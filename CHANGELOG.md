@@ -2,6 +2,10 @@
 
 All notable changes to the Issuegraph specification are recorded here. Until 1.0, breaking changes are expected and versioned as minor bumps.
 
+## 0.2.2 — 2026-08-14
+
+- Terminology: the structure is "the issuegraph block," never "frontmatter" — a block placed at the end of the body (0.2.1) is not front matter, and the name should say what the thing is.
+
 ## 0.2.1 — 2026-08-14
 
 - §4.1 placement: the block goes at the **end** of the issue body (prose leads, graph data trails), optionally in a `<details>` collapse — and MUST NOT be hidden from rendering entirely (HTML comments): invisible data is data nobody maintains.
