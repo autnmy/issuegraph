@@ -6,50 +6,60 @@ Issue **#230 — "Add usage-based billing"** is too big to work. Under the size 
 
 **#231 — "Billing: metering schema and write path"**
 
-```yaml
+```
+---
 issuegraph:
   decomposed-from: 230
   priority: 1
+---
 ```
 
 **#232 — "Billing: rating engine over metered usage"**
 
-```yaml
+```
+---
 issuegraph:
   decomposed-from: 230
   blocked-by: [231]
   priority: 1
+---
 ```
 
 **#233 — "Billing: invoice rendering"**
 
-```yaml
+```
+---
 issuegraph:
   decomposed-from: 230
   blocked-by: [232]
   priority: 2
+---
 ```
 
 **#234 — "Billing: usage dashboard widgets"**
 
-```yaml
+```
+---
 issuegraph:
   decomposed-from: 230
   blocked-by: [231]
   serialize-with: 233
   priority: 2
+---
 ```
 
 *#234 has no logical dependency on #233 — but both are known to rework the same rendering layer, so the decomposer records a conflict forecast. Whichever is claimed first excludes the other until it completes (SPEC §4.3.4). No false `blocked-by` is invented to fake the constraint.*
 
 **#235 — "Billing: end-to-end verification of the composed flow"**
 
-```yaml
+```
+---
 issuegraph:
   decomposed-from: 230
   blocked-by: [231, 232, 233, 234]
   evidence: asserted
   priority: 1
+---
 ```
 
 *The old "tracking issue" job — knowing when the whole is done — is an ordinary workable issue blocked by all its siblings.*

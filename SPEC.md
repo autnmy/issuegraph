@@ -1,6 +1,6 @@
 # Issuegraph — Specification
 
-**Version:** 0.2.3 (draft)
+**Version:** 0.1.0 (draft)
 **Status:** Draft for implementation. Not stable. Field names and semantics may change until 1.0. See [Versioning](#8-versioning-and-stability).
 
 Issuegraph is a specification for machine-readable work relationships and ordering, written directly onto the issues of an existing issue tracker. It defines a small data format (what you can write on an issue), writing rules (who writes it and when), and reading rules (how a scheduler turns a backlog into correctly ordered, safely parallel work).
@@ -48,22 +48,23 @@ MUST, MUST NOT, SHOULD, and MAY are used as in RFC 2119. Two conformance roles e
 
 ### 4.1 Location
 
-Issuegraph data lives in a fenced YAML block in the issue body whose top-level key is `issuegraph`. The format is ordinary YAML; only the carrier is chosen deliberately. Document frontmatter (`---` delimiters) is a *file* convention that issue trackers do not honor — a tracker renders a body opening with `---` as horizontal rules around unparsed text, and parses nothing — while a fenced code block renders legibly on every tracker and survives copy-paste. The `issuegraph` top-level key namespaces the block so no other tool's YAML is ever mistaken for it:
+Issuegraph data is **YAML frontmatter** on the issue body — the standard `---`-delimited block at the top, the same convention markdown files and their entire tooling ecosystem already read and write — containing a top-level `issuegraph` key:
 
-````markdown
-```yaml
+```markdown
+---
 issuegraph:
   blocked-by: [123, 124]
   priority: 1
+---
 ```
-````
 
-Rules:
+Nothing bespoke is introduced here, deliberately: the delimiters, the YAML, and the top-of-document placement are the existing universal convention, chosen because every human, model, and parser already knows it. Rules:
 
-- The **first** fenced block in the body containing a top-level `issuegraph` key is canonical. Later blocks with that key MUST be ignored by readers.
-- The block MAY appear anywhere in the body. Writers SHOULD place it at the **top**: the graph data is the first thing a scheduler needs and the first thing a reader should see framing the issue, and top-of-body is where the metadata-block convention already lives. It MAY be wrapped in a collapsible section (`<details>`) where the tracker renders one, but MUST NOT be hidden from rendering entirely (e.g. inside an HTML comment): invisible data is data nobody maintains, and human writers cannot correct what they cannot see.
-- Issue body text is untrusted input in most pipelines. Readers MUST parse the block with a plain YAML data parser (no anchors resolving to arbitrary object construction, no custom tags) and MUST treat everything outside the recognized fields as inert.
-- Trackers with native equivalents (sub-issue APIs, dependency features, priority labels) MAY mirror issuegraph fields into native features for human ergonomics. **For relationship fields, the issuegraph block is canonical**; on disagreement, the block wins, and the disagreement SHOULD be surfaced by grooming. The scalar fields (`priority`, `evidence`) run the other way — see 4.3.5 for the carrier-precedence rule.
+- Writers SHOULD open the body with the frontmatter. Readers MUST be tolerant of prefixed content (a bot's banner, a callout): the canonical data is the **first** `---`-delimited YAML block in the body containing a top-level `issuegraph` key; later claimants MUST be ignored.
+- The `issuegraph` key namespaces this specification's data. Other tools' keys MAY coexist in the same frontmatter and MUST be treated as inert by issuegraph readers.
+- The frontmatter MUST NOT be hidden from rendering (e.g. inside an HTML comment): invisible data is data nobody maintains, and human writers cannot correct what they cannot see.
+- Issue body text is untrusted input in most pipelines. Readers MUST parse the frontmatter with a plain YAML data parser (no anchors resolving to arbitrary object construction, no custom tags) and MUST treat everything outside the recognized fields as inert.
+- Trackers with native equivalents (sub-issue APIs, dependency features, priority labels) MAY mirror issuegraph fields into native features for human ergonomics. **For relationship fields, the frontmatter is canonical**; on disagreement, the frontmatter wins, and the disagreement SHOULD be surfaced by grooming. The scalar fields (`priority`, `evidence`) run the other way — see 4.3.5 for the carrier-precedence rule.
 
 ### 4.2 Issue references
 
@@ -71,7 +72,7 @@ A reference is either a bare integer (`123` — an issue in the same repository/
 
 ### 4.3 Fields
 
-All fields are optional. An issue with no issuegraph block is a valid node with no edges and default priority.
+All fields are optional. An issue with no issuegraph frontmatter is a valid node with no edges and default priority.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -113,15 +114,15 @@ Accidentally linking two groups merges them. This is deliberate fail-safety: the
 
 An integer 0–3, 0 most urgent, matching the common P0–P3 convention; absent means 2. This is the *declared* priority; readers compute *effective* priority from it (6.3).
 
-**Carrier precedence — the rule for scalar fields, the reverse of the relationship fields.** The scalar fields (`priority`, and `evidence` in 4.3.6) annotate a single issue with a value a human might flip; relationship fields carry references between issues. The precedence rule: **where the tracker has an established convention for a scalar field (priority labels, an evidence label pair), the native convention is canonical** and the block's field is an optional mirror; where no convention is established, the block carries the value. The reasoning is the same one that keeps holds out of the format (§2, 6.8): truth belongs in the carrier people actually edit. Humans and triage tooling flip labels; nobody re-edits YAML in an issue body to bump a priority — a block-canonical rule for scalars would put the authoritative value in the carrier guaranteed to go stale. Relationship fields don't have this problem (most trackers have no native edge convention worth the name), which is why the block stays canonical for them (4.1).
+**Carrier precedence — the rule for scalar fields, the reverse of the relationship fields.** The scalar fields (`priority`, and `evidence` in 4.3.6) annotate a single issue with a value a human might flip; relationship fields carry references between issues. The precedence rule: **where the tracker has an established convention for a scalar field (priority labels, an evidence label pair), the native convention is canonical** and the frontmatter's field is an optional mirror; where no convention is established, the frontmatter carries the value. The reasoning is the same one that keeps holds out of the format (§2, 6.8): truth belongs in the carrier people actually edit. Humans and triage tooling flip labels; nobody re-edits YAML in an issue body to bump a priority — a frontmatter-canonical rule for scalars would put the authoritative value in the carrier guaranteed to go stale. Relationship fields don't have this problem (most trackers have no native edge convention worth the name), which is why the frontmatter stays canonical for them (4.1).
 
-Readers resolve declared priority: the tracker's established convention if one exists, else the block field, else 2. Grooming surfaces disagreements between carriers (5.4).
+Readers resolve declared priority: the tracker's established convention if one exists, else the frontmatter field, else 2. Grooming surfaces disagreements between carriers (5.4).
 
 #### 4.3.6 `evidence`
 
 Machine-filed issues are hypotheses. Operational experience shows agents filing issues whose central claims are false — a function said to misbehave that did not, a component said to be dead that was referenced, a dependency said to exist that was absent — each caught only because the next agent re-verified before acting. A human-written issue carries implicit authority; a machine-written one has not earned it. `evidence: asserted` tells the next worker to verify before building; `verified` says the writer reproduced or otherwise confirmed the claim, and SHOULD be accompanied in the body by how.
 
-As a scalar field, `evidence` follows the carrier-precedence rule (4.3.5): an executor that establishes a native convention for it (e.g. an `evidence:verified` label an agent flips after reproducing the claim) makes that convention canonical, with the block as fallback where none exists. The flip from `asserted` to `verified` is exactly the kind of single-value edit label conventions handle better than body-YAML edits.
+As a scalar field, `evidence` follows the carrier-precedence rule (4.3.5): an executor that establishes a native convention for it (e.g. an `evidence:verified` label an agent flips after reproducing the claim) makes that convention canonical, with the frontmatter as fallback where none exists. The flip from `asserted` to `verified` is exactly the kind of single-value edit label conventions handle better than body-YAML edits.
 
 #### 4.3.7 `together-with`
 
@@ -175,7 +176,7 @@ A conforming grooming pass (any recurring maintenance process, human or machine)
 - unresolvable references (targets deleted, moved, or unreachable),
 - dependency cycles (6.6),
 - serialize groups whose members have all been open and untouched for an extended period (stale forecasts),
-- disagreements between the canonical block and any native-feature mirror (4.1),
+- disagreements between the canonical frontmatter and any native-feature mirror (4.1),
 - dependents unblocked by non-completed closures (5.3),
 - issues held ineligible by executor conventions (§6.8) for an extended period — a hold that never lifts is a decision nobody is making,
 - internal `blocked-by` edges within a together group (advisory ordering or a sign the coupling is wrong — 4.3.7), and together groups too large to work as one unit (a decomposition problem wearing a coupling costume).
@@ -193,7 +194,7 @@ A hold that turns out to contain a specific question SHOULD be converted: file t
 
 ### 6.1 Graph construction
 
-A reader parses the canonical block from each issue in its scope, resolves references, and builds: the dependency graph (`blocked-by`), the duplicate mapping (`duplicate-of` closure to canonical), the serialize components (`serialize-with`, undirected, union-find), and provenance (`decomposed-from`). Readers maintain whatever indexes they need; the format never stores derived data.
+A reader parses the canonical frontmatter from each issue in its scope, resolves references, and builds: the dependency graph (`blocked-by`), the duplicate mapping (`duplicate-of` closure to canonical), the serialize components (`serialize-with`, undirected, union-find), and provenance (`decomposed-from`). Readers maintain whatever indexes they need; the format never stores derived data.
 
 ### 6.2 The ready set
 

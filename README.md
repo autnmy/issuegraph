@@ -4,19 +4,19 @@
 
 A backlog is a list, and a list doesn't say what order to do things in, what can run in parallel, or which small issue is secretly the most urgent thing in the system because everything else is waiting on it. Humans carry that knowledge in conversation. Schedulers and autonomous agents can't — **a scheduler cannot act on prose**.
 
-Issuegraph puts the ordering knowledge on the issues themselves, as a small YAML block any tracker can store and any tool can read:
+Issuegraph puts the ordering knowledge on the issues themselves, as plain YAML frontmatter any tracker can store and any tool already knows how to read:
 
-````markdown
-```yaml
+```markdown
+---
 issuegraph:
   blocked-by: [231, 234]
   decomposed-from: 230
   serialize-with: 232
   priority: 1
+---
 ```
-````
 
-Six fields. Three chapters of rules. No server, no new tool, no migration — your tracker remains the source of truth.
+Seven fields. Three chapters of rules. No server, no new tool, no migration — your tracker remains the source of truth.
 
 ## What it gives you
 
