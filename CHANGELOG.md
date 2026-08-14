@@ -5,6 +5,7 @@ All notable changes to the Issuegraph specification are recorded here. Until 1.0
 ## 0.2.3 — 2026-08-14
 
 - §4.1 placement returns to the **top** of the body, reversing 0.2.1 after the steward saw both in practice: the graph data leads. The never-hidden rule (no HTML comments) is unchanged, and the structure's name stays "the issuegraph block" (0.2.2) — position-independent, even when the position makes it frontmatter again.
+- §4.1 records why the carrier is a fenced block and not `---` document frontmatter: the format is plain YAML; frontmatter is a file convention trackers render as broken horizontal rules and parse not at all, while a fenced block renders legibly everywhere and the `issuegraph` key namespaces it.
 
 ## 0.2.2 — 2026-08-14
 

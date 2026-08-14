@@ -48,7 +48,7 @@ MUST, MUST NOT, SHOULD, and MAY are used as in RFC 2119. Two conformance roles e
 
 ### 4.1 Location
 
-Issuegraph data lives in a fenced YAML block in the issue body whose top-level key is `issuegraph`:
+Issuegraph data lives in a fenced YAML block in the issue body whose top-level key is `issuegraph`. The format is ordinary YAML; only the carrier is chosen deliberately. Document frontmatter (`---` delimiters) is a *file* convention that issue trackers do not honor — a tracker renders a body opening with `---` as horizontal rules around unparsed text, and parses nothing — while a fenced code block renders legibly on every tracker and survives copy-paste. The `issuegraph` top-level key namespaces the block so no other tool's YAML is ever mistaken for it:
 
 ````markdown
 ```yaml
