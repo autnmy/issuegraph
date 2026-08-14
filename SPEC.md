@@ -61,7 +61,7 @@ issuegraph:
 Nothing bespoke is introduced here, deliberately: the delimiters, the YAML, and the top-of-document placement are the existing universal convention, chosen because every human, model, and parser already knows it. Rules:
 
 - Writers SHOULD open the body with the frontmatter. Readers MUST be tolerant of prefixed and wrapping content (a bot's banner, a callout, a code fence): the canonical data is the **first** `---`-delimited YAML block in the body containing a top-level `issuegraph` key; later claimants MUST be ignored.
-- On trackers that render the body as markdown — where a bare `---` renders as a rule and the line above one as a heading — writers SHOULD wrap the frontmatter in a plain code fence. The fence is display armor only: the frontmatter text inside is unchanged and byte-portable, and readers see through it via the tolerance rule above.
+- Writers SHOULD write the frontmatter **bare** — the universal form, nothing wrapped. The one permitted exception: where the tracker's rendering mangles bare frontmatter (GFM, for instance, renders `---` as a rule and the line above one as a heading), writers MAY wrap it in a plain code fence. The fence is display armor only: the frontmatter text inside is unchanged and byte-portable, and readers see through it via the tolerance rule above.
 
   ````markdown
   ```
