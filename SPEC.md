@@ -1,6 +1,6 @@
 # Issuegraph — Specification
 
-**Version:** 0.1.0 (draft)
+**Version:** 0.1.1 (draft)
 **Status:** Draft for implementation. Not stable. Field names and semantics may change until 1.0. See [Versioning](#8-versioning-and-stability).
 
 Issuegraph is a specification for machine-readable work relationships and ordering, written directly onto the issues of an existing issue tracker. It defines a small data format (what you can write on an issue), writing rules (who writes it and when), and reading rules (how a scheduler turns a backlog into correctly ordered, safely parallel work).
@@ -31,6 +31,7 @@ No claims, no leases, no in-progress states, no retries, no heartbeats, no logs,
 Consequences of that test, recorded here so they are not relitigated field by field:
 
 - **Work-type classification is executor policy, not format.** Whether an issue's deliverable is a code change, a decomposition, or something no automated pipeline can perform at all ("pay the vendor invoice," "migrate the repository") is a judgment each executor makes against its own capabilities. The format does not carry it.
+- **Holds are tracker/executor policy, not format.** Trackers already have conventions that pause work on a single issue pending attention — a `needs-human` label, a "waiting" state. These gate workability without referencing any other issue, and they stay out of the format: a `hold:` field would duplicate tracker-native machinery and rot beside it. The format's contributions to the problem are the composition rule (§6.8) and the decision-issue pattern (§5.5), which turns the *nameable* subset of human blockers into ordinary graph nodes.
 - **Concurrency rate is scheduler policy, not format.** The graph defines which issues *may* run concurrently; how many run at once is a knob on the scheduler.
 - **Progress roll-ups are queries, not data.** "How far along is the feature" is computed from the graph; it is never stored where it can rot.
 
@@ -148,7 +149,17 @@ A conforming grooming pass (any recurring maintenance process, human or machine)
 - dependency cycles (6.6),
 - serialize groups whose members have all been open and untouched for an extended period (stale forecasts),
 - disagreements between the canonical block and any native-feature mirror (4.1),
-- dependents unblocked by non-completed closures (5.3).
+- dependents unblocked by non-completed closures (5.3),
+- issues held ineligible by executor conventions (§6.8) for an extended period — a hold that never lifts is a decision nobody is making.
+
+### 5.5 Human gates: name the question
+
+Work is often blocked on a person rather than on another issue: a decision to make, an approval to grant, an account action only a human can take. Two mechanisms exist, and choosing between them follows one rule: **if you can name the question, make it a node; if you can't, hold the issue.**
+
+- **A decision issue** (RECOMMENDED whenever the blocker is a specific, answerable question). Write the question as its own issue — "Decide: adopt X or build Y," "Approve the ceiling change" — and put it in the dependent work's `blocked-by`. The gate is now an ordinary graph node: it lifts by ordinary closure, dependents become ready by the ordinary rule, and — the property that makes this worth the ceremony — **effective priority flows backward into it** (§6.3). The humans answering questions get a queue ordered by how urgent the work behind each question is, instead of a flat pile of flagged issues. Executors classify a decision issue's deliverable as human-performed (§2) and route it to their human-attention surface rather than to automated work.
+- **A hold** (a tracker-native label or state, per §6.8) for diffuse attention that has no single answerable question — "this RFC needs discussion," "customer escalation, handle manually." Holds are the honest representation of *unstructured* human involvement; converting them into vague decision issues ("figure this out") adds nodes without adding information.
+
+A hold that turns out to contain a specific question SHOULD be converted: file the decision issue, add the edge, drop the hold.
 
 ## 6. Reading rules
 
@@ -175,7 +186,9 @@ The **effective priority** of an issue is the highest declared priority (numeric
 
 ### 6.4 Selection
 
-> A reader selects work by: **effective priority** among **ready** issues, oldest first as the tiebreak.
+> A reader selects work by: **effective priority** among **ready, eligible** issues, oldest first as the tiebreak.
+
+Readiness is the graph's verdict (§6.2); eligibility is the executor's (§6.8). Both must hold.
 
 This is deliberately a cheap query: one indexed pass, incrementally recomputable on events (an issue closed, an edge written). "Issue closed" is the event that moves the frontier: dependents whose last blocker closed *become ready* at that moment — no polling.
 
@@ -190,6 +203,15 @@ A `blocked-by` cycle is detected **on read** and surfaced as a stuck group; writ
 ### 6.7 Unresolvable references
 
 A `blocked-by` reference that cannot be resolved MUST be treated as **blocking** (fail-safe: unknown state is not "closed") and MUST be surfaced for grooming. Unresolvable `serialize-with` references contribute no linkage but are likewise surfaced.
+
+### 6.8 Holds and eligibility
+
+The ready set (§6.2) is the graph's answer to "may this start?" — it is **necessary, not sufficient**. Executors compose it with their own **eligibility** gates: tracker-native hold conventions (a `needs-human` label, a paused state), claim protocols, capability classifications (§2), operational switches. A held issue is *ready but ineligible*: invisible to selection, exactly like an unready one.
+
+Two rules keep the composition clean:
+
+- Hold semantics MUST NOT be encoded as format fields (§2). The format never learns why an executor declines ready work.
+- Effective priority (§6.3) is computed from the graph **regardless of holds** — a held issue that blocks urgent work still propagates that urgency. This is deliberate: it is what surfaces "the most urgent thing in the system is waiting on a hold nobody is looking at," which grooming (§5.4) and human-attention surfaces consume. Compare §5.5: when the hold is really a nameable question, a decision issue represents it better.
 
 ## 7. Prior art
 
