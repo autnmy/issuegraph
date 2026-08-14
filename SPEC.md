@@ -1,6 +1,6 @@
 # Issuegraph — Specification
 
-**Version:** 0.1.1 (draft)
+**Version:** 0.2.0 (draft)
 **Status:** Draft for implementation. Not stable. Field names and semantics may change until 1.0. See [Versioning](#8-versioning-and-stability).
 
 Issuegraph is a specification for machine-readable work relationships and ordering, written directly onto the issues of an existing issue tracker. It defines a small data format (what you can write on an issue), writing rules (who writes it and when), and reading rules (how a scheduler turns a backlog into correctly ordered, safely parallel work).
@@ -63,7 +63,7 @@ Rules:
 - The **first** fenced block in the body containing a top-level `issuegraph` key is canonical. Later blocks with that key MUST be ignored by readers.
 - The block MAY appear anywhere in the body, but writers SHOULD place it at the top.
 - Issue body text is untrusted input in most pipelines. Readers MUST parse the block with a plain YAML data parser (no anchors resolving to arbitrary object construction, no custom tags) and MUST treat everything outside the recognized fields as inert.
-- Trackers with native equivalents (sub-issue APIs, dependency features, priority labels) MAY mirror issuegraph fields into native features for human ergonomics. **The frontmatter block is canonical**; on disagreement, the block wins, and the disagreement SHOULD be surfaced by grooming.
+- Trackers with native equivalents (sub-issue APIs, dependency features, priority labels) MAY mirror issuegraph fields into native features for human ergonomics. **For relationship fields, the frontmatter block is canonical**; on disagreement, the block wins, and the disagreement SHOULD be surfaced by grooming. The scalar fields (`priority`, `evidence`) run the other way — see 4.3.5 for the carrier-precedence rule.
 
 ### 4.2 Issue references
 
@@ -79,7 +79,8 @@ All fields are optional. An issue with no issuegraph block is a valid node with 
 | `decomposed-from` | ref | Provenance: this issue was produced by decomposing that one. Not a scheduling edge. |
 | `duplicate-of` | ref | This issue is the same work as that one; readers ignore this issue and treat the target as canonical. |
 | `serialize-with` | ref | This issue must not run concurrently with the referenced issue or anything transitively linked to it (see 4.3.4). No ordering implied. |
-| `priority` | integer 0–3 | 0 is most urgent. Absent means 2. |
+| `together-with` | ref | This issue and the referenced issue (and anything transitively linked) are distinct issues forming **one unit of work** — selected, claimed, and worked together (see 4.3.7). |
+| `priority` | integer 0–3 | 0 is most urgent. Absent means 2. Carrier precedence in 4.3.5. |
 | `evidence` | `asserted` \| `verified` | Whether the issue's factual claims were verified by the writer or merely asserted. Absent means `asserted` for machine-written issues. |
 
 #### 4.3.1 `blocked-by`
@@ -106,15 +107,41 @@ Readers MUST admit at most one actively-claimed issue per serialize group at a t
 
 Accidentally linking two groups merges them. This is deliberate fail-safety: the error direction is *more* serialization, which costs throughput, never correctness.
 
-`serialize-with` is the only soft-coordination construct in the format, and it earns its place only because a conflict forecast is knowledge the scheduler cannot derive — file overlap is only computable after the diffs exist, which is after the work is done. Implementers are urged to resist growing this into a family ("affinity," "prefer-after," "not-near"): every such field is a field that will go stale and mislead a scheduler.
+`serialize-with` earns its place only because a conflict forecast is knowledge the scheduler cannot derive — file overlap is only computable after the diffs exist, which is after the work is done. Together with `together-with` (4.3.7) it forms the format's complete coordination vocabulary beyond `blocked-by`, and both are **hard constraints with exact reader behavior**. Implementers are urged to resist preference-shaped additions ("affinity," "prefer-after," "not-near"): a preference a scheduler may ignore is a field that will go stale and mislead the reader that eventually honors it.
 
 #### 4.3.5 `priority`
 
-An integer 0–3, 0 most urgent, matching the common P0–P3 convention. This is the *declared* priority; readers compute *effective* priority from it (6.3). Trackers carrying priority as labels MAY treat the label as a mirror (4.1).
+An integer 0–3, 0 most urgent, matching the common P0–P3 convention; absent means 2. This is the *declared* priority; readers compute *effective* priority from it (6.3).
+
+**Carrier precedence — the rule for scalar fields, the reverse of the relationship fields.** The scalar fields (`priority`, and `evidence` in 4.3.6) annotate a single issue with a value a human might flip; relationship fields carry references between issues. The precedence rule: **where the tracker has an established convention for a scalar field (priority labels, an evidence label pair), the native convention is canonical** and the block's field is an optional mirror; where no convention is established, the block carries the value. The reasoning is the same one that keeps holds out of the format (§2, 6.8): truth belongs in the carrier people actually edit. Humans and triage tooling flip labels; nobody re-edits YAML in an issue body to bump a priority — a block-canonical rule for scalars would put the authoritative value in the carrier guaranteed to go stale. Relationship fields don't have this problem (most trackers have no native edge convention worth the name), which is why the block stays canonical for them (4.1).
+
+Readers resolve declared priority: the tracker's established convention if one exists, else the block field, else 2. Grooming surfaces disagreements between carriers (5.4).
 
 #### 4.3.6 `evidence`
 
 Machine-filed issues are hypotheses. Operational experience shows agents filing issues whose central claims are false — a function said to misbehave that did not, a component said to be dead that was referenced, a dependency said to exist that was absent — each caught only because the next agent re-verified before acting. A human-written issue carries implicit authority; a machine-written one has not earned it. `evidence: asserted` tells the next worker to verify before building; `verified` says the writer reproduced or otherwise confirmed the claim, and SHOULD be accompanied in the body by how.
+
+As a scalar field, `evidence` follows the carrier-precedence rule (4.3.5): an executor that establishes a native convention for it (e.g. an `evidence:verified` label an agent flips after reproducing the claim) makes that convention canonical, with the block as fallback where none exists. The flip from `asserted` to `verified` is exactly the kind of single-value edit label conventions handle better than body-YAML edits.
+
+#### 4.3.7 `together-with`
+
+Expresses a **unit of work spanning distinct issues**: "these are separate issues, but they must be selected, claimed, and worked as one." Two canonical uses:
+
+- **Cross-repository coupling** — one logical change that necessarily spans trackers: a spec change and its implementation, an API and its client. Merging them into one issue is impossible; working them separately produces broken intermediate states.
+- **Shared-fix coupling** — independently-filed issues describing *different* problems resolved by one change (two distinct defects, one refactor fixes both). `duplicate-of` would be false — they are not the same work and each needs its own closure trail — but working them apart is waste or conflict.
+
+Encoding mirrors `serialize-with`: symmetric, one edge per joining issue pointing at any existing member; the **together group** is the connected component; joining is one write on the joiner, leaving is deleting your own field; accidental linkage merges groups.
+
+Reader semantics — a together group is one schedulable unit:
+
+- **Readiness**: the group is ready when every open member is ready per §6.2, evaluating `blocked-by` over **boundary-crossing edges only**. Internal `blocked-by` edges (member blocking member) are not readiness inputs — they would deadlock the group against itself — and are surfaced to the worker as advisory ordering and to grooming as a possible smell.
+- **Claim**: atomic — claiming any member claims the group. For serialize admission (4.3.4), the whole group is one claim.
+- **Effective priority**: the maximum (numerically lowest) over members, composed with §6.3's backward flow.
+- **Closure**: members close individually as their deliverables land; the unit constraint is about *working*, not about closing in the same instant.
+
+Boundaries with neighbors, in one line each: `duplicate-of` says *same work — keep one*; `together-with` says *different work — one unit*; `serialize-with` says *either order — never overlapping*; `blocked-by` says *this order — no overlap question*.
+
+A caution symmetric to 4.3.4's: `together-with` inside a single repository is often a **decomposition smell** — if two halves of a split cannot stand alone, ask whether the split was right before coupling them back together. Its home ground is coupling that cannot be merged into one issue.
 
 ## 5. Writing rules
 
@@ -150,7 +177,8 @@ A conforming grooming pass (any recurring maintenance process, human or machine)
 - serialize groups whose members have all been open and untouched for an extended period (stale forecasts),
 - disagreements between the canonical block and any native-feature mirror (4.1),
 - dependents unblocked by non-completed closures (5.3),
-- issues held ineligible by executor conventions (§6.8) for an extended period — a hold that never lifts is a decision nobody is making.
+- issues held ineligible by executor conventions (§6.8) for an extended period — a hold that never lifts is a decision nobody is making,
+- internal `blocked-by` edges within a together group (advisory ordering or a sign the coupling is wrong — 4.3.7), and together groups too large to work as one unit (a decomposition problem wearing a coupling costume).
 
 ### 5.5 Human gates: name the question
 
@@ -173,8 +201,9 @@ An issue is **ready** when all of the following hold:
 
 1. it is open;
 2. it is not a duplicate (no `duplicate-of`, directly or transitively);
-3. every issue in its `blocked-by` list is closed;
-4. its serialize group (if any) has no actively-claimed member.
+3. every issue in its `blocked-by` list is closed — for members of a together group, evaluated over boundary-crossing edges only (4.3.7);
+4. its serialize group (if any) has no actively-claimed member;
+5. if it belongs to a together group, every other open member also satisfies 1–4 (the group is ready as a unit or not at all).
 
 Issues that are not ready MUST be invisible to selection. This retires pre-claiming: unready work needs no protection from an eager scheduler, because the scheduler cannot see it.
 
@@ -182,13 +211,13 @@ Issues that are not ready MUST be invisible to selection. This retires pre-claim
 
 **Importance flows backward along blocking edges.** If a minor issue blocks an urgent one, it is not minor — it is the most urgent thing in the system, because nothing else unblocks the urgent one.
 
-The **effective priority** of an issue is the highest declared priority (numerically lowest value) among itself and every open issue that transitively depends on it through `blocked-by`. Readers MUST select by effective priority, not declared priority. A naive scheduler that sorts by declared priority finds the urgent item blocked, moves on to the next-most-urgent thing it *can* do, and leaves the actual critical path at the bottom of the queue while everything looks busy.
+The **effective priority** of an issue is the highest declared priority (numerically lowest value) among itself and every open issue that transitively depends on it through `blocked-by`. A together group's effective priority is the highest over its members. Readers MUST select by effective priority, not declared priority. A naive scheduler that sorts by declared priority finds the urgent item blocked, moves on to the next-most-urgent thing it *can* do, and leaves the actual critical path at the bottom of the queue while everything looks busy.
 
 ### 6.4 Selection
 
 > A reader selects work by: **effective priority** among **ready, eligible** issues, oldest first as the tiebreak.
 
-Readiness is the graph's verdict (§6.2); eligibility is the executor's (§6.8). Both must hold.
+Readiness is the graph's verdict (§6.2); eligibility is the executor's (§6.8). Both must hold. Together groups enter selection as single units: one candidate, one claim, group effective priority (4.3.7).
 
 This is deliberately a cheap query: one indexed pass, incrementally recomputable on events (an issue closed, an edge written). "Issue closed" is the event that moves the frontier: dependents whose last blocker closed *become ready* at that moment — no polling.
 

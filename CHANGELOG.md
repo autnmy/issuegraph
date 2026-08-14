@@ -2,6 +2,15 @@
 
 All notable changes to the Issuegraph specification are recorded here. Until 1.0, breaking changes are expected and versioned as minor bumps.
 
+## 0.2.0 — 2026-08-14
+
+A new coordination field and a carrier-precedence flip for scalars.
+
+- **`together-with` added (§4.3.7):** distinct issues forming one unit of work — selected, claimed, and worked together. Same connected-component encoding as `serialize-with`. Group readiness is all-members-ready over boundary-crossing edges (internal `blocked-by` is advisory, never a readiness input); claims are atomic; group effective priority is the max over members; members still close individually. Canonical uses: cross-repository coupling, and shared-fix coupling (distinct defects, one change — where `duplicate-of` would be false). In-repo use is flagged as a decomposition smell.
+- **Scalar carrier precedence (§4.3.5–4.3.6, §4.1):** for `priority` and `evidence`, an established tracker-native convention (priority labels; an evidence label pair) is **canonical**, with the block as mirror/fallback — the reverse of relationship fields. Truth belongs in the carrier people actually edit; nobody bumps a priority by editing body YAML. Relationship fields keep block-canonical (trackers have no native edge convention worth the name).
+- §4.3.4 rewording: `serialize-with` + `together-with` are the complete coordination vocabulary beyond `blocked-by`; both are hard constraints; preference-shaped fields remain rejected.
+- Grooming (§5.4): surface internal together-group `blocked-by` edges and oversized together groups.
+
 ## 0.1.1 — 2026-08-14
 
 Holds and human gates — issues can be unworkable for non-inter-issue reasons, and the spec now says where that lives.
