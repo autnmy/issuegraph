@@ -2,6 +2,10 @@
 
 All notable changes to the Issuegraph specification are recorded here. Until 1.0, breaking changes are expected and versioned as minor bumps.
 
+## 0.2.1 — 2026-08-14
+
+- §4.1 placement: the block goes at the **end** of the issue body (prose leads, graph data trails), optionally in a `<details>` collapse — and MUST NOT be hidden from rendering entirely (HTML comments): invisible data is data nobody maintains.
+
 ## 0.2.0 — 2026-08-14
 
 A new coordination field and a carrier-precedence flip for scalars.

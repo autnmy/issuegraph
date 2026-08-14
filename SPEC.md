@@ -1,6 +1,6 @@
 # Issuegraph — Specification
 
-**Version:** 0.2.0 (draft)
+**Version:** 0.2.1 (draft)
 **Status:** Draft for implementation. Not stable. Field names and semantics may change until 1.0. See [Versioning](#8-versioning-and-stability).
 
 Issuegraph is a specification for machine-readable work relationships and ordering, written directly onto the issues of an existing issue tracker. It defines a small data format (what you can write on an issue), writing rules (who writes it and when), and reading rules (how a scheduler turns a backlog into correctly ordered, safely parallel work).
@@ -61,7 +61,7 @@ issuegraph:
 Rules:
 
 - The **first** fenced block in the body containing a top-level `issuegraph` key is canonical. Later blocks with that key MUST be ignored by readers.
-- The block MAY appear anywhere in the body, but writers SHOULD place it at the top.
+- The block MAY appear anywhere in the body. Writers SHOULD place it at the **end** — the issue's prose leads, the graph data trails — and MAY wrap it in a collapsible section (`<details>`) where the tracker renders one. It MUST NOT be hidden from rendering entirely (e.g. inside an HTML comment): invisible data is data nobody maintains, and human writers cannot correct what they cannot see.
 - Issue body text is untrusted input in most pipelines. Readers MUST parse the block with a plain YAML data parser (no anchors resolving to arbitrary object construction, no custom tags) and MUST treat everything outside the recognized fields as inert.
 - Trackers with native equivalents (sub-issue APIs, dependency features, priority labels) MAY mirror issuegraph fields into native features for human ergonomics. **For relationship fields, the frontmatter block is canonical**; on disagreement, the block wins, and the disagreement SHOULD be surfaced by grooming. The scalar fields (`priority`, `evidence`) run the other way — see 4.3.5 for the carrier-precedence rule.
 
