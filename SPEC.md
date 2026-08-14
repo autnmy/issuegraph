@@ -60,7 +60,18 @@ issuegraph:
 
 Nothing bespoke is introduced here, deliberately: the delimiters, the YAML, and the top-of-document placement are the existing universal convention, chosen because every human, model, and parser already knows it. Rules:
 
-- Writers SHOULD open the body with the frontmatter. Readers MUST be tolerant of prefixed content (a bot's banner, a callout): the canonical data is the **first** `---`-delimited YAML block in the body containing a top-level `issuegraph` key; later claimants MUST be ignored.
+- Writers SHOULD open the body with the frontmatter. Readers MUST be tolerant of prefixed and wrapping content (a bot's banner, a callout, a code fence): the canonical data is the **first** `---`-delimited YAML block in the body containing a top-level `issuegraph` key; later claimants MUST be ignored.
+- On trackers that render the body as markdown — where a bare `---` renders as a rule and the line above one as a heading — writers SHOULD wrap the frontmatter in a plain code fence. The fence is display armor only: the frontmatter text inside is unchanged and byte-portable, and readers see through it via the tolerance rule above.
+
+  ````markdown
+  ```
+  ---
+  issuegraph:
+    blocked-by: [123, 124]
+    priority: 1
+  ---
+  ```
+  ````
 - The `issuegraph` key namespaces this specification's data. Other tools' keys MAY coexist in the same frontmatter and MUST be treated as inert by issuegraph readers.
 - The frontmatter MUST NOT be hidden from rendering (e.g. inside an HTML comment): invisible data is data nobody maintains, and human writers cannot correct what they cannot see.
 - Issue body text is untrusted input in most pipelines. Readers MUST parse the frontmatter with a plain YAML data parser (no anchors resolving to arbitrary object construction, no custom tags) and MUST treat everything outside the recognized fields as inert.
