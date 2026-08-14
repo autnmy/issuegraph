@@ -2,6 +2,10 @@
 
 All notable changes to the Issuegraph specification are recorded here. Until 1.0, breaking changes are expected and versioned as minor bumps.
 
+## 0.2.3 — 2026-08-14
+
+- §4.1 placement returns to the **top** of the body, reversing 0.2.1 after the steward saw both in practice: the graph data leads. The never-hidden rule (no HTML comments) is unchanged, and the structure's name stays "the issuegraph block" (0.2.2) — position-independent, even when the position makes it frontmatter again.
+
 ## 0.2.2 — 2026-08-14
 
 - Terminology: the structure is "the issuegraph block," never "frontmatter" — a block placed at the end of the body (0.2.1) is not front matter, and the name should say what the thing is.
