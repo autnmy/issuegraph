@@ -471,9 +471,6 @@ td.m code { font-size: 12.5px; }
 .tile[data-state="missed"] { background: var(--amber-bg); }
 .tile[data-state="missed"] .tid, .tile[data-state="missed"] .tt { color: var(--amber); }
 .tile.whiff { animation: shake 260ms linear; }
-/* graph view telegraphs the next wave while the board rests */
-.graphmode .tile[data-next="1"] { outline: 2px dashed var(--accent); outline-offset: -2px; }
-.graphmode .tile[data-next="1"] .tid { color: var(--accent); }
 @keyframes pop { from { filter: brightness(0.92); } to { filter: brightness(1.14); } }
 @keyframes shake {
   25% { transform: translate(var(--tx), var(--ty)) translateX(-3px); }
@@ -893,17 +890,17 @@ footer a { color: var(--fg-2); }
       <h2>At backlog scale</h2>
       <span class="meta">48 issues · one repository</span>
       <span class="push"></span>
-      <div class="seg" role="group" aria-label="View">
-        <button type="button" class="segb on" id="vgrid">grid</button>
-        <button type="button" class="segb" id="vgraph">graph</button>
+      <div class="seg" role="group" aria-label="Ordering">
+        <button type="button" class="segb on" id="vgrid">order by newest</button>
+        <button type="button" class="segb" id="vgraph">order by issuegraph</button>
       </div>
     </header>
     <div class="explain">
-      <p><b>The same 48 issues, two views.</b> The grid is the backlog as a tracker shows it — newest first, read left to right. The graph is what the frontmatter on those same issues already says. Nothing was added to get from one to the other.</p>
-      <p><b>Then play it — whack-a-mole, two rounds.</b> The reader deals the backlog in waves: everything ready lights up at once — one to four issues, your pick — holds for a blink, then the board rests before the next wave. Whack what you can while it shows; whatever you miss closes anyway, because the frontier moves with or without you. <b>Round 1 plays on the grid</b>, in tracker order, where every wave lands somewhere new. <b>Round 2 replays the identical waves on the graph</b> — the same 48 tiles rebuilt into the graph their frontmatter already describes, blockers above and dependents below, with the coming wave glowing while the board rests. The sequence never changes; only your ability to see it coming does.</p>
+      <p><b>The same 48 issues, two orderings.</b> <b>Order by newest</b> is the backlog as a tracker shows it — newest first, read left to right. <b>Order by issuegraph</b> is the same 48 issues arranged by what their frontmatter already says — blockers above, dependents below, edges drawn between them. Nothing was added to get from one to the other.</p>
+      <p><b>Then play it — whack-a-mole, two rounds.</b> The reader deals the backlog in waves: everything ready lights up at once — one to four issues, your pick — holds for a blink, then the board rests before the next wave. Whack what you can while it shows; whatever you miss closes anyway, because the frontier moves with or without you. <b>Round 1 plays ordered by newest</b>, where every wave lands somewhere you didn&rsquo;t expect. <b>Round 2 replays the identical waves ordered by issuegraph</b>, where every closure points at what it frees up next. The sequence never changes; only your ability to see it coming does.</p>
     </div>
     <div class="gamebar" id="gamebar">
-      <button type="button" class="abtn primary" id="gstart">Start round 1 · grid</button>
+      <button type="button" class="abtn primary" id="gstart">Start round 1 · by newest</button>
       <label class="gsel">at a time
         <select id="gdiff">
           <option value="4">4 — easiest</option>
@@ -923,7 +920,7 @@ footer a { color: var(--fg-2); }
       <svg id="edgesvg" aria-hidden="true" focusable="false"></svg>
       <div class="gover" id="gover" hidden></div>
     </div>
-    <p class="gnote" id="gnote" aria-live="polite">Idle — nothing is lit. The reader deals the same waves every time; the grid just can&rsquo;t tell you where they&rsquo;ll land. The graph can. Press start.</p>
+    <p class="gnote" id="gnote" aria-live="polite">Idle — nothing is lit. The reader deals the same waves every time; ordered by newest, nothing tells you where they&rsquo;ll land — ordered by issuegraph, the board itself does. Press start.</p>
   </section>
 
 </main>
@@ -1435,14 +1432,6 @@ footer a { color: var(--fg-2); }
     el.streak.textContent = streak;
     el.hit.textContent = whacked;
   }
-  function setNext(waveOrNull) {
-    var mark = {};
-    if (waveOrNull) waveOrNull.forEach(function (a) { unit(a).forEach(function (m) { mark[m] = 1; }); });
-    IDS.forEach(function (id) {
-      if (mark[id]) tiles[id].setAttribute('data-next', '1');
-      else tiles[id].removeAttribute('data-next');
-    });
-  }
 
   /* ---- game feel ---- */
   var reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -1533,7 +1522,6 @@ footer a { color: var(--fg-2); }
         if (!isClosed(m)) { lit[m] = batchEndsAt; tiles[m].style.setProperty('--life', life + 'ms'); }
       });
     });
-    setNext(null);
   }
   function settleWave(now) {
     /* the wave is over: whatever wasn't whacked closes anyway — the reader's
@@ -1585,10 +1573,6 @@ footer a { color: var(--fg-2); }
     var now = Date.now();
     if (inBatch && now >= batchEndsAt) settleWave(now);
     if (!inBatch && now >= deadUntil) lightWave(now);
-    /* in the flow view the next wave is knowable — show it warming up */
-    if (!inBatch && view === 'graph') {
-      setNext(batches[batchIdx >= batches.length ? 0 : batchIdx]);
-    }
     var left = Math.max(0, (endAt - now) / 1000);
     el.time.textContent = Math.ceil(left);
     el.time.parentNode.classList.toggle('low', running && left <= 5.5);
@@ -1613,10 +1597,9 @@ footer a { color: var(--fg-2); }
     el.round.textContent = r + '/2';
     el.start.textContent = 'Restart round ' + r;
     el.note.innerHTML = r === 1
-      ? '<b>Round 1 — the grid.</b> Waves of issues pop up together and vanish fast; whack what you can. Whatever you miss closes anyway — the backlog moves on without you. Clicking a dark tile resets your streak.'
-      : '<b>Round 2 — the graph.</b> The identical waves on the graph itself: blockers above, dependents below, edges showing why. The coming wave glows while the board rests — read ahead and be waiting.';
-    banner(r === 1 ? 'Round 1 · the grid' : 'Round 2 · the graph');
-    setNext(null);
+      ? '<b>Round 1 — ordered by newest.</b> Waves of issues pop up together and vanish fast; whack what you can. Whatever you miss closes anyway — the backlog moves on without you. Clicking a dark tile resets your streak.'
+      : '<b>Round 2 — ordered by issuegraph.</b> The identical waves, but the board is the graph itself: blockers above, dependents below, edges showing why. When something closes, look downstream — that is where the next wave comes from.';
+    banner(r === 1 ? 'Round 1 · order by newest' : 'Round 2 · order by issuegraph');
     clearInterval(timer);
     timer = setInterval(tick, 100);
     paint();
@@ -1627,7 +1610,6 @@ footer a { color: var(--fg-2); }
     running = false;
     clearInterval(timer);
     lit = {}; inBatch = false;
-    setNext(null);
     el.time.parentNode.classList.remove('low');
     el.bar.classList.remove('playing');
     var rec = { score: score, whacked: whacked, best: best, whiffs: whiffs, missed: missedN };
@@ -1635,12 +1617,12 @@ footer a { color: var(--fg-2); }
       rounds.r1 = rec;
       phase = 'between';
       el.round.textContent = '1 done';
-      el.start.textContent = 'Start round 2 · graph';
+      el.start.textContent = 'Start round 2 · by issuegraph';
       lockSeg(false);
       setView('graph');
       el.note.innerHTML = '<b>Round 1: ' + rec.whacked + ' whacked, score ' + rec.score + '.</b> ' +
         'Watch the board rearrange — the same 48 tiles, rebuilt into the graph their frontmatter already describes: blockers above, dependents below. ' +
-        'Round 2 replays the identical waves here, and the coming wave glows while the board rests.';
+        'Round 2 replays the identical waves here — read the edges to see what every closure frees up next.';
     } else {
       rounds.r2 = rec;
       phase = 'over';
@@ -1672,8 +1654,8 @@ footer a { color: var(--fg-2); }
       '<h3>Time</h3>' +
       '<div class="big">' + r2.score + '</div>' +
       '<table><thead><tr><th>round</th><th>whacked</th><th>score</th><th>streak</th></tr></thead><tbody>' +
-      '<tr><td>1 · grid</td><td>' + r1.whacked + '/48</td><td>' + r1.score + '</td><td>' + r1.best + '</td></tr>' +
-      '<tr><td>2 · graph</td><td>' + r2.whacked + '/48</td><td>' + r2.score + '</td><td>' + r2.best + '</td></tr>' +
+      '<tr><td>1 · newest</td><td>' + r1.whacked + '/48</td><td>' + r1.score + '</td><td>' + r1.best + '</td></tr>' +
+      '<tr><td>2 · issuegraph</td><td>' + r2.whacked + '/48</td><td>' + r2.score + '</td><td>' + r2.best + '</td></tr>' +
       '</tbody></table>' +
       '<p class="kick">' + kick + '</p>' +
       '<p class="pb">' + pb + '</p>' +
@@ -1688,7 +1670,7 @@ footer a { color: var(--fg-2); }
     el.over.addEventListener('click', function (e) {
       if (e.target === el.over && Date.now() >= shieldUntil) el.over.hidden = true;
     });
-    el.note.innerHTML = '<b>Final — grid ' + r1.whacked + ' whacked · graph ' + r2.whacked + ' whacked.</b> ' +
+    el.note.innerHTML = '<b>Final — by newest ' + r1.whacked + ' whacked · by issuegraph ' + r2.whacked + ' whacked.</b> ' +
       'The waves were identical both rounds: whatever is ready lights together, worst-first by effective priority. ' +
       'The grid just couldn’t tell you where.';
   }
@@ -1710,10 +1692,9 @@ footer a { color: var(--fg-2); }
     el.time.textContent = '30';
     el.time.parentNode.classList.remove('low');
     el.bar.classList.remove('playing');
-    el.start.textContent = 'Start round 1 · grid';
-    el.note.innerHTML = 'Difficulty set — the wave size changed, so the sequence recomputed. Round 1 plays on the grid, round 2 on the graph.';
+    el.start.textContent = 'Start round 1 · by newest';
+    el.note.innerHTML = 'Difficulty set — the wave size changed, so the sequence recomputed. Round 1 plays ordered by newest, round 2 ordered by issuegraph.';
     lockSeg(false);
-    setNext(null);
     layout();
     paint();
   });
