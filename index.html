@@ -1,0 +1,1320 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Issuegraph — a specification for machine-readable work relationships and ordering</title>
+<meta name="description" content="Issuegraph is a specification for machine-readable work relationships and ordering, written as YAML frontmatter on the issues of an existing tracker. Seven fields; reader rules for a ready set and effective priority.">
+<meta name="theme-color" content="#f7f8fa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0c0f14" media="(prefers-color-scheme: dark)">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Issuegraph — machine-readable work relationships and ordering">
+<meta property="og:description" content="A specification for machine-readable work relationships and ordering, written as YAML frontmatter on the issues of an existing tracker.">
+<meta property="og:site_name" content="Issuegraph">
+<meta name="twitter:card" content="summary">
+<script>
+  try {
+    var t = localStorage.getItem('ig-theme');
+    if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+  } catch (e) {}
+</script>
+<style>
+:root {
+  color-scheme: light;
+  --canvas: #ffffff;
+  --canvas-2: #f7f8fa;
+  --canvas-3: #eef0f4;
+  --border: #d5dae1;
+  --border-2: #e5e9ee;
+  --fg: #1c2027;
+  --fg-2: #545c69;
+  --fg-3: #666e7a;
+  --accent: #1a5fa8;
+  --accent-bg: #e8f0f9;
+  --on-accent: #ffffff;
+  --green: #1a7a44;
+  --green-bg: #e6f4eb;
+  --amber: #8a5a00;
+  --amber-bg: #fbf1dc;
+
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --canvas: #12161c;
+  --canvas-2: #0c0f14;
+  --canvas-3: #171c24;
+  --border: #2c333d;
+  --border-2: #21272f;
+  --fg: #e8ecf1;
+  --fg-2: #a3acb9;
+  --fg-3: #8b94a1;
+  --accent: #6aa9e9;
+  --accent-bg: #16283d;
+  --on-accent: #0c0f14;
+  --green: #46b56a;
+  --green-bg: #13291b;
+  --amber: #d0a02c;
+  --amber-bg: #2b2312;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --canvas: #12161c;
+    --canvas-2: #0c0f14;
+    --canvas-3: #171c24;
+    --border: #2c333d;
+    --border-2: #21272f;
+    --fg: #e8ecf1;
+    --fg-2: #a3acb9;
+    --fg-3: #8b94a1;
+    --accent: #6aa9e9;
+    --accent-bg: #16283d;
+    --on-accent: #0c0f14;
+    --green: #46b56a;
+    --green-bg: #13291b;
+    --amber: #d0a02c;
+    --amber-bg: #2b2312;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--canvas-2);
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+code, pre, .mono { font-family: var(--mono); }
+svg { overflow: visible; }
+h1, h2, h3 { margin: 0; font-weight: 600; }
+p { margin: 0; }
+
+.container { max-width: 1080px; margin: 0 auto; padding: 0 16px; }
+
+/* ---- app bar -------------------------------------------------------- */
+
+.appbar {
+  position: sticky; top: 0; z-index: 20;
+  background: var(--canvas);
+  border-bottom: 1px solid var(--border);
+}
+.appbar .inner { display: flex; align-items: center; gap: 12px; height: 52px; }
+.wordmark {
+  font-family: var(--mono); font-size: 17px; font-weight: 600;
+  letter-spacing: -0.02em; color: var(--fg); white-space: nowrap;
+}
+.wordmark span { color: var(--accent); }
+.appbar .spacer { flex: 1 1 auto; }
+.appbar nav { display: flex; align-items: center; gap: 2px; }
+.appbar nav a {
+  font-size: 13px; color: var(--fg-2); padding: 5px 9px; border-radius: 5px;
+}
+.appbar nav a:hover { background: var(--canvas-3); color: var(--fg); text-decoration: none; }
+
+.btn {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--fg-2); background: var(--canvas); border: 1px solid var(--border);
+  padding: 5px 9px; border-radius: 5px; cursor: pointer; line-height: 1.4;
+}
+.btn:hover { background: var(--canvas-3); color: var(--fg); }
+
+/* ---- hero ----------------------------------------------------------- */
+
+.hero {
+  background: var(--canvas); border-bottom: 1px solid var(--border);
+  padding-top: clamp(36px, 5vw, 56px); padding-bottom: clamp(32px, 4vw, 44px);
+}
+.mark {
+  font-family: var(--mono); font-size: clamp(34px, 6.4vw, 58px); font-weight: 600;
+  letter-spacing: -0.04em; line-height: 1; color: var(--fg);
+}
+.mark span { color: var(--accent); }
+.tagline {
+  margin: 16px 0 0; font-size: clamp(16px, 1.9vw, 19px); line-height: 1.45;
+  color: var(--fg); font-weight: 500; max-width: 46ch; text-wrap: pretty;
+}
+.copy { margin: 18px 0 0; display: flex; flex-direction: column; gap: 11px; max-width: 72ch; }
+.copy p { font-size: 14.5px; line-height: 1.62; color: var(--fg-2); text-wrap: pretty; }
+.copy code {
+  font-family: var(--mono); font-size: 12.5px; color: var(--fg);
+  background: var(--canvas-2); border: 1px solid var(--border-2);
+  border-radius: 4px; padding: 1px 5px;
+}
+.metarow {
+  display: flex; flex-wrap: wrap; gap: 14px 20px; align-items: center;
+  justify-content: space-between; margin: 24px 0 0;
+}
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.abtn {
+  font-family: var(--mono); font-size: 12px; color: var(--fg-2);
+  background: var(--canvas-2); border: 1px solid var(--border);
+  padding: 5px 12px; border-radius: 5px; white-space: nowrap;
+}
+.abtn:hover { background: var(--canvas-3); color: var(--fg); text-decoration: none; }
+.abtn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.abtn.primary:hover { background: var(--accent); color: var(--on-accent); filter: brightness(1.08); }
+.desc { margin: 8px 0 0; max-width: 62ch; font-size: 15px; color: var(--fg-2); text-wrap: pretty; }
+.pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.pill {
+  font-family: var(--mono); font-size: 11.5px; color: var(--fg-2);
+  border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px 3px;
+  background: var(--canvas-2);
+}
+.pill.draft { color: var(--amber); border-color: var(--amber); background: var(--amber-bg); font-weight: 600; }
+
+
+
+/* ---- boxes ---------------------------------------------------------- */
+
+main.container { margin-top: clamp(32px, 4.5vw, 48px); display: flex; flex-direction: column; gap: 20px; }
+.box {
+  background: var(--canvas); border: 1px solid var(--border); border-radius: 6px;
+  scroll-margin-top: 64px; overflow: hidden;
+}
+.box > header {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 9px 16px; background: var(--canvas-3); border-bottom: 1px solid var(--border);
+}
+.box > header h2 { font-size: 13px; color: var(--fg); }
+.box > header .meta { font-family: var(--mono); font-size: 11.5px; color: var(--fg-3); }
+.box > header .push { flex: 1 1 auto; }
+.body { padding: 16px; }
+.rule {
+  padding: 11px 16px; border-top: 1px solid var(--border-2);
+  font-family: var(--mono); font-size: 12px; line-height: 1.7; color: var(--fg-3);
+  background: var(--canvas-2);
+}
+.rule b { color: var(--fg-2); font-weight: 600; }
+.rule code { color: var(--fg-2); }
+.explain {
+  padding: 14px 16px; border-top: 1px solid var(--border-2);
+  font-size: 13.5px; line-height: 1.62; color: var(--fg-2);
+  background: var(--canvas-2); display: flex; flex-direction: column; gap: 9px;
+}
+.explain p { max-width: 78ch; text-wrap: pretty; }
+.explain b { color: var(--fg); font-weight: 600; }
+.explain code {
+  font-family: var(--mono); font-size: 12.5px; color: var(--fg);
+  background: var(--canvas); border: 1px solid var(--border-2);
+  border-radius: 4px; padding: 1px 5px;
+}
+.explain .eg {
+  font-family: var(--mono); font-size: 12.5px; color: var(--fg-3);
+  background: var(--canvas); border: 1px solid var(--border-2);
+  border-radius: 5px; padding: 8px 11px; line-height: 1.7;
+}
+.explain .eg b { color: var(--accent); font-weight: 600; }
+
+/* ---- 01 the format -------------------------------------------------- */
+
+.pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 380px); gap: 20px; align-items: center; }
+.codeblock {
+  background: var(--canvas-2); border: 1px solid var(--border-2); border-radius: 6px;
+  padding: 12px 14px; overflow-x: auto;
+}
+.fm { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.85; color: var(--fg-2); }
+.fm > span { display: block; white-space: pre; border-radius: 3px; }
+.fm .d { color: var(--fg-3); }
+.fm .root { color: var(--fg); font-weight: 600; }
+.fm .v { color: var(--accent); }
+
+.hgwrap { overflow-x: auto; }
+.hg { display: block; width: 100%; min-width: 376px; height: auto; }
+.nd rect { fill: var(--canvas-2); stroke: var(--border); stroke-width: 1; }
+.nd text { fill: var(--fg-3); font-family: var(--mono); font-size: 12px; }
+.nd.subj rect { fill: var(--accent-bg); stroke: var(--accent); stroke-width: 1.5; }
+.nd.subj text { fill: var(--accent); font-weight: 600; }
+.lbl { fill: var(--fg-3); font-family: var(--mono); font-size: 10px; }
+.blk { fill: none; stroke: var(--fg-3); stroke-width: 1; marker-end: url(#arrow); }
+.prv { fill: none; stroke: var(--fg-3); stroke-width: 1; stroke-dasharray: 1 3; marker-end: url(#arrow); }
+.ser { fill: none; stroke: var(--fg-3); stroke-width: 1; stroke-dasharray: 4 4; }
+#arrow path { stroke: var(--fg-3); }
+#arrowdim path { stroke: var(--border); }
+
+.wrapall:has(tr[data-field="blocked-by"]:hover) .fm [data-field="blocked-by"],
+.wrapall:has(tr[data-field="decomposed-from"]:hover) .fm [data-field="decomposed-from"],
+.wrapall:has(tr[data-field="serialize-with"]:hover) .fm [data-field="serialize-with"],
+.wrapall:has(tr[data-field="priority"]:hover) .fm [data-field="priority"] {
+  background: var(--accent-bg);
+}
+
+/* ---- 02 fields table ------------------------------------------------ */
+
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+thead th {
+  text-align: left; font-family: var(--mono); font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-3);
+  padding: 8px 16px; background: var(--canvas-2); border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+tbody td { padding: 10px 16px; border-bottom: 1px solid var(--border-2); vertical-align: top; }
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover { background: var(--canvas-2); }
+.list tbody tr[data-act="0"]:hover { background: transparent; }
+td.f { font-family: var(--mono); font-size: 12.5px; color: var(--accent); white-space: nowrap; font-weight: 600; }
+td.ty { font-family: var(--mono); font-size: 11.5px; color: var(--fg-3); white-space: nowrap; }
+td.m { color: var(--fg-2); max-width: 62ch; text-wrap: pretty; }
+td.m strong { color: var(--fg); font-weight: 600; }
+td.m code { font-size: 12.5px; }
+
+/* ---- 03 relationships ----------------------------------------------- */
+
+.rels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--border-2); }
+.rel { background: var(--canvas); padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.rel svg { color: var(--fg-3); }
+.rel .f { font-family: var(--mono); font-size: 12.5px; font-weight: 600; color: var(--accent); }
+.rel .m { font-size: 13.5px; color: var(--fg-2); }
+.rel .m strong { color: var(--fg); font-weight: 600; }
+
+/* ---- 04 reading the graph ------------------------------------------- */
+
+.reader { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 0; }
+.reader .pane { padding: 16px; }
+.reader .pane.flush { padding: 0 0 16px; }
+.pane.flush .panelnote { padding-left: 16px; padding-right: 16px; margin-top: 16px; }
+.reader .pane + .pane { border-left: 1px solid var(--border-2); }
+.panelnote { font-size: 13.5px; line-height: 1.6; color: var(--fg-2); margin-bottom: 14px; max-width: 60ch; text-wrap: pretty; }
+.panelnote b { color: var(--fg); font-weight: 600; }
+.graphwrap { width: 100%; overflow-x: auto; }
+.dgraph { display: block; width: 100%; min-width: 430px; height: auto; }
+.dgraph .prov text { fill: var(--fg-3); font-family: var(--mono); font-size: 10.5px; }
+.dgraph .prov path { stroke: var(--border); stroke-width: 1; stroke-dasharray: 1 4; fill: none; }
+.edges path { fill: none; stroke: var(--fg-3); stroke-width: 1; marker-end: url(#arrow); transition: stroke 150ms linear; }
+.edges path[data-done="1"] { stroke: var(--border); marker-end: url(#arrowdim); }
+.edges .serial { stroke-dasharray: 4 4; }
+.dgraph[data-held="1"] .edges .serial { stroke: var(--amber); stroke-width: 1.4; }
+
+.node rect { fill: var(--canvas-2); stroke: var(--border); stroke-width: 1; transition: stroke 150ms linear, fill 150ms linear; }
+.node .id { fill: var(--fg-2); font-family: var(--mono); font-size: 12.5px; font-weight: 600; }
+.node .p { fill: var(--fg-3); font-family: var(--mono); font-size: 10px; }
+.node .strike { stroke: var(--fg-3); stroke-width: 1; opacity: 0; }
+.node[data-state="ready"] rect { fill: var(--accent-bg); stroke: var(--accent); stroke-width: 1.6; }
+.node[data-state="ready"] .id, .node[data-state="ready"] .p { fill: var(--accent); }
+.node[data-state="claimed"] rect { fill: var(--accent); stroke: var(--accent); }
+.node[data-state="claimed"] .id, .node[data-state="claimed"] .p { fill: var(--on-accent); }
+.node[data-state="held"] rect { stroke: var(--amber); stroke-dasharray: 3 3; fill: var(--amber-bg); }
+.node[data-state="held"] .id, .node[data-state="held"] .p { fill: var(--amber); }
+.node[data-state="closed"] { opacity: 0.55; }
+.node[data-state="closed"] .strike { opacity: 1; }
+.node[data-state="ready"], .node[data-state="claimed"], .node[data-state="closed"] { cursor: pointer; }
+.node[data-state="ready"]:hover rect, .node[data-state="claimed"]:hover rect { stroke-width: 2.4; }
+.node:focus-visible { outline: none; }
+.node:focus-visible rect { stroke: var(--accent); stroke-width: 2.4; }
+
+/* issue list — the same graph, as a tracker shows it */
+.list { width: 100%; border-collapse: collapse; }
+.list th {
+  text-align: left; font-family: var(--mono); font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-3);
+  padding: 9px 8px 9px 0; border-bottom: 1px solid var(--border);
+}
+.list th.r, .list td.r { text-align: right; }
+.list td { padding: 7px 8px 7px 0; border-bottom: 1px solid var(--border-2); vertical-align: middle; }
+.list th:first-child, .list td:first-child { padding-left: 16px; }
+.list th:last-child, .list td:last-child { padding-right: 16px; }
+.list tr:last-child td { border-bottom: 0; }
+.list tr[data-act="1"] { cursor: pointer; }
+.list tr[data-act="1"]:hover { background: var(--canvas-2); }
+.list .key { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--accent); white-space: nowrap; }
+.list .sum { color: var(--fg-2); font-size: 13px; }
+.list tr[data-state="closed"] .sum { color: var(--fg-3); text-decoration: line-through; text-decoration-color: var(--border); }
+.list .pri { font-family: var(--mono); font-size: 11.5px; color: var(--fg-3); white-space: nowrap; }
+.list .pri em { font-style: normal; color: var(--accent); font-weight: 600; }
+
+.loz {
+  display: inline-block; font-family: var(--mono); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase; padding: 2px 6px 2px;
+  border-radius: 3px; white-space: nowrap; line-height: 1.5;
+}
+.loz[data-s="ready"] { color: var(--accent); background: var(--accent-bg); box-shadow: inset 0 0 0 1px var(--accent); }
+.loz[data-s="claimed"] { color: var(--on-accent); background: var(--accent); }
+.loz[data-s="held"] { color: var(--amber); background: var(--amber-bg); box-shadow: inset 0 0 0 1px var(--amber); }
+.loz[data-s="closed"] { color: var(--green); background: var(--green-bg); }
+.loz[data-s="blocked"] { color: var(--fg-3); background: var(--canvas-3); box-shadow: inset 0 0 0 1px var(--border); }
+
+.readout {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px;
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border-2);
+  font-family: var(--mono); font-size: 12.5px;
+}
+.pane.flush .readout { padding: 16px 16px 0; margin-top: 0; }
+.readout .set { color: var(--accent); font-weight: 600; }
+.readout .hold { color: var(--amber); }
+
+/* ---- 05 scope ------------------------------------------------------- */
+
+.scope { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); gap: 1px; background: var(--border-2); }
+.scope > div { background: var(--canvas); padding: 14px 16px; }
+.scope h3 {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--fg-3); padding-bottom: 9px; margin-bottom: 10px; border-bottom: 1px solid var(--border-2);
+}
+.scope ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.scope li { font-family: var(--mono); font-size: 12.5px; color: var(--fg-2); display: flex; gap: 9px; }
+.scope li::before { content: "+"; color: var(--green); font-weight: 600; }
+.scope .out li { color: var(--fg-3); display: grid; grid-template-columns: 12px minmax(0, 1fr); column-gap: 9px; row-gap: 2px; align-items: baseline; }
+.scope .out li::before { content: "−"; color: var(--fg-3); grid-row: 1; }
+.scope .out .k { grid-column: 2; grid-row: 1; color: var(--fg-2); }
+.scope .out .w { grid-column: 2; grid-row: 2; font-family: var(--sans); font-size: 12.5px; line-height: 1.5; color: var(--fg-3); }
+.scope .out .w b { color: var(--fg-2); font-weight: 600; }
+.scope .out ul { gap: 12px; }
+
+/* ---- at backlog scale (interactive) ---------------------------------- */
+
+.seg { display: flex; border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
+.segb {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--fg-3); background: var(--canvas); border: 0; padding: 5px 11px; cursor: pointer;
+}
+.segb + .segb { border-left: 1px solid var(--border); }
+.segb:hover { color: var(--fg); }
+.segb.on { background: var(--accent); color: var(--on-accent); }
+
+.gamebar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px;
+  padding: 12px 16px; border-top: 1px solid var(--border-2); background: var(--canvas);
+}
+.gamebar .push { flex: 1 1 auto; }
+.gsel {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--fg-3);
+}
+.gsel select {
+  font-family: var(--mono); font-size: 12px; text-transform: none; letter-spacing: 0;
+  color: var(--fg-2); background: var(--canvas-2); border: 1px solid var(--border);
+  border-radius: 5px; padding: 5px 8px;
+}
+.stat {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--fg-3); white-space: nowrap;
+}
+.stat b { font-size: 14px; color: var(--fg); margin-left: 5px; letter-spacing: 0; }
+.stat.time b { color: var(--accent); }
+.stat.live b { color: var(--amber); }
+
+.views { border-top: 1px solid var(--border-2); }
+.gridview {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 1px; background: var(--border-2);
+}
+.tile {
+  background: var(--canvas); padding: 8px 10px 9px; border: 0; text-align: left;
+  display: flex; flex-direction: column; gap: 3px; cursor: default;
+  font-family: inherit; color: inherit; min-height: 62px; position: relative;
+}
+.tile .tid { font-family: var(--mono); font-size: 11.5px; font-weight: 600; color: var(--fg-3); }
+.tile .tt { font-size: 11.5px; line-height: 1.35; color: var(--fg-3); }
+.tile .tp {
+  position: absolute; top: 8px; right: 10px;
+  font-family: var(--mono); font-size: 9.5px; color: var(--fg-3);
+}
+.tile[data-state="ready"] .tid, .tile[data-state="ready"] .tt { color: var(--fg-2); }
+.tile[data-state="lit"] {
+  background: var(--accent); cursor: pointer;
+  animation: pop 900ms ease-in-out infinite alternate;
+}
+.tile[data-state="lit"] .tid, .tile[data-state="lit"] .tt, .tile[data-state="lit"] .tp { color: var(--on-accent); }
+.tile[data-state="lit"] .tid::after {
+  content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--on-accent); margin-left: 6px; vertical-align: middle;
+}
+.tile[data-state="closed"] { opacity: 0.4; }
+.tile[data-state="closed"] .tt { text-decoration: line-through; }
+.tile[data-state="hit"] { background: var(--green-bg); }
+.tile[data-state="hit"] .tid { color: var(--green); }
+@keyframes pop { from { filter: brightness(0.92); } to { filter: brightness(1.14); } }
+
+.graphscroll { overflow: auto; max-height: 470px; padding: 14px 16px; }
+#bigsvg { display: block; }
+.bn rect { fill: var(--canvas-2); stroke: var(--border); stroke-width: 1; }
+.bn text { font-family: var(--mono); font-size: 9.5px; fill: var(--fg-3); }
+.bn[data-state="ready"] rect { stroke: var(--fg-3); }
+.bn[data-state="ready"] text { fill: var(--fg-2); }
+.bn[data-state="lit"] rect { fill: var(--accent); stroke: var(--accent); }
+.bn[data-state="lit"] text { fill: var(--on-accent); font-weight: 600; }
+.bn[data-state="lit"] { cursor: pointer; }
+.bn[data-state="hit"] rect { fill: var(--green-bg); stroke: var(--green); }
+.bn[data-state="hit"] text { fill: var(--green); }
+.bn[data-state="closed"] { opacity: 0.32; }
+.be { fill: none; stroke: var(--border); stroke-width: 0.8; }
+.be[data-hot="1"] { stroke: var(--accent); stroke-width: 1.4; }
+.be[data-done="1"] { stroke: var(--border-2); }
+.bs { fill: none; stroke: var(--amber); stroke-width: 0.8; stroke-dasharray: 3 3; opacity: 0.5; }
+.bt { fill: none; stroke: var(--accent); stroke-width: 0.8; stroke-dasharray: 1 3; opacity: 0.7; }
+
+.gnote {
+  padding: 12px 16px; border-top: 1px solid var(--border-2); background: var(--canvas-2);
+  font-size: 13px; line-height: 1.55; color: var(--fg-2);
+}
+.gnote b { color: var(--fg); font-weight: 600; }
+
+/* ---- footer --------------------------------------------------------- */
+
+footer {
+  border-top: 1px solid var(--border); margin-top: 24px; background: var(--canvas);
+}
+footer .inner {
+  display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center;
+  padding: 18px 0; font-family: var(--mono); font-size: 11.5px; color: var(--fg-3);
+}
+footer a { color: var(--fg-2); }
+
+/* ---- narrow --------------------------------------------------------- */
+
+@media (max-width: 640px) {
+  .rels { grid-template-columns: minmax(0, 1fr); }
+  .scope { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 900px) {
+  .reader { grid-template-columns: minmax(0, 1fr); }
+  .reader .pane + .pane { border-left: 0; border-top: 1px solid var(--border-2); }
+}
+@media (max-width: 720px) {
+  .pair { grid-template-columns: minmax(0, 1fr); }
+  .appbar nav a { padding: 5px 6px; }
+}
+@media (max-width: 520px) {
+  .appbar nav { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}
+</style>
+</head>
+<body class="wrapall">
+
+<svg width="0" height="0" aria-hidden="true" focusable="false" style="position: absolute;">
+  <defs>
+    <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M1,1 L7,4 L1,7" fill="none" stroke-width="1.2"></path>
+    </marker>
+    <marker id="arrowdim" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M1,1 L7,4 L1,7" fill="none" stroke-width="1.2"></path>
+    </marker>
+  </defs>
+</svg>
+
+<div class="appbar">
+  <div class="container inner">
+    <span class="wordmark">issuegraph<span>:</span></span>
+    <span class="spacer"></span>
+    <nav>
+      <a href="https://github.com/autnmy/issuegraph/blob/main/SPEC.md">Specification</a>
+      <a href="https://github.com/autnmy/issuegraph/blob/main/examples/decomposition.md">Example</a>
+      <a href="https://github.com/autnmy/issuegraph/blob/main/CHANGELOG.md">Changelog</a>
+      <a href="https://github.com/autnmy/issuegraph">Repository</a>
+    </nav>
+    <button type="button" class="btn" id="theme" aria-label="Change colour theme">auto</button>
+  </div>
+</div>
+
+<div class="hero">
+  <div class="container">
+    <h1 class="mark">issuegraph<span>:</span></h1>
+    <p class="tagline">A specification for machine-readable work relationships and ordering.</p>
+    <div class="copy">
+      <p>Issuegraph is a data format plus rules for reading and writing it. Relationships and ordering live in YAML frontmatter on the issue body, namespaced under an <code>issuegraph:</code> key — seven optional fields, each carrying either issue references or a small scalar.</p>
+      <p>Nothing is installed and nothing is migrated. The frontmatter is ordinary YAML at the top of the body, so any tracker can store it and any parser already reads it; the tracker stays the source of truth. From the edges, a reader computes which issues are ready to start.</p>
+    </div>
+    <div class="metarow">
+      <div class="actions">
+        <a class="abtn primary" href="https://github.com/autnmy/issuegraph/blob/main/SPEC.md">Specification</a>
+        <a class="abtn" href="https://github.com/autnmy/issuegraph">Repository</a>
+      </div>
+      <div class="pills">
+        <span class="pill draft">v0.2.0 · draft</span>
+        <span class="pill">Apache-2.0</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<main class="container">
+
+  <section class="box" id="format">
+    <header>
+      <h2>The format</h2>
+      <span class="push"></span>
+      <span class="meta">YAML frontmatter · issue body</span>
+    </header>
+    <div class="body">
+      <div class="pair">
+        <div class="codeblock">
+          <pre class="fm" role="img" aria-label="YAML issuegraph frontmatter at the top of an issue body, declaring blocked-by 231 and 234, decomposed-from 230, serialize-with 232, and priority 1."><span class="d">---</span><span><span class="root">issuegraph</span><span class="d">:</span></span><span data-field="blocked-by">  blocked-by<span class="d">:</span> <span class="v">[231, 234]</span></span><span data-field="decomposed-from">  decomposed-from<span class="d">:</span> <span class="v">230</span></span><span data-field="serialize-with">  serialize-with<span class="d">:</span> <span class="v">232</span></span><span data-field="priority">  priority<span class="d">:</span> <span class="v">1</span></span><span class="d">---</span></pre>
+        </div>
+
+        <div class="hgwrap">
+        <svg class="hg" viewBox="-8 4 376 236" role="img" aria-label="The same frontmatter as a graph: issues 231 and 234 point at this issue along blocked-by edges, 230 points at it along a decomposed-from edge, and 232 is joined to it by an undirected serialize-with edge.">
+          <path class="blk" d="M86,44 C86,80 104,96 118,104"></path>
+          <path class="blk" d="M214,44 C214,80 196,96 182,104"></path>
+          <path class="prv" d="M73,125 L89,125"></path>
+          <path class="ser" d="M271,125 L211,125"></path>
+          <text class="lbl" x="150" y="74" text-anchor="middle">blocked-by</text>
+          <text class="lbl" x="44" y="160" text-anchor="middle">decomposed-from</text>
+          <text class="lbl" x="300" y="160" text-anchor="middle">serialize-with</text>
+          <g class="nd"><rect x="56" y="16" width="60" height="28" rx="3"></rect><text x="86" y="34" text-anchor="middle">231</text></g>
+          <g class="nd"><rect x="184" y="16" width="60" height="28" rx="3"></rect><text x="214" y="34" text-anchor="middle">234</text></g>
+          <g class="nd"><rect x="15" y="112" width="58" height="26" rx="3"></rect><text x="44" y="129" text-anchor="middle">230</text></g>
+          <g class="nd"><rect x="271" y="112" width="58" height="26" rx="3"></rect><text x="300" y="129" text-anchor="middle">232</text></g>
+          <g class="nd subj"><rect x="95" y="107" width="110" height="36" rx="3"></rect><text x="150" y="129" text-anchor="middle">this issue</text></g>
+        </svg>
+        </div>
+      </div>
+    </div>
+    <div class="explain">
+      <p><b>Standard YAML frontmatter.</b> Any tracker can store it, any parser already reads it. Nothing is installed and nothing is migrated.</p>
+      <p><b>If a body somehow ends up with two frontmatter blocks</b>, the first one containing an <code>issuegraph:</code> key is the real data. Later ones are ignored, so a bot's banner or a wrapper can't quietly override what you wrote.</p>
+      <p><b>Write it plain, exactly as above.</b> Some trackers garble bare frontmatter when they render it — GitHub, for one, draws <code>---</code> as a horizontal line and turns the line above it into a heading. For exactly that case, <b>the spec explicitly permits wrapping the block in a normal triple-backtick code block</b> — it is a sanctioned part of the format, not a workaround. It changes only how the block looks on screen: the text inside is byte-for-byte identical, it stays portable between trackers, and readers look straight through the wrapper to find it.</p>
+    </div>
+  </section>
+
+  <section class="box" id="fields">
+    <header>
+      <h2>Fields</h2>
+      <span class="push"></span>
+      <span class="meta">7 · all optional</span>
+    </header>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Field</th><th>Type</th><th>Meaning</th></tr>
+        </thead>
+        <tbody>
+          <tr data-field="blocked-by">
+            <td class="f">blocked-by</td>
+            <td class="ty">list of refs</td>
+            <td class="m">These issues must reach closure before this one may start. The only hard ordering fact.</td>
+          </tr>
+          <tr data-field="decomposed-from">
+            <td class="f">decomposed-from</td>
+            <td class="ty">ref</td>
+            <td class="m">Provenance: this issue was produced by decomposing that one. Not a scheduling edge.</td>
+          </tr>
+          <tr data-field="duplicate-of">
+            <td class="f">duplicate-of</td>
+            <td class="ty">ref</td>
+            <td class="m">This issue is the same work as that one; readers ignore this issue and treat the target as canonical.</td>
+          </tr>
+          <tr data-field="serialize-with">
+            <td class="f">serialize-with</td>
+            <td class="ty">ref</td>
+            <td class="m">This issue must not run concurrently with the referenced issue or anything transitively linked to it (see <a href="https://github.com/autnmy/issuegraph/blob/main/SPEC.md#434-serialize-with">4.3.4</a>). No ordering implied.</td>
+          </tr>
+          <tr data-field="together-with">
+            <td class="f">together-with</td>
+            <td class="ty">ref</td>
+            <td class="m">This issue and the referenced issue (and anything transitively linked) are distinct issues forming <strong>one unit of work</strong> — selected, claimed, and worked together (see <a href="https://github.com/autnmy/issuegraph/blob/main/SPEC.md#437-together-with">4.3.7</a>).</td>
+          </tr>
+          <tr data-field="priority">
+            <td class="f">priority</td>
+            <td class="ty">integer 0–3</td>
+            <td class="m">0 is most urgent. Absent means 2. Carrier precedence in <a href="https://github.com/autnmy/issuegraph/blob/main/SPEC.md#435-priority">4.3.5</a>.</td>
+          </tr>
+          <tr data-field="evidence">
+            <td class="f">evidence</td>
+            <td class="ty">asserted | verified</td>
+            <td class="m">Whether the issue's factual claims were verified by the writer or merely asserted. Absent means <code>asserted</code> for machine-written issues.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="explain">
+      <p><b>An issue with no issuegraph frontmatter is still valid</b> — it just has no edges and default priority. You add fields where you actually know something.</p>
+      <p><b><code>decomposed-from</code> only records where an issue came from.</b> It has no effect on ordering. There are no parent issues and no container issues: an issue that got split closes as soon as the split is done, and “what came out of #230?” is answered by asking the graph, not by a tracking issue someone has to keep tidy.</p>
+      <p><b><code>evidence</code> is the odd one out</b> — it changes no ordering at all. It says whether whoever wrote the issue actually verified its claims or just asserted them. Machine-filed issues are frequently wrong in small ways, and splitting an unverified issue produces a whole subtree of work built on a false premise, so the next worker wants to know before building on it. It earns its place by protecting decomposition, which is what produces the relationships in the first place.</p>
+    </div>
+  </section>
+
+  <section class="box" id="relationships">
+    <header>
+      <h2>Relationships</h2>
+      <span class="push"></span>
+      <span class="meta">4</span>
+    </header>
+    <div class="rels">
+      <div class="rel">
+        <svg width="96" height="30" viewBox="0 0 96 30" aria-hidden="true">
+          <circle cx="14" cy="15" r="7" fill="none" stroke="currentColor" stroke-width="1"></circle>
+          <line x1="9" y1="20" x2="19" y2="10" stroke="currentColor" stroke-width="1"></line>
+          <line x1="23" y1="15" x2="70" y2="15" stroke="currentColor" stroke-width="1"></line>
+          <path d="M68 11 L73 15 L68 19" fill="none" stroke="currentColor" stroke-width="1"></path>
+          <circle cx="82" cy="15" r="7" fill="var(--accent)" stroke="var(--accent)" stroke-width="1"></circle>
+        </svg>
+        <span class="f">duplicate-of</span>
+        <span class="m"><strong>same work</strong> — keep one.</span>
+      </div>
+      <div class="rel">
+        <svg width="96" height="30" viewBox="0 0 96 30" aria-hidden="true">
+          <rect x="2" y="2" width="92" height="26" rx="13" fill="none" stroke="var(--accent)" stroke-width="1" stroke-dasharray="3 3"></rect>
+          <circle cx="34" cy="15" r="7" fill="none" stroke="currentColor" stroke-width="1"></circle>
+          <circle cx="62" cy="15" r="7" fill="none" stroke="currentColor" stroke-width="1"></circle>
+        </svg>
+        <span class="f">together-with</span>
+        <span class="m"><strong>different work</strong> — one unit.</span>
+      </div>
+      <div class="rel">
+        <svg width="96" height="30" viewBox="0 0 96 30" aria-hidden="true">
+          <circle cx="14" cy="15" r="7" fill="none" stroke="currentColor" stroke-width="1"></circle>
+          <line x1="23" y1="15" x2="43" y2="15" stroke="currentColor" stroke-width="1" stroke-dasharray="3 3"></line>
+          <line x1="53" y1="15" x2="73" y2="15" stroke="currentColor" stroke-width="1" stroke-dasharray="3 3"></line>
+          <line x1="48" y1="6" x2="48" y2="24" stroke="var(--accent)" stroke-width="1"></line>
+          <circle cx="82" cy="15" r="7" fill="none" stroke="currentColor" stroke-width="1"></circle>
+        </svg>
+        <span class="f">serialize-with</span>
+        <span class="m"><strong>either order</strong> — never overlapping.</span>
+      </div>
+      <div class="rel">
+        <svg width="96" height="30" viewBox="0 0 96 30" aria-hidden="true">
+          <circle cx="14" cy="15" r="7" fill="none" stroke="currentColor" stroke-width="1"></circle>
+          <line x1="23" y1="15" x2="70" y2="15" stroke="var(--accent)" stroke-width="1"></line>
+          <path d="M68 11 L73 15 L68 19" fill="none" stroke="var(--accent)" stroke-width="1"></path>
+          <circle cx="82" cy="15" r="7" fill="none" stroke="currentColor" stroke-width="1"></circle>
+        </svg>
+        <span class="f">blocked-by</span>
+        <span class="m"><strong>this order</strong> — no overlap question.</span>
+      </div>
+    </div>
+    <div class="explain">
+      <p><b>You never write the group down.</b> <code>serialize-with</code> and <code>together-with</code> both describe a set of issues, but no issue ever holds the list. To join, point at any one issue already in the set — it does not matter which. The reader follows the links and works out the full set for you.</p>
+      <p class="eg">#232 writes <b>serialize-with: 231</b>&nbsp; · &nbsp;#233 writes <b>serialize-with: 232</b>&nbsp; · &nbsp;#234 writes <b>serialize-with: 231</b><br>→ the reader sees one group: <b>{ 231, 232, 233, 234 }</b> — and only one of them may run at a time.</p>
+      <p><b>This is the part that stops it rotting.</b> To leave a group you delete your own field, and nothing else. Closing an issue never means going back to edit the others. No issue ever writes to another issue's body, and there is no membership list anywhere that can drift out of date — the usual way this kind of bookkeeping dies. One line per issue, and nothing to maintain.</p>
+      <p>If you accidentally link two groups they merge, which costs you some parallelism and never costs you correctness.</p>
+    </div>
+  </section>
+
+  <section class="box" id="reading">
+    <header>
+      <h2>Reading the graph</h2>
+      <span class="meta">#230 — Add usage-based billing · decomposed</span>
+      <span class="push"></span>
+      <button type="button" class="btn" id="reset">reset</button>
+    </header>
+    <div class="reader">
+      <div class="pane">
+        <p class="panelnote">#230 was too big to work, so the only work permitted on it was decomposition: four leaves and a verification gate, with every edge written at split time. #230 then closed — there is no tracking issue.</p>
+        <div class="graphwrap">
+          <svg class="dgraph" id="dgraph" viewBox="0 0 474 296" role="img" aria-label="Interactive decomposition graph of issues 231 to 235.">
+            <g class="prov">
+              <text x="56" y="34" text-anchor="middle">#230 closed</text>
+              <path d="M56,42 L56,98"></path>
+            </g>
+            <g class="edges">
+              <path data-from="231" d="M87,112 C112,112 124,60 145,60"></path>
+              <path data-from="231" d="M87,128 C112,128 124,190 145,190"></path>
+              <path data-from="232" d="M209,60 L265,60"></path>
+              <path data-from="232" d="M209,72 C264,100 334,104 385,112"></path>
+              <path data-from="233" d="M331,66 C358,70 372,96 385,108"></path>
+              <path data-from="234" d="M209,190 C284,190 344,152 385,128"></path>
+              <path data-from="231" d="M56,138 C60,250 240,266 385,134"></path>
+              <path class="serial" d="M300,78 C292,124 254,160 210,180"></path>
+            </g>
+            <g class="nodes">
+              <g class="node" data-id="231" tabindex="0" role="button"><rect x="25" y="102" width="62" height="36" rx="3"></rect><text class="id" x="56" y="118" text-anchor="middle">#231</text><text class="p" x="56" y="131" text-anchor="middle">P1</text><line class="strike" x1="34" y1="120" x2="78" y2="120"></line></g>
+              <g class="node" data-id="232" tabindex="0" role="button"><rect x="147" y="42" width="62" height="36" rx="3"></rect><text class="id" x="178" y="58" text-anchor="middle">#232</text><text class="p" x="178" y="71" text-anchor="middle">P1</text><line class="strike" x1="156" y1="60" x2="200" y2="60"></line></g>
+              <g class="node" data-id="233" tabindex="0" role="button"><rect x="269" y="42" width="62" height="36" rx="3"></rect><text class="id" x="300" y="58" text-anchor="middle">#233</text><text class="p" x="300" y="71" text-anchor="middle">P2</text><line class="strike" x1="278" y1="60" x2="322" y2="60"></line></g>
+              <g class="node" data-id="234" tabindex="0" role="button"><rect x="147" y="172" width="62" height="36" rx="3"></rect><text class="id" x="178" y="188" text-anchor="middle">#234</text><text class="p" x="178" y="201" text-anchor="middle">P2</text><line class="strike" x1="156" y1="190" x2="200" y2="190"></line></g>
+              <g class="node" data-id="235" tabindex="0" role="button"><rect x="389" y="102" width="62" height="36" rx="3"></rect><text class="id" x="420" y="118" text-anchor="middle">#235</text><text class="p" x="420" y="131" text-anchor="middle">P1</text><line class="strike" x1="398" y1="120" x2="442" y2="120"></line></g>
+            </g>
+          </svg>
+        </div>
+      </div>
+
+      <div class="pane flush">
+        <table class="list">
+          <thead>
+            <tr><th>Key</th><th>Summary</th><th>Status</th><th class="r">Pri</th></tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <div class="readout" aria-live="polite">
+          <span class="set" id="set"></span>
+          <span class="hold" id="hold"></span>
+        </div>
+        <p class="panelnote" style="margin: 14px 0 0;">Click a ready issue to claim it, and again to close it. Blocked and held issues do not respond.</p>
+      </div>
+    </div>
+    <div class="explain">
+      <p><b>ready</b> — the issue is open, every issue in its <code>blocked-by</code> has closed, and nothing in its serialize group is being worked. Anything not ready is invisible to selection: a scheduler cannot pick it up, so nobody has to protect it.</p>
+      <p><b>effective priority</b> — the highest declared priority among the issue itself and every open issue that depends on it, however far down the chain. Readers select by this, not by the number written on the issue. That is why <b>#233</b> above shows <b>P2 → 1</b>: it is a P2 holding up a P1.</p>
+      <p><b>parallelism</b> — two ready issues with no path between them can be worked at the same time. Nothing else needs to say so.</p>
+    </div>
+  </section>
+
+  <section class="box" id="scope">
+    <header>
+      <h2>Scope</h2>
+      <span class="push"></span>
+      <span class="meta">describes work, never execution</span>
+    </header>
+    <div class="scope">
+      <div>
+        <h3>In the format</h3>
+        <ul>
+          <li>what blocks what</li>
+          <li>what must not run at the same time</li>
+          <li>what must be worked as one unit</li>
+          <li>which issues are the same work</li>
+          <li>where an issue came from</li>
+          <li>how urgent it is</li>
+          <li>whether its claims were checked</li>
+        </ul>
+      </div>
+      <div class="out">
+        <h3>Not in the format — and where it goes instead</h3>
+        <ul>
+          <li><span class="k">who is working on it, right now</span><span class="w">Your tracker's <b>assignee</b> and <b>status</b> fields, or whatever your runner uses to claim work.</span></li>
+          <li><span class="k">retries · heartbeats · logs</span><span class="w">The runner's own <b>logs and metrics</b>. None of it is a fact about the work; it's a fact about one attempt at the work.</span></li>
+          <li><span class="k">“don't start this yet”</span><span class="w">A tracker <b>label or paused state</b> — <code>needs-human</code>, <code>waiting</code>. Every tracker already has this, and duplicating it in the body means two places to fix. If the hold is really a specific question, file the question as its own issue and put it in <code>blocked-by</code> instead.</span></li>
+          <li><span class="k">what kind of work this is</span><span class="w">Each runner decides that <b>from its own capabilities</b>. “Pay the vendor invoice” is human work for everyone; “write this migration” depends entirely on the runner.</span></li>
+          <li><span class="k">how many things may run at once</span><span class="w">A <b>setting on your scheduler</b>. The graph says what <em>may</em> run together; how much you actually run is your call.</span></li>
+          <li><span class="k">how far along a feature is</span><span class="w">A <b>query</b>, run when someone asks. Stored progress numbers go stale the moment nobody updates them.</span></li>
+          <li><span class="k">“prefer after” · “not near” · affinity</span><span class="w"><b>Nowhere — on purpose.</b> These are suggestions rather than rules. The first scheduler ignores the suggestion, so nobody keeps it accurate; a later scheduler decides to respect it and acts on something that went stale months ago. Every Issuegraph field is a hard rule with one exact behavior, so a reader can't be misled by one.</span></li>
+          <li><span class="k">issues that aren't work — trackers, checklists, logs</span><span class="w">Nothing to add: they stay in your tracker and your reader skips them, normally <b>by label</b>. Issuegraph defines no way to mark an issue as excluded, because that is the reader's judgment call, not a fact about the work.</span></li>
+        </ul>
+      </div>
+    </div>
+    <div class="explain">
+      <p><b>Where the line is.</b> Issuegraph records what the work <em>is</em> and what it depends on — things that stay true no matter who or what picks it up, or how many times they try. Anything describing a particular attempt at the work belongs to the thing making the attempt.</p>
+      <p><b>The one-question version:</b> if you had a flawless scheduler, would it still need this written on the issue? If it could work the answer out for itself, or get along fine without it, the field stays out. “Is #232 blocked?” it cannot possibly guess — that's a fact somebody knows. “Is anyone working on #232 right now?” it already knows, because it's the one handing out the work.</p>
+      <p>The reason to be strict about this: the moment a format starts carrying run state, it's welded to whichever tool wrote that state, and it stops being portable — which was the whole point.</p>
+      <p><b>Every issue is a piece of work.</b> Issuegraph has no issue kinds — no PM issues, no tracking issues that exist only to hold other issues, no standing checklists, no issues used as a log. An issue is either small enough to work, or the only thing you may do to it is split it, and the split closes as soon as the smaller issues exist. That is what stops the graph filling up with nodes nobody will ever finish.</p>
+      <p><b>So where do those issues go?</b> They stay in your tracker, and the spec says nothing about them on purpose. Readiness is the graph's answer to “may this start?”; whether a reader is <em>willing</em> to pick something up is the reader's own business, layered on top. Filtering by label is the normal way to do it — tag your standing checklists <code>meta</code>, your discussion threads <code>rfc</code>, and have your reader ignore those labels. Issuegraph never learns why you skipped them, and no field is added to describe it.</p>
+    </div>
+  </section>
+
+  <section class="box" id="scale">
+    <header>
+      <h2>At backlog scale</h2>
+      <span class="meta">48 issues · one repository</span>
+      <span class="push"></span>
+      <div class="seg" role="group" aria-label="View">
+        <button type="button" class="segb on" id="vgrid">grid</button>
+        <button type="button" class="segb" id="vgraph">graph</button>
+      </div>
+    </header>
+    <div class="explain">
+      <p><b>The same 48 issues, two views.</b> The grid is the backlog as a tracker shows it — newest first, read left to right. The graph is what the frontmatter on those same issues already says. Nothing was added to get from one to the other.</p>
+      <p><b>Then play it.</b> Press start and the reader hands out work: it lights up whatever is ready, most urgent first by effective priority. Click a lit issue to close it, and whatever was waiting on it becomes ready. In the graph you can see what is coming next. In the grid the identical sequence looks like it is jumping around at random — which is the point.</p>
+    </div>
+    <div class="gamebar">
+      <button type="button" class="abtn primary" id="gstart">Start</button>
+      <label class="gsel">at a time
+        <select id="gdiff">
+          <option value="4">4 — easiest</option>
+          <option value="3" selected>3</option>
+          <option value="2">2</option>
+          <option value="1">1 — hardest</option>
+        </select>
+      </label>
+      <span class="push"></span>
+      <span class="stat">score <b id="gscore">0</b></span>
+      <span class="stat live">streak <b id="gstreak">0</b></span>
+      <span class="stat">closed <b id="gdone">0</b>/48</span>
+      <span class="stat time">time <b id="gtime">30</b>s</span>
+    </div>
+    <div class="views">
+      <div class="gridview" id="gridview"></div>
+      <div class="graphview" id="graphview" hidden>
+        <div class="graphscroll"><svg id="bigsvg" role="img" aria-label="The same 48 issues drawn as a dependency graph, laid out left to right by depth."></svg></div>
+      </div>
+    </div>
+    <p class="gnote" id="gnote" aria-live="polite">Idle — nothing is claimed, so nothing is lit. Twelve of these 48 issues have nothing in front of them; every other one is waiting on something.</p>
+  </section>
+
+</main>
+
+<footer>
+  <div class="container inner">
+    <span>Stewarded by <a href="https://github.com/autnmy">Autonomy LLC</a></span>
+    <a href="https://github.com/autnmy/issuegraph">Repository</a>
+    <a href="https://github.com/autnmy/issuegraph/blob/main/SPEC.md">Specification</a>
+    <a href="https://github.com/autnmy/issuegraph/blob/main/examples/decomposition.md">Worked example</a>
+    <a href="https://github.com/autnmy/issuegraph/blob/main/CHANGELOG.md">Changelog</a>
+    <span>Apache-2.0</span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  /* theme: auto → light → dark */
+  var btn = document.getElementById('theme'), root = document.documentElement;
+  function read() { try { return localStorage.getItem('ig-theme') || 'auto'; } catch (e) { return 'auto'; } }
+  function apply(t) {
+    if (t === 'auto') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', t);
+    btn.textContent = t;
+    try { localStorage.setItem('ig-theme', t); } catch (e) {}
+  }
+  apply(read());
+  btn.addEventListener('click', function () {
+    var order = ['auto', 'light', 'dark'];
+    apply(order[(order.indexOf(read()) + 1) % order.length]);
+  });
+
+  /* ---- the reader, live over the #230 decomposition ---------------- */
+
+  var IDS = ['231', '232', '233', '234', '235'];
+  var SUMMARY = {
+    231: 'Metering schema and write path',
+    232: 'Rating engine over metered usage',
+    233: 'Invoice rendering',
+    234: 'Usage dashboard widgets',
+    235: 'End-to-end verification of the composed flow'
+  };
+  var DECLARED = { 231: 1, 232: 1, 233: 2, 234: 2, 235: 1 };
+  var BLOCKED_BY = { 231: [], 232: ['231'], 233: ['232'], 234: ['231'], 235: ['231', '232', '233', '234'] };
+  var SERIAL = ['233', '234'];
+  var LABEL = { ready: 'Ready', claimed: 'In progress', held: 'Held', closed: 'Done', blocked: 'Blocked' };
+
+  var svg = document.getElementById('dgraph'),
+      rowsEl = document.getElementById('rows'),
+      setEl = document.getElementById('set'),
+      holdEl = document.getElementById('hold'),
+      nodes = {}, rows = {}, closed = {}, claimed = new Set();
+
+  svg.querySelectorAll('.node').forEach(function (n) { nodes[n.getAttribute('data-id')] = n; });
+
+  IDS.forEach(function (id) {
+    var tr = document.createElement('tr');
+    tr.setAttribute('data-id', id);
+    tr.innerHTML =
+      '<td class="key">#' + id + '</td>' +
+      '<td class="sum">' + SUMMARY[id] + '</td>' +
+      '<td><span class="loz"></span></td>' +
+      '<td class="pri r"></td>';
+    rowsEl.appendChild(tr);
+    rows[id] = tr;
+    tr.addEventListener('click', function () { activate(id); });
+  });
+
+  function isClosed(id) { return !!closed[id]; }
+  function blockersClear(id) { return BLOCKED_BY[id].every(isClosed); }
+  function serialHeld(id) {
+    return SERIAL.indexOf(id) > -1 && SERIAL.some(function (m) { return m !== id && claimed.has(m); });
+  }
+  function stateOf(id) {
+    if (isClosed(id)) return 'closed';
+    if (claimed.has(id)) return 'claimed';
+    if (!blockersClear(id)) return 'blocked';
+    if (serialHeld(id)) return 'held';
+    return 'ready';
+  }
+
+  /* effective priority: highest declared (numerically lowest) among itself
+     and every open issue that transitively depends on it via blocked-by */
+  function effective(id) {
+    var best = DECLARED[id], seen = {}, stack = [id];
+    while (stack.length) {
+      var cur = stack.pop();
+      IDS.forEach(function (other) {
+        if (BLOCKED_BY[other].indexOf(cur) > -1 && !seen[other]) {
+          seen[other] = 1;
+          if (!isClosed(other) && DECLARED[other] < best) best = DECLARED[other];
+          stack.push(other);
+        }
+      });
+    }
+    return best;
+  }
+
+  function render() {
+    var ready = [], held = null;
+
+    IDS.forEach(function (id) {
+      var st = stateOf(id), n = nodes[id], tr = rows[id];
+      if (st === 'ready') ready.push('#' + id);
+      if (st === 'held') held = id;
+
+      var dec = DECLARED[id], eff = effective(id), lifted = !isClosed(id) && eff < dec;
+
+      n.setAttribute('data-state', st);
+      n.querySelector('.p').textContent = lifted ? 'P' + dec + '→' + eff : 'P' + dec;
+      n.setAttribute('aria-label', 'Issue ' + id + ', ' + LABEL[st] + ', effective priority ' + eff +
+        (st === 'ready' ? '. Activate to claim.' : st === 'claimed' ? '. Activate to close.' : ''));
+
+      tr.setAttribute('data-state', st);
+      tr.setAttribute('data-act', st === 'blocked' || st === 'held' ? '0' : '1');
+      var loz = tr.querySelector('.loz');
+      loz.setAttribute('data-s', st);
+      loz.textContent = LABEL[st];
+      tr.querySelector('.pri').innerHTML = lifted
+        ? 'P' + dec + ' <em>→ ' + eff + '</em>'
+        : 'P' + dec;
+    });
+
+    svg.setAttribute('data-held', held ? '1' : '0');
+    svg.querySelectorAll('.edges path[data-from]').forEach(function (e) {
+      e.setAttribute('data-done', isClosed(e.getAttribute('data-from')) ? '1' : '0');
+    });
+
+    setEl.textContent = ready.length ? 'ready = { ' + ready.join(', ') + ' }' : 'ready = { }';
+    holdEl.textContent = held ? '#' + held + ' held — serialize group' : '';
+  }
+
+  function activate(id) {
+    var st = stateOf(id);
+    if (st === 'ready') { claimed.add(id); }
+    else if (st === 'claimed') { claimed.delete(id); closed[id] = true; }
+    else if (st === 'closed') { closed[id] = false; }
+    else { return; }
+    render();
+  }
+
+  IDS.forEach(function (id) {
+    var n = nodes[id];
+    n.addEventListener('click', function () { activate(id); });
+    n.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(id); }
+    });
+  });
+
+  document.getElementById('reset').addEventListener('click', function () {
+    closed = {}; claimed.clear(); render();
+  });
+
+  render();
+})();
+</script>
+<script>
+(function () {
+  /* 48 issues from one repository: [id, title, priority, blockedBy, serializeWith, togetherWith] */
+  var B = [
+    [101, 'SAML metadata parser', 1, []],
+    [102, 'SSO session exchange', 1, [101]],
+    [103, 'SCIM user provisioning', 2, [101]],
+    [104, 'SCIM group sync', 2, [103]],
+    [105, 'Just-in-time account creation', 2, [102]],
+    [106, 'IdP-initiated login flow', 1, [102]],
+    [107, 'SSO admin settings screen', 2, [102], 108],
+    [108, 'Account settings redesign', 3, [], 107],
+    [109, 'Metering schema design', 1, []],
+    [110, 'Metering write path', 1, [109]],
+    [111, 'Rating engine', 1, [110]],
+    [112, 'Invoice rendering', 2, [111], 113],
+    [113, 'Usage dashboard widgets', 2, [110], 112],
+    [114, 'Tax calculation service', 1, [111]],
+    [115, 'Dunning emails', 3, [111]],
+    [116, 'Proration on plan change', 2, [111]],
+    [117, 'Billing verification gate', 1, [110, 111, 112, 113, 114, 116]],
+    [118, 'Stripe webhook idempotency', 0, []],
+    [119, 'Search index schema v2', 1, []],
+    [120, 'Index backfill job', 1, [119]],
+    [121, 'Query parser', 2, [119]],
+    [122, 'Ranking model swap', 2, [120, 121]],
+    [123, 'Faceted filters UI', 2, [121], 124],
+    [124, 'Search results redesign', 3, [], 123],
+    [125, 'Synonym dictionary', 3, [121]],
+    [126, 'Search latency alerting', 2, [122]],
+    [127, 'Notification delivery queue', 1, []],
+    [128, 'Email template renderer', 2, [127]],
+    [129, 'Push token registry', 2, [127]],
+    [130, 'Digest scheduler', 2, [128]],
+    [131, 'Unsubscribe center', 2, [128], null, 132],
+    [132, 'Notification preference API', 2, [129], null, 131],
+    [133, 'Notification audit trail', 3, [130, 131, 132]],
+    [134, 'Export job runner', 1, []],
+    [135, 'CSV writer', 2, [134]],
+    [136, 'Parquet writer', 3, [134]],
+    [137, 'Signed download URLs', 1, [134]],
+    [138, 'Export retention policy', 3, [135, 136]],
+    [139, 'Large export chunking', 2, [135]],
+    [140, 'Export UI', 2, [137, 139]],
+    [141, 'Postgres 16 upgrade', 0, []],
+    [142, 'Connection pool tuning', 1, [141]],
+    [143, 'Read replica routing', 2, [142]],
+    [144, 'Migration runner hardening', 1, [141], 148],
+    [145, 'Trace sampling config', 2, []],
+    [146, 'Secrets rotation', 1, []],
+    [147, 'CI cache rebuild', 3, []],
+    [148, 'Deprecate legacy API v1', 2, [102, 140], 144]
+  ];
+
+  var IX = {}, IDS = B.map(function (r) { return r[0]; });
+  B.forEach(function (r) { IX[r[0]] = { id: r[0], t: r[1], p: r[2], bb: r[3], ser: r[4] || null, tog: r[5] || null }; });
+
+  /* dependents index + serialize / together groups as connected components */
+  var DEP = {};
+  IDS.forEach(function (id) { DEP[id] = []; });
+  IDS.forEach(function (id) { IX[id].bb.forEach(function (b) { if (DEP[b]) DEP[b].push(id); }); });
+
+  function components(key) {
+    var seen = {}, out = {};
+    IDS.forEach(function (id) {
+      if (seen[id]) return;
+      var stack = [id], group = [];
+      while (stack.length) {
+        var c = stack.pop();
+        if (seen[c]) continue;
+        seen[c] = 1; group.push(c);
+        var link = IX[c][key];
+        if (link && IX[link]) stack.push(link);
+        IDS.forEach(function (o) { if (IX[o][key] === c) stack.push(o); });
+      }
+      if (group.length > 1) group.forEach(function (g) { out[g] = group; });
+    });
+    return out;
+  }
+  var SER = components('ser'), TOG = components('tog');
+
+  function unit(id) { return TOG[id] || [id]; }
+
+  /* ---- state ---- */
+  var closed = {}, lit = {}, running = false, score = 0, streak = 0, best = 0,
+      left = 30, conc = 3, life = 1600, timer = null, endAt = 0;
+
+  var el = {
+    grid: document.getElementById('gridview'),
+    graph: document.getElementById('graphview'),
+    svg: document.getElementById('bigsvg'),
+    start: document.getElementById('gstart'),
+    diff: document.getElementById('gdiff'),
+    score: document.getElementById('gscore'),
+    streak: document.getElementById('gstreak'),
+    done: document.getElementById('gdone'),
+    time: document.getElementById('gtime'),
+    note: document.getElementById('gnote'),
+    vgrid: document.getElementById('vgrid'),
+    vgraph: document.getElementById('vgraph')
+  };
+
+  function isClosed(id) { return !!closed[id]; }
+  function blockersClear(id) {
+    return IX[id].bb.every(isClosed) && unit(id).every(function (m) { return isClosed(m) || IX[m].bb.every(function (b) { return unit(id).indexOf(b) > -1 || isClosed(b); }); });
+  }
+  function serBusy(id) {
+    var g = SER[id];
+    if (!g) return false;
+    return g.some(function (m) { return m !== id && lit[m]; });
+  }
+  function ready(id) {
+    if (isClosed(id) || !blockersClear(id) || serBusy(id)) return false;
+    return unit(id).every(function (m) { return isClosed(m) || (IX[m].bb.every(function (b) { return unit(id).indexOf(b) > -1 || isClosed(b); }) && !serBusy(m)); });
+  }
+  function effective(id) {
+    var bestP = IX[id].p, seen = {}, stack = [id];
+    while (stack.length) {
+      var c = stack.pop();
+      DEP[c].forEach(function (d) {
+        if (seen[d]) return;
+        seen[d] = 1;
+        if (!isClosed(d) && IX[d].p < bestP) bestP = IX[d].p;
+        stack.push(d);
+      });
+    }
+    return bestP;
+  }
+
+  /* ---- grid ---- */
+  var tiles = {};
+  IDS.slice().reverse().forEach(function (id) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'tile'; b.setAttribute('data-id', id);
+    b.innerHTML = '<span class="tid">#' + id + '</span><span class="tt">' + IX[id].t +
+      '</span><span class="tp">P' + IX[id].p + '</span>';
+    b.addEventListener('click', function () { whack(id); });
+    el.grid.appendChild(b);
+    tiles[id] = b;
+  });
+
+  /* ---- graph: layered left-to-right by longest path from a root ---- */
+  var depth = {}, nodes = {};
+  function computeDepth(id, guard) {
+    if (depth[id] !== undefined) return depth[id];
+    if (guard[id]) return 0;
+    guard[id] = 1;
+    var d = 0;
+    IX[id].bb.forEach(function (b) { if (IX[b]) d = Math.max(d, computeDepth(b, guard) + 1); });
+    depth[id] = d;
+    return d;
+  }
+  IDS.forEach(function (id) { computeDepth(id, {}); });
+
+  var cols = {}, maxD = 0;
+  IDS.forEach(function (id) {
+    var d = depth[id];
+    (cols[d] = cols[d] || []).push(id);
+    if (d > maxD) maxD = d;
+  });
+  var NW = 54, NH = 18, CX = 92, RY = 25, PAD = 8, rowsMax = 0;
+  Object.keys(cols).forEach(function (d) { rowsMax = Math.max(rowsMax, cols[d].length); });
+  var W = PAD * 2 + maxD * CX + NW, H = PAD * 2 + rowsMax * RY;
+  el.svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+  el.svg.setAttribute('width', W);
+  el.svg.setAttribute('height', H);
+
+  Object.keys(cols).forEach(function (d) {
+    var list = cols[d], off = (rowsMax - list.length) / 2;
+    list.forEach(function (id, i) {
+      nodes[id] = { x: PAD + d * CX, y: PAD + (off + i) * RY };
+    });
+  });
+
+  var ns = 'http://www.w3.org/2000/svg';
+  function mk(tag, attrs) {
+    var e = document.createElementNS(ns, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+  var gEdges = mk('g', {}), gNodes = mk('g', {}), edgeEls = [];
+  el.svg.appendChild(gEdges); el.svg.appendChild(gNodes);
+
+  IDS.forEach(function (id) {
+    IX[id].bb.forEach(function (b) {
+      if (!nodes[b]) return;
+      var a = nodes[b], c = nodes[id];
+      var x1 = a.x + NW, y1 = a.y + NH / 2, x2 = c.x, y2 = c.y + NH / 2, mx = (x1 + x2) / 2;
+      var p = mk('path', { 'class': 'be', 'data-from': b, 'data-to': id,
+        d: 'M' + x1 + ',' + y1 + ' C' + mx + ',' + y1 + ' ' + mx + ',' + y2 + ' ' + x2 + ',' + y2 });
+      gEdges.appendChild(p); edgeEls.push(p);
+    });
+    if (IX[id].ser && nodes[IX[id].ser]) {
+      var s = nodes[IX[id].ser], m = nodes[id];
+      gEdges.appendChild(mk('path', { 'class': 'bs',
+        d: 'M' + (m.x + NW / 2) + ',' + (m.y + NH) + ' L' + (s.x + NW / 2) + ',' + s.y }));
+    }
+    if (IX[id].tog && nodes[IX[id].tog]) {
+      var t = nodes[IX[id].tog], u = nodes[id];
+      gEdges.appendChild(mk('path', { 'class': 'bt',
+        d: 'M' + (u.x + NW / 2) + ',' + (u.y + NH) + ' L' + (t.x + NW / 2) + ',' + t.y }));
+    }
+  });
+
+  var gnodeEls = {};
+  IDS.forEach(function (id) {
+    var n = nodes[id];
+    var g = mk('g', { 'class': 'bn', 'data-id': id, tabindex: 0, role: 'button' });
+    g.appendChild(mk('rect', { x: n.x, y: n.y, width: NW, height: NH, rx: 2 }));
+    var tx = mk('text', { x: n.x + NW / 2, y: n.y + NH / 2 + 3.4, 'text-anchor': 'middle' });
+    tx.textContent = '#' + id;
+    g.appendChild(tx);
+    g.addEventListener('click', function () { whack(id); });
+    g.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); whack(id); }
+    });
+    gNodes.appendChild(g);
+    gnodeEls[id] = g;
+  });
+
+  /* ---- render ---- */
+  var flash = {};
+  function stateOf(id) {
+    if (isClosed(id)) return flash[id] ? 'hit' : 'closed';
+    if (lit[id]) return 'lit';
+    return ready(id) ? 'ready' : 'blocked';
+  }
+  function paint() {
+    var n = 0;
+    IDS.forEach(function (id) {
+      var st = stateOf(id);
+      if (st === 'closed' || st === 'hit') n++;
+      tiles[id].setAttribute('data-state', st);
+      tiles[id].setAttribute('aria-label', '#' + id + ' ' + IX[id].t + ', ' + st);
+      gnodeEls[id].setAttribute('data-state', st);
+      gnodeEls[id].setAttribute('aria-label', '#' + id + ' ' + IX[id].t + ', ' + st);
+    });
+    edgeEls.forEach(function (p) {
+      var from = p.getAttribute('data-from'), to = p.getAttribute('data-to');
+      p.setAttribute('data-done', isClosed(from) ? '1' : '0');
+      p.setAttribute('data-hot', lit[to] || lit[from] ? '1' : '0');
+    });
+    el.done.textContent = n;
+    el.score.textContent = score;
+    el.streak.textContent = streak;
+  }
+
+  /* ---- game ---- */
+  function readySet() {
+    /* effective priority, then newest first — the default selection tiebreak (§6.4) */
+    return IDS.filter(ready).sort(function (a, b2) {
+      var d = effective(a) - effective(b2);
+      return d !== 0 ? d : b2 - a;
+    });
+  }
+  /* a lit together group is one unit of work — one claim (§6.4) */
+  function litUnits() {
+    var seen = {}, n = 0;
+    Object.keys(lit).forEach(function (id) {
+      var k = unit(+id)[0];
+      if (!seen[k]) { seen[k] = 1; n++; }
+    });
+    return n;
+  }
+  function refill() {
+    var pool = readySet();
+    for (var i = 0; i < pool.length && litUnits() < conc; i++) {
+      var id = pool[i];
+      /* re-check: lighting an earlier entry may have taken this one's serialize slot */
+      if (lit[id] || !ready(id)) continue;
+      unit(id).forEach(function (m) { if (!isClosed(m)) lit[m] = Date.now() + life; });
+    }
+  }
+  function whack(id) {
+    if (!running || !lit[id]) return;
+    unit(id).forEach(function (m) {
+      delete lit[m]; closed[m] = true; flash[m] = 1;
+      setTimeout(function () { delete flash[m]; paint(); }, 320);
+    });
+    streak++;
+    if (streak > best) best = streak;
+    score += 10 + Math.min(streak - 1, 10) * 5;
+    refill(); paint();
+    if (IDS.every(isClosed)) stop('Backlog cleared \u2014 all 48 closed.');
+  }
+  function tick() {
+    var now = Date.now(), missed = 0;
+    Object.keys(lit).forEach(function (id) {
+      if (lit[id] < now) { delete lit[id]; missed++; }
+    });
+    if (missed) streak = 0;
+    left = Math.max(0, Math.ceil((endAt - now) / 1000));
+    el.time.textContent = left;
+    refill(); paint();
+    if (left <= 0) stop('Time. ' + Object.keys(closed).length + ' of 48 closed \u00b7 score ' + score + ' \u00b7 best streak ' + best + '.');
+  }
+  function stop(msg) {
+    running = false;
+    clearInterval(timer);
+    lit = {};
+    el.start.textContent = 'Play again';
+    el.note.innerHTML = '<b>' + msg + '</b> The order was never random \u2014 every issue lit up the moment its last blocker closed, worst-first by effective priority. Switch to the graph and start again to watch the same sequence make sense.';
+    paint();
+  }
+  function start() {
+    conc = +el.diff.value;
+    life = { 4: 2100, 3: 1700, 2: 1400, 1: 1100 }[conc];
+    closed = {}; lit = {}; flash = {}; score = 0; streak = 0; best = 0;
+    running = true; endAt = Date.now() + 30000; left = 30;
+    el.start.textContent = 'Restart';
+    el.note.innerHTML = '<b>Running.</b> Click issues while they are lit. Anything not ready cannot be clicked \u2014 unready work is invisible to selection, so there is nothing to hit.';
+    refill(); paint();
+    clearInterval(timer);
+    timer = setInterval(tick, 180);
+  }
+  el.start.addEventListener('click', start);
+  el.diff.addEventListener('change', function () { if (running) start(); });
+
+  el.vgrid.addEventListener('click', function () {
+    el.grid.hidden = false; el.graph.hidden = true;
+    el.vgrid.classList.add('on'); el.vgraph.classList.remove('on');
+  });
+  el.vgraph.addEventListener('click', function () {
+    el.grid.hidden = true; el.graph.hidden = false;
+    el.vgraph.classList.add('on'); el.vgrid.classList.remove('on');
+  });
+
+  paint();
+})();
+</script>
+</body>
+</html>
