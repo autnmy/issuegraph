@@ -412,25 +412,24 @@ td.m code { font-size: 12.5px; }
 /* one set of 48 tiles; grid and graph are two arrangements of the same elements */
 .stagewrap {
   position: relative; overflow: hidden;
-  border-top: 1px solid var(--border-2); background: var(--border-2);
-  transition: height 520ms cubic-bezier(0.2, 0.7, 0.2, 1), background-color 520ms linear;
+  border-top: 1px solid var(--border-2); background: var(--canvas-2);
+  transition: height 520ms cubic-bezier(0.2, 0.7, 0.2, 1);
 }
-.stagewrap.graphmode { background: var(--canvas-2); }
 #edgesvg {
   position: absolute; left: 0; top: 0; opacity: 0; pointer-events: none;
   transition: opacity 400ms linear;
 }
-.graphmode #edgesvg { opacity: 1; }
+.flowmode #edgesvg { opacity: 1; }
 
 .tile {
   position: absolute; left: 0; top: 0; margin: 0;
   transform: translate(var(--tx), var(--ty));
   transition: transform 520ms cubic-bezier(0.2, 0.7, 0.2, 1), background-color 160ms linear, opacity 200ms linear;
-  background: var(--canvas); padding: 8px 10px 9px; border: 0; border-radius: 0; text-align: left;
+  background: var(--canvas); padding: 8px 10px 9px; border: 0; border-radius: 5px; text-align: left;
   display: flex; flex-direction: column; gap: 3px; cursor: default;
   font-family: inherit; color: inherit; overflow: hidden;
+  box-shadow: inset 0 0 0 1px var(--border-2);
 }
-.graphmode .tile { border-radius: 5px; box-shadow: inset 0 0 0 1px var(--border); }
 .tile .tid { font-family: var(--mono); font-size: 11.5px; font-weight: 600; color: var(--fg-3); }
 .tile .tt {
   font-size: 11.5px; line-height: 1.35; color: var(--fg-3);
@@ -446,10 +445,18 @@ td.m code { font-size: 12.5px; }
   animation: pop 900ms ease-in-out infinite alternate;
 }
 .tile[data-state="lit"] .tid, .tile[data-state="lit"] .tt, .tile[data-state="lit"] .tp { color: var(--on-accent); }
-.tile[data-state="lit"] .tid::after {
-  content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
-  background: var(--on-accent); margin-left: 6px; vertical-align: middle;
+.tile[data-state="lit"] { box-shadow: none; }
+/* the mole */
+.tile[data-state="lit"]::before {
+  content: "\1F439"; position: absolute; right: 8px; bottom: 3px;
+  font-size: 26px; line-height: 1; z-index: 1; pointer-events: none;
+  animation: molepop 260ms cubic-bezier(0.2, 0.9, 0.3, 1.4);
 }
+.tile[data-state="hit"]::before {
+  content: "\1F4AB"; position: absolute; right: 8px; bottom: 3px;
+  font-size: 22px; line-height: 1; pointer-events: none;
+}
+@keyframes molepop { from { transform: translateY(28px); } to { transform: translateY(0); } }
 /* the fuse: how long this mole has left */
 .tile[data-state="lit"]::after {
   content: ""; position: absolute; left: 0; bottom: 0; height: 3px; width: 100%;
@@ -464,6 +471,9 @@ td.m code { font-size: 12.5px; }
 .tile[data-state="missed"] { background: var(--amber-bg); }
 .tile[data-state="missed"] .tid, .tile[data-state="missed"] .tt { color: var(--amber); }
 .tile.whiff { animation: shake 260ms linear; }
+/* flow view telegraphs the next wave while the board rests */
+.flowmode .tile[data-next="1"] { outline: 2px dashed var(--accent); outline-offset: -2px; }
+.flowmode .tile[data-next="1"] .tid { color: var(--accent); }
 @keyframes pop { from { filter: brightness(0.92); } to { filter: brightness(1.14); } }
 @keyframes shake {
   25% { transform: translate(var(--tx), var(--ty)) translateX(-3px); }
@@ -535,6 +545,7 @@ td.m code { font-size: 12.5px; }
   text-transform: uppercase; color: var(--amber);
 }
 .gover .abtn { align-self: center; }
+.gover .abtn[disabled] { opacity: 0.45; cursor: default; }
 
 .gnote {
   padding: 12px 16px; border-top: 1px solid var(--border-2); background: var(--canvas-2);
@@ -884,12 +895,12 @@ footer a { color: var(--fg-2); }
       <span class="push"></span>
       <div class="seg" role="group" aria-label="View">
         <button type="button" class="segb on" id="vgrid">grid</button>
-        <button type="button" class="segb" id="vgraph">graph</button>
+        <button type="button" class="segb" id="vflow">flow</button>
       </div>
     </header>
     <div class="explain">
       <p><b>The same 48 issues, two views.</b> The grid is the backlog as a tracker shows it — newest first, read left to right. The graph is what the frontmatter on those same issues already says. Nothing was added to get from one to the other.</p>
-      <p><b>Then play it — whack-a-mole, two rounds.</b> The reader lights up whatever is ready, most urgent first by effective priority, and each issue stays lit only briefly — close it before it goes dark. <b>Round 1 plays on the grid</b>, where every next mole is a surprise. <b>Round 2 replays the same backlog on the graph</b>, where a lit issue&rsquo;s edges point at what can light next. The sequence is the same both rounds; only your ability to see it coming changes.</p>
+      <p><b>Then play it — whack-a-mole, two rounds.</b> The reader deals the backlog in waves: everything ready lights up at once — one to four issues, your pick — holds for a blink, then the board rests before the next wave. Whack what you can while it shows; whatever you miss closes anyway, because the frontier moves with or without you. <b>Round 1 plays on the grid</b>, in tracker order, where every wave lands somewhere new. <b>Round 2 replays the identical waves on the flow</b> — the same 48 tiles re-ordered into the exact sequence the reader computed from their frontmatter, so the next wave is always the next tiles along. The sequence never changes; only your ability to see it coming does.</p>
     </div>
     <div class="gamebar" id="gamebar">
       <button type="button" class="abtn primary" id="gstart">Start round 1 · grid</button>
@@ -905,14 +916,14 @@ footer a { color: var(--fg-2); }
       <span class="stat">round <b id="ground">–</b></span>
       <span class="stat">score <b id="gscore">0</b></span>
       <span class="stat live">streak <b id="gstreak">0</b></span>
-      <span class="stat">closed <b id="gdone">0</b>/48</span>
+      <span class="stat">hit <b id="ghit">0</b>/48</span>
       <span class="stat time">time <b id="gtime">30</b>s</span>
     </div>
     <div class="stagewrap" id="stagewrap">
       <svg id="edgesvg" aria-hidden="true" focusable="false"></svg>
       <div class="gover" id="gover" hidden></div>
     </div>
-    <p class="gnote" id="gnote" aria-live="polite">Idle — nothing is lit. Twelve of these 48 issues have nothing in front of them; every other one is waiting on something. Press start to watch the reader hand out work.</p>
+    <p class="gnote" id="gnote" aria-live="polite">Idle — nothing is lit. The reader deals the same waves every time; the grid just can&rsquo;t tell you where they&rsquo;ll land. The flow can. Press start.</p>
   </section>
 
 </main>
@@ -1151,30 +1162,8 @@ footer a { color: var(--fg-2); }
 
   function unit(id) { return TOG[id] || [id]; }
 
-  /* ---- state ---- */
-  var closed = {}, lit = {}, cooldown = {}, flash = {}, missedFlash = {},
-      phase = 'idle', /* idle | r1 | between | r2 | over */
-      running = false, view = 'grid',
-      score = 0, streak = 0, best = 0, hits = 0, whiffs = 0, missed = 0, bonus = 0,
-      conc = 3, life = 1350, timer = null, endAt = 0, nextPopAt = 0,
-      rounds = {};
-
-  var el = {
-    wrap: document.getElementById('stagewrap'),
-    svg: document.getElementById('edgesvg'),
-    over: document.getElementById('gover'),
-    start: document.getElementById('gstart'),
-    diff: document.getElementById('gdiff'),
-    round: document.getElementById('ground'),
-    score: document.getElementById('gscore'),
-    streak: document.getElementById('gstreak'),
-    done: document.getElementById('gdone'),
-    time: document.getElementById('gtime'),
-    note: document.getElementById('gnote'),
-    bar: document.getElementById('gamebar'),
-    vgrid: document.getElementById('vgrid'),
-    vgraph: document.getElementById('vgraph')
-  };
+  /* ---- reader rules ---- */
+  var closed = {}, lit = {};
 
   function isClosed(id) { return !!closed[id]; }
   function blockersClear(id) {
@@ -1202,15 +1191,6 @@ footer a { color: var(--fg-2); }
     }
     return bestP;
   }
-  /* a lit together group is one unit of work — one claim (§6.4) */
-  function litUnits() {
-    var seen = {}, n = 0;
-    Object.keys(lit).forEach(function (id) {
-      var k = unit(+id)[0];
-      if (!seen[k]) { seen[k] = 1; n++; }
-    });
-    return n;
-  }
   function readySet() {
     /* effective priority, then newest first — the default selection tiebreak (§6.4) */
     return IDS.filter(ready).sort(function (a, b2) {
@@ -1218,6 +1198,75 @@ footer a { color: var(--fg-2); }
       return d !== 0 ? d : b2 - a;
     });
   }
+
+  /* ---- the wave sequence, precomputed.
+     A wave is the top `conc` units of the ready set (a together group is one unit —
+     one claim, §6.4; a serialize group never contributes two members to one wave).
+     Every issue in a wave closes when the wave ends, whacked or not, so the whole
+     30-second sequence is deterministic — identical in both rounds by construction. ---- */
+  function simulateBatches(c) {
+    var savedClosed = closed, savedLit = lit;
+    closed = {}; lit = {};
+    var out = [], guard = 0;
+    while (!IDS.every(isClosed) && guard++ < 100) {
+      var pool = readySet(), wave = [];
+      for (var i = 0; i < pool.length && wave.length < c; i++) {
+        var id = pool[i];
+        if (lit[id] || !ready(id)) continue;
+        unit(id).forEach(function (m) { if (!isClosed(m)) lit[m] = 1; });
+        wave.push(id);
+      }
+      if (!wave.length) break;
+      wave.forEach(function (a) { unit(a).forEach(function (m) { closed[m] = true; }); });
+      lit = {};
+      out.push(wave);
+    }
+    closed = savedClosed; lit = savedLit;
+    return out;
+  }
+
+  var simConc = null, batches = [], flowOrder = [];
+  function ensureSim() {
+    var c = +el.diff.value;
+    if (simConc === c) return;
+    simConc = c;
+    batches = simulateBatches(c);
+    flowOrder = [];
+    batches.forEach(function (wave) {
+      wave.forEach(function (a) {
+        unit(a).forEach(function (m) { if (flowOrder.indexOf(m) < 0) flowOrder.push(m); });
+      });
+    });
+    IDS.forEach(function (id) { if (flowOrder.indexOf(id) < 0) flowOrder.push(id); });
+  }
+
+  /* ---- game state ---- */
+  var flash = {}, missedFlash = {},
+      phase = 'idle', /* idle | r1 | between | r2 | over */
+      running = false, view = 'grid',
+      score = 0, streak = 0, best = 0, whacked = 0, whiffs = 0, missedN = 0,
+      conc = 3, life = 700, timer = null, endAt = 0,
+      inBatch = false, batchIdx = 0, batchEndsAt = 0, deadUntil = 0, batchHits = 0,
+      shieldUntil = 0, rounds = {};
+  var DEAD = 2000;
+  var LIFE = { 4: 800, 3: 700, 2: 575, 1: 475 };
+
+  var el = {
+    wrap: document.getElementById('stagewrap'),
+    svg: document.getElementById('edgesvg'),
+    over: document.getElementById('gover'),
+    start: document.getElementById('gstart'),
+    diff: document.getElementById('gdiff'),
+    round: document.getElementById('ground'),
+    score: document.getElementById('gscore'),
+    streak: document.getElementById('gstreak'),
+    hit: document.getElementById('ghit'),
+    time: document.getElementById('gtime'),
+    note: document.getElementById('gnote'),
+    bar: document.getElementById('gamebar'),
+    vgrid: document.getElementById('vgrid'),
+    vflow: document.getElementById('vflow')
+  };
 
   /* ---- tiles: one set of buttons, both views position the same elements ---- */
   var tiles = {};
@@ -1231,82 +1280,41 @@ footer a { color: var(--fg-2); }
     tiles[id] = b;
   });
 
-  /* ---- layout: grid = newest first; graph = tiers by longest-path depth.
-     Same tile size in both views — same hit targets, different arrangement. ---- */
-  var depth = {};
-  function computeDepth(id, guard) {
-    if (depth[id] !== undefined) return depth[id];
-    if (guard[id]) return 0;
-    guard[id] = 1;
-    var d = 0;
-    IX[id].bb.forEach(function (b) { if (IX[b]) d = Math.max(d, computeDepth(b, guard) + 1); });
-    depth[id] = d;
-    return d;
-  }
-  IDS.forEach(function (id) { computeDepth(id, {}); });
-  var maxD = 0;
-  IDS.forEach(function (id) { if (depth[id] > maxD) maxD = depth[id]; });
-
+  /* ---- layout: identical geometry in both views — same tile size, same columns,
+     same spacing, same canvas height. Grid orders newest-first; flow orders by the
+     precomputed wave sequence, serpentine so consecutive tiles stay adjacent. ---- */
   var TH = 66, pos = {}, tileW = 148;
 
-  function gridPositions(W) {
-    var gap = 1, n = Math.max(2, Math.floor((W + gap) / (148 + gap)));
-    var out = {}, i = 0;
-    IDS.slice().sort(function (a, b2) { return b2 - a; }).forEach(function (id) {
-      out[id] = { x: (i % n) * (tileW + gap), y: Math.floor(i / n) * (TH + gap) };
-      i++;
-    });
-    out._h = Math.ceil(48 / n) * (TH + gap) - gap;
-    return out;
-  }
-
-  function graphPositions(W) {
-    /* spacious gaps where the width allows, grid-tight packing where it does not —
-       the tile itself never shrinks below the grid's */
-    var gapY = 30, pad = 12;
-    var nMax = Math.max(1, Math.floor((W + 1) / (tileW + 1)));
-    var n = Math.floor((W + 14) / (tileW + 14));
-    if (n < 2) n = Math.min(2, nMax);
-    if (n < 1) n = 1;
-    var gapX = n > 1 ? Math.max(0, Math.min(14, Math.floor((W - n * tileW) / (n + 1)))) : 0;
-    var out = {}, y = pad, t, tiers = {};
-    IDS.forEach(function (id) { (tiers[depth[id]] = tiers[depth[id]] || []).push(id); });
-    for (t = 0; t <= maxD; t++) {
-      var list = tiers[t] || [];
-      if (t === 0) {
-        list.sort(function (a, b2) { return a - b2; }); /* roots cluster by workstream */
-      } else {
-        list.sort(function (a, b2) { return bary(a, out) - bary(b2, out) || a - b2; });
-      }
-      for (var r = 0; r < list.length; r += n) {
-        var row = list.slice(r, r + n);
-        var rowW = row.length * (tileW + gapX) - gapX;
-        var x0 = Math.max(0, (W - rowW) / 2);
-        row.forEach(function (id, i) {
-          out[id] = { x: x0 + i * (tileW + gapX), y: y };
-        });
-        y += TH + gapY;
-      }
-      y += 26; /* tier gap on top of row gap */
-    }
-    out._h = y - gapY - 26 + pad;
-    return out;
-  }
-  function bary(id, placed) {
-    var xs = IX[id].bb.filter(function (b) { return placed[b]; }).map(function (b) { return placed[b].x; });
-    if (!xs.length && IX[id].ser && placed[IX[id].ser]) xs = [placed[IX[id].ser].x];
-    if (!xs.length && IX[id].tog && placed[IX[id].tog]) xs = [placed[IX[id].tog].x];
-    if (!xs.length) return 1e9;
-    return xs.reduce(function (a, b2) { return a + b2; }, 0) / xs.length;
-  }
-
-  function layout() {
-    var W = el.wrap.clientWidth;
-    /* tile size comes from the grid formula at the current width, in both views —
-       identical hit targets is the point */
+  function geometry(W) {
     var g0 = 1, n0 = Math.max(2, Math.floor((W + g0) / (148 + g0)));
     tileW = Math.floor((W - (n0 - 1) * g0) / n0);
-    pos = (view === 'graph' ? graphPositions : gridPositions)(W);
+    var n = Math.floor((W + 12) / (tileW + 12));
+    if (n < 2) n = Math.min(2, Math.max(1, Math.floor((W + 1) / (tileW + 1))));
+    if (n < 1) n = 1;
+    var gapX = (W - n * tileW) / (n + 1);
+    var rows = Math.ceil(48 / n);
+    var gapY = 26, pad = 14;
+    return { n: n, gapX: gapX, rows: rows, gapY: gapY, pad: pad,
+             h: pad * 2 + rows * TH + (rows - 1) * gapY };
+  }
+  function place(order, W, serpentine) {
+    var g = geometry(W), out = {};
+    order.forEach(function (id, i) {
+      var row = Math.floor(i / g.n), col = i % g.n;
+      if (serpentine && row % 2 === 1) col = g.n - 1 - col;
+      out[id] = { x: g.gapX + col * (tileW + g.gapX), y: g.pad + row * (TH + g.gapY) };
+    });
+    out._h = g.h;
+    return out;
+  }
+  function layout() {
+    var W = el.wrap.clientWidth;
+    if (view === 'flow') {
+      ensureSim();
+      pos = place(flowOrder, W, true);
+    } else {
+      pos = place(IDS.slice().sort(function (a, b2) { return b2 - a; }), W, false);
+    }
     IDS.forEach(function (id) {
       var t = tiles[id];
       t.style.width = tileW + 'px';
@@ -1315,13 +1323,13 @@ footer a { color: var(--fg-2); }
       t.style.setProperty('--ty', pos[id].y + 'px');
     });
     el.wrap.style.height = pos._h + 'px';
-    el.wrap.classList.toggle('graphmode', view === 'graph');
+    el.wrap.classList.toggle('flowmode', view === 'flow');
     el.svg.setAttribute('width', W);
     el.svg.setAttribute('height', pos._h);
     drawEdges();
   }
 
-  /* ---- edges (drawn once, retraced on layout) ---- */
+  /* ---- edges (drawn once, retraced on layout; visible in flow view) ---- */
   var ns = 'http://www.w3.org/2000/svg';
   function mkpath(cls) {
     var p = document.createElementNS(ns, 'path');
@@ -1360,10 +1368,8 @@ footer a { color: var(--fg-2); }
     return ready(id) ? 'ready' : 'blocked';
   }
   function paint() {
-    var n = 0;
     IDS.forEach(function (id) {
       var st = stateOf(id);
-      if (st === 'closed' || st === 'hit') n++;
       tiles[id].setAttribute('data-state', st);
       tiles[id].setAttribute('aria-label', '#' + id + ' ' + IX[id].t + ', ' + st);
     });
@@ -1371,9 +1377,17 @@ footer a { color: var(--fg-2); }
       e.el.setAttribute('data-done', isClosed(e.from) ? '1' : '0');
       e.el.setAttribute('data-hot', lit[e.from] || lit[e.to] ? '1' : '0');
     });
-    el.done.textContent = n;
     el.score.textContent = score;
     el.streak.textContent = streak;
+    el.hit.textContent = whacked;
+  }
+  function setNext(waveOrNull) {
+    var mark = {};
+    if (waveOrNull) waveOrNull.forEach(function (a) { unit(a).forEach(function (m) { mark[m] = 1; }); });
+    IDS.forEach(function (id) {
+      if (mark[id]) tiles[id].setAttribute('data-next', '1');
+      else tiles[id].removeAttribute('data-next');
+    });
   }
 
   /* ---- game feel ---- */
@@ -1443,25 +1457,45 @@ footer a { color: var(--fg-2); }
   function setView(v) {
     view = v;
     el.vgrid.classList.toggle('on', v === 'grid');
-    el.vgraph.classList.toggle('on', v === 'graph');
+    el.vflow.classList.toggle('on', v === 'flow');
     layout();
   }
   function lockSeg(b) {
-    el.vgrid.disabled = b; el.vgraph.disabled = b;
+    el.vgrid.disabled = b; el.vflow.disabled = b;
   }
 
-  function popOne(now) {
-    var pool = readySet();
-    for (var i = 0; i < pool.length; i++) {
-      var id = pool[i];
-      /* re-check: lighting an earlier entry may have taken this one's serialize slot */
-      if (lit[id] || (cooldown[id] && cooldown[id] > now) || !ready(id)) continue;
-      unit(id).forEach(function (m) {
-        if (!isClosed(m)) { lit[m] = now + life; tiles[m].style.setProperty('--life', life + 'ms'); }
-      });
-      return true;
+  function lightWave(now) {
+    if (batchIdx >= batches.length) {
+      /* backlog exhausted before the clock — loop it */
+      closed = {}; flash = {}; missedFlash = {};
+      batchIdx = 0;
+      score += 100;
+      banner('Backlog cleared · +100');
     }
-    return false;
+    var wave = batches[batchIdx++];
+    batchHits = 0; inBatch = true; batchEndsAt = now + life;
+    wave.forEach(function (a) {
+      unit(a).forEach(function (m) {
+        if (!isClosed(m)) { lit[m] = batchEndsAt; tiles[m].style.setProperty('--life', life + 'ms'); }
+      });
+    });
+    setNext(null);
+  }
+  function settleWave(now) {
+    /* the wave is over: whatever wasn't whacked closes anyway — the reader's
+       frontier advances either way; only the score remembers the difference */
+    var missedHere = 0;
+    Object.keys(lit).forEach(function (id) {
+      delete lit[id];
+      closed[id] = true;
+      missedHere++;
+      missedFlash[id] = 1;
+      (function (mid) { setTimeout(function () { delete missedFlash[mid]; paint(); }, 380); })(id);
+    });
+    missedN += missedHere;
+    if (batchHits === 0 && missedHere > 0) streak = 0;
+    inBatch = false;
+    deadUntil = now + DEAD;
   }
 
   function tap(id) {
@@ -1470,16 +1504,21 @@ footer a { color: var(--fg-2); }
   }
   function whack(id) {
     unit(id).forEach(function (m) {
-      delete lit[m]; closed[m] = true; flash[m] = 1;
+      if (!lit[m]) return;
+      delete lit[m]; closed[m] = true; flash[m] = 1; whacked++;
       setTimeout(function () { delete flash[m]; paint(); }, 300);
     });
-    streak++; hits++;
+    streak++; batchHits++;
     if (streak > best) best = streak;
     var pts = 10 + Math.min(streak - 1, 10) * 5;
     score += pts;
     popup(id, '+' + pts, false);
+    if (inBatch && !Object.keys(lit).length) {
+      /* whole wave whacked — no need to wait out the fuse */
+      inBatch = false;
+      deadUntil = Date.now() + DEAD;
+    }
     paint();
-    if (IDS.every(isClosed)) endRound(true);
   }
   function whiff(id) {
     whiffs++;
@@ -1489,94 +1528,85 @@ footer a { color: var(--fg-2); }
   }
 
   function tick() {
-    var now = Date.now(), expiredUnits = {};
-    Object.keys(lit).forEach(function (id) {
-      if (lit[id] < now) {
-        delete lit[id];
-        cooldown[id] = now + 650;
-        expiredUnits[unit(+id)[0]] = 1;
-        missedFlash[id] = 1;
-        (function (mid) { setTimeout(function () { delete missedFlash[mid]; paint(); }, 340); })(id);
-      }
-    });
-    var m = Object.keys(expiredUnits).length;
-    if (m) { missed += m; streak = 0; }
-    if (litUnits() < conc && now >= nextPopAt) {
-      if (popOne(now)) nextPopAt = now + 240;
+    var now = Date.now();
+    if (inBatch && now >= batchEndsAt) settleWave(now);
+    if (!inBatch && now >= deadUntil) lightWave(now);
+    /* in the flow view the next wave is knowable — show it warming up */
+    if (!inBatch && view === 'flow') {
+      setNext(batches[batchIdx >= batches.length ? 0 : batchIdx]);
     }
     var left = Math.max(0, (endAt - now) / 1000);
     el.time.textContent = Math.ceil(left);
     el.time.parentNode.classList.toggle('low', running && left <= 5.5);
     paint();
-    if (endAt - now <= 0) endRound(false);
+    if (endAt - now <= 0) endRound();
   }
 
   function beginRound(r) {
     phase = r === 1 ? 'r1' : 'r2';
     if (r === 1) rounds = {};
     conc = +el.diff.value;
-    life = { 4: 1600, 3: 1350, 2: 1150, 1: 950 }[conc];
-    closed = {}; lit = {}; cooldown = {}; flash = {}; missedFlash = {};
-    score = 0; streak = 0; best = 0; hits = 0; whiffs = 0; missed = 0; bonus = 0;
-    running = true; endAt = Date.now() + 30000; nextPopAt = Date.now() + 400;
+    life = LIFE[conc];
+    ensureSim();
+    closed = {}; lit = {}; flash = {}; missedFlash = {};
+    score = 0; streak = 0; best = 0; whacked = 0; whiffs = 0; missedN = 0;
+    inBatch = false; batchIdx = 0; batchHits = 0;
+    running = true; endAt = Date.now() + 30000; deadUntil = Date.now() + 1200;
     el.over.hidden = true;
-    setView(r === 1 ? 'grid' : 'graph');
+    setView(r === 1 ? 'grid' : 'flow');
     lockSeg(true);
     el.bar.classList.add('playing');
     el.round.textContent = r + '/2';
     el.start.textContent = 'Restart round ' + r;
     el.note.innerHTML = r === 1
-      ? '<b>Round 1 — the grid.</b> Issues light up in reader order and go dark fast. Whack them while they last; a wild click or a mole you miss resets your streak.'
-      : '<b>Round 2 — the graph.</b> Same 48 issues, same order. A lit issue’s outgoing edges point at what can light next — read ahead and be waiting for it.';
-    banner(r === 1 ? 'Round 1 · the grid' : 'Round 2 · the graph');
+      ? '<b>Round 1 — the grid.</b> Waves of issues pop up together and vanish fast; whack what you can. Whatever you miss closes anyway — the backlog moves on without you. Clicking a dark tile resets your streak.'
+      : '<b>Round 2 — the flow.</b> The identical waves, but the board is laid out in reader order: the next wave is always the next tiles along, and it glows while it warms up. Be waiting for it.';
+    banner(r === 1 ? 'Round 1 · the grid' : 'Round 2 · the flow');
+    setNext(null);
     clearInterval(timer);
     timer = setInterval(tick, 100);
     paint();
   }
 
-  function endRound(clearedAll) {
+  function endRound() {
     if (!running) return;
     running = false;
     clearInterval(timer);
-    lit = {}; cooldown = {};
+    lit = {}; inBatch = false;
+    setNext(null);
     el.time.parentNode.classList.remove('low');
     el.bar.classList.remove('playing');
-    if (clearedAll) {
-      bonus = Math.max(0, Math.ceil((endAt - Date.now()) / 1000)) * 10;
-      score += bonus;
-    }
-    var rec = { score: score, closed: IDS.filter(isClosed).length, best: best,
-                hits: hits, whiffs: whiffs, missed: missed, cleared: clearedAll, bonus: bonus };
+    var rec = { score: score, whacked: whacked, best: best, whiffs: whiffs, missed: missedN };
     if (phase === 'r1') {
       rounds.r1 = rec;
       phase = 'between';
       el.round.textContent = '1 done';
-      el.start.textContent = 'Start round 2 · graph';
+      el.start.textContent = 'Start round 2 · flow';
       lockSeg(false);
-      setView('graph');
-      el.note.innerHTML = '<b>Round 1: ' + rec.closed + ' closed, score ' + rec.score + '.</b> ' +
-        'Watch the board rearrange — the same 48 tiles, moved to where their frontmatter already says they belong. ' +
-        'Round 2 is the identical game on this view: now the edges tell you what lights next.';
+      setView('flow');
+      el.note.innerHTML = '<b>Round 1: ' + rec.whacked + ' whacked, score ' + rec.score + '.</b> ' +
+        'Watch the board rearrange — the same 48 tiles, re-ordered into the exact sequence the reader computed from their frontmatter. ' +
+        'Round 2 replays the identical waves on this view: you will always know where the next one lands.';
     } else {
       rounds.r2 = rec;
       phase = 'over';
       el.round.textContent = 'done';
       el.start.textContent = 'Play again';
       lockSeg(false);
-      showOver(clearedAll);
+      showOver();
       confetti();
     }
     paint();
   }
 
-  function showOver(clearedAll) {
+  function showOver() {
     var r1 = rounds.r1, r2 = rounds.r2;
-    var d = r2.closed - r1.closed;
+    var d = r2.whacked - r1.whacked;
     var kick = d > 0
-      ? 'Same backlog, same order — ' + d + ' more closed when you could see it coming. The graph didn’t change the game; it let you read it.'
+      ? 'Same waves, same order — ' + d + ' more whacked when you could see them coming. The flow didn’t change the game; it let you read it.'
       : d === 0
-        ? 'Same backlog, same order, dead even — but this time you knew what was coming.'
-        : 'Same backlog, same order. Seeing it coming and reaching it in time are different problems.';
+        ? 'Same waves, same order, dead even — but in round 2 you knew what was coming.'
+        : 'Same waves, same order. Knowing where and getting there in time are different problems.';
     var total = r1.score + r2.score, pb = '';
     try {
       var old = +(localStorage.getItem('ig-best') || 0);
@@ -1585,49 +1615,56 @@ footer a { color: var(--fg-2); }
     } catch (e) { pb = 'total ' + total; }
     el.over.innerHTML =
       '<div class="card" role="dialog" aria-label="Game results">' +
-      '<h3>' + (clearedAll ? 'Backlog cleared' : 'Time') + '</h3>' +
+      '<h3>Time</h3>' +
       '<div class="big">' + r2.score + '</div>' +
-      '<table><thead><tr><th>round</th><th>closed</th><th>score</th><th>streak</th></tr></thead><tbody>' +
-      '<tr><td>1 · grid</td><td>' + r1.closed + '/48</td><td>' + r1.score + '</td><td>' + r1.best + '</td></tr>' +
-      '<tr><td>2 · graph</td><td>' + r2.closed + '/48</td><td>' + r2.score + '</td><td>' + r2.best + '</td></tr>' +
+      '<table><thead><tr><th>round</th><th>whacked</th><th>score</th><th>streak</th></tr></thead><tbody>' +
+      '<tr><td>1 · grid</td><td>' + r1.whacked + '/48</td><td>' + r1.score + '</td><td>' + r1.best + '</td></tr>' +
+      '<tr><td>2 · flow</td><td>' + r2.whacked + '/48</td><td>' + r2.score + '</td><td>' + r2.best + '</td></tr>' +
       '</tbody></table>' +
       '<p class="kick">' + kick + '</p>' +
       '<p class="pb">' + pb + '</p>' +
-      '<button type="button" class="abtn primary" id="gagain">Play again</button>' +
+      '<button type="button" class="abtn primary" id="gagain" disabled>Play again</button>' +
       '</div>';
     el.over.hidden = false;
-    document.getElementById('gagain').addEventListener('click', function () { beginRound(1); });
+    /* spam-click shield: the recap ignores input for a beat so it can't be clicked through */
+    shieldUntil = Date.now() + 1000;
+    var again = document.getElementById('gagain');
+    setTimeout(function () { again.disabled = false; }, 1000);
+    again.addEventListener('click', function () { if (Date.now() >= shieldUntil) beginRound(1); });
     el.over.addEventListener('click', function (e) {
-      if (e.target === el.over) el.over.hidden = true;
+      if (e.target === el.over && Date.now() >= shieldUntil) el.over.hidden = true;
     });
-    el.note.innerHTML = '<b>Final — grid ' + r1.closed + ' closed · graph ' + r2.closed + ' closed.</b> ' +
-      'The order was never random: every issue lit the moment its last blocker closed, worst-first by effective priority. ' +
-      'The grid just couldn’t show you.';
+    el.note.innerHTML = '<b>Final — grid ' + r1.whacked + ' whacked · flow ' + r2.whacked + ' whacked.</b> ' +
+      'The waves were identical both rounds: whatever is ready lights together, worst-first by effective priority. ' +
+      'The grid just couldn’t tell you where.';
   }
 
   el.start.addEventListener('click', function () {
-    if (phase === 'between') beginRound(2);
-    else if (phase === 'r2') beginRound(2);
+    if (phase === 'between' || phase === 'r2') beginRound(2);
     else beginRound(1);
   });
   el.diff.addEventListener('change', function () {
-    /* difficulty applies to a whole match — reset so both rounds play the same settings */
+    /* difficulty changes the wave sequence itself — reset the match */
     running = false; clearInterval(timer);
     phase = 'idle'; rounds = {};
-    closed = {}; lit = {}; cooldown = {}; flash = {}; missedFlash = {};
-    score = 0; streak = 0; best = 0; hits = 0; whiffs = 0; missed = 0;
+    simConc = null;
+    closed = {}; lit = {}; flash = {}; missedFlash = {};
+    score = 0; streak = 0; best = 0; whacked = 0; whiffs = 0; missedN = 0;
+    inBatch = false; batchIdx = 0;
     el.over.hidden = true;
     el.round.textContent = '–';
     el.time.textContent = '30';
     el.time.parentNode.classList.remove('low');
     el.bar.classList.remove('playing');
     el.start.textContent = 'Start round 1 · grid';
-    el.note.innerHTML = 'Difficulty set. Round 1 plays on the grid, round 2 on the graph — same backlog, same rules.';
+    el.note.innerHTML = 'Difficulty set — the wave size changed, so the sequence recomputed. Round 1 plays on the grid, round 2 on the flow.';
     lockSeg(false);
+    setNext(null);
+    layout();
     paint();
   });
   el.vgrid.addEventListener('click', function () { if (!running) setView('grid'); });
-  el.vgraph.addEventListener('click', function () { if (!running) setView('graph'); });
+  el.vflow.addEventListener('click', function () { if (!running) setView('flow'); });
 
   var resizeT;
   window.addEventListener('resize', function () {
