@@ -896,8 +896,8 @@ footer a { color: var(--fg-2); }
       </div>
     </header>
     <div class="explain">
-      <p><b>The same 48 issues, two orderings.</b> <b>Order by newest</b> is the backlog as a tracker shows it — newest first, read left to right. <b>Order by issuegraph</b> is the same 48 issues arranged by what their frontmatter already says — blockers above, dependents below, edges drawn between them. Nothing was added to get from one to the other.</p>
-      <p><b>Then play it — whack-a-mole, two rounds.</b> The reader deals the backlog in waves: everything ready lights up at once — one to four issues, your pick — holds for a blink, then the board rests before the next wave. Whack what you can while it shows; whatever you miss closes anyway, because the frontier moves with or without you. <b>Round 1 plays ordered by newest</b>, where every wave lands somewhere you didn&rsquo;t expect. <b>Round 2 replays the identical waves ordered by issuegraph</b>, where every closure points at what it frees up next. The sequence never changes; only your ability to see it coming does.</p>
+      <p><b>The same 48 issues, two orderings.</b> <b>Order by newest</b> is the backlog as a tracker shows it — newest first, read left to right. <b>Order by issuegraph</b> is the same 48 issues in the exact order the reader deals them — left to right, top to bottom — each one settling under the issues that blocked it, edges drawn between them. Nothing was added to get from one to the other.</p>
+      <p><b>Then play it — whack-a-mole, two rounds.</b> The reader deals the backlog in waves: everything ready lights up at once — one to four issues, your pick — holds for a blink, then the board rests before the next wave. Whack what you can while it shows; whatever you miss closes anyway, because the frontier moves with or without you. <b>Round 1 plays ordered by newest</b>, where every wave lands somewhere you didn&rsquo;t expect. <b>Round 2 replays the identical waves ordered by issuegraph</b>, where the next wave is always the next tiles along. The sequence never changes; only your ability to see it coming does.</p>
     </div>
     <div class="gamebar" id="gamebar">
       <button type="button" class="abtn primary" id="gstart">Start round 1 · by newest</button>
@@ -1321,44 +1321,79 @@ footer a { color: var(--fg-2); }
     return s / xs.length;
   }
   function graphPositions(W) {
-    var g = geometry(W), tierExtra = 14, pitch = tileW + g.gapX;
-    var tiers = {};
-    IDS.forEach(function (id) { (tiers[depth[id]] = tiers[depth[id]] || []).push(id); });
-    var out = {}, y = g.pad, t;
-    for (t = 0; t <= maxD; t++) {
-      var list = (tiers[t] || []).slice();
-      var k = Math.ceil(list.length / g.n);
-      if (t === 0) {
-        /* roots seed the columns, clustered by workstream */
-        list.sort(function (a, b2) { return a - b2; });
-        list.forEach(function (id, i) {
-          out[id] = { x: g.gapX + (i % g.n) * pitch, y: y + Math.floor(i / g.n) * (TH + g.gapY) };
+    /* the board in the exact order the reader deals it: reading order (left to
+       right, top to bottom) IS the lighting order. Waves place as a block, each
+       tile seeking the column under its blockers — chains run vertically, fans
+       spread beneath their blocker — and a wave that cannot hold that shape on
+       the current row wraps whole to the next. */
+    ensureSim();
+    var g = geometry(W), pitch = tileW + g.gapX, gapY = 24;
+    var waves = [];
+    batches.forEach(function (wave) {
+      var members = [];
+      wave.forEach(function (a) {
+        unit(a).forEach(function (m) { if (members.indexOf(m) < 0) members.push(m); });
+      });
+      waves.push(members);
+    });
+    var placedIds = {};
+    waves.forEach(function (ws) { ws.forEach(function (m) { placedIds[m] = 1; }); });
+    var rest = IDS.filter(function (id) { return !placedIds[id]; });
+    if (rest.length) waves.push(rest);
+
+    var out = {}, row = 0, cursor = 0;
+    function wantCol(id) {
+      var b = bary(id, out);
+      return b >= 1e9 ? -1 : Math.max(0, Math.min(g.n - 1, Math.round((b - g.gapX) / pitch)));
+    }
+    function tryRow(ws, startCol, drift) {
+      var wants = ws.map(wantCol), idx = ws.map(function (m, i) { return i; });
+      idx.sort(function (a, b2) { return (wants[a] < 0 ? 99 : wants[a]) - (wants[b2] < 0 ? 99 : wants[b2]) || a - b2; });
+      var cols = [], c = startCol, k, maxCol = 0;
+      for (k = 0; k < idx.length; k++) {
+        var wnt = wants[idx[k]];
+        var col = wnt < 0 ? c : Math.max(wnt, c);
+        cols[idx[k]] = col;
+        if (col > maxCol) maxCol = col;
+        c = col + 1;
+      }
+      var shift = Math.max(0, maxCol - (g.n - 1));
+      for (k = 0; k < ws.length; k++) {
+        var col2 = cols[k] - shift;
+        if (col2 < startCol) return null;
+        var wnt2 = wants[k];
+        if (wnt2 >= 0 && Math.abs(col2 - wnt2) > drift) return null;
+        cols[k] = col2;
+      }
+      return cols;
+    }
+    waves.forEach(function (ws) {
+      var cols = tryRow(ws, cursor, 1);
+      if (!cols) {
+        row++; cursor = 0;
+        cols = tryRow(ws, 0, 1) || tryRow(ws, 0, 2) || tryRow(ws, 0, 3);
+      }
+      if (cols) {
+        var maxCol = 0;
+        ws.forEach(function (m, i) {
+          out[m] = { x: g.gapX + cols[i] * pitch, y: g.pad + row * (TH + gapY) };
+          if (cols[i] > maxCol) maxCol = cols[i];
         });
+        cursor = maxCol + 1;
       } else {
-        /* each tile seeks the column under its blockers; gaps stay where
-           nothing wants to be — the shape follows the graph */
-        list.sort(function (a, b2) { return bary(a, out) - bary(b2, out) || a - b2; });
-        var free = [];
-        for (var r0 = 0; r0 < k; r0++) free.push(0);
-        list.forEach(function (id) {
-          var b = bary(id, out);
-          var want = b >= 1e9 ? g.n - 1 : Math.max(0, Math.min(g.n - 1, Math.round((b - g.gapX) / pitch)));
-          var bestR = -1, bestCol = 0, bestCost = 1e9;
-          for (var r = 0; r < k; r++) {
-            if (free[r] > g.n - 1) continue;
-            var col = Math.max(want, free[r]) <= g.n - 1 ? Math.max(want, free[r]) : free[r];
-            var cost = Math.abs(col - want) + r * 0.01;
-            if (cost < bestCost) { bestCost = cost; bestR = r; bestCol = col; }
-          }
-          out[id] = { x: g.gapX + bestCol * pitch, y: y + bestR * (TH + g.gapY) };
-          free[bestR] = bestCol + 1;
+        /* wave wider than the row allows (narrow screens) — sequential fill */
+        if (cursor > 0) { row++; cursor = 0; }
+        ws.forEach(function (m) {
+          if (cursor > g.n - 1) { row++; cursor = 0; }
+          out[m] = { x: g.gapX + cursor * pitch, y: g.pad + row * (TH + gapY) };
+          cursor++;
         });
       }
-      y += k * (TH + g.gapY) + tierExtra;
-    }
-    out._h = y - g.gapY - tierExtra + g.pad;
+    });
+    out._h = g.pad * 2 + (row + 1) * (TH + gapY) - gapY;
     return out;
   }
+
   function layout() {
     var W = el.wrap.clientWidth;
     if (view === 'graph') {
@@ -1401,7 +1436,12 @@ footer a { color: var(--fg-2); }
     blockEdges.forEach(function (e) {
       var a = pos[e.from], b = pos[e.to];
       if (!a || !b) return;
-      var x1 = a.x + w2, y1 = a.y + TH, x2 = b.x + w2, y2 = b.y, my = (y1 + y2) / 2;
+      var x1 = a.x + w2, x2 = b.x + w2;
+      if (Math.abs(a.y - b.y) < 1) {
+        e.el.setAttribute('d', 'M' + x1 + ',' + a.y + ' C' + x1 + ',' + (a.y - 22) + ' ' + x2 + ',' + (b.y - 22) + ' ' + x2 + ',' + b.y);
+        return;
+      }
+      var y1 = a.y + TH, y2 = b.y, my = (y1 + y2) / 2;
       e.el.setAttribute('d', 'M' + x1 + ',' + y1 + ' C' + x1 + ',' + my + ' ' + x2 + ',' + my + ' ' + x2 + ',' + y2);
     });
     pairEdges.forEach(function (e) {
@@ -1598,7 +1638,7 @@ footer a { color: var(--fg-2); }
     el.start.textContent = 'Restart round ' + r;
     el.note.innerHTML = r === 1
       ? '<b>Round 1 — ordered by newest.</b> Waves of issues pop up together and vanish fast; whack what you can. Whatever you miss closes anyway — the backlog moves on without you. Clicking a dark tile resets your streak.'
-      : '<b>Round 2 — ordered by issuegraph.</b> The identical waves, but the board is the graph itself: blockers above, dependents below, edges showing why. When something closes, look downstream — that is where the next wave comes from.';
+      : '<b>Round 2 — ordered by issuegraph.</b> The identical waves in reading order: the next wave is always the next tiles along — left to right, top to bottom — and the edges show why each one unlocked.';
     banner(r === 1 ? 'Round 1 · order by newest' : 'Round 2 · order by issuegraph');
     clearInterval(timer);
     timer = setInterval(tick, 100);
@@ -1621,8 +1661,8 @@ footer a { color: var(--fg-2); }
       lockSeg(false);
       setView('graph');
       el.note.innerHTML = '<b>Round 1: ' + rec.whacked + ' whacked, score ' + rec.score + '.</b> ' +
-        'Watch the board rearrange — the same 48 tiles, rebuilt into the graph their frontmatter already describes: blockers above, dependents below. ' +
-        'Round 2 replays the identical waves here — read the edges to see what every closure frees up next.';
+        'Watch the board rearrange — the same 48 tiles, re-dealt into the order the reader computed: left to right, top to bottom is exactly the order they will light, and the edges show why. ' +
+        'Round 2 replays the identical waves here.';
     } else {
       rounds.r2 = rec;
       phase = 'over';
