@@ -196,19 +196,19 @@ main.container { margin-top: clamp(32px, 4.5vw, 48px); display: flex; flex-direc
 .rule b { color: var(--fg-2); font-weight: 600; }
 .rule code { color: var(--fg-2); }
 .explain {
-  padding: 14px 16px; border-top: 1px solid var(--border-2);
-  font-size: 13.5px; line-height: 1.62; color: var(--fg-2);
-  background: var(--canvas-2); display: flex; flex-direction: column; gap: 9px;
+  padding: 12px 16px; border-top: 1px solid var(--border-2);
+  font-size: 12.5px; line-height: 1.6; color: var(--fg-3);
+  background: var(--canvas-2); display: flex; flex-direction: column; gap: 8px;
 }
 .explain p { max-width: 78ch; text-wrap: pretty; }
-.explain b { color: var(--fg); font-weight: 600; }
+.explain b { color: var(--fg-2); font-weight: 600; }
 .explain code {
-  font-family: var(--mono); font-size: 12.5px; color: var(--fg);
+  font-family: var(--mono); font-size: 11.5px; color: var(--fg-2);
   background: var(--canvas); border: 1px solid var(--border-2);
-  border-radius: 4px; padding: 1px 5px;
+  border-radius: 4px; padding: 1px 4px;
 }
 .explain .eg {
-  font-family: var(--mono); font-size: 12.5px; color: var(--fg-3);
+  font-family: var(--mono); font-size: 12px; color: var(--fg-3);
   background: var(--canvas); border: 1px solid var(--border-2);
   border-radius: 5px; padding: 8px 11px; line-height: 1.7;
 }
@@ -379,6 +379,9 @@ td.m code { font-size: 12.5px; }
 .segb + .segb { border-left: 1px solid var(--border); }
 .segb:hover { color: var(--fg); }
 .segb.on { background: var(--accent); color: var(--on-accent); }
+.segb[disabled] { cursor: default; }
+.segb[disabled]:not(.on) { opacity: 0.5; }
+.segb[disabled]:not(.on):hover { color: var(--fg-3); background: var(--canvas); }
 
 .gamebar {
   display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px;
@@ -399,29 +402,47 @@ td.m code { font-size: 12.5px; }
   font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
   color: var(--fg-3); white-space: nowrap;
 }
-.stat b { font-size: 14px; color: var(--fg); margin-left: 5px; letter-spacing: 0; }
+.stat b { font-size: 14px; color: var(--fg); margin-left: 5px; letter-spacing: 0; transition: font-size 200ms ease; }
 .stat.time b { color: var(--accent); }
 .stat.live b { color: var(--amber); }
+.gamebar.playing .stat b { font-size: 17px; }
+.stat.time.low b { color: var(--amber); animation: tpulse 500ms linear infinite alternate; }
+@keyframes tpulse { from { opacity: 1; } to { opacity: 0.4; } }
 
-.views { border-top: 1px solid var(--border-2); }
-.gridview {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
-  gap: 1px; background: var(--border-2);
+/* one set of 48 tiles; grid and graph are two arrangements of the same elements */
+.stagewrap {
+  position: relative; overflow: hidden;
+  border-top: 1px solid var(--border-2); background: var(--border-2);
+  transition: height 520ms cubic-bezier(0.2, 0.7, 0.2, 1), background-color 520ms linear;
 }
+.stagewrap.graphmode { background: var(--canvas-2); }
+#edgesvg {
+  position: absolute; left: 0; top: 0; opacity: 0; pointer-events: none;
+  transition: opacity 400ms linear;
+}
+.graphmode #edgesvg { opacity: 1; }
+
 .tile {
-  background: var(--canvas); padding: 8px 10px 9px; border: 0; text-align: left;
+  position: absolute; left: 0; top: 0; margin: 0;
+  transform: translate(var(--tx), var(--ty));
+  transition: transform 520ms cubic-bezier(0.2, 0.7, 0.2, 1), background-color 160ms linear, opacity 200ms linear;
+  background: var(--canvas); padding: 8px 10px 9px; border: 0; border-radius: 0; text-align: left;
   display: flex; flex-direction: column; gap: 3px; cursor: default;
-  font-family: inherit; color: inherit; min-height: 62px; position: relative;
+  font-family: inherit; color: inherit; overflow: hidden;
 }
+.graphmode .tile { border-radius: 5px; box-shadow: inset 0 0 0 1px var(--border); }
 .tile .tid { font-family: var(--mono); font-size: 11.5px; font-weight: 600; color: var(--fg-3); }
-.tile .tt { font-size: 11.5px; line-height: 1.35; color: var(--fg-3); }
+.tile .tt {
+  font-size: 11.5px; line-height: 1.35; color: var(--fg-3);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
 .tile .tp {
   position: absolute; top: 8px; right: 10px;
   font-family: var(--mono); font-size: 9.5px; color: var(--fg-3);
 }
 .tile[data-state="ready"] .tid, .tile[data-state="ready"] .tt { color: var(--fg-2); }
 .tile[data-state="lit"] {
-  background: var(--accent); cursor: pointer;
+  background: var(--accent); cursor: pointer; z-index: 2;
   animation: pop 900ms ease-in-out infinite alternate;
 }
 .tile[data-state="lit"] .tid, .tile[data-state="lit"] .tt, .tile[data-state="lit"] .tp { color: var(--on-accent); }
@@ -429,29 +450,91 @@ td.m code { font-size: 12.5px; }
   content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
   background: var(--on-accent); margin-left: 6px; vertical-align: middle;
 }
+/* the fuse: how long this mole has left */
+.tile[data-state="lit"]::after {
+  content: ""; position: absolute; left: 0; bottom: 0; height: 3px; width: 100%;
+  background: var(--on-accent); opacity: 0.75;
+  animation: fuse linear forwards; animation-duration: var(--life, 1350ms);
+}
+@keyframes fuse { from { width: 100%; } to { width: 0; } }
 .tile[data-state="closed"] { opacity: 0.4; }
 .tile[data-state="closed"] .tt { text-decoration: line-through; }
 .tile[data-state="hit"] { background: var(--green-bg); }
 .tile[data-state="hit"] .tid { color: var(--green); }
+.tile[data-state="missed"] { background: var(--amber-bg); }
+.tile[data-state="missed"] .tid, .tile[data-state="missed"] .tt { color: var(--amber); }
+.tile.whiff { animation: shake 260ms linear; }
 @keyframes pop { from { filter: brightness(0.92); } to { filter: brightness(1.14); } }
+@keyframes shake {
+  25% { transform: translate(var(--tx), var(--ty)) translateX(-3px); }
+  75% { transform: translate(var(--tx), var(--ty)) translateX(3px); }
+}
 
-.graphscroll { overflow: auto; max-height: 470px; padding: 14px 16px; }
-#bigsvg { display: block; }
-.bn rect { fill: var(--canvas-2); stroke: var(--border); stroke-width: 1; }
-.bn text { font-family: var(--mono); font-size: 9.5px; fill: var(--fg-3); }
-.bn[data-state="ready"] rect { stroke: var(--fg-3); }
-.bn[data-state="ready"] text { fill: var(--fg-2); }
-.bn[data-state="lit"] rect { fill: var(--accent); stroke: var(--accent); }
-.bn[data-state="lit"] text { fill: var(--on-accent); font-weight: 600; }
-.bn[data-state="lit"] { cursor: pointer; }
-.bn[data-state="hit"] rect { fill: var(--green-bg); stroke: var(--green); }
-.bn[data-state="hit"] text { fill: var(--green); }
-.bn[data-state="closed"] { opacity: 0.32; }
-.be { fill: none; stroke: var(--border); stroke-width: 0.8; }
-.be[data-hot="1"] { stroke: var(--accent); stroke-width: 1.4; }
+.be { fill: none; stroke: var(--border); stroke-width: 1.2; transition: stroke 200ms linear; }
+.be[data-hot="1"] { stroke: var(--accent); stroke-width: 1.8; }
 .be[data-done="1"] { stroke: var(--border-2); }
-.bs { fill: none; stroke: var(--amber); stroke-width: 0.8; stroke-dasharray: 3 3; opacity: 0.5; }
-.bt { fill: none; stroke: var(--accent); stroke-width: 0.8; stroke-dasharray: 1 3; opacity: 0.7; }
+.bs { fill: none; stroke: var(--amber); stroke-width: 1.2; stroke-dasharray: 4 4; opacity: 0.55; }
+.bt { fill: none; stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 2 4; opacity: 0.7; }
+
+.pop {
+  position: absolute; z-index: 4; pointer-events: none;
+  font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--green);
+  animation: rise 700ms ease-out forwards;
+}
+.pop.neg { color: var(--amber); }
+@keyframes rise { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-26px); } }
+
+.rflash {
+  position: absolute; inset: 0; z-index: 5; pointer-events: none;
+  display: flex; align-items: flex-start; justify-content: center; padding-top: 84px;
+}
+.rflash span {
+  font-family: var(--mono); font-size: clamp(20px, 3.6vw, 30px); font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent);
+  background: var(--canvas); border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px 22px; box-shadow: 0 10px 32px rgba(0, 0, 0, 0.16);
+  animation: rf 1100ms ease-out forwards;
+}
+@keyframes rf {
+  0% { opacity: 0; transform: scale(0.7); }
+  18% { opacity: 1; transform: scale(1); }
+  78% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1.05); }
+}
+
+.gover {
+  position: absolute; inset: 0; z-index: 6;
+  display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--canvas-2) 74%, transparent);
+}
+.gover[hidden] { display: none; }
+.gover .card {
+  background: var(--canvas); border: 1px solid var(--border); border-radius: 8px;
+  width: min(400px, calc(100% - 32px)); padding: 22px 24px;
+  display: flex; flex-direction: column; gap: 13px; text-align: center;
+  box-shadow: 0 14px 44px rgba(0, 0, 0, 0.2);
+  animation: cardin 420ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+@keyframes cardin { from { opacity: 0; transform: scale(0.86); } }
+.gover h3 {
+  font-family: var(--mono); font-size: 13px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-3);
+}
+.gover .big { font-family: var(--mono); font-size: 42px; font-weight: 600; line-height: 1; color: var(--accent); }
+.gover table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
+.gover th {
+  font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--fg-3); padding: 4px 6px; border-bottom: 1px solid var(--border-2); text-align: right;
+}
+.gover td { padding: 6px; color: var(--fg-2); border-bottom: 1px solid var(--border-2); text-align: right; }
+.gover th:first-child, .gover td:first-child { text-align: left; }
+.gover tr:last-child td { border-bottom: 0; }
+.gover .kick { font-size: 13px; line-height: 1.55; color: var(--fg-2); text-wrap: pretty; }
+.gover .pb {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--amber);
+}
+.gover .abtn { align-self: center; }
 
 .gnote {
   padding: 12px 16px; border-top: 1px solid var(--border-2); background: var(--canvas-2);
@@ -806,10 +889,10 @@ footer a { color: var(--fg-2); }
     </header>
     <div class="explain">
       <p><b>The same 48 issues, two views.</b> The grid is the backlog as a tracker shows it — newest first, read left to right. The graph is what the frontmatter on those same issues already says. Nothing was added to get from one to the other.</p>
-      <p><b>Then play it.</b> Press start and the reader hands out work: it lights up whatever is ready, most urgent first by effective priority. Click a lit issue to close it, and whatever was waiting on it becomes ready. In the graph you can see what is coming next. In the grid the identical sequence looks like it is jumping around at random — which is the point.</p>
+      <p><b>Then play it — whack-a-mole, two rounds.</b> The reader lights up whatever is ready, most urgent first by effective priority, and each issue stays lit only briefly — close it before it goes dark. <b>Round 1 plays on the grid</b>, where every next mole is a surprise. <b>Round 2 replays the same backlog on the graph</b>, where a lit issue&rsquo;s edges point at what can light next. The sequence is the same both rounds; only your ability to see it coming changes.</p>
     </div>
-    <div class="gamebar">
-      <button type="button" class="abtn primary" id="gstart">Start</button>
+    <div class="gamebar" id="gamebar">
+      <button type="button" class="abtn primary" id="gstart">Start round 1 · grid</button>
       <label class="gsel">at a time
         <select id="gdiff">
           <option value="4">4 — easiest</option>
@@ -819,18 +902,17 @@ footer a { color: var(--fg-2); }
         </select>
       </label>
       <span class="push"></span>
+      <span class="stat">round <b id="ground">–</b></span>
       <span class="stat">score <b id="gscore">0</b></span>
       <span class="stat live">streak <b id="gstreak">0</b></span>
       <span class="stat">closed <b id="gdone">0</b>/48</span>
       <span class="stat time">time <b id="gtime">30</b>s</span>
     </div>
-    <div class="views">
-      <div class="gridview" id="gridview"></div>
-      <div class="graphview" id="graphview" hidden>
-        <div class="graphscroll"><svg id="bigsvg" role="img" aria-label="The same 48 issues drawn as a dependency graph, laid out left to right by depth."></svg></div>
-      </div>
+    <div class="stagewrap" id="stagewrap">
+      <svg id="edgesvg" aria-hidden="true" focusable="false"></svg>
+      <div class="gover" id="gover" hidden></div>
     </div>
-    <p class="gnote" id="gnote" aria-live="polite">Idle — nothing is claimed, so nothing is lit. Twelve of these 48 issues have nothing in front of them; every other one is waiting on something.</p>
+    <p class="gnote" id="gnote" aria-live="polite">Idle — nothing is lit. Twelve of these 48 issues have nothing in front of them; every other one is waiting on something. Press start to watch the reader hand out work.</p>
   </section>
 
 </main>
@@ -1070,20 +1152,26 @@ footer a { color: var(--fg-2); }
   function unit(id) { return TOG[id] || [id]; }
 
   /* ---- state ---- */
-  var closed = {}, lit = {}, running = false, score = 0, streak = 0, best = 0,
-      left = 30, conc = 3, life = 1600, timer = null, endAt = 0;
+  var closed = {}, lit = {}, cooldown = {}, flash = {}, missedFlash = {},
+      phase = 'idle', /* idle | r1 | between | r2 | over */
+      running = false, view = 'grid',
+      score = 0, streak = 0, best = 0, hits = 0, whiffs = 0, missed = 0, bonus = 0,
+      conc = 3, life = 1350, timer = null, endAt = 0, nextPopAt = 0,
+      rounds = {};
 
   var el = {
-    grid: document.getElementById('gridview'),
-    graph: document.getElementById('graphview'),
-    svg: document.getElementById('bigsvg'),
+    wrap: document.getElementById('stagewrap'),
+    svg: document.getElementById('edgesvg'),
+    over: document.getElementById('gover'),
     start: document.getElementById('gstart'),
     diff: document.getElementById('gdiff'),
+    round: document.getElementById('ground'),
     score: document.getElementById('gscore'),
     streak: document.getElementById('gstreak'),
     done: document.getElementById('gdone'),
     time: document.getElementById('gtime'),
     note: document.getElementById('gnote'),
+    bar: document.getElementById('gamebar'),
     vgrid: document.getElementById('vgrid'),
     vgraph: document.getElementById('vgraph')
   };
@@ -1114,21 +1202,38 @@ footer a { color: var(--fg-2); }
     }
     return bestP;
   }
+  /* a lit together group is one unit of work — one claim (§6.4) */
+  function litUnits() {
+    var seen = {}, n = 0;
+    Object.keys(lit).forEach(function (id) {
+      var k = unit(+id)[0];
+      if (!seen[k]) { seen[k] = 1; n++; }
+    });
+    return n;
+  }
+  function readySet() {
+    /* effective priority, then newest first — the default selection tiebreak (§6.4) */
+    return IDS.filter(ready).sort(function (a, b2) {
+      var d = effective(a) - effective(b2);
+      return d !== 0 ? d : b2 - a;
+    });
+  }
 
-  /* ---- grid ---- */
+  /* ---- tiles: one set of buttons, both views position the same elements ---- */
   var tiles = {};
-  IDS.slice().reverse().forEach(function (id) {
+  IDS.slice().sort(function (a, b2) { return b2 - a; }).forEach(function (id) {
     var b = document.createElement('button');
     b.type = 'button'; b.className = 'tile'; b.setAttribute('data-id', id);
     b.innerHTML = '<span class="tid">#' + id + '</span><span class="tt">' + IX[id].t +
       '</span><span class="tp">P' + IX[id].p + '</span>';
-    b.addEventListener('click', function () { whack(id); });
-    el.grid.appendChild(b);
+    b.addEventListener('click', function () { tap(id); });
+    el.wrap.insertBefore(b, el.over);
     tiles[id] = b;
   });
 
-  /* ---- graph: layered left-to-right by longest path from a root ---- */
-  var depth = {}, nodes = {};
+  /* ---- layout: grid = newest first; graph = tiers by longest-path depth.
+     Same tile size in both views — same hit targets, different arrangement. ---- */
+  var depth = {};
   function computeDepth(id, guard) {
     if (depth[id] !== undefined) return depth[id];
     if (guard[id]) return 0;
@@ -1139,78 +1244,119 @@ footer a { color: var(--fg-2); }
     return d;
   }
   IDS.forEach(function (id) { computeDepth(id, {}); });
+  var maxD = 0;
+  IDS.forEach(function (id) { if (depth[id] > maxD) maxD = depth[id]; });
 
-  var cols = {}, maxD = 0;
-  IDS.forEach(function (id) {
-    var d = depth[id];
-    (cols[d] = cols[d] || []).push(id);
-    if (d > maxD) maxD = d;
-  });
-  var NW = 54, NH = 18, CX = 92, RY = 25, PAD = 8, rowsMax = 0;
-  Object.keys(cols).forEach(function (d) { rowsMax = Math.max(rowsMax, cols[d].length); });
-  var W = PAD * 2 + maxD * CX + NW, H = PAD * 2 + rowsMax * RY;
-  el.svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
-  el.svg.setAttribute('width', W);
-  el.svg.setAttribute('height', H);
+  var TH = 66, pos = {}, tileW = 148;
 
-  Object.keys(cols).forEach(function (d) {
-    var list = cols[d], off = (rowsMax - list.length) / 2;
-    list.forEach(function (id, i) {
-      nodes[id] = { x: PAD + d * CX, y: PAD + (off + i) * RY };
+  function gridPositions(W) {
+    var gap = 1, n = Math.max(2, Math.floor((W + gap) / (148 + gap)));
+    var out = {}, i = 0;
+    IDS.slice().sort(function (a, b2) { return b2 - a; }).forEach(function (id) {
+      out[id] = { x: (i % n) * (tileW + gap), y: Math.floor(i / n) * (TH + gap) };
+      i++;
     });
-  });
-
-  var ns = 'http://www.w3.org/2000/svg';
-  function mk(tag, attrs) {
-    var e = document.createElementNS(ns, tag);
-    for (var k in attrs) e.setAttribute(k, attrs[k]);
-    return e;
+    out._h = Math.ceil(48 / n) * (TH + gap) - gap;
+    return out;
   }
-  var gEdges = mk('g', {}), gNodes = mk('g', {}), edgeEls = [];
-  el.svg.appendChild(gEdges); el.svg.appendChild(gNodes);
 
+  function graphPositions(W) {
+    /* spacious gaps where the width allows, grid-tight packing where it does not —
+       the tile itself never shrinks below the grid's */
+    var gapY = 30, pad = 12;
+    var nMax = Math.max(1, Math.floor((W + 1) / (tileW + 1)));
+    var n = Math.floor((W + 14) / (tileW + 14));
+    if (n < 2) n = Math.min(2, nMax);
+    if (n < 1) n = 1;
+    var gapX = n > 1 ? Math.max(0, Math.min(14, Math.floor((W - n * tileW) / (n + 1)))) : 0;
+    var out = {}, y = pad, t, tiers = {};
+    IDS.forEach(function (id) { (tiers[depth[id]] = tiers[depth[id]] || []).push(id); });
+    for (t = 0; t <= maxD; t++) {
+      var list = tiers[t] || [];
+      if (t === 0) {
+        list.sort(function (a, b2) { return a - b2; }); /* roots cluster by workstream */
+      } else {
+        list.sort(function (a, b2) { return bary(a, out) - bary(b2, out) || a - b2; });
+      }
+      for (var r = 0; r < list.length; r += n) {
+        var row = list.slice(r, r + n);
+        var rowW = row.length * (tileW + gapX) - gapX;
+        var x0 = Math.max(0, (W - rowW) / 2);
+        row.forEach(function (id, i) {
+          out[id] = { x: x0 + i * (tileW + gapX), y: y };
+        });
+        y += TH + gapY;
+      }
+      y += 26; /* tier gap on top of row gap */
+    }
+    out._h = y - gapY - 26 + pad;
+    return out;
+  }
+  function bary(id, placed) {
+    var xs = IX[id].bb.filter(function (b) { return placed[b]; }).map(function (b) { return placed[b].x; });
+    if (!xs.length && IX[id].ser && placed[IX[id].ser]) xs = [placed[IX[id].ser].x];
+    if (!xs.length && IX[id].tog && placed[IX[id].tog]) xs = [placed[IX[id].tog].x];
+    if (!xs.length) return 1e9;
+    return xs.reduce(function (a, b2) { return a + b2; }, 0) / xs.length;
+  }
+
+  function layout() {
+    var W = el.wrap.clientWidth;
+    /* tile size comes from the grid formula at the current width, in both views —
+       identical hit targets is the point */
+    var g0 = 1, n0 = Math.max(2, Math.floor((W + g0) / (148 + g0)));
+    tileW = Math.floor((W - (n0 - 1) * g0) / n0);
+    pos = (view === 'graph' ? graphPositions : gridPositions)(W);
+    IDS.forEach(function (id) {
+      var t = tiles[id];
+      t.style.width = tileW + 'px';
+      t.style.height = TH + 'px';
+      t.style.setProperty('--tx', pos[id].x + 'px');
+      t.style.setProperty('--ty', pos[id].y + 'px');
+    });
+    el.wrap.style.height = pos._h + 'px';
+    el.wrap.classList.toggle('graphmode', view === 'graph');
+    el.svg.setAttribute('width', W);
+    el.svg.setAttribute('height', pos._h);
+    drawEdges();
+  }
+
+  /* ---- edges (drawn once, retraced on layout) ---- */
+  var ns = 'http://www.w3.org/2000/svg';
+  function mkpath(cls) {
+    var p = document.createElementNS(ns, 'path');
+    p.setAttribute('class', cls);
+    el.svg.appendChild(p);
+    return p;
+  }
+  var blockEdges = [], pairEdges = [];
   IDS.forEach(function (id) {
     IX[id].bb.forEach(function (b) {
-      if (!nodes[b]) return;
-      var a = nodes[b], c = nodes[id];
-      var x1 = a.x + NW, y1 = a.y + NH / 2, x2 = c.x, y2 = c.y + NH / 2, mx = (x1 + x2) / 2;
-      var p = mk('path', { 'class': 'be', 'data-from': b, 'data-to': id,
-        d: 'M' + x1 + ',' + y1 + ' C' + mx + ',' + y1 + ' ' + mx + ',' + y2 + ' ' + x2 + ',' + y2 });
-      gEdges.appendChild(p); edgeEls.push(p);
+      if (IX[b]) blockEdges.push({ from: b, to: id, el: mkpath('be') });
     });
-    if (IX[id].ser && nodes[IX[id].ser]) {
-      var s = nodes[IX[id].ser], m = nodes[id];
-      gEdges.appendChild(mk('path', { 'class': 'bs',
-        d: 'M' + (m.x + NW / 2) + ',' + (m.y + NH) + ' L' + (s.x + NW / 2) + ',' + s.y }));
-    }
-    if (IX[id].tog && nodes[IX[id].tog]) {
-      var t = nodes[IX[id].tog], u = nodes[id];
-      gEdges.appendChild(mk('path', { 'class': 'bt',
-        d: 'M' + (u.x + NW / 2) + ',' + (u.y + NH) + ' L' + (t.x + NW / 2) + ',' + t.y }));
-    }
+    if (IX[id].ser && IX[IX[id].ser] && id < IX[id].ser) pairEdges.push({ a: id, b: IX[id].ser, el: mkpath('bs') });
+    if (IX[id].tog && IX[IX[id].tog] && id < IX[id].tog) pairEdges.push({ a: id, b: IX[id].tog, el: mkpath('bt') });
   });
-
-  var gnodeEls = {};
-  IDS.forEach(function (id) {
-    var n = nodes[id];
-    var g = mk('g', { 'class': 'bn', 'data-id': id, tabindex: 0, role: 'button' });
-    g.appendChild(mk('rect', { x: n.x, y: n.y, width: NW, height: NH, rx: 2 }));
-    var tx = mk('text', { x: n.x + NW / 2, y: n.y + NH / 2 + 3.4, 'text-anchor': 'middle' });
-    tx.textContent = '#' + id;
-    g.appendChild(tx);
-    g.addEventListener('click', function () { whack(id); });
-    g.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); whack(id); }
+  function drawEdges() {
+    var w2 = tileW / 2;
+    blockEdges.forEach(function (e) {
+      var a = pos[e.from], b = pos[e.to];
+      if (!a || !b) return;
+      var x1 = a.x + w2, y1 = a.y + TH, x2 = b.x + w2, y2 = b.y, my = (y1 + y2) / 2;
+      e.el.setAttribute('d', 'M' + x1 + ',' + y1 + ' C' + x1 + ',' + my + ' ' + x2 + ',' + my + ' ' + x2 + ',' + y2);
     });
-    gNodes.appendChild(g);
-    gnodeEls[id] = g;
-  });
+    pairEdges.forEach(function (e) {
+      var a = pos[e.a], b = pos[e.b];
+      if (!a || !b) return;
+      e.el.setAttribute('d', 'M' + (a.x + w2) + ',' + (a.y + TH / 2) + ' L' + (b.x + w2) + ',' + (b.y + TH / 2));
+    });
+  }
 
   /* ---- render ---- */
-  var flash = {};
   function stateOf(id) {
     if (isClosed(id)) return flash[id] ? 'hit' : 'closed';
     if (lit[id]) return 'lit';
+    if (missedFlash[id]) return 'missed';
     return ready(id) ? 'ready' : 'blocked';
   }
   function paint() {
@@ -1220,99 +1366,276 @@ footer a { color: var(--fg-2); }
       if (st === 'closed' || st === 'hit') n++;
       tiles[id].setAttribute('data-state', st);
       tiles[id].setAttribute('aria-label', '#' + id + ' ' + IX[id].t + ', ' + st);
-      gnodeEls[id].setAttribute('data-state', st);
-      gnodeEls[id].setAttribute('aria-label', '#' + id + ' ' + IX[id].t + ', ' + st);
     });
-    edgeEls.forEach(function (p) {
-      var from = p.getAttribute('data-from'), to = p.getAttribute('data-to');
-      p.setAttribute('data-done', isClosed(from) ? '1' : '0');
-      p.setAttribute('data-hot', lit[to] || lit[from] ? '1' : '0');
+    blockEdges.forEach(function (e) {
+      e.el.setAttribute('data-done', isClosed(e.from) ? '1' : '0');
+      e.el.setAttribute('data-hot', lit[e.from] || lit[e.to] ? '1' : '0');
     });
     el.done.textContent = n;
     el.score.textContent = score;
     el.streak.textContent = streak;
   }
 
-  /* ---- game ---- */
-  function readySet() {
-    /* effective priority, then newest first — the default selection tiebreak (§6.4) */
-    return IDS.filter(ready).sort(function (a, b2) {
-      var d = effective(a) - effective(b2);
-      return d !== 0 ? d : b2 - a;
-    });
+  /* ---- game feel ---- */
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+  function popup(id, text, neg) {
+    if (reduced.matches || !pos[id]) return;
+    var s = document.createElement('span');
+    s.className = 'pop' + (neg ? ' neg' : '');
+    s.textContent = text;
+    s.style.left = (pos[id].x + tileW / 2 - 14) + 'px';
+    s.style.top = (pos[id].y - 6) + 'px';
+    el.wrap.appendChild(s);
+    s.addEventListener('animationend', function () { s.remove(); });
   }
-  /* a lit together group is one unit of work — one claim (§6.4) */
-  function litUnits() {
-    var seen = {}, n = 0;
-    Object.keys(lit).forEach(function (id) {
-      var k = unit(+id)[0];
-      if (!seen[k]) { seen[k] = 1; n++; }
-    });
-    return n;
+  function banner(text) {
+    var d = document.createElement('div');
+    d.className = 'rflash';
+    d.innerHTML = '<span></span>';
+    d.firstChild.textContent = text;
+    el.wrap.appendChild(d);
+    d.firstChild.addEventListener('animationend', function () { d.remove(); });
   }
-  function refill() {
+  function confetti() {
+    if (reduced.matches) return;
+    var cv = document.createElement('canvas');
+    cv.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;z-index:80;pointer-events:none;';
+    document.body.appendChild(cv);
+    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = window.innerWidth * dpr; cv.height = window.innerHeight * dpr;
+    var ctx = cv.getContext('2d'); ctx.scale(dpr, dpr);
+    var cs = getComputedStyle(document.documentElement);
+    var colors = ['--accent', '--green', '--amber', '--fg-2'].map(function (v) { return cs.getPropertyValue(v).trim(); });
+    var parts = [];
+    function burst(x, y, angle) {
+      for (var i = 0; i < 70; i++) {
+        var a = angle + (Math.random() - 0.5) * 1.0, sp = 7 + Math.random() * 9;
+        parts.push({ x: x, y: y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+          w: 5 + Math.random() * 5, h: 3 + Math.random() * 4,
+          c: colors[(Math.random() * colors.length) | 0],
+          r: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 0.3,
+          life: 130 + Math.random() * 70 });
+      }
+    }
+    burst(window.innerWidth * 0.12, window.innerHeight * 0.92, -1.15);
+    burst(window.innerWidth * 0.88, window.innerHeight * 0.92, -Math.PI + 1.15);
+    setTimeout(function () {
+      burst(window.innerWidth * 0.5, window.innerHeight * 0.95, -Math.PI / 2);
+    }, 260);
+    var frames = 0;
+    (function step() {
+      ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+      parts.forEach(function (p) {
+        p.x += p.vx; p.y += p.vy; p.vy += 0.22; p.vx *= 0.99; p.r += p.vr; p.life--;
+        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r);
+        ctx.globalAlpha = Math.max(0, Math.min(1, p.life / 40));
+        ctx.fillStyle = p.c;
+        ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+        ctx.restore();
+      });
+      parts = parts.filter(function (p) { return p.life > 0 && p.y < window.innerHeight + 30; });
+      if (parts.length && frames++ < 420) requestAnimationFrame(step);
+      else cv.remove();
+    })();
+  }
+
+  /* ---- the game ---- */
+  function setView(v) {
+    view = v;
+    el.vgrid.classList.toggle('on', v === 'grid');
+    el.vgraph.classList.toggle('on', v === 'graph');
+    layout();
+  }
+  function lockSeg(b) {
+    el.vgrid.disabled = b; el.vgraph.disabled = b;
+  }
+
+  function popOne(now) {
     var pool = readySet();
-    for (var i = 0; i < pool.length && litUnits() < conc; i++) {
+    for (var i = 0; i < pool.length; i++) {
       var id = pool[i];
       /* re-check: lighting an earlier entry may have taken this one's serialize slot */
-      if (lit[id] || !ready(id)) continue;
-      unit(id).forEach(function (m) { if (!isClosed(m)) lit[m] = Date.now() + life; });
+      if (lit[id] || (cooldown[id] && cooldown[id] > now) || !ready(id)) continue;
+      unit(id).forEach(function (m) {
+        if (!isClosed(m)) { lit[m] = now + life; tiles[m].style.setProperty('--life', life + 'ms'); }
+      });
+      return true;
     }
+    return false;
+  }
+
+  function tap(id) {
+    if (!running) return;
+    if (lit[id]) whack(id); else whiff(id);
   }
   function whack(id) {
-    if (!running || !lit[id]) return;
     unit(id).forEach(function (m) {
       delete lit[m]; closed[m] = true; flash[m] = 1;
-      setTimeout(function () { delete flash[m]; paint(); }, 320);
+      setTimeout(function () { delete flash[m]; paint(); }, 300);
     });
-    streak++;
+    streak++; hits++;
     if (streak > best) best = streak;
-    score += 10 + Math.min(streak - 1, 10) * 5;
-    refill(); paint();
-    if (IDS.every(isClosed)) stop('Backlog cleared \u2014 all 48 closed.');
+    var pts = 10 + Math.min(streak - 1, 10) * 5;
+    score += pts;
+    popup(id, '+' + pts, false);
+    paint();
+    if (IDS.every(isClosed)) endRound(true);
   }
+  function whiff(id) {
+    whiffs++;
+    if (streak > 0) { streak = 0; el.streak.textContent = '0'; }
+    var t = tiles[id];
+    t.classList.remove('whiff'); void t.offsetWidth; t.classList.add('whiff');
+  }
+
   function tick() {
-    var now = Date.now(), missed = 0;
+    var now = Date.now(), expiredUnits = {};
     Object.keys(lit).forEach(function (id) {
-      if (lit[id] < now) { delete lit[id]; missed++; }
+      if (lit[id] < now) {
+        delete lit[id];
+        cooldown[id] = now + 650;
+        expiredUnits[unit(+id)[0]] = 1;
+        missedFlash[id] = 1;
+        (function (mid) { setTimeout(function () { delete missedFlash[mid]; paint(); }, 340); })(id);
+      }
     });
-    if (missed) streak = 0;
-    left = Math.max(0, Math.ceil((endAt - now) / 1000));
-    el.time.textContent = left;
-    refill(); paint();
-    if (left <= 0) stop('Time. ' + Object.keys(closed).length + ' of 48 closed \u00b7 score ' + score + ' \u00b7 best streak ' + best + '.');
+    var m = Object.keys(expiredUnits).length;
+    if (m) { missed += m; streak = 0; }
+    if (litUnits() < conc && now >= nextPopAt) {
+      if (popOne(now)) nextPopAt = now + 240;
+    }
+    var left = Math.max(0, (endAt - now) / 1000);
+    el.time.textContent = Math.ceil(left);
+    el.time.parentNode.classList.toggle('low', running && left <= 5.5);
+    paint();
+    if (endAt - now <= 0) endRound(false);
   }
-  function stop(msg) {
-    running = false;
+
+  function beginRound(r) {
+    phase = r === 1 ? 'r1' : 'r2';
+    if (r === 1) rounds = {};
+    conc = +el.diff.value;
+    life = { 4: 1600, 3: 1350, 2: 1150, 1: 950 }[conc];
+    closed = {}; lit = {}; cooldown = {}; flash = {}; missedFlash = {};
+    score = 0; streak = 0; best = 0; hits = 0; whiffs = 0; missed = 0; bonus = 0;
+    running = true; endAt = Date.now() + 30000; nextPopAt = Date.now() + 400;
+    el.over.hidden = true;
+    setView(r === 1 ? 'grid' : 'graph');
+    lockSeg(true);
+    el.bar.classList.add('playing');
+    el.round.textContent = r + '/2';
+    el.start.textContent = 'Restart round ' + r;
+    el.note.innerHTML = r === 1
+      ? '<b>Round 1 — the grid.</b> Issues light up in reader order and go dark fast. Whack them while they last; a wild click or a mole you miss resets your streak.'
+      : '<b>Round 2 — the graph.</b> Same 48 issues, same order. A lit issue’s outgoing edges point at what can light next — read ahead and be waiting for it.';
+    banner(r === 1 ? 'Round 1 · the grid' : 'Round 2 · the graph');
     clearInterval(timer);
-    lit = {};
-    el.start.textContent = 'Play again';
-    el.note.innerHTML = '<b>' + msg + '</b> The order was never random \u2014 every issue lit up the moment its last blocker closed, worst-first by effective priority. Switch to the graph and start again to watch the same sequence make sense.';
+    timer = setInterval(tick, 100);
     paint();
   }
-  function start() {
-    conc = +el.diff.value;
-    life = { 4: 2100, 3: 1700, 2: 1400, 1: 1100 }[conc];
-    closed = {}; lit = {}; flash = {}; score = 0; streak = 0; best = 0;
-    running = true; endAt = Date.now() + 30000; left = 30;
-    el.start.textContent = 'Restart';
-    el.note.innerHTML = '<b>Running.</b> Click issues while they are lit. Anything not ready cannot be clicked \u2014 unready work is invisible to selection, so there is nothing to hit.';
-    refill(); paint();
+
+  function endRound(clearedAll) {
+    if (!running) return;
+    running = false;
     clearInterval(timer);
-    timer = setInterval(tick, 180);
+    lit = {}; cooldown = {};
+    el.time.parentNode.classList.remove('low');
+    el.bar.classList.remove('playing');
+    if (clearedAll) {
+      bonus = Math.max(0, Math.ceil((endAt - Date.now()) / 1000)) * 10;
+      score += bonus;
+    }
+    var rec = { score: score, closed: IDS.filter(isClosed).length, best: best,
+                hits: hits, whiffs: whiffs, missed: missed, cleared: clearedAll, bonus: bonus };
+    if (phase === 'r1') {
+      rounds.r1 = rec;
+      phase = 'between';
+      el.round.textContent = '1 done';
+      el.start.textContent = 'Start round 2 · graph';
+      lockSeg(false);
+      setView('graph');
+      el.note.innerHTML = '<b>Round 1: ' + rec.closed + ' closed, score ' + rec.score + '.</b> ' +
+        'Watch the board rearrange — the same 48 tiles, moved to where their frontmatter already says they belong. ' +
+        'Round 2 is the identical game on this view: now the edges tell you what lights next.';
+    } else {
+      rounds.r2 = rec;
+      phase = 'over';
+      el.round.textContent = 'done';
+      el.start.textContent = 'Play again';
+      lockSeg(false);
+      showOver(clearedAll);
+      confetti();
+    }
+    paint();
   }
-  el.start.addEventListener('click', start);
-  el.diff.addEventListener('change', function () { if (running) start(); });
 
-  el.vgrid.addEventListener('click', function () {
-    el.grid.hidden = false; el.graph.hidden = true;
-    el.vgrid.classList.add('on'); el.vgraph.classList.remove('on');
+  function showOver(clearedAll) {
+    var r1 = rounds.r1, r2 = rounds.r2;
+    var d = r2.closed - r1.closed;
+    var kick = d > 0
+      ? 'Same backlog, same order — ' + d + ' more closed when you could see it coming. The graph didn’t change the game; it let you read it.'
+      : d === 0
+        ? 'Same backlog, same order, dead even — but this time you knew what was coming.'
+        : 'Same backlog, same order. Seeing it coming and reaching it in time are different problems.';
+    var total = r1.score + r2.score, pb = '';
+    try {
+      var old = +(localStorage.getItem('ig-best') || 0);
+      if (total > old) { localStorage.setItem('ig-best', String(total)); pb = 'new personal best — ' + total; }
+      else pb = 'total ' + total + ' · personal best ' + old;
+    } catch (e) { pb = 'total ' + total; }
+    el.over.innerHTML =
+      '<div class="card" role="dialog" aria-label="Game results">' +
+      '<h3>' + (clearedAll ? 'Backlog cleared' : 'Time') + '</h3>' +
+      '<div class="big">' + r2.score + '</div>' +
+      '<table><thead><tr><th>round</th><th>closed</th><th>score</th><th>streak</th></tr></thead><tbody>' +
+      '<tr><td>1 · grid</td><td>' + r1.closed + '/48</td><td>' + r1.score + '</td><td>' + r1.best + '</td></tr>' +
+      '<tr><td>2 · graph</td><td>' + r2.closed + '/48</td><td>' + r2.score + '</td><td>' + r2.best + '</td></tr>' +
+      '</tbody></table>' +
+      '<p class="kick">' + kick + '</p>' +
+      '<p class="pb">' + pb + '</p>' +
+      '<button type="button" class="abtn primary" id="gagain">Play again</button>' +
+      '</div>';
+    el.over.hidden = false;
+    document.getElementById('gagain').addEventListener('click', function () { beginRound(1); });
+    el.over.addEventListener('click', function (e) {
+      if (e.target === el.over) el.over.hidden = true;
+    });
+    el.note.innerHTML = '<b>Final — grid ' + r1.closed + ' closed · graph ' + r2.closed + ' closed.</b> ' +
+      'The order was never random: every issue lit the moment its last blocker closed, worst-first by effective priority. ' +
+      'The grid just couldn’t show you.';
+  }
+
+  el.start.addEventListener('click', function () {
+    if (phase === 'between') beginRound(2);
+    else if (phase === 'r2') beginRound(2);
+    else beginRound(1);
   });
-  el.vgraph.addEventListener('click', function () {
-    el.grid.hidden = true; el.graph.hidden = false;
-    el.vgraph.classList.add('on'); el.vgrid.classList.remove('on');
+  el.diff.addEventListener('change', function () {
+    /* difficulty applies to a whole match — reset so both rounds play the same settings */
+    running = false; clearInterval(timer);
+    phase = 'idle'; rounds = {};
+    closed = {}; lit = {}; cooldown = {}; flash = {}; missedFlash = {};
+    score = 0; streak = 0; best = 0; hits = 0; whiffs = 0; missed = 0;
+    el.over.hidden = true;
+    el.round.textContent = '–';
+    el.time.textContent = '30';
+    el.time.parentNode.classList.remove('low');
+    el.bar.classList.remove('playing');
+    el.start.textContent = 'Start round 1 · grid';
+    el.note.innerHTML = 'Difficulty set. Round 1 plays on the grid, round 2 on the graph — same backlog, same rules.';
+    lockSeg(false);
+    paint();
+  });
+  el.vgrid.addEventListener('click', function () { if (!running) setView('grid'); });
+  el.vgraph.addEventListener('click', function () { if (!running) setView('graph'); });
+
+  var resizeT;
+  window.addEventListener('resize', function () {
+    clearTimeout(resizeT);
+    resizeT = setTimeout(layout, 150);
   });
 
+  layout();
   paint();
 })();
 </script>
