@@ -2,6 +2,10 @@
 
 Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn lives in git history, not in version bumps — the version moves when there is a consumer-visible reason for it to move.
 
+## 0.2.0 — 2026-08-15
+
+- §6.4 selection tiebreak: **newest first** is the default (was oldest first), with rationale — starvation avoidance now belongs to effective priority (an old issue that matters inherits urgency from its dependents), while recency buys premise freshness against issue-body rot. A deterministic executor-chosen tiebreak remains conformant.
+
 ## 0.1.0 — 2026-08-14
 
 Initial draft.

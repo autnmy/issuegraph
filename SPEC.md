@@ -1,6 +1,6 @@
 # Issuegraph — Specification
 
-**Version:** 0.1.0 (draft)
+**Version:** 0.2.0 (draft)
 **Status:** Draft for implementation. Not stable. Field names and semantics may change until 1.0. See [Versioning](#8-versioning-and-stability).
 
 Issuegraph is a specification for machine-readable work relationships and ordering, written directly onto the issues of an existing issue tracker. It defines a small data format (what you can write on an issue), writing rules (who writes it and when), and reading rules (how a scheduler turns a backlog into correctly ordered, safely parallel work).
@@ -227,9 +227,11 @@ The **effective priority** of an issue is the highest declared priority (numeric
 
 ### 6.4 Selection
 
-> A reader selects work by: **effective priority** among **ready, eligible** issues, oldest first as the tiebreak.
+> A reader selects work by: **effective priority** among **ready, eligible** issues, **newest first** as the default tiebreak.
 
 Readiness is the graph's verdict (§6.2); eligibility is the executor's (§6.8). Both must hold. Together groups enter selection as single units: one candidate, one claim, group effective priority (4.3.7).
+
+**Why newest-first.** The tiebreak's old job — starvation avoidance — is done better by the graph itself: an old issue that matters blocks something, and effective priority hands it the urgency of whatever waits on it. What a tiebreak can still buy is **premise freshness**: issue bodies rot as the code moves, and newer issues describe the codebase that exists. An executor MAY substitute another deterministic tiebreak where its domain argues for one; what is NOT conformant is a non-deterministic pick.
 
 This is deliberately a cheap query: one indexed pass, incrementally recomputable on events (an issue closed, an edge written). "Issue closed" is the event that moves the frontier: dependents whose last blocker closed *become ready* at that moment — no polling.
 
