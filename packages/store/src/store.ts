@@ -122,9 +122,11 @@ export interface Store {
   // composite.
 
   /**
-   * Drop an unsettled edit's overlay. The only call that removes the user's
-   * work — and on a conflict it also adopts the upstream document, which is the
-   * "discard mine" half of the choice the design offers.
+   * Drop an unsettled edit's overlay, and adopt nothing.
+   *
+   * The only call that removes the user's work. It does NOT adopt the conflict's
+   * recorded document: that is a reading of the past, and the store has no way
+   * to know how far past. A host that wants the current one calls `rehydrate`.
    */
   discardMine(mutationId: MutationId): void;
   /** Set the selected edges. Selection is client state; it writes nothing. */
@@ -148,8 +150,8 @@ const EMPTY_DOCUMENT: GraphDocument = Object.freeze({
  * arrive from the adapter, `order.rows` from the deriver — and `Object.freeze`
  * on the snapshot object protects none of them. A consumer calling `.sort()` on
  * one (the common slip; `[...list].sort()` is the careful form) would reorder
- * store state with no dispatch, no generation bump, no re-derivation and no
- * notification, and the next order would derive from a document nobody wrote.
+ * store state with no dispatch, no re-derivation and no notification, and the
+ * next order would derive from a document nobody wrote.
  *
  * COPIED BEFORE FREEZING, not frozen in place, because these arrive from the
  * host: freezing an adapter's own array would freeze it out of its own storage
@@ -552,7 +554,8 @@ export function createStore(config: StoreConfig): Store {
   }
 
   /**
-   * Run the queue, one dispatch at a time.
+   * Run the queue, one authoritative operation at a time — dispatches and
+   * document reads alike, since both answer with a document.
    *
    * An edit that WAITED is re-checked before it goes out, because `landed` may
    * have moved under it — a sibling edit can delete the relationship this one

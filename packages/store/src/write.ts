@@ -79,7 +79,7 @@ export interface ProjectedEdge extends StoredEdge {
   readonly states: readonly EdgeState[];
   /**
    * The unsettled edits marking this edge. A host reads the reason, and calls
-   * `retry` / `retryOnLatest` / `discardMine`, through these identifiers.
+   * `retry` / `discardMine`, through these identifiers.
    */
   readonly writes: readonly MutationId[];
 }
