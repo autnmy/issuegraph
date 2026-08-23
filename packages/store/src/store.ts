@@ -116,8 +116,11 @@ export interface Store {
   propose(proposal: Proposal): ProposalHandle;
   /** Re-dispatch an unsettled edit, unchanged, against the document as it stands. */
   retry(mutationId: MutationId): ProposalHandle;
-  /** Adopt the conflicting upstream document, then re-dispatch the same edit. */
-  retryOnLatest(mutationId: MutationId): ProposalHandle;
+  // NOTE: there is deliberately no `retryOnLatest`. A host composes it from
+  // `rehydrate()` and `retry()`, both of which are single-step. See the README
+  // section "Resolving a conflict" for why the store does not ship the
+  // composite.
+
   /**
    * Drop an unsettled edit's overlay. The only call that removes the user's
    * work — and on a conflict it also adopts the upstream document, which is the
@@ -666,31 +669,18 @@ export function createStore(config: StoreConfig): Store {
      * somebody deleted, a duplicate somebody created — and the refusal check at
      * dispatch is what catches that.
      */
-    retryOnLatest(mutationId) {
-      const record = recordFor(mutationId);
-      if (record === undefined || record.state !== 'conflict') return noop(mutationId);
-      // THE REFRESH IS A PRECONDITION, NOT A COMPANION. Queueing the two
-      // independently let the dispatch run even when the read had failed —
-      // re-dispatching against the very document the store had just failed to
-      // confirm, with the guard evaluated on that stale graph. Chained, so the
-      // dependency is in the control flow rather than in a rule to remember.
-      const settled = load(false).then((refreshed) => {
-        // Left exactly as it was: the conflict record stands, `hydrationError`
-        // says why, and the person can press it again.
-        if (!refreshed) return;
-        return start(record.mutation).settled;
-      });
-      return { mutationId, settled };
-    },
-
     /**
      * Drop the overlay, and adopt nothing.
      *
-     * The recorded snapshot is not adopted here either, for the same reason:
-     * it is a reading of the past, and the store has no way to know how far in
-     * the past without bookkeeping that has been wrong every time it existed.
-     * Discarding your own edit leaves the store where it was; a host that wants
-     * the current document calls `rehydrate`.
+     * The recorded snapshot is not adopted here: it is a reading of the past,
+     * and the store has no way to know how far in the past without bookkeeping
+     * that was wrong every time it existed. Discarding your own edit leaves the
+     * store where it was; a host that wants the current document calls
+     * `rehydrate`.
+     *
+     * Single-step on purpose — it reads the record and acts on it with no
+     * `await` in between, so nothing can change underneath it. That is the
+     * property `retryOnLatest` could not have, and why it is not here.
      */
     discardMine(mutationId) {
       const record = recordFor(mutationId);

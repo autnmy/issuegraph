@@ -181,12 +181,36 @@ The user's work stays on the canvas. `retry` re-dispatches it; on a conflict,
 auto-merges, nothing auto-reverts, and nothing times out** — `discardMine` is the only call
 that removes an optimistic edit, and a person has to make it.
 
-**A conflict's `upstream` is for display, and is never adopted.** It is the "view diff" half
-of the choice, and it is a reading of the past: a conflict can sit on screen for as long as a
-person takes to read it. So `retryOnLatest` **refreshes and then re-dispatches** — "on latest"
-is only true if something goes and looks, and the refresh is a *precondition*: if it fails,
-nothing is re-dispatched, the conflict is left intact, and `hydrationError` says why.
-`discardMine` drops the overlay and leaves the store where it was. The adapter is the authority on the current document; the store asks it
+### Resolving a conflict
+
+A conflict's `upstream` is **for display, and is never adopted** — it is the "view diff" half
+of the choice, and a reading of the past: a conflict can sit on screen for as long as a person
+takes to read it.
+
+The store ships the two single-step resolutions and **not** the composite:
+
+```ts
+store.discardMine(id);   // drop the overlay; adopts nothing
+store.retry(id);         // re-dispatch, unchanged
+```
+
+**"Retry on latest" is yours to compose**, and the two lines are the point:
+
+```ts
+await store.rehydrate();
+if (store.getSnapshot().hydrationError) return;                 // do not retry unconfirmed
+if (store.getSnapshot().writes.some((w) => w.mutationId === id)) store.retry(id);
+```
+
+That is deliberate, and it is the one place this package asks you to write something it could
+have written for you. Both calls above read state and act on it with no `await` in between, so
+neither can be overtaken. The composite has an `await` in the middle, and everything that can
+happen during it — the read failing, the user discarding, the user pressing again — is a
+decision about *user intent* that the caller holding the await can make and the store cannot.
+An earlier version shipped the composite and produced a defect of exactly that shape in three
+consecutive review rounds; each fix created the next one. What a store-owned version would
+need, and why it belongs with the editor layer instead, is
+[issue #7](https://github.com/autnmy/issuegraph/issues/7). The adapter is the authority on the current document; the store asks it
 rather than keeping a guess about how stale its own copy has become.
 
 `lastChange` belongs to the edit that is **current when it lands**. Two edits proposed before

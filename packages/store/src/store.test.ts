@@ -950,51 +950,15 @@ test('a refresh confirming the document supersedes a conflict snapshot taken bef
   );
 });
 
-test('retry on latest asks for the latest rather than trusting a held snapshot', async () => {
-  // "On latest" is only true if something goes and looks. The recorded snapshot
-  // is of unknown age by the time a person clicks.
-  let served: GraphDocument = threeOpenIssues();
-  const scripted = createScriptedSource(threeOpenIssues(), applyEdit);
-  let reads = 0;
-  const store = createStore({
-    source: {
-      hydrate: () => {
-        reads += 1;
-        return Promise.resolve(served);
-      },
-      dispatch: (mutation) => scripted.dispatch(mutation),
-    },
-    derive: simpleDeriver,
-  });
-  await store.hydrate();
-  assert.equal(reads, 1);
-
-  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
-  await scripted.whenPending(handle.mutationId);
-  scripted.settleNext({ outcome: 'conflict', upstream: withEdge(threeOpenIssues(), 'duplicate-of', '3', '1') });
-  await handle.settled;
-
-  // By now the world has moved on again — past the snapshot the conflict held.
-  served = withEdge(threeOpenIssues(), 'serialize-with', '2', '3');
-
-  const resolved = store.retryOnLatest(handle.mutationId);
-  await scripted.whenPending(handle.mutationId);
-  assert.equal(reads, 2, 'it refreshed before re-dispatching');
-  assert.deepEqual(
-    store.getSnapshot().landed.map((edge) => edge.id),
-    [edgeId('serialize-with', '2', '3')],
-    'against what the adapter holds now, not what the conflict remembered',
-  );
-
-  scripted.settleNext('applied');
-  await resolved.settled;
-});
-
-test('retry on latest does not re-dispatch when the refresh it depends on fails', async () => {
-  // "Retry on LATEST" means the refresh is a precondition, not a companion. Two
-  // independent queue tasks let the dispatch run anyway against the document
-  // the store already knew was out of date — and the guard is then evaluated on
-  // that stale graph, so an edit that upstream would now refuse can be applied.
+test('the two calls a host composes retry-on-latest from are each single-step', async () => {
+  // This is what replaced the store's own `retryOnLatest`, which had an `await`
+  // between reading the conflict and acting on it and produced a P1 in three
+  // consecutive review rounds. `retry` and `discardMine` read the record and
+  // act on it with nothing in between, so neither can be overtaken.
+  //
+  // The two races that killed the composite are the ones asserted here, and
+  // both are the HOST's to sequence now — which it can, because it holds the
+  // await and can look again.
   const scripted = createScriptedSource(threeOpenIssues(), applyEdit);
   let refreshFails = false;
   let dispatches = 0;
@@ -1017,27 +981,24 @@ test('retry on latest does not re-dispatch when the refresh it depends on fails'
   await handle.settled;
   assert.equal(dispatches, 1);
 
+  // RACE 1 — the refresh fails. The host sees it and does not retry.
   refreshFails = true;
-  const aborted = store.retryOnLatest(handle.mutationId);
+  await store.rehydrate();
+  assert.equal(store.getSnapshot().hydrationError, 'the tracker is down');
+  assert.equal(dispatches, 1, 'a host that checks does not dispatch against an unconfirmed document');
+  assert.equal(store.getSnapshot().writes[0]?.state, 'conflict', 'and the conflict is left to try again');
 
-  // Drained by microtask rather than by awaiting the handle: awaiting it would
-  // hang under the defect (the dispatch happens and nothing settles it), and a
-  // test that hangs reports a timeout instead of a wrong answer. Nothing here
-  // uses a timer, so a bounded microtask drain is deterministic.
-  for (let turn = 0; turn < 20; turn += 1) await Promise.resolve();
-
-  assert.equal(dispatches, 1, 'nothing was re-dispatched against a document the refresh could not confirm');
-  await aborted.settled;
-  const snapshot = store.getSnapshot();
-  assert.equal(snapshot.writes[0]?.state, 'conflict', 'the conflict is left intact to try again');
-  assert.equal(snapshot.hydrationError, 'the tracker is down', 'and the refresh failure is reported');
-
-  // And it works on a later attempt, once the refresh can succeed.
+  // RACE 2 — the edit is discarded while the refresh is in flight. The host
+  // looks again afterwards and finds nothing to retry.
   refreshFails = false;
-  const second = store.retryOnLatest(handle.mutationId);
-  await scripted.whenPending(handle.mutationId);
-  assert.equal(dispatches, 2);
-  scripted.settleNext('applied');
-  await second.settled;
-  assert.deepEqual(store.getSnapshot().writes, []);
+  const refresh = store.rehydrate();
+  store.discardMine(handle.mutationId);
+  await refresh;
+  assert.equal(
+    store.getSnapshot().writes.find((record) => record.mutationId === handle.mutationId),
+    undefined,
+    'the discard took effect immediately — it has no await to be overtaken across',
+  );
+  assert.equal(dispatches, 1, 'and nothing the user discarded was dispatched');
 });
+
