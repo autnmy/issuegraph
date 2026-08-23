@@ -161,6 +161,52 @@ const EMPTY_DOCUMENT: GraphDocument = Object.freeze({
 function own<T>(list: readonly T[]): readonly T[] {
   return Object.freeze([...list]);
 }
+
+/** A host-supplied document the store is taking on: its containers become ours. */
+function ownDocument(document: GraphDocument): GraphDocument {
+  return Object.freeze({ issues: own(document.issues), edges: own(document.edges) });
+}
+
+/**
+ * Rows from the injected deriver, with their nested container taken on too.
+ *
+ * `holdReasons` is the deriver's array, so it is copied for the same reason the
+ * top-level list is: the store must be able to freeze what it publishes without
+ * freezing a host out of its own storage.
+ */
+function ownRows(rows: readonly OrderRow[]): readonly OrderRow[] {
+  return own(rows.map((row) => ({ ...row, holdReasons: own(row.holdReasons) })));
+}
+
+/**
+ * Freeze every array reachable from a published value.
+ *
+ * `own` at each entry point covers the containers the store adopts directly,
+ * and that is exactly as far as it went — one level, when the predicate was
+ * never one level. Arrays nested inside published values (a conflict document's
+ * edges, an edge's state list, a row's hold reasons) are reachable from
+ * `getSnapshot()` just the same, and a consumer splicing one of those changes
+ * store state as surely as splicing `landed` would.
+ *
+ * ARRAYS ONLY: objects are walked but not frozen. That is the boundary the
+ * store can honestly keep — it owns which edges and rows it holds, the host
+ * owns what each one IS — and freezing the contents would seize objects an
+ * adapter or a deriver may still be using.
+ *
+ * Not short-circuited on an already-frozen array: `own` freezes a container
+ * without touching what is inside it, so stopping at the first frozen array
+ * would skip exactly the nested ones this exists to reach.
+ */
+function freezeArrays(value: unknown): void {
+  if (Array.isArray(value)) {
+    Object.freeze(value);
+    for (const item of value) freezeArrays(item);
+    return;
+  }
+  if (typeof value === 'object' && value !== null) {
+    for (const nested of Object.values(value)) freezeArrays(nested);
+  }
+}
 const NO_PROJECTION: readonly ProjectedEdge[] = Object.freeze([]);
 
 function messageOf(thrown: unknown): string {
@@ -229,7 +275,7 @@ export function createStore(config: StoreConfig): Store {
     issues: landed.issues,
     landed: landed.edges,
     projected: NO_PROJECTION,
-    order: Object.freeze({ rows: own(rows), status: 'settled' }),
+    order: Object.freeze({ rows: ownRows(rows), status: 'settled' }),
     writes: own(records),
     selection: own(selection),
   };
@@ -316,6 +362,7 @@ export function createStore(config: StoreConfig): Store {
       ...(orderError === undefined ? {} : { orderError }),
       selection: selected,
     });
+    freezeArrays(published);
     // Isolated, and for the same reason as the guard and the deriver: a host
     // callback that throws must not break the store. Rethrown asynchronously so
     // it still surfaces as an unhandled error rather than being swallowed.
@@ -355,7 +402,7 @@ export function createStore(config: StoreConfig): Store {
     // the attribution true, so none is claimed.
     const recovering = orderError !== undefined;
     orderError = undefined;
-    rows = own(next);
+    rows = ownRows(next);
     // Only for the edit that is still the current one. A landing that a newer
     // proposal has already overtaken has no summary to publish — the newer edit
     // owns that slot, and will fill it when it lands.
@@ -450,7 +497,11 @@ export function createStore(config: StoreConfig): Store {
           mutationId: mutation.mutationId,
           mutation,
           state: 'conflict',
-          upstream: result.upstream,
+          // Taken on rather than retained by reference: this document is
+          // exposed through `snapshot.writes` AND adopted as authoritative by
+          // both resolutions, so a consumer editing it would rewrite the
+          // ranking with no adapter operation at all.
+          upstream: ownDocument(result.upstream),
           landedAt: landedGeneration,
         });
         break;

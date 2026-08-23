@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { type GraphDocument, edgeId, makeEdge } from './model.ts';
+import { type GraphDocument, type StoredEdge, edgeId, makeEdge } from './model.ts';
 import type { EdgeGuard, OrderDeriver, OrderRow } from './source.ts';
 import { createStore } from './store.ts';
 import { createMemorySource } from './adapters/memory.ts';
@@ -819,24 +819,49 @@ test('EVERY array the snapshot exposes is frozen, including ones added later', a
   source.settleNext({ outcome: 'rejected', reason: 'so a write record is exposed too' });
   await handle.settled;
 
+  // WALKED RECURSIVELY, not one level. The first version of this test read the
+  // snapshot's own keys and stopped, which left `writes[].upstream.edges`,
+  // `projected[].states` and `order.rows[].holdReasons` unchecked — the same
+  // finding one level down. The predicate is "every array REACHABLE from the
+  // snapshot", so the walk has to be too.
+  function everyArray(value: unknown, path: string, found: [string, readonly unknown[]][] = []) {
+    if (Array.isArray(value)) {
+      found.push([path, value]);
+      value.forEach((item, index) => everyArray(item, `${path}[${index}]`, found));
+      return found;
+    }
+    if (typeof value === 'object' && value !== null) {
+      for (const [key, nested] of Object.entries(value)) everyArray(nested, `${path}.${key}`, found);
+    }
+    return found;
+  }
+
   const snapshot = store.getSnapshot();
-  const arrays: readonly (readonly [string, readonly unknown[]])[] = [
-    ...Object.entries(snapshot).filter((entry): entry is [string, readonly unknown[]] =>
-      Array.isArray(entry[1]),
-    ),
-    ['order.rows', snapshot.order.rows],
-  ];
+  const arrays = everyArray(snapshot, 'snapshot');
 
-  // Every one of the shapes this test is about must actually be present, or it
-  // would pass by having found nothing to check.
-  assert.deepEqual(
-    arrays.map(([name]) => name).sort(),
-    ['issues', 'landed', 'order.rows', 'projected', 'selection', 'writes'],
-  );
+  // The shapes this test is about must actually be present, or it would pass by
+  // having found nothing to check. Nested ones included, since those are the
+  // ones the one-level version missed.
+  for (const expected of [
+    'snapshot.issues',
+    'snapshot.landed',
+    'snapshot.projected',
+    'snapshot.selection',
+    'snapshot.writes',
+    'snapshot.order.rows',
+    'snapshot.projected[0].states',
+    'snapshot.projected[0].writes',
+    'snapshot.order.rows[0].holdReasons',
+  ]) {
+    assert.ok(
+      arrays.some(([path]) => path === expected),
+      `the walk never reached ${expected}`,
+    );
+  }
 
-  for (const [name, value] of arrays) {
-    assert.ok(Object.isFrozen(value), `snapshot.${name} is not frozen`);
-    assert.throws(() => (value as unknown[]).push('x'), TypeError, `snapshot.${name} accepted a push`);
+  for (const [path, value] of arrays) {
+    assert.ok(Object.isFrozen(value), `${path} is not frozen`);
+    assert.throws(() => (value as unknown[]).push('x'), TypeError, `${path} accepted a push`);
   }
 
   // And the store is unchanged by the attempts above.
@@ -855,4 +880,32 @@ test('freezing what the store publishes does not reach into the adapter’s own 
   await store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' }).settled;
   assert.ok(!Object.isFrozen(source.current().edges));
   assert.equal(source.current().edges.length, 1);
+});
+
+test('a conflict snapshot a consumer reached through cannot be edited into the store', async () => {
+  // `record.upstream` is adapter-owned and is exposed through `snapshot.writes`,
+  // then adopted as authoritative by `retryOnLatest` / `discardMine`. Splicing
+  // it would change the ranking with no adapter operation at all.
+  const source = createScriptedSource(threeOpenIssues(), applyEdit);
+  const store = createStore({ source, derive: simpleDeriver });
+  await store.hydrate();
+
+  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  await source.whenPending(handle.mutationId);
+  source.settleNext({ outcome: 'conflict', upstream: withEdge(threeOpenIssues(), 'duplicate-of', '3', '1') });
+  await handle.settled;
+
+  const record = store.getSnapshot().writes[0];
+  assert.equal(record?.state, 'conflict');
+  if (record?.state !== 'conflict') return;
+
+  assert.ok(Object.isFrozen(record.upstream.edges), 'the retained conflict document is frozen');
+  assert.throws(() => (record.upstream.edges as StoredEdge[]).pop(), TypeError);
+
+  store.discardMine(handle.mutationId);
+  assert.deepEqual(
+    store.getSnapshot().landed.map((edge) => edge.id),
+    [edgeId('duplicate-of', '3', '1')],
+    'and what is adopted is what the adapter sent',
+  );
 });
