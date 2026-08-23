@@ -12,7 +12,7 @@
 import ts from 'typescript';
 
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 
@@ -55,10 +55,50 @@ function exportTargets(node, found = []) {
 function firstParseError(file) {
   const out = ts.transpileModule(readFileSync(file, 'utf8'), {
     reportDiagnostics: true,
+    // The REAL filename, not a placeholder. Without it TypeScript parses the
+    // input AS TYPESCRIPT, so `export const x: number = 1` left in an emitted
+    // `.js` file reads as valid — the exact source no browser can load. Verified:
+    // unnamed it reports nothing, named `index.js` it reports "Type annotations
+    // can only be used in TypeScript files."
+    fileName: file,
     compilerOptions: { target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.ESNext, allowJs: true },
   });
   const error = (out.diagnostics ?? []).find((d) => d.category === ts.DiagnosticCategory.Error);
   return error ? ts.flattenDiagnosticMessageText(error.messageText, ' ') : undefined;
+}
+
+const EMITTED_EXTENSIONS = ['.js', '.mjs', '.cjs'];
+
+/** Every JavaScript file a package would publish, entry and siblings alike. */
+function emittedJsFiles(dir) {
+  const found = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      if (entry.name === 'node_modules') continue;
+      found.push(...emittedJsFiles(join(dir, entry.name)));
+    } else if (EMITTED_EXTENSIONS.some((extension) => entry.name.endsWith(extension))) {
+      found.push(join(dir, entry.name));
+    }
+  }
+  return found;
+}
+
+/**
+ * The first emitted file in a package that does not parse.
+ *
+ * Checking only the ENTRY was not enough: a valid entry importing a malformed
+ * emitted sibling makes Node reject the import, while the entry itself parses
+ * cleanly — so the failure was downgraded and CI passed on a package no consumer
+ * can load. The failure originates in the dependency, so the dependency has to
+ * be looked at. Every JavaScript file the package ships is checked rather than
+ * resolving the module graph, which needs no resolver and cannot miss an edge.
+ */
+function firstUnparseableFile(dir) {
+  for (const file of emittedJsFiles(dir)) {
+    const error = firstParseError(file);
+    if (error !== undefined) return { file, error };
+  }
+  return undefined;
 }
 
 /**
@@ -119,8 +159,12 @@ export async function smokeTest(packagesDir, { log = () => {} } = {}) {
       // be wrong: a module can throw one at RUNTIME — `JSON.parse("{")` at module
       // scope — and that is a package whose source is fine. The file itself is
       // the evidence, so the file is what gets asked.
-      const parseError = firstParseError(entryPath);
-      assert.equal(parseError, undefined, `${manifest.name}: ${runtime} does not parse — ${parseError}`);
+      const broken = firstUnparseableFile(dir);
+      assert.equal(
+        broken,
+        undefined,
+        `${manifest.name}: ${broken ? relative(dir, broken.file) : ''} does not parse — ${broken?.error}`,
+      );
       // It parsed. A package that CLAIMS a Node floor must still LOAD on it;
       // only one making no such claim may stop at having parsed.
       if (floor !== undefined) throw error;

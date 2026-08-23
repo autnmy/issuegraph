@@ -70,6 +70,29 @@ test('DERIVED, NOT ENUMERATED: an unanticipated load failure still downgrades', 
   assert.match(result.downgraded, /boom/);
 });
 
+test('NOT AN EXEMPTION: TypeScript syntax left in an emitted .js fails', async () => {
+  // Valid TypeScript, invalid JavaScript. Parsed without the real filename,
+  // TypeScript reads it as TypeScript and reports nothing — so this downgraded
+  // as "parsed" for source no browser can load.
+  const dir = fixture('export const x: number = 1;\n');
+  await assert.rejects(smokeTest(dir), /does not parse.*TypeScript files/s);
+});
+
+test('NOT AN EXEMPTION: a broken emitted SIBLING fails, not just the entry', async () => {
+  // The entry is fine; what Node choked on is the file it imports. Checking only
+  // the entry downgraded this and let CI pass on a package no consumer can load.
+  const dir = fixture('export { b } from "./broken.js";\n', {}, { 'broken.js': 'export const b = = ;\n' });
+  await assert.rejects(smokeTest(dir), /broken\.js does not parse/);
+});
+
+test('CONTROL: a valid sibling Node merely cannot load still downgrades', async () => {
+  // The two cases above must not have made every import failure fatal.
+  const dir = fixture('import "./style.css";\nexport { b } from "./ok.js";\n',
+    {}, { 'style.css': 'body{}', 'ok.js': 'export const b = 1;\n' });
+  const [result] = await smokeTest(dir);
+  assert.equal(result.check, 'parsed');
+});
+
 test('NOT AN EXEMPTION: broken syntax fails even with no declared floor', async () => {
   // The whole risk of a downgrade is that it becomes a pass for anything. A
   // SyntaxError proves the file was never valid, so it is never tolerated.
