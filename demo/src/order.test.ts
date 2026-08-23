@@ -698,3 +698,71 @@ test('a single-valued field refuses a second outgoing edge', () => {
     );
   }
 });
+
+test('every member of a cycle is found, including one that joins it later', () => {
+  // #12 and #13 already block each other. Wire #14 into that component:
+  // `#12 blocked-by #14` and `#14 blocked-by #13`. A walk that marks a node
+  // done on the way out finishes #12 and #13 first and never revisits them, so
+  // #14 comes back clean although it is plainly in the same component.
+  const document = seedDocument();
+  const joined = {
+    issues: document.issues,
+    edges: [...document.edges, makeEdge('blocked-by', '12', '14'), makeEdge('blocked-by', '14', '13')],
+  };
+  const rowsOf = explainOrder(joined, seedHolds());
+  for (const ref of ['12', '13', '14']) {
+    const member = rowsOf.find((each) => each.issue.ref === ref);
+    assert.ok(member, `no row for ${ref}`);
+    assert.ok(
+      member.holds.some((hold) => hold.label === 'cycle'),
+      `${ref} is in the component and is not reported cyclic`,
+    );
+  }
+
+  // And the guard refuses the edit that pulls #14 in.
+  const before = {
+    issues: document.issues,
+    edges: [...document.edges, makeEdge('blocked-by', '12', '14')],
+  };
+  assert.equal(guarded(before, 'blocked-by', '14', '13'), true, 'the guard missed the join');
+
+  // CONTROL: an issue with a one-way path into the cycle is NOT in it — a test
+  // that called everything reachable cyclic would pass the assertions above.
+  const oneWay = {
+    issues: document.issues,
+    edges: [...document.edges, makeEdge('blocked-by', '14', '12')],
+  };
+  const outside = explainOrder(oneWay, seedHolds()).find((each) => each.issue.ref === '14');
+  assert.ok(outside);
+  assert.ok(
+    !outside.holds.some((hold) => hold.label === 'cycle'),
+    'an issue merely depending on a cycle was reported as being in it',
+  );
+});
+
+test('a duplicate with no resolvable canonical is still never worked', () => {
+  // Two issues pointing `duplicate-of` at each other resolve to nothing — each
+  // walk returns to where it started. Deriving "is a duplicate" from the
+  // canonical map therefore came back empty, and both re-entered the spine as
+  // ordinary work while still carrying the field. §6.2 rule 2 excludes an issue
+  // that IS a duplicate; it does not make that conditional on the reader being
+  // able to name what it duplicates.
+  const document = seedDocument();
+  const mutual = {
+    issues: document.issues,
+    edges: [...document.edges, makeEdge('duplicate-of', '2', '3'), makeEdge('duplicate-of', '3', '2')],
+  };
+  const rowsOf = explainOrder(mutual, seedHolds());
+  for (const ref of ['2', '3']) {
+    const member = rowsOf.find((each) => each.issue.ref === ref);
+    assert.ok(member, `no row for ${ref}`);
+    assert.equal(member.placement, 'footer', `${ref} re-entered the order`);
+    assert.ok(member.holds.some((hold) => hold.label === 'duplicate'), `${ref} lost its duplicate hold`);
+  }
+
+  // CONTROL: the issue POINTED AT is not itself a duplicate, so the fix does
+  // not simply mark everything it touches.
+  const canonicalRow = explainOrder(document, seedHolds()).find((each) => each.issue.ref === '4');
+  assert.ok(canonicalRow);
+  assert.equal(canonicalRow.placement, 'spine', 'the canonical was excluded along with its duplicate');
+});

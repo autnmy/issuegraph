@@ -11,6 +11,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { EDGE_CARDINALITY } from '@issuegraph/core';
 import { EDGE_STATES, type EdgeState, createStore, makeEdge } from '@issuegraph/store';
 
 import { createDeriver } from './order.ts';
@@ -303,4 +304,44 @@ test('announcing is idempotent: arming the same outcome twice says nothing new',
   source.arm('conflict');
   assert.deepEqual(announced, ['conflict'], 'a no-op arm produced a notification');
   await Promise.resolve();
+});
+
+test('a fabricated upstream never writes a second single-valued edge', async () => {
+  // A fabricated upstream is still a write, so it is bound by the same
+  // cardinality rule the page enforces (§4.3). Otherwise conflict simulation
+  // produces a document the demo's own writer rules refuse — the demo
+  // contradicting itself, in the direction nothing fails on.
+  //
+  // THE PRECONDITION IS THE TEST. The search walks issues in document order and
+  // fields in vocabulary order, so on the bare seed it lands on
+  // `decomposed-from #1 → #2` — a field #1 does not yet carry, which exercises
+  // nothing. #1 has to ALREADY carry that field for the conflict to be
+  // reachable, which is why this lands one first. (Checked: without this setup
+  // the assertions below pass against the unfixed source.)
+  const { source, store } = harness();
+  await store.hydrate();
+  await store.propose({ op: 'create', kind: 'decomposed-from', from: '1', to: '3' }).settled;
+  assert.ok(
+    store.getSnapshot().landed.some((edge) => edge.kind === 'decomposed-from' && edge.from === '1'),
+    'the precondition did not land, so this test would prove nothing',
+  );
+
+  source.arm('conflict');
+  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '4', to: '3' });
+  await handle.settled;
+
+  const record = store.getSnapshot().writes.find((write) => write.mutationId === handle.mutationId);
+  assert.ok(record?.state === 'conflict');
+
+  // Counted over the WHOLE upstream document and enumerated from the
+  // vocabulary, so it covers whichever edge the search chose rather than the
+  // one this test predicted.
+  const counts = new Map<string, number>();
+  for (const edge of record.upstream.edges) {
+    if (EDGE_CARDINALITY[edge.kind] !== 'single') continue;
+    const key = `${edge.kind}|${edge.from}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const offenders = [...counts.entries()].filter(([, count]) => count > 1);
+  assert.deepEqual(offenders, [], 'the fabricated upstream carries two values for a single-valued field');
 });

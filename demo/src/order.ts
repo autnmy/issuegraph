@@ -191,12 +191,28 @@ function components(edges: readonly StoredEdge[], kind: EdgeKind): Map<IssueRef,
  * malformed rather than impossible: a ref that returns to where it started
  * stops there rather than looping.
  */
-function duplicateCanonicals(edges: readonly StoredEdge[]): Map<IssueRef, IssueRef> {
+function duplicateCanonicals(edges: readonly StoredEdge[]): {
+  canonical: Map<IssueRef, IssueRef>;
+  duplicates: Set<IssueRef>;
+} {
   const target = new Map<IssueRef, IssueRef>();
   for (const edge of edges) {
     if (edge.kind === 'duplicate-of') target.set(edge.from, edge.to);
   }
   const canonical = new Map<IssueRef, IssueRef>();
+  // BEING A DUPLICATE AND HAVING A CANONICAL ARE DIFFERENT FACTS, and conflating
+  // them let a malformed document put duplicates back into the schedulable
+  // order. Two issues pointing `duplicate-of` at each other resolve to NOTHING
+  // — each walk returns to where it started — so a duplicate set derived from
+  // the canonical map came back empty, and both issues re-entered the spine as
+  // ordinary work while still carrying the field.
+  //
+  // §6.2 rule 2 excludes an issue that IS a duplicate; it does not make the
+  // exclusion conditional on the reader being able to name what it duplicates.
+  // Exactly the issues that CARRY the field. An issue merely pointed AT is not
+  // a duplicate — it is the canonical — and transitivity needs no walk here,
+  // because every link in a chain carries the field itself.
+  const duplicates = new Set<IssueRef>(target.keys());
   for (const from of target.keys()) {
     const walked = new Set<IssueRef>([from]);
     let at = target.get(from);
@@ -208,37 +224,80 @@ function duplicateCanonicals(edges: readonly StoredEdge[]): Map<IssueRef, IssueR
     }
     if (at !== undefined && at !== from) canonical.set(from, at);
   }
-  return canonical;
+  return { canonical, duplicates };
 }
 
 /**
  * The issues caught in a `blocked-by` cycle, which are never ready (§6.6).
  *
- * Detected on read, exactly as §6.6 requires, and deliberately not prevented at
- * write time: "write-time rejection pushes writers into describing the
- * dependency in prose instead, which is strictly worse than a cycle a groomer
- * can see."
+ * TARJAN'S STRONGLY-CONNECTED COMPONENTS, not a hand-rolled reachability walk.
+ * The walk this replaces marked a node `done` on the way out and returned early
+ * for it afterwards, which finds SOME members of a cycle and not all of them:
+ * add `#12 blocked-by #14` and then `#14 blocked-by #13`, and #14 joins the
+ * existing #12/#13 component — but the walk had already finished #12 and #13,
+ * so it never revisited them and #14 was reported clean. The guard then
+ * accepted the edit and the page never showed the hold.
+ *
+ * That was the third round of findings against this one walk — first the
+ * together contraction, then the arrival comparison, then this — and the
+ * pattern is the tell: an ad-hoc traversal answering "is anything cyclic?" is
+ * one edge case short every time it is read. "Which vertices are in a
+ * non-trivial strongly connected component?" is exactly the question, and it
+ * has a known-complete answer, so the answer is used rather than approximated.
+ *
+ * Detected on read, as §6.6 requires, and deliberately not prevented at write
+ * time: a cycle a groomer can see beats a dependency described in prose.
  */
 function cyclic(blockers: ReadonlyMap<IssueRef, readonly IssueRef[]>): Set<IssueRef> {
-  const found = new Set<IssueRef>();
-  const state = new Map<IssueRef, 'visiting' | 'done'>();
+  const order = new Map<IssueRef, number>();
+  const lowLink = new Map<IssueRef, number>();
+  const onStack = new Set<IssueRef>();
   const stack: IssueRef[] = [];
-  const walk = (ref: IssueRef): void => {
-    const seen = state.get(ref);
-    if (seen === 'done') return;
-    if (seen === 'visiting') {
-      // Everything from this reference to the top of the stack is on the cycle.
-      const from = stack.indexOf(ref);
-      for (const member of stack.slice(from === -1 ? 0 : from)) found.add(member);
-      return;
-    }
-    state.set(ref, 'visiting');
+  const found = new Set<IssueRef>();
+  let counter = 0;
+
+  const visit = (ref: IssueRef): number => {
+    const at = counter;
+    counter += 1;
+    order.set(ref, at);
+    lowLink.set(ref, at);
     stack.push(ref);
-    for (const next of blockers.get(ref) ?? []) walk(next);
-    stack.pop();
-    state.set(ref, 'done');
+    onStack.add(ref);
+
+    let low = at;
+    for (const next of blockers.get(ref) ?? []) {
+      const seen = order.get(next);
+      if (seen === undefined) {
+        low = Math.min(low, visit(next));
+      } else if (onStack.has(next)) {
+        low = Math.min(low, seen);
+      }
+    }
+    lowLink.set(ref, low);
+
+    if (low === at) {
+      const component: IssueRef[] = [];
+      for (;;) {
+        const member = stack.pop();
+        if (member === undefined) break;
+        onStack.delete(member);
+        component.push(member);
+        if (member === ref) break;
+      }
+      // A component of one is a cycle only through a self-edge, which the
+      // dependency graph drops by construction — but the test is written out
+      // rather than assumed, so this stays correct if that ever changes.
+      const selfBlocking = (blockers.get(ref) ?? []).includes(ref);
+      if (component.length > 1 || selfBlocking) {
+        for (const member of component) found.add(member);
+      }
+    }
+    return low;
   };
-  for (const ref of blockers.keys()) walk(ref);
+
+  for (const ref of blockers.keys()) {
+    if (!order.has(ref)) visit(ref);
+  }
   return found;
 }
 
@@ -349,7 +408,7 @@ function dependencyGraph(
  * the index came to disagree in the first place.
  */
 export function cyclicMembers(document: GraphDocument): ReadonlySet<IssueRef> {
-  const canonical = duplicateCanonicals(document.edges);
+  const { canonical } = duplicateCanonicals(document.edges);
   const resolve = (ref: IssueRef): IssueRef => canonical.get(ref) ?? ref;
   const canonicalEdges = document.edges.map((edge) => ({
     ...edge,
@@ -407,7 +466,7 @@ export function cardinalityConflict(
 
 function index(document: GraphDocument, holds: readonly ExecutorHold[]): Index {
   const byRef = new Map(document.issues.map((issue) => [issue.ref, issue] as const));
-  const canonical = duplicateCanonicals(document.edges);
+  const { canonical, duplicates } = duplicateCanonicals(document.edges);
   // EVERY graph reference resolves through the duplicate mapping before it is
   // indexed, so a relationship written against a duplicate lands on the issue
   // that will actually be worked. A ref with no mapping is its own canonical.
@@ -438,7 +497,7 @@ function index(document: GraphDocument, holds: readonly ExecutorHold[]): Index {
     byRef,
     blockers,
     dependents,
-    duplicate: new Set(canonical.keys()),
+    duplicate: duplicates,
     canonical,
     cycle: cyclic(blockers),
     serialize: components(canonicalEdges, 'serialize-with'),

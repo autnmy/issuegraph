@@ -16,8 +16,16 @@
  * demonstrated.
  */
 
-import { EDGE_FIELDS } from '@issuegraph/core';
-import type { DataSource, DispatchResult, GraphDocument, Mutation, StoredEdge } from '@issuegraph/store';
+import { EDGE_CARDINALITY, EDGE_FIELDS } from '@issuegraph/core';
+import type {
+  DataSource,
+  DispatchResult,
+  EdgeKind,
+  GraphDocument,
+  IssueRef,
+  Mutation,
+  StoredEdge,
+} from '@issuegraph/store';
 import { createMemorySource, makeEdge, resultingEdge } from '@issuegraph/store';
 
 /**
@@ -91,6 +99,12 @@ export const DEFAULT_SETTLE_DELAY_MS = 450;
  * lied. Returning `undefined` is what lets the caller decline instead of
  * claiming a movement that did not happen.
  *
+ * It honours CARDINALITY, because a fabricated upstream is still a write. Every
+ * field except `blocked-by` holds one reference (§4.3), so installing a second
+ * one would let conflict simulation produce a document the page's own writer
+ * rules refuse — the demo contradicting itself, in the direction that is
+ * hardest to notice because nothing fails.
+ *
  * It also skips THE VISITOR'S OWN EDIT. If the search happened to land on the
  * very edge being dispatched, upstream and local would be expressing the same
  * intended change — which is an `unchanged` outcome, not two competing
@@ -107,10 +121,13 @@ function upstreamEdit(document: GraphDocument, mutation: Mutation): StoredEdge |
   const held = new Set(document.edges.map((edge) => edge.id));
   const mine = resultingEdge(document, mutation);
   if (mine !== undefined) held.add(mine.id);
+  const carries = (kind: EdgeKind, from: IssueRef): boolean =>
+    document.edges.some((edge) => edge.kind === kind && edge.from === from);
   for (const from of open) {
     for (const to of open) {
       if (from.ref === to.ref) continue;
       for (const kind of EDGE_FIELDS) {
+        if (EDGE_CARDINALITY[kind] === 'single' && carries(kind, from.ref)) continue;
         const added: StoredEdge = makeEdge(kind, from.ref, to.ref);
         if (held.has(added.id)) continue;
         return added;
