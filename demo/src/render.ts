@@ -189,7 +189,23 @@ function renderEdge(edge: ProjectedEdge, store: Store, snapshot: StoreSnapshot):
     }
     if (record.state !== 'pending') {
       node.append(
-        button('discard mine', () => store.discardMine(mutationId), 'button button-inline'),
+        button(
+          'discard mine',
+          () => {
+            // COMPOSED WITH A REHYDRATE, because discarding the local side of a
+            // conflict is accepting the other one — and the demo's upstream is
+            // genuinely installed in the source rather than merely described,
+            // so the store is holding a document that is now out of date.
+            // Without this the edge the visitor just accepted stays invisible
+            // until some unrelated write happens to refresh it.
+            //
+            // Safe to compose here, unlike "retry on latest": there is no user
+            // intent left to sequence against once the overlay is gone.
+            store.discardMine(mutationId);
+            void store.rehydrate();
+          },
+          'button button-inline',
+        ),
       );
     }
   }

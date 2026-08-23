@@ -20,14 +20,13 @@
  * the rail and the rendering disagree about the same document.
  */
 
-import { DEFAULT_PRIORITY, EDGE_CARDINALITY, type Priority } from '@issuegraph/core';
+import { DEFAULT_PRIORITY, type Priority } from '@issuegraph/core';
 import type {
   EdgeKind,
   GraphDocument,
   IssueRef,
   OrderDeriver,
   OrderRow,
-  ProjectedEdge,
   StoredEdge,
   StoredIssue,
 } from '@issuegraph/store';
@@ -460,53 +459,6 @@ export function cyclicMembers(document: GraphDocument): ReadonlySet<IssueRef> {
 export function introducesCycle(current: GraphDocument, next: GraphDocument): boolean {
   const before = cyclicMembers(current);
   return [...cyclicMembers(next)].some((ref) => !before.has(ref));
-}
-
-/**
- * The edges a writer rule must weigh: what has LANDED, plus what is in flight.
- *
- * A dispatch takes time to answer, so "does this field already hold a value?"
- * read against the landed document alone answers `no` twice for two creates
- * made inside one settle window — and the store's own structural refusals do
- * not cover cardinality, because that is a FORMAT rule rather than one of the
- * refusals the package makes.
- *
- * Only `pending-write` overlays count. An `invalid` edge was never written and
- * a `failed` one was refused upstream, so neither is a value the field holds;
- * counting them would refuse a write the document has room for.
- *
- * It lives here, beside the rule it feeds, because the alternative is a
- * decision made inline in the page where nothing can test it — which is exactly
- * how the landed-only reading survived being written.
- */
-export function writtenOrInFlight(
-  landed: readonly StoredEdge[],
-  projected: readonly ProjectedEdge[],
-): readonly StoredEdge[] {
-  const held = new Set(landed.map((edge) => edge.id));
-  const pending = projected.filter(
-    (edge) => !held.has(edge.id) && edge.states.includes('pending-write'),
-  );
-  return [...landed, ...pending];
-}
-
-/**
- * Whether the document already carries an outgoing edge of a single-valued
- * field for this issue (§4.3, `EDGE_CARDINALITY`).
- *
- * `blocked-by` is the only list; every other field holds ONE reference, because
- * a writer joins a group or names a canonical by pointing at one member. Two
- * `duplicate-of` edges out of one issue is not a richer document, it is an
- * ambiguous one — and the reader resolves it by whichever it happened to see
- * last, which is a coin toss wearing a rule.
- */
-export function cardinalityConflict(
-  document: GraphDocument,
-  kind: EdgeKind,
-  from: IssueRef,
-): StoredEdge | undefined {
-  if (EDGE_CARDINALITY[kind] !== 'single') return undefined;
-  return document.edges.find((edge) => edge.kind === kind && edge.from === from);
 }
 
 function index(document: GraphDocument, holds: readonly ExecutorHold[]): Index {

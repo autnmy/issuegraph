@@ -345,3 +345,102 @@ test('a fabricated upstream never writes a second single-valued edge', async () 
   const offenders = [...counts.entries()].filter(([, count]) => count > 1);
   assert.deepEqual(offenders, [], 'the fabricated upstream carries two values for a single-valued field');
 });
+
+test('the ADAPTER refuses a second value for a single-valued field, on every path', async () => {
+  // One enforcement point, reached by every way a write can happen. The page
+  // used to carry this rule, and each new route to a write — a second create
+  // inside the settle window, then `retry` — was a new place it had not been
+  // bolted on. The adapter is the tracker, and a tracker refuses a malformed
+  // write whoever sent it.
+  const { store } = harness();
+  await store.hydrate();
+  await store.propose({ op: 'create', kind: 'decomposed-from', from: '1', to: '2' }).settled;
+
+  // (a) a plain second create
+  const second = store.propose({ op: 'create', kind: 'decomposed-from', from: '1', to: '3' });
+  await second.settled;
+  const refused = store.getSnapshot().writes.find((write) => write.mutationId === second.mutationId);
+  assert.equal(refused?.state, 'failed', 'the adapter accepted a second single-valued value');
+  assert.ok(refused.state === 'failed' && refused.reason.includes('one reference'));
+
+  // (b) RETRYING it is refused too — the path the page-level rule could never
+  // reach, because retry does not go through the page.
+  await store.retry(second.mutationId).settled;
+  const afterRetry = store.getSnapshot().writes.find((write) => write.mutationId === second.mutationId);
+  assert.equal(afterRetry?.state, 'failed', 'a retry slipped past the rule');
+  assert.equal(
+    store.getSnapshot().landed.filter((edge) => edge.kind === 'decomposed-from' && edge.from === '1')
+      .length,
+    1,
+    'the field ended up holding two values',
+  );
+
+  // (c) a list field is untouched — #1 already has two `blocked-by` and may
+  // have a third.
+  const list = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '14' });
+  await list.settled;
+  assert.equal(store.getSnapshot().writes.length, 1, 'a list field was refused');
+});
+
+test('two creates inside one settle window cannot both land', async () => {
+  // The store runs one authoritative operation at a time, so the second
+  // dispatch reads a document that already contains the first — which is why
+  // the adapter sees the in-flight case for free, where the page had to be
+  // taught about optimistic overlays to see it at all.
+  const { store } = harness(20);
+  await store.hydrate();
+  const first = store.propose({ op: 'create', kind: 'decomposed-from', from: '1', to: '2' });
+  const second = store.propose({ op: 'create', kind: 'decomposed-from', from: '1', to: '3' });
+  await Promise.all([first.settled, second.settled]);
+
+  assert.equal(
+    store.getSnapshot().landed.filter((edge) => edge.kind === 'decomposed-from' && edge.from === '1')
+      .length,
+    1,
+    'both writes landed inside one settle window',
+  );
+});
+
+test('a retype into an occupied single-valued field is refused', async () => {
+  // Asked of the RESULTING edge rather than of the operation, so a retype is
+  // covered without naming it — and the edge a retype replaces is excluded,
+  // because it is on its way out.
+  const { store } = harness();
+  await store.hydrate();
+  await store.propose({ op: 'create', kind: 'decomposed-from', from: '1', to: '3' }).settled;
+
+  const blocked = store.getSnapshot().landed.find((edge) => edge.kind === 'blocked-by' && edge.from === '1');
+  assert.ok(blocked, 'the seed should give #1 a blocked-by to retype');
+  const retype = store.propose({ op: 'retype', edgeId: blocked.id, nextKind: 'decomposed-from' });
+  await retype.settled;
+
+  const record = store.getSnapshot().writes.find((write) => write.mutationId === retype.mutationId);
+  assert.equal(record?.state, 'failed', 'a retype filled an occupied single-valued field');
+});
+
+test('discarding a conflict adopts the upstream the source is actually holding', async () => {
+  // The fabricated upstream is installed in the source, so discarding the local
+  // side is accepting the other one — and the store is left holding a document
+  // that is now out of date. Composing with `rehydrate` is what makes the edge
+  // the visitor just accepted visible.
+  const { source, store } = harness();
+  await store.hydrate();
+  const landedBefore = store.getSnapshot().landed.length;
+  source.arm('conflict');
+  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '4', to: '3' });
+  await handle.settled;
+
+  store.discardMine(handle.mutationId);
+  assert.equal(
+    store.getSnapshot().landed.length,
+    landedBefore,
+    'the control failed: discarding alone should not change the landed document',
+  );
+
+  await store.rehydrate();
+  assert.equal(
+    store.getSnapshot().landed.length,
+    landedBefore + 1,
+    'the upstream change stayed invisible after the local side was discarded',
+  );
+});

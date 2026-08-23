@@ -12,19 +12,17 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { EDGE_CARDINALITY, EDGE_FIELDS } from '@issuegraph/core';
+import { EDGE_FIELDS } from '@issuegraph/core';
 import type { EdgeKind, GraphDocument } from '@issuegraph/store';
 import { makeEdge } from '@issuegraph/store';
 
 import {
   DEFAULT_CONCURRENCY_CAP,
   type ExplainedRow,
-  cardinalityConflict,
   createDeriver,
   explainOrder,
   introducesCycle,
   slotCount,
-  writtenOrInFlight,
 } from './order.ts';
 import { seedDocument, seedHolds } from './seed.ts';
 
@@ -670,35 +668,6 @@ function cyclicMembersPresent(document: GraphDocument): boolean {
   );
 }
 
-test('a single-valued field refuses a second outgoing edge', () => {
-  const document = seedDocument();
-  // #10 is already `duplicate-of #4`, and `duplicate-of` holds one reference.
-  const conflict = cardinalityConflict(document, 'duplicate-of', '10');
-  assert.ok(conflict, 'the existing single-valued edge was not found');
-  assert.equal(conflict.to, '4');
-
-  // `blocked-by` is the one list field, so it never conflicts — #1 already has
-  // two and a third is legitimate.
-  assert.equal(cardinalityConflict(document, 'blocked-by', '1'), undefined);
-
-  // An issue with no such edge yet is free to write one.
-  assert.equal(cardinalityConflict(document, 'duplicate-of', '14'), undefined);
-
-  // Enumerated from the vocabulary rather than by hand, so a field whose
-  // cardinality changes in the spec fails here instead of going unchecked.
-  for (const field of EDGE_FIELDS) {
-    const expected = EDGE_CARDINALITY[field] === 'single';
-    const twice = {
-      issues: document.issues,
-      edges: [...document.edges, makeEdge(field, '14', '9')],
-    };
-    assert.equal(
-      cardinalityConflict(twice, field, '14') !== undefined,
-      expected,
-      `${field} cardinality is read as ${EDGE_CARDINALITY[field]} and behaves otherwise`,
-    );
-  }
-});
 
 test('every member of a cycle is found, including one that joins it later', () => {
   // #12 and #13 already block each other. Wire #14 into that component:
@@ -808,37 +777,3 @@ test('a CLOSED member of a together unit does not hold its open groupmates', () 
   );
 });
 
-test('cardinality counts an IN-FLIGHT create, not only a landed one', () => {
-  // The decision this pins is WHICH EDGES COUNT, which used to be made inline
-  // in the page where nothing could test it — and that is how a landed-only
-  // reading survived being written. Two creates inside one settle window each
-  // saw a document with no landed value, and both were allowed.
-  const landed = [makeEdge('blocked-by', '1', '2')];
-  const pendingEdge = makeEdge('decomposed-from', '1', '3');
-  const projected = [
-    { ...landed[0]!, states: [] as const, writes: [] as const },
-    { ...pendingEdge, states: ['pending-write'] as const, writes: ['m1'] as const },
-    // Neither of these is a value the field holds: one was never written, the
-    // other was refused upstream.
-    { ...makeEdge('duplicate-of', '1', '9'), states: ['invalid'] as const, writes: ['m2'] as const },
-    { ...makeEdge('serialize-with', '1', '14'), states: ['failed'] as const, writes: ['m3'] as const },
-  ];
-
-  const weighed = writtenOrInFlight(landed, projected);
-  assert.ok(weighed.some((edge) => edge.id === pendingEdge.id), 'the in-flight create was not counted');
-  assert.ok(
-    !weighed.some((edge) => edge.kind === 'duplicate-of'),
-    'an invalid edge was counted as a value the field holds',
-  );
-  assert.ok(
-    !weighed.some((edge) => edge.kind === 'serialize-with'),
-    'a failed edge was counted as a value the field holds',
-  );
-  assert.equal(weighed.filter((edge) => edge.id === landed[0]?.id).length, 1, 'a landed edge was doubled');
-
-  // And the rule reading it now sees the conflict the page must refuse.
-  const document = { issues: seedDocument().issues, edges: weighed };
-  const conflict = cardinalityConflict(document, 'decomposed-from', '1');
-  assert.ok(conflict, 'an in-flight value was not counted against the field');
-  assert.equal(conflict.to, '3');
-});

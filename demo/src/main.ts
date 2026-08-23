@@ -18,11 +18,9 @@ import { createStore } from '@issuegraph/store';
 
 import {
   type ExplainedRow,
-  cardinalityConflict,
   createDeriver,
   explainOrder,
   introducesCycle,
-  writtenOrInFlight,
 } from './order.ts';
 import { render } from './render.ts';
 import { seedDocument, seedHolds } from './seed.ts';
@@ -77,7 +75,6 @@ function start(): void {
   const create = requireElement<HTMLButtonElement>('edit-create');
   const outcome = requireElement<HTMLSelectElement>('next-outcome');
   const reset = requireElement<HTMLButtonElement>('reset');
-  const note = requireElement('edit-note');
   const asOf = requireElement('as-of');
 
   for (const field of EDGE_FIELDS) kind.append(option(field, field));
@@ -132,44 +129,17 @@ function start(): void {
     });
     unsubscribe = store.subscribe(draw);
     outcome.value = 'apply';
-    note.textContent = '';
     asOf.textContent = `as of ${new Date().toLocaleTimeString()}`;
     void store.hydrate().then(draw);
     draw();
   };
 
   create.addEventListener('click', () => {
-    const chosen = kind.value as EdgeKind;
-    // CARDINALITY IS THE WRITER'S RULE, so the host checks it before writing.
-    // Every field except `blocked-by` holds ONE reference (§4.3), and a second
-    // one does not enrich the document — it makes the reader pick whichever it
-    // saw last. It is refused here rather than in the guard because the
-    // package's refusal codes are a closed set describing the STORE's own
-    // structural refusals, and inventing a meaning for one of them to carry a
-    // format rule would misreport what happened.
-    // READ THE IN-FLIGHT EDGES TOO, not just the landed ones. A dispatch takes
-    // 450ms to answer here, and two creates inside that window each saw a
-    // document with no landed value and both were allowed — after which the
-    // store's own structural refusals let them through, because cardinality is
-    // a FORMAT rule and not one of the refusals the package makes.
-    //
-    // Only `pending-write` edges count. An `invalid` one was never written and
-    // a `failed` one was refused upstream, so neither is a value this field
-    // holds; blocking on them would refuse a write the document has room for.
-    const snapshot = store.getSnapshot();
-    const existing = cardinalityConflict(
-      { issues: snapshot.issues, edges: writtenOrInFlight(snapshot.landed, snapshot.projected) },
-      chosen,
-      from.value,
-    );
-    if (existing !== undefined) {
-      note.textContent = `#${from.value} already has ${chosen} → #${existing.to}, and ${chosen} holds one reference. Delete that edge first.`;
-      return;
-    }
-    note.textContent = '';
+    // No writer rules here: the adapter enforces them for EVERY write path,
+    // which is the only way a rule reaches `retry` as well as this button.
     void store.propose({
       op: 'create',
-      kind: chosen,
+      kind: kind.value as EdgeKind,
       from: from.value,
       to: to.value,
     });
