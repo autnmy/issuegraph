@@ -142,7 +142,11 @@ function declaredPriority(issue: StoredIssue): Priority {
 }
 
 /** Disjoint-set over the two symmetric kinds, which is how §6.1 says to build them. */
-function components(edges: readonly StoredEdge[], kind: EdgeKind): Map<IssueRef, Set<IssueRef>> {
+function components(
+  edges: readonly StoredEdge[],
+  kind: EdgeKind,
+  known: ReadonlySet<IssueRef>,
+): Map<IssueRef, Set<IssueRef>> {
   const parent = new Map<IssueRef, IssueRef>();
   const find = (ref: IssueRef): IssueRef => {
     const seen = parent.get(ref);
@@ -158,6 +162,12 @@ function components(edges: readonly StoredEdge[], kind: EdgeKind): Map<IssueRef,
   };
   for (const edge of edges) {
     if (edge.kind !== kind) continue;
+    // AN UNRESOLVED REFERENCE CONTRIBUTES NO LINKAGE (§6.7). Passed through as
+    // an ordinary vertex it becomes a SHARED one: `#4 serialize-with #404` and
+    // `#5 serialize-with #404` would union #4 and #5 through an issue that does
+    // not exist, and a claim on one would then exclude the other. The reference
+    // is still surfaced — see `ownHolds` — but it links nothing.
+    if (!known.has(edge.from) || !known.has(edge.to)) continue;
     if (!parent.has(edge.from)) parent.set(edge.from, edge.from);
     if (!parent.has(edge.to)) parent.set(edge.to, edge.to);
     union(edge.from, edge.to);
@@ -327,6 +337,8 @@ interface Index {
   readonly serialize: ReadonlyMap<IssueRef, ReadonlySet<IssueRef>>;
   readonly together: ReadonlyMap<IssueRef, ReadonlySet<IssueRef>>;
   readonly held: ReadonlyMap<IssueRef, ExecutorHold>;
+  /** The symmetric-field edges, canonicalised, so an unresolved one can be surfaced. */
+  readonly symmetricEdges: readonly StoredEdge[];
   /**
    * The issues an executor is ACTIVELY working, expanded across together
    * components — claiming one member claims the whole unit atomically
@@ -443,7 +455,8 @@ export function cyclicMembers(document: GraphDocument): ReadonlySet<IssueRef> {
     from: resolve(edge.from),
     to: resolve(edge.to),
   }));
-  const together = components(canonicalEdges, 'together-with');
+  const known = new Set(document.issues.map((issue) => issue.ref));
+  const together = components(canonicalEdges, 'together-with', known);
   const { blockers } = dependencyGraph(document, resolve, together);
   return cyclic(blockers);
 }
@@ -488,7 +501,8 @@ function index(document: GraphDocument, holds: readonly ExecutorHold[]): Index {
   }));
   // Built BEFORE the dependency graph, which needs it to drop the edges §4.3.7
   // makes advisory.
-  const together = components(canonicalEdges, 'together-with');
+  const known = new Set(document.issues.map((issue) => issue.ref));
+  const together = components(canonicalEdges, 'together-with', known);
   const { blockers, dependents } = dependencyGraph(document, resolve, together);
 
   // An ACTIVE claim, expanded across the claimed issue's together unit. A hold
@@ -509,9 +523,12 @@ function index(document: GraphDocument, holds: readonly ExecutorHold[]): Index {
     duplicate: duplicates,
     canonical,
     cycle: cyclic(blockers),
-    serialize: components(canonicalEdges, 'serialize-with'),
+    serialize: components(canonicalEdges, 'serialize-with', known),
     together,
     held: new Map(holds.map((hold) => [hold.ref, hold] as const)),
+    symmetricEdges: canonicalEdges.filter(
+      (edge) => edge.kind === 'serialize-with' || edge.kind === 'together-with',
+    ),
     claimed,
   };
 }
@@ -560,6 +577,20 @@ function ownHolds(ref: IssueRef, at: Index): Hold[] {
       found.push({ family: 'graph', label: 'blocked', detail: `blocked by ${blocker}` });
     }
   }
+  // §6.7: an unresolved reference on a symmetric field contributes no linkage
+  // and is "likewise surfaced". Reported here rather than silently dropped —
+  // dropping it is what turns a malformed document into one that merely looks
+  // thin, and a groomer has nothing to act on.
+  for (const edge of at.symmetricEdges) {
+    if (edge.from !== ref) continue;
+    if (at.byRef.has(edge.to)) continue;
+    found.push({
+      family: 'graph',
+      label: 'unresolvable',
+      detail: `${edge.kind} ${edge.to}, which this document cannot resolve — it links nothing`,
+    });
+  }
+
   const serialize = at.serialize.get(ref);
   if (serialize !== undefined) {
     const unit = at.together.get(ref);

@@ -28,6 +28,8 @@ import type {
 } from '@issuegraph/store';
 import { createMemorySource, makeEdge, resultingEdge } from '@issuegraph/store';
 
+import { introducesCycle } from './order.ts';
+
 /**
  * What the next dispatch will answer.
  *
@@ -99,6 +101,13 @@ export const DEFAULT_SETTLE_DELAY_MS = 450;
  * lied. Returning `undefined` is what lets the caller decline instead of
  * claiming a movement that did not happen.
  *
+ * It is SCREENED BY THE SAME RULES AS ANY OTHER WRITE, because a fabricated
+ * upstream is still a write and this adapter installs it directly. A candidate
+ * that would close a dependency cycle is skipped: without that, resolving a
+ * conflict could persist exactly the graph the create flow refuses, and the one
+ * write in the demo that never passes a guard would be the one that breaks the
+ * rule the guard exists for.
+ *
  * It honours CARDINALITY, because a fabricated upstream is still a write. Every
  * field except `blocked-by` holds one reference (§4.3), so installing a second
  * one would let conflict simulation produce a document the page's own writer
@@ -130,6 +139,8 @@ function upstreamEdit(document: GraphDocument, mutation: Mutation): StoredEdge |
         if (EDGE_CARDINALITY[kind] === 'single' && carries(kind, from.ref)) continue;
         const added: StoredEdge = makeEdge(kind, from.ref, to.ref);
         if (held.has(added.id)) continue;
+        const next = { issues: document.issues, edges: [...document.edges, added] };
+        if (introducesCycle(document, next)) continue;
         return added;
       }
     }

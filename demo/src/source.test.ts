@@ -14,7 +14,7 @@ import { test } from 'node:test';
 import { EDGE_CARDINALITY } from '@issuegraph/core';
 import { EDGE_STATES, type EdgeState, createStore, makeEdge } from '@issuegraph/store';
 
-import { createDeriver } from './order.ts';
+import { createDeriver, introducesCycle } from './order.ts';
 import { seedDocument, seedHolds } from './seed.ts';
 import { createDemoSource } from './source.ts';
 
@@ -442,5 +442,56 @@ test('discarding a conflict adopts the upstream the source is actually holding',
     store.getSnapshot().landed.length,
     landedBefore + 1,
     'the upstream change stayed invisible after the local side was discarded',
+  );
+});
+
+test('a fabricated upstream is screened for cycles like any other write', async () => {
+  // The adapter installs the fabricated edit DIRECTLY, so it is the one write
+  // in the demo that never passes the page's guard. Without screening it here,
+  // resolving a conflict can persist exactly the graph the create flow refuses.
+  //
+  // The reviewer's scenario, built deliberately so the search is FORCED onto a
+  // cycle-closing candidate rather than happening to avoid one: #1's four
+  // single-valued fields are filled so they are skipped, `#1 duplicate-of #2`
+  // makes #1 resolve to #2, and `#4 blocked-by #2` is already landed — so the
+  // next candidate the search reaches, `#1 blocked-by #4`, resolves to
+  // `#2 blocked-by #4` and closes #2 → #4 → #2.
+  const { source, store } = harness();
+  await store.hydrate();
+  for (const edit of [
+    { kind: 'blocked-by', from: '4', to: '2' },
+    { kind: 'duplicate-of', from: '1', to: '2' },
+    { kind: 'decomposed-from', from: '1', to: '3' },
+    { kind: 'serialize-with', from: '1', to: '5' },
+    { kind: 'together-with', from: '1', to: '7' },
+  ] as const) {
+    await store.propose({ op: 'create', ...edit }).settled;
+  }
+
+  const landed = { issues: store.getSnapshot().issues, edges: store.getSnapshot().landed };
+  assert.ok(landed.edges.length > seedDocument().edges.length, 'the setup did not land');
+
+  source.arm('conflict');
+  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '14', to: '9' });
+  await handle.settled;
+
+  const record = store.getSnapshot().writes.find((write) => write.mutationId === handle.mutationId);
+  assert.ok(record?.state === 'conflict', 'the armed conflict did not fire, so nothing was screened');
+  assert.equal(
+    introducesCycle(landed, record.upstream),
+    false,
+    'the fabricated upstream installed a cycle the create flow would have refused',
+  );
+
+  // CONTROL: the machinery can see a cycle in this shape at all — otherwise the
+  // assertion above passes against a build that detects nothing.
+  const wouldCycle = {
+    issues: landed.issues,
+    edges: [...landed.edges, makeEdge('blocked-by', '1', '4')],
+  };
+  assert.equal(
+    introducesCycle(landed, wouldCycle),
+    true,
+    'the control failed: this fixture cannot express the cycle being screened for',
   );
 });

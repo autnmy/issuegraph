@@ -881,3 +881,53 @@ test('a TAIL leading into a duplicate cycle resolves to nothing', () => {
     'the control failed: a well-formed chain should resolve to its canonical',
   );
 });
+
+test('an unresolved symmetric reference links nothing, and is surfaced', () => {
+  // §6.7: an unresolved `serialize-with` contributes NO linkage. Passed through
+  // as an ordinary vertex it becomes a SHARED one — `#4 → #404` and `#5 → #404`
+  // union #4 and #5 through an issue that does not exist, so a claim on one
+  // excludes the other for no reason anyone can see.
+  const document = seedDocument();
+  const dangling = {
+    issues: document.issues,
+    edges: [
+      ...document.edges,
+      makeEdge('serialize-with', '4', '404'),
+      makeEdge('serialize-with', '3', '404'),
+    ],
+  };
+  const rowsOf = explainOrder(dangling, [
+    ...seedHolds(),
+    { ref: '4', label: 'claimed', detail: 'another worker holds this issue', active: true },
+  ]);
+
+  const other = rowsOf.find((each) => each.issue.ref === '3');
+  assert.ok(other);
+  assert.ok(
+    !other.holds.some((hold) => hold.label === 'serialized'),
+    'two issues were linked through a reference that resolves to nothing',
+  );
+  assert.equal(other.serializeGroupSize, 0, 'the phantom vertex still forms a group');
+
+  // "Likewise surfaced" is the other half of §6.7 — dropping the linkage
+  // silently turns a malformed document into one that merely looks thin.
+  assert.ok(
+    other.holds.some((hold) => hold.label === 'unresolvable'),
+    'the unresolved reference was dropped without being reported',
+  );
+
+  // CONTROL: a RESOLVED serialize-with still links and still excludes, so this
+  // does not pass against a build that stopped forming components.
+  const resolved = explainOrder(
+    { issues: document.issues, edges: [...document.edges, makeEdge('serialize-with', '3', '4')] },
+    [
+      ...seedHolds(),
+      { ref: '4', label: 'claimed', detail: 'another worker holds this issue', active: true },
+    ],
+  ).find((each) => each.issue.ref === '3');
+  assert.ok(resolved);
+  assert.ok(
+    resolved.holds.some((hold) => hold.label === 'serialized'),
+    'the control failed: a resolved serialize partner should still exclude',
+  );
+});
