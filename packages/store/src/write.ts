@@ -42,11 +42,8 @@ export type WriteRecord =
       /** The authoritative document as it stood when the conflict was reported. Held, never merged. */
       /**
        * The document as the adapter reported it at the moment of the conflict.
-       *
-       * FOR DISPLAY — the "view diff" half of the choice the design offers, and
-       * never adopted. Adopting it would mean answering "is this snapshot still
-       * current?", which the store cannot do: the adapter is the authority on
-       * the current document, so a host that wants it calls `rehydrate`.
+       * Retained for the host to show; never adopted. See the README's
+       * "Resolving a conflict".
        */
       readonly upstream: GraphDocument;
     };

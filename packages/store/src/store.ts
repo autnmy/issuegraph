@@ -116,17 +116,14 @@ export interface Store {
   propose(proposal: Proposal): ProposalHandle;
   /** Re-dispatch an unsettled edit, unchanged, against the document as it stands. */
   retry(mutationId: MutationId): ProposalHandle;
-  // NOTE: there is deliberately no `retryOnLatest`. A host composes it from
-  // `rehydrate()` and `retry()`, both of which are single-step. See the README
-  // section "Resolving a conflict" for why the store does not ship the
-  // composite.
+  // The store offers no retry-on-latest: a host composes it from `rehydrate()`
+  // and `retry()`, both single-step. The README's "Resolving a conflict" is the
+  // one place that explains why, so that a change of mind is one edit and not
+  // five.
 
   /**
-   * Drop an unsettled edit's overlay, and adopt nothing.
-   *
-   * The only call that removes the user's work. It does NOT adopt the conflict's
-   * recorded document: that is a reading of the past, and the store has no way
-   * to know how far past. A host that wants the current one calls `rehydrate`.
+   * Drop an unsettled edit's overlay. The only call that removes the user's
+   * work, and it adopts nothing. See the README's "Resolving a conflict".
    */
   discardMine(mutationId: MutationId): void;
   /** Set the selected edges. Selection is client state; it writes nothing. */
@@ -666,16 +663,10 @@ export function createStore(config: StoreConfig): Store {
     },
 
     /**
-     * Drop the overlay, and adopt nothing.
-     *
-     * The recorded snapshot is not adopted: it is a reading of the past, and the
-     * store has no way to know how far past. Discarding your own edit leaves
-     * the store where it was; a host that wants the current document calls
-     * `rehydrate`.
-     *
-     * Single-step on purpose — it reads the record and acts on it with no
-     * `await` in between, so nothing can change underneath it. That is the
-     * property `retryOnLatest` could not have, and why it is not here.
+     * Single-step on purpose: it reads the record and acts on it with no
+     * `await` in between, so nothing can change underneath it. A resolution
+     * that had to refresh first could not have that property, which is why the
+     * store does not offer one.
      */
     discardMine(mutationId) {
       const record = recordFor(mutationId);

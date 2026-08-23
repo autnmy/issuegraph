@@ -99,9 +99,12 @@ export type DispatchResult =
     }
   | {
       /**
-       * The issue changed upstream mid-edit. `upstream` is the authoritative
-       * document as it now stands, which is what lets the store offer
-       * retry-on-latest and a diff without ever merging the two versions.
+       * The issue changed upstream mid-edit, and `upstream` is the authoritative
+       * document as it stood at that moment.
+       *
+       * The store retains it and never merges it into anything. What a host may
+       * then do with it is the README's "Resolving a conflict"; this type says
+       * only what the value is.
        */
       readonly outcome: 'conflict';
       readonly upstream: GraphDocument;
