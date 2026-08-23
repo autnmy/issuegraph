@@ -18,6 +18,7 @@
     "test:scripts": "node --test \"scripts/**/*.test.ts\"",
     "test": "pnpm run test:packages && pnpm run test:scripts",
     "check:isolation": "node scripts/check-isolation.ts",
+    "smoke": "node scripts/smoke-consumer.mjs",
     "ci": "pnpm run typecheck && pnpm run build && pnpm run test && pnpm run check:isolation"
   },
   "devDependencies": {

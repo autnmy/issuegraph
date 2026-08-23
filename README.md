@@ -37,7 +37,7 @@ The reference implementation lives here as a pnpm workspace under [`packages/`](
 
 | package | what it is |
 |---|---|
-| [`@issuegraph/spec`](./packages/spec) | the specification's vocabulary as frozen constants and derived types — field names, cardinality, value sets, documented defaults. No parsing, no I/O. |
+| [`@issuegraph/core`](./packages/core) | the specification's vocabulary as frozen constants and derived types — field names, cardinality, value sets, documented defaults. No parsing, no I/O. |
 
 **Versioning: `0.x`, and unstable.** These packages track a draft specification, so breaking changes before `1.0` are expected and a minor bump may break you — pin exactly if that matters. A published version is a public commitment and npm does not allow an unpublish after 72 hours, so nothing is published on a merge: publishing happens on an explicit GitHub release.
 

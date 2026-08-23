@@ -15,7 +15,7 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
-  packages/spec:
+  packages/core:
     devDependencies:
       '@types/node':
         specifier: ^22.18.0

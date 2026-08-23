@@ -44,3 +44,45 @@ jobs:
 
       - name: Typecheck, build, test, isolation
         run: pnpm run ci
+
+  consumer-smoke:
+    # Everything above runs TypeScript SOURCE on a modern Node. This is the only
+    # job that loads the BUILT package, and it runs on the floor the published
+    # manifests declare — so `engines.node` stops being a claim nothing measured.
+    name: consumer smoke (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor each package declares. The smoke test asserts this matches
+        # `engines.node`, so raising one without the other fails loudly here
+        # rather than shipping an untested compatibility claim.
+        node: ['18']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      # Build on the toolchain's Node: the workspace needs >=22.18 to install and
+      # compile at all, which is exactly why the floor could never be part of the
+      # matrix above.
+      - name: Set up Node (toolchain)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - name: Install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
+
+      - name: Set up Node (published floor)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Load the built package on the declared floor
+        run: node scripts/smoke-consumer.mjs

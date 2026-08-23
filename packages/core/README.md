@@ -1,15 +1,17 @@
-# @issuegraph/spec
+# @issuegraph/core
 
-The [Issuegraph](https://github.com/autnmy/issuegraph) specification's vocabulary, as data.
+The vocabulary of the [Issuegraph](https://github.com/autnmy/issuegraph) format, as data.
 
-This package holds what the spec *fixes* and nothing it *derives*: the field names, their cardinality, the value sets, and the documented defaults. It parses nothing, reads nothing and builds no graph — those are a reader's and a writer's jobs, and keeping them apart is what lets you depend on the vocabulary without taking on either.
+This is what every layer agrees on: the field names, their cardinality, the value sets and the documented defaults. The reader, the writer and the viewer each read the format through this package, which is what keeps them from growing three copies of it.
+
+It holds what the spec *fixes* and nothing it *derives* — it parses nothing, reads nothing and builds no graph, so you can depend on the vocabulary without taking on a parser.
 
 ```sh
-npm install @issuegraph/spec
+npm install @issuegraph/core
 ```
 
 ```ts
-import { FIELDS, EDGE_CARDINALITY, DEFAULT_PRIORITY, isField, isPriority } from '@issuegraph/spec';
+import { FIELDS, EDGE_CARDINALITY, DEFAULT_PRIORITY, isField, isPriority } from '@issuegraph/core';
 
 FIELDS;                          // the seven recognised fields, frozen
 EDGE_CARDINALITY['blocked-by'];  // 'list' — every other edge field is 'single'
