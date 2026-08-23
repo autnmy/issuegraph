@@ -22,6 +22,7 @@ import {
   createDeriver,
   explainOrder,
   introducesCycle,
+  writtenOrInFlight,
 } from './order.ts';
 import { render } from './render.ts';
 import { seedDocument, seedHolds } from './seed.ts';
@@ -146,8 +147,18 @@ function start(): void {
     // package's refusal codes are a closed set describing the STORE's own
     // structural refusals, and inventing a meaning for one of them to carry a
     // format rule would misreport what happened.
+    // READ THE IN-FLIGHT EDGES TOO, not just the landed ones. A dispatch takes
+    // 450ms to answer here, and two creates inside that window each saw a
+    // document with no landed value and both were allowed — after which the
+    // store's own structural refusals let them through, because cardinality is
+    // a FORMAT rule and not one of the refusals the package makes.
+    //
+    // Only `pending-write` edges count. An `invalid` one was never written and
+    // a `failed` one was refused upstream, so neither is a value this field
+    // holds; blocking on them would refuse a write the document has room for.
+    const snapshot = store.getSnapshot();
     const existing = cardinalityConflict(
-      { issues: store.getSnapshot().issues, edges: store.getSnapshot().landed },
+      { issues: snapshot.issues, edges: writtenOrInFlight(snapshot.landed, snapshot.projected) },
       chosen,
       from.value,
     );

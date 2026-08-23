@@ -27,6 +27,7 @@ import type {
   IssueRef,
   OrderDeriver,
   OrderRow,
+  ProjectedEdge,
   StoredEdge,
   StoredIssue,
 } from '@issuegraph/store';
@@ -381,17 +382,33 @@ function dependencyGraph(
   // maps member-keyed, so every reader downstream is unchanged, while the walk
   // behaves as though the unit were one vertex — which, for the purpose of
   // deciding whether work can start, it is.
+  // CONTRACTED OVER THE UNIT'S **OPEN** MEMBERS ONLY. A together group closes
+  // member by member (§4.3.7) and its readiness is evaluated over the members
+  // still open, so a closed member is no longer part of the schedulable unit —
+  // and copying its dependencies onto the members that are left holds live work
+  // on a dependency that belongs to finished work. Reachable by adding
+  // `#8 blocked-by #2` and grouping the closed #8 with #4: #4 was then held by
+  // #2 for no reason a visitor could act on.
+  //
+  // A closed member keeps its OWN edges rather than being erased: it is still a
+  // real issue with a real history, and the linkage it carries is what makes it
+  // a member of the component at all.
+  const open = new Set(
+    document.issues.filter((issue) => issue.state === 'open').map((issue) => issue.ref),
+  );
   const contracted = (side: Map<IssueRef, IssueRef[]>): void => {
     for (const members of new Set(together.values())) {
+      const live = [...members].filter((member) => open.has(member));
+      if (live.length === 0) continue;
       const union = new Set<IssueRef>();
-      for (const member of members) {
+      for (const member of live) {
         for (const other of side.get(member) ?? []) {
           // An edge into the unit from one of its own members is internal, and
           // stays excluded after contraction exactly as it was before it.
           if (!members.has(other)) union.add(other);
         }
       }
-      for (const member of members) side.set(member, [...union]);
+      for (const member of live) side.set(member, [...union]);
     }
   };
   contracted(blockers);
@@ -443,6 +460,34 @@ export function cyclicMembers(document: GraphDocument): ReadonlySet<IssueRef> {
 export function introducesCycle(current: GraphDocument, next: GraphDocument): boolean {
   const before = cyclicMembers(current);
   return [...cyclicMembers(next)].some((ref) => !before.has(ref));
+}
+
+/**
+ * The edges a writer rule must weigh: what has LANDED, plus what is in flight.
+ *
+ * A dispatch takes time to answer, so "does this field already hold a value?"
+ * read against the landed document alone answers `no` twice for two creates
+ * made inside one settle window — and the store's own structural refusals do
+ * not cover cardinality, because that is a FORMAT rule rather than one of the
+ * refusals the package makes.
+ *
+ * Only `pending-write` overlays count. An `invalid` edge was never written and
+ * a `failed` one was refused upstream, so neither is a value the field holds;
+ * counting them would refuse a write the document has room for.
+ *
+ * It lives here, beside the rule it feeds, because the alternative is a
+ * decision made inline in the page where nothing can test it — which is exactly
+ * how the landed-only reading survived being written.
+ */
+export function writtenOrInFlight(
+  landed: readonly StoredEdge[],
+  projected: readonly ProjectedEdge[],
+): readonly StoredEdge[] {
+  const held = new Set(landed.map((edge) => edge.id));
+  const pending = projected.filter(
+    (edge) => !held.has(edge.id) && edge.states.includes('pending-write'),
+  );
+  return [...landed, ...pending];
 }
 
 /**

@@ -24,6 +24,7 @@ import {
   explainOrder,
   introducesCycle,
   slotCount,
+  writtenOrInFlight,
 } from './order.ts';
 import { seedDocument, seedHolds } from './seed.ts';
 
@@ -765,4 +766,79 @@ test('a duplicate with no resolvable canonical is still never worked', () => {
   const canonicalRow = explainOrder(document, seedHolds()).find((each) => each.issue.ref === '4');
   assert.ok(canonicalRow);
   assert.equal(canonicalRow.placement, 'spine', 'the canonical was excluded along with its duplicate');
+});
+
+test('a CLOSED member of a together unit does not hold its open groupmates', () => {
+  // A together group closes member by member (§4.3.7) and readiness is
+  // evaluated over the members still open, so a closed member is no longer part
+  // of the schedulable unit. Contracting over ALL members copied its
+  // dependencies onto the ones that are left — holding live work on a
+  // dependency that belongs to finished work.
+  const document = seedDocument();
+  const withClosedMember = {
+    issues: document.issues,
+    edges: [
+      ...document.edges,
+      makeEdge('blocked-by', '8', '2'), // #8 is CLOSED in the seed
+      makeEdge('together-with', '8', '4'),
+    ],
+  };
+  const live = explainOrder(withClosedMember, seedHolds()).find((each) => each.issue.ref === '4');
+  assert.ok(live);
+  assert.ok(
+    !live.holds.some((hold) => hold.label === 'blocked'),
+    "an open member is held by its CLOSED groupmate's dependency",
+  );
+
+  // CONTROL: the same shape with an OPEN member does hold #4 — otherwise this
+  // test passes against a build that has stopped contracting at all.
+  const withOpenMember = {
+    issues: document.issues,
+    edges: [
+      ...document.edges,
+      makeEdge('blocked-by', '14', '2'),
+      makeEdge('together-with', '14', '4'),
+    ],
+  };
+  const held = explainOrder(withOpenMember, seedHolds()).find((each) => each.issue.ref === '4');
+  assert.ok(held);
+  assert.ok(
+    held.holds.some((hold) => hold.label === 'blocked'),
+    'the control failed: an open groupmate should hold the unit',
+  );
+});
+
+test('cardinality counts an IN-FLIGHT create, not only a landed one', () => {
+  // The decision this pins is WHICH EDGES COUNT, which used to be made inline
+  // in the page where nothing could test it — and that is how a landed-only
+  // reading survived being written. Two creates inside one settle window each
+  // saw a document with no landed value, and both were allowed.
+  const landed = [makeEdge('blocked-by', '1', '2')];
+  const pendingEdge = makeEdge('decomposed-from', '1', '3');
+  const projected = [
+    { ...landed[0]!, states: [] as const, writes: [] as const },
+    { ...pendingEdge, states: ['pending-write'] as const, writes: ['m1'] as const },
+    // Neither of these is a value the field holds: one was never written, the
+    // other was refused upstream.
+    { ...makeEdge('duplicate-of', '1', '9'), states: ['invalid'] as const, writes: ['m2'] as const },
+    { ...makeEdge('serialize-with', '1', '14'), states: ['failed'] as const, writes: ['m3'] as const },
+  ];
+
+  const weighed = writtenOrInFlight(landed, projected);
+  assert.ok(weighed.some((edge) => edge.id === pendingEdge.id), 'the in-flight create was not counted');
+  assert.ok(
+    !weighed.some((edge) => edge.kind === 'duplicate-of'),
+    'an invalid edge was counted as a value the field holds',
+  );
+  assert.ok(
+    !weighed.some((edge) => edge.kind === 'serialize-with'),
+    'a failed edge was counted as a value the field holds',
+  );
+  assert.equal(weighed.filter((edge) => edge.id === landed[0]?.id).length, 1, 'a landed edge was doubled');
+
+  // And the rule reading it now sees the conflict the page must refuse.
+  const document = { issues: seedDocument().issues, edges: weighed };
+  const conflict = cardinalityConflict(document, 'decomposed-from', '1');
+  assert.ok(conflict, 'an in-flight value was not counted against the field');
+  assert.equal(conflict.to, '3');
 });
