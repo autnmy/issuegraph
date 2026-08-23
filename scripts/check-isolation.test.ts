@@ -486,6 +486,34 @@ test("a README's fenced usage example is not an escape", () => {
   assert.deepEqual(findIsolationViolations(packagesDir), []);
 });
 
+test('REGRESSION: a commented-out import block is not an escape', () => {
+  // Parking code behind /* */ is ordinary, and the inner lines DO begin with
+  // `import`, so the statement anchor cannot tell it from the real thing. A
+  // false positive here fails CI on the most common thing a developer does to
+  // code they are not using.
+  const packagesDir = fixture({
+    'src/index.ts': [
+      '/*',
+      'import { note } from "../../../consumer/private.js";',
+      '*/',
+      'export const clean = true;',
+    ].join('\n'),
+  });
+  assert.deepEqual(findIsolationViolations(packagesDir), []);
+});
+
+test('CONTROL: blanking comments does not blank the code around them', () => {
+  // The obvious way to break the fix above is to over-blank. A real escape on
+  // the line after a comment must still be caught.
+  const packagesDir = fixture({
+    'src/index.ts': [
+      '/* parked for now */',
+      "export { model } from '../../../apps/dashboard/src/model.ts';",
+    ].join('\n'),
+  });
+  assert.deepEqual(rulesFired(packagesDir), ['package-escape']);
+});
+
 test('an absolute filesystem import is an escape', () => {
   // A valid Node specifier that leaves the package and bakes a machine-specific
   // path into the artifact. The rule used to test only relative paths.

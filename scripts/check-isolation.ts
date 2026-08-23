@@ -341,8 +341,19 @@ function checkScannedFile(packagesDir: string, packageDir: string, file: string,
   // Only a file a runtime can execute has imports to find. Everything else is
   // still scanned by the brand rule below, which is what a README needs.
   if (isModuleFile(file)) {
+    // Blank block comments first — spaces, so every line number below still
+    // describes the original file. A commented-out import block is the ordinary
+    // way to park code, and its inner lines DO begin with `import`, so the
+    // statement anchor cannot tell it from the real thing. ESLint gets this
+    // right for free; this backstop has to be told.
+    //
+    // It strips `/*` inside a string literal too, which over-blanks and can
+    // therefore MISS a real import after it. That is the safe direction for a
+    // backstop whose primary instrument is a real parser, and it is why this is
+    // written as blanking rather than as another thing to recognise.
+    const scannable = text.replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, ' '));
     for (const pattern of SPECIFIER_PATTERNS) {
-      for (const match of text.matchAll(pattern)) {
+      for (const match of scannable.matchAll(pattern)) {
         const specifier = match[2];
         if (specifier === undefined) continue;
         const at = match.index ?? 0;

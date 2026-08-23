@@ -48,6 +48,11 @@ jobs:
       # `pnpm publish` fail with a registry authentication error that reads like
       # an outage; this says which secret is missing and who can add it.
       - name: Require a publish token
+        # Only where a token is actually needed. Unconditional, this exits before
+        # install and pack — so a dry run could not rehearse anything in exactly
+        # the no-token environment where rehearsing is the point (a fork, or
+        # before the secret exists).
+        if: ${{ github.event_name == 'release' || inputs.dry_run == false }}
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
