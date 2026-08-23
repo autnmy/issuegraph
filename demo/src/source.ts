@@ -39,8 +39,21 @@ export interface DemoSource extends DataSource {
   armed(): NextOutcome;
 }
 
-/** How the demo source is configured. Only the settle delay, so far. */
+/** How the demo source is configured. */
 export interface DemoSourceOptions {
+  /**
+   * Called whenever the armed outcome changes, INCLUDING when a dispatch
+   * disarms it.
+   *
+   * Without it the page cannot know: the store notifies its subscribers when
+   * the write is proposed, which is BEFORE the dispatch reaches this adapter
+   * and disarms, so the control redraws with the outcome still armed and then
+   * nothing redraws it again until the write settles. For the whole of that
+   * window the page says the next write will conflict when it will apply — and
+   * an edit made in the window is the one that proves the label wrong.
+   */
+  readonly onArmedChange?: (armed: NextOutcome) => void;
+
   /**
    * How long a dispatch takes to answer, in milliseconds.
    *
@@ -123,6 +136,13 @@ export function createDemoSource(
   const delayMs = options.settleDelayMs ?? DEFAULT_SETTLE_DELAY_MS;
   let next: NextOutcome = 'apply';
 
+  /** Announce the armed outcome, so a control showing it can stop being wrong. */
+  const setArmed = (outcome: NextOutcome): void => {
+    if (outcome === next) return;
+    next = outcome;
+    options.onArmedChange?.(outcome);
+  };
+
   /**
    * Answer after a real turn of the event loop, so the optimistic state paints.
    *
@@ -139,9 +159,7 @@ export function createDemoSource(
 
   return {
     current: () => memory.current(),
-    arm: (outcome: NextOutcome) => {
-      next = outcome;
-    },
+    arm: setArmed,
     armed: () => next,
 
     hydrate: () => memory.hydrate(),
@@ -150,8 +168,10 @@ export function createDemoSource(
       const armed = next;
       // Disarmed BEFORE the answer, so an armed outcome can never fire twice —
       // including on the retry the visitor is about to press, which is the whole
-      // point of offering one.
-      next = 'apply';
+      // point of offering one. Announced rather than assigned, because the page
+      // has already drawn itself by now and would otherwise go on displaying an
+      // outcome this adapter has just spent.
+      setArmed('apply');
       if (armed === 'reject') {
         return settle({
           outcome: 'rejected',

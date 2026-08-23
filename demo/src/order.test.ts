@@ -505,3 +505,60 @@ test('the cycle guard sees cycles that exist only after duplicate resolution', (
   // simply refusing everything.
   assert.equal(wouldCloseCycle(landed, '14', '9'), false, 'the guard refuses an innocent edge');
 });
+
+test('a cycle THROUGH a together unit is seen, because the unit is one node', () => {
+  // Opposite sides of the cycle touch different members: `#9 blocked-by #4`
+  // and `#4 blocked-by #7`, with {7,9} a together group. The schedulable-unit
+  // graph is {7,9} → 4 → {7,9} and all three are stuck, but a member-level walk
+  // cannot cross from #7 to #9, so excluding internal edges is not enough —
+  // the unit has to BE one node.
+  const document = seedDocument();
+  const edges = [...document.edges, makeEdge('blocked-by', '9', '4'), makeEdge('blocked-by', '4', '7')];
+  const stuck = explainOrder({ issues: document.issues, edges }, seedHolds());
+  for (const ref of ['4', '7', '9']) {
+    const member = stuck.find((each) => each.issue.ref === ref);
+    assert.ok(member, `no row for ${ref}`);
+    assert.ok(
+      member.holds.some((hold) => hold.label === 'cycle'),
+      `${ref} is in the deadlock and is not reported as stuck`,
+    );
+  }
+
+  // The guard has to refuse the edit that closes it, for the same reason and
+  // through the same graph.
+  const landed = { issues: document.issues, edges: [...document.edges, makeEdge('blocked-by', '9', '4')] };
+  assert.equal(
+    wouldCloseCycle(landed, '4', '7'),
+    true,
+    'the guard let through an edge that deadlocks a whole unit',
+  );
+
+  // CONTROL: without the group, the same two edges are NOT a cycle — #4 blocks
+  // #9 and #7 blocks #4, which is an ordinary chain.
+  const ungrouped = {
+    issues: document.issues,
+    edges: [
+      ...document.edges.filter((edge) => edge.kind !== 'together-with'),
+      makeEdge('blocked-by', '9', '4'),
+    ],
+  };
+  assert.equal(wouldCloseCycle(ungrouped, '4', '7'), false, 'the control chain reads as a cycle');
+});
+
+test('a unit-level blocker is reported once, not once per groupmate', () => {
+  // The contraction gives every member the unit's blockers directly, so
+  // propagating a groupmate's `blocked` hold on top would state one dependency
+  // twice — in its own words and in the groupmate's.
+  const document = seedDocument();
+  const blocked = explainOrder(
+    { issues: document.issues, edges: [...document.edges, makeEdge('blocked-by', '9', '14')] },
+    seedHolds(),
+  );
+  for (const ref of ['7', '9']) {
+    const member = blocked.find((each) => each.issue.ref === ref);
+    assert.ok(member);
+    const blockedHolds = member.holds.filter((hold) => hold.label === 'blocked');
+    assert.equal(blockedHolds.length, 1, `${ref} reports its unit's one blocker ${blockedHolds.length} times`);
+    assert.ok(blockedHolds[0]?.detail.includes('14'));
+  }
+});

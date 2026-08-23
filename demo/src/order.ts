@@ -310,6 +310,34 @@ function dependencyGraph(
     push(blockers, from, to);
     push(dependents, to, from);
   }
+
+  // CONTRACT EACH TOGETHER UNIT INTO ONE NODE. Excluding internal edges stops a
+  // unit blocking itself; it does NOT make the unit a single node, and the
+  // difference is a cycle that hides. With group {7,9}, `#9 blocked-by #4` and
+  // `#4 blocked-by #7` is `{7,9} → 4 → {7,9}` — three issues deadlocked — but a
+  // member-level walk cannot cross from #7 to #9, so neither cycle detection
+  // nor the write guard sees it.
+  //
+  // Contracting by UNIONING each unit's edges onto all of its members keeps the
+  // maps member-keyed, so every reader downstream is unchanged, while the walk
+  // behaves as though the unit were one vertex — which, for the purpose of
+  // deciding whether work can start, it is.
+  const contracted = (side: Map<IssueRef, IssueRef[]>): void => {
+    for (const members of new Set(together.values())) {
+      const union = new Set<IssueRef>();
+      for (const member of members) {
+        for (const other of side.get(member) ?? []) {
+          // An edge into the unit from one of its own members is internal, and
+          // stays excluded after contraction exactly as it was before it.
+          if (!members.has(other)) union.add(other);
+        }
+      }
+      for (const member of members) side.set(member, [...union]);
+    }
+  };
+  contracted(blockers);
+  contracted(dependents);
+
   return { blockers, dependents };
 }
 
@@ -472,6 +500,13 @@ function holdsFor(ref: IssueRef, at: Index): readonly Hold[] {
     if (member === ref) continue;
     if (at.byRef.get(member)?.state !== 'open') continue;
     for (const hold of ownHolds(member, at)) {
+      // `blocked` is skipped because the graph is CONTRACTED: every member
+      // already carries the unit's blockers directly, so propagating them here
+      // would report one dependency twice, once in its own words and once in a
+      // groupmate's. Everything else — an executor hold, a cycle, an
+      // unresolvable ref, a serialize exclusion — is genuinely the groupmate's
+      // and is what §6.2 rule 5 is about.
+      if (hold.label === 'blocked') continue;
       shared.push({
         family: hold.family,
         label: hold.label,

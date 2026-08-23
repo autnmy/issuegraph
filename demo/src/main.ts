@@ -90,15 +90,23 @@ function start(): void {
       seedHolds(),
     );
     render(root, store, rows, snapshot);
-    // The armed outcome fires once and disarms itself, so the control follows
-    // the source rather than keeping a claim the source has already dropped.
+    // The source ANNOUNCES a disarm (see `onArmedChange`), so this is only the
+    // initial sync and the reset path — a redraw can no longer be relied on to
+    // catch it, because the redraw happens first.
     outcome.value = source.armed();
   };
 
   const boot = (): void => {
     unsubscribe();
     issuesFilled = false;
-    source = createDemoSource(seedDocument());
+    source = createDemoSource(seedDocument(), {
+      // The adapter disarms itself inside `dispatch`, which happens AFTER the
+      // store has already notified the page about the pending write — so the
+      // control cannot be kept honest by redrawing, only by being told.
+      onArmedChange: (armed) => {
+        outcome.value = armed;
+      },
+    });
     store = createStore({
       source,
       derive: createDeriver(seedHolds()),

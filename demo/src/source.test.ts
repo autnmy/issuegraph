@@ -270,3 +270,37 @@ test('retrying after a conflict keeps the upstream change as well as mine', asyn
     'the retry did not land the visitor edit',
   );
 });
+
+test('the source announces its disarm, because a redraw happens too early', async () => {
+  // The store notifies subscribers when the write is PROPOSED, which is before
+  // the dispatch reaches the adapter and disarms. A page that syncs its control
+  // on redraw therefore keeps displaying an outcome the adapter has already
+  // spent, for the whole of the settle window.
+  const announced: string[] = [];
+  const source = createDemoSource(seedDocument(), {
+    settleDelayMs: 0,
+    onArmedChange: (armed) => announced.push(armed),
+  });
+  const store = createStore({ source, derive: createDeriver(seedHolds()) });
+  await store.hydrate();
+
+  source.arm('reject');
+  assert.deepEqual(announced, ['reject'], 'arming was not announced');
+
+  await store.propose({ op: 'create', kind: 'blocked-by', from: '4', to: '3' }).settled;
+
+  assert.deepEqual(announced, ['reject', 'apply'], 'the disarm was not announced');
+  assert.equal(source.armed(), 'apply');
+});
+
+test('announcing is idempotent: arming the same outcome twice says nothing new', async () => {
+  const announced: string[] = [];
+  const source = createDemoSource(seedDocument(), {
+    settleDelayMs: 0,
+    onArmedChange: (armed) => announced.push(armed),
+  });
+  source.arm('conflict');
+  source.arm('conflict');
+  assert.deepEqual(announced, ['conflict'], 'a no-op arm produced a notification');
+  await Promise.resolve();
+});
