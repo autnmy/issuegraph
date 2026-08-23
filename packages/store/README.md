@@ -181,12 +181,12 @@ The user's work stays on the canvas. `retry` re-dispatches it; on a conflict,
 auto-merges, nothing auto-reverts, and nothing times out** — `discardMine` is the only call
 that removes an optimistic edit, and a person has to make it.
 
-A conflict can sit unresolved while later edits land, so both resolutions adopt the recorded
-upstream **only while nothing has landed since it was taken.** Once something has, `landed`
-came from a later full authoritative answer and already knows everything the recorded
-snapshot did; adopting the older one would roll the intervening edit back. That reasoning is
-sound only because every authoritative answer is a whole document — which is why `applied`
-carries one.
+**A conflict's `upstream` is for display, and is never adopted.** It is the "view diff" half
+of the choice, and it is a reading of the past: a conflict can sit on screen for as long as a
+person takes to read it. So `retryOnLatest` **refreshes and then re-dispatches** — "on latest"
+is only true if something goes and looks — and `discardMine` drops the overlay and leaves the
+store where it was. The adapter is the authority on the current document; the store asks it
+rather than keeping a guess about how stale its own copy has become.
 
 `lastChange` belongs to the edit that is **current when it lands**. Two edits proposed before
 the first settles means the first's summary would otherwise be written after the second began,

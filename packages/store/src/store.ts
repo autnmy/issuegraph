@@ -240,8 +240,6 @@ export function createStore(config: StoreConfig): Store {
    * beside the one the user is making now.
    */
   let currentProposal: MutationId | undefined;
-  /** Bumped every time `landed` actually changes. See the conflict record's `landedAt`. */
-  let landedGeneration = 0;
   /**
    * ONE AUTHORITATIVE OPERATION AT A TIME, and the rest queued.
    *
@@ -262,7 +260,7 @@ export function createStore(config: StoreConfig): Store {
    * trip waits.
    */
   type Task =
-    | { readonly kind: 'dispatch'; readonly mutation: Mutation; readonly queuedAt: number }
+    | { readonly kind: 'dispatch'; readonly mutation: Mutation }
     | { readonly kind: 'load'; readonly first: boolean; readonly done: () => void };
   const queue: Task[] = [];
   let draining = false;
@@ -295,11 +293,6 @@ export function createStore(config: StoreConfig): Store {
       issues: sameValue(landed.issues, next.issues) ? landed.issues : own(next.issues),
       edges: sameEdgeSet(landed.edges, next.edges) ? landed.edges : own(next.edges),
     };
-    // Bumped only on a real change, so a rehydrate that returns the same
-    // document does not invalidate a conflict snapshot that is still current.
-    if (adopted.issues !== landed.issues || adopted.edges !== landed.edges) {
-      landedGeneration += 1;
-    }
     landed = adopted;
   }
 
@@ -502,7 +495,6 @@ export function createStore(config: StoreConfig): Store {
           // both resolutions, so a consumer editing it would rewrite the
           // ranking with no adapter operation at all.
           upstream: ownDocument(result.upstream),
-          landedAt: landedGeneration,
         });
         break;
       }
@@ -540,7 +532,7 @@ export function createStore(config: StoreConfig): Store {
     // not yet hold this edit, the nested one takes its place in line and goes
     // out first. Two edits on the same edge then apply in the reverse of the
     // order the user made them.
-    queue.push({ kind: 'dispatch', mutation, queuedAt: landedGeneration });
+    queue.push({ kind: 'dispatch', mutation });
     publish();
     void drain();
     return { mutationId: mutation.mutationId, settled };
@@ -566,7 +558,12 @@ export function createStore(config: StoreConfig): Store {
           next.done();
           continue;
         }
-        const refusal = next.queuedAt === landedGeneration ? undefined : refusalFor(next.mutation);
+        // ALWAYS re-checked, not only when something is known to have moved.
+        // Knowing that needs bookkeeping about document freshness, and every
+        // version of that bookkeeping this store has had was wrong in a way
+        // nobody could see. `refusalFor` is pure and cheap; asking it twice
+        // costs a great deal less than being wrong about when to ask.
+        const refusal = refusalFor(next.mutation);
         if (refusal !== undefined) {
           putRecord({
             mutationId: next.mutation.mutationId,
@@ -647,35 +644,40 @@ export function createStore(config: StoreConfig): Store {
       return start(record.mutation);
     },
 
+    /**
+     * REFRESH, then re-dispatch — the store never adopts the recorded snapshot.
+     *
+     * "On latest" is only true if something goes and looks. A conflict can sit
+     * on screen for as long as a person takes to read it, so the document the
+     * conflict reported is of unknown age by the time they click; the adapter
+     * is the authority on what is current, so the store asks it. Both tasks go
+     * through the same queue, in that order.
+     *
+     * The mutation itself needs no rewriting: three of the four operations name
+     * an edge by its content-derived identity and a `create` names its
+     * endpoints. What can change is whether it is still POSSIBLE — an edge
+     * somebody deleted, a duplicate somebody created — and the refusal check at
+     * dispatch is what catches that.
+     */
     retryOnLatest(mutationId) {
       const record = recordFor(mutationId);
       if (record === undefined || record.state !== 'conflict') return noop(mutationId);
-      // Adopt upstream FIRST, then re-run the edit against it. The mutation
-      // itself needs no rewriting: three of the four operations name an edge by
-      // its content-derived identity and a `create` names its endpoints, so
-      // nothing in it is invalidated by the adoption. What can change is whether
-      // it is still POSSIBLE — an edge somebody else deleted, a duplicate
-      // somebody else created — and `start` re-runs the refusal check for that.
-      // Adopt the recorded snapshot ONLY while nothing has landed since it was
-      // taken. If something has, `landed` came from a later full authoritative
-      // answer and already knows everything this snapshot did — adopting the
-      // older one would remove the edit that landed in between.
-      if (record.landedAt === landedGeneration) {
-        adopt(record.upstream);
-        reDerive(undefined);
-      }
+      void load(false);
       return start(record.mutation);
     },
 
+    /**
+     * Drop the overlay, and adopt nothing.
+     *
+     * The recorded snapshot is not adopted here either, for the same reason:
+     * it is a reading of the past, and the store has no way to know how far in
+     * the past without bookkeeping that has been wrong every time it existed.
+     * Discarding your own edit leaves the store where it was; a host that wants
+     * the current document calls `rehydrate`.
+     */
     discardMine(mutationId) {
       const record = recordFor(mutationId);
       if (record === undefined || record.state === 'pending') return;
-      // Same staleness rule as `retryOnLatest`: discarding your own edit must
-      // never roll back somebody else's that landed while you were deciding.
-      if (record.state === 'conflict' && record.landedAt === landedGeneration) {
-        adopt(record.upstream);
-        reDerive(undefined);
-      }
       dropRecord(mutationId);
       publish();
     },

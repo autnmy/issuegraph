@@ -40,18 +40,17 @@ export type WriteRecord =
       readonly mutation: Mutation;
       readonly state: 'conflict';
       /** The authoritative document as it stood when the conflict was reported. Held, never merged. */
-      readonly upstream: GraphDocument;
       /**
-       * Which landed document `upstream` was newer than.
+       * The document as the adapter reported it at the moment of the conflict.
        *
-       * A conflict can sit unresolved while later edits land, and every
-       * `applied` answer is a FULL authoritative snapshot — so once one has
-       * arrived, `landed` is strictly better informed than this record's
-       * `upstream`, and adopting the recorded one at resolution time would roll
-       * the later edit back. The stamp is what lets the resolution tell those
-       * two situations apart.
+       * FOR DISPLAY — the "view diff" half of the choice the design offers.
+       * It is never adopted, and that is what retired a whole class of bugs:
+       * the store used to adopt it at resolution time, which meant asking "is
+       * this snapshot still current?", which meant a freshness counter, which
+       * was wrong three separate times. The adapter is the authority on the
+       * current document, so the store asks it rather than keeping a guess.
        */
-      readonly landedAt: number;
+      readonly upstream: GraphDocument;
     };
 
 /** The state a record contributes to the edges it marks. */

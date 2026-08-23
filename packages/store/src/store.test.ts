@@ -335,7 +335,13 @@ test('the guard is shown both documents', async () => {
   });
   await store.hydrate();
   await store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' }).settled;
-  assert.deepEqual(seen, [{ current: 0, next: 1 }]);
+  // Twice: once for the immediate verdict a proposal needs, once at dispatch
+  // because `landed` may have moved while the edit waited. Asking a pure
+  // function twice is cheaper than keeping bookkeeping about when to ask.
+  assert.deepEqual(seen, [
+    { current: 0, next: 1 },
+    { current: 0, next: 1 },
+  ]);
 });
 
 test('mutation identities are deterministic within a store', async () => {
@@ -902,10 +908,84 @@ test('a conflict snapshot a consumer reached through cannot be edited into the s
   assert.ok(Object.isFrozen(record.upstream.edges), 'the retained conflict document is frozen');
   assert.throws(() => (record.upstream.edges as StoredEdge[]).pop(), TypeError);
 
+  // It is retained for display and never adopted, so even an editable copy
+  // could not have reached `landed` — the freeze is defence in depth on a door
+  // that is now closed anyway.
+  store.discardMine(handle.mutationId);
+  assert.deepEqual(store.getSnapshot().landed, []);
+});
+
+test('a refresh confirming the document supersedes a conflict snapshot taken before it', async () => {
+  // The counter bumped only when adopting CHANGED the document, so an
+  // authoritative read returning what the store already held left it untouched
+  // — and a conflict snapshot recorded before that read still looked current.
+  // Resurrecting it puts back a change the tracker no longer has.
+  let served: GraphDocument = threeOpenIssues();
+  const scripted = createScriptedSource(threeOpenIssues(), applyEdit);
+  const store = createStore({
+    source: {
+      hydrate: () => Promise.resolve(served),
+      dispatch: (mutation) => scripted.dispatch(mutation),
+    },
+    derive: simpleDeriver,
+  });
+  await store.hydrate();
+
+  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  await scripted.whenPending(handle.mutationId);
+  // Somebody else's change, which the store never adopts.
+  scripted.settleNext({ outcome: 'conflict', upstream: withEdge(threeOpenIssues(), 'duplicate-of', '3', '1') });
+  await handle.settled;
+
+  // ...and then it is reverted, so a refresh authoritatively returns the
+  // original document. Nothing about `landed` changes.
+  await store.rehydrate();
+  assert.deepEqual(store.getSnapshot().landed, []);
+
   store.discardMine(handle.mutationId);
   assert.deepEqual(
-    store.getSnapshot().landed.map((edge) => edge.id),
-    [edgeId('duplicate-of', '3', '1')],
-    'and what is adopted is what the adapter sent',
+    store.getSnapshot().landed,
+    [],
+    'a snapshot older than the last authoritative read must never be resurrected',
   );
+});
+
+test('retry on latest asks for the latest rather than trusting a held snapshot', async () => {
+  // "On latest" is only true if something goes and looks. The recorded snapshot
+  // is of unknown age by the time a person clicks.
+  let served: GraphDocument = threeOpenIssues();
+  const scripted = createScriptedSource(threeOpenIssues(), applyEdit);
+  let reads = 0;
+  const store = createStore({
+    source: {
+      hydrate: () => {
+        reads += 1;
+        return Promise.resolve(served);
+      },
+      dispatch: (mutation) => scripted.dispatch(mutation),
+    },
+    derive: simpleDeriver,
+  });
+  await store.hydrate();
+  assert.equal(reads, 1);
+
+  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  await scripted.whenPending(handle.mutationId);
+  scripted.settleNext({ outcome: 'conflict', upstream: withEdge(threeOpenIssues(), 'duplicate-of', '3', '1') });
+  await handle.settled;
+
+  // By now the world has moved on again — past the snapshot the conflict held.
+  served = withEdge(threeOpenIssues(), 'serialize-with', '2', '3');
+
+  const resolved = store.retryOnLatest(handle.mutationId);
+  await scripted.whenPending(handle.mutationId);
+  assert.equal(reads, 2, 'it refreshed before re-dispatching');
+  assert.deepEqual(
+    store.getSnapshot().landed.map((edge) => edge.id),
+    [edgeId('serialize-with', '2', '3')],
+    'against what the adapter holds now, not what the conflict remembered',
+  );
+
+  scripted.settleNext('applied');
+  await resolved.settled;
 });

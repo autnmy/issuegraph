@@ -265,18 +265,18 @@ test('discard mine is the only call that removes the user’s work', async () =>
   await store.hydrate();
 
   const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  await source.whenPending(handle.mutationId);
   source.settleNext({ outcome: 'conflict', upstream: withEdge(threeOpenIssues(), 'duplicate-of', '3', '1') });
   await handle.settled;
   assert.equal(store.getSnapshot().projected.length, 1);
 
   store.discardMine(handle.mutationId);
   const snapshot = store.getSnapshot();
-  assert.deepEqual(
-    snapshot.projected.map((edge) => edge.id),
-    [edgeId('duplicate-of', '3', '1')],
-    'the upstream is adopted and the user’s edge is gone',
-  );
+  assert.deepEqual(snapshot.projected, [], 'the user’s edge is gone');
   assert.deepEqual(snapshot.writes, []);
+  // And the conflict's recorded document is NOT adopted in its place: it is a
+  // reading of the past, and the store keeps no way to tell how far past.
+  assert.deepEqual(snapshot.landed, []);
 });
 
 test('an in-flight write cannot be discarded out from under itself', async () => {
