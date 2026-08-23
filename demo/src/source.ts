@@ -39,6 +39,29 @@ export interface DemoSource extends DataSource {
   armed(): NextOutcome;
 }
 
+/** How the demo source is configured. Only the settle delay, so far. */
+export interface DemoSourceOptions {
+  /**
+   * How long a dispatch takes to answer, in milliseconds.
+   *
+   * IT MUST NOT BE ZERO IN THE BROWSER, and that is a demonstration
+   * requirement rather than a cosmetic one. Every path here can answer
+   * immediately, and an already-settled promise resolves on the MICROTASK
+   * checkpoint — which drains before the browser gets a rendering opportunity.
+   * So `pending-write` and the held order, the two things the page exists to
+   * show, would be created and cleared without ever painting: observable to a
+   * synchronous test and invisible to a visitor, which is the worst version of
+   * this because the tests go on passing.
+   *
+   * Tests pass `0` to stay fast, and one of them uses a non-zero value to pin
+   * that the state really does survive a turn of the event loop.
+   */
+  readonly settleDelayMs?: number;
+}
+
+/** The default answer time: long enough to see, short enough not to annoy. */
+export const DEFAULT_SETTLE_DELAY_MS = 450;
+
 /**
  * The edge an upstream writer added while the visitor was editing, or
  * `undefined` when this document has no room for one.
@@ -92,9 +115,27 @@ function withUpstreamEdit(document: GraphDocument, mutation: Mutation): GraphDoc
  * MEANS. Re-implementing that here to add a switch would make the demo's
  * behaviour a second answer to a question the package has already answered.
  */
-export function createDemoSource(seed: GraphDocument): DemoSource {
+export function createDemoSource(
+  seed: GraphDocument,
+  options: DemoSourceOptions = {},
+): DemoSource {
   const memory = createMemorySource(seed);
+  const delayMs = options.settleDelayMs ?? DEFAULT_SETTLE_DELAY_MS;
   let next: NextOutcome = 'apply';
+
+  /**
+   * Answer after a real turn of the event loop, so the optimistic state paints.
+   *
+   * A MACROTASK, not a microtask: the microtask queue drains before the browser
+   * renders, so `Promise.resolve()` and `queueMicrotask` both leave the pending
+   * state invisible. `setTimeout` is the boundary the browser paints on.
+   */
+  const settle = (result: DispatchResult): Promise<DispatchResult> =>
+    delayMs <= 0
+      ? Promise.resolve(result)
+      : new Promise((resolve) => {
+          setTimeout(() => resolve(result), delayMs);
+        });
 
   return {
     current: () => memory.current(),
@@ -112,7 +153,7 @@ export function createDemoSource(seed: GraphDocument): DemoSource {
       // point of offering one.
       next = 'apply';
       if (armed === 'reject') {
-        return Promise.resolve({
+        return settle({
           outcome: 'rejected',
           reason: 'the tracker refused this write (armed by the demo controls)',
         });
@@ -124,15 +165,17 @@ export function createDemoSource(seed: GraphDocument): DemoSource {
         // to reach — the honest answer is a refusal that says why, not a
         // conflict whose "view diff" is empty.
         if (upstream === undefined) {
-          return Promise.resolve({
+          return settle({
             outcome: 'rejected',
             reason:
               'the demo could not fabricate an upstream change distinct from this edit: every other edge this document could hold already exists',
           });
         }
-        return Promise.resolve({ outcome: 'conflict', upstream });
+        return settle({ outcome: 'conflict', upstream });
       }
-      return memory.dispatch(mutation);
+      // The reference adapter answers immediately too, so its result goes
+      // through the same delay rather than around it.
+      return memory.dispatch(mutation).then(settle);
     },
   };
 }

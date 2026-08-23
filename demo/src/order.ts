@@ -45,6 +45,15 @@ export interface ExecutorHold {
   readonly label: string;
   /** The sentence shown beside it. */
   readonly detail: string;
+  /**
+   * Whether this hold means the issue is ACTIVELY BEING WORKED.
+   *
+   * §6.2 rule 4 admits a serialize group on "no actively-claimed member" — a
+   * claim, not a hold in general. Reading every executor hold as a claim holds
+   * a whole group because one member is *parked*, which is the opposite of what
+   * a width-1 semaphore is for: nothing is running, so nothing is excluded.
+   */
+  readonly active?: boolean;
 }
 
 /**
@@ -168,28 +177,38 @@ function components(edges: readonly StoredEdge[], kind: EdgeKind): Map<IssueRef,
 }
 
 /**
- * Every issue that is a duplicate, directly or transitively (§6.2 rule 2).
+ * The duplicate-to-CANONICAL map (§6.1), not merely the set of refs to ignore.
  *
- * Walked to a fixed point rather than one hop: `duplicate-of` closes to a
- * canonical issue (§6.1), so a duplicate of a duplicate is still a duplicate.
+ * The mapping is the part that matters and the part that is easy to drop. A set
+ * of "issues that are duplicates" answers §6.2 rule 2 and nothing else, so a
+ * reference POINTING AT a duplicate stays attached to it: an issue blocked by a
+ * duplicate never inherits the canonical's fate, the canonical never inherits
+ * the dependent's urgency, and closing the canonical does not unblock anything.
+ * The reader rules say references resolve, so they have to actually resolve.
+ *
+ * Followed to a fixed point, because a duplicate of a duplicate is a duplicate
+ * of the same canonical — and guarded against a `duplicate-of` cycle, which is
+ * malformed rather than impossible: a ref that returns to where it started
+ * stops there rather than looping.
  */
-function duplicates(edges: readonly StoredEdge[]): Set<IssueRef> {
-  const found = new Set<IssueRef>();
+function duplicateCanonicals(edges: readonly StoredEdge[]): Map<IssueRef, IssueRef> {
+  const target = new Map<IssueRef, IssueRef>();
   for (const edge of edges) {
-    if (edge.kind === 'duplicate-of') found.add(edge.from);
+    if (edge.kind === 'duplicate-of') target.set(edge.from, edge.to);
   }
-  let grew = true;
-  while (grew) {
-    grew = false;
-    for (const edge of edges) {
-      if (edge.kind !== 'duplicate-of') continue;
-      if (found.has(edge.to) && !found.has(edge.from)) {
-        found.add(edge.from);
-        grew = true;
-      }
+  const canonical = new Map<IssueRef, IssueRef>();
+  for (const from of target.keys()) {
+    const walked = new Set<IssueRef>([from]);
+    let at = target.get(from);
+    while (at !== undefined && !walked.has(at)) {
+      walked.add(at);
+      const next = target.get(at);
+      if (next === undefined) break;
+      at = next;
     }
+    if (at !== undefined && at !== from) canonical.set(from, at);
   }
-  return found;
+  return canonical;
 }
 
 /**
@@ -231,10 +250,18 @@ interface Index {
   /** ref → the issues that declare themselves blocked by it. §6.3 walks this way. */
   readonly dependents: ReadonlyMap<IssueRef, readonly IssueRef[]>;
   readonly duplicate: ReadonlySet<IssueRef>;
+  /** duplicate → the canonical it resolves to (§6.1). */
+  readonly canonical: ReadonlyMap<IssueRef, IssueRef>;
   readonly cycle: ReadonlySet<IssueRef>;
   readonly serialize: ReadonlyMap<IssueRef, ReadonlySet<IssueRef>>;
   readonly together: ReadonlyMap<IssueRef, ReadonlySet<IssueRef>>;
   readonly held: ReadonlyMap<IssueRef, ExecutorHold>;
+  /**
+   * The issues an executor is ACTIVELY working, expanded across together
+   * components — claiming one member claims the whole unit atomically
+   * (§4.3.7), so serialize admission has to see the unit, not the member.
+   */
+  readonly claimed: ReadonlySet<IssueRef>;
 }
 
 function push(map: Map<IssueRef, IssueRef[]>, key: IssueRef, value: IssueRef): void {
@@ -243,6 +270,12 @@ function push(map: Map<IssueRef, IssueRef[]>, key: IssueRef, value: IssueRef): v
 
 function index(document: GraphDocument, holds: readonly ExecutorHold[]): Index {
   const byRef = new Map(document.issues.map((issue) => [issue.ref, issue] as const));
+  const canonical = duplicateCanonicals(document.edges);
+  // EVERY graph reference resolves through the duplicate mapping before it is
+  // indexed, so a relationship written against a duplicate lands on the issue
+  // that will actually be worked. A ref with no mapping is its own canonical.
+  const resolve = (ref: IssueRef): IssueRef => canonical.get(ref) ?? ref;
+
   const blockers = new Map<IssueRef, IssueRef[]>();
   const dependents = new Map<IssueRef, IssueRef[]>();
   for (const issue of document.issues) {
@@ -251,18 +284,44 @@ function index(document: GraphDocument, holds: readonly ExecutorHold[]): Index {
   }
   for (const edge of document.edges) {
     if (edge.kind !== 'blocked-by') continue;
-    push(blockers, edge.from, edge.to);
-    push(dependents, edge.to, edge.from);
+    const from = resolve(edge.from);
+    const to = resolve(edge.to);
+    // A canonical does not block itself: two duplicates of one issue, or an
+    // issue blocked by its own duplicate, both collapse to a self-edge here.
+    if (from === to) continue;
+    push(blockers, from, to);
+    push(dependents, to, from);
   }
+
+  const canonicalEdges = document.edges.map((edge) => ({
+    ...edge,
+    from: resolve(edge.from),
+    to: resolve(edge.to),
+  }));
+  const together = components(canonicalEdges, 'together-with');
+
+  // An ACTIVE claim, expanded across the claimed issue's together unit. A hold
+  // that is not a claim — `parked` — excludes nobody, because nothing is
+  // running.
+  const claimed = new Set<IssueRef>();
+  for (const hold of holds) {
+    if (hold.active !== true) continue;
+    const ref = resolve(hold.ref);
+    claimed.add(ref);
+    for (const member of together.get(ref) ?? []) claimed.add(member);
+  }
+
   return {
     byRef,
     blockers,
     dependents,
-    duplicate: duplicates(document.edges),
+    duplicate: new Set(canonical.keys()),
+    canonical,
     cycle: cyclic(blockers),
-    serialize: components(document.edges, 'serialize-with'),
-    together: components(document.edges, 'together-with'),
+    serialize: components(canonicalEdges, 'serialize-with'),
+    together,
     held: new Map(holds.map((hold) => [hold.ref, hold] as const)),
+    claimed,
   };
 }
 
@@ -315,15 +374,16 @@ function ownHolds(ref: IssueRef, at: Index): Hold[] {
   if (serialize !== undefined) {
     for (const member of serialize) {
       if (member === ref) continue;
-      const claimed = at.held.get(member);
-      const state = at.byRef.get(member)?.state;
-      if (state === 'open' && claimed !== undefined) {
-        found.push({
-          family: 'graph',
-          label: 'serialized',
-          detail: `serialize group member ${member} is ${claimed.label}`,
-        });
-      }
+      // §6.2 rule 4: admission turns on an ACTIVELY-CLAIMED member. `at.claimed`
+      // already carries the together expansion, so claiming one member of a
+      // unit excludes the group through any of them.
+      if (!at.claimed.has(member)) continue;
+      if (at.byRef.get(member)?.state !== 'open') continue;
+      found.push({
+        family: 'graph',
+        label: 'serialized',
+        detail: `serialize group member ${member} is actively claimed`,
+      });
     }
   }
   const executor = at.held.get(ref);

@@ -90,11 +90,20 @@ thing it exists to demonstrate.
 
 ## Theming
 
-Every colour, size and spacing value lives in one block of CSS custom properties
-at the top of `styles.css`. Retheming this page means redeclaring that block and
-touching no markup and no script. The hue is never load-bearing: every edge
-carries a glyph and its written kind, so the page reads identically with colour
-removed.
+Every colour, dimension, radius, weight and tracking lives in the custom-property
+blocks at the top of `styles.css`. **No rule outside those blocks carries a
+length literal**, so retheming this page means redeclaring them and touching no
+markup, no script and no rule.
+
+That is enforced rather than promised: `src/theme.test.ts` reads the stylesheet
+and fails the build if a dimension reappears in a rule, and checks the other
+direction too — every property a rule references must be declared, or
+"redeclare the block" reaches nothing. The guard exists because this claim was
+once an overclaim, and the drift was invisible: the token block was there, the
+rules hard-coded their sizes anyway, and the sentence went on being printed.
+
+The hue is never load-bearing: every edge carries a glyph and its written kind,
+so the page reads identically with colour removed.
 
 ## It is not published
 

@@ -87,7 +87,12 @@ export function seedDocument(): GraphDocument {
  */
 export function seedHolds(): readonly ExecutorHold[] {
   return [
-    { ref: '6', label: 'claimed', detail: 'another worker holds this issue' },
+    // ACTIVE: a worker is running this right now, so its serialize group is
+    // excluded (§6.2 rule 4).
+    { ref: '6', label: 'claimed', detail: 'another worker holds this issue', active: true },
+    // NOT active: parked work is not running, so it excludes nobody. Reading
+    // every hold as a claim is what held a serialize group over an issue that
+    // nothing was working.
     { ref: '11', label: 'parked', detail: 'parked for a decision a person has to make' },
   ];
 }

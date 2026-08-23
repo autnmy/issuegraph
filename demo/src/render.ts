@@ -9,10 +9,11 @@
  * three readiness stations, the three rank-provenance forms and every edge
  * state.
  *
- * EVERY COLOUR, SIZE AND SPACING VALUE IS A CSS CUSTOM PROPERTY, set in
- * `styles.css` and never here. That is BYO-Theme demonstrated rather than
- * asserted: a host retheming this page edits one block of custom properties and
- * touches no markup. The hue is never load-bearing — each edge carries a glyph
+ * EVERY COLOUR AND DIMENSION IS A CSS CUSTOM PROPERTY, set in `styles.css` and
+ * never here — and `theme.test.ts` fails the build if a length literal
+ * reappears in a rule. That is BYO-Theme demonstrated rather than asserted: a
+ * host retheming this page redeclares one block and touches no markup, no
+ * script and no rule. The hue is never load-bearing — each edge carries a glyph
  * and a written kind, so the page reads identically in monochrome.
  *
  * Text is written with `textContent`, never `innerHTML`. An issue title is data

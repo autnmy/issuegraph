@@ -17,8 +17,11 @@ import { createDeriver } from './order.ts';
 import { seedDocument, seedHolds } from './seed.ts';
 import { createDemoSource } from './source.ts';
 
-function harness() {
-  const source = createDemoSource(seedDocument());
+function harness(settleDelayMs = 0) {
+  // Zero by default so the suite stays fast. The DEFAULT is deliberately not
+  // zero — see `DemoSourceOptions.settleDelayMs`, and the last test here, which
+  // pins why.
+  const source = createDemoSource(seedDocument(), { settleDelayMs });
   const store = createStore({ source, derive: createDeriver(seedHolds()) });
   return { source, store };
 }
@@ -204,4 +207,33 @@ test('an armed conflict never fabricates the visitor\'s own edit as the upstream
     !fabricated.some((edge) => edge.id === mine.id),
     'the upstream change IS the visitor\'s own edit, so the two do not compete',
   );
+});
+
+test('the pending state survives a turn of the event loop, so it can paint', async () => {
+  // Every dispatch path here can answer immediately, and an already-settled
+  // promise resolves on the MICROTASK checkpoint — which drains before the
+  // browser renders. The optimistic edge and the held order would then be
+  // created and cleared without ever painting: observable to a test, invisible
+  // to a visitor, with the tests still green.
+  const { store } = harness(30);
+  await store.hydrate();
+
+  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '4', to: '3' });
+
+  // A MACROTASK boundary — the one the browser paints on. Draining the
+  // microtask queue instead (`await Promise.resolve()`) is exactly what does
+  // NOT prove this, because that is the checkpoint the defect hid behind.
+  await new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+
+  const midflight = store.getSnapshot();
+  assert.ok(
+    midflight.projected.some((edge) => edge.states.includes('pending-write')),
+    'the optimistic edge did not survive a macrotask, so a visitor can never see it',
+  );
+  assert.equal(midflight.order.status, 'held', 'the held order did not survive a macrotask');
+
+  await handle.settled;
+  assert.equal(store.getSnapshot().order.status, 'settled');
 });

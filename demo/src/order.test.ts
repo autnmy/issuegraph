@@ -360,3 +360,91 @@ test('a ready together group is ONE scheduler slot, not one per member', () => {
     );
   }
 });
+
+test('a serialize group is admitted on an ACTIVE claim, not on any hold', () => {
+  // #11 is parked, which is not a claim: nothing is running, so nothing is
+  // excluded. Reading every executor hold as a claim held a serialize partner
+  // over work that no worker had.
+  const document = seedDocument();
+  const serialized = explainOrder(
+    { issues: document.issues, edges: [...document.edges, makeEdge('serialize-with', '4', '11')] },
+    seedHolds(),
+  );
+  const partner = serialized.find((each) => each.issue.ref === '4');
+  assert.ok(partner);
+  assert.ok(
+    !partner.holds.some((hold) => hold.label === 'serialized'),
+    'a parked partner held the group even though nothing is running',
+  );
+});
+
+test('a claim expands across the claimed unit before serialize admission', () => {
+  // Claiming #6 atomically claims its whole together unit (§4.3.7), so
+  // serializing with any member of that unit excludes you — even a member
+  // nobody claimed directly.
+  const document = seedDocument();
+  const serialized = explainOrder(
+    {
+      issues: document.issues,
+      edges: [
+        ...document.edges,
+        makeEdge('together-with', '6', '7'),
+        makeEdge('serialize-with', '4', '7'),
+      ],
+    },
+    seedHolds(),
+  );
+  const partner = serialized.find((each) => each.issue.ref === '4');
+  assert.ok(partner);
+  assert.ok(
+    partner.holds.some((hold) => hold.label === 'serialized'),
+    'the claim did not expand across the together unit, so the group admitted two workers',
+  );
+});
+
+test('a reference to a duplicate resolves to its canonical', () => {
+  // #10 is a duplicate of #4 and is never worked. A dependency written against
+  // #10 therefore has to LAND on #4 — otherwise #4 never inherits the
+  // dependent'"'"'s urgency, and closing #4 would not unblock anything.
+  const document = seedDocument();
+  const resolved = explainOrder(
+    { issues: document.issues, edges: [...document.edges, makeEdge('blocked-by', '1', '10')] },
+    seedHolds(),
+  );
+  const canonical = resolved.find((each) => each.issue.ref === '4');
+  assert.ok(canonical);
+  assert.equal(
+    canonical.effectivePriority,
+    0,
+    'the canonical did not inherit the urgency of the issue blocked by its duplicate',
+  );
+
+  const dependent = resolved.find((each) => each.issue.ref === '1');
+  assert.ok(dependent);
+  assert.ok(
+    dependent.holds.some((hold) => hold.detail.includes('blocked by 4')),
+    'the dependency stayed attached to the duplicate instead of the canonical',
+  );
+  assert.ok(
+    !dependent.holds.some((hold) => hold.detail.includes('blocked by 10')),
+    'the dependency is still reported against a duplicate that is never worked',
+  );
+});
+
+test('a chain of duplicates resolves to the far canonical, not one hop', () => {
+  const document = seedDocument();
+  const chained = explainOrder(
+    {
+      issues: [...document.issues, { ref: '15', title: 'Renaming that flag again', state: 'open' }],
+      edges: [
+        ...document.edges,
+        makeEdge('duplicate-of', '15', '10'),
+        makeEdge('blocked-by', '1', '15'),
+      ],
+    },
+    seedHolds(),
+  );
+  const canonical = chained.find((each) => each.issue.ref === '4');
+  assert.ok(canonical);
+  assert.equal(canonical.effectivePriority, 0, 'the closure stopped one hop short of the canonical');
+});
