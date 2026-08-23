@@ -15,11 +15,13 @@ import {
   PRIORITY_MIN,
   SCALAR_FIELDS,
   SPEC_VERSION,
+  SYMMETRIC_EDGE_FIELDS,
   isEdgeField,
   isEvidence,
   isField,
   isPriority,
   isScalarField,
+  isSymmetricEdgeField,
 } from './index.ts';
 
 const specPath = fileURLToPath(new URL('../../../SPEC.md', import.meta.url));
@@ -86,7 +88,14 @@ test('every edge field declares a cardinality, and only blocked-by is a list', (
 });
 
 test('the exported vocabulary is frozen', () => {
-  for (const value of [EDGE_FIELDS, SCALAR_FIELDS, FIELDS, EVIDENCE_VALUES, EDGE_CARDINALITY]) {
+  for (const value of [
+    EDGE_FIELDS,
+    SCALAR_FIELDS,
+    FIELDS,
+    EVIDENCE_VALUES,
+    EDGE_CARDINALITY,
+    SYMMETRIC_EDGE_FIELDS,
+  ]) {
     assert.ok(Object.isFrozen(value));
   }
 });
@@ -131,4 +140,22 @@ test('the guards read a prototype key as absent, not as a field', () => {
     assert.ok(!isEdgeField(inherited));
     assert.ok(!isEvidence(inherited));
   }
+});
+
+test('the symmetric edge fields are a subset of the edge fields, and the split is total', () => {
+  // Pinned against the spec by reading, not by parsing: §4.3.4 states the serialize
+  // group is "treated as undirected" and §4.3.7 says together-with's encoding
+  // "mirrors serialize-with: symmetric". Neither sentence lives in a table, and a
+  // matcher over prose is a parser for an open grammar — it would find a new edge
+  // case every time someone reworded a paragraph. So the constant is pinned here
+  // and the spec sections are cited in its doc comment.
+  for (const field of SYMMETRIC_EDGE_FIELDS) {
+    assert.ok(isEdgeField(field), `${field} should be an edge field`);
+    assert.ok(isSymmetricEdgeField(field));
+  }
+  assert.deepEqual([...SYMMETRIC_EDGE_FIELDS], ['serialize-with', 'together-with']);
+
+  const directed = EDGE_FIELDS.filter((field) => !isSymmetricEdgeField(field));
+  assert.deepEqual([...directed], ['blocked-by', 'decomposed-from', 'duplicate-of']);
+  assert.equal(directed.length + SYMMETRIC_EDGE_FIELDS.length, EDGE_FIELDS.length);
 });
