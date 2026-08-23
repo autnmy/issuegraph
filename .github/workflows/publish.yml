@@ -76,7 +76,13 @@ jobs:
         # `--no-git-checks` because the release ref is a detached checkout, which
         # pnpm otherwise refuses. Access and provenance come from each package's
         # own publishConfig, so a new package cannot inherit them by accident.
-        run: pnpm publish --recursive --no-git-checks
+        #
+        # `--ignore-scripts` is supply-chain hygiene, matching the estate's other
+        # published package: publishing must not be a place arbitrary lifecycle
+        # code runs. Nothing here depends on a hook — the build is an explicit
+        # step above — so if you ever add a `prepublishOnly`, it will NOT run and
+        # the build must stay explicit.
+        run: pnpm publish --recursive --no-git-checks --ignore-scripts
 
       - name: Publish (dry run)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
@@ -85,6 +91,6 @@ jobs:
         # Block scalar, not a bare one: a plain YAML scalar containing `: ` is
         # read as a mapping, and the workflow fails to LOAD rather than to run.
         run: |
-          pnpm publish --recursive --no-git-checks --dry-run
+          pnpm publish --recursive --no-git-checks --ignore-scripts --dry-run
           echo "Dry run complete: packed and validated, nothing uploaded."
           echo "Re-run with dry_run unchecked to publish."
