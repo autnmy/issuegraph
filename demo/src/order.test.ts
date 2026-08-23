@@ -194,3 +194,87 @@ test('the spine is ordered by effective priority, newest first within a tier', (
     );
   }
 });
+
+test('a together group is PLACED as a unit, not split across the two treatments', () => {
+  // Group a parked issue with a spine issue. The parked member's hold
+  // propagates to its groupmate (§6.2 rule 5), so the groupmate is held by the
+  // EXECUTOR family — and an executor-derived hold must never render inline.
+  const document = seedDocument();
+  const grouped = explainOrder(
+    { issues: document.issues, edges: [...document.edges, makeEdge('together-with', '11', '4')] },
+    seedHolds(),
+  );
+  for (const ref of ['11', '4']) {
+    const member = grouped.find((each) => each.issue.ref === ref);
+    assert.ok(member, `no row for ${ref}`);
+    assert.equal(member.placement, 'footer', `${ref} should be in the footer with its group`);
+  }
+  // The invariant behind it, stated as an invariant rather than as two cases:
+  // nothing in the spine carries an executor-derived hold.
+  for (const each of grouped.filter((row) => row.placement === 'spine')) {
+    assert.ok(
+      !each.holds.some((hold) => hold.family === 'executor'),
+      `${each.issue.ref} renders an executor-derived hold inline`,
+    );
+  }
+});
+
+test('INVARIANT: the returned rows never step backward in rank', () => {
+  // `OrderRow.rank` is a POSITION, rendered in ascending order, so a consumer
+  // walking the array must never see it decrease. Together members share a
+  // rank, which is why the test is non-decreasing rather than strictly
+  // increasing.
+  const check = (rows: readonly ExplainedRow[], what: string): void => {
+    for (let i = 1; i < rows.length; i += 1) {
+      const previous = rows[i - 1];
+      const current = rows[i];
+      assert.ok(previous && current);
+      assert.ok(
+        current.rank >= previous.rank,
+        `${what}: rank stepped back from ${previous.rank} (${previous.issue.ref}) to ${current.rank} (${current.issue.ref})`,
+      );
+    }
+  };
+
+  check(rows(), 'the seed');
+
+  const document = seedDocument();
+  // The reviewer's own scenario: group two equally-prioritised issues that the
+  // newest-first tiebreak separates. Handing the group its first member's rank
+  // while leaving both sorted individually is what made the array step back.
+  check(
+    explainOrder(
+      { issues: document.issues, edges: [...document.edges, makeEdge('together-with', '14', '4')] },
+      seedHolds(),
+    ),
+    'a together group whose members the tiebreak separates',
+  );
+  // And with three members spread across the tier.
+  check(
+    explainOrder(
+      {
+        issues: document.issues,
+        edges: [
+          ...document.edges,
+          makeEdge('together-with', '14', '4'),
+          makeEdge('together-with', '4', '13'),
+        ],
+      },
+      seedHolds(),
+    ),
+    'a three-member together group',
+  );
+});
+
+test('a together group whose members the tiebreak separates stays contiguous', () => {
+  const document = seedDocument();
+  const grouped = explainOrder(
+    { issues: document.issues, edges: [...document.edges, makeEdge('together-with', '14', '4')] },
+    seedHolds(),
+  );
+  const positions = ['14', '4'].map((ref) => grouped.findIndex((each) => each.issue.ref === ref));
+  assert.ok(positions.every((at) => at >= 0), 'both members should be present');
+  assert.equal(Math.abs(positions[0]! - positions[1]!), 1, 'the unit should be adjacent');
+  const ranks = new Set(['14', '4'].map((ref) => grouped.find((each) => each.issue.ref === ref)!.rank));
+  assert.equal(ranks.size, 1, 'one candidate, one rank');
+});

@@ -155,3 +155,28 @@ test('every mutation state is reachable from the demo, together', async () => {
   }
   await pending.settled;
 });
+
+test('an armed conflict always has something to show, even after that edge exists', () => {
+  // The reviewer's scenario: land the edge the fabricated upstream used to
+  // hardcode, then arm a conflict. A source that reached for one fixed pair
+  // returned the document UNCHANGED and still reported a conflict, so the
+  // "view diff" half of the choice had nothing in it.
+  return (async () => {
+    const { source, store } = harness();
+    await store.hydrate();
+    await store.propose({ op: 'create', kind: 'serialize-with', from: '1', to: '2' }).settled;
+
+    const landed = store.getSnapshot().landed;
+    source.arm('conflict');
+    const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '4', to: '3' });
+    await handle.settled;
+
+    const record = store.getSnapshot().writes.find((write) => write.mutationId === handle.mutationId);
+    assert.equal(record?.state, 'conflict', 'the armed conflict did not fire');
+    assert.ok(record.state === 'conflict');
+    assert.ok(
+      record.upstream.edges.length > landed.length,
+      'the upstream document is identical to what landed, so a diff would show nothing',
+    );
+  })();
+});

@@ -443,48 +443,93 @@ export function explainOrder(
   const at = index(document, holds);
   const effective = effectivePriorities(at);
 
+  const holdsOf = new Map<IssueRef, readonly Hold[]>();
+  for (const issue of document.issues) holdsOf.set(issue.ref, holdsFor(issue.ref, at));
+
+  // PLACEMENT IS DECIDED BY THE HOLD'S FAMILY, not by a per-issue test of the
+  // things that usually produce one. The design's rule is about the family —
+  // graph-derived holds render inline, executor-derived ones and duplicates
+  // collapse into the footer — and asking about the family directly is what
+  // makes a together group land in ONE place.
+  //
+  // The per-issue test this replaces read `at.held.has(ref) || duplicate`, which
+  // splits a schedulable unit: `holdsFor` propagates a parked member's hold to
+  // its groupmates (§6.2 rule 5), so the groupmate stayed in the spine carrying
+  // an executor-derived hold rendered inline — the exact distinction the demo
+  // states it never blurs. A group is ready as a unit or not at all, so it is
+  // placed as a unit too.
+  //
+  // `closed` stays a property of the ISSUE rather than of the unit, and that is
+  // not an oversight: a together group closes member by member (§4.3.7), so one
+  // closed member is not a statement about the rest.
   const spineRefs: IssueRef[] = [];
   const footerRefs: IssueRef[] = [];
   for (const issue of document.issues) {
     const footer =
-      issue.state === 'closed' || at.duplicate.has(issue.ref) || at.held.has(issue.ref);
+      issue.state === 'closed' ||
+      (holdsOf.get(issue.ref) ?? []).some((hold) => hold.family === 'executor');
     (footer ? footerRefs : spineRefs).push(issue.ref);
   }
 
   const priorityOf = (ref: IssueRef): Priority =>
     effective.get(ref)?.priority ?? DEFAULT_PRIORITY;
-  const bySelection = (a: IssueRef, b: IssueRef): number =>
-    priorityOf(a) - priorityOf(b) || newestFirst(a, b);
-  spineRefs.sort(bySelection);
-  footerRefs.sort(bySelection);
 
-  // Together-group members share ONE rank (§4.3.7 — the group enters selection
-  // as a single unit), so the counter advances per station, not per row.
+  // THE UNIT OF SELECTION IS THE TOGETHER COMPONENT, NOT THE ISSUE (§4.3.7:
+  // "together groups enter selection as single units: one candidate, one claim,
+  // group effective priority"). Sorting issues and then handing the group its
+  // first member's rank is what produced ranks that jump BACKWARD later in the
+  // array: two equally-prioritised members separated by another reference under
+  // the tiebreak each keep their own position while sharing one rank, and
+  // `OrderRow.rank` is documented as a position rendered in ascending order. So
+  // the component is grouped BEFORE the sort, and the rows come back in unit
+  // order — which makes the array monotonic by construction rather than by a
+  // rule every consumer has to remember.
   const inSpine = new Set(spineRefs);
-  const rankOf = new Map<IssueRef, number>();
-  let next = 0;
+  const units: IssueRef[][] = [];
+  const claimed = new Set<IssueRef>();
   for (const ref of spineRefs) {
-    if (rankOf.has(ref)) continue;
+    if (claimed.has(ref)) continue;
+    const members = [...(at.together.get(ref) ?? [ref])].filter((member) => inSpine.has(member));
+    if (members.length === 0) members.push(ref);
+    for (const member of members) claimed.add(member);
+    // Newest first WITHIN the unit too, so a group renders in the same order
+    // its members would have held individually.
+    members.sort(newestFirst);
+    units.push(members);
+  }
+
+  // A unit's effective priority is the highest over its members, and its
+  // tiebreak is its newest member — both the group reading of the rules a
+  // single issue gets for free.
+  const unitPriority = (members: readonly IssueRef[]): Priority =>
+    members.reduce<Priority>((best, ref) => (priorityOf(ref) < best ? priorityOf(ref) : best), 3);
+  const unitNewest = (members: readonly IssueRef[]): IssueRef => members[0] ?? '';
+  units.sort(
+    (a, b) => unitPriority(a) - unitPriority(b) || newestFirst(unitNewest(a), unitNewest(b)),
+  );
+
+  const rankOf = new Map<IssueRef, number>();
+  const ordered: IssueRef[] = [];
+  let next = 0;
+  for (const members of units) {
     const rank = next;
     next += 1;
-    rankOf.set(ref, rank);
-    for (const member of at.together.get(ref) ?? []) {
-      if (inSpine.has(member)) rankOf.set(member, rank);
+    for (const member of members) {
+      rankOf.set(member, rank);
+      ordered.push(member);
     }
   }
+  footerRefs.sort((a, b) => priorityOf(a) - priorityOf(b) || newestFirst(a, b));
   for (const ref of footerRefs) {
     rankOf.set(ref, next);
     next += 1;
   }
 
-  const holdsOf = new Map<IssueRef, readonly Hold[]>();
-  for (const ref of [...spineRefs, ...footerRefs]) holdsOf.set(ref, holdsFor(ref, at));
-
-  // The ready STATIONS, in rank order and deduplicated: a together group enters
-  // selection as a single unit (§4.3.7), so it consumes one slot rather than
-  // one per member. This is what the cap is counted against.
+  // The ready STATIONS, in rank order and deduplicated: a together group is one
+  // candidate, so it consumes one slot rather than one per member. This is what
+  // the cap is counted against.
   const readySlots: number[] = [];
-  for (const ref of spineRefs) {
+  for (const ref of ordered) {
     if ((holdsOf.get(ref) ?? []).length > 0) continue;
     const rank = rankOf.get(ref) ?? 0;
     if (!readySlots.includes(rank)) readySlots.push(rank);
@@ -492,7 +537,7 @@ export function explainOrder(
   readySlots.sort((a, b) => a - b);
 
   const rows: ExplainedRow[] = [];
-  for (const ref of [...spineRefs, ...footerRefs]) {
+  for (const ref of [...ordered, ...footerRefs]) {
     const issue = at.byRef.get(ref);
     if (issue === undefined) continue;
     const spine = inSpine.has(ref);

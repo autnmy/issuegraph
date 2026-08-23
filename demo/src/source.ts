@@ -16,6 +16,7 @@
  * demonstrated.
  */
 
+import { EDGE_FIELDS } from '@issuegraph/core';
 import type { DataSource, DispatchResult, GraphDocument, Mutation, StoredEdge } from '@issuegraph/store';
 import { createMemorySource, makeEdge } from '@issuegraph/store';
 
@@ -39,22 +40,39 @@ export interface DemoSource extends DataSource {
 }
 
 /**
- * The edge an upstream writer added while the visitor was editing.
+ * The edge an upstream writer added while the visitor was editing, or
+ * `undefined` when this document has no room for one.
  *
- * A conflict is only meaningful if the upstream document genuinely differs from
- * the one on screen — an "upstream" identical to what the store holds would show
- * the visitor a diff with nothing in it, which teaches the wrong thing about
- * what a conflict IS.
+ * A conflict is only meaningful if the upstream document genuinely DIFFERS from
+ * the one on screen — an "upstream" identical to what the store holds shows the
+ * visitor a diff with nothing in it, which teaches the wrong thing about what a
+ * conflict is.
+ *
+ * So it SEARCHES rather than reaching for one hardcoded pair. The previous
+ * version added `serialize-with` between the first two open issues and returned
+ * the document unchanged when that edge already existed — which a visitor
+ * reaches by simply writing that edge first, after which every armed conflict
+ * lied. Returning `undefined` is what lets the caller decline instead of
+ * claiming a movement that did not happen.
+ *
+ * Deliberately returns the FIRST absent edge rather than a random one: a demo
+ * that shows a different conflict each time is harder to talk about, and
+ * determinism costs nothing here.
  */
-function withUpstreamEdit(document: GraphDocument): GraphDocument {
-  const first = document.issues[0];
-  const other = document.issues.find(
-    (issue) => first !== undefined && issue.ref !== first.ref && issue.state === 'open',
-  );
-  if (first === undefined || other === undefined) return document;
-  const added: StoredEdge = makeEdge('serialize-with', first.ref, other.ref);
-  if (document.edges.some((edge) => edge.id === added.id)) return document;
-  return { issues: document.issues, edges: [...document.edges, added] };
+function withUpstreamEdit(document: GraphDocument): GraphDocument | undefined {
+  const open = document.issues.filter((issue) => issue.state === 'open');
+  const held = new Set(document.edges.map((edge) => edge.id));
+  for (const from of open) {
+    for (const to of open) {
+      if (from.ref === to.ref) continue;
+      for (const kind of EDGE_FIELDS) {
+        const added: StoredEdge = makeEdge(kind, from.ref, to.ref);
+        if (held.has(added.id)) continue;
+        return { issues: document.issues, edges: [...document.edges, added] };
+      }
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -91,10 +109,19 @@ export function createDemoSource(seed: GraphDocument): DemoSource {
         });
       }
       if (armed === 'conflict') {
-        return Promise.resolve({
-          outcome: 'conflict',
-          upstream: withUpstreamEdit(memory.current()),
-        });
+        const upstream = withUpstreamEdit(memory.current());
+        // NEVER REPORT A CONFLICT WITH NOTHING TO SHOW. Where no absent edge is
+        // left to fabricate — a saturated document, which takes deliberate work
+        // to reach — the honest answer is a refusal that says why, not a
+        // conflict whose "view diff" is empty.
+        if (upstream === undefined) {
+          return Promise.resolve({
+            outcome: 'rejected',
+            reason:
+              'the demo could not fabricate an upstream change: every edge this document could hold already exists',
+          });
+        }
+        return Promise.resolve({ outcome: 'conflict', upstream });
       }
       return memory.dispatch(mutation);
     },
