@@ -55,6 +55,17 @@ export const EDGE_CARDINALITY = Object.freeze({
   'together-with': 'single',
 } as const);
 
+/**
+ * The relationship fields whose edges carry no direction (§4.3.4, §4.3.7). Both
+ * describe a connected component "treated as undirected", so `A serialize-with
+ * B` and `B serialize-with A` state the same fact and a reader must not present
+ * them as two.
+ *
+ * Directed and symmetric are the only two readings, so the complement is every
+ * other member of `EDGE_FIELDS` rather than a second table to keep in step.
+ */
+export const SYMMETRIC_EDGE_FIELDS = Object.freeze(['serialize-with', 'together-with'] as const);
+
 /** The two values `evidence` accepts (§4.3.6). */
 export const EVIDENCE_VALUES = Object.freeze(['asserted', 'verified'] as const);
 
@@ -86,14 +97,29 @@ export type Priority = 0 | 1 | 2 | 3;
 /** How many references a relationship field carries. */
 export type EdgeCardinality = (typeof EDGE_CARDINALITY)[EdgeField];
 
+/** A relationship field whose edges carry no direction. */
+export type SymmetricEdgeField = (typeof SYMMETRIC_EDGE_FIELDS)[number];
+
 const EDGE_FIELD_SET: ReadonlySet<string> = new Set<string>(EDGE_FIELDS);
 const SCALAR_FIELD_SET: ReadonlySet<string> = new Set<string>(SCALAR_FIELDS);
 const FIELD_SET: ReadonlySet<string> = new Set<string>(FIELDS);
 const EVIDENCE_SET: ReadonlySet<string> = new Set<string>(EVIDENCE_VALUES);
+const SYMMETRIC_EDGE_FIELD_SET: ReadonlySet<string> = new Set<string>(SYMMETRIC_EDGE_FIELDS);
 
 /** Narrow an arbitrary string to a relationship field name. */
 export function isEdgeField(value: string): value is EdgeField {
   return EDGE_FIELD_SET.has(value);
+}
+
+/**
+ * Whether a relationship field's edges carry no direction (§4.3.4, §4.3.7).
+ *
+ * Takes an `EdgeField` rather than a bare string: "is this direction-free?" is
+ * only a question about a field the format recognises, and accepting anything
+ * would answer `false` for a typo as readily as for `blocked-by`.
+ */
+export function isSymmetricEdgeField(field: EdgeField): field is SymmetricEdgeField {
+  return SYMMETRIC_EDGE_FIELD_SET.has(field);
 }
 
 /** Narrow an arbitrary string to a scalar field name. */

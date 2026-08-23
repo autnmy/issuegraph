@@ -1,0 +1,56 @@
+{
+  "name": "@issuegraph/store",
+  "version": "0.1.0",
+  "description": "A framework-free client store for an Issuegraph document, plus the data-source port a host plugs its tracker into. Renders edits optimistically, dispatches every mutation outward, and never re-evaluates the selection order until the write lands.",
+  "keywords": [
+    "issuegraph",
+    "dependency-graph",
+    "backlog",
+    "scheduling",
+    "optimistic-updates",
+    "store"
+  ],
+  "license": "Apache-2.0",
+  "author": "Autonomy LLC",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/autnmy/issuegraph.git",
+    "directory": "packages/store"
+  },
+  "homepage": "https://github.com/autnmy/issuegraph#readme",
+  "bugs": {
+    "url": "https://github.com/autnmy/issuegraph/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "test": "node --test \"src/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@issuegraph/core": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "typescript": "^6.0.3"
+  }
+}
