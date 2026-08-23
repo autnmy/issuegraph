@@ -31,9 +31,30 @@ Issuegraph describes **work, never execution** — no claims, leases, statuses, 
 
 **→ [SPEC.md](./SPEC.md)** · [worked example](./examples/decomposition.md) · [changelog](./CHANGELOG.md)
 
+## Packages
+
+The reference implementation lives here as a pnpm workspace under [`packages/`](./packages), published to npm under the `@issuegraph` scope.
+
+| package | what it is |
+|---|---|
+| [`@issuegraph/core`](./packages/core) | the specification's vocabulary as frozen constants and derived types — field names, cardinality, value sets, documented defaults. No parsing, no I/O. |
+
+**Versioning: `0.x`, and unstable.** These packages track a draft specification, so breaking changes before `1.0` are expected and a minor bump may break you — pin exactly if that matters. A published version is a public commitment and npm does not allow an unpublish after 72 hours, so nothing is published on a merge: publishing happens on an explicit GitHub release.
+
+**Imports are linted, not pattern-matched.** `pnpm run lint` runs ESLint over `packages/`, which parses the real syntax tree: a forbidden consumer import, an absolute path (static or dynamic), and a relative import reaching into a sibling package all fail the build. Each rule is proved by a fixture written to break it, including a control that the config matches the file at all — a green lint run means nothing if it linted nothing.
+
+**Isolation is mechanical, not a convention.** Nothing in this repository may reach into a consumer's codebase — a package that depends on one consumer is a private library wearing a public name. `pnpm run check:isolation` fails the build on a forbidden dependency — named by a key, an `npm:` alias, or a git URL — on a relative import escaping its own package, and on a consumer's brand token in **any text a package ships**: source, README, a JSON schema, a NOTICE, or `package.json` metadata. There is no extension allowlist and no exemption for built output, because what a package can publish is an open set — and `dist`, with the sources its maps embed, is the part that actually ships. The guard is proved by [`scripts/check-isolation.test.ts`](./scripts/check-isolation.test.ts), which builds packages that break each rule and asserts it reports exactly that rule.
+
+Working on them:
+
+```sh
+pnpm install
+pnpm run ci   # typecheck, build, test, isolation
+```
+
 ## Status
 
-**v0.1.0 draft.** Published for implementation, not adoption claims: the spec is being implemented against a real backlog by a real autonomous pipeline, and will be amended from what breaks before any 1.0. Expect changes.
+**v0.2.0 draft.** Published for implementation, not adoption claims: the spec is being implemented against a real backlog by a real autonomous pipeline, and will be amended from what breaks before any 1.0. Expect changes.
 
 ## Implementations
 

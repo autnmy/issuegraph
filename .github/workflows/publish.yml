@@ -1,0 +1,101 @@
+name: Publish
+
+# Publishing is deliberately not on push. A published version is permanent —
+# npm does not allow an unpublish after 72 hours — so it happens on an explicit
+# release, or on a deliberate manual run.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      # Underscore, not a hyphen. A GitHub expression does not read a hyphenated
+      # name as a property: it parses `inputs.dry` MINUS `run`, and the workflow
+      # then fails to load at all rather than misbehaving visibly.
+      dry_run:
+        description: 'Run everything except the publish itself'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  # Required for npm provenance, which every package here requests through its
+  # own publishConfig.
+  id-token: write
+
+concurrency:
+  group: publish-${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: publish @issuegraph/*
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: pnpm
+          registry-url: 'https://registry.npmjs.org'
+
+      # Fail here rather than at the publish step. A missing secret makes
+      # `pnpm publish` fail with a registry authentication error that reads like
+      # an outage; this says which secret is missing and who can add it.
+      - name: Require a publish token
+        # Only where a token is actually needed. Unconditional, this exits before
+        # install and pack — so a dry run could not rehearse anything in exactly
+        # the no-token environment where rehearsing is the point (a fork, or
+        # before the secret exists).
+        if: ${{ github.event_name == 'release' || inputs.dry_run == false }}
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "${NPM_TOKEN}" ]; then
+            echo "::error::NPM_TOKEN is not set on this repository, so nothing can be published."
+            echo "::error::It needs a granular npm token with read-and-write access to the @issuegraph scope."
+            exit 1
+          fi
+          echo "NPM_TOKEN is present."
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck, build, test, isolation
+        run: pnpm run ci
+
+      # A dry run RUNS the publish, with `--dry-run` — it does not skip the step.
+      # Skipping it meant packing, the lifecycle hooks and the manifest checks
+      # never executed, so a completely broken publish still produced a green run
+      # and a summary saying everything but the upload had worked. A check that
+      # passes when the thing it checks is broken is decoration.
+      - name: Publish
+        if: ${{ github.event_name == 'release' || inputs.dry_run == false }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # `--no-git-checks` because the release ref is a detached checkout, which
+        # pnpm otherwise refuses. Access and provenance come from each package's
+        # own publishConfig, so a new package cannot inherit them by accident.
+        #
+        # `--ignore-scripts` is supply-chain hygiene, matching the estate's other
+        # published package: publishing must not be a place arbitrary lifecycle
+        # code runs. Nothing here depends on a hook — the build is an explicit
+        # step above — so if you ever add a `prepublishOnly`, it will NOT run and
+        # the build must stay explicit.
+        run: pnpm publish --recursive --no-git-checks --ignore-scripts
+
+      - name: Publish (dry run)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # Block scalar, not a bare one: a plain YAML scalar containing `: ` is
+        # read as a mapping, and the workflow fails to LOAD rather than to run.
+        run: |
+          pnpm publish --recursive --no-git-checks --ignore-scripts --dry-run
+          echo "Dry run complete: packed and validated, nothing uploaded."
+          echo "Re-run with dry_run unchecked to publish."

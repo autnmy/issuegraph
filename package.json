@@ -1,0 +1,32 @@
+{
+  "name": "issuegraph-workspace",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Workspace root for the @issuegraph/* reference packages. Not published.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "pnpm -r --if-present run build",
+    "typecheck:packages": "pnpm -r --if-present run typecheck",
+    "typecheck:scripts": "tsc -p tsconfig.scripts.json",
+    "typecheck": "pnpm run typecheck:packages && pnpm run typecheck:scripts",
+    "lint": "eslint packages",
+    "test:packages": "pnpm -r --if-present run test",
+    "test:scripts": "node --test \"scripts/**/*.test.ts\" \"scripts/**/*.test.mjs\"",
+    "test": "pnpm run test:packages && pnpm run test:scripts",
+    "check:isolation": "node scripts/check-isolation.ts",
+    "smoke": "node scripts/smoke-consumer.mjs",
+    "ci": "pnpm run typecheck && pnpm run lint && pnpm run build && pnpm run test && pnpm run check:isolation"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "eslint": "^10.9.0",
+    "eslint-plugin-import-x": "^4.17.1",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.67.0"
+  }
+}
