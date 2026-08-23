@@ -11,17 +11,21 @@
  * Three rules, each with one job:
  *
  * - `forbidden-dependency` — a module specifier, or a `package.json` dependency
- *   entry, naming a Descant-side package.
+ *   entry, naming a Descant-side package. An entry names one in three places:
+ *   its key, an `npm:` alias target, and a git or tarball value.
  * - `package-escape` — a relative specifier that resolves outside its own
  *   package. This is how a source file reaches a sibling package's internals,
  *   or the repository root, without ever naming Descant.
- * - `brand-leak` — a Descant brand token in the source text itself, outside any
- *   module specifier. An import scan cannot see a leak that arrives as an
- *   identifier, a string or a doc comment.
+ * - `brand-leak` — a Descant brand token in the source text itself. An import
+ *   scan cannot see a leak that arrives as an identifier, a string or a doc
+ *   comment, and a package's README is published too.
  *
- * The rules are disjoint by construction: `brand-leak` scans the source with
- * every module specifier removed, so a forbidden import is reported once, by
- * the rule that owns it.
+ * The rules are disjoint by construction: `brand-leak` scans the source with the
+ * specifiers the OTHER rules own blanked out, so a forbidden import is reported
+ * once, by the rule that owns it. What may be blanked is the delicate part — the
+ * pattern below matches prose as readily as code, and blanking prose would
+ * delete a leak on its way to the brand rule — so the decision is written out at
+ * the loop that makes it rather than summarised here.
  *
  * Run: `pnpm check:isolation`. Exit 0 clean, 1 with violations.
  */
