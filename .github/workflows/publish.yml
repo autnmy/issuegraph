@@ -8,9 +8,9 @@ on:
     types: [published]
   workflow_dispatch:
     inputs:
-      # Underscore, not a hyphen: `inputs.dry_run` is not a property read in a
-      # GitHub expression, it is `inputs.dry` MINUS `run`, and the workflow then
-      # fails to load at all rather than misbehaving visibly.
+      # Underscore, not a hyphen. A GitHub expression does not read a hyphenated
+      # name as a property: it parses `inputs.dry` MINUS `run`, and the workflow
+      # then fails to load at all rather than misbehaving visibly.
       dry_run:
         description: 'Run everything except the publish itself'
         type: boolean
