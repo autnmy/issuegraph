@@ -180,6 +180,70 @@ test('a relative specifier naming a brand-tokened FILE is a brand-leak', () => {
   assert.deepEqual(rulesFired(packagesDir), ['brand-leak']);
 });
 
+test('an npm: alias to a forbidden package is caught, whatever the key is called', () => {
+  // The key reveals nothing and the import names only the alias, so a scan
+  // reading either alone passes while the coupling is real.
+  const packagesDir = fixture(
+    { 'src/index.ts': "export { parse } from 'innocent';\n" },
+    { dependencies: { innocent: 'npm:@descant/types@^1.0.0' } },
+  );
+  assert.deepEqual(rulesFired(packagesDir), ['forbidden-dependency']);
+});
+
+test('an alias with no version pinned is caught too', () => {
+  const packagesDir = fixture(
+    { 'src/index.ts': "export const nothing = 'imports it';\n" },
+    { dependencies: { innocent: 'npm:descant' } },
+  );
+  assert.deepEqual(rulesFired(packagesDir), ['forbidden-dependency']);
+});
+
+test('a dependency resolved through a git URL naming the consumer is caught', () => {
+  const packagesDir = fixture(
+    { 'src/index.ts': "export const nothing = 'imports it';\n" },
+    { dependencies: { helper: 'github:autnmy/descant#main' } },
+  );
+  assert.deepEqual(rulesFired(packagesDir), ['forbidden-dependency']);
+});
+
+test('an ordinary version range is not mistaken for a forbidden resolution', () => {
+  const packagesDir = fixture(
+    { 'src/index.ts': "export const nothing = 'imports it';\n" },
+    { dependencies: { typescript: '^7.0.2', 'eslint-plugin-descant': '^1.0.0' } },
+  );
+  assert.deepEqual(rulesFired(packagesDir), []);
+});
+
+test('quoted prose is NOT masked as a specifier — the brand rule still sees it', () => {
+  // `from "Descant"` matches the specifier pattern, which runs over comments and
+  // Markdown. Masking it would delete the leak on its way to the brand rule.
+  const packagesDir = fixture({
+    'README.md': '# subject\n\nExtracted from "Descant".\n',
+  });
+  assert.deepEqual(rulesFired(packagesDir), ['brand-leak']);
+});
+
+test('the same prose inside a code comment is not masked either', () => {
+  const packagesDir = fixture({
+    'src/index.ts': '// Ported from "Takumi", with changes.\nexport const ported = true;\n',
+  });
+  assert.deepEqual(rulesFired(packagesDir), ['brand-leak']);
+});
+
+test('a real package specifier IS still masked, node: builtins included', () => {
+  // The control for the two cases above: narrowing the mask must not stop it
+  // covering the specifiers it exists for.
+  const packagesDir = fixture({
+    'src/index.ts': [
+      "import { readFileSync } from 'node:fs';",
+      "import { a } from 'eslint-plugin-descant';",
+      "import { b } from '@scope/descant-adjacent';",
+      'export const all = [readFileSync, a, b];',
+    ].join('\n'),
+  });
+  assert.deepEqual(findIsolationViolations(packagesDir), []);
+});
+
 test('a directory under packages with no package.json is not scanned', () => {
   const packagesDir = fixture({ 'src/index.ts': CLEAN_SOURCE, 'src/helper.ts': HELPER_SOURCE });
   const stray = join(packagesDir, 'not-a-package', 'src');

@@ -89,6 +89,36 @@ function isForbiddenPackage(specifier: string): boolean {
   return FORBIDDEN_PACKAGES.some((name) => specifier === name || specifier.startsWith(`${name}/`));
 }
 
+/**
+ * Whether a string could actually be a module specifier for a package.
+ *
+ * The specifier pattern below runs over comments and Markdown as well as code,
+ * so ordinary prose — `Extracted from "Descant"` — matches it. That text must
+ * still reach the brand rule, which means the mask has to be able to tell a
+ * package name from a quoted word. npm names are lowercase by rule, so a
+ * capitalised or spaced value is prose, not a dependency.
+ */
+function isPackageSpecifier(specifier: string): boolean {
+  const withoutProtocol = specifier.startsWith('node:') ? specifier.slice('node:'.length) : specifier;
+  return /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*(?:\/[^\s'"]+)?$/.test(withoutProtocol);
+}
+
+/**
+ * The package an `npm:` alias actually resolves to.
+ *
+ * `"innocent": "npm:@descant/types@^1.0.0"` installs the forbidden package under
+ * a name that reveals nothing, so a manifest scan reading only keys — and a
+ * source scan reading only `import ... from 'innocent'` — both pass while the
+ * coupling is real.
+ */
+function aliasTarget(value: string): string | undefined {
+  if (!value.startsWith('npm:')) return undefined;
+  const rest = value.slice('npm:'.length);
+  // A scoped name opens with `@`, so only a LATER `@` separates the version.
+  const versionAt = rest.lastIndexOf('@');
+  return versionAt > 0 ? rest.slice(0, versionAt) : rest;
+}
+
 function isRelative(specifier: string): boolean {
   return specifier.startsWith('./') || specifier.startsWith('../') || specifier === '.' || specifier === '..';
 }
@@ -143,13 +173,22 @@ function checkManifest(packagesDir: string, packageDir: string): Violation[] {
   for (const mapName of DEPENDENCY_MAPS) {
     const map = manifest[mapName];
     if (typeof map !== 'object' || map === null) continue;
-    for (const name of Object.keys(map)) {
-      if (!isForbiddenPackage(name)) continue;
+    for (const [name, value] of Object.entries(map as Record<string, unknown>)) {
+      const spec = typeof value === 'string' ? value : '';
+      const alias = aliasTarget(spec);
+      // Three readings of one entry, because a dependency can name the consumer
+      // in three places: the key, an `npm:` alias target, or a git/tarball URL.
+      const reason =
+        isForbiddenPackage(name) ? `declares "${name}"`
+        : alias !== undefined && isForbiddenPackage(alias) ? `aliases "${name}" to "${alias}"`
+        : BRAND_TOKEN.test(spec) ? `resolves "${name}" through "${spec}"`
+        : undefined;
+      if (reason === undefined) continue;
       violations.push({
         rule: 'forbidden-dependency',
         file: relative(packagesDir, manifestPath),
         line: 0,
-        detail: `${mapName} declares "${name}"`,
+        detail: `${mapName} ${reason}`,
       });
     }
   }
@@ -161,27 +200,33 @@ function checkSourceFile(packagesDir: string, packageDir: string, file: string):
   const where = relative(packagesDir, file);
   const violations: Violation[] = [];
 
-  // Blank each BARE specifier in place as it is judged — spaces, not deletion, so
-  // every offset and line number below still describes the original file. What is
-  // left is the text the specifier rules do not own, which is what the brand rule
-  // scans.
+  // Blank a specifier in place — spaces, not deletion, so every offset and line
+  // number below still describes the original file — but ONLY when one of the
+  // specifier rules owns it. Masking is what keeps the rules disjoint, and it is
+  // also the way a leak escapes, so what may be masked is decided explicitly:
   //
-  // A relative specifier is deliberately left visible to the brand rule: it names
-  // a file THIS repository chose to call something, so `./descant-notes.ts` is a
-  // leak in exactly the way a third-party package that happens to contain the
-  // token in its name is not.
+  //   forbidden        → masked; the forbidden rule reported it.
+  //   relative         → NOT masked; it names a file THIS repository chose to
+  //                      call something, so `./descant-notes.ts` is a leak in a
+  //                      way a third-party package name is not.
+  //   a package name   → masked; a third-party name is not our brand choice.
+  //   anything else    → NOT masked. The pattern runs over comments and Markdown,
+  //                      so prose like `from "Descant"` matches it, and masking
+  //                      that would delete the leak on its way to the brand rule.
   const masked = [...text];
   for (const match of text.matchAll(SPECIFIER_PATTERN)) {
     const specifier = match[2];
     const span = match.indices?.[2];
     if (specifier === undefined || span === undefined) continue;
     const at = match.index ?? 0;
-    if (!isRelative(specifier)) {
+    const forbidden = isForbiddenPackage(specifier);
+
+    if (forbidden || (!isRelative(specifier) && isPackageSpecifier(specifier))) {
       const [start, end] = span;
       for (let i = start; i < end; i += 1) masked[i] = ' ';
     }
 
-    if (isForbiddenPackage(specifier)) {
+    if (forbidden) {
       violations.push({
         rule: 'forbidden-dependency',
         file: where,
