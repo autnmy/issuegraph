@@ -38,7 +38,7 @@
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, URL } from 'node:url';
 
 /** Which rule a violation broke. */
 export type IsolationRule = 'forbidden-dependency' | 'package-escape' | 'brand-leak';
@@ -73,30 +73,62 @@ const DEPENDENCY_MAPS = Object.freeze([
   'dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies',
 ] as const);
 
+/** Extensions a JavaScript runtime can execute. Nothing else can import. */
+const MODULE_EXTENSIONS = Object.freeze([
+  '.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs',
+] as const);
+
+function isModuleFile(file: string): boolean {
+  return MODULE_EXTENSIONS.some((extension) => file.endsWith(extension));
+}
+
 /**
- * Every module specifier in a source text, with the line it sits on.
+ * Module specifiers, matched as STATEMENTS rather than as a quoted string after
+ * a keyword.
  *
- * A pattern rather than a parser, and the honest statement of what that costs:
- * module syntax is an OPEN grammar, so this recognises the forms written down
- * here and no others. It reads quoted and backticked specifiers, and tolerates
- * comments and whitespace between the keyword and the string. It does NOT read
- * a specifier built by concatenation, one returned from a helper, or a
- * `createRequire` call — and enumerating further forms buys the next one rather
- * than the last.
+ * The looser form reported `This was imported from "../private/guide.md"` in a
+ * README as a package escape — a false positive that fails CI on correct
+ * content, which is worse than a miss because it stops work rather than letting
+ * it through. Anchoring the `from` form at the start of a line, and requiring
+ * the call form to close its parenthesis, is what separates an import from
+ * prose that mentions one. The escape rule is additionally applied only to files
+ * a runtime can execute, since a Markdown file cannot import anything at all.
  *
- * That gap is tracked as its own issue rather than patched per round; closing it
- * properly needs a real parser, and this repository's TypeScript 7 exposes its
- * AST only under an `unstable` entry point.
- *
- * It is bounded, though, and the bound is what makes the gap tolerable: for a
- * FORBIDDEN dependency the brand rule is a total backstop, because every
- * forbidden name contains a brand token — asserted by a test, so the two tables
- * cannot drift apart. A missed forbidden import lands on a line with no other
- * violation and is reported there. Only `package-escape`, whose paths carry no
- * brand token, is genuinely blind to a form this pattern does not read.
+ * Still not a parser, and still an open grammar — a specifier built by
+ * concatenation is invisible, and that class is tracked on
+ * autnmy/descant#9137 rather than patched per round.
  */
-const SPECIFIER_PATTERN =
-  /(?:\bfrom|\bimport|\brequire)(?:\s|\/\*[\s\S]*?\*\/)*\(?(?:\s|\/\*[\s\S]*?\*\/)*(['"`])([^'"`]+)\1/g;
+const SPECIFIER_PATTERNS = Object.freeze([
+  // import x from 'y' / export { x } from 'y' — anchored: prose does not begin a line with the keyword.
+  /^[ \t]*(?:import|export)\b[^\n]*?\bfrom[ \t]*(['"`])([^'"`\n]+)\1/gm,
+  // import 'y' — side-effect import, same anchor.
+  /^[ \t]*import[ \t]*(['"`])([^'"`\n]+)\1/gm,
+  // import('y') / require('y'), comments tolerated between keyword and paren.
+  // The closing paren is required, which prose almost never writes.
+  /\b(?:import|require)[ \t]*(?:\/\*[\s\S]*?\*\/[ \t]*)*\([ \t]*(['"`])([^'"`\n]+)\1[ \t]*\)/g,
+] as const);
+
+/**
+ * Whether a specifier reaches outside its own package.
+ *
+ * Three shapes reach out, not one. The rule used to test only RELATIVE paths, so
+ * `import '/home/runner/work/consumer/private.js'` and its `file://` spelling
+ * both walked past it — valid Node specifiers that leave the package and bake an
+ * environment-specific path into a published artifact.
+ */
+function escapesPackage(packageDir: string, file: string, specifier: string): boolean {
+  if (isRelative(specifier)) return !isInside(packageDir, resolve(file, '..', specifier));
+  if (specifier.startsWith('file:')) {
+    try {
+      return !isInside(packageDir, fileURLToPath(new URL(specifier)));
+    } catch {
+      // An unparseable file: URL is not a resolvable module either. Report it
+      // rather than deciding it is fine — an unknown is not an absence.
+      return true;
+    }
+  }
+  return isAbsolute(specifier) ? !isInside(packageDir, specifier) : false;
+}
 
 function isForbiddenPackage(specifier: string): boolean {
   if (FORBIDDEN_SCOPES.some((scope) => specifier === scope || specifier.startsWith(`${scope}/`))) {
@@ -306,27 +338,33 @@ function checkScannedFile(packagesDir: string, packageDir: string, file: string,
   const where = relative(packagesDir, file);
   const violations: Violation[] = [];
 
-  for (const match of text.matchAll(SPECIFIER_PATTERN)) {
-    const specifier = match[2];
-    if (specifier === undefined) continue;
-    const at = match.index ?? 0;
+  // Only a file a runtime can execute has imports to find. Everything else is
+  // still scanned by the brand rule below, which is what a README needs.
+  if (isModuleFile(file)) {
+    for (const pattern of SPECIFIER_PATTERNS) {
+      for (const match of text.matchAll(pattern)) {
+        const specifier = match[2];
+        if (specifier === undefined) continue;
+        const at = match.index ?? 0;
 
-    if (isForbiddenPackage(specifier)) {
-      violations.push({
-        rule: 'forbidden-dependency',
-        file: where,
-        line: lineOf(text, at),
-        detail: `imports "${specifier}"`,
-      });
-      continue;
-    }
-    if (isRelative(specifier) && !isInside(packageDir, resolve(file, '..', specifier))) {
-      violations.push({
-        rule: 'package-escape',
-        file: where,
-        line: lineOf(text, at),
-        detail: `"${specifier}" resolves outside ${relative(packagesDir, packageDir)}`,
-      });
+        if (isForbiddenPackage(specifier)) {
+          violations.push({
+            rule: 'forbidden-dependency',
+            file: where,
+            line: lineOf(text, at),
+            detail: `imports "${specifier}"`,
+          });
+          continue;
+        }
+        if (escapesPackage(packageDir, file, specifier)) {
+          violations.push({
+            rule: 'package-escape',
+            file: where,
+            line: lineOf(text, at),
+            detail: `"${specifier}" resolves outside ${relative(packagesDir, packageDir)}`,
+          });
+        }
+      }
     }
   }
 

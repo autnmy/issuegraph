@@ -449,6 +449,72 @@ test('workspace: and a local path INSIDE the package are not escapes', () => {
   assert.deepEqual(findIsolationViolations(packagesDir), []);
 });
 
+test('REGRESSION: prose quoting a relative path is not an escape', () => {
+  // A false positive here fails CI on correct content, which is worse than a
+  // miss: it stops work rather than letting something through. A README cannot
+  // import anything, and this sentence is not an import.
+  const packagesDir = fixture({
+    'README.md': '# subject\n\nThis was imported from "../../private/guide.md" for context.\n',
+  });
+  assert.deepEqual(findIsolationViolations(packagesDir), []);
+});
+
+test('REGRESSION: the same sentence in a code comment is not an escape either', () => {
+  const packagesDir = fixture({
+    'src/index.ts': '// Ported from "../../../private/guide.md" originally.\nexport const clean = true;\n',
+  });
+  assert.deepEqual(findIsolationViolations(packagesDir), []);
+});
+
+test("a README's fenced usage example is not an escape", () => {
+  // The case the code-files-only guard actually exists for, and the reason the
+  // statement anchor is not enough on its own: a documentation fence DOES begin
+  // a line with `import`, so the anchor matches it. Markdown cannot import, so
+  // reporting a usage example would fail CI on a correct README.
+  const packagesDir = fixture({
+    'README.md': [
+      '# subject',
+      '',
+      'Usage:',
+      '',
+      '```ts',
+      "import { model } from '../../../apps/dashboard/src/model.js';",
+      '```',
+      '',
+    ].join('\n'),
+  });
+  assert.deepEqual(findIsolationViolations(packagesDir), []);
+});
+
+test('an absolute filesystem import is an escape', () => {
+  // A valid Node specifier that leaves the package and bakes a machine-specific
+  // path into the artifact. The rule used to test only relative paths.
+  const packagesDir = fixture({
+    'src/index.ts': "import '/home/runner/work/consumer/private.js';\nexport const b = 1;\n",
+  });
+  assert.deepEqual(rulesFired(packagesDir), ['package-escape']);
+});
+
+test('a file:// URL import is an escape too', () => {
+  const packagesDir = fixture({
+    'src/index.ts': "import 'file:///home/runner/work/consumer/private.js';\nexport const c = 1;\n",
+  });
+  assert.deepEqual(rulesFired(packagesDir), ['package-escape']);
+});
+
+test('CONTROL: a real escaping import in code is still caught after the narrowing', () => {
+  // The narrowing that killed the false positives must not have killed the rule.
+  for (const source of [
+    "export { model } from '../../../apps/dashboard/src/model.ts';",
+    'export const load = () => import(`../../../apps/dashboard/src/model.js`);',
+    "export const load = () => import /* webpackIgnore: true */ ('../../../apps/dashboard/src/model.js');",
+    "const m = require('../../../apps/dashboard/src/model.js');\nmodule.exports = m;",
+  ]) {
+    const packagesDir = fixture({ 'src/index.ts': `${source}\n` });
+    assert.deepEqual(rulesFired(packagesDir), ['package-escape'], source);
+  }
+});
+
 test('a directory under packages with no package.json is not scanned', () => {
   const packagesDir = fixture({ 'src/index.ts': CLEAN_SOURCE, 'src/helper.ts': HELPER_SOURCE });
   const stray = join(packagesDir, 'not-a-package', 'src');
