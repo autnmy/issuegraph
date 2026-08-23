@@ -131,25 +131,3 @@ export function sameEdgeSet(a: readonly StoredEdge[], b: readonly StoredEdge[]):
     return other !== undefined && other.from === edge.from && other.to === edge.to;
   });
 }
-
-/**
- * Whether two issue lists state the same issues, in the same order.
- *
- * Order is compared as well as content because a rehydrate that returns the
- * same issues in a different sequence really is a different document to render
- * — and unlike edges, an issue list has no derived identity to compare as a set.
- */
-export function sameIssueList(a: readonly StoredIssue[], b: readonly StoredIssue[]): boolean {
-  if (a.length !== b.length) return false;
-  return a.every((issue, index) => {
-    const other = b[index];
-    if (other === undefined) return false;
-    return (
-      issue.ref === other.ref &&
-      issue.title === other.title &&
-      issue.state === other.state &&
-      issue.priority === other.priority &&
-      issue.url === other.url
-    );
-  });
-}

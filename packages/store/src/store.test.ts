@@ -611,3 +611,64 @@ test('recovering a stale order does not attribute the lost edit’s movement to 
     'no summary, because the baseline it would diff against was never published as current',
   );
 });
+
+test('a reversed symmetric carrier reaches the projection, not just the landed set', async () => {
+  // `landed` adopts the new carrier; if the projection is reused because the
+  // ids match, the two slices of one snapshot disagree — and it is the
+  // projection a viewer draws and an editor deletes through.
+  let document = withEdge(threeOpenIssues(), 'serialize-with', '1', '2');
+  const store = createStore({
+    source: {
+      hydrate: () => Promise.resolve(document),
+      dispatch: () => Promise.resolve({ outcome: 'unchanged' as const }),
+    },
+    derive: simpleDeriver,
+  });
+  await store.hydrate();
+
+  document = withEdge(threeOpenIssues(), 'serialize-with', '2', '1');
+  await store.rehydrate();
+
+  const snapshot = store.getSnapshot();
+  assert.deepEqual(snapshot.landed.map((edge) => [edge.from, edge.to]), [['2', '1']]);
+  assert.deepEqual(
+    snapshot.projected.map((edge) => [edge.from, edge.to]),
+    [['2', '1']],
+    'the projection must not still be showing the carrier the landed set replaced',
+  );
+});
+
+test('a refusal whose reason changed is republished, not reused', async () => {
+  // The record keeps its identity and its `invalid` state; only the reason
+  // moves. A host reading the reason inline beside the ghost edge would keep
+  // showing the old explanation.
+  let document = withEdge(threeOpenIssues(), 'blocked-by', '1', '2');
+  const store = createStore({
+    source: {
+      hydrate: () => Promise.resolve(document),
+      dispatch: () => Promise.resolve({ outcome: 'unchanged' as const }),
+    },
+    derive: simpleDeriver,
+  });
+  await store.hydrate();
+
+  const id = edgeId('blocked-by', '1', '2');
+  const handle = store.propose({ op: 'retype', edgeId: id, nextKind: 'blocked-by' });
+  await handle.settled;
+  const first = store.getSnapshot().writes[0];
+  assert.equal(first?.state === 'invalid' ? first.reason.code : undefined, 'unchanged-kind');
+
+  // The edge goes away upstream, so the same retype is now refused for a
+  // different reason entirely.
+  document = threeOpenIssues();
+  await store.rehydrate();
+  await store.retry(handle.mutationId).settled;
+
+  const second = store.getSnapshot().writes[0];
+  assert.equal(second?.state, 'invalid');
+  assert.equal(
+    second?.state === 'invalid' ? second.reason.code : undefined,
+    'unknown-edge',
+    'the published reason must be the current one',
+  );
+});

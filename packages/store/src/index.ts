@@ -23,7 +23,6 @@ export {
   hasIssue,
   makeEdge,
   sameEdgeSet,
-  sameIssueList,
 } from './model.ts';
 
 export {
@@ -55,15 +54,9 @@ export {
   structuralRefusal,
 } from './validity.ts';
 
-export {
-  type ProjectedEdge,
-  type WriteRecord,
-  anyPending,
-  edgeStateOf,
-  project,
-  sameProjection,
-  sameRecords,
-} from './write.ts';
+export { type ProjectedEdge, type WriteRecord, anyPending, edgeStateOf, project } from './write.ts';
+
+export { sameList, sameValue } from './equality.ts';
 
 export {
   type ChangeCounts,
@@ -71,7 +64,6 @@ export {
   type RankDelta,
   type RankMovement,
   diffOrder,
-  sameOrder,
 } from './change.ts';
 
 export {

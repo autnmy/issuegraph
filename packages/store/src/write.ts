@@ -147,28 +147,3 @@ export function project(
     };
   });
 }
-
-/** Whether two projections state the same thing, edge for edge and state for state. */
-export function sameProjection(a: readonly ProjectedEdge[], b: readonly ProjectedEdge[]): boolean {
-  if (a.length !== b.length) return false;
-  return a.every((edge, index) => {
-    const other = b[index];
-    if (other === undefined) return false;
-    return (
-      edge.id === other.id &&
-      edge.states.length === other.states.length &&
-      edge.states.every((state, at) => state === other.states[at]) &&
-      edge.writes.length === other.writes.length &&
-      edge.writes.every((id, at) => id === other.writes[at])
-    );
-  });
-}
-
-/** Whether two ledgers hold the same records in the same states. */
-export function sameRecords(a: readonly WriteRecord[], b: readonly WriteRecord[]): boolean {
-  if (a.length !== b.length) return false;
-  return a.every((record, index) => {
-    const other = b[index];
-    return other !== undefined && record.mutationId === other.mutationId && record.state === other.state;
-  });
-}

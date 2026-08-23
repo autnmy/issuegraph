@@ -3,7 +3,8 @@ import { test } from 'node:test';
 
 import type { Mutation } from './mutation.ts';
 import type { OrderRow } from './source.ts';
-import { diffOrder, sameOrder } from './change.ts';
+import { diffOrder } from './change.ts';
+import { sameValue } from './equality.ts';
 
 const cause: Mutation = { op: 'create', kind: 'blocked-by', from: '1', to: '2', mutationId: 'm1' };
 
@@ -98,11 +99,11 @@ test('an omitted delta field is absent, not present-and-undefined', () => {
   assert.equal('presence' in delta, false);
 });
 
-test('sameOrder compares ranks, readiness and hold reasons', () => {
+test('an order comparison notices a rank, a readiness or a hold reason moving', () => {
   const rows = order(['1', true], ['2', false]);
-  assert.ok(sameOrder(rows, order(['1', true], ['2', false])));
-  assert.ok(!sameOrder(rows, order(['2', false], ['1', true])));
-  assert.ok(!sameOrder(rows, order(['1', true])));
+  assert.ok(sameValue(rows, order(['1', true], ['2', false])));
+  assert.ok(!sameValue(rows, order(['2', false], ['1', true])));
+  assert.ok(!sameValue(rows, order(['1', true])));
   const reworded = rows.map((row) => (row.ready ? row : { ...row, holdReasons: ['blocked by 9'] }));
-  assert.ok(!sameOrder(rows, reworded));
+  assert.ok(!sameValue(rows, reworded));
 });

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { edgeId, findEdge, hasIssue, makeEdge, sameEdgeSet, sameIssueList } from './model.ts';
+import { edgeId, findEdge, hasIssue, makeEdge, sameEdgeSet } from './model.ts';
+import { sameValue } from './equality.ts';
 import { mixedIssues, threeOpenIssues, withEdge } from './testing/fixtures.ts';
 
 test('a directed edge keeps its direction in its identity', () => {
@@ -57,12 +58,12 @@ test('sameEdgeSet compares as a set, so a reordering is not a change', () => {
   assert.ok(!sameEdgeSet(a, [makeEdge('blocked-by', '1', '2'), makeEdge('blocked-by', '3', '1')]));
 });
 
-test('sameIssueList notices a changed field, not only a changed length', () => {
+test('an issue-list comparison notices a changed field, not only a changed length', () => {
   const document = threeOpenIssues();
-  assert.ok(sameIssueList(document.issues, threeOpenIssues().issues));
+  assert.ok(sameValue(document.issues, threeOpenIssues().issues));
   const closedOne = document.issues.map((issue, index) =>
     index === 0 ? { ...issue, state: 'closed' as const } : issue,
   );
-  assert.ok(!sameIssueList(document.issues, closedOne));
-  assert.ok(!sameIssueList(document.issues, document.issues.slice(1)));
+  assert.ok(!sameValue(document.issues, closedOne));
+  assert.ok(!sameValue(document.issues, document.issues.slice(1)));
 });

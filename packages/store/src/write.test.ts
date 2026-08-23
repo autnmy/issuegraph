@@ -3,7 +3,8 @@ import { test } from 'node:test';
 
 import { edgeId, makeEdge } from './model.ts';
 import type { Mutation } from './mutation.ts';
-import { type WriteRecord, anyPending, edgeStateOf, project, sameProjection, sameRecords } from './write.ts';
+import { type WriteRecord, anyPending, edgeStateOf, project } from './write.ts';
+import { sameValue } from './equality.ts';
 import { threeOpenIssues, withEdge } from './testing/fixtures.ts';
 
 const NOTHING_SELECTED = new Set<string>();
@@ -116,27 +117,37 @@ test('an invalid create is still DRAWN — it is a ghost, not an absence', () =>
   assert.deepEqual(projected.map((edge) => edge.states), [['invalid']]);
 });
 
-test('sameProjection notices a state change on an otherwise identical edge', () => {
+test('a projection comparison notices a state change on an otherwise identical edge', () => {
   const landed = threeOpenIssues();
   const mutation: Mutation = { op: 'create', kind: 'blocked-by', from: '1', to: '2', mutationId: 'm1' };
   const bare = project(landed, [], NOTHING_SELECTED);
   const marked = project(landed, [pending(mutation)], NOTHING_SELECTED);
 
-  assert.ok(sameProjection(bare, project(landed, [], NOTHING_SELECTED)));
-  assert.ok(sameProjection(marked, project(landed, [pending(mutation)], NOTHING_SELECTED)));
-  assert.ok(!sameProjection(bare, marked));
+  assert.ok(sameValue(bare, project(landed, [], NOTHING_SELECTED)));
+  assert.ok(sameValue(marked, project(landed, [pending(mutation)], NOTHING_SELECTED)));
+  assert.ok(!sameValue(bare, marked));
 
   const selected = project(landed, [pending(mutation)], new Set([edgeId('blocked-by', '1', '2')]));
-  assert.ok(!sameProjection(marked, selected));
+  assert.ok(!sameValue(marked, selected));
 });
 
-test('sameRecords notices a record changing state without changing identity', () => {
+test('a record comparison notices state AND the fields only one state carries', () => {
   const mutation: Mutation = { op: 'delete', edgeId: 'x', mutationId: 'm1' };
   const before: readonly WriteRecord[] = [pending(mutation)];
   const after: readonly WriteRecord[] = [{ mutationId: 'm1', mutation, state: 'failed', reason: 'no' }];
-  assert.ok(sameRecords(before, [pending(mutation)]));
-  assert.ok(!sameRecords(before, after));
-  assert.ok(!sameRecords(before, []));
+  assert.ok(sameValue(before, [pending(mutation)]));
+  assert.ok(!sameValue(before, after));
+  assert.ok(!sameValue(before, []));
+
+  // Identity and state unchanged, only the reason moved — the shape that
+  // shipped a stale refusal on the canvas.
+  const one: readonly WriteRecord[] = [
+    { mutationId: 'm1', mutation, state: 'invalid', reason: { code: 'unchanged-kind', message: 'a' } },
+  ];
+  const other: readonly WriteRecord[] = [
+    { mutationId: 'm1', mutation, state: 'invalid', reason: { code: 'unknown-edge', message: 'b' } },
+  ];
+  assert.ok(!sameValue(one, other));
 });
 
 test('a drawn edge is not duplicated when the landed document already holds it', () => {

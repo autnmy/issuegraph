@@ -134,19 +134,3 @@ export function diffOrder(
     },
   };
 }
-
-/** Whether two orders state the same ranking, row for row. */
-export function sameOrder(a: readonly OrderRow[], b: readonly OrderRow[]): boolean {
-  if (a.length !== b.length) return false;
-  return a.every((row, index) => {
-    const other = b[index];
-    if (other === undefined) return false;
-    return (
-      row.ref === other.ref &&
-      row.rank === other.rank &&
-      row.ready === other.ready &&
-      row.holdReasons.length === other.holdReasons.length &&
-      row.holdReasons.every((reason, at) => reason === other.holdReasons[at])
-    );
-  });
-}

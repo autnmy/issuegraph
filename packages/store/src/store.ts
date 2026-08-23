@@ -18,19 +18,12 @@ import {
   type StoredEdge,
   type StoredIssue,
   sameEdgeSet,
-  sameIssueList,
 } from './model.ts';
 import type { InvalidReason, Mutation, MutationId, Proposal } from './mutation.ts';
 import type { DataSource, DispatchResult, EdgeGuard, OrderDeriver, OrderRow } from './source.ts';
-import { type OrderChange, diffOrder, sameOrder } from './change.ts';
-import {
-  type ProjectedEdge,
-  type WriteRecord,
-  anyPending,
-  project,
-  sameProjection,
-  sameRecords,
-} from './write.ts';
+import { type OrderChange, diffOrder } from './change.ts';
+import { sameValue } from './equality.ts';
+import { type ProjectedEdge, type WriteRecord, anyPending, project } from './write.ts';
 import { nextDocument, structuralRefusal } from './validity.ts';
 
 /** Where hydration has got to. A failure is a state, not an exception. */
@@ -220,7 +213,7 @@ export function createStore(config: StoreConfig): Store {
    */
   function adopt(next: GraphDocument): void {
     const adopted = {
-      issues: sameIssueList(landed.issues, next.issues) ? landed.issues : next.issues,
+      issues: sameValue(landed.issues, next.issues) ? landed.issues : next.issues,
       edges: sameEdgeSet(landed.edges, next.edges) ? landed.edges : next.edges,
     };
     // Bumped only on a real change, so a rehydrate that returns the same
@@ -244,19 +237,15 @@ export function createStore(config: StoreConfig): Store {
     const nextProjected = project(landed, records, new Set(selection));
     const nextOrderStatus: OrderStatus = anyPending(records) ? 'held' : 'settled';
 
-    const projected = sameProjection(published.projected, nextProjected)
-      ? published.projected
-      : nextProjected;
+    // One comparison for every slice. Nothing here names a field, so a field
+    // added to any of these shapes is compared without this block changing.
+    const projected = sameValue(published.projected, nextProjected) ? published.projected : nextProjected;
     const order =
-      published.order.status === nextOrderStatus && sameOrder(published.order.rows, rows)
+      published.order.status === nextOrderStatus && sameValue(published.order.rows, rows)
         ? published.order
         : { rows, status: nextOrderStatus };
-    const writes = sameRecords(published.writes, records) ? published.writes : records;
-    const selected =
-      published.selection.length === selection.length &&
-      published.selection.every((id, at) => id === selection[at])
-        ? published.selection
-        : selection;
+    const writes = sameValue(published.writes, records) ? published.writes : records;
+    const selected = sameValue(published.selection, selection) ? published.selection : selection;
 
     const unchanged =
       published.status === status &&
