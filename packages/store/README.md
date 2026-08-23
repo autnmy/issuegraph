@@ -75,12 +75,13 @@ Three contracts an adapter has to honour:
   need merge rules, and merge rules are where an optimistic store goes wrong.
 - **The store dispatches once per mutation and never retries on its own.** A retry is a user
   act, so nothing here assumes an idempotency you have not been given.
-- **The store dispatches one edit at a time**, queueing the rest, so `dispatch` is never
-  re-entered. `applied` is an unversioned authoritative snapshot, and two of those in flight
-  cannot be ordered by anything the store can observe — the later answer arriving first, then
-  the earlier one, silently rolls a landed edge back out of the document. Rather than push a
-  version onto every adapter, the store declines to create the situation. A queued edit still
-  renders `pending-write` immediately; only the round trip waits.
+- **The store runs one authoritative operation at a time**, queueing the rest, so `dispatch`
+  is never re-entered and never overlaps a `hydrate`. Both calls answer with an unversioned
+  authoritative document, and two of those in flight cannot be ordered by anything the store
+  can observe — whichever answers second wins, and if that is the older one it silently rolls
+  an edge back out. Rather than push a version onto every adapter, the store declines to
+  create the situation. A queued edit still renders `pending-write` immediately; only the
+  round trip waits, and `rehydrate()` resolves once it has had its turn.
 
 Because of that last one, an edit reaches the adapter some time *after* it is proposed.
 `createScriptedSource` exposes `whenPending(mutationId?)` for exactly this — await the

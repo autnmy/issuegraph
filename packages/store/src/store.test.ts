@@ -208,28 +208,63 @@ test("one write failing does not discard another write's overlay", async () => {
 });
 
 test('rehydrate replaces the landed document and keeps unsettled edits', async () => {
+  // An edit that FAILED is unsettled but not in flight, so it does not hold the
+  // queue — which is the only shape this scenario can now take, because a
+  // rehydrate waits behind anything actually dispatched.
   let document: GraphDocument = threeOpenIssues();
-  const source = createScriptedSource(threeOpenIssues(), applyEdit);
+  const scripted = createScriptedSource(threeOpenIssues(), applyEdit);
   const store = createStore({
     source: {
       hydrate: () => Promise.resolve(document),
-      dispatch: (mutation) => source.dispatch(mutation),
+      dispatch: (mutation) => scripted.dispatch(mutation),
     },
     derive: simpleDeriver,
   });
   await store.hydrate();
 
   const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  await scripted.whenPending(handle.mutationId);
+  scripted.settleNext({ outcome: 'rejected', reason: 'locked' });
+  await handle.settled;
+
   document = withEdge(threeOpenIssues(), 'duplicate-of', '3', '1');
   await store.rehydrate();
 
   const snapshot = store.getSnapshot();
   assert.equal(snapshot.landed.length, 1, 'the refreshed document landed');
-  assert.equal(snapshot.projected.length, 2, 'the pending edit is still drawn');
-  assert.equal(snapshot.order.status, 'held');
+  assert.equal(snapshot.projected.length, 2, 'the failed edit is still drawn');
+  assert.ok(snapshot.projected.some((edge) => edge.states.includes('failed')));
+  assert.equal(snapshot.order.status, 'settled');
+});
 
-  source.settleNext('applied');
+test('a refresh queued behind a write runs only once that write settles', async () => {
+  // The ordering guarantee, stated directly: this is what stops a dispatch
+  // answer that predates the refresh from overwriting it.
+  const scripted = createScriptedSource(threeOpenIssues(), applyEdit);
+  let reads = 0;
+  const store = createStore({
+    source: {
+      hydrate: () => {
+        reads += 1;
+        return Promise.resolve(threeOpenIssues());
+      },
+      dispatch: (mutation) => scripted.dispatch(mutation),
+    },
+    derive: simpleDeriver,
+  });
+  await store.hydrate();
+  assert.equal(reads, 1);
+
+  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  await scripted.whenPending(handle.mutationId);
+  const refresh = store.rehydrate();
+  await Promise.resolve();
+  assert.equal(reads, 1, 'the refresh has not run while the write is in flight');
+
+  scripted.settleNext('applied');
   await handle.settled;
+  await refresh;
+  assert.equal(reads, 2, 'and it runs as soon as the write settles');
 });
 
 test('selection is client state and writes nothing', async () => {
@@ -502,4 +537,77 @@ test('a deriver that throws does not strand the write behind it', async () => {
   source.settleNext('applied');
   await second.settled;
   assert.equal(store.getSnapshot().landed.length, 2, 'the queue kept moving');
+});
+
+test('a refresh cannot be overwritten by a dispatch answer that predates it', async () => {
+  // Serialising dispatches orders writes against each other; it says nothing
+  // about a rehydrate landing between one going out and its answer coming back.
+  // The answer is an authoritative snapshot too, so adopting it afterwards
+  // removes whatever the refresh brought in.
+  const scripted = createScriptedSource(threeOpenIssues(), applyEdit);
+  let refreshed = threeOpenIssues();
+  const store = createStore({
+    source: {
+      hydrate: () => Promise.resolve(refreshed),
+      dispatch: (mutation) => scripted.dispatch(mutation),
+    },
+    derive: simpleDeriver,
+  });
+  await store.hydrate();
+
+  const mine = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  await scripted.whenPending(mine.mutationId);
+
+  // Somebody else adds an edge, and the host refreshes.
+  refreshed = withEdge(threeOpenIssues(), 'duplicate-of', '3', '1');
+  const refresh = store.rehydrate();
+
+  // The dispatch answers with the adapter's own view, which never saw it.
+  scripted.settleNext('applied');
+  await mine.settled;
+  await refresh;
+
+  assert.ok(
+    store.getSnapshot().landed.some((edge) => edge.id === edgeId('duplicate-of', '3', '1')),
+    'the refreshed edge must survive the dispatch answer that predates it',
+  );
+});
+
+test('recovering a stale order does not attribute the lost edit’s movement to the next one', async () => {
+  // While `orderError` stands, the published rows are from before the edit that
+  // broke the deriver. Diffing the next successful derivation against them
+  // credits BOTH edits' movement to the second mutation.
+  const source = createScriptedSource(threeOpenIssues(), applyEdit);
+  let explode = true;
+  const store = createStore({
+    source,
+    derive: (document) => {
+      if (explode) throw new Error('the deriver fell over');
+      return simpleDeriver(document);
+    },
+  });
+  explode = false;
+  await store.hydrate();
+
+  explode = true;
+  const first = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  await source.whenPending(first.mutationId);
+  source.settleNext('applied');
+  await first.settled;
+  assert.ok(store.getSnapshot().orderError !== undefined, 'the order is stale');
+
+  explode = false;
+  const second = store.propose({ op: 'create', kind: 'blocked-by', from: '3', to: '2' });
+  await source.whenPending(second.mutationId);
+  source.settleNext('applied');
+  await second.settled;
+
+  const snapshot = store.getSnapshot();
+  assert.equal(snapshot.orderError, undefined, 'the order recovered');
+  assert.deepEqual(refs(snapshot.order.rows), ['2', '1', '3']);
+  assert.equal(
+    snapshot.lastChange,
+    undefined,
+    'no summary, because the baseline it would diff against was never published as current',
+  );
 });

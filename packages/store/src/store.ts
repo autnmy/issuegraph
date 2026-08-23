@@ -111,7 +111,13 @@ export interface Store {
   subscribe(listener: () => void): () => void;
   /** Load the document. Safe to call once; use `rehydrate` afterwards. */
   hydrate(): Promise<void>;
-  /** Re-read the document from the source, keeping unsettled edits. */
+  /**
+   * Re-read the document from the source, keeping unsettled edits.
+   *
+   * Queued behind anything already in flight, and resolves once it has had its
+   * turn — a refresh that overtook a dispatch could be overwritten by that
+   * dispatch's answer, which was computed before it.
+   */
   rehydrate(): Promise<void>;
   /** Propose an edit. Renders immediately; the order does not move yet. */
   propose(proposal: Proposal): ProposalHandle;
@@ -165,18 +171,28 @@ export function createStore(config: StoreConfig): Store {
   /** Bumped every time `landed` actually changes. See the conflict record's `landedAt`. */
   let landedGeneration = 0;
   /**
-   * One dispatch at a time, and the rest queued.
+   * ONE AUTHORITATIVE OPERATION AT A TIME, and the rest queued.
    *
-   * `applied` carries a full authoritative snapshot and the port gives it no
-   * version, so two of them in flight cannot be ordered by anything the store
-   * can see: the later answer arriving first, then the earlier one, silently
-   * rolls a landed edge back out of the document — and the order then derives
-   * from a backlog missing a real relationship. Rather than add a version to
-   * the port that no adapter asked for, the store simply never creates the
-   * situation. A queued edit still renders `pending-write` immediately; only
-   * the round trip is serialised.
+   * Both things that can produce a document — a `dispatch` answering `applied`
+   * and a `hydrate` — return a full authoritative snapshot, and the port gives
+   * neither of them a version. So two in flight cannot be ordered by anything
+   * the store can observe: whichever answers second wins, and if that is the
+   * older one it silently rolls an edge back out of the document, after which
+   * the order derives from a backlog missing a real relationship.
+   *
+   * Serialising only the writes would leave the mixed pair — a refresh landing
+   * between a write going out and its answer coming back — which is the same
+   * defect through a different door. So the queue carries both kinds. Rather
+   * than add a version to the port that no adapter asked for, the store simply
+   * never creates the situation.
+   *
+   * A queued edit still renders `pending-write` immediately; only the round
+   * trip waits.
    */
-  const queue: { readonly mutation: Mutation; readonly queuedAt: number }[] = [];
+  type Task =
+    | { readonly kind: 'dispatch'; readonly mutation: Mutation; readonly queuedAt: number }
+    | { readonly kind: 'load'; readonly first: boolean; readonly done: () => void };
+  const queue: Task[] = [];
   let draining = false;
 
   const listeners = new Set<() => void>();
@@ -302,9 +318,15 @@ export function createStore(config: StoreConfig): Store {
       orderError = messageOf(thrown);
       return;
     }
+    // RECOVERING FROM A STALE BASELINE EMITS NO SUMMARY. While `orderError`
+    // stood, the published rows were the ones from before the edit that broke
+    // the deriver — so diffing the recovered order against them would credit
+    // that edit's movement to this one. There is no baseline that would make
+    // the attribution true, so none is claimed.
+    const recovering = orderError !== undefined;
     orderError = undefined;
     rows = next;
-    if (cause !== undefined) lastChange = diffOrder(previous, rows, cause);
+    if (cause !== undefined && !recovering) lastChange = diffOrder(previous, rows, cause);
   }
 
   function recordFor(mutationId: MutationId): WriteRecord | undefined {
@@ -428,7 +450,7 @@ export function createStore(config: StoreConfig): Store {
 
     putRecord({ mutationId: mutation.mutationId, mutation, state: 'pending' });
     publish();
-    queue.push({ mutation, queuedAt: landedGeneration });
+    queue.push({ kind: 'dispatch', mutation, queuedAt: landedGeneration });
     void drain();
     return { mutationId: mutation.mutationId, settled };
   }
@@ -448,6 +470,11 @@ export function createStore(config: StoreConfig): Store {
     draining = true;
     try {
       for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
+        if (next.kind === 'load') {
+          await runLoad(next.first);
+          next.done();
+          continue;
+        }
         const refusal = next.queuedAt === landedGeneration ? undefined : refusalFor(next.mutation);
         if (refusal !== undefined) {
           putRecord({
@@ -467,12 +494,21 @@ export function createStore(config: StoreConfig): Store {
     }
   }
 
+  /** Queue a read of the document, behind whatever is already in flight. */
+  function load(first: boolean): Promise<void> {
+    return new Promise<void>((resolve) => {
+      queue.push({ kind: 'load', first, done: resolve });
+      void drain();
+    });
+  }
+
   /** A handle for a call that had nothing to act on. Already settled. */
   function noop(mutationId: MutationId): ProposalHandle {
     return { mutationId, settled: Promise.resolve() };
   }
 
-  async function load(first: boolean): Promise<void> {
+  /** Read the document. Only ever called from the queue. */
+  async function runLoad(first: boolean): Promise<void> {
     if (first) {
       status = 'hydrating';
       hydrationError = undefined;

@@ -44,7 +44,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.test.json",
-    "test": "node --test \"src/**/*.test.ts\""
+    "test": "node --test --test-timeout=20000 \"src/**/*.test.ts\""
   },
   "dependencies": {
     "@issuegraph/core": "workspace:^"
