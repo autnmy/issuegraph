@@ -20,7 +20,7 @@
  * the rail and the rendering disagree about the same document.
  */
 
-import { DEFAULT_PRIORITY, type Priority } from '@issuegraph/core';
+import { DEFAULT_PRIORITY, EDGE_CARDINALITY, type Priority } from '@issuegraph/core';
 import type {
   EdgeKind,
   GraphDocument,
@@ -342,18 +342,13 @@ function dependencyGraph(
 }
 
 /**
- * Whether creating `from blocked-by to` would close a cycle.
+ * The issues caught in a `blocked-by` cycle in this document.
  *
- * Exported because it is the host's `EdgeGuard` question, and answering it
- * anywhere but here is how the guard and the index came to disagree. §6.6 is
- * deliberate that an EXISTING cycle is surfaced rather than refused — this
- * refuses only the edit that would create one.
+ * Exported because two callers need the SAME answer: the readiness index, and
+ * the host's write guard. Answering it anywhere but here is how the guard and
+ * the index came to disagree in the first place.
  */
-export function wouldCloseCycle(
-  document: GraphDocument,
-  from: IssueRef,
-  to: IssueRef,
-): boolean {
+export function cyclicMembers(document: GraphDocument): ReadonlySet<IssueRef> {
   const canonical = duplicateCanonicals(document.edges);
   const resolve = (ref: IssueRef): IssueRef => canonical.get(ref) ?? ref;
   const canonicalEdges = document.edges.map((edge) => ({
@@ -363,34 +358,51 @@ export function wouldCloseCycle(
   }));
   const together = components(canonicalEdges, 'together-with');
   const { blockers } = dependencyGraph(document, resolve, together);
+  return cyclic(blockers);
+}
 
-  // THE WALK COMPARES UNITS, NOT REFERENCES, and that is the whole of the
-  // contraction rather than one direction of it. Copying a unit's adjacency
-  // onto its members makes every member the same SOURCE of an edge; it does
-  // not make every member the same DESTINATION, so an exact-reference test
-  // still missed a path that arrives at a different member than the one the
-  // new edge names — the same cycle, approached from the other end.
-  //
-  // A directed edge has exactly two ends, so answering both here closes the
-  // question rather than adding a case: `sameUnit` is applied to the arrival
-  // test and to the self-edge test alike.
-  const start = resolve(from);
-  const end = resolve(to);
-  const sameUnit = (a: IssueRef, b: IssueRef): boolean =>
-    a === b || (together.get(a)?.has(b) ?? false);
+/**
+ * Whether an edit would put an issue in a cycle that is not in one already.
+ *
+ * ASKED OF THE TWO DOCUMENTS, not of the edit — which is the point, and what
+ * the kind-by-kind version could not do. A cycle does not need a `blocked-by`
+ * edge to appear: `duplicate-of` and `together-with` COLLAPSE vertices, so
+ * `#4 blocked-by #2`, `#2 blocked-by #3`, `#3 duplicate-of #4` closes
+ * `#4 → #2 → #4` without a single new dependency being written. A guard keyed
+ * on the mutation'"'"'s kind cannot see that, and extending it kind by kind is a
+ * list that is always one entry short.
+ *
+ * Comparing the resulting graphs has no such list: whatever an edit does to the
+ * document — add an edge, retype one, flip one, collapse two vertices into one
+ * — the question is whether the answer got worse.
+ *
+ * It compares SETS rather than counts, so it refuses only what this edit
+ * introduces. §6.6 is deliberate that an EXISTING cycle is surfaced for
+ * grooming rather than refused, and the seeded document contains one: a count
+ * would refuse every unrelated edit made while that cycle stands.
+ */
+export function introducesCycle(current: GraphDocument, next: GraphDocument): boolean {
+  const before = cyclicMembers(current);
+  return [...cyclicMembers(next)].some((ref) => !before.has(ref));
+}
 
-  // A member editing its own groupmate is an internal edge — advisory under
-  // §4.3.7, refused structurally as a self-edge would be, and never a cycle.
-  if (sameUnit(start, end)) return false;
-
-  const seen = new Set<IssueRef>();
-  const reaches = (at: IssueRef): boolean => {
-    if (sameUnit(at, start)) return true;
-    if (seen.has(at)) return false;
-    seen.add(at);
-    return (blockers.get(at) ?? []).some(reaches);
-  };
-  return reaches(end);
+/**
+ * Whether the document already carries an outgoing edge of a single-valued
+ * field for this issue (§4.3, `EDGE_CARDINALITY`).
+ *
+ * `blocked-by` is the only list; every other field holds ONE reference, because
+ * a writer joins a group or names a canonical by pointing at one member. Two
+ * `duplicate-of` edges out of one issue is not a richer document, it is an
+ * ambiguous one — and the reader resolves it by whichever it happened to see
+ * last, which is a coin toss wearing a rule.
+ */
+export function cardinalityConflict(
+  document: GraphDocument,
+  kind: EdgeKind,
+  from: IssueRef,
+): StoredEdge | undefined {
+  if (EDGE_CARDINALITY[kind] !== 'single') return undefined;
+  return document.edges.find((edge) => edge.kind === kind && edge.from === from);
 }
 
 function index(document: GraphDocument, holds: readonly ExecutorHold[]): Index {

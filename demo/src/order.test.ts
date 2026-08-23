@@ -12,19 +12,30 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { EDGE_FIELDS } from '@issuegraph/core';
-import type { EdgeKind } from '@issuegraph/store';
+import { EDGE_CARDINALITY, EDGE_FIELDS } from '@issuegraph/core';
+import type { EdgeKind, GraphDocument } from '@issuegraph/store';
 import { makeEdge } from '@issuegraph/store';
 
 import {
   DEFAULT_CONCURRENCY_CAP,
   type ExplainedRow,
+  cardinalityConflict,
   createDeriver,
   explainOrder,
+  introducesCycle,
   slotCount,
-  wouldCloseCycle,
 } from './order.ts';
 import { seedDocument, seedHolds } from './seed.ts';
+
+/** The document an added edge would produce — what the store hands a guard. */
+function withEdge(document: GraphDocument, kind: EdgeKind, from: string, to: string): GraphDocument {
+  return { issues: document.issues, edges: [...document.edges, makeEdge(kind, from, to)] };
+}
+
+/** What the guard answers for `from --kind--> to` against this document. */
+function guarded(document: GraphDocument, kind: EdgeKind, from: string, to: string): boolean {
+  return introducesCycle(document, withEdge(document, kind, from, to));
+}
 
 function rows(): readonly ExplainedRow[] {
   return explainOrder(seedDocument(), seedHolds());
@@ -497,14 +508,14 @@ test('the cycle guard sees cycles that exist only after duplicate resolution', (
     edges: [...document.edges, makeEdge('blocked-by', '4', '2')],
   };
   assert.equal(
-    wouldCloseCycle(landed, '2', '10'),
+    guarded(landed, 'blocked-by', '2', '10'),
     true,
     'the guard missed a cycle that exists after duplicate resolution',
   );
 
   // CONTROL: an edge that closes nothing is still allowed, so the guard is not
   // simply refusing everything.
-  assert.equal(wouldCloseCycle(landed, '14', '9'), false, 'the guard refuses an innocent edge');
+  assert.equal(guarded(landed, 'blocked-by', '14', '9'), false, 'the guard refuses an innocent edge');
 });
 
 test('a cycle THROUGH a together unit is seen, because the unit is one node', () => {
@@ -529,7 +540,7 @@ test('a cycle THROUGH a together unit is seen, because the unit is one node', ()
   // through the same graph.
   const landed = { issues: document.issues, edges: [...document.edges, makeEdge('blocked-by', '9', '4')] };
   assert.equal(
-    wouldCloseCycle(landed, '4', '7'),
+    guarded(landed, 'blocked-by', '4', '7'),
     true,
     'the guard let through an edge that deadlocks a whole unit',
   );
@@ -543,7 +554,7 @@ test('a cycle THROUGH a together unit is seen, because the unit is one node', ()
       makeEdge('blocked-by', '9', '4'),
     ],
   };
-  assert.equal(wouldCloseCycle(ungrouped, '4', '7'), false, 'the control chain reads as a cycle');
+  assert.equal(guarded(ungrouped, 'blocked-by', '4', '7'), false, 'the control chain reads as a cycle');
 });
 
 test('a unit-level blocker is reported once, not once per groupmate', () => {
@@ -574,21 +585,21 @@ test('the cycle guard is unit-level at BOTH ends of the edge', () => {
   // Orientation A: the path leaves the unit. Land `#9 blocked-by #4`, then
   // `#4 blocked-by #7`.
   const a = { issues: document.issues, edges: [...document.edges, makeEdge('blocked-by', '9', '4')] };
-  assert.equal(wouldCloseCycle(a, '4', '7'), true, 'orientation A missed');
+  assert.equal(guarded(a, 'blocked-by', '4', '7'), true, 'orientation A missed');
 
   // Orientation B: the path ARRIVES at a different member. Land
   // `#4 blocked-by #9`, then `#7 blocked-by #4` — `reaches` gets to #9, which
   // is not #7 by reference but is #7 by unit.
   const b = { issues: document.issues, edges: [...document.edges, makeEdge('blocked-by', '4', '9')] };
-  assert.equal(wouldCloseCycle(b, '7', '4'), true, 'orientation B missed');
+  assert.equal(guarded(b, 'blocked-by', '7', '4'), true, 'orientation B missed');
 
   // A member naming its own groupmate is an internal edge, never a cycle.
-  assert.equal(wouldCloseCycle(document, '7', '9'), false, 'an internal edge read as a cycle');
+  assert.equal(guarded(document, 'blocked-by', '7', '9'), false, 'an internal edge read as a cycle');
 
   // CONTROL: an edge that closes nothing is still allowed in both fixtures, so
   // the guard is not simply refusing everything once a group exists.
-  assert.equal(wouldCloseCycle(a, '14', '3'), false, 'the guard refuses an innocent edge');
-  assert.equal(wouldCloseCycle(b, '14', '3'), false, 'the guard refuses an innocent edge');
+  assert.equal(guarded(a, 'blocked-by', '14', '3'), false, 'the guard refuses an innocent edge');
+  assert.equal(guarded(b, 'blocked-by', '14', '3'), false, 'the guard refuses an innocent edge');
 });
 
 test("the store's order carries only rows that are IN the order", () => {
@@ -613,4 +624,77 @@ test("the store's order carries only rows that are IN the order", () => {
   });
   assert.ok(rows.some((row) => row.ref === '3'), 'the control failed: #3 should start in the order');
   assert.ok(!nowDuplicate.some((row) => row.ref === '3'), '#3 stayed in the order after becoming a duplicate');
+});
+
+test('a cycle closed by COLLAPSING vertices is guarded, with no new dependency', () => {
+  // The edit that closes this cycle adds no `blocked-by` at all: it makes #3 a
+  // duplicate of #4, and duplicate resolution turns the chain #4 → #2 → #3 into
+  // #4 → #2 → #4. A guard keyed on the mutation's kind cannot see it, which is
+  // why the question is asked of the two documents instead.
+  const document = seedDocument();
+  const chain = {
+    issues: document.issues,
+    edges: [
+      ...document.edges.filter((edge) => !(edge.kind === 'duplicate-of' && edge.from === '10')),
+      makeEdge('blocked-by', '4', '2'),
+      makeEdge('blocked-by', '2', '3'),
+    ],
+  };
+  assert.equal(
+    guarded(chain, 'duplicate-of', '3', '4'),
+    true,
+    'a collapsing edit closed a cycle and the guard did not see it',
+  );
+
+  // The same collapse where no cycle results is still allowed — the guard is
+  // refusing the cycle, not the kind.
+  assert.equal(guarded(chain, 'duplicate-of', '14', '9'), false, 'an innocent collapse was refused');
+
+  // And `together-with` collapses too, so it is asked the same question.
+  assert.equal(guarded(chain, 'together-with', '3', '4'), true, 'a together collapse was missed');
+});
+
+test('an EXISTING cycle does not refuse unrelated edits', () => {
+  // The seed contains the #12/#13 cycle deliberately (§6.6 surfaces one rather
+  // than refusing it). Comparing counts instead of sets would make every edit
+  // made while it stands look like it introduced a cycle.
+  const document = seedDocument();
+  assert.ok(cyclicMembersPresent(document), 'the seed no longer carries a cycle to test against');
+  assert.equal(guarded(document, 'blocked-by', '4', '3'), false, 'an unrelated edit was refused');
+});
+
+function cyclicMembersPresent(document: GraphDocument): boolean {
+  return explainOrder(document, seedHolds()).some((row) =>
+    row.holds.some((hold) => hold.label === 'cycle'),
+  );
+}
+
+test('a single-valued field refuses a second outgoing edge', () => {
+  const document = seedDocument();
+  // #10 is already `duplicate-of #4`, and `duplicate-of` holds one reference.
+  const conflict = cardinalityConflict(document, 'duplicate-of', '10');
+  assert.ok(conflict, 'the existing single-valued edge was not found');
+  assert.equal(conflict.to, '4');
+
+  // `blocked-by` is the one list field, so it never conflicts — #1 already has
+  // two and a third is legitimate.
+  assert.equal(cardinalityConflict(document, 'blocked-by', '1'), undefined);
+
+  // An issue with no such edge yet is free to write one.
+  assert.equal(cardinalityConflict(document, 'duplicate-of', '14'), undefined);
+
+  // Enumerated from the vocabulary rather than by hand, so a field whose
+  // cardinality changes in the spec fails here instead of going unchecked.
+  for (const field of EDGE_FIELDS) {
+    const expected = EDGE_CARDINALITY[field] === 'single';
+    const twice = {
+      issues: document.issues,
+      edges: [...document.edges, makeEdge(field, '14', '9')],
+    };
+    assert.equal(
+      cardinalityConflict(twice, field, '14') !== undefined,
+      expected,
+      `${field} cardinality is read as ${EDGE_CARDINALITY[field]} and behaves otherwise`,
+    );
+  }
 });

@@ -16,24 +16,34 @@ import { EDGE_FIELDS } from '@issuegraph/core';
 import type { EdgeKind, Store, StoreSnapshot } from '@issuegraph/store';
 import { createStore } from '@issuegraph/store';
 
-import { type ExplainedRow, createDeriver, explainOrder, wouldCloseCycle } from './order.ts';
+import {
+  type ExplainedRow,
+  cardinalityConflict,
+  createDeriver,
+  explainOrder,
+  introducesCycle,
+} from './order.ts';
 import { render } from './render.ts';
 import { seedDocument, seedHolds } from './seed.ts';
 import { type DemoSource, type NextOutcome, createDemoSource } from './source.ts';
 
 /**
- * The host's cycle guard, delegating to the order module's own question.
+ * The host's graph guard, asked of the two DOCUMENTS rather than of the edit.
  *
- * It used to walk the raw edges here, which is how it came to disagree with the
- * index it guards: a cycle that exists only AFTER duplicate resolution was
- * accepted, because raw endpoints have no path between them. `wouldCloseCycle`
- * builds the same canonical, boundary-crossing graph readiness uses, so the two
- * cannot drift apart again.
+ * It used to key on the mutation — "is this a `blocked-by` create that would
+ * close a cycle?" — and that shape cannot work, because a cycle needs no new
+ * dependency to appear: `duplicate-of` and `together-with` COLLAPSE vertices.
+ * `#4 blocked-by #2`, `#2 blocked-by #3`, `#3 duplicate-of #4` closes
+ * `#4 → #2 → #4` with the last edit adding no dependency at all. Extending the
+ * guard kind by kind is a list that is always one entry short; comparing the
+ * resulting graphs has no list.
+ *
+ * The store hands a guard both documents precisely so it can ask this.
  *
  * Deliberately NOT a refusal of a cycle that already exists — §6.6 is explicit
  * that a cycle is detected on read and surfaced for grooming, because
  * write-time rejection pushes writers into describing the dependency in prose.
- * This refuses only the edit that would create one.
+ * `introducesCycle` compares sets, so only what this edit adds is refused.
  */
 
 function requireElement<T extends HTMLElement>(id: string): T {
@@ -66,6 +76,7 @@ function start(): void {
   const create = requireElement<HTMLButtonElement>('edit-create');
   const outcome = requireElement<HTMLSelectElement>('next-outcome');
   const reset = requireElement<HTMLButtonElement>('reset');
+  const note = requireElement('edit-note');
   const asOf = requireElement('as-of');
 
   for (const field of EDGE_FIELDS) kind.append(option(field, field));
@@ -110,26 +121,44 @@ function start(): void {
     store = createStore({
       source,
       derive: createDeriver(seedHolds()),
-      guard: ({ mutation, current }) => {
-        if (mutation.op !== 'create' || mutation.kind !== 'blocked-by') return undefined;
-        if (!wouldCloseCycle(current, mutation.from, mutation.to)) return undefined;
+      guard: ({ current, next }) => {
+        if (!introducesCycle(current, next)) return undefined;
         return {
           code: 'would-cycle',
-          message: 'that blocked-by would close a cycle, so nothing was written',
+          message: 'that edit would close a dependency cycle, so nothing was written',
         };
       },
     });
     unsubscribe = store.subscribe(draw);
     outcome.value = 'apply';
+    note.textContent = '';
     asOf.textContent = `as of ${new Date().toLocaleTimeString()}`;
     void store.hydrate().then(draw);
     draw();
   };
 
   create.addEventListener('click', () => {
+    const chosen = kind.value as EdgeKind;
+    // CARDINALITY IS THE WRITER'S RULE, so the host checks it before writing.
+    // Every field except `blocked-by` holds ONE reference (§4.3), and a second
+    // one does not enrich the document — it makes the reader pick whichever it
+    // saw last. It is refused here rather than in the guard because the
+    // package's refusal codes are a closed set describing the STORE's own
+    // structural refusals, and inventing a meaning for one of them to carry a
+    // format rule would misreport what happened.
+    const existing = cardinalityConflict(
+      { issues: store.getSnapshot().issues, edges: store.getSnapshot().landed },
+      chosen,
+      from.value,
+    );
+    if (existing !== undefined) {
+      note.textContent = `#${from.value} already has ${chosen} → #${existing.to}, and ${chosen} holds one reference. Delete that edge first.`;
+      return;
+    }
+    note.textContent = '';
     void store.propose({
       op: 'create',
-      kind: kind.value as EdgeKind,
+      kind: chosen,
       from: from.value,
       to: to.value,
     });
