@@ -8,7 +8,10 @@ on:
     types: [published]
   workflow_dispatch:
     inputs:
-      dry-run:
+      # Underscore, not a hyphen: `inputs.dry_run` is not a property read in a
+      # GitHub expression, it is `inputs.dry` MINUS `run`, and the workflow then
+      # fails to load at all rather than misbehaving visibly.
+      dry_run:
         description: 'Run everything except the publish itself'
         type: boolean
         default: true
@@ -62,7 +65,7 @@ jobs:
         run: pnpm run ci
 
       - name: Publish
-        if: ${{ github.event_name == 'release' || inputs.dry-run == false }}
+        if: ${{ github.event_name == 'release' || inputs.dry_run == false }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         # `--no-git-checks` because the release ref is a detached checkout, which
@@ -71,5 +74,5 @@ jobs:
         run: pnpm publish --recursive --no-git-checks
 
       - name: Dry run summary
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
-        run: echo "Dry run: everything but the publish ran. Re-run with dry-run unchecked to publish."
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: echo "Dry run: everything but the publish ran. Re-run with dry_run unchecked to publish."
