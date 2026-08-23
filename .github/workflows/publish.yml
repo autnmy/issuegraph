@@ -1,0 +1,75 @@
+name: Publish
+
+# Publishing is deliberately not on push. A published version is permanent —
+# npm does not allow an unpublish after 72 hours — so it happens on an explicit
+# release, or on a deliberate manual run.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Run everything except the publish itself'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  # Required for npm provenance, which every package here requests through its
+  # own publishConfig.
+  id-token: write
+
+concurrency:
+  group: publish-${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: publish @issuegraph/*
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: pnpm
+          registry-url: 'https://registry.npmjs.org'
+
+      # Fail here rather than at the publish step. A missing secret makes
+      # `pnpm publish` fail with a registry authentication error that reads like
+      # an outage; this says which secret is missing and who can add it.
+      - name: Require a publish token
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "${NPM_TOKEN}" ]; then
+            echo "::error::NPM_TOKEN is not set on this repository, so nothing can be published."
+            echo "::error::It needs a granular npm token with read-and-write access to the @issuegraph scope."
+            exit 1
+          fi
+          echo "NPM_TOKEN is present."
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck, build, test, isolation
+        run: pnpm run ci
+
+      - name: Publish
+        if: ${{ github.event_name == 'release' || inputs.dry-run == false }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # `--no-git-checks` because the release ref is a detached checkout, which
+        # pnpm otherwise refuses. Access and provenance come from each package's
+        # own publishConfig, so a new package cannot inherit them by accident.
+        run: pnpm publish --recursive --no-git-checks
+
+      - name: Dry run summary
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
+        run: echo "Dry run: everything but the publish ran. Re-run with dry-run unchecked to publish."

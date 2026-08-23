@@ -1,0 +1,52 @@
+{
+  "name": "@issuegraph/spec",
+  "version": "0.1.0",
+  "description": "The Issuegraph specification's vocabulary as frozen constants and derived types \u2014 field names, cardinality, defaults and value sets, with no parsing or I/O.",
+  "keywords": [
+    "issuegraph",
+    "dependency-graph",
+    "backlog",
+    "scheduling",
+    "frontmatter"
+  ],
+  "license": "Apache-2.0",
+  "author": "Autonomy LLC",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/autnmy/issuegraph.git",
+    "directory": "packages/spec"
+  },
+  "homepage": "https://github.com/autnmy/issuegraph#readme",
+  "bugs": {
+    "url": "https://github.com/autnmy/issuegraph/issues"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "test": "node --test \"src/**/*.test.ts\""
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "typescript": "^7.0.2"
+  }
+}
