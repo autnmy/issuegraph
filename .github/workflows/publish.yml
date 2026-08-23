@@ -66,7 +66,7 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Typecheck, build, test, isolation
+      - name: Build, typecheck, test, isolation
         run: pnpm run ci
 
       # A dry run RUNS the publish, with `--dry-run` — it does not skip the step.
