@@ -1,0 +1,56 @@
+{
+  "name": "@issuegraph/reader",
+  "version": "0.1.0",
+  "description": "Read the Issuegraph frontmatter block out of an issue body and derive the graph it declares — ready set, effective priority, serialize and together components, duplicate resolution, cycles. Parsing and pure derivation only; no network, no tracker, no writes.",
+  "keywords": [
+    "issuegraph",
+    "dependency-graph",
+    "backlog",
+    "scheduling",
+    "frontmatter",
+    "parser"
+  ],
+  "license": "Apache-2.0",
+  "author": "Autonomy LLC",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/autnmy/issuegraph.git",
+    "directory": "packages/reader"
+  },
+  "homepage": "https://github.com/autnmy/issuegraph#readme",
+  "bugs": {
+    "url": "https://github.com/autnmy/issuegraph/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "test": "node --test \"src/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@issuegraph/core": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "typescript": "^6.0.3"
+  }
+}
