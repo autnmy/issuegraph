@@ -14,15 +14,19 @@
     "typecheck:packages": "pnpm -r --if-present run typecheck",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json",
     "typecheck": "pnpm run typecheck:packages && pnpm run typecheck:scripts",
+    "lint": "eslint packages",
     "test:packages": "pnpm -r --if-present run test",
-    "test:scripts": "node --test \"scripts/**/*.test.ts\"",
+    "test:scripts": "node --test \"scripts/**/*.test.ts\" \"scripts/**/*.test.mjs\"",
     "test": "pnpm run test:packages && pnpm run test:scripts",
     "check:isolation": "node scripts/check-isolation.ts",
     "smoke": "node scripts/smoke-consumer.mjs",
-    "ci": "pnpm run typecheck && pnpm run build && pnpm run test && pnpm run check:isolation"
+    "ci": "pnpm run typecheck && pnpm run lint && pnpm run build && pnpm run test && pnpm run check:isolation"
   },
   "devDependencies": {
     "@types/node": "^22.18.0",
-    "typescript": "^7.0.2"
+    "eslint": "^10.9.0",
+    "eslint-plugin-import-x": "^4.17.1",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.67.0"
   }
 }
