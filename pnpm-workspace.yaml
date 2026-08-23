@@ -1,2 +1,9 @@
 packages:
   - packages/*
+  # The demo is a CONSUMER, not a published package: it is here so pnpm links
+  # the workspace packages into it and `pnpm -r` builds, typechecks and tests it
+  # like everything else. It carries `private: true`, so `pnpm publish -r`
+  # skips it. It deliberately does NOT live under `packages/`, which is the
+  # directory the isolation guard, the consumer smoke test and the lint config
+  # all read as "this ships".
+  - demo

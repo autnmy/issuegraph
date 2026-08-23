@@ -14,7 +14,7 @@
     "typecheck:packages": "pnpm -r --if-present run typecheck",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json",
     "typecheck": "pnpm run typecheck:packages && pnpm run typecheck:scripts",
-    "lint": "eslint packages",
+    "lint": "eslint packages demo",
     "test:packages": "pnpm -r --if-present run test",
     "test:scripts": "node --test \"scripts/**/*.test.ts\" \"scripts/**/*.test.mjs\"",
     "test": "pnpm run test:packages && pnpm run test:scripts",

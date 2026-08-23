@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Issuegraph — the in-memory demo</title>
+<meta name="description" content="A live Issuegraph backlog running on an in-memory data source: no tracker, no credentials, no backend. Every edge type, both hold families and every edge state are reachable.">
+<meta name="theme-color" content="#f7f8fa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0c0f14" media="(prefers-color-scheme: dark)">
+<link rel="stylesheet" href="./styles.css">
+<!--
+  The bare specifiers resolve here, in the page, rather than through a bundler.
+  A demo whose build step is `tsc` and whose runtime is the browser's own module
+  loader has nothing between the published package and the thing you are looking
+  at — which is the point: what runs below is `@issuegraph/store` exactly as an
+  installer would get it, loaded from the `exports` entry its manifest declares.
+-->
+<script type="importmap">
+{
+  "imports": {
+    "@issuegraph/core": "/packages/core/dist/index.js",
+    "@issuegraph/store": "/packages/store/dist/index.js"
+  }
+}
+</script>
+</head>
+<body>
+<header class="masthead">
+  <div>
+    <h1>The in-memory demo</h1>
+    <p class="lede">
+      A live backlog running on a data source that holds one document in a variable.
+      <strong>No tracker, no credentials, no backend.</strong> Edits are client-side and saved nowhere;
+      reload to get the seed back.
+    </p>
+  </div>
+  <span class="as-of" id="as-of"></span>
+</header>
+
+<section class="controls" aria-label="Demo controls">
+  <div class="control">
+    <label for="edit-from">Write an edge</label>
+    <div class="control-row">
+      <select id="edit-from" aria-label="From issue"></select>
+      <select id="edit-kind" aria-label="Relationship"></select>
+      <select id="edit-to" aria-label="To issue"></select>
+      <button class="button" id="edit-create" type="button">create</button>
+    </div>
+  </div>
+  <div class="control">
+    <label for="next-outcome">What the tracker answers next</label>
+    <div class="control-row">
+      <select id="next-outcome" aria-label="Next dispatch outcome">
+        <option value="apply">apply — the write lands</option>
+        <option value="reject">reject — the write is refused</option>
+        <option value="conflict">conflict — the document moved upstream</option>
+      </select>
+      <button class="button button-quiet" id="reset" type="button">reset</button>
+    </div>
+    <p class="hint">
+      An armed outcome fires once and disarms itself, so the retry it offers can actually land.
+    </p>
+  </div>
+</section>
+
+<main id="board"></main>
+
+<footer class="colophon">
+  <p>
+    The order below is derived by <em>this page</em>, not by the package: the store takes the deriver
+    as a port with no default, because the selection order is its own concern. Every colour, size and
+    spacing value on this page is a CSS custom property, and no edge relies on hue alone.
+  </p>
+  <p>
+    <a href="/">The specification</a> ·
+    <a href="https://github.com/autnmy/issuegraph">Source</a>
+  </p>
+</footer>
+
+<script type="module" src="./dist/main.js"></script>
+</body>
+</html>
