@@ -365,50 +365,73 @@ interface Effective {
 /**
  * Effective priority (§6.3): the highest declared priority among the issue
  * itself and every OPEN issue that transitively depends on it through
- * `blocked-by`.
+ * `blocked-by`, composed with §4.3.7's rule that a together group's is the
+ * highest over its members.
  *
  * "Importance flows backward along blocking edges. If a minor issue blocks an
  * urgent one, it is not minor — it is the most urgent thing in the system."
  * Computed regardless of holds (§6.8), so a held issue that blocks urgent work
  * still propagates that urgency, which is what surfaces the case where the most
  * urgent thing in the system is waiting on a hold nobody is looking at.
+ *
+ * A FIXED POINT, not a memoised depth-first walk, and the two composition
+ * failures that bought the rewrite are worth recording rather than rediscovering:
+ *
+ * - **Group priority has to participate in the flow, not be applied after it.**
+ *   Taking the group maximum as a post-processing pass left the BLOCKERS of a
+ *   low-priority member at their own priority, even though that member's group
+ *   is a P0 schedulable unit — so the real critical path could sort behind
+ *   unrelated work, which is the exact inversion §6.3 exists to prevent.
+ * - **A cycle made the answer depend on traversal order.** The re-entry
+ *   fallback returned a member's declared priority and then CACHED it, so
+ *   whichever member the walk reached first kept the wrong value while the
+ *   other was promoted — and both transitively depend on the same urgent
+ *   dependent. Iterating instead means every member of a strongly connected
+ *   component ends at the same answer, whatever order they are visited in.
+ *
+ * It terminates because every write strictly LOWERS a value drawn from
+ * {0,1,2,3} and nothing ever raises one, so the total descent is bounded.
  */
 function effectivePriorities(at: Index): Map<IssueRef, Effective> {
   const resolved = new Map<IssueRef, Effective>();
-  const visiting = new Set<IssueRef>();
+  for (const [ref, issue] of at.byRef) resolved.set(ref, { priority: declaredPriority(issue) });
 
-  const walk = (ref: IssueRef): Effective => {
-    const done = resolved.get(ref);
-    if (done !== undefined) return done;
-    const issue = at.byRef.get(ref);
-    if (issue === undefined) return { priority: DEFAULT_PRIORITY };
-    // A cycle cannot raise its own urgency: re-entering returns the issue's own
-    // declared value and lets the walk terminate.
-    if (visiting.has(ref)) return { priority: declaredPriority(issue) };
-
-    visiting.add(ref);
-    let best: Effective = { priority: declaredPriority(issue) };
-    for (const dependent of at.dependents.get(ref) ?? []) {
-      if (at.byRef.get(dependent)?.state !== 'open') continue;
-      const inherited = walk(dependent);
-      if (inherited.priority < best.priority) best = { priority: inherited.priority, from: dependent };
-    }
-    visiting.delete(ref);
-    resolved.set(ref, best);
-    return best;
+  /** Adopt a more urgent value, reporting whether anything moved. */
+  const raiseUrgency = (ref: IssueRef, candidate: Effective): boolean => {
+    const current = resolved.get(ref);
+    if (current === undefined || candidate.priority >= current.priority) return false;
+    resolved.set(ref, candidate);
+    return true;
   };
 
-  for (const ref of at.byRef.keys()) walk(ref);
+  let changed = true;
+  while (changed) {
+    changed = false;
 
-  // A together group's effective priority is the highest over its members
-  // (§4.3.7), applied after the walk so every member's own value is settled.
-  for (const [ref, members] of at.together) {
-    let best = resolved.get(ref) ?? { priority: DEFAULT_PRIORITY };
-    for (const member of members) {
-      const value = resolved.get(member);
-      if (value !== undefined && value.priority < best.priority) best = value;
+    // Backward along blocking edges: a blocker inherits its dependents' urgency.
+    for (const ref of at.byRef.keys()) {
+      for (const dependent of at.dependents.get(ref) ?? []) {
+        if (at.byRef.get(dependent)?.state !== 'open') continue;
+        const inherited = resolved.get(dependent);
+        if (inherited === undefined) continue;
+        if (raiseUrgency(ref, { priority: inherited.priority, from: dependent })) changed = true;
+      }
     }
-    resolved.set(ref, best);
+
+    // Sideways across a together component: the group is one candidate, so its
+    // members share the highest priority among them. Closed members are skipped
+    // — a group closes member by member (§4.3.7), and one that has closed is no
+    // longer part of the schedulable unit.
+    for (const [ref, members] of at.together) {
+      if (at.byRef.get(ref)?.state !== 'open') continue;
+      for (const member of members) {
+        if (member === ref) continue;
+        if (at.byRef.get(member)?.state !== 'open') continue;
+        const value = resolved.get(member);
+        if (value === undefined) continue;
+        if (raiseUrgency(ref, { priority: value.priority, from: member })) changed = true;
+      }
+    }
   }
   return resolved;
 }
@@ -585,6 +608,22 @@ export function explainOrder(
     });
   }
   return rows;
+}
+
+/**
+ * How many scheduler SLOTS a set of rows occupies.
+ *
+ * A together group is one candidate holding one rank (§4.3.7), so counting its
+ * members would report more work running than the concurrency cap allows — a
+ * header contradicting the stations drawn directly beneath it. Deduplicating by
+ * rank is what makes a count mean the same thing a station does.
+ *
+ * It lives here rather than in the rendering because it is a fact about the
+ * ORDER, and because a number that has to agree with the stations should be
+ * computed where the stations are — and where a test can reach it.
+ */
+export function slotCount(rows: readonly ExplainedRow[]): number {
+  return new Set(rows.map((row) => row.rank)).size;
 }
 
 /**

@@ -18,7 +18,7 @@
 
 import { EDGE_FIELDS } from '@issuegraph/core';
 import type { DataSource, DispatchResult, GraphDocument, Mutation, StoredEdge } from '@issuegraph/store';
-import { createMemorySource, makeEdge } from '@issuegraph/store';
+import { createMemorySource, makeEdge, resultingEdge } from '@issuegraph/store';
 
 /**
  * What the next dispatch will answer.
@@ -55,13 +55,22 @@ export interface DemoSource extends DataSource {
  * lied. Returning `undefined` is what lets the caller decline instead of
  * claiming a movement that did not happen.
  *
+ * It also skips THE VISITOR'S OWN EDIT. If the search happened to land on the
+ * very edge being dispatched, upstream and local would be expressing the same
+ * intended change — which is an `unchanged` outcome, not two competing
+ * versions, and drawing it as a conflict teaches the opposite of what a
+ * conflict is. Reachable on the seed by arming a conflict and creating
+ * `decomposed-from` from #1 to #2.
+ *
  * Deliberately returns the FIRST absent edge rather than a random one: a demo
  * that shows a different conflict each time is harder to talk about, and
  * determinism costs nothing here.
  */
-function withUpstreamEdit(document: GraphDocument): GraphDocument | undefined {
+function withUpstreamEdit(document: GraphDocument, mutation: Mutation): GraphDocument | undefined {
   const open = document.issues.filter((issue) => issue.state === 'open');
   const held = new Set(document.edges.map((edge) => edge.id));
+  const mine = resultingEdge(document, mutation);
+  if (mine !== undefined) held.add(mine.id);
   for (const from of open) {
     for (const to of open) {
       if (from.ref === to.ref) continue;
@@ -109,7 +118,7 @@ export function createDemoSource(seed: GraphDocument): DemoSource {
         });
       }
       if (armed === 'conflict') {
-        const upstream = withUpstreamEdit(memory.current());
+        const upstream = withUpstreamEdit(memory.current(), mutation);
         // NEVER REPORT A CONFLICT WITH NOTHING TO SHOW. Where no absent edge is
         // left to fabricate — a saturated document, which takes deliberate work
         // to reach — the honest answer is a refusal that says why, not a
@@ -118,7 +127,7 @@ export function createDemoSource(seed: GraphDocument): DemoSource {
           return Promise.resolve({
             outcome: 'rejected',
             reason:
-              'the demo could not fabricate an upstream change: every edge this document could hold already exists',
+              'the demo could not fabricate an upstream change distinct from this edit: every other edge this document could hold already exists',
           });
         }
         return Promise.resolve({ outcome: 'conflict', upstream });

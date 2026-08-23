@@ -16,7 +16,7 @@ import { EDGE_FIELDS } from '@issuegraph/core';
 import type { EdgeKind } from '@issuegraph/store';
 import { makeEdge } from '@issuegraph/store';
 
-import { DEFAULT_CONCURRENCY_CAP, type ExplainedRow, explainOrder } from './order.ts';
+import { DEFAULT_CONCURRENCY_CAP, type ExplainedRow, explainOrder, slotCount } from './order.ts';
 import { seedDocument, seedHolds } from './seed.ts';
 
 function rows(): readonly ExplainedRow[] {
@@ -277,4 +277,86 @@ test('a together group whose members the tiebreak separates stays contiguous', (
   assert.equal(Math.abs(positions[0]! - positions[1]!), 1, 'the unit should be adjacent');
   const ranks = new Set(['14', '4'].map((ref) => grouped.find((each) => each.issue.ref === ref)!.rank));
   assert.equal(ranks.size, 1, 'one candidate, one rank');
+});
+
+test('a together group propagates its urgency THROUGH its blockers', () => {
+  // #4 is the spec default tier. Group it with P0 #1 — the group is then a P0
+  // schedulable unit — and block #4 on the otherwise-unremarkable #14. The
+  // blocker must inherit the GROUP's urgency, not #4's declared tier: taking
+  // the group maximum after the dependency walk left it at P2, so the real
+  // critical path could sort behind unrelated work.
+  const document = seedDocument();
+  const promoted = explainOrder(
+    {
+      issues: document.issues,
+      edges: [
+        ...document.edges,
+        makeEdge('together-with', '4', '1'),
+        makeEdge('blocked-by', '4', '14'),
+      ],
+    },
+    seedHolds(),
+  );
+  const blocker = promoted.find((each) => each.issue.ref === '14');
+  assert.ok(blocker);
+  assert.equal(
+    blocker.effectivePriority,
+    0,
+    'a blocker of a P0 together unit must be the most urgent thing in the system',
+  );
+});
+
+test('effective priority does not depend on the order a cycle is walked', () => {
+  // #1 (P0) is made to depend on the seeded #12/#13 cycle. Both members are
+  // transitive dependencies of a P0, so BOTH must be promoted — a memoised walk
+  // cached whichever it reached first at its declared tier.
+  const document = seedDocument();
+  const withCycleDependency = {
+    issues: document.issues,
+    edges: [...document.edges, makeEdge('blocked-by', '1', '12')],
+  };
+  const rowsOf = (edges: readonly ReturnType<typeof makeEdge>[]): Map<string, number> =>
+    new Map(
+      explainOrder({ issues: document.issues, edges }, seedHolds()).map((each) => [
+        each.issue.ref,
+        each.effectivePriority,
+      ]),
+    );
+
+  const forward = rowsOf(withCycleDependency.edges);
+  assert.equal(forward.get('12'), 0, '#12 is a transitive dependency of a P0');
+  assert.equal(forward.get('13'), 0, '#13 is one too, through its cycle partner');
+
+  // The same graph with the edge list reversed must give the same answer.
+  const reversed = rowsOf([...withCycleDependency.edges].reverse());
+  for (const ref of ['12', '13', '1']) {
+    assert.equal(reversed.get(ref), forward.get(ref), `${ref} depends on traversal order`);
+  }
+});
+
+test('a ready together group is ONE scheduler slot, not one per member', () => {
+  // Group two issues that are both ready and both inside the cap. Counting rows
+  // would report two running from one slot, so the header would claim more work
+  // in flight than the cap allows — contradicting the stations beneath it.
+  const document = seedDocument();
+  const grouped = explainOrder(
+    { issues: document.issues, edges: [...document.edges, makeEdge('together-with', '3', '2')] },
+    seedHolds(),
+  );
+  const running = grouped.filter((each) => each.station === 'filled');
+  assert.ok(running.length > slotCount(running), 'the fixture does not exercise a shared slot');
+  assert.ok(
+    slotCount(running) <= DEFAULT_CONCURRENCY_CAP,
+    `${slotCount(running)} slots running exceeds the cap of ${DEFAULT_CONCURRENCY_CAP}`,
+  );
+
+  // And the invariant, over the whole spine rather than over this fixture: the
+  // filled stations never occupy more slots than the cap.
+  for (const edges of [document.edges, [...document.edges, makeEdge('together-with', '3', '2')]]) {
+    const all = explainOrder({ issues: document.issues, edges }, seedHolds());
+    assert.ok(
+      slotCount(all.filter((each) => each.station === 'filled')) <= DEFAULT_CONCURRENCY_CAP,
+      'filled stations exceed the concurrency cap',
+    );
+  }
 });

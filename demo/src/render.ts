@@ -22,7 +22,14 @@
 
 import type { EdgeKind, ProjectedEdge, Store, StoreSnapshot } from '@issuegraph/store';
 
-import { DEFAULT_CONCURRENCY_CAP, type ExplainedRow, type Hold, type Provenance, type Station } from './order.ts';
+import {
+  DEFAULT_CONCURRENCY_CAP,
+  type ExplainedRow,
+  type Hold,
+  type Provenance,
+  type Station,
+  slotCount,
+} from './order.ts';
 
 /** The design's vocabulary: each kind separable by glyph as well as by hue. */
 const GLYPH: Readonly<Record<EdgeKind, string>> = {
@@ -210,8 +217,11 @@ export function render(
   orderHead.append(el('h2', undefined, 'The order'));
   // The glance-count the filled stations exist for: how much could run right
   // now, against the number the executor will actually dispatch.
-  const readyNow = rows.filter((each) => each.station === 'filled').length;
-  const readyTotal = rows.filter((each) => each.ready && each.placement === 'spine').length;
+  //
+  // COUNTED IN SLOTS, NOT ROWS — see `slotCount`, which is where the rule and
+  // its test live, so the header cannot drift from the stations beneath it.
+  const readyNow = slotCount(rows.filter((each) => each.station === 'filled'));
+  const readyTotal = slotCount(rows.filter((each) => each.ready && each.placement === 'spine'));
   orderHead.append(
     el('span', 'muted', `${readyTotal} ready · cap ${DEFAULT_CONCURRENCY_CAP} · ${readyNow} running`),
   );

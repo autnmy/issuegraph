@@ -11,7 +11,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { EDGE_STATES, type EdgeState, createStore } from '@issuegraph/store';
+import { EDGE_STATES, type EdgeState, createStore, makeEdge } from '@issuegraph/store';
 
 import { createDeriver } from './order.ts';
 import { seedDocument, seedHolds } from './seed.ts';
@@ -179,4 +179,29 @@ test('an armed conflict always has something to show, even after that edge exist
       'the upstream document is identical to what landed, so a diff would show nothing',
     );
   })();
+});
+
+test('an armed conflict never fabricates the visitor\'s own edit as the upstream one', async () => {
+  // If the search lands on the very edge being dispatched, upstream and local
+  // express the SAME intended change — which is `unchanged`, not two competing
+  // versions. On the seed this is the first absent edge for the first pair.
+  const { source, store } = harness();
+  await store.hydrate();
+  source.arm('conflict');
+  const handle = store.propose({ op: 'create', kind: 'decomposed-from', from: '1', to: '2' });
+  await handle.settled;
+
+  const record = store.getSnapshot().writes.find((write) => write.mutationId === handle.mutationId);
+  assert.equal(record?.state, 'conflict');
+  assert.ok(record.state === 'conflict');
+  const mine = makeEdge('decomposed-from', '1', '2');
+  const landed = store.getSnapshot().landed;
+  const fabricated = record.upstream.edges.filter(
+    (edge) => !landed.some((existing) => existing.id === edge.id),
+  );
+  assert.ok(fabricated.length > 0, 'the upstream document has nothing to show');
+  assert.ok(
+    !fabricated.some((edge) => edge.id === mine.id),
+    'the upstream change IS the visitor\'s own edit, so the two do not compete',
+  );
 });
