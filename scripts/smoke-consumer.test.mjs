@@ -48,21 +48,33 @@ test('a package with no declared floor is PARSED when Node cannot load it', asyn
   const dir = fixture('import "./style.css";\nexport const a = 1;\n', {}, { 'style.css': 'body{}' });
   const [result] = await smokeTest(dir);
   assert.equal(result.check, 'parsed');
-  assert.match(result.downgraded, /asset Node cannot load/);
+  assert.match(result.downgraded, /Unknown file extension "\.css"/);
 });
 
 test('a browser global at module scope is parsed, not failed', async () => {
   const dir = fixture('document.title = "x";\nexport const a = 1;\n');
   const [result] = await smokeTest(dir);
   assert.equal(result.check, 'parsed');
-  assert.match(result.downgraded, /browser global/);
+  assert.match(result.downgraded, /document is not defined/);
+});
+
+test('DERIVED, NOT ENUMERATED: an unanticipated load failure still downgrades', async () => {
+  // The check this replaced listed the failures a browser entry had been OBSERVED
+  // to produce and tolerated exactly those. This error is in none of them: it is
+  // not a SyntaxError, not a ReferenceError, and carries no `code`. The old list
+  // would have failed the package; the derived question — did it parse? — gets it
+  // right without anyone having to add a row.
+  const dir = fixture('await Promise.reject(new TypeError("boom"));\nexport const a = 1;\n');
+  const [result] = await smokeTest(dir);
+  assert.equal(result.check, 'parsed');
+  assert.match(result.downgraded, /boom/);
 });
 
 test('NOT AN EXEMPTION: broken syntax fails even with no declared floor', async () => {
   // The whole risk of a downgrade is that it becomes a pass for anything. A
   // SyntaxError proves the file was never valid, so it is never tolerated.
   const dir = fixture('export const a = = ;\n');
-  await assert.rejects(smokeTest(dir), SyntaxError);
+  await assert.rejects(smokeTest(dir), /does not parse/);
 });
 
 test('NOT AN EXEMPTION: a package that DECLARES a floor must load on it', async () => {
@@ -75,6 +87,15 @@ test('NOT AN EXEMPTION: a package that DECLARES a floor must load on it', async 
 test('NOT AN EXEMPTION: a declared floor must equal the running major', async () => {
   const dir = fixture('export const a = 1;\n', { engines: { node: `>=${running - 1}` } });
   await assert.rejects(smokeTest(dir), /declares node >=/);
+});
+
+test('a RUNTIME SyntaxError is not a parse failure, and is not treated as one', async () => {
+  // The reason nothing is special-cased on error type. This module's source is
+  // perfectly valid; it throws SyntaxError while EXECUTING. Trusting the error's
+  // type would fail a package whose source is fine.
+  const dir = fixture('JSON.parse("{");\nexport const a = 1;\n');
+  const [result] = await smokeTest(dir);
+  assert.equal(result.check, 'parsed');
 });
 
 test('a missing exports target still fails, floor or no floor', async () => {

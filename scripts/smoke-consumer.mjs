@@ -9,6 +9,8 @@
  * so a `.ts` smoke test could not run there at all.
  */
 
+import ts from 'typescript';
+
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
@@ -33,22 +35,30 @@ function exportTargets(node, found = []) {
 }
 
 /**
- * Why a module that PARSED could still not be loaded by Node.
+ * The first syntax error in a source file, or `undefined` if it parses.
  *
- * These three prove the entry was read and understood: a bad extension fails
- * while LINKING an import the entry declared, and a `ReferenceError` happens
- * while EXECUTING it. A `SyntaxError` is the opposite — it proves the file was
- * never valid — so it is deliberately absent and always fails.
+ * This is a DERIVED test, and it replaced an enumerated one. The previous
+ * version listed the failures a browser entry was observed to produce —
+ * `ERR_UNKNOWN_FILE_EXTENSION`, `ReferenceError` — and tolerated those. That is
+ * a denylist wearing an allowlist's clothes: the property actually wanted is
+ * "the entry parsed", and the ways a valid module can fail to LOAD in Node are
+ * an open set. A `.wasm` import, an import-attributes syntax this Node does not
+ * know, a top-level `await` on a browser promise — each fails differently and
+ * none was on the list. Verified: all three PARSE, and only genuinely broken
+ * source does not.
+ *
+ * NOT `node --check`, which is the obvious tool and is unsound here. Measured on
+ * Node 25: `node --check` exits 0 for a syntactically broken `.js` file, and
+ * only reports correctly for `.mjs` and CommonJS. It would have passed on
+ * exactly the input this exists to catch.
  */
-const NOT_RUNNABLE_IN_NODE = new Map([
-  ['ERR_UNKNOWN_FILE_EXTENSION', 'imports an asset Node cannot load'],
-  ['ERR_MODULE_NOT_FOUND', 'imports a module not resolvable from Node'],
-]);
-
-function whyNotRunnable(error) {
-  if (error instanceof SyntaxError) return undefined;
-  if (error instanceof ReferenceError) return 'uses a browser global at module scope';
-  return NOT_RUNNABLE_IN_NODE.get(error?.code);
+function firstParseError(file) {
+  const out = ts.transpileModule(readFileSync(file, 'utf8'), {
+    reportDiagnostics: true,
+    compilerOptions: { target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.ESNext, allowJs: true },
+  });
+  const error = (out.diagnostics ?? []).find((d) => d.category === ts.DiagnosticCategory.Error);
+  return error ? ts.flattenDiagnosticMessageText(error.messageText, ' ') : undefined;
 }
 
 /**
@@ -97,21 +107,31 @@ export async function smokeTest(packagesDir, { log = () => {} } = {}) {
 
     let loaded;
     let downgraded;
+    const entryPath = join(dir, runtime);
     try {
-      loaded = await import(pathToFileURL(join(dir, runtime)).href);
+      loaded = await import(pathToFileURL(entryPath).href);
     } catch (error) {
-      const why = whyNotRunnable(error);
-      // A package that CLAIMS a Node floor must load on it. Only a package
-      // making no such claim may fall back to the parse-only check.
-      if (why === undefined || floor !== undefined) throw error;
-      downgraded = why;
+      // ONE question, asked of every failure: did the entry parse? Nothing is
+      // special-cased on the error's type or code, because that is the open set
+      // this check exists to stop enumerating.
+      //
+      // Not even `SyntaxError`, which is tempting to take at its word and would
+      // be wrong: a module can throw one at RUNTIME — `JSON.parse("{")` at module
+      // scope — and that is a package whose source is fine. The file itself is
+      // the evidence, so the file is what gets asked.
+      const parseError = firstParseError(entryPath);
+      assert.equal(parseError, undefined, `${manifest.name}: ${runtime} does not parse — ${parseError}`);
+      // It parsed. A package that CLAIMS a Node floor must still LOAD on it;
+      // only one making no such claim may stop at having parsed.
+      if (floor !== undefined) throw error;
+      downgraded = error.message;
     }
 
     if (downgraded === undefined) {
       assert.ok(Object.keys(loaded).length > 0, `${manifest.name} loaded but exported nothing`);
       log(`ok    ${manifest.name}  ${runtime}  loaded, ${Object.keys(loaded).length} exports, node ${process.version}`);
     } else {
-      log(`parse ${manifest.name}  ${runtime}  parsed but not run here — ${downgraded}`);
+      log(`parse ${manifest.name}  ${runtime}  parsed, not loadable here — ${downgraded}`);
     }
     results.push({ name: manifest.name, entry: runtime, check: downgraded === undefined ? 'loaded' : 'parsed', downgraded });
   }
