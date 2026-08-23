@@ -483,21 +483,65 @@ describe("model purity", () => {
     assert.deepEqual(claimed.readiness("3"), { ready: true, reasons: [] });
   });
 
-  test("only an unresolved SERIALIZE link clouds a serialize component's extent", () => {
-    // The component-extent rule is about the serialize component's boundary. An
-    // unresolved together-with says the DECLARER's unit runs past the horizon,
-    // which is already why that declarer alone is refused — it says nothing
-    // about its serialize peer, which was being refused indefinitely for it.
-    const together = buildModel([node(1, { data: { serializeWith: ref(2) } }), node(2, { data: { togetherWith: ref(40) } })]);
-    assert.deepEqual(together.readiness("1"), { ready: true, reasons: [] });
-    assertIncludes(together.readiness("2").reasons.join(" "), "together-with 40 is unresolvable");
+  test("SPEC 6.7 treats the three unresolvable references differently, and so must this", () => {
+    // The section is explicit and the three arms are not interchangeable:
+    // blocked-by MUST block (unknown state is not "closed"); serialize-with
+    // "contributes no linkage but is likewise surfaced"; together-with is not
+    // named, and refusing its declarer stays the fail-safe reading because a
+    // unit is ready as a whole or not at all (SPEC 4.3.7).
+    //
+    // Written as one test because the three arms are one rule read three ways,
+    // and pinning any of them alone lets another drift into its behaviour —
+    // which is how the serialize arm ended up with the blocked-by arm's.
+
+    // blocked-by: BLOCKS.
+    const blocking = buildModel([node(1, { data: { blockedBy: [ref(40)] } })]);
+    assert.equal(blocking.readiness("1").ready, false);
+    assertIncludes(blocking.readiness("1").reasons.join(" "), "blocked-by 40 is unresolvable");
+
+    // serialize-with: NO LINKAGE, and nobody is refused — not the declarer, not
+    // its component. This is the arm that used to refuse both.
+    const serial = buildModel([node(1, { data: { serializeWith: ref(40) } }), node(2, { data: { serializeWith: ref(1) } })]);
+    assert.deepEqual(serial.readiness("1"), { ready: true, reasons: [] }, "the declarer");
+    assert.deepEqual(serial.readiness("2"), { ready: true, reasons: [] }, "its component peer");
+    assert.deepEqual(serial.serializeComponent("1"), ["1", "2"], "no linkage to the missing target");
+    // "...but are likewise surfaced" — silence here would be the other failure,
+    // and a reader with no signal cannot groom what it could not resolve.
+    assert.equal(
+      serial.diagnostics.some((d) => d.includes("serialize-with 40 is unresolvable")),
+      true,
+      "surfaced",
+    );
+
+    // together-with: refuses its DECLARER, and only its declarer.
+    const unit = buildModel([node(1, { data: { serializeWith: ref(2) } }), node(2, { data: { togetherWith: ref(40) } })]);
+    assert.deepEqual(unit.readiness("1"), { ready: true, reasons: [] });
+    assertIncludes(unit.readiness("2").reasons.join(" "), "together-with 40 is unresolvable");
   });
 
-  test("CONTROL: an unresolved serialize link still clouds the whole component", () => {
-    // The narrowing must not disable the rule it narrows. Without this, a fix
-    // that dropped the extent check entirely would read as correct.
-    const m = buildModel([node(1, { data: { serializeWith: ref(2) } }), node(2, { data: { serializeWith: ref(40) } })]);
-    assertIncludes(m.readiness("1").reasons.join(" "), "the component's true extent is unknown");
+  test("an edge POINTING AT a duplicate resolves to its canonical", () => {
+    // The other half of "a duplicate is not in the relationship graph". The
+    // outgoing guard stops a duplicate DECLARING; without this, a canonical
+    // issue naming a duplicate as its target still pulled it in and inherited
+    // its permanent unreadiness.
+    const m = buildModel([node(1), node(2, { data: { duplicateOf: ref(1) } }), node(3, { data: { togetherWith: ref(2) } })]);
+    assert.deepEqual(m.readiness("3"), { ready: true, reasons: [] });
+    assert.deepEqual(m.togetherComponent("3"), ["1", "3"], "resolved to the canonical, not dropped");
+
+    // RESOLVED, NOT IGNORED, and blocked-by is why: the work named by a
+    // duplicate is still open under another number, so dropping the edge would
+    // UNDER-block — the one direction this model never resolves toward.
+    const blocked = buildModel([node(1), node(2, { data: { duplicateOf: ref(1) } }), node(3, { data: { blockedBy: [ref(2)] } })]);
+    assert.equal(blocked.readiness("3").ready, false);
+    assertIncludes(blocked.readiness("3").reasons.join(" "), "blocked-by 1 is open");
+
+    // ...and it clears when the CANONICAL closes, not when the duplicate does.
+    const done = buildModel([
+      node(1, { open: false, closedStateReason: "completed" }),
+      node(2, { data: { duplicateOf: ref(1) } }),
+      node(3, { data: { blockedBy: [ref(2)] } }),
+    ]);
+    assert.deepEqual(done.readiness("3"), { ready: true, reasons: [] });
   });
 
   test("a claimed singleton stays READY — assignment is eligibility, not readiness", () => {
@@ -547,10 +591,17 @@ describe("declarer-only nodes declare but never answer", () => {
     const m = buildModel([node(1, { data: { serializeWith: ref(40) } })], {
       declarerOnlyNodes: [declarer(40)],
     });
-    assert.equal(m.readiness("1").ready, false);
-    assertIncludes(m.readiness("1").reasons.join(" "), "serialize-with 40 is unresolvable");
-    // And the union did NOT happen: the component is the declarer alone.
+    // The UNION is what this test is about: the weak tier may add constraints
+    // and may never satisfy one, so the reference stays unresolved and the
+    // component is the declarer alone. Observed through the diagnostic rather
+    // than through readiness — SPEC 6.7 gives an unresolvable serialize-with no
+    // linkage and no refusal, so a readiness assertion here would be pinning
+    // the wrong half and would go green again the moment that rule regressed.
     assert.deepEqual(m.serializeComponent("1"), ["1"]);
+    assert.equal(
+      m.diagnostics.some((d) => d.includes("serialize-with 40 is unresolvable")),
+      true,
+    );
   });
 
   test("does not resolve somebody else's blocked-by", () => {

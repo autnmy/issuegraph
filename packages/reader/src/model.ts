@@ -147,8 +147,20 @@ export interface Model {
  *
  * The MAPPING is a tracker convention rather than a rule of the format —
  * §4.3.5 makes a tracker's own convention canonical and the frontmatter field
- * its fallback — so a host whose labels are spelled some other way supplies its
- * own resolved priority instead of relying on this.
+ * its fallback — and `P0`–`P3` is the only spelling this version understands.
+ *
+ * SAY WHAT THAT COSTS RATHER THAN IMPLYING A WAY OUT. An earlier draft of this
+ * comment said a host with different labels "supplies its own resolved priority
+ * instead of relying on this", which the API does not let it do: `NodeInput`
+ * carries raw `labels` and nothing else, and `ModelOptions` has no hook. So a
+ * tracker whose canonical convention is, say, a `priority:critical` label gets
+ * that label ignored and the frontmatter value reported as canonical — quietly
+ * inverting §4.3.5's precedence for exactly the host that needed it.
+ *
+ * A confident comment describing a capability that does not exist is worse than
+ * no comment: it closes the question for the next reader. The hook is a small
+ * additive change and belongs to its own decision, not to this port —
+ * https://github.com/autnmy/issuegraph/issues/5.
  */
 const PRIORITY_LABEL = new RegExp(`^p([${PRIORITY_MIN}-${PRIORITY_MAX}])$`, 'i');
 
@@ -398,14 +410,6 @@ export function buildModel(
   // forbids (the sibling was simply unfetchable this walk: budget, fault,
   // 404). Same fail-safe family as unresolved blocked-by.
   const unresolvedRelations = new Map<string, string[]>();
-  // Tracked SEPARATELY from the map above, and not derived from it by reading
-  // the label text. The component-extent rule below is about the SERIALIZE
-  // component's boundary, so only an unresolved serialize link may trigger it;
-  // an unresolved together link says the declarer's UNIT extends past the
-  // horizon, which is already why that declarer alone is refused. Keeping both
-  // kinds in one map made an unresolved together link on B refuse B's serialize
-  // peer A indefinitely, for a reason that was never about A.
-  const unresolvedSerialize = new Set<string>();
   const dependentsOf = new Map<string, string[]>(); // reverse of blockersOf
   const serialize = new UnionFind();
   const together = new UnionFind();
@@ -427,8 +431,30 @@ export function buildModel(
     // than the guard being written the other way round.
     if (duplicateCanonicalOf(k) !== null) continue;
     const sourceRepo = nodeSourceRepo(n, homeRepo);
-    for (const ref of data.blockedBy) {
+    // ...AND NO EDGE POINTS AT ONE EITHER. The guard above is only half the
+    // rule: it stops a duplicate DECLARING, while an edge naming a duplicate as
+    // its TARGET still admitted it, so a canonical issue `together-with` a
+    // duplicate unioned the duplicate into its unit and inherited its permanent
+    // "duplicate-of another issue" unreadiness. Same harm as the outgoing half,
+    // reached from the other side.
+    //
+    // RESOLVED THROUGH TO THE CANONICAL rather than ignored, because ignoring
+    // is unsafe in one direction that matters: `blocked-by` naming a duplicate
+    // would stop blocking, and the work it names is still open under another
+    // number — under-blocking, which ships work in the wrong order. Resolving
+    // keeps the block, and for the group edges it over-serializes at worst,
+    // which is the direction this model resolves every ambiguity toward. It is
+    // also what §4.3.3 means by pointing at the canonical.
+    //
+    // A canonical outside the node set falls through to each branch's own
+    // unresolvable arm, which is correct: `blocked-by` blocks, `serialize-with`
+    // contributes no linkage (§6.7), `together-with` refuses its declarer.
+    const targetKey = (ref: IssueRef): string => {
       const rk = keyForRef(ref, sourceRepo, homeRepo);
+      return duplicateCanonicalOf(rk) ?? rk;
+    };
+    for (const ref of data.blockedBy) {
+      const rk = targetKey(ref);
       if (referenceable.has(rk)) {
         blockersOf.set(k, [...(blockersOf.get(k) ?? []), rk]);
         dependentsOf.set(rk, [...(dependentsOf.get(rk) ?? []), k]);
@@ -438,16 +464,31 @@ export function buildModel(
       }
     }
     if (data.serializeWith !== null) {
-      const rk = keyForRef(data.serializeWith, sourceRepo, homeRepo);
+      const rk = targetKey(data.serializeWith);
       if (referenceable.has(rk)) serialize.union(k, rk);
       else {
-        unresolvedRelations.set(k, [...(unresolvedRelations.get(k) ?? []), `serialize-with ${rk}`]);
-        unresolvedSerialize.add(k);
-        diagnostics.push(`${k}: serialize-with ${rk} is unresolvable; fail-safe: refusing the declarer`);
+        // §6.7, VERBATIM: "Unresolvable `serialize-with` references contribute
+        // no linkage but are likewise surfaced." So this is a diagnostic and
+        // nothing else — no union, no refusal of the declarer, and no refusal
+        // of the component the declarer is in.
+        //
+        // It used to do all three, on the reasoning that a chain truncated past
+        // the traversal horizon leaves a component whose true extent is unknown,
+        // so refusing every known member keeps at most the invisible end
+        // schedulable. That argument is real, and it belongs to a CONSUMER's
+        // policy layer rather than to this reader: a host that fetches a partial
+        // neighbourhood knows its own horizon, and can compose that refusal with
+        // readiness the way §6.8 composes eligibility. Baking it in here made an
+        // otherwise-ready issue invisible to selection whenever its target
+        // happened not to be fetched, which is a rule the spec explicitly does
+        // not have — and, unlike the blocked-by case one branch up, §6.7 spells
+        // out the difference between the two rather than leaving it to be
+        // inferred.
+        diagnostics.push(`${k}: serialize-with ${rk} is unresolvable; contributes no linkage (§6.7)`);
       }
     }
     if (data.togetherWith !== null) {
-      const rk = keyForRef(data.togetherWith, sourceRepo, homeRepo);
+      const rk = targetKey(data.togetherWith);
       const target = referenceable.has(rk) ? byKey.get(rk) : undefined;
       if (target === undefined) {
         unresolvedRelations.set(k, [...(unresolvedRelations.get(k) ?? []), `together-with ${rk}`]);
@@ -629,24 +670,6 @@ export function buildModel(
     }
     for (const u of unresolvedRelations.get(k) ?? []) {
       reasons.push(`${u} is unresolvable (fail-safe: refusing the declarer)`);
-    }
-    // An unresolved serialize/together link poisons the WHOLE
-    // known component, not only its declarer. A chain truncated past the
-    // traversal horizon (10 - 20 - 30 - [unfetched 40] - 11) otherwise
-    // splits into a refused declarer (30), still-admitted members (10, 20)
-    // and an invisible far end (11) — and a batch tick can seed BOTH ends
-    // of one serialize chain concurrently. Refusing every known member
-    // keeps at most the invisible end seedable: one member, serialization
-    // preserved. The refusal clears when the link resolves (deeper
-    // traversal or the target entering the walk).
-    for (const m of componentMembers(serialize, k)) {
-      const memberUnresolved = unresolvedSerialize.has(m) ? unresolvedRelations.get(m) : undefined;
-      if (m !== k && memberUnresolved !== undefined && memberUnresolved.length > 0) {
-        reasons.push(
-          `serialize component member ${m} has an unresolvable link (${memberUnresolved[0]}) — the component's true extent is unknown (fail-safe)`,
-        );
-        break;
-      }
     }
     const serializeMembers = componentMembers(serialize, k);
     if (serializeMembers.length > 1 || (byKey.get(k) as ModelNode).data?.serializeWith != null) {
