@@ -1,15 +1,12 @@
 /**
  * One structural comparison, used by every slice the store reuses.
  *
- * It exists because the alternative failed twice in one review. Each reused
- * slice used to have its own comparator listing the fields it cared about —
- * and a field left off a list is invisible: the slice compares equal, the old
- * one is republished, and a host renders state the store has already replaced.
- * Two of those shipped (a projection whose edge carriers had reversed, a
- * refusal whose reason had changed), and a third was one field away.
+ * A comparator that lists the fields it cares about is a staleness bug waiting
+ * for the next field: leave one off and the slice compares equal, the old one
+ * is republished, and a host renders state the store has already replaced.
  *
- * A list of fields to compare is the defect, not any particular list. Nothing
- * here enumerates anything, so a field added tomorrow is compared tomorrow.
+ * A list of fields is the defect, not any particular list. Nothing here
+ * enumerates anything, so a field added tomorrow is compared tomorrow.
  *
  * The one comparator that stays bespoke is `sameEdgeSet`, and for a reason
  * this cannot express: it is deliberately order-INSENSITIVE, because an adapter

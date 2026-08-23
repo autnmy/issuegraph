@@ -482,10 +482,9 @@ export function createStore(config: StoreConfig): Store {
         // document — and often said BECAUSE the store is out of date, which is
         // exactly when not adopting it loses an edge that genuinely exists.
         //
-        // Re-derived with NO cause: whatever moved was somebody else's doing,
-        // and attributing it to this edit is the misattribution this arm used to
-        // avoid by not re-deriving at all. `adopt` no-ops when the document
-        // matches, so the ordinary case still changes nothing.
+        // Re-derived with NO cause: whatever moved was somebody else's doing, so
+        // attributing it to this edit would be wrong. `adopt` no-ops when the
+        // document already matches, so the ordinary case changes nothing.
         adopt(result.document);
         dropRecord(mutation.mutationId);
         reDerive(undefined);
@@ -505,10 +504,9 @@ export function createStore(config: StoreConfig): Store {
           mutationId: mutation.mutationId,
           mutation,
           state: 'conflict',
-          // Taken on rather than retained by reference: this document is
-          // exposed through `snapshot.writes` AND adopted as authoritative by
-          // both resolutions, so a consumer editing it would rewrite the
-          // ranking with no adapter operation at all.
+          // Taken on rather than retained by reference: it is exposed through
+          // `snapshot.writes`, so a consumer must not be able to edit the
+          // adapter's own arrays through it.
           upstream: ownDocument(result.upstream),
         });
         break;
@@ -668,27 +666,11 @@ export function createStore(config: StoreConfig): Store {
     },
 
     /**
-     * REFRESH, then re-dispatch — the store never adopts the recorded snapshot.
-     *
-     * "On latest" is only true if something goes and looks. A conflict can sit
-     * on screen for as long as a person takes to read it, so the document the
-     * conflict reported is of unknown age by the time they click; the adapter
-     * is the authority on what is current, so the store asks it. Both tasks go
-     * through the same queue, in that order.
-     *
-     * The mutation itself needs no rewriting: three of the four operations name
-     * an edge by its content-derived identity and a `create` names its
-     * endpoints. What can change is whether it is still POSSIBLE — an edge
-     * somebody deleted, a duplicate somebody created — and the refusal check at
-     * dispatch is what catches that.
-     */
-    /**
      * Drop the overlay, and adopt nothing.
      *
-     * The recorded snapshot is not adopted here: it is a reading of the past,
-     * and the store has no way to know how far in the past without bookkeeping
-     * that was wrong every time it existed. Discarding your own edit leaves the
-     * store where it was; a host that wants the current document calls
+     * The recorded snapshot is not adopted: it is a reading of the past, and the
+     * store has no way to know how far past. Discarding your own edit leaves
+     * the store where it was; a host that wants the current document calls
      * `rehydrate`.
      *
      * Single-step on purpose — it reads the record and acts on it with no

@@ -43,12 +43,10 @@ export type WriteRecord =
       /**
        * The document as the adapter reported it at the moment of the conflict.
        *
-       * FOR DISPLAY — the "view diff" half of the choice the design offers.
-       * It is never adopted, and that is what retired a whole class of bugs:
-       * the store used to adopt it at resolution time, which meant asking "is
-       * this snapshot still current?", which meant a freshness counter, which
-       * was wrong three separate times. The adapter is the authority on the
-       * current document, so the store asks it rather than keeping a guess.
+       * FOR DISPLAY — the "view diff" half of the choice the design offers, and
+       * never adopted. Adopting it would mean answering "is this snapshot still
+       * current?", which the store cannot do: the adapter is the authority on
+       * the current document, so a host that wants it calls `rehydrate`.
        */
       readonly upstream: GraphDocument;
     };

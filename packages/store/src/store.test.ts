@@ -890,8 +890,7 @@ test('freezing what the store publishes does not reach into the adapter’s own 
 
 test('a conflict snapshot a consumer reached through cannot be edited into the store', async () => {
   // `record.upstream` is adapter-owned and is exposed through `snapshot.writes`,
-  // then adopted as authoritative by `retryOnLatest` / `discardMine`. Splicing
-  // it would change the ranking with no adapter operation at all.
+  // so a consumer must not be able to edit the adapter's own arrays through it.
   const source = createScriptedSource(threeOpenIssues(), applyEdit);
   const store = createStore({ source, derive: simpleDeriver });
   await store.hydrate();
@@ -951,14 +950,13 @@ test('a refresh confirming the document supersedes a conflict snapshot taken bef
 });
 
 test('the two calls a host composes retry-on-latest from are each single-step', async () => {
-  // This is what replaced the store's own `retryOnLatest`, which had an `await`
-  // between reading the conflict and acting on it and produced a P1 in three
-  // consecutive review rounds. `retry` and `discardMine` read the record and
-  // act on it with nothing in between, so neither can be overtaken.
+  // `retry` and `discardMine` read the record and act on it with nothing in
+  // between, so neither can be overtaken. A composite that refreshed first
+  // could not have that property, which is why the store does not ship one.
   //
-  // The two races that killed the composite are the ones asserted here, and
-  // both are the HOST's to sequence now — which it can, because it holds the
-  // await and can look again.
+  // The two races that shape belongs to are asserted here, and both are the
+  // HOST's to sequence — which it can, because it holds the await and can look
+  // again before acting.
   const scripted = createScriptedSource(threeOpenIssues(), applyEdit);
   let refreshFails = false;
   let dispatches = 0;

@@ -210,9 +210,8 @@ have written for you. Both calls above read state and act on it with no `await` 
 neither can be overtaken. The composite has an `await` in the middle, and everything that can
 happen during it — the read failing, the user discarding, the user pressing again — is a
 decision about *user intent* that the caller holding the await can make and the store cannot.
-An earlier version shipped the composite and produced a defect of exactly that shape in three
-consecutive review rounds; each fix created the next one. What a store-owned version would
-need, and why it belongs with the editor layer instead, is
+What a store-owned version would need — a resolution reservation, or cancellation on the
+port — and why it belongs with the editor layer instead, is
 [issue #7](https://github.com/autnmy/issuegraph/issues/7). The adapter is the authority on the current document; the store asks it
 rather than keeping a guess about how stale its own copy has become.
 
