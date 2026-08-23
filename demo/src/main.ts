@@ -16,37 +16,25 @@ import { EDGE_FIELDS } from '@issuegraph/core';
 import type { EdgeKind, Store, StoreSnapshot } from '@issuegraph/store';
 import { createStore } from '@issuegraph/store';
 
-import { type ExplainedRow, createDeriver, explainOrder } from './order.ts';
+import { type ExplainedRow, createDeriver, explainOrder, wouldCloseCycle } from './order.ts';
 import { render } from './render.ts';
 import { seedDocument, seedHolds } from './seed.ts';
 import { type DemoSource, type NextOutcome, createDemoSource } from './source.ts';
 
 /**
- * A `blocked-by` that would close a cycle is refused by the host, not by the
- * package: the walk needs the graph, which is why the store takes a guard
- * rather than shipping one. Refused edits are drawn `invalid` and never
- * dispatched.
+ * The host's cycle guard, delegating to the order module's own question.
+ *
+ * It used to walk the raw edges here, which is how it came to disagree with the
+ * index it guards: a cycle that exists only AFTER duplicate resolution was
+ * accepted, because raw endpoints have no path between them. `wouldCloseCycle`
+ * builds the same canonical, boundary-crossing graph readiness uses, so the two
+ * cannot drift apart again.
  *
  * Deliberately NOT a refusal of a cycle that already exists — §6.6 is explicit
  * that a cycle is detected on read and surfaced for grooming, because
  * write-time rejection pushes writers into describing the dependency in prose.
  * This refuses only the edit that would create one.
  */
-function wouldCycle(from: string, to: string, edges: readonly { kind: EdgeKind; from: string; to: string }[]): boolean {
-  const blockers = new Map<string, string[]>();
-  for (const edge of edges) {
-    if (edge.kind !== 'blocked-by') continue;
-    blockers.set(edge.from, [...(blockers.get(edge.from) ?? []), edge.to]);
-  }
-  const seen = new Set<string>();
-  const reaches = (at: string): boolean => {
-    if (at === from) return true;
-    if (seen.has(at)) return false;
-    seen.add(at);
-    return (blockers.get(at) ?? []).some(reaches);
-  };
-  return reaches(to);
-}
 
 function requireElement<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
@@ -116,7 +104,7 @@ function start(): void {
       derive: createDeriver(seedHolds()),
       guard: ({ mutation, current }) => {
         if (mutation.op !== 'create' || mutation.kind !== 'blocked-by') return undefined;
-        if (!wouldCycle(mutation.from, mutation.to, current.edges)) return undefined;
+        if (!wouldCloseCycle(current, mutation.from, mutation.to)) return undefined;
         return {
           code: 'would-cycle',
           message: 'that blocked-by would close a cycle, so nothing was written',

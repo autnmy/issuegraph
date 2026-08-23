@@ -237,3 +237,36 @@ test('the pending state survives a turn of the event loop, so it can paint', asy
   await handle.settled;
   assert.equal(store.getSnapshot().order.status, 'settled');
 });
+
+test('retrying after a conflict keeps the upstream change as well as mine', async () => {
+  // The conflict shows an upstream edit and offers `retry`. If that edit lived
+  // only in the returned snapshot, the retry — dispatched against this adapter
+  // — would apply to the pre-conflict document and silently drop it: the
+  // visitor resolves a conflict and watches the other side's change vanish.
+  const { source, store } = harness();
+  await store.hydrate();
+  source.arm('conflict');
+  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '4', to: '3' });
+  await handle.settled;
+
+  const record = store.getSnapshot().writes.find((write) => write.mutationId === handle.mutationId);
+  assert.ok(record?.state === 'conflict');
+  const shown = record.upstream.edges.filter(
+    (edge) => !store.getSnapshot().landed.some((existing) => existing.id === edge.id),
+  );
+  assert.equal(shown.length, 1, 'the conflict should display exactly one upstream change');
+  const upstream = shown[0];
+  assert.ok(upstream);
+
+  await store.retry(handle.mutationId).settled;
+
+  const landed = store.getSnapshot().landed;
+  assert.ok(
+    landed.some((edge) => edge.id === upstream.id),
+    'the retry discarded the upstream change the conflict had just shown',
+  );
+  assert.ok(
+    landed.some((edge) => edge.from === '4' && edge.to === '3'),
+    'the retry did not land the visitor edit',
+  );
+});

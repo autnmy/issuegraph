@@ -89,7 +89,7 @@ export const DEFAULT_SETTLE_DELAY_MS = 450;
  * that shows a different conflict each time is harder to talk about, and
  * determinism costs nothing here.
  */
-function withUpstreamEdit(document: GraphDocument, mutation: Mutation): GraphDocument | undefined {
+function upstreamEdit(document: GraphDocument, mutation: Mutation): StoredEdge | undefined {
   const open = document.issues.filter((issue) => issue.state === 'open');
   const held = new Set(document.edges.map((edge) => edge.id));
   const mine = resultingEdge(document, mutation);
@@ -100,7 +100,7 @@ function withUpstreamEdit(document: GraphDocument, mutation: Mutation): GraphDoc
       for (const kind of EDGE_FIELDS) {
         const added: StoredEdge = makeEdge(kind, from.ref, to.ref);
         if (held.has(added.id)) continue;
-        return { issues: document.issues, edges: [...document.edges, added] };
+        return added;
       }
     }
   }
@@ -159,19 +159,33 @@ export function createDemoSource(
         });
       }
       if (armed === 'conflict') {
-        const upstream = withUpstreamEdit(memory.current(), mutation);
+        const added = upstreamEdit(memory.current(), mutation);
         // NEVER REPORT A CONFLICT WITH NOTHING TO SHOW. Where no absent edge is
         // left to fabricate — a saturated document, which takes deliberate work
         // to reach — the honest answer is a refusal that says why, not a
         // conflict whose "view diff" is empty.
-        if (upstream === undefined) {
+        if (added === undefined) {
           return settle({
             outcome: 'rejected',
             reason:
               'the demo could not fabricate an upstream change distinct from this edit: every other edge this document could hold already exists',
           });
         }
-        return settle({ outcome: 'conflict', upstream });
+        // INSTALL IT, do not merely describe it. "The document moved upstream"
+        // has to mean the SOURCE moved: the retry the conflict offers is
+        // dispatched against this adapter, so an upstream that lived only in
+        // the returned snapshot would be silently discarded by the very button
+        // the conflict puts on screen — the visitor would resolve a conflict
+        // and watch the other side's change disappear.
+        return memory
+          .dispatch({
+            op: 'create',
+            kind: added.kind,
+            from: added.from,
+            to: added.to,
+            mutationId: `${mutation.mutationId}-upstream`,
+          })
+          .then(() => settle({ outcome: 'conflict', upstream: memory.current() }));
       }
       // The reference adapter answers immediately too, so its result goes
       // through the same delay rather than around it.

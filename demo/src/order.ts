@@ -268,14 +268,32 @@ function push(map: Map<IssueRef, IssueRef[]>, key: IssueRef, value: IssueRef): v
   map.set(key, [...(map.get(key) ?? []), value]);
 }
 
-function index(document: GraphDocument, holds: readonly ExecutorHold[]): Index {
-  const byRef = new Map(document.issues.map((issue) => [issue.ref, issue] as const));
-  const canonical = duplicateCanonicals(document.edges);
-  // EVERY graph reference resolves through the duplicate mapping before it is
-  // indexed, so a relationship written against a duplicate lands on the issue
-  // that will actually be worked. A ref with no mapping is its own canonical.
-  const resolve = (ref: IssueRef): IssueRef => canonical.get(ref) ?? ref;
-
+/**
+ * THE dependency graph — one construction, used by everything that asks a
+ * dependency question.
+ *
+ * Readiness, cycle detection and the host's write guard were each building
+ * their own view of `blocked-by`, and they disagreed in two ways that a
+ * visitor could reach: cycle detection walked edges that readiness had already
+ * excluded as together-internal, so a group kept a `cycle` hold the rules say
+ * is advisory; and the guard walked RAW endpoints, so a cycle that exists only
+ * after duplicate resolution was accepted. Both are the same defect — a second
+ * reading of one graph — so there is now one reading and no second to drift.
+ *
+ * Two filters, both from the spec rather than from convenience:
+ *
+ * - **Duplicate resolution (§6.1).** Every endpoint resolves to its canonical,
+ *   and an edge whose ends collapse together is dropped rather than becoming a
+ *   self-edge.
+ * - **Together-internal edges (§4.3.7).** Blocking inside one unit is advisory:
+ *   a group is claimed and worked as a whole, so its members cannot be waiting
+ *   on each other for the purpose of deciding whether the unit may start.
+ */
+function dependencyGraph(
+  document: GraphDocument,
+  resolve: (ref: IssueRef) => IssueRef,
+  together: ReadonlyMap<IssueRef, ReadonlySet<IssueRef>>,
+): { blockers: Map<IssueRef, IssueRef[]>; dependents: Map<IssueRef, IssueRef[]> } {
   const blockers = new Map<IssueRef, IssueRef[]>();
   const dependents = new Map<IssueRef, IssueRef[]>();
   for (const issue of document.issues) {
@@ -286,19 +304,68 @@ function index(document: GraphDocument, holds: readonly ExecutorHold[]): Index {
     if (edge.kind !== 'blocked-by') continue;
     const from = resolve(edge.from);
     const to = resolve(edge.to);
-    // A canonical does not block itself: two duplicates of one issue, or an
-    // issue blocked by its own duplicate, both collapse to a self-edge here.
     if (from === to) continue;
+    const unit = together.get(from);
+    if (unit !== undefined && unit.has(to)) continue;
     push(blockers, from, to);
     push(dependents, to, from);
   }
+  return { blockers, dependents };
+}
 
+/**
+ * Whether creating `from blocked-by to` would close a cycle.
+ *
+ * Exported because it is the host's `EdgeGuard` question, and answering it
+ * anywhere but here is how the guard and the index came to disagree. §6.6 is
+ * deliberate that an EXISTING cycle is surfaced rather than refused — this
+ * refuses only the edit that would create one.
+ */
+export function wouldCloseCycle(
+  document: GraphDocument,
+  from: IssueRef,
+  to: IssueRef,
+): boolean {
+  const canonical = duplicateCanonicals(document.edges);
+  const resolve = (ref: IssueRef): IssueRef => canonical.get(ref) ?? ref;
   const canonicalEdges = document.edges.map((edge) => ({
     ...edge,
     from: resolve(edge.from),
     to: resolve(edge.to),
   }));
   const together = components(canonicalEdges, 'together-with');
+  const { blockers } = dependencyGraph(document, resolve, together);
+
+  const start = resolve(from);
+  const end = resolve(to);
+  if (start === end) return false; // a self-edge is refused structurally, not as a cycle
+  const seen = new Set<IssueRef>();
+  const reaches = (at: IssueRef): boolean => {
+    if (at === start) return true;
+    if (seen.has(at)) return false;
+    seen.add(at);
+    return (blockers.get(at) ?? []).some(reaches);
+  };
+  return reaches(end);
+}
+
+function index(document: GraphDocument, holds: readonly ExecutorHold[]): Index {
+  const byRef = new Map(document.issues.map((issue) => [issue.ref, issue] as const));
+  const canonical = duplicateCanonicals(document.edges);
+  // EVERY graph reference resolves through the duplicate mapping before it is
+  // indexed, so a relationship written against a duplicate lands on the issue
+  // that will actually be worked. A ref with no mapping is its own canonical.
+  const resolve = (ref: IssueRef): IssueRef => canonical.get(ref) ?? ref;
+
+  const canonicalEdges = document.edges.map((edge) => ({
+    ...edge,
+    from: resolve(edge.from),
+    to: resolve(edge.to),
+  }));
+  // Built BEFORE the dependency graph, which needs it to drop the edges §4.3.7
+  // makes advisory.
+  const together = components(canonicalEdges, 'together-with');
+  const { blockers, dependents } = dependencyGraph(document, resolve, together);
 
   // An ACTIVE claim, expanded across the claimed issue's together unit. A hold
   // that is not a claim — `parked` — excludes nobody, because nothing is
@@ -352,7 +419,9 @@ function ownHolds(ref: IssueRef, at: Index): Hold[] {
       detail: 'in a blocked-by cycle, which is stuck until a groomer breaks it',
     });
   }
-  const together = at.together.get(ref);
+  // The blockers here are ALREADY boundary-crossing and canonical — see
+  // `dependencyGraph`. Filtering again at read time is what let cycle detection
+  // and readiness disagree about the same edges.
   for (const blocker of at.blockers.get(ref) ?? []) {
     const target = at.byRef.get(blocker);
     if (target === undefined) {
@@ -363,9 +432,6 @@ function ownHolds(ref: IssueRef, at: Index): Hold[] {
       });
       continue;
     }
-    // Inside a together group, blocking is evaluated over boundary-crossing
-    // edges only (§4.3.7): members do not block one another.
-    if (together !== undefined && together.has(blocker)) continue;
     if (target.state === 'open') {
       found.push({ family: 'graph', label: 'blocked', detail: `blocked by ${blocker}` });
     }

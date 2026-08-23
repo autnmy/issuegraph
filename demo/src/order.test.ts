@@ -16,7 +16,13 @@ import { EDGE_FIELDS } from '@issuegraph/core';
 import type { EdgeKind } from '@issuegraph/store';
 import { makeEdge } from '@issuegraph/store';
 
-import { DEFAULT_CONCURRENCY_CAP, type ExplainedRow, explainOrder, slotCount } from './order.ts';
+import {
+  DEFAULT_CONCURRENCY_CAP,
+  type ExplainedRow,
+  explainOrder,
+  slotCount,
+  wouldCloseCycle,
+} from './order.ts';
 import { seedDocument, seedHolds } from './seed.ts';
 
 function rows(): readonly ExplainedRow[] {
@@ -447,4 +453,55 @@ test('a chain of duplicates resolves to the far canonical, not one hop', () => {
   const canonical = chained.find((each) => each.issue.ref === '4');
   assert.ok(canonical);
   assert.equal(canonical.effectivePriority, 0, 'the closure stopped one hop short of the canonical');
+});
+
+test('blocking INSIDE a together unit is advisory, so it is not a cycle', () => {
+  // #12 and #13 block each other. Group them, and those edges become internal
+  // to one unit — advisory under §4.3.7, because a group is claimed and worked
+  // as a whole. Readiness already ignored them; cycle detection did not, so the
+  // page went on calling a perfectly well-formed group stuck.
+  const document = seedDocument();
+  const grouped = explainOrder(
+    { issues: document.issues, edges: [...document.edges, makeEdge('together-with', '12', '13')] },
+    seedHolds(),
+  );
+  for (const ref of ['12', '13']) {
+    const member = grouped.find((each) => each.issue.ref === ref);
+    assert.ok(member);
+    assert.ok(
+      !member.holds.some((hold) => hold.label === 'cycle'),
+      `${ref} is still reported cyclic on an edge the rules make advisory`,
+    );
+    assert.ok(
+      !member.holds.some((hold) => hold.label === 'blocked'),
+      `${ref} is still reported blocked by its own groupmate`,
+    );
+  }
+
+  // CONTROL: ungrouped, the same two edges ARE a cycle. Without this the test
+  // above passes just as well against a build that never detects one.
+  for (const ref of ['12', '13']) {
+    const member = explainOrder(document, seedHolds()).find((each) => each.issue.ref === ref);
+    assert.ok(member?.holds.some((hold) => hold.label === 'cycle'), `${ref} control failed`);
+  }
+});
+
+test('the cycle guard sees cycles that exist only after duplicate resolution', () => {
+  // #10 is a duplicate of #4. With #4 blocked-by #2 already landed, adding
+  // `#2 blocked-by #10` closes #4 → #2 → #4 once references resolve — invisible
+  // to a walk over raw endpoints, because raw #10 has no path to #2.
+  const document = seedDocument();
+  const landed = {
+    issues: document.issues,
+    edges: [...document.edges, makeEdge('blocked-by', '4', '2')],
+  };
+  assert.equal(
+    wouldCloseCycle(landed, '2', '10'),
+    true,
+    'the guard missed a cycle that exists after duplicate resolution',
+  );
+
+  // CONTROL: an edge that closes nothing is still allowed, so the guard is not
+  // simply refusing everything.
+  assert.equal(wouldCloseCycle(landed, '14', '9'), false, 'the guard refuses an innocent edge');
 });
