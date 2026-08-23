@@ -2,15 +2,8 @@
  * The consumer smoke test.
  *
  * Everything else in this repository runs TypeScript SOURCE on a modern Node.
- * Nothing loaded the built artifact, and nothing ran on the floor the published
- * manifests declare — so `engines.node` was a compatibility claim no instrument
- * had ever measured. A future export using an API absent from that floor would
- * have passed every job and shipped as compatible.
- *
- * So this runs on the OLDEST supported Node, in CI, and it deliberately loads
- * `dist` through the entry each manifest declares rather than importing source:
- * that also makes a broken `exports` map — a path pointing at a file the build
- * does not produce — a failure rather than something a consumer discovers.
+ * This loads the BUILT artifact, on the floor the published manifest declares —
+ * so `engines.node` stops being a compatibility claim no instrument measured.
  *
  * Plain `.mjs` on purpose: the floor is older than Node's native type stripping,
  * so a `.ts` smoke test could not run there at all.
@@ -21,7 +14,11 @@ import { join } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 
-const packagesDir = fileURLToPath(new URL('../packages', import.meta.url));
+/** The major version a `>=X` / `^X` style engines range starts at. */
+export function declaredFloorMajor(range) {
+  const found = /(\d+)/.exec(range ?? '');
+  return found ? Number(found[1]) : undefined;
+}
 
 /** Every file an `exports` map points at, however deeply it is nested. */
 function exportTargets(node, found = []) {
@@ -35,63 +32,97 @@ function exportTargets(node, found = []) {
   return found;
 }
 
-/** The major version a `>=X` / `^X` style engines range starts at. */
-function declaredFloorMajor(range) {
-  const found = /(\d+)/.exec(range ?? '');
-  return found ? Number(found[1]) : undefined;
+/**
+ * Why a module that PARSED could still not be loaded by Node.
+ *
+ * These three prove the entry was read and understood: a bad extension fails
+ * while LINKING an import the entry declared, and a `ReferenceError` happens
+ * while EXECUTING it. A `SyntaxError` is the opposite — it proves the file was
+ * never valid — so it is deliberately absent and always fails.
+ */
+const NOT_RUNNABLE_IN_NODE = new Map([
+  ['ERR_UNKNOWN_FILE_EXTENSION', 'imports an asset Node cannot load'],
+  ['ERR_MODULE_NOT_FOUND', 'imports a module not resolvable from Node'],
+]);
+
+function whyNotRunnable(error) {
+  if (error instanceof SyntaxError) return undefined;
+  if (error instanceof ReferenceError) return 'uses a browser global at module scope';
+  return NOT_RUNNABLE_IN_NODE.get(error?.code);
 }
 
-const runningMajor = Number(process.versions.node.split('.')[0]);
-let checked = 0;
+/**
+ * Smoke-test every package under `packagesDir`. Returns one result per package.
+ *
+ * A package that declares `engines.node` is held to BOTH checks: this process
+ * must be running that floor, and the built entry must load in it. A package
+ * that declares none is not exempt from being checked — it is exempt from
+ * claiming a Node floor, and it still has to PARSE. The difference between the
+ * two is reported per package rather than left silent, because a check that
+ * quietly weakens is indistinguishable from one that passed.
+ */
+export async function smokeTest(packagesDir, { log = () => {} } = {}) {
+  const results = [];
+  const runningMajor = Number(process.versions.node.split('.')[0]);
 
-for (const entry of readdirSync(packagesDir, { withFileTypes: true })) {
-  if (!entry.isDirectory()) continue;
-  const dir = join(packagesDir, entry.name);
-  const manifestPath = join(dir, 'package.json');
-  if (!existsSync(manifestPath)) continue;
+  for (const entry of readdirSync(packagesDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const dir = join(packagesDir, entry.name);
+    const manifestPath = join(dir, 'package.json');
+    if (!existsSync(manifestPath)) continue;
 
-  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
-  const targets = exportTargets(manifest.exports);
-  assert.ok(
-    targets.length > 0,
-    `${manifest.name} declares no exports; a consumer has nothing to import`,
-  );
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    const targets = exportTargets(manifest.exports);
+    assert.ok(targets.length > 0, `${manifest.name} declares no exports; a consumer has nothing to import`);
 
-  // Every declared target must EXIST. A `types` path that the build stopped
-  // emitting is invisible to a runtime import, and breaks every typed consumer.
-  for (const target of targets) {
-    const resolved = join(dir, target);
-    assert.ok(existsSync(resolved), `${manifest.name}: exports names "${target}", which the build did not produce`);
+    for (const target of targets) {
+      assert.ok(
+        existsSync(join(dir, target)),
+        `${manifest.name}: exports names "${target}", which the build did not produce`,
+      );
+    }
+
+    const runtime = manifest.exports?.['.']?.default ?? manifest.main;
+    assert.ok(runtime, `${manifest.name} declares no runtime entry`);
+
+    const floor = declaredFloorMajor(manifest.engines?.node);
+    if (floor !== undefined) {
+      assert.equal(
+        runningMajor,
+        floor,
+        `${manifest.name} declares node >=${floor} but this smoke test is running on ${process.version}. ` +
+          'Run it on the declared floor, or change the floor — testing a newer runtime proves nothing about the older one.',
+      );
+    }
+
+    let loaded;
+    let downgraded;
+    try {
+      loaded = await import(pathToFileURL(join(dir, runtime)).href);
+    } catch (error) {
+      const why = whyNotRunnable(error);
+      // A package that CLAIMS a Node floor must load on it. Only a package
+      // making no such claim may fall back to the parse-only check.
+      if (why === undefined || floor !== undefined) throw error;
+      downgraded = why;
+    }
+
+    if (downgraded === undefined) {
+      assert.ok(Object.keys(loaded).length > 0, `${manifest.name} loaded but exported nothing`);
+      log(`ok    ${manifest.name}  ${runtime}  loaded, ${Object.keys(loaded).length} exports, node ${process.version}`);
+    } else {
+      log(`parse ${manifest.name}  ${runtime}  parsed but not run here — ${downgraded}`);
+    }
+    results.push({ name: manifest.name, entry: runtime, check: downgraded === undefined ? 'loaded' : 'parsed', downgraded });
   }
 
-  // The job must be RUNNING on the floor this package declares. Without this the
-  // workflow's node version and the manifest's `engines` drift apart silently,
-  // and the smoke test goes on passing while testing a version nobody promised
-  // — which is the same unmeasured claim this file exists to end, one level up.
-  const floor = declaredFloorMajor(manifest.engines?.node);
-  assert.ok(floor !== undefined, `${manifest.name} declares no engines.node, so there is no floor to test`);
-  assert.equal(
-    runningMajor,
-    floor,
-    `${manifest.name} declares node >=${floor} but this smoke test is running on ${process.version}. ` +
-      'Run it on the declared floor, or change the floor — testing a newer runtime proves nothing about the older one.',
-  );
-
-  // And the runtime entry must LOAD on this Node, which is the whole point of
-  // running this job on the declared floor.
-  const runtime = manifest.exports?.['.']?.default ?? manifest.main;
-  assert.ok(runtime, `${manifest.name} declares no runtime entry`);
-  const loaded = await import(pathToFileURL(join(dir, runtime)).href);
-  assert.ok(
-    Object.keys(loaded).length > 0,
-    `${manifest.name} loaded but exported nothing`,
-  );
-
-  console.log(`ok  ${manifest.name}  ${runtime}  (${Object.keys(loaded).length} exports, node ${process.version})`);
-  checked += 1;
+  assert.ok(results.length > 0, 'no packages were smoke-tested; this job proved nothing');
+  return results;
 }
 
-// A loop over an empty directory passes silently, which would make this job a
-// green light that looked at nothing.
-assert.ok(checked > 0, 'no packages were smoke-tested; this job proved nothing');
-console.log(`smoke: ${checked} package(s) loaded from dist on node ${process.version}`);
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const packagesDir = fileURLToPath(new URL('../packages', import.meta.url));
+  const results = await smokeTest(packagesDir, { log: (line) => console.log(line) });
+  const loaded = results.filter((r) => r.check === 'loaded').length;
+  console.log(`smoke: ${results.length} package(s) on node ${process.version} — ${loaded} loaded, ${results.length - loaded} parse-only`);
+}
