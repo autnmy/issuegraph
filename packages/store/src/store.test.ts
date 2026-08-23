@@ -443,7 +443,7 @@ test('a symmetric edge whose carrier reversed upstream is adopted, not kept stal
   const store = createStore({
     source: {
       hydrate: () => Promise.resolve(document),
-      dispatch: () => Promise.resolve({ outcome: 'unchanged' as const }),
+      dispatch: () => Promise.resolve({ outcome: 'unchanged' as const, document }),
     },
     derive: simpleDeriver,
   });
@@ -626,7 +626,7 @@ test('a reversed symmetric carrier reaches the projection, not just the landed s
   const store = createStore({
     source: {
       hydrate: () => Promise.resolve(document),
-      dispatch: () => Promise.resolve({ outcome: 'unchanged' as const }),
+      dispatch: () => Promise.resolve({ outcome: 'unchanged' as const, document }),
     },
     derive: simpleDeriver,
   });
@@ -652,7 +652,7 @@ test('a refusal whose reason changed is republished, not reused', async () => {
   const store = createStore({
     source: {
       hydrate: () => Promise.resolve(document),
-      dispatch: () => Promise.resolve({ outcome: 'unchanged' as const }),
+      dispatch: () => Promise.resolve({ outcome: 'unchanged' as const, document }),
     },
     derive: simpleDeriver,
   });
@@ -1002,3 +1002,52 @@ test('the two calls a host composes retry-on-latest from are each single-step', 
   assert.equal(dispatches, 1, 'and nothing the user discarded was dispatched');
 });
 
+
+test('an unchanged answer about a document the store has not got still lands it', async () => {
+  // `unchanged` is an authoritative statement — "the document already says what
+  // you asked for" — and the store could not act on it because it carried no
+  // document. When another client had already created the same edge, the store
+  // dropped the overlay and ended up WITHOUT an edge that genuinely exists,
+  // ranking the backlog on a document missing a real relationship.
+  const upstream = withEdge(threeOpenIssues(), 'blocked-by', '1', '2');
+  const store = createStore({
+    source: {
+      hydrate: () => Promise.resolve(threeOpenIssues()),
+      // The adapter already holds the edge, so there is nothing to apply.
+      dispatch: () => Promise.resolve({ outcome: 'unchanged' as const, document: upstream }),
+    },
+    derive: simpleDeriver,
+  });
+  await store.hydrate();
+  assert.deepEqual(refs(store.getSnapshot().order.rows), ['1', '2', '3']);
+
+  await store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' }).settled;
+
+  const snapshot = store.getSnapshot();
+  assert.deepEqual(
+    snapshot.landed.map((edge) => edge.id),
+    [edgeId('blocked-by', '1', '2')],
+    'the edge the adapter says exists is in the store',
+  );
+  assert.deepEqual(refs(snapshot.order.rows), ['2', '3', '1'], 'and the order reflects it');
+  assert.deepEqual(snapshot.writes, [], 'the edit is settled');
+  assert.equal(
+    snapshot.lastChange,
+    undefined,
+    'but no summary: the movement was somebody else’s, not this edit’s',
+  );
+});
+
+test('an unchanged answer about a document the store already has changes nothing at all', async () => {
+  const source = createMemorySource(threeOpenIssues());
+  const store = createStore({ source, derive: simpleDeriver });
+  await store.hydrate();
+
+  const before = store.getSnapshot();
+  await store.propose({ op: 'delete', edgeId: edgeId('blocked-by', '1', '2') }).settled;
+
+  const after = store.getSnapshot();
+  assert.equal(after.landed, before.landed, 'nothing adopted');
+  assert.equal(after.order.rows, before.order.rows, 'nothing re-derived');
+  assert.equal(after.lastChange, undefined);
+});

@@ -24,10 +24,13 @@ export interface PendingDispatch {
 }
 
 /**
- * What to answer with. `'applied'` is resolved against the adapter's own
- * document, so a test can say "this one lands" without restating the edges.
+ * What to answer with.
+ *
+ * `'applied'` and `'unchanged'` are resolved against the adapter's own
+ * document, so a caller can say "this one lands" or "there was nothing to do"
+ * without restating the edges. Anything else is passed through verbatim.
  */
-export type ScriptedOutcome = 'applied' | DispatchResult;
+export type ScriptedOutcome = 'applied' | 'unchanged' | DispatchResult;
 
 /** A scripted data source, plus the controls a test or a demo drives it with. */
 export interface ScriptedSource extends DataSource {
@@ -100,6 +103,10 @@ export function createScriptedSource(
   }
 
   function answer(entry: Waiting, outcome: ScriptedOutcome): void {
+    if (outcome === 'unchanged') {
+      entry.resolve({ outcome: 'unchanged', document });
+      return;
+    }
     if (outcome !== 'applied') {
       entry.resolve(outcome);
       return;

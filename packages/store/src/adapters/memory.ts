@@ -85,7 +85,7 @@ export function createMemorySource(seed: GraphDocument): MemorySource {
     dispatch(mutation: Mutation): Promise<DispatchResult> {
       const edges = applied(document, mutation);
       if (edges === undefined || sameEdgeSet(document.edges, edges)) {
-        return Promise.resolve({ outcome: 'unchanged' });
+        return Promise.resolve({ outcome: 'unchanged', document });
       }
       document = { issues: document.issues, edges };
       return Promise.resolve({ outcome: 'applied', document });

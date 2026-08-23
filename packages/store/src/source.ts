@@ -48,10 +48,12 @@ export interface DataSource {
 /**
  * How a dispatch settled.
  *
- * Four arms, and `unchanged` is the one that is easy to leave out and expensive
- * to miss: "I applied your edit" and "there was nothing to apply" are different
- * facts, and collapsing them makes the store adopt a document, re-derive the
- * order and emit a change summary for a write that changed nothing.
+ * Four arms. `applied` and `unchanged` are both authoritative statements about
+ * the document and both carry one; they differ only in whether this edit caused
+ * the difference, which is what decides whether a change summary is emitted.
+ * Collapsing them would attribute somebody else's movement to this edit;
+ * letting `unchanged` carry nothing left the store unable to act on a perfectly
+ * good answer.
  */
 export type DispatchResult =
   | {
@@ -74,8 +76,21 @@ export type DispatchResult =
       readonly document: GraphDocument;
     }
   | {
-      /** Nothing upstream differed. The store clears the pending write and adopts nothing. */
+      /**
+       * The edit changed nothing, and `document` is the AUTHORITATIVE state —
+       * the same contract as `applied`, because this is the same kind of claim.
+       *
+       * It carries one for a reason that is easy to miss: "nothing to do" is
+       * often said precisely BECAUSE the store is out of date. Another client
+       * creates the same edge, this edit arrives, the adapter has nothing to
+       * apply — and a bare `unchanged` would leave the store without an edge
+       * that genuinely exists, ranking a backlog missing a real relationship.
+       *
+       * The store adopts it and re-derives, but emits NO change summary: the
+       * movement, if any, was somebody else's and this edit did not cause it.
+       */
       readonly outcome: 'unchanged';
+      readonly document: GraphDocument;
     }
   | {
       /** The write was refused upstream. Nothing changed there. */

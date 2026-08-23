@@ -46,7 +46,7 @@ test('every outcome the port defines is producible from the script', async () =>
 
   const unchanged = createScriptedSource(threeOpenIssues(), applyEdit);
   const second = unchanged.dispatch(create);
-  unchanged.settleNext({ outcome: 'unchanged' });
+  unchanged.settleNext('unchanged');
   outcomes.push((await second).outcome);
 
   const rejected = createScriptedSource(threeOpenIssues(), applyEdit);
@@ -111,7 +111,7 @@ test('settlements can be taken out of order by naming the edit', async () => {
     ['m1'],
   );
 
-  source.settle('m1', { outcome: 'unchanged' });
+  source.settle('m1', 'unchanged');
   assert.equal((await first).outcome, 'unchanged');
 });
 
@@ -129,8 +129,8 @@ test('whenPending resolves for an edit already waiting, and for one still to com
   const second = source.dispatch(edit({ op: 'create', kind: 'duplicate-of', from: '3', to: '1' }, 'm2'));
   assert.equal((await later).mutationId, 'm2');
 
-  source.settle('m1', { outcome: 'unchanged' });
-  source.settle('m2', { outcome: 'unchanged' });
+  source.settle('m1', 'unchanged');
+  source.settle('m2', 'unchanged');
   await Promise.all([dispatched, second]);
 });
 

@@ -315,7 +315,7 @@ test('an adapter that throws surfaces as failed, not as a hang and not as succes
   assert.deepEqual(store.getSnapshot().landed, []);
 });
 
-test('an UNCHANGED result adopts nothing and re-evaluates nothing', async () => {
+test('an UNCHANGED result about the document the store has moves nothing', async () => {
   const source = createScriptedSource(threeOpenIssues(), applyEdit);
   const store = storeOver(source);
   await store.hydrate();
@@ -324,12 +324,16 @@ test('an UNCHANGED result adopts nothing and re-evaluates nothing', async () => 
   const rowsBefore = store.getSnapshot().order.rows;
 
   const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
-  source.settleNext({ outcome: 'unchanged' });
+  source.settleNext('unchanged');
   await handle.settled;
 
   const snapshot = store.getSnapshot();
-  assert.equal(snapshot.landed, landedBefore, 'nothing was adopted');
-  assert.equal(snapshot.order.rows, rowsBefore, 'nothing was re-derived');
+  // `unchanged` carries an authoritative document and the store adopts it — but
+  // when it says what the store already holds, adopting is a no-op and the
+  // ranking keeps its identity. (The case where it does NOT is covered by `an
+  // unchanged answer about a document the store has not got still lands it`.)
+  assert.equal(snapshot.landed, landedBefore, 'nothing adopted');
+  assert.equal(snapshot.order.rows, rowsBefore, 'the ranking did not move');
   assert.equal(snapshot.lastChange, undefined, 'no change summary for a write that changed nothing');
   assert.deepEqual(snapshot.projected, [], 'the settled overlay is gone');
 });

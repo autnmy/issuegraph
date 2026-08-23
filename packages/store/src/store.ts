@@ -323,10 +323,14 @@ export function createStore(config: StoreConfig): Store {
     const projected = sameValue(published.projected, nextProjected)
       ? published.projected
       : own(nextProjected);
+    // The rows keep their identity across a status-only change. Rebuilding the
+    // view is cheap; handing a host a new array when the ranking did not move
+    // defeats whatever it memoised on, and the status flips on every write.
+    const orderRows = sameValue(published.order.rows, rows) ? published.order.rows : rows;
     const order =
-      published.order.status === nextOrderStatus && sameValue(published.order.rows, rows)
+      published.order.status === nextOrderStatus && published.order.rows === orderRows
         ? published.order
-        : Object.freeze({ rows, status: nextOrderStatus });
+        : Object.freeze({ rows: orderRows, status: nextOrderStatus });
     const writes = sameValue(published.writes, records) ? published.writes : own(records);
     const selected = sameValue(published.selection, selection) ? published.selection : own(selection);
 
@@ -472,11 +476,17 @@ export function createStore(config: StoreConfig): Store {
         break;
       }
       case 'unchanged': {
-        // Nothing upstream differed, so nothing is adopted and the order is NOT
-        // re-derived: re-deriving here would emit a change summary for a write
-        // that changed nothing, which is exactly what this arm exists to avoid.
-        // The overlay goes, because the edit is settled.
+        // Adopted like `applied`, because it is the same kind of claim about the
+        // document — and often said BECAUSE the store is out of date, which is
+        // exactly when not adopting it loses an edge that genuinely exists.
+        //
+        // Re-derived with NO cause: whatever moved was somebody else's doing,
+        // and attributing it to this edit is the misattribution this arm used to
+        // avoid by not re-deriving at all. `adopt` no-ops when the document
+        // matches, so the ordinary case still changes nothing.
+        adopt(result.document);
         dropRecord(mutation.mutationId);
+        reDerive(undefined);
         break;
       }
       case 'rejected': {

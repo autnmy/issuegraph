@@ -72,17 +72,20 @@ interface DataSource {
 | outcome | what it means | what the store does |
 |---|---|---|
 | `applied` | the edit landed; carries the **whole** resulting document | adopts it, re-derives the order, emits a change summary |
-| `unchanged` | nothing upstream differed | clears the pending write, adopts nothing, re-derives nothing |
+| `unchanged` | the edit changed nothing; carries the **whole** document | adopts it, re-derives, emits **no** summary |
 | `rejected` | the write was refused; carries a reason | marks the edge `failed` and offers `retry` |
 | `conflict` | the document moved upstream mid-edit; carries the current one | marks the edge `conflict` and holds **both** versions |
 
 Three contracts an adapter has to honour:
 
-- **`applied` carries the authoritative full document — issues included — not a patch.** A
-  partial answer would need merge rules, and merge rules are where an optimistic store goes
-  wrong. Issues too, so that `hydrate`, `applied` and `conflict` all mean one thing by
-  "authoritative": when they meant two, the store's freshness question had two dimensions and
-  only one was tracked. An adapter that changed no issues returns the ones it holds.
+- **`applied` and `unchanged` both carry the authoritative full document — issues included —
+  not a patch.** A partial answer would need merge rules, and merge rules are where an
+  optimistic store goes wrong. Both, because both are the same kind of claim about the
+  document; they differ only in whether *this* edit caused the difference, which is what
+  decides whether a change summary is emitted. `unchanged` matters more than it looks: an
+  adapter often has nothing to apply precisely *because* your store is out of date — another
+  client got there first — and a bare "nothing to do" would leave you without an edge that
+  genuinely exists. An adapter that changed no issues returns the ones it holds.
 - **The store dispatches once per mutation and never retries on its own.** A retry is a user
   act, so nothing here assumes an idempotency you have not been given.
 - **The store runs one authoritative operation at a time**, queueing the rest, so `dispatch`
@@ -176,10 +179,10 @@ it, split by what the answer needs to see:
 
 ## A failed write is marked, never reverted
 
-The user's work stays on the canvas. `retry` re-dispatches it; on a conflict,
-`retryOnLatest` adopts the upstream document and re-dispatches against it. **Nothing
-auto-merges, nothing auto-reverts, and nothing times out** — `discardMine` is the only call
-that removes an optimistic edit, and a person has to make it.
+The user's work stays on the canvas. `retry` re-dispatches it, and on a conflict you get the
+two single-step resolutions below. **Nothing auto-merges, nothing auto-reverts, and nothing
+times out** — `discardMine` is the only call that removes an optimistic edit, and a person has
+to make it.
 
 ### Resolving a conflict
 
