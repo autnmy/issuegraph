@@ -243,6 +243,12 @@ export function createStore(config: StoreConfig): Store {
    * nothing at all moved, which is what `useSyncExternalStore` requires.
    */
   function publish(): void {
+    // CALL THIS ONLY ONCE THE OPERATION IS FULLY COMMITTED. Subscribers run
+    // synchronously and may call straight back into the store, so anything left
+    // undone at this point can be overtaken by the re-entrant call — which is
+    // how a follow-up edit once jumped the queue ahead of the edit that
+    // triggered it. Every other call site already commits first; keep it that
+    // way rather than making each one rediscover the rule.
     const nextProjected = project(landed, records, new Set(selection));
     const nextOrderStatus: OrderStatus = anyPending(records) ? 'held' : 'settled';
 
@@ -452,8 +458,13 @@ export function createStore(config: StoreConfig): Store {
     }
 
     putRecord({ mutationId: mutation.mutationId, mutation, state: 'pending' });
-    publish();
+    // ENQUEUE BEFORE NOTIFYING. `publish` runs subscribers synchronously, so a
+    // subscriber proposing a follow-up re-enters here — and if the queue does
+    // not yet hold this edit, the nested one takes its place in line and goes
+    // out first. Two edits on the same edge then apply in the reverse of the
+    // order the user made them.
     queue.push({ kind: 'dispatch', mutation, queuedAt: landedGeneration });
+    publish();
     void drain();
     return { mutationId: mutation.mutationId, settled };
   }

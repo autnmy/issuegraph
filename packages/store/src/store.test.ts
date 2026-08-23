@@ -757,3 +757,44 @@ test('a settling edit does not republish its summary once a newer edit has start
     'the summary belongs to the edit that is current when it lands',
   );
 });
+
+test('a subscriber that proposes during notification cannot overtake the edit it saw', async () => {
+  // `publish()` runs subscribers synchronously, so a subscriber proposing a
+  // follow-up re-enters `start()`. Publishing before enqueueing let the nested
+  // edit reach the queue first and go out first — user order reversed, and for
+  // two edits on the same edge the second can invalidate the first.
+  const scripted = createScriptedSource(threeOpenIssues(), applyEdit);
+  const dispatched: string[] = [];
+  const store = createStore({
+    source: {
+      hydrate: () => scripted.hydrate(),
+      dispatch: (mutation) => {
+        dispatched.push(mutation.mutationId);
+        return scripted.dispatch(mutation);
+      },
+    },
+    derive: simpleDeriver,
+  });
+  await store.hydrate();
+
+  let followedUp = false;
+  store.subscribe(() => {
+    if (followedUp) return;
+    if (!store.getSnapshot().writes.some((record) => record.state === 'pending')) return;
+    followedUp = true;
+    store.propose({ op: 'create', kind: 'duplicate-of', from: '3', to: '1' });
+  });
+
+  const first = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  assert.ok(followedUp, 'the subscriber ran during the first proposal');
+
+  // Drained without naming either edit, so this reads whichever order the store
+  // actually chose rather than assuming one and hanging when it guessed wrong.
+  await scripted.whenPending();
+  scripted.settleNext('applied');
+  await scripted.whenPending();
+  scripted.settleNext('applied');
+  await first.settled;
+
+  assert.deepEqual(dispatched, ['m1', 'm2'], 'the edits go out in the order the user made them');
+});
