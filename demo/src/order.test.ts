@@ -826,3 +826,58 @@ test('a groupmate holding the unit claim is not a serialize rival', () => {
     'the control failed: an ungrouped serialize partner should be excluded',
   );
 });
+
+test('a TAIL leading into a duplicate cycle resolves to nothing', () => {
+  // `#1 → #2`, `#2 → #3`, `#3 → #2`. The walk from #1 stops on the repeated #2,
+  // which differs from #1 — so it was recorded as #1's canonical: an arbitrary
+  // member of a cycle that HAS no canonical. A cycle resolves to nothing
+  // whether you enter it from inside or from a tail.
+  const document = seedDocument();
+  const tailed = {
+    issues: document.issues,
+    edges: [
+      ...document.edges.filter((edge) => edge.kind !== 'duplicate-of'),
+      makeEdge('duplicate-of', '1', '2'),
+      makeEdge('duplicate-of', '2', '3'),
+      makeEdge('duplicate-of', '3', '2'),
+      // A relationship written against the tail: if #1 resolved to an arbitrary
+      // cycle member, this dependency would silently reattach to it.
+      makeEdge('blocked-by', '14', '1'),
+    ],
+  };
+  const rowsOf = explainOrder(tailed, seedHolds());
+
+  // All three carry the field, so none of them is ever worked.
+  for (const ref of ['1', '2', '3']) {
+    const member = rowsOf.find((each) => each.issue.ref === ref);
+    assert.ok(member, `no row for ${ref}`);
+    assert.equal(member.placement, 'footer', `${ref} re-entered the order`);
+  }
+
+  // And the dependency stays attached to #1 rather than being moved onto a
+  // cycle member the reader picked arbitrarily.
+  const dependent = rowsOf.find((each) => each.issue.ref === '14');
+  assert.ok(dependent);
+  assert.ok(
+    dependent.holds.some((hold) => hold.detail.includes('blocked by 1')),
+    'the dependency was reattached to an arbitrary member of an unresolvable cycle',
+  );
+
+  // CONTROL: a well-formed chain still resolves all the way to its canonical —
+  // otherwise this passes against a build that resolves nothing at all.
+  const chain = {
+    issues: document.issues,
+    edges: [
+      ...document.edges.filter((edge) => edge.kind !== 'duplicate-of'),
+      makeEdge('duplicate-of', '1', '2'),
+      makeEdge('duplicate-of', '2', '3'),
+      makeEdge('blocked-by', '14', '1'),
+    ],
+  };
+  const resolved = explainOrder(chain, seedHolds()).find((each) => each.issue.ref === '14');
+  assert.ok(resolved);
+  assert.ok(
+    resolved.holds.some((hold) => hold.detail.includes('blocked by 3')),
+    'the control failed: a well-formed chain should resolve to its canonical',
+  );
+});

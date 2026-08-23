@@ -216,13 +216,25 @@ function duplicateCanonicals(edges: readonly StoredEdge[]): {
   for (const from of target.keys()) {
     const walked = new Set<IssueRef>([from]);
     let at = target.get(from);
-    while (at !== undefined && !walked.has(at)) {
+    let looped = false;
+    while (at !== undefined) {
+      // ANY repeated node ends the walk without a canonical, not just a return
+      // to where it started. A TAIL leading into a duplicate cycle — `#1 → #2`,
+      // `#2 → #3`, `#3 → #2` — stops on the repeated #2, which differs from #1
+      // and was therefore recorded as #1's canonical: an arbitrary member of a
+      // cycle that HAS no canonical, silently reattaching #1's relationships to
+      // it. A cycle resolves to nothing whether you enter it from inside or
+      // from a tail.
+      if (walked.has(at)) {
+        looped = true;
+        break;
+      }
       walked.add(at);
       const next = target.get(at);
       if (next === undefined) break;
       at = next;
     }
-    if (at !== undefined && at !== from) canonical.set(from, at);
+    if (!looped && at !== undefined && at !== from) canonical.set(from, at);
   }
   return { canonical, duplicates };
 }
