@@ -75,4 +75,8 @@ jobs:
 
       - name: Dry run summary
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
-        run: echo "Dry run: everything but the publish ran. Re-run with dry_run unchecked to publish."
+        # Block scalar, not a bare one: a plain YAML scalar containing `: ` is
+        # read as a mapping, and the workflow fails to LOAD rather than to run.
+        run: |
+          echo "Dry run: everything but the publish ran."
+          echo "Re-run with dry_run unchecked to publish."
