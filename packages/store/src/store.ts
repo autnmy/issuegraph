@@ -137,6 +137,30 @@ const EMPTY_DOCUMENT: GraphDocument = Object.freeze({
   issues: Object.freeze([]),
   edges: Object.freeze([]),
 });
+
+/**
+ * Take ownership of a list the store is about to publish: copy it, then freeze.
+ *
+ * The arrays a snapshot hands out ARE the store's state — `landed` and `issues`
+ * arrive from the adapter, `order.rows` from the deriver — and `Object.freeze`
+ * on the snapshot object protects none of them. A consumer calling `.sort()` on
+ * one (the common slip; `[...list].sort()` is the careful form) would reorder
+ * store state with no dispatch, no generation bump, no re-derivation and no
+ * notification, and the next order would derive from a document nobody wrote.
+ *
+ * COPIED BEFORE FREEZING, not frozen in place, because these arrive from the
+ * host: freezing an adapter's own array would freeze it out of its own storage
+ * for handing one over.
+ *
+ * THE CONTAINERS ONLY. The elements stay as the host made them — the store owns
+ * which edges and rows it holds, the host owns what each one is — because
+ * freezing those would reach into objects an adapter or a deriver may still be
+ * using. `readonly` in the types is what discourages touching them; nothing at
+ * runtime can promise it without taking objects that are not ours.
+ */
+function own<T>(list: readonly T[]): readonly T[] {
+  return Object.freeze([...list]);
+}
 const NO_PROJECTION: readonly ProjectedEdge[] = Object.freeze([]);
 
 function messageOf(thrown: unknown): string {
@@ -205,9 +229,9 @@ export function createStore(config: StoreConfig): Store {
     issues: landed.issues,
     landed: landed.edges,
     projected: NO_PROJECTION,
-    order: { rows, status: 'settled' },
-    writes: records,
-    selection,
+    order: Object.freeze({ rows: own(rows), status: 'settled' }),
+    writes: own(records),
+    selection: own(selection),
   };
   let published: StoreSnapshot = Object.freeze(initial);
 
@@ -222,8 +246,8 @@ export function createStore(config: StoreConfig): Store {
    */
   function adopt(next: GraphDocument): void {
     const adopted = {
-      issues: sameValue(landed.issues, next.issues) ? landed.issues : next.issues,
-      edges: sameEdgeSet(landed.edges, next.edges) ? landed.edges : next.edges,
+      issues: sameValue(landed.issues, next.issues) ? landed.issues : own(next.issues),
+      edges: sameEdgeSet(landed.edges, next.edges) ? landed.edges : own(next.edges),
     };
     // Bumped only on a real change, so a rehydrate that returns the same
     // document does not invalidate a conflict snapshot that is still current.
@@ -254,13 +278,15 @@ export function createStore(config: StoreConfig): Store {
 
     // One comparison for every slice. Nothing here names a field, so a field
     // added to any of these shapes is compared without this block changing.
-    const projected = sameValue(published.projected, nextProjected) ? published.projected : nextProjected;
+    const projected = sameValue(published.projected, nextProjected)
+      ? published.projected
+      : own(nextProjected);
     const order =
       published.order.status === nextOrderStatus && sameValue(published.order.rows, rows)
         ? published.order
-        : { rows, status: nextOrderStatus };
-    const writes = sameValue(published.writes, records) ? published.writes : records;
-    const selected = sameValue(published.selection, selection) ? published.selection : selection;
+        : Object.freeze({ rows, status: nextOrderStatus });
+    const writes = sameValue(published.writes, records) ? published.writes : own(records);
+    const selected = sameValue(published.selection, selection) ? published.selection : own(selection);
 
     const unchanged =
       published.status === status &&
@@ -329,7 +355,7 @@ export function createStore(config: StoreConfig): Store {
     // the attribution true, so none is claimed.
     const recovering = orderError !== undefined;
     orderError = undefined;
-    rows = next;
+    rows = own(next);
     // Only for the edit that is still the current one. A landing that a newer
     // proposal has already overtaken has no summary to publish — the newer edit
     // owns that slot, and will fill it when it lands.

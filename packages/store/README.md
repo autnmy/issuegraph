@@ -46,6 +46,12 @@ Read state with `getSnapshot()` and react to it with `subscribe(listener)` — t
 `useSyncExternalStore` wants, so a React host needs no adapter and a non-React host is not
 asked to pretend it is one.
 
+**Every array on a snapshot is frozen.** They are the store's own state, so a `.sort()` on
+one would reorder that state with no dispatch and no notification; `[...rows].sort()` is the
+form to use. The store copies before freezing, so handing it an array never freezes an adapter
+out of its own storage. The *elements* are left as you made them — the store owns which edges
+and rows it holds, you own what each one is.
+
 ---
 
 ## The data-source port

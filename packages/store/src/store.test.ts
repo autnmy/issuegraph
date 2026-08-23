@@ -798,3 +798,61 @@ test('a subscriber that proposes during notification cannot overtake the edit it
 
   assert.deepEqual(dispatched, ['m1', 'm2'], 'the edits go out in the order the user made them');
 });
+
+test('EVERY array the snapshot exposes is frozen, including ones added later', async () => {
+  // The arrays the snapshot hands out ARE the store's state — `landed` and
+  // `issues` come straight from the adapter and `order.rows` from the deriver,
+  // and `Object.freeze` on the snapshot wrapper protects none of them. A
+  // consumer calling `.sort()` on one (the common slip; `[...a].sort()` is the
+  // careful form) would change store state with no dispatch, no generation
+  // bump, no re-derivation and no notification.
+  //
+  // Driven off the snapshot's own keys rather than a written list, so an array
+  // added to the shape later is covered without editing this.
+  const source = createScriptedSource(threeOpenIssues(), applyEdit);
+  const store = createStore({ source, derive: simpleDeriver });
+  await store.hydrate();
+
+  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  store.select([edgeId('blocked-by', '1', '2')]);
+  await source.whenPending(handle.mutationId);
+  source.settleNext({ outcome: 'rejected', reason: 'so a write record is exposed too' });
+  await handle.settled;
+
+  const snapshot = store.getSnapshot();
+  const arrays: readonly (readonly [string, readonly unknown[]])[] = [
+    ...Object.entries(snapshot).filter((entry): entry is [string, readonly unknown[]] =>
+      Array.isArray(entry[1]),
+    ),
+    ['order.rows', snapshot.order.rows],
+  ];
+
+  // Every one of the shapes this test is about must actually be present, or it
+  // would pass by having found nothing to check.
+  assert.deepEqual(
+    arrays.map(([name]) => name).sort(),
+    ['issues', 'landed', 'order.rows', 'projected', 'selection', 'writes'],
+  );
+
+  for (const [name, value] of arrays) {
+    assert.ok(Object.isFrozen(value), `snapshot.${name} is not frozen`);
+    assert.throws(() => (value as unknown[]).push('x'), TypeError, `snapshot.${name} accepted a push`);
+  }
+
+  // And the store is unchanged by the attempts above.
+  assert.deepEqual(store.getSnapshot().issues.map((issue) => issue.ref), ['1', '2', '3']);
+  assert.deepEqual(store.getSnapshot().landed, []);
+});
+
+test('freezing what the store publishes does not reach into the adapter’s own arrays', async () => {
+  // The store copies before freezing, so an adapter that keeps and reuses its
+  // arrays is not frozen out of its own storage by handing one over.
+  const source = createMemorySource(threeOpenIssues());
+  const store = createStore({ source, derive: simpleDeriver });
+  await store.hydrate();
+
+  assert.ok(!Object.isFrozen(source.current().edges), 'the adapter still owns a mutable array');
+  await store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' }).settled;
+  assert.ok(!Object.isFrozen(source.current().edges));
+  assert.equal(source.current().edges.length, 1);
+});
