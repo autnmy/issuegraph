@@ -34,6 +34,16 @@ export interface ScriptedSource extends DataSource {
   /** Every edit handed over and not yet answered, oldest first. */
   pending(): readonly PendingDispatch[];
   /**
+   * Resolves once an edit is waiting to be settled — a named one, or the next
+   * one to arrive.
+   *
+   * A store that serialises its writes hands an edit over some time AFTER the
+   * caller proposed it, so "proposed" and "the adapter has it" are two
+   * different moments. Without this a caller has to guess how many microtasks
+   * separate them, which is the kind of test that passes until it doesn't.
+   */
+  whenPending(mutationId?: MutationId): Promise<PendingDispatch>;
+  /**
    * Answer the oldest unanswered edit. Throws when there is none, because
    * settling nothing is always a mistake in the caller rather than a state to
    * tolerate — and a silent no-op here would make a test pass by not running.
@@ -52,6 +62,11 @@ interface Waiting extends PendingDispatch {
   readonly reject: (error: Error) => void;
 }
 
+interface Watcher {
+  readonly mutationId: MutationId | undefined;
+  readonly notify: (entry: PendingDispatch) => void;
+}
+
 /**
  * A data source that hands control of every settlement to its caller.
  *
@@ -66,6 +81,7 @@ export function createScriptedSource(
 ): ScriptedSource {
   let document: GraphDocument = { issues: [...seed.issues], edges: [...seed.edges] };
   const waiting: Waiting[] = [];
+  let watchers: Watcher[] = [];
 
   function take(mutationId: MutationId | undefined): Waiting {
     const index = mutationId === undefined
@@ -100,8 +116,27 @@ export function createScriptedSource(
     hydrate: () => Promise.resolve(document),
 
     dispatch(mutation: Mutation): Promise<DispatchResult> {
-      return new Promise<DispatchResult>((resolve, reject) => {
+      const settlement = new Promise<DispatchResult>((resolve, reject) => {
         waiting.push({ mutationId: mutation.mutationId, mutation, resolve, reject });
+      });
+      const entry = { mutationId: mutation.mutationId, mutation };
+      const matched = watchers.filter(
+        (watcher) => watcher.mutationId === undefined || watcher.mutationId === mutation.mutationId,
+      );
+      watchers = watchers.filter((watcher) => !matched.includes(watcher));
+      for (const watcher of matched) watcher.notify(entry);
+      return settlement;
+    },
+
+    whenPending(mutationId) {
+      const already = mutationId === undefined
+        ? waiting[0]
+        : waiting.find((entry) => entry.mutationId === mutationId);
+      if (already !== undefined) {
+        return Promise.resolve({ mutationId: already.mutationId, mutation: already.mutation });
+      }
+      return new Promise<PendingDispatch>((resolve) => {
+        watchers.push({ mutationId, notify: resolve });
       });
     },
 

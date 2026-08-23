@@ -74,9 +74,18 @@ export function edgeChangeFor(document: GraphDocument, mutation: Mutation): Edge
   // edge while this one is still in flight, and an overlay on an edge that is
   // no longer there draws nothing rather than resurrecting it.
   const produced = resultingEdge(document, mutation);
-  return produced === undefined
-    ? { hidden: [], drawn: [], marked: [] }
-    : { hidden: [mutation.edgeId], drawn: [produced], marked: [produced.id] };
+  if (produced === undefined) return { hidden: [], drawn: [], marked: [] };
+  // A REPLACEMENT THAT PRODUCES THE SAME IDENTITY IS A MARK, NOT A SWAP. A
+  // retype to the kind the edge already has, and a flip of a symmetric edge,
+  // both name the edge they started from — so hiding the original while drawing
+  // the replacement would hide and redraw one identity, and the projection
+  // (which filters hidden ids out of BOTH sources) would erase a real, landed
+  // relationship because the user made a no-op edit. Both are refused anyway;
+  // this is what lets the refusal be SHOWN on the edge it is about.
+  if (produced.id === mutation.edgeId) {
+    return { hidden: [], drawn: [], marked: [mutation.edgeId] };
+  }
+  return { hidden: [mutation.edgeId], drawn: [produced], marked: [produced.id] };
 }
 
 /** The document an edit would produce, if it landed exactly as proposed. */

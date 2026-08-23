@@ -21,7 +21,7 @@ test('each record state maps to the edge state the design draws', () => {
   );
   assert.equal(edgeStateOf({ mutationId: 'm1', mutation, state: 'failed', reason: 'x' }), 'failed');
   assert.equal(
-    edgeStateOf({ mutationId: 'm1', mutation, state: 'conflict', upstream: threeOpenIssues() }),
+    edgeStateOf({ mutationId: 'm1', mutation, state: 'conflict', upstream: threeOpenIssues(), landedAt: 0 }),
     'conflict',
   );
 });

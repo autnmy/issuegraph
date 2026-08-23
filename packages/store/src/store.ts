@@ -153,6 +153,22 @@ export function createStore(config: StoreConfig): Store {
   let rows: readonly OrderRow[] = [];
   let lastChange: OrderChange | undefined;
   let sequence = 0;
+  /** Bumped every time `landed` actually changes. See the conflict record's `landedAt`. */
+  let landedGeneration = 0;
+  /**
+   * One dispatch at a time, and the rest queued.
+   *
+   * `applied` carries a full authoritative snapshot and the port gives it no
+   * version, so two of them in flight cannot be ordered by anything the store
+   * can see: the later answer arriving first, then the earlier one, silently
+   * rolls a landed edge back out of the document — and the order then derives
+   * from a backlog missing a real relationship. Rather than add a version to
+   * the port that no adapter asked for, the store simply never creates the
+   * situation. A queued edit still renders `pending-write` immediately; only
+   * the round trip is serialised.
+   */
+  const queue: { readonly mutation: Mutation; readonly queuedAt: number }[] = [];
+  let draining = false;
 
   const listeners = new Set<() => void>();
   const settlers = new Map<MutationId, () => void>();
@@ -178,10 +194,16 @@ export function createStore(config: StoreConfig): Store {
    * only if something changed" rule at its source rather than at its edge.
    */
   function adopt(next: GraphDocument): void {
-    landed = {
+    const adopted = {
       issues: sameIssueList(landed.issues, next.issues) ? landed.issues : next.issues,
       edges: sameEdgeSet(landed.edges, next.edges) ? landed.edges : next.edges,
     };
+    // Bumped only on a real change, so a rehydrate that returns the same
+    // document does not invalidate a conflict snapshot that is still current.
+    if (adopted.issues !== landed.issues || adopted.edges !== landed.edges) {
+      landedGeneration += 1;
+    }
+    landed = adopted;
   }
 
   /**
@@ -323,6 +345,7 @@ export function createStore(config: StoreConfig): Store {
           mutation,
           state: 'conflict',
           upstream: result.upstream,
+          landedAt: landedGeneration,
         });
         break;
       }
@@ -339,6 +362,11 @@ export function createStore(config: StoreConfig): Store {
    * edge, and that is what the tests assert.
    */
   function start(mutation: Mutation): ProposalHandle {
+    // The summary is evidence for ONE edit, and the contract is that it lasts
+    // until the next edit or an explicit dismissal. Clearing it here is what
+    // makes that true: left standing, a host would show the previous edit's
+    // blast radius beside the edit the user is making now.
+    lastChange = undefined;
     const settled = new Promise<void>((resolve) => settlers.set(mutation.mutationId, resolve));
     const refusal = refusalFor(mutation);
     if (refusal !== undefined) {
@@ -350,8 +378,43 @@ export function createStore(config: StoreConfig): Store {
 
     putRecord({ mutationId: mutation.mutationId, mutation, state: 'pending' });
     publish();
-    void dispatch(mutation);
+    queue.push({ mutation, queuedAt: landedGeneration });
+    void drain();
     return { mutationId: mutation.mutationId, settled };
+  }
+
+  /**
+   * Run the queue, one dispatch at a time.
+   *
+   * An edit that WAITED is re-checked before it goes out, because `landed` may
+   * have moved under it — a sibling edit can delete the relationship this one
+   * retypes, and dispatching against a document that no longer admits it would
+   * defeat "refused before any write". An edit that did not wait keeps the
+   * verdict `start` already reached, so the guard is called once per edit in
+   * the ordinary case and twice only when the document genuinely moved.
+   */
+  async function drain(): Promise<void> {
+    if (draining) return;
+    draining = true;
+    try {
+      for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
+        const refusal = next.queuedAt === landedGeneration ? undefined : refusalFor(next.mutation);
+        if (refusal !== undefined) {
+          putRecord({
+            mutationId: next.mutation.mutationId,
+            mutation: next.mutation,
+            state: 'invalid',
+            reason: refusal,
+          });
+          settle(next.mutation.mutationId);
+          publish();
+          continue;
+        }
+        await dispatch(next.mutation);
+      }
+    } finally {
+      draining = false;
+    }
   }
 
   /** A handle for a call that had nothing to act on. Already settled. */
@@ -416,15 +479,23 @@ export function createStore(config: StoreConfig): Store {
       // nothing in it is invalidated by the adoption. What can change is whether
       // it is still POSSIBLE — an edge somebody else deleted, a duplicate
       // somebody else created — and `start` re-runs the refusal check for that.
-      adopt(record.upstream);
-      reDerive(undefined);
+      // Adopt the recorded snapshot ONLY while nothing has landed since it was
+      // taken. If something has, `landed` came from a later full authoritative
+      // answer and already knows everything this snapshot did — adopting the
+      // older one would remove the edit that landed in between.
+      if (record.landedAt === landedGeneration) {
+        adopt(record.upstream);
+        reDerive(undefined);
+      }
       return start(record.mutation);
     },
 
     discardMine(mutationId) {
       const record = recordFor(mutationId);
       if (record === undefined || record.state === 'pending') return;
-      if (record.state === 'conflict') {
+      // Same staleness rule as `retryOnLatest`: discarding your own edit must
+      // never roll back somebody else's that landed while you were deciding.
+      if (record.state === 'conflict' && record.landedAt === landedGeneration) {
         adopt(record.upstream);
         reDerive(undefined);
       }

@@ -39,8 +39,19 @@ export type WriteRecord =
       readonly mutationId: MutationId;
       readonly mutation: Mutation;
       readonly state: 'conflict';
-      /** The authoritative document as it now stands. Held, never merged. */
+      /** The authoritative document as it stood when the conflict was reported. Held, never merged. */
       readonly upstream: GraphDocument;
+      /**
+       * Which landed document `upstream` was newer than.
+       *
+       * A conflict can sit unresolved while later edits land, and every
+       * `applied` answer is a FULL authoritative snapshot — so once one has
+       * arrived, `landed` is strictly better informed than this record's
+       * `upstream`, and adopting the recorded one at resolution time would roll
+       * the later edit back. The stamp is what lets the resolution tell those
+       * two situations apart.
+       */
+      readonly landedAt: number;
     };
 
 /** The state a record contributes to the edges it marks. */

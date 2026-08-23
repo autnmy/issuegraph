@@ -108,18 +108,28 @@ export function hasIssue(document: GraphDocument, ref: IssueRef): boolean {
 }
 
 /**
- * Whether two edge lists state the same set of relationships.
+ * Whether two edge lists state the same set of relationships, carriers included.
  *
  * Compared as a SET, not a sequence: an adapter is free to return its edges in
  * whatever order its own storage yields, and treating a reordering as a change
  * would re-derive the order and emit a change summary for a write that moved
- * nothing. Identity already encodes kind and endpoints, so comparing identities
- * compares the edges.
+ * nothing.
+ *
+ * IDENTITY IS NOT ENOUGH, and the exception is the symmetric kinds. Their two
+ * spellings share one identity by design, but `StoredEdge` deliberately keeps
+ * the directed pair, because that pair is the field an editor deletes and the
+ * endpoints a retype to a directed kind inherits. Compare on identity alone and
+ * a rehydrate that reverses the carrier reads as "nothing changed" — after
+ * which a retype writes the OPPOSITE direction, which §17b names as the most
+ * common encoding mistake there is.
  */
 export function sameEdgeSet(a: readonly StoredEdge[], b: readonly StoredEdge[]): boolean {
   if (a.length !== b.length) return false;
-  const ids = new Set(a.map((edge) => edge.id));
-  return b.every((edge) => ids.has(edge.id));
+  const byId = new Map(a.map((edge) => [edge.id, edge]));
+  return b.every((edge) => {
+    const other = byId.get(edge.id);
+    return other !== undefined && other.from === edge.from && other.to === edge.to;
+  });
 }
 
 /**

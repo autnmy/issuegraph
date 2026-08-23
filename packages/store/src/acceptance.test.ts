@@ -34,18 +34,20 @@ function storeOver(source: DataSource): Store {
  * The scenario both adapters run: create, retype, flip, delete, back to empty.
  *
  * `settle` is what differs — the in-memory source needs nothing, and the
- * scripted one has to be told. Everything else, including every assertion, is
- * shared, so an adapter that diverges from the port fails here rather than
- * quietly working only in its own test.
+ * scripted one has to be told (after awaiting the hand-off: the store
+ * serialises its dispatches, so an edit reaches the adapter some time after it
+ * is proposed). Everything else, including every assertion, is shared, so an
+ * adapter that diverges from the port fails here rather than quietly working
+ * only in its own test.
  */
-async function runTheWholeLoop(store: Store, settle: () => void): Promise<void> {
+async function runTheWholeLoop(store: Store, settle: () => Promise<void>): Promise<void> {
   await store.hydrate();
   assert.equal(store.getSnapshot().status, 'ready');
   assert.deepEqual(refs(store.getSnapshot().order.rows), ['1', '2', '3']);
 
   const created = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
   assert.equal(store.getSnapshot().order.status, 'held', 'the order holds the moment an edit is in flight');
-  settle();
+  await settle();
   await created.settled;
 
   const blockedBy = edgeId('blocked-by', '1', '2');
@@ -54,13 +56,13 @@ async function runTheWholeLoop(store: Store, settle: () => void): Promise<void> 
   assert.equal(store.getSnapshot().lastChange?.counts.newlyHeld, 1);
 
   const retyped = store.propose({ op: 'retype', edgeId: blockedBy, nextKind: 'duplicate-of' });
-  settle();
+  await settle();
   await retyped.settled;
   const duplicateOf = edgeId('duplicate-of', '1', '2');
   assert.deepEqual(store.getSnapshot().landed.map((edge) => edge.id), [duplicateOf]);
 
   const flipped = store.propose({ op: 'flip', edgeId: duplicateOf });
-  settle();
+  await settle();
   await flipped.settled;
   assert.deepEqual(
     store.getSnapshot().landed.map((edge) => [edge.from, edge.to]),
@@ -68,7 +70,7 @@ async function runTheWholeLoop(store: Store, settle: () => void): Promise<void> 
   );
 
   const deleted = store.propose({ op: 'delete', edgeId: edgeId('duplicate-of', '2', '1') });
-  settle();
+  await settle();
   await deleted.settled;
   assert.deepEqual(store.getSnapshot().landed, []);
   assert.deepEqual(store.getSnapshot().writes, [], 'nothing is left carrying a state');
@@ -76,12 +78,15 @@ async function runTheWholeLoop(store: Store, settle: () => void): Promise<void> 
 }
 
 test('DONE WHEN: the in-memory adapter drives the whole loop', async () => {
-  await runTheWholeLoop(storeOver(createMemorySource(threeOpenIssues())), () => {});
+  await runTheWholeLoop(storeOver(createMemorySource(threeOpenIssues())), () => Promise.resolve());
 });
 
 test('DONE WHEN: the scripted adapter drives the SAME loop', async () => {
   const source = createScriptedSource(threeOpenIssues(), applyEdit);
-  await runTheWholeLoop(storeOver(source), () => source.settleNext('applied'));
+  await runTheWholeLoop(storeOver(source), async () => {
+    await source.whenPending();
+    source.settleNext('applied');
+  });
 });
 
 test('DONE WHEN: every edge state is reachable, and reached by CAUSING it', async () => {
@@ -185,6 +190,7 @@ test('a failed write is retried by the user, and lands', async () => {
   await first.settled;
 
   const retried = store.retry(first.mutationId);
+  await source.whenPending(retried.mutationId);
   source.settleNext('applied');
   await retried.settled;
 
@@ -234,6 +240,7 @@ test('retry on latest adopts the upstream and re-dispatches the same edit', asyn
   await handle.settled;
 
   const resolved = store.retryOnLatest(handle.mutationId);
+  await source.whenPending(resolved.mutationId);
   assert.deepEqual(
     store.getSnapshot().landed.map((edge) => edge.id),
     [edgeId('duplicate-of', '3', '1')],

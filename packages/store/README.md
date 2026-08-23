@@ -69,12 +69,22 @@ interface DataSource {
 | `rejected` | the write was refused; carries a reason | marks the edge `failed` and offers `retry` |
 | `conflict` | the document moved upstream mid-edit; carries the current one | marks the edge `conflict` and holds **both** versions |
 
-Two contracts an adapter has to honour:
+Three contracts an adapter has to honour:
 
 - **`applied` carries the authoritative full edge set, not a patch.** A partial answer would
   need merge rules, and merge rules are where an optimistic store goes wrong.
 - **The store dispatches once per mutation and never retries on its own.** A retry is a user
   act, so nothing here assumes an idempotency you have not been given.
+- **The store dispatches one edit at a time**, queueing the rest, so `dispatch` is never
+  re-entered. `applied` is an unversioned authoritative snapshot, and two of those in flight
+  cannot be ordered by anything the store can observe — the later answer arriving first, then
+  the earlier one, silently rolls a landed edge back out of the document. Rather than push a
+  version onto every adapter, the store declines to create the situation. A queued edit still
+  renders `pending-write` immediately; only the round trip waits.
+
+Because of that last one, an edit reaches the adapter some time *after* it is proposed.
+`createScriptedSource` exposes `whenPending(mutationId?)` for exactly this — await the
+hand-off rather than guessing how many microtasks separate the two.
 
 Two adapters ship with the package. `createMemorySource` holds a document in a variable and
 applies every edit — it is the reference implementation, and the one a demo runs on with no
@@ -143,6 +153,11 @@ The user's work stays on the canvas. `retry` re-dispatches it; on a conflict,
 `retryOnLatest` adopts the upstream document and re-dispatches against it. **Nothing
 auto-merges, nothing auto-reverts, and nothing times out** — `discardMine` is the only call
 that removes an optimistic edit, and a person has to make it.
+
+A conflict can sit unresolved while later edits land, so both resolutions adopt the recorded
+upstream **only while nothing has landed since it was taken.** Once something has, `landed`
+came from a later full authoritative answer and already knows everything the recorded
+snapshot did; adopting the older one would roll the intervening edit back.
 
 ## Two smaller contracts worth knowing
 

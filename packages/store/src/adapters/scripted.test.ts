@@ -115,6 +115,25 @@ test('settlements can be taken out of order by naming the edit', async () => {
   assert.equal((await first).outcome, 'unchanged');
 });
 
+test('whenPending resolves for an edit already waiting, and for one still to come', async () => {
+  const source = createScriptedSource(threeOpenIssues(), applyEdit);
+
+  const later = source.whenPending('m2');
+  const dispatched = source.dispatch(create);
+
+  // Already waiting: resolves without another hand-off.
+  assert.equal((await source.whenPending()).mutationId, 'm1');
+  assert.equal((await source.whenPending('m1')).mutationId, 'm1');
+
+  // Registered before the hand-off: resolves when it arrives.
+  const second = source.dispatch(edit({ op: 'create', kind: 'duplicate-of', from: '3', to: '1' }, 'm2'));
+  assert.equal((await later).mutationId, 'm2');
+
+  source.settle('m1', { outcome: 'unchanged' });
+  source.settle('m2', { outcome: 'unchanged' });
+  await Promise.all([dispatched, second]);
+});
+
 test('settling nothing throws rather than passing quietly', () => {
   const source = createScriptedSource(threeOpenIssues(), applyEdit);
   assert.throws(() => source.settleNext('applied'), /nothing is waiting/);

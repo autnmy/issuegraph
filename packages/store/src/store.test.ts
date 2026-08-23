@@ -168,10 +168,12 @@ test('the order stays held until EVERY in-flight write settles', async () => {
   const first = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
   const second = store.propose({ op: 'create', kind: 'duplicate-of', from: '3', to: '1' });
 
+  await source.whenPending(first.mutationId);
   source.settle(first.mutationId, 'applied');
   await first.settled;
-  assert.equal(store.getSnapshot().order.status, 'held', 'one landed, one still in flight');
+  assert.equal(store.getSnapshot().order.status, 'held', 'one landed, one still queued');
 
+  await source.whenPending(second.mutationId);
   source.settle(second.mutationId, { outcome: 'rejected', reason: 'no' });
   await second.settled;
   assert.equal(store.getSnapshot().order.status, 'settled');
@@ -185,8 +187,10 @@ test("one write failing does not discard another write's overlay", async () => {
   const first = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
   const second = store.propose({ op: 'create', kind: 'duplicate-of', from: '3', to: '1' });
 
+  await source.whenPending(first.mutationId);
   source.settle(first.mutationId, { outcome: 'rejected', reason: 'locked' });
   await first.settled;
+  await source.whenPending(second.mutationId);
 
   const snapshot = store.getSnapshot();
   assert.equal(snapshot.projected.length, 2, 'both edits are still drawn');
@@ -304,4 +308,133 @@ test('mutation identities are deterministic within a store', async () => {
   await store.hydrate();
   assert.equal(store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' }).mutationId, 'm1');
   assert.equal(store.propose({ op: 'create', kind: 'duplicate-of', from: '3', to: '1' }).mutationId, 'm2');
+});
+
+test('an out-of-order applied response cannot roll the document backward', async () => {
+  // Two edits in flight, the SECOND answering first with the fuller snapshot.
+  // Adopting the delayed first answer afterwards would remove the second edit's
+  // edge from `landed` even though it is upstream — a ranking derived from a
+  // document missing a real relationship.
+  const source = createScriptedSource(threeOpenIssues(), applyEdit);
+  const store = createStore({ source, derive: simpleDeriver });
+  await store.hydrate();
+
+  const first = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  const second = store.propose({ op: 'create', kind: 'duplicate-of', from: '3', to: '1' });
+
+  // Only one dispatch may be outstanding: two unversioned authoritative
+  // snapshots in flight cannot be ordered by anything the port carries.
+  assert.deepEqual(
+    source.pending().map((entry) => entry.mutationId),
+    [first.mutationId],
+  );
+
+  await source.whenPending(first.mutationId);
+  source.settleNext('applied');
+  await first.settled;
+  await source.whenPending(second.mutationId);
+  source.settleNext('applied');
+  await second.settled;
+
+  assert.deepEqual(
+    [...store.getSnapshot().landed].map((edge) => edge.id).sort(),
+    [edgeId('blocked-by', '1', '2'), edgeId('duplicate-of', '3', '1')].sort(),
+  );
+});
+
+test('a conflict resolution never adopts a snapshot older than what has landed', async () => {
+  const source = createScriptedSource(threeOpenIssues(), applyEdit);
+  const store = createStore({ source, derive: simpleDeriver });
+  await store.hydrate();
+
+  const conflicted = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  await source.whenPending(conflicted.mutationId);
+  source.settleNext({ outcome: 'conflict', upstream: threeOpenIssues() });
+  await conflicted.settled;
+
+  // A later edit lands. `landed` is now NEWER than the conflict's snapshot,
+  // and — because `applied` is a full authoritative answer — strictly better
+  // informed than it.
+  const later = store.propose({ op: 'create', kind: 'duplicate-of', from: '3', to: '1' });
+  await source.whenPending(later.mutationId);
+  source.settleNext('applied');
+  await later.settled;
+  assert.deepEqual(store.getSnapshot().landed.map((edge) => edge.id), [edgeId('duplicate-of', '3', '1')]);
+
+  store.discardMine(conflicted.mutationId);
+  assert.deepEqual(
+    store.getSnapshot().landed.map((edge) => edge.id),
+    [edgeId('duplicate-of', '3', '1')],
+    'discarding the conflicted edit must not roll back the edit that landed after it',
+  );
+});
+
+test('a same-identity refusal marks the edge instead of erasing it', async () => {
+  // A retype to the kind the edge already has, and a flip of a symmetric edge,
+  // both "produce" the edge they name. Hiding the original while drawing the
+  // replacement would remove a real, landed relationship from the canvas
+  // because the user made a no-op edit.
+  for (const [seedKind, proposal] of [
+    ['blocked-by', { op: 'retype' as const, nextKind: 'blocked-by' as const }],
+    ['serialize-with', { op: 'flip' as const }],
+  ] as const) {
+    const id = edgeId(seedKind, '1', '2');
+    const store = createStore({
+      source: createMemorySource(withEdge(threeOpenIssues(), seedKind, '1', '2')),
+      derive: simpleDeriver,
+    });
+    await store.hydrate();
+    await store.propose({ ...proposal, edgeId: id }).settled;
+
+    const snapshot = store.getSnapshot();
+    assert.equal(snapshot.projected.length, 1, `${seedKind}: the relationship must still be drawn`);
+    assert.equal(snapshot.projected[0]?.id, id);
+    assert.deepEqual(snapshot.projected[0]?.states, ['invalid']);
+    assert.deepEqual(snapshot.landed.map((edge) => edge.id), [id], 'and nothing landed');
+  }
+});
+
+test('a symmetric edge whose carrier reversed upstream is adopted, not kept stale', async () => {
+  // The two spellings share a content-derived identity, but the stored pair is
+  // what an editor deletes and what a retype to a directed kind inherits — so
+  // keeping the stale carrier would write the opposite direction.
+  let document = withEdge(threeOpenIssues(), 'serialize-with', '1', '2');
+  const store = createStore({
+    source: {
+      hydrate: () => Promise.resolve(document),
+      dispatch: () => Promise.resolve({ outcome: 'unchanged' as const }),
+    },
+    derive: simpleDeriver,
+  });
+  await store.hydrate();
+  assert.deepEqual(store.getSnapshot().landed.map((edge) => [edge.from, edge.to]), [['1', '2']]);
+
+  document = withEdge(threeOpenIssues(), 'serialize-with', '2', '1');
+  await store.rehydrate();
+  assert.deepEqual(
+    store.getSnapshot().landed.map((edge) => [edge.from, edge.to]),
+    [['2', '1']],
+    'the carrier the tracker actually holds is the one to keep',
+  );
+});
+
+test('starting a new edit clears the previous edit’s change summary', async () => {
+  // The summary is evidence for ONE edit. Left standing through the next one, a
+  // UI attributes the previous edit's blast radius to the current one.
+  const source = createScriptedSource(threeOpenIssues(), applyEdit);
+  const store = createStore({ source, derive: simpleDeriver });
+  await store.hydrate();
+
+  const first = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  await source.whenPending(first.mutationId);
+  source.settleNext('applied');
+  await first.settled;
+  assert.ok(store.getSnapshot().lastChange !== undefined);
+
+  const second = store.propose({ op: 'create', kind: 'duplicate-of', from: '3', to: '1' });
+  assert.equal(store.getSnapshot().lastChange, undefined, 'cleared the moment the next edit starts');
+
+  await source.whenPending(second.mutationId);
+  source.settleNext({ outcome: 'rejected', reason: 'no' });
+  await second.settled;
 });

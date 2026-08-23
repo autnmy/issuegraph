@@ -27,6 +27,15 @@ import type { InvalidReason, Mutation } from './mutation.ts';
  * **The store dispatches once per mutation and never retries on its own.** A
  * retry is a user act (the `retry` on a failed edge), so an adapter must not
  * assume an idempotency it has not been given.
+ *
+ * **It also dispatches ONE AT A TIME**, queueing the rest. `applied` carries a
+ * full authoritative snapshot and this interface gives it no version, so two of
+ * them in flight cannot be ordered by anything the store can observe: the later
+ * answer arriving first, then the earlier one, silently rolls a landed edge back
+ * out of the document — after which the order derives from a backlog missing a
+ * real relationship. Adding a version here would push bookkeeping onto every
+ * adapter, so the store declines to create the situation instead. An adapter may
+ * therefore assume its `dispatch` is never re-entered.
  */
 export interface DataSource {
   /** The whole document. Called on `hydrate()` and again on `rehydrate()`. */
