@@ -130,7 +130,23 @@ that exists nowhere. Keeping the two sets apart makes that a property of the str
 than a rule every reader has to remember.
 
 While any edit is in flight, `order.status` is `'held'` and the rows are the previous ones,
-unchanged — a stale-but-labelled order beats a half-computed one.
+unchanged — a stale-but-labelled order beats a half-computed one. Same principle if your
+deriver throws: the last order that *was* derived stands, and `orderError` says why it is
+stale.
+
+## Host callbacks that throw cannot break the store
+
+Three of them — the deriver, the guard, and a subscriber — and one rule for all three, because
+they are all your code and the store already reads a throwing *adapter* as a rejection.
+
+A guard that throws reached **no verdict**, and an unknown verdict is not permission to write:
+the edit is refused `invalid` with code `guard-failed`. A deriver that throws follows a write
+that already landed, so it cannot become a failed write; the order goes stale with
+`orderError` set. A subscriber that throws is isolated and rethrown asynchronously, so it
+still surfaces without taking the notification loop down.
+
+None of them may escape into the dispatch queue, where they would strand every edit behind
+them with the order held for ever.
 
 ## Edge states are overlays, not variants
 

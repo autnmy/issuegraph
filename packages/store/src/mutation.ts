@@ -78,6 +78,10 @@ export interface InvalidReason {
  * `would-cycle` is listed here but is never produced by this package: it is what
  * an injected guard returns, and it is named so hosts and guards agree on one
  * code rather than inventing two.
+ *
+ * `guard-failed` is the opposite case — the guard threw, so no verdict was
+ * reached at all. It refuses rather than proceeding, because an unknown verdict
+ * is not permission to write.
  */
 export const INVALID_CODES = Object.freeze([
   'self-edge',
@@ -87,6 +91,7 @@ export const INVALID_CODES = Object.freeze([
   'unchanged-kind',
   'symmetric-edge',
   'would-cycle',
+  'guard-failed',
 ] as const);
 
 /** A refusal code. */

@@ -438,3 +438,68 @@ test('starting a new edit clears the previous edit’s change summary', async ()
   source.settleNext({ outcome: 'rejected', reason: 'no' });
   await second.settled;
 });
+
+test('a guard that throws refuses the edit rather than stranding the queue', async () => {
+  // The guard is HOST code required by the port, so it throwing is ordinary —
+  // and the store already reads a throwing ADAPTER as a rejection. Left
+  // unhandled it would escape `drain`, leaving this edit pending for ever, the
+  // order held for ever, and every queued edit behind it undispatched.
+  let dispatches = 0;
+  const memory = createMemorySource(threeOpenIssues());
+  const store = createStore({
+    source: {
+      hydrate: () => memory.hydrate(),
+      dispatch: (mutation) => {
+        dispatches += 1;
+        return memory.dispatch(mutation);
+      },
+    },
+    derive: simpleDeriver,
+    guard: () => {
+      throw new Error('the guard fell over');
+    },
+  });
+  await store.hydrate();
+
+  const refused = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  await refused.settled;
+
+  const record = store.getSnapshot().writes[0];
+  assert.equal(record?.state, 'invalid', 'an unknown verdict fails closed');
+  if (record?.state === 'invalid') assert.match(record.reason.message, /fell over/);
+  assert.equal(dispatches, 0, 'and nothing was dispatched on a verdict nobody reached');
+  assert.equal(store.getSnapshot().order.status, 'settled');
+
+  // The queue is still usable.
+  const next = store.propose({ op: 'create', kind: 'duplicate-of', from: '3', to: '1' });
+  await next.settled;
+  assert.equal(store.getSnapshot().writes.length, 2);
+});
+
+test('a deriver that throws does not strand the write behind it', async () => {
+  const source = createScriptedSource(threeOpenIssues(), applyEdit);
+  let explode = false;
+  const store = createStore({
+    source,
+    derive: (document) => {
+      if (explode) throw new Error('the deriver fell over');
+      return simpleDeriver(document);
+    },
+  });
+  await store.hydrate();
+
+  explode = true;
+  const first = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  const second = store.propose({ op: 'create', kind: 'duplicate-of', from: '3', to: '1' });
+  await source.whenPending(first.mutationId);
+  source.settleNext('applied');
+  await first.settled;
+
+  // The edit landed; only the ORDER could not be recomputed, which is a state
+  // the rail can label — not a reason to stop the pipeline behind it.
+  assert.equal(store.getSnapshot().landed.length, 1);
+  await source.whenPending(second.mutationId);
+  source.settleNext('applied');
+  await second.settled;
+  assert.equal(store.getSnapshot().landed.length, 2, 'the queue kept moving');
+});

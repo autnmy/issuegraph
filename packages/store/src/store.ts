@@ -71,6 +71,14 @@ export interface StoreSnapshot {
   readonly writes: readonly WriteRecord[];
   /** What the last landed edit did to the order. Cleared only by a call. */
   readonly lastChange?: OrderChange;
+  /**
+   * Why the order could not be recomputed, when the injected deriver threw.
+   *
+   * `order.rows` is then the last order that WAS derived — stale, and labelled
+   * as such, on the same principle as the held order: a rail that cannot vouch
+   * for a ranking says so rather than showing a half-computed one.
+   */
+  readonly orderError?: string;
   readonly selection: readonly EdgeId[];
 }
 
@@ -152,6 +160,7 @@ export function createStore(config: StoreConfig): Store {
   let selection: readonly EdgeId[] = [];
   let rows: readonly OrderRow[] = [];
   let lastChange: OrderChange | undefined;
+  let orderError: string | undefined;
   let sequence = 0;
   /** Bumped every time `landed` actually changes. See the conflict record's `landedAt`. */
   let landedGeneration = 0;
@@ -242,6 +251,7 @@ export function createStore(config: StoreConfig): Store {
       published.order === order &&
       published.writes === writes &&
       published.lastChange === lastChange &&
+      published.orderError === orderError &&
       published.selection === selected;
     if (unchanged) return;
 
@@ -257,15 +267,43 @@ export function createStore(config: StoreConfig): Store {
       order,
       writes,
       ...(lastChange === undefined ? {} : { lastChange }),
+      ...(orderError === undefined ? {} : { orderError }),
       selection: selected,
     });
-    for (const listener of listeners) listener();
+    // Isolated, and for the same reason as the guard and the deriver: a host
+    // callback that throws must not break the store. Rethrown asynchronously so
+    // it still surfaces as an unhandled error rather than being swallowed.
+    for (const listener of listeners) {
+      try {
+        listener();
+      } catch (thrown) {
+        queueMicrotask(() => {
+          throw thrown;
+        });
+      }
+    }
   }
 
-  /** Recompute the order from `landed`, and record what moved. */
+  /**
+   * Recompute the order from `landed`, and record what moved.
+   *
+   * A deriver that throws is a HOST callback failing, and the write it followed
+   * has already landed — so this cannot become a failed write and must not
+   * escape into the dispatch queue, where it would strand every edit behind it.
+   * The previously derived rows stand, `orderError` says why they are stale, and
+   * no change summary is emitted for an order nobody computed.
+   */
   function reDerive(cause: Mutation | undefined): void {
     const previous = rows;
-    rows = derive(landed);
+    let next: readonly OrderRow[];
+    try {
+      next = derive(landed);
+    } catch (thrown) {
+      orderError = messageOf(thrown);
+      return;
+    }
+    orderError = undefined;
+    rows = next;
     if (cause !== undefined) lastChange = diffOrder(previous, rows, cause);
   }
 
@@ -289,11 +327,23 @@ export function createStore(config: StoreConfig): Store {
     resolve?.();
   }
 
+  /**
+   * Why this edit cannot happen — structurally, then by the injected guard.
+   *
+   * A guard that throws reached no verdict, and an unknown verdict is not
+   * permission to write: it refuses, fail-closed, with the thrown message as
+   * the reason. Letting it escape would strand the whole dispatch queue behind
+   * an edit that stayed pending for ever.
+   */
   function refusalFor(mutation: Mutation): InvalidReason | undefined {
     const structural = structuralRefusal(landed, mutation);
     if (structural !== undefined) return structural;
     if (guard === undefined) return undefined;
-    return guard({ mutation, current: landed, next: nextDocument(landed, mutation) });
+    try {
+      return guard({ mutation, current: landed, next: nextDocument(landed, mutation) });
+    } catch (thrown) {
+      return { code: 'guard-failed', message: messageOf(thrown) };
+    }
   }
 
   async function dispatch(mutation: Mutation): Promise<void> {
