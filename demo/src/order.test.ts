@@ -931,3 +931,70 @@ test('an unresolved symmetric reference links nothing, and is surfaced', () => {
     'the control failed: a resolved serialize partner should still exclude',
   );
 });
+
+test('an unresolved SERIALIZATION reference is surfaced without blocking', () => {
+  // §6.7 draws an asymmetry that matters: an unresolved `blocked-by` is treated
+  // as BLOCKING, because unknown state is not "closed"; an unresolved reference
+  // on a SYMMETRIC field contributes no linkage and is merely surfaced. It
+  // links nothing, so it excludes nothing — reporting it as a hold removed
+  // otherwise-ready work from selection over a reference that does nothing.
+  const document = seedDocument();
+  const dangling = explainOrder(
+    { issues: document.issues, edges: [...document.edges, makeEdge('serialize-with', '4', '404')] },
+    seedHolds(),
+  ).find((each) => each.issue.ref === '4');
+  assert.ok(dangling);
+  assert.equal(dangling.ready, true, 'an unresolved serialization reference removed ready work');
+  assert.equal(dangling.placement, 'spine');
+  assert.ok(
+    dangling.holds.some((hold) => hold.label === 'unresolvable'),
+    'it must still be surfaced for grooming',
+  );
+
+  // CONTROL: the OTHER half of §6.7 is unchanged — an unresolved `blocked-by`
+  // still blocks, because unknown state is not "closed".
+  const blocked = explainOrder(document, seedHolds()).find((each) => each.issue.ref === '14');
+  assert.ok(blocked);
+  assert.equal(blocked.ready, false, 'an unresolved blocked-by stopped blocking');
+  assert.ok(blocked.holds.some((hold) => hold.label === 'unresolvable'));
+});
+
+test('a dependency on CLOSED work is satisfied, so it forms no cycle', () => {
+  // #8 is seeded closed. `#8 blocked-by #4` and `#4 blocked-by #8` draws a
+  // cycle on paper, but #4's dependency is already satisfied — nothing is
+  // waiting on anything. Keeping historical edges in the graph made the guard
+  // refuse the second edit and the deriver call #4 stuck.
+  const document = seedDocument();
+  const throughClosed = {
+    issues: document.issues,
+    edges: [...document.edges, makeEdge('blocked-by', '8', '4'), makeEdge('blocked-by', '4', '8')],
+  };
+  const row = explainOrder(throughClosed, seedHolds()).find((each) => each.issue.ref === '4');
+  assert.ok(row);
+  assert.ok(
+    !row.holds.some((hold) => hold.label === 'cycle'),
+    '#4 is reported stuck on a dependency that is already closed',
+  );
+  assert.ok(
+    !row.holds.some((hold) => hold.label === 'blocked'),
+    '#4 is reported blocked by closed work',
+  );
+
+  const landed = {
+    issues: document.issues,
+    edges: [...document.edges, makeEdge('blocked-by', '8', '4')],
+  };
+  assert.equal(
+    guarded(landed, 'blocked-by', '4', '8'),
+    false,
+    'the guard refused an edit whose dependency is already satisfied',
+  );
+
+  // CONTROL: the same shape through an OPEN issue IS a cycle, so this does not
+  // pass against a build that stopped detecting cycles.
+  const throughOpen = {
+    issues: document.issues,
+    edges: [...document.edges, makeEdge('blocked-by', '9', '4')],
+  };
+  assert.equal(guarded(throughOpen, 'blocked-by', '4', '9'), true, 'the control chain is not a cycle');
+});

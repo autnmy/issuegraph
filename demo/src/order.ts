@@ -70,11 +70,32 @@ export const DEFAULT_CONCURRENCY_CAP = 2;
 /** Which family a hold belongs to. The two are never given one treatment. */
 export type HoldFamily = 'graph' | 'executor';
 
-/** One reason an issue may not start, and which family it came from. */
+/**
+ * One thing worth saying about why an issue is where it is.
+ *
+ * Most holds block. One does not, and §6.7 is explicit about the asymmetry: an
+ * unresolved `blocked-by` is treated as BLOCKING, because unknown state is not
+ * "closed" and starting work whose dependency nobody can see is the failure
+ * that rule exists to prevent — while an unresolved reference on a SYMMETRIC
+ * field "contributes no linkage" and is merely surfaced for grooming. It links
+ * nothing, so it excludes nothing; reporting it as a hold removed
+ * otherwise-ready work from selection over a reference that does nothing.
+ */
 export interface Hold {
   readonly family: HoldFamily;
   readonly label: string;
   readonly detail: string;
+  /**
+   * Whether this reason keeps the issue out of the ready set. Absent means it
+   * does — blocking is the overwhelming case, and a flag that must be
+   * remembered on every ordinary hold would be forgotten on one.
+   */
+  readonly blocking?: false;
+}
+
+/** Whether a reason actually keeps work out of the ready set. */
+function blocks(hold: Hold): boolean {
+  return hold.blocking !== false;
 }
 
 /**
@@ -383,6 +404,9 @@ function dependencyGraph(
     blockers.set(issue.ref, []);
     dependents.set(issue.ref, []);
   }
+  const closed = new Set(
+    document.issues.filter((issue) => issue.state === 'closed').map((issue) => issue.ref),
+  );
   for (const edge of document.edges) {
     if (edge.kind !== 'blocked-by') continue;
     const from = resolve(edge.from);
@@ -390,6 +414,17 @@ function dependencyGraph(
     if (from === to) continue;
     const unit = together.get(from);
     if (unit !== undefined && unit.has(to)) continue;
+    // A DEPENDENCY ON CLOSED WORK IS SATISFIED, so it is not a dependency any
+    // more (§6.2 rule 3 asks that every `blocked-by` target BE closed). Kept in
+    // the graph it is a historical edge that still connects vertices, so a
+    // cycle drawn THROUGH a closed issue read as live: `#8 blocked-by #4` with
+    // #8 closed, then `#4 blocked-by #8`, refused the second edit and derived
+    // #4 as stuck although nothing was waiting on anything.
+    //
+    // Dropped here rather than filtered at each reader, because cycle
+    // detection, the readiness holds and the write guard all walk this one
+    // graph — which is the property three earlier rounds bought.
+    if (closed.has(to)) continue;
     push(blockers, from, to);
     push(dependents, to, from);
   }
@@ -588,6 +623,10 @@ function ownHolds(ref: IssueRef, at: Index): Hold[] {
       family: 'graph',
       label: 'unresolvable',
       detail: `${edge.kind} ${edge.to}, which this document cannot resolve — it links nothing`,
+      // NON-BLOCKING, and this is the whole point of §6.7's asymmetry: it links
+      // nothing, so it excludes nothing. Surfaced for grooming, not counted
+      // against readiness.
+      blocking: false,
     });
   }
 
@@ -644,8 +683,7 @@ function holdsFor(ref: IssueRef, at: Index): readonly Hold[] {
       // and is what §6.2 rule 5 is about.
       if (hold.label === 'blocked') continue;
       shared.push({
-        family: hold.family,
-        label: hold.label,
+        ...hold,
         detail: `${member}, in this together group, is held: ${hold.detail}`,
       });
     }
@@ -787,7 +825,7 @@ export function explainOrder(
   for (const issue of document.issues) {
     const footer =
       issue.state === 'closed' ||
-      (holdsOf.get(issue.ref) ?? []).some((hold) => hold.family === 'executor');
+      (holdsOf.get(issue.ref) ?? []).some((hold) => hold.family === 'executor' && blocks(hold));
     (footer ? footerRefs : spineRefs).push(issue.ref);
   }
 
@@ -862,7 +900,7 @@ export function explainOrder(
     if (issue === undefined) continue;
     const spine = inSpine.has(ref);
     const holdsHere = holdsOf.get(ref) ?? [];
-    const ready = holdsHere.length === 0;
+    const ready = !holdsHere.some(blocks);
 
     // A ready row inside the cap can start now; one beyond it starts when the
     // slot `concurrencyCap` places earlier is finished, which is the rank the
