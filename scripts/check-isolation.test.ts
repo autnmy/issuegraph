@@ -153,23 +153,6 @@ test("a brand token in a package's README is a brand-leak — the README is publ
   assert.deepEqual(rulesFired(packagesDir), ['brand-leak']);
 });
 
-test('a repeated import line is masked at every occurrence, not just the first', () => {
-  // Regression pin. Blanking specifiers by searching for the matched text reached
-  // only the first occurrence, so the second line's specifier survived into the
-  // brand scan and reported a leak that is not there.
-  // The specifier must carry the brand token as a WHOLE WORD, or the mask has
-  // nothing to hide from the brand rule and the case passes however it is
-  // masked — verified by neutering the mask and watching this test still pass.
-  const packagesDir = fixture({
-    'src/index.ts': [
-      "import { a } from 'eslint-plugin-descant';",
-      "import { a } from 'eslint-plugin-descant';",
-      'export const both = a;',
-    ].join('\n'),
-  });
-  assert.deepEqual(findIsolationViolations(packagesDir), []);
-});
-
 test('a relative specifier naming a brand-tokened FILE is a brand-leak', () => {
   // The mask covers bare specifiers, whose names this repository does not choose.
   // A relative path is a filename we did choose, so it stays visible to the rule.
@@ -209,7 +192,7 @@ test('a dependency resolved through a git URL naming the consumer is caught', ()
 test('an ordinary version range is not mistaken for a forbidden resolution', () => {
   const packagesDir = fixture(
     { 'src/index.ts': "export const nothing = 'imports it';\n" },
-    { dependencies: { typescript: '^7.0.2', 'eslint-plugin-descant': '^1.0.0' } },
+    { dependencies: { typescript: '^7.0.2', vitest: '^2.0.0' } },
   );
   assert.deepEqual(rulesFired(packagesDir), []);
 });
@@ -230,18 +213,97 @@ test('the same prose inside a code comment is not masked either', () => {
   assert.deepEqual(rulesFired(packagesDir), ['brand-leak']);
 });
 
-test('a real package specifier IS still masked, node: builtins included', () => {
-  // The control for the two cases above: narrowing the mask must not stop it
-  // covering the specifiers it exists for.
+test('POSITIVE CONTROL: an ordinary import block produces nothing', () => {
+  // The control for deleting the mask: dropping it must not start reporting the
+  // imports every package has.
   const packagesDir = fixture({
     'src/index.ts': [
       "import { readFileSync } from 'node:fs';",
-      "import { a } from 'eslint-plugin-descant';",
-      "import { b } from '@scope/descant-adjacent';",
-      'export const all = [readFileSync, a, b];',
+      "import { join } from 'node:path';",
+      "import { helper } from './helper.ts';",
+      'export const all = [readFileSync, join, helper];',
     ].join('\n'),
+    'src/helper.ts': HELPER_SOURCE,
   });
   assert.deepEqual(findIsolationViolations(packagesDir), []);
+});
+
+test('a quoted PATH after `from` is not treated as a specifier and hidden', () => {
+  // The mask used to blank anything package-shaped after `from`, which swallowed
+  // this sentence whole. Nothing decides what a quoted string "really is" now.
+  const packagesDir = fixture({
+    'README.md': '# subject\n\nNotes imported from "docs/descant".\n',
+  });
+  assert.deepEqual(rulesFired(packagesDir), ['brand-leak']);
+});
+
+test('a dependency whose NAME carries the token is caught in both files alike', () => {
+  // Deliberate and fail-closed: the token is a made-up product name, so a real
+  // package containing it is not a case worth an escape hatch — and letting the
+  // manifest allow what source rejects is the rule holding in one file only.
+  const inSource = fixture({
+    'src/index.ts': "import { a } from 'eslint-plugin-descant';\n\nexport const b = a;\n",
+  });
+  assert.deepEqual(rulesFired(inSource), ['brand-leak']);
+  const inManifest = fixture(
+    { 'src/index.ts': 'export const clean = true;\n' },
+    { dependencies: { 'eslint-plugin-descant': '^1.0.0' } },
+  );
+  assert.deepEqual(rulesFired(inManifest), ['forbidden-dependency']);
+});
+
+test('a leak that exists ONLY in the built output is caught', () => {
+  // dist is what npm publishes, and a source scan cannot reach a banner or a
+  // copied asset that the build puts there.
+  const packagesDir = fixture(
+    {
+      'src/index.ts': 'export const clean = true;\n',
+      'dist/index.js': '// generated banner: built by the Descant toolchain\nexport const clean = true;\n',
+    },
+    { files: ['dist'] },
+  );
+  assert.deepEqual(rulesFired(packagesDir), ['brand-leak']);
+});
+
+test('a published JSON asset is scanned — there is no extension allowlist', () => {
+  const packagesDir = fixture(
+    { 'schema.json': '{"description":"Descant-specific schema"}\n' },
+    { files: ['schema.json'] },
+  );
+  assert.deepEqual(rulesFired(packagesDir), ['brand-leak']);
+});
+
+test('a file with NO extension at all is scanned', () => {
+  // A NOTICE is the case an extension list cannot express at all, which is the
+  // point of deciding by content instead.
+  const packagesDir = fixture({ NOTICE: 'Portions derived from Takumi.\n' });
+  assert.deepEqual(rulesFired(packagesDir), ['brand-leak']);
+});
+
+test('a YAML config is scanned', () => {
+  const packagesDir = fixture({ 'config.yaml': 'title: descant fixture\n' });
+  assert.deepEqual(rulesFired(packagesDir), ['brand-leak']);
+});
+
+test('a binary file is skipped rather than decoded', () => {
+  // The token's own bytes are in there, so this fails if binaries are read as
+  // text — and it would also catch the guard crashing on one.
+  const packagesDir = fixture({ 'src/index.ts': 'export const clean = true;\n' });
+  writeFileSync(
+    join(packagesDir, 'subject', 'logo.png'),
+    Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x00]), Buffer.from('descant')]),
+  );
+  assert.deepEqual(findIsolationViolations(packagesDir), []);
+});
+
+test('a manifest leak is reported once, not twice', () => {
+  // The file walk now reaches package.json too, so the manifest has to be
+  // excluded from it or checkManifest's finding is duplicated.
+  const packagesDir = fixture(
+    { 'src/index.ts': 'export const clean = true;\n' },
+    { description: 'Extracted from the Descant pipeline' },
+  );
+  assert.equal(findIsolationViolations(packagesDir).length, 1);
 });
 
 test('a brand token in the published description is a brand-leak', () => {
@@ -305,47 +367,6 @@ test('an ordinary manifest with a repository and homepage stays clean', () => {
     },
   );
   assert.deepEqual(findIsolationViolations(packagesDir), []);
-});
-
-test('a published JSON asset is scanned — there is no extension allowlist', () => {
-  const packagesDir = fixture(
-    { 'schema.json': '{"description":"Descant-specific schema"}\n' },
-    { files: ['schema.json'] },
-  );
-  assert.deepEqual(rulesFired(packagesDir), ['brand-leak']);
-});
-
-test('a file with NO extension at all is scanned', () => {
-  // A NOTICE is the case an extension list cannot express at all, which is the
-  // point of deciding by content instead.
-  const packagesDir = fixture({ NOTICE: 'Portions derived from Takumi.\n' });
-  assert.deepEqual(rulesFired(packagesDir), ['brand-leak']);
-});
-
-test('a YAML config is scanned', () => {
-  const packagesDir = fixture({ 'config.yaml': 'title: descant fixture\n' });
-  assert.deepEqual(rulesFired(packagesDir), ['brand-leak']);
-});
-
-test('a binary file is skipped rather than decoded', () => {
-  // The token's own bytes are in there, so this fails if binaries are read as
-  // text — and it would also catch the guard crashing on one.
-  const packagesDir = fixture({ 'src/index.ts': 'export const clean = true;\n' });
-  writeFileSync(
-    join(packagesDir, 'subject', 'logo.png'),
-    Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x00]), Buffer.from('descant')]),
-  );
-  assert.deepEqual(findIsolationViolations(packagesDir), []);
-});
-
-test('a manifest leak is reported once, not twice', () => {
-  // The file walk now reaches package.json too, so the manifest has to be
-  // excluded from it or checkManifest's finding is duplicated.
-  const packagesDir = fixture(
-    { 'src/index.ts': 'export const clean = true;\n' },
-    { description: 'Extracted from the Descant pipeline' },
-  );
-  assert.equal(findIsolationViolations(packagesDir).length, 1);
 });
 
 test('a directory under packages with no package.json is not scanned', () => {

@@ -22,12 +22,14 @@
  *   of what to scan is always one member short. Everything is read and binaries
  *   are skipped by content.
  *
- * The rules are disjoint by construction: `brand-leak` scans the source with the
- * specifiers the OTHER rules own blanked out, so a forbidden import is reported
- * once, by the rule that owns it. What may be blanked is the delicate part — the
- * pattern below matches prose as readily as code, and blanking prose would
- * delete a leak on its way to the brand rule — so the decision is written out at
- * the loop that makes it rather than summarised here.
+ * The rules stay disjoint the cheap way: `brand-leak` is not reported on a line
+ * that already produced another violation. Suppression therefore REQUIRES an
+ * existing report on that same line, so it can never hide a leak — which is the
+ * property the previous design lacked. That design blanked out anything that
+ * looked like a module specifier before the brand scan, and every round found
+ * another string it wrongly believed was one: a quoted capitalised name, then a
+ * quoted path. Guessing which quoted strings are specifiers is the defect; the
+ * disjointness it bought is cosmetic, and this buys the same thing for nothing.
  *
  * Run: `pnpm check:isolation`. Exit 0 clean, 1 with violations.
  */
@@ -57,7 +59,13 @@ const FORBIDDEN_SCOPES = Object.freeze(['@descant', '@takumi'] as const);
 const FORBIDDEN_PACKAGES = Object.freeze(['descant', 'takumi'] as const);
 const BRAND_TOKEN = /\b(descant|takumi)\b/i;
 
-const SKIPPED_DIRECTORIES = Object.freeze(['node_modules', 'dist', '.git', 'coverage'] as const);
+/**
+ * Directories that are not this package's own text. `dist` is deliberately NOT
+ * among them: it is what npm actually publishes, and its sourcemaps carry the
+ * whole of `src` inside `sourcesContent`, so excluding it exempted the artifact
+ * from the rule while checking the thing the artifact is made from.
+ */
+const SKIPPED_DIRECTORIES = Object.freeze(['node_modules', '.git', 'coverage'] as const);
 
 const DEPENDENCY_MAPS = Object.freeze([
   'dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies',
@@ -70,33 +78,14 @@ const DEPENDENCY_MAPS = Object.freeze([
  * with no dependencies, and it errs toward reading *more* text as a specifier,
  * which fails toward reporting.
  */
-// The `d` flag is load-bearing: the brand scan below blanks a specifier by its
-// exact span, and only `match.indices` reports that span. Blanking by searching
-// the text for the matched string instead reaches only the FIRST occurrence, so
-// a second identical import line would keep its specifier and be handed to the
-// brand rule that does not own it.
 const SPECIFIER_PATTERN =
-  /(?:\bfrom\s*|\bimport\s*|\brequire\s*\(\s*|\bimport\s*\(\s*)(['"])([^'"]+)\1/dg;
+  /(?:\bfrom\s*|\bimport\s*|\brequire\s*\(\s*|\bimport\s*\(\s*)(['"])([^'"]+)\1/g;
 
 function isForbiddenPackage(specifier: string): boolean {
   if (FORBIDDEN_SCOPES.some((scope) => specifier === scope || specifier.startsWith(`${scope}/`))) {
     return true;
   }
   return FORBIDDEN_PACKAGES.some((name) => specifier === name || specifier.startsWith(`${name}/`));
-}
-
-/**
- * Whether a string could actually be a module specifier for a package.
- *
- * The specifier pattern below runs over comments and Markdown as well as code,
- * so ordinary prose — `Extracted from "Descant"` — matches it. That text must
- * still reach the brand rule, which means the mask has to be able to tell a
- * package name from a quoted word. npm names are lowercase by rule, so a
- * capitalised or spaced value is prose, not a dependency.
- */
-function isPackageSpecifier(specifier: string): boolean {
-  const withoutProtocol = specifier.startsWith('node:') ? specifier.slice('node:'.length) : specifier;
-  return /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*(?:\/[^\s'"]+)?$/.test(withoutProtocol);
 }
 
 /**
@@ -226,6 +215,11 @@ function checkManifest(packagesDir: string, packageDir: string): Violation[] {
         isForbiddenPackage(name) ? `declares "${name}"`
         : alias !== undefined && isForbiddenPackage(alias) ? `aliases "${name}" to "${alias}"`
         : BRAND_TOKEN.test(spec) ? `resolves "${name}" through "${spec}"`
+        // A dependency whose NAME carries the token is caught here rather than
+        // left to the brand rule, so the manifest and the source agree: an
+        // import of it is a brand-leak, and allowing the same name in the
+        // manifest would be the rule holding in one file and not the other.
+        : BRAND_TOKEN.test(name) ? `declares "${name}", whose name carries the token`
         : undefined;
       if (reason === undefined) continue;
       violations.push({
@@ -261,33 +255,12 @@ function checkScannedFile(packagesDir: string, packageDir: string, file: string,
   const where = relative(packagesDir, file);
   const violations: Violation[] = [];
 
-  // Blank a specifier in place — spaces, not deletion, so every offset and line
-  // number below still describes the original file — but ONLY when one of the
-  // specifier rules owns it. Masking is what keeps the rules disjoint, and it is
-  // also the way a leak escapes, so what may be masked is decided explicitly:
-  //
-  //   forbidden        → masked; the forbidden rule reported it.
-  //   relative         → NOT masked; it names a file THIS repository chose to
-  //                      call something, so `./descant-notes.ts` is a leak in a
-  //                      way a third-party package name is not.
-  //   a package name   → masked; a third-party name is not our brand choice.
-  //   anything else    → NOT masked. The pattern runs over comments and Markdown,
-  //                      so prose like `from "Descant"` matches it, and masking
-  //                      that would delete the leak on its way to the brand rule.
-  const masked = [...text];
   for (const match of text.matchAll(SPECIFIER_PATTERN)) {
     const specifier = match[2];
-    const span = match.indices?.[2];
-    if (specifier === undefined || span === undefined) continue;
+    if (specifier === undefined) continue;
     const at = match.index ?? 0;
-    const forbidden = isForbiddenPackage(specifier);
 
-    if (forbidden || (!isRelative(specifier) && isPackageSpecifier(specifier))) {
-      const [start, end] = span;
-      for (let i = start; i < end; i += 1) masked[i] = ' ';
-    }
-
-    if (forbidden) {
+    if (isForbiddenPackage(specifier)) {
       violations.push({
         rule: 'forbidden-dependency',
         file: where,
@@ -306,8 +279,12 @@ function checkScannedFile(packagesDir: string, packageDir: string, file: string,
     }
   }
 
-  const lines = masked.join('').split('\n');
-  for (const [index, line] of lines.entries()) {
+  // One leak, one report — without ever deciding what a quoted string "really
+  // is". A line that already carries a violation has been reported by the rule
+  // that owns it; every other line is scanned as written.
+  const alreadyReported = new Set(violations.map((violation) => violation.line));
+  for (const [index, line] of text.split('\n').entries()) {
+    if (alreadyReported.has(index + 1)) continue;
     const brand = BRAND_TOKEN.exec(line);
     if (brand === null) continue;
     violations.push({
