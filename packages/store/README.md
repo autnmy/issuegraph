@@ -184,8 +184,9 @@ that removes an optimistic edit, and a person has to make it.
 **A conflict's `upstream` is for display, and is never adopted.** It is the "view diff" half
 of the choice, and it is a reading of the past: a conflict can sit on screen for as long as a
 person takes to read it. So `retryOnLatest` **refreshes and then re-dispatches** — "on latest"
-is only true if something goes and looks — and `discardMine` drops the overlay and leaves the
-store where it was. The adapter is the authority on the current document; the store asks it
+is only true if something goes and looks, and the refresh is a *precondition*: if it fails,
+nothing is re-dispatched, the conflict is left intact, and `hydrationError` says why.
+`discardMine` drops the overlay and leaves the store where it was. The adapter is the authority on the current document; the store asks it
 rather than keeping a guess about how stale its own copy has become.
 
 `lastChange` belongs to the edit that is **current when it lands**. Two edits proposed before

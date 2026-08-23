@@ -989,3 +989,55 @@ test('retry on latest asks for the latest rather than trusting a held snapshot',
   scripted.settleNext('applied');
   await resolved.settled;
 });
+
+test('retry on latest does not re-dispatch when the refresh it depends on fails', async () => {
+  // "Retry on LATEST" means the refresh is a precondition, not a companion. Two
+  // independent queue tasks let the dispatch run anyway against the document
+  // the store already knew was out of date — and the guard is then evaluated on
+  // that stale graph, so an edit that upstream would now refuse can be applied.
+  const scripted = createScriptedSource(threeOpenIssues(), applyEdit);
+  let refreshFails = false;
+  let dispatches = 0;
+  const store = createStore({
+    source: {
+      hydrate: () =>
+        refreshFails ? Promise.reject(new Error('the tracker is down')) : Promise.resolve(threeOpenIssues()),
+      dispatch: (mutation) => {
+        dispatches += 1;
+        return scripted.dispatch(mutation);
+      },
+    },
+    derive: simpleDeriver,
+  });
+  await store.hydrate();
+
+  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  await scripted.whenPending(handle.mutationId);
+  scripted.settleNext({ outcome: 'conflict', upstream: withEdge(threeOpenIssues(), 'duplicate-of', '3', '1') });
+  await handle.settled;
+  assert.equal(dispatches, 1);
+
+  refreshFails = true;
+  const aborted = store.retryOnLatest(handle.mutationId);
+
+  // Drained by microtask rather than by awaiting the handle: awaiting it would
+  // hang under the defect (the dispatch happens and nothing settles it), and a
+  // test that hangs reports a timeout instead of a wrong answer. Nothing here
+  // uses a timer, so a bounded microtask drain is deterministic.
+  for (let turn = 0; turn < 20; turn += 1) await Promise.resolve();
+
+  assert.equal(dispatches, 1, 'nothing was re-dispatched against a document the refresh could not confirm');
+  await aborted.settled;
+  const snapshot = store.getSnapshot();
+  assert.equal(snapshot.writes[0]?.state, 'conflict', 'the conflict is left intact to try again');
+  assert.equal(snapshot.hydrationError, 'the tracker is down', 'and the refresh failure is reported');
+
+  // And it works on a later attempt, once the refresh can succeed.
+  refreshFails = false;
+  const second = store.retryOnLatest(handle.mutationId);
+  await scripted.whenPending(handle.mutationId);
+  assert.equal(dispatches, 2);
+  scripted.settleNext('applied');
+  await second.settled;
+  assert.deepEqual(store.getSnapshot().writes, []);
+});

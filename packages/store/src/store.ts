@@ -261,7 +261,7 @@ export function createStore(config: StoreConfig): Store {
    */
   type Task =
     | { readonly kind: 'dispatch'; readonly mutation: Mutation }
-    | { readonly kind: 'load'; readonly first: boolean; readonly done: () => void };
+    | { readonly kind: 'load'; readonly first: boolean; readonly done: (ok: boolean) => void };
   const queue: Task[] = [];
   let draining = false;
 
@@ -554,8 +554,7 @@ export function createStore(config: StoreConfig): Store {
     try {
       for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
         if (next.kind === 'load') {
-          await runLoad(next.first);
-          next.done();
+          next.done(await runLoad(next.first));
           continue;
         }
         // ALWAYS re-checked, not only when something is known to have moved.
@@ -583,8 +582,8 @@ export function createStore(config: StoreConfig): Store {
   }
 
   /** Queue a read of the document, behind whatever is already in flight. */
-  function load(first: boolean): Promise<void> {
-    return new Promise<void>((resolve) => {
+  function load(first: boolean): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
       queue.push({ kind: 'load', first, done: resolve });
       void drain();
     });
@@ -596,7 +595,8 @@ export function createStore(config: StoreConfig): Store {
   }
 
   /** Read the document. Only ever called from the queue. */
-  async function runLoad(first: boolean): Promise<void> {
+  /** Read the document. Resolves `true` when the read succeeded. */
+  async function runLoad(first: boolean): Promise<boolean> {
     if (first) {
       status = 'hydrating';
       hydrationError = undefined;
@@ -613,8 +613,11 @@ export function createStore(config: StoreConfig): Store {
       // A failed refresh keeps the last good document and stays `ready`; only a
       // first load that never produced one reports `failed`.
       if (first) status = 'failed';
+      publish();
+      return false;
     }
     publish();
+    return true;
   }
 
   return {
@@ -627,8 +630,12 @@ export function createStore(config: StoreConfig): Store {
       };
     },
 
-    hydrate: () => load(true),
-    rehydrate: () => load(false),
+    hydrate: async () => {
+      await load(true);
+    },
+    rehydrate: async () => {
+      await load(false);
+    },
 
     propose(proposal) {
       sequence += 1;
@@ -662,8 +669,18 @@ export function createStore(config: StoreConfig): Store {
     retryOnLatest(mutationId) {
       const record = recordFor(mutationId);
       if (record === undefined || record.state !== 'conflict') return noop(mutationId);
-      void load(false);
-      return start(record.mutation);
+      // THE REFRESH IS A PRECONDITION, NOT A COMPANION. Queueing the two
+      // independently let the dispatch run even when the read had failed —
+      // re-dispatching against the very document the store had just failed to
+      // confirm, with the guard evaluated on that stale graph. Chained, so the
+      // dependency is in the control flow rather than in a rule to remember.
+      const settled = load(false).then((refreshed) => {
+        // Left exactly as it was: the conflict record stands, `hydrationError`
+        // says why, and the person can press it again.
+        if (!refreshed) return;
+        return start(record.mutation).settled;
+      });
+      return { mutationId, settled };
     },
 
     /**
