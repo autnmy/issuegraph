@@ -19,7 +19,12 @@ import { join } from 'node:path';
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 
-import { findIsolationViolations } from './check-isolation.ts';
+import {
+  BRAND_TOKEN,
+  FORBIDDEN_PACKAGES,
+  FORBIDDEN_SCOPES,
+  findIsolationViolations,
+} from './check-isolation.ts';
 
 const roots: string[] = [];
 
@@ -367,6 +372,50 @@ test('an ordinary manifest with a repository and homepage stays clean', () => {
     },
   );
   assert.deepEqual(findIsolationViolations(packagesDir), []);
+});
+
+test('INVARIANT: every forbidden name carries a brand token', () => {
+  // This is what makes the specifier pattern's incompleteness tolerable. A
+  // forbidden import the pattern cannot read lands on a line with no other
+  // violation, and the brand rule reports it there — but only while every
+  // forbidden name contains a token the brand rule matches. Add one without and
+  // the backstop silently stops covering it, so it is asserted, not assumed.
+  for (const scope of FORBIDDEN_SCOPES) {
+    assert.match(scope, BRAND_TOKEN);
+    assert.match(`${scope}/types`, BRAND_TOKEN);
+  }
+  for (const name of FORBIDDEN_PACKAGES) {
+    assert.match(name, BRAND_TOKEN);
+    assert.match(`${name}/runner`, BRAND_TOKEN);
+  }
+});
+
+test('a template-literal dynamic import cannot hide an escape', () => {
+  const packagesDir = fixture({
+    'src/index.ts': 'export const load = () => import(`../../../apps/dashboard/src/model.js`);\n',
+  });
+  assert.deepEqual(rulesFired(packagesDir), ['package-escape']);
+});
+
+test('a comment between the import keyword and the paren cannot hide one either', () => {
+  const packagesDir = fixture({
+    'src/index.ts':
+      "export const load = () => import /* webpackIgnore: true */ ('../../../apps/dashboard/src/model.js');\n",
+  });
+  assert.deepEqual(rulesFired(packagesDir), ['package-escape']);
+});
+
+test('a forbidden import the pattern cannot read is still caught, by the brand rule', () => {
+  // The backstop in action: a specifier built by concatenation is a form the
+  // pattern does not read, and the build still fails.
+  const packagesDir = fixture({
+    'src/index.ts': "const name = '@des' + 'cant/types';\nexport const load = () => import(name);\n",
+  });
+  assert.deepEqual(rulesFired(packagesDir), []);
+  const spelled = fixture({
+    'src/index.ts': "const name = '@descant/types';\nexport const load = () => import(name);\n",
+  });
+  assert.deepEqual(rulesFired(spelled), ['brand-leak']);
 });
 
 test('a directory under packages with no package.json is not scanned', () => {

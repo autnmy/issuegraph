@@ -55,9 +55,9 @@ export interface Violation {
  * What counts as Descant-side. Declared as data so adding a name is an edit to
  * this table and nothing else.
  */
-const FORBIDDEN_SCOPES = Object.freeze(['@descant', '@takumi'] as const);
-const FORBIDDEN_PACKAGES = Object.freeze(['descant', 'takumi'] as const);
-const BRAND_TOKEN = /\b(descant|takumi)\b/i;
+export const FORBIDDEN_SCOPES = Object.freeze(['@descant', '@takumi'] as const);
+export const FORBIDDEN_PACKAGES = Object.freeze(['descant', 'takumi'] as const);
+export const BRAND_TOKEN = /\b(descant|takumi)\b/i;
 
 /**
  * Directories that are not this package's own text. `dist` is deliberately NOT
@@ -74,12 +74,27 @@ const DEPENDENCY_MAPS = Object.freeze([
 /**
  * Every module specifier in a source text, with the line it sits on.
  *
- * A regex rather than a parser: the guard must run before anything is built and
- * with no dependencies, and it errs toward reading *more* text as a specifier,
- * which fails toward reporting.
+ * A pattern rather than a parser, and the honest statement of what that costs:
+ * module syntax is an OPEN grammar, so this recognises the forms written down
+ * here and no others. It reads quoted and backticked specifiers, and tolerates
+ * comments and whitespace between the keyword and the string. It does NOT read
+ * a specifier built by concatenation, one returned from a helper, or a
+ * `createRequire` call — and enumerating further forms buys the next one rather
+ * than the last.
+ *
+ * That gap is tracked as its own issue rather than patched per round; closing it
+ * properly needs a real parser, and this repository's TypeScript 7 exposes its
+ * AST only under an `unstable` entry point.
+ *
+ * It is bounded, though, and the bound is what makes the gap tolerable: for a
+ * FORBIDDEN dependency the brand rule is a total backstop, because every
+ * forbidden name contains a brand token — asserted by a test, so the two tables
+ * cannot drift apart. A missed forbidden import lands on a line with no other
+ * violation and is reported there. Only `package-escape`, whose paths carry no
+ * brand token, is genuinely blind to a form this pattern does not read.
  */
 const SPECIFIER_PATTERN =
-  /(?:\bfrom\s*|\bimport\s*|\brequire\s*\(\s*|\bimport\s*\(\s*)(['"])([^'"]+)\1/g;
+  /(?:\bfrom|\bimport|\brequire)(?:\s|\/\*[\s\S]*?\*\/)*\(?(?:\s|\/\*[\s\S]*?\*\/)*(['"`])([^'"`]+)\1/g;
 
 function isForbiddenPackage(specifier: string): boolean {
   if (FORBIDDEN_SCOPES.some((scope) => specifier === scope || specifier.startsWith(`${scope}/`))) {
