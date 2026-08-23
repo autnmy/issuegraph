@@ -565,7 +565,19 @@ export function parseFrontmatter(body: string): ParseResult {
       continue;
     }
     const colon = trimmed.indexOf(':');
-    if (colon === -1) {
+    // A BLOCK-MAPPING COLON MUST BE FOLLOWED BY WHITESPACE OR END-OF-LINE.
+    // Without that test `blocked-by:[1]` and `priority:0` parsed as fields,
+    // while a conforming YAML reader sees a plain SCALAR — so this reader
+    // derived edges and priorities that another reader, reading the same body,
+    // does not have. Two conforming readers disagreeing about the graph is the
+    // one failure a reference implementation cannot ship.
+    //
+    // It degrades the whole block through the same arm as any other unparseable
+    // line, and that is faithful rather than heavy-handed: a section whose
+    // children are a scalar, or a mixture of a scalar and mapping entries, is
+    // not a mapping in YAML either.
+    const separated = colon !== -1 && (colon + 1 === trimmed.length || trimmed[colon + 1] === ' ' || trimmed[colon + 1] === '\t');
+    if (!separated) {
       sectionContentInvalid = true;
       diagnostics.push(`issuegraph: unparseable line ("${trimmed}"); ignored`);
       continue;

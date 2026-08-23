@@ -587,6 +587,41 @@ describe("declarer-only nodes declare but never answer", () => {
   const declarer = (n: number, overrides: Parameters<typeof node>[1] = {}) =>
     declarerOnlyNode(node(n, overrides));
 
+  test("is not a selectable candidate: out of keys, and never ready", () => {
+    // The tier may add constraints and may never satisfy one. A weak node that
+    // LOOKS open and ready is the shape a behind copy produces, and exposing it
+    // by enumeration lets a scheduler dispatch work whose only evidence is the
+    // eventually-consistent source.
+    const m = buildModel([node(1)], { declarerOnlyNodes: [declarer(40)] });
+    assert.deepEqual(m.keys, ["1"], "enumeration");
+    assert.equal(m.readiness("40").ready, false, "and by direct lookup");
+    // Still VISIBLE, just not selectable — a caller holding the key already
+    // knows where it came from.
+    assert.notEqual(m.readiness("40").reasons.length, 0);
+    assert.equal(m.declaredPriority("40").value, 2);
+  });
+
+  test("REGRESSION: a weak node's duplicate-of never satisfies somebody's blocked-by", () => {
+    // The sharpest form of the contract, and the way it was broken: adding the
+    // weak node REMOVED a refusal. Its stale `duplicate-of` carried the
+    // reference onto a closed canonical, and a blocked-by that was blocking
+    // without it came back satisfied. Adding weak input must only ever be
+    // neutral or stricter — never looser.
+    const weak = declarerOnlyNode(node(40, { data: { duplicateOf: ref(9) } }));
+    const nodes = [
+      node(1, { data: { blockedBy: [ref(40)] } }),
+      node(9, { open: false, closedStateReason: "completed" }),
+    ];
+    const without = buildModel(nodes);
+    const with_ = buildModel(nodes, { declarerOnlyNodes: [weak] });
+    assert.equal(without.readiness("1").ready, false, "blocking without the weak node");
+    assert.deepEqual(
+      with_.readiness("1"),
+      without.readiness("1"),
+      "adding a weak node must not change the answer",
+    );
+  });
+
   test("does not resolve somebody else's serialize-with", () => {
     const m = buildModel([node(1, { data: { serializeWith: ref(40) } })], {
       declarerOnlyNodes: [declarer(40)],

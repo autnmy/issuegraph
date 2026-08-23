@@ -186,6 +186,29 @@ describe("parseFrontmatter", () => {
     assert.equal(isUnreadDeclaration(interior), true);
   });
 
+  test("a mapping colon needs whitespace or end-of-line after it", () => {
+    // `blocked-by:[1]` is a plain SCALAR to a conforming YAML reader, not a
+    // field — so reading it as one made this reader derive an edge that another
+    // reader, given the same body, does not have. Two conforming readers
+    // disagreeing about the graph is the failure a reference implementation
+    // cannot ship, and it is worse than refusing: the divergence is silent.
+    const block = (v: string): string => ["---", "issuegraph:", `  ${v}`, "---"].join("\n");
+
+    for (const malformed of ["blocked-by:[1]", "priority:0", "evidence:verified"]) {
+      const r = parseFrontmatter(block(malformed));
+      assert.equal(r.data, null, malformed);
+      assert.ok(r.diagnostics.length > 0, malformed);
+      assert.equal(isUnreadDeclaration(r), true, malformed);
+    }
+
+    // The two separated forms are unaffected — a space, and end-of-line.
+    assert.deepEqual(parseFrontmatter(block("blocked-by: [1]")).data?.blockedBy, [{ repo: null, number: 1 }]);
+    assert.deepEqual(parseFrontmatter(block("blocked-by:\t[1]")).data?.blockedBy, [{ repo: null, number: 1 }]);
+    const bare = parseFrontmatter(block("duplicate-of:"));
+    assert.equal(bare.data?.duplicateOf, null);
+    assert.ok(bare.diagnostics.some((d) => d.includes("unparseable ref")), "end-of-line still parses as a field");
+  });
+
   test("a bare blocked-by is a null, and nulls are diagnosed like every other field", () => {
     // The asymmetry that made this a defect: every other recognised field
     // already diagnoses a blank value, and blocked-by silently became `[]` —

@@ -62,7 +62,13 @@ model.diagnostics;               // unresolvable refs, carrier disagreements, de
 
 `buildModel` is pure and total: it never throws, and every anomaly becomes a diagnostic instead of an exception.
 
-**It is fail-safe in one direction, deliberately.** An unresolvable `blocked-by` blocks; an unresolvable `serialize-with` or `together-with` refuses its declarer; an ambiguous component merge over-serializes. The costs are not symmetric — over-blocking delays work, under-blocking ships it in the wrong order — so every ambiguity resolves toward refusing. If you hand it a partial node set, expect it to say so rather than to guess.
+**It is fail-safe in one direction, deliberately.** The costs are not symmetric — over-blocking delays work, under-blocking ships it in the wrong order — so where the spec leaves a choice, this resolves toward refusing: an ambiguous component merge over-serializes, and an unresolvable `together-with` refuses its declarer.
+
+**Where the spec makes the choice, the spec wins, and §6.7 makes two of them.** An unresolvable `blocked-by` **blocks** — unknown state is not "closed". An unresolvable `serialize-with` **contributes no linkage**: it is surfaced in `diagnostics` and refuses nobody, neither the declarer nor its component.
+
+That second one matters if you fetch a partial neighbourhood. It is deliberately *not* a refusal, so if your traversal has a horizon and you want unresolved links to hold work back, compose that yourself around the model — the way §6.8 composes eligibility with readiness. You know your horizon; the reader does not.
+
+If you hand it a partial node set, expect it to say so in `diagnostics` rather than to guess.
 
 ## The parser is a restricted subset reader, on purpose
 

@@ -112,7 +112,18 @@ export interface ReadinessResult {
 }
 
 export interface Model {
-  /** Canonical node key: "N" for home-repo, "owner/repo#N" otherwise. */
+  /**
+   * The SELECTABLE candidates, as canonical node keys: `"N"` for a home-repo
+   * node, `"owner/repo#N"` otherwise.
+   *
+   * DECLARER-ONLY NODES ARE NOT HERE, and that is the tier's contract rather
+   * than a filter over it: a weak node may add constraints and may never
+   * satisfy one, so a scheduler enumerating this set must not be able to
+   * dispatch work whose only evidence is an eventually-consistent copy. They
+   * remain visible to every keyed accessor — ask `readiness` about one and it
+   * says what it is — because a caller holding such a key already knows where
+   * it came from. What they must never do is arrive by enumeration.
+   */
   readonly keys: readonly string[];
   readonly declaredPriority: (key: string) => DeclaredPriority;
   /**
@@ -451,7 +462,19 @@ export function buildModel(
     // contributes no linkage (§6.7), `together-with` refuses its declarer.
     const targetKey = (ref: IssueRef): string => {
       const rk = keyForRef(ref, sourceRepo, homeRepo);
-      return duplicateCanonicalOf(rk) ?? rk;
+      // ONLY CANONICALIZE A KEY THAT IS ALREADY REFERENCEABLE. The walk reads
+      // `byKey`, which includes the declarer-only tier, so canonicalizing first
+      // let a WEAK node's stale `duplicate-of` carry a reference onto a closed
+      // canonical and satisfy a `blocked-by` that was blocking without it.
+      // That inverts the tier's whole contract — it may add constraints and may
+      // never satisfy one — and it does so by REMOVING a refusal, which is the
+      // direction that ships work in the wrong order.
+      //
+      // Gating here rather than inside the walk, because the walk already gates
+      // every hop AFTER the first on `referenceable`; the starting key was the
+      // one position that had no such test, and it had none because before
+      // targets were canonicalized at all it was always a full node.
+      return referenceable.has(rk) ? (duplicateCanonicalOf(rk) ?? rk) : rk;
     };
     for (const ref of data.blockedBy) {
       const rk = targetKey(ref);
@@ -702,7 +725,18 @@ export function buildModel(
   };
 
   const readiness = (key: string): ReadinessResult => {
-    if (!byKey.has(key)) return { ready: false, reasons: ['unknown node'] };
+    const self = byKey.get(key);
+    if (self === undefined) return { ready: false, reasons: ['unknown node'] };
+    // A WEAK NODE IS NEVER READY, whatever its own copy says. Keeping it out of
+    // `keys` stops a scheduler reaching it by enumeration; this stops one
+    // reaching it any other way. Reporting `ready` for a node the model was
+    // told not to trust is the tier turning weak data into an admission, which
+    // is the one thing it exists to prevent — and a stale open-looking copy of
+    // an issue that has since been closed or claimed is exactly the shape that
+    // arrives here.
+    if (self.declarerOnly === true) {
+      return { ready: false, reasons: ['declared by a weak source; not selectable'] };
+    }
     const togetherMembers = componentMembers(together, key);
     if (togetherMembers.length <= 1) {
       const reasons = baseReasons(key, null);
@@ -734,7 +768,7 @@ export function buildModel(
   const uniqueDiagnostics = [...new Set(diagnostics)];
 
   return {
-    keys: [...byKey.keys()],
+    keys: [...byKey.keys()].filter((k) => (byKey.get(k) as ModelNode).declarerOnly !== true),
     declaredPriority: (key) =>
       declared.get(key) ?? {
         value: DEFAULT_PRIORITY,
