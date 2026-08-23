@@ -418,6 +418,37 @@ test('a forbidden import the pattern cannot read is still caught, by the brand r
   assert.deepEqual(rulesFired(spelled), ['brand-leak']);
 });
 
+test('a file: dependency escaping the package is a package-escape', () => {
+  // Worse than a source import: npm preserves it in the packed manifest, so the
+  // published artifact carries a dependency no installer can resolve.
+  const packagesDir = fixture(
+    { 'src/index.ts': "export { x } from 'innocent';\n" },
+    { dependencies: { innocent: 'file:../../../consumer/internal' } },
+  );
+  assert.deepEqual(rulesFired(packagesDir), ['package-escape']);
+});
+
+test('link: and portal: and a bare relative value are caught the same way', () => {
+  for (const value of ['link:../../../consumer', 'portal:../../../consumer', '../../../consumer']) {
+    const packagesDir = fixture(
+      { 'src/index.ts': 'export const clean = true;\n' },
+      { dependencies: { innocent: value } },
+    );
+    assert.deepEqual(rulesFired(packagesDir), ['package-escape'], value);
+  }
+});
+
+test('workspace: and a local path INSIDE the package are not escapes', () => {
+  // The control. `workspace:` names a sibling package, which is how these
+  // packages are meant to depend on each other, and a vendored path that stays
+  // inside the package has escaped nothing.
+  const packagesDir = fixture(
+    { 'src/index.ts': 'export const clean = true;\n' },
+    { dependencies: { sibling: 'workspace:*', vendored: 'file:./vendor/thing', typescript: '^7.0.2' } },
+  );
+  assert.deepEqual(findIsolationViolations(packagesDir), []);
+});
+
 test('a directory under packages with no package.json is not scanned', () => {
   const packagesDir = fixture({ 'src/index.ts': CLEAN_SOURCE, 'src/helper.ts': HELPER_SOURCE });
   const stray = join(packagesDir, 'not-a-package', 'src');

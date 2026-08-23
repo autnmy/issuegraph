@@ -64,6 +64,11 @@ jobs:
       - name: Typecheck, build, test, isolation
         run: pnpm run ci
 
+      # A dry run RUNS the publish, with `--dry-run` — it does not skip the step.
+      # Skipping it meant packing, the lifecycle hooks and the manifest checks
+      # never executed, so a completely broken publish still produced a green run
+      # and a summary saying everything but the upload had worked. A check that
+      # passes when the thing it checks is broken is decoration.
       - name: Publish
         if: ${{ github.event_name == 'release' || inputs.dry_run == false }}
         env:
@@ -73,10 +78,13 @@ jobs:
         # own publishConfig, so a new package cannot inherit them by accident.
         run: pnpm publish --recursive --no-git-checks
 
-      - name: Dry run summary
+      - name: Publish (dry run)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         # Block scalar, not a bare one: a plain YAML scalar containing `: ` is
         # read as a mapping, and the workflow fails to LOAD rather than to run.
         run: |
-          echo "Dry run: everything but the publish ran."
+          pnpm publish --recursive --no-git-checks --dry-run
+          echo "Dry run complete: packed and validated, nothing uploaded."
           echo "Re-run with dry_run unchecked to publish."

@@ -13,9 +13,11 @@
  * - `forbidden-dependency` — a module specifier, or a `package.json` dependency
  *   entry, naming a Descant-side package. An entry names one in three places:
  *   its key, an `npm:` alias target, and a git or tarball value.
- * - `package-escape` — a relative specifier that resolves outside its own
- *   package. This is how a source file reaches a sibling package's internals,
- *   or the repository root, without ever naming Descant.
+ * - `package-escape` — a relative specifier, or a `file:`/`link:`/`portal:`
+ *   dependency, that resolves outside its own package. This is how a package
+ *   reaches a sibling's internals, or the repository root, without ever naming
+ *   Descant — and a local-path dependency survives into the packed manifest, so
+ *   it also ships an artifact no installer can resolve.
  * - `brand-leak` — a Descant brand token in ANY text file under a package, plus
  *   its `package.json` metadata. Not an extension list: what a package can
  *   publish is an open set — source, README, a JSON schema, a NOTICE — so a list
@@ -101,6 +103,26 @@ function isForbiddenPackage(specifier: string): boolean {
     return true;
   }
   return FORBIDDEN_PACKAGES.some((name) => specifier === name || specifier.startsWith(`${name}/`));
+}
+
+/**
+ * Protocols whose value is a PATH on this machine rather than a registry name.
+ * `workspace:` is deliberately absent — it names a sibling package, which is how
+ * these packages are meant to depend on each other.
+ */
+const LOCAL_PROTOCOLS = Object.freeze(['file:', 'link:', 'portal:'] as const);
+
+/**
+ * The path a dependency value points at, when it points at one at all.
+ *
+ * Unlike a module specifier in source, this is not an open grammar: a manifest
+ * is JSON and the value is exactly one string, so reading it is unambiguous.
+ */
+function localDependencyPath(value: string): string | undefined {
+  for (const protocol of LOCAL_PROTOCOLS) {
+    if (value.startsWith(protocol)) return value.slice(protocol.length);
+  }
+  return value.startsWith('./') || value.startsWith('../') ? value : undefined;
 }
 
 /**
@@ -236,6 +258,20 @@ function checkManifest(packagesDir: string, packageDir: string): Violation[] {
         // manifest would be the rule holding in one file and not the other.
         : BRAND_TOKEN.test(name) ? `declares "${name}", whose name carries the token`
         : undefined;
+      // A local-path dependency that climbs out of the package is an escape, and
+      // a worse one than a source import: npm preserves it in the packed
+      // manifest, so the published artifact carries a dependency no installer
+      // can resolve. Reported under the escape rule rather than the forbidden
+      // one because it need not name the consumer to do this.
+      const local = localDependencyPath(spec);
+      if (local !== undefined && !isInside(packageDir, resolve(packageDir, local))) {
+        violations.push({
+          rule: 'package-escape',
+          file: relative(packagesDir, manifestPath),
+          line: 0,
+          detail: `${mapName} points "${name}" at "${spec}", outside ${relative(packagesDir, packageDir)}`,
+        });
+      }
       if (reason === undefined) continue;
       violations.push({
         rule: 'forbidden-dependency',
