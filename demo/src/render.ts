@@ -81,10 +81,16 @@ function provenanceLabel(provenance: Provenance): string {
 }
 
 function holdChip(hold: Hold): HTMLElement {
-  const chip = el('span', `hold hold-${hold.family}`);
+  // A NON-BLOCKING REASON IS NOT A HOLD, and drawing it as one says the row is
+  // stuck when it is ready. §6.7's unresolved symmetric reference is surfaced
+  // for grooming and excludes nothing, so it is drawn as a note.
+  const blocking = hold.blocking !== false;
+  const chip = el('span', `hold hold-${hold.family}${blocking ? '' : ' hold-note'}`);
   chip.append(el('span', 'hold-label', hold.label));
   chip.append(el('span', 'hold-detail', hold.detail));
-  chip.title = `${hold.family}-derived hold: ${hold.detail}`;
+  chip.title = blocking
+    ? `${hold.family}-derived hold: ${hold.detail}`
+    : `surfaced for grooming, and blocking nothing: ${hold.detail}`;
   return chip;
 }
 

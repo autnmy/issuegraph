@@ -888,7 +888,7 @@ export function explainOrder(
   // the cap is counted against.
   const readySlots: number[] = [];
   for (const ref of ordered) {
-    if ((holdsOf.get(ref) ?? []).length > 0) continue;
+    if ((holdsOf.get(ref) ?? []).some(blocks)) continue;
     const rank = rankOf.get(ref) ?? 0;
     if (!readySlots.includes(rank)) readySlots.push(rank);
   }
@@ -987,7 +987,11 @@ export function createDeriver(holds: readonly ExecutorHold[] = []): OrderDeriver
           ref: row.issue.ref,
           rank: row.rank,
           ready: row.ready,
-          holdReasons: row.holds.map((hold) => hold.detail),
+          // The store documents this as "why it may not start, EMPTY WHEN
+          // READY". A non-blocking annotation is not such a reason, so
+          // including it would hand the store a ready row with reasons — a
+          // contract violation the reviewer did not name and the sweep found.
+          holdReasons: row.holds.filter(blocks).map((hold) => hold.detail),
         }),
       );
 }

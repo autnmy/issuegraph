@@ -998,3 +998,45 @@ test('a dependency on CLOSED work is satisfied, so it forms no cycle', () => {
   };
   assert.equal(guarded(throughOpen, 'blocked-by', '4', '9'), true, 'the control chain is not a cycle');
 });
+
+test('INVARIANT: a non-blocking annotation changes nothing a blocking hold would', () => {
+  // The concept was introduced in one place and consumed in four, and one
+  // consumer was missed — so this asserts the WHOLE contract rather than the
+  // one symptom that was reported. Every consumer of a hold must agree about
+  // which reasons keep work out of the ready set.
+  const document = seedDocument();
+  const annotated = {
+    issues: document.issues,
+    edges: [...document.edges, makeEdge('serialize-with', '4', '404')],
+  };
+  const plain = explainOrder(document, seedHolds());
+  const withNote = explainOrder(annotated, seedHolds());
+
+  const row = withNote.find((each) => each.issue.ref === '4');
+  const control = plain.find((each) => each.issue.ref === '4');
+  assert.ok(row && control);
+  assert.ok(row.holds.length > control.holds.length, 'the fixture did not add an annotation');
+
+  // 1. Readiness is unchanged.
+  assert.equal(row.ready, control.ready);
+  // 2. The STATION is unchanged — the slot count must not treat the annotated
+  //    row as unready, which would leave it filled outside the cap.
+  assert.equal(row.station, control.station);
+  // 3. Placement is unchanged.
+  assert.equal(row.placement, control.placement);
+
+  // 4. And the whole board still respects the cap. This is the symptom that was
+  //    reported: an annotated row omitted from the slot count is filled
+  //    regardless, so the board showed cap+1 running.
+  assert.ok(
+    slotCount(withNote.filter((each) => each.station === 'filled')) <= DEFAULT_CONCURRENCY_CAP,
+    'the board shows more filled slots than the concurrency cap allows',
+  );
+
+  // 5. The store's own contract: `holdReasons` is "empty when ready".
+  const rows = createDeriver(seedHolds())(annotated);
+  for (const each of rows) {
+    if (!each.ready) continue;
+    assert.deepEqual(each.holdReasons, [], `${each.ref} is ready and carries reasons`);
+  }
+});

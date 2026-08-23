@@ -285,6 +285,7 @@ main {
   padding: var(--pad-chip-y) var(--pad-hold-x);
   border: var(--border-width) solid currentColor;
 }
+.hold-note .hold-label { color: var(--fg-3); border-style: dashed; }
 .hold-graph .hold-label { color: var(--hold-graph); }
 .hold-executor .hold-label { color: var(--hold-executor); }
 .hold-detail { color: var(--fg-2); }
