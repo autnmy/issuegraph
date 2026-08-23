@@ -38,7 +38,7 @@
     "url": "https://github.com/autnmy/issuegraph/issues"
   },
   "engines": {
-    "node": ">=22.18"
+    "node": ">=18"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
