@@ -186,6 +186,43 @@ describe("parseFrontmatter", () => {
     assert.equal(isUnreadDeclaration(interior), true);
   });
 
+  test("a dedented field is a broken mapping, not nested content", () => {
+    // The silent-discard shape: an INERT first child at a deeper indent set the
+    // bar, and every properly-placed field after it was read as that child's
+    // nested content and skipped — so a declared dependency vanished with no
+    // diagnostic and the declaration reported itself fully read.
+    const block = (...v: string[]): string => ["---", "issuegraph:", ...v, "---"].join("\n");
+
+    const dedented = parseFrontmatter(block("    extension: x", "  blocked-by: [1]"));
+    assert.equal(dedented.data, null);
+    assert.ok(dedented.diagnostics.some((d) => d.includes("does not align")));
+    assert.equal(isUnreadDeclaration(dedented), true);
+
+    // DEEPER is still inert and still silent — that is §4.1's extension rule and
+    // this must not have widened into it. The recognized field beside the
+    // subtree is read normally.
+    const nested = parseFrontmatter(block("  blocked-by: [1]", "  extension:", "    - value"));
+    assert.deepEqual(nested.data?.blockedBy, [{ repo: null, number: 1 }]);
+    assert.deepEqual(nested.diagnostics, []);
+  });
+
+  test("a quoted key is the same key", () => {
+    const block = (...v: string[]): string => ["---", "issuegraph:", ...v, "---"].join("\n");
+
+    for (const spelling of ['"blocked-by": [1]', "'blocked-by': [1]"]) {
+      const r = parseFrontmatter(block(`  ${spelling}`));
+      assert.deepEqual(r.data?.blockedBy, [{ repo: null, number: 1 }], spelling);
+      assert.deepEqual(r.diagnostics, [], spelling);
+    }
+
+    // ...which means the two spellings are the SAME key to the repeat guard.
+    // Stripping after that guard would let a quoted duplicate through as a
+    // second field and hand the win to whichever came last.
+    const repeated = parseFrontmatter(block("  blocked-by: [123]", '  "blocked-by": []'));
+    assert.equal(repeated.data, null);
+    assert.ok(repeated.diagnostics.some((d) => d.includes("declared more than once")));
+  });
+
   test("a repeated recognized key is malformed, not last-one-wins", () => {
     // The silent-discard shape: the second declaration overwrote the first and
     // said nothing, so an issue that named a dependency read as fully declared

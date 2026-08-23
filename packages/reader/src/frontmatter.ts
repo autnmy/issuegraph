@@ -551,7 +551,20 @@ export function parseFrontmatter(body: string): ParseResult {
     }
 
     if (childIndent === -1) childIndent = indent;
-    if (indent !== childIndent) {
+    if (indent < childIndent) {
+      // A DEDENT IS NOT NESTED CONTENT. Both directions used to land in the arm
+      // below and be discarded in silence, so an inert first child at a deeper
+      // indent set the bar and every properly-placed field after it vanished:
+      // `extension` at four spaces followed by `blocked-by` at two returned an
+      // empty blocker list, no diagnostic, and a declaration reading as fully
+      // read. A block mapping's keys align, so a shallower line is not deeper
+      // content — it is a mapping that does not parse, and it degrades the
+      // block like any other structural fault.
+      sectionContentInvalid = true;
+      diagnostics.push(`issuegraph: dedented line ("${trimmed}") does not align with the block's fields; block ignored`);
+      continue;
+    }
+    if (indent > childIndent) {
       // Nested content of some entry (an extension subtree): inert — and it
       // CLOSES the current entry, so a deeper list cannot misattach to it.
       // Remember whether the closed owner was a recognized field: malformed
@@ -582,7 +595,13 @@ export function parseFrontmatter(body: string): ParseResult {
       diagnostics.push(`issuegraph: unparseable line ("${trimmed}"); ignored`);
       continue;
     }
-    const key = trimmed.slice(0, colon).trim();
+    // QUOTED KEYS ARE THE SAME KEYS. YAML reads `"blocked-by"` and `blocked-by`
+    // as one key, and leaving the quotes on made `isField` classify the quoted
+    // spelling as an inert extension — so quoting a key made a declared
+    // dependency disappear while the declaration reported itself fully read.
+    // Stripped BEFORE the repeat guard below, so the two spellings collide as
+    // the duplicate they are rather than passing as two different fields.
+    const key = stripQuotes(trimmed.slice(0, colon).trim());
     const scalar = trimmed.slice(colon + 1).trim();
     // A REPEATED RECOGNIZED KEY IS A MALFORMED MAPPING, and letting the last
     // one win discards a declaration in silence: `blocked-by: [123]` followed
