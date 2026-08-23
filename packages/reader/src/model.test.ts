@@ -455,6 +455,51 @@ describe("model purity", () => {
     assertIncludes(m.readiness("1").reasons.join(" "), "serialize group member 3 is actively claimed");
   });
 
+  test("a duplicate contributes no relationship edges, so it cannot refuse live work", () => {
+    // Stale metadata on an ignored issue must not reach the canonical work.
+    // #2 is a duplicate carrying `together-with: 3`; reading that edge unioned
+    // it with #3, and #2's permanent duplicate unreadiness then made #3 — real,
+    // canonical, unrelated work — unselectable.
+    const m = buildModel([node(1), node(2, { data: { duplicateOf: ref(1), togetherWith: ref(3) } }), node(3)]);
+    assert.deepEqual(m.readiness("3"), { ready: true, reasons: [] });
+    assert.deepEqual(m.togetherComponent("3"), ["3"]);
+    // The duplicate is still a duplicate: its own duplicate-of is read, which
+    // is the one edge the guard must not drop.
+    assert.deepEqual(m.readiness("2"), { ready: false, reasons: ["duplicate-of another issue"] });
+    assert.equal(m.duplicateCanonical("2"), "1");
+  });
+
+  test("a duplicate's blocked-by and serialize-with are ignored too", () => {
+    // The same rule on the other two edge types, because a guard that only
+    // covered together-with would read as fixed while leaving two ways in.
+    const blocking = buildModel([node(1), node(2, { data: { duplicateOf: ref(1), blockedBy: [ref(3)] } }), node(3)]);
+    assert.deepEqual(blocking.readiness("3"), { ready: true, reasons: [] });
+
+    const claimed = buildModel([
+      node(1),
+      node(2, { assigneeCount: 1, data: { duplicateOf: ref(1), serializeWith: ref(3) } }),
+      node(3),
+    ]);
+    assert.deepEqual(claimed.readiness("3"), { ready: true, reasons: [] });
+  });
+
+  test("only an unresolved SERIALIZE link clouds a serialize component's extent", () => {
+    // The component-extent rule is about the serialize component's boundary. An
+    // unresolved together-with says the DECLARER's unit runs past the horizon,
+    // which is already why that declarer alone is refused — it says nothing
+    // about its serialize peer, which was being refused indefinitely for it.
+    const together = buildModel([node(1, { data: { serializeWith: ref(2) } }), node(2, { data: { togetherWith: ref(40) } })]);
+    assert.deepEqual(together.readiness("1"), { ready: true, reasons: [] });
+    assertIncludes(together.readiness("2").reasons.join(" "), "together-with 40 is unresolvable");
+  });
+
+  test("CONTROL: an unresolved serialize link still clouds the whole component", () => {
+    // The narrowing must not disable the rule it narrows. Without this, a fix
+    // that dropped the extent check entirely would read as correct.
+    const m = buildModel([node(1, { data: { serializeWith: ref(2) } }), node(2, { data: { serializeWith: ref(40) } })]);
+    assertIncludes(m.readiness("1").reasons.join(" "), "the component's true extent is unknown");
+  });
+
   test("a claimed singleton stays READY — assignment is eligibility, not readiness", () => {
     // Pins the declined round-7 finding: SPEC 6.8 composes ready AND eligible;
     // folding claim state into readiness would break post-claim re-verification.

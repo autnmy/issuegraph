@@ -321,74 +321,6 @@ export function buildModel(
     });
   }
 
-  // ---- edges ----
-  // blockersOf[k] = keys k is blocked by (resolved refs only; unresolved refs
-  // recorded separately and treated as blocking, §6.7).
-  const blockersOf = new Map<string, string[]>();
-  const unresolvedBlockers = new Map<string, string[]>();
-  // Unresolved SERIALIZE/TOGETHER targets refuse their declarer —
-  // "no linkage" admitted a candidate beside the very sibling the edge
-  // forbids (the sibling was simply unfetchable this walk: budget, fault,
-  // 404). Same fail-safe family as unresolved blocked-by.
-  const unresolvedRelations = new Map<string, string[]>();
-  const dependentsOf = new Map<string, string[]>(); // reverse of blockersOf
-  const serialize = new UnionFind();
-  const together = new UnionFind();
-
-  for (const [k, n] of byKey) {
-    const data = n.data;
-    if (data === null) continue;
-    const sourceRepo = nodeSourceRepo(n, homeRepo);
-    for (const ref of data.blockedBy) {
-      const rk = keyForRef(ref, sourceRepo, homeRepo);
-      if (referenceable.has(rk)) {
-        blockersOf.set(k, [...(blockersOf.get(k) ?? []), rk]);
-        dependentsOf.set(rk, [...(dependentsOf.get(rk) ?? []), k]);
-      } else {
-        unresolvedBlockers.set(k, [...(unresolvedBlockers.get(k) ?? []), rk]);
-        diagnostics.push(`${k}: blocked-by ${rk} is unresolvable in this node set; treated as blocking`);
-      }
-    }
-    if (data.serializeWith !== null) {
-      const rk = keyForRef(data.serializeWith, sourceRepo, homeRepo);
-      if (referenceable.has(rk)) serialize.union(k, rk);
-      else {
-        unresolvedRelations.set(k, [...(unresolvedRelations.get(k) ?? []), `serialize-with ${rk}`]);
-        diagnostics.push(`${k}: serialize-with ${rk} is unresolvable; fail-safe: refusing the declarer`);
-      }
-    }
-    if (data.togetherWith !== null) {
-      const rk = keyForRef(data.togetherWith, sourceRepo, homeRepo);
-      const target = referenceable.has(rk) ? byKey.get(rk) : undefined;
-      if (target === undefined) {
-        unresolvedRelations.set(k, [...(unresolvedRelations.get(k) ?? []), `together-with ${rk}`]);
-        diagnostics.push(`${k}: together-with ${rk} is unresolvable; fail-safe: refusing the declarer`);
-      } else if (n.open && target.open) {
-        // Only OPEN endpoints union: a closed member has left the unit and
-        // must not bridge two open members into one active component.
-        together.union(k, rk);
-      }
-    }
-  }
-
-  const membersByRoot = (uf: UnionFind): Map<string, string[]> => {
-    const m = new Map<string, string[]>();
-    for (const k of byKey.keys()) {
-      const root = uf.find(k);
-      const arr = m.get(root);
-      if (arr === undefined) m.set(root, [k]);
-      else arr.push(k);
-    }
-    for (const arr of m.values()) arr.sort();
-    return m;
-  };
-  const serializeMembersByRoot = membersByRoot(serialize);
-  const togetherMembersByRoot = membersByRoot(together);
-  const componentMembers = (uf: UnionFind, key: string): string[] => {
-    const table = uf === serialize ? serializeMembersByRoot : togetherMembersByRoot;
-    return table.get(uf.find(key)) ?? [key];
-  };
-
   // ---- duplicate closure (§4.3.3) ----
   const canonicalCache = new Map<string, string | null>();
   const duplicateCanonicalOf = (key: string): string | null => {
@@ -455,6 +387,97 @@ export function buildModel(
     if (!canonicalCache.has(key)) canonicalCache.set(key, result);
     return canonicalCache.get(key) as string | null;
   };
+
+  // ---- edges ----
+  // blockersOf[k] = keys k is blocked by (resolved refs only; unresolved refs
+  // recorded separately and treated as blocking, §6.7).
+  const blockersOf = new Map<string, string[]>();
+  const unresolvedBlockers = new Map<string, string[]>();
+  // Unresolved SERIALIZE/TOGETHER targets refuse their declarer —
+  // "no linkage" admitted a candidate beside the very sibling the edge
+  // forbids (the sibling was simply unfetchable this walk: budget, fault,
+  // 404). Same fail-safe family as unresolved blocked-by.
+  const unresolvedRelations = new Map<string, string[]>();
+  // Tracked SEPARATELY from the map above, and not derived from it by reading
+  // the label text. The component-extent rule below is about the SERIALIZE
+  // component's boundary, so only an unresolved serialize link may trigger it;
+  // an unresolved together link says the declarer's UNIT extends past the
+  // horizon, which is already why that declarer alone is refused. Keeping both
+  // kinds in one map made an unresolved together link on B refuse B's serialize
+  // peer A indefinitely, for a reason that was never about A.
+  const unresolvedSerialize = new Set<string>();
+  const dependentsOf = new Map<string, string[]>(); // reverse of blockersOf
+  const serialize = new UnionFind();
+  const together = new UnionFind();
+
+  for (const [k, n] of byKey) {
+    const data = n.data;
+    if (data === null) continue;
+    // A DUPLICATE CONTRIBUTES NO RELATIONSHIP EDGES. §4.3.3 says a duplicate is
+    // ignored in favour of its canonical, and an issue nobody may work cannot
+    // block one, cannot hold a serialize component, and cannot be half of a
+    // unit of work. Reading its edges anyway let STALE METADATA ON AN IGNORED
+    // ISSUE refuse live work: a duplicate carrying `together-with: 3` unioned
+    // itself with #3, and its own permanent "duplicate-of another issue"
+    // unreadiness then made #3 unready too — canonical work unselectable
+    // because of a field on an issue the spec says to ignore.
+    //
+    // Its `duplicate-of` is still read: the closure above walks it directly off
+    // `data`, which is why that closure had to move ahead of this loop rather
+    // than the guard being written the other way round.
+    if (duplicateCanonicalOf(k) !== null) continue;
+    const sourceRepo = nodeSourceRepo(n, homeRepo);
+    for (const ref of data.blockedBy) {
+      const rk = keyForRef(ref, sourceRepo, homeRepo);
+      if (referenceable.has(rk)) {
+        blockersOf.set(k, [...(blockersOf.get(k) ?? []), rk]);
+        dependentsOf.set(rk, [...(dependentsOf.get(rk) ?? []), k]);
+      } else {
+        unresolvedBlockers.set(k, [...(unresolvedBlockers.get(k) ?? []), rk]);
+        diagnostics.push(`${k}: blocked-by ${rk} is unresolvable in this node set; treated as blocking`);
+      }
+    }
+    if (data.serializeWith !== null) {
+      const rk = keyForRef(data.serializeWith, sourceRepo, homeRepo);
+      if (referenceable.has(rk)) serialize.union(k, rk);
+      else {
+        unresolvedRelations.set(k, [...(unresolvedRelations.get(k) ?? []), `serialize-with ${rk}`]);
+        unresolvedSerialize.add(k);
+        diagnostics.push(`${k}: serialize-with ${rk} is unresolvable; fail-safe: refusing the declarer`);
+      }
+    }
+    if (data.togetherWith !== null) {
+      const rk = keyForRef(data.togetherWith, sourceRepo, homeRepo);
+      const target = referenceable.has(rk) ? byKey.get(rk) : undefined;
+      if (target === undefined) {
+        unresolvedRelations.set(k, [...(unresolvedRelations.get(k) ?? []), `together-with ${rk}`]);
+        diagnostics.push(`${k}: together-with ${rk} is unresolvable; fail-safe: refusing the declarer`);
+      } else if (n.open && target.open) {
+        // Only OPEN endpoints union: a closed member has left the unit and
+        // must not bridge two open members into one active component.
+        together.union(k, rk);
+      }
+    }
+  }
+
+  const membersByRoot = (uf: UnionFind): Map<string, string[]> => {
+    const m = new Map<string, string[]>();
+    for (const k of byKey.keys()) {
+      const root = uf.find(k);
+      const arr = m.get(root);
+      if (arr === undefined) m.set(root, [k]);
+      else arr.push(k);
+    }
+    for (const arr of m.values()) arr.sort();
+    return m;
+  };
+  const serializeMembersByRoot = membersByRoot(serialize);
+  const togetherMembersByRoot = membersByRoot(together);
+  const componentMembers = (uf: UnionFind, key: string): string[] => {
+    const table = uf === serialize ? serializeMembersByRoot : togetherMembersByRoot;
+    return table.get(uf.find(key)) ?? [key];
+  };
+
 
   // ---- effective priority (§6.3): relax minima along blocked-by AND together ----
   const effective = new Map<string, number>();
@@ -617,7 +640,7 @@ export function buildModel(
     // preserved. The refusal clears when the link resolves (deeper
     // traversal or the target entering the walk).
     for (const m of componentMembers(serialize, k)) {
-      const memberUnresolved = unresolvedRelations.get(m);
+      const memberUnresolved = unresolvedSerialize.has(m) ? unresolvedRelations.get(m) : undefined;
       if (m !== k && memberUnresolved !== undefined && memberUnresolved.length > 0) {
         reasons.push(
           `serialize component member ${m} has an unresolvable link (${memberUnresolved[0]}) — the component's true extent is unknown (fail-safe)`,

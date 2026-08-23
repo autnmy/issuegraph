@@ -631,6 +631,24 @@ export function parseFrontmatter(body: string): ParseResult {
         } else if (entry.scalar.length > 0) {
           items = [entry.scalar]; // single scalar tolerated as a 1-list
         } else {
+          // A BARE `blocked-by:` IS A YAML NULL, NOT AN EMPTY LIST, and the two
+          // must not answer the same. `[]` is a writer declaring no blockers;
+          // a null is a field whose value is missing, which this reader cannot
+          // turn into a list without inventing one. Silent, it returned an
+          // empty list with no diagnostic — indistinguishable from `[]` — so
+          // `isUnreadDeclaration` said the declaration was fully read.
+          //
+          // Every OTHER recognised field already diagnoses a blank value:
+          // `duplicate-of:`, `serialize-with:`, `together-with:` through
+          // `parseRef('')`, and `priority:` / `evidence:` through their own
+          // arms. This was the one exception, which is what makes it an
+          // inconsistency rather than a tolerance.
+          //
+          // The block-list form is unaffected: `blocked-by:` with indented
+          // items has a blank scalar too, and the branch above claims it first.
+          diagnostics.push(
+            'issuegraph: blocked-by has no value (write [] to declare none); dropped',
+          );
           items = [];
         }
         const refs: IssueRef[] = [];

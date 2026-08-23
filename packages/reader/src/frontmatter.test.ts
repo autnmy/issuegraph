@@ -186,6 +186,37 @@ describe("parseFrontmatter", () => {
     assert.equal(isUnreadDeclaration(interior), true);
   });
 
+  test("a bare blocked-by is a null, and nulls are diagnosed like every other field", () => {
+    // The asymmetry that made this a defect: every other recognised field
+    // already diagnoses a blank value, and blocked-by silently became `[]` —
+    // which is a writer declaring NO blockers, not a field whose value is
+    // missing. A scheduler could not tell the two apart.
+    const block = (v: string[]): string => ["---", "issuegraph:", ...v, "---"].join("\n");
+
+    const bare = parseFrontmatter(block(["  blocked-by:"]));
+    assert.deepEqual(bare.data?.blockedBy, []);
+    assert.ok(bare.diagnostics.length > 0, "a null value must be diagnosed");
+    assert.equal(isUnreadDeclaration(bare), true);
+
+    // The BLOCK-LIST form has a blank scalar too, and must stay clean — this is
+    // the false positive a careless fix introduces, and it would fire on the
+    // most common spelling of the field there is.
+    const list = parseFrontmatter(block(["  blocked-by:", "    - 1", "    - 2"]));
+    assert.deepEqual(list.data?.blockedBy, [
+      { repo: null, number: 1 },
+      { repo: null, number: 2 },
+    ]);
+    assert.deepEqual(list.diagnostics, []);
+
+    // Every other field already behaved this way; pinned so the consistency is
+    // a property rather than a coincidence.
+    for (const field of ["duplicate-of:", "serialize-with:", "together-with:", "priority:", "evidence:"]) {
+      const r = parseFrontmatter(block([`  ${field}`]));
+      assert.ok(r.diagnostics.length > 0, field);
+      assert.equal(isUnreadDeclaration(r), true, field);
+    }
+  });
+
   test("an empty list and one trailing comma stay clean — the two non-entries", () => {
     // The other half of the rule, and the half a fix for the case above breaks
     // if it simply stops trimming: `[]` is a list a writer emits when it
