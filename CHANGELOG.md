@@ -6,7 +6,7 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 - **Packages workspace.** The repository is now a pnpm workspace publishing `@issuegraph/*` to npm, with CI that typechecks, builds, tests and enforces isolation, and a publish workflow that runs on an explicit GitHub release.
 - **`@issuegraph/spec` 0.1.0** — the specification's vocabulary as frozen constants and derived types. Its tests read SPEC.md §4.3 directly, so a field added to the spec and not to the package fails the build.
-- **Isolation guard.** `pnpm run check:isolation` refuses a forbidden dependency, a relative import escaping its own package, and a consumer's brand token in package source. Proved by tests that break each rule deliberately.
+- **Isolation guard.** `pnpm run check:isolation` refuses a forbidden dependency — by key, `npm:` alias target, or git URL — a relative import escaping its own package, and a consumer's brand token in any text a package ships, `package.json` metadata included. It scans by content rather than by an extension list, because what a package can publish is an open set. Proved by tests that break each rule deliberately.
 - **Version consistency.** SPEC.md §8 and the README both still said `v0.1.0` while the spec's own version header and this changelog said `0.2.0`. Corrected, and pinned by a test so the header and §8 cannot drift apart again.
 
 ## 0.2.0 — 2026-08-15

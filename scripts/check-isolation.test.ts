@@ -307,6 +307,47 @@ test('an ordinary manifest with a repository and homepage stays clean', () => {
   assert.deepEqual(findIsolationViolations(packagesDir), []);
 });
 
+test('a published JSON asset is scanned — there is no extension allowlist', () => {
+  const packagesDir = fixture(
+    { 'schema.json': '{"description":"Descant-specific schema"}\n' },
+    { files: ['schema.json'] },
+  );
+  assert.deepEqual(rulesFired(packagesDir), ['brand-leak']);
+});
+
+test('a file with NO extension at all is scanned', () => {
+  // A NOTICE is the case an extension list cannot express at all, which is the
+  // point of deciding by content instead.
+  const packagesDir = fixture({ NOTICE: 'Portions derived from Takumi.\n' });
+  assert.deepEqual(rulesFired(packagesDir), ['brand-leak']);
+});
+
+test('a YAML config is scanned', () => {
+  const packagesDir = fixture({ 'config.yaml': 'title: descant fixture\n' });
+  assert.deepEqual(rulesFired(packagesDir), ['brand-leak']);
+});
+
+test('a binary file is skipped rather than decoded', () => {
+  // The token's own bytes are in there, so this fails if binaries are read as
+  // text — and it would also catch the guard crashing on one.
+  const packagesDir = fixture({ 'src/index.ts': 'export const clean = true;\n' });
+  writeFileSync(
+    join(packagesDir, 'subject', 'logo.png'),
+    Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x00]), Buffer.from('descant')]),
+  );
+  assert.deepEqual(findIsolationViolations(packagesDir), []);
+});
+
+test('a manifest leak is reported once, not twice', () => {
+  // The file walk now reaches package.json too, so the manifest has to be
+  // excluded from it or checkManifest's finding is duplicated.
+  const packagesDir = fixture(
+    { 'src/index.ts': 'export const clean = true;\n' },
+    { description: 'Extracted from the Descant pipeline' },
+  );
+  assert.equal(findIsolationViolations(packagesDir).length, 1);
+});
+
 test('a directory under packages with no package.json is not scanned', () => {
   const packagesDir = fixture({ 'src/index.ts': CLEAN_SOURCE, 'src/helper.ts': HELPER_SOURCE });
   const stray = join(packagesDir, 'not-a-package', 'src');

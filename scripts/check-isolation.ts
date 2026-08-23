@@ -16,10 +16,11 @@
  * - `package-escape` — a relative specifier that resolves outside its own
  *   package. This is how a source file reaches a sibling package's internals,
  *   or the repository root, without ever naming Descant.
- * - `brand-leak` — a Descant brand token anywhere a package publishes text: its
- *   source, its README, and its `package.json` metadata. An import scan cannot
- *   see a leak that arrives as an identifier, a doc comment, or a `description`,
- *   and npm ships all three to every installer.
+ * - `brand-leak` — a Descant brand token in ANY text file under a package, plus
+ *   its `package.json` metadata. Not an extension list: what a package can
+ *   publish is an open set — source, README, a JSON schema, a NOTICE — so a list
+ *   of what to scan is always one member short. Everything is read and binaries
+ *   are skipped by content.
  *
  * The rules are disjoint by construction: `brand-leak` scans the source with the
  * specifiers the OTHER rules own blanked out, so a forbidden import is reported
@@ -55,16 +56,6 @@ export interface Violation {
 const FORBIDDEN_SCOPES = Object.freeze(['@descant', '@takumi'] as const);
 const FORBIDDEN_PACKAGES = Object.freeze(['descant', 'takumi'] as const);
 const BRAND_TOKEN = /\b(descant|takumi)\b/i;
-
-/**
- * What gets scanned. Markdown is in the list because a package's README is
- * published with it — `files` ships it to the registry — so a brand token there
- * is exactly as public as one in the code, and an extension list covering only
- * code would leave the most-read file in the package unguarded.
- */
-const SOURCE_EXTENSIONS = Object.freeze([
-  '.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.md',
-] as const);
 
 const SKIPPED_DIRECTORIES = Object.freeze(['node_modules', 'dist', '.git', 'coverage'] as const);
 
@@ -140,19 +131,41 @@ function lineOf(text: string, index: number): number {
   return line;
 }
 
-function listSourceFiles(dir: string): string[] {
+/**
+ * Every file under a package, minus the build and tooling directories.
+ *
+ * Deliberately NOT an extension allowlist. This started as one — code, then
+ * Markdown when a README leak was found — and each round named another surface
+ * it did not cover: a published `schema.json`, a `NOTICE`, a YAML config. The
+ * set of things a package can publish is open, so a list of what to scan is a
+ * list that is always one member short. Scanning everything and deciding by
+ * CONTENT closes that: a file type invented tomorrow is covered tomorrow.
+ */
+function listScannedFiles(dir: string): string[] {
   const found: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (entry.isDirectory()) {
       if ((SKIPPED_DIRECTORIES as readonly string[]).includes(entry.name)) continue;
-      found.push(...listSourceFiles(join(dir, entry.name)));
+      found.push(...listScannedFiles(join(dir, entry.name)));
       continue;
     }
-    if (SOURCE_EXTENSIONS.some((extension) => entry.name.endsWith(extension))) {
-      found.push(join(dir, entry.name));
-    }
+    if (entry.isFile()) found.push(join(dir, entry.name));
   }
   return found;
+}
+
+/**
+ * A file's text, or `undefined` when it is not text at all.
+ *
+ * A NUL byte in the first block is the usual, cheap discriminator: no UTF-8 text
+ * contains one, and every common binary format does within its header. Skipping
+ * a binary matters for more than speed — decoding one as UTF-8 produces
+ * replacement characters that could match anything.
+ */
+function readTextOrSkip(file: string): string | undefined {
+  const buffer = readFileSync(file);
+  if (buffer.subarray(0, 8000).includes(0)) return undefined;
+  return buffer.toString('utf8');
 }
 
 function listPackageDirectories(packagesDir: string): string[] {
@@ -244,8 +257,7 @@ function checkManifest(packagesDir: string, packageDir: string): Violation[] {
   return violations;
 }
 
-function checkSourceFile(packagesDir: string, packageDir: string, file: string): Violation[] {
-  const text = readFileSync(file, 'utf8');
+function checkScannedFile(packagesDir: string, packageDir: string, file: string, text: string): Violation[] {
   const where = relative(packagesDir, file);
   const violations: Violation[] = [];
 
@@ -316,8 +328,14 @@ export function findIsolationViolations(packagesDir: string): Violation[] {
   const violations: Violation[] = [];
   for (const packageDir of listPackageDirectories(packagesDir)) {
     violations.push(...checkManifest(packagesDir, packageDir));
-    for (const file of listSourceFiles(packageDir)) {
-      violations.push(...checkSourceFile(packagesDir, packageDir, file));
+    const manifestPath = join(packageDir, 'package.json');
+    for (const file of listScannedFiles(packageDir)) {
+      // checkManifest owns the package's own manifest; scanning it again here
+      // would report one leak twice.
+      if (file === manifestPath) continue;
+      const text = readTextOrSkip(file);
+      if (text === undefined) continue;
+      violations.push(...checkScannedFile(packagesDir, packageDir, file, text));
     }
   }
   return violations.sort(
