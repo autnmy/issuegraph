@@ -206,6 +206,53 @@ describe("parseFrontmatter", () => {
     assert.deepEqual(nested.diagnostics, []);
   });
 
+  test("a quoted TOP-LEVEL key is the same key too", () => {
+    // The worst reading in the whole module: `"issuegraph":` returned
+    // data null, NO diagnostics and NO block defect — byte-identical to a body
+    // that never carried a block. A scheduler cannot distinguish "no
+    // dependencies" from "dependencies it could not see", so it dispatches.
+    for (const spelling of ['"issuegraph":', "'issuegraph':", "issuegraph :", "issuegraph\t:"]) {
+      const r = parseFrontmatter(["---", spelling, "  blocked-by: [1]", "---"].join("\n"));
+      assert.deepEqual(r.data?.blockedBy, [{ repo: null, number: 1 }], spelling);
+      assert.deepEqual(r.diagnostics, [], spelling);
+    }
+  });
+
+  test("an inert key containing a colon does not refuse the block", () => {
+    // A regression this PR introduced and then removed: once the separator was
+    // required, `indexOf(':')` picked the colon INSIDE a quoted extension key,
+    // the separator test failed on it, and a whole valid declaration became
+    // unread. §4.1 says an unrecognized field is inert — it must not be able to
+    // refuse the fields beside it.
+    const r = parseFrontmatter(
+      ["---", "issuegraph:", '  "extension:foo": v', "  blocked-by: [1]", "---"].join("\n"),
+    );
+    assert.deepEqual(r.data?.blockedBy, [{ repo: null, number: 1 }]);
+    assert.deepEqual(r.diagnostics, []);
+  });
+
+  test("the exported pattern is a SUPERSET of what the parser accepts", () => {
+    // The invariant a PREFILTER owes, and deliberately not equality: its job is
+    // to decide whether a body is worth parsing, on the other side of a
+    // language boundary. A false positive costs one parse that finds nothing; a
+    // false negative means a declaration is never fetched and silently does not
+    // exist. Equality would break the first time the two legitimately diverge.
+    const prefilter = new RegExp(`^${FRONTMATTER_KEY_PATTERN}`);
+    for (const spelling of [
+      "issuegraph:",
+      '"issuegraph":',
+      "'issuegraph':",
+      "issuegraph :",
+      "issuegraph\t:",
+    ]) {
+      const body = ["---", spelling, "  blocked-by: [1]", "---"].join("\n");
+      assert.deepEqual(parseFrontmatter(body).data?.blockedBy, [{ repo: null, number: 1 }], spelling);
+      assert.ok(prefilter.test(spelling), `prefilter must not miss ${spelling}`);
+    }
+    // It still discriminates: a different key is not a candidate at all.
+    assert.equal(prefilter.test("not-issuegraph:"), false);
+  });
+
   test("a quoted key is the same key", () => {
     const block = (...v: string[]): string => ["---", "issuegraph:", ...v, "---"].join("\n");
 

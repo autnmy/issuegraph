@@ -74,8 +74,19 @@ import {
  * and `*`. Do not add anything outside that subset without checking what else
  * derives a predicate from it — and pin the translation with a behavioural
  * test, because a shared STRING cannot prove two dialects read it the same way.
+ *
+ * IT OVER-MATCHES ON PURPOSE, which is why the quote handling is `*` and not
+ * the `?` the grammar would suggest: `?` is outside that shared subset, and a
+ * prefilter has no use for the precision. This answers "could this body carry a
+ * block?", never "is this line the key". A false positive costs one parse that
+ * finds nothing; a false negative means a declaration is never fetched and
+ * silently does not exist. So it accepts spellings the parser will go on to
+ * reject, unbalanced quotes included, and {@link readMappingEntry} is what
+ * actually decides. This module's test asserts the pattern is a SUPERSET of
+ * what the parser accepts, which is the invariant a prefilter owes; asserting
+ * equality would break the first time the two legitimately diverge.
  */
-export const FRONTMATTER_KEY_PATTERN = `${FRONTMATTER_KEY}[ \\t]*:`;
+export const FRONTMATTER_KEY_PATTERN = `["']*${FRONTMATTER_KEY}["']*[ \\t]*:`;
 
 /**
  * The accepted key LINE: {@link FRONTMATTER_KEY_PATTERN} anchored to a
@@ -254,6 +265,46 @@ function stripComment(s: string): string {
     }
   }
   return s;
+}
+
+/**
+ * Read one `key: value` mapping entry, or null when the line is not one.
+ *
+ * THE ONE PLACE THIS MODULE DECIDES WHAT A KEY IS. The rule used to be spelled
+ * three times — a regex for the top-level key, `indexOf(':')` for a child's
+ * separator, and a `stripQuotes` on the child's key — and each spelling knew a
+ * different amount about quoting. Review found a defect at every one of them,
+ * in order, because fixing one site left the rule stated differently at the
+ * other two: a quoted child key read as an inert extension; then a quoted
+ * top-level key read as NO BLOCK AT ALL; then a colon inside a quoted key made
+ * `indexOf` pick the wrong one and refuse the whole block.
+ *
+ * Three rules, in one place, so a fourth quoting corner is one edit:
+ *
+ *   - the mapping colon is the first one OUTSIDE quotes;
+ *   - it must be followed by whitespace or end-of-line, which is what makes
+ *     `blocked-by:[1]` a plain scalar to YAML and therefore not a field here;
+ *   - a quoted key is the same key, since YAML reads `"blocked-by"` and
+ *     `blocked-by` identically.
+ *
+ * Its remaining limit is the subset's everywhere: an ESCAPED quote inside a key
+ * is not tracked, so such a key mis-locates its colon. That fails toward an
+ * unparseable line rather than toward a wrong field.
+ */
+function readMappingEntry(line: string): { key: string; scalar: string } | null {
+  let inSingle = false;
+  let inDouble = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === "'" && !inDouble) inSingle = !inSingle;
+    else if (c === '"' && !inSingle) inDouble = !inDouble;
+    else if (c === ':' && !inSingle && !inDouble) {
+      const after = line[i + 1];
+      if (after !== undefined && after !== ' ' && after !== '\t') return null;
+      return { key: stripQuotes(line.slice(0, i).trim()), scalar: line.slice(i + 1).trim() };
+    }
+  }
+  return null;
 }
 
 /**
@@ -480,15 +531,15 @@ export function parseFrontmatter(body: string): ParseResult {
     }
 
     if (indent === 0) {
-      if (FRONTMATTER_KEY_LINE.test(line)) {
+      const topLevel = readMappingEntry(line);
+      if (topLevel !== null && topLevel.key === FRONTMATTER_KEY) {
         if (sectionSeen) {
           // A later claimant is ignored — and it also ENDS the active section,
           // or an adjacent duplicate's children would merge into the first.
           inSection = false;
           continue;
         }
-        const after = line.replace(FRONTMATTER_KEY_LINE, '').trim();
-        if (after.length > 0) {
+        if (topLevel.scalar.length > 0) {
           // Flow-map or scalar value on the key itself is outside the subset.
           diagnostics.push(
             'issuegraph: inline value on the top-level key is outside the supported subset; block ignored',
@@ -577,32 +628,19 @@ export function parseFrontmatter(body: string): ParseResult {
       current = null;
       continue;
     }
-    const colon = trimmed.indexOf(':');
-    // A BLOCK-MAPPING COLON MUST BE FOLLOWED BY WHITESPACE OR END-OF-LINE.
-    // Without that test `blocked-by:[1]` and `priority:0` parsed as fields,
-    // while a conforming YAML reader sees a plain SCALAR — so this reader
-    // derived edges and priorities that another reader, reading the same body,
-    // does not have. Two conforming readers disagreeing about the graph is the
-    // one failure a reference implementation cannot ship.
-    //
-    // It degrades the whole block through the same arm as any other unparseable
-    // line, and that is faithful rather than heavy-handed: a section whose
-    // children are a scalar, or a mixture of a scalar and mapping entries, is
-    // not a mapping in YAML either.
-    const separated = colon !== -1 && (colon + 1 === trimmed.length || trimmed[colon + 1] === ' ' || trimmed[colon + 1] === '\t');
-    if (!separated) {
+    // A line that is not a mapping entry degrades the block, and that is
+    // faithful rather than heavy-handed: a section whose children are a scalar,
+    // or a mixture of a scalar and mapping entries, is not a mapping in YAML
+    // either. What COUNTS as a mapping entry is {@link readMappingEntry}'s
+    // single answer rather than a rule respelled here — which is what stopped
+    // this line growing a new special case per quoting corner.
+    const entry = readMappingEntry(trimmed);
+    if (entry === null) {
       sectionContentInvalid = true;
       diagnostics.push(`issuegraph: unparseable line ("${trimmed}"); ignored`);
       continue;
     }
-    // QUOTED KEYS ARE THE SAME KEYS. YAML reads `"blocked-by"` and `blocked-by`
-    // as one key, and leaving the quotes on made `isField` classify the quoted
-    // spelling as an inert extension — so quoting a key made a declared
-    // dependency disappear while the declaration reported itself fully read.
-    // Stripped BEFORE the repeat guard below, so the two spellings collide as
-    // the duplicate they are rather than passing as two different fields.
-    const key = stripQuotes(trimmed.slice(0, colon).trim());
-    const scalar = trimmed.slice(colon + 1).trim();
+    const { key, scalar } = entry;
     // A REPEATED RECOGNIZED KEY IS A MALFORMED MAPPING, and letting the last
     // one win discards a declaration in silence: `blocked-by: [123]` followed
     // by `blocked-by: []` returned no blockers and no diagnostic, so the issue
