@@ -777,3 +777,52 @@ test('a CLOSED member of a together unit does not hold its open groupmates', () 
   );
 });
 
+test('a groupmate holding the unit claim is not a serialize rival', () => {
+  // #5 and #6 are serialize-with in the seed and #6 is actively claimed. Group
+  // them: the claim expands across the together unit, and reading that
+  // expansion back as competition made each member exclude the other — a
+  // `serialized` hold for a group nobody else was working. A together
+  // component is ONE atomic claim, not two rivals.
+  const document = seedDocument();
+  const grouped = explainOrder(
+    { issues: document.issues, edges: [...document.edges, makeEdge('together-with', '5', '6')] },
+    seedHolds(),
+  );
+  for (const ref of ['5', '6']) {
+    const member = grouped.find((each) => each.issue.ref === ref);
+    assert.ok(member, `no row for ${ref}`);
+    assert.ok(
+      !member.holds.some((hold) => hold.label === 'serialized'),
+      `${ref} is excluded by its own claim unit`,
+    );
+  }
+
+  // CONTROL 1: an OUTSIDE issue serialized with the claimed unit is still
+  // excluded — otherwise this passes against a build that stopped enforcing
+  // serialize admission at all.
+  const outsider = explainOrder(
+    {
+      issues: document.issues,
+      edges: [
+        ...document.edges,
+        makeEdge('together-with', '5', '6'),
+        makeEdge('serialize-with', '4', '6'),
+      ],
+    },
+    seedHolds(),
+  ).find((each) => each.issue.ref === '4');
+  assert.ok(outsider);
+  assert.ok(
+    outsider.holds.some((hold) => hold.label === 'serialized'),
+    'the control failed: an outsider should still be excluded by the claimed unit',
+  );
+
+  // CONTROL 2: ungrouped, #5 IS excluded by claimed #6 — the seed's own case,
+  // which must not regress.
+  const ungrouped = explainOrder(document, seedHolds()).find((each) => each.issue.ref === '5');
+  assert.ok(ungrouped);
+  assert.ok(
+    ungrouped.holds.some((hold) => hold.label === 'serialized'),
+    'the control failed: an ungrouped serialize partner should be excluded',
+  );
+});

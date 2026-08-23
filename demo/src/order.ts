@@ -550,8 +550,17 @@ function ownHolds(ref: IssueRef, at: Index): Hold[] {
   }
   const serialize = at.serialize.get(ref);
   if (serialize !== undefined) {
+    const unit = at.together.get(ref);
     for (const member of serialize) {
       if (member === ref) continue;
+      // A GROUPMATE IS NOT A RIVAL. A together component is ONE atomic claim
+      // (§4.3.7), so a member of this issue's own unit holding that claim is
+      // this issue's claim too — not a second worker competing for the same
+      // semaphore. Expanding the claim across the unit and then reading the
+      // expansion back as competition made two members of one unit exclude
+      // each other, and both acquired a `serialized` hold for a group nobody
+      // else was working.
+      if (unit !== undefined && unit.has(member)) continue;
       // §6.2 rule 4: admission turns on an ACTIVELY-CLAIMED member. `at.claimed`
       // already carries the together expansion, so claiming one member of a
       // unit excludes the group through any of them.
