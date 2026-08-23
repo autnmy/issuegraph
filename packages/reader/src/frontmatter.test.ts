@@ -186,6 +186,30 @@ describe("parseFrontmatter", () => {
     assert.equal(isUnreadDeclaration(interior), true);
   });
 
+  test("a repeated recognized key is malformed, not last-one-wins", () => {
+    // The silent-discard shape: the second declaration overwrote the first and
+    // said nothing, so an issue that named a dependency read as fully declared
+    // and unblocked.
+    const block = (...v: string[]): string => ["---", "issuegraph:", ...v, "---"].join("\n");
+
+    for (const repeated of [
+      ["  blocked-by: [123]", "  blocked-by: []"],
+      ["  blocked-by: [123]", "  blocked-by: [7]"],
+      ["  priority: 0", "  priority: 3"],
+    ]) {
+      const r = parseFrontmatter(block(...repeated));
+      assert.equal(r.data, null, repeated.join(" / "));
+      assert.ok(r.diagnostics.some((d) => d.includes("declared more than once")), repeated.join(" / "));
+      assert.equal(isUnreadDeclaration(r), true, repeated.join(" / "));
+    }
+
+    // An UNRECOGNIZED field is inert (§4.1), so repeating one decides nothing
+    // and must not degrade a block whose recognized fields are fine.
+    const inert = parseFrontmatter(block("  extension: a", "  extension: b", "  blocked-by: [5]"));
+    assert.deepEqual(inert.data?.blockedBy, [{ repo: null, number: 5 }]);
+    assert.deepEqual(inert.diagnostics, []);
+  });
+
   test("a mapping colon needs whitespace or end-of-line after it", () => {
     // `blocked-by:[1]` is a plain SCALAR to a conforming YAML reader, not a
     // field — so reading it as one made this reader derive an edge that another

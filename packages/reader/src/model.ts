@@ -668,6 +668,14 @@ export function buildModel(
   const baseReasons = (k: string, togetherMembers: ReadonlySet<string> | null): string[] => {
     const n = byKey.get(k) as ModelNode;
     const reasons: string[] = [];
+    // A WEAK NODE IS NEVER READY, whatever its own copy says — and the refusal
+    // lives HERE, in the one function every readiness path runs through, rather
+    // than at the entry to `readiness`. It was at that entry first, and the
+    // together-member loop calls this function directly, so a full node whose
+    // unit contained a weak member read ready while the unit it would claim
+    // atomically (§4.3.7) contained a node the model refuses to select. A guard
+    // at one of two doors is not a guard.
+    if (n.declarerOnly === true) reasons.push('declared by a weak source; not selectable');
     if (!n.open) reasons.push('closed');
     if (duplicateCanonicalOf(k) !== null) reasons.push('duplicate-of another issue');
     for (const b of blockersOf.get(k) ?? []) {
@@ -725,18 +733,7 @@ export function buildModel(
   };
 
   const readiness = (key: string): ReadinessResult => {
-    const self = byKey.get(key);
-    if (self === undefined) return { ready: false, reasons: ['unknown node'] };
-    // A WEAK NODE IS NEVER READY, whatever its own copy says. Keeping it out of
-    // `keys` stops a scheduler reaching it by enumeration; this stops one
-    // reaching it any other way. Reporting `ready` for a node the model was
-    // told not to trust is the tier turning weak data into an admission, which
-    // is the one thing it exists to prevent — and a stale open-looking copy of
-    // an issue that has since been closed or claimed is exactly the shape that
-    // arrives here.
-    if (self.declarerOnly === true) {
-      return { ready: false, reasons: ['declared by a weak source; not selectable'] };
-    }
+    if (!byKey.has(key)) return { ready: false, reasons: ['unknown node'] };
     const togetherMembers = componentMembers(together, key);
     if (togetherMembers.length <= 1) {
       const reasons = baseReasons(key, null);

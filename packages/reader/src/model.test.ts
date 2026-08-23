@@ -601,6 +601,17 @@ describe("declarer-only nodes declare but never answer", () => {
     assert.equal(m.declaredPriority("40").value, 2);
   });
 
+  test("a unit containing a weak member is not ready, from either side", () => {
+    // §4.3.7 makes the claim atomic, so a unit is selectable only if every
+    // member is. A weak member is by definition not — and the refusal has to
+    // reach the FULL node, because that is the key a scheduler holds.
+    const weak = declarerOnlyNode(node(40, { data: { togetherWith: ref(1) } }));
+    const m = buildModel([node(1)], { declarerOnlyNodes: [weak] });
+    assert.deepEqual(m.togetherComponent("1"), ["1", "40"], "the weak node's own edge still unions");
+    assert.equal(m.readiness("1").ready, false, "the full node it would be claimed with");
+    assert.equal(m.readiness("40").ready, false, "and the weak member itself");
+  });
+
   test("REGRESSION: a weak node's duplicate-of never satisfies somebody's blocked-by", () => {
     // The sharpest form of the contract, and the way it was broken: adding the
     // weak node REMOVED a refusal. Its stale `duplicate-of` carried the

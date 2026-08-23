@@ -584,6 +584,24 @@ export function parseFrontmatter(body: string): ParseResult {
     }
     const key = trimmed.slice(0, colon).trim();
     const scalar = trimmed.slice(colon + 1).trim();
+    // A REPEATED RECOGNIZED KEY IS A MALFORMED MAPPING, and letting the last
+    // one win discards a declaration in silence: `blocked-by: [123]` followed
+    // by `blocked-by: []` returned no blockers and no diagnostic, so the issue
+    // read as fully declared and unblocked while the dependency it named was
+    // thrown away.
+    //
+    // STRUCTURAL, not a dropped field. Dropping the field would leave the
+    // safety hole pointing the wrong way — an issue with no blockers looks
+    // schedulable to anything reading `data` alone — so this degrades the whole
+    // block, which is also what a strict YAML reader does with a duplicate key.
+    //
+    // Only RECOGNIZED keys, because §4.1 makes an unrecognized field inert and
+    // a repeated inert field decides nothing here.
+    if (isField(key) && entries.some((e) => e.key === key)) {
+      sectionContentInvalid = true;
+      diagnostics.push(`issuegraph: ${key} is declared more than once; block ignored`);
+      continue;
+    }
     current = { key, scalar, blockItems: [], itemIndent: -1 };
     entries.push(current);
   }
