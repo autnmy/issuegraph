@@ -14,7 +14,7 @@
  *   Same reason: the walk belongs with the derivation, not beside it.
  */
 
-import type { GraphDocument, IssueRef, StoredEdge } from './model.ts';
+import type { GraphDocument, IssueRef } from './model.ts';
 import type { InvalidReason, Mutation } from './mutation.ts';
 
 /**
@@ -28,14 +28,15 @@ import type { InvalidReason, Mutation } from './mutation.ts';
  * retry is a user act (the `retry` on a failed edge), so an adapter must not
  * assume an idempotency it has not been given.
  *
- * **It also dispatches ONE AT A TIME**, queueing the rest. `applied` carries a
- * full authoritative snapshot and this interface gives it no version, so two of
- * them in flight cannot be ordered by anything the store can observe: the later
- * answer arriving first, then the earlier one, silently rolls a landed edge back
- * out of the document — after which the order derives from a backlog missing a
- * real relationship. Adding a version here would push bookkeeping onto every
- * adapter, so the store declines to create the situation instead. An adapter may
- * therefore assume its `dispatch` is never re-entered.
+ * **It also runs ONE AUTHORITATIVE OPERATION AT A TIME**, queueing the rest.
+ * `hydrate` and an `applied` `dispatch` both answer with a full authoritative
+ * document and this interface gives neither a version, so two in flight cannot
+ * be ordered by anything the store can observe: the later answer arriving
+ * first, then the earlier one, silently rolls an edge back out — after which
+ * the order derives from a backlog missing a real relationship. Adding a
+ * version here would push bookkeeping onto every adapter, so the store declines
+ * to create the situation instead. An adapter may therefore assume its
+ * `dispatch` is never re-entered, and never overlapped by a `hydrate`.
  */
 export interface DataSource {
   /** The whole document. Called on `hydrate()` and again on `rehydrate()`. */
@@ -55,14 +56,22 @@ export interface DataSource {
 export type DispatchResult =
   | {
       /**
-       * The edit landed. `edges` is the AUTHORITATIVE full edge set afterwards,
-       * not a patch and not a slice: a partial answer would need merge rules,
-       * and merge rules are exactly where an optimistic store goes wrong. The
+       * The edit landed. `document` is the AUTHORITATIVE state afterwards, not
+       * a patch and not a slice: a partial answer would need merge rules, and
+       * merge rules are exactly where an optimistic store goes wrong. The
        * document is small enough to be client-side by construction, so sending
        * all of it removes the whole class.
+       *
+       * A WHOLE DOCUMENT, ISSUES INCLUDED — not an edge set. When this answered
+       * with edges alone, "what the store holds is newer" was true of edges and
+       * false of issues, so the store's freshness question had two dimensions
+       * and only one of them was tracked: a conflict snapshot skipped as stale
+       * threw away the only copy of the issue updates it carried. One kind of
+       * authoritative answer collapses that back to one question. An adapter
+       * that changed no issues simply returns the ones it holds.
        */
       readonly outcome: 'applied';
-      readonly edges: readonly StoredEdge[];
+      readonly document: GraphDocument;
     }
   | {
       /** Nothing upstream differed. The store clears the pending write and adopts nothing. */

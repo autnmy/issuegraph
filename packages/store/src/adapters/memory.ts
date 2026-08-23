@@ -88,7 +88,7 @@ export function createMemorySource(seed: GraphDocument): MemorySource {
         return Promise.resolve({ outcome: 'unchanged' });
       }
       document = { issues: document.issues, edges };
-      return Promise.resolve({ outcome: 'applied', edges });
+      return Promise.resolve({ outcome: 'applied', document });
     },
   };
 }

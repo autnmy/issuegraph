@@ -161,6 +161,15 @@ export function createStore(config: StoreConfig): Store {
   let lastChange: OrderChange | undefined;
   let orderError: string | undefined;
   let sequence = 0;
+  /**
+   * The edit the summary would belong to.
+   *
+   * A summary is written when a write LANDS, which can be after a newer edit
+   * has already started — and the contract is that a summary lasts until the
+   * next edit. Without this, a host shows the previous edit's blast radius
+   * beside the one the user is making now.
+   */
+  let currentProposal: MutationId | undefined;
   /** Bumped every time `landed` actually changes. See the conflict record's `landedAt`. */
   let landedGeneration = 0;
   /**
@@ -315,7 +324,11 @@ export function createStore(config: StoreConfig): Store {
     const recovering = orderError !== undefined;
     orderError = undefined;
     rows = next;
-    if (cause !== undefined && !recovering) lastChange = diffOrder(previous, rows, cause);
+    // Only for the edit that is still the current one. A landing that a newer
+    // proposal has already overtaken has no summary to publish — the newer edit
+    // owns that slot, and will fill it when it lands.
+    const overtaken = cause !== undefined && cause.mutationId !== currentProposal;
+    if (cause !== undefined && !recovering && !overtaken) lastChange = diffOrder(previous, rows, cause);
   }
 
   function recordFor(mutationId: MutationId): WriteRecord | undefined {
@@ -378,7 +391,7 @@ export function createStore(config: StoreConfig): Store {
 
     switch (result.outcome) {
       case 'applied': {
-        adopt({ issues: landed.issues, edges: result.edges });
+        adopt(result.document);
         dropRecord(mutation.mutationId);
         reDerive(mutation);
         break;
@@ -428,6 +441,7 @@ export function createStore(config: StoreConfig): Store {
     // makes that true: left standing, a host would show the previous edit's
     // blast radius beside the edit the user is making now.
     lastChange = undefined;
+    currentProposal = mutation.mutationId;
     const settled = new Promise<void>((resolve) => settlers.set(mutation.mutationId, resolve));
     const refusal = refusalFor(mutation);
     if (refusal !== undefined) {

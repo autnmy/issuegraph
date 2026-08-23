@@ -105,7 +105,7 @@ export function createScriptedSource(
       return;
     }
     document = apply(document, entry.mutation);
-    entry.resolve({ outcome: 'applied', edges: document.edges });
+    entry.resolve({ outcome: 'applied', document });
   }
 
   return {

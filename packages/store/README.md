@@ -64,19 +64,22 @@ interface DataSource {
 
 | outcome | what it means | what the store does |
 |---|---|---|
-| `applied` | the edit landed; carries the **whole** resulting edge set | adopts it, re-derives the order, emits a change summary |
+| `applied` | the edit landed; carries the **whole** resulting document | adopts it, re-derives the order, emits a change summary |
 | `unchanged` | nothing upstream differed | clears the pending write, adopts nothing, re-derives nothing |
 | `rejected` | the write was refused; carries a reason | marks the edge `failed` and offers `retry` |
 | `conflict` | the document moved upstream mid-edit; carries the current one | marks the edge `conflict` and holds **both** versions |
 
 Three contracts an adapter has to honour:
 
-- **`applied` carries the authoritative full edge set, not a patch.** A partial answer would
-  need merge rules, and merge rules are where an optimistic store goes wrong.
+- **`applied` carries the authoritative full document — issues included — not a patch.** A
+  partial answer would need merge rules, and merge rules are where an optimistic store goes
+  wrong. Issues too, so that `hydrate`, `applied` and `conflict` all mean one thing by
+  "authoritative": when they meant two, the store's freshness question had two dimensions and
+  only one was tracked. An adapter that changed no issues returns the ones it holds.
 - **The store dispatches once per mutation and never retries on its own.** A retry is a user
   act, so nothing here assumes an idempotency you have not been given.
 - **The store runs one authoritative operation at a time**, queueing the rest, so `dispatch`
-  is never re-entered and never overlaps a `hydrate`. Both calls answer with an unversioned
+  is never re-entered and never overlaps a `hydrate`. Both answer with an unversioned
   authoritative document, and two of those in flight cannot be ordered by anything the store
   can observe — whichever answers second wins, and if that is the older one it silently rolls
   an edge back out. Rather than push a version onto every adapter, the store declines to
@@ -174,7 +177,13 @@ that removes an optimistic edit, and a person has to make it.
 A conflict can sit unresolved while later edits land, so both resolutions adopt the recorded
 upstream **only while nothing has landed since it was taken.** Once something has, `landed`
 came from a later full authoritative answer and already knows everything the recorded
-snapshot did; adopting the older one would roll the intervening edit back.
+snapshot did; adopting the older one would roll the intervening edit back. That reasoning is
+sound only because every authoritative answer is a whole document — which is why `applied`
+carries one.
+
+`lastChange` belongs to the edit that is **current when it lands**. Two edits proposed before
+the first settles means the first's summary would otherwise be written after the second began,
+and a host would show the previous edit's blast radius beside the current one.
 
 ## Two smaller contracts worth knowing
 

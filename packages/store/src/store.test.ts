@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { type GraphDocument, edgeId } from './model.ts';
+import { type GraphDocument, edgeId, makeEdge } from './model.ts';
 import type { EdgeGuard, OrderDeriver, OrderRow } from './source.ts';
 import { createStore } from './store.ts';
 import { createMemorySource } from './adapters/memory.ts';
@@ -670,5 +670,90 @@ test('a refusal whose reason changed is republished, not reused', async () => {
     second?.state === 'invalid' ? second.reason.code : undefined,
     'unknown-edge',
     'the published reason must be the current one',
+  );
+});
+
+test('issue updates are not lost when a conflict is resolved after another edit lands', async () => {
+  // `applied` used to answer with edges alone while `conflict` answered with a
+  // whole document, so "landed is newer" was true of edges and false of issues:
+  // skipping a stale conflict snapshot threw away the only copy of the issue
+  // updates it carried, and a closed issue reads as open until a rehydrate.
+  const upstream: GraphDocument = {
+    issues: [
+      { ref: '1', title: 'Issue 1', state: 'closed' },
+      { ref: '2', title: 'Issue 2', state: 'open' },
+      { ref: '3', title: 'Issue 3', state: 'open' },
+    ],
+    edges: [],
+  };
+  let answer: 'conflict' | 'applied' = 'conflict';
+  const store = createStore({
+    source: {
+      hydrate: () => Promise.resolve(threeOpenIssues()),
+      dispatch: () =>
+        answer === 'conflict'
+          ? Promise.resolve({ outcome: 'conflict' as const, upstream })
+          : Promise.resolve({
+              outcome: 'applied' as const,
+              // The adapter answers with what it holds — issues included.
+              document: { issues: upstream.issues, edges: [makeEdge('duplicate-of', '3', '1')] },
+            }),
+    },
+    derive: simpleDeriver,
+  });
+  await store.hydrate();
+
+  const conflicted = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  await conflicted.settled;
+  assert.equal(store.getSnapshot().writes[0]?.state, 'conflict');
+
+  answer = 'applied';
+  const later = store.propose({ op: 'create', kind: 'duplicate-of', from: '3', to: '1' });
+  await later.settled;
+
+  store.discardMine(conflicted.mutationId);
+
+  const snapshot = store.getSnapshot();
+  assert.equal(
+    snapshot.issues.find((issue) => issue.ref === '1')?.state,
+    'closed',
+    'the issue update must survive, whichever answer carried it',
+  );
+  assert.deepEqual(
+    snapshot.landed.map((edge) => edge.id),
+    [edgeId('duplicate-of', '3', '1')],
+    'and the later edit is still landed',
+  );
+});
+
+test('a settling edit does not republish its summary once a newer edit has started', async () => {
+  // The contract is that a summary lasts until the NEXT edit. Two edits
+  // proposed before the first settles means the first's summary is written
+  // after the second began, so a host shows the previous edit's blast radius
+  // beside the current one.
+  const source = createScriptedSource(threeOpenIssues(), applyEdit);
+  const store = createStore({ source, derive: simpleDeriver });
+  await store.hydrate();
+
+  const first = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  const second = store.propose({ op: 'create', kind: 'duplicate-of', from: '3', to: '1' });
+
+  await source.whenPending(first.mutationId);
+  source.settleNext('applied');
+  await first.settled;
+
+  assert.equal(
+    store.getSnapshot().lastChange,
+    undefined,
+    'the first edit is no longer the current one, so its summary is not published',
+  );
+
+  await source.whenPending(second.mutationId);
+  source.settleNext('applied');
+  await second.settled;
+  assert.equal(
+    store.getSnapshot().lastChange?.mutation.mutationId,
+    second.mutationId,
+    'the summary belongs to the edit that is current when it lands',
   );
 });

@@ -61,14 +61,20 @@ test('a symmetric edge written the other way round is one edge, and the second i
   assert.equal(source.current().edges.length, 1);
 });
 
-test('an applied result carries the whole edge set, not a patch', async () => {
+test('an applied result carries the whole document, not a patch', async () => {
   const source = createMemorySource(withEdge(threeOpenIssues(), 'blocked-by', '1', '2'));
   const result = await source.dispatch(edit({ op: 'create', kind: 'duplicate-of', from: '3', to: '1' }));
   assert.equal(result.outcome, 'applied');
   if (result.outcome !== 'applied') return;
   assert.deepEqual(
-    [...result.edges].map((edge) => edge.kind).sort(),
+    [...result.document.edges].map((edge) => edge.kind).sort(),
     ['blocked-by', 'duplicate-of'],
+  );
+  // Issues too: an answer that carried edges alone made the store's freshness
+  // question two-dimensional, and only one dimension was tracked.
+  assert.deepEqual(
+    result.document.issues.map((issue) => issue.ref),
+    ['1', '2', '3'],
   );
 });
 
