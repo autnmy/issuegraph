@@ -172,6 +172,52 @@ describe("declared and effective priority (SPEC 4.3.5 / 6.3)", () => {
     assert.equal(fromDefault.source, "default");
   });
 
+  test("a together unit shares the highest priority among its members (SPEC 6.3)", () => {
+    // "A together group's effective priority is the highest over its members."
+    // Read in BOTH directions, because a relaxation that only walks one way
+    // settles the component on whichever member the worklist happened to pop
+    // first.
+    const m = buildModel([
+      node(1, { labels: ["p0"], data: { togetherWith: ref(2) } }),
+      node(2, { labels: ["p3"] }),
+    ]);
+    assert.equal(m.effectivePriority("1"), 0);
+    assert.equal(m.effectivePriority("2"), 0);
+    assert.equal(m.declaredPriority("2").value, 3, "the DECLARED value is untouched");
+  });
+
+  test("a together unit's urgency reaches the blockers of its raised member", () => {
+    // The half a two-pass implementation loses: #2 is only urgent BECAUSE of
+    // the unit, so a blocked-by pass that ran before the together fold — or
+    // after it, without re-relaxing — leaves #3 at its declared priority while
+    // it sits on the unit's critical path.
+    const m = buildModel([
+      node(1, { labels: ["p0"], data: { togetherWith: ref(2) } }),
+      node(2, { labels: ["p3"], data: { blockedBy: [ref(3)] } }),
+      node(3, { labels: ["p3"] }),
+    ]);
+    assert.equal(m.effectivePriority("2"), 0);
+    assert.equal(m.effectivePriority("3"), 0);
+  });
+
+  test("a closed together member neither lends the unit urgency nor takes any", () => {
+    // Closed members leave the unit (SPEC 4.3.7) — so a finished P0 must not
+    // keep its open partner at P0, and an open P0 must not drag a finished
+    // partner's number down. Enforced at the UNION, which admits an edge only
+    // when both endpoints are open, so this pins the rule rather than any one
+    // guard: a probe that deletes a guard downstream of the union breaks
+    // nothing, and this test still fails if the union starts admitting them.
+    const m = buildModel([
+      node(1, { labels: ["p0"], open: false, closedStateReason: "completed", data: { togetherWith: ref(2) } }),
+      node(2, { labels: ["p3"] }),
+      node(3, { labels: ["p0"], data: { togetherWith: ref(4) } }),
+      node(4, { labels: ["p3"], open: false, closedStateReason: "completed" }),
+    ]);
+    assert.equal(m.effectivePriority("2"), 3);
+    assert.equal(m.effectivePriority("4"), 3);
+    assert.equal(m.effectivePriority("3"), 0);
+  });
+
   test("importance flows backward: a p3 blocker of a p0 dependent is effectively p0", () => {
     const m = buildModel([
       node(1, { labels: ["p3"] }),

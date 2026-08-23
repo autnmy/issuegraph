@@ -456,12 +456,18 @@ export function buildModel(
     return canonicalCache.get(key) as string | null;
   };
 
-  // ---- effective priority (§6.3): relax minima backward along blocked-by ----
+  // ---- effective priority (§6.3): relax minima along blocked-by AND together ----
   const effective = new Map<string, number>();
   for (const [k] of byKey) effective.set(k, (declared.get(k) as DeclaredPriority).value);
-  // A blocker inherits the min effective priority of its OPEN dependents.
-  // Values only decrease and are bounded below by 0, so worklist relaxation
-  // terminates on any graph, cycles included.
+  // Two relaxations, run in ONE worklist rather than in sequence, because each
+  // feeds the other: §6.3 says both that importance flows backward along
+  // blocking edges and that "a together group's effective priority is the
+  // highest over its members". A P0 together with a P3 raises the P3 member,
+  // and that member's own blockers must then inherit the unit's urgency —
+  // which a blocked-by pass that had already finished would never see.
+  //
+  // Values only ever decrease and are bounded below by 0, so this terminates on
+  // any graph, cycles included, whichever edge did the lowering.
   const work: string[] = [...byKey.keys()];
   while (work.length > 0) {
     const k = work.pop() as string;
@@ -474,6 +480,25 @@ export function buildModel(
       if ((effective.get(blocker) as number) > ep) {
         effective.set(blocker, ep);
         work.push(blocker);
+      }
+    }
+    // A together unit is ONE unit of work, so its members share the highest
+    // priority among them. Symmetric, unlike the blocked-by arm: no member is
+    // upstream of another, so the relaxation runs in both directions and the
+    // worklist settles the component on its minimum.
+    //
+    // NO CLOSED-MEMBER GUARD HERE, and its absence is the point rather than an
+    // omission: the union above admits a together edge only when BOTH endpoints
+    // are open, so a closed node is never in another node's component and an
+    // open node's component is open throughout. A guard here would be a second
+    // statement of that rule which no input can reach — a mutation probe that
+    // deleted it broke nothing — and a defence nothing can falsify reads as
+    // evidence that its population exists. The rule lives at the union.
+    for (const member of componentMembers(together, k)) {
+      if (member === k) continue;
+      if ((effective.get(member) as number) > ep) {
+        effective.set(member, ep);
+        work.push(member);
       }
     }
   }
