@@ -244,6 +244,69 @@ test('a real package specifier IS still masked, node: builtins included', () => 
   assert.deepEqual(findIsolationViolations(packagesDir), []);
 });
 
+test('a brand token in the published description is a brand-leak', () => {
+  // npm publishes package.json whole, so its metadata reaches every installer
+  // exactly as the README does.
+  const packagesDir = fixture(
+    { 'src/index.ts': 'export const clean = true;\n' },
+    { description: 'Extracted from the Descant pipeline' },
+  );
+  assert.deepEqual(rulesFired(packagesDir), ['brand-leak']);
+});
+
+test('a brand token inside an array of keywords is found', () => {
+  const packagesDir = fixture(
+    { 'src/index.ts': 'export const clean = true;\n' },
+    { keywords: ['issuegraph', 'takumi'] },
+  );
+  assert.deepEqual(rulesFired(packagesDir), ['brand-leak']);
+});
+
+test('a brand token in a manifest KEY is found, not just in a value', () => {
+  const packagesDir = fixture(
+    { 'src/index.ts': 'export const clean = true;\n' },
+    { 'descant-config': { enabled: true } },
+  );
+  assert.deepEqual(rulesFired(packagesDir), ['brand-leak']);
+});
+
+test('a field nobody anticipated is scanned too — the walk is not a field list', () => {
+  // The point of recursing rather than checking known metadata fields: a manifest
+  // key invented tomorrow is published tomorrow, and a table would call it clean.
+  const packagesDir = fixture(
+    { 'src/index.ts': 'export const clean = true;\n' },
+    { publishConfig: { registry: 'https://registry.descant.example/' } },
+  );
+  assert.deepEqual(rulesFired(packagesDir), ['brand-leak']);
+});
+
+test('the metadata scan does not double-report a forbidden dependency', () => {
+  // The dependency maps are removed before the metadata walk, because the
+  // forbidden rule owns them. Without that, every forbidden dependency would be
+  // reported twice, under two rules.
+  const packagesDir = fixture(
+    { 'src/index.ts': "export const nothing = 'imports it';\n" },
+    { dependencies: { '@descant/types': '^1.0.0' } },
+  );
+  const violations = findIsolationViolations(packagesDir);
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0]?.rule, 'forbidden-dependency');
+});
+
+test('an ordinary manifest with a repository and homepage stays clean', () => {
+  const packagesDir = fixture(
+    { 'src/index.ts': 'export const clean = true;\n' },
+    {
+      description: 'The specification vocabulary, as data.',
+      keywords: ['issuegraph', 'dependency-graph'],
+      homepage: 'https://github.com/autnmy/issuegraph#readme',
+      repository: { type: 'git', url: 'git+https://github.com/autnmy/issuegraph.git' },
+      publishConfig: { access: 'public', provenance: true },
+    },
+  );
+  assert.deepEqual(findIsolationViolations(packagesDir), []);
+});
+
 test('a directory under packages with no package.json is not scanned', () => {
   const packagesDir = fixture({ 'src/index.ts': CLEAN_SOURCE, 'src/helper.ts': HELPER_SOURCE });
   const stray = join(packagesDir, 'not-a-package', 'src');

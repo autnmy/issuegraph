@@ -16,9 +16,10 @@
  * - `package-escape` — a relative specifier that resolves outside its own
  *   package. This is how a source file reaches a sibling package's internals,
  *   or the repository root, without ever naming Descant.
- * - `brand-leak` — a Descant brand token in the source text itself. An import
- *   scan cannot see a leak that arrives as an identifier, a string or a doc
- *   comment, and a package's README is published too.
+ * - `brand-leak` — a Descant brand token anywhere a package publishes text: its
+ *   source, its README, and its `package.json` metadata. An import scan cannot
+ *   see a leak that arrives as an identifier, a doc comment, or a `description`,
+ *   and npm ships all three to every installer.
  *
  * The rules are disjoint by construction: `brand-leak` scans the source with the
  * specifiers the OTHER rules own blanked out, so a forbidden import is reported
@@ -167,6 +168,32 @@ function listPackageDirectories(packagesDir: string): string[] {
     });
 }
 
+/**
+ * Every string in a manifest, with the JSON path it sits at — keys included,
+ * because `"descant-config": {}` is a leak as surely as a value is.
+ *
+ * Recursive rather than a list of fields to check: npm publishes `package.json`
+ * whole, so a field nobody thought of is published too, and a table of known
+ * metadata fields would read as complete while a new one defaulted to unscanned.
+ */
+function eachManifestString(value: unknown, path: string, visit: (at: string, text: string) => void): void {
+  if (typeof value === 'string') {
+    visit(path, value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => eachManifestString(item, `${path}[${index}]`, visit));
+    return;
+  }
+  if (typeof value === 'object' && value !== null) {
+    for (const [key, nested] of Object.entries(value)) {
+      const at = path === '' ? key : `${path}.${key}`;
+      visit(at, key);
+      eachManifestString(nested, at, visit);
+    }
+  }
+}
+
 function checkManifest(packagesDir: string, packageDir: string): Violation[] {
   const manifestPath = join(packageDir, 'package.json');
   const raw: unknown = JSON.parse(readFileSync(manifestPath, 'utf8'));
@@ -196,6 +223,24 @@ function checkManifest(packagesDir: string, packageDir: string): Violation[] {
       });
     }
   }
+
+  // npm publishes package.json in full, so its metadata is a published surface
+  // exactly like the README — a `description` naming the consumer ships to every
+  // installer. The dependency maps are removed first because the rule above owns
+  // them; everything else is scanned, so a field nobody anticipated is covered
+  // rather than defaulting to unwatched.
+  const metadata: Record<string, unknown> = { ...manifest };
+  for (const mapName of DEPENDENCY_MAPS) delete metadata[mapName];
+  eachManifestString(metadata, '', (at, text) => {
+    const brand = BRAND_TOKEN.exec(text);
+    if (brand === null) return;
+    violations.push({
+      rule: 'brand-leak',
+      file: relative(packagesDir, manifestPath),
+      line: 0,
+      detail: `${at} mentions "${brand[1]}"`,
+    });
+  });
   return violations;
 }
 
