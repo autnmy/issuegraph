@@ -256,8 +256,30 @@ function stripComment(s: string): string {
   return s;
 }
 
-/** Split a flow list body (`a, b, c` — no nested brackets in the subset). */
+/**
+ * Split a flow list body (`a, b, c` — no nested brackets in the subset).
+ *
+ * AN EMPTY ENTRY IS KEPT, and that is the whole subtlety here. YAML reads
+ * `[1,,2]` as three nodes whose middle one is null, and a null is not a ref —
+ * so the empty item must survive to the caller, be refused by `parseRef`, and
+ * earn its diagnostic like any other unparseable item. Dropping empties here
+ * instead made `[,]` return an empty list with NO diagnostic, which is
+ * byte-identical to a body declaring `[]` and no edges: an absence rendered as
+ * a value, and exactly the licence for a false clear that
+ * {@link ParseResult.diagnostics} exists to withhold.
+ *
+ * Two entries are NOT empty items and must not become diagnostics:
+ *
+ *   - `[]` (or `[ ]`) — a genuinely empty list, which the spec permits and a
+ *     writer emits when it removes the last edge. Returned as no items at all.
+ *   - ONE trailing comma — `[1, 2,]` is valid YAML for a two-item list, so the
+ *     empty part it leaves behind is punctuation rather than a node.
+ *
+ * A SECOND trailing comma is not covered by that, deliberately: `[1,,]` leaves
+ * two empty parts, one of which is a real null node, so it is diagnosed.
+ */
 function splitFlowList(inner: string): string[] {
+  if (inner.trim().length === 0) return [];
   const parts: string[] = [];
   let current = '';
   let inSingle = false;
@@ -273,7 +295,9 @@ function splitFlowList(inner: string): string[] {
     }
   }
   parts.push(current);
-  return parts.map((p) => p.trim()).filter((p) => p.length > 0);
+  const trimmed = parts.map((p) => p.trim());
+  if (trimmed.length > 1 && trimmed[trimmed.length - 1] === '') trimmed.pop();
+  return trimmed;
 }
 
 interface RawEntry {

@@ -633,7 +633,18 @@ export function buildModel(
         // its own serialize refusal — counting self made a recovery-paged
         // bot-assigned candidate refuse its own component. OTHER members'
         // claims are exactly what the edge forbids running beside.
-        if (m === k) continue;
+        //
+        // THE WHOLE TOGETHER UNIT IS EXCLUDED FOR THE SAME REASON, not just
+        // this node. A together unit is claimed ATOMICALLY (§4.3.7), so its
+        // members are assigned as the unit is taken — and where a unit also
+        // shares a serialize component, each member would then read its own
+        // partner's assignment as a conflicting claim and the unit would go
+        // unready the instant it was claimed, breaking post-claim
+        // re-verification. `NodeInput.assigneeCount` already names this case as
+        // the reason self-exclusion exists; the exclusion was simply narrower
+        // than its own rationale. The blocked-by arm above draws the same
+        // boundary with the same member set.
+        if (m === k || togetherMembers?.has(m) === true) continue;
         const mn = byKey.get(m) as ModelNode;
         if (mn.open && mn.assigneeCount > 0) {
           reasons.push(`serialize group member ${m} is actively claimed`);

@@ -424,6 +424,37 @@ describe("model purity", () => {
     assert.equal(m.diagnostics.some((d) => d.includes("unresolvable")), false);
   });
 
+  test("a together unit survives its OWN atomic claim across a shared serialize edge", () => {
+    // A together unit is claimed atomically (SPEC 4.3.7), so every member is
+    // assigned as the unit is taken. Where the unit also shares a serialize
+    // component, each member would read its partner's assignment as a
+    // conflicting claim and the unit would go unready the instant it was
+    // claimed — post-claim re-verification then fails on a unit nobody else is
+    // touching. `NodeInput.assigneeCount` already names this case as the reason
+    // self-exclusion exists; the exclusion was narrower than its own rationale.
+    const unit = (assigneeCount: number) =>
+      buildModel([
+        node(1, { assigneeCount, data: { togetherWith: ref(2), serializeWith: ref(2) } }),
+        node(2, { assigneeCount }),
+      ]);
+    assert.equal(unit(0).readiness("1").ready, true, "unclaimed");
+    assert.deepEqual(unit(1).readiness("1"), { ready: true, reasons: [] }, "after its own claim");
+    assert.deepEqual(unit(1).readiness("2"), { ready: true, reasons: [] }, "from the other member");
+  });
+
+  test("CONTROL: an OUTSIDE claim in the same serialize component still refuses the unit", () => {
+    // The exclusion must cover the unit and stop there. Without this the fix
+    // above reads as correct while having disabled the serialize edge for any
+    // node that happens to belong to a together unit — which is the failure the
+    // edge exists to prevent, arriving through the fix for a different one.
+    const m = buildModel([
+      node(1, { data: { togetherWith: ref(2), serializeWith: ref(3) } }),
+      node(2),
+      node(3, { assigneeCount: 1 }),
+    ]);
+    assertIncludes(m.readiness("1").reasons.join(" "), "serialize group member 3 is actively claimed");
+  });
+
   test("a claimed singleton stays READY — assignment is eligibility, not readiness", () => {
     // Pins the declined round-7 finding: SPEC 6.8 composes ready AND eligible;
     // folding claim state into readiness would break post-claim re-verification.

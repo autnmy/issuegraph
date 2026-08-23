@@ -162,6 +162,60 @@ describe("parseFrontmatter", () => {
     assert.deepEqual(parseFrontmatter(block(["  blocked-by: []"])).data?.blockedBy, []);
   });
 
+  test("an empty flow-list entry is a dropped item, not a vanished one", () => {
+    // The row that made this a defect rather than a nit: `[,]` used to return
+    // an empty list with NO diagnostic, which is byte-identical to a body
+    // declaring `[]` and no edges. A scheduler reading `data` — or asking
+    // `isUnreadDeclaration` — could not tell "this issue has no blockers" from
+    // "this issue's blockers could not be read", which is the absence-rendered-
+    // as-a-value licence the whole diagnostics contract exists to withhold.
+    const block = (v: string): string => ["---", "issuegraph:", `  blocked-by: ${v}`, "---"].join("\n");
+
+    const onlyComma = parseFrontmatter(block("[,]"));
+    assert.deepEqual(onlyComma.data?.blockedBy, []);
+    assert.ok(onlyComma.diagnostics.length > 0, "an empty entry must be diagnosed");
+    assert.equal(isUnreadDeclaration(onlyComma), true);
+
+    // The surviving refs are still read; only the null node is dropped.
+    const interior = parseFrontmatter(block("[1,,2]"));
+    assert.deepEqual(interior.data?.blockedBy, [
+      { repo: null, number: 1 },
+      { repo: null, number: 2 },
+    ]);
+    assert.ok(interior.diagnostics.length > 0);
+    assert.equal(isUnreadDeclaration(interior), true);
+  });
+
+  test("an empty list and one trailing comma stay clean — the two non-entries", () => {
+    // The other half of the rule, and the half a fix for the case above breaks
+    // if it simply stops trimming: `[]` is a list a writer emits when it
+    // removes the last edge, and YAML permits one trailing comma. Neither is a
+    // null node, so neither may raise a diagnostic — an over-strict reader
+    // refuses perfectly good declarations, which is worse than the miss.
+    const block = (v: string): string => ["---", "issuegraph:", `  blocked-by: ${v}`, "---"].join("\n");
+
+    for (const empty of ["[]", "[ ]"]) {
+      const r = parseFrontmatter(block(empty));
+      assert.deepEqual(r.data?.blockedBy, [], empty);
+      assert.deepEqual(r.diagnostics, [], empty);
+      assert.equal(isUnreadDeclaration(r), false, empty);
+    }
+
+    const trailing = parseFrontmatter(block("[1, 2,]"));
+    assert.deepEqual(trailing.data?.blockedBy, [
+      { repo: null, number: 1 },
+      { repo: null, number: 2 },
+    ]);
+    assert.deepEqual(trailing.diagnostics, []);
+
+    // A SECOND trailing comma leaves a real null node behind it, so it is not
+    // punctuation and is diagnosed. Pinned because the obvious implementation —
+    // strip every trailing empty — would swallow it.
+    const twoTrailing = parseFrontmatter(block("[1,,]"));
+    assert.deepEqual(twoTrailing.data?.blockedBy, [{ repo: null, number: 1 }]);
+    assert.ok(twoTrailing.diagnostics.length > 0);
+  });
+
   test("parses cross-repo, hash-prefixed, and quoted refs", () => {
     const body = ["---", "issuegraph:", '  blocked-by: [autnmy/issuegraph#4, "#12", \'7\']', "  duplicate-of: acme/backlog#90", "---"].join("\n");
     const r = parseFrontmatter(body);
