@@ -364,12 +364,28 @@ export function wouldCloseCycle(
   const together = components(canonicalEdges, 'together-with');
   const { blockers } = dependencyGraph(document, resolve, together);
 
+  // THE WALK COMPARES UNITS, NOT REFERENCES, and that is the whole of the
+  // contraction rather than one direction of it. Copying a unit's adjacency
+  // onto its members makes every member the same SOURCE of an edge; it does
+  // not make every member the same DESTINATION, so an exact-reference test
+  // still missed a path that arrives at a different member than the one the
+  // new edge names — the same cycle, approached from the other end.
+  //
+  // A directed edge has exactly two ends, so answering both here closes the
+  // question rather than adding a case: `sameUnit` is applied to the arrival
+  // test and to the self-edge test alike.
   const start = resolve(from);
   const end = resolve(to);
-  if (start === end) return false; // a self-edge is refused structurally, not as a cycle
+  const sameUnit = (a: IssueRef, b: IssueRef): boolean =>
+    a === b || (together.get(a)?.has(b) ?? false);
+
+  // A member editing its own groupmate is an internal edge — advisory under
+  // §4.3.7, refused structurally as a self-edge would be, and never a cycle.
+  if (sameUnit(start, end)) return false;
+
   const seen = new Set<IssueRef>();
   const reaches = (at: IssueRef): boolean => {
-    if (at === start) return true;
+    if (sameUnit(at, start)) return true;
     if (seen.has(at)) return false;
     seen.add(at);
     return (blockers.get(at) ?? []).some(reaches);
@@ -796,12 +812,24 @@ export function slotCount(rows: readonly ExplainedRow[]): number {
  */
 export function createDeriver(holds: readonly ExecutorHold[] = []): OrderDeriver {
   return (document: GraphDocument): readonly OrderRow[] =>
-    explainOrder(document, holds).map(
-      (row): OrderRow => ({
-        ref: row.issue.ref,
-        rank: row.rank,
-        ready: row.ready,
-        holdReasons: row.holds.map((hold) => hold.detail),
-      }),
-    );
+    explainOrder(document, holds)
+      // FOOTER ROWS ARE NOT IN THE ORDER — that is what the footer means, and
+      // the store computes `entered` and `left` by comparing one order against
+      // the next. Handing it rows that were never candidates made an issue
+      // LEAVING the order (a visitor marking it a duplicate) look like a move
+      // to its footer rank instead, so the change summary reported a blast
+      // radius that never happened.
+      //
+      // `explainOrder` still returns them, because the PAGE draws them: the
+      // collapsed group is how a visitor sees what was excluded and why. The
+      // two readers want different sets, and this is the seam between them.
+      .filter((row) => row.placement === 'spine')
+      .map(
+        (row): OrderRow => ({
+          ref: row.issue.ref,
+          rank: row.rank,
+          ready: row.ready,
+          holdReasons: row.holds.map((hold) => hold.detail),
+        }),
+      );
 }

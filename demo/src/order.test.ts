@@ -19,6 +19,7 @@ import { makeEdge } from '@issuegraph/store';
 import {
   DEFAULT_CONCURRENCY_CAP,
   type ExplainedRow,
+  createDeriver,
   explainOrder,
   slotCount,
   wouldCloseCycle,
@@ -561,4 +562,55 @@ test('a unit-level blocker is reported once, not once per groupmate', () => {
     assert.equal(blockedHolds.length, 1, `${ref} reports its unit's one blocker ${blockedHolds.length} times`);
     assert.ok(blockedHolds[0]?.detail.includes('14'));
   }
+});
+
+test('the cycle guard is unit-level at BOTH ends of the edge', () => {
+  // Copying a unit's adjacency onto its members makes every member the same
+  // SOURCE of an edge; it does not make every member the same DESTINATION. So
+  // the arrival test has to compare units too, or the same cycle approached
+  // from the other end walks straight past it.
+  const document = seedDocument();
+
+  // Orientation A: the path leaves the unit. Land `#9 blocked-by #4`, then
+  // `#4 blocked-by #7`.
+  const a = { issues: document.issues, edges: [...document.edges, makeEdge('blocked-by', '9', '4')] };
+  assert.equal(wouldCloseCycle(a, '4', '7'), true, 'orientation A missed');
+
+  // Orientation B: the path ARRIVES at a different member. Land
+  // `#4 blocked-by #9`, then `#7 blocked-by #4` — `reaches` gets to #9, which
+  // is not #7 by reference but is #7 by unit.
+  const b = { issues: document.issues, edges: [...document.edges, makeEdge('blocked-by', '4', '9')] };
+  assert.equal(wouldCloseCycle(b, '7', '4'), true, 'orientation B missed');
+
+  // A member naming its own groupmate is an internal edge, never a cycle.
+  assert.equal(wouldCloseCycle(document, '7', '9'), false, 'an internal edge read as a cycle');
+
+  // CONTROL: an edge that closes nothing is still allowed in both fixtures, so
+  // the guard is not simply refusing everything once a group exists.
+  assert.equal(wouldCloseCycle(a, '14', '3'), false, 'the guard refuses an innocent edge');
+  assert.equal(wouldCloseCycle(b, '14', '3'), false, 'the guard refuses an innocent edge');
+});
+
+test("the store's order carries only rows that are IN the order", () => {
+  const document = seedDocument();
+  const derive = createDeriver(seedHolds());
+  const rows = derive(document);
+  const explained = explainOrder(document, seedHolds());
+
+  const footer = explained.filter((each) => each.placement === 'footer').map((each) => each.issue.ref);
+  assert.ok(footer.length > 0, 'the seed does not exercise the footer');
+  for (const ref of footer) {
+    assert.ok(!rows.some((row) => row.ref === ref), `${ref} is in the footer and in the order`);
+  }
+  assert.equal(rows.length, explained.length - footer.length);
+
+  // The point of the filter: an issue LEAVING the order must be absent from the
+  // next order, so the store can report it as `left` rather than as a move to a
+  // footer rank it never occupied.
+  const nowDuplicate = derive({
+    issues: document.issues,
+    edges: [...document.edges, makeEdge('duplicate-of', '3', '2')],
+  });
+  assert.ok(rows.some((row) => row.ref === '3'), 'the control failed: #3 should start in the order');
+  assert.ok(!nowDuplicate.some((row) => row.ref === '3'), '#3 stayed in the order after becoming a duplicate');
 });
