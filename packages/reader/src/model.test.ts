@@ -803,15 +803,88 @@ describe("under-read declarations", () => {
   });
 
   test("an under-read node stays REFERENCEABLE and stays in keys", () => {
-    // It is refused for SELECTION, not demoted to the weak tier: a reference to
-    // it still resolves, so a blocker that is closed still unblocks. Refusing
-    // the reference too would over-block work the node has nothing to say about.
+    // It is refused for SELECTION, not demoted to the weak tier, and the two are
+    // genuinely different dispositions: a reference to it still RESOLVES — the
+    // reason below names `blocked-by 1`, not "unresolvable" — while a weak node
+    // would have left the reference unresolvable and the dependent blocked for a
+    // different stated cause. Keeping it referenceable is what stops the axis
+    // spilling into the declarer-only tier's contract.
+    //
+    // AN EARLIER REVISION OF THIS TEST ASSERTED THE DEPENDENT WAS READY, which
+    // was the defect codex raised on this PR's first head: `targetKey` resolves
+    // the edge through the target's `duplicate-of`, so an under-read target can
+    // stop the edge at a closed duplicate instead of a still-open canonical. The
+    // referenceable half was right; the unblocks half was the bug, written down
+    // as an expectation. Recorded here because a test that pins a defect is
+    // worse than no test.
     const m = buildModel([
       node(1, { open: false, closedStateReason: "completed", declarationRead: "under-read" }),
       node(2, { data: { blockedBy: [ref(1)] } }),
     ]);
     assert.equal(m.keys.includes("1"), true);
-    assert.deepEqual(m.readiness("2"), { ready: true, reasons: [] });
+    const r = m.readiness("2");
+    assert.equal(r.ready, false);
+    assertIncludes(r.reasons[0], "blocked-by 1 is closed but its own declaration was under-read");
+    assert.equal(r.reasons.some((x) => x.includes("unresolvable")), false);
+  });
+
+  test("a CLOSED under-read blocker blocks — its dropped duplicate-of may redirect the edge", () => {
+    // `targetKey` resolves a blocked-by ref THROUGH the target's `duplicate-of`,
+    // so an under-read target can silently stop the edge at a closed duplicate
+    // instead of carrying it to a canonical that is still open. Measured on this
+    // PR's own review: one field apart, opposite verdicts.
+    const m = buildModel([
+      node(3), // the canonical, OPEN — where the edge SHOULD land
+      node(2, {
+        open: false,
+        closedStateReason: "duplicate",
+        declarationRead: "under-read", // its `duplicate-of: 3` was dropped
+      }),
+      node(1, { data: { blockedBy: [ref(2)] } }),
+    ]);
+    assert.equal(m.readiness("1").ready, false);
+    assertIncludes(
+      m.readiness("1").reasons.find((r) => r.includes("blocked-by 2")),
+      "its own declaration was under-read",
+    );
+  });
+
+  test("CONTROL: the same shape with the duplicate-of PARSED blocks on the canonical", () => {
+    // The paired control, and it is what makes the test above mean anything: it
+    // shows the refusal above restores the verdict a fully-read declaration
+    // would have produced, rather than inventing a new one.
+    const m = buildModel([
+      node(3),
+      node(2, { open: false, closedStateReason: "duplicate", data: { duplicateOf: ref(3) } }),
+      node(1, { data: { blockedBy: [ref(2)] } }),
+    ]);
+    assert.equal(m.readiness("1").ready, false);
+    assertIncludes(m.readiness("1").reasons[0], "blocked-by 3 is open");
+  });
+
+  test("CONTROL: a closed FULLY-READ blocker still unblocks", () => {
+    // The negative control for the refusal: the axis must not turn every closed
+    // blocker into a block, or it would stall the ordinary case.
+    const m = buildModel([
+      node(2, { open: false, closedStateReason: "completed" }),
+      node(1, { data: { blockedBy: [ref(2)] } }),
+    ]);
+    assert.deepEqual(m.readiness("1"), { ready: true, reasons: [] });
+  });
+
+  test("an under-read blocker keeps its non-completed-closure re-groom diagnostic", () => {
+    // The two facts are independent — closure reason comes from the tracker, read
+    // extent from the declaration — so chaining them would drop the SECTION 5.3
+    // surface for exactly the nodes least well understood.
+    const m = buildModel([
+      node(2, { open: false, closedStateReason: "not_planned", declarationRead: "under-read" }),
+      node(1, { data: { blockedBy: [ref(2)] } }),
+    ]);
+    assert.equal(m.readiness("1").ready, false);
+    assert.equal(
+      m.diagnostics.some((d) => d.includes("1: unblocked by non-completed closure of 2")),
+      true,
+    );
   });
 
   test("effective priority is deliberately untouched by the axis", () => {

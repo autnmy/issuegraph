@@ -761,12 +761,47 @@ export function buildModel(
       if (b !== k && togetherMembers?.has(b) === true) continue;
       const bn = byKey.get(b) as ModelNode;
       if (bn.open) reasons.push(`blocked-by ${b} is open`);
-      else if (
-        bn.closedStateReason != null &&
-        bn.closedStateReason !== 'completed'
-      ) {
-        // Unblocked, but flag for re-groom (§5.3) — a diagnostic, not a block.
-        diagnostics.push(`${k}: unblocked by non-completed closure of ${b}; re-check its premise`);
+      else {
+        // A CLOSED BLOCKER WHOSE OWN DECLARATION WAS UNDER-READ IS NOT EVIDENCE
+        // OF BEING UNBLOCKED, and this is the one place the axis has to travel
+        // ALONG an edge rather than stopping at the node that carries it.
+        //
+        // `targetKey` resolves a `blocked-by` ref THROUGH the target's
+        // `duplicate-of` (`duplicateCanonicalOf(rk) ?? rk`), so which node this
+        // edge actually points at is read off the target's declaration. When
+        // that declaration was under-read, its `duplicate-of` may be one of the
+        // dropped fields — and `duplicateCanonicalOf` then answers `null`, which
+        // is indistinguishable from "not a duplicate". The edge silently stops
+        // at a CLOSED duplicate instead of continuing to a canonical that may
+        // still be OPEN, and this node reports ready.
+        //
+        // MEASURED, one field apart: with #2 closed and its `duplicate-of: 3`
+        // DROPPED, the dependent came back `{ready: true, reasons: []}`; with
+        // the same field PARSED it came back `blocked-by 3 is open`. Under-
+        // blocking is the costly direction by this module's own design rules,
+        // so an unreadable redirect must block rather than resolve.
+        //
+        // ONLY THE CLOSED ARM NEEDS IT: an OPEN blocker already blocks above, so
+        // adding the refusal there would be a second true-but-redundant reason
+        // on a node that is refused either way.
+        //
+        // THE OTHER TWO EDGE KINDS ARE ALREADY COVERED and need no equivalent —
+        // a `serialize-with` target joins the component the scan below sweeps
+        // for under-read members, and a `together-with` target is refused
+        // through `readiness`'s own per-member evaluation.
+        if (bn.declarationRead === 'under-read') {
+          reasons.push(
+            `blocked-by ${b} is closed but its own declaration was under-read — a dropped duplicate-of would redirect this edge to a canonical that may still be open (fail-safe: blocking)`,
+          );
+        }
+        if (bn.closedStateReason != null && bn.closedStateReason !== 'completed') {
+          // Unblocked, but flag for re-groom (§5.3) — a diagnostic, not a block.
+          // NOT an `else if` on the arm above: closure reason is a TRACKER fact
+          // and the read extent is a DECLARATION fact, so a blocker can carry
+          // both and a chain would silently drop the §5.3 surface for exactly
+          // the nodes least well understood.
+          diagnostics.push(`${k}: unblocked by non-completed closure of ${b}; re-check its premise`);
+        }
       }
     }
     for (const u of unresolvedBlockers.get(k) ?? []) {
