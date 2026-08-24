@@ -1190,3 +1190,81 @@ describe('locateSection agrees with the parser about what it refuses', () => {
     assert.equal(located?.hasSiblingKeys, false);
   });
 });
+
+describe('a quoted reference is taken as written', () => {
+  const B = (v: string): string => ['---', 'issuegraph:', `  blocked-by: [${v}]`, '---'].join('\n');
+
+  test('whitespace inside quotes is not trimmed away', () => {
+    // Measured: YAML already strips surrounding whitespace from a PLAIN scalar,
+    // including inside a flow sequence — so a trim in the ref parser could only
+    // ever act on a QUOTED one, where the author explicitly asked for those
+    // bytes. Trimming there bypasses `isRefId`'s whitespace exclusion and
+    // silently changes what the author wrote: `" #123 "` would become the
+    // reference `123`, and a re-render would write it back as `"#123"`.
+    for (const quoted of ['" #123 "', '" ABC-123 "', "' 123 '", '"ABC-123 "']) {
+      const r = parseFrontmatter(B(quoted));
+      assert.deepEqual(r.data?.blockedBy, [], quoted);
+      assert.ok(r.diagnostics.length > 0, quoted);
+      assert.equal(isUnreadDeclaration(r), true, quoted);
+    }
+  });
+
+  test('CONTROL: an unquoted scalar YAML already trimmed still parses', () => {
+    // Without this the case above is satisfiable by refusing every padded
+    // reference, including the ordinary spelling nobody quoted.
+    const r = parseFrontmatter(['---', 'issuegraph:', '  blocked-by: [  ABC-123  ,  231  ]', '---'].join('\n'));
+    assert.deepEqual(r.data?.blockedBy, [
+      { repo: null, id: 'ABC-123' },
+      { repo: null, id: '231' },
+    ]);
+    assert.deepEqual(r.diagnostics, []);
+  });
+});
+
+describe('an explicitly-written null section', () => {
+  const body = (header: string): string => ['---', header, 'other: x', '---'].join('\n');
+
+  test('READS as an empty declaration, exactly as a bare key does — deliberately', () => {
+    // `issuegraph:` and `issuegraph: null` are the SAME YAML value. Measured:
+    // both materialize to `{issuegraph: null}`, and the only difference is a
+    // zero-width range in the syntax tree. So the parser treats them
+    // identically, and it must — distinguishing two spellings of one value by
+    // reaching past the data model is the hand-rolled-grammar reflex this
+    // module exists to have stopped. "No data" is correctly read as "no edges",
+    // which is §4.3's degenerate legal case.
+    for (const header of ['issuegraph:', 'issuegraph: null', 'issuegraph: ~', 'issuegraph: Null']) {
+      const r = parseFrontmatter(body(header));
+      assert.notEqual(r.data, null, header);
+      assert.deepEqual(r.data?.blockedBy, [], header);
+      assert.equal(r.data?.priority, null, header);
+      assert.deepEqual(r.diagnostics, [], header);
+      assert.equal(isUnreadDeclaration(r), false, header);
+    }
+  });
+
+  test('but is NOT line-editable, so the locator refuses it', () => {
+    // A fact about EDITING, not about meaning. Inserting `  blocked-by:` under
+    // `issuegraph: null` nests a mapping under a scalar value — invalid YAML —
+    // so the only correct answer is to refuse and let the caller prepend.
+    // The splice's own parse-check already caught the unreadable result; this
+    // makes the refusal structural rather than a downstream accident.
+    for (const header of ['issuegraph: null', 'issuegraph: ~', 'issuegraph: Null']) {
+      assert.equal(locateSection([header, 'other: x']), null, header);
+    }
+    // A FLOW mapping is refused for the same reason, and an EMPTY one never
+    // reaches the per-entry line test that catches the non-empty case.
+    assert.equal(locateSection(['issuegraph: {}']), null, 'empty flow map');
+    assert.equal(locateSection(['issuegraph: {priority: 1}']), null, 'flow map');
+  });
+
+  test('CONTROL: a BARE key stays editable — a writer inserts under it', () => {
+    // The other half. Refusing this too would break the ordinary path a splice
+    // takes when a block's section has emptied, which is the shape it leaves
+    // behind after removing the last owned edge.
+    const located = locateSection(['issuegraph:', 'other: x']);
+    assert.notEqual(located, null);
+    assert.equal(located?.headerLine, 0);
+    assert.deepEqual(located?.fields, []);
+    assert.equal(located?.hasSiblingKeys, true);
+  });
+});

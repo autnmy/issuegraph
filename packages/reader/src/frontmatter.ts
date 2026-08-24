@@ -307,7 +307,14 @@ function parseRef(raw: unknown): IssueRef | null {
     return { repo: null, id: String(raw) };
   }
   if (typeof raw !== 'string') return null;
-  const s = raw.trim();
+  // NOT TRIMMED, and the reason is measured rather than stylistic. YAML already
+  // strips surrounding whitespace from a PLAIN scalar — including inside a flow
+  // sequence — so a trim here could only ever act on a QUOTED one, where the
+  // author explicitly asked for those bytes. Trimming there bypasses
+  // `isRefId`'s deliberate whitespace exclusion: `" #123 "` would become the
+  // reference `123` and a re-render would write it back as `"#123"`, silently
+  // changing what the author wrote.
+  const s = raw;
   if (s.length === 0) return null;
 
   // The sigil is same-repo-only: in a qualified reference the `#` is the
@@ -620,6 +627,7 @@ export function locateSection(blockLines: readonly string[]): SectionLocation | 
   if (section === null) return null;
   const value = sectionMap(section.value);
   if (value === null) return null;
+  if (!isLineEditableSection(section.value)) return null;
 
   const headerRange = nodeRange(section.key);
   if (headerRange === null) return null;
@@ -919,9 +927,48 @@ function readDocumentOrReason(text: string): { doc: Document.Parsed | null; reas
  * inventing them.
  */
 function sectionMap(value: unknown): readonly Pair<unknown, unknown>[] | null {
+  // Reachable through the explicit-key and flow spellings (`? issuegraph`,
+  // `{issuegraph}`), which carry no value node at all. The ORDINARY bare
+  // `issuegraph:` does not land here — measured, yaml gives it a zero-width
+  // null Scalar, which the next line catches.
   if (value === null || value === undefined) return [];
   if (isScalar(value) && value.value === null) return [];
   return isMap(value) ? value.items : null;
+}
+
+/**
+ * Whether a writer can insert a child line under this section header.
+ *
+ * SEPARATE FROM {@link sectionMap} ON PURPOSE, because the reader and the
+ * writer are answering different questions and one of them is not about
+ * spelling. `issuegraph:` and `issuegraph: null` are the SAME YAML value —
+ * measured, both materialize to `{issuegraph: null}` — so the PARSER treats
+ * them identically, and it must: distinguishing two spellings of one value by
+ * reaching past the data model into the syntax tree is the hand-rolled-grammar
+ * reflex this module exists to have stopped.
+ *
+ * A LINE-BASED EDIT still cannot treat them identically, and that is a fact
+ * about editing rather than about meaning. A writer inserting `  blocked-by:`
+ * under `issuegraph: null` produces a mapping nested under a scalar value —
+ * invalid YAML — so the only correct answer is to refuse and let the caller
+ * prepend a fresh block.
+ *
+ * That refusal already happened, but only DOWNSTREAM: the splice's parse-check
+ * caught the unreadable result and returned null. Safety by accident is worth
+ * converting into safety by construction, because the accident depends on a
+ * control one refactor away from being narrowed.
+ *
+ * A FLOW mapping is refused for the same reason and is stated here rather than
+ * left to the per-entry line test, which an EMPTY flow map (`{}`) never reaches.
+ */
+function isLineEditableSection(value: unknown): boolean {
+  if (isScalar(value) && value.value === null) {
+    // An OMITTED value is zero-width; a WRITTEN `null` / `~` / `Null` is not.
+    const range = nodeRange(value);
+    return range !== null && range[1] === range[0];
+  }
+  if (value === null || value === undefined) return false;
+  return isMap(value) && value.flow !== true;
 }
 
 /** A pair's key as a plain string, or null when it is not a scalar string key. */
