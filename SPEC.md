@@ -94,7 +94,7 @@ Nothing bespoke is introduced here, deliberately: the delimiters, the YAML, and 
 
 ### 4.2 Issue references
 
-A reference is an **opaque tracker-scoped identifier**: whatever string the host tracker uses to name an issue. It MAY carry a leading `#` sigil, and it MAY be qualified by a `owner/repo` prefix separated by `#`. All four of these are references, and readers MUST support all four:
+A reference is an **opaque tracker-scoped identifier**. It MAY carry a leading `#` sigil, and it MAY be qualified by a `owner/repo` prefix separated by `#`. All four of these are references, and readers MUST support all four:
 
 | form | meaning |
 |---|---|
@@ -104,6 +104,31 @@ A reference is an **opaque tracker-scoped identifier**: whatever string the host
 | `owner/repo#123` | an issue in another repository/project |
 
 The identifier is **opaque**: a reader compares references, it does not interpret them. `123` and `#123` denote the same issue and MUST parse to the same reference, so the sigil is never part of the stored identifier.
+
+**Opaque does not mean unconstrained, and the grammar is normative.** An identifier is one or more characters from `A-Z a-z 0-9 . _ -`, beginning with a letter or a digit. Anything else is not a reference: a reader MUST reject it (dropping the field with a diagnostic, per 4.1) and a writer MUST refuse to emit it.
+
+The bound exists because three separate mechanisms in this format read the identifier back, and each excludes something:
+
+- **The writer emits a reference inside a quoted scalar**, so `"` and `\` would break the very quoting the sigil rule below requires.
+- **`#` separates the sigil and the qualifier**, and **`/` separates `owner` from `repo`**, so neither can appear in an identifier without making a reference ambiguous.
+- **Whitespace cannot be part of an identifier.** Readers strip it from a plain scalar and preserve it inside quotes, so admitting it would make `123` and `" 123 "` two different references for the same issue.
+
+A specification that said "whatever string the tracker uses" would be unimplementable: two conforming readers would disagree about `" a b "`, and a conforming writer could emit a block its own reader cannot parse. So the class is stated, and this table is the conformance surface:
+
+| identifier | accepted | why |
+|---|---|---|
+| `231` | yes | numeric, canonical, in range |
+| `ABC-123` | yes | the Jira and Linear shape |
+| `a.b_c-1` | yes | every permitted punctuation mark |
+| `0` | no | not a positive integer |
+| `007` | no | an all-digits identifier must be canonical |
+| `a b` | no | whitespace |
+| `a/b` | no | `/` separates `owner` from `repo` |
+| `a#b` | no | `#` separates the sigil and the qualifier |
+| `a"b` | no | would break the writer's quoted rendering |
+| `ABC:123` | no | outside the class — see below |
+
+**Widening the class is a spec revision, not an implementation choice.** A tracker whose identifiers carry other punctuation is not modelled today, and the failure is loud on both sides rather than silent — the reader reports a dropped field and the writer throws — so a consumer learns immediately rather than filing a graph that lies. A future revision MAY widen it; the constraints it must keep are the three above.
 
 **Numeric identifiers carry one bound.** An all-digits identifier MUST be a positive integer exactly representable by the host language's integer type, written canonically (no leading zeros). This is not arithmetic on the identifier — it is what makes a reference survive a re-render: a value outside that range comes back from a naive round-trip in a spelling (`1e+21`) no reader accepts, so an identifier that parsed cleanly would be written back unparseable. Identifiers that are not all digits carry no such bound.
 

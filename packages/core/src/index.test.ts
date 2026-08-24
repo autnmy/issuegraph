@@ -201,3 +201,62 @@ test('the Set-backed predicates never had the coercion problem', () => {
     assert.equal(isPriority(value), false, `isPriority(${String(value)})`);
   }
 });
+
+/**
+ * Read §4.2's identifier conformance table out of SPEC.md.
+ *
+ * The same reason the §4.3 reader above exists: the grammar is stated in two
+ * places, and a copy nothing compares against drifts. This one earned its keep
+ * immediately — §4.2 said an identifier was "whatever string the host tracker
+ * uses to name an issue" while `isRefId` admitted a bounded class, and nothing
+ * in the suite could see the contradiction.
+ *
+ * A BEHAVIOURAL pin rather than a comparison of pattern SOURCES. The spec states
+ * the class in prose for a human; matching that text against a regex literal
+ * would compare two spellings and prove nothing about how either is read. The
+ * table states cases, and the cases are what both sides must agree on.
+ */
+function identifierCasesDeclaredBySpec(): { id: string; accepted: boolean }[] {
+  const start = spec.indexOf('### 4.2 Issue references');
+  assert.notEqual(start, -1, 'SPEC.md no longer contains a "### 4.2 Issue references" heading');
+  const section = spec.slice(start, spec.indexOf('### 4.3 Fields'));
+  const marker = '| identifier | accepted | why |';
+  const tableAt = section.indexOf(marker);
+  assert.notEqual(tableAt, -1, 'SPEC.md §4.2 no longer carries the identifier conformance table');
+  // CONTIGUOUS rows only, stopping at the first line that is not a table row.
+  // §4.2 carries a SECOND table (the sigil-quoting one), and filtering every
+  // `|`-prefixed line in the section jumps the blank line between them and
+  // parses both as one — which is how this test first failed, on a header cell
+  // from the wrong table.
+  const rows: string[] = [];
+  for (const line of section.slice(tableAt + marker.length).split('\n').slice(1)) {
+    if (!line.startsWith('|')) break;
+    rows.push(line);
+  }
+  assert.ok(rows.length > 1, 'SPEC.md §4.2 identifier table has no rows under its separator');
+  const cases: { id: string; accepted: boolean }[] = [];
+  for (const row of rows.slice(1)) { // drop the |---|---|---| separator
+    const cells = row.split('|').map((cell) => cell.trim());
+    const id = cells[1];
+    const verdict = cells[2];
+    if (id === undefined || verdict === undefined || id === '') break;
+    assert.match(id, /^`.*`$/, `§4.2 identifier cell is not backticked: ${row}`);
+    assert.ok(verdict === 'yes' || verdict === 'no', `§4.2 verdict must be yes|no, got "${verdict}"`);
+    cases.push({ id: id.slice(1, -1), accepted: verdict === 'yes' });
+  }
+  return cases;
+}
+
+test('isRefId agrees with SPEC.md §4.2 on every case the spec states', () => {
+  const cases = identifierCasesDeclaredBySpec();
+  // The table must actually have been read. An empty parse would make every
+  // assertion below vacuous, which is the failure mode a doc-derived test has.
+  assert.ok(cases.length >= 8, `expected the §4.2 table to yield cases, got ${cases.length}`);
+  assert.ok(
+    cases.some((entry) => entry.accepted) && cases.some((entry) => !entry.accepted),
+    'the table must state both accepted and rejected identifiers, or it pins only one direction',
+  );
+  for (const { id, accepted } of cases) {
+    assert.equal(isRefId(id), accepted, `§4.2 says ${JSON.stringify(id)} is ${accepted ? 'accepted' : 'rejected'}`);
+  }
+});
