@@ -79,6 +79,7 @@ import {
   isSeq,
   parseDocument,
   visit,
+  Scalar,
   type Document,
   type DocumentOptions,
   type Pair,
@@ -287,34 +288,71 @@ export interface ParseResult {
 }
 
 /**
- * Parse one YAML scalar as a reference: `123`, `#123`, `ABC-123`,
+ * The IDENTIFIER TEXT a scalar node carries, or null when it is not a scalar.
+ *
+ * A REFERENCE IS LEXICAL, NOT TYPED, and this is the whole of §4.2: an
+ * identifier is an opaque string, so what a YAML schema would have made of that
+ * string is irrelevant to it.
+ *
+ * Reading the MATERIALIZED value instead was a silent defect. YAML implicitly
+ * types a plain scalar, so the reader was handed a number and never saw the
+ * author's token — measured:
+ *
+ *     1e5   ->  100000     a different issue
+ *     0x1F  ->  31         a different issue
+ *     007   ->  7          a different issue, AND it bypasses §4.2's
+ *                          non-canonical rejection, which the spec's own
+ *                          conformance table requires
+ *
+ * `1e5` and `0x1F` are perfectly good identifiers under §4.2's class, so an
+ * author on such a tracker had the edge pointed at another issue with no
+ * diagnostic — and if the substituted target happened to be closed, the issue
+ * read READY while its real blocker was open. Shipping work in the wrong order
+ * is the one outcome this format exists to prevent.
+ *
+ * So a PLAIN scalar's identifier is its SOURCE. A QUOTED one's is its unescaped
+ * value: quoting is how an author says "these exact bytes", and the value is
+ * what those bytes are.
+ *
+ * IT ALSO REMOVES AN ASYMMETRY THAT WAS PREVIOUSLY DOCUMENTED AS ACCEPTABLE:
+ * quoted `"007"` was refused while plain `007` silently became `7`. Both are
+ * refused now, which is what the spec says and what an author would expect.
+ */
+function scalarIdText(node: unknown, text: string): string | null {
+  if (!isScalar(node)) return null;
+  // Only the QUOTED and BLOCK styles carry author bytes in `value`; everything
+  // else — plain, and any style this list does not name — is read lexically,
+  // which is the §4.2-faithful direction and fails toward the author's token.
+  const quoted: readonly unknown[] = [
+    Scalar.QUOTE_SINGLE,
+    Scalar.QUOTE_DOUBLE,
+    Scalar.BLOCK_LITERAL,
+    Scalar.BLOCK_FOLDED,
+  ];
+  if (quoted.includes(node.type)) {
+    return typeof node.value === 'string' ? node.value : null;
+  }
+  const range = nodeRange(node);
+  if (range === null) return null;
+  // A ZERO-WIDTH range is the empty node an unquoted `- #9094` leaves behind
+  // once `#` opens a comment. It yields `""`, which no identifier grammar
+  // accepts — which is what keeps that silent-null case refused.
+  return text.slice(range[0], range[1]);
+}
+
+/**
+ * Parse one identifier token as a reference: `123`, `#123`, `ABC-123`,
  * `owner/repo#123` (§4.2).
  *
- * TAKES THE PARSED VALUE, NOT A TOKEN, because `yaml` has already decided what
- * the scalar is: an unquoted `123` arrives as a NUMBER and a quoted `"123"` as
- * a string, and both denote the same reference. Anything else — a null (which
- * is what an unquoted `#`-sigil reference in a block sequence becomes, see
- * {@link refsFrom}), a boolean, a nested collection — is not a reference.
+ * NOT TRIMMED, and the reason is measured rather than stylistic. YAML already
+ * strips surrounding whitespace from a PLAIN scalar — including inside a flow
+ * sequence — so a trim here could only ever act on a QUOTED one, where the
+ * author explicitly asked for those bytes. Trimming there bypasses `isRefId`'s
+ * deliberate whitespace exclusion: `" #123 "` would become the reference `123`
+ * and a re-render would write it back as `"#123"`, silently changing what the
+ * author wrote.
  */
-function parseRef(raw: unknown): IssueRef | null {
-  if (typeof raw === 'number') {
-    // BOUNDS ARE PART OF PARSING. `Number("1e21")` loses precision silently and
-    // a renderer's `String()` then emits scientific notation no reader accepts,
-    // so an unbounded parse lets an author-supplied `99999999999999999999999`
-    // ride a re-render into a corrupted line — parse-clean in, unparseable out.
-    // Zero and negatives are equally invalid: no tracker resolves them.
-    if (!Number.isSafeInteger(raw) || raw < 1) return null;
-    return { repo: null, id: String(raw) };
-  }
-  if (typeof raw !== 'string') return null;
-  // NOT TRIMMED, and the reason is measured rather than stylistic. YAML already
-  // strips surrounding whitespace from a PLAIN scalar — including inside a flow
-  // sequence — so a trim here could only ever act on a QUOTED one, where the
-  // author explicitly asked for those bytes. Trimming there bypasses
-  // `isRefId`'s deliberate whitespace exclusion: `" #123 "` would become the
-  // reference `123` and a re-render would write it back as `"#123"`, silently
-  // changing what the author wrote.
-  const s = raw;
+function parseRef(s: string): IssueRef | null {
   if (s.length === 0) return null;
 
   // The sigil is same-repo-only: in a qualified reference the `#` is the
@@ -699,7 +737,10 @@ export function parseFrontmatter(body: string): ParseResult {
     return { data: null, diagnostics, blockDefect: located.defect };
   }
 
-  const read = readDocumentOrReason(located.lines.join('\n'));
+  // THE TEXT THE RANGES INDEX. Every node range below is an offset into exactly
+  // this string, so it is computed once and threaded rather than rebuilt.
+  const blockText = located.lines.join('\n');
+  const read = readDocumentOrReason(blockText);
   if (read.doc === null) {
     diagnostics.push(`issuegraph: the block is not readable YAML (${read.reason ?? 'unreadable'}); block ignored`);
     return { data: null, diagnostics, blockDefect: null };
@@ -740,18 +781,23 @@ export function parseFrontmatter(body: string): ParseResult {
   let priority: Priority | null = null;
   let evidence: Evidence | null = null;
 
-  const singleRef = (key: string, raw: unknown): IssueRef | null => {
-    if (Array.isArray(raw)) {
+  const singleRef = (key: string, node: unknown): IssueRef | null => {
+    if (isSeq(node)) {
       diagnostics.push(`issuegraph: ${key} takes a single ref, not a list; dropped`);
       return null;
     }
-    if (raw !== null && typeof raw === 'object') {
+    if (isMap(node)) {
       diagnostics.push(`issuegraph: ${key} has nested mapping content; dropped`);
       return null;
     }
-    const ref = parseRef(raw);
+    const token = scalarIdText(node, blockText);
+    if (token === null) {
+      diagnostics.push(`issuegraph: ${key} has an unparseable ref; dropped`);
+      return null;
+    }
+    const ref = parseRef(token);
     if (ref === null) {
-      diagnostics.push(`issuegraph: ${key} has an unparseable ref ("${describe(raw)}"); dropped`);
+      diagnostics.push(`issuegraph: ${key} has an unparseable ref ("${token}"); dropped`);
     }
     return ref;
   };
@@ -759,37 +805,47 @@ export function parseFrontmatter(body: string): ParseResult {
   for (const pair of value) {
     const key = scalarKey(pair);
     if (key === null || !isField(key)) continue; // inert, silently (§4.1)
-    const raw: unknown = toJS(pair.value, doc);
     switch (key) {
+      // THE RELATIONSHIP FIELDS READ THE NODE, not a materialized value: a
+      // reference is lexical (§4.2), so YAML's implicit typing of a plain
+      // scalar must not reach it. See `scalarIdText`.
       case 'blocked-by':
-        blockedBy = refsFrom(raw, diagnostics);
+        blockedBy = refsFrom(pair.value, blockText, diagnostics);
         break;
       case 'decomposed-from':
-        decomposedFrom = singleRef(key, raw);
+        decomposedFrom = singleRef(key, pair.value);
         break;
       case 'duplicate-of':
-        duplicateOf = singleRef(key, raw);
+        duplicateOf = singleRef(key, pair.value);
         break;
       case 'serialize-with':
-        serializeWith = singleRef(key, raw);
+        serializeWith = singleRef(key, pair.value);
         break;
       case 'together-with':
-        togetherWith = singleRef(key, raw);
+        togetherWith = singleRef(key, pair.value);
         break;
-      case 'priority':
+      // THE SCALAR FIELDS KEEP THE MATERIALIZED VALUE, and the asymmetry is the
+      // point rather than an inconsistency: `priority` IS an integer (§4.3.5)
+      // and `evidence` IS one of two words, so YAML's typing is exactly right
+      // for them. Only references are opaque strings.
+      case 'priority': {
+        const raw: unknown = toJS(pair.value, doc);
         if (isPriority(raw)) priority = raw;
         else
           diagnostics.push(
             `issuegraph: priority must be an integer ${PRIORITY_MIN}-${PRIORITY_MAX} (got "${describe(raw)}"); dropped`,
           );
         break;
-      case 'evidence':
+      }
+      case 'evidence': {
+        const raw: unknown = toJS(pair.value, doc);
         if (typeof raw === 'string' && isEvidence(raw)) evidence = raw;
         else
           diagnostics.push(
             `issuegraph: evidence must be ${EVIDENCE_VALUES.join('|')} (got "${describe(raw)}"); dropped`,
           );
         break;
+      }
     }
   }
 
@@ -826,29 +882,35 @@ export function parseFrontmatter(body: string): ParseResult {
  * other recognised field already diagnoses a blank value, so tolerating it here
  * would be an inconsistency rather than a tolerance.
  */
-function refsFrom(raw: unknown, diagnostics: string[]): readonly IssueRef[] {
-  if (raw === null || raw === undefined) {
-    diagnostics.push('issuegraph: blocked-by has no value (write [] to declare none); dropped');
+function refsFrom(node: unknown, text: string, diagnostics: string[]): readonly IssueRef[] {
+  if (isMap(node)) {
+    diagnostics.push('issuegraph: blocked-by has nested mapping content; dropped');
     return [];
   }
-  if (!Array.isArray(raw)) {
-    if (typeof raw === 'object') {
-      diagnostics.push('issuegraph: blocked-by has nested mapping content; dropped');
+  if (!isSeq(node)) {
+    // A single scalar is tolerated as a one-item list, as it always has been.
+    const token = scalarIdText(node, text);
+    if (token === null || token.length === 0) {
+      diagnostics.push('issuegraph: blocked-by has no value (write [] to declare none); dropped');
       return [];
     }
-    // A single scalar is tolerated as a one-item list, as it always has been.
-    const ref = parseRef(raw);
+    const ref = parseRef(token);
     if (ref === null) {
-      diagnostics.push(`issuegraph: blocked-by item unparseable ("${describe(raw)}"); dropped`);
+      diagnostics.push(`issuegraph: blocked-by item unparseable ("${token}"); dropped`);
       return [];
     }
     return [ref];
   }
   const refs: IssueRef[] = [];
-  for (const item of raw as readonly unknown[]) {
-    const ref = parseRef(item);
+  for (const item of node.items) {
+    const token = scalarIdText(item, text);
+    if (token === null) {
+      diagnostics.push('issuegraph: blocked-by item is not a reference; dropped');
+      continue;
+    }
+    const ref = parseRef(token);
     if (ref === null) {
-      diagnostics.push(`issuegraph: blocked-by item unparseable ("${describe(item)}"); dropped`);
+      diagnostics.push(`issuegraph: blocked-by item unparseable ("${token}"); dropped`);
       continue;
     }
     refs.push(ref);

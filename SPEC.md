@@ -128,6 +128,8 @@ A specification that said "whatever string the tracker uses" would be unimplemen
 | `a"b` | no | would break the writer's quoted rendering |
 | `ABC:123` | no | outside the class — see below |
 
+**An identifier is never typed.** Readers MUST take a plain scalar's identifier from its **source text**, not from whatever a YAML schema makes of it. `1e5`, `0x1F` and `007` are identifiers, not numbers — a reader that materializes them first sees `100000`, `31` and `7`, silently pointing the edge at a different issue and bypassing the canonical-number rule above. By the same rule a token a schema would read as a boolean is still just an identifier; it will not resolve against any tracker, and an unresolvable reference blocks (6.2), which is the safe direction.
+
 **Widening the class is a spec revision, not an implementation choice.** A tracker whose identifiers carry other punctuation is not modelled today, and the failure is loud on both sides rather than silent — the reader reports a dropped field and the writer throws — so a consumer learns immediately rather than filing a graph that lies. A future revision MAY widen it; the constraints it must keep are the three above.
 
 **Numeric identifiers carry one bound.** An all-digits identifier MUST be a positive integer exactly representable by the host language's integer type, written canonically (no leading zeros). This is not arithmetic on the identifier — it is what makes a reference survive a re-render: a value outside that range comes back from a naive round-trip in a spelling (`1e+21`) no reader accepts, so an identifier that parsed cleanly would be written back unparseable. Identifiers that are not all digits carry no such bound.

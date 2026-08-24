@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
@@ -1043,23 +1045,42 @@ describe('issue references', () => {
     assert.deepEqual(refsOf(max), [{ repo: null, id: max }]);
   });
 
-  test('an UNQUOTED numeric scalar is normalised by YAML before this reader sees it', () => {
-    // Worth pinning because it is surprising and it is not this module's
-    // choice: `007`, `0x1F` and `1e5` are all INTEGERS in YAML's core schema,
-    // so the reader is handed 7, 31 and 100000 and never sees the spelling.
-    // The result round-trips stably from there, which is the property that
-    // matters — but an author's zero padding does not survive a re-render.
-    assert.deepEqual(refsOf('007'), [{ repo: null, id: '7' }]);
-    assert.deepEqual(refsOf('0x1F'), [{ repo: null, id: '31' }]);
-    assert.deepEqual(refsOf('1e5'), [{ repo: null, id: '100000' }]);
-
-    // QUOTING opts out of that reading, and then the token is judged as a
-    // string: `"007"` is refused above (leading zeros are not the canonical
-    // numeric spelling, and accepting them would let a re-render rewrite the
-    // author's reference), while a token YAML would not have read as a number
-    // at all is an ordinary opaque id.
-    assert.deepEqual(refsOf('"1e5"'), [{ repo: null, id: '1e5' }]);
+  test('a reference is read LEXICALLY, so YAML cannot retype it', () => {
+    // THIS TEST PREVIOUSLY PINNED A DEFECT, and the correction is recorded here
+    // rather than quietly swapped, because a test that asserts a defect is
+    // worse than no test. It used to assert that `007`, `0x1F` and `1e5` came
+    // back as `7`, `31` and `100000` — YAML implicitly types a plain scalar, so
+    // the reader was handed a number and never saw the author's token — and it
+    // called that acceptable on the grounds that the result round-trips stably
+    // from there.
+    //
+    // It does not. `1e5` and `0x1F` are perfectly good identifiers under §4.2's
+    // class, so an author on such a tracker had the edge silently pointed at a
+    // DIFFERENT ISSUE — and if that substituted target happened to be closed,
+    // the issue read READY while its real blocker was open. `007` additionally
+    // bypassed §4.2's non-canonical rejection, which the spec's own conformance
+    // table requires.
+    //
+    // §4.2 says an identifier is an opaque STRING, so a plain scalar's
+    // identifier is its SOURCE and a quoted one's is its unescaped value.
+    assert.deepEqual(refsOf('1e5'), [{ repo: null, id: '1e5' }]);
+    assert.deepEqual(refsOf('0x1F'), [{ repo: null, id: '0x1F' }]);
     assert.deepEqual(refsOf('1_000'), [{ repo: null, id: '1_000' }]);
+
+    // `007` is now REFUSED, in both spellings — which also removes an asymmetry
+    // this suite previously documented as acceptable: quoted `"007"` was
+    // refused while plain `007` silently became `7`.
+    for (const spelling of ['007', '"007"']) {
+      const r = parseFrontmatter(B(spelling));
+      assert.deepEqual(r.data?.blockedBy, [], spelling);
+      assert.ok(r.diagnostics.length > 0, spelling);
+      assert.equal(isUnreadDeclaration(r), true, spelling);
+    }
+
+    // Quoting still means "these exact bytes", so the two spellings of one
+    // identifier agree.
+    assert.deepEqual(refsOf('"1e5"'), refsOf('1e5'));
+    assert.deepEqual(refsOf('"ABC-1"'), refsOf('ABC-1'));
   });
 
   test('a token carrying whitespace or a stray separator is not an identifier', () => {
@@ -1266,5 +1287,78 @@ describe('an explicitly-written null section', () => {
     assert.equal(located?.headerLine, 0);
     assert.deepEqual(located?.fields, []);
     assert.equal(located?.hasSiblingKeys, true);
+  });
+});
+
+/**
+ * The READER, not just the predicate, must agree with SPEC.md §4.2.
+ *
+ * `@issuegraph/core` already pins `isRefId` against §4.2's conformance table.
+ * That pin passed while the reader VIOLATED the same table, and the gap is
+ * worth naming: an unquoted `007` never reaches `isRefId` as `"007"` — YAML
+ * hands the reader the number `7` — so a pin on the predicate says nothing
+ * about the parse path the spec is actually describing.
+ *
+ * This reads the same table and drives it through `parseFrontmatter`, which is
+ * the surface a consumer has.
+ */
+describe('parseFrontmatter agrees with SPEC.md §4.2', () => {
+  function specCases(): { id: string; accepted: boolean }[] {
+    const specPath = fileURLToPath(new URL('../../../SPEC.md', import.meta.url));
+    const spec = readFileSync(specPath, 'utf8');
+    const start = spec.indexOf('### 4.2 Issue references');
+    assert.notEqual(start, -1, 'SPEC.md no longer contains a "### 4.2 Issue references" heading');
+    const section = spec.slice(start, spec.indexOf('### 4.3 Fields'));
+    const marker = '| identifier | accepted | why |';
+    const at = section.indexOf(marker);
+    assert.notEqual(at, -1, 'SPEC.md §4.2 no longer carries the identifier conformance table');
+    const cases: { id: string; accepted: boolean }[] = [];
+    for (const line of section.slice(at + marker.length).split('\n').slice(2)) {
+      if (!line.startsWith('|')) break;
+      const cells = line.split('|').map((cell) => cell.trim());
+      const id = cells[1];
+      const verdict = cells[2];
+      if (id === undefined || verdict === undefined || id === '') break;
+      cases.push({ id: id.slice(1, -1), accepted: verdict === 'yes' });
+    }
+    return cases;
+  }
+
+  test('every identifier the table states parses, or is refused, as stated', () => {
+    const cases = specCases();
+    assert.ok(cases.length >= 8, `expected §4.2's table to yield cases, got ${cases.length}`);
+    assert.ok(
+      cases.some((c) => c.accepted) && cases.some((c) => !c.accepted),
+      'the table must state both verdicts, or this pins only one direction',
+    );
+    for (const { id, accepted } of cases) {
+      // QUOTED, so the table's own bytes reach the reader rather than a
+      // spelling YAML would retype. The unquoted path is covered separately by
+      // the lexical test above — this asserts the SPEC's cases, as written.
+      const body = ['---', 'issuegraph:', `  blocked-by: [${JSON.stringify(id)}]`, '---'].join('\n');
+      const parse = parseFrontmatter(body);
+      assert.equal(
+        parse.data?.blockedBy.length ?? 0,
+        accepted ? 1 : 0,
+        `§4.2 says ${JSON.stringify(id)} is ${accepted ? 'accepted' : 'rejected'}`,
+      );
+      if (accepted) assert.deepEqual(parse.diagnostics, [], JSON.stringify(id));
+      else assert.ok(parse.diagnostics.length > 0, JSON.stringify(id));
+    }
+  });
+
+  test('and the UNQUOTED spelling of each case agrees too, where YAML permits one', () => {
+    // The half the core pin structurally cannot reach: these go through YAML's
+    // implicit typing, which is exactly where `007` used to become `7`.
+    for (const { id, accepted } of specCases()) {
+      if (/[\s"/#]/.test(id)) continue; // not writable unquoted; the sigil rule covers those
+      const body = ['---', 'issuegraph:', `  blocked-by: [${id}]`, '---'].join('\n');
+      const parse = parseFrontmatter(body);
+      assert.equal(
+        parse.data?.blockedBy[0]?.id ?? null,
+        accepted ? id : null,
+        `unquoted ${id} must read as ${accepted ? id : 'a refusal'}`,
+      );
+    }
   });
 });
