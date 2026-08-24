@@ -32,7 +32,7 @@
  */
 
 import { EDGE_CARDINALITY, FIELDS } from '@issuegraph/core';
-import { isSpliceOwnedField, SPLICE_FIELD_OWNERSHIP, SPLICE_OWNED_FIELDS } from '@issuegraph/writer';
+import { SPLICE_FIELD_OWNERSHIP, SPLICE_OWNED_FIELDS } from '@issuegraph/writer';
 import type { SpliceOwnedField } from '@issuegraph/writer';
 
 /** A frontmatter field this CLI can write, spelled as it appears in a block. */
@@ -57,16 +57,43 @@ const SPLICE_UNCLEARABLE: readonly SpliceOwnedField[] = Object.freeze(
   SPLICE_OWNED_FIELDS.filter((field) => !SPLICE_FIELD_OWNERSHIP[field].clearable),
 );
 
+/** A field the splice does not own, so only `renderFrontmatter` can write it. */
+type RenderOnlyField = Exclude<WritableField, SpliceOwnedField>;
+
+/**
+ * The render-only fields, listed DELIBERATELY and checked for totality.
+ *
+ * NOT A BARE COMPLEMENT OF `FIELDS`, and the difference is a real defect rather
+ * than a style preference. `argv.ts` generates `set`'s option surface from
+ * `[...SPLICE_WRITABLE, ...RENDER_ONLY]`, while `collectSetFields` in `run.ts`
+ * handles the field names it names. A complement makes the OPTION surface grow
+ * the moment a field is added to the specification, and the HANDLER does not
+ * grow with it — so the new `--<field>` is parsed, accepted, and silently
+ * ignored, and the command exits 0 having not done what it was asked. That is
+ * the exact defect this file exists to refuse, rebuilt one layer up, and it is
+ * strictly worse than the field simply being unsupported.
+ *
+ * `satisfies Record<RenderOnlyField, true>` makes the divergence a BUILD ERROR
+ * instead: add a field to the specification and this stops compiling until
+ * somebody classifies it, which is the moment to teach `collectSetFields` about
+ * it too. Totality holds in both directions — a missing member fails the
+ * `Record`, and an extra key is an excess property on a fresh literal.
+ */
+const RENDER_ONLY_MEMBERS = {
+  'together-with': true,
+  priority: true,
+  evidence: true,
+} satisfies Record<RenderOnlyField, true>;
+
 /**
  * The fields only `renderFrontmatter` can write, so they reach a body that has
  * no block yet and cannot be amended in one that has.
  *
- * The COMPLEMENT of what the splice owns, over the spec's own field list, rather
- * than a third list to keep in step: a field added to the specification lands
- * here automatically instead of falling into no list at all.
+ * Ordered by the specification's own field order rather than by the literal
+ * above, so the two cannot disagree about presentation.
  */
 export const RENDER_ONLY: readonly WritableField[] = Object.freeze(
-  FIELDS.filter((field) => !isSpliceOwnedField(field)),
+  FIELDS.filter((field) => field in RENDER_ONLY_MEMBERS),
 );
 
 /** The key names the `--edges` payload accepts, matching the writer's own surface. */
