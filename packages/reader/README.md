@@ -17,14 +17,14 @@ import { parseFrontmatter, isUnreadDeclaration } from '@issuegraph/reader';
 
 const parse = parseFrontmatter(issue.body);
 
-parse.data?.blockedBy;   // [{ repo: null, number: 231 }, …]
+parse.data?.blockedBy;   // [{ repo: null, id: '231' }, …]
 parse.diagnostics;       // human-readable reasons a field or the block was dropped
 parse.blockDefect;       // 'undelimited' | 'unterminated' | null
 ```
 
 It never throws, on any input. A body with no block returns `data: null` with no diagnostics — a valid issue with no edges, not an error.
 
-**`data` alone cannot tell you whether the declaration was fully read**, and this is the mistake that costs money. `blocked-by: [231, not-a-ref]` returns a list carrying only `#231`, and `blocked-by: [not-a-ref]` returns an **empty** list that reads exactly like a body declaring no edge at all. Ask through `isUnreadDeclaration`:
+**`data` alone cannot tell you whether the declaration was fully read**, and this is the mistake that costs money. `blocked-by: [231, "a ref"]` returns a list carrying only `231`, and `blocked-by: ["a ref"]` returns an **empty** list that reads exactly like a body declaring no edge at all. Ask through `isUnreadDeclaration`:
 
 ```ts
 if (isUnreadDeclaration(parse)) {
@@ -43,7 +43,7 @@ const model = buildModel(
   issues.map((i) => {
     const parse = parseFrontmatter(i.body);
     return {
-      number: i.number,
+      id: String(i.number),      // the tracker's own id — a STRING, and opaque
       repo: i.repo,              // null for the home repo
       open: i.state === 'open',
       closedStateReason: i.stateReason,

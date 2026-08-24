@@ -630,7 +630,7 @@ export function locateSection(blockLines: readonly string[]): SectionLocation | 
   for (const pair of value) {
     const key = scalarKey(pair);
     const keyRange = nodeRange(pair.key);
-    if (key === null || keyRange === null) return null;
+    if (keyRange === null) return null;
     const startLine = lineAt(keyRange[0]);
     // AN ENTRY MUST OWN ITS OWN LINE, or a line-based edit cannot express it.
     // `issuegraph: {priority: 1}` is a perfectly good FLOW mapping that the
@@ -648,6 +648,26 @@ export function locateSection(blockLines: readonly string[]): SectionLocation | 
     while (endLine > startLine && (blockLines[endLine] ?? '').trim().length === 0) endLine -= 1;
     if (childIndent === -1) childIndent = columnAt(text, keyRange[0]);
     if (endLine > sectionEnd) sectionEnd = endLine;
+    // A NON-STRING KEY IS SKIPPED, NEVER A REFUSAL — and the two halves of that
+    // are separate on purpose.
+    //
+    // `parseFrontmatter` treats `1: extension` as an unrecognised field: inert,
+    // silent, and the recognised fields beside it still read (SPEC 4.1).
+    // Refusing the whole section here would make the writer disagree with the
+    // reader about a block the reader handles fine — and the consequence is not
+    // a refused write, it is DATA LOSS. `spliceGeneratedEdges` returns null, the
+    // caller takes the documented path and PREPENDS a fresh block, and under
+    // §4.1's first-block rule the author's original block stops being canonical:
+    // every recognised-but-unowned field in it silently goes invisible.
+    //
+    // Its SPAN still counts, above, even though the field itself is not
+    // reported. `sectionEnd` is what tells a writer where the section stops, so
+    // an entry omitted from the span would be classified as sibling content —
+    // and a section that still holds one would have its `issuegraph:` header
+    // dropped as though it were empty. Nothing is owed to `fields`: a writer
+    // only ever REMOVES lines it owns, so an entry it cannot name is preserved
+    // by not being listed.
+    if (key === null) continue;
     fields.push({ key, startLine, endLine });
   }
   return {

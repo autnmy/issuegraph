@@ -9,12 +9,15 @@ Issuegraph puts the ordering knowledge on the issues themselves, as plain YAML f
 ```markdown
 ---
 issuegraph:
-  blocked-by: [231, 234]
-  decomposed-from: 230
-  serialize-with: 232
+  blocked-by: ["#231", "#234"]
+  decomposed-from: "#230"
+  serialize-with: "#232"
   priority: 1
+
 ---
 ```
+
+A reference is whatever your tracker calls an issue — `231`, `#231`, `ABC-231`, or `owner/repo#231`. Writing it with the `#` sigil makes the tracker **auto-link** it, which stamps a cross-reference on the *target* issue: the one place you can see what an issue is **blocking**, since the format deliberately has no `blocks` field. Quote the sigil — `#` starts a comment in YAML — and leave a blank line before the closing `---`, or a markdown renderer reads it as a heading underline.
 
 Seven fields. Three chapters of rules. No server, no new tool, no migration — your tracker remains the source of truth.
 

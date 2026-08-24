@@ -1161,3 +1161,32 @@ describe('the silent-null case: an unquoted # in a block sequence', () => {
     assert.deepEqual(flow.diagnostics, []);
   });
 });
+
+describe('locateSection agrees with the parser about what it refuses', () => {
+  test('a NON-STRING key is skipped, exactly as the parser skips it', () => {
+    // The divergence this pins caused DATA LOSS rather than a refused write:
+    // `parseFrontmatter` reads `1: extension` as an unrecognised field and
+    // returns the recognised ones beside it, so a `locateSection` that refused
+    // the section sent the writer down its prepend-a-fresh-block path — and
+    // under §4.1's first-block rule the author's original block stopped being
+    // canonical, taking every unowned field in it out of view.
+    const lines = ['issuegraph:', '  1: extension', '  blocked-by: ["#7"]'];
+    const parsed = parseFrontmatter(['---', ...lines, '---'].join('\n'));
+    assert.deepEqual(parsed.data?.blockedBy, [{ repo: null, id: '7' }], 'the parser reads it');
+    assert.deepEqual(parsed.diagnostics, [], 'and says nothing — an unrecognised field is inert');
+
+    const located = locateSection(lines);
+    assert.notEqual(located, null, 'so the locator must not refuse it');
+    assert.deepEqual(located?.fields.map((f) => f.key), ['blocked-by']);
+  });
+
+  test("a skipped entry's SPAN still bounds the section", () => {
+    // `sectionEnd` is what tells a writer where the section stops. An entry
+    // omitted from it would read as sibling top-level content, and a section
+    // that still holds one would have its `issuegraph:` header dropped as
+    // though it had emptied.
+    const located = locateSection(['issuegraph:', '  blocked-by: ["#7"]', '  1: extension']);
+    assert.equal(located?.endLine, 2);
+    assert.equal(located?.hasSiblingKeys, false);
+  });
+});
