@@ -16,14 +16,24 @@
  * - `set` is the ergonomic one. It routes: render a fresh block when the body
  *   has none, splice when it has one.
  *
- * WHAT NEITHER CAN DO, stated plainly rather than discovered. The writer's
- * splice surface owns GENERATED EDGES only — `blocked-by`, `serialize-with`,
- * `decomposed-from`, `duplicate-of`. It deliberately does not own `together-with`,
- * `priority` or `evidence`, because those run the other way: the specification
- * makes a tracker's own convention canonical for them and the frontmatter field a
- * mirror. So those three can be written into a body that has NO block (via
- * render) and cannot be amended in one that already has a block. That is refused
- * explicitly, with the reason, rather than silently dropped.
+ * WHAT NEITHER CAN DO, stated plainly rather than discovered — the capability
+ * table lives in `fields.ts` and this is its consequence. Two limits, and they
+ * are different:
+ *
+ * - The splice surface owns GENERATED EDGES only, so `together-with`,
+ *   `priority` and `evidence` reach a body with NO block (via render) and cannot
+ *   be amended in one that has. The specification makes a tracker's own
+ *   convention canonical for those, and the frontmatter field a mirror.
+ * - Of the four edges it does own, only `blocked-by` and `serialize-with` can be
+ *   REMOVED. For `decomposed-from` and `duplicate-of` the writer reads an empty
+ *   value as "leave untouched" — deliberately, since they carry provenance and a
+ *   dedupe verdict rather than scheduling state, and a machine refreshing its
+ *   owned edges must not erase them by omission.
+ *
+ * BOTH ARE REFUSED WITH THE REASON, never silently dropped. A write command that
+ * exits 0 having changed nothing is the same defect this package exists to
+ * refuse, rebuilt one layer up: it tells its caller a thing happened that did
+ * not, and automation has no way to detect it.
  */
 
 import { backfillFrontmatter, renderFrontmatter, spliceGeneratedEdges } from '@issuegraph/writer';
@@ -32,10 +42,18 @@ import { parseFrontmatter } from '@issuegraph/reader';
 import type { Evidence } from '@issuegraph/core';
 
 import { classifyDeclaration, unreadErrorLines } from '../declaration.ts';
+import { clearRefusalReason } from '../fields.ts';
 import { EXIT } from '../exit.ts';
 import type { VerbResult } from '../exit.ts';
 
-/** The fields `set` accepts. Absent means "leave alone"; `null` means "clear". */
+/**
+ * The fields `set` accepts.
+ *
+ * Absent means "leave alone". A `null` (or `[]` for the list) is a CLEAR
+ * REQUEST — and a clear is only performable for the fields `fields.ts` lists as
+ * clearable. Asking to clear any of the others in a body that already has a
+ * block is refused rather than accepted and dropped; see the module note.
+ */
 export interface SetFields {
   readonly blockedBy?: readonly IssueRef[];
   readonly serializeWith?: IssueRef | null;
@@ -118,6 +136,24 @@ export function setFields(body: string, fields: SetFields): VerbResult {
   }
 
   if (decl.state === 'read') {
+    // A CLEAR THE WRITER CANNOT PERFORM IS REFUSED HERE, not only in the flag
+    // table. The flags are one caller; this package is importable, so a program
+    // holding `SetFields` reaches the same assignment, and refusing only at the
+    // command line would leave the silent no-op available through the library.
+    const unclearable = [
+      ['decomposed-from', fields.decomposedFrom],
+      ['duplicate-of', fields.duplicateOf],
+    ] as const;
+    for (const [field, value] of unclearable) {
+      if (value === null) {
+        return {
+          stdout: '',
+          stderr: [`issuegraph: refusing to write — ${clearRefusalReason(field)}`],
+          code: EXIT.refusedWrite,
+        };
+      }
+    }
+
     const renderOnly = renderOnlyRequested(fields);
     if (renderOnly.length > 0) {
       return {

@@ -18,6 +18,8 @@
  * of it here or anywhere else in this package.
  */
 
+import { RENDER_ONLY, SPLICE_CLEARABLE, SPLICE_WRITABLE } from './fields.ts';
+
 /** How many values an option takes, and whether it may repeat. */
 export interface OptionSpec {
   readonly arity: 0 | 1;
@@ -44,6 +46,43 @@ const BODY_FILE = { '--body-file': opt(1, 'read the issue body from a file inste
 const INPUT_FILE = { '--input': opt(1, 'read the input document from a file instead of stdin') };
 
 const REF = 'a reference: 123, #123, or owner/repo#123';
+
+/** The value each writable field takes, for its `--<field>` option's summary. */
+const FIELD_VALUE: Readonly<Record<string, string>> = Object.freeze({
+  'blocked-by': `${REF}; repeat to give the whole list`,
+  'serialize-with': REF,
+  'decomposed-from': REF,
+  'duplicate-of': REF,
+  'together-with': REF,
+  priority: 'an integer 0-3',
+  evidence: 'asserted or verified',
+});
+
+/**
+ * `set`'s field options, GENERATED from the capability tables rather than
+ * listed.
+ *
+ * A `--no-<field>` flag appears for exactly the fields the writer can remove
+ * from an existing block. Listing them by hand is what produced five flags that
+ * accepted a clear nothing could perform and exited 0 having changed nothing —
+ * see `fields.ts` for why the capabilities differ per field.
+ */
+const SET_FIELD_OPTIONS: Readonly<Record<string, OptionSpec>> = Object.freeze(
+  Object.fromEntries([
+    ...[...SPLICE_WRITABLE, ...RENDER_ONLY].map((field) => [
+      `--${field}`,
+      opt(
+        1,
+        `${FIELD_VALUE[field] ?? REF}${RENDER_ONLY.includes(field) ? ' (only when the body has no block yet)' : ''}`,
+        field === 'blocked-by',
+      ),
+    ]),
+    ...SPLICE_CLEARABLE.map((field) => [
+      `--no-${field}`,
+      opt(0, `remove the ${field} entry from the block`),
+    ]),
+  ]),
+);
 
 /**
  * Every verb this binary answers to.
@@ -78,20 +117,7 @@ export const VERBS = Object.freeze({
     input: 'body',
     options: Object.freeze({
       ...BODY_FILE,
-      '--blocked-by': opt(1, `${REF}; repeat to give the whole list`, true),
-      '--no-blocked-by': opt(0, 'remove every blocked-by entry'),
-      '--serialize-with': opt(1, REF),
-      '--no-serialize-with': opt(0, 'remove the serialize-with entry'),
-      '--decomposed-from': opt(1, REF),
-      '--no-decomposed-from': opt(0, 'remove the decomposed-from entry'),
-      '--duplicate-of': opt(1, REF),
-      '--no-duplicate-of': opt(0, 'remove the duplicate-of entry'),
-      '--together-with': opt(1, `${REF} (only when the body has no block yet)`),
-      '--no-together-with': opt(0, 'remove the together-with entry (only when the body has no block yet)'),
-      '--priority': opt(1, 'an integer 0-3 (only when the body has no block yet)'),
-      '--no-priority': opt(0, 'remove the priority field (only when the body has no block yet)'),
-      '--evidence': opt(1, 'asserted or verified (only when the body has no block yet)'),
-      '--no-evidence': opt(0, 'remove the evidence field (only when the body has no block yet)'),
+      ...SET_FIELD_OPTIONS,
     }),
   },
   splice: {

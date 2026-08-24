@@ -110,6 +110,32 @@ describe('usage errors at the process boundary', () => {
   });
 });
 
+describe('a write command never exits 0 having silently done nothing', () => {
+  // Both reported findings, at the boundary a caller's automation actually reads.
+  test('a clear the writer cannot perform is refused, not accepted and ignored', () => {
+    const body = ['---', 'issuegraph:', '  duplicate-of: 42', '---', '', 'Prose.'].join('\n');
+    const result = run(['set', '--no-duplicate-of'], body);
+    assert.notEqual(result.status, EXIT.ok);
+    assert.equal(result.stdout, '');
+  });
+
+  test('an unrecognised --edges key is refused, not ignored', () => {
+    const body = ['---', 'issuegraph:', '  serialize-with: 9', '---', '', 'Prose.'].join('\n');
+    const result = run(['splice', '--edges', '{"serialiseWith":"9"}'], body);
+    assert.equal(result.status, EXIT.usage);
+    assert.equal(result.stdout, '');
+    assert.ok(result.stderr.includes('serialiseWith'), result.stderr);
+  });
+
+  test('CONTROL: the clear the writer CAN perform still succeeds and still clears', () => {
+    const body = ['---', 'issuegraph:', '  serialize-with: 9', '  blocked-by:', '    - 1', '---', '', 'Prose.'].join('\n');
+    const result = run(['set', '--no-serialize-with'], body);
+    assert.equal(result.status, EXIT.ok);
+    assert.ok(!result.stdout.includes('serialize-with'), result.stdout);
+    assert.ok(result.stdout.includes('blocked-by'), 'an unowned field must survive');
+  });
+});
+
 describe('--help and --version', () => {
   const help = run(['--help']);
 

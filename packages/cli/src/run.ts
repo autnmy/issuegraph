@@ -16,6 +16,7 @@ import type { VerbResult } from './exit.ts';
 import { helpText } from './argv.ts';
 import type { ParsedArgv } from './argv.ts';
 import { REF_SPELLINGS, resolveRef } from './refs.ts';
+import { CLEARABLE_JSON_KEYS, EDGE_JSON_KEYS, SPLICE_CLEARABLE, clearRefusalReason } from './fields.ts';
 import { parseBody } from './verbs/parse.ts';
 import { validateBody } from './verbs/validate.ts';
 import { orderFromJson } from './verbs/order.ts';
@@ -52,36 +53,22 @@ export function help(): string {
 
 type Options = ReadonlyMap<string, readonly string[]>;
 
-/** Resolve one ref-valued option, or say which flag was wrong. */
-function refOption(options: Options, name: string): IssueRef | 'absent' | { readonly bad: string } {
-  const values = options.get(name);
-  if (values === undefined) return 'absent';
-  const token = values[0];
-  if (token === undefined) return { bad: name };
-  const ref = resolveRef(token);
-  return ref === null ? { bad: name } : ref;
-}
-
 /**
- * Build the `set` fields from the options, or a usage error.
+ * Build the `set` fields from the options, or the refusal to return.
  *
  * A `--x` and `--no-x` pair given together is refused rather than resolved by
  * precedence: either answer would be a guess about which the caller meant, and a
  * guess that writes to an issue body is the expensive kind.
+ *
+ * Only the fields `fields.ts` lists as clearable have a `--no-` form at all, so
+ * there is no arm here that accepts a clear the writer cannot perform.
  */
 function collectSetFields(options: Options): Collected<SetFields> {
-  const pairs: readonly (readonly [set: string, clear: string])[] = [
-    ['--blocked-by', '--no-blocked-by'],
-    ['--serialize-with', '--no-serialize-with'],
-    ['--decomposed-from', '--no-decomposed-from'],
-    ['--duplicate-of', '--no-duplicate-of'],
-    ['--together-with', '--no-together-with'],
-    ['--priority', '--no-priority'],
-    ['--evidence', '--no-evidence'],
-  ];
-  for (const [setName, clearName] of pairs) {
-    if (options.has(setName) && options.has(clearName)) {
-      return refused(usageResult(`set: ${setName} and ${clearName} were both given; they contradict each other`));
+  for (const field of SPLICE_CLEARABLE) {
+    if (options.has(`--${field}`) && options.has(`--no-${field}`)) {
+      return refused(
+        usageResult(`set: --${field} and --no-${field} were both given; they contradict each other`),
+      );
     }
   }
 
@@ -109,39 +96,45 @@ function collectSetFields(options: Options): Collected<SetFields> {
   }
   if (options.has('--no-blocked-by')) fields.blockedBy = [];
 
+  /**
+   * The single-ref fields. `clearable` is read from the taxonomy rather than
+   * hard-coded, so a field that gains or loses a `--no-` form does so in one
+   * place and this loop follows.
+   */
   const singles: readonly (readonly [
-    option: string,
-    clear: string,
+    field: string,
     assign: (ref: IssueRef | null) => void,
   ])[] = [
-    ['--serialize-with', '--no-serialize-with', (ref) => (fields.serializeWith = ref)],
-    ['--decomposed-from', '--no-decomposed-from', (ref) => (fields.decomposedFrom = ref)],
-    ['--duplicate-of', '--no-duplicate-of', (ref) => (fields.duplicateOf = ref)],
-    ['--together-with', '--no-together-with', (ref) => (fields.togetherWith = ref)],
+    ['serialize-with', (ref) => (fields.serializeWith = ref)],
+    ['decomposed-from', (ref) => (fields.decomposedFrom = ref)],
+    ['duplicate-of', (ref) => (fields.duplicateOf = ref)],
+    ['together-with', (ref) => (fields.togetherWith = ref)],
   ];
-  for (const [option, clear, assign] of singles) {
-    if (options.has(clear)) {
+  for (const [field, assign] of singles) {
+    const option = `--${field}`;
+    if (options.has(`--no-${field}`)) {
       assign(null);
       continue;
     }
-    const resolved = refOption(options, option);
-    if (resolved === 'absent') continue;
-    if ('bad' in resolved) {
-      const given = options.get(option)?.[0] ?? '';
-      return refused(usageResult(`set: ${option} ${JSON.stringify(given)} is not ${REF_SPELLINGS}`));
+    const values = options.get(option);
+    if (values === undefined) continue;
+    const token = values[0] ?? '';
+    const ref = resolveRef(token);
+    if (ref === null) {
+      return refused(usageResult(`set: ${option} ${JSON.stringify(token)} is not ${REF_SPELLINGS}`));
     }
-    assign(resolved);
+    assign(ref);
   }
 
-  if (options.has('--no-priority')) fields.priority = null;
   const priority = options.get('--priority')?.[0];
   if (priority !== undefined) {
     const value = Number(priority);
-    if (!isPriority(value)) return refused(usageResult(`set: --priority ${JSON.stringify(priority)} is not an integer 0-3`));
+    if (!isPriority(value)) {
+      return refused(usageResult(`set: --priority ${JSON.stringify(priority)} is not an integer 0-3`));
+    }
     fields.priority = value;
   }
 
-  if (options.has('--no-evidence')) fields.evidence = null;
   const evidence = options.get('--evidence')?.[0];
   if (evidence !== undefined) {
     if (!isEvidence(evidence)) {
@@ -162,7 +155,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  *
  * Refs are given as STRINGS in the same three spellings the flags accept, so the
  * CLI has one ref grammar rather than two — and that one is the reader's.
- * Absent leaves a field untouched; `null` clears it; a value sets it.
+ * Absent leaves a field untouched; a value sets it; `null` clears it, but only
+ * for the keys the writer can actually clear.
+ *
+ * EVERY KEY IS CHECKED AGAINST THE ALLOWLIST, and an unrecognised one is a usage
+ * error rather than a shrug. `splice` is a WRITE command, so ignoring a key it
+ * did not recognise means exiting 0 with the body unchanged while the caller
+ * believes an edge landed — a misspelling (`serialiseWith`) or the block's own
+ * spelling (`duplicate-of`) is enough to trigger it, and automation has no way
+ * to tell that success from a real one.
  */
 function collectEdges(text: string): Collected<GeneratedEdges> {
   let value: unknown;
@@ -173,6 +174,17 @@ function collectEdges(text: string): Collected<GeneratedEdges> {
     return refused(usageResult(`splice: --edges is not valid JSON — ${detail}`));
   }
   if (!isRecord(value)) return refused(usageResult('splice: --edges must be a JSON object'));
+
+  const allowed: readonly string[] = EDGE_JSON_KEYS;
+  for (const key of Object.keys(value)) {
+    if (!allowed.includes(key)) {
+      return refused(
+        usageResult(
+          `splice: --edges has an unrecognised key ${JSON.stringify(key)}. Allowed: ${allowed.join(', ')}`,
+        ),
+      );
+    }
+  }
 
   const edges: {
     blockedBy?: readonly IssueRef[];
@@ -204,11 +216,16 @@ function collectEdges(text: string): Collected<GeneratedEdges> {
     if (!Object.hasOwn(value, key)) continue;
     const item = value[key];
     if (item === null) {
+      // The writer reads `null` as "leave untouched" for the provenance pair, so
+      // accepting one here would report a clear it never performed.
+      if (!CLEARABLE_JSON_KEYS.includes(key)) {
+        return refused(usageResult(`splice: ${clearRefusalReason(`--edges.${key}`)}`));
+      }
       edges[key] = null;
       continue;
     }
     const ref = typeof item === 'string' ? resolveRef(item) : null;
-    if (ref === null) return refused(usageResult(`splice: --edges.${key} is not ${REF_SPELLINGS} or null`));
+    if (ref === null) return refused(usageResult(`splice: --edges.${key} is not ${REF_SPELLINGS}`));
     edges[key] = ref;
   }
 

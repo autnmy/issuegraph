@@ -106,9 +106,27 @@ References take any spelling the reader accepts: `123`, `#123`, or `owner/repo#1
 
 `set` renders a fresh block when the body has none and splices when it has one. `splice` only ever edits an existing block, and refuses when there is none.
 
-**A field the splice surface does not own cannot be amended in an existing block.** `together-with`, `priority` and `evidence` can be written into a body that has no block yet, but not changed in one that already has — the writer owns *generated edges* (`blocked-by`, `serialize-with`, `decomposed-from`, `duplicate-of`), because for the others the specification makes the tracker's own convention canonical and the frontmatter field a mirror. Asking for one is refused with that reason rather than silently dropped.
+### What a write cannot do
 
-Both write verbs **refuse an unread block**: editing entries nobody could read would replace edges the run never saw.
+The writer's capabilities differ per field, and the CLI refuses what it cannot perform rather than exiting `0` having changed nothing.
+
+| field | can be written into an existing block | can be **removed** from one |
+|---|---|---|
+| `blocked-by` | yes | yes — `--no-blocked-by` |
+| `serialize-with` | yes | yes — `--no-serialize-with` |
+| `decomposed-from` | yes | **no** |
+| `duplicate-of` | yes | **no** |
+| `together-with` | **no** | no |
+| `priority` | **no** | no |
+| `evidence` | **no** | no |
+
+The last three reach a body that has **no block yet** (rendered) and cannot be amended in one that has: the specification makes a tracker's own convention canonical for them and the frontmatter field a mirror.
+
+The middle two can be written but not removed: the writer reads an empty value there as *leave untouched*, deliberately, because they carry provenance and a dedupe verdict rather than scheduling state — a machine refreshing its owned edges must not erase them by omission.
+
+So there is **no `--no-decomposed-from` or `--no-duplicate-of`**, an `--edges` payload containing `null` for either is refused, and an **unrecognised `--edges` key is refused too** rather than ignored. A write command that exits `0` having silently done nothing tells its caller a thing happened that did not, and automation cannot detect it — which is the same defect this package exists to refuse, one layer up.
+
+Both write verbs also **refuse an unread block**: editing entries nobody could read would replace edges the run never saw.
 
 ## Exit codes
 

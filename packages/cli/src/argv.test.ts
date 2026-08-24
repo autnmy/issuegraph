@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
 import { VERBS, VERB_NAMES, helpText, parseArgv } from './argv.ts';
+import { RENDER_ONLY, SPLICE_CLEARABLE, SPLICE_WRITABLE } from './fields.ts';
 
 describe('parseArgv', () => {
   test('no arguments asks for help rather than guessing a verb', () => {
@@ -122,15 +123,24 @@ describe('the verb table', () => {
     }
   });
 
-  test('every set/clear flag pair is declared together', () => {
-    // A `--x` with no `--no-x` (or the reverse) is a surface a user will reach
-    // for and not find. Derived from the table rather than listed, so a new pair
-    // is covered the moment it is added.
+  test('set offers a --<field> for every writable field, and a --no-<field> for exactly the clearable ones', () => {
+    // The invariant is NOT "every flag has a partner" — that was the shape that
+    // produced five `--no-` flags accepting a clear the writer cannot perform.
+    // It is: a clear is offered exactly where one can be performed.
     const setOptions = Object.keys(VERBS.set.options);
+    for (const field of [...SPLICE_WRITABLE, ...RENDER_ONLY]) {
+      assert.ok(setOptions.includes(`--${field}`), `set lacks --${field}`);
+    }
     for (const option of setOptions) {
-      if (option === '--body-file') continue;
-      const partner = option.startsWith('--no-') ? `--${option.slice('--no-'.length)}` : `--no-${option.slice(2)}`;
-      assert.ok(setOptions.includes(partner), `${option} has no ${partner}`);
+      if (!option.startsWith('--no-')) continue;
+      const field = option.slice('--no-'.length);
+      assert.ok(
+        SPLICE_CLEARABLE.some((clearable) => clearable === field),
+        `${option} offers a clear the writer cannot perform`,
+      );
+    }
+    for (const field of SPLICE_CLEARABLE) {
+      assert.ok(setOptions.includes(`--no-${field}`), `set lacks --no-${field}`);
     }
   });
 });
