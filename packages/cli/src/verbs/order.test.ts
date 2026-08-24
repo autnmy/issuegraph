@@ -356,7 +356,7 @@ describe('input validation — a bad document is a USAGE error, never unread', (
     // The document carries bodies. Handing in pre-parsed data is exactly the
     // hand-rolled-grammar path this package exists to close, so an extra key is
     // simply not read — the body is still the only edge source.
-    const issues = [{ ...issue(1, 'no block'), data: { blockedBy: [{ repo: null, number: 999 }] } }];
+    const issues = [{ ...issue(1, 'no block'), data: { blockedBy: [{ repo: null, id: '999' }] } }];
     const { out } = run(document(issues));
     assert.equal(out.slots.find((s) => s.lead === '1')?.ready, true, 'a fabricated blocker must not gate anything');
   });

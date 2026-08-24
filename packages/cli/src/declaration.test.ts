@@ -21,8 +21,8 @@ describe('classifyDeclaration', () => {
     assert.equal(decl.state, 'read');
     assert.ok(decl.state === 'read');
     assert.deepEqual(
-      decl.data.blockedBy.map((ref) => ref.number),
-      [123, 124],
+      decl.data.blockedBy.map((ref) => ref.id),
+      ['123', '124'],
     );
     assert.deepEqual(decl.diagnostics, []);
   });
@@ -32,8 +32,8 @@ describe('classifyDeclaration', () => {
     assert.equal(decl.state, 'read');
     assert.ok(decl.state === 'read');
     assert.deepEqual(
-      decl.data.blockedBy.map((ref) => ref.number),
-      [7],
+      decl.data.blockedBy.map((ref) => ref.id),
+      ['7'],
     );
     assert.equal(decl.data.evidence, 'verified');
   });

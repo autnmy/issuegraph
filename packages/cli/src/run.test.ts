@@ -109,7 +109,7 @@ describe('splice --edges validates its payload', () => {
   test('CONTROL: an ordinary write through a recognised key still lands', () => {
     const result = run(['splice', '--edges', '{"duplicateOf":"99"}'], FULL_BODY);
     assert.equal(result.code, EXIT.ok);
-    assert.ok(result.stdout.includes('duplicate-of: 99'), result.stdout);
+    assert.ok(result.stdout.includes('duplicate-of: "#99"'), result.stdout);
   });
 
   test('blockedBy: [] still clears — the writer reads an empty LIST as remove', () => {
@@ -139,7 +139,7 @@ describe('splice --edges validates its payload', () => {
     // of a filename into an issue body is the failure this separation prevents.
     const result = run(['splice', '--edges-file', '/tmp/edges.json'], FULL_BODY, '{"duplicateOf":"55"}');
     assert.equal(result.code, EXIT.ok);
-    assert.ok(result.stdout.includes('duplicate-of: 55'), result.stdout);
+    assert.ok(result.stdout.includes('duplicate-of: "#55"'), result.stdout);
   });
 });
 

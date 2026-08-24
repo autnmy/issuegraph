@@ -197,7 +197,10 @@ function asBaseRanking(value: unknown, at: string): IssueOrderBaseRanking {
 function asIssueNumber(value: unknown, at: string): number {
   const parsed = asInteger(value, at);
   const ref = resolveRef(String(parsed));
-  if (ref === null || ref.number !== parsed) {
+  // COMPARED AS THE READER STORES IT. An identifier is an opaque string
+  // (SPEC 4.2), so the round-trip through `resolveRef` comes back as text; the
+  // CLI's own input schema keeps `number`, and this is the boundary.
+  if (ref === null || ref.id !== String(parsed)) {
     fail(at, `expected an issue number the reader can reference, got ${parsed}`);
   }
   return parsed;
@@ -270,7 +273,7 @@ export type OrderView = 'order' | 'ready';
 function duplicateKeyRefusal(document: OrderInputDocument): VerbResult | null {
   const seen = new Map<string, number>();
   for (const [index, issue] of document.issues.entries()) {
-    const key = nodeKey({ number: issue.number, repo: issue.repo ?? null }, document.homeRepo);
+    const key = nodeKey({ id: String(issue.number), repo: issue.repo ?? null }, document.homeRepo);
     const first = seen.get(key);
     if (first !== undefined) {
       return {
@@ -310,10 +313,10 @@ export function deriveOrder(document: OrderInputDocument, view: OrderView): Verb
     const decl = classifyDeclaration(parse);
     const repo = issue.repo ?? null;
     if (decl.state === 'unread') {
-      underRead.push(nodeKey({ number: issue.number, repo }, document.homeRepo));
+      underRead.push(nodeKey({ id: String(issue.number), repo }, document.homeRepo));
     }
     return {
-      number: issue.number,
+      id: String(issue.number),
       ...(issue.repo === undefined ? {} : { repo: issue.repo }),
       open: issue.open,
       ...(issue.closedStateReason === undefined
