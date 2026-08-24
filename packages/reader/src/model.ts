@@ -54,7 +54,44 @@ export interface NodeInput {
    */
   readonly assigneeCount: number;
   readonly data: Frontmatter | null;
+  /**
+   * How completely this node's OWN declaration was read.
+   *
+   * REQUIRED, and that is the mechanism rather than a style choice. `data`
+   * cannot express this: the parser's field-drop row returns a NON-NULL `data`
+   * with a field rejected, so `blocked-by: [123, not-a-ref]` yields a node
+   * gated on `#123` alone and `serialize-with: not-a-ref` yields a node that
+   * reads exactly like a body declaring no relation at all. Both are an absence
+   * rendered as a value. An optional field would let a producer silently omit
+   * it and restore precisely that defect — as an UNSTATED one, since the
+   * omission would compile.
+   *
+   * Answer it with `isUnreadDeclaration` over the SAME `ParseResult` whose
+   * `data` you pass here; the pair travels together or the fact is lost.
+   */
+  readonly declarationRead: DeclarationRead;
 }
+
+/**
+ * How completely a node's issuegraph declaration was read.
+ *
+ * - `'read'` — nothing was lost. This covers a body with NO block at all:
+ *   nothing was declared, so nothing was dropped. It also covers a node whose
+ *   `data` was SYNTHESIZED rather than parsed, where there is no body to
+ *   under-read.
+ * - `'under-read'` — a DELIMITED block was found and something inside it could
+ *   not be read, so `data` is a PARTIAL declaration and its silence about any
+ *   edge is not evidence.
+ *
+ * THE AXIS IS `isUnreadDeclaration`, NOT `diagnostics.length > 0`. That
+ * predicate's doc owns the reasoning and is cited rather than paraphrased here;
+ * the consequence that matters at this seam is that the
+ * `undelimited`/`unterminated` family is excluded by construction, so the
+ * header-carrying bodies written without a `---` pair — the overwhelming
+ * majority of hand-authored ones — stay exactly as inert as they are today and
+ * none of the rules below reaches them.
+ */
+export type DeclarationRead = 'read' | 'under-read';
 
 /**
  * A node that may DECLARE but may never ANSWER.
@@ -147,6 +184,45 @@ export interface Model {
    * ending nowhere, cycles.
    */
   readonly diagnostics: readonly string[];
+  /**
+   * Every key whose own declaration was under-read, sorted. Empty is the
+   * ordinary case and means every declaration in the set was fully read.
+   *
+   * WHY THIS IS ON THE SURFACE AND NOT JUST A DIAGNOSTIC — it is the seam for
+   * the one thing this model provably CANNOT do for you.
+   *
+   * The refusals elsewhere protect nodes the model can NAME: the under-read
+   * node itself, its serialize component, and anything whose edge resolved to
+   * it. They cannot protect a node it cannot name. When the DROPPED FIELD IS
+   * ITSELF AN EDGE — `#1` declares `together-with: 2` and the parser rejects
+   * that line — the relationship never enters edge collection, so `#2` is an
+   * ordinary ready singleton, indistinguishable from any other node in the set.
+   * Measured, one field apart: with the edge SURVIVING the parse, `#2` came
+   * back refused ("together member 1 is not ready"); with the edge DROPPED it
+   * came back `{ready: true, reasons: []}` in a component of one.
+   *
+   * No refusal this model could compute closes that. The peer's IDENTITY is
+   * what the parse destroyed, so the only sound refusal would be "refuse every
+   * node while any declaration is under-read" — a global stall on one malformed
+   * body, which is not a rule any consumer would want imposed.
+   *
+   * SO THE POLICY IS THE HOST'S, and this field is what makes it expressible.
+   * A host wanting the strict §4.3.7 guarantee holds selection while this is
+   * non-empty; one with a looser bar reads it for triage and grooming. That is
+   * the same split `isUnreadDeclaration` already draws one layer down — the
+   * QUESTION factors, the POLICY does not — and the same shape §6.7 leaves to a
+   * consumer for an unresolvable `serialize-with`.
+   *
+   * READ IT STRUCTURALLY; DO NOT MATCH THE DIAGNOSTIC PROSE. The diagnostics
+   * carry the same fact as a sentence, and a reworded sentence silently stops
+   * matching and fails OPEN — the exact failure this package refuses elsewhere.
+   *
+   * DECLARER-ONLY NODES ARE INCLUDED, unlike `keys`. A weak node may add
+   * constraints, and an under-read weak node is a constraint that could not be
+   * read; a host composing the strict policy needs to know that as much as it
+   * needs the full-node case.
+   */
+  readonly underReadKeys: readonly string[];
 }
 
 /**
@@ -421,11 +497,32 @@ export function buildModel(
   // forbids (the sibling was simply unfetchable this walk: budget, fault,
   // 404). Same fail-safe family as unresolved blocked-by.
   const unresolvedRelations = new Map<string, string[]>();
+  /**
+   * Declarers whose `together-with` resolved to a CLOSED node that had itself
+   * been under-read — so "it left the unit" is not a fact anyone established.
+   *
+   * SEPARATE FROM `unresolvedRelations` because the reference DID resolve: the
+   * node is here and referenceable, and only its REDIRECT is unknown. Folding
+   * the two would report a node we can see as one we cannot, which is a
+   * different diagnosis with a different remedy.
+   */
+  const underReadTogether = new Map<string, string[]>();
   const dependentsOf = new Map<string, string[]>(); // reverse of blockersOf
   const serialize = new UnionFind();
   const together = new UnionFind();
 
   for (const [k, n] of byKey) {
+    // REPORTED BEFORE THE `data === null` GUARD BELOW, deliberately: an
+    // under-read node can be either shape. A delimited block that was UNUSABLE
+    // yields `data: null`, and a block that merely DROPPED A FIELD yields
+    // non-null `data` — the second is the one that reads as complete, so a
+    // diagnostic emitted only on the edge-bearing path would miss half the
+    // population it exists to surface.
+    if (n.declarationRead === 'under-read') {
+      diagnostics.push(
+        `${k}: its own issuegraph declaration was not fully read; its silence about an edge is not evidence (fail-safe: refusing the node and its serialize component)`,
+      );
+    }
     const data = n.data;
     if (data === null) continue;
     // A DUPLICATE CONTRIBUTES NO RELATIONSHIP EDGES. §4.3.3 says a duplicate is
@@ -516,6 +613,24 @@ export function buildModel(
       if (target === undefined) {
         unresolvedRelations.set(k, [...(unresolvedRelations.get(k) ?? []), `together-with ${rk}`]);
         diagnostics.push(`${k}: together-with ${rk} is unresolvable; fail-safe: refusing the declarer`);
+      } else if (!target.open && target.declarationRead === 'under-read') {
+        // "A CLOSED MEMBER HAS LEFT THE UNIT" IS READ OFF THE TARGET'S OWN
+        // DECLARATION, and for this target that declaration was not fully read.
+        // `targetKey` resolves the ref through the target's `duplicate-of`, so a
+        // dropped one stops the edge at a closed duplicate instead of carrying
+        // it to a canonical that may still be an OPEN member of the unit. The
+        // union below then never happens, `readiness` never evaluates the unit,
+        // and the declarer reports ready alone — a §4.3.7 atomic unit silently
+        // dissolved by a field nobody could read.
+        //
+        // MEASURED, one field apart: with the target closed and its
+        // `duplicate-of: 3` DROPPED the declarer came back
+        // `{ready: true, reasons: []}` in a component of one; with the same
+        // field PARSED it came back refused, in a two-member unit with #3.
+        underReadTogether.set(k, [...(underReadTogether.get(k) ?? []), rk]);
+        diagnostics.push(
+          `${k}: together-with ${rk} resolves to a closed node whose own declaration was under-read; whether it left the unit is unknown (fail-safe: refusing the declarer)`,
+        );
       } else if (n.open && target.open) {
         // Only OPEN endpoints union: a closed member has left the unit and
         // must not bridge two open members into one active component.
@@ -544,6 +659,14 @@ export function buildModel(
 
 
   // ---- effective priority (§6.3): relax minima along blocked-by AND together ----
+  // THE UNDER-READ AXIS DELIBERATELY DOES NOT REACH HERE, and the choice is
+  // recorded rather than left to look like an oversight. An under-read node may
+  // have declared a `blocked-by` the parser dropped, so a blocker somewhere does
+  // not inherit this node's urgency. That UNDER-reports urgency — a blocker
+  // ranks lower than it should — which can only reorder work, never admit any.
+  // Every other site of this rule refuses something; this one has nothing to
+  // refuse, and inventing a refusal here would trade a ranking imprecision for a
+  // stall.
   const effective = new Map<string, number>();
   for (const [k] of byKey) effective.set(k, (declared.get(k) as DeclaredPriority).value);
   // Two relaxations, run in ONE worklist rather than in sequence, because each
@@ -676,6 +799,23 @@ export function buildModel(
     // atomically (§4.3.7) contained a node the model refuses to select. A guard
     // at one of two doors is not a guard.
     if (n.declarerOnly === true) reasons.push('declared by a weak source; not selectable');
+    // THE NODE'S OWN DECLARATION WAS UNDER-READ. Every derivation below reads
+    // `n.data` as though it were the whole declaration, and for this node it is
+    // not — a dropped `blocked-by` item leaves a SHORT blocker list that reports
+    // ready the moment the survivors close, and a dropped `duplicate-of` leaves
+    // a duplicate looking canonical. Neither is recoverable from `data`, which
+    // is exactly why the fact is carried on the node. Refusing here is the same
+    // fail-safe the model already applies to an unresolvable ref: what could not
+    // be read must not read as absent.
+    //
+    // ITS TOGETHER UNIT NEEDS NO SEPARATE RULE, and adding one would be a second
+    // mechanism saying the same thing. `readiness` runs every open member
+    // through THIS function and refuses the unit on any member that is not
+    // ready, so an under-read member already refuses the whole unit — the same
+    // one-function argument the weak-source line above rests on.
+    if (n.declarationRead === 'under-read') {
+      reasons.push('own issuegraph declaration was not fully read (fail-safe: refusing the node)');
+    }
     if (!n.open) reasons.push('closed');
     if (duplicateCanonicalOf(k) !== null) reasons.push('duplicate-of another issue');
     for (const b of blockersOf.get(k) ?? []) {
@@ -688,12 +828,66 @@ export function buildModel(
       if (b !== k && togetherMembers?.has(b) === true) continue;
       const bn = byKey.get(b) as ModelNode;
       if (bn.open) reasons.push(`blocked-by ${b} is open`);
-      else if (
-        bn.closedStateReason != null &&
-        bn.closedStateReason !== 'completed'
-      ) {
-        // Unblocked, but flag for re-groom (§5.3) — a diagnostic, not a block.
-        diagnostics.push(`${k}: unblocked by non-completed closure of ${b}; re-check its premise`);
+      else {
+        // A CLOSED BLOCKER WHOSE OWN DECLARATION WAS UNDER-READ IS NOT EVIDENCE
+        // OF BEING UNBLOCKED, and this is the one place the axis has to travel
+        // ALONG an edge rather than stopping at the node that carries it.
+        //
+        // `targetKey` resolves a `blocked-by` ref THROUGH the target's
+        // `duplicate-of` (`duplicateCanonicalOf(rk) ?? rk`), so which node this
+        // edge actually points at is read off the target's declaration. When
+        // that declaration was under-read, its `duplicate-of` may be one of the
+        // dropped fields — and `duplicateCanonicalOf` then answers `null`, which
+        // is indistinguishable from "not a duplicate". The edge silently stops
+        // at a CLOSED duplicate instead of continuing to a canonical that may
+        // still be OPEN, and this node reports ready.
+        //
+        // MEASURED, one field apart: with #2 closed and its `duplicate-of: 3`
+        // DROPPED, the dependent came back `{ready: true, reasons: []}`; with
+        // the same field PARSED it came back `blocked-by 3 is open`. Under-
+        // blocking is the costly direction by this module's own design rules,
+        // so an unreadable redirect must block rather than resolve.
+        //
+        // ONLY THE CLOSED ARM NEEDS IT: an OPEN blocker already blocks above, so
+        // adding the refusal there would be a second true-but-redundant reason
+        // on a node that is refused either way.
+        //
+        // WHICH EDGE KINDS NEED THIS, AND HOW TO TELL — the property, so a
+        // future edge kind is checked rather than remembered:
+        //
+        //   An edge kind needs an under-read guard EXACTLY WHEN it reads the
+        //   TARGET'S `open` flag to DISCHARGE the edge. "Closed" is a tracker
+        //   fact, but WHICH NODE the flag is read from is a declaration fact —
+        //   `targetKey` resolves the ref through the target's `duplicate-of` —
+        //   so an under-read target means the flag was read off the wrong node.
+        //
+        // Two kinds satisfy it and both are guarded: `blocked-by` here (closed
+        // ⇒ unblocks) and `together-with` in the edge loop (closed ⇒ leaves the
+        // unit). `serialize-with` does NOT — it unions whatever the state, so
+        // closure discharges nothing there, and its under-read targets are swept
+        // by the component scan below.
+        //
+        // MEASURED, not reasoned: with a closed under-read target whose real
+        // canonical was open and CLAIMED, the serialize declarer came back
+        // refused either way, while the together declarer came back READY until
+        // its guard was added. An earlier revision of this comment asserted
+        // together-with was covered by `readiness`'s per-member evaluation —
+        // that was FALSE, because a closed target is never unioned, so there is
+        // no member for `readiness` to evaluate. It is corrected here rather
+        // than deleted, because the wrong version is the easier one to re-derive.
+        if (bn.declarationRead === 'under-read') {
+          reasons.push(
+            `blocked-by ${b} is closed but its own declaration was under-read — a dropped duplicate-of would redirect this edge to a canonical that may still be open (fail-safe: blocking)`,
+          );
+        }
+        if (bn.closedStateReason != null && bn.closedStateReason !== 'completed') {
+          // Unblocked, but flag for re-groom (§5.3) — a diagnostic, not a block.
+          // NOT an `else if` on the arm above: closure reason is a TRACKER fact
+          // and the read extent is a DECLARATION fact, so a blocker can carry
+          // both and a chain would silently drop the §5.3 surface for exactly
+          // the nodes least well understood.
+          diagnostics.push(`${k}: unblocked by non-completed closure of ${b}; re-check its premise`);
+        }
       }
     }
     for (const u of unresolvedBlockers.get(k) ?? []) {
@@ -702,7 +896,45 @@ export function buildModel(
     for (const u of unresolvedRelations.get(k) ?? []) {
       reasons.push(`${u} is unresolvable (fail-safe: refusing the declarer)`);
     }
+    for (const u of underReadTogether.get(k) ?? []) {
+      reasons.push(
+        `together-with ${u} is closed but its own declaration was under-read — a dropped duplicate-of would redirect this edge to a canonical that may still be an open member (fail-safe: refusing the declarer)`,
+      );
+    }
+    // A SERIALIZE PEER'S DECLARATION WAS UNDER-READ, so the COMPONENT'S TRUE
+    // EXTENT is unknown: the peer may have declared a `serialize-with` the
+    // parser dropped, which would have pulled a member into this component that
+    // nothing here can see. Admitting this node means admitting it beside a
+    // sibling the edge may forbid running with — the same harm §6.7's
+    // unresolvable-`blocked-by` rule refuses, arriving through the component
+    // rather than through a ref.
+    //
+    // UNCONDITIONAL over the component, unlike the claimed-member scan below:
+    // `componentMembers` returns `[k]` for a node in no component, and the
+    // self-skip then leaves the loop with nothing to do — so no guard is needed
+    // and adding one would be a second thing to keep in step.
+    //
+    // TOGETHER MEMBERS ARE NOT EXCLUDED HERE, though they are from the claim
+    // scan below. That exclusion exists because a unit is claimed atomically and
+    // would otherwise read its own partner's assignment as a conflict — a fact
+    // about CLAIMING. An under-read peer is a fact about EXTENT, which atomic
+    // claiming does not resolve, so the refusal stands whoever the peer is.
     const serializeMembers = componentMembers(serialize, k);
+    for (const m of serializeMembers) {
+      if (m === k) continue; // the node's own refusal is recorded above
+      // NO ASSERTION: the optional chain reads the same fact without one, and it
+      // is TOTAL rather than merely tidier. A member somehow absent from `byKey`
+      // yields `undefined`, which is not `'under-read'`, so this scan moves on
+      // instead of throwing — this module's first design rule ("never throws on
+      // any input"). The surrounding scans still assert; they are not this
+      // change's to rewrite.
+      if (byKey.get(m)?.declarationRead === 'under-read') {
+        reasons.push(
+          `serialize group member ${m} had an under-read declaration — the component's true extent is unknown (fail-safe)`,
+        );
+        break;
+      }
+    }
     if (serializeMembers.length > 1 || (byKey.get(k) as ModelNode).data?.serializeWith != null) {
       for (const m of serializeMembers) {
         // SELF-EXCLUDED: a node's own claim is the claim
@@ -781,5 +1013,13 @@ export function buildModel(
     duplicateCanonical: (key) => canonicalMap.get(key) ?? null,
     cycles,
     diagnostics: uniqueDiagnostics,
+    // SORTED, so the value is stable across node-input order and a host may
+    // compare two builds without normalizing first. Over `byKey`, which holds
+    // the declarer-only tier too — see the field's doc for why that is
+    // deliberate rather than an oversight.
+    underReadKeys: [...byKey.entries()]
+      .filter(([, n]) => n.declarationRead === 'under-read')
+      .map(([k]) => k)
+      .sort(),
   };
 }

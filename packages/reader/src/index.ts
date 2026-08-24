@@ -36,6 +36,7 @@ export type { BlockLocation, MappingEntry } from './frontmatter.ts';
 
 export { buildModel, declarerOnlyNode, nodeKey, nodeSourceRepo, priorityLabelValue, refKey } from './model.ts';
 export type {
+  DeclarationRead,
   DeclaredPriority,
   DeclarerOnlyNode,
   Model,

@@ -38,6 +38,10 @@ function node(
     open: true,
     labels: [],
     assigneeCount: 0,
+    // The default the field is REQUIRED to stop a producer omitting: a test that
+    // says nothing about the axis is testing a fully-read declaration, which is
+    // also the negative control every other test in this file now carries.
+    declarationRead: "read",
     ...rest,
     data: data === null ? null : { ...EMPTY, ...(data ?? {}) },
   };
@@ -713,5 +717,282 @@ describe("declarer-only nodes declare but never answer", () => {
     });
     assert.deepEqual(m.togetherComponent("1"), ["1", "40"]);
     assert.equal(m.readiness("1").ready, false);
+  });
+});
+
+describe("under-read declarations", () => {
+  test("an under-read node is refused where a fully-read one is admitted", () => {
+    // THE ACCEPTANCE, and it is stated as a PAIR on purpose: a test that only
+    // shows the refusal cannot distinguish "the axis works" from "this fixture
+    // was unready anyway". The two nodes differ in exactly one field.
+    const m = buildModel([
+      node(1, { declarationRead: "read" }),
+      node(2, { declarationRead: "under-read" }),
+    ]);
+    assert.deepEqual(m.readiness("1"), { ready: true, reasons: [] });
+    assert.equal(m.readiness("2").ready, false);
+    assertIncludes(m.readiness("2").reasons[0], "own issuegraph declaration was not fully read");
+  });
+
+  test("the FIELD-DROP shape is refused too — non-null data that looks complete", () => {
+    // The row readers miss. `blocked-by: [123, not-a-ref]` yields a node gated
+    // on `#123` alone; `data` is non-null and reads as a finished declaration,
+    // so nothing but this axis can tell it from one.
+    const m = buildModel([
+      node(1, { open: false, closedStateReason: "completed" }),
+      node(2, { data: { blockedBy: [ref(1)] }, declarationRead: "under-read" }),
+    ]);
+    // Its only DECLARED blocker is closed, so without the axis it reads ready.
+    assert.equal(m.readiness("2").ready, false);
+    assert.equal(
+      m.diagnostics.some((d) => d.includes("2: its own issuegraph declaration was not fully read")),
+      true,
+    );
+  });
+
+  test("the UNUSABLE-BLOCK shape raises the diagnostic too, past the data guard", () => {
+    // `data: null` short-circuits the edge loop, so a diagnostic emitted after
+    // that guard would miss half the population. Delimited-but-unusable is that
+    // half.
+    const m = buildModel([node(1, { data: null, declarationRead: "under-read" })]);
+    assert.equal(m.readiness("1").ready, false);
+    assert.equal(
+      m.diagnostics.some((d) => d.includes("1: its own issuegraph declaration was not fully read")),
+      true,
+    );
+  });
+
+  test("a serialize peer's under-read declaration refuses the whole component", () => {
+    // A dropped `serialize-with` means the component's true extent is unknown,
+    // so admitting #1 may admit it beside a sibling the edge forbids.
+    const m = buildModel([
+      node(1, { data: { serializeWith: ref(2) } }),
+      node(2, { declarationRead: "under-read" }),
+    ]);
+    assert.deepEqual(m.serializeComponent("1"), ["1", "2"]);
+    assert.equal(m.readiness("1").ready, false);
+    assertIncludes(
+      m.readiness("1").reasons.find((r) => r.includes("serialize group member")),
+      "the component's true extent is unknown",
+    );
+  });
+
+  test("a fully-read serialize component is still admitted", () => {
+    // The negative control for the scan above: the same shape, one field apart.
+    const m = buildModel([
+      node(1, { data: { serializeWith: ref(2) } }),
+      node(2),
+    ]);
+    assert.deepEqual(m.serializeComponent("1"), ["1", "2"]);
+    assert.deepEqual(m.readiness("1"), { ready: true, reasons: [] });
+  });
+
+  test("an under-read together member refuses the unit, with no rule of its own", () => {
+    // `readiness` runs every open member through `baseReasons`, so the member's
+    // own refusal is what refuses the unit. No second mechanism.
+    const m = buildModel([
+      node(1, { data: { togetherWith: ref(2) } }),
+      node(2, { declarationRead: "under-read" }),
+    ]);
+    assert.deepEqual(m.togetherComponent("1"), ["1", "2"]);
+    assert.equal(m.readiness("1").ready, false);
+    assertIncludes(
+      m.readiness("1").reasons.find((r) => r.includes("together member")),
+      "own issuegraph declaration was not fully read",
+    );
+  });
+
+  test("an under-read node stays REFERENCEABLE and stays in keys", () => {
+    // It is refused for SELECTION, not demoted to the weak tier, and the two are
+    // genuinely different dispositions: a reference to it still RESOLVES — the
+    // reason below names `blocked-by 1`, not "unresolvable" — while a weak node
+    // would have left the reference unresolvable and the dependent blocked for a
+    // different stated cause. Keeping it referenceable is what stops the axis
+    // spilling into the declarer-only tier's contract.
+    //
+    // AN EARLIER REVISION OF THIS TEST ASSERTED THE DEPENDENT WAS READY, which
+    // was the defect codex raised on this PR's first head: `targetKey` resolves
+    // the edge through the target's `duplicate-of`, so an under-read target can
+    // stop the edge at a closed duplicate instead of a still-open canonical. The
+    // referenceable half was right; the unblocks half was the bug, written down
+    // as an expectation. Recorded here because a test that pins a defect is
+    // worse than no test.
+    const m = buildModel([
+      node(1, { open: false, closedStateReason: "completed", declarationRead: "under-read" }),
+      node(2, { data: { blockedBy: [ref(1)] } }),
+    ]);
+    assert.equal(m.keys.includes("1"), true);
+    const r = m.readiness("2");
+    assert.equal(r.ready, false);
+    assertIncludes(r.reasons[0], "blocked-by 1 is closed but its own declaration was under-read");
+    assert.equal(r.reasons.some((x) => x.includes("unresolvable")), false);
+  });
+
+  test("a CLOSED under-read blocker blocks — its dropped duplicate-of may redirect the edge", () => {
+    // `targetKey` resolves a blocked-by ref THROUGH the target's `duplicate-of`,
+    // so an under-read target can silently stop the edge at a closed duplicate
+    // instead of carrying it to a canonical that is still open. Measured on this
+    // PR's own review: one field apart, opposite verdicts.
+    const m = buildModel([
+      node(3), // the canonical, OPEN — where the edge SHOULD land
+      node(2, {
+        open: false,
+        closedStateReason: "duplicate",
+        declarationRead: "under-read", // its `duplicate-of: 3` was dropped
+      }),
+      node(1, { data: { blockedBy: [ref(2)] } }),
+    ]);
+    assert.equal(m.readiness("1").ready, false);
+    assertIncludes(
+      m.readiness("1").reasons.find((r) => r.includes("blocked-by 2")),
+      "its own declaration was under-read",
+    );
+  });
+
+  test("CONTROL: the same shape with the duplicate-of PARSED blocks on the canonical", () => {
+    // The paired control, and it is what makes the test above mean anything: it
+    // shows the refusal above restores the verdict a fully-read declaration
+    // would have produced, rather than inventing a new one.
+    const m = buildModel([
+      node(3),
+      node(2, { open: false, closedStateReason: "duplicate", data: { duplicateOf: ref(3) } }),
+      node(1, { data: { blockedBy: [ref(2)] } }),
+    ]);
+    assert.equal(m.readiness("1").ready, false);
+    assertIncludes(m.readiness("1").reasons[0], "blocked-by 3 is open");
+  });
+
+  test("CONTROL: a closed FULLY-READ blocker still unblocks", () => {
+    // The negative control for the refusal: the axis must not turn every closed
+    // blocker into a block, or it would stall the ordinary case.
+    const m = buildModel([
+      node(2, { open: false, closedStateReason: "completed" }),
+      node(1, { data: { blockedBy: [ref(2)] } }),
+    ]);
+    assert.deepEqual(m.readiness("1"), { ready: true, reasons: [] });
+  });
+
+  test("an under-read blocker keeps its non-completed-closure re-groom diagnostic", () => {
+    // The two facts are independent — closure reason comes from the tracker, read
+    // extent from the declaration — so chaining them would drop the SECTION 5.3
+    // surface for exactly the nodes least well understood.
+    const m = buildModel([
+      node(2, { open: false, closedStateReason: "not_planned", declarationRead: "under-read" }),
+      node(1, { data: { blockedBy: [ref(2)] } }),
+    ]);
+    assert.equal(m.readiness("1").ready, false);
+    assert.equal(
+      m.diagnostics.some((d) => d.includes("1: unblocked by non-completed closure of 2")),
+      true,
+    );
+  });
+
+  test("a CLOSED under-read together target refuses the declarer — the unit is not provably dissolved", () => {
+    // "A closed member has left the unit" is read off the TARGET'S declaration,
+    // and for this target it was not fully read: a dropped `duplicate-of` stops
+    // the edge at a closed duplicate instead of carrying it to a canonical that
+    // may still be an open member. The union never happens, so `readiness` has
+    // no member to evaluate and the declarer would report ready ALONE.
+    const m = buildModel([
+      node(3), // the canonical, OPEN — the member the unit should have had
+      node(2, { open: false, closedStateReason: "duplicate", declarationRead: "under-read" }),
+      node(1, { data: { togetherWith: ref(2) } }),
+    ]);
+    assert.equal(m.readiness("1").ready, false);
+    assertIncludes(
+      m.readiness("1").reasons.find((r) => r.includes("together-with 2")),
+      "is closed but its own declaration was under-read",
+    );
+  });
+
+  test("CONTROL: a closed FULLY-READ together target still leaves the unit", () => {
+    // The negative control: the guard must not turn every closed member into a
+    // refusal, or §4.3.7's "closed members leave the unit" would stop working.
+    const m = buildModel([
+      node(2, { open: false, closedStateReason: "completed" }),
+      node(1, { data: { togetherWith: ref(2) } }),
+    ]);
+    assert.deepEqual(m.readiness("1"), { ready: true, reasons: [] });
+  });
+
+  test("BOUNDS THE CLASS: serialize-with has no closed-target hole", () => {
+    // The property: an edge kind needs an under-read guard exactly when it reads
+    // the TARGET'S `open` flag to DISCHARGE the edge. `serialize-with` unions
+    // whatever the state, so closure discharges nothing and the component scan
+    // covers it. Pinned so a future refactor that makes serialize skip closed
+    // targets — reintroducing the hole — fails here rather than in the field.
+    const m = buildModel([
+      node(3, { assigneeCount: 1 }), // the canonical: open AND claimed
+      node(2, { open: false, closedStateReason: "duplicate", declarationRead: "under-read" }),
+      node(1, { data: { serializeWith: ref(2) } }),
+    ]);
+    assert.deepEqual(m.serializeComponent("1"), ["1", "2"]); // unioned despite being closed
+    assert.equal(m.readiness("1").ready, false);
+  });
+
+  test("THE BOUNDARY: a dropped EDGE hides a peer the model cannot name", () => {
+    // The one case no refusal here can close, pinned so it stays a DECLARED
+    // limit rather than an unstated one. When the dropped field is itself an
+    // edge, the relationship never enters edge collection, so the peer is an
+    // ordinary singleton indistinguishable from any other node.
+    const hidden = buildModel([
+      node(1, { declarationRead: "under-read" }), // its `together-with: 2` was dropped
+      node(2), // the peer, unnameable from here
+    ]);
+    assert.equal(hidden.readiness("1").ready, false); // the declarer IS refused
+    assert.deepEqual(hidden.readiness("2"), { ready: true, reasons: [] }); // the peer is not
+    assert.deepEqual(hidden.togetherComponent("2"), ["2"]);
+
+    // SHARP CONTROL — the same node under-read, but with the edge SURVIVING the
+    // parse. This is what makes the case above a statement about the DROPPED
+    // FIELD rather than about under-read declarations in general.
+    const visible = buildModel([
+      node(1, { declarationRead: "under-read", data: { togetherWith: ref(2) } }),
+      node(2),
+    ]);
+    assert.equal(visible.readiness("2").ready, false);
+    assertIncludes(visible.readiness("2").reasons[0], "together member 1 is not ready");
+
+    // And the seam that makes the host's policy expressible in BOTH cases.
+    assert.deepEqual(hidden.underReadKeys, ["1"]);
+    assert.deepEqual(visible.underReadKeys, ["1"]);
+  });
+
+  test("underReadKeys is sorted, input-order stable, and empty in the ordinary case", () => {
+    assert.deepEqual(buildModel([node(1), node(2)]).underReadKeys, []);
+    const a = buildModel([
+      node(3, { declarationRead: "under-read" }),
+      node(1, { declarationRead: "under-read" }),
+      node(2),
+    ]);
+    const b = buildModel([
+      node(1, { declarationRead: "under-read" }),
+      node(2),
+      node(3, { declarationRead: "under-read" }),
+    ]);
+    assert.deepEqual(a.underReadKeys, ["1", "3"]);
+    assert.deepEqual(a.underReadKeys, b.underReadKeys);
+  });
+
+  test("underReadKeys includes the declarer-only tier, unlike keys", () => {
+    // A weak node may add constraints, and an under-read weak node is a
+    // constraint nobody could read — a host composing the strict policy needs
+    // that as much as the full-node case.
+    const m = buildModel([node(1)], {
+      declarerOnlyNodes: [declarerOnlyNode(node(40, { declarationRead: "under-read" }))],
+    });
+    assert.equal(m.keys.includes("40"), false);
+    assert.deepEqual(m.underReadKeys, ["40"]);
+  });
+
+  test("effective priority is deliberately untouched by the axis", () => {
+    // Recorded as a decision, not left to look like an oversight: the axis
+    // refuses, and there is nothing here to refuse. A P3 blocking a P0 still
+    // comes back 0 whatever either node's declaration read.
+    const m = buildModel([
+      node(1, { labels: ["p3"], declarationRead: "under-read" }),
+      node(2, { labels: ["p0"], data: { blockedBy: [ref(1)] }, declarationRead: "under-read" }),
+    ]);
+    assert.equal(m.effectivePriority("1"), 0);
   });
 });
