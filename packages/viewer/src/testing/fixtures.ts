@@ -151,6 +151,55 @@ export const heldTogetherDocument: ViewerDocument = {
   },
 };
 
+/**
+ * ONE gutter node related to TWO spine slots — the shape where a node's single
+ * neighbour-per-side cannot point back to both, so only a pair whose reverse
+ * survives may be published.
+ */
+export const sharedGutterDocument: ViewerDocument = {
+  issues: [
+    { key: 'a', title: 'First', open: true, priority: 2 },
+    { key: 'b', title: 'Second', open: true, priority: 2 },
+    { key: 'g', title: 'Shared blocker', open: true, priority: 1 },
+  ],
+  edges: [
+    { field: 'blocked-by', from: 'a', to: 'g' },
+    { field: 'blocked-by', from: 'b', to: 'g' },
+  ],
+  order: {
+    slots: [
+      { rank: 1, lead: 'a', members: ['a'], ready: true, holds: [] },
+      { rank: 2, lead: 'b', members: ['b'], ready: true, holds: [] },
+    ],
+    excluded: [],
+  },
+};
+
+/**
+ * A hand-built document that names one issue in TWO positions — a slot AND an
+ * exclusion — and another twice in `excluded`. Both publish a key more than
+ * once, which strands everything after the first occurrence.
+ */
+export const doublePlacedDocument: ViewerDocument = {
+  issues: [
+    { key: 'x', title: 'Placed and excluded', open: true, priority: 2 },
+    { key: 'y', title: 'Excluded twice', open: true, priority: 2 },
+    { key: 'z', title: 'Canonical', open: true, priority: 1 },
+  ],
+  edges: [{ field: 'duplicate-of', from: 'y', to: 'z' }],
+  order: {
+    slots: [
+      { rank: 1, lead: 'z', members: ['z'], ready: true, holds: [] },
+      { rank: 2, lead: 'x', members: ['x'], ready: true, holds: [] },
+    ],
+    excluded: [
+      { key: 'x', canonical: 'z', reason: 'duplicate-of' },
+      { key: 'y', canonical: 'z', reason: 'duplicate-of' },
+      { key: 'y', canonical: 'z', reason: 'duplicate-of' },
+    ],
+  },
+};
+
 /** A document whose graph deliberately exceeds a budget, for the refusal path. */
 export function crowdedDocument(nodeCount: number): ViewerDocument {
   const issues = Array.from({ length: nodeCount }, (_, index) => ({

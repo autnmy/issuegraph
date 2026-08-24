@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { type ViewerDocument, normalizeDocument } from './document.ts';
-import { fixtureDocument } from './testing/fixtures.ts';
+import { doublePlacedDocument, fixtureDocument } from './testing/fixtures.ts';
 
 const emptyOrder = { slots: [], excluded: [] };
 
@@ -154,6 +154,21 @@ describe('normalizeDocument', () => {
     });
 
     assert.equal(document.order.slots.length, 1);
+  });
+
+  it('places an issue once across slots AND exclusions', () => {
+    // One issue, one position — and the rule has to cover both fields, because
+    // the projections publish them into one focus order. A key in a slot and in
+    // `excluded`, or twice in `excluded`, published twice: `ArrowDown` from the
+    // first resolved to the same key and answered `none`.
+    const { document, diagnostics } = normalizeDocument(doublePlacedDocument);
+
+    assert.deepEqual(
+      document.order.excluded.map((exclusion) => exclusion.key),
+      ['y'],
+    );
+    assert.ok(diagnostics.some((line) => /x already holds a position in the order/.test(line)));
+    assert.ok(diagnostics.some((line) => /y already holds a position in the order/.test(line)));
   });
 
   it('reports as isolated only issues in no slot and on no edge', () => {

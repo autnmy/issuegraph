@@ -6,7 +6,7 @@ import { mountViewer } from './mount.ts';
 import { renderViewer } from './render.ts';
 import { KEY_ATTRIBUTE } from './scene.ts';
 import { TestDocument, TestElement, TestNode } from './testing/document.ts';
-import { fixtureDocument } from './testing/fixtures.ts';
+import { fixtureDocument, heldTogetherDocument } from './testing/fixtures.ts';
 
 function mounted(options = {}) {
   const doc = new TestDocument();
@@ -73,6 +73,36 @@ describe('mountViewer', () => {
     assert.ok(nested !== undefined);
     container.dispatch('click', { target: nested });
     assert.deepEqual(selected, ['102']);
+  });
+
+  it('resolves a pointer on decoration to the slot it decorates', () => {
+    // The enclosure and its connector are deliberately OUTSIDE the focus index
+    // — one element per key, or `focus()` lands on the non-tabbable rect
+    // painted behind the node. They are still visible marks a reader can click,
+    // and the design states the connector IS a click target, so they keep
+    // POINTER identity through a separate attribute.
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const selected: (string | null)[] = [];
+    mountViewer(container, heldTogetherDocument, {
+      projection: 'graph',
+      onSelect: (key: string | null) => selected.push(key),
+    });
+
+    const enclosure = container
+      .descendants()
+      .find((element) => element.getAttribute('class') === 'ig-enclosure');
+    const connector = container
+      .descendants()
+      .find((element) => element.getAttribute('class') === 'ig-connector');
+
+    assert.ok(enclosure !== undefined, 'no enclosure was drawn');
+    assert.ok(connector !== undefined, 'no connector was drawn');
+    assert.equal(enclosure.getAttribute(KEY_ATTRIBUTE), null, 'decoration is in the focus index');
+
+    container.dispatch('click', { target: enclosure });
+    container.dispatch('click', { target: connector });
+    assert.deepEqual(selected, ['1', '1']);
   });
 
   it('ignores a click that lands on nothing keyed', () => {

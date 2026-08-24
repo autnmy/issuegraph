@@ -311,7 +311,7 @@ function normalizeSlots(
   slots: readonly ViewerSlot[],
   byKey: ReadonlyMap<string, ViewerIssue>,
   diagnostics: string[],
-): ViewerSlot[] {
+): { kept: ViewerSlot[]; placed: Set<string> } {
   const kept: ViewerSlot[] = [];
   // ONE ISSUE HOLDS ONE PLACE IN THE ORDER. A hand-built document can name the
   // same issue in two slots, and keeping both publishes the key twice: two rows
@@ -342,7 +342,7 @@ function normalizeSlots(
     }
     kept.push(Object.freeze({ ...slot, lead, members: Object.freeze(members) }));
   }
-  return kept;
+  return { kept, placed };
 }
 
 /**
@@ -355,17 +355,26 @@ export function normalizeDocument(input: ViewerDocument): NormalizeResult {
   const diagnostics: string[] = [];
   const { kept: issues, byKey } = indexIssues(input.issues, diagnostics);
   const { kept: edges, edgesOf, outOfSetOrigins } = indexEdges(input.edges, byKey, diagnostics);
-  const slots = normalizeSlots(input.order.slots, byKey, diagnostics);
+  const { kept: slots, placed } = normalizeSlots(input.order.slots, byKey, diagnostics);
 
+  // AN EXCLUSION IS A POSITION TOO. The rule is one issue, one position — and
+  // it has to cover this field as well as the slots, because the projections
+  // publish both into one focus order. A key in a slot AND in `excluded`, or
+  // twice in `excluded`, rendered two keyed rows: `ArrowDown` from the first
+  // resolved to the same key and returned `none`, so nothing after it was
+  // reachable.
   const excluded = input.order.excluded.filter((exclusion) => {
-    if (byKey.has(exclusion.key)) return true;
-    diagnostics.push(`excluded ${exclusion.key} is not an issue in this document and was dropped`);
-    return false;
+    if (!byKey.has(exclusion.key)) {
+      diagnostics.push(`excluded ${exclusion.key} is not an issue in this document and was dropped`);
+      return false;
+    }
+    if (placed.has(exclusion.key)) {
+      diagnostics.push(`${exclusion.key} already holds a position in the order; the exclusion was dropped`);
+      return false;
+    }
+    placed.add(exclusion.key);
+    return true;
   });
-
-  const placed = new Set<string>();
-  for (const slot of slots) for (const member of slot.members) placed.add(member);
-  for (const exclusion of excluded) placed.add(exclusion.key);
 
   const isolated = issues
     .filter((issue) => !placed.has(issue.key) && (edgesOf.get(issue.key) ?? []).length === 0)

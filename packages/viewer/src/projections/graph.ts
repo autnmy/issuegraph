@@ -307,17 +307,27 @@ export function graphScene(document: NormalizedDocument, options: GraphOptions =
     ...document.order.excluded.map((exclusion) => exclusion.key),
   ].filter((key) => focusable.has(key));
 
-  // ── the lateral axis, BOTH WAYS ───────────────────────────────────────────
+  // ── the lateral axis: ONLY PAIRS WHOSE REVERSE HOLDS ──────────────────────
   //
-  // A one-way mapping is not a traversal: focus moved from the spine to a
-  // gutter node and the opposite arrow answered `none`, so the documented path
-  // "from the spine and back" only went out. Each pair is recorded from both
-  // ends, and a gutter node's neighbour is on the side the SPINE is on — right
-  // for a left-gutter node, left for a right one.
+  // A one-way mapping is not a traversal — focus went out to a gutter node and
+  // the opposite arrow answered `none`. Recording both ends fixed that, and
+  // then broke on the case one gutter node is related to TWO spine slots: each
+  // slot overwrote the gutter's single reverse entry, so `A.left = G` while
+  // `G.right = B`, and left-then-right did not come back.
+  //
+  // A node has ONE neighbour per side, so a shared gutter cannot point back to
+  // both — no amount of care makes it. So the invariant is the thing published:
+  // a pair is written only when its reverse is still free, and a forward link
+  // whose reverse could not be kept is not published either. Every pair in this
+  // map is reversible, which `graph.test.ts` asserts over the whole map rather
+  // than for one example.
   const lateral = new Map<string, LateralNeighbours>();
+  const opposite = (side: 'left' | 'right'): 'left' | 'right' =>
+    side === 'left' ? 'right' : 'left';
+  const linkable = (key: string, side: 'left' | 'right'): boolean =>
+    (lateral.get(key) ?? {})[side] === undefined;
   const link = (key: string, side: 'left' | 'right', target: string): void => {
-    const existing = lateral.get(key) ?? {};
-    lateral.set(key, { ...existing, [side]: target });
+    lateral.set(key, { ...(lateral.get(key) ?? {}), [side]: target });
   };
 
   for (const slot of document.order.slots) {
@@ -330,20 +340,19 @@ export function graphScene(document: NormalizedDocument, options: GraphOptions =
         edge.from === member ? edge.to : edge.from,
       ),
     );
-    const inColumn = (column: 'left' | 'right'): string | undefined =>
-      touching.find(
-        (other) => focusable.has(other) && layout.nodes.get(other)?.column === column,
-      );
 
-    const left = inColumn('left');
-    if (left !== undefined) {
-      link(slot.lead, 'left', left);
-      link(left, 'right', slot.lead);
-    }
-    const right = inColumn('right');
-    if (right !== undefined) {
-      link(slot.lead, 'right', right);
-      link(right, 'left', slot.lead);
+    for (const side of ['left', 'right'] as const) {
+      const target = touching.find(
+        (other) =>
+          focusable.has(other) &&
+          layout.nodes.get(other)?.column === side &&
+          // Both directions have to be free, or the pair is not reversible.
+          linkable(slot.lead, side) &&
+          linkable(other, opposite(side)),
+      );
+      if (target === undefined) continue;
+      link(slot.lead, side, target);
+      link(target, opposite(side), slot.lead);
     }
   }
 

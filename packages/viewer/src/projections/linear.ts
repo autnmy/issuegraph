@@ -95,7 +95,12 @@ function slotRow(
   );
 }
 
-function excludedRow(document: NormalizedDocument, key: string, canonical: string): ElementSpec {
+function excludedRow(
+  document: NormalizedDocument,
+  key: string,
+  canonical: string,
+  options: SceneOptions,
+): ElementSpec {
   const issue = document.byKey.get(key);
   return element(
     'li',
@@ -103,9 +108,13 @@ function excludedRow(document: NormalizedDocument, key: string, canonical: strin
       class: 'ig-slot',
       'data-ig-key': key,
       'data-held': 'true',
-      'aria-current': 'false',
+      'aria-current': options.selected === key ? 'true' : 'false',
       'aria-label': `${issue?.title ?? key} — ${treatmentFor('duplicate-of').label} ${canonical}, never worked`,
-      tabindex: -1,
+      // A HARDCODED -1 HERE MEANT THE VIEWER LOST ITS TAB STOP ENTIRELY. An
+      // exclusion is in `focusOrder`, so focus can resolve to one — and when it
+      // did, no element carried `tabindex="0"` and Tab could not enter the
+      // viewer at all. Every row that can hold focus renders the roving stop.
+      tabindex: options.focused === key ? 0 : -1,
     },
     [
       station('dashed'),
@@ -165,7 +174,7 @@ export function linearScene(
   const footerEntries = [
     ...footerSlots.map((slot) => slotRow(document, slot, withFocus, false)),
     ...document.order.excluded.map((exclusion) =>
-      excludedRow(document, exclusion.key, exclusion.canonical),
+      excludedRow(document, exclusion.key, exclusion.canonical, withFocus),
     ),
   ];
 

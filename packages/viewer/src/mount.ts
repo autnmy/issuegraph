@@ -23,7 +23,7 @@ import {
   reconcile,
 } from './navigation.ts';
 import { type RenderOptions, sceneFor } from './render.ts';
-import { KEY_ATTRIBUTE, type Projection, type Scene } from './scene.ts';
+import { GROUP_ATTRIBUTE, KEY_ATTRIBUTE, type Projection, type Scene } from './scene.ts';
 import { type Theme, defaultTheme } from './theme.ts';
 
 /** The slice of an element `mount` needs beyond building. */
@@ -72,12 +72,21 @@ export interface ViewerHandle {
  * rendering two viewers, or reusing the attribute — would answer for a click
  * that landed on nothing of ours. Stopping at the mount point makes the answer
  * a fact about this viewer.
+ *
+ * DECORATION ANSWERS TOO, through {@link GROUP_ATTRIBUTE}. The enclosure and
+ * its connector are deliberately outside the focus index — one element per key
+ * or `focus()` lands on the wrong one — but they are still visible marks a
+ * reader can click, and the design states the connector IS a click target.
+ * Reading both attributes here separates "what may take focus" from "what may
+ * be pointed at" rather than making one attribute answer both.
  */
 function keyAt(target: MountElement | null | undefined, container: MountElement): string | null {
   let cursor: MountElement | null = target ?? null;
   while (cursor !== null) {
-    const key = cursor.getAttribute(KEY_ATTRIBUTE);
-    if (key !== null && key !== '') return key;
+    for (const attribute of [KEY_ATTRIBUTE, GROUP_ATTRIBUTE]) {
+      const key = cursor.getAttribute(attribute);
+      if (key !== null && key !== '') return key;
+    }
     if (cursor === container) return null;
     cursor = cursor.parentElement;
   }

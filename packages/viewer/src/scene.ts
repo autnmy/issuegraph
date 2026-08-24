@@ -50,6 +50,21 @@ export interface Scene {
 export const KEY_ATTRIBUTE = 'data-ig-key';
 
 /**
+ * The attribute DECORATION carries — a `together-with` enclosure, its connector.
+ *
+ * Two different questions were being answered by one attribute. The FOCUS INDEX
+ * needs exactly one element per key, or `focus()` lands on whichever the
+ * renderer happened to emit first — which for the enclosure is a non-tabbable
+ * `<rect>` painted deliberately behind the node. POINTER identity is the other
+ * question, and the design fixes its answer: the connector IS a click target.
+ *
+ * Separating the attributes answers both. `keyAt` reads this one as a fallback
+ * so a click or hover on the enclosure still names its slot, while the index
+ * that drives focus sees only {@link KEY_ATTRIBUTE}.
+ */
+export const GROUP_ATTRIBUTE = 'data-ig-group';
+
+/**
  * Which key holds the roving tab stop.
  *
  * ONE RULE, USED BY THE PROJECTIONS AND BY `reconcile`. They have to agree: the

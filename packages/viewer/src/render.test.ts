@@ -3,7 +3,14 @@ import { describe, it } from 'node:test';
 
 import { renderViewer } from './render.ts';
 import { viewerStylesheet } from './styles.ts';
-import { crowdedDocument, fixtureDocument, heldTogetherDocument } from './testing/fixtures.ts';
+import { reconcile } from './navigation.ts';
+import {
+  crowdedDocument,
+  doublePlacedDocument,
+  fixtureDocument,
+  heldTogetherDocument,
+  sharedGutterDocument,
+} from './testing/fixtures.ts';
 import { COLOR_TOKENS, defaultTheme, extendTheme, themeCss } from './theme.ts';
 import { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET } from './projections/graph.ts';
 
@@ -100,16 +107,18 @@ describe('renderViewer', () => {
     }
   });
 
-  it('never publishes a navigation target it does not draw', () => {
-    // THE CLASS, not an instance. Three review rounds found the same defect in
-    // three places — a key published as a target with no focusable element
-    // behind it — so the sets are now derived from what a scene draws, and this
-    // asserts the property across every projection and every shape that used to
-    // break it: a refusal (which replaces the whole canvas), a held together
-    // unit (whose lead has no rail row), and the ordinary fixture.
+  it('holds the whole navigation contract, for every projection and every shape', () => {
+    // FOUR INVARIANTS, NOT FOUR EXAMPLES. Three review rounds kept finding the
+    // same class — a published navigation target the markup cannot honour —
+    // each time in a place the previous round's test did not reach: a gutter
+    // node, a refusal, an enclosure winning the index, an excluded row with a
+    // hardcoded `-1`. Asserting the CONTRACT across every projection and every
+    // shape is what leaves the class nothing to hide in.
     const shapes = [
       ['fixture', fixtureDocument],
       ['held-together', heldTogetherDocument],
+      ['shared-gutter', sharedGutterDocument],
+      ['double-placed', doublePlacedDocument],
       ['refusal-capsules', crowdedDocument(GRAPH_NODE_BUDGET + 1)],
       ['refusal-clusters', crowdedDocument(CLUSTER_ONLY_BUDGET + 1)],
       ['empty', { issues: [], edges: [], order: { slots: [], excluded: [] } }],
@@ -117,26 +126,73 @@ describe('renderViewer', () => {
 
     for (const [name, input] of shapes) {
       for (const projection of ['linear', 'graph', 'tree'] as const) {
-        const { markup, scene } = renderViewer(input, { projection });
-        const focusable = [
-          ...markup.matchAll(/data-ig-key="([^"]+)"[^>]*tabindex="(?:0|-1)"/g),
-        ].map((match) => match[1] as string);
+        const { scene } = renderViewer(input, { projection });
+        const where = `${name}/${projection}`;
 
-        for (const key of scene.navigable) {
-          assert.equal(
-            focusable.filter((found) => found === key).length,
-            1,
-            `${name}/${projection}: ${key} is published but has ${String(focusable.filter((f) => f === key).length)} focusable elements`,
-          );
+        // 1. The published sets agree with each other and repeat nothing. A
+        //    duplicate entry makes `ArrowDown` resolve to the key it is already
+        //    on and answer `none`, stranding everything after it.
+        assert.equal(
+          new Set(scene.focusOrder).size,
+          scene.focusOrder.length,
+          `${where}: focusOrder repeats a key`,
+        );
+        for (const key of scene.focusOrder) {
+          assert.ok(scene.navigable.includes(key), `${where}: focusOrder is not a subset of navigable`);
         }
-        for (const neighbours of scene.lateral.values()) {
-          for (const key of [neighbours.left, neighbours.right]) {
-            if (key === undefined) continue;
-            assert.ok(scene.navigable.includes(key), `${name}/${projection}: ${key} is a lateral target outside navigable`);
+
+        // 2. Every lateral pair is REVERSIBLE. A node has one neighbour per
+        //    side, so a shared target cannot point back to two — the map must
+        //    only ever publish pairs whose reverse it kept.
+        for (const [from, neighbours] of scene.lateral) {
+          for (const side of ['left', 'right'] as const) {
+            const to = neighbours[side];
+            if (to === undefined) continue;
+            assert.ok(scene.navigable.includes(to), `${where}: lateral target ${to} is not navigable`);
+            assert.equal(
+              scene.lateral.get(to)?.[side === 'left' ? 'right' : 'left'],
+              from,
+              `${where}: ${from} -${side}-> ${to} does not come back`,
+            );
           }
         }
-        for (const key of scene.focusOrder) {
-          assert.ok(scene.navigable.includes(key), `${name}/${projection}: focusOrder is not a subset of navigable`);
+
+        // 3 and 4, under every focus state a host can hand us: each published
+        //    key has exactly ONE focusable element, and the element carrying the
+        //    roving tab stop is exactly the key `reconcile` reports. When those
+        //    two disagree, Tab cannot enter the viewer at all.
+        const states = [
+          { focused: null, selected: null },
+          { focused: scene.focusOrder[scene.focusOrder.length - 1] ?? null, selected: null },
+          { focused: 'not-a-key', selected: scene.focusOrder[0] ?? null },
+          { focused: 'not-a-key', selected: 'also-not-a-key' },
+          ...scene.focusOrder.map((key) => ({ focused: key, selected: null })),
+          ...[...scene.lateral.keys()].map((key) => ({ focused: key, selected: null })),
+        ];
+
+        for (const state of states) {
+          const { markup } = renderViewer(input, { projection, ...state });
+          const focusable = [
+            ...markup.matchAll(/data-ig-key="([^"]+)"[^>]*tabindex="(?:0|-1)"/g),
+          ].map((match) => match[1] as string);
+          const stops = [...markup.matchAll(/data-ig-key="([^"]+)"[^>]*tabindex="0"/g)].map(
+            (match) => match[1] as string,
+          );
+
+          for (const key of scene.navigable) {
+            assert.equal(
+              focusable.filter((found) => found === key).length,
+              1,
+              `${where}: ${key} does not have exactly one focusable element`,
+            );
+          }
+
+          const expected = reconcile(scene, state);
+          assert.deepEqual(
+            stops,
+            expected.focused === null ? [] : [expected.focused],
+            `${where}: the tab stop and the reconciled focus disagree for ${JSON.stringify(state)}`,
+          );
         }
       }
     }
