@@ -199,13 +199,36 @@ const REPO_QUALIFIER = /^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/;
  *
  * A token that merely STARTS with a digit but carries a separator (`1-ABC`) is
  * an ordinary opaque id, not a malformed number, and is judged as one.
+ *
+ * TAKES `unknown` AND TESTS THE TYPE FIRST, matching {@link isPriority} above,
+ * and for a sharper reason than symmetry: `RegExp.test` COERCES its argument.
+ * `OPAQUE_ID.test(undefined)` tests the string `"undefined"`, which is a
+ * perfectly good opaque identifier — so a validator typed `string` returned
+ * TRUE for `undefined`, `null` and `true`.
+ *
+ * These are PUBLISHED packages, so the type annotation is a promise to
+ * TypeScript callers and nothing at all to JavaScript ones. What that cost is
+ * measured: `renderRef({ repo: null, id: undefined })` emitted `"#undefined"`,
+ * which parses back as a valid reference to an issue named `undefined`, with
+ * ZERO diagnostics. An unresolvable blocker still blocks, so the issue is
+ * permanently unready and nothing reports why — a writer filing a graph that
+ * lies, which is the one outcome the writer's fail-loud contract exists to make
+ * impossible.
+ *
+ * The Set-backed predicates in this file never had the problem — `Set.has`
+ * does not coerce — so these two were the only members of the class, and the
+ * inconsistency was inside one module.
  */
-export function isRefId(id: string): boolean {
+export function isRefId(id: unknown): id is string {
+  if (typeof id !== 'string') return false;
   if (/^[0-9]+$/.test(id)) return NUMERIC_ID.test(id) && Number.isSafeInteger(Number(id));
   return OPAQUE_ID.test(id);
 }
 
-/** Whether a string is an `owner/repo` qualifier. */
-export function isRepoQualifier(repo: string): boolean {
-  return REPO_QUALIFIER.test(repo);
+/**
+ * Whether a value is an `owner/repo` qualifier. Type-tested first, for the
+ * coercion reason {@link isRefId} states.
+ */
+export function isRepoQualifier(repo: unknown): repo is string {
+  return typeof repo === 'string' && REPO_QUALIFIER.test(repo);
 }

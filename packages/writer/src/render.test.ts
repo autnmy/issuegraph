@@ -109,6 +109,18 @@ describe('renderFrontmatter', () => {
 
   it('THROWS on contract violations rather than degrading — a writer that drops an edge lies', () => {
     assert.throws(() => renderFrontmatter({ blockedBy: [{ repo: null, id: '0' }] }), /not a valid tracker identifier/);
+    // A NON-STRING id from a JavaScript caller. The type annotation is a
+    // promise to TypeScript and nothing to the JS callers a published package
+    // has — and the failure was silent rather than loud: `#undefined` rendered,
+    // parsed back as a valid reference with zero diagnostics, and left the
+    // issue permanently unready with nothing reporting why.
+    for (const id of [undefined, null, true, 123]) {
+      assert.throws(
+        () => renderFrontmatter({ blockedBy: [{ repo: null, id: id as unknown as string }] }),
+        /not a valid tracker identifier/,
+        `render must refuse ${String(id)}`,
+      );
+    }
     assert.throws(() => renderFrontmatter({ blockedBy: [{ repo: null, id: 'a ref' }] }), /not a valid tracker identifier/);
     assert.throws(() => renderFrontmatter({ blockedBy: [{ repo: 'not a repo', id: '1' }] }), /owner\/repo/);
     assert.throws(() => renderFrontmatter({ priority: 5 }), /0-3/);

@@ -21,6 +21,8 @@ import {
   isField,
   isPriority,
   isScalarField,
+  isRefId,
+  isRepoQualifier,
   isSymmetricEdgeField,
 } from './index.ts';
 
@@ -158,4 +160,44 @@ test('the symmetric edge fields are a subset of the edge fields, and the split i
   const directed = EDGE_FIELDS.filter((field) => !isSymmetricEdgeField(field));
   assert.deepEqual([...directed], ['blocked-by', 'decomposed-from', 'duplicate-of']);
   assert.equal(directed.length + SYMMETRIC_EDGE_FIELDS.length, EDGE_FIELDS.length);
+});
+
+test('the reference predicates test the TYPE before the pattern', () => {
+  // `RegExp.test` COERCES, and the coercion is not a curiosity: the opaque-id
+  // pattern tested against `undefined` tests the string "undefined", which is a
+  // perfectly good identifier. Typed `string`, these returned TRUE for every
+  // non-string primitive — and a type annotation is a promise to TypeScript
+  // callers and nothing at all to the JavaScript ones a published package has.
+  //
+  // Measured consequence before the guard: `renderRef({ repo: null, id:
+  // undefined })` emitted `"#undefined"`, which parses back as a valid
+  // reference with zero diagnostics. An unresolvable blocker still blocks, so
+  // the issue is permanently unready and nothing says why.
+  for (const value of [undefined, null, true, false, 123, 0, {}, [], () => 1]) {
+    assert.equal(isRefId(value), false, `isRefId(${String(value)})`);
+    assert.equal(isRepoQualifier(value), false, `isRepoQualifier(${String(value)})`);
+  }
+
+  // CONTROL: the guard must not have swallowed the valid cases with them.
+  for (const id of ['1', '231', 'ABC-123', 'ENG-456', String(Number.MAX_SAFE_INTEGER)]) {
+    assert.equal(isRefId(id), true, id);
+  }
+  assert.equal(isRepoQualifier('acme/widgets'), true);
+
+  // And the numeric bound still applies to the strings that carry one.
+  for (const id of ['0', '007', '99999999999999999999999']) {
+    assert.equal(isRefId(id), false, id);
+  }
+});
+
+test('the Set-backed predicates never had the coercion problem', () => {
+  // The negative half of the sweep, so the class is bounded by evidence rather
+  // than by having stopped looking: `Set.has` does not coerce, so every other
+  // predicate in this module already refused a non-string. That is what made
+  // the two regex ones the whole class, and the inconsistency an internal one.
+  for (const value of [undefined, null, true, 123]) {
+    assert.equal(isEvidence(value as unknown as string), false, `isEvidence(${String(value)})`);
+    assert.equal(isField(value as unknown as string), false, `isField(${String(value)})`);
+    assert.equal(isPriority(value), false, `isPriority(${String(value)})`);
+  }
 });
