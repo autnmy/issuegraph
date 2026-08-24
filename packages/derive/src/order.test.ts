@@ -323,7 +323,7 @@ describe('deriveIssueOrder — priority carrier precedence', () => {
   /** #520 with a frontmatter priority that contradicts its P2 label. */
   function disagreeingSeed(): NodeInput[] {
     return issuegraphOrderSeed().map((issue) =>
-      issue.number === 520 ? { ...issue, data: frontmatter({ priority: 0 }) } : issue,
+      issue.id === '520' ? { ...issue, data: frontmatter({ priority: 0 }) } : issue,
     );
   }
 
@@ -380,7 +380,7 @@ describe('deriveIssueOrder — priority carrier precedence', () => {
     // priority view — the diagnostic is the only place their disagreement can
     // surface.
     const excluded = issuegraphOrderSeed().map((issue) =>
-      issue.number === 455
+      issue.id === '455'
         ? { ...issue, labels: ['P1'], data: frontmatter({ duplicateOf: ref(512), priority: 3 }) }
         : issue,
     );
@@ -399,7 +399,7 @@ describe('deriveIssueOrder — priority carrier precedence', () => {
 
   test('takes the lowest value when several priority labels are set', () => {
     const signals = resolvePrioritySignals({
-      number: 1,
+      id: '1',
       open: true,
       labels: ['P3', 'P0'],
       assigneeCount: 0,
@@ -414,7 +414,7 @@ describe('deriveIssueOrder — priority carrier precedence', () => {
 describe('deriveIssueOrder — readiness', () => {
   test('refuses a candidate whose serialize partner is actively being worked', () => {
     const claimed = issuegraphOrderSeed().map((issue) =>
-      issue.number === 503 ? { ...issue, assigneeCount: 1 } : issue,
+      issue.id === '503' ? { ...issue, assigneeCount: 1 } : issue,
     );
     const slot = slotLed(deriveSeed(claimed), '501');
     assert.equal(slot.rank, null);
@@ -423,7 +423,7 @@ describe('deriveIssueOrder — readiness', () => {
 
   test('readies a slot once its blocker closes', () => {
     const unblocked = issuegraphOrderSeed().map((issue) =>
-      issue.number === 602 ? { ...issue, open: false } : issue,
+      issue.id === '602' ? { ...issue, open: false } : issue,
     );
     const derived = deriveSeed(unblocked);
     // The exact rank, not merely "not held": with #602 gone from the order the
@@ -434,7 +434,7 @@ describe('deriveIssueOrder — readiness', () => {
 
   test('counts serialize group size over live members only, like together', () => {
     const shipped = issuegraphOrderSeed().map((issue) =>
-      issue.number === 503 ? { ...issue, open: false } : issue,
+      issue.id === '503' ? { ...issue, open: false } : issue,
     );
     // #503 has shipped, so it is no longer part of the live serialize group —
     // the same denominator `togetherGroupSize` uses.
@@ -464,7 +464,7 @@ describe('deriveIssueOrder — structural invariants', () => {
     // across repos, so a tie there used to fall through to the stable sort,
     // which preserves fetch order — and the two clients disagreed.
     const collide = (repo: string | null, number: number): NodeInput => ({
-      number,
+      id: String(number),
       ...(repo === null ? {} : { repo }),
       open: true,
       labels: ['P2'],
@@ -507,7 +507,7 @@ describe('deriveIssueOrder — structural invariants', () => {
     // blocking while the work is still open under another number), so the model
     // resolves every such edge and over-serializes at worst.
     const withDuplicateMember = issuegraphOrderSeed().map((issue) =>
-      issue.number === 514
+      issue.id === '514'
         ? { ...issue, data: frontmatter({ togetherWith: ref(512), duplicateOf: ref(520) }) }
         : issue,
     );
@@ -527,7 +527,7 @@ describe('deriveIssueOrder — structural invariants', () => {
 
   test('keeps the first occurrence when the input repeats an issue', () => {
     const seed = issuegraphOrderSeed();
-    const original = seed.find((issue) => issue.number === 488);
+    const original = seed.find((issue) => issue.id === '488');
     assert.ok(original !== undefined, 'expected #488 in the seed');
     const stale: NodeInput = {
       ...original,
@@ -552,7 +552,7 @@ describe('deriveIssueOrder — decomposed-from orders nothing', () => {
     // ordering one. An OPEN origin can: if `decomposed-from` were ever folded
     // into the blocked-by graph, #488 would go held and #520 would inherit.
     const openOrigin = issuegraphOrderSeed().map((issue) =>
-      issue.number === 488
+      issue.id === '488'
         ? { ...issue, data: frontmatter({ decomposedFrom: ref(520), evidence: 'verified' }) }
         : issue,
     );
@@ -573,21 +573,21 @@ describe('deriveIssueOrder — cross-repo keys', () => {
     const homeRepo = 'acme/widgets';
     const issues: NodeInput[] = [
       {
-        number: 488,
+        id: '488',
         repo: homeRepo,
         open: true,
         labels: ['P3'],
         assigneeCount: 0,
         declarationRead: 'read',
-        data: frontmatter({ decomposedFrom: { repo: 'acme/widgets', number: 470 } }),
+        data: frontmatter({ decomposedFrom: { repo: 'acme/widgets', id: '470' } }),
       },
       {
-        number: 512,
+        id: '512',
         open: true,
         labels: ['P0'],
         assigneeCount: 0,
         declarationRead: 'read',
-        data: frontmatter({ blockedBy: [{ repo: 'acme/widgets', number: 488 }] }),
+        data: frontmatter({ blockedBy: [{ repo: 'acme/widgets', id: '488' }] }),
       },
     ];
     const derived = deriveIssueOrder({
@@ -625,7 +625,7 @@ describe('deriveIssueOrder — promotion provenance matches the edges the model 
   // promotion cannot be the reason given for it.
 
   const plain = (number: number, labels: readonly string[] = []): NodeInput => ({
-    number,
+    id: String(number),
     open: true,
     labels,
     assigneeCount: 0,
@@ -677,7 +677,7 @@ describe('deriveIssueOrder — urgency also arrives through a together peer', ()
   test('names the together peer the urgency arrived through', () => {
     const issues: NodeInput[] = [
       {
-        number: 10,
+        id: '10',
         open: true,
         labels: ['P3'],
         assigneeCount: 0,
@@ -685,7 +685,7 @@ describe('deriveIssueOrder — urgency also arrives through a together peer', ()
         data: frontmatter({ togetherWith: ref(20) }),
       },
       {
-        number: 20,
+        id: '20',
         open: true,
         labels: ['P0'],
         assigneeCount: 0,
@@ -710,7 +710,7 @@ describe('deriveIssueOrder — urgency also arrives through a together peer', ()
     // every together member regardless of where the urgency came from.
     const issues: NodeInput[] = [
       {
-        number: 10,
+        id: '10',
         open: true,
         labels: ['P3'],
         assigneeCount: 0,
@@ -718,7 +718,7 @@ describe('deriveIssueOrder — urgency also arrives through a together peer', ()
         data: frontmatter({ togetherWith: ref(20) }),
       },
       {
-        number: 20,
+        id: '20',
         open: true,
         labels: ['P0'],
         assigneeCount: 0,
@@ -747,7 +747,7 @@ describe('deriveIssueOrder — a together component is not a neighbourhood', () 
   const chain = (): NodeInput[] => [
     // #10 -- #20 -- #30, and only #30 carries the urgency.
     {
-      number: 10,
+      id: '10',
       open: true,
       labels: [],
       assigneeCount: 0,
@@ -755,14 +755,14 @@ describe('deriveIssueOrder — a together component is not a neighbourhood', () 
       data: frontmatter({ togetherWith: ref(20) }),
     },
     {
-      number: 20,
+      id: '20',
       open: true,
       labels: [],
       assigneeCount: 0,
       declarationRead: 'read',
       data: frontmatter({ togetherWith: ref(30) }),
     },
-    { number: 30, open: true, labels: ['P0'], assigneeCount: 0, declarationRead: 'read', data: null },
+    { id: '30', open: true, labels: ['P0'], assigneeCount: 0, declarationRead: 'read', data: null },
   ];
 
   const derived = (): DerivedIssueOrder =>
@@ -808,7 +808,7 @@ describe('deriveIssueOrder — a slot describes the whole unit it represents', (
   const unitWithSerializedPeer = (): NodeInput[] => [
     // #10 -- #20 as a unit; the serialize edge hangs off the NON-lead member.
     {
-      number: 10,
+      id: '10',
       open: true,
       labels: [],
       assigneeCount: 0,
@@ -816,14 +816,14 @@ describe('deriveIssueOrder — a slot describes the whole unit it represents', (
       data: frontmatter({ togetherWith: ref(20) }),
     },
     {
-      number: 20,
+      id: '20',
       open: true,
       labels: [],
       assigneeCount: 0,
       declarationRead: 'read',
       data: frontmatter({ serializeWith: ref(30) }),
     },
-    { number: 30, open: true, labels: [], assigneeCount: 0, declarationRead: 'read', data: null },
+    { id: '30', open: true, labels: [], assigneeCount: 0, declarationRead: 'read', data: null },
   ];
 
   const withLeadOrder = (keys: readonly string[]): DerivedIssueOrder =>
@@ -862,9 +862,96 @@ describe('deriveIssueOrder — a slot describes the whole unit it represents', (
     // new one. Without this the assertions above could pass for a rule that
     // simply adds the together members on top.
     const derived = deriveIssueOrder({
-      issues: [{ number: 40, open: true, labels: [], assigneeCount: 0, declarationRead: 'read', data: null }],
+      issues: [{ id: '40', open: true, labels: [], assigneeCount: 0, declarationRead: 'read', data: null }],
       config: { baseRanking: { source: 'config', order: [] } },
     });
     assert.equal(slotWith(derived, '40').serializeGroupSize, 1);
+  });
+});
+
+describe('deriveIssueOrder — the ordering is TOTAL over opaque ids', () => {
+  /** Every permutation of a list, for a property test over input order. */
+  function permutations<T>(items: readonly T[]): T[][] {
+    if (items.length <= 1) return [[...items]];
+    return items.flatMap((item, i) =>
+      permutations([...items.slice(0, i), ...items.slice(i + 1)]).map((rest) => [item, ...rest]),
+    );
+  }
+
+  function node(id: string): NodeInput {
+    return {
+      id,
+      open: true,
+      labels: [],
+      assigneeCount: 0,
+      declarationRead: 'read',
+      data: null,
+    };
+  }
+
+  test('the same candidate set derives the same order however it is enumerated', () => {
+    // THE MODULE'S HEADLINE CONTRACT, asserted directly rather than through a
+    // pairwise comparison: two clients holding the same graph must derive the
+    // same order without coordinating. Nothing else in this suite tests it as a
+    // property of INPUT ORDER, which is what a non-transitive comparator
+    // breaks.
+    //
+    // These three ids are the measured counterexample. A comparator that goes
+    // numeric only when BOTH ids are numeric reports `2 < 10` numerically,
+    // `10 < 15A` and `15A < 2` by codepoint — a cycle — and `Array.sort` on a
+    // non-transitive comparator is input-order dependent, so this set sorted to
+    // THREE different orders depending on how it arrived.
+    const ids = ['2', '10', '15A'];
+    const orders = new Set<string>();
+    for (const permutation of permutations(ids)) {
+      const derived = deriveIssueOrder({
+        issues: permutation.map(node),
+        config: { baseRanking: { source: 'config', order: [] } },
+      });
+      const leads = derived.slots.map((slot) => slot.lead);
+      // GUARD AGAINST A VACUOUS PASS. Read the wrong field and every
+      // permutation yields the same list of nothing, so `orders.size === 1`
+      // holds while the test measures nothing — which is exactly what happened
+      // when this was first written against a field that does not exist.
+      assert.deepEqual([...leads].sort(), [...ids].sort(), 'the slots must name the issues');
+      orders.add(leads.join(','));
+    }
+    assert.equal(orders.size, 1, `one graph must derive one order, got ${[...orders].join(' | ')}`);
+  });
+
+  test('a wider mixed set is stable across every enumeration too', () => {
+    // Five ids spanning all three categories — numeric, opaque, and an
+    // out-of-safe-range digit run that is deliberately opaque because comparing
+    // it as a number would round it into a tie with its neighbours.
+    //
+    // IT STILL CONTAINS THE CYCLE-FORMING TRIPLE (`2`, `10`, `15A`), and that
+    // is deliberate: a first draft of this case used ids whose codepoint order
+    // happened to AGREE with their numeric order, so it stayed green under the
+    // neutered comparator and pinned nothing. A cycle needs the two orderings
+    // to CONTRADICT — an opaque id sorting between two numerics that numeric
+    // order puts the other way round — so a broader set is only a stronger test
+    // if it keeps one.
+    const ids = ['2', '10', '15A', 'ABC-1', '99999999999999999999'];
+    const orders = new Set<string>();
+    for (const permutation of permutations(ids)) {
+      const derived = deriveIssueOrder({
+        issues: permutation.map(node),
+        config: { baseRanking: { source: 'config', order: [] } },
+      });
+      const leads = derived.slots.map((slot) => slot.lead);
+      assert.deepEqual([...leads].sort(), [...ids].sort(), 'the slots must name the issues');
+      orders.add(leads.join(','));
+    }
+    assert.equal(orders.size, 1, `one graph must derive one order, got ${[...orders].join(' | ')}`);
+  });
+
+  test('CONTROL: numeric ids still order by VALUE, not by codepoint', () => {
+    // The refinement is worth keeping, and a fix that made everything codepoint
+    // order would satisfy the two properties above while sorting #9 after #10.
+    const derived = deriveIssueOrder({
+      issues: ['10', '9', '100'].map(node),
+      config: { baseRanking: { source: 'config', order: [] } },
+    });
+    assert.deepEqual(derived.slots.map((slot) => slot.lead), ['9', '10', '100']);
   });
 });

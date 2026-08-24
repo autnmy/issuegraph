@@ -18,27 +18,30 @@
  * ref another writer left — its line simply stays, and a conforming reader
  * already drops it with a diagnostic.
  *
- * IT LOCATES THE BLOCK WITH THE READER'S OWN RULES, not with a second scan of
- * its own: `locateBlock`, `topLevelKeyScalar` and `readMappingEntry` come from
- * `@issuegraph/reader`, so an editor and a parser cannot disagree about which
- * block is canonical, which line opens the section, or which bytes constitute
- * an entry. Every one of those three questions has produced a real defect when
- * answered twice — a splice that could not see a quoted `"issuegraph":` header
- * the parser read perfectly well, and a quoted `"blocked-by":` this writer owns
- * that it failed to recognise as its own and so duplicated.
+ * IT LOCATES THE BLOCK AND ITS ENTRIES WITH THE READER'S OWN PARSE, not with a
+ * second scan of its own: `locateBlock` and `locateSection` come from
+ * `@issuegraph/reader`, and the latter computes its line spans from the very
+ * `yaml` document the parser reads. So an editor and a parser cannot disagree
+ * about which block is canonical, which line opens the section, or which bytes
+ * constitute an entry — there is one opinion, not two.
+ *
+ * THAT SEAM USED TO BE A HAND-WRITTEN LINE GRAMMAR shared between the packages
+ * (`readMappingEntry`, `topLevelKeyScalar`, `stripComment`), and every one of
+ * its three questions produced a real defect when answered twice: a splice that
+ * could not see a quoted `"issuegraph":` header the parser read perfectly well,
+ * a quoted `"blocked-by":` this writer owns that it failed to recognise as its
+ * own and so duplicated, and a wholly-comment child that made it refuse a block
+ * the parser reads fine. None of those is expressible now.
  */
 
 import {
   FENCE_CLOSE,
   FENCE_OPEN,
   locateBlock,
-  readMappingEntry,
-  stripComment,
-  topLevelKeyScalar,
+  locateSection,
+  parseFrontmatter,
   type IssueRef,
 } from '@issuegraph/reader';
-
-import { parseFrontmatter } from '@issuegraph/reader';
 
 import { renderRef } from './render.ts';
 
@@ -46,20 +49,18 @@ import { renderRef } from './render.ts';
  * THE POSITIVE CONTROL: hand back a body only when the block in it can still be
  * READ. Otherwise refuse, which routes the caller to the documented fallback.
  *
- * WHY THIS EXISTS RATHER THAN MORE ARMS IN THE WALK. The walk models the
- * parser's rules, and it will always model *some* of them: a section can be
- * structurally invalid in ways it does not check — a tab in the indentation, a
- * dedented child, a sequence where a mapping belongs — and for every one of
- * those the walk classified the lines happily, inserted the owned entry, and
- * returned a NON-NULL body that `parseFrontmatter` reads as `data: null`. The
- * caller then skips the `null` fallback and persists a body in which the gate it
- * just wrote is unreadable. That is the silent half-write this module's contract
- * says it makes impossible, arriving through the one door the walk cannot close
- * by enumeration — each missing arm is a correct fix and the next review finds
- * the next one.
+ * WHY THIS EXISTS RATHER THAN MORE ARMS IN THE WALK. A walk models the parser's
+ * rules, and it will always model *some* of them — so for every rule it misses
+ * it classified the lines happily, inserted the owned entry, and returned a
+ * NON-NULL body that `parseFrontmatter` reads as `data: null`. The caller then
+ * skips the `null` fallback and persists a body in which the gate it just wrote
+ * is unreadable. That is the silent half-write this module's contract says it
+ * makes impossible, arriving through the one door enumeration cannot close.
  *
- * Asking the parser is the class removal: whatever the walk failed to model, the
- * answer here is the one the consumer will get.
+ * Asking the parser is the class removal: whatever the edit failed to model,
+ * the answer here is the one the consumer will get. It stays even though the
+ * location now comes from the parser too — locating an entry correctly is not
+ * the same as proving the RESULT still parses, and this asserts the second.
  *
  * THE PREDICATE IS `data === null` WITH A DIAGNOSTIC, and both halves are
  * load-bearing:
@@ -71,13 +72,43 @@ import { renderRef } from './render.ts';
  *     "there is a block and nobody could read it" (null, loud). Only the second
  *     is a failed write.
  *   - It deliberately does NOT refuse on diagnostics alone: a body carrying an
- *     unowned `- not-a-ref` this splice preserved byte-for-byte parses with
+ *     unowned `- "a ref"` this splice preserved byte-for-byte parses with
  *     non-null data AND a diagnostic, and refusing there would destroy the
  *     preservation guarantee one field over.
  */
-function readableOrNull(next: string): string | null {
-  const parse = parseFrontmatter(next);
-  return parse.data === null && parse.diagnostics.length > 0 ? null : next;
+function readableOrNull(body: string, next: string, intent: 'edit' | 'remove'): string | null {
+  const after = parseFrontmatter(next);
+
+  // A SPLICE MUST NEVER TURN A READABLE DECLARATION INTO AN UNREADABLE ONE,
+  // and this comparison is what makes the control total rather than partial.
+  //
+  // The predicate below cannot see the worst case on its own, because it asks
+  // only about the RESULT: a body whose block the edit destroyed so thoroughly
+  // that it is no longer discoverable parses as `data: null` with NO
+  // diagnostic — absence is silent by design — which is indistinguishable from
+  // "this body never had a block" and slips straight through. Measured: an
+  // explicit-key section (`? issuegraph` / `:` / `  priority: 1`) spliced for
+  // `blocked-by` handed back a NON-NULL body in which the requested edge was
+  // not written, `priority` was gone, and the reader reported no declaration at
+  // all — the caller told it had succeeded. That is the silent half-write this
+  // module's contract says it makes impossible.
+  //
+  // Asking whether the block was readable BEFORE closes it: destroying a
+  // declaration is a failed write whatever the wreckage looks like afterwards.
+  // The `before` parse is the only way to tell that from a body that never
+  // declared anything, and the whole-block REMOVAL path below is why it is a
+  // comparison rather than a flat refusal of `data: null`.
+  //
+  // THE INTENT IS PASSED IN RATHER THAN INFERRED, because the whole-block
+  // REMOVAL path legitimately ends with no declaration at all — inferring
+  // "the block vanished, so the edit failed" would refuse the one success
+  // whose correct outcome is an absent block.
+  if (intent === 'edit') {
+    const before = parseFrontmatter(body);
+    if (before.data !== null && after.data === null) return null;
+  }
+
+  return after.data === null && after.diagnostics.length > 0 ? null : next;
 }
 
 /**
@@ -127,6 +158,22 @@ export interface GeneratedEdges {
   readonly duplicateOf?: IssueRef | null;
 }
 
+/** Whether this call owns the named field, per {@link GeneratedEdges}. */
+function owns(edges: GeneratedEdges, key: string): boolean {
+  switch (key) {
+    case 'blocked-by':
+      return edges.blockedBy !== undefined;
+    case 'serialize-with':
+      return edges.serializeWith !== undefined;
+    case 'decomposed-from':
+      return edges.decomposedFrom != null;
+    case 'duplicate-of':
+      return edges.duplicateOf != null;
+    default:
+      return false;
+  }
+}
+
 /**
  * Splice the owned generated edges into the canonical block, returning the new
  * body — or `null` when `body` carries no closed keyed block this writer can
@@ -144,117 +191,64 @@ export interface GeneratedEdges {
  * EVERY NON-NULL RETURN IS PARSE-VERIFIED (see {@link readableOrNull}). A body
  * this hands back is one whose block a conforming reader can still read; if the
  * result would not be, the answer is `null` and the caller prepends instead.
- * That covers the structural faults the walk above does not model, so the
- * promise does not depend on the walk being exhaustive.
  */
 export function spliceGeneratedEdges(body: string, edges: GeneratedEdges): string | null {
   const located = locateBlock(body);
   if (located.lines === null) return null;
+  const section = locateSection(located.lines);
+  if (section !== null && !section.lineEditable) {
+    // READABLE, BUT NOT EDITABLE LINE BY LINE — a flow mapping, which is what a
+    // YAML serializer emits in flow style. Returning `null` here would send the
+    // caller down the prepend fallback, and §4.1's first-block rule then demotes
+    // this block: every entry the call does not own goes with it.
+    //
+    // COUNTED FROM THE SECTION'S OWN ENTRIES, not from the recognised
+    // `Frontmatter`. That projection omits unrecognised fields by design, so a
+    // section carrying only `{future-edge: "#5"}` reported "nothing to lose"
+    // and the extension was demoted in silence — §4.1 makes such a field inert
+    // to the READER, never disposable by a WRITER.
+    if (section.fields.length > 0) {
+      throw new Error(
+        'issuegraph splice: this block is readable but not line-editable (its section is a flow mapping), ' +
+          'and it carries entries this call does not own. Returning null would send you down the prepend ' +
+          'fallback, which demotes the original block and silently drops those entries. Rewrite the block ' +
+          'from its parsed value instead, or leave it alone.',
+      );
+    }
+    return null;
+  }
+  if (section === null) {
+    // NULL NOW MEANS EXACTLY ONE THING: there is no readable section — the YAML
+    // did not parse, the key is not a top-level mapping key, or its value is a
+    // scalar or a sequence. Nothing readable is at stake, so the caller's
+    // documented prepend loses nothing. The readable-but-uneditable case is
+    // handled above and never reaches here.
+    return null;
+  }
+
   const lines = body.split('\n');
   const blockStart = located.startLine;
   const blockEnd = located.endLine;
+  // `locateSection` indexes the block's INTERIOR; the edit indexes the body.
+  const toBody = (interiorLine: number): number => blockStart + 1 + interiorLine;
 
-  // Walk the interior with the parser's rules: first `issuegraph:` claimant at
-  // indent 0 opens the section; the next indent-0 line closes it; the first
-  // child sets the entry indent; deeper lines continue the entry above.
-  let sectionHeader = -1;
-  let sectionEnd = blockEnd;
-  let sectionClosed = false;
-  let childIndent = -1;
-  const ownedSpans: Array<{ from: number; to: number }> = [];
-  let openSpan: number | null = null;
-  let lastContent = -1;
-  const closeSpan = (): void => {
-    if (openSpan !== null) {
-      ownedSpans.push({ from: openSpan, to: lastContent });
-      openSpan = null;
-    }
-  };
-  for (let i = blockStart + 1; i < blockEnd; i++) {
-    // STRIP THE COMMENT BEFORE CLASSIFYING, because the parse walk does — and
-    // this line is CLASSIFICATION ONLY. The output below writes `lines[i]`
-    // verbatim, so the author's comment bytes are never at risk from this.
-    //
-    // Skipping this step was a live defect twice over. A section child that is
-    // wholly a comment (`  # why`) reached `readMappingEntry`, came back null,
-    // and — since an unreadable child is structural — the whole splice was
-    // refused on a block the parser reads perfectly well. The caller then took
-    // the documented `null` fallback and prepended a FRESH block, which makes
-    // the author's original block a later claimant: canonical no longer, so its
-    // unowned fields go silently invisible. And a comment at INDENT ZERO closed
-    // the section early, so every entry below it stopped being editable.
-    const content = stripComment((lines[i] ?? '').replace(/\r$/, '')).trimEnd();
-    if (content.trim().length === 0) continue;
-    const indent = content.length - content.trimStart().length;
-    if (indent === 0) {
-      if (sectionHeader === -1) {
-        const headerScalar = topLevelKeyScalar(content);
-        if (headerScalar !== null) {
-          // AN INLINE VALUE ON THE KEY MAKES THE PARSER REFUSE THE WHOLE BLOCK,
-          // so splicing into it would hand back a body that does not parse while
-          // the caller believes its edge was written — the same silent half-write
-          // the child-entry arm below refuses, one line up.
-          if (headerScalar.length > 0) return null;
-          sectionHeader = i;
-          continue;
-        }
-      }
-      if (sectionHeader !== -1 && !sectionClosed) {
-        closeSpan();
-        sectionEnd = i;
-        sectionClosed = true;
-      }
-      continue;
-    }
-    if (sectionHeader === -1 || sectionClosed) continue;
-    if (childIndent === -1) childIndent = indent;
-    if (indent === childIndent) {
-      const trimmedLine = content.trim();
-      if (trimmedLine.startsWith('- ') || trimmedLine === '-') {
-        // An indentationless sequence item: YAML permits list items at the key's
-        // OWN indent, and the parser accepts them as items of the entry above —
-        // so they are a CONTINUATION here, never a new entry. Treating them as
-        // entries would close an owned span before its items, orphan the dashes
-        // on removal, and structurally invalidate the section for every reader.
-        lastContent = i;
-        continue;
-      }
-      closeSpan();
-      const entry = readMappingEntry(trimmedLine);
-      if (entry === null) {
-        // A CHILD THE PARSER WILL REFUSE MAKES THIS WHOLE SPLICE A LIE, so
-        // refuse it here instead. `blocked-by:[1]` — no space after the colon —
-        // is not a mapping entry, so the parse walk marks the section
-        // structurally invalid and returns `data: null`. A cruder reader used to
-        // match that line and replace it; this one does not, so the line would
-        // survive and a canonical entry be inserted beside it, handing back a
-        // NON-NULL body that parses to nothing. A caller writing a `blocked-by`
-        // gate would then believe it had written one — the silent half-write
-        // this module exists to make impossible. Returning null is the
-        // contract's documented path: the caller prepends a fresh block.
-        return null;
-      }
-      const key = entry.key;
-      if (
-        (edges.blockedBy !== undefined && key === 'blocked-by') ||
-        (edges.serializeWith !== undefined && key === 'serialize-with') ||
-        (edges.decomposedFrom != null && key === 'decomposed-from') ||
-        (edges.duplicateOf != null && key === 'duplicate-of')
-      ) {
-        openSpan = i;
-      }
-    }
-    // Deeper than childIndent: continuation of the entry above — covered by
-    // `lastContent` when a span is open.
-    lastContent = i;
+  const sectionHeader = toBody(section.headerLine);
+  const sectionEnd = toBody(section.endLine);
+
+  const removed = new Set<number>();
+  let firstOwned: number | null = null;
+  for (const field of section.fields) {
+    if (!owns(edges, field.key)) continue;
+    const from = toBody(field.startLine);
+    const to = toBody(field.endLine);
+    if (firstOwned === null || from < firstOwned) firstOwned = from;
+    for (let i = from; i <= to; i++) removed.add(i);
   }
-  closeSpan();
-  if (sectionHeader === -1) return null; // key outside the subset; the parse would be null too
 
   // Inserted lines: the section's own child indent, the renderer's spelling,
   // the SPEC declaration order among the owned fields.
-  const pad = ' '.repeat(childIndent === -1 ? 2 : childIndent);
-  const itemPad = ' '.repeat((childIndent === -1 ? 2 : childIndent) + 2);
+  const pad = ' '.repeat(section.childIndent);
+  const itemPad = ' '.repeat(section.childIndent + 2);
   const ins: string[] = [];
   if (edges.blockedBy !== undefined && edges.blockedBy.length > 0) {
     ins.push(`${pad}blocked-by:`);
@@ -264,11 +258,7 @@ export function spliceGeneratedEdges(body: string, edges: GeneratedEdges): strin
   if (edges.duplicateOf != null) ins.push(`${pad}duplicate-of: ${renderRef(edges.duplicateOf)}`);
   if (edges.serializeWith != null) ins.push(`${pad}serialize-with: ${renderRef(edges.serializeWith)}`);
 
-  const removed = new Set<number>();
-  for (const span of ownedSpans) {
-    for (let i = span.from; i <= span.to; i++) removed.add(i);
-  }
-  const insertAt = ownedSpans.length > 0 ? (ownedSpans[0] as { from: number }).from : sectionHeader + 1;
+  const insertAt = firstOwned ?? sectionHeader + 1;
 
   let sectionSurvivors = 0;
   let siblingContent = 0;
@@ -278,7 +268,7 @@ export function spliceGeneratedEdges(body: string, edges: GeneratedEdges): strin
     if (removed.has(i)) continue;
     const line = lines[i] ?? '';
     if (i !== sectionHeader && line.replace(/\r$/, '').trim().length > 0) {
-      if (i > sectionHeader && i < sectionEnd) sectionSurvivors += 1;
+      if (i > sectionHeader && i <= sectionEnd) sectionSurvivors += 1;
       else siblingContent += 1;
     }
     interior.push(line);
@@ -298,7 +288,7 @@ export function spliceGeneratedEdges(body: string, edges: GeneratedEdges): strin
         to += 1;
       }
       if (to + 1 < lines.length && (lines[to + 1] as string).trim() === '') to += 1;
-      return readableOrNull([...lines.slice(0, from), ...lines.slice(to + 1)].join('\n'));
+      return readableOrNull(body, [...lines.slice(0, from), ...lines.slice(to + 1)].join('\n'), 'remove');
     }
     // The section emptied but sibling top-level content remains: drop the bare
     // `issuegraph:` header, keep the rest of the block.
@@ -307,5 +297,9 @@ export function spliceGeneratedEdges(body: string, edges: GeneratedEdges): strin
     if (headerAt !== -1) interior.splice(headerAt, 1);
   }
 
-  return readableOrNull([...lines.slice(0, blockStart + 1), ...interior, ...lines.slice(blockEnd)].join('\n'));
+  return readableOrNull(
+    body,
+    [...lines.slice(0, blockStart + 1), ...interior, ...lines.slice(blockEnd)].join('\n'),
+    ins.length === 0 && sectionSurvivors === 0 ? 'remove' : 'edit',
+  );
 }

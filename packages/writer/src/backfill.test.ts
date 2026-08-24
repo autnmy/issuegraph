@@ -36,8 +36,8 @@ describe('backfillFrontmatter', () => {
     assert.equal(result.outcome, 'delimited');
     assert.deepEqual(parseFrontmatter(result.body).data, {
       blockedBy: [
-        { repo: null, number: 12 },
-        { repo: null, number: 34 },
+        { repo: null, id: '12' },
+        { repo: null, id: '34' },
       ],
       decomposedFrom: null,
       duplicateOf: null,
@@ -84,7 +84,7 @@ describe('backfillFrontmatter', () => {
 
     assert.equal(result.outcome, 'delimited');
     assert.ok(result.body.includes('# RULING 2026-08-21: keep this'));
-    assert.deepEqual(parseFrontmatter(result.body).data?.blockedBy, [{ repo: null, number: 12 }]);
+    assert.deepEqual(parseFrontmatter(result.body).data?.blockedBy, [{ repo: null, id: '12' }]);
   });
 
   it('keeps an unrecognized extension field', () => {
@@ -92,7 +92,7 @@ describe('backfillFrontmatter', () => {
 
     assert.equal(result.outcome, 'delimited');
     assert.ok(result.body.includes('owner-note: keep-me'));
-    assert.deepEqual(parseFrontmatter(result.body).data?.blockedBy, [{ repo: null, number: 12 }]);
+    assert.deepEqual(parseFrontmatter(result.body).data?.blockedBy, [{ repo: null, id: '12' }]);
   });
 
   it('repairs a block sitting under a markdown rule (the `unterminated` reading)', () => {
@@ -119,7 +119,7 @@ describe('backfillFrontmatter', () => {
 
     assert.equal(result.outcome, 'delimited');
     assert.ok(result.body.includes('> A callout.'));
-    assert.deepEqual(parseFrontmatter(result.body).data?.blockedBy, [{ repo: null, number: 7 }]);
+    assert.deepEqual(parseFrontmatter(result.body).data?.blockedBy, [{ repo: null, id: '7' }]);
   });
 
   it('keeps a rejected field value, and reports that the parse dropped it', () => {
@@ -153,13 +153,15 @@ describe('backfillFrontmatter', () => {
     // The same loss, reached through the other arm. `delimited` reports it, and
     // this arm used to return `[]` for the identical drop, purely because the
     // author had remembered the delimiters.
-    const body = ['---', 'issuegraph:', '  blocked-by: [5, not-a-ref]', '---', '', 'Prose.'].join('\n');
+    // The unreadable item carries WHITESPACE: `not-a-ref` used to be the
+    // unparseable example and is now a valid opaque tracker id (SPEC 4.2).
+    const body = ['---', 'issuegraph:', '  blocked-by: [5, "not a ref"]', '---', '', 'Prose.'].join('\n');
 
     const result = backfillFrontmatter(body);
 
     assert.equal(result.outcome, 'already-canonical');
     assert.equal(result.body, body);
-    assert.deepEqual(result.data?.blockedBy, [{ repo: null, number: 5 }]);
+    assert.deepEqual(result.data?.blockedBy, [{ repo: null, id: '5' }]);
     // Same diagnostics the parser gave — carried, not re-worded, so a future
     // message change cannot make this pin silently stop describing the loss.
     assert.deepEqual(result.diagnostics, parseFrontmatter(body).diagnostics);
@@ -243,7 +245,7 @@ describe('backfillFrontmatter', () => {
     const result = backfillFrontmatter(body);
 
     assert.equal(result.outcome, 'delimited');
-    assert.deepEqual(parseFrontmatter(result.body).data?.blockedBy, [{ repo: null, number: 8 }]);
+    assert.deepEqual(parseFrontmatter(result.body).data?.blockedBy, [{ repo: null, id: '8' }]);
   });
 
   it('does not rewrite the line endings of prose it never touched', () => {
@@ -281,7 +283,7 @@ describe('backfillFrontmatter', () => {
     // The prose outside the region is untouched, LF and all.
     assert.ok(result.body.startsWith('Intro.\n\n'));
     assert.ok(result.body.endsWith('\n\nProse.'));
-    assert.deepEqual(parseFrontmatter(result.body).data?.blockedBy, [{ repo: null, number: 8 }]);
+    assert.deepEqual(parseFrontmatter(result.body).data?.blockedBy, [{ repo: null, id: '8' }]);
   });
 
   it('consumes a closing fence separated from the block by a blank line', () => {
@@ -295,7 +297,7 @@ describe('backfillFrontmatter', () => {
     const result = backfillFrontmatter(body);
 
     assert.equal(result.outcome, 'delimited');
-    assert.deepEqual(parseFrontmatter(result.body).data?.blockedBy, [{ repo: null, number: 11 }]);
+    assert.deepEqual(parseFrontmatter(result.body).data?.blockedBy, [{ repo: null, id: '11' }]);
     // Exactly one fence pair survives: the canonical one.
     assert.equal(result.body.split('\n').filter((line) => /^`{3,}\s*$/.test(line)).length, 2);
     assert.ok(result.body.includes('Prose.'));
@@ -437,7 +439,7 @@ describe('refuses a fence structure it cannot establish', () => {
     const result = backfillFrontmatter(body);
 
     assert.equal(result.outcome, 'delimited');
-    assert.deepEqual(parseFrontmatter(result.body).data?.blockedBy, [{ repo: null, number: 12 }]);
+    assert.deepEqual(parseFrontmatter(result.body).data?.blockedBy, [{ repo: null, id: '12' }]);
     // The list item's own fence is untouched, indentation included.
     assert.ok(result.body.includes('  ```sh'));
     assert.ok(result.body.includes('  echo hi'));
@@ -463,7 +465,7 @@ describe('locating the fence around the key', () => {
     const result = backfillFrontmatter(body);
 
     assert.equal(result.outcome, 'delimited');
-    assert.deepEqual(parseFrontmatter(result.body).data?.blockedBy, [{ repo: null, number: 21 }]);
+    assert.deepEqual(parseFrontmatter(result.body).data?.blockedBy, [{ repo: null, id: '21' }]);
     // Exactly one fence pair survives, and the comment went with the block it
     // belonged to.
     assert.equal(result.body.split('\n').filter((line) => /^`{3,}\s*$/.test(line)).length, 2);
@@ -508,7 +510,7 @@ describe('locating the fence around the key', () => {
 
     assert.equal(result.outcome, 'delimited');
     assert.ok(result.body.includes('evidence: measured'));
-    assert.deepEqual(parseFrontmatter(result.body).data?.blockedBy, [{ repo: null, number: 12 }]);
+    assert.deepEqual(parseFrontmatter(result.body).data?.blockedBy, [{ repo: null, id: '12' }]);
   });
 
   it('refuses a key between two fenced code blocks rather than reading its neighbours as a pair', () => {
@@ -584,7 +586,7 @@ describe('the strict key rule decides what counts as a header', () => {
     const body = ['```yaml', '"issuegraph":', '  blocked-by: [7]', '```', '', 'prose'].join('\n');
     const r = backfillFrontmatter(body);
     assert.equal(r.outcome, 'delimited');
-    assert.deepEqual(r.data?.blockedBy, [{ repo: null, number: 7 }]);
+    assert.deepEqual(r.data?.blockedBy, [{ repo: null, id: '7' }]);
   });
 
   it('stops reporting a SECOND key that only the prefilter can see', () => {
@@ -618,6 +620,6 @@ describe('the strict key rule decides what counts as a header', () => {
     const body = ['```yaml', '"issuegraph":', '  blocked-by: [7]', '```'].join('\n');
     const r = backfillFrontmatter(body);
     assert.equal(r.outcome, 'delimited');
-    assert.deepEqual(r.data?.blockedBy, [{ repo: null, number: 7 }]);
+    assert.deepEqual(r.data?.blockedBy, [{ repo: null, id: '7' }]);
   });
 });

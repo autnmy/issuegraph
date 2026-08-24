@@ -22,15 +22,29 @@ npm install @issuegraph/writer
 import { renderFrontmatter } from '@issuegraph/writer';
 
 const block = renderFrontmatter({
-  blockedBy: [{ repo: null, number: 231 }, { repo: 'acme/widgets', number: 7 }],
-  decomposedFrom: { repo: null, number: 12 },
+  blockedBy: [{ repo: null, id: '231' }, { repo: 'acme/widgets', id: '7' }],
+  decomposedFrom: { repo: null, id: 'ABC-12' },   // ids are opaque — not just integers
   evidence: 'asserted',
 });
 
 await tracker.update(issue, `${block}\n\n${issue.body}`);
 ```
 
-The default output is **fence-wrapped** — SPEC §4.1's display armor, because a markdown-rendering tracker draws a bare `---` block as a broken table, and every conforming reader sees through the fence. Pass `{ fenceWrapped: false }` for a host that renders frontmatter natively.
+The default output is **bare**, with a blank line before the closing `---`, and every reference written as a quoted `"#231"`:
+
+```yaml
+---
+issuegraph:
+  blocked-by:
+    - "#231"
+    - "acme/widgets#7"
+
+---
+```
+
+Each of those three details is load-bearing. The **blank line** stops a markdown renderer reading the closing `---` as a setext heading underline, which is what used to turn a bare block into a banner of YAML. The **`#` sigil** is what makes a tracker auto-link the reference — and an auto-linked reference stamps a cross-reference on the *target* issue, which is the only surface anywhere showing what an issue is **blocking**, since §4.3.1 has no `blocks` field. The **quoting** is mandatory, not style: `#` opens a comment in YAML, so `[#231]` is a parse error and `- #231` parses to `null` *silently*.
+
+Pass `{ fenceWrapped: true }` for a host whose renderer still mangles bare frontmatter — §4.1's display armor, which every conforming reader sees through.
 
 An input with nothing to say renders `null`, never an empty `issuegraph:` stub.
 
@@ -42,7 +56,7 @@ A tracker's issue body is a document a human edits. If you own the scheduling ed
 import { spliceGeneratedEdges } from '@issuegraph/writer';
 
 const next = spliceGeneratedEdges(issue.body, {
-  blockedBy: [{ repo: null, number: 231 }],
+  blockedBy: [{ repo: null, id: '231' }],
   serializeWith: null,          // scheduling edge, present: remove it
   // duplicateOf omitted        // absent: not mine, do not touch
 });
@@ -51,6 +65,8 @@ if (next === null) {
   // No block this writer can edit — prepend a fresh one instead.
 }
 ```
+
+**`null` means "prepend a fresh block", and that is only safe because it is never returned for a block that would lose fields.** A block that *reads* fine but cannot be edited line-by-line — a flow mapping, which is what a YAML serializer emits in flow style — **throws** instead. Prepending there would demote the original block under §4.1's first-block rule and silently drop every field the call did not own. Giving callers a value to branch on rather than an exception is [#27](https://github.com/autnmy/issuegraph/issues/27).
 
 **Ownership is per field and opt-in.** A field you *omit* is left byte-untouched. That distinction is load-bearing — round-tripping parsed values back through a splice would silently launder away unparseable items and exotic spellings the parser tolerates with a diagnostic, so omission is the honest "not mine" signal.
 
@@ -92,7 +108,8 @@ A parser takes untrusted issue text and must never throw — every anomaly becom
 
 ```ts
 renderFrontmatter({ priority: 5 });                       // throws: priority must be 0-3
-renderFrontmatter({ blockedBy: [{ repo: 'x y', number: 1 }] }); // throws: not owner/repo-shaped
+renderFrontmatter({ blockedBy: [{ repo: 'x y', id: '1' }] });   // throws: not owner/repo-shaped
+renderFrontmatter({ blockedBy: [{ repo: null, id: 'a ref' }] }); // throws: not a valid tracker identifier
 ```
 
 ## Versioning

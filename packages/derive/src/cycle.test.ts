@@ -18,7 +18,7 @@ import {
 
 function issue(number: number, blockedBy: readonly number[] = []): NodeInput {
   return {
-    number,
+    id: String(number),
     open: true,
     labels: [],
     assigneeCount: 0,
@@ -151,13 +151,13 @@ describe('wouldCycleOnBlockedBy', () => {
       false,
     );
     const qualified: NodeInput = {
-      number: 512,
+      id: '512',
       repo: 'Acme/Widgets',
       open: true,
       labels: [],
       assigneeCount: 0,
       declarationRead: 'read',
-      data: frontmatter({ blockedBy: [{ repo: 'Acme/Widgets', number: 488 }] }),
+      data: frontmatter({ blockedBy: [{ repo: 'Acme/Widgets', id: '488' }] }),
     };
     const cross = [{ ...issue(488), repo: 'Acme/Widgets' }, qualified];
     assert.equal(wouldCycleOnBlockedBy(cross, 'Acme/Widgets#488', 'ACME/widgets#512'), true);
@@ -165,12 +165,12 @@ describe('wouldCycleOnBlockedBy', () => {
 
   test("normalizes a cross-repo ref onto the home repo's bare key", () => {
     const qualified: NodeInput = {
-      number: 512,
+      id: '512',
       open: true,
       labels: [],
       assigneeCount: 0,
       declarationRead: 'read',
-      data: frontmatter({ blockedBy: [{ repo: 'acme/widgets', number: 488 }] }),
+      data: frontmatter({ blockedBy: [{ repo: 'acme/widgets', id: '488' }] }),
     };
     const issues = [issue(488), qualified];
     // Spelled `acme/widgets#488` but the home repo IS acme/widgets, so it is

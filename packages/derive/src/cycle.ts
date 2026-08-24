@@ -160,14 +160,18 @@ export function wouldCycleOnBlockedBy(
  * of the folding rule is what produced this bug in the first place.
  */
 function canonicalKey(key: string, homeRepo?: string): string {
-  const bare = /^([0-9]+)$/.exec(key);
-  if (bare !== null) return refKey({ repo: null, number: Number(bare[1]) }, null, homeRepo);
-  const qualified = /^(.+)#([0-9]+)$/.exec(key);
-  if (qualified === null) return key; // not a key shape; the walk simply misses
-  const repo = qualified[1] as string;
-  const number = Number(qualified[2]);
-  if (!Number.isSafeInteger(number)) return key;
-  return refKey({ repo, number }, null, homeRepo);
+  // A key is `<id>` or `<owner/repo>#<id>`, and an id is an OPAQUE tracker
+  // token (§4.2) — so the split is on the LAST `#`, not on a digit run. Keying
+  // on digits used to be equivalent and is not any more: `ABC-123` and
+  // `owner/repo#ABC-123` are ordinary keys, and a digits-only test would send
+  // both down the "not a key shape" arm, where the walk silently misses and
+  // the guard FAILS OPEN — the exact failure this function's own doc describes.
+  const hash = key.lastIndexOf('#');
+  if (hash === -1) return refKey({ repo: null, id: key }, null, homeRepo);
+  const repo = key.slice(0, hash);
+  const id = key.slice(hash + 1);
+  if (repo.length === 0 || id.length === 0) return key; // not a key shape; the walk simply misses
+  return refKey({ repo, id }, null, homeRepo);
 }
 
 /**
