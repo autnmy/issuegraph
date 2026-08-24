@@ -43,7 +43,12 @@ export const INERT_BODY = ['```', 'issuegraph:', '  blocked-by:', '    - "#1"', 
  * the hazard is: the block was there and could not be read. It exists as a
  * fixture to prove the state is not "a field was dropped".
  */
-export const UNUSABLE_BODY = ['---', 'issuegraph: { together-with: 71 }', '---', '', 'The body.'].join('\n');
+export const UNUSABLE_BODY = ['---', 'issuegraph: hello', '---', '', 'The body.'].join('\n');
+// An inline flow mapping (`issuegraph: { together-with: 71 }`) filled this role
+// until SPEC 4.2's parser change: it is ordinary YAML and now READS, which is
+// the point of that change rather than a regression. A SCALAR under the key is
+// still genuinely unusable — it is not the mapping of fields §4.3 describes, so
+// reading edges out of it would mean inventing them.
 
 /** The canonical fence-wrapped block this repository's own issues use. */
 export const CANONICAL_BODY = [

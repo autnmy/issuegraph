@@ -14,22 +14,22 @@ import { backfill, setFields, spliceEdges } from './write.ts';
  * writer's formatting choices, which are its to change; what has to hold is that
  * the result parses back to what was asked for.
  */
-function edgesOf(body: string): readonly number[] {
+function edgesOf(body: string): readonly string[] {
   const decl = classifyDeclaration(parseFrontmatter(body));
   assert.equal(decl.state, 'read', `expected a readable block, got ${decl.state}`);
   assert.ok(decl.state === 'read');
-  return decl.data.blockedBy.map((ref) => ref.number);
+  return decl.data.blockedBy.map((ref) => ref.id);
 }
 
-const REF_1 = { repo: null, number: 1 } as const;
-const REF_7 = { repo: null, number: 7 } as const;
-const REF_8 = { repo: null, number: 8 } as const;
+const REF_1 = { repo: null, id: '1' } as const;
+const REF_7 = { repo: null, id: '7' } as const;
+const REF_8 = { repo: null, id: '8' } as const;
 
 describe('set', () => {
   test('on a body with no block, renders one whose re-parse carries the edges', () => {
     const result = setFields(ABSENT_BODY, { blockedBy: [REF_7, REF_8] });
     assert.equal(result.code, EXIT.ok);
-    assert.deepEqual(edgesOf(result.stdout), [7, 8]);
+    assert.deepEqual(edgesOf(result.stdout), ['7', '8']);
   });
 
   test('the rendered block keeps the original prose', () => {
@@ -40,7 +40,7 @@ describe('set', () => {
   test('on a body with a block, splices in place and leaves surrounding prose alone', () => {
     const result = setFields(QUOTED_BODY, { blockedBy: [REF_7] });
     assert.equal(result.code, EXIT.ok);
-    assert.deepEqual(edgesOf(result.stdout), [7]);
+    assert.deepEqual(edgesOf(result.stdout), ['7']);
     assert.ok(result.stdout.includes('The body.'), 'the prose was disturbed');
   });
 
@@ -93,7 +93,7 @@ describe('set', () => {
   test('round-trip: parse, set, parse preserves the rest of the body byte for byte', () => {
     const result = setFields(CANONICAL_BODY, { blockedBy: [REF_8] });
     assert.equal(result.code, EXIT.ok);
-    assert.deepEqual(edgesOf(result.stdout), [8]);
+    assert.deepEqual(edgesOf(result.stdout), ['8']);
     assert.ok(result.stdout.includes('The body.'));
     // `evidence` was in the original block and is not an owned edge, so the
     // splice must have left it exactly where it was.
@@ -146,6 +146,9 @@ describe('a clear the writer cannot perform is refused on EVERY path', () => {
     // which is why refusing it breaks nothing.
     const result = spliceEdges(WITH_PROVENANCE, { blockedBy: [REF_1] });
     assert.equal(result.code, EXIT.ok);
+    // BARE, not `"#42"`. These entries are UNOWNED by this call, so the splice
+    // preserves them byte-for-byte — the author's spelling survives. Only
+    // entries the writer RENDERS take the canonical quoted form.
     assert.ok(result.stdout.includes('duplicate-of: 42'), result.stdout);
     assert.ok(result.stdout.includes('decomposed-from: 7'), result.stdout);
   });
@@ -161,9 +164,9 @@ describe('a clear the writer cannot perform is refused on EVERY path', () => {
   });
 
   test('CONTROL: an ordinary write to those same fields still lands', () => {
-    const result = spliceEdges(WITH_PROVENANCE, { duplicateOf: { repo: null, number: 99 } });
+    const result = spliceEdges(WITH_PROVENANCE, { duplicateOf: { repo: null, id: '99' } });
     assert.equal(result.code, EXIT.ok);
-    assert.ok(result.stdout.includes('duplicate-of: 99'), result.stdout);
+    assert.ok(result.stdout.includes('duplicate-of: "#99"'), result.stdout);
   });
 });
 
@@ -211,7 +214,7 @@ describe('the write funnel — one gate, every path', () => {
     for (const [name, run] of WRITE_OPERATIONS) {
       const result = run(WITH_BLOCK, { blockedBy: [REF_7] } as never);
       assert.equal(result.code, EXIT.ok, `${name} refused a valid write`);
-      assert.deepEqual(edgesOf(result.stdout), [7], name);
+      assert.deepEqual(edgesOf(result.stdout), ['7'], name);
     }
   });
 
@@ -229,13 +232,13 @@ describe('splice', () => {
   test('an owned field present replaces its entries', () => {
     const result = spliceEdges(QUOTED_BODY, { blockedBy: [REF_1] });
     assert.equal(result.code, EXIT.ok);
-    assert.deepEqual(edgesOf(result.stdout), [1]);
+    assert.deepEqual(edgesOf(result.stdout), ['1']);
   });
 
   test('an owned field ABSENT leaves its entries untouched', () => {
     const result = spliceEdges(QUOTED_BODY, { serializeWith: REF_7 });
     assert.equal(result.code, EXIT.ok);
-    assert.deepEqual(edgesOf(result.stdout), [123, 124]);
+    assert.deepEqual(edgesOf(result.stdout), ['123', '124']);
   });
 
   test('an explicit empty list removes entries without inserting', () => {
@@ -265,7 +268,7 @@ describe('backfill', () => {
   test('repairs an inert body into one that reads', () => {
     const result = backfill(INERT_BODY);
     assert.equal(result.code, EXIT.ok);
-    assert.deepEqual(edgesOf(result.stdout), [1]);
+    assert.deepEqual(edgesOf(result.stdout), ['1']);
     // The loop closes: what `validate` flagged, `backfill` fixes.
     assert.equal(classifyDeclaration(parseFrontmatter(INERT_BODY)).state, 'inert');
   });
