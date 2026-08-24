@@ -810,7 +810,14 @@ export function locateSection(blockLines: readonly string[]): SectionLocation | 
   return {
     headerLine,
     endLine: sectionEnd,
-    childIndent: childIndent === -1 ? 2 : childIndent,
+    // AN EMPTY SECTION HAS NO CHILD TO MEASURE, so the fallback is derived from
+    // the HEADER's own column rather than assumed to be 2. Assuming it put a
+    // writer's first insert at the header's own indent when the block itself
+    // was indented — `  issuegraph:` — so `  blocked-by:` landed as a SIBLING
+    // of the section instead of a child. The body still parsed, so the
+    // post-edit readability check passed, and the caller was told the write
+    // succeeded while the blocker it asked for was never written.
+    childIndent: childIndent === -1 ? columnAt(text, headerRange[0]) + 2 : childIndent,
     lineEditable,
     fields,
     hasSiblingKeys,

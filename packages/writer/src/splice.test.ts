@@ -523,3 +523,43 @@ describe('the positive control is comparative, not just a shape test', () => {
     assert.deepEqual(parse.diagnostics, []);
   });
 });
+
+describe('an empty section takes its child indent from the header', () => {
+  it('writes the edge INSIDE an indented section, not beside it', () => {
+    // An empty section has no child to measure, and the fallback used to assume
+    // column 2 — the header's own column when the block itself is indented. So
+    // `  blocked-by:` landed as a SIBLING of `issuegraph:` rather than a child.
+    // The body still parsed, so the post-edit readability check passed, and the
+    // caller was told the write succeeded while the blocker it asked for was
+    // never written. Silent under-blocking: the issue reads unblocked when the
+    // writer meant to block it.
+    const body = ['---', '  issuegraph:', '---', '', 'Body.'].join('\n');
+    const next = spliceGeneratedEdges(body, { blockedBy: [{ repo: null, id: '9' }] }) as string;
+    assert.notEqual(next, null);
+    assert.deepEqual(
+      parseFrontmatter(next).data?.blockedBy,
+      [{ repo: null, id: '9' }],
+      'the requested edge must actually be readable afterwards',
+    );
+  });
+
+  it('CONTROL: a flush section still uses two spaces', () => {
+    // The fallback must key on the header's column, not add a fixed offset to
+    // whatever it finds — a flush header keeps the canonical indent.
+    const body = ['---', 'issuegraph:', 'other: x', '---'].join('\n');
+    const next = spliceGeneratedEdges(body, { blockedBy: [{ repo: null, id: '9' }] }) as string;
+    assert.ok(next.includes('\n  blocked-by:'), 'two spaces for a flush header');
+    assert.deepEqual(parseFrontmatter(next).data?.blockedBy, [{ repo: null, id: '9' }]);
+  });
+
+  it("CONTROL: a NON-empty section still adopts its own children's indent", () => {
+    // The fallback only applies when there is nothing to measure; an author's
+    // existing style still wins where one exists.
+    const body = ['---', '  issuegraph:', '    priority: 1', '---'].join('\n');
+    const next = spliceGeneratedEdges(body, { blockedBy: [{ repo: null, id: '9' }] }) as string;
+    assert.ok(next.includes('\n    blocked-by:'), "four spaces, from the section's own child");
+    const parse = parseFrontmatter(next);
+    assert.deepEqual(parse.data?.blockedBy, [{ repo: null, id: '9' }]);
+    assert.equal(parse.data?.priority, 1, 'and the unowned field survived');
+  });
+});
