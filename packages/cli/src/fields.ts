@@ -1,37 +1,39 @@
 /**
- * What the writer can actually do with each field — as data, because the answer
- * differs per field and every place that forgets it produces a silent no-op.
+ * What the writer can actually do with each field — DERIVED FROM THE WRITER,
+ * because the answer differs per field and every place that forgets it produces
+ * a silent no-op.
  *
- * Three capabilities, and they do not coincide:
+ * Three capabilities, and they do not coincide: the splice can WRITE a field,
+ * it can CLEAR one, and `renderFrontmatter` can write one into a body that has
+ * no block yet. The first two are `@issuegraph/writer`'s
+ * `SPLICE_FIELD_OWNERSHIP`, which this file reads rather than restates; the
+ * third is every recognised field the splice does not own.
  *
- * | field             | splice can WRITE | splice can CLEAR | render can write |
- * |-------------------|------------------|------------------|------------------|
- * | `blocked-by`      | yes              | yes (`[]`)       | yes              |
- * | `serialize-with`  | yes              | yes (`null`)     | yes              |
- * | `decomposed-from` | yes              | **no**           | yes              |
- * | `duplicate-of`    | yes              | **no**           | yes              |
- * | `together-with`   | **no**           | no               | yes              |
- * | `priority`        | **no**           | no               | yes              |
- * | `evidence`        | **no**           | no               | yes              |
- *
- * THE MIDDLE COLUMN IS THE ONE THAT BITES, and it is not an oversight in the
- * writer. `spliceGeneratedEdges` documents `null` as "leave untouched" for
- * `decomposed-from` and `duplicate-of` — they are PROVENANCE and a dedupe
- * VERDICT, not scheduling state, so a machine refreshing its owned edges must
- * not be able to erase them by omission. For `serialize-with`, `null` means
- * "remove"; for `blocked-by`, `[]` means "remove". Same-shaped values, opposite
- * meanings, one field apart.
+ * THE CLEAR COLUMN IS THE ONE THAT BITES, and it is not an oversight in the
+ * writer. `null` means "leave untouched" for `decomposed-from` and
+ * `duplicate-of` — they are PROVENANCE and a dedupe VERDICT, not scheduling
+ * state, so a machine refreshing its owned edges must not be able to erase them
+ * by omission. For `serialize-with`, `null` means "remove"; for `blocked-by`,
+ * `[]` means "remove". Same-shaped values, opposite meanings, one field apart.
+ * That is the RATIONALE; which field is which is the writer's table.
  *
  * WHY THIS FILE EXISTS RATHER THAN THE RULE BEING SPELLED AT EACH SITE. The
  * first version of this package offered a `--no-<field>` flag for all seven,
  * which meant five of them accepted a clear the libraries cannot perform and
  * exited 0 having changed nothing. That is the exact defect this package exists
  * to refuse — a command reporting success for work it did not do — rebuilt one
- * layer up. A flag table generated from these lists cannot drift back into it,
- * and the tests read the same lists rather than a copy.
+ * layer up. A flag table generated from these lists cannot drift back into it.
+ *
+ * AND WHY THE LISTS ARE NO LONGER WRITTEN HERE. They used to be typed out, and
+ * a hand-maintained copy of a rule the library owns is the same defect one more
+ * layer up: it cannot drift loudly, only into accepting a value the writer then
+ * refuses. Four of the eleven findings on this package's own review were that.
+ * The writer exports the domain now, so these ask.
  */
 
-import type { GeneratedEdges } from '@issuegraph/writer';
+import { EDGE_CARDINALITY, FIELDS } from '@issuegraph/core';
+import { SPLICE_FIELD_OWNERSHIP, SPLICE_OWNED_FIELDS } from '@issuegraph/writer';
+import type { GeneratedEdges, SpliceOwnedField } from '@issuegraph/writer';
 
 /**
  * Compile-time proof that a key list names EVERY key of the interface it claims
@@ -55,54 +57,78 @@ export type SameKeys<A extends string, B extends string> = [A] extends [B]
     ? true
     : false
   : false;
-
 /** A frontmatter field this CLI can write, spelled as it appears in a block. */
-export type WritableField =
-  | 'blocked-by'
-  | 'serialize-with'
-  | 'decomposed-from'
-  | 'duplicate-of'
-  | 'together-with'
-  | 'priority'
-  | 'evidence';
+export type WritableField = (typeof FIELDS)[number];
 
 /**
  * The fields `spliceGeneratedEdges` owns, so they can be written into a block
  * that already exists.
  */
-export const SPLICE_WRITABLE: readonly WritableField[] = Object.freeze([
-  'blocked-by',
-  'serialize-with',
-  'decomposed-from',
-  'duplicate-of',
-]);
+export const SPLICE_WRITABLE: readonly WritableField[] = SPLICE_OWNED_FIELDS;
 
 /**
  * The fields the writer can REMOVE from an existing block. A `--no-<field>` flag
  * exists for exactly these and for no others.
  */
-export const SPLICE_CLEARABLE: readonly WritableField[] = Object.freeze([
-  'blocked-by',
-  'serialize-with',
-]);
+export const SPLICE_CLEARABLE: readonly WritableField[] = Object.freeze(
+  SPLICE_OWNED_FIELDS.filter((field) => SPLICE_FIELD_OWNERSHIP[field].clearable),
+);
+
+/** The owned fields an explicit empty value does NOT clear — the refusal set. */
+const SPLICE_UNCLEARABLE: readonly SpliceOwnedField[] = Object.freeze(
+  SPLICE_OWNED_FIELDS.filter((field) => !SPLICE_FIELD_OWNERSHIP[field].clearable),
+);
+
+/** A field the splice does not own, so only `renderFrontmatter` can write it. */
+type RenderOnlyField = Exclude<WritableField, SpliceOwnedField>;
+
+/**
+ * The render-only fields, listed DELIBERATELY and checked for totality.
+ *
+ * NOT A BARE COMPLEMENT OF `FIELDS`, and the difference is a real defect rather
+ * than a style preference. `argv.ts` generates `set`'s option surface from
+ * `[...SPLICE_WRITABLE, ...RENDER_ONLY]`, while `collectSetFields` in `run.ts`
+ * handles the field names it names. A complement makes the OPTION surface grow
+ * the moment a field is added to the specification, and the HANDLER does not
+ * grow with it — so the new `--<field>` is parsed, accepted, and silently
+ * ignored, and the command exits 0 having not done what it was asked. That is
+ * the exact defect this file exists to refuse, rebuilt one layer up, and it is
+ * strictly worse than the field simply being unsupported.
+ *
+ * The totality proof makes the divergence a BUILD ERROR instead: add a field to
+ * the specification and this stops compiling until somebody classifies it, which
+ * is the moment to teach `collectSetFields` about it too.
+ *
+ * Proved with this file's own `AssertTrue`/`SameKeys` idiom rather than a
+ * `satisfies Record<...>`, so one file does not carry two ways of saying the
+ * same thing. It holds in both directions, which is what `SameKeys` is for.
+ */
+const RENDER_ONLY_MEMBERS = Object.freeze({
+  'together-with': true,
+  priority: true,
+  evidence: true,
+});
+
+/** @see RENDER_ONLY_MEMBERS — the compile-time totality proof, not a runtime value. */
+export type RenderOnlyMembersCoverComplement = AssertTrue<
+  SameKeys<keyof typeof RENDER_ONLY_MEMBERS, RenderOnlyField>
+>;
 
 /**
  * The fields only `renderFrontmatter` can write, so they reach a body that has
  * no block yet and cannot be amended in one that has.
+ *
+ * Ordered by the specification's own field order rather than by the literal
+ * above, so the two cannot disagree about presentation.
  */
-export const RENDER_ONLY: readonly WritableField[] = Object.freeze([
-  'together-with',
-  'priority',
-  'evidence',
-]);
+export const RENDER_ONLY: readonly WritableField[] = Object.freeze(
+  FIELDS.filter((field) => field in RENDER_ONLY_MEMBERS),
+);
 
 /** The key names the `--edges` payload accepts, matching the writer's own surface. */
-export const EDGE_JSON_KEYS = Object.freeze([
-  'blockedBy',
-  'serializeWith',
-  'decomposedFrom',
-  'duplicateOf',
-] as const);
+export const EDGE_JSON_KEYS = Object.freeze(
+  SPLICE_OWNED_FIELDS.map((field) => SPLICE_FIELD_OWNERSHIP[field].property),
+);
 
 /** A key in the `--edges` payload. */
 export type EdgeJsonKey = (typeof EDGE_JSON_KEYS)[number];
@@ -112,19 +138,34 @@ export type EdgeJsonKey = (typeof EDGE_JSON_KEYS)[number];
  * This is what lets it serve as the allowlist `writeRequestRefusal` applies to a
  * splice request: an allowlist one field out of date would refuse a write the
  * writer can perform, which is the mirror image of the defect it is there for.
+ *
+ * IT NOW PROVES A DERIVED LIST RATHER THAN A HAND-WRITTEN ONE, which makes it
+ * strictly stronger: `EDGE_JSON_KEYS` is built from the writer's own ownership
+ * table, so this also fails if a property is added to `GeneratedEdges` and not
+ * to that table.
  */
 export type EdgeJsonKeysCoverGeneratedEdges = AssertTrue<
   SameKeys<EdgeJsonKey, keyof GeneratedEdges>
 >;
 
 /**
- * The `--edges` keys for which an explicit `null` means REMOVE. For the other
- * two the writer reads `null` as "leave untouched", so accepting one would be a
+ * The `--edges` keys for which an explicit `null` means REMOVE. For the others
+ * the writer reads `null` as "leave untouched", so accepting one would be a
  * clear request the command silently declines to perform.
+ *
+ * CLEARABLE IS NOT THE SAME QUESTION AS NULL-CLEARABLE, and conflating them is
+ * how this constant briefly became false. `clearable` says a field's OWN empty
+ * value removes it — and for a list-valued field that value is `[]`, not `null`.
+ * `blocked-by` is clearable and `blockedBy: null` is still refused, as a
+ * non-array, before it ever reaches the null test. So the cardinality is asked
+ * too, from `@issuegraph/core`, which already owns it: `null` is the empty value
+ * exactly for the SINGLE-valued fields.
  */
-export const CLEARABLE_JSON_KEYS: readonly EdgeJsonKey[] = Object.freeze([
-  'serializeWith',
-]);
+export const CLEARABLE_JSON_KEYS: readonly EdgeJsonKey[] = Object.freeze(
+  SPLICE_OWNED_FIELDS.filter(
+    (field) => SPLICE_FIELD_OWNERSHIP[field].clearable && EDGE_CARDINALITY[field] === 'single',
+  ).map((field) => SPLICE_FIELD_OWNERSHIP[field].property),
+);
 
 /**
  * The field a clear request names that the writer cannot perform, or `null`.
@@ -140,13 +181,21 @@ export const CLEARABLE_JSON_KEYS: readonly EdgeJsonKey[] = Object.freeze([
  * "leave untouched". That is also why refusing `null` costs a caller nothing —
  * the only intent `null` could express here is already expressible by omission,
  * so there is no legitimate use to break.
+ *
+ * IT WALKS THE WRITER'S OWN UNCLEARABLE SET rather than testing two fields by
+ * name. The two `if`s it replaces were correct and were also a fourth copy of a
+ * rule the writer now exports; if the writer ever makes one of them clearable,
+ * or adds an owned field that is not, this follows without an edit.
  */
 export function unperformableClear(edges: {
   readonly decomposedFrom?: unknown;
   readonly duplicateOf?: unknown;
 }): WritableField | null {
-  if (edges.decomposedFrom === null) return 'decomposed-from';
-  if (edges.duplicateOf === null) return 'duplicate-of';
+  const request: Readonly<Record<string, unknown>> = edges;
+  for (const field of SPLICE_UNCLEARABLE) {
+    const { property } = SPLICE_FIELD_OWNERSHIP[field];
+    if (request[property] === null) return field;
+  }
   return null;
 }
 

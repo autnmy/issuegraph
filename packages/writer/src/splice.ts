@@ -121,9 +121,8 @@ function readableOrNull(body: string, next: string, intent: 'edit' | 'remove'): 
  * away unparseable items and exotic spellings the parser tolerates with a
  * diagnostic.
  *
- * WHAT AN EXPLICIT `null` MEANS IS NOT UNIFORM, and the asymmetry is deliberate
- * rather than an oversight — read each field's own note below rather than this
- * paragraph. `blockedBy` and `serializeWith` are SCHEDULING edges, so a present
+ * WHAT AN EXPLICIT EMPTY VALUE MEANS IS NOT UNIFORM, and the asymmetry is
+ * deliberate. `blockedBy` and `serializeWith` are SCHEDULING edges, so a present
  * `[]` or `null` is an owned REMOVAL. `decomposedFrom` and `duplicateOf` are
  * PROVENANCE and VERDICT, where the established caller shape is "write it when
  * the block lacks one, never clobber one that is already there" — it passes
@@ -132,46 +131,115 @@ function readableOrNull(body: string, next: string, intent: 'edit' | 'remove'): 
  * There is consequently no way to CLEAR those two through this call; that gap
  * is real and is tracked rather than closed by overloading a value that already
  * has a caller.
+ *
+ * WHICH FIELD IS WHICH IS {@link SPLICE_FIELD_OWNERSHIP}, NOT THIS PARAGRAPH.
+ * The rule above is the RATIONALE; the table is the answer, it is exported, and
+ * {@link owns} derives from it — so a consumer asks rather than reading prose,
+ * and prose cannot drift away from behaviour. Restating the per-field mechanics
+ * here is what made four separate copies of this rule; the notes below name
+ * each field's ROLE and defer the mechanics to the table.
  */
 export interface GeneratedEdges {
-  /**
-   * Owned when PRESENT: existing entries are removed and a non-empty set is
-   * inserted; an explicit `[]` removes without inserting. Absent = untouched.
-   */
+  /** A SCHEDULING edge. Clearable — see {@link SPLICE_FIELD_OWNERSHIP}. */
   readonly blockedBy?: readonly IssueRef[];
-  /**
-   * Owned when PRESENT: an existing entry is removed and a non-null ref is
-   * inserted; an explicit `null` removes without inserting. Absent = untouched.
-   */
+  /** A SCHEDULING edge. Clearable — see {@link SPLICE_FIELD_OWNERSHIP}. */
   readonly serializeWith?: IssueRef | null;
-  /**
-   * PROVENANCE, not scheduling: absent or `null` leaves any existing
-   * `decomposed-from` line completely untouched; a non-null ref replaces or
-   * inserts it.
-   */
+  /** PROVENANCE. Not clearable — see {@link SPLICE_FIELD_OWNERSHIP}. */
   readonly decomposedFrom?: IssueRef | null;
-  /**
-   * A dedupe verdict (§4.3.3, §5.1). Absent or `null` leaves any existing
-   * `duplicate-of` line completely untouched; a non-null ref replaces or
-   * inserts it.
-   */
+  /** A dedupe VERDICT (§4.3.3, §5.1). Not clearable — see {@link SPLICE_FIELD_OWNERSHIP}. */
   readonly duplicateOf?: IssueRef | null;
 }
 
-/** Whether this call owns the named field, per {@link GeneratedEdges}. */
+/**
+ * The edge fields this splice can own, spelled as they appear in a block.
+ *
+ * `together-with` is ABSENT rather than present-and-false: the splice cannot
+ * write it at all, so it is not a member of this domain. A consumer asking
+ * "can I splice this?" gets `false` from {@link isSpliceOwnedField} without the
+ * table needing a third state to describe a field it does not handle.
+ */
+export const SPLICE_OWNED_FIELDS = Object.freeze([
+  'blocked-by',
+  'serialize-with',
+  'decomposed-from',
+  'duplicate-of',
+] as const);
+
+/** An edge field {@link spliceGeneratedEdges} can own. */
+export type SpliceOwnedField = (typeof SPLICE_OWNED_FIELDS)[number];
+
+/** What this splice can do with one owned field. */
+export interface SpliceFieldOwnership {
+  /** The {@link GeneratedEdges} property that carries this field's value. */
+  readonly property: keyof GeneratedEdges;
+  /**
+   * Whether an explicit empty value (`[]` for a list, `null` for a single)
+   * REMOVES the entry. When `false`, an empty value means *leave untouched* and
+   * there is no way to clear the field through this call.
+   *
+   * IT IS ALSO THE OWNERSHIP PREDICATE, which is why one flag carries both
+   * facts rather than two that could disagree: a clearable field is owned when
+   * its property is present at all, and a non-clearable one only when that
+   * property is non-null — because for the latter, `null` is already spoken for.
+   */
+  readonly clearable: boolean;
+}
+
+/**
+ * THE SPLICE'S OWNERSHIP DOMAIN, AS DATA — the single source of truth.
+ *
+ * {@link owns} below derives from this, so the table is not a description of
+ * the behaviour sitting alongside it: it IS the behaviour, and the splice suite
+ * that covers clearing and preservation covers this table too. That is the
+ * point. A table written beside a hand-maintained predicate would be one more
+ * copy of a rule this package already had three of, and copies of this
+ * particular rule are what produced four of the eleven findings in #26.
+ *
+ * `satisfies` PROVES TOTALITY IN BOTH DIRECTIONS: a field added to
+ * {@link SPLICE_OWNED_FIELDS} with no row here fails to compile (TS1360), and a
+ * row whose key is not a member fails too (TS1360, excess property). Neither is
+ * a comment asking the next author to remember.
+ *
+ * IT SITS INSIDE `Object.freeze`, NOT AFTER IT, AND THAT POSITION IS THE SECOND
+ * DIRECTION. Excess-property checking applies only to a FRESH object literal, so
+ * `Object.freeze({…}) satisfies …` checks the freeze's RETURN VALUE — by then
+ * the literal is spent, and an extra key rides through silently. Measured: with
+ * the assertion outside, a bogus `'together-with'` row compiled clean, while the
+ * missing-row direction failed correctly. A one-directional guard that reads as
+ * two-directional is worse than none, because the comment above would be false.
+ */
+export const SPLICE_FIELD_OWNERSHIP = Object.freeze({
+  'blocked-by': Object.freeze({ property: 'blockedBy', clearable: true }),
+  'serialize-with': Object.freeze({ property: 'serializeWith', clearable: true }),
+  'decomposed-from': Object.freeze({ property: 'decomposedFrom', clearable: false }),
+  'duplicate-of': Object.freeze({ property: 'duplicateOf', clearable: false }),
+} satisfies Readonly<Record<SpliceOwnedField, SpliceFieldOwnership>>);
+
+const SPLICE_OWNED_FIELD_SET: ReadonlySet<string> = new Set<string>(SPLICE_OWNED_FIELDS);
+
+/**
+ * Whether a field name is one this splice can own.
+ *
+ * Takes `unknown` and narrows, matching `@issuegraph/core`'s predicates: these
+ * are published packages, so a `string` annotation is a promise to TypeScript
+ * callers and nothing at all to JavaScript ones. Set-backed, so unlike a
+ * `RegExp.test` it cannot coerce its argument into an answer.
+ */
+export function isSpliceOwnedField(value: unknown): value is SpliceOwnedField {
+  return typeof value === 'string' && SPLICE_OWNED_FIELD_SET.has(value);
+}
+
+/**
+ * Whether this call owns the named field.
+ *
+ * DERIVED FROM {@link SPLICE_FIELD_OWNERSHIP}, not a switch restating it — see
+ * that table's note. `clearable` selects the predicate, for the reason
+ * {@link SpliceFieldOwnership.clearable} gives.
+ */
 function owns(edges: GeneratedEdges, key: string): boolean {
-  switch (key) {
-    case 'blocked-by':
-      return edges.blockedBy !== undefined;
-    case 'serialize-with':
-      return edges.serializeWith !== undefined;
-    case 'decomposed-from':
-      return edges.decomposedFrom != null;
-    case 'duplicate-of':
-      return edges.duplicateOf != null;
-    default:
-      return false;
-  }
+  if (!isSpliceOwnedField(key)) return false;
+  const { property, clearable } = SPLICE_FIELD_OWNERSHIP[key];
+  return clearable ? edges[property] !== undefined : edges[property] != null;
 }
 
 /**

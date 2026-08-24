@@ -8,6 +8,13 @@
  * specification says follows from them: the ready set, effective priority,
  * serialize and together components, duplicate resolution and cycles.
  *
+ * {@link parseRef} sits underneath both: it answers whether one TOKEN is a
+ * legal reference, which is the question a consumer has to settle about its own
+ * input before it calls in at all. It is exported so that question has an
+ * answer to ask for — re-deriving §4.2's grammar, or round-tripping a token
+ * through {@link parseFrontmatter} to see what comes back, are the two things
+ * consumers did while it was private.
+ *
  * Neither half fetches anything, authenticates anything or writes anything. A
  * host supplies bodies and labels from whatever tracker it has; writing edges
  * back is `@issuegraph/writer`'s job, and the vocabulary both packages share is
@@ -16,7 +23,7 @@
  * @see https://github.com/autnmy/issuegraph/blob/main/SPEC.md
  */
 
-export { FRONTMATTER_KEY_PATTERN, isUnreadDeclaration, parseFrontmatter } from './frontmatter.ts';
+export { FRONTMATTER_KEY_PATTERN, isUnreadDeclaration, parseFrontmatter, parseRef } from './frontmatter.ts';
 export type { BlockDefect, Frontmatter, IssueRef, ParseResult } from './frontmatter.ts';
 
 /**

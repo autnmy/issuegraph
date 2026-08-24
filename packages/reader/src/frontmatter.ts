@@ -356,7 +356,16 @@ function scalarIdText(node: unknown, text: string): string | null {
 
 /**
  * Parse one identifier token as a reference: `123`, `#123`, `ABC-123`,
- * `owner/repo#123` (§4.2).
+ * `owner/repo#123` (§4.2). `null` when the token is not a legal reference.
+ *
+ * EXPORTED BECAUSE IT IS THE MOST-RESTATED RULE IN THE FORMAT. A consumer that
+ * validates its own input — a CLI flag, a write request, an order document —
+ * has to answer "is this a reference?" before calling in, and until this was
+ * exported the only ways to answer were to re-implement the grammar or to feed
+ * a synthetic frontmatter block to {@link parseFrontmatter} and read the result
+ * back. Both were observed: re-implementation drifts into accepting values the
+ * library then refuses, and the round-trip is a parser invocation standing in
+ * for a function call. This is that function.
  *
  * NOT TRIMMED, and the reason is measured rather than stylistic. YAML already
  * strips surrounding whitespace from a PLAIN scalar — including inside a flow
@@ -365,9 +374,25 @@ function scalarIdText(node: unknown, text: string): string | null {
  * deliberate whitespace exclusion: `" #123 "` would become the reference `123`
  * and a re-render would write it back as `"#123"`, silently changing what the
  * author wrote.
+ *
+ * A CALLER READING FROM SOMEWHERE THAT IS NOT YAML may legitimately trim first
+ * — a shell argument carries whitespace the user never typed — but that is the
+ * caller's decision about its own input, taken BEFORE this is called, and it
+ * does not transfer to a token read out of a document.
+ *
+ * TAKES `unknown` AND TESTS THE TYPE FIRST, matching `@issuegraph/core`'s
+ * `isRefId`, and for the reason that predicate records: these are PUBLISHED
+ * packages, so a `string` annotation is a promise to TypeScript callers and
+ * nothing at all to JavaScript ones. While this function was private its
+ * callers were all internal and all passed strings; exporting it makes that
+ * assumption unenforceable. Measured before the guard: `parseRef(undefined)`
+ * and `parseRef(123)` THREW a `TypeError` rather than refusing, which would
+ * have made a validator that cannot be called defensively — the opposite of
+ * what a consumer exports it to do, and this reader's stated discipline is that
+ * parsing untrusted input never throws.
  */
-function parseRef(s: string): IssueRef | null {
-  if (s.length === 0) return null;
+export function parseRef(s: unknown): IssueRef | null {
+  if (typeof s !== 'string' || s.length === 0) return null;
 
   // The sigil is same-repo-only: in a qualified reference the `#` is the
   // separator, so a leading one is the bare `#123` spelling and nothing else.

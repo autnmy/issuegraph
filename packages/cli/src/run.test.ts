@@ -100,6 +100,19 @@ describe('splice --edges validates its payload', () => {
     }
   });
 
+  test('null-clearable is NARROWER than clearable — a list field is not in it', () => {
+    // REGRESSION PIN. `clearable` says a field's OWN empty value removes it; for
+    // `blocked-by` that value is `[]`, not `null`. A derivation that filtered on
+    // `clearable` alone put `blockedBy` in here, which made the constant's
+    // documented contract false — and did it silently, because `spliceEdges`
+    // only ever tests this set against the SINGLE-valued keys, and the test
+    // below already skipped `blockedBy` by name. Nothing went red.
+    assert.deepEqual([...CLEARABLE_JSON_KEYS], ['serializeWith']);
+    assert.ok(!CLEARABLE_JSON_KEYS.includes('blockedBy'), 'blockedBy is cleared with [], not null');
+    // ...and it IS clearable, which is exactly why the two questions differ.
+    assert.ok(SPLICE_CLEARABLE.includes('blocked-by'));
+  });
+
   test('CONTROL: a null on the one clearable key still clears', () => {
     const result = run(['splice', '--edges', '{"serializeWith":null}'], FULL_BODY);
     assert.equal(result.code, EXIT.ok);

@@ -43,7 +43,13 @@ import type { Evidence } from '@issuegraph/core';
 
 import { classifyDeclaration, unreadErrorLines } from '../declaration.ts';
 import type { Declaration } from '../declaration.ts';
-import { EDGE_JSON_KEYS, clearRefusalReason, writeRequestRefusal } from '../fields.ts';
+import {
+  EDGE_JSON_KEYS,
+  RENDER_ONLY,
+  clearRefusalReason,
+  unperformableClear,
+  writeRequestRefusal,
+} from '../fields.ts';
 import type { AssertTrue, SameKeys, WriteRefusal } from '../fields.ts';
 import { EXIT } from '../exit.ts';
 import type { VerbResult } from '../exit.ts';
@@ -92,8 +98,6 @@ export type SetFieldKeysCoverSetFields = AssertTrue<
   SameKeys<(typeof SET_FIELD_KEYS)[number], keyof SetFields>
 >;
 
-/** The three fields the writer's splice surface does not own, in message order. */
-const RENDER_ONLY_FIELDS = Object.freeze(['together-with', 'priority', 'evidence'] as const);
 
 function renderOnlyRequested(fields: SetFields): readonly string[] {
   const requested: string[] = [];
@@ -220,18 +224,19 @@ export function setFields(body: string, fields: SetFields): VerbResult {
       // table. The flags are one caller; this package is importable, so a program
       // holding `SetFields` reaches the same assignment, and refusing only at the
       // command line would leave the silent no-op available through the library.
-      const unclearable = [
-        ['decomposed-from', fields.decomposedFrom],
-        ['duplicate-of', fields.duplicateOf],
-      ] as const;
-      for (const [field, value] of unclearable) {
-        if (value === null) {
-          return {
-            stdout: '',
-            stderr: [`issuegraph: refusing to write — ${clearRefusalReason(field)}`],
-            code: EXIT.refusedWrite,
-          };
-        }
+      //
+      // IT ASKS `unperformableClear` rather than listing the two fields again.
+      // The list that used to sit here was a fourth copy of a rule the writer now
+      // exports, and `fields.ts` already says why there must be exactly one
+      // implementation: each previous fix added the check at the one site that
+      // lacked it, which is why the next round found the next site.
+      const unclearable = unperformableClear(fields);
+      if (unclearable !== null) {
+        return {
+          stdout: '',
+          stderr: [`issuegraph: refusing to write — ${clearRefusalReason(unclearable)}`],
+          code: EXIT.refusedWrite,
+        };
       }
 
       const renderOnly = renderOnlyRequested(fields);
@@ -240,7 +245,7 @@ export function setFields(body: string, fields: SetFields): VerbResult {
           stdout: '',
           stderr: [
             `issuegraph: refusing to write ${renderOnly.join(', ')} into an existing block — the writer's splice surface owns generated edges only (blocked-by, serialize-with, decomposed-from, duplicate-of).`,
-            `  ${RENDER_ONLY_FIELDS.join(', ')} can be written when the body has no block yet, but not amended in one that has.`,
+            `  ${RENDER_ONLY.join(', ')} can be written when the body has no block yet, but not amended in one that has.`,
           ],
           code: EXIT.refusedWrite,
         };

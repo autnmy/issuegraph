@@ -59,8 +59,16 @@ describe('resolveRef', () => {
     }
   });
 
-  describe('the injection guard', () => {
-    test('refuses a token carrying a quote, so it cannot close the probe’s scalar', () => {
+  describe('tokens that could inject into a document', () => {
+    // THESE OUTLIVE THE GUARD THEY WERE WRITTEN FOR, DELIBERATELY. They used to
+    // cover a character allowlist protecting a YAML interpolation; both are gone
+    // now that `resolveRef` calls `parseRef` and builds no document at all. The
+    // PROPERTY is what mattered and it still holds — a token that could open a
+    // second line is not a reference — so these assertions stay exactly as they
+    // were, now proving the reader's grammar refuses them rather than proving a
+    // regex did. They are also what would catch a future reintroduction of
+    // string-built YAML on this path.
+    test('refuses a token carrying a quote', () => {
       assert.equal(resolveRef('1"\n---\nevil: true'), null);
       assert.equal(resolveRef('1"'), null);
     });

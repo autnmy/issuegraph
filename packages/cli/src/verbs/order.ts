@@ -183,10 +183,10 @@ function asBaseRanking(value: unknown, at: string): IssueOrderBaseRanking {
 /**
  * An issue number the READER would also accept as a reference.
  *
- * The bound is not restated here — it is asked. `resolveRef` puts the token
- * through `parseFrontmatter`, so a node number is accepted exactly when a
- * `blocked-by` naming it would parse, by construction rather than by two bounds
- * being kept in step.
+ * The bound is not restated here — it is asked. `resolveRef` calls the reader's
+ * own `parseRef`, so a node number is accepted exactly when a `blocked-by`
+ * naming it would parse, by construction rather than by two bounds being kept in
+ * step.
  *
  * That distinction is why this exists rather than a second `isSafeInteger` test.
  * Review found this validator accepting `9007199254740992` while the reader and
