@@ -141,6 +141,16 @@ describe('normalizeDocument', () => {
       '\u0001javascript:alert(1)',
       'data:text/html,<script>alert(1)</script>',
       'vbscript:msgbox(1)',
+      // EMBEDDED controls, not just leading ones. The URL parser removes every
+      // ASCII tab and newline from ANYWHERE in the input before it reads the
+      // scheme, so each of these reaches the browser as `javascript:` while a
+      // raw scan finds no scheme at all and reads the value as relative.
+      'java\tscript:alert(1)',
+      'java\nscript:alert(1)',
+      'java\rscript:alert(1)',
+      'j\ta\nv\ra\tscript:alert(1)',
+      ' \tjavascript:alert(1)',
+      'da\tta:text/html,<script>alert(1)</script>',
     ]) {
       const { document, diagnostics } = normalizeDocument({
         issues: [issue('1', { url })],

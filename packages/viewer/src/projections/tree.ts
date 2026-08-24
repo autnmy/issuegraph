@@ -14,7 +14,7 @@
 import type { NormalizedDocument } from '../document.ts';
 import { type ElementSpec, element } from '../element.ts';
 import { edgeBadges, emptyState, identity, legend, provenanceLine } from '../parts.ts';
-import { type LateralNeighbours, type Scene } from '../scene.ts';
+import { type LateralNeighbours, type Scene, resolveFocusKey } from '../scene.ts';
 import type { SceneOptions } from './linear.ts';
 
 interface Forest {
@@ -163,13 +163,9 @@ export function treeScene(document: NormalizedDocument, options: SceneOptions = 
 
   // A focus the caller supplied wins, but only when it is a key this projection
   // actually draws; otherwise the roving tab stop would land nowhere and the
-  // whole tree would be unreachable by keyboard.
-  const focused =
-    options.focused !== undefined &&
-    options.focused !== null &&
-    focusOrder.includes(options.focused)
-      ? options.focused
-      : (focusOrder[0] ?? null);
+  // whole tree would be unreachable by keyboard. The rule is shared with
+  // `reconcile` so the markup and the reported state cannot disagree.
+  const focused = resolveFocusKey(focusOrder, options.focused, options.selected);
 
   const body =
     forest.roots.length === 0
@@ -190,5 +186,12 @@ export function treeScene(document: NormalizedDocument, options: SceneOptions = 
   // so there is nothing beside a node to move to.
   const lateral: ReadonlyMap<string, LateralNeighbours> = new Map();
 
-  return { projection: 'tree', root, focusOrder, lateral, diagnostics: forest.diagnostics };
+  return {
+    projection: 'tree',
+    root,
+    focusOrder,
+    navigable: focusOrder,
+    lateral,
+    diagnostics: forest.diagnostics,
+  };
 }

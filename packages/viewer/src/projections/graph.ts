@@ -27,7 +27,7 @@ import {
   layoutGraph,
 } from '../layout.ts';
 import { emptyState, legend, slotLabel, slotTitle, station, stationFill } from '../parts.ts';
-import { type LateralNeighbours, type Scene } from '../scene.ts';
+import { type LateralNeighbours, type Scene, resolveFocusKey } from '../scene.ts';
 import { type Theme, defaultTheme } from '../theme.ts';
 import { type EdgeTerminal, dashArrayFor, treatmentFor } from '../vocabulary.ts';
 import { type SceneOptions, isFooterSlot } from './linear.ts';
@@ -126,17 +126,36 @@ function edgePaths(edge: ViewerEdge, geometry: EdgeGeometry, theme: Theme): Elem
   return [svg('path', base)];
 }
 
+/**
+ * One node on the canvas.
+ *
+ * A NODE THE SCENE PUBLISHES AS A NAVIGATION TARGET HAS TO BE FOCUSABLE. The
+ * rail draws only the ranked spine slots, so a tracker-held slot, a duplicate
+ * and every gutter node exist ONLY as this group — and an SVG group with no
+ * `tabindex` cannot take focus, so navigating to one called `focus()` on
+ * nothing and the visible tab stop vanished.
+ *
+ * `railed` names the keys the rail already draws, so exactly one element per
+ * key is tabbable; a second tab stop for the same issue would be worse than
+ * none. A focusable element also needs a name, hence `role`/`aria-label`.
+ */
 function nodeShape(
   document: NormalizedDocument,
   layout: GraphLayout,
   key: string,
   options: SceneOptions,
   theme: Theme,
+  navigable: {
+    readonly keys: readonly string[];
+    readonly focused: string | null;
+    readonly railed: ReadonlySet<string>;
+  },
 ): ElementSpec | null {
   const box = layout.nodes.get(key);
   if (box === undefined) return null;
   const issue = document.byKey.get(key);
   const selected = options.selected === key;
+  const ownsTabStop = navigable.keys.includes(key) && !navigable.railed.has(key);
 
   return svg(
     'g',
@@ -145,6 +164,9 @@ function nodeShape(
       'data-ig-key': key,
       'data-column': box.column,
       'aria-current': selected ? 'true' : 'false',
+      role: ownsTabStop ? 'img' : null,
+      'aria-label': ownsTabStop ? `${issue?.title ?? key} — ${key}` : null,
+      tabindex: ownsTabStop ? (navigable.focused === key ? 0 : -1) : null,
     },
     [
       svg('rect', {
@@ -184,10 +206,9 @@ function nodeShape(
 function spineRail(
   document: NormalizedDocument,
   options: SceneOptions,
-  focusOrder: readonly string[],
+  focused: string | null,
 ): ElementSpec {
   const slots = document.order.slots.filter((slot) => !isFooterSlot(slot));
-  const focused = options.focused ?? focusOrder[0] ?? null;
   return element(
     'ol',
     // A plain list for the reason `linear.ts` gives: an interactive descendant
@@ -263,6 +284,9 @@ export function graphScene(document: NormalizedDocument, options: GraphOptions =
     ...footerSlots.map((slot) => slot.lead),
     ...document.order.excluded.map((exclusion) => exclusion.key),
   ];
+  // The rail draws the ranked slots; the canvas owns the tab stop for
+  // everything else the scene reaches.
+  const railed: ReadonlySet<string> = new Set(inline.map((slot) => slot.lead));
 
   // Lateral traversal reaches the gutters from the spine and back. It is built
   // from the layout's own columns, so a node that moves column moves its
@@ -286,6 +310,24 @@ export function graphScene(document: NormalizedDocument, options: GraphOptions =
       lateral.set(slot.lead, { left, right });
     }
   }
+
+  // A GUTTER NODE IS REACHABLE SIDEWAYS WITHOUT BEING A POSITION IN THE ORDER,
+  // so the set that can hold focus is wider than the order that walks it. Built
+  // here, after `lateral`, because its targets are exactly the difference —
+  // `focusOrder` leads so the first entry is the same under either.
+  const navigableKeys = [...focusOrder];
+  for (const neighbours of lateral.values()) {
+    for (const key of [neighbours.left, neighbours.right]) {
+      if (key !== undefined && !navigableKeys.includes(key)) navigableKeys.push(key);
+    }
+  }
+  // One rule, shared with `reconcile` and the other projections, so the element
+  // that renders `tabindex="0"` and the state a host reads cannot disagree.
+  const navigable = {
+    keys: navigableKeys,
+    focused: resolveFocusKey(navigableKeys, options.focused, options.selected),
+    railed,
+  };
 
   const diagnostics: string[] = [];
   let canvas: ElementSpec;
@@ -350,7 +392,7 @@ export function graphScene(document: NormalizedDocument, options: GraphOptions =
     }
 
     const nodeShapes = [...layout.nodes.keys()]
-      .map((key) => nodeShape(document, layout, key, options, theme))
+      .map((key) => nodeShape(document, layout, key, options, theme, navigable))
       .filter((node): node is ElementSpec => node !== null);
 
     canvas = svg(
@@ -370,7 +412,7 @@ export function graphScene(document: NormalizedDocument, options: GraphOptions =
     { class: 'ig-viewer ig-graph', 'data-projection': 'graph', 'aria-label': 'issue order and relationships' },
     [
       legend(),
-      spineRail(document, options, focusOrder),
+      spineRail(document, options, navigable.focused),
       canvas,
       document.isolated.length === 0
         ? null
@@ -380,5 +422,5 @@ export function graphScene(document: NormalizedDocument, options: GraphOptions =
     ],
   );
 
-  return { projection: 'graph', root, focusOrder, lateral, diagnostics };
+  return { projection: 'graph', root, focusOrder, navigable: navigableKeys, lateral, diagnostics };
 }

@@ -6,6 +6,8 @@ import { initialNavigationState, navigate, reconcile } from './navigation.ts';
 import { graphScene } from './projections/graph.ts';
 import { linearScene } from './projections/linear.ts';
 import { treeScene } from './projections/tree.ts';
+import { renderMarkup } from './element.ts';
+import type { SceneOptions } from './projections/linear.ts';
 import type { Scene } from './scene.ts';
 import { fixtureDocument } from './testing/fixtures.ts';
 
@@ -14,6 +16,13 @@ const graph = (): Scene => graphScene(normalizeDocument(fixtureDocument).documen
 const tree = (): Scene => treeScene(normalizeDocument(fixtureDocument).document);
 
 const at = (key: string | null) => ({ focused: key, selected: null });
+
+function buildWith(projection: Scene['projection'], options: SceneOptions): Scene {
+  const document = normalizeDocument(fixtureDocument).document;
+  if (projection === 'linear') return linearScene(document, options);
+  if (projection === 'graph') return graphScene(document, options);
+  return treeScene(document, options);
+}
 
 describe('navigate', () => {
   it('moves down and up the published order', () => {
@@ -131,6 +140,37 @@ describe('reconcile', () => {
       focused: '102',
       selected: null,
     });
+  });
+
+  it('agrees with what the projection rendered a tab stop on', () => {
+    // The two answers have to be the same one. `reconcile` decides what
+    // `handle.state.focused` reports and the projection decides which element
+    // carries `tabindex="0"`; when they diverged, a stale key rendered NO tab
+    // stop while the state named a valid fallback, and the viewer could not be
+    // entered from the keyboard at all.
+    for (const state of [
+      { focused: 'gone', selected: '103' },
+      { focused: 'gone', selected: 'also-gone' },
+      { focused: null, selected: '105' },
+      { focused: '101', selected: '103' },
+    ]) {
+      for (const build of [linear, graph, tree]) {
+        const scene = build();
+        const reconciled = reconcile(scene, state);
+        const markup = renderMarkup(
+          buildWith(scene.projection, { selected: state.selected, focused: state.focused }).root,
+        );
+        const stops = [...markup.matchAll(/data-ig-key="([^"]+)"[^>]*tabindex="0"/g)].map(
+          (match) => match[1],
+        );
+
+        assert.deepEqual(
+          stops,
+          reconciled.focused === null ? [] : [reconciled.focused],
+          `${scene.projection}: markup and reconciled state disagree`,
+        );
+      }
+    }
   });
 
   it('reports null focus for a scene with nothing in it', () => {

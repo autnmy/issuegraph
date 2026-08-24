@@ -27,7 +27,7 @@ import {
   station,
   stationFill,
 } from '../parts.ts';
-import { type LateralNeighbours, type Scene } from '../scene.ts';
+import { type LateralNeighbours, type Scene, resolveFocusKey } from '../scene.ts';
 import { treatmentFor } from '../vocabulary.ts';
 
 export interface SceneOptions {
@@ -140,8 +140,14 @@ export function linearScene(
     ...document.order.excluded.map((exclusion) => exclusion.key),
   ];
 
-  const effectiveFocus = options.focused ?? focusOrder[0] ?? null;
-  const withFocus: SceneOptions = { ...options, focused: effectiveFocus };
+  // A REQUESTED KEY THIS PROJECTION NO LONGER DRAWS must not silently render no
+  // tab stop at all — that leaves the viewer unreachable by keyboard. The
+  // shared rule resolves it, and `reconcile` uses the same one, so the markup
+  // and `handle.state.focused` cannot disagree about where focus sits.
+  const withFocus: SceneOptions = {
+    ...options,
+    focused: resolveFocusKey(focusOrder, options.focused, options.selected),
+  };
 
   const body =
     inline.length === 0
@@ -188,5 +194,7 @@ export function linearScene(
   // make a lateral key press look handled.
   const lateral: ReadonlyMap<string, LateralNeighbours> = new Map();
 
-  return { projection: 'linear', root, focusOrder, lateral, diagnostics: [] };
+  // No lateral axis here, so nothing is reachable sideways that the order does
+  // not already contain.
+  return { projection: 'linear', root, focusOrder, navigable: focusOrder, lateral, diagnostics: [] };
 }

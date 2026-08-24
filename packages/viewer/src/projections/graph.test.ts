@@ -123,6 +123,47 @@ describe('the graph projection', () => {
     assert.match(markup, /r="18.5"/);
   });
 
+  it('makes every published navigation target focusable, exactly once', () => {
+    // The rail draws only the ranked slots, so a tracker-held slot, a duplicate
+    // and every gutter node exist ONLY as an SVG group. A group with no
+    // `tabindex` cannot take focus, so navigating to one called `focus()` on
+    // nothing and the visible tab stop vanished.
+    const built = scene();
+    const markup = renderMarkup(built.root);
+
+    const focusable = new Set(
+      [...markup.matchAll(/data-ig-key="([^"]+)"[^>]*tabindex="(?:0|-1)"/g)].map(
+        (match) => match[1] as string,
+      ),
+    );
+    for (const key of built.focusOrder) {
+      assert.ok(focusable.has(key), `${key} is published as a target but is not focusable`);
+    }
+    for (const neighbours of built.lateral.values()) {
+      for (const key of [neighbours.left, neighbours.right]) {
+        if (key === undefined) continue;
+        assert.ok(focusable.has(key), `lateral target ${key} is not focusable`);
+      }
+    }
+
+    // The scene says so too: `navigable` is the membership question and leads
+    // with `focusOrder`, so the first entry is the same under either.
+    assert.deepEqual([...built.navigable].slice(0, built.focusOrder.length), [...built.focusOrder]);
+    for (const key of built.navigable) assert.ok(focusable.has(key));
+    assert.ok(built.navigable.length > built.focusOrder.length, 'no sideways-only key in the fixture');
+
+    // Exactly one tab stop, and it is the resolved focus — a second element for
+    // the same issue would be worse than none.
+    const stops = [...markup.matchAll(/data-ig-key="([^"]+)"[^>]*tabindex="0"/g)];
+    assert.equal(stops.length, 1);
+    assert.equal(stops[0]?.[1], built.focusOrder[0]);
+  });
+
+  it('names every focusable graph node so a screen reader can announce it', () => {
+    const markup = render();
+    assert.match(markup, /data-ig-key="106"[^>]*aria-label="[^"]+"[^>]*tabindex=/);
+  });
+
   it('uses plain list semantics on the spine rail too', () => {
     const markup = render();
     assert.equal(/role="listbox"/.test(markup), false);

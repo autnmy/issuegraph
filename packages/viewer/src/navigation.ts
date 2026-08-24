@@ -14,7 +14,7 @@
  * a coordinate.
  */
 
-import type { Scene } from './scene.ts';
+import { type Scene, resolveFocusKey } from './scene.ts';
 
 export interface NavigationState {
   /** The roving tab stop. `null` before anything has been focused. */
@@ -61,19 +61,17 @@ function moveTo(state: NavigationState, key: string): NavigationResult {
  * item rather than nowhere.
  */
 export function reconcile(scene: Scene, state: NavigationState): NavigationState {
-  const first = scene.focusOrder[0] ?? null;
   // Selection is carried WHOLE, even when the new projection does not draw it.
   // It is the subject, and a switch changes representation rather than subject;
   // dropping it here would make the toggle lose the thing the reader is looking
   // at, which is the one property the design fixes about switching.
-  const selected = state.selected;
-  const focused =
-    state.focused !== null && scene.focusOrder.includes(state.focused)
-      ? state.focused
-      : selected !== null && scene.focusOrder.includes(selected)
-        ? selected
-        : first;
-  return { focused, selected };
+  //
+  // Focus goes through the SHARED rule, so what this reports and what the
+  // projection rendered a tab stop on cannot diverge.
+  return {
+    focused: resolveFocusKey(scene.navigable, state.focused, state.selected),
+    selected: state.selected,
+  };
 }
 
 /**

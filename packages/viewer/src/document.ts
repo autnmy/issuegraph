@@ -202,12 +202,20 @@ export interface NormalizeResult {
 const LINKABLE_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:']);
 
 function isLinkable(url: string): boolean {
-  // A scheme is `ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ) ":"` at the very
-  // start (RFC 3986 3.1). No match means the value is relative, which carries no
-  // scheme to abuse. Leading control characters and whitespace are stripped by
-  // browsers before the scheme is read, so they are skipped here too — a
-  // "\njavascript:" this test read as relative would still execute.
-  const scheme = /^[\x00-\x20]*([A-Za-z][A-Za-z0-9+.-]*):/.exec(url);
+  // CANONICALIZE THE WAY A URL PARSER DOES, THEN READ THE SCHEME. Reading the
+  // raw string is not enough: the URL parser REMOVES every ASCII tab, newline
+  // and carriage return from ANYWHERE in the input before it reads anything,
+  // and then strips leading C0 controls and spaces. So `java<TAB>script:alert(1)`
+  // reaches the browser as `javascript:` while a raw scan finds no scheme at
+  // all, reads the value as relative, and links it.
+  //
+  // The test therefore has to canonicalize first. Stripping only the leading
+  // controls — which is what this did — left the whole embedded-control class
+  // open, which is the same fail-open the allowlist exists to close.
+  const canonical = url.replace(/[\t\n\r]/g, '').replace(/^[\x00-\x20]+/, '');
+  // A scheme is `ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ) ":"` (RFC 3986 3.1).
+  // No match means the value is relative, which carries no scheme to abuse.
+  const scheme = /^([A-Za-z][A-Za-z0-9+.-]*):/.exec(canonical);
   if (scheme === null) return true;
   return LINKABLE_SCHEMES.has(`${(scheme[1] as string).toLowerCase()}:`);
 }
