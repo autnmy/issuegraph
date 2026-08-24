@@ -247,3 +247,27 @@ describe('spliceGeneratedEdges', () => {
     assert.equal(data?.priority, 1);
   });
 });
+
+describe('spliceGeneratedEdges on a CRLF body', () => {
+  it('leaves the block readable, and states the one thing it does not promise', () => {
+    // The splice preserves the lines it does not touch, terminators included —
+    // it slices a `\n` split, so a `\r` stays on the end of every line it keeps.
+    // What it does NOT do is match the surrounding terminator on the lines it
+    // INSERTS: those are written bare, so a CRLF body comes back with LF-ended
+    // inserted lines. The parser splits on `\r?\n`, so the result reads
+    // correctly either way, and the byte-for-byte promise was only ever about
+    // the lines it leaves alone. This pins both halves so neither can regress
+    // into the other.
+    const body = ['---', 'issuegraph:', '  blocked-by:', '    - 7', '  priority: 1', '---', '', 'Body.'].join('\r\n');
+    const next = spliceGeneratedEdges(body, NEW_EDGES) as string;
+
+    assert.notEqual(next, null);
+    const data = parseFrontmatter(next).data;
+    assert.deepEqual(data?.blockedBy, [{ repo: null, number: 12 }]);
+    assert.equal(data?.priority, 1);
+    // The untouched neighbour keeps its carriage return.
+    assert.ok(next.includes('  priority: 1\r\n'));
+    // The prose after the block is untouched, CRLF and all.
+    assert.ok(next.endsWith('\r\n\r\nBody.'));
+  });
+});

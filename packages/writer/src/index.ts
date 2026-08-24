@@ -23,6 +23,13 @@
  * @see https://github.com/autnmy/issuegraph/blob/main/SPEC.md
  */
 
+/**
+ * The ref shape every write mode takes, re-exported from the reader rather than
+ * restated. A second declaration of the same record is a second thing to keep
+ * in step, and a consumer should not need two imports to describe one edge.
+ */
+export type { IssueRef } from '@issuegraph/reader';
+
 export { expectedParseOfRender, renderFrontmatter, renderRef } from './render.ts';
 export type { RenderInput, RenderOptions } from './render.ts';
 

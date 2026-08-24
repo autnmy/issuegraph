@@ -567,10 +567,3 @@ export function backfillFrontmatter(body: string): BackfillResult {
     diagnostics: probe.diagnostics,
   };
 }
-
-/**
- * The canonical wrapper's own spelling, exported ONLY so a test can pin it
- * against {@link renderFrontmatter}'s output across the two modules. Nothing in
- * a consumer should need it.
- */
-export const CANONICAL_BACKFILL_WRAPPER = CANONICAL_WRAPPER;
