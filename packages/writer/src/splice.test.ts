@@ -352,3 +352,78 @@ describe('an explicit null does NOT clear provenance or a verdict', () => {
     assert.deepEqual(data?.duplicateOf, { repo: null, number: 5 });
   });
 });
+
+describe('the splice verifies its own output', () => {
+  // The walk models the parser's rules and will always model only SOME of them.
+  // For every rule it misses, it classified the lines happily, inserted the
+  // owned entry, and returned a NON-NULL body the parser reads as `data: null` —
+  // so the caller skipped the documented fallback and persisted a body in which
+  // the gate it just wrote is unreadable. Asking the parser removes the class
+  // instead of adding an arm per rule.
+  const structurallyInvalid: readonly (readonly [string, string])[] = [
+    ['a tab in the indentation', ['---', 'issuegraph:', '\t priority: 1', '---', '', 'Body.'].join('\n')],
+    [
+      'a dedented child that does not align with the section',
+      ['---', 'issuegraph:', '    owner-note: x', '  priority: 1', '---', '', 'Body.'].join('\n'),
+    ],
+    [
+      'a sequence where the section expects a mapping',
+      ['---', 'issuegraph:', '  - 12', '  - 34', '---', '', 'Body.'].join('\n'),
+    ],
+  ];
+
+  for (const [name, body] of structurallyInvalid) {
+    it(`refuses rather than half-writing into a block with ${name}`, () => {
+      // The premise: the parser cannot read this block to begin with.
+      assert.equal(parseFrontmatter(body).data, null, 'fixture must be unreadable to start with');
+      assert.equal(
+        spliceGeneratedEdges(body, NEW_EDGES),
+        null,
+        'a body whose block stays unreadable must take the null fallback, not be persisted',
+      );
+    });
+  }
+
+  it('CONTROL: a readable block is still spliced, so the check refuses nothing valid', () => {
+    const body = ['---', 'issuegraph:', '  blocked-by:', '    - 7', '  priority: 1', '---', '', 'Body.'].join('\n');
+    const next = spliceGeneratedEdges(body, NEW_EDGES);
+    assert.notEqual(next, null);
+    assert.deepEqual(parseFrontmatter(next as string).data?.blockedBy, [{ repo: null, number: 12 }]);
+  });
+
+  it('CONTROL: an unparseable ITEM the splice preserved is not a refusal', () => {
+    // The check keys on `data === null` WITH a diagnostic, not on diagnostics
+    // alone. A body carrying an unowned `- not-a-ref` this splice preserved
+    // byte-for-byte parses with NON-NULL data and a diagnostic, and refusing
+    // there would destroy the preservation guarantee one field over.
+    const body = [
+      '---',
+      'issuegraph:',
+      '  blocked-by:',
+      '    - not-a-ref',
+      '---',
+      '',
+      'Body.',
+    ].join('\n');
+    const next = spliceGeneratedEdges(body, { duplicateOf: { repo: null, number: 99 } }) as string;
+    assert.notEqual(next, null);
+    assert.ok(next.includes('    - not-a-ref'), 'preserved byte-for-byte');
+    const parse = parseFrontmatter(next);
+    assert.notEqual(parse.data, null);
+    assert.ok(parse.diagnostics.length > 0, 'and it still reports the drop');
+  });
+
+  it('CONTROL: whole-block removal is a success, not an unreadable result', () => {
+    // Removal leaves a body with NO block, which parses to `data: null` with NO
+    // diagnostic. Keying the check on `data === null` alone would refuse it.
+    const block = renderFrontmatter({ blockedBy: [{ repo: null, number: 7 }] }) as string;
+    assert.equal(
+      spliceGeneratedEdges(`${block}\n\nThe brief body.`, {
+        blockedBy: [],
+        serializeWith: null,
+        decomposedFrom: null,
+      }),
+      'The brief body.',
+    );
+  });
+});

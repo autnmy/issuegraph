@@ -102,3 +102,40 @@ describe('renderFrontmatter', () => {
     assert.deepEqual(parsed.data, expectedParseOfRender(FULL));
   });
 });
+
+describe('a rendered ref is one the reader can read back', () => {
+  it('refuses an integer outside the range the parser accepts', () => {
+    // `Number.isInteger` is not the bound that matters — the READER'S is.
+    // Rendering `9007199254740992` or `1e21` emits a line the parser drops with
+    // a diagnostic instead of reading, so the edge silently does not exist:
+    // fail-loud broken and the round-trip guarantee broken together.
+    for (const n of [9007199254740992, 1e21, Number.MAX_VALUE]) {
+      assert.throws(
+        () => renderFrontmatter({ blockedBy: [{ repo: null, number: n }] }),
+        /positive integer/,
+        `render must refuse ${String(n)}`,
+      );
+    }
+  });
+
+  it('accepts the largest ref the parser accepts, so the bound is not too tight', () => {
+    // The control in the other direction: a refusal that also refused valid
+    // input would satisfy the test above just as well.
+    const max = Number.MAX_SAFE_INTEGER;
+    const parsed = parseFrontmatter(`${renderFrontmatter({ blockedBy: [{ repo: null, number: max }] }) as string}\n`);
+    assert.deepEqual(parsed.diagnostics, []);
+    assert.deepEqual(parsed.data?.blockedBy, [{ repo: null, number: max }]);
+  });
+
+  it('every ref render ACCEPTS survives the round-trip with no diagnostic', () => {
+    // The property the two cases above are instances of, asserted directly.
+    for (const n of [1, 2, 42, 231, 999999, Number.MAX_SAFE_INTEGER]) {
+      for (const repo of [null, 'acme/widgets']) {
+        const input = { blockedBy: [{ repo, number: n }] };
+        const parsed = parseFrontmatter(`${renderFrontmatter(input) as string}\n`);
+        assert.deepEqual(parsed.diagnostics, [], `diagnostics for ${String(repo)}#${String(n)}`);
+        assert.deepEqual(parsed.data?.blockedBy, [{ repo, number: n }], `round-trip for ${String(repo)}#${String(n)}`);
+      }
+    }
+  });
+});

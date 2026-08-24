@@ -38,7 +38,47 @@ import {
   type IssueRef,
 } from '@issuegraph/reader';
 
+import { parseFrontmatter } from '@issuegraph/reader';
+
 import { renderRef } from './render.ts';
+
+/**
+ * THE POSITIVE CONTROL: hand back a body only when the block in it can still be
+ * READ. Otherwise refuse, which routes the caller to the documented fallback.
+ *
+ * WHY THIS EXISTS RATHER THAN MORE ARMS IN THE WALK. The walk models the
+ * parser's rules, and it will always model *some* of them: a section can be
+ * structurally invalid in ways it does not check — a tab in the indentation, a
+ * dedented child, a sequence where a mapping belongs — and for every one of
+ * those the walk classified the lines happily, inserted the owned entry, and
+ * returned a NON-NULL body that `parseFrontmatter` reads as `data: null`. The
+ * caller then skips the `null` fallback and persists a body in which the gate it
+ * just wrote is unreadable. That is the silent half-write this module's contract
+ * says it makes impossible, arriving through the one door the walk cannot close
+ * by enumeration — each missing arm is a correct fix and the next review finds
+ * the next one.
+ *
+ * Asking the parser is the class removal: whatever the walk failed to model, the
+ * answer here is the one the consumer will get.
+ *
+ * THE PREDICATE IS `data === null` WITH A DIAGNOSTIC, and both halves are
+ * load-bearing:
+ *
+ *   - `data === null` ALONE would refuse the legitimate whole-block removal
+ *     below — a body with no block reads as null, correctly, and that is a
+ *     success.
+ *   - A DIAGNOSTIC is what separates "there is no block" (null, silent) from
+ *     "there is a block and nobody could read it" (null, loud). Only the second
+ *     is a failed write.
+ *   - It deliberately does NOT refuse on diagnostics alone: a body carrying an
+ *     unowned `- not-a-ref` this splice preserved byte-for-byte parses with
+ *     non-null data AND a diagnostic, and refusing there would destroy the
+ *     preservation guarantee one field over.
+ */
+function readableOrNull(next: string): string | null {
+  const parse = parseFrontmatter(next);
+  return parse.data === null && parse.diagnostics.length > 0 ? null : next;
+}
 
 /**
  * The generated edge fields a writer owns for one splice call.
@@ -100,6 +140,12 @@ export interface GeneratedEdges {
  * wrapping fence pair, and one following blank line — because an empty stub
  * must not survive either. When only the section empties but sibling top-level
  * keys remain, the bare `issuegraph:` header is dropped and the rest stays.
+ *
+ * EVERY NON-NULL RETURN IS PARSE-VERIFIED (see {@link readableOrNull}). A body
+ * this hands back is one whose block a conforming reader can still read; if the
+ * result would not be, the answer is `null` and the caller prepends instead.
+ * That covers the structural faults the walk above does not model, so the
+ * promise does not depend on the walk being exhaustive.
  */
 export function spliceGeneratedEdges(body: string, edges: GeneratedEdges): string | null {
   const located = locateBlock(body);
@@ -252,7 +298,7 @@ export function spliceGeneratedEdges(body: string, edges: GeneratedEdges): strin
         to += 1;
       }
       if (to + 1 < lines.length && (lines[to + 1] as string).trim() === '') to += 1;
-      return [...lines.slice(0, from), ...lines.slice(to + 1)].join('\n');
+      return readableOrNull([...lines.slice(0, from), ...lines.slice(to + 1)].join('\n'));
     }
     // The section emptied but sibling top-level content remains: drop the bare
     // `issuegraph:` header, keep the rest of the block.
@@ -261,5 +307,5 @@ export function spliceGeneratedEdges(body: string, edges: GeneratedEdges): strin
     if (headerAt !== -1) interior.splice(headerAt, 1);
   }
 
-  return [...lines.slice(0, blockStart + 1), ...interior, ...lines.slice(blockEnd)].join('\n');
+  return readableOrNull([...lines.slice(0, blockStart + 1), ...interior, ...lines.slice(blockEnd)].join('\n'));
 }

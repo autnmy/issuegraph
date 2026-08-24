@@ -62,8 +62,17 @@ export interface RenderOptions {
  * write, and those lines must spell refs exactly as it does.
  */
 export function renderRef(ref: IssueRef): string {
-  if (!Number.isInteger(ref.number) || ref.number < 1) {
-    throw new Error(`issuegraph render: ref number must be a positive integer, got ${String(ref.number)}`);
+  // SAFE integer, not merely an integer, because the bound that matters is the
+  // READER'S. `Number.isInteger` accepts `9007199254740992` and `1e21`; the
+  // parser's own ref validation is `Number.isSafeInteger`, and `String(1e21)`
+  // is `"1e+21"` — a spelling no reader accepts. Rendering either emits a line
+  // that comes back DROPPED WITH A DIAGNOSTIC rather than throwing, which
+  // breaks the round-trip guarantee and this module's fail-loud contract at the
+  // same time: the edge silently does not exist. Verified in both directions.
+  if (!Number.isSafeInteger(ref.number) || ref.number < 1) {
+    throw new Error(
+      `issuegraph render: ref number must be a positive integer within the safe range, got ${String(ref.number)}`,
+    );
   }
   if (ref.repo === null) return String(ref.number);
   if (!/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/.test(ref.repo)) {
