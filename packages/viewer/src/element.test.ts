@@ -133,6 +133,43 @@ describe('materialize', () => {
   });
 });
 
+describe('both walks survive a tree deeper than a call stack', () => {
+  /** A chain of nested elements `depth` levels deep, with text at the bottom. */
+  function deepSpec(depth: number): ElementSpec {
+    let node: ElementSpec = element('span', { class: 'leaf' }, ['bottom']);
+    for (let level = depth - 1; level > 0; level -= 1) {
+      node = element('div', { 'data-level': level }, [node]);
+    }
+    return node;
+  }
+
+  it('renders it to markup', () => {
+    // The renderers are the shared depth surface: the tree projection's nesting
+    // is the host's `decomposed-from` chain, which nothing bounds, and
+    // `renderViewer` claims to be total.
+    const markup = renderMarkup(deepSpec(20_000));
+    assert.match(markup, /class="leaf"/);
+    assert.equal([...markup.matchAll(/<div /g)].length, 19_999);
+  });
+
+  it('materializes it into a document', () => {
+    // Both walks, or the claim only holds for whichever one a host happens to
+    // call — and `mountViewer` calls the other one.
+    const doc = new TestDocument();
+    const built = materialize(doc, deepSpec(20_000));
+
+    assert.ok(built instanceof TestElement);
+    let depth = 1;
+    let cursor: TestElement = built;
+    while (cursor.children[0] instanceof TestElement) {
+      cursor = cursor.children[0];
+      depth += 1;
+    }
+    assert.equal(depth, 20_000);
+    assert.equal(cursor.getAttribute('class'), 'leaf');
+  });
+});
+
 describe('element and svg helpers', () => {
   it('drop null, undefined and false children so a conditional child needs no filter', () => {
     const spec = element('div', {}, ['a', null, undefined, false, 'b']);

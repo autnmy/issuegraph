@@ -3,9 +3,9 @@ import { describe, it } from 'node:test';
 
 import { renderViewer } from './render.ts';
 import { viewerStylesheet } from './styles.ts';
-import { crowdedDocument, fixtureDocument } from './testing/fixtures.ts';
+import { crowdedDocument, fixtureDocument, heldTogetherDocument } from './testing/fixtures.ts';
 import { COLOR_TOKENS, defaultTheme, extendTheme, themeCss } from './theme.ts';
-import { GRAPH_NODE_BUDGET } from './projections/graph.ts';
+import { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET } from './projections/graph.ts';
 
 describe('renderViewer', () => {
   it('renders every projection from one document', () => {
@@ -97,6 +97,48 @@ describe('renderViewer', () => {
     } finally {
       globals['document'] = saved.document;
       globals['window'] = saved.window;
+    }
+  });
+
+  it('never publishes a navigation target it does not draw', () => {
+    // THE CLASS, not an instance. Three review rounds found the same defect in
+    // three places — a key published as a target with no focusable element
+    // behind it — so the sets are now derived from what a scene draws, and this
+    // asserts the property across every projection and every shape that used to
+    // break it: a refusal (which replaces the whole canvas), a held together
+    // unit (whose lead has no rail row), and the ordinary fixture.
+    const shapes = [
+      ['fixture', fixtureDocument],
+      ['held-together', heldTogetherDocument],
+      ['refusal-capsules', crowdedDocument(GRAPH_NODE_BUDGET + 1)],
+      ['refusal-clusters', crowdedDocument(CLUSTER_ONLY_BUDGET + 1)],
+      ['empty', { issues: [], edges: [], order: { slots: [], excluded: [] } }],
+    ] as const;
+
+    for (const [name, input] of shapes) {
+      for (const projection of ['linear', 'graph', 'tree'] as const) {
+        const { markup, scene } = renderViewer(input, { projection });
+        const focusable = [
+          ...markup.matchAll(/data-ig-key="([^"]+)"[^>]*tabindex="(?:0|-1)"/g),
+        ].map((match) => match[1] as string);
+
+        for (const key of scene.navigable) {
+          assert.equal(
+            focusable.filter((found) => found === key).length,
+            1,
+            `${name}/${projection}: ${key} is published but has ${String(focusable.filter((f) => f === key).length)} focusable elements`,
+          );
+        }
+        for (const neighbours of scene.lateral.values()) {
+          for (const key of [neighbours.left, neighbours.right]) {
+            if (key === undefined) continue;
+            assert.ok(scene.navigable.includes(key), `${name}/${projection}: ${key} is a lateral target outside navigable`);
+          }
+        }
+        for (const key of scene.focusOrder) {
+          assert.ok(scene.navigable.includes(key), `${name}/${projection}: focusOrder is not a subset of navigable`);
+        }
+      }
     }
   });
 

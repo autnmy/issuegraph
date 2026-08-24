@@ -122,6 +122,35 @@ export const fixtureDocument: ViewerDocument = {
   },
 };
 
+/**
+ * A together unit that the tracker holds — so its lead gets no rail row and the
+ * canvas owns its tab stop, which is the one shape where the enclosure and the
+ * node group compete for the same key.
+ */
+export const heldTogetherDocument: ViewerDocument = {
+  issues: [
+    { key: '1', title: 'Lead', open: true, priority: 2 },
+    { key: '2', title: 'Partner', open: true, priority: 2 },
+    { key: '3', title: 'Blocker', open: true, priority: 2 },
+  ],
+  edges: [
+    { field: 'together-with', from: '1', to: '2' },
+    { field: 'blocked-by', from: '2', to: '3' },
+  ],
+  order: {
+    slots: [
+      {
+        rank: null,
+        lead: '1',
+        members: ['1', '2'],
+        ready: false,
+        holds: [{ family: 'tracker', reason: 'claimed by another run' }],
+      },
+    ],
+    excluded: [],
+  },
+};
+
 /** A document whose graph deliberately exceeds a budget, for the refusal path. */
 export function crowdedDocument(nodeCount: number): ViewerDocument {
   const issues = Array.from({ length: nodeCount }, (_, index) => ({

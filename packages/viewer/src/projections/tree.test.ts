@@ -148,6 +148,27 @@ describe('the tree projection', () => {
     assert.equal([...unknown.matchAll(/tabindex="0"/g)].length, 1);
   });
 
+  it('renders a chain far deeper than any call stack would hold', () => {
+    // Nothing bounds how deep a host's `decomposed-from` chain runs, and
+    // `renderViewer` documents itself as TOTAL — a document that makes it throw
+    // falsifies that claim whatever the depth was. Both the order walk and the
+    // element build are iterative for this reason.
+    const depth = 20_000;
+    const issues = Array.from({ length: depth }, (_, index) => issue(String(index + 1)));
+    const edges = issues.slice(1).map((child, index) => ({
+      field: 'decomposed-from' as const,
+      from: child.key,
+      to: String(index + 1),
+    }));
+    const built = scene({ issues, edges, order: emptyOrder });
+
+    assert.equal(built.focusOrder.length, depth);
+    assert.equal(built.focusOrder[0], '1');
+    assert.equal(built.focusOrder[depth - 1], String(depth));
+    const markup = renderMarkup(built.root);
+    assert.match(markup, new RegExp(`data-ig-key="${String(depth)}" data-level="${String(depth)}"`));
+  });
+
   it('is deterministic — two renders of one document agree byte for byte', () => {
     assert.equal(render(), render());
   });

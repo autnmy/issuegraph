@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import { type ViewerDocument, normalizeDocument } from '../document.ts';
 import { renderMarkup } from '../element.ts';
-import { crowdedDocument, fixtureDocument } from '../testing/fixtures.ts';
+import { crowdedDocument, fixtureDocument, heldTogetherDocument } from '../testing/fixtures.ts';
 import { viewerStylesheet } from '../styles.ts';
 import { defaultTheme, extendTheme } from '../theme.ts';
 import { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET, graphScene } from './graph.ts';
@@ -98,6 +98,45 @@ describe('the graph projection', () => {
     }).lateral;
 
     assert.equal(lateral.get('1')?.left, '3');
+  });
+
+  it('traverses to a gutter node AND back', () => {
+    // A one-way mapping is not a traversal: focus went out to the gutter and the
+    // opposite arrow answered `none`, so the documented path "from the spine and
+    // back" only went one way.
+    const lateral = scene().lateral;
+
+    assert.equal(lateral.get('105')?.left, 'other/repo#7');
+    assert.equal(lateral.get('other/repo#7')?.right, '105', 'the gutter cannot get back');
+    assert.equal(lateral.get('105')?.right, '106');
+    assert.equal(lateral.get('106')?.left, '105', 'the gutter cannot get back');
+  });
+
+  it('publishes nothing beyond the rail when it refuses to draw', () => {
+    // A refusal replaces the WHOLE canvas, so every canvas-owned key stops
+    // existing. Publishing them anyway let `reconcile` keep one and navigation
+    // target it with no element behind it.
+    const refused = scene(crowdedDocument(GRAPH_NODE_BUDGET + 1));
+
+    assert.deepEqual([...refused.focusOrder], [], 'a refusal published order keys it does not draw');
+    assert.deepEqual([...refused.navigable], []);
+    assert.equal(refused.lateral.size, 0);
+  });
+
+  it('keeps the canvas node addressable when an enclosure shares its slot', () => {
+    // The enclosure is painted BEFORE the nodes so it sits behind them, and the
+    // mount index keeps the first element per key — so sharing the key sent
+    // focus to a non-tabbable rect instead of the node group.
+    const markup = render(heldTogetherDocument);
+    const enclosureAt = markup.indexOf('class="ig-enclosure"');
+    const groupAt = markup.indexOf('data-ig-key="1"');
+
+    assert.notEqual(enclosureAt, -1);
+    assert.equal(/class="ig-enclosure"[^>]*data-ig-key=/.test(markup), false);
+    assert.match(markup, /class="ig-enclosure"[^>]*data-ig-group="1"/);
+    assert.match(markup, /class="ig-connector"[^>]*data-ig-group="1"/);
+    assert.ok(groupAt > enclosureAt);
+    assert.match(markup, /data-ig-key="1"[^>]*tabindex="0"/);
   });
 
   it('gives every terminal marker its own hue, not the inherited text colour', () => {

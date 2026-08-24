@@ -117,6 +117,45 @@ describe('normalizeDocument', () => {
     assert.ok(diagnostics.some((line) => /leads instead/.test(line)));
   });
 
+  it('places an issue once, however many slots name it', () => {
+    // Two placements publish the key twice: two rows render `tabindex="0"` for
+    // one focused key, while `indexOf` and the mount index address only the
+    // first — roving focus breaks and the later row is unreachable.
+    const { document, diagnostics } = normalizeDocument({
+      issues: [issue('1'), issue('2')],
+      edges: [],
+      order: {
+        slots: [
+          { rank: 1, lead: '1', members: ['1'], ready: true, holds: [] },
+          { rank: 2, lead: '2', members: ['2', '1'], ready: true, holds: [] },
+        ],
+        excluded: [],
+      },
+    });
+
+    assert.deepEqual(
+      document.order.slots.map((slot) => [...slot.members]),
+      [['1'], ['2']],
+    );
+    assert.ok(diagnostics.some((line) => /already placed in an earlier slot/.test(line)));
+  });
+
+  it('drops a slot whose every member is already placed', () => {
+    const { document } = normalizeDocument({
+      issues: [issue('1')],
+      edges: [],
+      order: {
+        slots: [
+          { rank: 1, lead: '1', members: ['1'], ready: true, holds: [] },
+          { rank: 2, lead: '1', members: ['1'], ready: true, holds: [] },
+        ],
+        excluded: [],
+      },
+    });
+
+    assert.equal(document.order.slots.length, 1);
+  });
+
   it('reports as isolated only issues in no slot and on no edge', () => {
     const { document } = normalizeDocument({
       issues: [issue('1'), issue('2'), issue('3')],

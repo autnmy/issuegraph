@@ -279,47 +279,80 @@ export function graphScene(document: NormalizedDocument, options: GraphOptions =
 
   const inline = document.order.slots.filter((slot) => !isFooterSlot(slot));
   const footerSlots = document.order.slots.filter(isFooterSlot);
+
+  // ── WHICH KEYS CAN HOLD FOCUS IS DERIVED FROM WHAT THIS SCENE WILL DRAW ────
+  //
+  // Three rounds of review found the same class here — a key published as a
+  // navigation target with no focusable element behind it — in three different
+  // places: gutter nodes with no `tabindex`, then refusal mode replacing the
+  // whole canvas while the published sets still named its nodes. Patching each
+  // site kept the invariant true by maintenance, which is why it kept coming
+  // back.
+  //
+  // So the sets are FILTERED BY WHAT RENDERS instead of declared beside it. The
+  // rail always draws the ranked slots; the canvas draws every laid-out node,
+  // and draws NOTHING keyed when it refuses or is empty. Everything downstream
+  // is a subset of that, so "every published target is focusable" holds by
+  // construction rather than by remembering.
+  const refused = nodeCount === 0 || nodeCount > GRAPH_NODE_BUDGET;
+  const railed: ReadonlySet<string> = new Set(inline.map((slot) => slot.lead));
+  const focusable: ReadonlySet<string> = new Set([
+    ...railed,
+    ...(refused ? [] : layout.nodes.keys()),
+  ]);
+
   const focusOrder = [
     ...inline.map((slot) => slot.lead),
     ...footerSlots.map((slot) => slot.lead),
     ...document.order.excluded.map((exclusion) => exclusion.key),
-  ];
-  // The rail draws the ranked slots; the canvas owns the tab stop for
-  // everything else the scene reaches.
-  const railed: ReadonlySet<string> = new Set(inline.map((slot) => slot.lead));
+  ].filter((key) => focusable.has(key));
 
-  // Lateral traversal reaches the gutters from the spine and back. It is built
-  // from the layout's own columns, so a node that moves column moves its
-  // neighbours with it.
+  // ── the lateral axis, BOTH WAYS ───────────────────────────────────────────
+  //
+  // A one-way mapping is not a traversal: focus moved from the spine to a
+  // gutter node and the opposite arrow answered `none`, so the documented path
+  // "from the spine and back" only went out. Each pair is recorded from both
+  // ends, and a gutter node's neighbour is on the side the SPINE is on — right
+  // for a left-gutter node, left for a right one.
   const lateral = new Map<string, LateralNeighbours>();
+  const link = (key: string, side: 'left' | 'right', target: string): void => {
+    const existing = lateral.get(key) ?? {};
+    lateral.set(key, { ...existing, [side]: target });
+  };
+
   for (const slot of document.order.slots) {
+    if (!focusable.has(slot.lead)) continue;
     // Every MEMBER's edges, not just the lead's: a together unit is one station
     // with one focus key, so a gutter neighbour reachable only through its
     // second member would otherwise be unreachable by keyboard entirely.
-    const touching = slot.members.flatMap(
-      (member) =>
-        (document.edgesOf.get(member) ?? []).map((edge) => ({
-          other: edge.from === member ? edge.to : edge.from,
-        })),
+    const touching = slot.members.flatMap((member) =>
+      (document.edgesOf.get(member) ?? []).map((edge) =>
+        edge.from === member ? edge.to : edge.from,
+      ),
     );
     const inColumn = (column: 'left' | 'right'): string | undefined =>
-      touching.find(({ other }) => layout.nodes.get(other)?.column === column)?.other;
+      touching.find(
+        (other) => focusable.has(other) && layout.nodes.get(other)?.column === column,
+      );
+
     const left = inColumn('left');
+    if (left !== undefined) {
+      link(slot.lead, 'left', left);
+      link(left, 'right', slot.lead);
+    }
     const right = inColumn('right');
-    if (left !== undefined || right !== undefined) {
-      lateral.set(slot.lead, { left, right });
+    if (right !== undefined) {
+      link(slot.lead, 'right', right);
+      link(right, 'left', slot.lead);
     }
   }
 
   // A GUTTER NODE IS REACHABLE SIDEWAYS WITHOUT BEING A POSITION IN THE ORDER,
-  // so the set that can hold focus is wider than the order that walks it. Built
-  // here, after `lateral`, because its targets are exactly the difference —
-  // `focusOrder` leads so the first entry is the same under either.
+  // so the set that can hold focus is wider than the order that walks it.
+  // `focusOrder` leads, so the first entry is the same under either.
   const navigableKeys = [...focusOrder];
-  for (const neighbours of lateral.values()) {
-    for (const key of [neighbours.left, neighbours.right]) {
-      if (key !== undefined && !navigableKeys.includes(key)) navigableKeys.push(key);
-    }
+  for (const key of lateral.keys()) {
+    if (!navigableKeys.includes(key)) navigableKeys.push(key);
   }
   // One rule, shared with `reconcile` and the other projections, so the element
   // that renders `tabindex="0"` and the state a host reads cannot disagree.
@@ -361,9 +394,15 @@ export function graphScene(document: NormalizedDocument, options: GraphOptions =
       const bounds = enclosureBounds(layout, members, theme);
       if (bounds === null) continue;
       enclosures.push(
+        // `data-ig-GROUP`, not `data-ig-key`. The enclosure is painted BEFORE
+        // the nodes so it sits behind them, and `mountViewer` indexes the first
+        // element it sees for a key — so sharing the key made keyboard movement
+        // to a canvas-owned lead call `focus()` on this non-tabbable rect
+        // instead of its `<g tabindex="0">`. Decoration does not compete with
+        // the thing it decorates for an identity.
         svg('rect', {
           class: 'ig-enclosure',
-          'data-ig-key': lead,
+          'data-ig-group': lead,
           'stroke-dasharray': dashArrayFor('enclosure'),
           x: bounds.x,
           y: bounds.y,
@@ -381,7 +420,7 @@ export function graphScene(document: NormalizedDocument, options: GraphOptions =
         enclosures.push(
           svg('line', {
             class: 'ig-connector',
-            'data-ig-key': lead,
+            'data-ig-group': lead,
             x1: previous.x + previous.width / 2,
             y1: previous.y + previous.height,
             x2: current.x + current.width / 2,

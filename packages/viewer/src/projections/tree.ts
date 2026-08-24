@@ -12,7 +12,7 @@
  */
 
 import type { NormalizedDocument } from '../document.ts';
-import { type ElementSpec, element } from '../element.ts';
+import { type ElementSpec, type SpecChild, element } from '../element.ts';
 import { edgeBadges, emptyState, identity, legend, provenanceLine } from '../parts.ts';
 import { type LateralNeighbours, type Scene, resolveFocusKey } from '../scene.ts';
 import type { SceneOptions } from './linear.ts';
@@ -102,25 +102,42 @@ function buildForest(document: NormalizedDocument): Forest {
   return { roots, childrenOf, diagnostics };
 }
 
-/** Depth-first order — what `Tab` and the vertical keys walk. */
-function collectOrder(forest: Forest, key: string, into: string[]): void {
-  into.push(key);
-  for (const child of forest.childrenOf.get(key) ?? []) collectOrder(forest, child, into);
+/**
+ * Depth-first order — what `Tab` and the vertical keys walk.
+ *
+ * ITERATIVE, like the element build below and like the cluster walk. Nothing
+ * bounds how deep a host's `decomposed-from` chain runs, and `renderViewer`
+ * documents itself as TOTAL — a document that makes it throw falsifies that
+ * claim, whatever the depth was.
+ */
+function collectOrder(forest: Forest, roots: readonly string[]): string[] {
+  const order: string[] = [];
+  const stack = [...roots].reverse();
+  while (stack.length > 0) {
+    const key = stack.pop() as string;
+    order.push(key);
+    const children = forest.childrenOf.get(key) ?? [];
+    for (let index = children.length - 1; index >= 0; index -= 1) {
+      stack.push(children[index] as string);
+    }
+  }
+  return order;
 }
 
-function treeItem(
+/** The row for one issue, without its children — those are attached below. */
+function treeRow(
   document: NormalizedDocument,
   key: string,
   level: number,
-  forest: Forest,
+  hasChildren: boolean,
   options: SceneOptions,
   focused: string | null,
-): ElementSpec {
+): { spec: ElementSpec; children: SpecChild[] } {
   const issue = document.byKey.get(key);
-  const children = forest.childrenOf.get(key) ?? [];
   const outOfSet = document.outOfSetOrigins.get(key);
+  const children: SpecChild[] = [];
 
-  return element(
+  const spec = element(
     'li',
     {
       class: 'ig-tree-item',
@@ -145,21 +162,57 @@ function treeItem(
         : element('p', { class: 'ig-provenance' }, [
             `decomposed from ${outOfSet}, which is outside this document`,
           ]),
-      children.length === 0
-        ? null
-        : element(
-            'ul',
-            { class: 'ig-list' },
-            children.map((child) => treeItem(document, child, level + 1, forest, options, focused)),
-          ),
+      // A SPEC LITERAL, not `element()`. That helper FILTERS its children, which
+      // copies the array — so the list this row hands back would no longer be
+      // the one the `<ul>` holds, and every child appended afterwards would
+      // land in a detached array. The whole iterative build turns on this
+      // array's identity surviving.
+      hasChildren ? { tag: 'ul', attrs: { class: 'ig-list' }, children } : null,
     ],
   );
+  return { spec, children };
+}
+
+/**
+ * Build the whole forest iteratively.
+ *
+ * The obvious shape is one recursive call per level, and it is the shape that
+ * exhausts the call stack on a chain nothing bounds. Each row is built with an
+ * EMPTY children array that the row's own `<ul>` already holds by reference, so
+ * a child appended later lands inside its parent without the parent's builder
+ * still being on the stack.
+ */
+function buildForestElements(
+  document: NormalizedDocument,
+  forest: Forest,
+  options: SceneOptions,
+  focused: string | null,
+): ElementSpec[] {
+  const roots: ElementSpec[] = [];
+  const pending: { key: string; level: number; into: SpecChild[] }[] = [];
+  for (let index = forest.roots.length - 1; index >= 0; index -= 1) {
+    pending.push({ key: forest.roots[index] as string, level: 1, into: roots });
+  }
+
+  while (pending.length > 0) {
+    const { key, level, into } = pending.pop() as {
+      key: string;
+      level: number;
+      into: SpecChild[];
+    };
+    const children = forest.childrenOf.get(key) ?? [];
+    const row = treeRow(document, key, level, children.length > 0, options, focused);
+    into.push(row.spec);
+    for (let index = children.length - 1; index >= 0; index -= 1) {
+      pending.push({ key: children[index] as string, level: level + 1, into: row.children });
+    }
+  }
+  return roots;
 }
 
 export function treeScene(document: NormalizedDocument, options: SceneOptions = {}): Scene {
   const forest = buildForest(document);
-  const focusOrder: string[] = [];
-  for (const rootKey of forest.roots) collectOrder(forest, rootKey, focusOrder);
+  const focusOrder = collectOrder(forest, forest.roots);
 
   // A focus the caller supplied wins, but only when it is a key this projection
   // actually draws; otherwise the roving tab stop would land nowhere and the
@@ -173,7 +226,7 @@ export function treeScene(document: NormalizedDocument, options: SceneOptions = 
       : element(
           'ul',
           { class: 'ig-tree ig-list', 'aria-label': 'decomposition' },
-          forest.roots.map((rootKey) => treeItem(document, rootKey, 1, forest, options, focused)),
+          buildForestElements(document, forest, options, focused),
         );
 
   const root = element(

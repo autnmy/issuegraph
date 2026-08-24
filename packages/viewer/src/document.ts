@@ -313,11 +313,24 @@ function normalizeSlots(
   diagnostics: string[],
 ): ViewerSlot[] {
   const kept: ViewerSlot[] = [];
+  // ONE ISSUE HOLDS ONE PLACE IN THE ORDER. A hand-built document can name the
+  // same issue in two slots, and keeping both publishes the key twice: two rows
+  // render `tabindex="0"` for one focused key, while `indexOf` and the mount
+  // index can only ever address the first — so roving focus breaks and the
+  // later row is unreachable. The first placement wins, as everywhere else here.
+  const placed = new Set<string>();
   for (const slot of slots) {
     const members = slot.members.filter((member) => {
-      if (byKey.has(member)) return true;
-      diagnostics.push(`slot member ${member} is not an issue in this document and was dropped`);
-      return false;
+      if (!byKey.has(member)) {
+        diagnostics.push(`slot member ${member} is not an issue in this document and was dropped`);
+        return false;
+      }
+      if (placed.has(member)) {
+        diagnostics.push(`${member} is already placed in an earlier slot; the later placement was dropped`);
+        return false;
+      }
+      placed.add(member);
+      return true;
     });
     if (members.length === 0) {
       diagnostics.push(`slot led by ${slot.lead} has no known member and was dropped`);

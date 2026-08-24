@@ -86,19 +86,57 @@ function renderAttrs(attrs: Readonly<Record<string, AttrValue>> | undefined): st
  * Pure and deterministic: attribute order follows the spec's own key order, so
  * the same tree always produces the same bytes. That is what makes a
  * two-themes-one-markup assertion possible.
+ *
+ * ITERATIVE, LIKE EVERY OTHER WALK IN THIS PACKAGE. A recursive renderer costs
+ * one call frame per level of nesting, and the tree projection's depth is the
+ * host's `decomposed-from` chain — which nothing bounds. `renderViewer`
+ * documents itself as TOTAL, so a document that makes it throw falsifies the
+ * claim whatever the depth was. This was the third stack-depth finding on this
+ * package; making the traversal iterative removes the class rather than
+ * capping the input, which would have invented a product rule the design does
+ * not have.
  */
 export function renderMarkup(spec: ElementSpec, inheritedNs?: 'svg' | undefined): string {
-  const ns = spec.ns ?? inheritedNs;
-  const open = `<${spec.tag}${renderAttrs(spec.attrs)}`;
-  const children = spec.children ?? [];
-  if (children.length === 0) {
-    if (ns === 'svg' || VOID_HTML_TAGS.has(spec.tag)) return `${open} />`;
-    return `${open}></${spec.tag}>`;
+  type Frame =
+    | { readonly kind: 'open'; readonly spec: ElementSpec; readonly ns: 'svg' | undefined }
+    | { readonly kind: 'close'; readonly tag: string }
+    | { readonly kind: 'text'; readonly text: string };
+
+  const out: string[] = [];
+  const stack: Frame[] = [{ kind: 'open', spec, ns: inheritedNs }];
+
+  while (stack.length > 0) {
+    const frame = stack.pop() as Frame;
+    if (frame.kind === 'close') {
+      out.push(`</${frame.tag}>`);
+      continue;
+    }
+    if (frame.kind === 'text') {
+      out.push(escapeText(frame.text));
+      continue;
+    }
+
+    const ns = frame.spec.ns ?? frame.ns;
+    const open = `<${frame.spec.tag}${renderAttrs(frame.spec.attrs)}`;
+    const children = frame.spec.children ?? [];
+    if (children.length === 0) {
+      out.push(
+        ns === 'svg' || VOID_HTML_TAGS.has(frame.spec.tag)
+          ? `${open} />`
+          : `${open}></${frame.spec.tag}>`,
+      );
+      continue;
+    }
+
+    out.push(`${open}>`);
+    stack.push({ kind: 'close', tag: frame.spec.tag });
+    // Pushed in reverse so they pop in document order.
+    for (let index = children.length - 1; index >= 0; index -= 1) {
+      const child = children[index] as SpecChild;
+      stack.push(isSpec(child) ? { kind: 'open', spec: child, ns } : { kind: 'text', text: child });
+    }
   }
-  const inner = children
-    .map((child) => (isSpec(child) ? renderMarkup(child, ns) : escapeText(child)))
-    .join('');
-  return `${open}>${inner}</${spec.tag}>`;
+  return out.join('');
 }
 
 /**
@@ -152,25 +190,61 @@ export function materialize(
   spec: ElementSpec,
   options: MaterializeOptions = {},
 ): SpecElement {
-  const ns = spec.ns ?? options.ns;
-  const element =
-    ns === 'svg' ? doc.createElementNS(SVG_NAMESPACE, spec.tag) : doc.createElement(spec.tag);
+  type Frame =
+    | {
+        readonly kind: 'element';
+        readonly spec: ElementSpec;
+        readonly ns: 'svg' | undefined;
+        readonly parent: SpecElement | null;
+      }
+    | { readonly kind: 'text'; readonly text: string; readonly parent: SpecElement };
 
-  if (spec.attrs !== undefined) {
-    for (const [name, value] of Object.entries(spec.attrs)) {
-      if (value === undefined || value === null || value === false) continue;
-      element.setAttribute(name, value === true ? '' : String(value));
+  // Iterative for the reason `renderMarkup` is: the two walks are only useful
+  // as one grammar, so they have to share the depth behaviour too.
+  const stack: Frame[] = [{ kind: 'element', spec, ns: options.ns, parent: null }];
+  let root: SpecElement | null = null;
+
+  while (stack.length > 0) {
+    const frame = stack.pop() as Frame;
+    if (frame.kind === 'text') {
+      frame.parent.appendChild(doc.createTextNode(frame.text));
+      continue;
+    }
+
+    const ns = frame.spec.ns ?? frame.ns;
+    const built =
+      ns === 'svg'
+        ? doc.createElementNS(SVG_NAMESPACE, frame.spec.tag)
+        : doc.createElement(frame.spec.tag);
+
+    if (frame.spec.attrs !== undefined) {
+      for (const [name, value] of Object.entries(frame.spec.attrs)) {
+        if (value === undefined || value === null || value === false) continue;
+        built.setAttribute(name, value === true ? '' : String(value));
+      }
+    }
+
+    options.onElement?.(frame.spec, built);
+
+    // Appended on the way DOWN, so a node is in place before its own children
+    // are popped. That is what keeps sibling order right without holding the
+    // parent's frame open, which is the whole point of dropping the recursion.
+    if (frame.parent === null) root = built;
+    else frame.parent.appendChild(built);
+
+    const children = frame.spec.children ?? [];
+    // Pushed in reverse so they pop in document order.
+    for (let index = children.length - 1; index >= 0; index -= 1) {
+      const child = children[index] as SpecChild;
+      stack.push(
+        isSpec(child)
+          ? { kind: 'element', spec: child, ns, parent: built }
+          : { kind: 'text', text: child, parent: built },
+      );
     }
   }
-
-  options.onElement?.(spec, element);
-
-  for (const child of spec.children ?? []) {
-    element.appendChild(
-      isSpec(child) ? materialize(doc, child, { ...options, ns }) : doc.createTextNode(child),
-    );
-  }
-  return element;
+  // The seed frame always builds an element, so this is set by the first pass.
+  return root as SpecElement;
 }
 
 /** A spec, with `undefined` children dropped — the common conditional-child case. */
