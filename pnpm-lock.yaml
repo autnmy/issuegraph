@@ -24,6 +24,28 @@ importers:
         specifier: ^8.67.0
         version: 8.67.0(eslint@10.9.0)(typescript@6.0.3)
 
+  packages/cli:
+    dependencies:
+      '@issuegraph/core':
+        specifier: workspace:^
+        version: link:../core
+      '@issuegraph/derive':
+        specifier: workspace:^
+        version: link:../derive
+      '@issuegraph/reader':
+        specifier: workspace:^
+        version: link:../reader
+      '@issuegraph/writer':
+        specifier: workspace:^
+        version: link:../writer
+    devDependencies:
+      '@types/node':
+        specifier: ^22.18.0
+        version: 22.20.1
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
   packages/core:
     devDependencies:
       '@types/node':

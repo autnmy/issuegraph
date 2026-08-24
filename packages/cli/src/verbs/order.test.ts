@@ -1,0 +1,195 @@
+import assert from 'node:assert/strict';
+import { describe, test } from 'node:test';
+
+import { EXIT } from '../exit.ts';
+import { HAZARD_BODY } from '../testing/fixtures.ts';
+import { orderFromJson } from './order.ts';
+
+interface Slot {
+  readonly rank: number | null;
+  readonly lead: string;
+  readonly members: readonly string[];
+  readonly ready: boolean;
+  readonly holdReasons: readonly string[];
+}
+
+interface OrderOutput {
+  readonly view: string;
+  readonly slots: readonly Slot[];
+  readonly excluded: readonly { readonly key: string; readonly canonical: string }[];
+  readonly underRead: readonly string[];
+  readonly diagnostics: readonly string[];
+}
+
+/** A body declaring exactly the given `blocked-by` refs, in the readable spelling. */
+function blockedBy(...refs: readonly string[]): string {
+  return ['---', 'issuegraph:', '  blocked-by:', ...refs.map((r) => `    - "${r}"`), '---', '', 'Prose.'].join('\n');
+}
+
+function issue(
+  number: number,
+  body: string,
+  overrides: { open?: boolean; labels?: readonly string[]; assigneeCount?: number } = {},
+): Record<string, unknown> {
+  return {
+    number,
+    open: overrides.open ?? true,
+    labels: overrides.labels ?? ['P2'],
+    assigneeCount: overrides.assigneeCount ?? 0,
+    body,
+  };
+}
+
+function document(issues: readonly Record<string, unknown>[]): string {
+  return JSON.stringify({
+    baseRanking: {
+      source: 'config',
+      order: issues.map((i) => ({ key: String(i['number']), matchedOrderIndex: 0 })),
+    },
+    issues,
+  });
+}
+
+function run(input: string, view: 'order' | 'ready' = 'order'): { result: ReturnType<typeof orderFromJson>; out: OrderOutput } {
+  const result = orderFromJson(input, view);
+  assert.equal(result.code, EXIT.ok, result.stderr.join('\n'));
+  const parsed: unknown = JSON.parse(result.stdout);
+  return { result, out: parsed as OrderOutput };
+}
+
+describe('order', () => {
+  test('an open blocker holds its dependent; the blocker itself is ready', () => {
+    const { out } = run(document([issue(1, blockedBy('#2')), issue(2, 'no block')]));
+    const one = out.slots.find((s) => s.lead === '1');
+    const two = out.slots.find((s) => s.lead === '2');
+    assert.equal(one?.ready, false);
+    assert.ok(one?.holdReasons.some((r) => r.includes('2')), JSON.stringify(one?.holdReasons));
+    assert.equal(two?.ready, true);
+  });
+
+  test('closing that blocker — an INPUT, never a fetch — makes the dependent ready', () => {
+    // The boundary rule, as an executable claim: the only thing that changed
+    // between these two runs is a field on the document.
+    const { out } = run(document([issue(1, blockedBy('#2')), issue(2, 'no block', { open: false })]));
+    assert.equal(out.slots.find((s) => s.lead === '1')?.ready, true);
+  });
+
+  test('a chain ranks in dependency order', () => {
+    const { out } = run(
+      document([issue(1, blockedBy('#2')), issue(2, blockedBy('#3')), issue(3, 'no block')]),
+    );
+    assert.equal(out.slots.find((s) => s.lead === '3')?.ready, true);
+    assert.equal(out.slots.find((s) => s.lead === '2')?.ready, false);
+    assert.equal(out.slots.find((s) => s.lead === '1')?.ready, false);
+  });
+
+  test('a duplicate is excluded and takes no slot', () => {
+    const dup = ['---', 'issuegraph:', '  duplicate-of: "#1"', '---', '', 'Prose.'].join('\n');
+    const { out } = run(document([issue(1, 'no block'), issue(2, dup)]));
+    assert.deepEqual(
+      out.excluded.map((e) => [e.key, e.canonical]),
+      [['2', '1']],
+    );
+    assert.equal(
+      out.slots.some((s) => s.members.includes('2')),
+      false,
+    );
+  });
+
+  test('a together pair occupies ONE slot with two members', () => {
+    const together = ['---', 'issuegraph:', '  together-with: "#2"', '---', '', 'Prose.'].join('\n');
+    const { out } = run(document([issue(1, together), issue(2, 'no block')]));
+    const unit = out.slots.find((s) => s.members.length === 2);
+    assert.ok(unit, `expected one slot with two members, got ${JSON.stringify(out.slots)}`);
+    assert.deepEqual([...unit.members].sort(), ['1', '2']);
+    assert.equal(out.slots.length, 1);
+  });
+
+  describe('an under-read body', () => {
+    const { result, out } = run(document([issue(1, 'no block'), issue(2, HAZARD_BODY)]));
+
+    test('is reported in underRead', () => {
+      assert.deepEqual(out.underRead, ['2']);
+    });
+
+    test('is NOT reported ready — its silence about an edge is not evidence', () => {
+      // The plan's one open risk, answered by executing it rather than by
+      // reading the library's documentation. An under-read node reported ready
+      // would launder the exact defect this package exists to surface.
+      const held = out.slots.find((s) => s.lead === '2');
+      assert.equal(held?.ready, false);
+      assert.ok(held !== undefined && held.holdReasons.length > 0);
+    });
+
+    test('does not fail the whole set — the fact travels, it does not stop the run', () => {
+      assert.equal(result.code, EXIT.ok);
+      assert.ok(result.stderr[0]?.includes('under-read'), result.stderr.join('\n'));
+    });
+
+    test('the readable sibling is still ready', () => {
+      assert.equal(out.slots.find((s) => s.lead === '1')?.ready, true);
+    });
+  });
+});
+
+describe('ready', () => {
+  test('is exactly the subset of order’s slots that are ready — compared against the same run', () => {
+    const input = document([issue(1, blockedBy('#2')), issue(2, 'no block'), issue(3, 'no block')]);
+    const all = run(input, 'order').out;
+    const only = run(input, 'ready').out;
+    assert.deepEqual(only.slots, all.slots.filter((s) => s.ready));
+    assert.ok(only.slots.length > 0 && only.slots.length < all.slots.length);
+  });
+
+  test('names its view, so a caller can tell the two apart', () => {
+    assert.equal(run(document([issue(1, 'no block')]), 'ready').out.view, 'ready');
+    assert.equal(run(document([issue(1, 'no block')]), 'order').out.view, 'order');
+  });
+});
+
+describe('input validation — a bad document is a USAGE error, never unread', () => {
+  function usage(input: string): string {
+    const result = orderFromJson(input, 'order');
+    assert.equal(result.code, EXIT.usage, `expected usage, got ${result.code}: ${result.stdout}`);
+    assert.equal(result.stdout, '');
+    return result.stderr.join('\n');
+  }
+
+  test('malformed JSON names the input as the problem', () => {
+    assert.ok(usage('{ not json').includes('not valid JSON'));
+  });
+
+  test('a missing required field names the field and the issue', () => {
+    for (const field of ['open', 'labels', 'assigneeCount', 'body', 'number']) {
+      const issues = [issue(1, 'no block')];
+      const first = issues[0];
+      assert.ok(first !== undefined);
+      delete first[field];
+      const message = usage(document(issues));
+      assert.ok(message.includes(field), `${field}: ${message}`);
+      assert.ok(message.includes('issues[0]'), message);
+    }
+  });
+
+  test('a wrongly-typed field is refused rather than coerced', () => {
+    assert.ok(usage(JSON.stringify({ baseRanking: { source: 'config', order: [] }, issues: [{ ...issue(1, 'x'), open: 'yes' }] })).includes('open'));
+    assert.ok(usage(JSON.stringify({ baseRanking: { source: 'config', order: [] }, issues: [{ ...issue(1, 'x'), labels: 'P1' }] })).includes('labels'));
+  });
+
+  test('an unknown baseRanking source is refused', () => {
+    assert.ok(usage(JSON.stringify({ baseRanking: { source: 'vibes' }, issues: [] })).includes('source'));
+  });
+
+  test('a top-level non-object is refused', () => {
+    assert.ok(usage('[]').includes('input'));
+  });
+
+  test('a caller-supplied `data` object cannot bypass the reader', () => {
+    // The document carries bodies. Handing in pre-parsed data is exactly the
+    // hand-rolled-grammar path this package exists to close, so an extra key is
+    // simply not read — the body is still the only edge source.
+    const issues = [{ ...issue(1, 'no block'), data: { blockedBy: [{ repo: null, number: 999 }] } }];
+    const { out } = run(document(issues));
+    assert.equal(out.slots.find((s) => s.lead === '1')?.ready, true, 'a fabricated blocker must not gate anything');
+  });
+});
