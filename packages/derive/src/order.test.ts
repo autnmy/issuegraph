@@ -611,3 +611,53 @@ describe('deriveIssueOrder — cross-repo keys', () => {
     ]);
   });
 });
+
+describe('deriveIssueOrder — promotion provenance matches the edges the model used', () => {
+  // `promotedBy` EXPLAINS a promotion the model computed, so it has to read the
+  // same edges the model read: an edge naming a duplicate is attributed to its
+  // canonical (`packages/reader/src/model.ts:477`), and a duplicate's own edges
+  // are ignored entirely (`:443`). This is the one place the derivation must
+  // MATCH the model rather than over-refuse — a reason that did not cause a
+  // promotion cannot be the reason given for it.
+
+  const plain = (number: number, labels: readonly string[] = []): NodeInput => ({
+    number,
+    open: true,
+    labels,
+    assigneeCount: 0,
+    data: null,
+  });
+  const derive = (issues: readonly NodeInput[]): DerivedIssueOrder =>
+    deriveIssueOrder({ issues, config: { baseRanking: { source: 'config', order: [] } } });
+
+  test('attributes a promotion to the canonical, not the duplicate that named it', () => {
+    // #20 is blocked-by #30, and #30 duplicates #10 — so the model promotes
+    // #10. Reading the RAW target files the dependent under #30, and #10 comes
+    // back promoted with nothing to show for it.
+    const derived = derive([
+      plain(10),
+      { ...plain(20, ['P0']), data: frontmatter({ blockedBy: [ref(30)] }) },
+      { ...plain(30), data: frontmatter({ duplicateOf: ref(10) }) },
+    ]);
+    const view = priorityView(derived, '10');
+    assert.equal(view.promoted, true);
+    assert.equal(view.effective, 0);
+    assert.deepStrictEqual(view.promotedBy, ['20']);
+  });
+
+  test('never names a duplicate as the promoter — the model ignored its edge', () => {
+    // #30 is a duplicate, so its `blocked-by` did NOT promote #10. Its own P0
+    // label makes its effective priority equal the promotion, which is exactly
+    // what let a raw reverse index list it beside the genuine promoter.
+    const derived = derive([
+      plain(10),
+      { ...plain(20, ['P0']), data: frontmatter({ blockedBy: [ref(10)] }) },
+      {
+        ...plain(30, ['P0']),
+        data: frontmatter({ blockedBy: [ref(10)], duplicateOf: ref(40) }),
+      },
+      plain(40),
+    ]);
+    assert.deepStrictEqual(priorityView(derived, '10').promotedBy, ['20']);
+  });
+});

@@ -197,3 +197,57 @@ describe('wouldCycleOnBlockedBy', () => {
     assert.equal(derived.wouldCycle('512', '488'), false);
   });
 });
+
+describe('duplicate targets, which the model resolves and a raw walk does not', () => {
+  // `buildModel` reads an edge naming a duplicate as naming its CANONICAL
+  // (`packages/reader/src/model.ts:477`). A walk over raw targets therefore
+  // misses a path the model can see, and misses it in the fail-OPEN direction.
+
+  test('resolves a blocked-by target through a duplicate before walking', () => {
+    // #30 duplicates #10, so the model reads "#20 blocked-by #30" as
+    // "#20 blocked-by #10". Adding "#10 blocked-by #20" closes 10 -> 20 -> 10.
+    // A raw walk follows #20 -> #30, never reaches #10, and admits the edge.
+    const issues = [
+      issue(10),
+      issue(20, [30]),
+      { ...issue(30), data: frontmatter({ duplicateOf: ref(10) }) },
+    ];
+    assert.equal(wouldCycleOnBlockedBy(issues, '10', '20'), true);
+  });
+
+  test('CONTROL: the same shape with no duplicate edge admits the write', () => {
+    // Identical but for the `duplicate-of`. Without this the test above would
+    // pass for a guard that simply refuses more, rather than one that resolves.
+    const issues = [issue(10), issue(20, [30]), issue(30)];
+    assert.equal(wouldCycleOnBlockedBy(issues, '10', '20'), false);
+  });
+
+  test('resolves through a CHAIN of duplicates, as the model does', () => {
+    // #30 -> #25 -> #10. The canonical is transitive, so the walk must follow
+    // it the whole way rather than one hop.
+    const issues = [
+      issue(10),
+      issue(20, [30]),
+      { ...issue(25), data: frontmatter({ duplicateOf: ref(10) }) },
+      { ...issue(30), data: frontmatter({ duplicateOf: ref(25) }) },
+    ];
+    assert.equal(wouldCycleOnBlockedBy(issues, '10', '20'), true);
+  });
+
+  test('KEEPS an edge declared BY a duplicate — a third deliberate divergence', () => {
+    // The model drops a duplicate's own edges entirely (`model.ts:443`). This
+    // guard does not, for the reason the other two divergences give: dropping
+    // them REMOVES reachability, which is the fail-open direction, and a
+    // groomer clearing the `duplicate-of` makes the edge live again with the
+    // cycle already written. Refusing is the recoverable direction.
+    const issues = [
+      issue(10),
+      {
+        ...issue(20),
+        data: frontmatter({ blockedBy: [ref(10)], duplicateOf: ref(40) }),
+      },
+      issue(40),
+    ];
+    assert.equal(wouldCycleOnBlockedBy(issues, '10', '20'), true);
+  });
+});

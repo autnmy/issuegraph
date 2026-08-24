@@ -20,7 +20,17 @@
  * cannot close a cycle, an already-cyclic input terminates on the seen-set,
  * and an unknown key simply has no outgoing edges.
  *
- * TWO DELIBERATE DIVERGENCES FROM `model.cycles`, both fail-safe:
+ * DUPLICATES ARE RESOLVED THE MODEL'S WAY, THROUGH THE MODEL'S OWN ANSWER.
+ * §4.3.3 makes an edge naming a duplicate name its CANONICAL instead, and
+ * `buildModel` applies that to every `blocked-by` target it reads. A walk over
+ * RAW targets therefore misses a path the model can see: with `#30` duplicating
+ * `#10`, the model reads "#20 blocked-by #30" as "#20 blocked-by #10", so
+ * adding "#10 blocked-by #20" closes a cycle that a raw walk never finds. That
+ * is a guard failing OPEN on a write nobody can undo. The canonical comes from
+ * `Model.duplicateCanonical` rather than from a second duplicate-chain walk
+ * here — restating the rule is how the two drift apart.
+ *
+ * THREE DELIBERATE DIVERGENCES FROM `model.cycles`, all fail-safe:
  *
  *  1. The walk spans CLOSED nodes. `model.cycles` filters to open nodes,
  *     because a closed blocker does not block today. This guard is asked a
@@ -34,10 +44,17 @@
  *     anything. Failing closed instead would make a paged editing surface
  *     refuse every edge to an issue it has not loaded yet. Whether to return
  *     a three-valued verdict is an open question for the paging model.
+ *  3. An edge declared BY a duplicate is KEPT. `buildModel` drops a duplicate's
+ *     own edges entirely, and matching it here would be the one place copying
+ *     the model makes this guard WEAKER: dropping an edge removes reachability,
+ *     and a groomer who clears the `duplicate-of` brings it back with the cycle
+ *     already written. Note the asymmetry with the resolution above — resolving
+ *     a target ADDS reachability and is adopted; filtering a declarer REMOVES
+ *     it and is not. Both choices point the same way.
  */
 
-import type { NodeInput } from '@issuegraph/reader';
-import { nodeKey, nodeSourceRepo, refKey } from '@issuegraph/reader';
+import type { Model, NodeInput } from '@issuegraph/reader';
+import { buildModel, nodeKey, nodeSourceRepo, refKey } from '@issuegraph/reader';
 
 export interface WouldCycleOptions {
   /** The home repository (`owner/repo`), as the model spells it. */
@@ -51,8 +68,21 @@ export interface WouldCycleOptions {
  */
 export type BlockedByAdjacency = ReadonlyMap<string, readonly string[]>;
 
+/**
+ * The model's transitive `duplicate-of` answer for a key — `Model.duplicateCanonical`.
+ *
+ * Taken as a PARAMETER rather than recomputed, and required rather than
+ * defaulted. A default would be a second duplicate-chain walk beside the
+ * model's, which is the mirror-whose-input-space-drifts shape this package
+ * exists to avoid; and an OPTIONAL parameter would let a call site silently
+ * omit it and quietly restore the raw walk, which is the defect itself. A
+ * required positional argument is a compile error at every call site instead.
+ */
+export type CanonicalOf = (key: string) => string | null;
+
 export function buildBlockedByAdjacency(
   issues: readonly NodeInput[],
+  canonicalOf: CanonicalOf,
   options: WouldCycleOptions = {},
 ): BlockedByAdjacency {
   const homeRepo = options.homeRepo;
@@ -63,7 +93,14 @@ export function buildBlockedByAdjacency(
     const sourceRepo = nodeSourceRepo(node, homeRepo);
     adjacency.set(
       key,
-      (node.data?.blockedBy ?? []).map((ref) => refKey(ref, sourceRepo, homeRepo)),
+      (node.data?.blockedBy ?? []).map((ref) => {
+        const target = refKey(ref, sourceRepo, homeRepo);
+        // A key the model does not hold answers `null` and falls through
+        // unchanged, which is the same outcome the model's own
+        // `referenceable` gate produces for it — so no second gate is written
+        // here to say it twice.
+        return canonicalOf(target) ?? target;
+      }),
     );
   }
   return adjacency;
@@ -82,7 +119,21 @@ export function wouldCycleOnBlockedBy(
   to: string,
   options: WouldCycleOptions = {},
 ): boolean {
-  return wouldCycleOnAdjacency(buildBlockedByAdjacency(issues, options), from, to, options);
+  // Builds a model for the duplicate answer alone. That is real work, and it is
+  // the honest price of not restating §4.3.3: the alternative is a second
+  // duplicate-chain walk. It costs no ROUND-TRIP, which is what this guard
+  // promises — a caller already deriving an order pays nothing extra, because
+  // `deriveIssueOrder` hands its own model's resolver to the adjacency builder.
+  const model: Model = buildModel(
+    issues,
+    options.homeRepo === undefined ? {} : { homeRepo: options.homeRepo },
+  );
+  return wouldCycleOnAdjacency(
+    buildBlockedByAdjacency(issues, model.duplicateCanonical, options),
+    from,
+    to,
+    options,
+  );
 }
 
 /**

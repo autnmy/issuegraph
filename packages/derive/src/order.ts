@@ -68,7 +68,7 @@
  * TIE-BREAK SUBSTITUTION, not a second ranking engine.
  */
 
-import type { NodeInput } from '@issuegraph/reader';
+import type { Model, NodeInput } from '@issuegraph/reader';
 import { buildModel, nodeKey, nodeSourceRepo, refKey } from '@issuegraph/reader';
 
 import {
@@ -339,7 +339,7 @@ export function deriveIssueOrder(input: DeriveIssueOrderInput): DerivedIssueOrde
 
   // ---- priority views ----
   const priority = new Map<string, IssuePriorityView>();
-  const dependentsOf = openDependents(issues, homeRepo, rawByKey);
+  const dependentsOf = openDependents(issues, homeRepo, rawByKey, model);
   for (const key of candidates) {
     const node = rawByKey.get(key) as NodeInput;
     const signals = resolvePrioritySignals(node, precedence);
@@ -383,7 +383,10 @@ export function deriveIssueOrder(input: DeriveIssueOrderInput): DerivedIssueOrde
   // endpoints have to fold identically or the walk starts at a key that is not
   // there and the guard fails open.
   const cycleOptions = { homeRepo };
-  const adjacency = buildBlockedByAdjacency(issues, cycleOptions);
+  // The model's OWN duplicate answer, handed over rather than recomputed — the
+  // walk has to see the same edges the model sees (SPEC §4.3.3), and a caller
+  // that already built a model must not pay for a second one.
+  const adjacency = buildBlockedByAdjacency(issues, model.duplicateCanonical, cycleOptions);
 
   return {
     slots,
@@ -421,11 +424,25 @@ function finitePosition(value: number | undefined): number {
   return value !== undefined && Number.isFinite(value) ? value : UNRANKED_POSITION;
 }
 
-/** `key -> the OPEN issues directly blocked by it` (the reverse blocked-by edge). */
+/**
+ * `key -> the OPEN issues directly blocked by it` (the reverse blocked-by edge).
+ *
+ * THIS ONE MUST MATCH THE MODEL EXACTLY, and that is the opposite instruction
+ * from the cycle guard's. `promotedBy` EXPLAINS a promotion the model computed,
+ * so an edge the model did not read cannot be the reason it gives, and an edge
+ * the model attributed elsewhere has to be attributed the same way. Refusing
+ * more is a safe direction for a pre-write guard and a WRONG one for
+ * provenance: it names a cause that did not act.
+ *
+ * So both of §4.3.3's halves are applied, through the model's own answer:
+ * a duplicate declares nothing (`model.ts:443`), and an edge naming a duplicate
+ * names its canonical (`model.ts:477`).
+ */
 function openDependents(
   issues: readonly NodeInput[],
   homeRepo: string | undefined,
   rawByKey: ReadonlyMap<string, NodeInput>,
+  model: Model,
 ): ReadonlyMap<string, readonly string[]> {
   const dependents = new Map<string, string[]>();
   const seen = new Set<string>();
@@ -434,9 +451,14 @@ function openDependents(
     if (seen.has(key)) continue; // first occurrence wins, like the model
     seen.add(key);
     if (!node.open) continue; // a closed dependent propagates no urgency
+    // A duplicate contributed no edge to the model, so it promoted nothing and
+    // may not be named as a promoter — however its own effective priority
+    // happens to compare.
+    if (model.duplicateCanonical(key) !== null) continue;
     const sourceRepo = nodeSourceRepo(node, homeRepo);
     for (const ref of node.data?.blockedBy ?? []) {
-      const blockerKey = refKey(ref, sourceRepo, homeRepo);
+      const target = refKey(ref, sourceRepo, homeRepo);
+      const blockerKey = model.duplicateCanonical(target) ?? target;
       // An unresolvable or closed blocker inherits nothing: the lookup answers
       // "is this a known OPEN node" in one step.
       if (rawByKey.get(blockerKey)?.open !== true) continue;
