@@ -1,14 +1,14 @@
 {
-  "name": "@issuegraph/reader",
-  "version": "0.2.0",
-  "description": "Read the Issuegraph frontmatter block out of an issue body and derive the graph it declares — ready set, effective priority, serialize and together components, duplicate resolution, cycles. Parsing and pure derivation only; no network, no tracker, no writes.",
+  "name": "@issuegraph/writer",
+  "version": "0.1.0",
+  "description": "Write the Issuegraph frontmatter block into an issue body — render a fresh block, splice generated edges in place without disturbing anything else, and re-delimit a block a fence left inert. Pure string work; no network, no tracker, no reads.",
   "keywords": [
     "issuegraph",
     "dependency-graph",
     "backlog",
     "scheduling",
     "frontmatter",
-    "parser"
+    "serializer"
   ],
   "license": "Apache-2.0",
   "author": "Autonomy LLC",
@@ -32,7 +32,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/autnmy/issuegraph.git",
-    "directory": "packages/reader"
+    "directory": "packages/writer"
   },
   "homepage": "https://github.com/autnmy/issuegraph#readme",
   "bugs": {
@@ -47,7 +47,8 @@
     "test": "node --test \"src/**/*.test.ts\""
   },
   "dependencies": {
-    "@issuegraph/core": "workspace:^"
+    "@issuegraph/core": "workspace:^",
+    "@issuegraph/reader": "workspace:^"
   },
   "devDependencies": {
     "@types/node": "^22.18.0",

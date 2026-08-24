@@ -267,44 +267,132 @@ function stripComment(s: string): string {
   return s;
 }
 
+/** One `key: value` mapping entry: the key as it SPELLS (unquoted, unescaped)
+ *  and the scalar text after the colon (trimmed; `""` when there is none). */
+export interface MappingEntry {
+  readonly key: string;
+  readonly scalar: string;
+}
+
 /**
  * Read one `key: value` mapping entry, or null when the line is not one.
  *
- * THE ONE PLACE THIS MODULE DECIDES WHAT A KEY IS. The rule used to be spelled
- * three times — a regex for the top-level key, `indexOf(':')` for a child's
- * separator, and a `stripQuotes` on the child's key — and each spelling knew a
- * different amount about quoting. Review found a defect at every one of them,
- * in order, because fixing one site left the rule stated differently at the
- * other two: a quoted child key read as an inert extension; then a quoted
- * top-level key read as NO BLOCK AT ALL; then a colon inside a quoted key made
- * `indexOf` pick the wrong one and refuse the whole block.
+ * THE ONE PLACE THIS PACKAGE DECIDES WHAT A KEY IS, and it is exported because
+ * the decision is not the reader's alone: `@issuegraph/writer` edits entries in
+ * place, so an editor and a parser that disagreed about which bytes constitute
+ * an entry would produce a body that one of them cannot read. The rule was
+ * spelled three times inside this module once — a regex for the top-level key,
+ * `indexOf(':')` for a child's separator, and a `stripQuotes` on the child's
+ * key — and review found a defect at every one of them, in order, because
+ * fixing one site left the rule stated differently at the other two. Two
+ * packages spelling it twice is that failure with a package boundary in it.
  *
  * Three rules, in one place, so a fourth quoting corner is one edit:
  *
- *   - the mapping colon is the first one OUTSIDE quotes;
- *   - it must be followed by whitespace or end-of-line, which is what makes
- *     `blocked-by:[1]` a plain scalar to YAML and therefore not a field here;
+ *   - a QUOTED key must OPEN with its quote; anywhere else a quote is an
+ *     ordinary character in a plain scalar;
+ *   - the mapping colon must be followed by whitespace or end-of-line, which is
+ *     what makes `blocked-by:[1]` a plain scalar to YAML and therefore not a
+ *     field here;
  *   - a quoted key is the same key, since YAML reads `"blocked-by"` and
  *     `blocked-by` identically.
  *
- * Its remaining limit is the subset's everywhere: an ESCAPED quote inside a key
- * is not tracked, so such a key mis-locates its colon. That fails toward an
- * unparseable line rather than toward a wrong field.
+ * QUOTE STATE IS NOT TOGGLED ANYWHERE ON THE LINE, and that correction is the
+ * whole of issue #10. Toggling meant a stray apostrophe in an ORDINARY key
+ * swallowed the colon — `note's: x` read as unparseable — and an unparseable
+ * child is STRUCTURAL, so the block degraded and every real edge beside it was
+ * lost. §4.1 gives an unrecognized field no such power. YAML agrees: a quoted
+ * key opens with its quote, so a quote elsewhere is plain content.
+ *
+ * ESCAPES ARE TRACKED — `''` inside a single-quoted key and `\"` inside a
+ * double-quoted one — for the same reason. Taking the first inner quote as the
+ * terminator returned null for `'owner''s-note'`, which is one key, and a null
+ * at a section child degrades the whole block.
+ *
+ * THE KEY IS RETURNED UNESCAPED, so it compares equal to the field it SPELLS.
+ * Only the two escapes that can produce a quote or a backslash are undone: a
+ * double-quoted YAML scalar has a fixed escape set, `\g` is not in it, and
+ * unescaping any backslash pair would read `"issue\graph"` as `issuegraph` —
+ * narrower than {@link FRONTMATTER_KEY_PATTERN}, whose bracket expression has
+ * no escape grammar, and so the fail-OPEN direction a prefilter forbids.
+ *
+ * THE CALLER TRIMS. This reads the line as given, so a caller that has not
+ * trimmed leading indentation gets it back inside `key`.
  */
-function readMappingEntry(line: string): { key: string; scalar: string } | null {
-  let inSingle = false;
-  let inDouble = false;
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
-    if (c === "'" && !inDouble) inSingle = !inSingle;
-    else if (c === '"' && !inSingle) inDouble = !inDouble;
-    else if (c === ':' && !inSingle && !inDouble) {
-      const after = line[i + 1];
-      if (after !== undefined && after !== ' ' && after !== '\t') return null;
-      return { key: stripQuotes(line.slice(0, i).trim()), scalar: line.slice(i + 1).trim() };
+export function readMappingEntry(line: string): MappingEntry | null {
+  const opener = line[0];
+  if (opener === '"' || opener === "'") {
+    let close = -1;
+    for (let i = 1; i < line.length; i++) {
+      const c = line[i];
+      if (opener === '"' && c === '\\') {
+        i++; // whatever follows a backslash is literal, including a quote
+        continue;
+      }
+      if (c !== opener) continue;
+      if (opener === "'" && line[i + 1] === "'") {
+        i++; // a doubled quote is an escaped one, not the terminator
+        continue;
+      }
+      close = i;
+      break;
     }
+    if (close === -1) return null; // an opening quote nothing closes is not a key
+    const rest = line.slice(close + 1);
+    const gap = rest.length - rest.trimStart().length; // YAML allows space before the colon
+    if (rest[gap] !== ':') return null;
+    const after = rest[gap + 1];
+    if (after !== undefined && after !== ' ' && after !== '\t') return null;
+    const raw = line.slice(1, close);
+    const key =
+      opener === "'"
+        ? raw.replaceAll("''", "'")
+        : raw.replaceAll('\\"', '"').replaceAll('\\\\', '\\');
+    return { key, scalar: rest.slice(gap + 1).trim() };
+  }
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] !== ':') continue;
+    const after = line[i + 1];
+    if (after !== undefined && after !== ' ' && after !== '\t') continue;
+    return { key: line.slice(0, i).trim(), scalar: line.slice(i + 1).trim() };
   }
   return null;
+}
+
+/**
+ * The block's TOP-LEVEL KEY LINE, as one predicate every reader shares: the
+ * key's scalar (`""` when it has none) for a line that names it, and null for a
+ * line that does not.
+ *
+ * FOUR READERS ASK THIS QUESTION and they must not answer it differently. This
+ * module's parse walk opens its section on it, and `@issuegraph/writer` finds
+ * the section it is about to edit — and the block it is about to re-delimit —
+ * by it. A reader slightly more permissive than the walk selects a block the
+ * walk then refuses, so either a real declaration goes unread or a write hands
+ * back a body that does not parse.
+ *
+ * Three conditions, each load-bearing:
+ *
+ *   - INDENT ZERO. {@link readMappingEntry} trims, so it answers `issuegraph`
+ *     for an indented child too — and the walk opens a section only at the top
+ *     level, so a nested `issuegraph:` inside somebody else's mapping is not a
+ *     header.
+ *   - THE KEY, read by {@link readMappingEntry}, so a quoted spelling is the
+ *     same key here as it is everywhere else.
+ *   - COMMENTS STRIPPED FIRST, because the walk strips them before classifying.
+ *     `issuegraph:  # note` is a header with NO value, and a reader that
+ *     skipped this step would refuse it as though the comment were a value.
+ *
+ * THE SCALAR IS RETURNED RATHER THAN JUDGED, because its readers want different
+ * things from it: the walk reports a non-empty one as an unsupported inline
+ * value, while a writer refuses to splice into such a block for the same
+ * reason. Judging here would fix one reader's policy on both.
+ */
+export function topLevelKeyScalar(rawLine: string): string | null {
+  const line = stripComment(rawLine).trimEnd();
+  if (line.length !== line.trimStart().length) return null;
+  const entry = readMappingEntry(line);
+  return entry !== null && entry.key === FRONTMATTER_KEY ? entry.scalar : null;
 }
 
 /**
@@ -372,6 +460,19 @@ interface RawEntry {
 export type BlockDefect = 'unterminated' | 'undelimited';
 
 /**
+ * The code-fence lines §4.1 permits as display armor around the block. An
+ * opener may carry an info string (```yaml); a closer is bare.
+ *
+ * EXPORTED so a writer recognises the SAME armor this reader sees through. Two
+ * copies is a drift hazard with real consequences either way it drifts: a fence
+ * one skips and the other keeps gets delimited INTO the block, and one the
+ * other way gets left outside it.
+ */
+export const FENCE_OPEN = /^`{3,}[A-Za-z0-9-]*[ \t]*$/;
+export const FENCE_CLOSE = /^`{3,}[ \t]*$/;
+
+
+/**
  * The diagnostic each defect reports, as a table rather than a branch: the
  * parser's job here is to LOOK UP what it found, not to decide it again.
  * Adding a defect adds a row, and the type system requires the row.
@@ -393,10 +494,42 @@ const BLOCK_DEFECT_DIAGNOSTIC: Readonly<Record<BlockDefect, string>> = {
  * rests on (`ParseResult.diagnostics`). It is null only for a body
  * with no key at line start anywhere.
  */
-function extractBlockLines(body: string): {
-  lines: string[] | null;
-  defect: BlockDefect | null;
-} {
+export interface BlockLocation {
+  /** The block's interior lines (between the delimiters), or null when none. */
+  readonly lines: readonly string[] | null;
+  readonly defect: BlockDefect | null;
+  /**
+   * Index of the opening `---` in a newline split of `body`, or -1 when
+   * `lines` is null. A splice edits BYTE RANGES of the original body, so it
+   * needs where the block is and not only what it says — and re-deriving that
+   * with a second scan is how an editor and a parser come to disagree about
+   * which block is canonical.
+   */
+  readonly startLine: number;
+  /** Index of the closing `---`; -1 when `lines` is null. */
+  readonly endLine: number;
+}
+
+/**
+ * Locate the canonical issuegraph frontmatter block in an issue body: its raw
+ * interior lines and the delimiter line indices, or null lines when no `---`
+ * block carrying the key exists. Tolerates any prefix content (banners,
+ * callouts, a wrapping code fence): the scan is line-based, so fence lines are
+ * simply lines that are not `---`.
+ *
+ * Split the body on `\n` to use the indices — every line terminator this
+ * splits on contains one, so a `\r\n` body yields the same indices with the
+ * carriage returns left on the line ends where an editor must preserve them.
+ *
+ * When no block is returned, `defect` separates a body that MEANT to carry one
+ * from a body that never did — the distinction the whole `data: null` contract
+ * rests on ({@link ParseResult.diagnostics}). It is null only for a body with
+ * no key at line start anywhere.
+ *
+ * EXPORTED for `@issuegraph/writer`, which must edit the block this reader
+ * would read and no other.
+ */
+export function locateBlock(body: string): BlockLocation {
   const lines = body.split(/\r?\n/);
   let start = -1;
   for (let i = 0; i < lines.length; i++) {
@@ -407,7 +540,7 @@ function extractBlockLines(body: string): {
       }
       const block = lines.slice(start + 1, i);
       if (block.some((l) => FRONTMATTER_KEY_LINE.test(l))) {
-        return { lines: block, defect: null };
+        return { lines: block, defect: null, startLine: start, endLine: i };
       }
       // A `---` pair without the key: the NEXT `---` starts a new candidate
       // (markdown horizontal rules between sections behave this way).
@@ -417,7 +550,7 @@ function extractBlockLines(body: string): {
   // No closed block carried the key — but an OPEN delimiter followed by the
   // key with no closing `---` is a malformed block the writer meant to exist.
   if (start !== -1 && lines.slice(start + 1).some((l) => FRONTMATTER_KEY_LINE.test(l))) {
-    return { lines: null, defect: 'unterminated' };
+    return { lines: null, defect: 'unterminated', startLine: -1, endLine: -1 };
   }
   // The key is at a line's start SOMEWHERE, and no `---` pair ever
   // enclosed it — the form hand-authors overwhelmingly write, a bare ```yaml
@@ -456,9 +589,9 @@ function extractBlockLines(body: string): {
   // edge that put 336 issues in this state. A detector whose purpose is to end
   // silence must fail LOUD.
   if (lines.some((l) => FRONTMATTER_KEY_LINE.test(l))) {
-    return { lines: null, defect: 'undelimited' };
+    return { lines: null, defect: 'undelimited', startLine: -1, endLine: -1 };
   }
-  return { lines: null, defect: null };
+  return { lines: null, defect: null, startLine: -1, endLine: -1 };
 }
 
 /**
@@ -500,7 +633,7 @@ export function isUnreadDeclaration(parse: ParseResult): boolean {
  */
 export function parseFrontmatter(body: string): ParseResult {
   const diagnostics: string[] = [];
-  const extracted = extractBlockLines(body);
+  const extracted = locateBlock(body);
   if (extracted.lines === null) {
     if (extracted.defect !== null) diagnostics.push(BLOCK_DEFECT_DIAGNOSTIC[extracted.defect]);
     return { data: null, diagnostics, blockDefect: extracted.defect };
@@ -531,15 +664,17 @@ export function parseFrontmatter(body: string): ParseResult {
     }
 
     if (indent === 0) {
-      const topLevel = readMappingEntry(line);
-      if (topLevel !== null && topLevel.key === FRONTMATTER_KEY) {
+      // `topLevelKeyScalar`, the one predicate a writer locates this same
+      // section by. Spelling it here instead is how the two come to disagree.
+      const headerScalar = topLevelKeyScalar(line);
+      if (headerScalar !== null) {
         if (sectionSeen) {
           // A later claimant is ignored — and it also ENDS the active section,
           // or an adjacent duplicate's children would merge into the first.
           inSection = false;
           continue;
         }
-        if (topLevel.scalar.length > 0) {
+        if (headerScalar.length > 0) {
           // Flow-map or scalar value on the key itself is outside the subset.
           diagnostics.push(
             'issuegraph: inline value on the top-level key is outside the supported subset; block ignored',
