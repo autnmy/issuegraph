@@ -195,13 +195,29 @@ function asBaseRanking(value: unknown, at: string): IssueOrderBaseRanking {
  * shape: a rule owned elsewhere, restated here, and drifting. The ref grammar is
  * already asked rather than reimplemented; the number bound now is too.
  */
-function asIssueNumber(value: unknown, at: string): number {
-  const parsed = asInteger(value, at);
-  const ref = resolveRef(String(parsed));
+function isReferenceableId(value: number): boolean {
+  const ref = resolveRef(String(value));
   // COMPARED AS THE READER STORES IT. An identifier is an opaque string
   // (SPEC 4.2), so the round-trip through `resolveRef` comes back as text; the
   // CLI's own input schema keeps `number`, and this is the boundary.
-  if (ref === null || ref.id !== String(parsed)) {
+  return ref !== null && ref.id === String(value);
+}
+
+/**
+ * No tracker resolves a negative claim count, and the derivation reads
+ * `assigneeCount > 0` as "this serialize component is actively claimed" — so a
+ * negative one read as UNCLAIMED and admitted a second worker to a group whose
+ * whole purpose is to exclude one. The safe-integer half is the same bound every
+ * numeric field carries: past 2^53 a JSON number lost precision before this code
+ * saw it.
+ */
+function isAssigneeCount(value: number): boolean {
+  return Number.isSafeInteger(value) && value >= 0;
+}
+
+function asIssueNumber(value: unknown, at: string): number {
+  const parsed = asInteger(value, at);
+  if (!isReferenceableId(parsed)) {
     fail(at, `expected an issue number the reader can reference, got ${parsed}`);
   }
   return parsed;
@@ -237,6 +253,13 @@ function asRepoQualifier(value: unknown, at: string): string {
   return repo;
 }
 
+/** The parse-time reader for `assigneeCount`; the domain itself is {@link isAssigneeCount}'s. */
+function asAssigneeCount(value: unknown, at: string): number {
+  const parsed = asInteger(value, at);
+  if (!isAssigneeCount(parsed)) fail(at, `expected an integer >= 0, got ${parsed}`);
+  return parsed;
+}
+
 function asIssue(value: unknown, at: string): OrderInputIssue {
   const record = asRecord(value, at);
   const repo = record['repo'];
@@ -248,7 +271,7 @@ function asIssue(value: unknown, at: string): OrderInputIssue {
     ...(repo === undefined ? {} : { repo: repo === null ? null : asRepoQualifier(repo, `${at}.repo`) }),
     open: asBoolean(record['open'], `${at}.open`),
     labels: asStringArray(record['labels'], `${at}.labels`),
-    assigneeCount: asIntegerAtLeast(record['assigneeCount'], `${at}.assigneeCount`, 0),
+    assigneeCount: asAssigneeCount(record['assigneeCount'], `${at}.assigneeCount`),
     ...(closedStateReason === undefined
       ? {}
       : {
@@ -322,6 +345,67 @@ function duplicateKeyRefusal(document: OrderInputDocument): VerbResult | null {
 }
 
 /**
+ * The input domains the DERIVATION depends on, checked at the boundary both
+ * entry points share.
+ *
+ * IT LIVES HERE FOR THE REASON {@link duplicateKeyRefusal} ALREADY GIVES, and
+ * this is the second instance of that one class rather than a new rule. These
+ * bounds were enforced in `asOrderInput`, so `orderFromJson` had them and the
+ * exported `deriveOrder` — the same operation, reached directly — did not. A
+ * typed caller can hold an `OrderInputDocument` legitimately: `repo` is a
+ * `string`, `number` is a `number`, so `repo: "project"` and `number: 0`
+ * both compile, reach `nodeKey`, and rebuild the unreferenceable `project#7`
+ * key this package refuses everywhere else. Type-checking the FIELD is not
+ * checking its DOMAIN.
+ *
+ * THE PARSE-TIME READERS STAY, and are not a second copy of these rules. They
+ * narrow `unknown` and name the offending path for a JSON caller; the domain
+ * itself is owned by the three predicates both sides call, so there is one
+ * statement of each rule and two callers of it. On the JSON path `asOrderInput`
+ * simply refuses first, which is why that path's messages are unchanged.
+ *
+ * THE ORDER OF THE FIELDS IS THE ORDER `asIssue` READS THEM, so a document with
+ * two faults is reported the same way whichever entry point it arrives through.
+ */
+function inputDomainRefusal(document: OrderInputDocument): VerbResult | null {
+  // Phrased exactly as the parse-time failures are, and rendered exactly as
+  // `orderFromJson` renders an `InputError`, so one document cannot produce two
+  // differently-shaped reports depending on how it was supplied.
+  const refuse = (at: string, wanted: string): VerbResult => ({
+    stdout: '',
+    stderr: [`issuegraph: ${at}: ${wanted}`],
+    code: EXIT.usage,
+  });
+
+  if (document.homeRepo !== undefined && !isRepoQualifier(document.homeRepo)) {
+    return refuse(
+      'input.homeRepo',
+      `expected an owner/repo qualifier the reader can reference, got ${JSON.stringify(document.homeRepo)}`,
+    );
+  }
+
+  for (const [index, issue] of document.issues.entries()) {
+    const at = `input.issues[${index}]`;
+    if (!isReferenceableId(issue.number)) {
+      return refuse(`${at}.number`, `expected an issue number the reader can reference, got ${issue.number}`);
+    }
+    // `!= null` covers both spellings: an absent key and an explicit `null` are
+    // the SAME fact here — the issue is home-repo data — and neither is a repo
+    // to qualify. Only a supplied string is in this predicate's domain.
+    if (issue.repo != null && !isRepoQualifier(issue.repo)) {
+      return refuse(
+        `${at}.repo`,
+        `expected an owner/repo qualifier the reader can reference, got ${JSON.stringify(issue.repo)}`,
+      );
+    }
+    if (!isAssigneeCount(issue.assigneeCount)) {
+      return refuse(`${at}.assigneeCount`, `expected an integer >= 0, got ${issue.assigneeCount}`);
+    }
+  }
+  return null;
+}
+
+/**
  * Derive the order over a validated document.
  *
  * On an under-read body this does NOT refuse, and the asymmetry with `parse` is
@@ -334,6 +418,13 @@ function duplicateKeyRefusal(document: OrderInputDocument): VerbResult | null {
  * exception. The keys are reported so a caller can apply its own policy.
  */
 export function deriveOrder(document: OrderInputDocument, view: OrderView): VerbResult {
+  // DOMAIN BEFORE IDENTITY. `duplicateKeyRefusal` builds a `nodeKey` from the
+  // very fields checked here, so running it first would key a document this one
+  // is about to refuse — and report an unreferenceable key back to the caller as
+  // though it were a real one.
+  const domain = inputDomainRefusal(document);
+  if (domain !== null) return domain;
+
   const refusal = duplicateKeyRefusal(document);
   if (refusal !== null) return refusal;
 

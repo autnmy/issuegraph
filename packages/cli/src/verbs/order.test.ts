@@ -199,6 +199,55 @@ describe('every entry point to the derivation enforces the same preconditions', 
     assert.equal(first.stdout, second.stdout, 'the two entry points disagreed about the same document');
   });
 
+  /**
+   * THE SECOND INSTANCE OF THE CLASS THE BLOCK ABOVE NAMES, so it is a row here
+   * rather than a test of its own. Each of these bounds lived only in
+   * `asOrderInput`, so a caller holding an `OrderInputDocument` — which every
+   * one of these values type-checks against — reached the derivation without it.
+   * `repo: "project"` is the measured case: `nodeKey` builds `project#7`, which
+   * no issue body can reference.
+   */
+  const OUT_OF_DOMAIN: readonly (readonly [field: string, value: unknown])[] = [
+    ['repo', 'project'],
+    ['repo', 'owner/'],
+    ['number', 0],
+    ['number', -3],
+    ['number', 9007199254740992],
+    ['assigneeCount', -1],
+  ];
+
+  test('every entry point refuses a field outside its domain, not just the JSON one', () => {
+    for (const [field, value] of OUT_OF_DOMAIN) {
+      const bad = doc([{ ...issue(1, READABLE), [field]: value }]);
+      for (const [name, run] of ENTRY_POINTS) {
+        const result = run(bad);
+        assert.equal(result.code, EXIT.usage, `${name} accepted ${field}=${JSON.stringify(value)}`);
+        assert.equal(result.stdout, '', `${name} produced output for ${field}=${JSON.stringify(value)}`);
+      }
+    }
+  });
+
+  test('homeRepo is held to its domain at every entry point too', () => {
+    const parsed: unknown = JSON.parse(
+      JSON.stringify({ homeRepo: 'project', baseRanking: { source: 'config', order: [] }, issues: [issue(1, READABLE)] }),
+    );
+    const bad = parsed as OrderInputDocument;
+    for (const [name, run] of ENTRY_POINTS) {
+      assert.equal(run(bad).code, EXIT.usage, `${name} accepted homeRepo="project"`);
+    }
+  });
+
+  test('CONTROL: in-domain values still derive at every entry point', () => {
+    // Without this the two tests above pass for a package that refuses
+    // everything — and the qualified `repo` is the one that must NOT be caught.
+    for (const [field, value] of [['repo', 'owner/repo'], ['repo', null], ['number', 1], ['assigneeCount', 0]] as const) {
+      const ok = doc([{ ...issue(1, READABLE), [field]: value }, CLOSED_FIVE as unknown as Record<string, unknown>]);
+      for (const [name, run] of ENTRY_POINTS) {
+        assert.equal(run(ok).code, EXIT.ok, `${name} refused ${field}=${JSON.stringify(value)}`);
+      }
+    }
+  });
+
   test('the reported divergence is gone: no key is reported under-read AND ready', () => {
     // The exact shape review measured — readable body first, unreadable second.
     const clean = doc([issue(1, READABLE), CLOSED_FIVE as unknown as Record<string, unknown>]);
