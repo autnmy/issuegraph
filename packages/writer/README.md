@@ -66,6 +66,8 @@ if (next === null) {
 }
 ```
 
+**`null` means "prepend a fresh block", and that is only safe because it is never returned for a block that would lose fields.** A block that *reads* fine but cannot be edited line-by-line — a flow mapping, which is what a YAML serializer emits in flow style — **throws** instead. Prepending there would demote the original block under §4.1's first-block rule and silently drop every field the call did not own. Giving callers a value to branch on rather than an exception is [#27](https://github.com/autnmy/issuegraph/issues/27).
+
 **Ownership is per field and opt-in.** A field you *omit* is left byte-untouched. That distinction is load-bearing — round-tripping parsed values back through a splice would silently launder away unparseable items and exotic spellings the parser tolerates with a diagnostic, so omission is the honest "not mine" signal.
 
 **What a present `null` means is not uniform**, and the asymmetry is deliberate:

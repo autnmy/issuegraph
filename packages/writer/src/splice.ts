@@ -40,6 +40,7 @@ import {
   locateBlock,
   locateSection,
   parseFrontmatter,
+  type Frontmatter,
   type IssueRef,
 } from '@issuegraph/reader';
 
@@ -128,6 +129,17 @@ export interface GeneratedEdges {
   readonly duplicateOf?: IssueRef | null;
 }
 
+/**
+ * Whether a parsed declaration carries anything a prepend would lose.
+ *
+ * TOTAL OVER `Frontmatter` BY CONSTRUCTION rather than a list of fields to
+ * remember: every key is visited, so a field added to the format is covered the
+ * day it is added instead of the round somebody notices it is missing here.
+ */
+function carriesAnyField(data: Frontmatter): boolean {
+  return Object.values(data).some((value) => (Array.isArray(value) ? value.length > 0 : value !== null));
+}
+
 /** Whether this call owns the named field, per {@link GeneratedEdges}. */
 function owns(edges: GeneratedEdges, key: string): boolean {
   switch (key) {
@@ -166,12 +178,44 @@ export function spliceGeneratedEdges(body: string, edges: GeneratedEdges): strin
   const located = locateBlock(body);
   if (located.lines === null) return null;
   const section = locateSection(located.lines);
-  // A block whose YAML does not parse, whose `issuegraph` key is not a
-  // top-level mapping key, or whose section is not a mapping. Each is a block
-  // the READER also refuses, so splicing into it would hand back a body that
-  // does not parse while the caller believes its edge was written — the silent
-  // half-write this module exists to make impossible.
-  if (section === null) return null;
+  if (section === null) {
+    // TWO DIFFERENT SITUATIONS REACH HERE, and `null` is the right answer to
+    // only one of them.
+    //
+    //   - The block is one the READER also refuses (its YAML does not parse,
+    //     its key is not a top-level mapping key, its section is a scalar or a
+    //     sequence). Nothing readable is at stake, so `null` is correct and the
+    //     caller's documented prepend loses nothing.
+    //
+    //   - The block READS PERFECTLY WELL and merely cannot be edited LINE BY
+    //     LINE — a flow mapping, `{issuegraph: {blocked-by: ["#1"], priority: 1}}`,
+    //     which is what a YAML serializer emits in flow style. Returning `null`
+    //     there sends the caller down the same prepend path, and under §4.1's
+    //     first-block rule the prepended block becomes canonical while the
+    //     original is demoted — so every field this call did not own
+    //     (`priority`, `together-with`, an unrecognised extension) SILENTLY
+    //     disappears from the graph. Measured: exactly that, with zero
+    //     diagnostics on either side.
+    //
+    // This package's discipline for the second kind is already written down —
+    // a writer takes its caller's own data and fails LOUDLY rather than
+    // producing an issue whose graph lies. A silent field loss is that failure
+    // wearing a `null`, so it throws instead.
+    //
+    // ONLY WHEN SOMETHING WOULD ACTUALLY BE LOST. An empty section
+    // (`issuegraph: null`) is readable and carries no field, so prepending
+    // costs nothing and `null` stays correct for it.
+    const parse = parseFrontmatter(body);
+    if (parse.data !== null && carriesAnyField(parse.data)) {
+      throw new Error(
+        'issuegraph splice: this block is readable but not line-editable (its section is a flow mapping), ' +
+          'and it carries fields this call does not own. Returning null would send you down the prepend ' +
+          'fallback, which demotes the original block and silently drops those fields. Rewrite the block ' +
+          'from its parsed value instead, or leave it alone.',
+      );
+    }
+    return null;
+  }
 
   const lines = body.split('\n');
   const blockStart = located.startLine;

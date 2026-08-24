@@ -104,9 +104,44 @@ describe('spliceGeneratedEdges', () => {
     assert.deepEqual(parseFrontmatter(next).data?.blockedBy, [{ repo: null, id: '12' }]);
   });
 
-  it('refuses a block whose header carries an inline value, which the parser rejects', () => {
-    const body = ['---', 'issuegraph: { blocked-by: [7] }', '---', '', 'Body.'].join('\n');
-    assert.equal(spliceGeneratedEdges(body, NEW_EDGES), null);
+  it('THROWS on a readable block it cannot line-edit, rather than losing its fields', () => {
+    // THIS TEST'S PREMISE WENT STALE TWICE, and the correction is recorded
+    // rather than swapped. It used to assert `null` "because the parser rejects
+    // an inline value" — the parser now READS a flow mapping (it is what a YAML
+    // serializer emits in flow style), so that reason is simply false.
+    //
+    // And `null` turned out to be the wrong answer anyway. It is the caller's
+    // signal to PREPEND a fresh block, and under §4.1's first-block rule the
+    // prepended block becomes canonical while the original is demoted — so
+    // every field this call does not own silently disappears. Measured on this
+    // exact body: `priority` and `together-with` gone, zero diagnostics.
+    //
+    // A writer that would file a graph that lies fails loudly instead. That is
+    // this package's own stated discipline, applied to a loss that was wearing
+    // a `null`.
+    const body = [
+      '---',
+      '{issuegraph: {blocked-by: ["#7"], priority: 1, together-with: "#5"}}',
+      '---',
+      '',
+      'Body.',
+    ].join('\n');
+    assert.throws(() => spliceGeneratedEdges(body, NEW_EDGES), /not line-editable/);
+  });
+
+  it('but still returns null when the uneditable block has NOTHING to lose', () => {
+    // The throw is a data-loss guard, not a shape guard, so it must not fire
+    // where prepending costs the author nothing. Each of these is readable (or
+    // not) but carries no field, so `null` — and the caller's prepend — stays
+    // correct.
+    for (const body of [
+      ['---', '{issuegraph: {}}', '---', '', 'Body.'].join('\n'),
+      ['---', 'issuegraph: null', 'other: x', '---'].join('\n'),
+      ['---', 'issuegraph:', '  priority: 0', '  priority: 1', '---'].join('\n'),
+      'Just prose, no block at all.',
+    ]) {
+      assert.equal(spliceGeneratedEdges(body, NEW_EDGES), null, body);
+    }
   });
 
   it('refuses a child the parser will refuse, rather than writing a body that parses to nothing', () => {
