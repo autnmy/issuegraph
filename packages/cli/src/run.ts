@@ -54,6 +54,13 @@ export function help(): string {
 type Options = ReadonlyMap<string, readonly string[]>;
 
 /**
+ * A priority, as a caller may spell it on the command line: exactly one digit
+ * 0-3. Deliberately narrower than "something `Number()` can read" — see the use
+ * site for what that admitted.
+ */
+const PRIORITY_SPELLING = /^[0-3]$/;
+
+/**
  * Build the `set` fields from the options, or the refusal to return.
  *
  * A `--x` and `--no-x` pair given together is refused rather than resolved by
@@ -128,7 +135,19 @@ function collectSetFields(options: Options): Collected<SetFields> {
 
   const priority = options.get('--priority')?.[0];
   if (priority !== undefined) {
+    // VALIDATE THE SPELLING, THEN CONVERT — never convert and then validate.
+    // `Number()` is a coercion, not an integer parser: it reads `""` and a
+    // whitespace-only value as 0, which `isPriority` accepts, so `--priority=`
+    // silently wrote the HIGHEST urgency. It also accepts `0x2`, `1e0`, `2.0`
+    // and `+1`, each of which is a caller typing something they did not mean.
+    // A priority is one character from 0 to 3; anything else is a usage error.
+    if (!PRIORITY_SPELLING.test(priority)) {
+      return refused(usageResult(`set: --priority ${JSON.stringify(priority)} is not an integer 0-3`));
+    }
     const value = Number(priority);
+    // The vocabulary's own answer, kept as the second half of the pair: the
+    // spelling test bounds the input, `isPriority` bounds the RANGE, and the two
+    // stay in step because `@issuegraph/core` owns what a priority is.
     if (!isPriority(value)) {
       return refused(usageResult(`set: --priority ${JSON.stringify(priority)} is not an integer 0-3`));
     }

@@ -167,6 +167,64 @@ describe('a clear the writer cannot perform is refused on EVERY path', () => {
   });
 });
 
+describe('the write funnel — one gate, every path', () => {
+  /**
+   * ENUMERATED AS DATA so a new write operation is one row, and every
+   * precondition below is asserted over ALL of them rather than once per
+   * operation. Three review rounds each found the next write path missing the
+   * check the previous round added; this is that pattern's stop-condition.
+   */
+  const WRITE_OPERATIONS: readonly (readonly [name: string, run: (body: string, request: never) => ReturnType<typeof setFields>])[] = [
+    ['setFields', (body, request) => setFields(body, request)],
+    ['spliceEdges', (body, request) => spliceEdges(body, request)],
+  ];
+
+  const WITH_BLOCK = ['---', 'issuegraph:', '  blocked-by:', '    - 1', '  duplicate-of: 42', '---', '', 'Prose.'].join('\n');
+
+  test('every write operation refuses a request that asks for nothing', () => {
+    for (const [name, run] of WRITE_OPERATIONS) {
+      const result = run(WITH_BLOCK, {} as never);
+      assert.equal(result.code, EXIT.usage, `${name} accepted an empty request`);
+      assert.equal(result.stdout, '', `${name} wrote a body for an empty request`);
+    }
+  });
+
+  test('every write operation refuses a clear the writer cannot perform', () => {
+    for (const [name, run] of WRITE_OPERATIONS) {
+      const result = run(WITH_BLOCK, { duplicateOf: null } as never);
+      assert.equal(result.code, EXIT.refusedWrite, `${name} accepted an unperformable clear`);
+      assert.equal(result.stdout, '', `${name} wrote a body for a refused clear`);
+    }
+  });
+
+  test('every write operation refuses an unread block', () => {
+    for (const [name, run] of WRITE_OPERATIONS) {
+      const result = run(HAZARD_BODY, { blockedBy: [REF_7] } as never);
+      assert.equal(result.code, EXIT.unreadDeclaration, `${name} wrote into an unread block`);
+      assert.equal(result.stdout, '');
+    }
+  });
+
+  test('CONTROL: every write operation still performs an ordinary write', () => {
+    // Without this the three tests above would pass for a package that had
+    // simply stopped writing anything at all.
+    for (const [name, run] of WRITE_OPERATIONS) {
+      const result = run(WITH_BLOCK, { blockedBy: [REF_7] } as never);
+      assert.equal(result.code, EXIT.ok, `${name} refused a valid write`);
+      assert.deepEqual(edgesOf(result.stdout), [7], name);
+    }
+  });
+
+  test('the refusals are identical across paths, so they cannot drift apart', () => {
+    for (const request of [{}, { duplicateOf: null }]) {
+      const [a, b] = WRITE_OPERATIONS.map(([, run]) => run(WITH_BLOCK, request as never));
+      assert.ok(a !== undefined && b !== undefined);
+      assert.equal(a.code, b.code);
+      assert.deepEqual(a.stderr, b.stderr);
+    }
+  });
+});
+
 describe('splice', () => {
   test('an owned field present replaces its entries', () => {
     const result = spliceEdges(QUOTED_BODY, { blockedBy: [REF_1] });

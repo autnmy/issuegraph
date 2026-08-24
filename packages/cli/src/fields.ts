@@ -115,6 +115,37 @@ export function unperformableClear(edges: {
   return null;
 }
 
+/**
+ * Why a write request cannot proceed, or `null` when it can.
+ *
+ * THIS IS THE CLASS THIS PACKAGE KEPT REBUILDING, so it is worth stating once.
+ * Review found, over three rounds: a `--no-` flag for a clear the writer cannot
+ * perform; an unrecognised `--edges` key ignored; the same clear reaching the
+ * exported `spliceEdges`; and an empty edge object accepted. Four spellings of
+ * ONE defect — **a write that accepts a request it does not act on and exits 0**
+ * — and each fix added the missing check at the one site that lacked it, which
+ * is precisely why the next round found the next site.
+ *
+ * So the preconditions stop being per-site. Every write request is judged here,
+ * and `performWrite` in `verbs/write.ts` is the only way to reach the writer, so
+ * a new write path inherits both questions by construction rather than by its
+ * author remembering them.
+ */
+export type WriteRefusal =
+  | { readonly kind: 'nothing-requested' }
+  | { readonly kind: 'unperformable-clear'; readonly field: WritableField };
+
+export function writeRequestRefusal(request: {
+  readonly decomposedFrom?: unknown;
+  readonly duplicateOf?: unknown;
+}): WriteRefusal | null {
+  // A request naming no field asks for nothing. Returning the body unchanged at
+  // exit 0 would tell a caller an edit happened; there is no edit.
+  if (Object.keys(request).length === 0) return { kind: 'nothing-requested' };
+  const field = unperformableClear(request);
+  return field === null ? null : { kind: 'unperformable-clear', field };
+}
+
 /** Why a clear is refused, phrased once so every refusal says the same thing. */
 export function clearRefusalReason(field: string): string {
   return (

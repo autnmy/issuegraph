@@ -143,6 +143,40 @@ describe('splice --edges validates its payload', () => {
   });
 });
 
+describe('--priority is validated as a SPELLING, not coerced', () => {
+  const BODY = 'Prose with no block.';
+
+  function priorityOf(result: ReturnType<typeof run>): string | null {
+    const found = /priority: (\d+)/.exec(result.stdout);
+    return found?.[1] ?? null;
+  }
+
+  test('every non-canonical spelling is refused', () => {
+    // `Number()` is a coercion, not a parser. Each of these produced a silently
+    // WRONG priority; the empty one wrote 0, the highest urgency there is.
+    for (const value of ['', ' ', '  ', '0x2', '1e0', '2.0', '+1', '-0', '03', '4', 'one']) {
+      const result = run(['set', `--priority=${value}`], BODY);
+      assert.equal(result.code, EXIT.usage, `--priority=${JSON.stringify(value)} was accepted`);
+      assert.equal(priorityOf(result), null, `--priority=${JSON.stringify(value)} wrote a value`);
+    }
+  });
+
+  test('CONTROL: every canonical spelling still works, and writes what it says', () => {
+    for (const value of ['0', '1', '2', '3']) {
+      const result = run(['set', `--priority=${value}`], BODY);
+      assert.equal(result.code, EXIT.ok, `--priority=${value} was refused`);
+      assert.equal(priorityOf(result), value);
+    }
+  });
+
+  test('the empty spelling does not become the highest priority', () => {
+    // The specific harm, pinned on its own: a caller who typed `--priority=` and
+    // walked away must not have reordered the backlog.
+    const result = run(['set', '--priority='], BODY);
+    assert.notEqual(priorityOf(result), '0');
+  });
+});
+
 describe('dispatch routes the non-verb forms', () => {
   test('--help exits 0 and mentions the boundary rule', () => {
     const result = dispatch(parseArgv(['--help']), { primary: '' }, '9.9.9');

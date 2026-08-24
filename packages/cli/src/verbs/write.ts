@@ -42,7 +42,9 @@ import { parseFrontmatter } from '@issuegraph/reader';
 import type { Evidence } from '@issuegraph/core';
 
 import { classifyDeclaration, unreadErrorLines } from '../declaration.ts';
-import { clearRefusalReason, unperformableClear } from '../fields.ts';
+import type { Declaration } from '../declaration.ts';
+import { clearRefusalReason, writeRequestRefusal } from '../fields.ts';
+import type { WriteRefusal } from '../fields.ts';
 import { EXIT } from '../exit.ts';
 import type { VerbResult } from '../exit.ts';
 
@@ -88,30 +90,65 @@ function toGeneratedEdges(fields: SetFields): GeneratedEdges {
 }
 
 /**
- * Built per call rather than shared. A module-level constant is `readonly` to
- * TypeScript and mutable at runtime, so one caller reaching into `stderr` would
- * change what every later caller reports.
- */
-/**
- * The refusal, built where the request arrives.
+ * Render a precondition refusal.
  *
- * Every write path shares it so the message and the exit code cannot diverge
- * between the command line and the library.
+ * Built per call rather than shared as a constant: `readonly` is compile-time
+ * only, so one caller reaching into `stderr` would change what every later
+ * caller reports.
  */
-function refuseClear(field: string): VerbResult {
+function refuse(refusal: WriteRefusal): VerbResult {
+  if (refusal.kind === 'nothing-requested') {
+    return {
+      stdout: '',
+      stderr: ['issuegraph: no fields were given, so there is nothing to write'],
+      code: EXIT.usage,
+    };
+  }
   return {
     stdout: '',
-    stderr: [`issuegraph: refusing to write — ${clearRefusalReason(field)}`],
+    stderr: [`issuegraph: refusing to write — ${clearRefusalReason(refusal.field)}`],
     code: EXIT.refusedWrite,
   };
 }
 
-function nothingToDo(): VerbResult {
-  return {
-    stdout: '',
-    stderr: ['issuegraph: no fields were given, so there is nothing to write'],
-    code: EXIT.usage,
-  };
+/**
+ * THE ONLY WAY TO REACH THE WRITER.
+ *
+ * It owns the questions every write shares — does the request ask for anything,
+ * is what it asks for performable, and was the block readable — and answers them
+ * BEFORE `perform` runs. A write path written through this cannot skip them, so
+ * the guarantee is structural rather than a rule each author has to remember.
+ *
+ * That is the point. Review found four spellings of one defect across three
+ * rounds, and every fix added the missing check at the one site that lacked it,
+ * which is exactly why the next round found the next site. The check is not
+ * per-site any more.
+ *
+ * What it deliberately does NOT own is each verb's declaration-state policy:
+ * `set` renders into an absent body and refuses an inert one, `splice` lets the
+ * writer's own null return speak. Those genuinely differ, and folding them in
+ * would make the funnel a place where behaviour hides.
+ */
+function performWrite(
+  body: string,
+  request: { readonly decomposedFrom?: unknown; readonly duplicateOf?: unknown },
+  perform: (declaration: Declaration) => VerbResult,
+): VerbResult {
+  const refusal = writeRequestRefusal(request);
+  if (refusal !== null) return refuse(refusal);
+
+  const decl = classifyDeclaration(parseFrontmatter(body));
+  if (decl.state === 'unread') {
+    return {
+      stdout: '',
+      stderr: [
+        ...unreadErrorLines(decl.diagnostics),
+        'issuegraph: refusing to write — editing a block that could not be read would replace entries this run never saw',
+      ],
+      code: EXIT.unreadDeclaration,
+    };
+  }
+  return perform(decl);
 }
 
 /**
@@ -124,87 +161,74 @@ function nothingToDo(): VerbResult {
  * is the repair, and the message says so.
  */
 export function setFields(body: string, fields: SetFields): VerbResult {
-  if (Object.keys(fields).length === 0) return nothingToDo();
-
-  const decl = classifyDeclaration(parseFrontmatter(body));
-
-  if (decl.state === 'unread') {
-    return {
-      stdout: '',
-      stderr: [
-        ...unreadErrorLines(decl.diagnostics),
-        'issuegraph: refusing to write — editing a block that could not be read would replace entries this run never saw',
-      ],
-      code: EXIT.unreadDeclaration,
-    };
-  }
-
-  if (decl.state === 'inert') {
-    return {
-      stdout: '',
-      stderr: [
-        `issuegraph: refusing to write — a block key is present but no \`---\` pair delimits it (${decl.blockDefect}), and prepending a second block would leave two declarations. Run \`issuegraph backfill\` first.`,
-      ],
-      code: EXIT.refusedWrite,
-    };
-  }
-
-  if (decl.state === 'read') {
-    // A CLEAR THE WRITER CANNOT PERFORM IS REFUSED HERE, not only in the flag
-    // table. The flags are one caller; this package is importable, so a program
-    // holding `SetFields` reaches the same assignment, and refusing only at the
-    // command line would leave the silent no-op available through the library.
-    const unclearable = [
-      ['decomposed-from', fields.decomposedFrom],
-      ['duplicate-of', fields.duplicateOf],
-    ] as const;
-    for (const [field, value] of unclearable) {
-      if (value === null) {
-        return {
-          stdout: '',
-          stderr: [`issuegraph: refusing to write — ${clearRefusalReason(field)}`],
-          code: EXIT.refusedWrite,
-        };
-      }
-    }
-
-    const renderOnly = renderOnlyRequested(fields);
-    if (renderOnly.length > 0) {
+  return performWrite(body, fields, (decl) => {
+    if (decl.state === 'inert') {
       return {
         stdout: '',
         stderr: [
-          `issuegraph: refusing to write ${renderOnly.join(', ')} into an existing block — the writer's splice surface owns generated edges only (blocked-by, serialize-with, decomposed-from, duplicate-of).`,
-          `  ${RENDER_ONLY_FIELDS.join(', ')} can be written when the body has no block yet, but not amended in one that has.`,
+          `issuegraph: refusing to write — a block key is present but no \`---\` pair delimits it (${decl.blockDefect}), and prepending a second block would leave two declarations. Run \`issuegraph backfill\` first.`,
         ],
         code: EXIT.refusedWrite,
       };
     }
-    const spliced = spliceGeneratedEdges(body, toGeneratedEdges(fields));
-    if (spliced === null) {
-      return {
-        stdout: '',
-        stderr: ['issuegraph: refusing to write — the writer could not edit this block and keep it readable'],
-        code: EXIT.refusedWrite,
-      };
-    }
-    return { stdout: spliced, stderr: [], code: EXIT.ok };
-  }
 
-  // `absent`: render a fresh block and prepend it, in the canonical position.
-  const block = renderFrontmatter({
-    ...(fields.blockedBy === undefined ? {} : { blockedBy: fields.blockedBy }),
-    ...(fields.serializeWith === undefined ? {} : { serializeWith: fields.serializeWith }),
-    ...(fields.decomposedFrom === undefined ? {} : { decomposedFrom: fields.decomposedFrom }),
-    ...(fields.duplicateOf === undefined ? {} : { duplicateOf: fields.duplicateOf }),
-    ...(fields.togetherWith === undefined ? {} : { togetherWith: fields.togetherWith }),
-    ...(fields.priority === undefined ? {} : { priority: fields.priority }),
-    ...(fields.evidence === undefined ? {} : { evidence: fields.evidence }),
+    if (decl.state === 'read') {
+      // A CLEAR THE WRITER CANNOT PERFORM IS REFUSED HERE, not only in the flag
+      // table. The flags are one caller; this package is importable, so a program
+      // holding `SetFields` reaches the same assignment, and refusing only at the
+      // command line would leave the silent no-op available through the library.
+      const unclearable = [
+        ['decomposed-from', fields.decomposedFrom],
+        ['duplicate-of', fields.duplicateOf],
+      ] as const;
+      for (const [field, value] of unclearable) {
+        if (value === null) {
+          return {
+            stdout: '',
+            stderr: [`issuegraph: refusing to write — ${clearRefusalReason(field)}`],
+            code: EXIT.refusedWrite,
+          };
+        }
+      }
+
+      const renderOnly = renderOnlyRequested(fields);
+      if (renderOnly.length > 0) {
+        return {
+          stdout: '',
+          stderr: [
+            `issuegraph: refusing to write ${renderOnly.join(', ')} into an existing block — the writer's splice surface owns generated edges only (blocked-by, serialize-with, decomposed-from, duplicate-of).`,
+            `  ${RENDER_ONLY_FIELDS.join(', ')} can be written when the body has no block yet, but not amended in one that has.`,
+          ],
+          code: EXIT.refusedWrite,
+        };
+      }
+      const spliced = spliceGeneratedEdges(body, toGeneratedEdges(fields));
+      if (spliced === null) {
+        return {
+          stdout: '',
+          stderr: ['issuegraph: refusing to write — the writer could not edit this block and keep it readable'],
+          code: EXIT.refusedWrite,
+        };
+      }
+      return { stdout: spliced, stderr: [], code: EXIT.ok };
+    }
+
+    // `absent`: render a fresh block and prepend it, in the canonical position.
+    const block = renderFrontmatter({
+      ...(fields.blockedBy === undefined ? {} : { blockedBy: fields.blockedBy }),
+      ...(fields.serializeWith === undefined ? {} : { serializeWith: fields.serializeWith }),
+      ...(fields.decomposedFrom === undefined ? {} : { decomposedFrom: fields.decomposedFrom }),
+      ...(fields.duplicateOf === undefined ? {} : { duplicateOf: fields.duplicateOf }),
+      ...(fields.togetherWith === undefined ? {} : { togetherWith: fields.togetherWith }),
+      ...(fields.priority === undefined ? {} : { priority: fields.priority }),
+      ...(fields.evidence === undefined ? {} : { evidence: fields.evidence }),
+    });
+    if (block === null) {
+      // Every requested field was a clear, and there was nothing to clear.
+      return { stdout: body, stderr: ['issuegraph: nothing to write; the body has no block and every field given was a clear'], code: EXIT.ok };
+    }
+    return { stdout: `${block}\n\n${body}`, stderr: [], code: EXIT.ok };
   });
-  if (block === null) {
-    // Every requested field was a clear, and there was nothing to clear.
-    return { stdout: body, stderr: ['issuegraph: nothing to write; the body has no block and every field given was a clear'], code: EXIT.ok };
-  }
-  return { stdout: `${block}\n\n${body}`, stderr: [], code: EXIT.ok };
 }
 
 /**
@@ -215,41 +239,19 @@ export function setFields(body: string, fields: SetFields): VerbResult {
  * contract surfaced at the process boundary.
  */
 export function spliceEdges(body: string, edges: GeneratedEdges): VerbResult {
-  // THE EXPORTED PATH NEEDS THE SAME REFUSAL AS `setFields`. This takes the
-  // writer's own `GeneratedEdges`, where `null` legitimately means "leave
-  // untouched" — which is why the first fix for this class stopped short here.
-  // That reasoning was wrong for one decisive reason: OMITTING the key already
-  // means untouched, so `null` is a redundant spelling with no intent of its own
-  // and the only thing a caller can plausibly mean by it is "clear". Refusing it
-  // therefore breaks no legitimate use, and accepting it returns the body
-  // unchanged at exit 0 to a caller who asked for a removal.
-  const unperformable = unperformableClear(edges);
-  if (unperformable !== null) return refuseClear(unperformable);
-
-  const decl = classifyDeclaration(parseFrontmatter(body));
-
-  if (decl.state === 'unread') {
-    return {
-      stdout: '',
-      stderr: [
-        ...unreadErrorLines(decl.diagnostics),
-        'issuegraph: refusing to splice — editing a block that could not be read would replace entries this run never saw',
-      ],
-      code: EXIT.unreadDeclaration,
-    };
-  }
-
-  const spliced = spliceGeneratedEdges(body, edges);
-  if (spliced === null) {
-    return {
-      stdout: '',
-      stderr: [
-        'issuegraph: refusing to splice — this body carries no delimited block to edit. `issuegraph set` prepends one; `issuegraph backfill` repairs an undelimited one.',
-      ],
-      code: EXIT.refusedWrite,
-    };
-  }
-  return { stdout: spliced, stderr: [], code: EXIT.ok };
+  return performWrite(body, edges, () => {
+    const spliced = spliceGeneratedEdges(body, edges);
+    if (spliced === null) {
+      return {
+        stdout: '',
+        stderr: [
+          'issuegraph: refusing to splice — this body carries no delimited block to edit. `issuegraph set` prepends one; `issuegraph backfill` repairs an undelimited one.',
+        ],
+        code: EXIT.refusedWrite,
+      };
+    }
+    return { stdout: spliced, stderr: [], code: EXIT.ok };
+  });
 }
 
 /**
