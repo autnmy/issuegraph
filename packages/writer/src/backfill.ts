@@ -121,7 +121,13 @@ interface InertRegion {
 }
 
 /** Why a body was not repairable, when the reason is the SHAPE rather than the content. */
-type LocateRefusal = 'no-key' | 'ambiguous-key' | 'unfenced' | 'half-fenced' | 'undecidable-fence' | 'fence-mismatch';
+type LocateRefusal =
+  | 'no-key'
+  | 'ambiguous-key'
+  | 'unfenced'
+  | 'block-not-flush-with-fence'
+  | 'undecidable-fence'
+  | 'fence-mismatch';
 
 /**
  * What each refusal reports, as a table rather than a branch — the same shape
@@ -133,7 +139,16 @@ const LOCATE_REFUSAL_DIAGNOSTIC: Readonly<Record<LocateRefusal, string>> = {
   'ambiguous-key':
     'backfill: more than one issuegraph key at a line start; one of them may be a documentation example, and choosing is not this tool’s call',
   unfenced: 'backfill: the key is not inside a code fence, so nothing establishes it as frontmatter rather than prose',
-  'half-fenced': 'backfill: the block has a fence on one side only, so replacing it would strand the other half',
+  // NAMED FOR WHAT IS ACTUALLY TRUE. This used to say "the block has a fence on
+  // one side only", and that sentence was false EVERY time it fired: an
+  // established enclosing pair is a precondition of reaching it, because a
+  // genuinely one-sided fence returns `unfenced` or `undecidable-fence` further
+  // up. What it really detects is content between the block and its fence that
+  // this walk will not pull inside the `---` pair — prose, or another tool's
+  // top-level key. Sending a reader to look for a missing fence wastes the one
+  // thing a refusal is for.
+  'block-not-flush-with-fence':
+    'backfill: the fence around this block is established, but something between the block and that fence is neither blank nor a comment, and this walk will not pull it inside the delimiters',
   'undecidable-fence':
     'backfill: this body’s code-fence structure is not one this walk can establish, so whether the key sits inside a fence cannot be answered',
   'fence-mismatch': 'backfill: the fence around the key is not the one the body’s fence structure pairs it with',
@@ -345,10 +360,22 @@ function locateInertRegion(lines: readonly string[]): InertRegion | LocateRefusa
   while (closer < lines.length && (lines[closer] ?? '').trim().length === 0) closer++;
   const hasCloser = closer < lines.length && FENCE_CLOSE.test(lines[closer] ?? '');
 
-  // An established fence encloses the key, so BOTH ends must be found here too.
-  // Missing either means this local search cannot say where the fence begins or
-  // ends, and replacing part of it would strand the other half as a stray fence.
-  if (!hasOpener || !hasCloser) return 'half-fenced';
+  // AN ESTABLISHED FENCE ENCLOSES THE KEY, so failing to reach it from here does
+  // not mean a fence is missing — it means something is IN THE WAY. The local
+  // search deliberately crosses only blanks and YAML comments, so it stops at
+  // prose, and at another tool's top-level key.
+  //
+  // STOPPING AT A SIBLING TOP-LEVEL KEY IS A KNOWN RECALL LIMIT, not a claim
+  // that such a block is malformed: §4.1 explicitly permits other tools' keys in
+  // the same frontmatter, and this refuses to repair one. Widening the scan to
+  // the enclosing fence's own boundaries is the obvious remedy and is NOT taken
+  // here, because that is the one thing the narrow span exists to prevent — it
+  // pairs across prose and would pull it inside the delimiters, promoting text
+  // into frontmatter. Admitting sibling keys without admitting prose needs a
+  // discriminator, and a `Word: text` line of prose satisfies every cheap one.
+  // That design question is #19; the refusal below is the safe direction
+  // meanwhile, and it now says what is actually true.
+  if (!hasOpener || !hasCloser) return 'block-not-flush-with-fence';
 
   // THE TWO READINGS MUST AGREE, AND THE SPAN COMES FROM THE LOCAL ONE. The
   // local search is the narrower of the two: it stops at the first line that is

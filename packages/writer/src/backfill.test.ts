@@ -313,8 +313,49 @@ describe('backfillFrontmatter', () => {
 
     assert.equal(result.outcome, 'unrecoverable');
     assert.equal(result.body, body);
-    assert.ok(result.diagnostics.join(' ').includes('fence on one side only'));
+    // THE REFUSAL MUST SAY WHAT IS TRUE. This body's fences DO pair — an
+    // established enclosing pair is a precondition of reaching this arm at all,
+    // since a genuinely one-sided fence is refused further up as `unfenced` or
+    // `undecidable-fence`. So the old "fence on one side only" wording was false
+    // every time it fired, and it sent a reader looking for a fence that is
+    // right there.
+    assert.ok(result.diagnostics.join(' ').includes('something between the block and that fence'));
+    assert.ok(
+      !result.diagnostics.join(' ').includes('fence on one side only'),
+      'the refusal must not claim a fence is missing when both are established',
+    );
   });
+
+  // §4.1 permits another tool's top-level keys in the same frontmatter. This
+  // walk refuses to repair a block that carries one, because the local scan
+  // crosses only blanks and comments — a KNOWN RECALL LIMIT, tracked as #19,
+  // and deliberately not closed by widening the scan to the enclosing fence,
+  // which is the one thing the narrow span exists to prevent.
+  //
+  // Pinned so the limit is a decision with a stated cost rather than a surprise,
+  // and so the diagnostic keeps naming the real reason.
+  for (const [name, body] of [
+    [
+      'a sibling top-level key BEFORE the section',
+      ['```yaml', 'labels-hint: platform', 'issuegraph:', '  blocked-by: [7]', '```', '', 'Prose.'].join('\n'),
+    ],
+    [
+      'a sibling top-level key AFTER the section',
+      ['```yaml', 'issuegraph:', '  blocked-by: [7]', 'labels-hint: platform', '```', '', 'Prose.'].join('\n'),
+    ],
+  ] as const) {
+    it(`refuses ${name}, and says why rather than blaming the fence`, () => {
+      const result = backfillFrontmatter(body);
+
+      assert.equal(result.outcome, 'unrecoverable');
+      assert.equal(result.body, body, 'a refusal writes nothing at all');
+      assert.ok(result.diagnostics.join(' ').includes('something between the block and that fence'));
+      assert.ok(
+        !result.diagnostics.join(' ').includes('fence on one side only'),
+        'both fences are established here; the refusal must not claim otherwise',
+      );
+    });
+  }
 });
 
 // THE SHAPES A PARITY COUNT GOT WRONG, AND THE CLASS AROUND THEM. Parity treated
@@ -560,7 +601,7 @@ describe('the strict key rule decides what counts as a header', () => {
     const body = ['```yaml', '""issuegraph:', '"issuegraph":', '  blocked-by: [7]', '```'].join('\n');
     const r = backfillFrontmatter(body);
     assert.notEqual(r.outcome, 'delimited');
-    assert.ok(r.diagnostics.join(' ').includes('fence on one side only'));
+    assert.ok(r.diagnostics.join(' ').includes('something between the block and that fence'));
     assert.ok(!r.diagnostics.join(' ').includes('more than one issuegraph key'));
   });
 
