@@ -76,9 +76,39 @@ import { renderRef } from './render.ts';
  *     non-null data AND a diagnostic, and refusing there would destroy the
  *     preservation guarantee one field over.
  */
-function readableOrNull(next: string): string | null {
-  const parse = parseFrontmatter(next);
-  return parse.data === null && parse.diagnostics.length > 0 ? null : next;
+function readableOrNull(body: string, next: string, intent: 'edit' | 'remove'): string | null {
+  const after = parseFrontmatter(next);
+
+  // A SPLICE MUST NEVER TURN A READABLE DECLARATION INTO AN UNREADABLE ONE,
+  // and this comparison is what makes the control total rather than partial.
+  //
+  // The predicate below cannot see the worst case on its own, because it asks
+  // only about the RESULT: a body whose block the edit destroyed so thoroughly
+  // that it is no longer discoverable parses as `data: null` with NO
+  // diagnostic — absence is silent by design — which is indistinguishable from
+  // "this body never had a block" and slips straight through. Measured: an
+  // explicit-key section (`? issuegraph` / `:` / `  priority: 1`) spliced for
+  // `blocked-by` handed back a NON-NULL body in which the requested edge was
+  // not written, `priority` was gone, and the reader reported no declaration at
+  // all — the caller told it had succeeded. That is the silent half-write this
+  // module's contract says it makes impossible.
+  //
+  // Asking whether the block was readable BEFORE closes it: destroying a
+  // declaration is a failed write whatever the wreckage looks like afterwards.
+  // The `before` parse is the only way to tell that from a body that never
+  // declared anything, and the whole-block REMOVAL path below is why it is a
+  // comparison rather than a flat refusal of `data: null`.
+  //
+  // THE INTENT IS PASSED IN RATHER THAN INFERRED, because the whole-block
+  // REMOVAL path legitimately ends with no declaration at all — inferring
+  // "the block vanished, so the edit failed" would refuse the one success
+  // whose correct outcome is an absent block.
+  if (intent === 'edit') {
+    const before = parseFrontmatter(body);
+    if (before.data !== null && after.data === null) return null;
+  }
+
+  return after.data === null && after.diagnostics.length > 0 ? null : next;
 }
 
 /**
@@ -258,7 +288,7 @@ export function spliceGeneratedEdges(body: string, edges: GeneratedEdges): strin
         to += 1;
       }
       if (to + 1 < lines.length && (lines[to + 1] as string).trim() === '') to += 1;
-      return readableOrNull([...lines.slice(0, from), ...lines.slice(to + 1)].join('\n'));
+      return readableOrNull(body, [...lines.slice(0, from), ...lines.slice(to + 1)].join('\n'), 'remove');
     }
     // The section emptied but sibling top-level content remains: drop the bare
     // `issuegraph:` header, keep the rest of the block.
@@ -267,5 +297,9 @@ export function spliceGeneratedEdges(body: string, edges: GeneratedEdges): strin
     if (headerAt !== -1) interior.splice(headerAt, 1);
   }
 
-  return readableOrNull([...lines.slice(0, blockStart + 1), ...interior, ...lines.slice(blockEnd)].join('\n'));
+  return readableOrNull(
+    body,
+    [...lines.slice(0, blockStart + 1), ...interior, ...lines.slice(blockEnd)].join('\n'),
+    ins.length === 0 && sectionSurvivors === 0 ? 'remove' : 'edit',
+  );
 }

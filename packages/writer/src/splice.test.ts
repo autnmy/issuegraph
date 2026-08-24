@@ -481,3 +481,45 @@ describe('the splice verifies its own output', () => {
     );
   });
 });
+
+describe('the positive control is comparative, not just a shape test', () => {
+  it('refuses a splice that DESTROYS a readable declaration, even silently', () => {
+    // THE HOLE THIS CLOSES. The control used to ask only about the RESULT:
+    // `data === null` WITH a diagnostic. A body whose block the edit wrecked so
+    // thoroughly that it is no longer discoverable parses as `data: null` with
+    // NO diagnostic — absence is silent by design — so it slipped straight
+    // through and the caller was handed a NON-NULL body and told it succeeded.
+    //
+    // Measured on this input before the fix: the requested edge was not
+    // written, `priority` was gone, and the reader reported no declaration at
+    // all. That is the silent half-write this module's contract says it makes
+    // impossible, arriving through the control meant to prevent it.
+    const body = ['---', '? issuegraph', ':', '  priority: 1', '---', '', 'Body.'].join('\n');
+    assert.notEqual(parseFrontmatter(body).data, null, 'the reader can read this before the splice');
+
+    const next = spliceGeneratedEdges(body, { blockedBy: [{ repo: null, id: '9' }] });
+    assert.equal(next, null, 'so a splice that would destroy it must refuse rather than hand back wreckage');
+  });
+
+  it('CONTROL: whole-block REMOVAL still succeeds, which is why intent is passed in', () => {
+    // Removal legitimately ends with no declaration. Inferring "the block
+    // vanished, so the edit failed" would refuse the one success whose correct
+    // outcome is an absent block — so the intent is threaded rather than
+    // guessed from the result.
+    const body = ['---', 'issuegraph:', '  blocked-by:', '    - "#1"', '---', '', 'Body.'].join('\n');
+    const next = spliceGeneratedEdges(body, { blockedBy: [] });
+    assert.notEqual(next, null);
+    assert.equal(parseFrontmatter(next as string).data, null, 'the block is gone, which is the point');
+    assert.deepEqual(parseFrontmatter(next as string).diagnostics, []);
+  });
+
+  it('CONTROL: an ordinary edit still round-trips', () => {
+    // The comparative check must not refuse the common path.
+    const body = ['---', 'issuegraph:', '  blocked-by:', '    - "#1"', '  priority: 1', '---', '', 'Body.'].join('\n');
+    const next = spliceGeneratedEdges(body, { blockedBy: [{ repo: null, id: '9' }] }) as string;
+    const parse = parseFrontmatter(next);
+    assert.deepEqual(parse.data?.blockedBy, [{ repo: null, id: '9' }]);
+    assert.equal(parse.data?.priority, 1, 'the unowned field survived');
+    assert.deepEqual(parse.diagnostics, []);
+  });
+});

@@ -1125,6 +1125,7 @@ function isLineEditableSection(value: unknown): boolean {
   return isMap(value) && value.flow !== true;
 }
 
+
 /** A pair's key as a plain string, or null when it is not a scalar string key. */
 function scalarKey(pair: Pair<unknown, unknown>): string | null {
   const key = pair.key;
