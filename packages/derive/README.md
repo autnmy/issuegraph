@@ -43,7 +43,7 @@ A **together unit occupies one slot**, not one per member (§4.3.7) — the grou
 
 A **held slot keeps its position and carries `rank: null`.** It is not moved to the end, and it never carries a number: *"why isn't my P1 running"* has to be answerable at the rank the work would have taken, and a claim-time selector that simply drops held work deletes exactly that. `holdReasons` names each failed condition.
 
-`promotedBy` names the neighbour the urgency arrived through, and reads **exactly** the edges the model read — an edge naming a duplicate is attributed to its canonical, and a duplicate's own edges are ignored. Over-refusing is safe for a pre-write guard and wrong for provenance: it would name a cause that did not act.
+`promotedBy` names the neighbour the urgency arrived through — along **both** paths §6.3 relaxes, `blocked-by` *and* `together-with`, since a P3 grouped with a P0 is genuinely promoted and a blocked-by-only index would report that with nothing to show for it. It reads **exactly** the edges the model read — an edge naming a duplicate is attributed to its canonical, and a duplicate's own edges are ignored. Over-refusing is safe for a pre-write guard and wrong for provenance: it would name a cause that did not act.
 
 **Group sizes are computed, never read.** No issue writes its group down (§4.3.4, §4.3.7). Both sizes count live candidates only, so a serialize partner that shipped stops counting, exactly as a closed together member does.
 
@@ -58,6 +58,8 @@ wouldCycleOnBlockedBy(issues, from, to, { homeRepo });   // true = refuse the wr
 Synchronous by signature — no client, no handle, no promise — which is what makes *zero round-trips* a property of the contract rather than of an optimization. An edge that closes a cycle produces a component no member of which can ever be ready (§6.6), and once written nobody can unstick it.
 
 **Duplicates resolve the model's way.** §4.3.3 makes an edge naming a duplicate name its *canonical*, and the walk follows the same resolution — through `Model.duplicateCanonical`, not a second duplicate-chain walk. Skip it and the guard fails open: with `#30` duplicating `#10`, the model reads *"#20 blocked-by #30"* as *"#20 blocked-by #10"*, so `#10 blocked-by #20` closes a cycle a raw walk never finds.
+
+**That applies to the two arguments as well as to the stored edges**, and each is walked under *both* spellings — the key as given and its canonical. Resolving only the stored edges leaves `from` and `to` in a different key space from the edges they are compared against, so `#20 blocked-by #30` where `#30` duplicates `#20` is a self-dependency the probe never sees. Replacing the raw spelling instead of adding to it would *remove* refusals, because a duplicate still has outgoing edges under its own key (see the third divergence). Both is monotone: it can only refuse more.
 
 Three deliberate divergences from `model.cycles`, all fail-safe:
 

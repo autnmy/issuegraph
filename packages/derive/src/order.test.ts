@@ -661,3 +661,68 @@ describe('deriveIssueOrder — promotion provenance matches the edges the model 
     assert.deepStrictEqual(priorityView(derived, '10').promotedBy, ['20']);
   });
 });
+
+describe('deriveIssueOrder — urgency also arrives through a together peer', () => {
+  // SPEC §6.3 relaxes effective priority along blocked-by AND together edges —
+  // "a together group's effective priority is the highest over its members"
+  // (`packages/reader/src/model.ts:546-552`). A provenance index built from
+  // reverse blocked-by edges alone therefore reports a real promotion with
+  // nothing to show for it.
+
+  test('names the together peer the urgency arrived through', () => {
+    const issues: NodeInput[] = [
+      {
+        number: 10,
+        open: true,
+        labels: ['P3'],
+        assigneeCount: 0,
+        data: frontmatter({ togetherWith: ref(20) }),
+      },
+      {
+        number: 20,
+        open: true,
+        labels: ['P0'],
+        assigneeCount: 0,
+        data: frontmatter({ togetherWith: ref(10) }),
+      },
+    ];
+    const derived = deriveIssueOrder({
+      issues,
+      config: { baseRanking: { source: 'config', order: [] } },
+    });
+    const view = priorityView(derived, '10');
+    assert.equal(view.declared, 3);
+    assert.equal(view.effective, 0);
+    assert.equal(view.promoted, true);
+    assert.equal(view.notation, 'P3 -> 0');
+    assert.deepStrictEqual(view.promotedBy, ['20']);
+  });
+
+  test('CONTROL: the P0 peer is not itself promoted, so it names nobody', () => {
+    // Without this the test above would pass for an index that simply lists
+    // every together member regardless of where the urgency came from.
+    const issues: NodeInput[] = [
+      {
+        number: 10,
+        open: true,
+        labels: ['P3'],
+        assigneeCount: 0,
+        data: frontmatter({ togetherWith: ref(20) }),
+      },
+      {
+        number: 20,
+        open: true,
+        labels: ['P0'],
+        assigneeCount: 0,
+        data: frontmatter({ togetherWith: ref(10) }),
+      },
+    ];
+    const derived = deriveIssueOrder({
+      issues,
+      config: { baseRanking: { source: 'config', order: [] } },
+    });
+    const peer = priorityView(derived, '20');
+    assert.equal(peer.promoted, false);
+    assert.deepStrictEqual(peer.promotedBy, []);
+  });
+});

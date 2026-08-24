@@ -130,6 +130,7 @@ export function wouldCycleOnBlockedBy(
   );
   return wouldCycleOnAdjacency(
     buildBlockedByAdjacency(issues, model.duplicateCanonical, options),
+    model.duplicateCanonical,
     from,
     to,
     options,
@@ -161,33 +162,63 @@ function canonicalKey(key: string, homeRepo?: string): string {
 }
 
 /**
+ * Every spelling of a caller-supplied endpoint the adjacency could hold it
+ * under: the folded key, plus its canonical when it duplicates something.
+ *
+ * BOTH, never just the canonical, and this is the half that is easy to get
+ * wrong. Canonicalizing the stored targets while leaving the two ARGUMENTS
+ * folded-only puts them in different key spaces, and the probe then fails open
+ * on its own inputs — `#20 blocked-by #30`, where `#30` duplicates `#20`, is
+ * a self-dependency the model will read and a raw walk never finds.
+ *
+ * But replacing the raw spelling would REMOVE refusals rather than add them.
+ * Divergence 3 keeps a duplicate's own outgoing edges, so a duplicate key
+ * still has edges under its raw name; seeding only at the canonical would
+ * start the walk somewhere those edges are not, and admit a cycle the older,
+ * unresolved code already refused. Keeping both is monotone — it can only ever
+ * refuse more — which is the direction every choice in this file points.
+ */
+function endpointSpellings(
+  raw: string,
+  canonicalOf: CanonicalOf,
+  homeRepo?: string,
+): readonly string[] {
+  const key = canonicalKey(raw, homeRepo);
+  const canonical = canonicalOf(key);
+  return canonical === null || canonical === key ? [key] : [key, canonical];
+}
+
+/**
  * The same predicate against a prepared adjacency, so a caller deriving the
  * whole order builds the map once instead of per probe. No memoization of
  * RESULTS — the map is a view of the input, not a cache of answers.
  *
- * `options` must carry the SAME `homeRepo` the adjacency was built with;
- * otherwise the endpoints fold differently from the keys they have to match.
+ * `canonicalOf` must be the SAME resolver the adjacency was built with, and
+ * `options` the same `homeRepo`; otherwise the endpoints land in a different
+ * key space from the keys they have to match, which is the fail-open this
+ * argument exists to close.
  */
 export function wouldCycleOnAdjacency(
   adjacency: BlockedByAdjacency,
+  canonicalOf: CanonicalOf,
   rawFrom: string,
   rawTo: string,
   options: WouldCycleOptions = {},
 ): boolean {
-  const from = canonicalKey(rawFrom, options.homeRepo);
-  const to = canonicalKey(rawTo, options.homeRepo);
-  // Walk what `to` already depends on. Reaching `from` means the proposed edge
-  // would close the loop. Iterative, so a deep chain cannot exhaust the stack.
+  const from = new Set(endpointSpellings(rawFrom, canonicalOf, options.homeRepo));
+  // Walk what `to` already depends on, from every spelling of it. Reaching any
+  // spelling of `from` means the proposed edge would close the loop. Iterative,
+  // so a deep chain cannot exhaust the stack.
   //
   // The self-edge case needs no separate guard: the walk starts AT `to`, so
   // `from === to` is caught on the first pop. An explicit short-circuit here
   // was unkillable by mutation — no test could distinguish it — which is the
   // signature of a redundant branch rather than a defended one.
   const seen = new Set<string>();
-  const stack: string[] = [to];
+  const stack: string[] = [...endpointSpellings(rawTo, canonicalOf, options.homeRepo)];
   while (stack.length > 0) {
     const current = stack.pop() as string;
-    if (current === from) return true;
+    if (from.has(current)) return true;
     if (seen.has(current)) continue;
     seen.add(current);
     for (const next of adjacency.get(current) ?? []) stack.push(next);

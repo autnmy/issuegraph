@@ -340,6 +340,24 @@ export function deriveIssueOrder(input: DeriveIssueOrderInput): DerivedIssueOrde
   // ---- priority views ----
   const priority = new Map<string, IssuePriorityView>();
   const dependentsOf = openDependents(issues, homeRepo, rawByKey, model);
+  /**
+   * Every open neighbour urgency can arrive through — §6.3 relaxes effective
+   * priority along blocked-by AND together edges, so a reverse index of one of
+   * them explains only half the promotions it is asked about. A P3 grouped
+   * with a P0 is genuinely promoted, and a blocked-by-only index reports it
+   * with an empty `promotedBy`.
+   *
+   * Dependents first, then peers, deduplicated: a direct dependent is the more
+   * specific answer, and an issue can be both.
+   */
+  const promotersOf = (key: string): readonly string[] => [
+    ...new Set([
+      ...(dependentsOf.get(key) ?? []),
+      ...model
+        .togetherComponent(key)
+        .filter((member) => member !== key && rawByKey.get(member)?.open === true),
+    ]),
+  ];
   for (const key of candidates) {
     const node = rawByKey.get(key) as NodeInput;
     const signals = resolvePrioritySignals(node, precedence);
@@ -354,8 +372,8 @@ export function deriveIssueOrder(input: DeriveIssueOrderInput): DerivedIssueOrde
       // on the dependents, so a promotion several hops away still names the
       // adjacent issue rather than reporting none.
       promotedBy: promoted
-        ? (dependentsOf.get(key) ?? []).filter(
-            (dependent) => model.effectivePriority(dependent) === effective,
+        ? promotersOf(key).filter(
+            (neighbour) => model.effectivePriority(neighbour) === effective,
           )
         : [],
       notation: promoted ? `P${String(declared)} -> ${String(effective)}` : `P${String(declared)}`,
@@ -395,7 +413,8 @@ export function deriveIssueOrder(input: DeriveIssueOrderInput): DerivedIssueOrde
     excluded,
     provenance,
     diagnostics: [...new Set(diagnostics)],
-    wouldCycle: (from, to) => wouldCycleOnAdjacency(adjacency, from, to, cycleOptions),
+    wouldCycle: (from, to) =>
+      wouldCycleOnAdjacency(adjacency, model.duplicateCanonical, from, to, cycleOptions),
   };
 }
 

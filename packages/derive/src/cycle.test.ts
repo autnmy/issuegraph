@@ -251,3 +251,47 @@ describe('duplicate targets, which the model resolves and a raw walk does not', 
     assert.equal(wouldCycleOnBlockedBy(issues, '10', '20'), true);
   });
 });
+
+describe('the PROPOSED endpoints need the same resolution the stored edges got', () => {
+  // Canonicalizing the adjacency alone leaves the probe's own two arguments in
+  // a different key space from the edges it compares them against. Both
+  // spellings of each endpoint are walked, because the two are reachable
+  // through different edges and refusing on either is the recoverable
+  // direction — the same argument the closed-node divergence makes.
+
+  test('refuses a proposed target that duplicates the source', () => {
+    // #30 duplicates #20, so the written "#20 blocked-by #30" is read as
+    // "#20 blocked-by #20" — a self-dependency, permanently unready. A walk
+    // that only normalizes the SPELLING of `to` starts at #30, never meets
+    // #20, and admits it.
+    const issues = [issue(20), { ...issue(30), data: frontmatter({ duplicateOf: ref(20) }) }];
+    assert.equal(wouldCycleOnBlockedBy(issues, '20', '30'), true);
+  });
+
+  test('refuses a proposed SOURCE that duplicates an existing blocker', () => {
+    // The mirror case. #30 duplicates #20, and #40 is already blocked by #30 —
+    // which the adjacency stores canonicalized as #40 -> #20. Adding
+    // "#30 blocked-by #40" closes it, but only if `from` is compared in the
+    // key space the adjacency actually uses.
+    const issues = [
+      issue(20),
+      { ...issue(30), data: frontmatter({ duplicateOf: ref(20) }) },
+      issue(40, [30]),
+    ];
+    assert.equal(wouldCycleOnBlockedBy(issues, '30', '40'), true);
+  });
+
+  test('KEEPS the raw spelling too, so resolving cannot LOSE a refusal', () => {
+    // The reason both spellings are walked rather than just the canonical.
+    // Divergence 3 keeps a duplicate's OWN edges, so #30 still has outgoing
+    // edges under its raw key. Seeding the walk only at the canonical #20
+    // would start somewhere with no such edge and admit a cycle the raw walk
+    // already refused — a fix that removes a refusal it was not asked to.
+    const issues = [
+      issue(20),
+      { ...issue(30), data: frontmatter({ blockedBy: [ref(40)], duplicateOf: ref(20) }) },
+      issue(40),
+    ];
+    assert.equal(wouldCycleOnBlockedBy(issues, '40', '30'), true);
+  });
+});
