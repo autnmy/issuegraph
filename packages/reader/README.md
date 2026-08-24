@@ -67,6 +67,10 @@ model.diagnostics;               // unresolvable refs, carrier disagreements, de
 
 `buildModel` is pure and total: it never throws, and every anomaly becomes a diagnostic instead of an exception.
 
+**What the axis does NOT protect, stated plainly.** The refusals cover nodes the model can **name** — the under-read node, its serialize component, and anything whose edge resolved to it. They cannot cover a node it cannot name. When the dropped field is *itself an edge* (`#1` declares `together-with: 2` and the parser rejects that line), the relationship never enters edge collection, so `#2` is an ordinary ready singleton. The peer's identity is what the parse destroyed, and the only sound refusal would be "refuse everything while any declaration is under-read" — a global stall on one malformed body.
+
+So that policy is **yours**, and `model.underReadKeys` is the seam for it: hold selection while it is non-empty for the strict §4.3.7 guarantee, or read it for triage. Read it structurally — never match the diagnostic prose, which a rewording silently breaks. This is the same split `isUnreadDeclaration` draws one layer down: the question factors, the policy does not.
+
 **`declarationRead` is required, and that is the mechanism.** `data` cannot carry the answer — a dropped field returns non-null `data` that looks complete — so the fact has to travel *with* the node. An optional field would let a producer omit it and restore the defect as an unstated one, since the omission would compile. A node marked `'under-read'` is refused, and so is any node sharing its `serialize-with` component, because a dropped `serialize-with` means the component's true extent is unknown. Effective priority is deliberately untouched: an under-read node under-reports a blocker's urgency, which reorders work but never admits any.
 
 **It is fail-safe in one direction, deliberately.** The costs are not symmetric — over-blocking delays work, under-blocking ships it in the wrong order — so where the spec leaves a choice, this resolves toward refusing: an ambiguous component merge over-serializes, and an unresolvable `together-with` refuses its declarer.

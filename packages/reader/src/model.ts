@@ -184,6 +184,45 @@ export interface Model {
    * ending nowhere, cycles.
    */
   readonly diagnostics: readonly string[];
+  /**
+   * Every key whose own declaration was under-read, sorted. Empty is the
+   * ordinary case and means every declaration in the set was fully read.
+   *
+   * WHY THIS IS ON THE SURFACE AND NOT JUST A DIAGNOSTIC — it is the seam for
+   * the one thing this model provably CANNOT do for you.
+   *
+   * The refusals elsewhere protect nodes the model can NAME: the under-read
+   * node itself, its serialize component, and anything whose edge resolved to
+   * it. They cannot protect a node it cannot name. When the DROPPED FIELD IS
+   * ITSELF AN EDGE — `#1` declares `together-with: 2` and the parser rejects
+   * that line — the relationship never enters edge collection, so `#2` is an
+   * ordinary ready singleton, indistinguishable from any other node in the set.
+   * Measured, one field apart: with the edge SURVIVING the parse, `#2` came
+   * back refused ("together member 1 is not ready"); with the edge DROPPED it
+   * came back `{ready: true, reasons: []}` in a component of one.
+   *
+   * No refusal this model could compute closes that. The peer's IDENTITY is
+   * what the parse destroyed, so the only sound refusal would be "refuse every
+   * node while any declaration is under-read" — a global stall on one malformed
+   * body, which is not a rule any consumer would want imposed.
+   *
+   * SO THE POLICY IS THE HOST'S, and this field is what makes it expressible.
+   * A host wanting the strict §4.3.7 guarantee holds selection while this is
+   * non-empty; one with a looser bar reads it for triage and grooming. That is
+   * the same split `isUnreadDeclaration` already draws one layer down — the
+   * QUESTION factors, the POLICY does not — and the same shape §6.7 leaves to a
+   * consumer for an unresolvable `serialize-with`.
+   *
+   * READ IT STRUCTURALLY; DO NOT MATCH THE DIAGNOSTIC PROSE. The diagnostics
+   * carry the same fact as a sentence, and a reworded sentence silently stops
+   * matching and fails OPEN — the exact failure this package refuses elsewhere.
+   *
+   * DECLARER-ONLY NODES ARE INCLUDED, unlike `keys`. A weak node may add
+   * constraints, and an under-read weak node is a constraint that could not be
+   * read; a host composing the strict policy needs to know that as much as it
+   * needs the full-node case.
+   */
+  readonly underReadKeys: readonly string[];
 }
 
 /**
@@ -974,5 +1013,13 @@ export function buildModel(
     duplicateCanonical: (key) => canonicalMap.get(key) ?? null,
     cycles,
     diagnostics: uniqueDiagnostics,
+    // SORTED, so the value is stable across node-input order and a host may
+    // compare two builds without normalizing first. Over `byKey`, which holds
+    // the declarer-only tier too — see the field's doc for why that is
+    // deliberate rather than an oversight.
+    underReadKeys: [...byKey.entries()]
+      .filter(([, n]) => n.declarationRead === 'under-read')
+      .map(([k]) => k)
+      .sort(),
   };
 }

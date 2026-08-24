@@ -930,6 +930,61 @@ describe("under-read declarations", () => {
     assert.equal(m.readiness("1").ready, false);
   });
 
+  test("THE BOUNDARY: a dropped EDGE hides a peer the model cannot name", () => {
+    // The one case no refusal here can close, pinned so it stays a DECLARED
+    // limit rather than an unstated one. When the dropped field is itself an
+    // edge, the relationship never enters edge collection, so the peer is an
+    // ordinary singleton indistinguishable from any other node.
+    const hidden = buildModel([
+      node(1, { declarationRead: "under-read" }), // its `together-with: 2` was dropped
+      node(2), // the peer, unnameable from here
+    ]);
+    assert.equal(hidden.readiness("1").ready, false); // the declarer IS refused
+    assert.deepEqual(hidden.readiness("2"), { ready: true, reasons: [] }); // the peer is not
+    assert.deepEqual(hidden.togetherComponent("2"), ["2"]);
+
+    // SHARP CONTROL — the same node under-read, but with the edge SURVIVING the
+    // parse. This is what makes the case above a statement about the DROPPED
+    // FIELD rather than about under-read declarations in general.
+    const visible = buildModel([
+      node(1, { declarationRead: "under-read", data: { togetherWith: ref(2) } }),
+      node(2),
+    ]);
+    assert.equal(visible.readiness("2").ready, false);
+    assertIncludes(visible.readiness("2").reasons[0], "together member 1 is not ready");
+
+    // And the seam that makes the host's policy expressible in BOTH cases.
+    assert.deepEqual(hidden.underReadKeys, ["1"]);
+    assert.deepEqual(visible.underReadKeys, ["1"]);
+  });
+
+  test("underReadKeys is sorted, input-order stable, and empty in the ordinary case", () => {
+    assert.deepEqual(buildModel([node(1), node(2)]).underReadKeys, []);
+    const a = buildModel([
+      node(3, { declarationRead: "under-read" }),
+      node(1, { declarationRead: "under-read" }),
+      node(2),
+    ]);
+    const b = buildModel([
+      node(1, { declarationRead: "under-read" }),
+      node(2),
+      node(3, { declarationRead: "under-read" }),
+    ]);
+    assert.deepEqual(a.underReadKeys, ["1", "3"]);
+    assert.deepEqual(a.underReadKeys, b.underReadKeys);
+  });
+
+  test("underReadKeys includes the declarer-only tier, unlike keys", () => {
+    // A weak node may add constraints, and an under-read weak node is a
+    // constraint nobody could read — a host composing the strict policy needs
+    // that as much as the full-node case.
+    const m = buildModel([node(1)], {
+      declarerOnlyNodes: [declarerOnlyNode(node(40, { declarationRead: "under-read" }))],
+    });
+    assert.equal(m.keys.includes("40"), false);
+    assert.deepEqual(m.underReadKeys, ["40"]);
+  });
+
   test("effective priority is deliberately untouched by the axis", () => {
     // Recorded as a decision, not left to look like an oversight: the axis
     // refuses, and there is nothing here to refuse. A P3 blocking a P0 still
