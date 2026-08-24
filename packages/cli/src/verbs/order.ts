@@ -99,6 +99,25 @@ function asInteger(value: unknown, at: string): number {
   return value;
 }
 
+/**
+ * An integer that is also IN ITS DOMAIN.
+ *
+ * Checking the type and stopping there is how a malformed tracker fact reaches
+ * the derivation looking validated. A negative `assigneeCount` is the case
+ * review found: the derivation tests `assigneeCount > 0` to decide a serialize
+ * component is actively claimed, so `-1` read as UNCLAIMED and a peer that was
+ * being worked appeared free — admitting a second worker to a group whose whole
+ * purpose is to exclude one.
+ *
+ * None of these fields has a meaningful negative value, so the bound is part of
+ * what the field IS rather than an extra rule.
+ */
+function asIntegerAtLeast(value: unknown, at: string, min: number): number {
+  const parsed = asInteger(value, at);
+  if (parsed < min) fail(at, `expected an integer >= ${min}, got ${parsed}`);
+  return parsed;
+}
+
 function asStringArray(value: unknown, at: string): readonly string[] {
   return asArray(value, at, 'expected an array of strings').map((item, index) =>
     asString(item, `${at}[${index}]`),
@@ -125,9 +144,10 @@ function asBaseRanking(value: unknown, at: string): IssueOrderBaseRanking {
         const entry = asRecord(row, `${at}.order[${index}]`);
         return {
           key: asString(entry['key'], `${at}.order[${index}].key`),
-          matchedOrderIndex: asInteger(
+          matchedOrderIndex: asIntegerAtLeast(
             entry['matchedOrderIndex'],
             `${at}.order[${index}].matchedOrderIndex`,
+            0,
           ),
         };
       }),
@@ -153,13 +173,13 @@ function asIssue(value: unknown, at: string): OrderInputIssue {
   const repo = record['repo'];
   const closedStateReason = record['closedStateReason'];
   return {
-    number: asInteger(record['number'], `${at}.number`),
+    number: asIntegerAtLeast(record['number'], `${at}.number`, 1),
     // `exactOptionalPropertyTypes` is on: an absent key and an explicit
     // `undefined` are different types, so the key is only added when supplied.
     ...(repo === undefined ? {} : { repo: repo === null ? null : asString(repo, `${at}.repo`) }),
     open: asBoolean(record['open'], `${at}.open`),
     labels: asStringArray(record['labels'], `${at}.labels`),
-    assigneeCount: asInteger(record['assigneeCount'], `${at}.assigneeCount`),
+    assigneeCount: asIntegerAtLeast(record['assigneeCount'], `${at}.assigneeCount`, 0),
     ...(closedStateReason === undefined
       ? {}
       : {
@@ -181,33 +201,6 @@ export function asOrderInput(value: unknown): OrderInputDocument {
     asIssue(issue, `input.issues[${index}]`),
   );
 
-  // TWO ENTRIES FOR ONE ISSUE ARE REFUSED, not silently deduplicated.
-  //
-  // `buildModel` keeps the FIRST occurrence and ignores the rest, which is a
-  // reasonable rule and not this package's to restate — and restating it is
-  // exactly what went wrong: the under-read report was built by walking every
-  // entry, so a key whose first body read fine and whose second did not was
-  // listed as under-read while the derivation had used the readable one. The
-  // output then said a ready slot was carried in as under-read.
-  //
-  // Teaching this loop the same first-occurrence rule would fix that instance
-  // and leave a second copy of a rule the derive package owns, free to drift the
-  // next time either side changes. A document naming one issue twice is a caller
-  // defect with no correct reading, so it is refused and the divergence cannot
-  // exist.
-  const seen = new Map<string, number>();
-  for (const [index, issue] of issues.entries()) {
-    const key = nodeKey({ number: issue.number, repo: issue.repo ?? null }, rawHomeRepo);
-    const first = seen.get(key);
-    if (first !== undefined) {
-      fail(
-        `input.issues[${index}]`,
-        `issue ${key} is already declared at input.issues[${first}]; each issue may appear once`,
-      );
-    }
-    seen.set(key, index);
-  }
-
   return {
     ...(rawHomeRepo === undefined ? {} : { homeRepo: rawHomeRepo }),
     baseRanking: asBaseRanking(record['baseRanking'], 'input.baseRanking'),
@@ -217,6 +210,47 @@ export function asOrderInput(value: unknown): OrderInputDocument {
 
 /** Which view of the same derivation to emit. */
 export type OrderView = 'order' | 'ready';
+
+/**
+ * The precondition every derivation shares, checked at the boundary they share.
+ *
+ * TWO ENTRIES FOR ONE ISSUE ARE REFUSED, not silently deduplicated. `buildModel`
+ * keeps the FIRST occurrence and ignores the rest — a reasonable rule, and not
+ * this package's to restate. Walking every entry to build `underRead` while the
+ * derivation used only the first is what made the output report a READY issue as
+ * under-read. Measured: readable body first, unreadable second, and the result
+ * carried `underRead: ["1"]` beside a slot for `1` with `ready: true`.
+ *
+ * IT LIVES HERE RATHER THAN IN `asOrderInput`, and that placement is the whole
+ * correction. It was in the JSON validator, so `orderFromJson` enforced it and
+ * the exported `deriveOrder` — the same operation, reached directly — did not.
+ * That is the same shape as the write paths before `performWrite`: a precondition
+ * at one entry point while a second entry point reaches the operation without it.
+ * The write half was made structural first and the derive half was left per-site,
+ * which is exactly where the next round landed.
+ *
+ * A document naming one issue twice is a caller defect with no correct reading,
+ * so it is refused and the divergence cannot exist.
+ */
+function duplicateKeyRefusal(document: OrderInputDocument): VerbResult | null {
+  const seen = new Map<string, number>();
+  for (const [index, issue] of document.issues.entries()) {
+    const key = nodeKey({ number: issue.number, repo: issue.repo ?? null }, document.homeRepo);
+    const first = seen.get(key);
+    if (first !== undefined) {
+      return {
+        stdout: '',
+        stderr: [
+          `issuegraph: input.issues[${index}]: issue ${key} is already declared at ` +
+            `input.issues[${first}]; each issue may appear once`,
+        ],
+        code: EXIT.usage,
+      };
+    }
+    seen.set(key, index);
+  }
+  return null;
+}
 
 /**
  * Derive the order over a validated document.
@@ -231,6 +265,9 @@ export type OrderView = 'order' | 'ready';
  * exception. The keys are reported so a caller can apply its own policy.
  */
 export function deriveOrder(document: OrderInputDocument, view: OrderView): VerbResult {
+  const refusal = duplicateKeyRefusal(document);
+  if (refusal !== null) return refusal;
+
   const underRead: string[] = [];
 
   const nodes: NodeInput[] = document.issues.map((issue) => {

@@ -3,7 +3,8 @@ import { describe, test } from 'node:test';
 
 import { EXIT } from '../exit.ts';
 import { HAZARD_BODY } from '../testing/fixtures.ts';
-import { orderFromJson } from './order.ts';
+import { deriveOrder, orderFromJson } from './order.ts';
+import type { OrderInputDocument } from './order.ts';
 
 interface Slot {
   readonly rank: number | null;
@@ -144,6 +145,112 @@ describe('ready', () => {
   test('names its view, so a caller can tell the two apart', () => {
     assert.equal(run(document([issue(1, 'no block')]), 'ready').out.view, 'ready');
     assert.equal(run(document([issue(1, 'no block')]), 'order').out.view, 'order');
+  });
+});
+
+describe('every entry point to the derivation enforces the same preconditions', () => {
+  /**
+   * ENUMERATED AS DATA, the same shape the write funnel's test uses.
+   *
+   * The uniqueness check first lived in `asOrderInput`, so `orderFromJson`
+   * enforced it and the exported `deriveOrder` — the same operation, reached
+   * directly — did not. That is the identical shape the write paths had before
+   * `performWrite`, and it is why this is asserted over the entry points rather
+   * than once per entry point: a new one is a row here, and a new one that skips
+   * the boundary fails an assertion that already exists.
+   */
+  const ENTRY_POINTS: readonly (readonly [name: string, run: (doc: OrderInputDocument) => { code: number; stdout: string }])[] = [
+    ['deriveOrder', (doc) => deriveOrder(doc, 'order')],
+    ['orderFromJson', (doc) => orderFromJson(JSON.stringify(doc), 'order')],
+  ];
+
+  const READABLE = blockedBy('#5');
+  const CLOSED_FIVE = { number: 5, open: false, labels: ['P2'], assigneeCount: 0, body: 'no block' };
+
+  function doc(issues: readonly Record<string, unknown>[]): OrderInputDocument {
+    const parsed: unknown = JSON.parse(JSON.stringify({ baseRanking: { source: 'config', order: [] }, issues }));
+    return parsed as OrderInputDocument;
+  }
+
+  test('every entry point refuses an issue declared twice', () => {
+    const duplicated = doc([
+      issue(1, READABLE),
+      issue(1, HAZARD_BODY),
+      CLOSED_FIVE as unknown as Record<string, unknown>,
+    ]);
+    for (const [name, run] of ENTRY_POINTS) {
+      const result = run(duplicated);
+      assert.equal(result.code, EXIT.usage, `${name} accepted a duplicate key`);
+      assert.equal(result.stdout, '', `${name} produced output for a refused document`);
+    }
+  });
+
+  test('CONTROL: every entry point still derives a unique-key document identically', () => {
+    // Without this the test above would pass for a package that had stopped
+    // deriving anything, and it also pins that the two paths agree.
+    const clean = doc([issue(1, READABLE), CLOSED_FIVE as unknown as Record<string, unknown>]);
+    const outputs = ENTRY_POINTS.map(([, run]) => run(clean));
+    for (const [index, result] of outputs.entries()) {
+      assert.equal(result.code, EXIT.ok, `${ENTRY_POINTS[index]?.[0]} refused a valid document`);
+    }
+    const [first, second] = outputs;
+    assert.ok(first !== undefined && second !== undefined);
+    assert.equal(first.stdout, second.stdout, 'the two entry points disagreed about the same document');
+  });
+
+  test('the reported divergence is gone: no key is reported under-read AND ready', () => {
+    // The exact shape review measured — readable body first, unreadable second.
+    const clean = doc([issue(1, READABLE), CLOSED_FIVE as unknown as Record<string, unknown>]);
+    for (const [name, run] of ENTRY_POINTS) {
+      const parsed: unknown = JSON.parse(run(clean).stdout);
+      const out = parsed as OrderOutput;
+      for (const slot of out.slots) {
+        if (!slot.ready) continue;
+        for (const member of slot.members) {
+          assert.equal(out.underRead.includes(member), false, `${name}: ${member} is both ready and under-read`);
+        }
+      }
+    }
+  });
+});
+
+describe('input fields are bounded by their domain, not just their type', () => {
+  function refusal(field: string, value: unknown): string {
+    const issues = [{ ...issue(1, 'no block'), [field]: value }];
+    const result = orderFromJson(document(issues), 'order');
+    assert.equal(result.code, EXIT.usage, `${field}=${JSON.stringify(value)} was accepted`);
+    return result.stderr.join('\n');
+  }
+
+  test('a negative assigneeCount is refused — it would read as UNCLAIMED', () => {
+    // The derivation tests `assigneeCount > 0` to decide a serialize component is
+    // actively claimed, so a negative count made a peer being worked look free.
+    const message = refusal('assigneeCount', -1);
+    assert.ok(message.includes('assigneeCount'), message);
+    assert.ok(message.includes('>= 0'), message);
+  });
+
+  test('a non-positive issue number is refused', () => {
+    for (const value of [0, -3]) assert.ok(refusal('number', value).includes('>= 1'));
+  });
+
+  test('a negative matchedOrderIndex is refused', () => {
+    const input = JSON.stringify({
+      baseRanking: { source: 'config', order: [{ key: '1', matchedOrderIndex: -1 }] },
+      issues: [],
+    });
+    assert.equal(orderFromJson(input, 'order').code, EXIT.usage);
+  });
+
+  test('CONTROL: the boundary values on each side are accepted', () => {
+    for (const [field, value] of [
+      ['assigneeCount', 0],
+      ['assigneeCount', 5],
+      ['number', 1],
+    ] as const) {
+      const issues = [{ ...issue(1, 'no block'), [field]: value }];
+      assert.equal(orderFromJson(document(issues), 'order').code, EXIT.ok, `${field}=${value} was refused`);
+    }
   });
 });
 
