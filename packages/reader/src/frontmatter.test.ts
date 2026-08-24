@@ -1263,19 +1263,37 @@ describe('an explicitly-written null section', () => {
     }
   });
 
-  test('but is NOT line-editable, so the locator refuses it', () => {
+  test('but is NOT line-editable — reported as such, NOT as an absent section', () => {
     // A fact about EDITING, not about meaning. Inserting `  blocked-by:` under
     // `issuegraph: null` nests a mapping under a scalar value — invalid YAML —
-    // so the only correct answer is to refuse and let the caller prepend.
-    // The splice's own parse-check already caught the unreadable result; this
-    // makes the refusal structural rather than a downstream accident.
+    // so a writer must not edit in place.
+    //
+    // THIS USED TO RETURN `null`, AND THAT WAS THE DEFECT. `null` also means
+    // "there is no readable section", and a caller's response to THAT is to
+    // prepend a fresh block — which under §4.1's first-block rule demotes this
+    // one and silently drops every entry it carries. "I could not answer" and
+    // "the answer is none" must not be the same value.
     for (const header of ['issuegraph: null', 'issuegraph: ~', 'issuegraph: Null']) {
-      assert.equal(locateSection([header, 'other: x']), null, header);
+      const located = locateSection([header, 'other: x']);
+      assert.notEqual(located, null, header);
+      assert.equal(located?.lineEditable, false, header);
+      assert.deepEqual(located?.fields, [], `${header} carries nothing, so nothing is at stake`);
     }
-    // A FLOW mapping is refused for the same reason, and an EMPTY one never
-    // reaches the per-entry line test that catches the non-empty case.
-    assert.equal(locateSection(['issuegraph: {}']), null, 'empty flow map');
-    assert.equal(locateSection(['issuegraph: {priority: 1}']), null, 'flow map');
+
+    // A FLOW mapping is not editable either, and its ENTRIES are still
+    // reported — that is what lets a writer tell "nothing to lose" from
+    // "something to lose" instead of guessing from a projection.
+    const empty = locateSection(['issuegraph: {}']);
+    assert.equal(empty?.lineEditable, false, 'empty flow map');
+    assert.deepEqual(empty?.fields, [], 'empty flow map carries nothing');
+
+    const carrying = locateSection(['issuegraph: {priority: 1, future-edge: "#5"}']);
+    assert.equal(carrying?.lineEditable, false, 'flow map');
+    assert.deepEqual(
+      carrying?.fields.map((f) => f.key),
+      ['priority', 'future-edge'],
+      'UNRECOGNISED entries are reported too — a writer counting only recognised fields drops them',
+    );
   });
 
   test('CONTROL: a BARE key stays editable — a writer inserts under it', () => {
@@ -1429,6 +1447,41 @@ describe('block discovery finds the key the PARSER reports, not one spelling of 
       assert.equal(parse.data, null, body);
       assert.deepEqual(parse.diagnostics, [], body);
       assert.equal(parse.blockDefect, null, body);
+    }
+  });
+});
+
+describe('a projection must never testify that content is absent', () => {
+  // ONE CLASS, TWO SITES, and the review found an instance at each. Every
+  // decision about a block here is made from the block's own raw content —
+  // never from a line pattern that cannot see every spelling, a parse that
+  // failed, or the recognised-field projection that omits extensions by design.
+
+  test('a MALFORMED flow-root block reports itself unread, like the block-style spelling', () => {
+    // A failed parse cannot testify the key is absent. It used to: a flow-root
+    // block with a YAML error matched no line pattern and would not parse, so
+    // it was reported as NO BLOCK — `data: null`, zero diagnostics,
+    // `isUnreadDeclaration` false. A malformed declaration read as a fully-read
+    // edge-free one, which is the licence for a false clear.
+    const malformedFlow = parseFrontmatter(['---', '{ issuegraph: { blocked-by: ["#1", } }', '---'].join('\n'));
+    assert.equal(malformedFlow.data, null);
+    assert.ok(malformedFlow.diagnostics.length > 0);
+    assert.equal(isUnreadDeclaration(malformedFlow), true);
+
+    // The block-style spelling of the same fault, which the line prefilter
+    // already caught — the two must not disagree about one body's meaning.
+    const malformedBlock = parseFrontmatter(['---', 'issuegraph:', '  blocked-by: ["#1",', '---'].join('\n'));
+    assert.equal(isUnreadDeclaration(malformedBlock), true);
+  });
+
+  test('CONTROL: a body that never meant to declare stays silently absent', () => {
+    // The unanchored key test only decides whether to SELECT an unparseable
+    // block; it must not start reporting a defect for ordinary prose.
+    for (const body of ['no block here', ['---', 'other: 1', '---'].join('\n'), ['A', '', '---', '', 'Prose.', '', '---', '', 'B'].join('\n')]) {
+      const parse = parseFrontmatter(body);
+      assert.equal(parse.data, null, body);
+      assert.deepEqual(parse.diagnostics, [], body);
+      assert.equal(isUnreadDeclaration(parse), false, body);
     }
   });
 });

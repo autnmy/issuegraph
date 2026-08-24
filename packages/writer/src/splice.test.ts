@@ -129,6 +129,17 @@ describe('spliceGeneratedEdges', () => {
     assert.throws(() => spliceGeneratedEdges(body, NEW_EDGES), /not line-editable/);
   });
 
+  it('THROWS for a flow section carrying only an UNRECOGNISED extension', () => {
+    // The guard used to count the recognised `Frontmatter`, which omits
+    // extension fields by design — so a section carrying only `future-edge`
+    // reported "nothing to lose" and the prepend demoted it in silence. §4.1
+    // makes an unrecognised field inert to the READER; it never makes it
+    // disposable by a WRITER. The count now comes from the section's own
+    // entries.
+    const body = ['---', '{issuegraph: {future-edge: "#5", note: "keep me"}}', '---', '', 'Body.'].join('\n');
+    assert.throws(() => spliceGeneratedEdges(body, NEW_EDGES), /not line-editable/);
+  });
+
   it('but still returns null when the uneditable block has NOTHING to lose', () => {
     // The throw is a data-loss guard, not a shape guard, so it must not fire
     // where prepending costs the author nothing. Each of these is readable (or

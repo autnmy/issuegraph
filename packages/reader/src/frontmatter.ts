@@ -167,6 +167,14 @@ export const FRONTMATTER_KEY_PATTERN = `["']*${FRONTMATTER_KEY}["']*[ \\t]*:`;
 const FRONTMATTER_KEY_LINE = new RegExp(`^${FRONTMATTER_KEY_PATTERN}`);
 
 /**
+ * The same rule UNANCHORED, for the one question that must be asked of a block
+ * whose YAML did not parse: "did this plausibly mean to carry a declaration?"
+ * A failed parse cannot answer it, and treating silence as "no" is what makes a
+ * malformed block indistinguishable from an absent one.
+ */
+const FRONTMATTER_KEY_MENTION = new RegExp(FRONTMATTER_KEY_PATTERN);
+
+/**
  * A reference to an issue (§4.2).
  *
  * THE IDENTIFIER IS OPAQUE AND TRACKER-SCOPED, which is the format's position
@@ -444,7 +452,21 @@ const BLOCK_DEFECT_DIAGNOSTIC: Readonly<Record<BlockDefect, string>> = {
 function blockCarriesKey(block: readonly string[]): boolean {
   if (block.some((line) => FRONTMATTER_KEY_LINE.test(line))) return true;
   const doc = readDocument(block.join('\n'));
-  if (doc === null) return false;
+  if (doc === null) {
+    // A FAILED PARSE IS NOT TESTIMONY THAT THE KEY IS ABSENT, and reading it as
+    // one is how a MALFORMED flow-root block came back as an issue with no
+    // declaration at all: `data: null`, no diagnostic, `isUnreadDeclaration`
+    // false. The block-style spelling of the same fault is caught by the line
+    // prefilter above and reports itself correctly, so the two spellings
+    // disagreed about a body that plainly meant to declare something.
+    //
+    // UNANCHORED ON PURPOSE. This arm decides only whether to SELECT the block
+    // so `parseFrontmatter` can say WHY it is unreadable — it never decides
+    // what the block means. Over-selecting costs one advisory diagnostic;
+    // under-selecting is the silent absence above. That is the same trade the
+    // `undelimited` arm already makes deliberately.
+    return block.some((line) => FRONTMATTER_KEY_MENTION.test(line));
+  }
   const root = doc.contents;
   if (!isMap(root)) return false;
   return root.items.some((pair) => scalarKey(pair) === FRONTMATTER_KEY);
@@ -633,6 +655,30 @@ export interface SectionLocation {
   readonly endLine: number;
   /** Column at which the section's child entries begin. */
   readonly childIndent: number;
+  /**
+   * Whether a writer can insert or replace lines inside this section.
+   *
+   * SEPARATE FROM `null`, and that separation is the point. Returning `null`
+   * for "there is no readable section" AND for "there is one I cannot edit
+   * line by line" made the two indistinguishable to a caller — and the
+   * caller's response to the first (prepend a fresh block) SILENTLY DESTROYS
+   * the second, because §4.1's first-block rule then demotes a block that
+   * carries fields. A value that says "I could not answer" and one that says
+   * "the answer is none" must not be the same value.
+   */
+  readonly lineEditable: boolean;
+  /**
+   * Every entry the section carries, RECOGNISED OR NOT.
+   *
+   * Unrecognised entries are included deliberately: §4.1 makes them inert to
+   * the reader but they are still an author's bytes, and a writer deciding
+   * whether anything would be lost must count them. Asking the recognised
+   * `Frontmatter` projection instead reported "nothing here" for a section
+   * carrying only an extension field.
+   *
+   * When `lineEditable` is false the spans are degenerate — a flow section's
+   * entries all sit on the header's line — so read the KEYS, never the spans.
+   */
   readonly fields: readonly SectionField[];
   /** True when a top-level key other than `issuegraph` carries content. */
   readonly hasSiblingKeys: boolean;
@@ -671,16 +717,16 @@ export function isSectionHeader(line: string): boolean {
  * Locate the `issuegraph:` section within a block's interior lines, or null
  * when the block does not carry a usable one.
  *
- * Null means "do not edit this", for one of two reasons:
+ * NULL MEANS EXACTLY ONE THING: there is no readable section here — the YAML
+ * did not parse, no `issuegraph` key is a top-level mapping key, or its value
+ * is a scalar or a sequence. A writer that stops on `null` and a reader
+ * returning `data: null` are then answering from the same evidence, and a
+ * caller's prepend loses nothing because there was nothing to lose.
  *
- *   - The block is one the READER also refuses — the YAML did not parse, no
- *     `issuegraph` key is a top-level mapping key, or its value is a scalar or
- *     a sequence. A writer that stops here and a reader returning `data: null`
- *     are then answering from the same evidence.
- *   - The section is written INLINE, as a flow mapping on the header's own
- *     line. The reader reads that perfectly well, so this is the one case where
- *     the two legitimately differ: a line-based edit has no span to replace
- *     that is not also the header.
+ * A SECTION THAT READS BUT CANNOT BE LINE-EDITED IS NOT NULL. It comes back
+ * with `lineEditable: false` and its fields intact, because those are two
+ * different answers and collapsing them is what let a caller's prepend
+ * silently demote a block carrying an author's fields.
  *
  * EXPORTED for `@issuegraph/writer`. It is a LOWER-LEVEL surface than
  * {@link parseFrontmatter} and consumers who only want the data should not
@@ -710,7 +756,7 @@ export function locateSection(blockLines: readonly string[]): SectionLocation | 
   if (section === null) return null;
   const value = sectionMap(section.value);
   if (value === null) return null;
-  if (!isLineEditableSection(section.value)) return null;
+  let lineEditable = isLineEditableSection(section.value);
 
   const headerRange = nodeRange(section.key);
   if (headerRange === null) return null;
@@ -725,11 +771,11 @@ export function locateSection(blockLines: readonly string[]): SectionLocation | 
     const startLine = lineAt(keyRange[0]);
     // AN ENTRY MUST OWN ITS OWN LINE, or a line-based edit cannot express it.
     // `issuegraph: {priority: 1}` is a perfectly good FLOW mapping that the
-    // parser reads — see `parseFrontmatter` — but every entry in it starts on
-    // the header's line, so replacing an entry's span would delete the header
-    // and hand back a body nobody can read. A writer must prepend a fresh block
-    // instead, which is what `null` routes it to.
-    if (startLine <= headerLine) return null;
+    // parser reads, but every entry in it starts on the header's line, so
+    // replacing an entry's span would delete the header. That makes the section
+    // UNEDITABLE — not unreadable — so the fields are still reported and the
+    // caller is told which of the two it is.
+    if (startLine <= headerLine) lineEditable = false;
     // `range[2]` is the node END, which includes trailing comments and the
     // newline that closes the node — so it can land on the line AFTER the
     // entry's last content. Step back to the last line carrying content.
@@ -765,6 +811,7 @@ export function locateSection(blockLines: readonly string[]): SectionLocation | 
     headerLine,
     endLine: sectionEnd,
     childIndent: childIndent === -1 ? 2 : childIndent,
+    lineEditable,
     fields,
     hasSiblingKeys,
   };
