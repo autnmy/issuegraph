@@ -2,9 +2,15 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
 import {
+  FENCE_CLOSE,
+  FENCE_OPEN,
   FRONTMATTER_KEY_PATTERN,
   isUnreadDeclaration,
+  locateBlock,
   parseFrontmatter,
+  readMappingEntry,
+  stripComment,
+  topLevelKeyScalar,
 } from './frontmatter.ts';
 
 /**
@@ -753,5 +759,132 @@ describe("isUnreadDeclaration", () => {
       const parse = parseFrontmatter(body);
       if (parse.data !== null) assert.equal(parse.blockDefect, null);
     }
+  });
+});
+
+/**
+ * THE LINE GRAMMAR, and the two questions the writer package asks of it.
+ *
+ * These exports exist so an editor and a parser cannot disagree about which
+ * bytes are a block, which line opens the section, or which bytes constitute an
+ * entry. The tests below are the proof that they answer for THIS parser rather
+ * than merely alongside it — a second spelling that happened to agree on the
+ * examples anyone thought to write is the failure they exist to prevent.
+ */
+describe('the shared line grammar', () => {
+  test('topLevelKeyScalar names the header the parse walk opens on, and nothing else', () => {
+    // A header, in every spelling the walk accepts.
+    assert.equal(topLevelKeyScalar('issuegraph:'), '');
+    assert.equal(topLevelKeyScalar('"issuegraph":'), '');
+    assert.equal(topLevelKeyScalar("'issuegraph':"), '');
+    assert.equal(topLevelKeyScalar('issuegraph :'), '');
+    assert.equal(topLevelKeyScalar('issuegraph:  # note'), '', 'a comment is stripped before classifying');
+    // An inline value is RETURNED, not judged: the walk reports it as an
+    // unsupported subset, a writer refuses to splice into it, and neither
+    // policy belongs in the predicate.
+    assert.equal(topLevelKeyScalar('issuegraph: { blocked-by: [7] }'), '{ blocked-by: [7] }');
+    // Not a header.
+    assert.equal(topLevelKeyScalar('  issuegraph:'), null, 'indented: a nested key is not the block header');
+    assert.equal(topLevelKeyScalar('issuegraph'), null, 'no colon at all');
+    assert.equal(topLevelKeyScalar('issuegraph:x'), null, 'the colon must be followed by whitespace or line end');
+    assert.equal(topLevelKeyScalar('""issuegraph:'), null, 'the prefilter accepts this; the parser does not');
+    assert.equal(topLevelKeyScalar('note about issuegraph: yes'), null);
+  });
+
+  test('the header predicate AGREES with the parse walk on every spelling', () => {
+    // The predicate is only worth exporting if it decides the same way the walk
+    // does. Asserting the pair rather than the predicate alone is what makes
+    // that a measured claim instead of an intention.
+    for (const header of ['issuegraph:', '"issuegraph":', "'issuegraph':", 'issuegraph :', 'issuegraph:  # note']) {
+      assert.notEqual(topLevelKeyScalar(header), null, `${header} should be a header`);
+      const parsed = parseFrontmatter(['---', header, '  blocked-by: [7]', '---'].join('\n'));
+      assert.deepEqual(parsed.data?.blockedBy, [{ repo: null, number: 7 }], `walk should read ${header}`);
+    }
+    for (const notHeader of ['""issuegraph:', 'issuegraph:x']) {
+      assert.equal(topLevelKeyScalar(notHeader), null, `${notHeader} should not be a header`);
+      const parsed = parseFrontmatter(['---', notHeader, '  blocked-by: [7]', '---'].join('\n'));
+      assert.equal(parsed.data, null, `walk should not read ${notHeader}`);
+    }
+  });
+
+  test('a quote in the MIDDLE of a key is ordinary content, not an opening quote', () => {
+    // This is the correction the writer extraction carried back. Toggling quote
+    // state anywhere on the line meant a stray apostrophe in an ORDINARY key
+    // swallowed the colon, so the line read as unparseable — and an unparseable
+    // child is STRUCTURAL, so the whole block degraded and every real edge
+    // beside it was lost. §4.1 gives an unrecognized field no such power.
+    assert.deepEqual(readMappingEntry("note's: x"), { key: "note's", scalar: 'x' });
+    const parsed = parseFrontmatter(['---', 'issuegraph:', "  note's: x", '  blocked-by: [7]', '---'].join('\n'));
+    assert.deepEqual(parsed.data?.blockedBy, [{ repo: null, number: 7 }], 'the real edge beside it survives');
+  });
+
+  test('an escaped quote inside a quoted key does not terminate it', () => {
+    assert.deepEqual(readMappingEntry("'owner''s-note': x"), { key: "owner's-note", scalar: 'x' });
+    assert.deepEqual(readMappingEntry('"owner\\"note": x'), { key: 'owner"note', scalar: 'x' });
+  });
+
+  test('readMappingEntry refuses a colon that is not a mapping separator', () => {
+    assert.equal(readMappingEntry('blocked-by:[1]'), null);
+    assert.deepEqual(readMappingEntry('a:b: c'), { key: 'a:b', scalar: 'c' });
+    assert.deepEqual(readMappingEntry('blocked-by:'), { key: 'blocked-by', scalar: '' });
+  });
+
+  test('locateBlock reports the delimiter line indices a writer edits between', () => {
+    const body = ['Banner.', '', '```', '---', 'issuegraph:', '  blocked-by: [7]', '---', '```', '', 'Prose.'].join(
+      '\n',
+    );
+    const located = locateBlock(body);
+    assert.equal(located.defect, null);
+    assert.deepEqual([...(located.lines ?? [])], ['issuegraph:', '  blocked-by: [7]']);
+    const lines = body.split('\n');
+    assert.equal(lines[located.startLine], '---');
+    assert.equal(lines[located.endLine], '---');
+    // The interior really is the span between them, so an editor slicing on the
+    // indices sees exactly what the parser read.
+    assert.deepEqual(lines.slice(located.startLine + 1, located.endLine), [...(located.lines ?? [])]);
+  });
+
+  test('locateBlock reports -1 indices for every no-block outcome', () => {
+    // Absence must not be spelled as a usable position: a writer that took the
+    // indices without checking `lines` would splice at line -1.
+    for (const body of ['no block here', ['---', 'issuegraph:', '  priority: 1'].join('\n'), 'issuegraph:\n  priority: 1']) {
+      const located = locateBlock(body);
+      assert.equal(located.lines, null, body);
+      assert.equal(located.startLine, -1, body);
+      assert.equal(located.endLine, -1, body);
+    }
+  });
+
+  test('the fence patterns classify the armor §4.1 permits', () => {
+    assert.ok(FENCE_OPEN.test('```'));
+    assert.ok(FENCE_OPEN.test('```yaml'));
+    assert.ok(FENCE_OPEN.test('````'));
+    assert.ok(FENCE_CLOSE.test('```'));
+    // A closer carries no info string; an opener with one is not a closer.
+    assert.ok(!FENCE_CLOSE.test('```yaml'));
+    assert.ok(!FENCE_OPEN.test('  ```'), 'indented fences are outside the modelled subset');
+    assert.ok(!FENCE_OPEN.test('~~~'), 'tilde fences are outside the modelled subset');
+  });
+});
+
+describe('stripComment, the rule anything editing beside the walk must share', () => {
+  test('a whitespace-preceded # opens a comment; a bare one does not', () => {
+    assert.equal(stripComment('  # why'), '  ');
+    assert.equal(stripComment('  blocked-by: [7]  # stale'), '  blocked-by: [7]  ');
+    // The subset rule is exactly YAML's, and it is what keeps a cross-repo ref
+    // working unquoted — no whitespace precedes its `#`.
+    assert.equal(stripComment('  blocked-by: acme/widgets#7'), '  blocked-by: acme/widgets#7');
+    // Inside quotes a # is content.
+    assert.equal(stripComment('  note: "a # b"'), '  note: "a # b"');
+  });
+
+  test('the walk and the exported rule agree, which is the point of exporting it', () => {
+    // A writer that classifies a section's children without this rule refuses a
+    // block the walk reads. Both directions are asserted so the pair cannot
+    // drift: the walk keeps reading the block, and the rule reduces the same
+    // line to nothing.
+    const parsed = parseFrontmatter(['---', 'issuegraph:', '  # why', '  blocked-by: [7]', '---'].join('\n'));
+    assert.deepEqual(parsed.data?.blockedBy, [{ repo: null, number: 7 }]);
+    assert.equal(stripComment('  # why').trim(), '');
   });
 });
