@@ -31,7 +31,7 @@
  * The writer exports the domain now, so these ask.
  */
 
-import { FIELDS } from '@issuegraph/core';
+import { EDGE_CARDINALITY, FIELDS } from '@issuegraph/core';
 import { isSpliceOwnedField, SPLICE_FIELD_OWNERSHIP, SPLICE_OWNED_FIELDS } from '@issuegraph/writer';
 import type { SpliceOwnedField } from '@issuegraph/writer';
 
@@ -81,11 +81,19 @@ export type EdgeJsonKey = (typeof EDGE_JSON_KEYS)[number];
  * The `--edges` keys for which an explicit `null` means REMOVE. For the others
  * the writer reads `null` as "leave untouched", so accepting one would be a
  * clear request the command silently declines to perform.
+ *
+ * CLEARABLE IS NOT THE SAME QUESTION AS NULL-CLEARABLE, and conflating them is
+ * how this constant briefly became false. `clearable` says a field's OWN empty
+ * value removes it — and for a list-valued field that value is `[]`, not `null`.
+ * `blocked-by` is clearable and `blockedBy: null` is still refused, as a
+ * non-array, before it ever reaches the null test. So the cardinality is asked
+ * too, from `@issuegraph/core`, which already owns it: `null` is the empty value
+ * exactly for the SINGLE-valued fields.
  */
 export const CLEARABLE_JSON_KEYS: readonly EdgeJsonKey[] = Object.freeze(
-  SPLICE_OWNED_FIELDS.filter((field) => SPLICE_FIELD_OWNERSHIP[field].clearable).map(
-    (field) => SPLICE_FIELD_OWNERSHIP[field].property,
-  ),
+  SPLICE_OWNED_FIELDS.filter(
+    (field) => SPLICE_FIELD_OWNERSHIP[field].clearable && EDGE_CARDINALITY[field] === 'single',
+  ).map((field) => SPLICE_FIELD_OWNERSHIP[field].property),
 );
 
 /**
