@@ -159,6 +159,18 @@ export interface IssueOrderSlot {
    * Both count CANDIDATES only (open, non-duplicate), so the two read on the
    * same denominator: a serialize partner that shipped no longer counts, just
    * as a closed together member no longer does.
+   *
+   * BOTH ALSO SPAN THE WHOLE SLOT. A together unit is one piece of work, so
+   * its serialize footprint is the union over its members' components — every
+   * one of them has to be free before the unit can be admitted. Reading only
+   * the LEAD's component made a structural number depend on the base ranking,
+   * because which member leads is a ranking outcome: two clients ranking
+   * differently reported different sizes for the same graph, which is this
+   * module's coordination-free contract failing quietly.
+   *
+   * Each count includes the slot's own members, exactly as a lone issue's
+   * serialize component has always included itself — so a unit of two with no
+   * serialize edge reads 2 under the same rule that makes a lone issue read 1.
    */
   readonly togetherGroupSize: number;
   readonly serializeGroupSize: number;
@@ -330,9 +342,15 @@ export function deriveIssueOrder(input: DeriveIssueOrderInput): DerivedIssueOrde
       ready,
       holdReasons,
       togetherGroupSize: members.length,
-      serializeGroupSize: model
-        .serializeComponent(key)
-        .filter((member) => candidateSet.has(member)).length,
+      // The union over MEMBERS, not the lead's component — see the field's doc.
+      // A Set because two members of one unit routinely share a serialize
+      // component, and a peer must not be counted once per member that reaches
+      // it.
+      serializeGroupSize: new Set(
+        members.flatMap((member) =>
+          model.serializeComponent(member).filter((peer) => candidateSet.has(peer)),
+        ),
+      ).size,
     });
     for (const member of members) rankOf.set(member, slotRank);
   }

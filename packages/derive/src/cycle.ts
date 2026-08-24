@@ -39,11 +39,20 @@
  *     point the cycle is real and unbreakable. Refusing is the recoverable
  *     direction: a human can decline the refusal, but nobody can unstick a
  *     component after the fact.
- *  2. A target OUTSIDE the supplied node set returns false, not a refusal.
- *     PRECONDITION: both endpoints must be present for the answer to mean
- *     anything. Failing closed instead would make a paged editing surface
- *     refuse every edge to an issue it has not loaded yet. Whether to return
- *     a three-valued verdict is an open question for the paging model.
+ *  2. A PROBED TARGET outside the supplied node set returns false, not a
+ *     refusal. PRECONDITION: the probe's own endpoints must be present for the
+ *     answer to mean anything. Failing closed instead would make a paged
+ *     editing surface refuse every edge to an issue it has not loaded yet.
+ *     Whether to return a three-valued verdict is an open question for the
+ *     paging model.
+ *
+ *     THIS IS NOT A RULE ABOUT EXISTING EDGES, and reading it as one inverts
+ *     it. An unresolvable `blocked-by` already in the data is recorded and
+ *     TREATED AS BLOCKING by the model (`model.ts:485-486`, consumed by
+ *     readiness at `:699`), so it stays in the adjacency and a proposed edge
+ *     back to its declarer really does close a loop. Filtering unresolved
+ *     targets out would drop that refusal — the fail-open this file exists to
+ *     prevent — and it is pinned by a test in both directions.
  *  3. An edge declared BY a duplicate is KEPT. `buildModel` drops a duplicate's
  *     own edges entirely, and matching it here would be the one place copying
  *     the model makes this guard WEAKER: dropping an edge removes reachability,

@@ -295,3 +295,27 @@ describe('the PROPOSED endpoints need the same resolution the stored edges got',
     assert.equal(wouldCycleOnBlockedBy(issues, '40', '30'), true);
   });
 });
+
+describe('an UNRESOLVABLE blocker still blocks, so it still closes a cycle', () => {
+  // Divergence 2 is about the PROBE'S OWN TARGET being outside the node set.
+  // It is not a rule about existing edges: the model records an unresolvable
+  // `blocked-by` separately and treats it as BLOCKING (`model.ts:485-486`,
+  // consumed by readiness at `:699`). So an edge back to the declarer really
+  // does close a loop, and dropping unresolved targets from the adjacency
+  // would lose the refusal — the fail-open this file exists to prevent.
+
+  test('refuses an edge closing a loop through an unloaded blocker', () => {
+    // Only #10 is loaded, and it is blocked by #99, which is not. The model
+    // still holds #10 blocked. "#99 blocked-by #10" therefore closes 10 -> 99
+    // -> 10 the moment #99 arrives, and it cannot be unstuck afterwards.
+    const issues = [issue(10, [99])];
+    assert.equal(wouldCycleOnBlockedBy(issues, '99', '10'), true);
+  });
+
+  test('CONTROL: divergence 2 is untouched — an unknown TARGET still admits', () => {
+    // The paged-input behaviour the contract promises. This is the case
+    // divergence 2 names, and it must keep answering false.
+    const issues = [issue(10, [99])];
+    assert.equal(wouldCycleOnBlockedBy(issues, '10', '77'), false);
+  });
+});

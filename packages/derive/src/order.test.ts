@@ -786,3 +786,72 @@ describe('deriveIssueOrder — a together component is not a neighbourhood', () 
     }
   });
 });
+
+describe('deriveIssueOrder — a slot describes the whole unit it represents', () => {
+  // A together unit is ONE slot spanning every member, so its serialize
+  // footprint is every member's. Reading only the LEAD's component makes a
+  // structural number depend on the base ranking, because which member leads
+  // is a ranking outcome — two clients with different rankings then report
+  // different sizes for the same graph.
+
+  const unitWithSerializedPeer = (): NodeInput[] => [
+    // #10 -- #20 as a unit; the serialize edge hangs off the NON-lead member.
+    {
+      number: 10,
+      open: true,
+      labels: [],
+      assigneeCount: 0,
+      data: frontmatter({ togetherWith: ref(20) }),
+    },
+    {
+      number: 20,
+      open: true,
+      labels: [],
+      assigneeCount: 0,
+      data: frontmatter({ serializeWith: ref(30) }),
+    },
+    { number: 30, open: true, labels: [], assigneeCount: 0, data: null },
+  ];
+
+  const withLeadOrder = (keys: readonly string[]): DerivedIssueOrder =>
+    deriveIssueOrder({
+      issues: unitWithSerializedPeer(),
+      config: {
+        baseRanking: {
+          source: 'config',
+          order: keys.map((key, index) => ({ key, matchedOrderIndex: index })),
+        },
+      },
+    });
+
+  test("spans every member's serialize component, not just the lead's", () => {
+    const unit = slotWith(withLeadOrder(['10', '20', '30']), '10');
+    assert.deepStrictEqual(unit.members, ['10', '20']);
+    // #10 (itself), #20, and #30 — which only #20 reaches.
+    assert.equal(unit.serializeGroupSize, 3);
+  });
+
+  test('reports the SAME size whichever member the ranking makes lead', () => {
+    // The defect stated as the property it breaks. This module's headline
+    // contract is that two clients reading the same issue bodies agree without
+    // coordinating; a structural size that moves with an unrelated input is
+    // that contract failing quietly.
+    const leadIs10 = slotWith(withLeadOrder(['10', '20', '30']), '10');
+    const leadIs20 = slotWith(withLeadOrder(['20', '10', '30']), '10');
+    assert.equal(leadIs10.lead, '10');
+    assert.equal(leadIs20.lead, '20');
+    assert.equal(leadIs20.serializeGroupSize, leadIs10.serializeGroupSize);
+  });
+
+  test('CONTROL: a lone issue still counts only itself', () => {
+    // The count has always included self — a lone issue in no serialize group
+    // reports 1 — so a unit reporting its own members is the same rule, not a
+    // new one. Without this the assertions above could pass for a rule that
+    // simply adds the together members on top.
+    const derived = deriveIssueOrder({
+      issues: [{ number: 40, open: true, labels: [], assigneeCount: 0, data: null }],
+      config: { baseRanking: { source: 'config', order: [] } },
+    });
+    assert.equal(slotWith(derived, '40').serializeGroupSize, 1);
+  });
+});
