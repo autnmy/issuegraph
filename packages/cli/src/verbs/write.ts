@@ -43,8 +43,14 @@ import type { Evidence } from '@issuegraph/core';
 
 import { classifyDeclaration, unreadErrorLines } from '../declaration.ts';
 import type { Declaration } from '../declaration.ts';
-import { clearRefusalReason, unperformableClear, writeRequestRefusal } from '../fields.ts';
-import type { WriteRefusal } from '../fields.ts';
+import {
+  EDGE_JSON_KEYS,
+  RENDER_ONLY,
+  clearRefusalReason,
+  unperformableClear,
+  writeRequestRefusal,
+} from '../fields.ts';
+import type { AssertTrue, SameKeys, WriteRefusal } from '../fields.ts';
 import { EXIT } from '../exit.ts';
 import type { VerbResult } from '../exit.ts';
 
@@ -69,8 +75,29 @@ export interface SetFields {
   readonly evidence?: Evidence | null;
 }
 
-/** The three fields the writer's splice surface does not own, in message order. */
-const RENDER_ONLY_FIELDS = Object.freeze(['together-with', 'priority', 'evidence'] as const);
+/**
+ * The keys a `set` request may name — the allowlist `performWrite` applies to it.
+ *
+ * It sits beside `SetFields` rather than in `fields.ts` because it is that
+ * interface's key set and nothing else, and `fields.ts` proves it: the
+ * `SetFieldKeysCoverSetFields` line below fails to compile if a field is added
+ * to `SetFields` and not to this list, or left here after being removed.
+ */
+export const SET_FIELD_KEYS = Object.freeze([
+  'blockedBy',
+  'serializeWith',
+  'decomposedFrom',
+  'duplicateOf',
+  'togetherWith',
+  'priority',
+  'evidence',
+] as const);
+
+/** @see SET_FIELD_KEYS — the compile-time totality proof, not a runtime value. */
+export type SetFieldKeysCoverSetFields = AssertTrue<
+  SameKeys<(typeof SET_FIELD_KEYS)[number], keyof SetFields>
+>;
+
 
 function renderOnlyRequested(fields: SetFields): readonly string[] {
   const requested: string[] = [];
@@ -104,6 +131,19 @@ function refuse(refusal: WriteRefusal): VerbResult {
       code: EXIT.usage,
     };
   }
+  if (refusal.kind === 'unsupported-key') {
+    // `usage`, matching what `--edges` already reports for an unrecognised key
+    // at the process boundary: the request is malformed, not a performable
+    // request the writer declines.
+    return {
+      stdout: '',
+      stderr: [
+        `issuegraph: ${JSON.stringify(refusal.key)} is not a field this write can set. ` +
+          `Allowed: ${refusal.allowed.join(', ')}`,
+      ],
+      code: EXIT.usage,
+    };
+  }
   return {
     stdout: '',
     stderr: [`issuegraph: refusing to write — ${clearRefusalReason(refusal.field)}`],
@@ -114,10 +154,16 @@ function refuse(refusal: WriteRefusal): VerbResult {
 /**
  * THE ONLY WAY TO REACH THE WRITER.
  *
- * It owns the questions every write shares — does the request ask for anything,
- * is what it asks for performable, and was the block readable — and answers them
- * BEFORE `perform` runs. A write path written through this cannot skip them, so
- * the guarantee is structural rather than a rule each author has to remember.
+ * It owns the questions every write shares — does the request name only fields
+ * this write can act on, does it ask for anything, is what it asks for
+ * performable, and was the block readable — and answers them BEFORE `perform`
+ * runs. A write path written through this cannot skip them, so the guarantee is
+ * structural rather than a rule each author has to remember.
+ *
+ * The allowlist is an ARGUMENT because the answer to the FIRST question differs
+ * per path — `set` owns seven fields, `splice` owns four — while the other three
+ * are the same for every write. Fixing one shared list here would have to be the
+ * union of the two, which accepts `togetherWith` into a splice that ignores it.
  *
  * That is the point. Review found four spellings of one defect across three
  * rounds, and every fix added the missing check at the one site that lacked it,
@@ -132,9 +178,10 @@ function refuse(refusal: WriteRefusal): VerbResult {
 function performWrite(
   body: string,
   request: { readonly decomposedFrom?: unknown; readonly duplicateOf?: unknown },
+  allowed: readonly string[],
   perform: (declaration: Declaration) => VerbResult,
 ): VerbResult {
-  const refusal = writeRequestRefusal(request);
+  const refusal = writeRequestRefusal(request, allowed);
   if (refusal !== null) return refuse(refusal);
 
   const decl = classifyDeclaration(parseFrontmatter(body));
@@ -161,7 +208,7 @@ function performWrite(
  * is the repair, and the message says so.
  */
 export function setFields(body: string, fields: SetFields): VerbResult {
-  return performWrite(body, fields, (decl) => {
+  return performWrite(body, fields, SET_FIELD_KEYS, (decl) => {
     if (decl.state === 'inert') {
       return {
         stdout: '',
@@ -198,7 +245,7 @@ export function setFields(body: string, fields: SetFields): VerbResult {
           stdout: '',
           stderr: [
             `issuegraph: refusing to write ${renderOnly.join(', ')} into an existing block — the writer's splice surface owns generated edges only (blocked-by, serialize-with, decomposed-from, duplicate-of).`,
-            `  ${RENDER_ONLY_FIELDS.join(', ')} can be written when the body has no block yet, but not amended in one that has.`,
+            `  ${RENDER_ONLY.join(', ')} can be written when the body has no block yet, but not amended in one that has.`,
           ],
           code: EXIT.refusedWrite,
         };
@@ -240,7 +287,7 @@ export function setFields(body: string, fields: SetFields): VerbResult {
  * contract surfaced at the process boundary.
  */
 export function spliceEdges(body: string, edges: GeneratedEdges): VerbResult {
-  return performWrite(body, edges, () => {
+  return performWrite(body, edges, EDGE_JSON_KEYS, () => {
     const spliced = spliceGeneratedEdges(body, edges);
     if (spliced === null) {
       return {

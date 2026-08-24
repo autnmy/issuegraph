@@ -199,6 +199,55 @@ describe('every entry point to the derivation enforces the same preconditions', 
     assert.equal(first.stdout, second.stdout, 'the two entry points disagreed about the same document');
   });
 
+  /**
+   * THE SECOND INSTANCE OF THE CLASS THE BLOCK ABOVE NAMES, so it is a row here
+   * rather than a test of its own. Each of these bounds lived only in
+   * `asOrderInput`, so a caller holding an `OrderInputDocument` — which every
+   * one of these values type-checks against — reached the derivation without it.
+   * `repo: "project"` is the measured case: `nodeKey` builds `project#7`, which
+   * no issue body can reference.
+   */
+  const OUT_OF_DOMAIN: readonly (readonly [field: string, value: unknown])[] = [
+    ['repo', 'project'],
+    ['repo', 'owner/'],
+    ['number', 0],
+    ['number', -3],
+    ['number', 9007199254740992],
+    ['assigneeCount', -1],
+  ];
+
+  test('every entry point refuses a field outside its domain, not just the JSON one', () => {
+    for (const [field, value] of OUT_OF_DOMAIN) {
+      const bad = doc([{ ...issue(1, READABLE), [field]: value }]);
+      for (const [name, run] of ENTRY_POINTS) {
+        const result = run(bad);
+        assert.equal(result.code, EXIT.usage, `${name} accepted ${field}=${JSON.stringify(value)}`);
+        assert.equal(result.stdout, '', `${name} produced output for ${field}=${JSON.stringify(value)}`);
+      }
+    }
+  });
+
+  test('homeRepo is held to its domain at every entry point too', () => {
+    const parsed: unknown = JSON.parse(
+      JSON.stringify({ homeRepo: 'project', baseRanking: { source: 'config', order: [] }, issues: [issue(1, READABLE)] }),
+    );
+    const bad = parsed as OrderInputDocument;
+    for (const [name, run] of ENTRY_POINTS) {
+      assert.equal(run(bad).code, EXIT.usage, `${name} accepted homeRepo="project"`);
+    }
+  });
+
+  test('CONTROL: in-domain values still derive at every entry point', () => {
+    // Without this the two tests above pass for a package that refuses
+    // everything — and the qualified `repo` is the one that must NOT be caught.
+    for (const [field, value] of [['repo', 'owner/repo'], ['repo', null], ['number', 1], ['assigneeCount', 0]] as const) {
+      const ok = doc([{ ...issue(1, READABLE), [field]: value }, CLOSED_FIVE as unknown as Record<string, unknown>]);
+      for (const [name, run] of ENTRY_POINTS) {
+        assert.equal(run(ok).code, EXIT.ok, `${name} refused ${field}=${JSON.stringify(value)}`);
+      }
+    }
+  });
+
   test('the reported divergence is gone: no key is reported under-read AND ready', () => {
     // The exact shape review measured — readable body first, unreadable second.
     const clean = doc([issue(1, READABLE), CLOSED_FIVE as unknown as Record<string, unknown>]);
@@ -262,6 +311,63 @@ describe('input fields are bounded by their domain, not just their type', () => 
       assert.equal(resolveRef(String(value)), null, `reader accepts ${value}`);
       assert.equal(orderFromJson(document([{ ...issue(1, 'no block'), number: value }]), 'order').code, EXIT.usage);
     }
+  });
+
+  test('a repository the reader cannot reference is refused', () => {
+    // MEASURED CONSEQUENCE, not a tidiness rule. `repo` used to accept any
+    // string, `nodeKey` then built `project#7`, and no issue body can reference
+    // that: a dependent declaring `blocked-by: project#7` came back HELD with
+    // `own issuegraph declaration was not fully read`. Fail-safe, and the reason
+    // named the wrong thing — so the caller could not see its own input was at
+    // fault. Refused at the boundary that owns it instead.
+    for (const value of ['project', 'owner/', '/repo', 'owner repo', 'owner/repo#7', '']) {
+      const message = refusal('repo', value);
+      assert.ok(message.includes('repo'), `${JSON.stringify(value)}: ${message}`);
+      assert.ok(message.includes('owner/repo'), `${JSON.stringify(value)}: ${message}`);
+    }
+  });
+
+  test('CONTROL: a qualified repo, an explicit null, and an absent key all still pass', () => {
+    // The refusal has to be the unusable value and nothing else. `null` and an
+    // absent key both mean "home repo" and are the common case, so a rule that
+    // caught either would break every ordinary document.
+    for (const value of ['owner/repo', 'autnmy/issuegraph', 'a/b', 'Owner/Repo.js', null]) {
+      const issues = [{ ...issue(1, 'no block'), repo: value }];
+      const result = orderFromJson(document(issues), 'order');
+      assert.equal(result.code, EXIT.ok, `${JSON.stringify(value)}: ${result.stderr.join('\n')}`);
+    }
+    assert.equal(orderFromJson(document([issue(1, 'no block')]), 'order').code, EXIT.ok);
+  });
+
+  test('the accepted repositories are exactly the ones the reader can reference', () => {
+    // Asked, not restated — the same claim the issue-number test above makes,
+    // over the other half of a qualified reference. `resolveRef` is the reader's
+    // whole-token answer, so agreeing with it is agreeing with the grammar that
+    // decides whether the key this input produces can ever be addressed.
+    for (const value of ['owner/repo', 'a/b']) {
+      assert.notEqual(resolveRef(`${value}#1`), null, `reader refuses ${value}`);
+      assert.equal(orderFromJson(document([{ ...issue(1, 'no block'), repo: value }]), 'order').code, EXIT.ok);
+    }
+    for (const value of ['project', 'owner/', '/repo']) {
+      assert.equal(resolveRef(`${value}#1`), null, `reader accepts ${value}`);
+      assert.equal(orderFromJson(document([{ ...issue(1, 'no block'), repo: value }]), 'order').code, EXIT.usage);
+    }
+  });
+
+  test('homeRepo is held to the same domain as an issue repo', () => {
+    // It is not a reference, so nothing it accepts can be MIS-resolved — but it
+    // is compared against every node's repo after both are lowercased, so an
+    // unusable value silently matches nothing and leaves qualified keys where
+    // the caller expected bare ones. Same predicate, same authority.
+    const withHome = (homeRepo: unknown): string =>
+      JSON.stringify({
+        homeRepo,
+        baseRanking: { source: 'config', order: [{ key: '1', matchedOrderIndex: 0 }] },
+        issues: [issue(1, 'no block')],
+      });
+    assert.equal(orderFromJson(withHome('project'), 'order').code, EXIT.usage);
+    assert.ok(orderFromJson(withHome('project'), 'order').stderr.join('\n').includes('homeRepo'));
+    assert.equal(orderFromJson(withHome('owner/repo'), 'order').code, EXIT.ok);
   });
 
   test('a negative matchedOrderIndex is refused', () => {
