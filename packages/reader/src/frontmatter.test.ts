@@ -12,6 +12,7 @@ import {
   locateBlock,
   locateSection,
   parseFrontmatter,
+  parseRef,
 } from './frontmatter.ts';
 
 /**
@@ -1482,6 +1483,77 @@ describe('a projection must never testify that content is absent', () => {
       assert.equal(parse.data, null, body);
       assert.deepEqual(parse.diagnostics, [], body);
       assert.equal(isUnreadDeclaration(parse), false, body);
+    }
+  });
+});
+
+/**
+ * The reference-token parser, now exported.
+ *
+ * IT WAS ALWAYS TESTED THROUGH `parseFrontmatter`, and those cases stay where
+ * they are — a reference inside a document is the reader's primary job. What is
+ * new is that a consumer can ask about ONE token without building a document,
+ * so what is tested here is that surface: the three spellings, the bounds, and
+ * above all that the two entry points cannot answer differently.
+ */
+describe('parseRef', () => {
+  test('reads all three spellings, and both same-repo spellings agree', () => {
+    assert.deepEqual(parseRef('123'), { repo: null, id: '123' });
+    // `123` and `#123` are ONE reference: the sigil never survives into `id`.
+    assert.deepEqual(parseRef('#123'), parseRef('123'));
+    assert.deepEqual(parseRef('owner/repo#123'), { repo: 'owner/repo', id: '123' });
+  });
+
+  test('reads an opaque tracker identifier', () => {
+    assert.deepEqual(parseRef('ABC-123'), { repo: null, id: 'ABC-123' });
+    assert.deepEqual(parseRef('owner/repo#ENG-456'), { repo: 'owner/repo', id: 'ENG-456' });
+  });
+
+  test('refuses what no tracker can name', () => {
+    for (const token of ['', '#', '#0', '0', '-1', 'owner/repo', 'owner/repo#']) {
+      assert.equal(parseRef(token), null, `expected ${JSON.stringify(token)} to be refused`);
+    }
+  });
+
+  test('refuses a non-canonical or unrepresentable number', () => {
+    // Both bounds §4.2 keeps on the numeric shape, and both exist for the same
+    // reason: a value outside them comes back from a RE-RENDER spelled
+    // differently than it went in.
+    assert.equal(parseRef('0123'), null);
+    assert.equal(parseRef('99999999999999999999999'), null);
+  });
+
+  test('does not trim — a quoted scalar is bytes the author asked for', () => {
+    assert.equal(parseRef(' #123 '), null);
+    assert.equal(parseRef('123 '), null);
+  });
+
+  test('does not coerce a non-string', () => {
+    // `RegExp.test` coerces, so a grammar reached without a type test answers
+    // for `"undefined"`. `isRefId` closed that; this pins that `parseRef`
+    // inherits it rather than reopening it at the token boundary.
+    for (const value of [undefined, null, 123, true, {}, []]) {
+      assert.equal(parseRef(value), null, `expected ${String(value)} to be refused`);
+    }
+  });
+
+  test('AGREES WITH THE PARSER on every shape, which is the whole point', () => {
+    // THE EQUIVALENCE PIN. Before this export the only way to ask "is this a
+    // reference?" was to feed a synthetic block to `parseFrontmatter` and read
+    // the answer back. Consumers did exactly that. If the two ever diverge, the
+    // export is worse than the workaround it replaced — so the divergence is
+    // what this test exists to catch, over accepted and refused shapes alike.
+    const tokens = [
+      '1', '123', '#123', 'owner/repo#123', 'ABC-123', 'ENG-456', 'abc', 'not-a-ref',
+      '', '#', '#0', '0', '-1', 'owner/repo', 'owner/repo#', '0123',
+      '99999999999999999999999', '1 2', '1"', 'a/b/c#1',
+    ];
+    for (const token of tokens) {
+      const direct = parseRef(token);
+      const block = ['---', 'issuegraph:', '  blocked-by:', `    - "${token.replace(/["\\]/g, '\\$&')}"`, '---', ''].join('\n');
+      const parsed = parseFrontmatter(block);
+      const viaDocument = parsed.diagnostics.length === 0 ? (parsed.data?.blockedBy[0] ?? null) : null;
+      assert.deepEqual(direct, viaDocument, `parseRef and parseFrontmatter disagree about ${JSON.stringify(token)}`);
     }
   });
 });

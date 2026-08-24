@@ -33,8 +33,22 @@ export type { IssueRef } from '@issuegraph/reader';
 export { expectedParseOfRender, renderFrontmatter, renderRef } from './render.ts';
 export type { RenderInput, RenderOptions } from './render.ts';
 
-export { spliceGeneratedEdges } from './splice.ts';
-export type { GeneratedEdges } from './splice.ts';
+/**
+ * The splice's OWNERSHIP DOMAIN is exported alongside the call it governs: which
+ * fields {@link spliceGeneratedEdges} can own, and which of those an explicit
+ * empty value clears. A consumer that validates a write request before making
+ * one needs both answers, and reading them out of a doc comment is how four
+ * separate restatements of this rule came to exist. {@link owns} inside the
+ * package derives from the same table, so asking it and behaving are the same
+ * thing rather than two things that agree today.
+ */
+export {
+  isSpliceOwnedField,
+  SPLICE_FIELD_OWNERSHIP,
+  SPLICE_OWNED_FIELDS,
+  spliceGeneratedEdges,
+} from './splice.ts';
+export type { GeneratedEdges, SpliceFieldOwnership, SpliceOwnedField } from './splice.ts';
 
 export { backfillFrontmatter } from './backfill.ts';
 export type { BackfillOutcome, BackfillResult } from './backfill.ts';

@@ -14,7 +14,13 @@ import { describe, it } from 'node:test';
 import { parseFrontmatter } from '@issuegraph/reader';
 
 import { renderFrontmatter } from './render.ts';
-import { spliceGeneratedEdges, type GeneratedEdges } from './splice.ts';
+import {
+  isSpliceOwnedField,
+  SPLICE_FIELD_OWNERSHIP,
+  SPLICE_OWNED_FIELDS,
+  spliceGeneratedEdges,
+  type GeneratedEdges,
+} from './splice.ts';
 
 const NEW_EDGES: GeneratedEdges = {
   blockedBy: [{ repo: null, id: '12' }],
@@ -561,5 +567,108 @@ describe('an empty section takes its child indent from the header', () => {
     const parse = parseFrontmatter(next);
     assert.deepEqual(parse.data?.blockedBy, [{ repo: null, id: '9' }]);
     assert.equal(parse.data?.priority, 1, 'and the unowned field survived');
+  });
+});
+
+/**
+ * The ownership domain, exported so consumers ask instead of re-deriving.
+ *
+ * THE DERIVATION PIN AT THE BOTTOM IS THE ONE THAT MATTERS. Everything above it
+ * checks the table's shape, which a wrong-but-well-formed table would pass. The
+ * last case checks that the table AGREES WITH THE SPLICE — which is what makes
+ * publishing it safe, because `owns` reads the same rows.
+ */
+describe('the splice ownership domain', () => {
+  it('lists exactly the fields the splice can own', () => {
+    assert.deepEqual([...SPLICE_OWNED_FIELDS], [
+      'blocked-by',
+      'serialize-with',
+      'decomposed-from',
+      'duplicate-of',
+    ]);
+  });
+
+  it('has a row for every listed field, and lists every row — in both directions', () => {
+    // `satisfies` pins this at compile time; asserting it at runtime as well is
+    // what catches a table whose TYPE is satisfied by a value built some other
+    // way (a spread, a merge) than the literal the compiler checked.
+    assert.deepEqual(Object.keys(SPLICE_FIELD_OWNERSHIP).sort(), [...SPLICE_OWNED_FIELDS].sort());
+  });
+
+  it('maps each field to a distinct GeneratedEdges property', () => {
+    const properties = SPLICE_OWNED_FIELDS.map((f) => SPLICE_FIELD_OWNERSHIP[f].property);
+    assert.equal(new Set(properties).size, properties.length, 'two fields share one property');
+    assert.deepEqual(properties, ['blockedBy', 'serializeWith', 'decomposedFrom', 'duplicateOf']);
+  });
+
+  it('records scheduling edges as clearable and provenance as not', () => {
+    assert.equal(SPLICE_FIELD_OWNERSHIP['blocked-by'].clearable, true);
+    assert.equal(SPLICE_FIELD_OWNERSHIP['serialize-with'].clearable, true);
+    assert.equal(SPLICE_FIELD_OWNERSHIP['decomposed-from'].clearable, false);
+    assert.equal(SPLICE_FIELD_OWNERSHIP['duplicate-of'].clearable, false);
+  });
+
+  it('is frozen, table and rows alike', () => {
+    assert.ok(Object.isFrozen(SPLICE_FIELD_OWNERSHIP));
+    assert.ok(Object.isFrozen(SPLICE_OWNED_FIELDS));
+    for (const field of SPLICE_OWNED_FIELDS) {
+      assert.ok(Object.isFrozen(SPLICE_FIELD_OWNERSHIP[field]), field);
+    }
+  });
+
+  describe('isSpliceOwnedField', () => {
+    it('accepts every owned field', () => {
+      for (const field of SPLICE_OWNED_FIELDS) assert.equal(isSpliceOwnedField(field), true, field);
+    });
+
+    it('REFUSES together-with — the field the splice genuinely cannot write', () => {
+      // The one a consumer is most likely to assume is spliceable, because it is
+      // an edge field like the other four. It is absent from the domain rather
+      // than present-and-false, and this is what makes that absence answerable.
+      assert.equal(isSpliceOwnedField('together-with'), false);
+      assert.equal(isSpliceOwnedField('priority'), false);
+      assert.equal(isSpliceOwnedField('evidence'), false);
+    });
+
+    it('does not coerce a non-string', () => {
+      for (const value of [undefined, null, 42, true, {}, ['blocked-by']]) {
+        assert.equal(isSpliceOwnedField(value), false, String(value));
+      }
+    });
+  });
+
+  it('THE DERIVATION PIN: clearable says what an empty value actually does', () => {
+    // For each owned field, splice an explicit empty value into a block that
+    // HAS that entry, and assert the entry is gone iff the table says clearable.
+    // This is what stops the exported table from being a description that can
+    // drift: `owns` reads these same rows, so a wrong row is a wrong splice.
+    const ref = { repo: null, id: '9' };
+    const empties: Readonly<Record<string, GeneratedEdges>> = {
+      'blocked-by': { blockedBy: [] },
+      'serialize-with': { serializeWith: null },
+      'decomposed-from': { decomposedFrom: null },
+      'duplicate-of': { duplicateOf: null },
+    };
+    for (const field of SPLICE_OWNED_FIELDS) {
+      const { property, clearable } = SPLICE_FIELD_OWNERSHIP[field];
+      const seeded =
+        property === 'blockedBy'
+          ? renderFrontmatter({ blockedBy: [ref], priority: 1 })
+          : renderFrontmatter({ blockedBy: [ref], priority: 1, [property]: ref });
+      const body = `${seeded as string}\n\nTail.`;
+      const next = spliceGeneratedEdges(body, empties[field] as GeneratedEdges);
+      assert.notEqual(next, null, field);
+      const data = parseFrontmatter(next as string).data;
+      const present = property === 'blockedBy'
+        ? (data?.blockedBy.length ?? 0) > 0
+        : data?.[property as 'serializeWith' | 'decomposedFrom' | 'duplicateOf'] != null;
+      assert.equal(
+        present,
+        !clearable,
+        `${field}: clearable=${clearable} but the entry is ${present ? 'still present' : 'gone'}`,
+      );
+      // The un-owned neighbour survives either way — the splice is surgical.
+      assert.equal(data?.priority, 1, field);
+    }
   });
 });

@@ -43,7 +43,7 @@ import type { Evidence } from '@issuegraph/core';
 
 import { classifyDeclaration, unreadErrorLines } from '../declaration.ts';
 import type { Declaration } from '../declaration.ts';
-import { clearRefusalReason, writeRequestRefusal } from '../fields.ts';
+import { clearRefusalReason, unperformableClear, writeRequestRefusal } from '../fields.ts';
 import type { WriteRefusal } from '../fields.ts';
 import { EXIT } from '../exit.ts';
 import type { VerbResult } from '../exit.ts';
@@ -177,18 +177,19 @@ export function setFields(body: string, fields: SetFields): VerbResult {
       // table. The flags are one caller; this package is importable, so a program
       // holding `SetFields` reaches the same assignment, and refusing only at the
       // command line would leave the silent no-op available through the library.
-      const unclearable = [
-        ['decomposed-from', fields.decomposedFrom],
-        ['duplicate-of', fields.duplicateOf],
-      ] as const;
-      for (const [field, value] of unclearable) {
-        if (value === null) {
-          return {
-            stdout: '',
-            stderr: [`issuegraph: refusing to write — ${clearRefusalReason(field)}`],
-            code: EXIT.refusedWrite,
-          };
-        }
+      //
+      // IT ASKS `unperformableClear` rather than listing the two fields again.
+      // The list that used to sit here was a fourth copy of a rule the writer now
+      // exports, and `fields.ts` already says why there must be exactly one
+      // implementation: each previous fix added the check at the one site that
+      // lacked it, which is why the next round found the next site.
+      const unclearable = unperformableClear(fields);
+      if (unclearable !== null) {
+        return {
+          stdout: '',
+          stderr: [`issuegraph: refusing to write — ${clearRefusalReason(unclearable)}`],
+          code: EXIT.refusedWrite,
+        };
       }
 
       const renderOnly = renderOnlyRequested(fields);
