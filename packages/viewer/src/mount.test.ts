@@ -150,6 +150,38 @@ describe('mountViewer', () => {
     assert.deepEqual(selected, [], 'a host ancestor answered for a click on nothing of ours');
   });
 
+  it('leaves keyboard activation to a nested link', () => {
+    // `keydown` bubbles, so the viewer's own Enter handling ran while focus was
+    // on a row's deep-link chip, called `preventDefault()` and suppressed the
+    // link. A projection that exposes a link a keyboard cannot follow has not
+    // exposed it.
+    const selected: (string | null)[] = [];
+    const { container } = mounted({ onSelect: (key: string | null) => selected.push(key) });
+    const link = container.descendants().find((element) => element.tag === 'a');
+    assert.ok(link !== undefined, 'no deep link was rendered');
+
+    let prevented = 0;
+    container.dispatch('keydown', {
+      key: 'Enter',
+      target: link,
+      preventDefault: () => (prevented += 1),
+    });
+
+    assert.equal(prevented, 0, 'the viewer suppressed the link');
+    assert.deepEqual(selected, [], 'the viewer selected instead of following the link');
+  });
+
+  it('still moves focus when the arrow keys arrive on a link', () => {
+    // Only ACTIVATION belongs to the control — a reader focused on a link must
+    // still be able to arrow away from it.
+    const { container, handle } = mounted();
+    const link = container.descendants().find((element) => element.tag === 'a');
+    assert.ok(link !== undefined);
+
+    container.dispatch('keydown', { key: 'ArrowDown', target: link });
+    assert.equal(handle.state.focused, '101');
+  });
+
   it('reports a hover, and reports null when the pointer leaves', () => {
     const hovered: (string | null)[] = [];
     const { container } = mounted({ onHover: (key: string | null) => hovered.push(key) });

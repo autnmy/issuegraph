@@ -184,9 +184,41 @@ export const viewerStylesheet = `
 
 /* ── the graph canvas ──────────────────────────────────────────────────── */
 
+/* The stage carries the LAYOUT's own size, so one SVG unit is one CSS pixel
+   and an absolutely-positioned rail row lands on the node it names. A
+   percentage-width canvas would rescale under the rail and drift. It scrolls
+   rather than shrinking, because shrinking would silently break that. */
+.ig-stage {
+  block-size: var(--ig-stage-h);
+  inline-size: var(--ig-stage-w);
+  max-inline-size: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  position: relative;
+}
+
 .ig-canvas {
+  block-size: var(--ig-stage-h);
   display: block;
-  inline-size: 100%;
+  inline-size: var(--ig-stage-w);
+}
+
+/* The ranks and stations FOR the spine nodes, sitting on them. */
+.ig-rail {
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+}
+
+.ig-rail-row {
+  block-size: var(--ig-row-h);
+  inline-size: var(--ig-row-w);
+  inset-block-start: var(--ig-row-y);
+  inset-inline-start: var(--ig-row-x);
+  margin-bottom: 0;
+  min-block-size: 0;
+  pointer-events: auto;
+  position: absolute;
 }
 
 .ig-node {

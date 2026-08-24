@@ -29,6 +29,8 @@ import { type Theme, defaultTheme } from './theme.ts';
 /** The slice of an element `mount` needs beyond building. */
 export interface MountElement extends SpecElement {
   readonly ownerDocument: SpecDocument;
+  /** Upper-case, as the DOM reports it. Absent on an implementation that has none. */
+  readonly tagName?: string;
   addEventListener(type: string, handler: (event: MountEvent) => void): void;
   removeEventListener(type: string, handler: (event: MountEvent) => void): void;
   removeChild(child: SpecElement): void;
@@ -62,6 +64,35 @@ export interface ViewerHandle {
   readonly state: NavigationState;
   /** Remove every listener this handle added and empty the container. */
   destroy(): void;
+}
+
+/**
+ * Elements that own their own keyboard activation.
+ *
+ * Every row deliberately carries a deep-link chip, and `keydown` BUBBLES — so
+ * the viewer's own Enter/Space handling ran while focus was on the anchor,
+ * called `preventDefault()`, and suppressed the link. A projection that exposes
+ * a link a keyboard cannot follow has not exposed it.
+ */
+const SELF_ACTIVATING_TAGS: ReadonlySet<string> = new Set([
+  'A',
+  'BUTTON',
+  'INPUT',
+  'SELECT',
+  'TEXTAREA',
+]);
+
+function ownsItsOwnActivation(
+  target: MountElement | null | undefined,
+  container: MountElement,
+): boolean {
+  let cursor: MountElement | null = target ?? null;
+  while (cursor !== null && cursor !== container) {
+    const tag = cursor.tagName;
+    if (tag !== undefined && SELF_ACTIVATING_TAGS.has(tag.toUpperCase())) return true;
+    cursor = cursor.parentElement;
+  }
+  return false;
 }
 
 /**
@@ -173,6 +204,15 @@ export function mountViewer(
 
   const onKeyDown = (event: MountEvent): void => {
     if (event.key === undefined || currentScene === null) return;
+    // An activation key on a control that activates itself is that control's.
+    // Movement keys are still the viewer's — a reader on a link must be able to
+    // arrow away from it.
+    if (
+      (event.key === 'Enter' || event.key === ' ') &&
+      ownsItsOwnActivation(event.target, container)
+    ) {
+      return;
+    }
     const result = navigate(currentScene, state, event.key);
     if (result.command.kind === 'none') return;
     event.preventDefault?.();

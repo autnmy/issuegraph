@@ -178,52 +178,75 @@ function nodeShape(
         height: box.height,
         rx: theme.metrics['--ig-radius'],
       }),
-      svg(
-        'text',
-        {
-          class: 'ig-node-label',
-          x: box.x + theme.metrics['--ig-space'],
-          // `dominant-baseline` centres the glyphs on the line rather than a
-          // remembered offset, so the label stays centred at any type scale.
-          y: box.y + box.height / 2,
-          'dominant-baseline': 'middle',
-        },
-        [issue?.title ?? key],
-      ),
+      // A SPINE node is labelled by its rail row, which sits on top of it — so
+      // labelling it here too would print the title twice, once in text a
+      // reader can select and once in text they cannot.
+      box.column === 'spine'
+        ? null
+        : svg(
+            'text',
+            {
+              class: 'ig-node-label',
+              x: box.x + theme.metrics['--ig-space'],
+              // `dominant-baseline` centres the glyphs on the line rather than
+              // a remembered offset, so the label stays centred at any scale.
+              y: box.y + box.height / 2,
+              'dominant-baseline': 'middle',
+            },
+            [issue?.title ?? key],
+          ),
     ],
   );
 }
 
 /**
- * The spine's rank column and readiness stations, drawn as HTML beside the
- * canvas rather than inside it.
+ * The spine's ranks and readiness stations, drawn as HTML ON the canvas.
  *
- * Text in SVG is not selectable, not reflowable, and announces poorly; the
- * spine's job is to be read. Keeping the stations in the document flow is also
- * what lets them keep the `4px` background halo the design asks for, so a
- * crossing arc reads as passing behind.
+ * Text in SVG is not selectable, not reflowable and announces poorly, so the
+ * spine's rows stay HTML — but they are the labels FOR the spine nodes, and
+ * emitting them as a sibling block put them above the drawing instead of on it.
+ * Ranks and stations then described a picture the reader had to hold in their
+ * head, which is the opposite of the design's claim that the spine IS the
+ * order.
+ *
+ * So each row is positioned at the coordinates the LAYOUT computed for its own
+ * node — same source of truth as every edge endpoint. Hand-authoring these
+ * against remembered positions is the failure mode the design's implementation
+ * note names; the numbers ride custom properties so the theme still owns them.
  */
 function spineRail(
   document: NormalizedDocument,
+  layout: GraphLayout,
   options: SceneOptions,
   focused: string | null,
+  positioned: boolean,
 ): ElementSpec {
   const slots = document.order.slots.filter((slot) => !isFooterSlot(slot));
   return element(
     'ol',
     // A plain list for the reason `linear.ts` gives: an interactive descendant
     // may not live inside `role="option"`.
-    { class: 'ig-list', 'aria-label': 'work order' },
-    slots.map((slot) =>
-      element(
+    // WHEN THERE IS NO CANVAS THERE IS NOTHING TO SIT ON. A refusal draws no
+    // spine nodes, so the rail returns to ordinary flow rather than positioning
+    // itself against coordinates nothing rendered.
+    { class: positioned ? 'ig-list ig-rail' : 'ig-list', 'aria-label': 'work order' },
+    slots.map((slot) => {
+      const box = layout.nodes.get(slot.lead);
+      return element(
         'li',
         {
-          class: 'ig-slot',
+          class: positioned ? 'ig-slot ig-rail-row' : 'ig-slot',
           'data-ig-key': slot.lead,
           'data-held': slot.ready ? 'false' : 'true',
           'aria-current': options.selected === slot.lead ? 'true' : 'false',
           'aria-label': slotLabel(document, slot),
           tabindex: focused === slot.lead ? 0 : -1,
+          // Positioned from the layout, not from the flow, so a row sits on the
+          // node it names however the theme scales the geometry.
+          style:
+            positioned && box !== undefined
+              ? `--ig-row-x:${String(box.x)}px;--ig-row-y:${String(box.y)}px;--ig-row-w:${String(box.width)}px;--ig-row-h:${String(box.height)}px`
+              : null,
         },
         [
           element(
@@ -234,8 +257,8 @@ function spineRail(
           station(stationFill(slot)),
           element('span', { class: 'ig-title' }, [slotTitle(document, slot)]),
         ],
-      ),
-    ),
+      );
+    }),
   );
 }
 
@@ -448,7 +471,11 @@ export function graphScene(document: NormalizedDocument, options: GraphOptions =
       {
         class: 'ig-canvas',
         viewBox: `0 0 ${String(Math.round(layout.width))} ${String(Math.round(layout.height))}`,
-        role: 'img',
+        // `role="img"` FLATTENS every descendant into a single image, which
+        // would hide the very node roles and labels that make gutter and
+        // held nodes reachable. A container holding separately focusable
+        // semantic children is a group, not a picture.
+        role: 'group',
         'aria-label': `${String(nodeCount)} issues and ${String(document.edges.length)} relationships`,
       },
       [...enclosures, ...edgeLayers, ...nodeShapes],
@@ -460,8 +487,22 @@ export function graphScene(document: NormalizedDocument, options: GraphOptions =
     { class: 'ig-viewer ig-graph', 'data-projection': 'graph', 'aria-label': 'issue order and relationships' },
     [
       legend(),
-      spineRail(document, options, navigable.focused),
-      canvas,
+      // ONE STAGE, sized in the layout's own units, so an absolutely-positioned
+      // rail row and an SVG coordinate mean the same thing. A percentage-width
+      // canvas would rescale under the rail and the two would drift apart.
+      // A refusal draws no nodes, so it needs no stage and the rail stays in
+      // ordinary flow — a fixed-height stage would clip it.
+      refused
+        ? canvas
+        : element(
+            'div',
+            {
+              class: 'ig-stage',
+              style: `--ig-stage-w:${String(Math.round(layout.width))}px;--ig-stage-h:${String(Math.round(layout.height))}px`,
+            },
+            [canvas, spineRail(document, layout, options, navigable.focused, true)],
+          ),
+      refused ? spineRail(document, layout, options, navigable.focused, false) : null,
       document.isolated.length === 0
         ? null
         : element('p', { class: 'ig-count' }, [

@@ -56,6 +56,11 @@ export class TestElement implements MountElement {
     return this.parent;
   }
 
+  /** Upper-case, as the DOM reports it. */
+  get tagName(): string {
+    return this.tag.toUpperCase();
+  }
+
   setAttribute(name: string, value: string): void {
     this.attributes.set(name, value);
   }

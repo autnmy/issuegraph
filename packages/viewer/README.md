@@ -68,6 +68,8 @@ const document = {
 
 **Held slots keep their position.** A hold the graph itself imposes renders *inline at the rank the work would have taken*, with `—` for the rank and a dashed station, because "why isn't my P1 running" has to be answerable in place. A hold the runner or tracker imposes is not a fact about the work, earns no rank slot, and collapses into a footer group with duplicates.
 
+**The rail sits on the canvas, not above it.** Ranks and readiness stations are HTML — SVG text is not selectable, not reflowable and announces poorly — but they are the labels *for* the spine nodes, so each row is positioned at the coordinates the layout computed for its own node. One stage carries both at the layout's own size, so one SVG unit is one CSS pixel and the two cannot drift; it scrolls rather than shrinking, because shrinking would silently break that alignment.
+
 **The graph refuses rather than degrades.** Past 60 nodes it stops drawing and shows connected components as capsules — size, blocking count, cycle flag, chain depth — and past 300 it shows clusters only. Each refusal names the next move. A refusal with a route forward reads as competence; a hairball reads as a bug.
 
 ## The edge grammar
@@ -133,6 +135,8 @@ That exact theme is the one `acceptance.test.ts` uses, so the example cannot dri
 - **Keyboard navigable.** `↑` `↓` walk the order, `←` `→` traverse to gutter neighbours, `Enter` or `Space` selects, `Home` and `End` jump to the ends. Movement never wraps: the ends of the order are the ends of the work.
 - **Rank order, never geometric.** The graph places boxes where the geometry puts them and publishes its traversal in *rank* order; recovering an order from coordinates is what the design forbids, and `navigate` cannot see a coordinate.
 - **No graph-theory literacy assumed.** The tree is a nested list announced as one; every relationship carries a written label alongside its glyph.
+- **A nested control keeps its own keyboard.** `keydown` bubbles, so Enter or Space on a row's deep-link chip follows the link rather than selecting the row — a link a keyboard cannot follow is not exposed. Movement keys stay the viewer's, so a reader can still arrow away from a link.
+- **The canvas is a group, not a picture.** `role="img"` would flatten every descendant into one image node and hide the roles and labels that make gutter and held nodes reachable at all.
 - **Plain list semantics, deliberately.** Rows carry a deep-link chip, and `role="option"` / `role="treeitem"` forbid a focusable descendant — so selection is announced with `aria-current` and hierarchy with nesting, which leaves the link legal instead of making it a violation.
 
 Navigation is a pure reducer (`navigate`), so the whole key map is testable without a DOM — and the shell has nothing left to get wrong except wiring.

@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { LAYOUT_PROPERTIES } from './layout.ts';
+import { renderViewer } from './render.ts';
+import { fixtureDocument } from './testing/fixtures.ts';
 import { viewerStylesheet } from './styles.ts';
 import { THEME_TOKENS } from './theme.ts';
 
@@ -15,14 +18,42 @@ function withoutComments(css: string): string {
 }
 
 describe('the structural stylesheet', () => {
-  it('references only tokens the theme supplies', () => {
-    // The other direction of the theme contract: a `var()` naming a token no
-    // theme sets resolves to nothing, and the affected rule silently does not
-    // apply — the failure mode that looks like a styling bug for weeks.
+  it('references only properties something actually sets', () => {
+    // The other direction of the theme contract: a `var()` naming a property no
+    // theme and no layout sets resolves to nothing, and the affected rule
+    // silently does not apply — the failure mode that looks like a styling bug
+    // for weeks.
+    //
+    // TWO KINDS, declared separately rather than merged. A theme token is a
+    // value a HOST chooses; a layout property is one the LAYOUT computes and
+    // writes onto an element. Accepting any `--ig-` name would have made this
+    // guard vacuous the moment the first computed property appeared.
+    const known = [...THEME_TOKENS, ...LAYOUT_PROPERTIES];
     const unknown = referencedTokens(viewerStylesheet).filter(
-      (token) => !THEME_TOKENS.includes(token),
+      (token) => !known.includes(token),
     );
     assert.deepEqual(unknown, []);
+  });
+
+  it('keeps the two kinds of property disjoint', () => {
+    for (const property of LAYOUT_PROPERTIES) {
+      assert.equal(
+        THEME_TOKENS.includes(property),
+        false,
+        `${property} is both a theme token and layout output`,
+      );
+      assert.match(property, /^--ig-[a-z0-9-]+$/);
+    }
+  });
+
+  it('sets every layout property on the elements that use it', () => {
+    // A declared-but-never-written property is the same silent nothing as an
+    // undeclared one, so the list is checked against the markup rather than
+    // taken on trust.
+    const written = renderViewer(fixtureDocument, { projection: 'graph' }).markup;
+    for (const property of LAYOUT_PROPERTIES) {
+      assert.ok(written.includes(`${property}:`), `${property} is declared but never written`);
+    }
   });
 
   it('contains no literal colour', () => {

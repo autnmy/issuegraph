@@ -26,6 +26,24 @@
 import type { NormalizedDocument, ViewerEdge } from './document.ts';
 import type { MetricToken, Theme } from './theme.ts';
 
+/**
+ * Custom properties carrying LAYOUT OUTPUT rather than theme input.
+ *
+ * A theme token is a value a host chooses; these are values this module
+ * COMPUTES and writes onto individual elements, so the rail can sit on the node
+ * it names without either side hard-coding a coordinate. They are declared here
+ * so `styles.test.ts` can tell the two kinds apart — a `var()` naming neither a
+ * theme token nor one of these is still a defect, and still fails.
+ */
+export const LAYOUT_PROPERTIES: readonly string[] = Object.freeze([
+  '--ig-stage-w',
+  '--ig-stage-h',
+  '--ig-row-x',
+  '--ig-row-y',
+  '--ig-row-w',
+  '--ig-row-h',
+]);
+
 /** Which column a node sits in. */
 export type Column = 'left' | 'spine' | 'right';
 

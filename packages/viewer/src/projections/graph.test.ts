@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { type ViewerDocument, normalizeDocument } from '../document.ts';
+import { layoutGraph } from '../layout.ts';
 import { renderMarkup } from '../element.ts';
 import { crowdedDocument, fixtureDocument, heldTogetherDocument } from '../testing/fixtures.ts';
 import { viewerStylesheet } from '../styles.ts';
@@ -201,6 +202,78 @@ describe('the graph projection', () => {
   it('names every focusable graph node so a screen reader can announce it', () => {
     const markup = render();
     assert.match(markup, /data-ig-key="106"[^>]*aria-label="[^"]+"[^>]*tabindex=/);
+  });
+
+  it('sits each rail row on the node it names, at the layout coordinates', () => {
+    // Emitted as a sibling block, the ranks and stations rendered ABOVE the
+    // drawing — so the reader had to hold the correspondence in their head,
+    // which is the opposite of the design's claim that the spine IS the order.
+    const document = normalizeDocument(fixtureDocument).document;
+    const layout = layoutGraph(document, defaultTheme);
+    const markup = render();
+
+    assert.match(markup, /class="ig-stage"[^>]*--ig-stage-w:\d+px;--ig-stage-h:\d+px/);
+    assert.ok(
+      markup.indexOf('class="ig-stage"') < markup.indexOf('class="ig-list ig-rail"'),
+      'the rail is not inside the stage',
+    );
+
+    // Scoped to the RAIL row. A bare key search finds the SVG node group first,
+    // which carries the same key and no style — the assertion would then read a
+    // different element than the one it is about.
+    const railRows = new Map(
+      [...markup.matchAll(/<li class="ig-slot ig-rail-row" data-ig-key="([^"]+)"[^>]*>/g)].map(
+        (match) => [match[1] as string, match[0]],
+      ),
+    );
+    assert.ok(railRows.size > 0, 'no rail rows were rendered');
+
+    for (const slot of document.order.slots) {
+      const box = layout.nodes.get(slot.lead);
+      const row = railRows.get(slot.lead);
+      if (box === undefined || row === undefined) continue;
+      assert.match(
+        row,
+        new RegExp(`--ig-row-x:${String(box.x)}px;--ig-row-y:${String(box.y)}px`),
+        `${slot.lead} is not positioned on its own node`,
+      );
+      assert.match(row, new RegExp(`--ig-row-w:${String(box.width)}px`));
+    }
+    // Every ranked slot has a row, so the loop above is not vacuous.
+    for (const slot of document.order.slots.filter((candidate) => candidate.rank !== null)) {
+      assert.ok(railRows.has(slot.lead), `no rail row for ranked slot ${slot.lead}`);
+    }
+  });
+
+  it('labels a spine node once, in the rail, and a gutter node in the canvas', () => {
+    // The rail row sits ON the spine node, so an SVG label there would print the
+    // title twice — once selectable, once not.
+    const markup = render();
+    const labels = [...markup.matchAll(/<text class="ig-node-label"[^>]*>([^<]*)</g)].map(
+      (match) => match[1] as string,
+    );
+
+    assert.ok(labels.includes('Publish the rate table'), 'the gutter node lost its label');
+    assert.equal(labels.includes('Backfill the ledger'), false, 'a spine node is labelled twice');
+  });
+
+  it('returns the rail to ordinary flow when it refuses to draw', () => {
+    // A refusal draws no nodes, so there is nothing to sit on — and a
+    // fixed-height stage would clip the refusal block.
+    const markup = render(crowdedDocument(GRAPH_NODE_BUDGET + 1));
+
+    assert.equal(/class="ig-stage"/.test(markup), false);
+    assert.equal(/ig-rail-row/.test(markup), false);
+    assert.equal(/--ig-row-x/.test(markup), false);
+  });
+
+  it('groups the canvas rather than flattening it into one image', () => {
+    // `role="img"` collapses every descendant into a single image node, which
+    // would hide the node roles and labels that make gutter and held nodes
+    // reachable at all.
+    const markup = render();
+    assert.match(markup, /<svg class="ig-canvas"[^>]*role="group"/);
+    assert.equal(/<svg class="ig-canvas"[^>]*role="img"/.test(markup), false);
   });
 
   it('uses plain list semantics on the spine rail too', () => {
