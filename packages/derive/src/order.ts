@@ -68,7 +68,7 @@
  * TIE-BREAK SUBSTITUTION, not a second ranking engine.
  */
 
-import type { Model, NodeInput } from '@issuegraph/reader';
+import type { IssueRef, Model, NodeInput } from '@issuegraph/reader';
 import { buildModel, nodeKey, nodeSourceRepo, refKey } from '@issuegraph/reader';
 
 import {
@@ -339,23 +339,42 @@ export function deriveIssueOrder(input: DeriveIssueOrderInput): DerivedIssueOrde
 
   // ---- priority views ----
   const priority = new Map<string, IssuePriorityView>();
-  const dependentsOf = openDependents(issues, homeRepo, rawByKey, model);
+  const { dependents, declaredTogether } = promotionEdges(issues, homeRepo, rawByKey, model);
   /**
-   * Every open neighbour urgency can arrive through — §6.3 relaxes effective
+   * Every neighbour urgency can arrive through — §6.3 relaxes effective
    * priority along blocked-by AND together edges, so a reverse index of one of
-   * them explains only half the promotions it is asked about. A P3 grouped
-   * with a P0 is genuinely promoted, and a blocked-by-only index reports it
-   * with an empty `promotedBy`.
+   * them explains only half the promotions it is asked about.
+   *
+   * THE TOGETHER HALF IS THE ADJACENT PEER, NOT THE COMPONENT. Relaxation puts
+   * every member of a component at the SAME effective priority, so the filter
+   * below cannot tell a peer from a stranger three hops away — enumerate the
+   * component and every member reads as a cause. `promotedBy` promises the
+   * neighbour urgency arrived THROUGH, and the blocked-by arm has always
+   * answered that with the adjacent issue even when the cause is further off.
+   *
+   * INTERSECTING THE COMPONENT WITH THE DECLARED EDGES is what keeps this from
+   * restating the model's admission rule for a third time. A together edge is
+   * unioned only when the target resolves AND both endpoints are open
+   * (`model.ts:519`), and a duplicate declares nothing at all — so membership
+   * of the component already carries all of that. What is left to check is the
+   * single thing the component cannot say: whether these two are DIRECTLY
+   * joined. Re-testing `open` here would be a second statement of a rule no
+   * input can reach, which is exactly the kind of unfalsifiable defence the
+   * reader's own model refuses to write.
    *
    * Dependents first, then peers, deduplicated: a direct dependent is the more
    * specific answer, and an issue can be both.
    */
   const promotersOf = (key: string): readonly string[] => [
     ...new Set([
-      ...(dependentsOf.get(key) ?? []),
+      ...(dependents.get(key) ?? []),
       ...model
         .togetherComponent(key)
-        .filter((member) => member !== key && rawByKey.get(member)?.open === true),
+        .filter(
+          (member) =>
+            member !== key &&
+            (declaredTogether.get(key) === member || declaredTogether.get(member) === key),
+        ),
     ]),
   ];
   for (const key of candidates) {
@@ -443,27 +462,48 @@ function finitePosition(value: number | undefined): number {
   return value !== undefined && Number.isFinite(value) ? value : UNRANKED_POSITION;
 }
 
+/** The declared edges promotion provenance is read from. */
+interface PromotionEdges {
+  /** `key -> the OPEN issues directly blocked by it` (the reverse blocked-by edge). */
+  readonly dependents: ReadonlyMap<string, readonly string[]>;
+  /**
+   * `key -> the single key its own `together-with` names`, resolved.
+   *
+   * The FORWARD direction only, because the field is single-valued: the edge is
+   * symmetric, so the reverse is read by asking the other endpoint. No
+   * admission test is applied here — see `promotersOf`, which intersects this
+   * with the model's own component.
+   */
+  readonly declaredTogether: ReadonlyMap<string, string>;
+}
+
 /**
- * `key -> the OPEN issues directly blocked by it` (the reverse blocked-by edge).
+ * ONE walk over the declared edges, for both promotion paths.
  *
- * THIS ONE MUST MATCH THE MODEL EXACTLY, and that is the opposite instruction
- * from the cycle guard's. `promotedBy` EXPLAINS a promotion the model computed,
- * so an edge the model did not read cannot be the reason it gives, and an edge
- * the model attributed elsewhere has to be attributed the same way. Refusing
- * more is a safe direction for a pre-write guard and a WRONG one for
- * provenance: it names a cause that did not act.
+ * It is one function rather than two because "walk the declarations, skip a
+ * duplicate declarer, resolve the target" is a rule that had been written out
+ * three separate times by the third review round, and each copy grew its own
+ * gap. Reading both edges in a single pass leaves one place for it.
+ *
+ * IT MUST MATCH THE MODEL EXACTLY, which is the opposite instruction from the
+ * cycle guard's. `promotedBy` EXPLAINS a promotion the model computed, so an
+ * edge the model did not read cannot be the reason it gives, and an edge the
+ * model attributed elsewhere has to be attributed the same way. Refusing more
+ * is a safe direction for a pre-write guard and a WRONG one for provenance: it
+ * names a cause that did not act.
  *
  * So both of §4.3.3's halves are applied, through the model's own answer:
  * a duplicate declares nothing (`model.ts:443`), and an edge naming a duplicate
  * names its canonical (`model.ts:477`).
  */
-function openDependents(
+function promotionEdges(
   issues: readonly NodeInput[],
   homeRepo: string | undefined,
   rawByKey: ReadonlyMap<string, NodeInput>,
   model: Model,
-): ReadonlyMap<string, readonly string[]> {
+): PromotionEdges {
   const dependents = new Map<string, string[]>();
+  const declaredTogether = new Map<string, string>();
   const seen = new Set<string>();
   for (const node of issues) {
     const key = nodeKey(node, homeRepo);
@@ -475,9 +515,12 @@ function openDependents(
     // happens to compare.
     if (model.duplicateCanonical(key) !== null) continue;
     const sourceRepo = nodeSourceRepo(node, homeRepo);
-    for (const ref of node.data?.blockedBy ?? []) {
+    const resolve = (ref: IssueRef): string => {
       const target = refKey(ref, sourceRepo, homeRepo);
-      const blockerKey = model.duplicateCanonical(target) ?? target;
+      return model.duplicateCanonical(target) ?? target;
+    };
+    for (const ref of node.data?.blockedBy ?? []) {
+      const blockerKey = resolve(ref);
       // An unresolvable or closed blocker inherits nothing: the lookup answers
       // "is this a known OPEN node" in one step.
       if (rawByKey.get(blockerKey)?.open !== true) continue;
@@ -485,6 +528,8 @@ function openDependents(
       if (existing === undefined) dependents.set(blockerKey, [key]);
       else existing.push(key);
     }
+    const together = node.data?.togetherWith;
+    if (together != null) declaredTogether.set(key, resolve(together));
   }
-  return dependents;
+  return { dependents, declaredTogether };
 }

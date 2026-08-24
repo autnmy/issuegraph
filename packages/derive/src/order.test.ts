@@ -726,3 +726,63 @@ describe('deriveIssueOrder — urgency also arrives through a together peer', ()
     assert.deepStrictEqual(peer.promotedBy, []);
   });
 });
+
+describe('deriveIssueOrder — a together component is not a neighbourhood', () => {
+  // `togetherComponent` is the transitive component, and relaxation gives every
+  // member the SAME effective priority — so the effective-priority filter
+  // cannot tell a direct peer from a distant one, and every member reads as a
+  // cause. `promotedBy` promises the neighbour urgency arrived THROUGH, which
+  // the blocked-by arm has always answered with the adjacent issue even when
+  // the cause is several hops away.
+
+  const chain = (): NodeInput[] => [
+    // #10 -- #20 -- #30, and only #30 carries the urgency.
+    {
+      number: 10,
+      open: true,
+      labels: [],
+      assigneeCount: 0,
+      data: frontmatter({ togetherWith: ref(20) }),
+    },
+    {
+      number: 20,
+      open: true,
+      labels: [],
+      assigneeCount: 0,
+      data: frontmatter({ togetherWith: ref(30) }),
+    },
+    { number: 30, open: true, labels: ['P0'], assigneeCount: 0, data: null },
+  ];
+
+  const derived = (): DerivedIssueOrder =>
+    deriveIssueOrder({
+      issues: chain(),
+      config: { baseRanking: { source: 'config', order: [] } },
+    });
+
+  test('names only the DIRECT together peer, not the whole component', () => {
+    const view = priorityView(derived(), '10');
+    assert.equal(view.effective, 0);
+    assert.equal(view.promoted, true);
+    // #30 is two hops away and shares no edge with #10.
+    assert.deepStrictEqual(view.promotedBy, ['20']);
+  });
+
+  test('names BOTH peers for the member that genuinely has two', () => {
+    // The control that stops the test above passing for a rule that simply
+    // returns one peer, or the lowest-numbered one.
+    assert.deepStrictEqual(priorityView(derived(), '20').promotedBy, ['10', '30']);
+  });
+
+  test('CONTROL: the whole chain really is one component at one priority', () => {
+    // Without this the assertions above could pass because the component never
+    // formed — in which case they would be measuring nothing.
+    const d = derived();
+    const unit = slotWith(d, '10');
+    assert.deepStrictEqual(unit.members, ['10', '20', '30']);
+    assert.equal(unit.togetherGroupSize, 3);
+    for (const key of ['10', '20', '30']) {
+      assert.equal(priorityView(d, key).effective, 0);
+    }
+  });
+});
