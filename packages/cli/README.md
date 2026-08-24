@@ -124,7 +124,9 @@ The last three reach a body that has **no block yet** (rendered) and cannot be a
 
 The middle two can be written but not removed: the writer reads an empty value there as *leave untouched*, deliberately, because they carry provenance and a dedupe verdict rather than scheduling state — a machine refreshing its owned edges must not erase them by omission.
 
-So there is **no `--no-decomposed-from` or `--no-duplicate-of`**, an `--edges` payload containing `null` for either is refused, and an **unrecognised `--edges` key is refused too** rather than ignored. A write command that exits `0` having silently done nothing tells its caller a thing happened that did not, and automation cannot detect it — which is the same defect this package exists to refuse, one layer up.
+So there is **no `--no-decomposed-from` or `--no-duplicate-of`**, an `--edges` payload containing `null` for either is refused, and an **unrecognised `--edges` key is refused too** rather than ignored. The refusal lives on the operation, so it holds for `setFields` and `spliceEdges` alike when you call them as a library — omitting a key is how you say *leave it alone*, and it is the only way.
+
+The `order` document must also name each issue **once**: two entries for one key are refused rather than deduplicated, because the derivation keeps the first and this package restating that rule is how the two drift. A write command that exits `0` having silently done nothing tells its caller a thing happened that did not, and automation cannot detect it — which is the same defect this package exists to refuse, one layer up.
 
 Both write verbs also **refuse an unread block**: editing entries nobody could read would replace edges the run never saw.
 

@@ -176,11 +176,42 @@ function asIssue(value: unknown, at: string): OrderInputIssue {
 export function asOrderInput(value: unknown): OrderInputDocument {
   const record = asRecord(value, 'input');
   const homeRepo = record['homeRepo'];
-  const issues = asArray(record['issues'], 'input.issues');
+  const rawHomeRepo = homeRepo === undefined ? undefined : asString(homeRepo, 'input.homeRepo');
+  const issues = asArray(record['issues'], 'input.issues').map((issue, index) =>
+    asIssue(issue, `input.issues[${index}]`),
+  );
+
+  // TWO ENTRIES FOR ONE ISSUE ARE REFUSED, not silently deduplicated.
+  //
+  // `buildModel` keeps the FIRST occurrence and ignores the rest, which is a
+  // reasonable rule and not this package's to restate — and restating it is
+  // exactly what went wrong: the under-read report was built by walking every
+  // entry, so a key whose first body read fine and whose second did not was
+  // listed as under-read while the derivation had used the readable one. The
+  // output then said a ready slot was carried in as under-read.
+  //
+  // Teaching this loop the same first-occurrence rule would fix that instance
+  // and leave a second copy of a rule the derive package owns, free to drift the
+  // next time either side changes. A document naming one issue twice is a caller
+  // defect with no correct reading, so it is refused and the divergence cannot
+  // exist.
+  const seen = new Map<string, number>();
+  for (const [index, issue] of issues.entries()) {
+    const key = nodeKey({ number: issue.number, repo: issue.repo ?? null }, rawHomeRepo);
+    const first = seen.get(key);
+    if (first !== undefined) {
+      fail(
+        `input.issues[${index}]`,
+        `issue ${key} is already declared at input.issues[${first}]; each issue may appear once`,
+      );
+    }
+    seen.set(key, index);
+  }
+
   return {
-    ...(homeRepo === undefined ? {} : { homeRepo: asString(homeRepo, 'input.homeRepo') }),
+    ...(rawHomeRepo === undefined ? {} : { homeRepo: rawHomeRepo }),
     baseRanking: asBaseRanking(record['baseRanking'], 'input.baseRanking'),
-    issues: issues.map((issue, index) => asIssue(issue, `input.issues[${index}]`)),
+    issues,
   };
 }
 

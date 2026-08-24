@@ -91,6 +91,30 @@ export const CLEARABLE_JSON_KEYS: readonly EdgeJsonKey[] = Object.freeze([
   'serializeWith',
 ]);
 
+/**
+ * The field a clear request names that the writer cannot perform, or `null`.
+ *
+ * ONE implementation, called by EVERY path that reaches the writer — the flag
+ * collector, `setFields`, and `spliceEdges`. The first fix for this class put
+ * the test inline in one of them and review found the next path still open; a
+ * second inline copy is how a third path gets missed. The shape it accepts is
+ * the intersection of `SetFields` and `GeneratedEdges`, which is exactly the two
+ * fields at issue.
+ *
+ * `undefined` is NOT a clear request and never refused: absent already means
+ * "leave untouched". That is also why refusing `null` costs a caller nothing —
+ * the only intent `null` could express here is already expressible by omission,
+ * so there is no legitimate use to break.
+ */
+export function unperformableClear(edges: {
+  readonly decomposedFrom?: unknown;
+  readonly duplicateOf?: unknown;
+}): WritableField | null {
+  if (edges.decomposedFrom === null) return 'decomposed-from';
+  if (edges.duplicateOf === null) return 'duplicate-of';
+  return null;
+}
+
 /** Why a clear is refused, phrased once so every refusal says the same thing. */
 export function clearRefusalReason(field: string): string {
   return (

@@ -103,6 +103,70 @@ describe('set', () => {
   });
 });
 
+describe('a clear the writer cannot perform is refused on EVERY path', () => {
+  // The class, swept. `setFields` was fixed first and review found `spliceEdges`
+  // still open, so both now go through one shared test rather than two inline
+  // copies — a second copy is how a third path gets missed.
+  const WITH_PROVENANCE = [
+    '---',
+    'issuegraph:',
+    '  decomposed-from: 7',
+    '  duplicate-of: 42',
+    '  serialize-with: 9',
+    '---',
+    '',
+    'Prose.',
+  ].join('\n');
+
+  test('setFields refuses it', () => {
+    for (const fields of [{ decomposedFrom: null }, { duplicateOf: null }] as const) {
+      const result = setFields(WITH_PROVENANCE, fields);
+      assert.equal(result.code, EXIT.refusedWrite);
+      assert.equal(result.stdout, '');
+    }
+  });
+
+  test('spliceEdges refuses it too — the exported path a library caller reaches', () => {
+    for (const edges of [{ decomposedFrom: null }, { duplicateOf: null }] as const) {
+      const result = spliceEdges(WITH_PROVENANCE, edges);
+      assert.equal(result.code, EXIT.refusedWrite);
+      assert.equal(result.stdout, '', 'a refusal writes no body');
+    }
+  });
+
+  test('both paths give the SAME code and the same reason', () => {
+    const a = setFields(WITH_PROVENANCE, { duplicateOf: null });
+    const b = spliceEdges(WITH_PROVENANCE, { duplicateOf: null });
+    assert.equal(a.code, b.code);
+    assert.deepEqual(a.stderr, b.stderr);
+  });
+
+  test('CONTROL: omitting the key leaves the entry alone at exit 0', () => {
+    // The intent `null` might have expressed is already expressible by omission,
+    // which is why refusing it breaks nothing.
+    const result = spliceEdges(WITH_PROVENANCE, { blockedBy: [REF_1] });
+    assert.equal(result.code, EXIT.ok);
+    assert.ok(result.stdout.includes('duplicate-of: 42'), result.stdout);
+    assert.ok(result.stdout.includes('decomposed-from: 7'), result.stdout);
+  });
+
+  test('CONTROL: the clear the writer CAN perform still works on both paths', () => {
+    for (const result of [
+      setFields(WITH_PROVENANCE, { serializeWith: null }),
+      spliceEdges(WITH_PROVENANCE, { serializeWith: null }),
+    ]) {
+      assert.equal(result.code, EXIT.ok);
+      assert.ok(!result.stdout.includes('serialize-with'), result.stdout);
+    }
+  });
+
+  test('CONTROL: an ordinary write to those same fields still lands', () => {
+    const result = spliceEdges(WITH_PROVENANCE, { duplicateOf: { repo: null, number: 99 } });
+    assert.equal(result.code, EXIT.ok);
+    assert.ok(result.stdout.includes('duplicate-of: 99'), result.stdout);
+  });
+});
+
 describe('splice', () => {
   test('an owned field present replaces its entries', () => {
     const result = spliceEdges(QUOTED_BODY, { blockedBy: [REF_1] });

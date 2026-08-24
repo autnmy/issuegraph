@@ -42,7 +42,7 @@ import { parseFrontmatter } from '@issuegraph/reader';
 import type { Evidence } from '@issuegraph/core';
 
 import { classifyDeclaration, unreadErrorLines } from '../declaration.ts';
-import { clearRefusalReason } from '../fields.ts';
+import { clearRefusalReason, unperformableClear } from '../fields.ts';
 import { EXIT } from '../exit.ts';
 import type { VerbResult } from '../exit.ts';
 
@@ -92,6 +92,20 @@ function toGeneratedEdges(fields: SetFields): GeneratedEdges {
  * TypeScript and mutable at runtime, so one caller reaching into `stderr` would
  * change what every later caller reports.
  */
+/**
+ * The refusal, built where the request arrives.
+ *
+ * Every write path shares it so the message and the exit code cannot diverge
+ * between the command line and the library.
+ */
+function refuseClear(field: string): VerbResult {
+  return {
+    stdout: '',
+    stderr: [`issuegraph: refusing to write — ${clearRefusalReason(field)}`],
+    code: EXIT.refusedWrite,
+  };
+}
+
 function nothingToDo(): VerbResult {
   return {
     stdout: '',
@@ -201,6 +215,17 @@ export function setFields(body: string, fields: SetFields): VerbResult {
  * contract surfaced at the process boundary.
  */
 export function spliceEdges(body: string, edges: GeneratedEdges): VerbResult {
+  // THE EXPORTED PATH NEEDS THE SAME REFUSAL AS `setFields`. This takes the
+  // writer's own `GeneratedEdges`, where `null` legitimately means "leave
+  // untouched" — which is why the first fix for this class stopped short here.
+  // That reasoning was wrong for one decisive reason: OMITTING the key already
+  // means untouched, so `null` is a redundant spelling with no intent of its own
+  // and the only thing a caller can plausibly mean by it is "clear". Refusing it
+  // therefore breaks no legitimate use, and accepting it returns the body
+  // unchanged at exit 0 to a caller who asked for a removal.
+  const unperformable = unperformableClear(edges);
+  if (unperformable !== null) return refuseClear(unperformable);
+
   const decl = classifyDeclaration(parseFrontmatter(body));
 
   if (decl.state === 'unread') {

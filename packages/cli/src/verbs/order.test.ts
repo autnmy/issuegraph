@@ -180,6 +180,37 @@ describe('input validation — a bad document is a USAGE error, never unread', (
     assert.ok(usage(JSON.stringify({ baseRanking: { source: 'vibes' }, issues: [] })).includes('source'));
   });
 
+  test('an issue declared twice is refused, naming both positions', () => {
+    // Not silently deduplicated: `buildModel` keeps the first occurrence, and
+    // this package walking every entry to build `underRead` reported a key as
+    // under-read whose readable body the derivation had actually used. Refusing
+    // removes the divergence instead of restating a rule derive owns.
+    const readable = blockedBy('#5');
+    const message = usage(document([issue(1, readable), issue(1, HAZARD_BODY)]));
+    assert.ok(message.includes('issues[1]'), message);
+    assert.ok(message.includes('issues[0]'), message);
+    assert.ok(message.includes('once'), message);
+  });
+
+  test('the same number in a DIFFERENT repo is not a duplicate', () => {
+    // The key, not the number, is what must be unique — otherwise a cross-repo
+    // set would be refused for no reason.
+    const doc = JSON.parse(document([issue(1, 'no block'), issue(1, 'no block')])) as {
+      issues: Record<string, unknown>[];
+    };
+    const second = doc.issues[1];
+    assert.ok(second !== undefined);
+    second['repo'] = 'other/repo';
+    const result = orderFromJson(JSON.stringify(doc), 'order');
+    assert.equal(result.code, EXIT.ok, result.stderr.join('\n'));
+  });
+
+  test('CONTROL: unique keys still derive, and report no spurious under-read', () => {
+    const { out } = run(document([issue(1, blockedBy('#5')), issue(5, 'no block', { open: false })]));
+    assert.deepEqual(out.underRead, []);
+    assert.equal(out.slots.find((s) => s.lead === '1')?.ready, true);
+  });
+
   test('a top-level non-object is refused', () => {
     assert.ok(usage('[]').includes('input'));
   });
