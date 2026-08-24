@@ -9,6 +9,7 @@ import {
   locateBlock,
   parseFrontmatter,
   readMappingEntry,
+  stripComment,
   topLevelKeyScalar,
 } from './frontmatter.ts';
 
@@ -863,5 +864,27 @@ describe('the shared line grammar', () => {
     assert.ok(!FENCE_CLOSE.test('```yaml'));
     assert.ok(!FENCE_OPEN.test('  ```'), 'indented fences are outside the modelled subset');
     assert.ok(!FENCE_OPEN.test('~~~'), 'tilde fences are outside the modelled subset');
+  });
+});
+
+describe('stripComment, the rule anything editing beside the walk must share', () => {
+  test('a whitespace-preceded # opens a comment; a bare one does not', () => {
+    assert.equal(stripComment('  # why'), '  ');
+    assert.equal(stripComment('  blocked-by: [7]  # stale'), '  blocked-by: [7]  ');
+    // The subset rule is exactly YAML's, and it is what keeps a cross-repo ref
+    // working unquoted — no whitespace precedes its `#`.
+    assert.equal(stripComment('  blocked-by: acme/widgets#7'), '  blocked-by: acme/widgets#7');
+    // Inside quotes a # is content.
+    assert.equal(stripComment('  note: "a # b"'), '  note: "a # b"');
+  });
+
+  test('the walk and the exported rule agree, which is the point of exporting it', () => {
+    // A writer that classifies a section's children without this rule refuses a
+    // block the walk reads. Both directions are asserted so the pair cannot
+    // drift: the walk keeps reading the block, and the rule reduces the same
+    // line to nothing.
+    const parsed = parseFrontmatter(['---', 'issuegraph:', '  # why', '  blocked-by: [7]', '---'].join('\n'));
+    assert.deepEqual(parsed.data?.blockedBy, [{ repo: null, number: 7 }]);
+    assert.equal(stripComment('  # why').trim(), '');
   });
 });

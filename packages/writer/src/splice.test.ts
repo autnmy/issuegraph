@@ -271,3 +271,84 @@ describe('spliceGeneratedEdges on a CRLF body', () => {
     assert.ok(next.endsWith('\r\n\r\nBody.'));
   });
 });
+
+describe('YAML comments inside the block', () => {
+  it('edits a section carrying a comment child instead of refusing the whole block', () => {
+    // A comment child reached `readMappingEntry`, came back null, and — since an
+    // unreadable child is structural — the splice refused a block the parser
+    // reads perfectly well. The caller then followed the documented `null`
+    // fallback and PREPENDED a fresh block, which demotes the author's original
+    // to a later claimant: no longer canonical, so its unowned fields go
+    // silently invisible. The refusal is the visible half; that is the harm.
+    const body = ['---', 'issuegraph:', '  # why this is blocked', '  blocked-by:', '    - 7', '  priority: 1', '---', '', 'Body.'].join('\n');
+    const next = spliceGeneratedEdges(body, NEW_EDGES);
+
+    assert.notEqual(next, null, 'a comment child must not make the splice refuse');
+    // The comment survives byte-for-byte — stripping is classification only.
+    assert.ok((next as string).includes('  # why this is blocked'));
+    const data = parseFrontmatter(next as string).data;
+    assert.deepEqual(data?.blockedBy, [{ repo: null, number: 12 }]);
+    assert.deepEqual(data?.serializeWith, { repo: null, number: 3 });
+    assert.equal(data?.priority, 1, 'the unowned neighbour is still there');
+  });
+
+  it('does not let a column-zero comment close the section early', () => {
+    // The parser strips the comment to nothing and keeps walking. A splice that
+    // did not strip read it as an indent-0 line, closed the section on it, and
+    // every entry below stopped being editable — so an owned `blocked-by` after
+    // the comment was left stale while the call reported success.
+    const body = ['---', 'issuegraph:', '# a column-zero note', '  blocked-by:', '    - 7', '---', '', 'Body.'].join('\n');
+    const next = spliceGeneratedEdges(body, NEW_EDGES) as string;
+
+    assert.notEqual(next, null);
+    assert.ok(next.includes('# a column-zero note'));
+    assert.deepEqual(parseFrontmatter(next).data?.blockedBy, [{ repo: null, number: 12 }]);
+  });
+
+  it('still refuses a child the parser refuses, now that comments are stripped', () => {
+    // The control for the fix above: stripping must not widen what is accepted.
+    // `blocked-by:[1]` carries no comment, so it is still not a mapping entry.
+    const body = ['---', 'issuegraph:', '  # a note', '  blocked-by:[1]', '---', '', 'Body.'].join('\n');
+    assert.equal(spliceGeneratedEdges(body, NEW_EDGES), null);
+  });
+
+  it('reads an entry whose value carries a trailing comment as that entry', () => {
+    const body = ['---', 'issuegraph:', '  blocked-by: [7]  # stale', '  priority: 1', '---', '', 'Body.'].join('\n');
+    const next = spliceGeneratedEdges(body, NEW_EDGES) as string;
+    // The owned entry was recognised and replaced — the trailing comment went
+    // with the line it annotated, and no second `blocked-by` was inserted.
+    assert.equal((next.match(/blocked-by/g) ?? []).length, 1);
+    assert.deepEqual(parseFrontmatter(next).data?.blockedBy, [{ repo: null, number: 12 }]);
+    assert.equal(parseFrontmatter(next).data?.priority, 1);
+  });
+});
+
+describe('an explicit null does NOT clear provenance or a verdict', () => {
+  it('is the documented asymmetry, and a live caller depends on it', () => {
+    // `blockedBy` / `serializeWith` treat a present value as an owned removal.
+    // `decomposedFrom` / `duplicateOf` do not, because the established caller
+    // shape is "write it when the block lacks one, never clobber one that is
+    // already there" — it passes `null` to mean LEAVE IT ALONE. Making `null`
+    // remove would delete provenance on every refresh of a block that has it.
+    // Pinned here because it reads like an inconsistency and is not one.
+    const block = renderFrontmatter({
+      blockedBy: [{ repo: null, number: 7 }],
+      serializeWith: { repo: null, number: 4 },
+      decomposedFrom: { repo: null, number: 9 },
+      duplicateOf: { repo: null, number: 5 },
+    }) as string;
+    const next = spliceGeneratedEdges(`${block}\n\nBody.`, {
+      blockedBy: [],
+      serializeWith: null,
+      decomposedFrom: null,
+      duplicateOf: null,
+    }) as string;
+    const data = parseFrontmatter(next).data;
+    // Scheduling edges: a present value removes.
+    assert.deepEqual(data?.blockedBy, []);
+    assert.equal(data?.serializeWith, null);
+    // Provenance and verdict: null leaves them exactly where they were.
+    assert.deepEqual(data?.decomposedFrom, { repo: null, number: 9 });
+    assert.deepEqual(data?.duplicateOf, { repo: null, number: 5 });
+  });
+});

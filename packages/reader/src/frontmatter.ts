@@ -248,10 +248,21 @@ function stripQuotes(s: string): string {
   return s;
 }
 
-// Strip a trailing YAML comment: ` #` outside quotes starts a comment. The
-// subset rule (whitespace before `#`) is exactly YAML's, which is what keeps
-// `owner/repo#N` working unquoted.
-function stripComment(s: string): string {
+/**
+ * Strip a trailing YAML comment: ` #` outside quotes starts a comment. The
+ * subset rule (whitespace before `#`) is exactly YAML's, which is what keeps
+ * `owner/repo#N` working unquoted.
+ *
+ * EXPORTED for `@issuegraph/writer`, and the reason is a defect rather than
+ * symmetry. A writer that classifies a section's child lines WITHOUT stripping
+ * first hands a comment line to {@link readMappingEntry}, gets null, and — since
+ * an unreadable child is structural — refuses a block this parser reads
+ * perfectly well. A caller then follows the documented fallback, prepends a
+ * fresh block, and the author's original block stops being the canonical one:
+ * its unowned fields go silently invisible. The walk strips before it
+ * classifies, so anything editing alongside it must strip with the SAME rule.
+ */
+export function stripComment(s: string): string {
   let inSingle = false;
   let inDouble = false;
   for (let i = 0; i < s.length; i++) {

@@ -28,7 +28,15 @@
  * that it failed to recognise as its own and so duplicated.
  */
 
-import { FENCE_CLOSE, FENCE_OPEN, locateBlock, readMappingEntry, topLevelKeyScalar, type IssueRef } from '@issuegraph/reader';
+import {
+  FENCE_CLOSE,
+  FENCE_OPEN,
+  locateBlock,
+  readMappingEntry,
+  stripComment,
+  topLevelKeyScalar,
+  type IssueRef,
+} from '@issuegraph/reader';
 
 import { renderRef } from './render.ts';
 
@@ -41,6 +49,18 @@ import { renderRef } from './render.ts';
  * and round-tripping parsed values back through a splice would silently launder
  * away unparseable items and exotic spellings the parser tolerates with a
  * diagnostic.
+ *
+ * WHAT AN EXPLICIT `null` MEANS IS NOT UNIFORM, and the asymmetry is deliberate
+ * rather than an oversight — read each field's own note below rather than this
+ * paragraph. `blockedBy` and `serializeWith` are SCHEDULING edges, so a present
+ * `[]` or `null` is an owned REMOVAL. `decomposedFrom` and `duplicateOf` are
+ * PROVENANCE and VERDICT, where the established caller shape is "write it when
+ * the block lacks one, never clobber one that is already there" — it passes
+ * `null` precisely to mean *leave it alone*, so spending `null` on removal
+ * instead would delete provenance on every refresh of a block that has it.
+ * There is consequently no way to CLEAR those two through this call; that gap
+ * is real and is tracked rather than closed by overloading a value that already
+ * has a caller.
  */
 export interface GeneratedEdges {
   /**
@@ -105,7 +125,19 @@ export function spliceGeneratedEdges(body: string, edges: GeneratedEdges): strin
     }
   };
   for (let i = blockStart + 1; i < blockEnd; i++) {
-    const content = (lines[i] ?? '').replace(/\r$/, '').trimEnd();
+    // STRIP THE COMMENT BEFORE CLASSIFYING, because the parse walk does — and
+    // this line is CLASSIFICATION ONLY. The output below writes `lines[i]`
+    // verbatim, so the author's comment bytes are never at risk from this.
+    //
+    // Skipping this step was a live defect twice over. A section child that is
+    // wholly a comment (`  # why`) reached `readMappingEntry`, came back null,
+    // and — since an unreadable child is structural — the whole splice was
+    // refused on a block the parser reads perfectly well. The caller then took
+    // the documented `null` fallback and prepended a FRESH block, which makes
+    // the author's original block a later claimant: canonical no longer, so its
+    // unowned fields go silently invisible. And a comment at INDENT ZERO closed
+    // the section early, so every entry below it stopped being editable.
+    const content = stripComment((lines[i] ?? '').replace(/\r$/, '')).trimEnd();
     if (content.trim().length === 0) continue;
     const indent = content.length - content.trimStart().length;
     if (indent === 0) {

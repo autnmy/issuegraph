@@ -31,7 +31,7 @@ export type { BlockDefect, Frontmatter, IssueRef, ParseResult } from './frontmat
  * It is a LOWER-LEVEL surface than {@link parseFrontmatter} and consumers who
  * only want the data should not reach for it.
  */
-export { FENCE_CLOSE, FENCE_OPEN, locateBlock, readMappingEntry, topLevelKeyScalar } from './frontmatter.ts';
+export { FENCE_CLOSE, FENCE_OPEN, locateBlock, readMappingEntry, stripComment, topLevelKeyScalar } from './frontmatter.ts';
 export type { BlockLocation, MappingEntry } from './frontmatter.ts';
 
 export { buildModel, declarerOnlyNode, nodeKey, nodeSourceRepo, priorityLabelValue, refKey } from './model.ts';
