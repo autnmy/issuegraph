@@ -301,15 +301,12 @@ export function deriveIssueOrder(input: DeriveIssueOrderInput): DerivedIssueOrde
     // Both unranked by the base ranking (or genuinely tied): a deterministic
     // refinement rather than an unspecified order.
     //
-    // NUMERIC ONLY WHEN BOTH IDS ARE NUMERIC, because an id is an OPAQUE
-    // tracker token (§4.2) and most trackers' are not numbers. Subtracting
-    // `ABC-123` from `ENG-456` yields NaN, which compares false against
-    // everything — an UNSPECIFIED order, in the one comparator whose whole
-    // purpose is that two clients holding the same graph derive the same one.
-    // A mixed or non-numeric pair falls through to the codepoint comparison
-    // below, which already totalizes the ordering for exactly this reason.
-    const numberDelta = numericDelta(rawByKey.get(a)?.id, rawByKey.get(b)?.id);
-    if (numberDelta !== 0) return numberDelta;
+    // BY ID, under a TOTAL ordering — see `idDelta`. An id is an opaque tracker
+    // token (§4.2), so a numeric comparison cannot apply to every pair; what it
+    // must not do is vary by pair, because a non-transitive comparator makes
+    // this sort depend on the order the candidates arrived in.
+    const idDeltaValue = idDelta(rawByKey.get(a)?.id, rawByKey.get(b)?.id);
+    if (idDeltaValue !== 0) return idDeltaValue;
     // Issue NUMBER is not unique across repos, so it cannot be the last word:
     // two cross-repo issues sharing a number tie here, the stable sort keeps
     // whatever order they were fetched in, and two clients holding the same
@@ -561,19 +558,50 @@ function promotionEdges(
 }
 
 /**
- * The numeric ordering of two ids when BOTH are all-digits, else 0 — leaving
- * the comparison to the caller's next tiebreak.
+ * Which comparison an id sorts under. A PURE FUNCTION OF ONE ID, and that is
+ * the whole of why the ordering below is transitive.
  *
- * `Number.isSafeInteger` rather than a bare parse: an id past the safe range
- * compares equal to its neighbours after rounding, which is a silent
- * disagreement between clients rather than a visible one. Those ids are
+ * An id past the safe integer range is deliberately OPAQUE rather than numeric:
+ * compared as a number it would round and tie with its neighbours, which is a
+ * silent disagreement between clients rather than a visible one. Such ids are
  * refused at parse time, so this only bounds a host-supplied node.
  */
-function numericDelta(a: string | undefined, b: string | undefined): number {
-  if (a === undefined || b === undefined) return 0;
-  if (!/^[0-9]+$/.test(a) || !/^[0-9]+$/.test(b)) return 0;
-  const na = Number(a);
-  const nb = Number(b);
-  if (!Number.isSafeInteger(na) || !Number.isSafeInteger(nb)) return 0;
-  return na - nb;
+function idRank(id: string | undefined): 0 | 1 | 2 {
+  if (id === undefined) return 2;
+  return /^[0-9]+$/.test(id) && Number.isSafeInteger(Number(id)) ? 0 : 1;
+}
+
+/**
+ * A TOTAL ordering of two ids: numeric ids first by value, then opaque ids by
+ * codepoint, then ids the node set does not carry.
+ *
+ * IT IS A CATEGORY ORDERING BECAUSE A PAIR-DEPENDENT ONE IS NOT TRANSITIVE, and
+ * that was a real defect rather than a theoretical one. The previous shape
+ * compared numerically when BOTH ids were numeric and fell through to the
+ * caller's codepoint tiebreak otherwise, which produces a cycle as soon as one
+ * opaque id is present. Measured on `2`, `10`, `15A`:
+ *
+ *     2 < 10    (numerically)
+ *     10 < 15A  (by codepoint)
+ *     15A < 2   (by codepoint)
+ *
+ * `Array.prototype.sort` on a non-transitive comparator is input-order
+ * dependent, so those three ids sorted to THREE DIFFERENT ORDERS depending on
+ * the order they arrived in — defeating precisely the coordination-free
+ * agreement this module exists to provide.
+ *
+ * Deciding the category from EACH ID ALONE is what fixes it: the comparison
+ * becomes lexicographic on `(rank, value-within-rank)`, and a lexicographic
+ * composition of total orders is a total order. Which category sorts first is
+ * arbitrary; that it is FIXED is not.
+ */
+function idDelta(a: string | undefined, b: string | undefined): number {
+  const rankA = idRank(a);
+  const rankB = idRank(b);
+  if (rankA !== rankB) return rankA - rankB;
+  if (rankA === 0) return Number(a) - Number(b);
+  if (rankA === 2) return 0; // neither id is carried; the key comparison decides
+  const left = a as string;
+  const right = b as string;
+  return left < right ? -1 : left > right ? 1 : 0;
 }

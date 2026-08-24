@@ -868,3 +868,90 @@ describe('deriveIssueOrder — a slot describes the whole unit it represents', (
     assert.equal(slotWith(derived, '40').serializeGroupSize, 1);
   });
 });
+
+describe('deriveIssueOrder — the ordering is TOTAL over opaque ids', () => {
+  /** Every permutation of a list, for a property test over input order. */
+  function permutations<T>(items: readonly T[]): T[][] {
+    if (items.length <= 1) return [[...items]];
+    return items.flatMap((item, i) =>
+      permutations([...items.slice(0, i), ...items.slice(i + 1)]).map((rest) => [item, ...rest]),
+    );
+  }
+
+  function node(id: string): NodeInput {
+    return {
+      id,
+      open: true,
+      labels: [],
+      assigneeCount: 0,
+      declarationRead: 'read',
+      data: null,
+    };
+  }
+
+  test('the same candidate set derives the same order however it is enumerated', () => {
+    // THE MODULE'S HEADLINE CONTRACT, asserted directly rather than through a
+    // pairwise comparison: two clients holding the same graph must derive the
+    // same order without coordinating. Nothing else in this suite tests it as a
+    // property of INPUT ORDER, which is what a non-transitive comparator
+    // breaks.
+    //
+    // These three ids are the measured counterexample. A comparator that goes
+    // numeric only when BOTH ids are numeric reports `2 < 10` numerically,
+    // `10 < 15A` and `15A < 2` by codepoint — a cycle — and `Array.sort` on a
+    // non-transitive comparator is input-order dependent, so this set sorted to
+    // THREE different orders depending on how it arrived.
+    const ids = ['2', '10', '15A'];
+    const orders = new Set<string>();
+    for (const permutation of permutations(ids)) {
+      const derived = deriveIssueOrder({
+        issues: permutation.map(node),
+        config: { baseRanking: { source: 'config', order: [] } },
+      });
+      const leads = derived.slots.map((slot) => slot.lead);
+      // GUARD AGAINST A VACUOUS PASS. Read the wrong field and every
+      // permutation yields the same list of nothing, so `orders.size === 1`
+      // holds while the test measures nothing — which is exactly what happened
+      // when this was first written against a field that does not exist.
+      assert.deepEqual([...leads].sort(), [...ids].sort(), 'the slots must name the issues');
+      orders.add(leads.join(','));
+    }
+    assert.equal(orders.size, 1, `one graph must derive one order, got ${[...orders].join(' | ')}`);
+  });
+
+  test('a wider mixed set is stable across every enumeration too', () => {
+    // Five ids spanning all three categories — numeric, opaque, and an
+    // out-of-safe-range digit run that is deliberately opaque because comparing
+    // it as a number would round it into a tie with its neighbours.
+    //
+    // IT STILL CONTAINS THE CYCLE-FORMING TRIPLE (`2`, `10`, `15A`), and that
+    // is deliberate: a first draft of this case used ids whose codepoint order
+    // happened to AGREE with their numeric order, so it stayed green under the
+    // neutered comparator and pinned nothing. A cycle needs the two orderings
+    // to CONTRADICT — an opaque id sorting between two numerics that numeric
+    // order puts the other way round — so a broader set is only a stronger test
+    // if it keeps one.
+    const ids = ['2', '10', '15A', 'ABC-1', '99999999999999999999'];
+    const orders = new Set<string>();
+    for (const permutation of permutations(ids)) {
+      const derived = deriveIssueOrder({
+        issues: permutation.map(node),
+        config: { baseRanking: { source: 'config', order: [] } },
+      });
+      const leads = derived.slots.map((slot) => slot.lead);
+      assert.deepEqual([...leads].sort(), [...ids].sort(), 'the slots must name the issues');
+      orders.add(leads.join(','));
+    }
+    assert.equal(orders.size, 1, `one graph must derive one order, got ${[...orders].join(' | ')}`);
+  });
+
+  test('CONTROL: numeric ids still order by VALUE, not by codepoint', () => {
+    // The refinement is worth keeping, and a fix that made everything codepoint
+    // order would satisfy the two properties above while sorting #9 after #10.
+    const derived = deriveIssueOrder({
+      issues: ['10', '9', '100'].map(node),
+      config: { baseRanking: { source: 'config', order: [] } },
+    });
+    assert.deepEqual(derived.slots.map((slot) => slot.lead), ['9', '10', '100']);
+  });
+});
