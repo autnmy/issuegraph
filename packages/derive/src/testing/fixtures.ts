@@ -63,6 +63,12 @@ function node(seed: SeedNode): NodeInput {
     // No issue in the seed is claimed; serialize admission is exercised by its
     // own test rather than baked into the shared seed.
     assigneeCount: 0,
+    // SYNTHESIZED, not parsed — which is precisely what `'read'` covers. These
+    // fixtures build `Frontmatter` values directly, so there is no body that
+    // could have been under-read, and nothing here is asserting that an
+    // under-read node behaves a particular way. The under-read tier is the
+    // reader's own to test.
+    declarationRead: 'read',
     data: seed.data ?? null,
   };
 }

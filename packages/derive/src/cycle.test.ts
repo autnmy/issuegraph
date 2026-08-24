@@ -22,6 +22,7 @@ function issue(number: number, blockedBy: readonly number[] = []): NodeInput {
     open: true,
     labels: [],
     assigneeCount: 0,
+    declarationRead: 'read',
     data: frontmatter({ blockedBy: blockedBy.map(ref) }),
   };
 }
@@ -155,6 +156,7 @@ describe('wouldCycleOnBlockedBy', () => {
       open: true,
       labels: [],
       assigneeCount: 0,
+      declarationRead: 'read',
       data: frontmatter({ blockedBy: [{ repo: 'Acme/Widgets', number: 488 }] }),
     };
     const cross = [{ ...issue(488), repo: 'Acme/Widgets' }, qualified];
@@ -167,6 +169,7 @@ describe('wouldCycleOnBlockedBy', () => {
       open: true,
       labels: [],
       assigneeCount: 0,
+      declarationRead: 'read',
       data: frontmatter({ blockedBy: [{ repo: 'acme/widgets', number: 488 }] }),
     };
     const issues = [issue(488), qualified];
