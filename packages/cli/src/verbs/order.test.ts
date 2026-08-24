@@ -3,6 +3,7 @@ import { describe, test } from 'node:test';
 
 import { EXIT } from '../exit.ts';
 import { HAZARD_BODY } from '../testing/fixtures.ts';
+import { resolveRef } from '../refs.ts';
 import { deriveOrder, orderFromJson } from './order.ts';
 import type { OrderInputDocument } from './order.ts';
 
@@ -231,7 +232,36 @@ describe('input fields are bounded by their domain, not just their type', () => 
   });
 
   test('a non-positive issue number is refused', () => {
-    for (const value of [0, -3]) assert.ok(refusal('number', value).includes('>= 1'));
+    // The bound is the READER's now, not a hand-written `>= 1` here, so the
+    // message names referenceability rather than a number this package chose.
+    for (const value of [0, -3]) assert.ok(refusal('number', value).includes('reference'));
+  });
+
+  test('an issue number outside the safe range is refused — JSON already rounded it', () => {
+    // 2^53 and above lose precision before this code sees them, and the reader
+    // and writer both refuse a ref there, so a node accepted at that value could
+    // be ranked and never addressed.
+    for (const value of [9007199254740992, 9007199254740993]) {
+      assert.ok(refusal('number', value).includes('safe range'), String(value));
+    }
+  });
+
+  test('an unsafe integer is refused in EVERY numeric field, not just the number', () => {
+    assert.ok(refusal('assigneeCount', 9007199254740992).includes('safe range'));
+  });
+
+  test('the accepted issue numbers are exactly the ones the reader can reference', () => {
+    // Asked, not restated: the bound cannot drift from the reader's because it
+    // IS the reader's answer.
+    for (const value of [1, 42, 9007199254740991]) {
+      const ref = resolveRef(String(value));
+      assert.notEqual(ref, null, `reader refuses ${value}`);
+      assert.equal(orderFromJson(document([{ ...issue(1, 'no block'), number: value }]), 'order').code, EXIT.ok);
+    }
+    for (const value of [0, -3, 9007199254740992]) {
+      assert.equal(resolveRef(String(value)), null, `reader accepts ${value}`);
+      assert.equal(orderFromJson(document([{ ...issue(1, 'no block'), number: value }]), 'order').code, EXIT.usage);
+    }
   });
 
   test('a negative matchedOrderIndex is refused', () => {

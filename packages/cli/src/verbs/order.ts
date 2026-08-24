@@ -24,6 +24,7 @@ import { nodeKey, parseFrontmatter } from '@issuegraph/reader';
 import type { NodeInput } from '@issuegraph/reader';
 
 import { classifyDeclaration } from '../declaration.ts';
+import { resolveRef } from '../refs.ts';
 import { EXIT } from '../exit.ts';
 import type { VerbResult } from '../exit.ts';
 import { toJson } from '../json.ts';
@@ -94,8 +95,18 @@ function asBoolean(value: unknown, at: string): boolean {
   return value;
 }
 
+/**
+ * An integer JSON has not already rounded.
+ *
+ * `Number.isSafeInteger`, not `Number.isInteger`: past 2^53 a JSON number has
+ * lost precision before this code ever sees it, so `9007199254740993` arrives as
+ * `9007199254740992`. Accepting one means accepting a value that is not what the
+ * document said, which no amount of downstream care recovers.
+ */
 function asInteger(value: unknown, at: string): number {
-  if (typeof value !== 'number' || !Number.isInteger(value)) fail(at, 'expected an integer');
+  if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
+    fail(at, 'expected an integer within the safe range');
+  }
   return value;
 }
 
@@ -168,12 +179,36 @@ function asBaseRanking(value: unknown, at: string): IssueOrderBaseRanking {
   return fail(`${at}.source`, "expected 'config' or 'fixture-parity'");
 }
 
+/**
+ * An issue number the READER would also accept as a reference.
+ *
+ * The bound is not restated here — it is asked. `resolveRef` puts the token
+ * through `parseFrontmatter`, so a node number is accepted exactly when a
+ * `blocked-by` naming it would parse, by construction rather than by two bounds
+ * being kept in step.
+ *
+ * That distinction is why this exists rather than a second `isSafeInteger` test.
+ * Review found this validator accepting `9007199254740992` while the reader and
+ * writer both refuse a ref at that value — a node that could be ranked and never
+ * addressed. Every previous version of that mistake in this package was the same
+ * shape: a rule owned elsewhere, restated here, and drifting. The ref grammar is
+ * already asked rather than reimplemented; the number bound now is too.
+ */
+function asIssueNumber(value: unknown, at: string): number {
+  const parsed = asInteger(value, at);
+  const ref = resolveRef(String(parsed));
+  if (ref === null || ref.number !== parsed) {
+    fail(at, `expected an issue number the reader can reference, got ${parsed}`);
+  }
+  return parsed;
+}
+
 function asIssue(value: unknown, at: string): OrderInputIssue {
   const record = asRecord(value, at);
   const repo = record['repo'];
   const closedStateReason = record['closedStateReason'];
   return {
-    number: asIntegerAtLeast(record['number'], `${at}.number`, 1),
+    number: asIssueNumber(record['number'], `${at}.number`),
     // `exactOptionalPropertyTypes` is on: an absent key and an explicit
     // `undefined` are different types, so the key is only added when supplied.
     ...(repo === undefined ? {} : { repo: repo === null ? null : asString(repo, `${at}.repo`) }),
