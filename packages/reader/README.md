@@ -37,18 +37,23 @@ if (isUnreadDeclaration(parse)) {
 ## Deriving the graph
 
 ```ts
-import { buildModel } from '@issuegraph/reader';
+import { buildModel, isUnreadDeclaration, parseFrontmatter } from '@issuegraph/reader';
 
 const model = buildModel(
-  issues.map((i) => ({
-    number: i.number,
-    repo: i.repo,              // null for the home repo
-    open: i.state === 'open',
-    closedStateReason: i.stateReason,
-    labels: i.labels,
-    assigneeCount: i.assignees.length,
-    data: parseFrontmatter(i.body).data,
-  })),
+  issues.map((i) => {
+    const parse = parseFrontmatter(i.body);
+    return {
+      number: i.number,
+      repo: i.repo,              // null for the home repo
+      open: i.state === 'open',
+      closedStateReason: i.stateReason,
+      labels: i.labels,
+      assigneeCount: i.assignees.length,
+      data: parse.data,
+      // Carry the ANSWER, not just the data. Required, so you cannot forget.
+      declarationRead: isUnreadDeclaration(parse) ? 'under-read' : 'read',
+    };
+  }),
   { homeRepo: 'acme/backlog' },
 );
 
@@ -61,6 +66,8 @@ model.diagnostics;               // unresolvable refs, carrier disagreements, de
 ```
 
 `buildModel` is pure and total: it never throws, and every anomaly becomes a diagnostic instead of an exception.
+
+**`declarationRead` is required, and that is the mechanism.** `data` cannot carry the answer — a dropped field returns non-null `data` that looks complete — so the fact has to travel *with* the node. An optional field would let a producer omit it and restore the defect as an unstated one, since the omission would compile. A node marked `'under-read'` is refused, and so is any node sharing its `serialize-with` component, because a dropped `serialize-with` means the component's true extent is unknown. Effective priority is deliberately untouched: an under-read node under-reports a blocker's urgency, which reorders work but never admits any.
 
 **It is fail-safe in one direction, deliberately.** The costs are not symmetric — over-blocking delays work, under-blocking ships it in the wrong order — so where the spec leaves a choice, this resolves toward refusing: an ambiguous component merge over-serializes, and an unresolvable `together-with` refuses its declarer.
 

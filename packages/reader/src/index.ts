@@ -21,6 +21,7 @@ export type { BlockDefect, Frontmatter, IssueRef, ParseResult } from './frontmat
 
 export { buildModel, declarerOnlyNode, nodeKey, nodeSourceRepo, priorityLabelValue, refKey } from './model.ts';
 export type {
+  DeclarationRead,
   DeclaredPriority,
   DeclarerOnlyNode,
   Model,

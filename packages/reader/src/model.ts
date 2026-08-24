@@ -54,7 +54,44 @@ export interface NodeInput {
    */
   readonly assigneeCount: number;
   readonly data: Frontmatter | null;
+  /**
+   * How completely this node's OWN declaration was read.
+   *
+   * REQUIRED, and that is the mechanism rather than a style choice. `data`
+   * cannot express this: the parser's field-drop row returns a NON-NULL `data`
+   * with a field rejected, so `blocked-by: [123, not-a-ref]` yields a node
+   * gated on `#123` alone and `serialize-with: not-a-ref` yields a node that
+   * reads exactly like a body declaring no relation at all. Both are an absence
+   * rendered as a value. An optional field would let a producer silently omit
+   * it and restore precisely that defect — as an UNSTATED one, since the
+   * omission would compile.
+   *
+   * Answer it with `isUnreadDeclaration` over the SAME `ParseResult` whose
+   * `data` you pass here; the pair travels together or the fact is lost.
+   */
+  readonly declarationRead: DeclarationRead;
 }
+
+/**
+ * How completely a node's issuegraph declaration was read.
+ *
+ * - `'read'` — nothing was lost. This covers a body with NO block at all:
+ *   nothing was declared, so nothing was dropped. It also covers a node whose
+ *   `data` was SYNTHESIZED rather than parsed, where there is no body to
+ *   under-read.
+ * - `'under-read'` — a DELIMITED block was found and something inside it could
+ *   not be read, so `data` is a PARTIAL declaration and its silence about any
+ *   edge is not evidence.
+ *
+ * THE AXIS IS `isUnreadDeclaration`, NOT `diagnostics.length > 0`. That
+ * predicate's doc owns the reasoning and is cited rather than paraphrased here;
+ * the consequence that matters at this seam is that the
+ * `undelimited`/`unterminated` family is excluded by construction, so the
+ * header-carrying bodies written without a `---` pair — the overwhelming
+ * majority of hand-authored ones — stay exactly as inert as they are today and
+ * none of the rules below reaches them.
+ */
+export type DeclarationRead = 'read' | 'under-read';
 
 /**
  * A node that may DECLARE but may never ANSWER.
@@ -426,6 +463,17 @@ export function buildModel(
   const together = new UnionFind();
 
   for (const [k, n] of byKey) {
+    // REPORTED BEFORE THE `data === null` GUARD BELOW, deliberately: an
+    // under-read node can be either shape. A delimited block that was UNUSABLE
+    // yields `data: null`, and a block that merely DROPPED A FIELD yields
+    // non-null `data` — the second is the one that reads as complete, so a
+    // diagnostic emitted only on the edge-bearing path would miss half the
+    // population it exists to surface.
+    if (n.declarationRead === 'under-read') {
+      diagnostics.push(
+        `${k}: its own issuegraph declaration was not fully read; its silence about an edge is not evidence (fail-safe: refusing the node and its serialize component)`,
+      );
+    }
     const data = n.data;
     if (data === null) continue;
     // A DUPLICATE CONTRIBUTES NO RELATIONSHIP EDGES. §4.3.3 says a duplicate is
@@ -544,6 +592,14 @@ export function buildModel(
 
 
   // ---- effective priority (§6.3): relax minima along blocked-by AND together ----
+  // THE UNDER-READ AXIS DELIBERATELY DOES NOT REACH HERE, and the choice is
+  // recorded rather than left to look like an oversight. An under-read node may
+  // have declared a `blocked-by` the parser dropped, so a blocker somewhere does
+  // not inherit this node's urgency. That UNDER-reports urgency — a blocker
+  // ranks lower than it should — which can only reorder work, never admit any.
+  // Every other site of this rule refuses something; this one has nothing to
+  // refuse, and inventing a refusal here would trade a ranking imprecision for a
+  // stall.
   const effective = new Map<string, number>();
   for (const [k] of byKey) effective.set(k, (declared.get(k) as DeclaredPriority).value);
   // Two relaxations, run in ONE worklist rather than in sequence, because each
@@ -676,6 +732,23 @@ export function buildModel(
     // atomically (§4.3.7) contained a node the model refuses to select. A guard
     // at one of two doors is not a guard.
     if (n.declarerOnly === true) reasons.push('declared by a weak source; not selectable');
+    // THE NODE'S OWN DECLARATION WAS UNDER-READ. Every derivation below reads
+    // `n.data` as though it were the whole declaration, and for this node it is
+    // not — a dropped `blocked-by` item leaves a SHORT blocker list that reports
+    // ready the moment the survivors close, and a dropped `duplicate-of` leaves
+    // a duplicate looking canonical. Neither is recoverable from `data`, which
+    // is exactly why the fact is carried on the node. Refusing here is the same
+    // fail-safe the model already applies to an unresolvable ref: what could not
+    // be read must not read as absent.
+    //
+    // ITS TOGETHER UNIT NEEDS NO SEPARATE RULE, and adding one would be a second
+    // mechanism saying the same thing. `readiness` runs every open member
+    // through THIS function and refuses the unit on any member that is not
+    // ready, so an under-read member already refuses the whole unit — the same
+    // one-function argument the weak-source line above rests on.
+    if (n.declarationRead === 'under-read') {
+      reasons.push('own issuegraph declaration was not fully read (fail-safe: refusing the node)');
+    }
     if (!n.open) reasons.push('closed');
     if (duplicateCanonicalOf(k) !== null) reasons.push('duplicate-of another issue');
     for (const b of blockersOf.get(k) ?? []) {
@@ -702,7 +775,40 @@ export function buildModel(
     for (const u of unresolvedRelations.get(k) ?? []) {
       reasons.push(`${u} is unresolvable (fail-safe: refusing the declarer)`);
     }
+    // A SERIALIZE PEER'S DECLARATION WAS UNDER-READ, so the COMPONENT'S TRUE
+    // EXTENT is unknown: the peer may have declared a `serialize-with` the
+    // parser dropped, which would have pulled a member into this component that
+    // nothing here can see. Admitting this node means admitting it beside a
+    // sibling the edge may forbid running with — the same harm §6.7's
+    // unresolvable-`blocked-by` rule refuses, arriving through the component
+    // rather than through a ref.
+    //
+    // UNCONDITIONAL over the component, unlike the claimed-member scan below:
+    // `componentMembers` returns `[k]` for a node in no component, and the
+    // self-skip then leaves the loop with nothing to do — so no guard is needed
+    // and adding one would be a second thing to keep in step.
+    //
+    // TOGETHER MEMBERS ARE NOT EXCLUDED HERE, though they are from the claim
+    // scan below. That exclusion exists because a unit is claimed atomically and
+    // would otherwise read its own partner's assignment as a conflict — a fact
+    // about CLAIMING. An under-read peer is a fact about EXTENT, which atomic
+    // claiming does not resolve, so the refusal stands whoever the peer is.
     const serializeMembers = componentMembers(serialize, k);
+    for (const m of serializeMembers) {
+      if (m === k) continue; // the node's own refusal is recorded above
+      // NO ASSERTION: the optional chain reads the same fact without one, and it
+      // is TOTAL rather than merely tidier. A member somehow absent from `byKey`
+      // yields `undefined`, which is not `'under-read'`, so this scan moves on
+      // instead of throwing — this module's first design rule ("never throws on
+      // any input"). The surrounding scans still assert; they are not this
+      // change's to rewrite.
+      if (byKey.get(m)?.declarationRead === 'under-read') {
+        reasons.push(
+          `serialize group member ${m} had an under-read declaration — the component's true extent is unknown (fail-safe)`,
+        );
+        break;
+      }
+    }
     if (serializeMembers.length > 1 || (byKey.get(k) as ModelNode).data?.serializeWith != null) {
       for (const m of serializeMembers) {
         // SELF-EXCLUDED: a node's own claim is the claim
