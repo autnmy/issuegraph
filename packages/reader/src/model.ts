@@ -458,6 +458,16 @@ export function buildModel(
   // forbids (the sibling was simply unfetchable this walk: budget, fault,
   // 404). Same fail-safe family as unresolved blocked-by.
   const unresolvedRelations = new Map<string, string[]>();
+  /**
+   * Declarers whose `together-with` resolved to a CLOSED node that had itself
+   * been under-read — so "it left the unit" is not a fact anyone established.
+   *
+   * SEPARATE FROM `unresolvedRelations` because the reference DID resolve: the
+   * node is here and referenceable, and only its REDIRECT is unknown. Folding
+   * the two would report a node we can see as one we cannot, which is a
+   * different diagnosis with a different remedy.
+   */
+  const underReadTogether = new Map<string, string[]>();
   const dependentsOf = new Map<string, string[]>(); // reverse of blockersOf
   const serialize = new UnionFind();
   const together = new UnionFind();
@@ -564,6 +574,24 @@ export function buildModel(
       if (target === undefined) {
         unresolvedRelations.set(k, [...(unresolvedRelations.get(k) ?? []), `together-with ${rk}`]);
         diagnostics.push(`${k}: together-with ${rk} is unresolvable; fail-safe: refusing the declarer`);
+      } else if (!target.open && target.declarationRead === 'under-read') {
+        // "A CLOSED MEMBER HAS LEFT THE UNIT" IS READ OFF THE TARGET'S OWN
+        // DECLARATION, and for this target that declaration was not fully read.
+        // `targetKey` resolves the ref through the target's `duplicate-of`, so a
+        // dropped one stops the edge at a closed duplicate instead of carrying
+        // it to a canonical that may still be an OPEN member of the unit. The
+        // union below then never happens, `readiness` never evaluates the unit,
+        // and the declarer reports ready alone — a §4.3.7 atomic unit silently
+        // dissolved by a field nobody could read.
+        //
+        // MEASURED, one field apart: with the target closed and its
+        // `duplicate-of: 3` DROPPED the declarer came back
+        // `{ready: true, reasons: []}` in a component of one; with the same
+        // field PARSED it came back refused, in a two-member unit with #3.
+        underReadTogether.set(k, [...(underReadTogether.get(k) ?? []), rk]);
+        diagnostics.push(
+          `${k}: together-with ${rk} resolves to a closed node whose own declaration was under-read; whether it left the unit is unknown (fail-safe: refusing the declarer)`,
+        );
       } else if (n.open && target.open) {
         // Only OPEN endpoints union: a closed member has left the unit and
         // must not bridge two open members into one active component.
@@ -785,10 +813,29 @@ export function buildModel(
         // adding the refusal there would be a second true-but-redundant reason
         // on a node that is refused either way.
         //
-        // THE OTHER TWO EDGE KINDS ARE ALREADY COVERED and need no equivalent —
-        // a `serialize-with` target joins the component the scan below sweeps
-        // for under-read members, and a `together-with` target is refused
-        // through `readiness`'s own per-member evaluation.
+        // WHICH EDGE KINDS NEED THIS, AND HOW TO TELL — the property, so a
+        // future edge kind is checked rather than remembered:
+        //
+        //   An edge kind needs an under-read guard EXACTLY WHEN it reads the
+        //   TARGET'S `open` flag to DISCHARGE the edge. "Closed" is a tracker
+        //   fact, but WHICH NODE the flag is read from is a declaration fact —
+        //   `targetKey` resolves the ref through the target's `duplicate-of` —
+        //   so an under-read target means the flag was read off the wrong node.
+        //
+        // Two kinds satisfy it and both are guarded: `blocked-by` here (closed
+        // ⇒ unblocks) and `together-with` in the edge loop (closed ⇒ leaves the
+        // unit). `serialize-with` does NOT — it unions whatever the state, so
+        // closure discharges nothing there, and its under-read targets are swept
+        // by the component scan below.
+        //
+        // MEASURED, not reasoned: with a closed under-read target whose real
+        // canonical was open and CLAIMED, the serialize declarer came back
+        // refused either way, while the together declarer came back READY until
+        // its guard was added. An earlier revision of this comment asserted
+        // together-with was covered by `readiness`'s per-member evaluation —
+        // that was FALSE, because a closed target is never unioned, so there is
+        // no member for `readiness` to evaluate. It is corrected here rather
+        // than deleted, because the wrong version is the easier one to re-derive.
         if (bn.declarationRead === 'under-read') {
           reasons.push(
             `blocked-by ${b} is closed but its own declaration was under-read — a dropped duplicate-of would redirect this edge to a canonical that may still be open (fail-safe: blocking)`,
@@ -809,6 +856,11 @@ export function buildModel(
     }
     for (const u of unresolvedRelations.get(k) ?? []) {
       reasons.push(`${u} is unresolvable (fail-safe: refusing the declarer)`);
+    }
+    for (const u of underReadTogether.get(k) ?? []) {
+      reasons.push(
+        `together-with ${u} is closed but its own declaration was under-read — a dropped duplicate-of would redirect this edge to a canonical that may still be an open member (fail-safe: refusing the declarer)`,
+      );
     }
     // A SERIALIZE PEER'S DECLARATION WAS UNDER-READ, so the COMPONENT'S TRUE
     // EXTENT is unknown: the peer may have declared a `serialize-with` the

@@ -887,6 +887,49 @@ describe("under-read declarations", () => {
     );
   });
 
+  test("a CLOSED under-read together target refuses the declarer — the unit is not provably dissolved", () => {
+    // "A closed member has left the unit" is read off the TARGET'S declaration,
+    // and for this target it was not fully read: a dropped `duplicate-of` stops
+    // the edge at a closed duplicate instead of carrying it to a canonical that
+    // may still be an open member. The union never happens, so `readiness` has
+    // no member to evaluate and the declarer would report ready ALONE.
+    const m = buildModel([
+      node(3), // the canonical, OPEN — the member the unit should have had
+      node(2, { open: false, closedStateReason: "duplicate", declarationRead: "under-read" }),
+      node(1, { data: { togetherWith: ref(2) } }),
+    ]);
+    assert.equal(m.readiness("1").ready, false);
+    assertIncludes(
+      m.readiness("1").reasons.find((r) => r.includes("together-with 2")),
+      "is closed but its own declaration was under-read",
+    );
+  });
+
+  test("CONTROL: a closed FULLY-READ together target still leaves the unit", () => {
+    // The negative control: the guard must not turn every closed member into a
+    // refusal, or §4.3.7's "closed members leave the unit" would stop working.
+    const m = buildModel([
+      node(2, { open: false, closedStateReason: "completed" }),
+      node(1, { data: { togetherWith: ref(2) } }),
+    ]);
+    assert.deepEqual(m.readiness("1"), { ready: true, reasons: [] });
+  });
+
+  test("BOUNDS THE CLASS: serialize-with has no closed-target hole", () => {
+    // The property: an edge kind needs an under-read guard exactly when it reads
+    // the TARGET'S `open` flag to DISCHARGE the edge. `serialize-with` unions
+    // whatever the state, so closure discharges nothing and the component scan
+    // covers it. Pinned so a future refactor that makes serialize skip closed
+    // targets — reintroducing the hole — fails here rather than in the field.
+    const m = buildModel([
+      node(3, { assigneeCount: 1 }), // the canonical: open AND claimed
+      node(2, { open: false, closedStateReason: "duplicate", declarationRead: "under-read" }),
+      node(1, { data: { serializeWith: ref(2) } }),
+    ]);
+    assert.deepEqual(m.serializeComponent("1"), ["1", "2"]); // unioned despite being closed
+    assert.equal(m.readiness("1").ready, false);
+  });
+
   test("effective priority is deliberately untouched by the axis", () => {
     // Recorded as a decision, not left to look like an oversight: the axis
     // refuses, and there is nothing here to refuse. A P3 blocking a P0 still
