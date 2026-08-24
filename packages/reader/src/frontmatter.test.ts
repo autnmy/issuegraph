@@ -1362,3 +1362,73 @@ describe('parseFrontmatter agrees with SPEC.md §4.2', () => {
     }
   });
 });
+
+describe('block discovery finds the key the PARSER reports, not one spelling of it', () => {
+  const withKey = (...header: string[]): string =>
+    ['---', ...header, '---'].join('\n');
+
+  test('a flow-root block is read — an ordinary serializer emits one', () => {
+    // THE HONESTLY-REACHABLE MEMBER of this class, and the reason it is not a
+    // curiosity: `yaml.stringify` in flow style emits exactly this shape. So a
+    // conforming third-party writer's block was reported as NO BLOCK, with
+    // `data: null` and ZERO diagnostics — indistinguishable from an issue that
+    // never declared anything, and every edge in it silently gone.
+    const parse = parseFrontmatter(withKey('{issuegraph: {blocked-by: ["#1"], priority: 1}}'));
+    assert.deepEqual(parse.data?.blockedBy, [{ repo: null, id: '1' }]);
+    assert.equal(parse.data?.priority, 1);
+    assert.deepEqual(parse.diagnostics, []);
+  });
+
+  test('the other spellings a line pattern cannot see are read too', () => {
+    // Widening the PATTERN would have been a denylist of spellings, growing a
+    // row per review round, with every missing row another silent loss. Asking
+    // the parser is total by construction — so these need no rows.
+    for (const header of [
+      '"issuegraph":\n  blocked-by: ["#1"]',
+      '? issuegraph\n: {blocked-by: ["#1"]}',
+      '{"issuegraph": {"blocked-by": ["#1"]}}',
+      '  issuegraph:\n    blocked-by: ["#1"]',
+    ]) {
+      const parse = parseFrontmatter(withKey(...header.split('\n')));
+      assert.deepEqual(parse.data?.blockedBy, [{ repo: null, id: '1' }], header);
+      assert.deepEqual(parse.diagnostics, [], header);
+    }
+  });
+
+  test('a key NESTED under another key is still not the block header', () => {
+    // The case the old indent-zero rule actually protected, and the parser
+    // answers it more precisely than an indent test could: `issuegraph` is not
+    // a key of this document's root mapping, so the body carries no block.
+    const nested = parseFrontmatter(withKey('other:', '  issuegraph:', '    blocked-by: ["#9"]'));
+    assert.equal(nested.data, null);
+
+    // And when a real root-level key sits beside it, the ROOT one is canonical.
+    const both = parseFrontmatter(
+      withKey('other:', '  issuegraph:', '    blocked-by: ["#9"]', 'issuegraph:', '  blocked-by: ["#1"]'),
+    );
+    assert.deepEqual(both.data?.blockedBy, [{ repo: null, id: '1' }]);
+  });
+
+  test('a block that carries the key but does NOT parse is still SELECTED', () => {
+    // The regression the union exists to prevent. Judging a candidate by the
+    // parse alone would make an unreadable-but-keyed block invisible — no
+    // block, no defect, no diagnostic — so the cheap line prefilter is OR-ed in
+    // rather than replaced. The union can only ever select more.
+    const parse = parseFrontmatter(withKey('issuegraph:', '  priority: 0', '  priority: 1'));
+    assert.equal(parse.data, null);
+    assert.equal(parse.blockDefect, null, 'a delimited block, so not a block-level defect');
+    assert.ok(parse.diagnostics.length > 0, 'and it must say why');
+    assert.equal(isUnreadDeclaration(parse), true);
+  });
+
+  test('CONTROL: a body with no declaration is still silently absent', () => {
+    // Absence must stay absence — the widening must not start reporting a
+    // defect for every markdown rule in a body.
+    for (const body of ['no block here', ['---', 'other: 1', '---'].join('\n'), ['A', '', '---', '', 'Prose.', '', '---', '', 'B'].join('\n')]) {
+      const parse = parseFrontmatter(body);
+      assert.equal(parse.data, null, body);
+      assert.deepEqual(parse.diagnostics, [], body);
+      assert.equal(parse.blockDefect, null, body);
+    }
+  });
+});

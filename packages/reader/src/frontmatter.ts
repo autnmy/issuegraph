@@ -144,12 +144,18 @@ const UNREADABLE = Symbol('issuegraph: unreadable node');
  * the `?` the grammar would suggest: `?` is outside that shared subset, and a
  * prefilter has no use for the precision. This answers "could this body carry a
  * block?", never "is this line the key". A false positive costs one parse that
- * finds nothing; a false negative means a declaration is never fetched and
- * silently does not exist. So it accepts spellings the parser will go on to
- * reject, unbalanced quotes included, and the YAML parse is what actually
- * decides. This module's test asserts the pattern is a SUPERSET of what the
- * parser accepts, which is the invariant a prefilter owes; asserting equality
- * would break the first time the two legitimately diverge.
+ * finds nothing. So it accepts spellings the parser will go on to reject,
+ * unbalanced quotes included, and the YAML parse is what actually decides.
+ *
+ * IT IS NOT A SUPERSET OF EVERY SPELLING THE READER ACCEPTS, and saying so
+ * plainly matters more than the property would. This reader takes the key its
+ * YAML parser reports, so a flow-root (`{issuegraph: …}`) or escape-encoded
+ * (`"\u0069ssuegraph"`) key is read and this pattern cannot match either.
+ * §4.1 closes that gap on the WRITE side — a conforming writer writes the key
+ * literally, at the document's top level — so a mirror prefiltering with this
+ * is correct for every conforming body, and the reader never depends on it
+ * ({@link blockCarriesKey} ORs it with the parser's own answer). What a mirror
+ * must not assume is that a body this misses cannot carry a declaration.
  */
 export const FRONTMATTER_KEY_PATTERN = `["']*${FRONTMATTER_KEY}["']*[ \\t]*:`;
 
@@ -406,6 +412,45 @@ const BLOCK_DEFECT_DIAGNOSTIC: Readonly<Record<BlockDefect, string>> = {
 };
 
 /**
+ * Whether a `---` block carries the top-level `issuegraph` key.
+ *
+ * A UNION OF TWO TESTS, AND THE UNION IS THE POINT: the cheap line prefilter,
+ * OR the key the YAML parser actually reports. Either alone loses declarations.
+ *
+ * THE PREFILTER ALONE MISSES EVERY SPELLING IT CANNOT SEE, and one of them is
+ * ordinary rather than exotic. `yaml.stringify` in flow style emits
+ *
+ *     { issuegraph: { blocked-by: [ "#1" ] } }
+ *
+ * which no line-anchored key pattern matches — so a conforming third-party
+ * writer's block was reported as NO BLOCK, with `data: null` and ZERO
+ * diagnostics. Indistinguishable from an issue that never declared anything,
+ * which is the absence-rendered-as-a-value licence this module refuses
+ * everywhere else. The explicit-key (`? issuegraph`) and escape-encoded
+ * (`"\u0069ssuegraph"`) spellings fail the same way.
+ *
+ * Widening the PATTERN instead was the obvious move and is the wrong one: it is
+ * a denylist of spellings, it grows a row per review round, and every row it is
+ * missing is another silent loss. Asking the parser is total by construction.
+ *
+ * THE PREFILTER IS STILL OR-ED IN, and dropping it would be a regression rather
+ * than a simplification. A block that carries the key but does NOT parse — a
+ * duplicate key, a tab in the indentation — must still be SELECTED, so that
+ * `parseFrontmatter` can report why it is unreadable. Judge it by the parse
+ * alone and such a block becomes invisible: no block, no defect, no diagnostic.
+ * The union can only ever select more, so it cannot lose a case the previous
+ * rule caught.
+ */
+function blockCarriesKey(block: readonly string[]): boolean {
+  if (block.some((line) => FRONTMATTER_KEY_LINE.test(line))) return true;
+  const doc = readDocument(block.join('\n'));
+  if (doc === null) return false;
+  const root = doc.contents;
+  if (!isMap(root)) return false;
+  return root.items.some((pair) => scalarKey(pair) === FRONTMATTER_KEY);
+}
+
+/**
  * Locate the canonical issuegraph frontmatter block in an issue body and
  * return its raw lines, or null when no `---` block carrying the key exists.
  * Tolerates any prefix content (banners, callouts, a wrapping code fence):
@@ -461,7 +506,7 @@ export function locateBlock(body: string): BlockLocation {
         continue;
       }
       const block = lines.slice(start + 1, i);
-      if (block.some((l) => FRONTMATTER_KEY_LINE.test(l))) {
+      if (blockCarriesKey(block)) {
         return { lines: block, defect: null, startLine: start, endLine: i };
       }
       // A `---` pair without the key: the NEXT `---` starts a new candidate
