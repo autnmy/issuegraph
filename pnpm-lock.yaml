@@ -33,6 +33,19 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  packages/derive:
+    dependencies:
+      '@issuegraph/reader':
+        specifier: workspace:^
+        version: link:../reader
+    devDependencies:
+      '@types/node':
+        specifier: ^22.18.0
+        version: 22.20.1
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
   packages/reader:
     dependencies:
       '@issuegraph/core':
