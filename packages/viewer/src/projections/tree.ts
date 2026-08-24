@@ -33,15 +33,13 @@ interface Forest {
  */
 function buildForest(document: NormalizedDocument): Forest {
   const diagnostics: string[] = [];
+  // NO CARDINALITY CHECK HERE ANY MORE. `normalizeDocument` applies the
+  // format's single-origin rule where the edges are read, so a second origin
+  // cannot reach this map — and a branch that can never fire, carrying a
+  // diagnostic nothing can trigger, reads as a guard while guarding nothing.
   const parentOf = new Map<string, string>();
   for (const edge of document.edges) {
     if (edge.field !== 'decomposed-from') continue;
-    if (parentOf.has(edge.from)) {
-      diagnostics.push(
-        `${edge.from} declares more than one decomposed-from origin; ${String(parentOf.get(edge.from))} is used and ${edge.to} is ignored`,
-      );
-      continue;
-    }
     parentOf.set(edge.from, edge.to);
   }
 

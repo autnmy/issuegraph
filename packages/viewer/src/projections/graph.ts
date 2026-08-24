@@ -178,10 +178,13 @@ function nodeShape(
         height: box.height,
         rx: theme.metrics['--ig-radius'],
       }),
-      // A SPINE node is labelled by its rail row, which sits on top of it — so
-      // labelling it here too would print the title twice, once in text a
-      // reader can select and once in text they cannot.
-      box.column === 'spine'
+      // A node is labelled by its RAIL ROW when it has one, so labelling it
+      // here too would print the title twice — once selectable, once not. But
+      // the rail draws only the ranked slots, and keying this on the COLUMN
+      // rather than on the rail left a tracker-held slot as a blank rectangle:
+      // no title, no hold reason, nothing. The question is whether this key is
+      // railed, not which column it sits in.
+      navigable.railed.has(key)
         ? null
         : svg(
             'text',
@@ -262,6 +265,19 @@ function spineRail(
   );
 }
 
+/**
+ * The refusal.
+ *
+ * A refusal with a route forward reads as competence — but only if the route is
+ * one the reader can actually take. "Select one component to draw it" was not:
+ * the capsules carried no identity, nothing dispatched from them, and this
+ * package never narrows to a component. Advertising an action nobody can
+ * perform is worse than a plain refusal, so each capsule now carries its
+ * component's lead as a pointer identity (a host receives it through
+ * `onSelect`) and the instruction names what actually happens next — the host
+ * narrows the document, because narrowing IS the host's job in a package that
+ * renders exactly what it is given.
+ */
 function refusal(document: NormalizedDocument, nodeCount: number, mode: 'capsules' | 'clusters'): ElementSpec {
   const clusters = clustersOf(document);
   const heading =
@@ -276,7 +292,15 @@ function refusal(document: NormalizedDocument, nodeCount: number, mode: 'capsule
       'ol',
       { class: 'ig-list', 'aria-label': 'connected components' },
       shown.map((cluster) =>
-        element('li', { class: 'ig-capsule' }, [
+        element(
+          'li',
+          {
+            class: 'ig-capsule',
+            // Pointer identity, not focus identity: a refusal publishes no
+            // navigation targets, so this must not enter the focus index.
+            'data-ig-group': cluster.members[0] ?? null,
+          },
+          [
           element('span', { class: 'ig-count' }, [`${String(cluster.members.length)} issues`]),
           element('span', { class: 'ig-count' }, [`${String(cluster.blockedByEdges)} blocking`]),
           element('span', { class: 'ig-count' }, [`depth ${String(cluster.chainDepth)}`]),
@@ -284,13 +308,14 @@ function refusal(document: NormalizedDocument, nodeCount: number, mode: 'capsule
             ? element('span', { class: 'ig-badge', 'data-edge': 'blocked-by' }, ['cycle'])
             : null,
           element('span', { class: 'ig-id' }, [cluster.members.slice(0, 3).join(', ')]),
-        ]),
+          ],
+        ),
       ),
     ),
     element('p', { class: 'ig-refusal-next' }, [
       mode === 'capsules'
-        ? 'Select one component to draw it, or use the order list, which is complete at any size.'
-        : 'Search for an issue to focus its neighbourhood, or use the order list, which is complete at any size.',
+        ? 'Choose a component above to narrow the document to it, then render again — or use the order list, which is complete at any size.'
+        : 'Narrow the document to one neighbourhood and render again, or use the order list, which is complete at any size.',
     ]),
   ]);
 }

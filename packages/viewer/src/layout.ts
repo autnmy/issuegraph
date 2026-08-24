@@ -153,17 +153,24 @@ export function layoutGraph(document: NormalizedDocument, theme: Theme): GraphLa
   const gutterWidth = metric(theme, '--ig-gutter-width');
   const spineWidth = metric(theme, '--ig-spine-width');
   const channelWidth = metric(theme, '--ig-gutter-width') / 2;
+  // THE CANVAS RESERVES WHAT THE ENCLOSURE NEEDS. A `together-with` enclosure
+  // pads clear of its members' bounds, so a unit on the first or last row drew
+  // at a negative coordinate or past the bottom edge — outside the viewBox, and
+  // outside the stage, which hides its overflow. Laying the whole drawing out
+  // inside that margin costs nothing and removes the clip everywhere at once,
+  // rather than special-casing the two rows where it happens to bite.
+  const pad = metric(theme, '--ig-space-tight');
 
   const { spine, left, right, slotMembers } = assignColumns(document);
 
-  const leftX = 0;
-  const spineX = gutterWidth + channelWidth;
+  const leftX = pad;
+  const spineX = pad + gutterWidth + channelWidth;
   const rightX = spineX + spineWidth + channelWidth;
-  const width = rightX + gutterWidth;
+  const width = rightX + gutterWidth + pad;
 
   // The channels sit between the columns, so no arc routed through one can
   // cross an occupied x-range.
-  const leftChannel = gutterWidth + channelWidth / 2;
+  const leftChannel = pad + gutterWidth + channelWidth / 2;
   const rightChannel = spineX + spineWidth + channelWidth / 2;
 
   const rankOf = new Map<string, number | null>();
@@ -183,7 +190,7 @@ export function layoutGraph(document: NormalizedDocument, theme: Theme): GraphLa
         key,
         column,
         x,
-        y: index * (rowHeight + gap),
+        y: pad + index * (rowHeight + gap),
         width: boxWidth(theme, label, columnWidth),
         height: rowHeight,
         rank: rankOf.get(key) ?? null,
@@ -197,7 +204,7 @@ export function layoutGraph(document: NormalizedDocument, theme: Theme): GraphLa
   place(right, 'right', rightX, gutterWidth);
 
   const rows = Math.max(spine.length, left.length, right.length);
-  const height = rows === 0 ? 0 : rows * (rowHeight + gap) - gap;
+  const height = rows === 0 ? 0 : rows * (rowHeight + gap) - gap + pad * 2;
 
   return {
     width,
@@ -230,7 +237,7 @@ const DEPART_FRACTION = 0.75;
 const ARRIVE_FRACTION = 0.25;
 
 /**
- * Which bound of `box` faces `other`.
+ * Which bound of `box` the edge should leave from or arrive at.
  *
  * PAIRWISE, NOT PER-COLUMN, and the difference is the whole correctness of the
  * drawing. Deciding from a box's own column alone made every spine endpoint the
@@ -238,11 +245,19 @@ const ARRIVE_FRACTION = 0.25;
  * had to cross the node to reach its own terminal, occluding exactly the marker
  * the colour-blind-safety claim depends on.
  *
- * A tie — two spine nodes at the same x — resolves LEFT, which is the design's
- * own rule: arcs bow left of the spine.
+ * ON A TIE, FACE THE CHANNEL. Two nodes in the same column have the same x, so
+ * "face the other" says nothing — and defaulting LEFT was right for the spine
+ * only by coincidence: the left channel happens to sit left of it. For two
+ * left-gutter nodes the same channel is on their RIGHT, so the default sent
+ * both endpoints out of the canvas and dragged the path back across the boxes.
+ * Facing the channel is the rule the spine case was an instance of, so it keeps
+ * "arcs bow left of the spine" while fixing the gutter.
  */
-function facingSide(box: NodeBox, other: NodeBox): 'left' | 'right' {
-  return other.x + other.width / 2 > box.x + box.width / 2 ? 'right' : 'left';
+function facingSide(box: NodeBox, other: NodeBox, channelX: number): 'left' | 'right' {
+  const centre = box.x + box.width / 2;
+  const otherCentre = other.x + other.width / 2;
+  if (otherCentre !== centre) return otherCentre > centre ? 'right' : 'left';
+  return channelX > centre ? 'right' : 'left';
 }
 
 function anchor(box: NodeBox, fraction: number, side: 'left' | 'right'): Point {
@@ -268,14 +283,15 @@ export function edgeGeometry(
   const to = layout.nodes.get(edge.to);
   if (from === undefined || to === undefined) return null;
 
-  const start = anchor(from, DEPART_FRACTION, facingSide(from, to));
-  const end = anchor(to, ARRIVE_FRACTION, facingSide(to, from));
-
-  // Route through the channel on the side the arc actually needs. A pair of
-  // spine nodes bows LEFT, as the design fixes; anything touching the right
-  // gutter uses the right channel so the two families never tangle.
+  // The channel is chosen FIRST, because on a same-column tie it is what
+  // decides which bound each endpoint uses. A pair of spine nodes bows LEFT, as
+  // the design fixes; anything touching the right gutter uses the right channel
+  // so the two families never tangle.
   const usesRight = from.column === 'right' || to.column === 'right';
   const controlX = usesRight ? layout.rightChannel : layout.leftChannel;
+
+  const start = anchor(from, DEPART_FRACTION, facingSide(from, to, controlX));
+  const end = anchor(to, ARRIVE_FRACTION, facingSide(to, from, controlX));
   const controlY = (start.y + end.y) / 2;
 
   const round = (value: number): string => (Math.round(value * 100) / 100).toFixed(2);

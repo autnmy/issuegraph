@@ -257,6 +257,33 @@ describe('the graph projection', () => {
     assert.equal(labels.includes('Backfill the ledger'), false, 'a spine node is labelled twice');
   });
 
+  it('labels a spine node the rail does not draw', () => {
+    // The rail draws only the RANKED slots, so keying the SVG label on the
+    // column rather than on the rail left a tracker-held slot as a blank
+    // rectangle — no title, no hold reason, nothing.
+    const markup = render();
+    const labels = [...markup.matchAll(/<text class="ig-node-label"[^>]*>([^<]*)</g)].map(
+      (match) => match[1] as string,
+    );
+
+    assert.ok(
+      labels.includes('Rework the retry budget'),
+      'the tracker-held slot rendered as a blank rectangle',
+    );
+    assert.equal(labels.includes('Backfill the ledger'), false, 'a railed node is labelled twice');
+  });
+
+  it('offers a refusal action a host can actually perform', () => {
+    // A route forward nobody can take is worse than a plain refusal: the
+    // capsules carried no identity, nothing dispatched from them, and this
+    // package never narrows to a component.
+    const markup = render(crowdedDocument(GRAPH_NODE_BUDGET + 1));
+
+    assert.match(markup, /class="ig-capsule" data-ig-group="[^"]+"/);
+    assert.match(markup, /Choose a component above to narrow the document to it/);
+    assert.equal(/Select one component to draw it/.test(markup), false);
+  });
+
   it('returns the rail to ordinary flow when it refuses to draw', () => {
     // A refusal draws no nodes, so there is nothing to sit on — and a
     // fixed-height stage would clip the refusal block.
@@ -305,7 +332,7 @@ describe('the graph projection', () => {
   it('refuses with clusters only past the second threshold', () => {
     const markup = render(crowdedDocument(CLUSTER_ONLY_BUDGET + 1));
     assert.match(markup, /showing clusters only/);
-    assert.match(markup, /Search for an issue to focus its neighbourhood/);
+    assert.match(markup, /Narrow the document to one neighbourhood and render again/);
   });
 
   it('offers a next move with every refusal, not just a count', () => {

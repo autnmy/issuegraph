@@ -271,10 +271,26 @@ function indexEdges(
   const kept: ViewerEdge[] = [];
   const edgesOf = new Map<string, ViewerEdge[]>();
   const outOfSetOrigins = new Map<string, string>();
+  // `decomposed-from` is SINGLE-CARDINALITY in the format, and the rule has to
+  // be applied HERE, where the edges are read — not later, per projection. A
+  // second origin that resolved while the first did not left the tree nesting
+  // an issue under one parent while printing that it came from another, with
+  // neither the diagnostic nor the first-origin rule the projection promises.
+  // First declared wins, whether or not it resolves.
+  const originClaimed = new Set<string>();
   for (const edge of edges) {
     if (!isEdgeField(edge.field)) {
       diagnostics.push(`edge ${edge.from} -> ${edge.to} names an unknown field and was dropped`);
       continue;
+    }
+    if (edge.field === 'decomposed-from') {
+      if (originClaimed.has(edge.from)) {
+        diagnostics.push(
+          `${edge.from} declares more than one decomposed-from origin; only the first is kept and ${edge.to} was dropped`,
+        );
+        continue;
+      }
+      originClaimed.add(edge.from);
     }
     const missing = !byKey.has(edge.from) ? edge.from : !byKey.has(edge.to) ? edge.to : null;
     if (missing !== null) {

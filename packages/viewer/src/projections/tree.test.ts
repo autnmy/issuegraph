@@ -103,8 +103,11 @@ describe('the tree projection', () => {
     assert.deepEqual([...cyclic.focusOrder].sort(), ['1', '2', '3']);
   });
 
-  it('keeps the first of two declared origins and diagnoses the rest', () => {
-    const twoOrigins = scene({
+  it('keeps the first of two declared origins, whichever one resolves', () => {
+    // The format makes `decomposed-from` single-cardinality and
+    // `normalizeDocument` applies that where the edges are read, so the tree
+    // cannot see a second origin at all.
+    const first = normalizeDocument({
       issues: [issue('1'), issue('2'), issue('3')],
       edges: [
         { field: 'decomposed-from', from: '3', to: '1' },
@@ -113,8 +116,45 @@ describe('the tree projection', () => {
       order: emptyOrder,
     });
 
-    assert.match(twoOrigins.diagnostics[0] as string, /more than one decomposed-from origin/);
-    assert.equal(levelOf(renderMarkup(twoOrigins.root), '3'), '2');
+    assert.ok(
+      first.diagnostics.some((line) => /more than one decomposed-from origin/.test(line)),
+    );
+    assert.equal(levelOf(renderMarkup(treeScene(first.document).root), '3'), '2');
+  });
+
+  it('does not both nest an issue and claim its origin is missing', () => {
+    // A missing FIRST origin and a resolving second used to be recorded
+    // independently: the tree nested the issue under the second parent while
+    // printing that it came from the first, which is two contradictory claims
+    // about one single-cardinality field.
+    const missingFirst = normalizeDocument({
+      issues: [issue('1'), issue('3')],
+      edges: [
+        { field: 'decomposed-from', from: '3', to: '900' },
+        { field: 'decomposed-from', from: '3', to: '1' },
+      ],
+      order: emptyOrder,
+    });
+    const markup = renderMarkup(treeScene(missingFirst.document).root);
+
+    // The FIRST origin wins even though it does not resolve, so `3` is a root
+    // that says where it came from — and is not also nested under `1`.
+    assert.equal(missingFirst.document.outOfSetOrigins.get('3'), '900');
+    assert.equal(levelOf(markup, '3'), '1');
+    assert.match(markup, /decomposed from 900, which is outside this document/);
+
+    // And the reverse order resolves the other way, with no out-of-set claim.
+    const presentFirst = normalizeDocument({
+      issues: [issue('1'), issue('3')],
+      edges: [
+        { field: 'decomposed-from', from: '3', to: '1' },
+        { field: 'decomposed-from', from: '3', to: '900' },
+      ],
+      order: emptyOrder,
+    });
+
+    assert.equal(presentFirst.document.outOfSetOrigins.get('3'), undefined);
+    assert.equal(levelOf(renderMarkup(treeScene(presentFirst.document).root), '3'), '2');
   });
 
   it('renders every issue as a root when nothing declares provenance', () => {
