@@ -264,6 +264,63 @@ describe('input fields are bounded by their domain, not just their type', () => 
     }
   });
 
+  test('a repository the reader cannot reference is refused', () => {
+    // MEASURED CONSEQUENCE, not a tidiness rule. `repo` used to accept any
+    // string, `nodeKey` then built `project#7`, and no issue body can reference
+    // that: a dependent declaring `blocked-by: project#7` came back HELD with
+    // `own issuegraph declaration was not fully read`. Fail-safe, and the reason
+    // named the wrong thing — so the caller could not see its own input was at
+    // fault. Refused at the boundary that owns it instead.
+    for (const value of ['project', 'owner/', '/repo', 'owner repo', 'owner/repo#7', '']) {
+      const message = refusal('repo', value);
+      assert.ok(message.includes('repo'), `${JSON.stringify(value)}: ${message}`);
+      assert.ok(message.includes('owner/repo'), `${JSON.stringify(value)}: ${message}`);
+    }
+  });
+
+  test('CONTROL: a qualified repo, an explicit null, and an absent key all still pass', () => {
+    // The refusal has to be the unusable value and nothing else. `null` and an
+    // absent key both mean "home repo" and are the common case, so a rule that
+    // caught either would break every ordinary document.
+    for (const value of ['owner/repo', 'autnmy/issuegraph', 'a/b', 'Owner/Repo.js', null]) {
+      const issues = [{ ...issue(1, 'no block'), repo: value }];
+      const result = orderFromJson(document(issues), 'order');
+      assert.equal(result.code, EXIT.ok, `${JSON.stringify(value)}: ${result.stderr.join('\n')}`);
+    }
+    assert.equal(orderFromJson(document([issue(1, 'no block')]), 'order').code, EXIT.ok);
+  });
+
+  test('the accepted repositories are exactly the ones the reader can reference', () => {
+    // Asked, not restated — the same claim the issue-number test above makes,
+    // over the other half of a qualified reference. `resolveRef` is the reader's
+    // whole-token answer, so agreeing with it is agreeing with the grammar that
+    // decides whether the key this input produces can ever be addressed.
+    for (const value of ['owner/repo', 'a/b']) {
+      assert.notEqual(resolveRef(`${value}#1`), null, `reader refuses ${value}`);
+      assert.equal(orderFromJson(document([{ ...issue(1, 'no block'), repo: value }]), 'order').code, EXIT.ok);
+    }
+    for (const value of ['project', 'owner/', '/repo']) {
+      assert.equal(resolveRef(`${value}#1`), null, `reader accepts ${value}`);
+      assert.equal(orderFromJson(document([{ ...issue(1, 'no block'), repo: value }]), 'order').code, EXIT.usage);
+    }
+  });
+
+  test('homeRepo is held to the same domain as an issue repo', () => {
+    // It is not a reference, so nothing it accepts can be MIS-resolved — but it
+    // is compared against every node's repo after both are lowercased, so an
+    // unusable value silently matches nothing and leaves qualified keys where
+    // the caller expected bare ones. Same predicate, same authority.
+    const withHome = (homeRepo: unknown): string =>
+      JSON.stringify({
+        homeRepo,
+        baseRanking: { source: 'config', order: [{ key: '1', matchedOrderIndex: 0 }] },
+        issues: [issue(1, 'no block')],
+      });
+    assert.equal(orderFromJson(withHome('project'), 'order').code, EXIT.usage);
+    assert.ok(orderFromJson(withHome('project'), 'order').stderr.join('\n').includes('homeRepo'));
+    assert.equal(orderFromJson(withHome('owner/repo'), 'order').code, EXIT.ok);
+  });
+
   test('a negative matchedOrderIndex is refused', () => {
     const input = JSON.stringify({
       baseRanking: { source: 'config', order: [{ key: '1', matchedOrderIndex: -1 }] },

@@ -287,3 +287,97 @@ describe('backfill', () => {
     assert.ok(result.stderr.join('\n').includes('no block'));
   });
 });
+
+/**
+ * A request key the writer cannot act on.
+ *
+ * EVERY CASE HERE IS UNREACHABLE FROM TYPESCRIPT, and that is the finding rather
+ * than a gap in it: `{ serialiseWith: ref }` draws TS2561 as a literal and TS2559
+ * as a variable, so the reachable population is plain-JavaScript callers of an
+ * exported function. A published package's type annotation is a promise to
+ * TypeScript callers and nothing at all to the others — the same reasoning
+ * `@issuegraph/core`'s own predicates were corrected on — so the tests reach the
+ * functions the way that population does, through `as unknown as`, exactly as
+ * this repository's other untyped-caller tests do.
+ */
+describe('a write request naming a field the writer cannot act on', () => {
+  function setFromJs(fields: Record<string, unknown>) {
+    return setFields(CANONICAL_BODY, fields as unknown as Parameters<typeof setFields>[1]);
+  }
+  function spliceFromJs(edges: Record<string, unknown>) {
+    return spliceEdges(CANONICAL_BODY, edges as unknown as Parameters<typeof spliceEdges>[1]);
+  }
+
+  test('a misspelled key is refused, not ignored — this is the whole defect', () => {
+    // It used to pass `writeRequestRefusal` (the request was non-empty), the
+    // writer ignored the property it does not know, and the wrapper returned the
+    // UNCHANGED body at exit 0 — a command telling its caller an edit happened
+    // when none did, which is the one outcome this package exists to refuse.
+    const result = setFromJs({ serialiseWith: REF_7 });
+    assert.equal(result.code, EXIT.usage);
+    assert.equal(result.stdout, '', 'a refused write must emit no body');
+    assert.ok(result.stderr.join('\n').includes('serialiseWith'), result.stderr.join('\n'));
+  });
+
+  test('the refusal lists what IS allowed, so the caller can fix it without guessing', () => {
+    const message = setFromJs({ serialiseWith: REF_7 }).stderr.join('\n');
+    for (const key of ['blockedBy', 'serializeWith', 'priority', 'evidence']) {
+      assert.ok(message.includes(key), `${key} missing from: ${message}`);
+    }
+  });
+
+  test('the allowlist is PER PATH: a set-only field is refused by splice', () => {
+    // The case a single shared allowlist would wave through. `togetherWith` is a
+    // real `SetFields` key, so a union allowlist would accept it here — and
+    // `spliceGeneratedEdges` does not own it, so the request would be ignored and
+    // the body returned unchanged at exit 0. Same defect, one field further along.
+    const result = spliceFromJs({ togetherWith: REF_7 });
+    assert.equal(result.code, EXIT.usage);
+    assert.equal(result.stdout, '');
+    assert.ok(result.stderr.join('\n').includes('togetherWith'), result.stderr.join('\n'));
+  });
+
+  test('CONTROL: that same field is accepted by set, on a body with no block', () => {
+    // Proves the refusal above is about the SURFACE REACHED and not about the
+    // field being unknown to the package — otherwise the test above would pass
+    // for the wrong reason.
+    const result = setFields(ABSENT_BODY, { togetherWith: REF_7 });
+    assert.equal(result.code, EXIT.ok, result.stderr.join('\n'));
+  });
+
+  test('CONTROL: every allowed key still reaches the writer', () => {
+    // The refusal must not have narrowed the surface. A stale allowlist would
+    // refuse a write the writer can perform — the mirror image of the defect.
+    assert.equal(setFields(CANONICAL_BODY, { blockedBy: [REF_7] }).code, EXIT.ok);
+    assert.equal(setFields(CANONICAL_BODY, { serializeWith: REF_7 }).code, EXIT.ok);
+    assert.equal(setFields(CANONICAL_BODY, { decomposedFrom: REF_7 }).code, EXIT.ok);
+    assert.equal(setFields(CANONICAL_BODY, { duplicateOf: REF_7 }).code, EXIT.ok);
+    assert.equal(spliceEdges(CANONICAL_BODY, { blockedBy: [REF_7] }).code, EXIT.ok);
+    assert.equal(spliceEdges(CANONICAL_BODY, { serializeWith: null }).code, EXIT.ok);
+  });
+
+  test('an explicitly-undefined value asks for nothing, exactly as an absent key does', () => {
+    // Counting KEYS let this one shape of "nothing requested" through to a
+    // body-unchanged exit 0. Absent and explicitly-undefined mean the same thing
+    // to every reader downstream, so they get the same answer here.
+    for (const request of [{ blockedBy: undefined }, { serializeWith: undefined }]) {
+      const result = setFromJs(request);
+      assert.equal(result.code, EXIT.usage, JSON.stringify(request));
+      assert.equal(result.stdout, '');
+      assert.ok(result.stderr.join('\n').includes('nothing to write'), result.stderr.join('\n'));
+    }
+  });
+
+  test('CONTROL: a clear request is a request — [] and null are not "nothing"', () => {
+    // The undefined rule must not swallow the two values that MEAN remove.
+    assert.equal(setFields(CANONICAL_BODY, { blockedBy: [] }).code, EXIT.ok);
+    assert.equal(setFields(CANONICAL_BODY, { serializeWith: null }).code, EXIT.ok);
+  });
+
+  test('an unsupported key is reported ahead of a clear the writer cannot perform', () => {
+    // Both are wrong with the request; the misspelling is the one the caller can
+    // act on, and reporting the other would describe a request they did not make.
+    const message = setFromJs({ serialiseWith: REF_7, decomposedFrom: null }).stderr.join('\n');
+    assert.ok(message.includes('serialiseWith'), message);
+  });
+});

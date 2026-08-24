@@ -18,6 +18,7 @@
  * is the defect the package exists to end. Bodies in, reader-parsed, every time.
  */
 
+import { isRepoQualifier } from '@issuegraph/core';
 import { deriveIssueOrder } from '@issuegraph/derive';
 import type { IssueOrderBaseRanking } from '@issuegraph/derive';
 import { nodeKey, parseFrontmatter } from '@issuegraph/reader';
@@ -206,6 +207,36 @@ function asIssueNumber(value: unknown, at: string): number {
   return parsed;
 }
 
+/**
+ * A repository qualifier the LIBRARIES would also accept.
+ *
+ * The bound is not restated here — it is asked, exactly as {@link asIssueNumber}
+ * asks for the number half. `isRepoQualifier` is the predicate
+ * `@issuegraph/reader`'s own ref parser calls before it will build a qualified
+ * reference, so what this admits is what the reader admits, by construction.
+ *
+ * Review found this field accepting any non-null string. `nodeKey` then built a
+ * key such as `project#7`, and no issue body can reference that: a dependent
+ * declaring `blocked-by: project#7` came back HELD, reported as `own issuegraph
+ * declaration was not fully read (fail-safe: refusing the node)`. The miss failed
+ * SAFE — it refused work rather than releasing blocked work — but the reason it
+ * gave named the wrong thing, so the caller could not see that its own input was
+ * the defect. Refusing the input names it at the boundary that owns it.
+ *
+ * `homeRepo` is validated through here too. It is not a reference, so nothing it
+ * accepts can be mis-resolved — but it is compared against every node's repo
+ * after both are lowercased, so an unusable value silently matches nothing and
+ * leaves qualified keys where the caller expected bare ones. Same predicate,
+ * same authority, one helper.
+ */
+function asRepoQualifier(value: unknown, at: string): string {
+  const repo = asString(value, at);
+  if (!isRepoQualifier(repo)) {
+    fail(at, `expected an owner/repo qualifier the reader can reference, got ${JSON.stringify(repo)}`);
+  }
+  return repo;
+}
+
 function asIssue(value: unknown, at: string): OrderInputIssue {
   const record = asRecord(value, at);
   const repo = record['repo'];
@@ -214,7 +245,7 @@ function asIssue(value: unknown, at: string): OrderInputIssue {
     number: asIssueNumber(record['number'], `${at}.number`),
     // `exactOptionalPropertyTypes` is on: an absent key and an explicit
     // `undefined` are different types, so the key is only added when supplied.
-    ...(repo === undefined ? {} : { repo: repo === null ? null : asString(repo, `${at}.repo`) }),
+    ...(repo === undefined ? {} : { repo: repo === null ? null : asRepoQualifier(repo, `${at}.repo`) }),
     open: asBoolean(record['open'], `${at}.open`),
     labels: asStringArray(record['labels'], `${at}.labels`),
     assigneeCount: asIntegerAtLeast(record['assigneeCount'], `${at}.assigneeCount`, 0),
@@ -234,7 +265,7 @@ function asIssue(value: unknown, at: string): OrderInputIssue {
 export function asOrderInput(value: unknown): OrderInputDocument {
   const record = asRecord(value, 'input');
   const homeRepo = record['homeRepo'];
-  const rawHomeRepo = homeRepo === undefined ? undefined : asString(homeRepo, 'input.homeRepo');
+  const rawHomeRepo = homeRepo === undefined ? undefined : asRepoQualifier(homeRepo, 'input.homeRepo');
   const issues = asArray(record['issues'], 'input.issues').map((issue, index) =>
     asIssue(issue, `input.issues[${index}]`),
   );

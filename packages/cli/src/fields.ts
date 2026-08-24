@@ -31,6 +31,31 @@
  * and the tests read the same lists rather than a copy.
  */
 
+import type { GeneratedEdges } from '@issuegraph/writer';
+
+/**
+ * Compile-time proof that a key list names EVERY key of the interface it claims
+ * to cover, and no others.
+ *
+ * A list of key names is a restatement of a type, and a restatement drifts —
+ * which is the class this whole file exists to stop, one level up. `AssertTrue`
+ * turns the drift into a compile error at the declaration site: add a field to
+ * `GeneratedEdges` or `SetFields` without adding it to the matching list, or
+ * leave a stale entry behind, and the build fails here rather than the key being
+ * silently accepted or silently refused.
+ *
+ * `[A] extends [B]` rather than `A extends B`: a bare conditional over a union
+ * DISTRIBUTES, so a missing member would be tested one member at a time and the
+ * answer would come back a union of `true | false` rather than the `false` this
+ * needs. The tuple wrapper compares the unions as wholes.
+ */
+export type AssertTrue<T extends true> = T;
+export type SameKeys<A extends string, B extends string> = [A] extends [B]
+  ? [B] extends [A]
+    ? true
+    : false
+  : false;
+
 /** A frontmatter field this CLI can write, spelled as it appears in a block. */
 export type WritableField =
   | 'blocked-by'
@@ -83,6 +108,16 @@ export const EDGE_JSON_KEYS = Object.freeze([
 export type EdgeJsonKey = (typeof EDGE_JSON_KEYS)[number];
 
 /**
+ * The list above IS the writer's splice surface — proved, not asserted in prose.
+ * This is what lets it serve as the allowlist `writeRequestRefusal` applies to a
+ * splice request: an allowlist one field out of date would refuse a write the
+ * writer can perform, which is the mirror image of the defect it is there for.
+ */
+export type EdgeJsonKeysCoverGeneratedEdges = AssertTrue<
+  SameKeys<EdgeJsonKey, keyof GeneratedEdges>
+>;
+
+/**
  * The `--edges` keys for which an explicit `null` means REMOVE. For the other
  * two the writer reads `null` as "leave untouched", so accepting one would be a
  * clear request the command silently declines to perform.
@@ -133,15 +168,56 @@ export function unperformableClear(edges: {
  */
 export type WriteRefusal =
   | { readonly kind: 'nothing-requested' }
-  | { readonly kind: 'unperformable-clear'; readonly field: WritableField };
+  | { readonly kind: 'unperformable-clear'; readonly field: WritableField }
+  | {
+      readonly kind: 'unsupported-key';
+      readonly key: string;
+      readonly allowed: readonly string[];
+    };
 
-export function writeRequestRefusal(request: {
-  readonly decomposedFrom?: unknown;
-  readonly duplicateOf?: unknown;
-}): WriteRefusal | null {
+export function writeRequestRefusal(
+  request: { readonly decomposedFrom?: unknown; readonly duplicateOf?: unknown },
+  // The keys the operation being reached can actually act on. Passed IN rather
+  // than fixed here, because the two write paths have different surfaces: `set`
+  // reaches `renderFrontmatter` and owns seven fields, `splice` reaches
+  // `spliceGeneratedEdges` and owns four. One shared allowlist would have to be
+  // their union, and would then wave `togetherWith` through to a splice that
+  // ignores it — the same silent no-op, one field further along.
+  allowed: readonly string[],
+): WriteRefusal | null {
+  // `Object.entries` types its values `any` against an interface; re-binding
+  // keeps each one `unknown`, so nothing below reads a value it has not proved.
+  const entries: readonly (readonly [string, unknown])[] = Object.entries(request);
+
+  // AN UNSUPPORTED KEY IS REFUSED, NOT IGNORED. `writeRequestRefusal` used to
+  // test only that the request named SOME field, so `{ serialiseWith: ref }` —
+  // one letter off — passed, the writer ignored the property it does not know,
+  // and the wrapper returned the unchanged body at exit 0. TypeScript already
+  // refuses that spelling in every form, including through a variable
+  // (TS2561 on the literal, TS2559 on the variable), so the reachable population
+  // is plain-JavaScript callers of an exported function; a published package's
+  // type annotation is a promise to TypeScript callers and nothing at all to the
+  // others, which is the same reasoning `@issuegraph/core`'s own predicates were
+  // corrected on.
+  //
+  // Checked BEFORE the emptiness test would otherwise pass and before the clear
+  // test, so a misspelled key is reported as itself rather than as whatever the
+  // request looks like once the unknown key is disregarded.
+  for (const [key] of entries) {
+    if (!allowed.includes(key)) return { kind: 'unsupported-key', key, allowed };
+  }
+
   // A request naming no field asks for nothing. Returning the body unchanged at
   // exit 0 would tell a caller an edit happened; there is no edit.
-  if (Object.keys(request).length === 0) return { kind: 'nothing-requested' };
+  //
+  // JUDGED ON VALUES, NOT ON KEY COUNT. `{ blockedBy: undefined }` names a key
+  // and asks for nothing — absent and explicitly-undefined mean the same thing
+  // to every reader downstream — so counting keys let exactly one shape of
+  // "nothing requested" through to a body-unchanged exit 0. Same defect, same
+  // reachable population: `exactOptionalPropertyTypes` is on, so TypeScript
+  // callers cannot write it either.
+  if (entries.every(([, value]) => value === undefined)) return { kind: 'nothing-requested' };
+
   const field = unperformableClear(request);
   return field === null ? null : { kind: 'unperformable-clear', field };
 }
