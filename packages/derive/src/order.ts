@@ -300,7 +300,15 @@ export function deriveIssueOrder(input: DeriveIssueOrderInput): DerivedIssueOrde
     if (positionA !== positionB) return positionA - positionB;
     // Both unranked by the base ranking (or genuinely tied): a deterministic
     // refinement rather than an unspecified order.
-    const numberDelta = (rawByKey.get(a)?.number ?? 0) - (rawByKey.get(b)?.number ?? 0);
+    //
+    // NUMERIC ONLY WHEN BOTH IDS ARE NUMERIC, because an id is an OPAQUE
+    // tracker token (§4.2) and most trackers' are not numbers. Subtracting
+    // `ABC-123` from `ENG-456` yields NaN, which compares false against
+    // everything — an UNSPECIFIED order, in the one comparator whose whole
+    // purpose is that two clients holding the same graph derive the same one.
+    // A mixed or non-numeric pair falls through to the codepoint comparison
+    // below, which already totalizes the ordering for exactly this reason.
+    const numberDelta = numericDelta(rawByKey.get(a)?.id, rawByKey.get(b)?.id);
     if (numberDelta !== 0) return numberDelta;
     // Issue NUMBER is not unique across repos, so it cannot be the last word:
     // two cross-repo issues sharing a number tie here, the stable sort keeps
@@ -550,4 +558,22 @@ function promotionEdges(
     if (together != null) declaredTogether.set(key, resolve(together));
   }
   return { dependents, declaredTogether };
+}
+
+/**
+ * The numeric ordering of two ids when BOTH are all-digits, else 0 — leaving
+ * the comparison to the caller's next tiebreak.
+ *
+ * `Number.isSafeInteger` rather than a bare parse: an id past the safe range
+ * compares equal to its neighbours after rounding, which is a silent
+ * disagreement between clients rather than a visible one. Those ids are
+ * refused at parse time, so this only bounds a host-supplied node.
+ */
+function numericDelta(a: string | undefined, b: string | undefined): number {
+  if (a === undefined || b === undefined) return 0;
+  if (!/^[0-9]+$/.test(a) || !/^[0-9]+$/.test(b)) return 0;
+  const na = Number(a);
+  const nb = Number(b);
+  if (!Number.isSafeInteger(na) || !Number.isSafeInteger(nb)) return 0;
+  return na - nb;
 }

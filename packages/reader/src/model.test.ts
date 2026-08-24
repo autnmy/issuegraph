@@ -29,12 +29,12 @@ const EMPTY: Frontmatter = {
 };
 
 function node(
-  number: number,
+  id: string | number,
   overrides: Omit<Partial<NodeInput>, "data"> & { data?: Partial<Frontmatter> | null } = {},
 ): NodeInput {
   const { data, ...rest } = overrides;
   return {
-    number,
+    id: String(id),
     open: true,
     labels: [],
     assigneeCount: 0,
@@ -47,7 +47,7 @@ function node(
   };
 }
 
-const ref = (n: number, repo: string | null = null) => ({ repo, number: n });
+const ref = (n: string | number, repo: string | null = null) => ({ repo, id: String(n) });
 
 describe("buildModel readiness (SPEC 6.2)", () => {
   test("an open node with no frontmatter is ready", () => {
@@ -735,7 +735,7 @@ describe("under-read declarations", () => {
   });
 
   test("the FIELD-DROP shape is refused too — non-null data that looks complete", () => {
-    // The row readers miss. `blocked-by: [123, not-a-ref]` yields a node gated
+    // The row readers miss. `blocked-by: [123, "a ref"]` yields a node gated
     // on `#123` alone; `data` is non-null and reads as a finished declaration,
     // so nothing but this axis can tell it from one.
     const m = buildModel([

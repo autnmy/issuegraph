@@ -14,7 +14,7 @@
  */
 
 /** The specification revision this vocabulary tracks (SPEC.md's version header). */
-export const SPEC_VERSION = '0.2.0';
+export const SPEC_VERSION = '0.3.0';
 
 /** The top-level frontmatter key that namespaces this specification's data (§4.1). */
 export const FRONTMATTER_KEY = 'issuegraph';
@@ -149,4 +149,63 @@ export function isPriority(value: unknown): value is Priority {
     value >= PRIORITY_MIN &&
     value <= PRIORITY_MAX
   );
+}
+
+/**
+ * The lexical shape of an issue reference (§4.2).
+ *
+ * A reference is an OPAQUE TRACKER-SCOPED IDENTIFIER with an optional `#` sigil
+ * and an optional `owner/repo` qualifier. GitHub numbers issues; Jira writes
+ * `ABC-123`; Linear writes `ENG-456`. The specification used to admit only
+ * integers and say so explicitly — that was the defect, not a simplification.
+ *
+ * IT LIVES HERE, IN THE VOCABULARY, BECAUSE BOTH SIDES NEED IT. The reader
+ * decides whether a body's reference is legal and the writer decides whether a
+ * caller's is; those are the same question, and answering it in two packages is
+ * the drift this specification's own reference implementation must not model.
+ */
+
+/**
+ * The all-digits shape, in its CANONICAL spelling — no leading zeros.
+ *
+ * Canonical form matters because a writer re-renders what a reader parsed:
+ * `0123` and `123` are the same number and different strings, so accepting the
+ * first would let a re-render silently rewrite an author's reference.
+ */
+const NUMERIC_ID = /^[1-9][0-9]*$/;
+
+/**
+ * Any other tracker identifier. Deliberately permissive INSIDE its bounds — a
+ * tighter rule would refuse some real tracker's format — and what it EXCLUDES
+ * is the designed part: whitespace, the `#` sigil, `/` (which belongs to the
+ * qualifier), and anything structural to YAML.
+ */
+const OPAQUE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+/** `owner/repo`, per the character classes trackers actually allow. */
+const REPO_QUALIFIER = /^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/;
+
+/**
+ * Whether a bare token (no `#` sigil, no `owner/repo` qualifier) is a usable
+ * identifier.
+ *
+ * AN ALL-DIGITS TOKEN CARRIES A NUMERIC BOUND that the opaque shape does not,
+ * and the bound is part of the grammar rather than a separate validation.
+ * `Number("1e21")` loses precision silently and a renderer's `String()` then
+ * emits scientific notation no reader accepts, so an unbounded numeric id lets
+ * an author-supplied `99999999999999999999999` ride a re-render into a
+ * corrupted line — parse-clean in, unparseable out. Zero and negatives are
+ * equally invalid: no tracker resolves them.
+ *
+ * A token that merely STARTS with a digit but carries a separator (`1-ABC`) is
+ * an ordinary opaque id, not a malformed number, and is judged as one.
+ */
+export function isRefId(id: string): boolean {
+  if (/^[0-9]+$/.test(id)) return NUMERIC_ID.test(id) && Number.isSafeInteger(Number(id));
+  return OPAQUE_ID.test(id);
+}
+
+/** Whether a string is an `owner/repo` qualifier. */
+export function isRepoQualifier(repo: string): boolean {
+  return REPO_QUALIFIER.test(repo);
 }

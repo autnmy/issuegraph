@@ -17,22 +17,24 @@ import { renderFrontmatter } from './render.ts';
 import { spliceGeneratedEdges, type GeneratedEdges } from './splice.ts';
 
 const NEW_EDGES: GeneratedEdges = {
-  blockedBy: [{ repo: null, number: 12 }],
-  serializeWith: { repo: null, number: 3 },
+  blockedBy: [{ repo: null, id: '12' }],
+  serializeWith: { repo: null, id: '3' },
   decomposedFrom: null,
 };
 
 describe('spliceGeneratedEdges', () => {
   it('updates the owned fields in place, preserving prefix, remainder, and armor', () => {
-    const block = renderFrontmatter({ blockedBy: [{ repo: null, number: 7 }], priority: 2 }) as string;
+    // Fence-wrapped ON PURPOSE: this case is about preserving the ARMOR, which
+    // is no longer the render default (§4.1's exception, still supported).
+    const block = renderFrontmatter({ blockedBy: [{ repo: null, id: '7' }], priority: 2 }, { fenceWrapped: true }) as string;
     const body = `Banner line.\n\n${block}\n\nThe brief body.\n\n---\n\nA rule-bearing tail.`;
     const next = spliceGeneratedEdges(body, NEW_EDGES);
     assert.notEqual(next, null);
     assert.ok((next as string).includes('Banner line.\n\n```'));
     assert.ok((next as string).includes('\n\nThe brief body.\n\n---\n\nA rule-bearing tail.'));
     const data = parseFrontmatter(next as string).data;
-    assert.deepEqual(data?.blockedBy, [{ repo: null, number: 12 }]);
-    assert.deepEqual(data?.serializeWith, { repo: null, number: 3 });
+    assert.deepEqual(data?.blockedBy, [{ repo: null, id: '12' }]);
+    assert.deepEqual(data?.serializeWith, { repo: null, id: '3' });
     // The un-owned field survived UNTOUCHED — the splice never re-renders it.
     assert.equal(data?.priority, 2);
     assert.equal((next as string).match(/^```$/gm)?.length, 2);
@@ -57,8 +59,8 @@ describe('spliceGeneratedEdges', () => {
     assert.ok(next.includes('  risk-class: high'));
     assert.ok(next.includes('labels-hint: platform'));
     const data = parseFrontmatter(next).data;
-    assert.deepEqual(data?.blockedBy, [{ repo: null, number: 12 }]);
-    assert.deepEqual(data?.serializeWith, { repo: null, number: 3 });
+    assert.deepEqual(data?.blockedBy, [{ repo: null, id: '12' }]);
+    assert.deepEqual(data?.serializeWith, { repo: null, id: '3' });
     assert.ok(next.includes('The brief body.'));
   });
 
@@ -73,16 +75,16 @@ describe('spliceGeneratedEdges', () => {
     assert.ok(!next.includes('- 7'));
     assert.ok(!next.includes('- 8'));
     const parsed = parseFrontmatter(next);
-    assert.deepEqual(parsed.data?.blockedBy, [{ repo: null, number: 12 }]);
-    assert.deepEqual(parsed.data?.serializeWith, { repo: null, number: 3 });
+    assert.deepEqual(parsed.data?.blockedBy, [{ repo: null, id: '12' }]);
+    assert.deepEqual(parsed.data?.serializeWith, { repo: null, id: '3' });
     assert.equal(parsed.data?.priority, 1);
   });
 
   it("adopts the section's own child indent instead of imposing the canonical one", () => {
     const body = ['---', 'issuegraph:', '    blocked-by:', '      - 7', '---'].join('\n');
     const next = spliceGeneratedEdges(body, NEW_EDGES) as string;
-    assert.ok(next.includes('    blocked-by:\n      - 12'));
-    assert.deepEqual(parseFrontmatter(next).data?.blockedBy, [{ repo: null, number: 12 }]);
+    assert.ok(next.includes('    blocked-by:\n      - "#12"'));
+    assert.deepEqual(parseFrontmatter(next).data?.blockedBy, [{ repo: null, id: '12' }]);
   });
 
   it('locates a QUOTED section header, exactly as the parser does', () => {
@@ -92,14 +94,14 @@ describe('spliceGeneratedEdges', () => {
     const body = ['---', '"issuegraph":', '  blocked-by:', '    - 7', '---', '', 'Body.'].join('\n');
     const next = spliceGeneratedEdges(body, NEW_EDGES);
     assert.notEqual(next, null);
-    assert.deepEqual(parseFrontmatter(next as string).data?.blockedBy, [{ repo: null, number: 12 }]);
+    assert.deepEqual(parseFrontmatter(next as string).data?.blockedBy, [{ repo: null, id: '12' }]);
   });
 
   it('recognises a QUOTED owned entry as its own rather than duplicating it', () => {
     const body = ['---', 'issuegraph:', '  "blocked-by":', '    - 7', '---', '', 'Body.'].join('\n');
     const next = spliceGeneratedEdges(body, NEW_EDGES) as string;
     assert.equal((next.match(/blocked-by/g) ?? []).length, 1);
-    assert.deepEqual(parseFrontmatter(next).data?.blockedBy, [{ repo: null, number: 12 }]);
+    assert.deepEqual(parseFrontmatter(next).data?.blockedBy, [{ repo: null, id: '12' }]);
   });
 
   it('refuses a block whose header carries an inline value, which the parser rejects', () => {
@@ -114,24 +116,24 @@ describe('spliceGeneratedEdges', () => {
 
   it('leaves an existing decomposed-from untouched when the input passes null', () => {
     const block = renderFrontmatter({
-      decomposedFrom: { repo: null, number: 9 },
-      blockedBy: [{ repo: null, number: 7 }],
+      decomposedFrom: { repo: null, id: '9' },
+      blockedBy: [{ repo: null, id: '7' }],
     }) as string;
     const next = spliceGeneratedEdges(`${block}\n\nBody.`, NEW_EDGES) as string;
-    assert.deepEqual(parseFrontmatter(next).data?.decomposedFrom, { repo: null, number: 9 });
+    assert.deepEqual(parseFrontmatter(next).data?.decomposedFrom, { repo: null, id: '9' });
   });
 
   it('sets decomposed-from when the input carries one', () => {
-    const block = renderFrontmatter({ blockedBy: [{ repo: null, number: 7 }] }) as string;
+    const block = renderFrontmatter({ blockedBy: [{ repo: null, id: '7' }] }) as string;
     const next = spliceGeneratedEdges(`${block}\n\nBody.`, {
       ...NEW_EDGES,
-      decomposedFrom: { repo: null, number: 42 },
+      decomposedFrom: { repo: null, id: '42' },
     }) as string;
-    assert.deepEqual(parseFrontmatter(next).data?.decomposedFrom, { repo: null, number: 42 });
+    assert.deepEqual(parseFrontmatter(next).data?.decomposedFrom, { repo: null, id: '42' });
   });
 
   it('removes the whole block (armor and trailing blank included) when nothing remains', () => {
-    const block = renderFrontmatter({ blockedBy: [{ repo: null, number: 7 }] }) as string;
+    const block = renderFrontmatter({ blockedBy: [{ repo: null, id: '7' }] }) as string;
     assert.equal(
       spliceGeneratedEdges(`${block}\n\nThe brief body.`, {
         blockedBy: [],
@@ -162,43 +164,43 @@ describe('spliceGeneratedEdges', () => {
   });
 
   it('inserts duplicate-of when the input carries one and the block lacks the key', () => {
-    const block = renderFrontmatter({ blockedBy: [{ repo: null, number: 7 }], priority: 2 }) as string;
+    const block = renderFrontmatter({ blockedBy: [{ repo: null, id: '7' }], priority: 2 }) as string;
     const next = spliceGeneratedEdges(`${block}\n\nBody.`, {
       ...NEW_EDGES,
-      duplicateOf: { repo: null, number: 99 },
+      duplicateOf: { repo: null, id: '99' },
     }) as string;
     const data = parseFrontmatter(next).data;
-    assert.deepEqual(data?.duplicateOf, { repo: null, number: 99 });
+    assert.deepEqual(data?.duplicateOf, { repo: null, id: '99' });
     // Un-owned neighbour untouched; owned fields refreshed as usual.
     assert.equal(data?.priority, 2);
-    assert.deepEqual(data?.blockedBy, [{ repo: null, number: 12 }]);
+    assert.deepEqual(data?.blockedBy, [{ repo: null, id: '12' }]);
   });
 
   it('replaces an existing duplicate-of when the input carries a different ref', () => {
     const block = renderFrontmatter({
-      duplicateOf: { repo: null, number: 5 },
-      blockedBy: [{ repo: null, number: 7 }],
+      duplicateOf: { repo: null, id: '5' },
+      blockedBy: [{ repo: null, id: '7' }],
     }) as string;
     const next = spliceGeneratedEdges(`${block}\n\nBody.`, {
       ...NEW_EDGES,
-      duplicateOf: { repo: 'acme/widgets', number: 6 },
+      duplicateOf: { repo: 'acme/widgets', id: '6' },
     }) as string;
     const data = parseFrontmatter(next).data;
-    assert.deepEqual(data?.duplicateOf, { repo: 'acme/widgets', number: 6 });
+    assert.deepEqual(data?.duplicateOf, { repo: 'acme/widgets', id: '6' });
     // Exactly one duplicate-of line survives — replace, never stack.
     assert.equal((next.match(/duplicate-of:/g) ?? []).length, 1);
   });
 
   it('leaves an existing duplicate-of untouched when the input omits or nulls the field', () => {
     const block = renderFrontmatter({
-      duplicateOf: { repo: null, number: 9 },
-      blockedBy: [{ repo: null, number: 7 }],
+      duplicateOf: { repo: null, id: '9' },
+      blockedBy: [{ repo: null, id: '7' }],
     }) as string;
     const body = `${block}\n\nBody.`;
     const omitted = spliceGeneratedEdges(body, NEW_EDGES) as string;
-    assert.deepEqual(parseFrontmatter(omitted).data?.duplicateOf, { repo: null, number: 9 });
+    assert.deepEqual(parseFrontmatter(omitted).data?.duplicateOf, { repo: null, id: '9' });
     const nulled = spliceGeneratedEdges(body, { ...NEW_EDGES, duplicateOf: null }) as string;
-    assert.deepEqual(parseFrontmatter(nulled).data?.duplicateOf, { repo: null, number: 9 });
+    assert.deepEqual(parseFrontmatter(nulled).data?.duplicateOf, { repo: null, id: '9' });
   });
 
   it('leaves blocked-by and serialize-with byte-untouched when omitted from the input', () => {
@@ -208,32 +210,35 @@ describe('spliceGeneratedEdges', () => {
     // parsed values back through a splice would silently launder away
     // unparseable items and exotic spellings the parser tolerates with a
     // diagnostic; omission is the honest "not mine" signal.
+    //
+    // The unreadable item carries WHITESPACE: a bare `not-a-ref` is a perfectly
+    // good opaque tracker id now (SPEC 4.2), so it would prove nothing here.
     const body = [
       '```',
       '---',
       'issuegraph:',
       '  blocked-by:',
       "    - '#7'",
-      '    - not-a-ref',
+      '    - "not a ref"',
       '  serialize-with: 44',
       '---',
       '```',
       '',
       'Body.',
     ].join('\n');
-    const next = spliceGeneratedEdges(body, { duplicateOf: { repo: null, number: 99 } }) as string;
+    const next = spliceGeneratedEdges(body, { duplicateOf: { repo: null, id: '99' } }) as string;
     // The exotic spelling AND the unparseable item both survive byte-for-byte —
     // proof the entries were never re-rendered.
     assert.ok(next.includes("    - '#7'"));
-    assert.ok(next.includes('    - not-a-ref'));
+    assert.ok(next.includes('    - "not a ref"'));
     assert.ok(next.includes('  serialize-with: 44'));
-    assert.deepEqual(parseFrontmatter(next).data?.duplicateOf, { repo: null, number: 99 });
+    assert.deepEqual(parseFrontmatter(next).data?.duplicateOf, { repo: null, id: '99' });
   });
 
   it('still treats an explicit empty set / null as owned-remove', () => {
     const block = renderFrontmatter({
-      blockedBy: [{ repo: null, number: 7 }],
-      serializeWith: { repo: null, number: 4 },
+      blockedBy: [{ repo: null, id: '7' }],
+      serializeWith: { repo: null, id: '4' },
       priority: 1,
     }) as string;
     const next = spliceGeneratedEdges(`${block}\n\nBody.`, {
@@ -263,7 +268,7 @@ describe('spliceGeneratedEdges on a CRLF body', () => {
 
     assert.notEqual(next, null);
     const data = parseFrontmatter(next).data;
-    assert.deepEqual(data?.blockedBy, [{ repo: null, number: 12 }]);
+    assert.deepEqual(data?.blockedBy, [{ repo: null, id: '12' }]);
     assert.equal(data?.priority, 1);
     // The untouched neighbour keeps its carriage return.
     assert.ok(next.includes('  priority: 1\r\n'));
@@ -287,8 +292,8 @@ describe('YAML comments inside the block', () => {
     // The comment survives byte-for-byte — stripping is classification only.
     assert.ok((next as string).includes('  # why this is blocked'));
     const data = parseFrontmatter(next as string).data;
-    assert.deepEqual(data?.blockedBy, [{ repo: null, number: 12 }]);
-    assert.deepEqual(data?.serializeWith, { repo: null, number: 3 });
+    assert.deepEqual(data?.blockedBy, [{ repo: null, id: '12' }]);
+    assert.deepEqual(data?.serializeWith, { repo: null, id: '3' });
     assert.equal(data?.priority, 1, 'the unowned neighbour is still there');
   });
 
@@ -302,7 +307,7 @@ describe('YAML comments inside the block', () => {
 
     assert.notEqual(next, null);
     assert.ok(next.includes('# a column-zero note'));
-    assert.deepEqual(parseFrontmatter(next).data?.blockedBy, [{ repo: null, number: 12 }]);
+    assert.deepEqual(parseFrontmatter(next).data?.blockedBy, [{ repo: null, id: '12' }]);
   });
 
   it('still refuses a child the parser refuses, now that comments are stripped', () => {
@@ -318,7 +323,7 @@ describe('YAML comments inside the block', () => {
     // The owned entry was recognised and replaced — the trailing comment went
     // with the line it annotated, and no second `blocked-by` was inserted.
     assert.equal((next.match(/blocked-by/g) ?? []).length, 1);
-    assert.deepEqual(parseFrontmatter(next).data?.blockedBy, [{ repo: null, number: 12 }]);
+    assert.deepEqual(parseFrontmatter(next).data?.blockedBy, [{ repo: null, id: '12' }]);
     assert.equal(parseFrontmatter(next).data?.priority, 1);
   });
 });
@@ -332,10 +337,10 @@ describe('an explicit null does NOT clear provenance or a verdict', () => {
     // remove would delete provenance on every refresh of a block that has it.
     // Pinned here because it reads like an inconsistency and is not one.
     const block = renderFrontmatter({
-      blockedBy: [{ repo: null, number: 7 }],
-      serializeWith: { repo: null, number: 4 },
-      decomposedFrom: { repo: null, number: 9 },
-      duplicateOf: { repo: null, number: 5 },
+      blockedBy: [{ repo: null, id: '7' }],
+      serializeWith: { repo: null, id: '4' },
+      decomposedFrom: { repo: null, id: '9' },
+      duplicateOf: { repo: null, id: '5' },
     }) as string;
     const next = spliceGeneratedEdges(`${block}\n\nBody.`, {
       blockedBy: [],
@@ -348,8 +353,8 @@ describe('an explicit null does NOT clear provenance or a verdict', () => {
     assert.deepEqual(data?.blockedBy, []);
     assert.equal(data?.serializeWith, null);
     // Provenance and verdict: null leaves them exactly where they were.
-    assert.deepEqual(data?.decomposedFrom, { repo: null, number: 9 });
-    assert.deepEqual(data?.duplicateOf, { repo: null, number: 5 });
+    assert.deepEqual(data?.decomposedFrom, { repo: null, id: '9' });
+    assert.deepEqual(data?.duplicateOf, { repo: null, id: '5' });
   });
 });
 
@@ -388,26 +393,29 @@ describe('the splice verifies its own output', () => {
     const body = ['---', 'issuegraph:', '  blocked-by:', '    - 7', '  priority: 1', '---', '', 'Body.'].join('\n');
     const next = spliceGeneratedEdges(body, NEW_EDGES);
     assert.notEqual(next, null);
-    assert.deepEqual(parseFrontmatter(next as string).data?.blockedBy, [{ repo: null, number: 12 }]);
+    assert.deepEqual(parseFrontmatter(next as string).data?.blockedBy, [{ repo: null, id: '12' }]);
   });
 
   it('CONTROL: an unparseable ITEM the splice preserved is not a refusal', () => {
     // The check keys on `data === null` WITH a diagnostic, not on diagnostics
-    // alone. A body carrying an unowned `- not-a-ref` this splice preserved
+    // alone. A body carrying an unowned unreadable item this splice preserved
     // byte-for-byte parses with NON-NULL data and a diagnostic, and refusing
     // there would destroy the preservation guarantee one field over.
+    //
+    // The item carries WHITESPACE: `not-a-ref` used to be the unparseable
+    // example and is now a perfectly good opaque tracker id (§4.2).
     const body = [
       '---',
       'issuegraph:',
       '  blocked-by:',
-      '    - not-a-ref',
+      '    - "not a ref"',
       '---',
       '',
       'Body.',
     ].join('\n');
-    const next = spliceGeneratedEdges(body, { duplicateOf: { repo: null, number: 99 } }) as string;
+    const next = spliceGeneratedEdges(body, { duplicateOf: { repo: null, id: '99' } }) as string;
     assert.notEqual(next, null);
-    assert.ok(next.includes('    - not-a-ref'), 'preserved byte-for-byte');
+    assert.ok(next.includes('    - "not a ref"'), 'preserved byte-for-byte');
     const parse = parseFrontmatter(next);
     assert.notEqual(parse.data, null);
     assert.ok(parse.diagnostics.length > 0, 'and it still reports the drop');
@@ -416,7 +424,7 @@ describe('the splice verifies its own output', () => {
   it('CONTROL: whole-block removal is a success, not an unreadable result', () => {
     // Removal leaves a body with NO block, which parses to `data: null` with NO
     // diagnostic. Keying the check on `data === null` alone would refuse it.
-    const block = renderFrontmatter({ blockedBy: [{ repo: null, number: 7 }] }) as string;
+    const block = renderFrontmatter({ blockedBy: [{ repo: null, id: '7' }] }) as string;
     assert.equal(
       spliceGeneratedEdges(`${block}\n\nThe brief body.`, {
         blockedBy: [],

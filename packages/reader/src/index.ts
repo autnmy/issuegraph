@@ -20,19 +20,25 @@ export { FRONTMATTER_KEY_PATTERN, isUnreadDeclaration, parseFrontmatter } from '
 export type { BlockDefect, Frontmatter, IssueRef, ParseResult } from './frontmatter.ts';
 
 /**
- * THE LINE GRAMMAR, shared with `@issuegraph/writer`.
+ * THE BLOCK'S STRUCTURE, shared with `@issuegraph/writer`.
  *
  * A writer edits the block this reader would read — in place, byte-for-byte
- * outside the entries it owns — so it has to locate the same block, open the
- * same section and recognise the same entries. Spelling those rules twice is
- * how an editor hands back a body its own parser cannot read, so they are
- * stated once, here, and both packages read them from this surface.
+ * outside the entries it owns — so it has to locate the same block and the same
+ * entries. Spelling those rules twice is how an editor hands back a body its own
+ * parser cannot read, so they are stated once, here, and both packages read them
+ * from this surface.
+ *
+ * {@link locateSection} computes its answer from the same `yaml` document the
+ * parse uses. It replaces a hand-written line grammar this module used to
+ * export (`readMappingEntry`, `topLevelKeyScalar`, `stripComment`), which was a
+ * SECOND opinion about what an entry is — and every one of its three questions
+ * produced a real defect when answered twice.
  *
  * It is a LOWER-LEVEL surface than {@link parseFrontmatter} and consumers who
  * only want the data should not reach for it.
  */
-export { FENCE_CLOSE, FENCE_OPEN, locateBlock, readMappingEntry, stripComment, topLevelKeyScalar } from './frontmatter.ts';
-export type { BlockLocation, MappingEntry } from './frontmatter.ts';
+export { FENCE_CLOSE, FENCE_OPEN, isSectionHeader, locateBlock, locateSection } from './frontmatter.ts';
+export type { BlockLocation, SectionField, SectionLocation } from './frontmatter.ts';
 
 export { buildModel, declarerOnlyNode, nodeKey, nodeSourceRepo, priorityLabelValue, refKey } from './model.ts';
 export type {

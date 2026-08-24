@@ -58,7 +58,7 @@ pnpm run ci   # build, typecheck, lint, test, isolation
 
 ## Status
 
-**v0.2.0 draft.** Published for implementation, not adoption claims: the spec is being implemented against a real backlog by a real autonomous pipeline, and will be amended from what breaks before any 1.0. Expect changes.
+**v0.3.0 draft.** Published for implementation, not adoption claims: the spec is being implemented against a real backlog by a real autonomous pipeline, and will be amended from what breaks before any 1.0. Expect changes.
 
 ## Implementations
 

@@ -3,38 +3,55 @@
  *
  * An issue body MAY open with standard `---`-delimited YAML frontmatter
  * namespaced under a top-level `issuegraph` key. Trackers that render markdown
- * usually show the block wrapped in a plain code fence as display armor, so
+ * sometimes show the block wrapped in a plain code fence as display armor, so
  * §4.1 requires a reader to see through both a wrapping fence and any leading
- * banner content. This module extracts and validates that data into a typed
- * shape; `model.ts` turns a set of those into a graph.
+ * banner. This module extracts and validates that data into a typed shape;
+ * `model.ts` turns a set of those into a graph.
  *
- * PARSER POSTURE — a restricted SUBSET reader, deliberately hand-rolled:
+ * PARSER POSTURE — tokenizing is delegated, and the delegation is the point:
  *
- *   - The specification requires restricted parsing (§4.1: "a plain YAML data
- *     parser — no anchors resolving to arbitrary object construction, no custom
- *     tags"), and the recognised field grammar is a tiny closed subset: scalar
- *     integers and strings, flow lists, block lists, comments, quotes. The
- *     FORMAT stays standard YAML — this reader accepts the subset the spec's
- *     fields can express, and anything outside it degrades per the rules below.
- *   - Issue bodies are untrusted content: anyone who can file an issue can
- *     author one. A short auditable parser that constructs no objects is a
- *     smaller attack surface than a general YAML engine, and it keeps this
- *     package free of runtime dependencies — which matters for something every
- *     other package here is expected to sit on.
+ *   - §4.1 mandates it: "Readers MUST parse the frontmatter with a plain YAML
+ *     data parser (no anchors resolving to arbitrary object construction, no
+ *     custom tags)." Tokenizing is `yaml`'s job, so the grammar's corners are
+ *     its problem and not ours. This module decides only what the SPEC's own
+ *     fields mean.
+ *   - A hand-rolled grammar for an open format yields one review finding per
+ *     round indefinitely. Two of them were filed as issues before the class was
+ *     named; delegating removes the premise rather than adjudicating instances.
+ *   - It costs this package its zero-runtime-dependency posture, which earlier
+ *     revisions of this header argued for at length. That trade was made
+ *     deliberately. `yaml` carries no dependencies of its own and declares
+ *     `node >= 14.6`, comfortably under the `>=18` floor this package
+ *     publishes — so the cost is bounded to one direct dependency, which is
+ *     what made it affordable for the package everything else sits on.
+ *
+ * WHAT IS *NOT* DELEGATED, and must not be: locating the block. §4.1's
+ * canonical-block rule — the FIRST `---`-delimited block containing the key,
+ * seen through a wrapping fence and any leading banner, later claimants
+ * ignored — is this specification's, not YAML's, and no frontmatter library
+ * implements it. {@link locateBlock} owns that and hands `yaml` the text.
+ *
+ * SAFETY IS `parseDocument`, NOT `parse`, AND THE DIFFERENCE IS MEASURED. With
+ * `{ customTags: [], maxAliasCount: 0 }`, an anchor throws — good — but an
+ * unresolved custom tag does NOT: `blocked-by: !!python/object 1` comes back as
+ * the string `"1"` with only a warning, so `parse` alone meets §4.1's anchor
+ * clause and silently fails its tag clause. Refusing on `errors` OR `warnings`
+ * is what closes that, and it is why this module reads a document rather than a
+ * value.
  *
  * DEGRADATION RULES — this module never throws, on any input:
  *
  *   - No frontmatter, or no `issuegraph` key anywhere -> `data: null` and no
  *     diagnostics: a valid node with no edges, not an error.
- *   - A structurally unparseable block (bad delimiters, non-mapping under the
- *     key) -> `data: null` plus a diagnostic. An issue with a broken block is
- *     still a workable issue with no edges. BAD DELIMITERS INCLUDES NO
- *     DELIMITERS: a key wrapped in a bare ```yaml fence with the `---` pair
- *     omitted is the malformed case, not the absent one. Reporting it as absent
- *     hides the overwhelming majority of hand-authored declarations — measured
- *     on one real backlog, 336 of the 369 bodies carrying the key were written
- *     that way, and every edge in them was inert while reading byte-identically
- *     to "this issue has no block".
+ *   - A structurally unparseable block (bad delimiters, YAML that does not
+ *     parse, a non-mapping under the key) -> `data: null` plus a diagnostic. An
+ *     issue with a broken block is still a workable issue with no edges. BAD
+ *     DELIMITERS INCLUDES NO DELIMITERS: a key wrapped in a bare ```yaml fence
+ *     with the `---` pair omitted is the malformed case, not the absent one.
+ *     Reporting it as absent hides the overwhelming majority of hand-authored
+ *     declarations — measured on one real backlog, 336 of the 369 bodies
+ *     carrying the key were written that way, and every edge in them was inert
+ *     while reading byte-identically to "this issue has no block".
  *   - A recognised field with an invalid VALUE -> that field is dropped with a
  *     diagnostic; the rest of the block still parses. Unrecognised fields are
  *     inert (§4.1), silently.
@@ -50,14 +67,61 @@ import {
   isEvidence,
   isField,
   isPriority,
+  isRefId,
+  isRepoQualifier,
   type Evidence,
   type Priority,
 } from '@issuegraph/core';
+import {
+  isAlias,
+  isMap,
+  isScalar,
+  isSeq,
+  parseDocument,
+  visit,
+  type Document,
+  type DocumentOptions,
+  type Pair,
+  type ParseOptions,
+  type SchemaOptions,
+} from 'yaml';
+
+/**
+ * THE PARSE OPTIONS, in one place because the posture must not differ between
+ * the reader's own parse and the section location a writer asks for. Each entry
+ * is load-bearing:
+ *
+ *   - `version: '1.2'` and `schema: 'core'` — the plain data schema. No
+ *     implicit typing beyond YAML's own core types.
+ *   - `customTags: []` — no tag this module did not ask for resolves to
+ *     anything. On its own this is NOT sufficient; see the header.
+ *
+ * ALIAS REFUSAL IS NOT AN OPTION HERE, and the asymmetry is the library's
+ * rather than a choice: `maxAliasCount` belongs to the value-materializing step
+ * (`toJS`), not to the parse. So the parse happily produces a document
+ * containing an alias node, and refusing it is {@link readDocument}'s own job.
+ *
+ * A FRESH OBJECT PER CALL, not a frozen constant: `yaml` types these options as
+ * mutable, so a shared literal would have to be widened or cast to satisfy it —
+ * and a shared mutable options object is the kind of thing that acquires a
+ * caller-set field years later. One allocation per parse is not a cost worth
+ * reasoning about.
+ */
+function yamlOptions(): ParseOptions & DocumentOptions & SchemaOptions {
+  return { version: '1.2', schema: 'core', customTags: [] };
+}
+
+/**
+ * The value of a node that could not be materialized. No validator accepts it,
+ * so the field carrying it is dropped with a diagnostic like any other
+ * unreadable value.
+ */
+const UNREADABLE = Symbol('issuegraph: unreadable node');
 
 /**
  * THE ACCEPTED SPELLING OF THE BLOCK'S TOP-LEVEL KEY, and the one definition of
  * it. YAML permits whitespace between a key and its colon, so `issuegraph :`
- * and `issuegraph\t:` are the same key as `issuegraph:`, and this parser
+ * and `issuegraph\t:` are the same key as `issuegraph:`, and this pattern
  * accepts all three.
  *
  * EXPORTED AS A PATTERN SOURCE RATHER THAN A COMPILED REGEX, because the same
@@ -81,10 +145,10 @@ import {
  * block?", never "is this line the key". A false positive costs one parse that
  * finds nothing; a false negative means a declaration is never fetched and
  * silently does not exist. So it accepts spellings the parser will go on to
- * reject, unbalanced quotes included, and {@link readMappingEntry} is what
- * actually decides. This module's test asserts the pattern is a SUPERSET of
- * what the parser accepts, which is the invariant a prefilter owes; asserting
- * equality would break the first time the two legitimately diverge.
+ * reject, unbalanced quotes included, and the YAML parse is what actually
+ * decides. This module's test asserts the pattern is a SUPERSET of what the
+ * parser accepts, which is the invariant a prefilter owes; asserting equality
+ * would break the first time the two legitimately diverge.
  */
 export const FRONTMATTER_KEY_PATTERN = `["']*${FRONTMATTER_KEY}["']*[ \\t]*:`;
 
@@ -95,11 +159,32 @@ export const FRONTMATTER_KEY_PATTERN = `["']*${FRONTMATTER_KEY}["']*[ \\t]*:`;
  */
 const FRONTMATTER_KEY_LINE = new RegExp(`^${FRONTMATTER_KEY_PATTERN}`);
 
-/** A reference to an issue: same-repo (a bare number) or cross-repo (§4.2). */
+/**
+ * A reference to an issue (§4.2).
+ *
+ * THE IDENTIFIER IS OPAQUE AND TRACKER-SCOPED, which is the format's position
+ * rather than this implementation's convenience. GitHub numbers issues; Jira
+ * writes `ABC-123`; Linear writes `ENG-456`. A format admitting only integers
+ * cannot describe two of those three, and §4.2 used to say in as many words
+ * that no other identifier type existed — which was the defect, not a
+ * simplification.
+ *
+ * SO `id` IS A STRING, AND IT IS DELIBERATELY NOT NAMED `number`. The field it
+ * replaces was `number: number`, and widening that field's TYPE rather than
+ * renaming it would have left arithmetic on it compiling: a sort tiebreak
+ * subtracting two ids yields `NaN` for `ABC-123`, which is an unspecified order
+ * rather than an error, in the one module whose whole purpose is that two
+ * clients holding the same graph derive the same order. A rename cannot be
+ * missed by a consumer; a widening can.
+ *
+ * BOTH SPELLINGS OF A SAME-REPO REFERENCE PRODUCE THE SAME VALUE: `123` and
+ * `#123` are one reference, so `id` never carries the sigil.
+ */
 export interface IssueRef {
   /** `owner/repo` when the reference is qualified; null for same-repo refs. */
   readonly repo: string | null;
-  readonly number: number;
+  /** The tracker's own identifier, without any `#` sigil. */
+  readonly id: string;
 }
 
 /** Parsed, validated issuegraph frontmatter for one issue (SPEC §4.3). */
@@ -137,8 +222,8 @@ export interface ParseResult {
    *
    * THE LAST ROW IS THE ONE READERS MISS, and it is the one that costs money:
    * `data` comes back non-null and LOOKING COMPLETE while a field was rejected.
-   * `blocked-by: [123, not-a-ref]` yields a list carrying only `#123`, and
-   * `blocked-by: [not-a-ref]` yields an EMPTY list that reads exactly like a body
+   * `blocked-by: [123, "a ref"]` yields a list carrying only `123`, and
+   * `blocked-by: ["a ref"]` yields an EMPTY list that reads exactly like a body
    * declaring no edge at all. A reader testing `data` alone reports both as
    * complete declarations — an absence rendered as a value, and the licence for a
    * false clear.
@@ -171,16 +256,15 @@ export interface ParseResult {
    * approximating, and it exists because both approximations are wrong:
    *
    *   - `diagnostics.length > 0` alone captures `undelimited`, which
-   *     {@link extractBlockLines} emits for a key at ANY line start with no
-   *     `---` pair. That arm is the loosest rule in this module ON PURPOSE, on
-   *     the stated grounds that nothing gates on it — and hand-authored blocks
-   *     are overwhelmingly written that way, so a gate reading it refuses
-   *     nearly every real declaration.
+   *     {@link locateBlock} emits for a key at ANY line start with no `---`
+   *     pair. That arm is the loosest rule in this module ON PURPOSE, on the
+   *     stated grounds that nothing gates on it — and hand-authored blocks are
+   *     overwhelmingly written that way, so a gate reading it refuses nearly
+   *     every real declaration.
    *   - `data !== null &&` alone misses a DELIMITED block that was unusable —
-   *     `issuegraph: { together-with: 71 }` inside a proper `---` pair returns
-   *     `data: null` with a diagnostic. That issue declared a relationship in
-   *     the canonical form and nobody could read it, which is exactly the case
-   *     a gate must catch.
+   *     `issuegraph: hello` inside a proper `---` pair returns `data: null`
+   *     with a diagnostic. That issue declared in the canonical form and nobody
+   *     could read it, which is exactly the case a gate must catch.
    *
    * So the axis is not "did data survive" but "was there a delimited block at
    * all", and only this field answers it. A gate wants
@@ -202,273 +286,47 @@ export interface ParseResult {
   readonly blockDefect: BlockDefect | null;
 }
 
-
-// `owner/repo#N` — owner and repo per GitHub's allowed character classes,
-// deliberately narrow (no dots-only names edge-casing; a miss degrades to a
-// dropped field with a diagnostic, never a crash).
-const CROSS_REPO_REF = /^([A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+)#([0-9]+)$/;
-
-/** Parse one scalar token as a ref: bare int, `#N`, or `owner/repo#N`. */
-function parseRef(raw: string): IssueRef | null {
-  const s = stripQuotes(raw.trim());
-  if (/^[0-9]+$/.test(s)) return boundedRef(null, s);
-  if (/^#[0-9]+$/.test(s)) return boundedRef(null, s.slice(1));
-  const m = CROSS_REPO_REF.exec(s);
-  if (m !== null) {
-    const repo = m[1];
-    const num = m[2];
-    if (repo !== undefined && num !== undefined) return boundedRef(repo, num);
-  }
-  return null;
-}
-
-// BOUNDS ARE PART OF PARSING: a digit-run that is not a safe
-// positive integer is UNPARSEABLE, not a ref. `Number("1e21-digits")` loses
-// precision silently and the renderer's `String()` then emits scientific
-// notation no reader accepts, so an unbounded parse here lets a
-// author-supplied `- 99999999999999999999999` ride a writer's re-render
-// into a corrupted line — parse-clean in, unparseable out. Zero is equally
-// invalid (issue numbers start at 1) and made the renderer THROW. Dropping
-// them here routes both through the ordinary dropped-with-diagnostic path
-// every conforming reader already takes for `not-a-ref`, and nothing real is
-// unblocked by the drop: no tracker can resolve issue 0 or 1e21.
-function boundedRef(repo: string | null, digits: string): IssueRef | null {
-  const n = Number(digits);
-  if (!Number.isSafeInteger(n) || n < 1) return null;
-  return { repo, number: n };
-}
-
-function stripQuotes(s: string): string {
-  if (s.length >= 2) {
-    const first = s[0];
-    if ((first === '"' || first === "'") && s[s.length - 1] === first) {
-      return s.slice(1, -1);
-    }
-  }
-  return s;
-}
-
 /**
- * Strip a trailing YAML comment: ` #` outside quotes starts a comment. The
- * subset rule (whitespace before `#`) is exactly YAML's, which is what keeps
- * `owner/repo#N` working unquoted.
+ * Parse one YAML scalar as a reference: `123`, `#123`, `ABC-123`,
+ * `owner/repo#123` (§4.2).
  *
- * EXPORTED for `@issuegraph/writer`, and the reason is a defect rather than
- * symmetry. A writer that classifies a section's child lines WITHOUT stripping
- * first hands a comment line to {@link readMappingEntry}, gets null, and — since
- * an unreadable child is structural — refuses a block this parser reads
- * perfectly well. A caller then follows the documented fallback, prepends a
- * fresh block, and the author's original block stops being the canonical one:
- * its unowned fields go silently invisible. The walk strips before it
- * classifies, so anything editing alongside it must strip with the SAME rule.
+ * TAKES THE PARSED VALUE, NOT A TOKEN, because `yaml` has already decided what
+ * the scalar is: an unquoted `123` arrives as a NUMBER and a quoted `"123"` as
+ * a string, and both denote the same reference. Anything else — a null (which
+ * is what an unquoted `#`-sigil reference in a block sequence becomes, see
+ * {@link refsFrom}), a boolean, a nested collection — is not a reference.
  */
-export function stripComment(s: string): string {
-  let inSingle = false;
-  let inDouble = false;
-  for (let i = 0; i < s.length; i++) {
-    const c = s[i];
-    if (c === "'" && !inDouble) inSingle = !inSingle;
-    else if (c === '"' && !inSingle) inDouble = !inDouble;
-    else if (c === '#' && !inSingle && !inDouble) {
-      if (i === 0 || s[i - 1] === ' ' || s[i - 1] === "\t") {
-        return s.slice(0, i);
-      }
-    }
+function parseRef(raw: unknown): IssueRef | null {
+  if (typeof raw === 'number') {
+    // BOUNDS ARE PART OF PARSING. `Number("1e21")` loses precision silently and
+    // a renderer's `String()` then emits scientific notation no reader accepts,
+    // so an unbounded parse lets an author-supplied `99999999999999999999999`
+    // ride a re-render into a corrupted line — parse-clean in, unparseable out.
+    // Zero and negatives are equally invalid: no tracker resolves them.
+    if (!Number.isSafeInteger(raw) || raw < 1) return null;
+    return { repo: null, id: String(raw) };
   }
-  return s;
-}
+  if (typeof raw !== 'string') return null;
+  const s = raw.trim();
+  if (s.length === 0) return null;
 
-/** One `key: value` mapping entry: the key as it SPELLS (unquoted, unescaped)
- *  and the scalar text after the colon (trimmed; `""` when there is none). */
-export interface MappingEntry {
-  readonly key: string;
-  readonly scalar: string;
-}
+  // The sigil is same-repo-only: in a qualified reference the `#` is the
+  // separator, so a leading one is the bare `#123` spelling and nothing else.
+  if (s.startsWith('#')) return sameRepoRef(s.slice(1));
 
-/**
- * Read one `key: value` mapping entry, or null when the line is not one.
- *
- * THE ONE PLACE THIS PACKAGE DECIDES WHAT A KEY IS, and it is exported because
- * the decision is not the reader's alone: `@issuegraph/writer` edits entries in
- * place, so an editor and a parser that disagreed about which bytes constitute
- * an entry would produce a body that one of them cannot read. The rule was
- * spelled three times inside this module once — a regex for the top-level key,
- * `indexOf(':')` for a child's separator, and a `stripQuotes` on the child's
- * key — and review found a defect at every one of them, in order, because
- * fixing one site left the rule stated differently at the other two. Two
- * packages spelling it twice is that failure with a package boundary in it.
- *
- * Three rules, in one place, so a fourth quoting corner is one edit:
- *
- *   - a QUOTED key must OPEN with its quote; anywhere else a quote is an
- *     ordinary character in a plain scalar;
- *   - the mapping colon must be followed by whitespace or end-of-line, which is
- *     what makes `blocked-by:[1]` a plain scalar to YAML and therefore not a
- *     field here;
- *   - a quoted key is the same key, since YAML reads `"blocked-by"` and
- *     `blocked-by` identically.
- *
- * QUOTE STATE IS NOT TOGGLED ANYWHERE ON THE LINE, and that correction is the
- * whole of issue #10. Toggling meant a stray apostrophe in an ORDINARY key
- * swallowed the colon — `note's: x` read as unparseable — and an unparseable
- * child is STRUCTURAL, so the block degraded and every real edge beside it was
- * lost. §4.1 gives an unrecognized field no such power. YAML agrees: a quoted
- * key opens with its quote, so a quote elsewhere is plain content.
- *
- * ESCAPES ARE TRACKED — `''` inside a single-quoted key and `\"` inside a
- * double-quoted one — for the same reason. Taking the first inner quote as the
- * terminator returned null for `'owner''s-note'`, which is one key, and a null
- * at a section child degrades the whole block.
- *
- * THE KEY IS RETURNED UNESCAPED, so it compares equal to the field it SPELLS.
- * Only the two escapes that can produce a quote or a backslash are undone: a
- * double-quoted YAML scalar has a fixed escape set, `\g` is not in it, and
- * unescaping any backslash pair would read `"issue\graph"` as `issuegraph` —
- * narrower than {@link FRONTMATTER_KEY_PATTERN}, whose bracket expression has
- * no escape grammar, and so the fail-OPEN direction a prefilter forbids.
- *
- * THE CALLER TRIMS. This reads the line as given, so a caller that has not
- * trimmed leading indentation gets it back inside `key`.
- */
-export function readMappingEntry(line: string): MappingEntry | null {
-  const opener = line[0];
-  if (opener === '"' || opener === "'") {
-    let close = -1;
-    for (let i = 1; i < line.length; i++) {
-      const c = line[i];
-      if (opener === '"' && c === '\\') {
-        i++; // whatever follows a backslash is literal, including a quote
-        continue;
-      }
-      if (c !== opener) continue;
-      if (opener === "'" && line[i + 1] === "'") {
-        i++; // a doubled quote is an escaped one, not the terminator
-        continue;
-      }
-      close = i;
-      break;
-    }
-    if (close === -1) return null; // an opening quote nothing closes is not a key
-    const rest = line.slice(close + 1);
-    const gap = rest.length - rest.trimStart().length; // YAML allows space before the colon
-    if (rest[gap] !== ':') return null;
-    const after = rest[gap + 1];
-    if (after !== undefined && after !== ' ' && after !== '\t') return null;
-    const raw = line.slice(1, close);
-    const key =
-      opener === "'"
-        ? raw.replaceAll("''", "'")
-        : raw.replaceAll('\\"', '"').replaceAll('\\\\', '\\');
-    return { key, scalar: rest.slice(gap + 1).trim() };
+  const hash = s.indexOf('#');
+  if (hash !== -1) {
+    const repo = s.slice(0, hash);
+    const id = s.slice(hash + 1);
+    if (!isRepoQualifier(repo) || !isRefId(id)) return null;
+    return { repo, id };
   }
-  for (let i = 0; i < line.length; i++) {
-    if (line[i] !== ':') continue;
-    const after = line[i + 1];
-    if (after !== undefined && after !== ' ' && after !== '\t') continue;
-    return { key: line.slice(0, i).trim(), scalar: line.slice(i + 1).trim() };
-  }
-  return null;
+  return sameRepoRef(s);
 }
 
-/**
- * The block's TOP-LEVEL KEY LINE, as one predicate every reader shares: the
- * key's scalar (`""` when it has none) for a line that names it, and null for a
- * line that does not.
- *
- * FOUR READERS ASK THIS QUESTION and they must not answer it differently. This
- * module's parse walk opens its section on it, and `@issuegraph/writer` finds
- * the section it is about to edit — and the block it is about to re-delimit —
- * by it. A reader slightly more permissive than the walk selects a block the
- * walk then refuses, so either a real declaration goes unread or a write hands
- * back a body that does not parse.
- *
- * Three conditions, each load-bearing:
- *
- *   - INDENT ZERO. {@link readMappingEntry} trims, so it answers `issuegraph`
- *     for an indented child too — and the walk opens a section only at the top
- *     level, so a nested `issuegraph:` inside somebody else's mapping is not a
- *     header.
- *   - THE KEY, read by {@link readMappingEntry}, so a quoted spelling is the
- *     same key here as it is everywhere else.
- *   - COMMENTS STRIPPED FIRST, because the walk strips them before classifying.
- *     `issuegraph:  # note` is a header with NO value, and a reader that
- *     skipped this step would refuse it as though the comment were a value.
- *
- * THE SCALAR IS RETURNED RATHER THAN JUDGED, because its readers want different
- * things from it: the walk reports a non-empty one as an unsupported inline
- * value, while a writer refuses to splice into such a block for the same
- * reason. Judging here would fix one reader's policy on both.
- */
-export function topLevelKeyScalar(rawLine: string): string | null {
-  const line = stripComment(rawLine).trimEnd();
-  if (line.length !== line.trimStart().length) return null;
-  const entry = readMappingEntry(line);
-  return entry !== null && entry.key === FRONTMATTER_KEY ? entry.scalar : null;
+function sameRepoRef(id: string): IssueRef | null {
+  return isRefId(id) ? { repo: null, id } : null;
 }
-
-/**
- * Split a flow list body (`a, b, c` — no nested brackets in the subset).
- *
- * AN EMPTY ENTRY IS KEPT, and that is the whole subtlety here. YAML reads
- * `[1,,2]` as three nodes whose middle one is null, and a null is not a ref —
- * so the empty item must survive to the caller, be refused by `parseRef`, and
- * earn its diagnostic like any other unparseable item. Dropping empties here
- * instead made `[,]` return an empty list with NO diagnostic, which is
- * byte-identical to a body declaring `[]` and no edges: an absence rendered as
- * a value, and exactly the licence for a false clear that
- * {@link ParseResult.diagnostics} exists to withhold.
- *
- * Two entries are NOT empty items and must not become diagnostics:
- *
- *   - `[]` (or `[ ]`) — a genuinely empty list, which the spec permits and a
- *     writer emits when it removes the last edge. Returned as no items at all.
- *   - ONE trailing comma — `[1, 2,]` is valid YAML for a two-item list, so the
- *     empty part it leaves behind is punctuation rather than a node.
- *
- * A SECOND trailing comma is not covered by that, deliberately: `[1,,]` leaves
- * two empty parts, one of which is a real null node, so it is diagnosed.
- */
-function splitFlowList(inner: string): string[] {
-  if (inner.trim().length === 0) return [];
-  const parts: string[] = [];
-  let current = '';
-  let inSingle = false;
-  let inDouble = false;
-  for (const c of inner) {
-    if (c === "'" && !inDouble) inSingle = !inSingle;
-    else if (c === '"' && !inSingle) inDouble = !inDouble;
-    if (c === ',' && !inSingle && !inDouble) {
-      parts.push(current);
-      current = '';
-    } else {
-      current += c;
-    }
-  }
-  parts.push(current);
-  const trimmed = parts.map((p) => p.trim());
-  if (trimmed.length > 1 && trimmed[trimmed.length - 1] === '') trimmed.pop();
-  return trimmed;
-}
-
-interface RawEntry {
-  readonly key: string;
-  /** Scalar text after the colon (comment-stripped, trimmed); "" for none. */
-  readonly scalar: string;
-  /** Items accumulated from an indented `- item` block list, if any. */
-  readonly blockItems: string[];
-  /** Indent of the entry's FIRST list item; -1 until one arrives. Deeper
-   *  dashes are the item's own nested content, never additional items. */
-  itemIndent: number;
-}
-
-/**
- * Why a body that CARRIES the key still yielded no block. A closed union, not
- * a pair of booleans: the two defects are mutually exclusive by construction
- * (an unterminated block has an opening delimiter, an undelimited one has
- * none), and a boolean pair makes the impossible both-at-once state
- * representable — and, worse, makes "neither" mean two different things.
- */
-export type BlockDefect = 'unterminated' | 'undelimited';
 
 /**
  * The code-fence lines §4.1 permits as display armor around the block. An
@@ -482,6 +340,14 @@ export type BlockDefect = 'unterminated' | 'undelimited';
 export const FENCE_OPEN = /^`{3,}[A-Za-z0-9-]*[ \t]*$/;
 export const FENCE_CLOSE = /^`{3,}[ \t]*$/;
 
+/**
+ * Why a body that CARRIES the key still yielded no block. A closed union, not
+ * a pair of booleans: the two defects are mutually exclusive by construction
+ * (an unterminated block has an opening delimiter, an undelimited one has
+ * none), and a boolean pair makes the impossible both-at-once state
+ * representable — and, worse, makes "neither" mean two different things.
+ */
+export type BlockDefect = 'unterminated' | 'undelimited';
 
 /**
  * The diagnostic each defect reports, as a table rather than a branch: the
@@ -511,7 +377,7 @@ export interface BlockLocation {
   readonly defect: BlockDefect | null;
   /**
    * Index of the opening `---` in a newline split of `body`, or -1 when
-   * `lines` is null. A splice edits BYTE RANGES of the original body, so it
+   * `lines` is null. A splice edits LINE RANGES of the original body, so it
    * needs where the block is and not only what it says — and re-deriving that
    * with a second scan is how an editor and a parser come to disagree about
    * which block is canonical.
@@ -583,10 +449,10 @@ export function locateBlock(body: string): BlockLocation {
   // should not disqualify (r2); nor should an unindented field (r3); nor an
   // inert extension subtree before a recognized one (r4). Every one of those
   // was correct ABOUT THE QUALIFIER, and that is the tell — a qualifier is a
-  // second reader of the block's structure, sitting beside the walk below and
-  // re-deriving part of it, so each round found another line where the two
-  // disagreed. Three of the four disagreements left a real declaration SILENT,
-  // which is the exact failure this change exists to end.
+  // second reader of the block's structure, re-deriving part of the parse, so
+  // each round found another line where the two disagreed. Three of the four
+  // disagreements left a real declaration SILENT, which is the exact failure
+  // this change exists to end.
   //
   // Measured over the 500 open issues, 2026-08-22: the qualifier, a fence
   // requirement, and no qualifier at all select the SAME 345 bodies. It has
@@ -639,193 +505,206 @@ export function isUnreadDeclaration(parse: ParseResult): boolean {
 }
 
 /**
+ * One recognised or unrecognised entry under `issuegraph:`, located by LINE so
+ * a writer can replace exactly its own bytes.
+ *
+ * Line indices are relative to the block's INTERIOR lines — what
+ * {@link BlockLocation.lines} returns — not to the body, because that is the
+ * only frame both packages already share.
+ */
+export interface SectionField {
+  /** The key as it SPELLS, unquoted: `"blocked-by"` and `blocked-by` agree. */
+  readonly key: string;
+  /** First interior line index of the entry (the key's own line). */
+  readonly startLine: number;
+  /** Last interior line index belonging to the entry, inclusive. */
+  readonly endLine: number;
+}
+
+/**
+ * Where the `issuegraph:` section sits inside a located block, and which lines
+ * each of its entries occupies.
+ *
+ * THIS EXISTS SO THERE IS EXACTLY ONE GRAMMAR. `@issuegraph/writer` edits the
+ * block this reader reads, so it needs to know which bytes constitute an entry
+ * — and the previous answer was a hand-written line scanner exported from this
+ * module and re-walked by the writer. Two walks of one grammar is how an editor
+ * hands back a body its own parser cannot read; three separate defects were
+ * filed against exactly that seam.
+ *
+ * Now the answer comes from the same `yaml` document the parse uses, whose
+ * nodes carry byte ranges. Nothing here re-tokenizes, so the editor and the
+ * parser cannot disagree about what an entry is: there is only one opinion.
+ */
+export interface SectionLocation {
+  /** Interior line index of the `issuegraph:` key line. */
+  readonly headerLine: number;
+  /** Last interior line index belonging to the section, inclusive. */
+  readonly endLine: number;
+  /** Column at which the section's child entries begin. */
+  readonly childIndent: number;
+  readonly fields: readonly SectionField[];
+  /** True when a top-level key other than `issuegraph` carries content. */
+  readonly hasSiblingKeys: boolean;
+}
+
+/**
+ * Whether one line is the block's top-level `issuegraph:` key line.
+ *
+ * THE STRICT RULE, as opposed to {@link FRONTMATTER_KEY_PATTERN}'s prefilter.
+ * The pattern over-matches on purpose — it accepts `""issuegraph:`, which the
+ * parser refuses — so a tool counting header lines with it reads a body
+ * carrying one valid key plus one over-matched line as ambiguous, and leaves a
+ * declaration it could have repaired alone.
+ *
+ * ANSWERED BY THE PARSER, not by a line grammar. A repair tool and a reader
+ * disagreeing about which line opens the section is the same drift the section
+ * location exists to remove, one question smaller.
+ *
+ * TWO CONDITIONS, both load-bearing: the line carries no leading whitespace
+ * (YAML accepts an indented root mapping, so parsing alone would answer `true`
+ * for a nested `  issuegraph:` inside somebody else's mapping), and it parses
+ * as a mapping whose key is this specification's.
+ *
+ * EXPORTED for `@issuegraph/writer`.
+ */
+export function isSectionHeader(line: string): boolean {
+  if (line.length !== line.trimStart().length) return false;
+  const doc = readDocument(line);
+  if (doc === null) return false;
+  const root = doc.contents;
+  if (!isMap(root) || root.items.length !== 1) return false;
+  return scalarKey(root.items[0] as Pair<unknown, unknown>) === FRONTMATTER_KEY;
+}
+
+/**
+ * Locate the `issuegraph:` section within a block's interior lines, or null
+ * when the block does not carry a usable one.
+ *
+ * Null means "do not edit this", for one of two reasons:
+ *
+ *   - The block is one the READER also refuses — the YAML did not parse, no
+ *     `issuegraph` key is a top-level mapping key, or its value is a scalar or
+ *     a sequence. A writer that stops here and a reader returning `data: null`
+ *     are then answering from the same evidence.
+ *   - The section is written INLINE, as a flow mapping on the header's own
+ *     line. The reader reads that perfectly well, so this is the one case where
+ *     the two legitimately differ: a line-based edit has no span to replace
+ *     that is not also the header.
+ *
+ * EXPORTED for `@issuegraph/writer`. It is a LOWER-LEVEL surface than
+ * {@link parseFrontmatter} and consumers who only want the data should not
+ * reach for it.
+ */
+export function locateSection(blockLines: readonly string[]): SectionLocation | null {
+  const text = blockLines.join('\n');
+  const doc = readDocument(text);
+  if (doc === null) return null;
+  const root = doc.contents;
+  if (!isMap(root)) return null;
+
+  const lineAt = lineIndexer(text);
+  let section: Pair<unknown, unknown> | null = null;
+  let hasSiblingKeys = false;
+  for (const pair of root.items) {
+    const key = scalarKey(pair);
+    if (key === FRONTMATTER_KEY) {
+      // The FIRST claimant is canonical (§4.1). A duplicate top-level key is a
+      // YAML error, so `readDocument` has already refused it — this only
+      // guards a hypothetical parser that tolerated one.
+      section ??= pair;
+    } else if (key !== null) {
+      hasSiblingKeys = true;
+    }
+  }
+  if (section === null) return null;
+  const value = sectionMap(section.value);
+  if (value === null) return null;
+
+  const headerRange = nodeRange(section.key);
+  if (headerRange === null) return null;
+  const headerLine = lineAt(headerRange[0]);
+  const fields: SectionField[] = [];
+  let childIndent = -1;
+  let sectionEnd = headerLine;
+  for (const pair of value) {
+    const key = scalarKey(pair);
+    const keyRange = nodeRange(pair.key);
+    if (key === null || keyRange === null) return null;
+    const startLine = lineAt(keyRange[0]);
+    // AN ENTRY MUST OWN ITS OWN LINE, or a line-based edit cannot express it.
+    // `issuegraph: {priority: 1}` is a perfectly good FLOW mapping that the
+    // parser reads — see `parseFrontmatter` — but every entry in it starts on
+    // the header's line, so replacing an entry's span would delete the header
+    // and hand back a body nobody can read. A writer must prepend a fresh block
+    // instead, which is what `null` routes it to.
+    if (startLine <= headerLine) return null;
+    // `range[2]` is the node END, which includes trailing comments and the
+    // newline that closes the node — so it can land on the line AFTER the
+    // entry's last content. Step back to the last line carrying content.
+    const valueRange = nodeRange(pair.value);
+    const rawEnd = valueRange === null ? keyRange[2] : valueRange[2];
+    let endLine = lineAt(Math.max(rawEnd - 1, keyRange[0]));
+    while (endLine > startLine && (blockLines[endLine] ?? '').trim().length === 0) endLine -= 1;
+    if (childIndent === -1) childIndent = columnAt(text, keyRange[0]);
+    if (endLine > sectionEnd) sectionEnd = endLine;
+    fields.push({ key, startLine, endLine });
+  }
+  return {
+    headerLine,
+    endLine: sectionEnd,
+    childIndent: childIndent === -1 ? 2 : childIndent,
+    fields,
+    hasSiblingKeys,
+  };
+}
+
+/**
  * Parse the canonical issuegraph frontmatter out of an issue body (SPEC §4).
  * Never throws on any input.
  */
 export function parseFrontmatter(body: string): ParseResult {
   const diagnostics: string[] = [];
-  const extracted = locateBlock(body);
-  if (extracted.lines === null) {
-    if (extracted.defect !== null) diagnostics.push(BLOCK_DEFECT_DIAGNOSTIC[extracted.defect]);
-    return { data: null, diagnostics, blockDefect: extracted.defect };
-  }
-  const block = extracted.lines;
-
-  // Walk the block: find `issuegraph:` at indent 0, then collect its indented
-  // child entries until the next indent-0 line (other top-level keys: inert).
-  let inSection = false;
-  let sectionSeen = false;
-  let sectionContentInvalid = false;
-  let closedOwnerRecognized = false;
-  const contaminated = new Set<string>();
-  let childIndent = -1;
-  const entries: RawEntry[] = [];
-  let current: RawEntry | null = null;
-
-  for (const rawLine of block) {
-    const line = stripComment(rawLine).trimEnd();
-    if (line.trim().length === 0) continue;
-    const indent = line.length - line.trimStart().length;
-    if (inSection && line.slice(0, indent).includes("\t")) {
-      // YAML forbids tabs in indentation; mixed tab/space widths also corrupt
-      // the indent arithmetic below. Structural, per the degrade contract.
-      sectionContentInvalid = true;
-      diagnostics.push('issuegraph: tab character in indentation; block ignored');
-      continue;
-    }
-
-    if (indent === 0) {
-      // `topLevelKeyScalar`, the one predicate a writer locates this same
-      // section by. Spelling it here instead is how the two come to disagree.
-      const headerScalar = topLevelKeyScalar(line);
-      if (headerScalar !== null) {
-        if (sectionSeen) {
-          // A later claimant is ignored — and it also ENDS the active section,
-          // or an adjacent duplicate's children would merge into the first.
-          inSection = false;
-          continue;
-        }
-        if (headerScalar.length > 0) {
-          // Flow-map or scalar value on the key itself is outside the subset.
-          diagnostics.push(
-            'issuegraph: inline value on the top-level key is outside the supported subset; block ignored',
-          );
-          return { data: null, diagnostics, blockDefect: null };
-        }
-        inSection = true;
-        sectionSeen = true;
-      } else {
-        if (inSection) inSection = false; // another top-level key: inert
-      }
-      continue;
-    }
-
-    if (!inSection) continue;
-
-    const trimmed = line.trim();
-    if (trimmed.startsWith('- ') || trimmed === '-') {
-      // Block-list item for the current entry — only when an entry is open to
-      // receive it and the item sits at or below the child level.
-      if (
-        indent === childIndent &&
-        current !== null &&
-        current.scalar === '' &&
-        (current.itemIndent === -1 || current.itemIndent === indent)
-      ) {
-        // Standard YAML permits an indentationless sequence value: items at
-        // the KEY's own indent belong to the preceding key when that key has
-        // no scalar (this is yaml.dump's default emission style). Falls
-        // through to the attach path below.
-      } else if (childIndent === -1 || indent <= childIndent) {
-        // Otherwise a section-level item is a sequence/mapping mixture —
-        // before or after mapping entries, or beside a key that already has a
-        // scalar value: structurally invalid, order-blind.
-        sectionContentInvalid = true;
-        diagnostics.push(`issuegraph: list item without a key ("${trimmed}"); ignored`);
-        continue;
-      }
-      if (current === null) {
-        // Deeper than the child level with no open entry: content of whatever
-        // the nested mapping closed. Diagnostic-worthy only when that owner
-        // was a recognized field; extension subtrees are inert and silent.
-        if (closedOwnerRecognized) {
-          diagnostics.push(`issuegraph: list item without a key ("${trimmed}"); ignored`);
-        }
-        continue;
-      }
-      if (current.itemIndent === -1) current.itemIndent = indent;
-      if (indent !== current.itemIndent) {
-        // A dash nested inside an item. For a RECOGNIZED field this is a
-        // malformed continuation worth a diagnostic; inside an unrecognized
-        // extension subtree it is inert and silent (SPEC §4.1).
-        if (isField(current.key)) {
-          diagnostics.push(`issuegraph: nested list content ("${trimmed}"); ignored`);
-        }
-        continue;
-      }
-      current.blockItems.push(trimmed === '-' ? '' : trimmed.slice(2).trim());
-      continue;
-    }
-
-    if (childIndent === -1) childIndent = indent;
-    if (indent < childIndent) {
-      // A DEDENT IS NOT NESTED CONTENT. Both directions used to land in the arm
-      // below and be discarded in silence, so an inert first child at a deeper
-      // indent set the bar and every properly-placed field after it vanished:
-      // `extension` at four spaces followed by `blocked-by` at two returned an
-      // empty blocker list, no diagnostic, and a declaration reading as fully
-      // read. A block mapping's keys align, so a shallower line is not deeper
-      // content — it is a mapping that does not parse, and it degrades the
-      // block like any other structural fault.
-      sectionContentInvalid = true;
-      diagnostics.push(`issuegraph: dedented line ("${trimmed}") does not align with the block's fields; block ignored`);
-      continue;
-    }
-    if (indent > childIndent) {
-      // Nested content of some entry (an extension subtree): inert — and it
-      // CLOSES the current entry, so a deeper list cannot misattach to it.
-      // Remember whether the closed owner was a recognized field: malformed
-      // continuations under recognized fields stay diagnostic-worthy, while
-      // unrecognized extension subtrees are inert AND silent (SPEC §4.1).
-      if (current !== null) {
-        closedOwnerRecognized = isField(current.key);
-        if (closedOwnerRecognized) contaminated.add(current.key);
-      }
-      current = null;
-      continue;
-    }
-    // A line that is not a mapping entry degrades the block, and that is
-    // faithful rather than heavy-handed: a section whose children are a scalar,
-    // or a mixture of a scalar and mapping entries, is not a mapping in YAML
-    // either. What COUNTS as a mapping entry is {@link readMappingEntry}'s
-    // single answer rather than a rule respelled here — which is what stopped
-    // this line growing a new special case per quoting corner.
-    const entry = readMappingEntry(trimmed);
-    if (entry === null) {
-      sectionContentInvalid = true;
-      diagnostics.push(`issuegraph: unparseable line ("${trimmed}"); ignored`);
-      continue;
-    }
-    const { key, scalar } = entry;
-    // A REPEATED RECOGNIZED KEY IS A MALFORMED MAPPING, and letting the last
-    // one win discards a declaration in silence: `blocked-by: [123]` followed
-    // by `blocked-by: []` returned no blockers and no diagnostic, so the issue
-    // read as fully declared and unblocked while the dependency it named was
-    // thrown away.
-    //
-    // STRUCTURAL, not a dropped field. Dropping the field would leave the
-    // safety hole pointing the wrong way — an issue with no blockers looks
-    // schedulable to anything reading `data` alone — so this degrades the whole
-    // block, which is also what a strict YAML reader does with a duplicate key.
-    //
-    // Only RECOGNIZED keys, because §4.1 makes an unrecognized field inert and
-    // a repeated inert field decides nothing here.
-    if (isField(key) && entries.some((e) => e.key === key)) {
-      sectionContentInvalid = true;
-      diagnostics.push(`issuegraph: ${key} is declared more than once; block ignored`);
-      continue;
-    }
-    current = { key, scalar, blockItems: [], itemIndent: -1 };
-    entries.push(current);
+  const located = locateBlock(body);
+  if (located.lines === null) {
+    if (located.defect !== null) diagnostics.push(BLOCK_DEFECT_DIAGNOSTIC[located.defect]);
+    return { data: null, diagnostics, blockDefect: located.defect };
   }
 
-  if (!sectionSeen) {
-    // The key existed (extractBlockLines proved it) but never parsed as a
-    // top-level section line — outside the subset.
+  const read = readDocumentOrReason(located.lines.join('\n'));
+  if (read.doc === null) {
+    diagnostics.push(`issuegraph: the block is not readable YAML (${read.reason ?? 'unreadable'}); block ignored`);
+    return { data: null, diagnostics, blockDefect: null };
+  }
+  const doc = read.doc;
+  const root = doc.contents;
+  if (!isMap(root)) {
+    diagnostics.push('issuegraph: the block is not a mapping; block ignored');
+    return { data: null, diagnostics, blockDefect: null };
+  }
+
+  let section: Pair<unknown, unknown> | null = null;
+  for (const pair of root.items) {
+    if (scalarKey(pair) === FRONTMATTER_KEY) {
+      section ??= pair; // first claimant is canonical (§4.1)
+    }
+  }
+  if (section === null) {
+    // `locateBlock` proved the key is at a line start, but it never parsed as
+    // a top-level mapping key — an indented `issuegraph:` inside somebody
+    // else's mapping, or a spelling YAML reads as something other than a key.
     diagnostics.push('issuegraph: key present but no parseable section');
     return { data: null, diagnostics, blockDefect: null };
   }
-  if (sectionContentInvalid) {
-    // Direct non-mapping content under the key (a sequence item or unparseable
-    // line at the section's own level) is STRUCTURAL: the documented contract
-    // degrades the whole block to null, even when valid mapping entries were
-    // also collected — a sequence/mapping mixture is not valid YAML.
+  const value = sectionMap(section.value);
+  if (value === null) {
+    // A scalar or a sequence. Neither is the mapping §4.3 describes, and
+    // reading edges out of one would mean inventing them.
     diagnostics.push('issuegraph: section is not a mapping; block ignored');
     return { data: null, diagnostics, blockDefect: null };
   }
 
-  // Validate recognized fields.
-  let blockedBy: IssueRef[] = [];
+  let blockedBy: readonly IssueRef[] = [];
   let decomposedFrom: IssueRef | null = null;
   let duplicateOf: IssueRef | null = null;
   let serializeWith: IssueRef | null = null;
@@ -833,119 +712,267 @@ export function parseFrontmatter(body: string): ParseResult {
   let priority: Priority | null = null;
   let evidence: Evidence | null = null;
 
-  const singleRef = (entry: RawEntry): IssueRef | null => {
-    if (entry.blockItems.length > 0 || entry.scalar.startsWith('[')) {
-      diagnostics.push(`issuegraph: ${entry.key} takes a single ref, not a list; dropped`);
+  const singleRef = (key: string, raw: unknown): IssueRef | null => {
+    if (Array.isArray(raw)) {
+      diagnostics.push(`issuegraph: ${key} takes a single ref, not a list; dropped`);
       return null;
     }
-    const ref = parseRef(entry.scalar);
+    if (raw !== null && typeof raw === 'object') {
+      diagnostics.push(`issuegraph: ${key} has nested mapping content; dropped`);
+      return null;
+    }
+    const ref = parseRef(raw);
     if (ref === null) {
-      diagnostics.push(`issuegraph: ${entry.key} has an unparseable ref ("${entry.scalar}"); dropped`);
+      diagnostics.push(`issuegraph: ${key} has an unparseable ref ("${describe(raw)}"); dropped`);
     }
     return ref;
   };
 
-  for (const entry of entries) {
-    if (!isField(entry.key)) continue; // inert, silently
-    if (contaminated.has(entry.key)) {
-      diagnostics.push(`issuegraph: ${entry.key} has nested mapping content; dropped`);
-      continue;
-    }
-    switch (entry.key) {
-      case 'blocked-by': {
-        if (entry.blockItems.length > 0 && entry.scalar.length > 0) {
-          diagnostics.push('issuegraph: blocked-by has both a scalar value and list items; dropped');
-          break;
-        }
-        let items: string[];
-        if (entry.blockItems.length > 0) items = entry.blockItems;
-        else if (entry.scalar.startsWith('[') && entry.scalar.endsWith(']')) {
-          items = splitFlowList(entry.scalar.slice(1, -1));
-        } else if (entry.scalar.length > 0) {
-          items = [entry.scalar]; // single scalar tolerated as a 1-list
-        } else {
-          // A BARE `blocked-by:` IS A YAML NULL, NOT AN EMPTY LIST, and the two
-          // must not answer the same. `[]` is a writer declaring no blockers;
-          // a null is a field whose value is missing, which this reader cannot
-          // turn into a list without inventing one. Silent, it returned an
-          // empty list with no diagnostic — indistinguishable from `[]` — so
-          // `isUnreadDeclaration` said the declaration was fully read.
-          //
-          // Every OTHER recognised field already diagnoses a blank value:
-          // `duplicate-of:`, `serialize-with:`, `together-with:` through
-          // `parseRef('')`, and `priority:` / `evidence:` through their own
-          // arms. This was the one exception, which is what makes it an
-          // inconsistency rather than a tolerance.
-          //
-          // The block-list form is unaffected: `blocked-by:` with indented
-          // items has a blank scalar too, and the branch above claims it first.
-          diagnostics.push(
-            'issuegraph: blocked-by has no value (write [] to declare none); dropped',
-          );
-          items = [];
-        }
-        const refs: IssueRef[] = [];
-        for (const item of items) {
-          const ref = parseRef(item);
-          if (ref === null) {
-            diagnostics.push(`issuegraph: blocked-by item unparseable ("${item}"); dropped`);
-          } else {
-            refs.push(ref);
-          }
-        }
-        blockedBy = refs;
+  for (const pair of value) {
+    const key = scalarKey(pair);
+    if (key === null || !isField(key)) continue; // inert, silently (§4.1)
+    const raw: unknown = toJS(pair.value, doc);
+    switch (key) {
+      case 'blocked-by':
+        blockedBy = refsFrom(raw, diagnostics);
         break;
-      }
       case 'decomposed-from':
-        decomposedFrom = singleRef(entry);
+        decomposedFrom = singleRef(key, raw);
         break;
       case 'duplicate-of':
-        duplicateOf = singleRef(entry);
+        duplicateOf = singleRef(key, raw);
         break;
       case 'serialize-with':
-        serializeWith = singleRef(entry);
+        serializeWith = singleRef(key, raw);
         break;
       case 'together-with':
-        togetherWith = singleRef(entry);
+        togetherWith = singleRef(key, raw);
         break;
-      case 'priority': {
-        if (entry.blockItems.length > 0) {
-          diagnostics.push('issuegraph: priority has nested list content; dropped');
-          break;
-        }
-        const raw = stripQuotes(entry.scalar);
-        // `Number("")` is 0, and an empty scalar is an ABSENT value rather than
-        // the most urgent priority there is — so the empty case is mapped away
-        // from the numeric conversion before `isPriority` ever sees it.
-        const n = raw === '' ? Number.NaN : Number(raw);
-        if (isPriority(n)) priority = n;
+      case 'priority':
+        if (isPriority(raw)) priority = raw;
         else
           diagnostics.push(
-            `issuegraph: priority must be an integer ${PRIORITY_MIN}-${PRIORITY_MAX} (got "${entry.scalar}"); dropped`,
+            `issuegraph: priority must be an integer ${PRIORITY_MIN}-${PRIORITY_MAX} (got "${describe(raw)}"); dropped`,
           );
         break;
-      }
-      case 'evidence': {
-        if (entry.blockItems.length > 0) {
-          diagnostics.push('issuegraph: evidence has nested list content; dropped');
-          break;
-        }
-        const v = stripQuotes(entry.scalar);
-        if (isEvidence(v)) evidence = v;
+      case 'evidence':
+        if (typeof raw === 'string' && isEvidence(raw)) evidence = raw;
         else
           diagnostics.push(
-            `issuegraph: evidence must be ${EVIDENCE_VALUES.join("|")} (got "${entry.scalar}"); dropped`,
+            `issuegraph: evidence must be ${EVIDENCE_VALUES.join('|')} (got "${describe(raw)}"); dropped`,
           );
         break;
-      }
     }
   }
 
   return {
     data: { blockedBy, decomposedFrom, duplicateOf, serializeWith, togetherWith, priority, evidence },
     diagnostics,
-    // The block was delimited and walked; any diagnostic here is a FIELD
+    // The block was delimited and parsed; any diagnostic here is a FIELD
     // rejection inside it, never a block-level defect.
     blockDefect: null,
   };
+}
+
+/**
+ * The refs a `blocked-by` value declares, diagnosing every member it could not
+ * read.
+ *
+ * A `null` MEMBER IS REFUSED, AND THAT IS THIS FUNCTION'S REASON TO EXIST.
+ * Measured: an unquoted `#`-sigil reference in a block sequence —
+ *
+ *     blocked-by:
+ *       - #9094
+ *
+ * — parses SUCCESSFULLY to `[null]`, with zero parser errors and zero warnings,
+ * because `#` opens a YAML comment and what remains is an empty node. Nothing
+ * upstream of this function reports it. Left unrefused, the issue reads as
+ * declaring no edges at all: a park that looks exactly like a free issue, which
+ * is the licence for a false clear that {@link ParseResult.diagnostics} exists
+ * to withhold. So a null member is a dropped field with a diagnostic, never a
+ * shorter list.
+ *
+ * A BARE `blocked-by:` IS ALSO A NULL, and it is diagnosed for the same reason
+ * one field over: `[]` is a writer declaring no blockers, while a missing value
+ * is a field this reader cannot turn into a list without inventing one. Every
+ * other recognised field already diagnoses a blank value, so tolerating it here
+ * would be an inconsistency rather than a tolerance.
+ */
+function refsFrom(raw: unknown, diagnostics: string[]): readonly IssueRef[] {
+  if (raw === null || raw === undefined) {
+    diagnostics.push('issuegraph: blocked-by has no value (write [] to declare none); dropped');
+    return [];
+  }
+  if (!Array.isArray(raw)) {
+    if (typeof raw === 'object') {
+      diagnostics.push('issuegraph: blocked-by has nested mapping content; dropped');
+      return [];
+    }
+    // A single scalar is tolerated as a one-item list, as it always has been.
+    const ref = parseRef(raw);
+    if (ref === null) {
+      diagnostics.push(`issuegraph: blocked-by item unparseable ("${describe(raw)}"); dropped`);
+      return [];
+    }
+    return [ref];
+  }
+  const refs: IssueRef[] = [];
+  for (const item of raw as readonly unknown[]) {
+    const ref = parseRef(item);
+    if (ref === null) {
+      diagnostics.push(`issuegraph: blocked-by item unparseable ("${describe(item)}"); dropped`);
+      continue;
+    }
+    refs.push(ref);
+  }
+  return refs;
+}
+
+/**
+ * Parse a block's text into a document, or null when it is not safe to read.
+ *
+ * REFUSES ON WARNINGS AS WELL AS ERRORS, and that is not belt-and-braces — it
+ * is the only thing enforcing §4.1's custom-tag clause. Measured:
+ * `blocked-by: !!python/object 1` produces ZERO errors, one
+ * `TAG_RESOLVE_FAILED` warning, and the string `"1"`. A reader testing
+ * `errors` alone accepts it, and the tag requirement is met in name only.
+ *
+ * Refusing every warning is the fail-CLOSED direction, and deliberately wider
+ * than the one code that motivated it: a matcher on `TAG_RESOLVE_FAILED` would
+ * silently stop covering whatever warning `yaml` adds next, which is the same
+ * fail-open shape this module refuses everywhere else.
+ */
+function readDocument(text: string): Document.Parsed | null {
+  return readDocumentOrReason(text).doc;
+}
+
+/**
+ * The same read, with the REASON it refused — so a diagnostic can name the
+ * cause instead of saying only that something was wrong.
+ *
+ * The parser's own message is better than any prose this module could write
+ * for the same fault: it names the line, the column and the rule ("Map keys
+ * must be unique", "Tabs are not allowed as indentation"). Passing it through
+ * is why delegating tokenizing improves the diagnostics rather than costing
+ * them — and it is reported as OPAQUE TEXT, never matched on, exactly as
+ * {@link ParseResult.diagnostics} requires of every message here.
+ */
+function readDocumentOrReason(text: string): { doc: Document.Parsed | null; reason: string | null } {
+  let doc: Document.Parsed;
+  try {
+    doc = parseDocument(text, yamlOptions());
+  } catch (cause) {
+    // `parseDocument` is not documented to throw for input faults, but the
+    // never-throws contract is this module's and not the library's.
+    return { doc: null, reason: cause instanceof Error ? cause.message : 'unreadable' };
+  }
+  const fault = doc.errors[0] ?? doc.warnings[0];
+  if (fault !== undefined) return { doc: null, reason: fault.message };
+  // AN ANCHOR MUST NOT RESOLVE (§4.1), and the parse options cannot express
+  // that — `maxAliasCount` is a `toJS` option, so `parseDocument` returns a
+  // document with the alias node intact. Refusing structurally is both earlier
+  // and clearer than letting the materializing step raise: an alias is a
+  // document this reader will not read, not a field it drops.
+  let aliased = false;
+  visit(doc, {
+    Alias() {
+      aliased = true;
+      return visit.BREAK;
+    },
+  });
+  return aliased
+    ? { doc: null, reason: 'an anchor alias may not resolve here (SPEC 4.1)' }
+    : { doc, reason: null };
+}
+
+/**
+ * The section's entries, or null when its value is not a mapping at all.
+ *
+ * A NULL VALUE IS AN EMPTY MAPPING HERE, not a broken one, and the distinction
+ * is load-bearing rather than lenient. A bare `issuegraph:` header beside a
+ * sibling top-level key is a legitimate empty declaration — it is exactly what
+ * a splice leaves behind after removing the last owned edge — so refusing it
+ * would make the writer hand back bodies its own reader calls unreadable.
+ *
+ * A SCALAR or a SEQUENCE is genuinely not a mapping and still refuses: §4.3
+ * describes a mapping of fields, and reading edges out of either would mean
+ * inventing them.
+ */
+function sectionMap(value: unknown): readonly Pair<unknown, unknown>[] | null {
+  if (value === null || value === undefined) return [];
+  if (isScalar(value) && value.value === null) return [];
+  return isMap(value) ? value.items : null;
+}
+
+/** A pair's key as a plain string, or null when it is not a scalar string key. */
+function scalarKey(pair: Pair<unknown, unknown>): string | null {
+  const key = pair.key;
+  if (!isScalar(key)) return null;
+  return typeof key.value === 'string' ? key.value : null;
+}
+
+/** A node's `[start, value-end, node-end]` byte range, or null when it has none. */
+function nodeRange(node: unknown): readonly [number, number, number] | null {
+  if (node === null || typeof node !== 'object') return null;
+  const range = (node as { range?: unknown }).range;
+  return Array.isArray(range) && range.length === 3 ? (range as [number, number, number]) : null;
+}
+
+/**
+ * A node's plain JavaScript value.
+ *
+ * `maxAliasCount: 0` is passed again at this boundary because `toJS` takes its
+ * own options: the parse-time setting stops an alias RESOLVING, and this stops
+ * a document that somehow carried one from expanding it here.
+ */
+function toJS(node: unknown, doc: Document.Parsed): unknown {
+  if (isAlias(node)) return UNREADABLE; // refused in readDocument; belt and braces
+  if (!isScalar(node) && !isSeq(node) && !isMap(node)) return null;
+  try {
+    return node.toJS(doc, { maxAliasCount: 0 });
+  } catch {
+    // Unreachable while `readDocument` refuses every aliased document, and
+    // caught anyway: "never throws on any input" is THIS module's contract, so
+    // it may not rest on another module's refusal being exhaustive.
+    return UNREADABLE;
+  }
+}
+
+/** A one-line rendering of a rejected value, for a diagnostic. */
+function describe(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'symbol') return 'unreadable';
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'object') return Array.isArray(value) ? '[...]' : '{...}';
+  return String(value);
+}
+
+/**
+ * A byte-offset -> line-index lookup over one text, built once per call.
+ *
+ * Linear in the text rather than per query: `locateSection` asks for two
+ * offsets per field, and re-scanning from the start each time is quadratic on a
+ * block with many entries.
+ */
+function lineIndexer(text: string): (offset: number) => number {
+  const starts: number[] = [0];
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '\n') starts.push(i + 1);
+  }
+  return (offset: number): number => {
+    let low = 0;
+    let high = starts.length - 1;
+    while (low < high) {
+      const mid = Math.ceil((low + high) / 2);
+      if ((starts[mid] as number) <= offset) low = mid;
+      else high = mid - 1;
+    }
+    return low;
+  };
+}
+
+/** The column an offset sits at, counted from its line's start. */
+function columnAt(text: string, offset: number): number {
+  const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
+  return offset - lineStart;
 }

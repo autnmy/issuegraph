@@ -23,7 +23,13 @@ import type { Frontmatter, IssueRef } from './frontmatter.ts';
 
 /** One issue as the model consumes it. `repo: null` means the home repo. */
 export interface NodeInput {
-  readonly number: number;
+  /**
+   * The tracker's own identifier for this issue, without any `#` sigil (§4.2).
+   * A STRING because a reference is one: an id and the refs pointing at it have
+   * to be the same kind of thing or they cannot be compared, and the format
+   * admits `ABC-123` as readily as `123`.
+   */
+  readonly id: string;
   readonly repo?: string | null;
   /**
    * NEVER SET ON A FULL NODE — typed `undefined` so that
@@ -59,8 +65,8 @@ export interface NodeInput {
    *
    * REQUIRED, and that is the mechanism rather than a style choice. `data`
    * cannot express this: the parser's field-drop row returns a NON-NULL `data`
-   * with a field rejected, so `blocked-by: [123, not-a-ref]` yields a node
-   * gated on `#123` alone and `serialize-with: not-a-ref` yields a node that
+   * with a field rejected, so `blocked-by: [123, "a ref"]` yields a node
+   * gated on `123` alone and `serialize-with: "a ref"` yields a node that
    * reads exactly like a body declaring no relation at all. Both are an absence
    * rendered as a value. An optional field would let a producer silently omit
    * it and restore precisely that defect — as an UNSTATED one, since the
@@ -296,13 +302,13 @@ export function nodeKey(
   // Only the two identity fields are read, and both kinds of node carry them —
   // spelled as a `Pick` so the declarer-only tier can be keyed without the
   // signature implying it is a full node.
-  node: Pick<NodeInput, 'number' | 'repo'>,
+  node: Pick<NodeInput, 'id' | 'repo'>,
   homeRepo?: string,
 ): string {
-  if (node.repo == null) return String(node.number);
+  if (node.repo == null) return node.id;
   const repo = node.repo.toLowerCase();
-  if (homeRepo !== undefined && repo === homeRepo.toLowerCase()) return String(node.number);
-  return `${repo}#${node.number}`;
+  if (homeRepo !== undefined && repo === homeRepo.toLowerCase()) return node.id;
+  return `${repo}#${node.id}`;
 }
 
 /**
@@ -326,8 +332,8 @@ export function refKey(
 
 function keyForRef(ref: IssueRef, sourceRepo: string | null, homeRepo?: string): string {
   const repo = (ref.repo ?? sourceRepo)?.toLowerCase() ?? null;
-  if (repo === null || (homeRepo !== undefined && repo === homeRepo)) return String(ref.number);
-  return `${repo}#${ref.number}`;
+  if (repo === null || (homeRepo !== undefined && repo === homeRepo)) return ref.id;
+  return `${repo}#${ref.id}`;
 }
 
 /** Minimal union-find over string keys. */

@@ -1,7 +1,7 @@
 {
   "name": "@issuegraph/reader",
   "version": "0.2.0",
-  "description": "Read the Issuegraph frontmatter block out of an issue body and derive the graph it declares — ready set, effective priority, serialize and together components, duplicate resolution, cycles. Parsing and pure derivation only; no network, no tracker, no writes.",
+  "description": "Read the Issuegraph frontmatter block out of an issue body and derive the graph it declares \u2014 ready set, effective priority, serialize and together components, duplicate resolution, cycles. Parsing and pure derivation only; no network, no tracker, no writes.",
   "keywords": [
     "issuegraph",
     "dependency-graph",
@@ -47,7 +47,8 @@
     "test": "node --test \"src/**/*.test.ts\""
   },
   "dependencies": {
-    "@issuegraph/core": "workspace:^"
+    "@issuegraph/core": "workspace:^",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@types/node": "^22.18.0",

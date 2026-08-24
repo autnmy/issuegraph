@@ -57,8 +57,8 @@
 import {
   FENCE_CLOSE,
   FENCE_OPEN,
+  isSectionHeader,
   parseFrontmatter,
-  topLevelKeyScalar,
   type Frontmatter,
 } from '@issuegraph/reader';
 
@@ -290,7 +290,7 @@ function locateInertRegion(lines: readonly string[]): InertRegion | LocateRefusa
     // `ambiguous-key`, so a declaration this tool could have repaired is left
     // inert. Genuine ambiguity — two keys the parser would both read — is still
     // refused; that is the case the count exists for.
-    if (topLevelKeyScalar(line) !== null) found.push(index);
+    if (isSectionHeader(line)) found.push(index);
     return found;
   }, []);
   if (headers.length === 0) return 'no-key';

@@ -19,8 +19,8 @@
 import type { Frontmatter, IssueRef, NodeInput } from '@issuegraph/reader';
 
 /** A same-repo ref, as the frontmatter parser produces it. */
-export function ref(number: number): IssueRef {
-  return { repo: null, number };
+export function ref(id: string | number): IssueRef {
+  return { repo: null, id: String(id) };
 }
 
 /**
@@ -48,6 +48,7 @@ export function frontmatter(overrides: Partial<Frontmatter> = {}): Frontmatter {
 }
 
 interface SeedNode {
+  /** The seed's issues are GitHub-numbered; `node` stringifies it into `id`. */
   readonly number: number;
   readonly open: boolean;
   readonly labels?: readonly string[];
@@ -57,7 +58,7 @@ interface SeedNode {
 
 function node(seed: SeedNode): NodeInput {
   return {
-    number: seed.number,
+    id: String(seed.number),
     open: seed.open,
     labels: seed.labels ?? [],
     // No issue in the seed is claimed; serialize admission is exercised by its
@@ -152,7 +153,7 @@ export function withBlockedByEdge(
   to: number,
 ): NodeInput[] {
   return issues.map((issue) => {
-    if (issue.number !== from) return issue;
+    if (issue.id !== String(from)) return issue;
     const data = issue.data ?? frontmatter({});
     return { ...issue, data: { ...data, blockedBy: [...data.blockedBy, ref(to)] } };
   });
