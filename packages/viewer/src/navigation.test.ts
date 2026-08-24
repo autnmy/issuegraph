@@ -1,0 +1,142 @@
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+
+import { normalizeDocument } from './document.ts';
+import { initialNavigationState, navigate, reconcile } from './navigation.ts';
+import { graphScene } from './projections/graph.ts';
+import { linearScene } from './projections/linear.ts';
+import { treeScene } from './projections/tree.ts';
+import type { Scene } from './scene.ts';
+import { fixtureDocument } from './testing/fixtures.ts';
+
+const linear = (): Scene => linearScene(normalizeDocument(fixtureDocument).document);
+const graph = (): Scene => graphScene(normalizeDocument(fixtureDocument).document);
+const tree = (): Scene => treeScene(normalizeDocument(fixtureDocument).document);
+
+const at = (key: string | null) => ({ focused: key, selected: null });
+
+describe('navigate', () => {
+  it('moves down and up the published order', () => {
+    const scene = linear();
+    const down = navigate(scene, at('102'), 'ArrowDown');
+
+    assert.deepEqual(down.command, { kind: 'focus', key: '101' });
+    assert.equal(navigate(scene, down.state, 'ArrowUp').command.kind, 'focus');
+    assert.equal(navigate(scene, at('101'), 'ArrowUp').state.focused, '102');
+  });
+
+  it('stops at both ends rather than wrapping', () => {
+    // The ends of the order are the ends of the work. A list that teleports to
+    // the top reads as a jump, not as a boundary.
+    const scene = linear();
+    const last = scene.focusOrder[scene.focusOrder.length - 1] as string;
+
+    assert.deepEqual(navigate(scene, at('102'), 'ArrowUp').command, { kind: 'none' });
+    assert.deepEqual(navigate(scene, at(last), 'ArrowDown').command, { kind: 'none' });
+  });
+
+  it('starts at the first item when nothing is focused yet', () => {
+    assert.deepEqual(navigate(linear(), at(null), 'ArrowDown').command, {
+      kind: 'focus',
+      key: '102',
+    });
+  });
+
+  it('walks the graph in RANK order, not in the order boxes were laid out', () => {
+    // The design's rule, made falsifiable: the layout places 104 immediately
+    // after 103, and rank order skips it because a together unit is ONE station.
+    const scene = graph();
+    assert.deepEqual([...scene.focusOrder], ['102', '101', '103', '105', '106']);
+    assert.equal(navigate(scene, at('103'), 'ArrowDown').state.focused, '105');
+    assert.equal(scene.focusOrder.includes('104'), false);
+  });
+
+  it('traverses to a gutter neighbour and reports none when there is not one', () => {
+    const scene = graph();
+    assert.deepEqual(navigate(scene, at('105'), 'ArrowLeft').command, {
+      kind: 'focus',
+      key: 'other/repo#7',
+    });
+    assert.deepEqual(navigate(scene, at('102'), 'ArrowLeft').command, { kind: 'none' });
+  });
+
+  it('has no lateral axis in the linear or tree projections', () => {
+    assert.deepEqual(navigate(linear(), at('102'), 'ArrowRight').command, { kind: 'none' });
+    assert.deepEqual(navigate(tree(), at('101'), 'ArrowLeft').command, { kind: 'none' });
+  });
+
+  it('selects the focused key on Enter and on Space', () => {
+    for (const key of ['Enter', ' ']) {
+      const result = navigate(linear(), at('101'), key);
+      assert.deepEqual(result.command, { kind: 'select', key: '101' });
+      assert.equal(result.state.selected, '101');
+    }
+  });
+
+  it('selects the first item when Enter arrives with nothing focused', () => {
+    assert.deepEqual(navigate(linear(), at(null), 'Enter').command, { kind: 'select', key: '102' });
+  });
+
+  it('jumps to the ends on Home and End', () => {
+    const scene = linear();
+    assert.equal(navigate(scene, at('103'), 'Home').state.focused, '102');
+    assert.equal(navigate(scene, at('103'), 'End').state.focused, '106');
+    assert.deepEqual(navigate(scene, at('102'), 'Home').command, { kind: 'none' });
+  });
+
+  it('returns the state untouched for a key it does not claim', () => {
+    // A host keeps every shortcut this package does not handle.
+    const state = at('101');
+    const result = navigate(linear(), state, 'g');
+
+    assert.deepEqual(result.command, { kind: 'none' });
+    assert.equal(result.state, state);
+  });
+
+  it('does nothing on an empty scene', () => {
+    const empty = linearScene(
+      normalizeDocument({ issues: [], edges: [], order: { slots: [], excluded: [] } }).document,
+    );
+    assert.deepEqual(navigate(empty, initialNavigationState, 'ArrowDown').command, { kind: 'none' });
+  });
+
+  it('reaches a held slot, which has a position even without a rank', () => {
+    assert.ok(linear().focusOrder.includes('101'));
+    assert.ok(linear().focusOrder.includes('105'));
+  });
+});
+
+describe('reconcile', () => {
+  it('carries a selection across a projection change', () => {
+    // A switch changes representation, never subject.
+    const state = { focused: '103', selected: '103' };
+    assert.deepEqual(reconcile(tree(), state), { focused: '103', selected: '103' });
+  });
+
+  it('keeps a selection the new projection does not draw', () => {
+    const state = { focused: '104', selected: '104' };
+    const next = reconcile(linear(), state);
+
+    assert.equal(next.selected, '104');
+    assert.equal(next.focused, '102', 'focus did not fall back to something reachable');
+  });
+
+  it('follows the selection with focus when focus is unreachable', () => {
+    const next = reconcile(linear(), { focused: 'nope', selected: '103' });
+    assert.equal(next.focused, '103');
+  });
+
+  it('falls to the first item when nothing is set', () => {
+    assert.deepEqual(reconcile(linear(), initialNavigationState), {
+      focused: '102',
+      selected: null,
+    });
+  });
+
+  it('reports null focus for a scene with nothing in it', () => {
+    const empty = linearScene(
+      normalizeDocument({ issues: [], edges: [], order: { slots: [], excluded: [] } }).document,
+    );
+    assert.deepEqual(reconcile(empty, initialNavigationState), { focused: null, selected: null });
+  });
+});
