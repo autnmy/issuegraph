@@ -403,6 +403,7 @@ describe('deriveIssueOrder — priority carrier precedence', () => {
       open: true,
       labels: ['P3', 'P0'],
       assigneeCount: 0,
+      declarationRead: 'read',
       data: null,
     });
     assert.equal(signals.labelValue, 0);
@@ -468,6 +469,7 @@ describe('deriveIssueOrder — structural invariants', () => {
       open: true,
       labels: ['P2'],
       assigneeCount: 0,
+      declarationRead: 'read',
       data: null,
     });
     // Three issues sharing one number across three repos, all effective 2, none
@@ -576,6 +578,7 @@ describe('deriveIssueOrder — cross-repo keys', () => {
         open: true,
         labels: ['P3'],
         assigneeCount: 0,
+        declarationRead: 'read',
         data: frontmatter({ decomposedFrom: { repo: 'acme/widgets', number: 470 } }),
       },
       {
@@ -583,6 +586,7 @@ describe('deriveIssueOrder — cross-repo keys', () => {
         open: true,
         labels: ['P0'],
         assigneeCount: 0,
+        declarationRead: 'read',
         data: frontmatter({ blockedBy: [{ repo: 'acme/widgets', number: 488 }] }),
       },
     ];
@@ -625,6 +629,7 @@ describe('deriveIssueOrder — promotion provenance matches the edges the model 
     open: true,
     labels,
     assigneeCount: 0,
+    declarationRead: 'read',
     data: null,
   });
   const derive = (issues: readonly NodeInput[]): DerivedIssueOrder =>
@@ -676,6 +681,7 @@ describe('deriveIssueOrder — urgency also arrives through a together peer', ()
         open: true,
         labels: ['P3'],
         assigneeCount: 0,
+        declarationRead: 'read',
         data: frontmatter({ togetherWith: ref(20) }),
       },
       {
@@ -683,6 +689,7 @@ describe('deriveIssueOrder — urgency also arrives through a together peer', ()
         open: true,
         labels: ['P0'],
         assigneeCount: 0,
+        declarationRead: 'read',
         data: frontmatter({ togetherWith: ref(10) }),
       },
     ];
@@ -707,6 +714,7 @@ describe('deriveIssueOrder — urgency also arrives through a together peer', ()
         open: true,
         labels: ['P3'],
         assigneeCount: 0,
+        declarationRead: 'read',
         data: frontmatter({ togetherWith: ref(20) }),
       },
       {
@@ -714,6 +722,7 @@ describe('deriveIssueOrder — urgency also arrives through a together peer', ()
         open: true,
         labels: ['P0'],
         assigneeCount: 0,
+        declarationRead: 'read',
         data: frontmatter({ togetherWith: ref(10) }),
       },
     ];
@@ -742,6 +751,7 @@ describe('deriveIssueOrder — a together component is not a neighbourhood', () 
       open: true,
       labels: [],
       assigneeCount: 0,
+      declarationRead: 'read',
       data: frontmatter({ togetherWith: ref(20) }),
     },
     {
@@ -749,9 +759,10 @@ describe('deriveIssueOrder — a together component is not a neighbourhood', () 
       open: true,
       labels: [],
       assigneeCount: 0,
+      declarationRead: 'read',
       data: frontmatter({ togetherWith: ref(30) }),
     },
-    { number: 30, open: true, labels: ['P0'], assigneeCount: 0, data: null },
+    { number: 30, open: true, labels: ['P0'], assigneeCount: 0, declarationRead: 'read', data: null },
   ];
 
   const derived = (): DerivedIssueOrder =>
@@ -801,6 +812,7 @@ describe('deriveIssueOrder — a slot describes the whole unit it represents', (
       open: true,
       labels: [],
       assigneeCount: 0,
+      declarationRead: 'read',
       data: frontmatter({ togetherWith: ref(20) }),
     },
     {
@@ -808,9 +820,10 @@ describe('deriveIssueOrder — a slot describes the whole unit it represents', (
       open: true,
       labels: [],
       assigneeCount: 0,
+      declarationRead: 'read',
       data: frontmatter({ serializeWith: ref(30) }),
     },
-    { number: 30, open: true, labels: [], assigneeCount: 0, data: null },
+    { number: 30, open: true, labels: [], assigneeCount: 0, declarationRead: 'read', data: null },
   ];
 
   const withLeadOrder = (keys: readonly string[]): DerivedIssueOrder =>
@@ -849,7 +862,7 @@ describe('deriveIssueOrder — a slot describes the whole unit it represents', (
     // new one. Without this the assertions above could pass for a rule that
     // simply adds the together members on top.
     const derived = deriveIssueOrder({
-      issues: [{ number: 40, open: true, labels: [], assigneeCount: 0, data: null }],
+      issues: [{ number: 40, open: true, labels: [], assigneeCount: 0, declarationRead: 'read', data: null }],
       config: { baseRanking: { source: 'config', order: [] } },
     });
     assert.equal(slotWith(derived, '40').serializeGroupSize, 1);
