@@ -153,10 +153,19 @@ export const viewerStylesheet = `
 
 /* ── edge badges ───────────────────────────────────────────────────────── */
 
+/* SPANNED FROM THE TITLE COLUMN, LIKE EVERY OTHER FULL-WIDTH ROW MEMBER. Left
+   unplaced this was the fifth child of a four-column grid, so it auto-placed
+   into column ONE of a second row — the rank track, an auto-sized column that
+   takes the width of its widest item. One relationship badge then set the width
+   of the rank column for the whole row, pushing the station and title across
+   and squeezing the title to pay for it. Badges belong with the row's other
+   metadata, which is what 3 / -1 already means here for provenance and holds.
+   (No backticks in this file: the stylesheet is a template literal.) */
 .ig-badges {
   display: flex;
   flex-wrap: wrap;
   gap: var(--ig-space-tight);
+  grid-column: 3 / -1;
 }
 
 .ig-badge {

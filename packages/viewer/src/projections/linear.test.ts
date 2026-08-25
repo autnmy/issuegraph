@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import { normalizeDocument } from '../document.ts';
 import { renderMarkup } from '../element.ts';
-import { fixtureDocument } from '../testing/fixtures.ts';
+import { fixtureDocument, heldTogetherDocument } from '../testing/fixtures.ts';
 import { linearScene } from './linear.ts';
 
 function render(input = fixtureDocument, options = {}): string {
@@ -69,6 +69,27 @@ describe('the linear projection', () => {
 
     assert.match(unit, /Split the invoice writer · Split the invoice reader/);
     assert.equal(markup.includes('data-ig-key="104"'), false, '104 rendered as its own row');
+  });
+
+  it("carries a partner's relationships onto the unit's one row", () => {
+    // A together unit is ONE row and its partners get no row of their own, so
+    // reading only the lead's edges dropped every relationship a partner owned.
+    // Here the unit is held and what holds it is the PARTNER's `blocked-by`:
+    // the row said "held" and silently withheld the reason.
+    const markup = render(heldTogetherDocument);
+    const unit = row(markup, '1');
+
+    assert.match(unit, /data-edge="blocked-by"[^>]*aria-label="blocked by 3"/);
+  });
+
+  it('renders an edge internal to a unit once, not once per member', () => {
+    // Both endpoints of `1 together-with 2` are members, so the edge is in TWO
+    // `edgesOf` entries — the failure mode of aggregating across members, and
+    // the reason the fix dedupes on the edge rather than on the member.
+    const unit = row(render(heldTogetherDocument), '1');
+    const together = unit.match(/data-edge="together-with"/g) ?? [];
+
+    assert.equal(together.length, 1, `together-with rendered ${together.length} times`);
   });
 
   it('renders a promotion in the spec notation, naming the dependent', () => {

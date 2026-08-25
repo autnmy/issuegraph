@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { type ElementSpec, type SpecChild } from './element.ts';
 import { LAYOUT_PROPERTIES } from './layout.ts';
 import { renderViewer } from './render.ts';
 import { fixtureDocument } from './testing/fixtures.ts';
@@ -33,6 +34,45 @@ describe('the structural stylesheet', () => {
       'the selected canvas node does not use the accent the rail selection uses',
     );
   });
+  it('places every row child the four grid columns cannot hold', () => {
+    // `.ig-slot` declares FOUR columns and a row has more children than that.
+    // A child left unplaced auto-places into column ONE of a second row — the
+    // rank track, an auto-sized column that takes the width of its widest item
+    // — so one relationship badge set the rank column's width for the whole
+    // row, pushing the station and title across and squeezing the title.
+    //
+    // ASSERTED AS THE RULE, NOT AS ONE CLASS. Naming `.ig-badges` would pass
+    // the moment a sixth child is added and land in the rank exactly as this
+    // one did; deriving the children from the rendered row makes the next
+    // addition fail here instead of on someone's screen.
+    const css = withoutComments(viewerStylesheet);
+    const columns = (css.match(/\.ig-slot \{[^}]*grid-template-columns:([^;]*);/) ?? [])[1];
+    assert.ok(columns, 'the slot row no longer declares its columns');
+    const budget = columns.trim().split(/\s+/).length;
+
+    const rows: ElementSpec[] = [];
+    const walk = (node: SpecChild): void => {
+      if (typeof node === 'string') return;
+      if (node.tag === 'li' && node.attrs?.['class'] === 'ig-slot') rows.push(node);
+      for (const child of node.children ?? []) walk(child);
+    };
+    walk(renderViewer(fixtureDocument, {}).scene.root);
+    assert.ok(rows.length > 0, 'no slot rows rendered, so this proves nothing');
+
+    for (const row of rows) {
+      const classes = (row.children ?? [])
+        .filter((child): child is ElementSpec => typeof child !== 'string')
+        .map((child) => String(child.attrs?.['class'] ?? ''));
+      for (const cls of classes.slice(budget)) {
+        assert.match(
+          css,
+          new RegExp(`\\.${cls}[^{]*\\{[^}]*grid-column`),
+          `.${cls} sits past the ${budget} declared columns and names no grid-column, so it auto-places into the rank track`,
+        );
+      }
+    }
+  });
+
   it('references only properties something actually sets', () => {
     // The other direction of the theme contract: a `var()` naming a property no
     // theme and no layout sets resolves to nothing, and the affected rule

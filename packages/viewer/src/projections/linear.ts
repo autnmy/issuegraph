@@ -76,7 +76,7 @@ function slotRow(
     station(stationFill(slot)),
     element('span', { class: 'ig-title' }, [slotTitle(document, slot)]),
     lead === undefined ? null : identity(lead),
-    edgeBadges(document, slot.lead),
+    edgeBadges(document, slot.members),
     provenanceLine(lead?.provenance),
     ...slot.holds.map(holdLine),
   ];
@@ -124,7 +124,7 @@ export function excludedRow(
       station('dashed'),
       element('span', { class: 'ig-title' }, [issue?.title ?? key]),
       issue === undefined ? null : identity(issue),
-      edgeBadges(document, key),
+      edgeBadges(document, [key]),
       element('p', { class: 'ig-hold', 'data-family': 'tracker' }, [
         `${treatmentFor('duplicate-of').label} ${canonical} — never worked`,
       ]),

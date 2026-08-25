@@ -127,24 +127,43 @@ function edgeBadge(field: EdgeField, detail: string): ElementSpec {
 }
 
 /**
- * Every relationship touching one issue, as badges in the format's own field
- * order — so two issues with the same relationships always read identically.
+ * Every relationship touching a ROW, as badges in the format's own field order
+ * — so two rows with the same relationships always read identically.
+ *
+ * TAKES THE ROW'S WHOLE KEY SET, NOT ONE KEY, because a together unit is ONE
+ * row and its partners get no row of their own. Reading only the lead dropped
+ * every relationship a partner owned: a unit blocked through its partner
+ * rendered no blocking badge at all, so the order UI showed a held unit and
+ * silently withheld what was holding it. The keys are the row's identity, so
+ * `other` is whichever endpoint is OUTSIDE the set, and an edge internal to the
+ * unit still reads from its `from` end exactly as it did when the set was one
+ * key — a single-key row is unchanged by construction.
  */
-export function edgeBadges(document: NormalizedDocument, key: string): ElementSpec | null {
-  const edges = document.edgesOf.get(key) ?? [];
-  if (edges.length === 0) return null;
+export function edgeBadges(document: NormalizedDocument, keys: readonly string[]): ElementSpec | null {
+  const mine = new Set(keys);
   const badges: ElementSpec[] = [];
+  // ONE EDGE, ONE BADGE. Both endpoints of an intra-unit edge are members, so
+  // it appears in two `edgesOf` entries and would otherwise render twice on the
+  // row that owns both ends.
+  const seen = new Set<string>();
   for (const field of EDGE_ORDER) {
-    for (const edge of edges) {
-      if (edge.field !== field) continue;
-      const treatment = treatmentFor(field);
-      // A symmetric edge states one fact whichever end you read it from, so it
-      // is announced as one relationship rather than as two directions.
-      const other = edge.from === key ? edge.to : edge.from;
-      const detail = treatment.symmetric || edge.from === key ? other : `${other} (incoming)`;
-      badges.push(edgeBadge(field, detail));
+    for (const key of keys) {
+      for (const edge of document.edgesOf.get(key) ?? []) {
+        if (edge.field !== field) continue;
+        const identity = `${edge.field}\u0000${edge.from}\u0000${edge.to}`;
+        if (seen.has(identity)) continue;
+        seen.add(identity);
+        const treatment = treatmentFor(field);
+        // A symmetric edge states one fact whichever end you read it from, so it
+        // is announced as one relationship rather than as two directions.
+        const outgoing = mine.has(edge.from);
+        const other = outgoing ? edge.to : edge.from;
+        const detail = treatment.symmetric || outgoing ? other : `${other} (incoming)`;
+        badges.push(edgeBadge(field, detail));
+      }
     }
   }
+  if (badges.length === 0) return null;
   return element('span', { class: 'ig-badges' }, badges);
 }
 

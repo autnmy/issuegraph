@@ -161,7 +161,7 @@ function treeRow(
     [
       element('span', { class: 'ig-title' }, [issue?.title ?? key]),
       issue === undefined ? null : identity(issue),
-      edgeBadges(document, key),
+      edgeBadges(document, [key]),
       provenanceLine(issue?.provenance),
       outOfSet === undefined
         ? null
