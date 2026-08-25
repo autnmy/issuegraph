@@ -72,6 +72,39 @@ describe('the graph projection', () => {
     assert.deepEqual([...scene().focusOrder], ['102', '101', '103', '105', '106']);
   });
 
+  it('gives a canvas with no ordered slots a keyboard entry at all', () => {
+    // Every list is empty when nothing is ordered, so the canvas rendered keyed
+    // nodes a pointer could select and not one `tabindex` — no keyboard entry
+    // whatsoever.
+    const built = scene({
+      issues: [
+        { key: 'a', title: 'A', open: true, priority: 2 },
+        { key: 'b', title: 'B', open: true, priority: 2 },
+      ],
+      edges: [{ field: 'blocked-by', from: 'a', to: 'b' }],
+      order: { slots: [], excluded: [] },
+    });
+    const markup = renderMarkup(built.root);
+
+    assert.deepEqual([...built.navigable].sort(), ['a', 'b']);
+    assert.match(markup, /tabindex="0"/);
+    for (const key of ['a', 'b']) {
+      assert.ok(built.navigable.includes(key), `${key} is drawn and keyed but unreachable by keyboard`);
+    }
+  });
+
+  it('does NOT give a together unit a second station while doing so', () => {
+    // The unit is ONE station with one focus key, so its non-lead members are
+    // absent from the order deliberately — they are represented by their lead,
+    // not unreachable. An earlier version of the fix above appended `104` and
+    // split the unit, which is why the test is membership-aware rather than
+    // "anything not in a list".
+    const built = scene();
+
+    assert.equal(built.focusOrder.includes('104'), false, 'the together unit was split into two stations');
+    assert.ok(built.focusOrder.includes('103'), 'the unit lost the station that represents it');
+  });
+
   it('offers lateral neighbours from the layout columns', () => {
     const lateral = scene().lateral;
     assert.equal(lateral.get('105')?.left, 'other/repo#7');

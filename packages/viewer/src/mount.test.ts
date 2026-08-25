@@ -291,6 +291,41 @@ describe('mountViewer', () => {
     assert.deepEqual(hovered, ['103'], 'a live hover was cleared by an unrelated redraw');
   });
 
+  it('does not select a row when the click belongs to its deep link', () => {
+    // Returning from the keydown handler does NOT suppress the click the browser
+    // synthesizes afterwards, so following a link also selected its row and told
+    // the host about a selection the anchor owned.
+    const selected: (string | null)[] = [];
+    const { container } = mounted({ onSelect: (key: string | null) => selected.push(key) });
+    const link = container.descendants().find((element) => element.tag === 'a');
+    assert.ok(link !== undefined, 'no deep link was rendered');
+
+    container.dispatch('click', { target: link });
+
+    assert.deepEqual(selected, [], 'following a link also selected its row');
+  });
+
+  it('clears an active hover on destroy, so the host is not left holding a dead key', () => {
+    // Teardown removes the listeners and then the root, so no `pointerleave` can
+    // fire — and destruction bypasses `draw()` entirely, so the redraw
+    // reconciliation never sees this path. The host was left with a tooltip
+    // pinned to an element that no longer exists.
+    const hovered: (string | null)[] = [];
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const handle = mountViewer(container, fixtureDocument, {
+      onHover: (key: string | null) => hovered.push(key),
+    });
+    const target = container.find(KEY_ATTRIBUTE, '103');
+    assert.ok(target !== undefined);
+    container.dispatch('pointerover', { target });
+    assert.deepEqual(hovered, ['103']);
+
+    handle.destroy();
+
+    assert.deepEqual(hovered, ['103', null], 'the host was never told the hover ended');
+  });
+
   it('reports a hover, and reports null when the pointer leaves', () => {
     const hovered: (string | null)[] = [];
     const { container } = mounted({ onHover: (key: string | null) => hovered.push(key) });

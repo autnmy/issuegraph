@@ -165,6 +165,16 @@ export function mountViewer(
 
   const theme: Theme = options.theme ?? defaultTheme;
 
+  // ONE PLACE THAT CLEARS A HOVER, because forgetting a site is exactly how this
+  // kept going wrong: `pointerleave` had it, then a redraw needed it, and now
+  // teardown does too. Three call sites open-coding two lines is a fourth site
+  // waiting to omit them, so the rule lives here and the sites ask for it.
+  const clearHover = (): void => {
+    if (hovered === null) return;
+    hovered = null;
+    currentOptions.onHover?.(null);
+  };
+
   const draw = (): void => {
     if (root !== null) container.removeChild(root);
     const scene = sceneFor(normalized, projection, {
@@ -198,10 +208,7 @@ export function mountViewer(
     // redraw — clearing on that test would fire constantly on a hover that is
     // perfectly live. Both attributes carry an ISSUE key, so membership in the
     // normalized document is the test that answers for both.
-    if (hovered !== null && !normalized.byKey.has(hovered)) {
-      hovered = null;
-      currentOptions.onHover?.(null);
-    }
+    if (hovered !== null && !normalized.byKey.has(hovered)) clearHover();
   };
 
   const emitSelect = (key: string | null): void => {
@@ -228,6 +235,16 @@ export function mountViewer(
   };
 
   const onClick = (event: MountEvent): void => {
+    // AN ACTIVATION ON A CONTROL THAT ACTIVATES ITSELF IS THAT CONTROL'S — the
+    // same invariant `onKeyDown` already applies, and the click path needs its
+    // own copy because returning from the keydown handler does NOT suppress the
+    // click the browser synthesizes afterwards. Following a row's deep link was
+    // therefore also selecting the row and firing `onSelect` at the host, for an
+    // activation the anchor owned.
+    // UNCONDITIONAL HERE, CONDITIONAL THERE, and the asymmetry is the point: a
+    // click IS an activation, whereas a keydown may be a MOVEMENT key, which
+    // stays the viewer's even while focus rests on a link.
+    if (ownsItsOwnActivation(event.target, container)) return;
     const key = keyAt(event.target, container);
     if (key === null) return;
     emitSelect(key);
@@ -241,9 +258,7 @@ export function mountViewer(
   };
 
   const onPointerLeave = (): void => {
-    if (hovered === null) return;
-    hovered = null;
-    currentOptions.onHover?.(null);
+    clearHover();
   };
 
   const onKeyDown = (event: MountEvent): void => {
@@ -315,6 +330,11 @@ export function mountViewer(
     destroy(): void {
       if (destroyed) return;
       destroyed = true;
+      // BEFORE THE LISTENERS COME OFF, because after that no `pointerleave` can
+      // fire and the host is left holding a key for an element about to be
+      // removed — a tooltip pinned to nothing. Destruction bypasses `draw()`
+      // entirely, so the redraw reconciliation above never sees this path.
+      clearHover();
       container.removeEventListener('click', onClick);
       container.removeEventListener('pointerover', onPointerOver);
       container.removeEventListener('pointerleave', onPointerLeave);

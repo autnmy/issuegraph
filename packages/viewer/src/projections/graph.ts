@@ -431,9 +431,40 @@ export function graphScene(document: NormalizedDocument, options: GraphOptions =
     }
   }
 
+  // A NODE NO STATION REPRESENTS HAS NO KEYBOARD EXISTENCE AT ALL. The canvas
+  // draws it with a key, so a pointer can select what a keyboard cannot reach —
+  // and where NOTHING is ordered, every list is empty and the canvas offers no
+  // keyboard entry whatsoever. Measured: a document with edges and no order
+  // slots renders two keyed nodes and not one `tabindex`.
+  // THE TEST IS "REPRESENTED BY A STATION", NOT "IN A LIST", and that distinction
+  // is the whole correctness of this. A together unit is ONE station with one
+  // focus key, so its non-lead members are absent from the order DELIBERATELY —
+  // `104` in this package's fixture is exactly that, and an earlier version of
+  // this fix gave it a station of its own, splitting the unit and breaking the
+  // rule `navigation.test.ts` states in as many words. A member is represented
+  // by its lead; only a key belonging to no slot at all is unrepresented.
+  // THEY JOIN THE VERTICAL ORDER rather than the membership set alone, because
+  // with a roving tabindex only the FOCUSED key is tabbable — a key focus can
+  // never ARRIVE at is unreachable however wide the set of things that "can hold
+  // focus" is. The arrows are the only way in.
+  // APPENDED, so every ranked position keeps its rank and the first entry is
+  // unchanged; in the layout's own node order, so the result is deterministic.
+  const represented = new Set<string>();
+  for (const slot of document.order.slots) for (const member of slot.members) represented.add(member);
+  if (!refused) {
+    for (const key of layout.nodes.keys()) {
+      if (!focusOrder.includes(key) && !lateral.has(key) && !represented.has(key)) focusOrder.push(key);
+    }
+  }
+
   // A GUTTER NODE IS REACHABLE SIDEWAYS WITHOUT BEING A POSITION IN THE ORDER,
   // so the set that can hold focus is wider than the order that walks it.
-  // `focusOrder` leads, so the first entry is the same under either.
+  // `focusOrder` LEADS, so the first entry is the same under either — which is
+  // why this is built AFTER the pass above rather than before it. Built first,
+  // the lateral keys landed between the ranked entries and the appended ones and
+  // `navigable` stopped leading with `focusOrder`, which the scene contract
+  // requires and `graph.test.ts` asserts. Anything derived from the ORDER has to
+  // come after a pass that changes the order.
   const navigableKeys = [...focusOrder];
   for (const key of lateral.keys()) {
     if (!navigableKeys.includes(key)) navigableKeys.push(key);
