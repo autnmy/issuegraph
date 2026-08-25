@@ -294,49 +294,55 @@ function refusal(
       ? `${String(nodeCount)} related issues is past this canvas's budget of ${String(GRAPH_NODE_BUDGET)}, so it is not drawing them.`
       : `${String(nodeCount)} related issues is far past this canvas's budget, so it is showing clusters only.`;
 
-  const shown = mode === 'capsules' ? clusters : clusters.slice(0, 12);
+  // THE REFUSAL IS INFORMATIONAL. IT PUBLISHES NO CONTROL — and that is a
+  // RESTRUCTURE, not a regression of the round-five finding it answers.
+  // That finding offered two remedies: expose an actionable component target,
+  // OR replace the instruction with an action the rendered API actually
+  // supports. The first was taken, and it drew a defect in every round since —
+  // the capsule was pointer-only, then it was a button outside the focus index
+  // whose activation redraws and destroys itself, leaving a keyboard reader
+  // with focus on nothing. Each patch was correct and each bought another.
+  // The cause underneath them is that this package DOES NOT NARROW. It renders
+  // exactly what it is given, so a control here can never complete the action
+  // it advertises; only the host can, by narrowing the document and rendering
+  // again. A control that cannot finish its own job is the surface generating
+  // the findings, so it goes rather than gets a fourth fix — and with it go the
+  // focus index it never belonged to, the synthesized click, and the group
+  // identity nothing could act on.
+  // The order list remains, and IS complete at any size: that is the action a
+  // reader can actually take inside this package, so it is the one named below.
+  const LIMIT = 12;
+  const shown = mode === 'capsules' ? clusters : clusters.slice(0, LIMIT);
+  // SAY WHAT WAS OMITTED. A silent slice left a reader looking at twelve
+  // components and no indication that 139 others existed — under a heading
+  // announcing it was showing clusters. Refusing to draw is defensible;
+  // under-reporting the shape without saying so is not, because the reader
+  // cannot tell a complete list from a truncated one.
+  const omitted = clusters.length - shown.length;
   return element('section', { class: 'ig-refusal', role: 'note' }, [
     element('p', {}, [heading]),
     element(
       'ol',
       { class: 'ig-list', 'aria-label': 'connected components' },
       shown.map((cluster) =>
-        element('li', {}, [
-          // A REAL CONTROL, NOT A CLICKABLE `li`. `data-ig-group` made the
-          // capsule dispatch on a POINTER click while the sentence below
-          // offered the action to everyone — so keyboard-only readers were
-          // told to choose a component and given no way to do it. A refusal
-          // publishes no navigation targets by design (one focus index, one
-          // element per key), which is exactly why the fix cannot be a
-          // tabindex: a native `button` is focusable and Enter/Space-activated
-          // on its own, without the refusal owning a focus index it has no
-          // other use for. The click it synthesizes carries the same
-          // `data-ig-group` the pointer path already reads, so both routes
-          // reach `onSelect` through one code path rather than two.
-          element(
-            'button',
-            {
-              type: 'button',
-              class: 'ig-capsule',
-              'data-ig-group': cluster.members[0] ?? null,
-            },
-            [
-              element('span', { class: 'ig-count' }, [`${String(cluster.members.length)} issues`]),
-              element('span', { class: 'ig-count' }, [`${String(cluster.blockedByEdges)} blocking`]),
-              element('span', { class: 'ig-count' }, [`depth ${String(cluster.chainDepth)}`]),
-              cluster.hasCycle
-                ? element('span', { class: 'ig-badge', 'data-edge': 'blocked-by' }, ['cycle'])
-                : null,
-              element('span', { class: 'ig-id' }, [cluster.members.slice(0, 3).join(', ')]),
-            ],
-          ),
+        element('li', { class: 'ig-capsule' }, [
+          element('span', { class: 'ig-count' }, [`${String(cluster.members.length)} issues`]),
+          element('span', { class: 'ig-count' }, [`${String(cluster.blockedByEdges)} blocking`]),
+          element('span', { class: 'ig-count' }, [`depth ${String(cluster.chainDepth)}`]),
+          cluster.hasCycle
+            ? element('span', { class: 'ig-badge', 'data-edge': 'blocked-by' }, ['cycle'])
+            : null,
+          element('span', { class: 'ig-id' }, [cluster.members.slice(0, 3).join(', ')]),
         ]),
       ),
     ),
+    omitted > 0
+      ? element('p', { class: 'ig-refusal-omitted' }, [
+          `${String(omitted)} further ${omitted === 1 ? 'component is' : 'components are'} not listed; ${String(clusters.length)} were found in total.`,
+        ])
+      : null,
     element('p', { class: 'ig-refusal-next' }, [
-      mode === 'capsules'
-        ? 'Choose a component above to narrow the document to it, then render again — or use the order list, which is complete at any size.'
-        : 'Narrow the document to one neighbourhood and render again, or use the order list, which is complete at any size.',
+      'Narrow the document to one neighbourhood and render again — narrowing is the host\'s, because this package draws exactly what it is given. The order list is complete at any size.',
     ]),
   ]);
 }

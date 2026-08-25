@@ -150,19 +150,36 @@ export const viewerStylesheet = `
 
 .ig-badge {
   align-items: center;
-  border: var(--ig-stroke) solid currentColor;
+  /* Not currentColor any more: the label and the border now carry DIFFERENT
+     colours deliberately — see below. Left as currentColor the border would
+     follow the text to --ig-text and the hue channel would vanish from the
+     badge entirely, which is the opposite of the fix. */
+  border: var(--ig-stroke) solid var(--ig-line);
   border-radius: var(--ig-radius);
+  color: var(--ig-text);
   display: inline-flex;
   font-size: var(--ig-font-size-small);
   gap: var(--ig-space-tight);
   padding: 0 var(--ig-space-tight);
 }
 
-.ig-badge[data-edge='blocked-by'] { color: var(--ig-edge-blocked-by); border-style: solid; }
-.ig-badge[data-edge='serialize-with'] { color: var(--ig-edge-serialize-with); border-style: double; }
-.ig-badge[data-edge='together-with'] { color: var(--ig-edge-together-with); border-style: solid; }
-.ig-badge[data-edge='duplicate-of'] { color: var(--ig-edge-duplicate-of); border-style: dotted; }
-.ig-badge[data-edge='decomposed-from'] { color: var(--ig-edge-decomposed-from); border-style: dashed; }
+/* THE HUE IS A BORDER COLOUR HERE, NOT A TEXT COLOUR — the theme holds the
+   edge hues to the 3:1 NON-TEXT bar, and says so where it defines them, so
+   painting badge LABELS with them contradicted the palette's own claim. It was
+   not merely theoretical: at this size duplicate-of measured 3.98:1 on
+   --ig-surface and decomposed-from 4.37:1, both under the 4.5:1 the text test
+   asserts for every text colour. The label now takes --ig-text, which that
+   test already proves on all three surfaces, and the hue keeps the non-text
+   use it was measured for.
+   NO CHANNEL IS LOST. Hue is one of four redundant channels and it is still
+   carried by the border; the dash pattern and the glyph are untouched; and the
+   vocabulary test independently proves all five stay distinguishable with hue
+   removed ENTIRELY, which is the stronger claim. */
+.ig-badge[data-edge='blocked-by'] { border-color: var(--ig-edge-blocked-by); border-style: solid; }
+.ig-badge[data-edge='serialize-with'] { border-color: var(--ig-edge-serialize-with); border-style: double; }
+.ig-badge[data-edge='together-with'] { border-color: var(--ig-edge-together-with); border-style: solid; }
+.ig-badge[data-edge='duplicate-of'] { border-color: var(--ig-edge-duplicate-of); border-style: dotted; }
+.ig-badge[data-edge='decomposed-from'] { border-color: var(--ig-edge-decomposed-from); border-style: dashed; }
 
 .ig-glyph {
   font-family: var(--ig-font-mono);
@@ -292,22 +309,26 @@ export const viewerStylesheet = `
   margin: var(--ig-space-tight) 0 0;
 }
 
-/* The capsule is a BUTTON, so the refusal's stated action is reachable by
-   keyboard and not only by pointer. That means undoing the UA's own button
-   look — font, alignment, width — rather than styling a bare box. */
+/* The capsule is INFORMATIONAL — a plain list item again. It was briefly a
+   button, to make the refusal's advertised action keyboard-reachable; the
+   action itself has since gone, because this package cannot narrow a document
+   and so could never complete it. With the control removed the UA button reset
+   goes too: there is no button look left to undo. */
 .ig-capsule {
   align-items: baseline;
   background: var(--ig-surface);
   border: var(--ig-stroke) solid var(--ig-line);
   border-radius: var(--ig-radius);
-  color: inherit;
   display: flex;
-  font: inherit;
   gap: var(--ig-space);
   margin-top: var(--ig-space-tight);
   padding: var(--ig-space-tight) var(--ig-space);
-  text-align: left;
-  width: 100%;
+}
+
+.ig-refusal-omitted {
+  color: var(--ig-text-muted);
+  font-size: var(--ig-font-size-small);
+  margin: var(--ig-space-tight) 0 0;
 }
 
 /* ── the decomposition tree ────────────────────────────────────────────── */

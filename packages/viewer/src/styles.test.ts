@@ -110,3 +110,41 @@ describe('the structural stylesheet', () => {
     }
   });
 });
+
+describe('the stylesheet keeps text on text-grade colours', () => {
+  it('never paints a text colour with an edge hue', () => {
+    // The theme holds the edge hues to the 3:1 NON-TEXT bar and says so where it
+    // defines them — so any rule setting `color` to one is a claim the palette
+    // does not support. It was not theoretical: the badge label took the hue,
+    // and duplicate-of measured 3.98:1 on --ig-surface at 11px.
+    // Written as a STRUCTURAL rule rather than a per-token contrast check,
+    // because that is the invariant: `color` may not name an edge hue at all.
+    // A contrast assertion would pass again the moment somebody darkened one
+    // hue by a point, which is not the property worth holding.
+    // COMMENTS STRIPPED FIRST — this very rule's own comment names the tokens,
+    // and the prose around the badge rules discusses them at length, so a raw
+    // scan would report the explanation as the offence.
+    const css = withoutComments(viewerStylesheet);
+    const offenders = [];
+    for (const rule of css.split('}')) {
+      for (const line of rule.split(';')) {
+        const declaration = line.trim();
+        if (!/^color\s*:/.test(declaration)) continue;
+        if (/--ig-edge-/.test(declaration)) offenders.push(declaration);
+      }
+    }
+
+    assert.deepEqual(
+      offenders,
+      [],
+      `these rules paint TEXT with a non-text-grade edge hue: ${offenders.join(' | ')}`,
+    );
+  });
+
+  it('still carries the hue on the badge border, so no channel was lost', () => {
+    // The fix moves the hue rather than dropping it. Losing it here would be a
+    // quieter regression than the one it repairs.
+    const css = withoutComments(viewerStylesheet);
+    assert.match(css, /border-color: var\(--ig-edge-duplicate-of\)/);
+  });
+});

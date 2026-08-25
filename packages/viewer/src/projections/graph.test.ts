@@ -306,28 +306,60 @@ describe('the graph projection', () => {
     assert.equal(capsules, size, `refused ${String(size)} nodes but listed ${String(capsules)}`);
   });
 
-  it('makes the refusal action reachable by keyboard, not only by pointer', () => {
-    // `data-ig-group` on a plain `li` dispatches on a POINTER click while the
-    // sentence below offers the action to everyone. A native button is
-    // focusable and Enter/Space-activated without the refusal owning a focus
-    // index it has no other use for.
-    const markup = render(crowdedDocument(GRAPH_NODE_BUDGET + 1));
+  it('says how many components it did not list, rather than truncating in silence', () => {
+    // The cluster mode shows at most twelve. A silent slice left a reader
+    // looking at twelve under a heading announcing the shape, with no way to
+    // tell a complete list from a truncated one.
+    // EVEN, and comfortably past the cluster-only budget: every issue must be an
+    // edge endpoint to become a layout node, so an odd leftover would not be
+    // counted and the document would fall back into capsule mode.
+    const size = CLUSTER_ONLY_BUDGET + 20;
+    const issues = Array.from({ length: size }, (_, index) => ({
+      key: String(index + 1),
+      title: `Issue ${String(index + 1)}`,
+      open: true,
+      priority: 2,
+    }));
+    // Two-node components, so there are far more than twelve of them.
+    const edges = [];
+    for (let index = 0; index + 1 < size; index += 2) {
+      edges.push({
+        field: 'blocked-by',
+        from: String(index + 1),
+        to: String(index + 2),
+      } as ViewerDocument['edges'][number]);
+    }
+    const markup = render({ issues, edges, order: { slots: [], excluded: [] } });
 
-    assert.match(markup, /<button type="button" class="ig-capsule" data-ig-group="[^"]+"/);
-    // And it must NOT have become a focus target: one focus index, one element
-    // per key, and a refusal publishes no navigation targets.
+    const listed = [...markup.matchAll(/class="ig-capsule"/g)].length;
+    assert.equal(listed, 12, `listed ${String(listed)} capsules, expected the cluster cap of 12`);
+    assert.match(markup, /further components are not listed/);
+    // The total is stated, so the reader can size what they are not seeing.
+    assert.match(markup, /were found in total/);
+  });
+
+  it('still publishes no focus targets when it refuses', () => {
+    // One focus index, one element per key — a refusal draws no nodes, so it
+    // has no navigation targets to publish and must not invent any.
     assert.deepEqual([...scene(crowdedDocument(GRAPH_NODE_BUDGET + 1)).focusOrder], []);
   });
 
-  it('offers a refusal action a host can actually perform', () => {
-    // A route forward nobody can take is worse than a plain refusal: the
-    // capsules carried no identity, nothing dispatched from them, and this
-    // package never narrows to a component.
+  it('publishes NO control in the refusal, and names only actions this package supports', () => {
+    // A control here could never finish the action it advertised — narrowing is
+    // the host's, because this package draws exactly what it is given. So the
+    // capsules are informational, and the instruction names the order list,
+    // which really is complete at any size.
     const markup = render(crowdedDocument(GRAPH_NODE_BUDGET + 1));
 
-    assert.match(markup, /class="ig-capsule" data-ig-group="[^"]+"/);
-    assert.match(markup, /Choose a component above to narrow the document to it/);
-    assert.equal(/Select one component to draw it/.test(markup), false);
+    assert.match(markup, /class="ig-capsule"/);
+    assert.equal(/<button/.test(markup), false, 'the refusal published a control again');
+    assert.equal(
+      /data-ig-group/.test(markup),
+      false,
+      'a refusal capsule carries a dispatch identity nothing can complete',
+    );
+    assert.equal(/Choose a component above/.test(markup), false);
+    assert.match(markup, /The order list is complete at any size/);
   });
 
   it('returns the rail to ordinary flow when it refuses to draw', () => {
