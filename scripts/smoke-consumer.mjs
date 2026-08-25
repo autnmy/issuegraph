@@ -11,8 +11,8 @@
 
 import ts from 'typescript';
 
-import { readFileSync, existsSync, readdirSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { dirname, join, relative } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 
@@ -102,6 +102,62 @@ function firstUnparseableFile(dir) {
 }
 
 /**
+ * The paths Node would try for a relative specifier, in the shapes an emitted
+ * file actually uses.
+ *
+ * The empty suffix is the ESM shape TypeScript emits (`./foo.js`, already
+ * carrying its extension); the rest are the CommonJS and bundler shapes, where
+ * `./foo` may be `foo.js` or `foo/index.js`. Being GENEROUS here is deliberate:
+ * this list decides what counts as RESOLVED, so a shape left off it becomes a
+ * false failure, and a false failure in a guard is worse than a narrow one.
+ */
+const RESOLUTION_SUFFIXES = ['', '.js', '.mjs', '.cjs', '.json', '/index.js', '/index.mjs', '/index.cjs'];
+
+/** Whether a relative specifier names something that is actually on disk. */
+function resolvesOnDisk(fromFile, specifier) {
+  // A bundler query or fragment names the same FILE with different handling —
+  // `./worker.js?worker`, `./data.txt?raw`. Browser packages emit these, and
+  // the file they name is what has to exist.
+  const path = specifier.split(/[?#]/)[0];
+  const base = join(dirname(fromFile), path);
+  return RESOLUTION_SUFFIXES.some((suffix) => {
+    const candidate = base + suffix;
+    return existsSync(candidate) && statSync(candidate).isFile();
+  });
+}
+
+/**
+ * The first relative import in a package's emitted files that resolves to
+ * nothing.
+ *
+ * Parsing is not enough, and this is the gap it leaves. An entry of
+ * `export { x } from "./missing.js"` parses perfectly, every file that DOES
+ * exist parses too — so the load failure downgraded to parse-only and CI passed
+ * on a package whose first import 404s. Nothing was broken; something was
+ * absent, and an absence is invisible to a check that only reads what is there.
+ *
+ * `ts.preProcessFile` rather than a hand-walked AST: it is what TypeScript's own
+ * program builder uses to find a file's edges, so it already covers every shape
+ * an emitted file takes — `import`, `export ... from`, `import()` with a literal
+ * argument, and `require()` in CommonJS output.
+ *
+ * BARE specifiers are deliberately not checked. Resolving `react` needs a real
+ * resolver and a node_modules layout, and a peer dependency legitimately absent
+ * from the package's own tree would fail. A RELATIVE specifier needs neither: it
+ * names a file the package itself is supposed to ship.
+ */
+function firstUnresolvedImport(dir) {
+  for (const file of emittedJsFiles(dir)) {
+    const { importedFiles } = ts.preProcessFile(readFileSync(file, 'utf8'), true, true);
+    for (const { fileName: specifier } of importedFiles) {
+      if (!specifier.startsWith('./') && !specifier.startsWith('../')) continue;
+      if (!resolvesOnDisk(file, specifier)) return { file, specifier };
+    }
+  }
+  return undefined;
+}
+
+/**
  * Smoke-test every package under `packagesDir`. Returns one result per package.
  *
  * A package that declares `engines.node` is held to BOTH checks: this process
@@ -165,7 +221,20 @@ export async function smokeTest(packagesDir, { log = () => {} } = {}) {
         undefined,
         `${manifest.name}: ${broken ? relative(dir, broken.file) : ''} does not parse — ${broken?.error}`,
       );
-      // It parsed. A package that CLAIMS a Node floor must still LOAD on it;
+      // It parsed — which says nothing about whether the files it names are
+      // there. A missing relative import is a defect in EVERY target, browser or
+      // Node, so it is never downgraded: the downgrade exists for a package Node
+      // cannot LOAD, not for one that is incomplete. Checked only on this path
+      // because it is the only one that turns a failure into a pass — an import
+      // that succeeded had its graph resolved by Node itself.
+      const missing = firstUnresolvedImport(dir);
+      assert.equal(
+        missing,
+        undefined,
+        `${manifest.name}: ${missing ? relative(dir, missing.file) : ''} imports "${missing?.specifier}", ` +
+          'which the package does not contain',
+      );
+      // A package that CLAIMS a Node floor must still LOAD on it;
       // only one making no such claim may stop at having parsed.
       if (floor !== undefined) throw error;
       downgraded = error.message;

@@ -85,6 +85,40 @@ test('NOT AN EXEMPTION: a broken emitted SIBLING fails, not just the entry', asy
   await assert.rejects(smokeTest(dir), /broken\.js does not parse/);
 });
 
+test('NOT AN EXEMPTION: an unresolved relative import fails, floor or no floor', async () => {
+  // Everything present PARSES — the defect is what is ABSENT, which a check that
+  // only reads the files on disk cannot see. Node reported it as a load failure,
+  // so the downgrade swallowed it and CI passed on a package whose first import
+  // 404s.
+  const dir = fixture('export { x } from "./missing.js";\n');
+  await assert.rejects(smokeTest(dir), /imports "\.\/missing\.js", which the package does not contain/);
+});
+
+test('NOT AN EXEMPTION: an unresolved import in a SIBLING, reached dynamically, fails', async () => {
+  // Two things at once: the sweep covers every emitted file rather than the
+  // entry, and a dynamic `import()` is an edge like any other — Node would never
+  // have raised this one, because nothing calls `load()` during the import.
+  const dir = fixture('import "./style.css";\nexport { b } from "./ok.js";\n', {}, {
+    'style.css': 'body{}',
+    'ok.js': 'export const b = 1;\nexport const load = () => import("./gone.js");\n',
+  });
+  await assert.rejects(smokeTest(dir), /imports "\.\/gone\.js"/);
+});
+
+test('CONTROL: the shapes a resolved relative import takes are not failed', async () => {
+  // The resolution check decides what counts as PRESENT, so a shape it does not
+  // know becomes a false failure. Three that browser and CommonJS output emit:
+  // an extensionless specifier, a directory index, and a bundler query suffix.
+  const dir = fixture(
+    'import "./style.css";\nexport { b } from "./ok";\nexport { c } from "./nested";\nimport "./data.txt?raw";\n',
+    {}, { 'style.css': 'body{}', 'ok.js': 'export const b = 1;\n', 'data.txt': 'x' },
+  );
+  mkdirSync(join(dir, 'subject', 'dist', 'nested'), { recursive: true });
+  writeFileSync(join(dir, 'subject', 'dist', 'nested', 'index.js'), 'export const c = 1;\n');
+  const [result] = await smokeTest(dir);
+  assert.equal(result.check, 'parsed');
+});
+
 test('CONTROL: a valid sibling Node merely cannot load still downgrades', async () => {
   // The two cases above must not have made every import failure fatal.
   const dir = fixture('import "./style.css";\nexport { b } from "./ok.js";\n',
