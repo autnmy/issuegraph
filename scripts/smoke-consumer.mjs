@@ -102,6 +102,39 @@ function firstUnparseableFile(dir) {
 }
 
 /**
+ * The missing RELATIVE target of a failed load, or `undefined` when the failure
+ * was anything else.
+ *
+ * The two module systems report this differently, and only one of them does it
+ * structurally — so this is where the asymmetry lives, once, rather than at the
+ * call site. Measured on Node 25:
+ *
+ *   ESM  export { x } from "./missing.js"  -> ERR_MODULE_NOT_FOUND, url=file:///…/missing.js
+ *   ESM  import "some-absent-pkg"          -> ERR_MODULE_NOT_FOUND, url=(none)
+ *   CJS  require("./missing.js")           -> MODULE_NOT_FOUND, no url, message names the specifier
+ *   CJS  require("some-absent-pkg")        -> MODULE_NOT_FOUND, no url, message names the specifier
+ *
+ * ESM populates `err.url` only for a target that named a FILE, so the field
+ * alone separates a missing file from an uninstalled package. CommonJS gives no
+ * such field — both cases are `MODULE_NOT_FOUND` with an identical shape — so
+ * the specifier has to come from the message, which is the ONE place this file
+ * reads message text. It is bounded: Node does not localise these, the specifier
+ * is the first quoted run, and a non-match yields `undefined`, which downgrades
+ * exactly as before rather than failing.
+ *
+ * WHY THE DISTINCTION IS WORTH THE REGEX: an uninstalled peer dependency is a
+ * fact about the INSTALL, not about the package, and failing it would break the
+ * browser packages this PR exists to admit. Treating every CommonJS
+ * `MODULE_NOT_FOUND` as fatal would do exactly that.
+ */
+function missingRelativeTarget(error) {
+  if (error?.code === 'ERR_MODULE_NOT_FOUND') return error.url;
+  if (error?.code !== 'MODULE_NOT_FOUND') return undefined;
+  const named = /^Cannot find module '((?:\.\.?\/)[^']*)'/.exec(String(error.message ?? ''));
+  return named ? named[1] : undefined;
+}
+
+/**
  * A readable one-line reason from a thrown value, which need NOT be an `Error`.
  *
  * `throw null` and `throw "boom"` are legal JavaScript, and a module whose
@@ -254,8 +287,9 @@ export async function smokeTest(packagesDir, { log = () => {} } = {}) {
       // uninstalled PEER DEPENDENCY, which is a fact about the install rather
       // than about the package — the reason a blanket `ERR_MODULE_NOT_FOUND`
       // rule was rejected earlier. A control test pins it.
-      if (error?.code === 'ERR_MODULE_NOT_FOUND' && error.url) {
-        assert.fail(`${manifest.name}: ${runtime} imports a file the package does not contain — ${error.url}`);
+      const missing = missingRelativeTarget(error);
+      if (missing !== undefined) {
+        assert.fail(`${manifest.name}: ${runtime} imports a file the package does not contain — ${missing}`);
       }
 
       parseOnly = true;

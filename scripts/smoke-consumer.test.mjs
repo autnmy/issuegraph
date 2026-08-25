@@ -128,6 +128,23 @@ test('NOT AN EXEMPTION: a missing STATIC import fails, floor or no floor', async
   await assert.rejects(smokeTest(dir), /imports a file the package does not contain/);
 });
 
+test('NOT AN EXEMPTION: a missing CommonJS require fails too', async () => {
+  // CommonJS reports MODULE_NOT_FOUND with no `url`, so the ESM discriminator
+  // does not reach it. Measured: relative and bare are identical apart from the
+  // specifier named in the message.
+  const dir = fixture('module.exports = require("./missing.js");\n',
+    { type: 'commonjs', exports: { '.': { types: './dist/index.d.ts', default: './dist/index.js' } } });
+  await assert.rejects(smokeTest(dir), /imports a file the package does not contain/);
+});
+
+test('CONTROL: an uninstalled BARE require still downgrades', async () => {
+  // The CommonJS half of the peer-dependency carve-out. Treating every
+  // MODULE_NOT_FOUND as fatal would fail exactly the packages this PR admits.
+  const dir = fixture('module.exports = require("some-absent-package");\n', { type: 'commonjs' });
+  const [result] = await smokeTest(dir);
+  assert.equal(result.check, 'parsed');
+});
+
 test('CONTROL: an uninstalled BARE import still downgrades — that is the install, not the package', async () => {
   // The reason this keys on `err.url` rather than on the bare error code: a
   // browser package's peer dependency is legitimately absent from its own tree,
