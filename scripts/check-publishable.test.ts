@@ -16,6 +16,7 @@ import assert from 'node:assert/strict';
 import {
   admitsVersion,
   blankDerivedVersion,
+  WORKSPACE_RANGE,
   diffTarballContents,
   isBlocking,
   normalizeManifest,
@@ -28,7 +29,7 @@ const payload = (entries: Record<string, string>): TarballContents =>
   new Map(Object.entries(entries).map(([path, text]) => [path, Buffer.from(text, 'utf8')]));
 
 /** The set a package declaring `@issuegraph/core` through `workspace:` produces. */
-const DECLARED = new Set(['@issuegraph/core']);
+const DECLARED = new Set(['dependencies\u0000@issuegraph/core']);
 
 test('normalizeManifest makes key order irrelevant and value changes visible', () => {
   const a = '{"dependencies":{"yaml":"^2.9.0","zod":"^3.0.0"}}';
@@ -252,7 +253,9 @@ test('admitsVersion: a shape outside the allowlist is undefined, never a guess',
   // Undefined is what makes the caller fail closed. Returning `true` for an
   // unparsed range is the answer that ships the bug; returning `false` would
   // block correct releases. Neither is available, so the guard declines.
-  for (const range of ['~0.1.0', '>=0.1.0 <0.3.0', '0.1.x', '*', 'workspace:^', '']) {
+  // `~` is deliberately NOT here: it is a shape `workspace:~` really emits, so
+  // the guard must judge it. See the tilde test below.
+  for (const range of ['>=0.1.0 <0.3.0', '0.1.x', '*', 'workspace:^', '', '>=0.1.0']) {
     assert.equal(admitsVersion(range, '0.1.1'), undefined, `${range} should not be judged`);
   }
   assert.equal(admitsVersion('^0.1.0', '0.1.1-beta.1'), undefined);
@@ -291,8 +294,9 @@ test('unresolvableConsumers: a consumer being republished is not stranded', () =
 });
 
 test('unresolvableConsumers: an unjudgeable range is reported, not waved through', () => {
+  // A range no `workspace:` declaration produces — reported rather than guessed.
   const published = [
-    { name: '@issuegraph/reader', version: '0.2.0', dependencies: { '@issuegraph/core': '~0.1.0' } },
+    { name: '@issuegraph/reader', version: '0.2.0', dependencies: { '@issuegraph/core': '>=0.1.0' } },
   ];
   const stranded = unresolvableConsumers(published, { '@issuegraph/core': '0.1.1' });
   assert.equal(stranded.length, 1);
@@ -331,4 +335,57 @@ test('the guard would have caught #36: core gaining an export without a bump', (
 
   // And the fix clears it: with the version bumped, the same tree is `new`.
   assert.deepEqual(standingFor(['0.1.0'], '0.1.1', undefined), { kind: 'new' });
+});
+
+
+test('admitsVersion: a TILDE pins the minor, whatever the major is', () => {
+  // `workspace:~` packs to `~X.Y.Z`, so this is a shape the protocol really
+  // emits. It used to return `undefined`, and `unresolvableConsumers` reads
+  // anything but `true` as stranded — so a supported configuration made the
+  // guard block a perfectly valid patch release.
+  assert.equal(admitsVersion('~0.1.0', '0.1.1'), true);
+  assert.equal(admitsVersion('~0.1.0', '0.2.0'), false);
+  assert.equal(admitsVersion('~1.2.3', '1.2.9'), true);
+  assert.equal(admitsVersion('~1.2.3', '1.3.0'), false);
+  assert.equal(admitsVersion('~1.2.3', '1.2.2'), false);
+});
+
+test('a tilde consumer is NOT stranded by a patch bump', () => {
+  // The consequence, stated end to end rather than as a unit.
+  const published = [
+    { name: '@issuegraph/reader', version: '0.2.0', dependencies: { '@issuegraph/core': '~0.1.0' } },
+  ];
+  assert.deepEqual(unresolvableConsumers(published, { '@issuegraph/core': '0.1.1' }), []);
+  assert.equal(unresolvableConsumers(published, { '@issuegraph/core': '0.2.0' }).length, 1);
+});
+
+test('the two allowlists are ONE allowlist — the shapes cannot drift apart', () => {
+  // The drift this closes: normalization accepted `~X.Y.Z` as derived while
+  // `admitsVersion` refused to judge it. Both now read WORKSPACE_RANGE, so any
+  // shape one of them treats as a workspace range the other must judge too.
+  for (const range of ['0.1.1', '~0.1.1', '^0.1.1']) {
+    assert.ok(WORKSPACE_RANGE.test(range), `${range} should be a workspace range`);
+    assert.notEqual(blankDerivedVersion(range), range, `${range} should be blanked`);
+    assert.notEqual(admitsVersion(range, '0.1.1'), undefined, `${range} should be judged`);
+  }
+  for (const range of ['>=0.1.1', '0.1.x', 'latest', 'npm:other@1.0.0']) {
+    assert.ok(!WORKSPACE_RANGE.test(range), `${range} should not be a workspace range`);
+    assert.equal(blankDerivedVersion(range), range, `${range} should be left verbatim`);
+    assert.equal(admitsVersion(range, '0.1.1'), undefined, `${range} should not be judged`);
+  }
+});
+
+test('normalizeManifest blanks per BLOCK, so an authored peer range survives', () => {
+  // The peer-plus-dev arrangement: the sibling is `workspace:` in devDependencies
+  // and an AUTHORED range in peerDependencies. A name-only key blanked both, so
+  // changing the authored peer range without a bump read as unchanged and would
+  // be skipped by the release — this guard's own subject.
+  const declared = new Set(['devDependencies\u0000@issuegraph/core']);
+  const a = '{"devDependencies":{"@issuegraph/core":"^0.1.0"},"peerDependencies":{"@issuegraph/core":"^0.1.0"}}';
+  const b = '{"devDependencies":{"@issuegraph/core":"^0.1.1"},"peerDependencies":{"@issuegraph/core":"^0.2.0"}}';
+  assert.notEqual(normalizeManifest(a, declared), normalizeManifest(b, declared));
+
+  // …and the control: with ONLY the derived devDependency moving, they match.
+  const c = '{"devDependencies":{"@issuegraph/core":"^0.1.1"},"peerDependencies":{"@issuegraph/core":"^0.1.0"}}';
+  assert.equal(normalizeManifest(a, declared), normalizeManifest(c, declared));
 });

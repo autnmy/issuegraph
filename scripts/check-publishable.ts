@@ -123,6 +123,20 @@ export interface ResolvabilityFinding {
 /** The name every package in this workspace shares, so siblings are nameable. */
 export const WORKSPACE_SCOPE = '@issuegraph/';
 
+/**
+ * The manifest blocks a dependency range can live in.
+ *
+ * Declared once and shared, because the set that RECORDS which ranges are
+ * workspace-derived and the loop that BLANKS them must agree about the blocks
+ * they cover; two hand-written lists is how they come to disagree.
+ */
+export const DEPENDENCY_BLOCKS = [
+  'dependencies',
+  'devDependencies',
+  'peerDependencies',
+  'optionalDependencies',
+] as const;
+
 /** A packed tarball's payload: the path inside `package/`, and its bytes. */
 export type TarballContents = ReadonlyMap<string, Buffer>;
 
@@ -162,13 +176,21 @@ export function normalizeManifest(text: string, workspaceDeclared: ReadonlySet<s
   // ADDED or REMOVED is an authored change and must still show up as a
   // difference, which deleting the key would hide.
   if (manifest !== null && typeof manifest === 'object') {
-    for (const field of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
+    for (const field of DEPENDENCY_BLOCKS) {
       const block = (manifest as Record<string, unknown>)[field];
       if (block === null || typeof block !== 'object') continue;
       const rewritten = Object.fromEntries(
         Object.entries(block as Record<string, unknown>).map(([name, range]) => [
           name,
-          workspaceDeclared.has(name) && typeof range === 'string' ? blankDerivedVersion(range) : range,
+          // Keyed by BLOCK **and** name. A name-only set blanks a sibling in
+          // EVERY block once it is declared `workspace:` in ANY of them — so in
+          // the ordinary peer-plus-dev arrangement (an authored `peerDependencies`
+          // range beside a `workspace:` devDependency) the authored peer range was
+          // blanked too, and changing it without a bump read as unchanged and
+          // would be skipped by the release. That is this guard's own subject.
+          workspaceDeclared.has(`${field}\u0000${name}`) && typeof range === 'string'
+            ? blankDerivedVersion(range)
+            : range,
         ]),
       );
       (manifest as Record<string, unknown>)[field] = rewritten;
@@ -197,8 +219,10 @@ export function normalizeManifest(text: string, workspaceDeclared: ReadonlySet<s
  * and reached too far: it matched `npm:other@1.0.0` and blanked the ALIAS
  * TARGET's version, hiding a change to a different package entirely.
  */
+export const WORKSPACE_RANGE = /^([~^]?)([0-9]+\.[0-9]+\.[0-9]+)$/;
+
 export function blankDerivedVersion(range: string): string {
-  const found = /^([~^]?)([0-9]+\.[0-9]+\.[0-9]+)$/.exec(range);
+  const found = WORKSPACE_RANGE.exec(range);
   const operator = found?.[1];
   return operator === undefined ? range : `${operator}<workspace-derived-version>`;
 }
@@ -230,22 +254,37 @@ export function admitsVersion(range: string, version: string): boolean | undefin
   const target = parse(version);
   if (target === undefined) return undefined;
 
-  const exact = parse(range);
-  if (exact !== undefined) return exact[0] === target[0] && exact[1] === target[1] && exact[2] === target[2];
-
-  if (!range.startsWith('^')) return undefined;
-  const floor = parse(range.slice(1));
+  // The SAME pattern `blankDerivedVersion` allowlists, deliberately. The two
+  // used to carry separate allowlists and drifted: normalization accepted
+  // `~X.Y.Z` as a derived range while this returned `undefined` for it, and
+  // `unresolvableConsumers` reads anything but `true` as stranded — so a repo
+  // declaring `workspace:~` had a SUPPORTED configuration the guard could not
+  // enforce, and a perfectly valid patch release was blocked unless every tilde
+  // consumer was pointlessly bumped. One pattern, one set of shapes, no drift.
+  const found = WORKSPACE_RANGE.exec(range);
+  const operator = found?.[1];
+  const floorText = found?.[2];
+  if (operator === undefined || floorText === undefined) return undefined;
+  const floor = parse(floorText);
   if (floor === undefined) return undefined;
 
   const [fMajor, fMinor, fPatch] = floor;
   const [tMajor, tMinor, tPatch] = target;
+
   const atOrAbove =
     tMajor > fMajor ||
     (tMajor === fMajor && (tMinor > fMinor || (tMinor === fMinor && tPatch >= fPatch)));
   if (!atOrAbove) return false;
 
-  // The ceiling moves to the leftmost NON-ZERO part, which is what makes a
-  // caret stricter on `0.x` than on `1.x`.
+  // Exact: only itself.
+  if (operator === '') return tMajor === fMajor && tMinor === fMinor && tPatch === fPatch;
+
+  // Tilde: the MINOR is pinned, whatever the major is. `~1.2.3` admits `1.2.9`
+  // and not `1.3.0`; `~0.1.0` admits `0.1.1` and not `0.2.0`.
+  if (operator === '~') return tMajor === fMajor && tMinor === fMinor;
+
+  // Caret: the ceiling moves to the leftmost NON-ZERO part, which is what makes
+  // it stricter on `0.x` than on `1.x` — and is why #36's fix had to be a patch.
   if (fMajor > 0) return tMajor === fMajor;
   if (fMinor > 0) return tMajor === 0 && tMinor === fMinor;
   return tMajor === 0 && tMinor === 0 && tPatch === fPatch;
@@ -396,15 +435,11 @@ interface Manifest {
  */
 function workspaceDeclared(manifest: Manifest): ReadonlySet<string> {
   const declared = new Set<string>();
-  for (const block of [
-    manifest.dependencies,
-    manifest.devDependencies,
-    manifest.peerDependencies,
-    manifest.optionalDependencies,
-  ]) {
+  for (const field of DEPENDENCY_BLOCKS) {
+    const block = manifest[field];
     if (block === undefined || block === null) continue;
     for (const [name, range] of Object.entries(block)) {
-      if (typeof range === 'string' && range.startsWith('workspace:')) declared.add(name);
+      if (typeof range === 'string' && range.startsWith('workspace:')) declared.add(`${field}\u0000${name}`);
     }
   }
   return declared;
