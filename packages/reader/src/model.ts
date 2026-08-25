@@ -773,10 +773,21 @@ export function buildModel(
           // group against itself" — so it must not become a self-loop here
           // either, or every unit carrying its own advisory ordering would be
           // reported as stuck.
-          // THE `> 1` IS LOAD-BEARING, not a tidy guard: a SINGLETON's unit is
-          // itself, so without it `#9 blocked-by #9` would read as "internal"
-          // and §6.6's own self-loop case would stop being reported.
-          if (blockerUnit === u && members.length > 1) continue;
+          // `b !== member` IS THE WHOLE CONDITION, and it is the SAME ONE
+          // readiness applies at `b !== k` below. An edge from an issue to
+          // ITSELF is not "advisory ordering between two members" — readiness
+          // treats it as load-bearing and refuses the whole unit for it — so
+          // exempting it here reported nothing while both issues were
+          // permanently unready. That is the exact invisible deadlock this
+          // block exists to end, reintroduced one case over: `#1 blocked-by #1`
+          // with `#1 together-with #2` gave empty `cycles`, empty
+          // `diagnostics`, and two issues that can never start.
+          // A UNIT SIZE TEST CANNOT EXPRESS THIS. Keying on "the unit has more
+          // than one member" drops a member's self-loop the moment it acquires
+          // a partner; keying on the EDGE is what distinguishes the two shapes,
+          // and it makes a singleton's self-loop fall out rather than needing
+          // its own clause.
+          if (blockerUnit === u && b !== member) continue;
           out.add(blockerUnit);
         }
       }

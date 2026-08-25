@@ -302,6 +302,22 @@ describe("overlapping cycles (SPEC 6.6 stuck groups)", () => {
     assert.deepEqual(m.cycles, []);
   });
 
+  test("reports a self-loop on a MEMBER of a multi-issue unit", () => {
+    // The distinction the contraction turns on: `#1 blocked-by #1` is not
+    // "advisory ordering between two members", it is an issue blocking itself.
+    // Readiness already treats it as load-bearing — its exemption is guarded on
+    // `b !== k` — so exempting it here reported nothing while BOTH issues were
+    // permanently unready: empty `cycles`, empty `diagnostics`, and a unit that
+    // can never start. That is this section's own defect, one case over.
+    const m = buildModel([
+      node(1, { data: { blockedBy: [ref(1)], togetherWith: ref(2) } }),
+      node(2),
+    ]);
+    assert.deepEqual(m.cycles, [["1", "2"]]);
+    assert.equal(m.readiness("1").ready, false);
+    assert.equal(m.readiness("2").ready, false);
+  });
+
   test("still reports a self-loop, which contraction must not swallow", () => {
     // A singleton's unit IS itself, so "drop edges inside the unit" would erase
     // §6.6's own self-loop case. The drop is therefore conditioned on the unit

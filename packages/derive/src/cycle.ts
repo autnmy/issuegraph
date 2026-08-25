@@ -53,7 +53,8 @@
  *     back to its declarer really does close a loop. Filtering unresolved
  *     targets out would drop that refusal — the fail-open this file exists to
  *     prevent — and it is pinned by a test in both directions.
- *  3. A TOGETHER UNIT IS ONE VERTEX, exactly as in `model.cycles`. §4.3.7
+ *  3. A TOGETHER UNIT IS ONE VERTEX, and its membership is built HERE rather
+ *     than taken from `Model.togetherComponent`. §4.3.7
  *     makes a together group one schedulable unit, so a blocker on any member
  *     blocks every member — and without that contraction this guard admitted a
  *     permanent deadlock: with `#1 blocked-by #2` and `#2 together-with #3`,
@@ -63,6 +64,22 @@
  *     reaches the unit), and the walk traverses every unit sibling's blockers
  *     (a dependency can leave the unit through a member other than the one it
  *     entered by).
+ *
+ *     THE MEMBERSHIP SPANS CLOSED NODES, which is divergence 1 applied to the
+ *     other axis and the reason the model's own answer cannot be reused. The
+ *     model unions only OPEN endpoints — correctly, because "a closed member has
+ *     left the unit" is true of readiness TODAY — so a unit with a closed member
+ *     is invisible to it. This guard is asked about the future: with
+ *     `#1 blocked-by #2` and a CLOSED `#2 together-with #3`, the model reports
+ *     `#3` in a unit of one, the guard admitted `#3 blocked-by #1`, and
+ *     reopening `#2` then contracts `{2,3}` into exactly the permanent cycle
+ *     this file exists to refuse — with the edge already written and nobody able
+ *     to unstick it. Measured both halves.
+ *
+ *     So `buildTogetherComponents` walks the raw declarations, the same shape
+ *     `buildBlockedByAdjacency` already uses for the other edge kind and for the
+ *     same reason. It still resolves targets through `canonicalOf`, so §4.3.3 is
+ *     not restated here either.
  *
  *     INTERNAL EDGES ARE NOT EXEMPTED HERE, and that is a deliberate divergence
  *     from `model.cycles`, which drops them per §4.3.7. This guard already
@@ -149,6 +166,58 @@ export function buildBlockedByAdjacency(
 }
 
 /**
+ * `key -> every key in its together unit`, over the RAW declarations and
+ * spanning closed nodes — see divergence 3.
+ *
+ * A key with no `together-with` anywhere answers a unit of one, which is what
+ * an unlinked issue is.
+ */
+export function buildTogetherComponents(
+  issues: readonly NodeInput[],
+  canonicalOf: CanonicalOf,
+  options: WouldCycleOptions = {},
+): TogetherOf {
+  const homeRepo = options.homeRepo;
+  const parent = new Map<string, string>();
+  const find = (key: string): string => {
+    let root = key;
+    for (;;) {
+      const next = parent.get(root);
+      if (next === undefined || next === root) return root;
+      root = next;
+    }
+  };
+  const add = (key: string): void => {
+    if (!parent.has(key)) parent.set(key, key);
+  };
+  const seen = new Set<string>();
+  for (const node of issues) {
+    const key = nodeKey(node, homeRepo);
+    if (seen.has(key)) continue; // first occurrence wins, like the model
+    seen.add(key);
+    add(key);
+    const target = node.data?.togetherWith;
+    if (target === null || target === undefined) continue;
+    const raw = refKey(target, nodeSourceRepo(node, homeRepo), homeRepo);
+    // §4.3.3 through the model's own answer, exactly as the blocked-by
+    // adjacency does it — an edge naming a duplicate names its canonical.
+    const resolved = canonicalOf(raw) ?? raw;
+    add(resolved);
+    const [a, b] = [find(key), find(resolved)];
+    if (a !== b) parent.set(a, b);
+  }
+  const members = new Map<string, string[]>();
+  for (const key of parent.keys()) {
+    const root = find(key);
+    const existing = members.get(root);
+    if (existing === undefined) members.set(root, [key]);
+    else existing.push(key);
+  }
+  for (const group of members.values()) group.sort();
+  return (key) => members.get(find(key)) ?? [key];
+}
+
+/**
  * Would adding `from blocked-by to` create a `blocked-by` cycle?
  *
  * Synchronous by signature — it takes no client, handle, or promise — which is
@@ -173,7 +242,7 @@ export function wouldCycleOnBlockedBy(
   return wouldCycleOnAdjacency(
     buildBlockedByAdjacency(issues, model.duplicateCanonical, options),
     model.duplicateCanonical,
-    model.togetherComponent,
+    buildTogetherComponents(issues, model.duplicateCanonical, options),
     from,
     to,
     options,
