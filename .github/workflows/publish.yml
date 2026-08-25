@@ -103,6 +103,23 @@ jobs:
         # the build must stay explicit.
         run: pnpm publish --recursive --no-git-checks --ignore-scripts
 
+      # AFTER the upload, gated exactly as the publish step is: on a dry run
+      # nothing was uploaded, so there is nothing to verify and this would check
+      # the PREVIOUS release while reporting on this one.
+      #
+      # It cannot prevent a bad release — a publish is irreversible, and npm does
+      # not allow an unpublish after 72 hours. It makes one LOUD in the same run
+      # instead of leaving it for the first consumer to find, which is the gap
+      # #36 went through: `ci.yml` and the consumer smoke test were both green
+      # while every fresh `npm install @issuegraph/cli` threw on import.
+      #
+      # Its own step, not folded into the publish command, so a verification
+      # failure is distinguishable from an upload failure at a glance — they need
+      # opposite responses, and only one of them is recoverable by re-running.
+      - name: Verify the published packages resolve and run
+        if: ${{ github.event_name == 'release' || inputs.dry_run == false }}
+        run: pnpm run verify:published
+
       - name: Publish (dry run)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
         env:

@@ -20,6 +20,7 @@
     "test": "pnpm run test:packages && pnpm run test:scripts",
     "check:isolation": "node scripts/check-isolation.ts",
     "check:publishable": "node scripts/check-publishable.ts",
+    "verify:published": "node scripts/verify-published.ts",
     "smoke": "node scripts/smoke-consumer.mjs",
     "ci": "pnpm run build && pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run check:isolation"
   },

@@ -482,7 +482,7 @@ function readTarball(tarball: string): TarballContents {
  * matched as npm's own error CODE, which npm prints unlocalized, and not as
  * prose.
  */
-function registryVersions(name: string, cwd: string): readonly string[] | { readonly unreachable: string } {
+export function registryVersions(name: string, cwd: string): readonly string[] | { readonly unreachable: string } {
   try {
     // `--prefer-online` for the same reason the post-publish verification uses
     // it: a cached packument can be served without revalidation, and this guard
