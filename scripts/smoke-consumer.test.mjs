@@ -128,6 +128,25 @@ test('CONTROL: a CommonJS package MAY use extensionless imports and directory in
   assert.equal(result.check, 'loaded');
 });
 
+test('NOT AN EXEMPTION: an ESM directory import fails, index file or not', async () => {
+  // `new URL` is a pure string join, so `./nested` resolves to the DIRECTORY —
+  // and Node ESM refuses that with ERR_UNSUPPORTED_DIR_IMPORT. The entry loads,
+  // so only a lazy edge exposes it, and every consumer calling it fails.
+  const dir = fixture('export const a = 1;\nexport const load = () => import("./nested");\n');
+  mkdirSync(join(dir, 'subject', 'dist', 'nested'), { recursive: true });
+  writeFileSync(join(dir, 'subject', 'dist', 'nested', 'index.js'), 'export const c = 1;\n');
+  await assert.rejects(smokeTest(dir), /resolves to a DIRECTORY/);
+});
+
+test('NOT AN EXEMPTION: a package that CLAIMS a Node floor may not use bundler query suffixes', async () => {
+  // The query convention is a BUNDLER one — neither Node resolver implements it,
+  // both treat the query as part of the filename. Stripping it universally
+  // modelled a bundler on behalf of a package that promised to run on Node.
+  const dir = fixture('module.exports = { load: () => require("./ok.js?raw") };\n',
+    { type: 'commonjs', engines: { node: `>=${running}` } }, { 'ok.js': 'module.exports = 1;\n' });
+  await assert.rejects(smokeTest(dir), /imports "\.\/ok\.js\?raw"/);
+});
+
 test('CONTROL: a bundler query suffix names the file, and still resolves', async () => {
   const dir = fixture('import "./style.css";\nimport "./data.txt?raw";\n',
     {}, { 'style.css': 'body{}', 'data.txt': 'x' });

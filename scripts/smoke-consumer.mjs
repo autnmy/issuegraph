@@ -11,7 +11,7 @@
 
 import ts from 'typescript';
 
-import { readFileSync, existsSync, readdirSync, realpathSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -135,9 +135,19 @@ function isEsm(file, manifest) {
  * answers existence too, and the caller's `existsSync` is a no-op for it.
  */
 function resolveRelative(file, specifier, manifest) {
-  // A bundler query or fragment names the same FILE with different handling —
-  // `./worker.js?worker`, `./data.txt?raw`. Browser packages emit these.
-  const path = specifier.split(/[?#]/)[0];
+  // THE BUNDLER QUERY IS STRIPPED ONLY FOR A PACKAGE THAT CLAIMS NO NODE FLOOR.
+  // `./worker.js?worker` and `./data.txt?raw` name the same FILE with different
+  // handling — but that is a BUNDLER convention, and NEITHER Node resolver
+  // implements it: both treat the query as part of the name. So stripping it
+  // universally modelled a bundler on behalf of a package that had promised to
+  // run on Node, and a `require('./ok.js?raw')` in a floor-declaring package
+  // resolved here while a consumer calling it got MODULE_NOT_FOUND.
+  // `engines.node` is the package's own statement about which is true of it: a
+  // declared floor asserts Node loads this, so Node's literal reading is the one
+  // that must hold. Absent, the target is a bundler and the convention applies.
+  const path = declaredFloorMajor(manifest.engines?.node) === undefined
+    ? specifier.split(/[?#]/)[0]
+    : specifier;
   const parent = pathToFileURL(file);
   return isEsm(file, manifest)
     ? fileURLToPath(new URL(path, parent))
@@ -177,6 +187,15 @@ function firstUnresolvedImport(dir, manifest) {
         return { file, specifier, why: 'which resolves to nothing' };
       }
       if (!existsSync(resolved)) return { file, specifier, why: 'which resolves to nothing' };
+      // A DIRECTORY IS NOT A MODULE IN ESM. `new URL` is a pure string join, so
+      // `./nested` resolves to the directory whether or not `nested/index.js`
+      // exists — and Node ESM refuses that with ERR_UNSUPPORTED_DIR_IMPORT, so
+      // an entry can load while a lazy `import('./nested')` fails for every
+      // consumer. CommonJS is unaffected: `require.resolve` has already resolved
+      // a directory to its index FILE, so this only ever fires on the ESM branch.
+      if (!statSync(resolved).isFile()) {
+        return { file, specifier, why: 'which resolves to a DIRECTORY, and ESM has no directory imports' };
+      }
 
       // AND IT MUST BE INSIDE THE PACKAGE. Existing somewhere on this disk is not
       // the property that matters: `npm pack` ships the package DIRECTORY, so an
