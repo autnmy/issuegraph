@@ -6,6 +6,17 @@ import { doublePlacedDocument, fixtureDocument } from './testing/fixtures.ts';
 
 const emptyOrder = { slots: [], excluded: [] };
 
+// ONE SLOT CARRYING EVERY MEMBER. `together-with` is drawn as an enclosure around
+// a slot's members, so an edge the order does not group is dropped as undrawable
+// — which means a cardinality test written with `together-with` and no order at
+// all is testing an input the reader rejects for a different reason first.
+function groupedOrder(...members: readonly string[]) {
+  return {
+    slots: [{ lead: members[0] as string, members: [...members], rank: 1, ready: true, holds: [] }],
+    excluded: [],
+  };
+}
+
 function issue(key: string, extra: Partial<ViewerDocument['issues'][number]> = {}) {
   return { key, title: `Issue ${key}`, open: true, priority: 2, ...extra };
 }
@@ -23,7 +34,10 @@ describe('normalizeDocument', () => {
           { field, from: '1', to: '2' },
           { field, from: '1', to: '3' },
         ],
-        order: emptyOrder,
+        // Grouped for every field, not only the one that needs it: a
+        // `together-with` the order does not carry is dropped as undrawable
+        // before cardinality is ever reached, and the other fields do not care.
+        order: groupedOrder('1', '2', '3'),
       });
 
       assert.equal(document.edges.length, 1, `${field} kept both declarations`);
@@ -47,7 +61,7 @@ describe('normalizeDocument', () => {
         { field: 'together-with', from: '1', to: '2' },
         { field: 'together-with', from: '2', to: '1' },
       ],
-      order: emptyOrder,
+      order: groupedOrder('1', '2'),
     });
 
     assert.equal(both.document.edges.length, 1);
@@ -65,7 +79,7 @@ describe('normalizeDocument', () => {
         { field: 'together-with', from: '2', to: '1' },
         { field: 'together-with', from: '3', to: '1' },
       ],
-      order: emptyOrder,
+      order: groupedOrder('1', '2', '3'),
     });
 
     assert.equal(group.document.edges.length, 2);
@@ -94,6 +108,48 @@ describe('normalizeDocument', () => {
 
     assert.equal(document.edges.length, 1, 'issue 2 got a second serialize-with edge');
     assert.ok(diagnostics.some((line) => line.includes('more than one serialize-with')));
+  });
+
+  it('drops a together-with the order does not group, and says why', () => {
+    // It is drawn as an ENCLOSURE around one slot's members, never as an arc, and
+    // the enclosures come from the slot table — so an edge whose endpoints sit in
+    // different slots, or in none, produced no mark anywhere while still counting
+    // toward the relationship total the legend prints. Measured before the fix: a
+    // document with one such edge said "2 relationships" and drew one.
+    for (const [label, order] of [
+      ['different slots', { slots: [
+        { lead: '1', members: ['1'], rank: 1, ready: true, holds: [] },
+        { lead: '2', members: ['2'], rank: 2, ready: true, holds: [] },
+      ], excluded: [] }],
+      ['no slots at all', emptyOrder],
+    ] as const) {
+      const { document, diagnostics } = normalizeDocument({
+        issues: [issue('1'), issue('2')],
+        edges: [{ field: 'together-with', from: '1', to: '2' }],
+        order,
+      });
+
+      assert.equal(document.edges.length, 0, `${label}: an undrawable edge was kept`);
+      assert.ok(
+        diagnostics.some((line) => /together-with edge 1 -> 2 is not carried by any one order slot/.test(line)),
+        `${label}: it was dropped in silence`,
+      );
+    }
+  });
+
+  it('keeps a together-with the order does carry', () => {
+    // The other half — the rule must not reject the ordinary grouped case.
+    const { document, diagnostics } = normalizeDocument({
+      issues: [issue('1'), issue('2')],
+      edges: [{ field: 'together-with', from: '1', to: '2' }],
+      order: groupedOrder('1', '2'),
+    });
+
+    assert.equal(document.edges.length, 1);
+    assert.equal(
+      diagnostics.filter((line) => line.includes('not carried by any one order slot')).length,
+      0,
+    );
   });
 
   it('collapses a symmetric edge declared from both ends into one undirected fact', () => {
@@ -127,7 +183,7 @@ describe('normalizeDocument', () => {
         { field: 'together-with', from: '1', to: '2' },
         { field: 'together-with', from: '1', to: '2' },
       ],
-      order: emptyOrder,
+      order: groupedOrder('1', '2'),
     });
 
     assert.equal(document.edges.length, 1);

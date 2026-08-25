@@ -267,6 +267,7 @@ function indexIssues(
 function indexEdges(
   edges: readonly ViewerEdge[],
   byKey: ReadonlyMap<string, ViewerIssue>,
+  slotOf: ReadonlyMap<string, string>,
   diagnostics: string[],
 ): {
   kept: ViewerEdge[];
@@ -334,6 +335,28 @@ function indexEdges(
     if (edge.from === edge.to) {
       diagnostics.push(`${edge.field} self-edge on ${edge.from} was dropped`);
       continue;
+    }
+    // A `together-with` THE ORDER DOES NOT GROUP CANNOT BE DRAWN AT ALL. It is
+    // rendered as an enclosure around one slot's members rather than as an arc,
+    // and the enclosures come from the slot table — so an edge whose endpoints
+    // sit in different slots, or in none, produced no mark anywhere while still
+    // counting toward the relationship total the legend reports. Measured: a
+    // document with one such edge said "2 relationships" and drew one.
+    // DROPPED AND REPORTED RATHER THAN DRAWN SOME OTHER WAY. The alternative is a
+    // fallback connector, which invents a second visual form for one relationship
+    // and leaves the reader to reconcile them. The input is inconsistent — an
+    // author declared a grouping the order does not carry — and saying so is what
+    // this reader does with every other undrawable edge above.
+    // THE COUNT IS WHY IT MATTERS: it is taken from the kept edges, so dropping
+    // here makes the total the legend prints match what the canvas contains.
+    if (edge.field === 'together-with') {
+      const home = slotOf.get(edge.from);
+      if (home === undefined || home !== slotOf.get(edge.to)) {
+        diagnostics.push(
+          `together-with edge ${edge.from} -> ${edge.to} is not carried by any one order slot, so nothing could draw it, and it was dropped`,
+        );
+        continue;
+      }
     }
     // A SYMMETRIC FIELD IS ONE UNDIRECTED FACT, so both endpoints declaring it
     // is the NORMAL way to write it down, not a malformed document — and the
@@ -415,8 +438,16 @@ function normalizeSlots(
 export function normalizeDocument(input: ViewerDocument): NormalizeResult {
   const diagnostics: string[] = [];
   const { kept: issues, byKey } = indexIssues(input.issues, diagnostics);
-  const { kept: edges, edgesOf, outOfSetOrigins } = indexEdges(input.edges, byKey, diagnostics);
+  // SLOTS BEFORE EDGES, because one edge rule needs to know them. `together-with`
+  // is drawn as an ENCLOSURE around a slot's members rather than as an arc, so an
+  // edge whose endpoints are not in one slot has nothing to draw it — and
+  // `indexEdges` is where an undrawable edge is dropped and reported. Nothing in
+  // `normalizeSlots` reads the edges, so the two are free to swap.
   const { kept: slots, placed } = normalizeSlots(input.order.slots, byKey, diagnostics);
+  // WHICH SLOT OWNS EACH KEY, which is the whole question the rule asks.
+  const slotOf = new Map<string, string>();
+  for (const slot of slots) for (const member of slot.members) slotOf.set(member, slot.lead);
+  const { kept: edges, edgesOf, outOfSetOrigins } = indexEdges(input.edges, byKey, slotOf, diagnostics);
 
   // AN EXCLUSION IS A POSITION TOO. The rule is one issue, one position — and
   // it has to cover this field as well as the slots, because the projections

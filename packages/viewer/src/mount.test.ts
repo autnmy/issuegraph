@@ -379,6 +379,49 @@ describe('mountViewer', () => {
     assert.deepEqual(selected, [], 'following a link also selected its row');
   });
 
+  it('clears a hover the new projection does not draw', () => {
+    // An off-order edge endpoint is drawn on the graph canvas and has no row in
+    // the linear projection, so a switch destroys the element while its issue
+    // stays in `byKey` — the document test preserved the hover, and the host was
+    // never told it ended until the pointer left the whole viewer.
+    const hovered: (string | null)[] = [];
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const handle = mountViewer(container, fixtureDocument, {
+      projection: 'graph',
+      onHover: (key: string | null) => hovered.push(key),
+    });
+    // `107` is an edge endpoint the graph draws and the linear projection does not.
+    const target = container.find(KEY_ATTRIBUTE, '107');
+    assert.ok(target !== undefined, 'the fixture no longer has a graph-only node');
+    container.dispatch('pointerover', { target });
+    assert.deepEqual(hovered, ['107']);
+
+    handle.setProjection('linear');
+
+    assert.deepEqual(hovered, ['107', null], 'the host still holds a hover on a destroyed node');
+  });
+
+  it('keeps a hover the new scene still draws', () => {
+    // The other half, and the reason the test is the DRAWN set rather than
+    // `keyed`: decoration never enters the focus index, so a narrower test would
+    // clear a live hover on every redraw.
+    const hovered: (string | null)[] = [];
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const handle = mountViewer(container, fixtureDocument, {
+      projection: 'graph',
+      onHover: (key: string | null) => hovered.push(key),
+    });
+    const target = container.find(KEY_ATTRIBUTE, '101');
+    assert.ok(target !== undefined);
+    container.dispatch('pointerover', { target });
+
+    handle.setProjection('linear');
+
+    assert.deepEqual(hovered, ['101'], 'a hover both projections draw was cleared');
+  });
+
   it('clears an active hover on destroy, so the host is not left holding a dead key', () => {
     // Teardown removes the listeners and then the root, so no `pointerleave` can
     // fire — and destruction bypasses `draw()` entirely, so the redraw

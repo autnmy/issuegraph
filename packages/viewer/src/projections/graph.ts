@@ -161,6 +161,27 @@ function nodeShape(
   const full = issue?.title ?? key;
   const drawn = fitLabel(theme, full, box.width);
 
+  // A HOLD THE RAIL DOES NOT CARRY HAS TO BE CARRIED HERE. The rail draws only
+  // the non-footer slots, so a tracker-held slot is filtered out of it — and the
+  // reason last round put on the rail row therefore never reached the graph at
+  // all for exactly those slots, while `ViewerHold` says the viewer renders the
+  // reason verbatim. Measured on the fixture: `claimed by another run` appeared
+  // nowhere in graph markup.
+  // I DEFERRED THIS ONCE ON A REASON THAT WAS WRONG, and it is worth recording:
+  // I said `nodeShape` "takes a key and an issue and knows nothing about slots",
+  // so carrying the reason would be a signature change touching every node. It
+  // takes the whole `document`, and the slots are on it. There was no signature
+  // change to make. See issue #41.
+  // ONLY FOR A NODE THE RAIL DOES NOT LABEL — a railed slot already carries its
+  // reason on its row, and repeating it here would announce the same sentence
+  // twice for one slot.
+  const heldBecause = navigable.railed.has(key)
+    ? ''
+    : document.order.slots
+        .filter((slot) => slot.lead === key || slot.members.includes(key))
+        .flatMap((slot) => slot.holds.map((hold) => hold.reason))
+        .join(' · ');
+
   return svg(
     'g',
     {
@@ -169,10 +190,20 @@ function nodeShape(
       'data-column': box.column,
       'aria-current': selected ? 'true' : 'false',
       role: ownsTabStop ? 'img' : null,
-      'aria-label': ownsTabStop ? `${issue?.title ?? key} — ${key}` : null,
+      // THE REASON RIDES THE NAME WHEN THERE IS ONE, on the same channels the
+      // rail row uses, so one hold reads the same whichever surface drew it.
+      'aria-label': ownsTabStop
+        ? heldBecause === ''
+          ? `${full} — ${key}`
+          : `${full} — ${key} — ${heldBecause}`
+        : null,
       tabindex: ownsTabStop ? (navigable.focused === key ? 0 : -1) : null,
     },
     [
+      // AND ON THE POINTER CHANNEL, which is also the only one left for a node
+      // that owns no tab stop and therefore carries no `aria-label` at all.
+      // First child, because that is where SVG looks for `<title>`.
+      heldBecause === '' ? null : svg('title', {}, [`${full} — ${heldBecause}`]),
       svg('rect', {
         class: 'ig-node',
         'data-held': box.held ? 'true' : 'false',

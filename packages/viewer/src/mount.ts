@@ -204,10 +204,20 @@ export function mountViewer(
     });
     state = reconcile(scene, state);
     keyed = new Map<string, SpecElement>();
+    // EVERY POINTER IDENTITY THIS SCENE ACTUALLY DREW, which is a WIDER set than
+    // `keyed` and a NARROWER one than the document. `keyed` holds focus
+    // identities only; decoration announces itself through `GROUP_ATTRIBUTE` and
+    // deliberately never enters the focus index, so an enclosure or a connector
+    // is absent from `keyed` on every redraw. The hover reconciliation below
+    // needs both, and needs them from the SCENE rather than from `byKey`.
+    const drawnHoverable = new Set<string>();
     root = materialize(doc, scene.root, {
       onElement: (spec, node) => {
         const key = spec.attrs?.[KEY_ATTRIBUTE];
         if (typeof key === 'string' && key !== '' && !keyed.has(key)) keyed.set(key, node);
+        if (typeof key === 'string' && key !== '') drawnHoverable.add(key);
+        const group = spec.attrs?.[GROUP_ATTRIBUTE];
+        if (typeof group === 'string' && group !== '') drawnHoverable.add(group);
       },
     });
     container.appendChild(root);
@@ -221,13 +231,21 @@ export function mountViewer(
     // IN `draw()` RATHER THAN IN `update()`, because the removal is a property
     // of REDRAWING, not of one entry point — `setProjection` and a selection
     // redraw can drop the key just as `update` can.
-    // ASK THE DOCUMENT, NOT `keyed`. Decoration announces itself through
-    // GROUP_ATTRIBUTE and deliberately never enters the focus index, so a
-    // hover on an enclosure or a connector is absent from `keyed` on every
-    // redraw — clearing on that test would fire constantly on a hover that is
-    // perfectly live. Both attributes carry an ISSUE key, so membership in the
-    // normalized document is the test that answers for both.
-    if (hovered !== null && !normalized.byKey.has(hovered)) clearHover();
+    // ASK WHAT THIS SCENE DREW, NOT WHAT THE DOCUMENT CARRIES. Both tests reject
+    // `keyed` alone, and for the reason that still stands: decoration announces
+    // itself through `GROUP_ATTRIBUTE` and never enters the focus index, so
+    // clearing on `keyed` would fire constantly on a hover that is perfectly
+    // live. The earlier answer — document membership — was the wrong correction,
+    // because the document is not what the pointer is over.
+    // A PROJECTION SWITCH IS WHERE THE TWO COME APART. An off-order edge endpoint
+    // is drawn on the graph canvas and has no row in the linear projection, so
+    // switching destroys the element while its issue stays in `byKey` — the
+    // document test then preserves a hover on something that is no longer on
+    // screen, and the host never receives the documented `onHover(null)` until
+    // the pointer leaves the whole viewer. `drawnHoverable` carries both
+    // attributes from the scene just materialized, so it answers for decoration
+    // and for issues, on every redraw, from the thing the pointer can touch.
+    if (hovered !== null && !drawnHoverable.has(hovered)) clearHover();
     // TOLD, NOT JUST DROPPED. The host was told a selection began, so leaving it
     // to infer the ending from a document it happens to have replaced is the
     // same divergence `clearHover` exists to prevent one line up. Fired AFTER

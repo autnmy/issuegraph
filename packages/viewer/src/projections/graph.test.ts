@@ -72,6 +72,25 @@ describe('the graph projection', () => {
     assert.deepEqual([...scene().focusOrder], ['102', '101', '103', '105', '106']);
   });
 
+  it('carries a hold reason the rail does not draw', () => {
+    // The rail draws only the non-footer slots, so a TRACKER-HELD slot is
+    // filtered out of it — and the reason put on the rail row therefore never
+    // reached the graph for exactly those slots, while `ViewerHold` says the
+    // viewer renders it verbatim. Measured on the fixture before the fix:
+    // `claimed by another run` appeared nowhere in graph markup.
+    const document = normalizeDocument(fixtureDocument).document;
+    const markup = renderMarkup(scene().root);
+
+    for (const slot of document.order.slots) {
+      for (const hold of slot.holds) {
+        assert.ok(
+          markup.includes(hold.reason),
+          `${slot.lead} is held and the graph never says why: ${hold.reason}`,
+        );
+      }
+    }
+  });
+
   it('gives a canvas with no ordered slots a keyboard entry at all', () => {
     // Every list is empty when nothing is ordered, so the canvas rendered keyed
     // nodes a pointer could select and not one `tabindex` — no keyboard entry

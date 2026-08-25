@@ -89,6 +89,33 @@ describe('clustersOf', () => {
     assert.equal(cluster?.chainDepth, 2);
   });
 
+  it('orders equal-sized components without consulting the host locale', () => {
+    // This package promises deterministic rendering, and `localeCompare` without
+    // an explicit locale uses the RUNTIME's default — so a server and a reader's
+    // browser could order two equal-sized components differently and produce
+    // markup that does not match, which is a hydration mismatch.
+    // ASSERTED AGAINST CODE-UNIT ORDER rather than against a remembered list, so
+    // it fails for any comparison that is locale-sensitive rather than only for
+    // the characters one locale happens to reorder.
+    const keys = ['B', 'a', 'Z', 'ä', '_x'];
+    const issues = keys.flatMap((key) => [
+      { key, title: key, open: true, priority: 2 as const },
+      { key: `${key}~`, title: key, open: true, priority: 2 as const },
+    ]);
+    const edges = keys.map((key) => ({
+      field: 'blocked-by' as const,
+      from: key,
+      to: `${key}~`,
+    }));
+    const document = normalizeDocument({ issues, edges, order: { slots: [], excluded: [] } })
+      .document;
+
+    const leads = clustersOf(document).map((cluster) => cluster.members[0] as string);
+    const expected = [...leads].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+
+    assert.deepEqual(leads, expected, 'components are not in code-unit order');
+  });
+
   it('counts each component’s blocking edges exactly, not approximately', () => {
     // The cheap count has to be the SAME number the scan produced — a faster
     // summary that reports a different edge count is not a fix.

@@ -191,8 +191,17 @@ export function clustersOf(
     return { members, blockedByEdges, hasCycle, chainDepth: depth };
   });
 
+  // CODE UNITS, NOT `localeCompare`. This package promises deterministic
+  // rendering, and `localeCompare` without an explicit locale uses the RUNTIME's
+  // default — so a server and a reader's browser can order two equal-sized
+  // components differently and produce markup that does not match, which is a
+  // hydration mismatch rather than a cosmetic one. The comparison is the same
+  // one `document.ts` already uses to canonicalize a symmetric edge's endpoint
+  // pair, so the package has one ordering rule rather than two.
   return clusters.sort((a, b) => {
     if (a.members.length !== b.members.length) return b.members.length - a.members.length;
-    return (a.members[0] ?? '').localeCompare(b.members[0] ?? '');
+    const left = a.members[0] ?? '';
+    const right = b.members[0] ?? '';
+    return left < right ? -1 : left > right ? 1 : 0;
   });
 }
