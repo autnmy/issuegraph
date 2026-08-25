@@ -69,6 +69,20 @@ jobs:
       - name: Build, typecheck, test, isolation
         run: pnpm run ci
 
+      # The last check before the irreversible step, and the one `pnpm run ci`
+      # cannot make: it compares what this release would upload against what the
+      # registry already holds. A package whose content changed without a version
+      # bump would otherwise be SKIPPED here at exit 0, and the release would
+      # report success having left it behind — which is exactly how #36 published
+      # a `reader` and `writer` that import names their pinned `core` does not
+      # export. It also refuses a bump that would strand an already-published
+      # consumer, because `^0.1.0` does not admit `0.2.0`.
+      #
+      # It runs on a dry run too. A rehearsal that skips the gate rehearses
+      # nothing about the gate.
+      - name: Check every package is publishable as it stands
+        run: pnpm run check:publishable
+
       # A dry run RUNS the publish, with `--dry-run` — it does not skip the step.
       # Skipping it meant packing, the lifecycle hooks and the manifest checks
       # never executed, so a completely broken publish still produced a green run
@@ -88,6 +102,19 @@ jobs:
         # step above — so if you ever add a `prepublishOnly`, it will NOT run and
         # the build must stay explicit.
         run: pnpm publish --recursive --no-git-checks --ignore-scripts
+
+      # Nothing in this repository had ever loaded what a CONSUMER receives. The
+      # workspace resolves `workspace:^` to the local package, so every job above
+      # is green in the one arrangement that cannot fail — which is why #36's
+      # broken graph reached the registry with CI passing throughout.
+      #
+      # This installs the published `@issuegraph/cli` into an empty directory and
+      # runs it. It cannot PREVENT a bad release, because a publish is
+      # irreversible; what it does is make one loud within the same run, instead
+      # of leaving it for the first consumer to find.
+      - name: Verify the published packages install and run
+        if: ${{ github.event_name == 'release' || inputs.dry_run == false }}
+        run: pnpm run verify:published
 
       - name: Publish (dry run)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}

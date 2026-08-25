@@ -86,3 +86,40 @@ jobs:
 
       - name: Load the built package on the declared floor
         run: node scripts/smoke-consumer.mjs
+
+  publishable:
+    # `pnpm publish --recursive` SKIPS a package whose version is already on the
+    # registry, so a package whose content changed without a version bump is
+    # silently left out of the release — which is how #36 shipped a `core` that
+    # its own consumers could not import.
+    #
+    # Its own job rather than a step in `pnpm run ci`, for two reasons. It is the
+    # only check here that needs the network, so a registry blip must not be able
+    # to mask the build, the tests or the isolation guard; and `pnpm run ci` is
+    # what a developer runs locally, where staying offline is worth keeping.
+    name: publishable
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: pnpm
+          registry-url: 'https://registry.npmjs.org'
+
+      # The guard compares PACKED content against PUBLISHED content, so `dist`
+      # has to exist — a pack over an unbuilt tree would report every package as
+      # differing from its published tarball.
+      - name: Install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
+
+      - name: Compare what would be published against what already is
+        run: pnpm run check:publishable

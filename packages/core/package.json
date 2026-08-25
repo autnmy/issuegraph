@@ -1,6 +1,6 @@
 {
   "name": "@issuegraph/core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "The Issuegraph format's shared vocabulary as frozen constants and derived types \u2014 field names, cardinality, defaults and value sets. No parsing, no I/O. The reader, the writer and the viewer all read the format through this.",
   "keywords": [
     "issuegraph",
