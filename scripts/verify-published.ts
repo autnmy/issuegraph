@@ -367,9 +367,25 @@ function runCli(projectDir: string): { readonly ok: boolean; readonly detail: st
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** Attempts, and the wait before each retry. Propagation is usually seconds. */
-const ATTEMPTS = 5;
-const BACKOFF_MS = 10_000;
+/**
+ * Attempts, and the wait before each retry.
+ *
+ * Sized against npm's OWN stated latency, not a guess: a publish prints
+ * `Your package is being processed and may take a few minutes to become
+ * available`, and that is the wait this has to cover. Measured on the release
+ * that first published `@issuegraph/viewer` — `reader@0.2.1` was queryable
+ * immediately while `derive@0.1.1` and `viewer@0.1.0` were not, so the lag is
+ * per package rather than per release and a budget that covers the fastest one
+ * reds a healthy release.
+ *
+ * The earlier 5 x 10s was 40 seconds against a documented few minutes, and it
+ * failed exactly that way on a release where all three packages had in fact
+ * uploaded. Failing a good release is the expensive direction here: the upload
+ * is irreversible, so a false red is investigated by hand while the packages
+ * are already public.
+ */
+const ATTEMPTS = 10;
+const BACKOFF_MS = 30_000;
 
 async function main(): Promise<number> {
   const repoRoot = fileURLToPath(new URL('..', import.meta.url));
