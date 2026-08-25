@@ -291,6 +291,54 @@ describe('mountViewer', () => {
     assert.deepEqual(hovered, ['103'], 'a live hover was cleared by an unrelated redraw');
   });
 
+  it('drops a selection the updated document no longer carries, and says so', () => {
+    // `reconcile` carries the selection through whole, which is right for a
+    // PROJECTION switch and wrong for a document REPLACEMENT: the subject can
+    // genuinely be gone, and the handle went on reporting a key this document
+    // does not carry, against `update`'s own promise that a STILL-PRESENT
+    // selection survives.
+    const selected: (string | null)[] = [];
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const handle = mountViewer(container, fixtureDocument, {
+      onSelect: (key: string | null) => selected.push(key),
+    });
+    handle.select('101');
+    assert.equal(handle.state.selected, '101');
+
+    handle.update({
+      ...fixtureDocument,
+      issues: fixtureDocument.issues.filter((issue) => issue.key !== '101'),
+      edges: fixtureDocument.edges.filter((edge) => edge.from !== '101' && edge.to !== '101'),
+      order: {
+        ...fixtureDocument.order,
+        slots: fixtureDocument.order.slots.filter((slot) => slot.lead !== '101'),
+      },
+    });
+
+    assert.equal(handle.state.selected, null, 'the handle still reports a removed issue');
+    assert.deepEqual(selected, ['101', null], 'the host was never told the selection ended');
+  });
+
+  it('keeps a still-present selection across a projection switch', () => {
+    // The other half of the same rule, and the reason the test is document
+    // membership rather than "is it drawn": a switch changes representation, not
+    // subject, so a selection the new projection does not draw must survive.
+    const selected: (string | null)[] = [];
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const handle = mountViewer(container, fixtureDocument, {
+      projection: 'linear',
+      onSelect: (key: string | null) => selected.push(key),
+    });
+    handle.select('101');
+
+    handle.setProjection('graph');
+
+    assert.equal(handle.state.selected, '101', 'a projection switch dropped the subject');
+    assert.deepEqual(selected, ['101'], 'a projection switch told the host the selection ended');
+  });
+
   it('does not select a row when the click belongs to its deep link', () => {
     // Returning from the keydown handler does NOT suppress the click the browser
     // synthesizes afterwards, so following a link also selected its row and told

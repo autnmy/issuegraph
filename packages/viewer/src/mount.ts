@@ -176,6 +176,25 @@ export function mountViewer(
   };
 
   const draw = (): void => {
+    // A DOCUMENT UPDATE CAN REMOVE THE SELECTED ISSUE, and `reconcile` carries
+    // the selection through whole — deliberately, because a PROJECTION switch
+    // changes representation rather than subject and dropping it there would
+    // lose the thing the reader is looking at. A document REPLACEMENT is the
+    // other case: the subject can genuinely be gone, and the handle went on
+    // reporting a key this document does not carry, against `update`'s own
+    // documented promise that a still-present selection survives.
+    // THE TEST IS DOCUMENT MEMBERSHIP, WHICH IS WHY IT COSTS THE PROJECTION
+    // SWITCH NOTHING. `setProjection` redraws against the SAME `normalized`, so
+    // `byKey` is unchanged and a still-present selection passes untouched —
+    // preserved across a projection-only change and reconciled on replacement,
+    // from one rule rather than from two entry points that can disagree.
+    // THE SAME SHAPE AND THE SAME TEST AS THE HOVER RECONCILIATION at the foot
+    // of this function, sitting apart from it only because the selection has to
+    // be settled BEFORE the scene is built: `sceneFor` is handed
+    // `state.selected`, so clearing afterwards would draw one frame marking a
+    // selection that no longer exists.
+    const droppedSelection = state.selected !== null && !normalized.byKey.has(state.selected);
+    if (droppedSelection) state = { ...state, selected: null };
     if (root !== null) container.removeChild(root);
     const scene = sceneFor(normalized, projection, {
       ...currentOptions,
@@ -209,6 +228,12 @@ export function mountViewer(
     // perfectly live. Both attributes carry an ISSUE key, so membership in the
     // normalized document is the test that answers for both.
     if (hovered !== null && !normalized.byKey.has(hovered)) clearHover();
+    // TOLD, NOT JUST DROPPED. The host was told a selection began, so leaving it
+    // to infer the ending from a document it happens to have replaced is the
+    // same divergence `clearHover` exists to prevent one line up. Fired AFTER
+    // the DOM is in place, exactly as the hover clear is, so a host that redraws
+    // from this callback finds the viewer already consistent.
+    if (droppedSelection) currentOptions.onSelect?.(null);
   };
 
   const emitSelect = (key: string | null): void => {

@@ -235,6 +235,23 @@ function spineRail(
     { class: positioned ? 'ig-list ig-rail' : 'ig-list', 'aria-label': 'work order' },
     slots.map((slot) => {
       const box = layout.nodes.get(slot.lead);
+      // THE REASON A SLOT IS HELD IS PART OF WHAT THIS ROW MEANS. `ViewerHold`
+      // says the viewer renders the reason verbatim, and the linear projection
+      // does — this one rendered rank, station and title, so a graph reader was
+      // told THAT a slot is held and never WHY. `data-held` styles the row, so
+      // the holding was visible and the host's sentence was not, on either the
+      // visible or the accessible channel.
+      // ON THE LABEL AND THE TOOLTIP, NOT AS A BLOCK IN THE ROW. This row is
+      // positioned onto its node's box — `--ig-row-h` IS the node height — so a
+      // paragraph per hold would overflow geometry the layout computed for a
+      // node, which is a worse defect than the one being fixed. `title` plus
+      // `aria-label` is how this package already carries text that cannot take
+      // space (see the edge badges): sighted readers hover, screen readers hear
+      // it, and the layout is untouched.
+      // ONLY HERE, not in `slotLabel`. That helper is shared with the linear
+      // projection, which renders the same holds as visible paragraphs — adding
+      // them there would announce every linear hold twice.
+      const heldBecause = slot.holds.map((hold) => hold.reason).join(' · ');
       return element(
         'li',
         {
@@ -242,7 +259,11 @@ function spineRail(
           'data-ig-key': slot.lead,
           'data-held': slot.ready ? 'false' : 'true',
           'aria-current': options.selected === slot.lead ? 'true' : 'false',
-          'aria-label': slotLabel(document, slot),
+          'aria-label':
+            heldBecause === ''
+              ? slotLabel(document, slot)
+              : `${slotLabel(document, slot)} — ${heldBecause}`,
+          title: heldBecause === '' ? null : heldBecause,
           tabindex: focused === slot.lead ? 0 : -1,
           // Positioned from the layout, not from the flow, so a row sits on the
           // node it names however the theme scales the geometry.

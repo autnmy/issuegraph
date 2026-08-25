@@ -105,6 +105,35 @@ describe('the graph projection', () => {
     assert.ok(built.focusOrder.includes('103'), 'the unit lost the station that represents it');
   });
 
+  it('carries a held slot’s reason, which ViewerHold says is rendered verbatim', () => {
+    // The row rendered rank, station and title, so a graph reader was told THAT
+    // a slot is held and never WHY — while the linear projection rendered the
+    // same host-authored sentence in full. `data-held` styles the row, so the
+    // holding was visible on both channels and the reason on neither.
+    const built = scene();
+    const markup = renderMarkup(built.root);
+    const railed = normalizeDocument(fixtureDocument).document.order.slots.filter(
+      (slot) => slot.holds.length > 0 && slot.rank === null && slot.lead === '101',
+    );
+    assert.ok(railed.length > 0, 'the fixture no longer has a railed held slot');
+
+    for (const slot of railed) {
+      for (const hold of slot.holds) {
+        assert.ok(
+          markup.includes(hold.reason),
+          `${slot.lead} is held and the graph never says why: ${hold.reason}`,
+        );
+      }
+    }
+  });
+
+  it('leaves a ready slot no tooltip to explain', () => {
+    // The reason rides `title`, so a slot with no holds must not acquire an
+    // empty one — an empty tooltip is a hover target that says nothing.
+    const markup = renderMarkup(scene().root);
+    assert.equal(/title=""/.test(markup), false, 'a slot with no holds got an empty tooltip');
+  });
+
   it('offers lateral neighbours from the layout columns', () => {
     const lateral = scene().lateral;
     assert.equal(lateral.get('105')?.left, 'other/repo#7');
