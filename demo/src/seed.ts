@@ -13,7 +13,9 @@
  * decoration.
  *
  * References are numbered the way a tracker numbers them, which is what lets the
- * order's tiebreak read as §6.4's "newest first" (see `order.ts`).
+ * demo's BASE RANKING read as §6.4's "newest first". That ranking is a host
+ * input to `@issuegraph/derive`, which takes a tracker's own ordering and never
+ * computes one — see `order.ts`.
  */
 
 import type { GraphDocument, StoredEdge, StoredIssue } from '@issuegraph/store';

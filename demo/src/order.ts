@@ -1,28 +1,58 @@
 /**
- * The demo's order deriver — the `OrderDeriver` the store requires and
- * deliberately does not supply.
+ * The demo's order — PROJECTED onto the published derivation, never computed
+ * here.
  *
- * `@issuegraph/store` takes the deriver as a port with NO default, because the
- * selection order is its own concern: a default there would be a second
- * implementation of it. This file is what a host writes on the other side of
- * that port, and the demo is a host. It reads SPEC.md §6.2 (the ready set),
- * §6.3 (effective priority) and §6.4 (selection) directly.
+ * `@issuegraph/store` takes its `OrderDeriver` as a port with NO default,
+ * because the selection order is its own concern: a default in the store would
+ * be a second implementation of it. A host therefore has to supply one, and the
+ * demo is a host. What it supplies is `@issuegraph/derive` — the reference
+ * derivation — reached through two projections and nothing else:
  *
- * IT IS NOT THE REFERENCE DERIVATION, and nothing should grow to make it look
- * like one. The reference engine is a package of its own, still to be
- * published; when it exists this file is deleted and the demo imports it. Until
- * then the demo needs SOME deriver to be a demo at all, and a small honest one
- * that names its spec sections beats waiting.
+ *   the store's `GraphDocument`  ->  the derivation's `NodeInput[]`
+ *   the derivation's slots       ->  the stations this page draws
+ *
+ * THE EARLIER VERSION OF THIS FILE READ THE ORDERING RULES A SECOND TIME, and
+ * that was the right call at the time only because there was nothing to import:
+ * it carried its own union-find, its own duplicate-chain walk, its own Tarjan,
+ * its own effective-priority fixed point and its own selection sort, all read
+ * off SPEC §6.2, §6.3 and §6.4. Every one of those is gone. The review that
+ * produced this file measured what the duplication cost — 31 findings across
+ * fifteen rounds, the largest cluster in exactly those algorithms — which is
+ * the argument for the port having no default stated as evidence rather than as
+ * a design note.
+ *
+ * WHAT IS STILL THE HOST'S IS STILL HERE, because the specification puts it
+ * here rather than because it was convenient to keep:
+ *
+ *  - the EXECUTOR HOLDS (§6.8: hold semantics must not be encoded as format
+ *    fields, so the format never learns why an executor declines ready work);
+ *  - the CONCURRENCY CAP (§6.5: ready issues are safe to run concurrently by
+ *    construction, and how many to dispatch is scheduler policy, out of scope);
+ *  - the BASE RANKING (`@issuegraph/derive` takes a host's own ordering as an
+ *    input and never computes one, so that a tracker's existing `ORDER BY` stays
+ *    single-sourced where it already lives);
+ *  - and the RENDERING — stations, placement, chips, wording.
+ *
+ * Those are inputs to a derivation and a projection of its output. None of them
+ * is a derivation.
  *
  * Two outputs from one computation. {@link explainOrder} is the rich form the
- * demo renders — station, holds, rank provenance — and {@link createDeriver}
- * projects it onto the store's `OrderRow`. Computing them separately would let
- * the rail and the rendering disagree about the same document.
+ * demo renders and {@link createDeriver} projects it onto the store's
+ * `OrderRow`, so the rail and the page cannot disagree about one document.
  */
 
-import { DEFAULT_PRIORITY, type Priority } from '@issuegraph/core';
+import {
+  DEFAULT_PRIORITY,
+  type EdgeField,
+  type Priority,
+  isPriority,
+  isSymmetricEdgeField,
+} from '@issuegraph/core';
+import type { ConfigRankedIssue, DerivedIssueOrder, IssueOrderSlot } from '@issuegraph/derive';
+import { deriveIssueOrder } from '@issuegraph/derive';
+import type { Frontmatter, IssueRef as ParsedRef, Model, NodeInput } from '@issuegraph/reader';
+import { buildModel } from '@issuegraph/reader';
 import type {
-  EdgeKind,
   GraphDocument,
   IssueRef,
   OrderDeriver,
@@ -34,10 +64,10 @@ import type {
 /**
  * A hold the EXECUTOR applies, not the graph (§6.8).
  *
- * It reaches the deriver through this table rather than through the document,
- * because §6.8 forbids encoding hold semantics as format fields: the format
- * never learns why an executor declines ready work. A host knows its own holds;
- * that is exactly the asymmetry this table expresses.
+ * It reaches the derivation through this table rather than through the
+ * document, because §6.8 forbids encoding hold semantics as format fields: the
+ * format never learns why an executor declines ready work. A host knows its own
+ * holds; that is exactly the asymmetry this table expresses.
  */
 export interface ExecutorHold {
   readonly ref: IssueRef;
@@ -52,6 +82,10 @@ export interface ExecutorHold {
    * claim, not a hold in general. Reading every executor hold as a claim holds
    * a whole group because one member is *parked*, which is the opposite of what
    * a width-1 semaphore is for: nothing is running, so nothing is excluded.
+   *
+   * It reaches the derivation as `NodeInput.assigneeCount`, which is the one
+   * channel the model reads a claim through — so the ADMISSION RULE is applied
+   * by the reader and this flag only decides what to tell it.
    */
   readonly active?: boolean;
 }
@@ -73,13 +107,18 @@ export type HoldFamily = 'graph' | 'executor';
 /**
  * One thing worth saying about why an issue is where it is.
  *
+ * A CHIP IS PRESENTATION, NOT THE VERDICT. Whether a row may start comes from
+ * `IssueOrderSlot.ready` and from nothing else; these carry the demo's own
+ * wording for what the model already decided, so a visitor reads a sentence
+ * rather than a boolean. `order.test.ts` pins the two together in both
+ * directions, which is what stops the wording drifting into a second opinion.
+ *
  * Most holds block. One does not, and §6.7 is explicit about the asymmetry: an
  * unresolved `blocked-by` is treated as BLOCKING, because unknown state is not
  * "closed" and starting work whose dependency nobody can see is the failure
  * that rule exists to prevent — while an unresolved reference on a SYMMETRIC
  * field "contributes no linkage" and is merely surfaced for grooming. It links
- * nothing, so it excludes nothing; reporting it as a hold removed
- * otherwise-ready work from selection over a reference that does nothing.
+ * nothing, so it excludes nothing.
  */
 export interface Hold {
   readonly family: HoldFamily;
@@ -151,431 +190,213 @@ export interface ExplainedRow {
   readonly effectivePriority: Priority;
   /**
    * How many issues share this row's `serialize-with` or `together-with`
-   * component. Groups are never written down (§6.1), so this is computed.
+   * component. Groups are never written down (§6.1), so this is computed — by
+   * the derivation, which counts CANDIDATES and spans a together unit's whole
+   * membership rather than its lead's.
    */
   readonly serializeGroupSize: number;
   readonly togetherGroupSize: number;
 }
 
-/** The declared priority of an issue, with §4.3.5's default applied. */
-function declaredPriority(issue: StoredIssue): Priority {
-  return issue.priority ?? DEFAULT_PRIORITY;
+/**
+ * The priority label spelling the reader understands (§4.3.5's mapped-label
+ * carrier, which is canonical over the frontmatter field).
+ *
+ * The demo carries a declared priority on `StoredIssue`, and a tracker's own
+ * convention is how that reaches the model. `order.test.ts` asserts this
+ * round-trips through `priorityLabelValue` for every `Priority`, so the demo
+ * cannot quietly spell a label the reader does not read — which would present
+ * as "every issue is in the spec's default tier" rather than as a failure.
+ */
+function priorityLabel(priority: Priority): string {
+  return `P${String(priority)}`;
 }
 
-/** Disjoint-set over the two symmetric kinds, which is how §6.1 says to build them. */
-function components(
-  edges: readonly StoredEdge[],
-  kind: EdgeKind,
-  known: ReadonlySet<IssueRef>,
-): Map<IssueRef, Set<IssueRef>> {
-  const parent = new Map<IssueRef, IssueRef>();
-  const find = (ref: IssueRef): IssueRef => {
-    const seen = parent.get(ref);
-    if (seen === undefined || seen === ref) return ref;
-    const root = find(seen);
-    parent.set(ref, root);
-    return root;
-  };
-  const union = (a: IssueRef, b: IssueRef): void => {
-    const rootA = find(a);
-    const rootB = find(b);
-    if (rootA !== rootB) parent.set(rootA, rootB);
-  };
-  for (const edge of edges) {
-    if (edge.kind !== kind) continue;
-    // AN UNRESOLVED REFERENCE CONTRIBUTES NO LINKAGE (§6.7). Passed through as
-    // an ordinary vertex it becomes a SHARED one: `#4 serialize-with #404` and
-    // `#5 serialize-with #404` would union #4 and #5 through an issue that does
-    // not exist, and a claim on one would then exclude the other. The reference
-    // is still surfaced — see `ownHolds` — but it links nothing.
-    if (!known.has(edge.from) || !known.has(edge.to)) continue;
-    if (!parent.has(edge.from)) parent.set(edge.from, edge.from);
-    if (!parent.has(edge.to)) parent.set(edge.to, edge.to);
-    union(edge.from, edge.to);
-  }
-  const grouped = new Map<IssueRef, Set<IssueRef>>();
-  for (const ref of parent.keys()) {
-    const root = find(ref);
-    const members = grouped.get(root) ?? new Set<IssueRef>();
-    members.add(ref);
-    grouped.set(root, members);
-  }
-  const byMember = new Map<IssueRef, Set<IssueRef>>();
-  for (const members of grouped.values()) {
-    for (const ref of members) byMember.set(ref, members);
-  }
-  return byMember;
+/** The derivation answers in `number`; the vocabulary's own type is narrower. */
+function asPriority(value: number): Priority {
+  return isPriority(value) ? value : DEFAULT_PRIORITY;
 }
 
 /**
- * The duplicate-to-CANONICAL map (§6.1), not merely the set of refs to ignore.
+ * One issue's declaration, assembled from the edges the document holds.
  *
- * The mapping is the part that matters and the part that is easy to drop. A set
- * of "issues that are duplicates" answers §6.2 rule 2 and nothing else, so a
- * reference POINTING AT a duplicate stays attached to it: an issue blocked by a
- * duplicate never inherits the canonical's fate, the canonical never inherits
- * the dependent's urgency, and closing the canonical does not unblock anything.
- * The reader rules say references resolve, so they have to actually resolve.
+ * THE SWITCH IS EXHAUSTIVE OVER `EdgeField`, which is the mechanism rather than
+ * a style: a sixth relationship kind added to the vocabulary fails to compile
+ * here instead of being silently dropped out of the projection — and a dropped
+ * edge is an absence rendered as a value, which is the one failure the reader's
+ * own under-read tier exists to refuse.
  *
- * Followed to a fixed point, because a duplicate of a duplicate is a duplicate
- * of the same canonical — and guarded against a `duplicate-of` cycle, which is
- * malformed rather than impossible: a ref that returns to where it started
- * stops there rather than looping.
+ * FIRST DECLARATION WINS on the four single-valued fields (§4.3.4, §4.3.7:
+ * a writer joins a group by pointing at any ONE existing member). The demo's
+ * adapter refuses to write a second, so this is a total function over documents
+ * the adapter can produce rather than a policy about ones it cannot;
+ * `order.test.ts` pins the split against `EDGE_CARDINALITY` so the two cannot
+ * drift.
  */
-function duplicateCanonicals(edges: readonly StoredEdge[]): {
-  canonical: Map<IssueRef, IssueRef>;
-  duplicates: Set<IssueRef>;
-} {
-  const target = new Map<IssueRef, IssueRef>();
+function declarationFor(ref: IssueRef, edges: readonly StoredEdge[]): Frontmatter {
+  const blockedBy: ParsedRef[] = [];
+  let decomposedFrom: ParsedRef | null = null;
+  let duplicateOf: ParsedRef | null = null;
+  let serializeWith: ParsedRef | null = null;
+  let togetherWith: ParsedRef | null = null;
+
   for (const edge of edges) {
-    if (edge.kind === 'duplicate-of') target.set(edge.from, edge.to);
-  }
-  const canonical = new Map<IssueRef, IssueRef>();
-  // BEING A DUPLICATE AND HAVING A CANONICAL ARE DIFFERENT FACTS, and conflating
-  // them let a malformed document put duplicates back into the schedulable
-  // order. Two issues pointing `duplicate-of` at each other resolve to NOTHING
-  // — each walk returns to where it started — so a duplicate set derived from
-  // the canonical map came back empty, and both issues re-entered the spine as
-  // ordinary work while still carrying the field.
-  //
-  // §6.2 rule 2 excludes an issue that IS a duplicate; it does not make the
-  // exclusion conditional on the reader being able to name what it duplicates.
-  // Exactly the issues that CARRY the field. An issue merely pointed AT is not
-  // a duplicate — it is the canonical — and transitivity needs no walk here,
-  // because every link in a chain carries the field itself.
-  const duplicates = new Set<IssueRef>(target.keys());
-  for (const from of target.keys()) {
-    const walked = new Set<IssueRef>([from]);
-    let at = target.get(from);
-    let looped = false;
-    while (at !== undefined) {
-      // ANY repeated node ends the walk without a canonical, not just a return
-      // to where it started. A TAIL leading into a duplicate cycle — `#1 → #2`,
-      // `#2 → #3`, `#3 → #2` — stops on the repeated #2, which differs from #1
-      // and was therefore recorded as #1's canonical: an arbitrary member of a
-      // cycle that HAS no canonical, silently reattaching #1's relationships to
-      // it. A cycle resolves to nothing whether you enter it from inside or
-      // from a tail.
-      if (walked.has(at)) {
-        looped = true;
+    if (edge.from !== ref) continue;
+    // `repo: null` throughout: this document is one repository's, so a
+    // reference is bare and `nodeKey`/`refKey` collapse to the demo's own
+    // opaque reference. The two key spaces are therefore IDENTICAL, which is
+    // what lets every model answer below be looked up by `IssueRef` with no
+    // translation layer — and `order.test.ts` asserts it rather than assuming.
+    const target: ParsedRef = { repo: null, id: edge.to };
+    const kind: EdgeField = edge.kind;
+    switch (kind) {
+      case 'blocked-by':
+        blockedBy.push(target);
         break;
-      }
-      walked.add(at);
-      const next = target.get(at);
-      if (next === undefined) break;
-      at = next;
+      case 'decomposed-from':
+        decomposedFrom ??= target;
+        break;
+      case 'duplicate-of':
+        duplicateOf ??= target;
+        break;
+      case 'serialize-with':
+        serializeWith ??= target;
+        break;
+      case 'together-with':
+        togetherWith ??= target;
+        break;
     }
-    if (!looped && at !== undefined && at !== from) canonical.set(from, at);
-  }
-  return { canonical, duplicates };
-}
-
-/**
- * The issues caught in a `blocked-by` cycle, which are never ready (§6.6).
- *
- * TARJAN'S STRONGLY-CONNECTED COMPONENTS, not a hand-rolled reachability walk.
- * The walk this replaces marked a node `done` on the way out and returned early
- * for it afterwards, which finds SOME members of a cycle and not all of them:
- * add `#12 blocked-by #14` and then `#14 blocked-by #13`, and #14 joins the
- * existing #12/#13 component — but the walk had already finished #12 and #13,
- * so it never revisited them and #14 was reported clean. The guard then
- * accepted the edit and the page never showed the hold.
- *
- * That was the third round of findings against this one walk — first the
- * together contraction, then the arrival comparison, then this — and the
- * pattern is the tell: an ad-hoc traversal answering "is anything cyclic?" is
- * one edge case short every time it is read. "Which vertices are in a
- * non-trivial strongly connected component?" is exactly the question, and it
- * has a known-complete answer, so the answer is used rather than approximated.
- *
- * Detected on read, as §6.6 requires, and deliberately not prevented at write
- * time: a cycle a groomer can see beats a dependency described in prose.
- */
-function cyclic(blockers: ReadonlyMap<IssueRef, readonly IssueRef[]>): Set<IssueRef> {
-  const order = new Map<IssueRef, number>();
-  const lowLink = new Map<IssueRef, number>();
-  const onStack = new Set<IssueRef>();
-  const stack: IssueRef[] = [];
-  const found = new Set<IssueRef>();
-  let counter = 0;
-
-  const visit = (ref: IssueRef): number => {
-    const at = counter;
-    counter += 1;
-    order.set(ref, at);
-    lowLink.set(ref, at);
-    stack.push(ref);
-    onStack.add(ref);
-
-    let low = at;
-    for (const next of blockers.get(ref) ?? []) {
-      const seen = order.get(next);
-      if (seen === undefined) {
-        low = Math.min(low, visit(next));
-      } else if (onStack.has(next)) {
-        low = Math.min(low, seen);
-      }
-    }
-    lowLink.set(ref, low);
-
-    if (low === at) {
-      const component: IssueRef[] = [];
-      for (;;) {
-        const member = stack.pop();
-        if (member === undefined) break;
-        onStack.delete(member);
-        component.push(member);
-        if (member === ref) break;
-      }
-      // A component of one is a cycle only through a self-edge, which the
-      // dependency graph drops by construction — but the test is written out
-      // rather than assumed, so this stays correct if that ever changes.
-      const selfBlocking = (blockers.get(ref) ?? []).includes(ref);
-      if (component.length > 1 || selfBlocking) {
-        for (const member of component) found.add(member);
-      }
-    }
-    return low;
-  };
-
-  for (const ref of blockers.keys()) {
-    if (!order.has(ref)) visit(ref);
-  }
-  return found;
-}
-
-/** Everything the readiness and priority rules need, computed once. */
-interface Index {
-  readonly byRef: ReadonlyMap<IssueRef, StoredIssue>;
-  /** ref → the issues it declares itself blocked by. */
-  readonly blockers: ReadonlyMap<IssueRef, readonly IssueRef[]>;
-  /** ref → the issues that declare themselves blocked by it. §6.3 walks this way. */
-  readonly dependents: ReadonlyMap<IssueRef, readonly IssueRef[]>;
-  readonly duplicate: ReadonlySet<IssueRef>;
-  /** duplicate → the canonical it resolves to (§6.1). */
-  readonly canonical: ReadonlyMap<IssueRef, IssueRef>;
-  readonly cycle: ReadonlySet<IssueRef>;
-  readonly serialize: ReadonlyMap<IssueRef, ReadonlySet<IssueRef>>;
-  readonly together: ReadonlyMap<IssueRef, ReadonlySet<IssueRef>>;
-  readonly held: ReadonlyMap<IssueRef, ExecutorHold>;
-  /** The symmetric-field edges, canonicalised, so an unresolved one can be surfaced. */
-  readonly symmetricEdges: readonly StoredEdge[];
-  /**
-   * The issues an executor is ACTIVELY working, expanded across together
-   * components — claiming one member claims the whole unit atomically
-   * (§4.3.7), so serialize admission has to see the unit, not the member.
-   */
-  readonly claimed: ReadonlySet<IssueRef>;
-}
-
-function push(map: Map<IssueRef, IssueRef[]>, key: IssueRef, value: IssueRef): void {
-  map.set(key, [...(map.get(key) ?? []), value]);
-}
-
-/**
- * THE dependency graph — one construction, used by everything that asks a
- * dependency question.
- *
- * Readiness, cycle detection and the host's write guard were each building
- * their own view of `blocked-by`, and they disagreed in two ways that a
- * visitor could reach: cycle detection walked edges that readiness had already
- * excluded as together-internal, so a group kept a `cycle` hold the rules say
- * is advisory; and the guard walked RAW endpoints, so a cycle that exists only
- * after duplicate resolution was accepted. Both are the same defect — a second
- * reading of one graph — so there is now one reading and no second to drift.
- *
- * Two filters, both from the spec rather than from convenience:
- *
- * - **Duplicate resolution (§6.1).** Every endpoint resolves to its canonical,
- *   and an edge whose ends collapse together is dropped rather than becoming a
- *   self-edge.
- * - **Together-internal edges (§4.3.7).** Blocking inside one unit is advisory:
- *   a group is claimed and worked as a whole, so its members cannot be waiting
- *   on each other for the purpose of deciding whether the unit may start.
- */
-function dependencyGraph(
-  document: GraphDocument,
-  resolve: (ref: IssueRef) => IssueRef,
-  together: ReadonlyMap<IssueRef, ReadonlySet<IssueRef>>,
-): { blockers: Map<IssueRef, IssueRef[]>; dependents: Map<IssueRef, IssueRef[]> } {
-  const blockers = new Map<IssueRef, IssueRef[]>();
-  const dependents = new Map<IssueRef, IssueRef[]>();
-  for (const issue of document.issues) {
-    blockers.set(issue.ref, []);
-    dependents.set(issue.ref, []);
-  }
-  const closed = new Set(
-    document.issues.filter((issue) => issue.state === 'closed').map((issue) => issue.ref),
-  );
-  for (const edge of document.edges) {
-    if (edge.kind !== 'blocked-by') continue;
-    const from = resolve(edge.from);
-    const to = resolve(edge.to);
-    if (from === to) continue;
-    const unit = together.get(from);
-    if (unit !== undefined && unit.has(to)) continue;
-    // A DEPENDENCY ON CLOSED WORK IS SATISFIED, so it is not a dependency any
-    // more (§6.2 rule 3 asks that every `blocked-by` target BE closed). Kept in
-    // the graph it is a historical edge that still connects vertices, so a
-    // cycle drawn THROUGH a closed issue read as live: `#8 blocked-by #4` with
-    // #8 closed, then `#4 blocked-by #8`, refused the second edit and derived
-    // #4 as stuck although nothing was waiting on anything.
-    //
-    // Dropped here rather than filtered at each reader, because cycle
-    // detection, the readiness holds and the write guard all walk this one
-    // graph — which is the property three earlier rounds bought.
-    if (closed.has(to)) continue;
-    push(blockers, from, to);
-    push(dependents, to, from);
-  }
-
-  // CONTRACT EACH TOGETHER UNIT INTO ONE NODE. Excluding internal edges stops a
-  // unit blocking itself; it does NOT make the unit a single node, and the
-  // difference is a cycle that hides. With group {7,9}, `#9 blocked-by #4` and
-  // `#4 blocked-by #7` is `{7,9} → 4 → {7,9}` — three issues deadlocked — but a
-  // member-level walk cannot cross from #7 to #9, so neither cycle detection
-  // nor the write guard sees it.
-  //
-  // Contracting by UNIONING each unit's edges onto all of its members keeps the
-  // maps member-keyed, so every reader downstream is unchanged, while the walk
-  // behaves as though the unit were one vertex — which, for the purpose of
-  // deciding whether work can start, it is.
-  // CONTRACTED OVER THE UNIT'S **OPEN** MEMBERS ONLY. A together group closes
-  // member by member (§4.3.7) and its readiness is evaluated over the members
-  // still open, so a closed member is no longer part of the schedulable unit —
-  // and copying its dependencies onto the members that are left holds live work
-  // on a dependency that belongs to finished work. Reachable by adding
-  // `#8 blocked-by #2` and grouping the closed #8 with #4: #4 was then held by
-  // #2 for no reason a visitor could act on.
-  //
-  // A closed member keeps its OWN edges rather than being erased: it is still a
-  // real issue with a real history, and the linkage it carries is what makes it
-  // a member of the component at all.
-  const open = new Set(
-    document.issues.filter((issue) => issue.state === 'open').map((issue) => issue.ref),
-  );
-  const contracted = (side: Map<IssueRef, IssueRef[]>): void => {
-    for (const members of new Set(together.values())) {
-      const live = [...members].filter((member) => open.has(member));
-      if (live.length === 0) continue;
-      const union = new Set<IssueRef>();
-      for (const member of live) {
-        for (const other of side.get(member) ?? []) {
-          // An edge into the unit from one of its own members is internal, and
-          // stays excluded after contraction exactly as it was before it.
-          if (!members.has(other)) union.add(other);
-        }
-      }
-      for (const member of live) side.set(member, [...union]);
-    }
-  };
-  contracted(blockers);
-  contracted(dependents);
-
-  return { blockers, dependents };
-}
-
-/**
- * The issues caught in a `blocked-by` cycle in this document.
- *
- * Exported because two callers need the SAME answer: the readiness index, and
- * the host's write guard. Answering it anywhere but here is how the guard and
- * the index came to disagree in the first place.
- */
-export function cyclicMembers(document: GraphDocument): ReadonlySet<IssueRef> {
-  const { canonical } = duplicateCanonicals(document.edges);
-  const resolve = (ref: IssueRef): IssueRef => canonical.get(ref) ?? ref;
-  const canonicalEdges = document.edges.map((edge) => ({
-    ...edge,
-    from: resolve(edge.from),
-    to: resolve(edge.to),
-  }));
-  const known = new Set(document.issues.map((issue) => issue.ref));
-  const together = components(canonicalEdges, 'together-with', known);
-  const { blockers } = dependencyGraph(document, resolve, together);
-  return cyclic(blockers);
-}
-
-/**
- * Whether an edit would put an issue in a cycle that is not in one already.
- *
- * ASKED OF THE TWO DOCUMENTS, not of the edit — which is the point, and what
- * the kind-by-kind version could not do. A cycle does not need a `blocked-by`
- * edge to appear: `duplicate-of` and `together-with` COLLAPSE vertices, so
- * `#4 blocked-by #2`, `#2 blocked-by #3`, `#3 duplicate-of #4` closes
- * `#4 → #2 → #4` without a single new dependency being written. A guard keyed
- * on the mutation'"'"'s kind cannot see that, and extending it kind by kind is a
- * list that is always one entry short.
- *
- * Comparing the resulting graphs has no such list: whatever an edit does to the
- * document — add an edge, retype one, flip one, collapse two vertices into one
- * — the question is whether the answer got worse.
- *
- * It compares SETS rather than counts, so it refuses only what this edit
- * introduces. §6.6 is deliberate that an EXISTING cycle is surfaced for
- * grooming rather than refused, and the seeded document contains one: a count
- * would refuse every unrelated edit made while that cycle stands.
- */
-export function introducesCycle(current: GraphDocument, next: GraphDocument): boolean {
-  const before = cyclicMembers(current);
-  return [...cyclicMembers(next)].some((ref) => !before.has(ref));
-}
-
-function index(document: GraphDocument, holds: readonly ExecutorHold[]): Index {
-  const byRef = new Map(document.issues.map((issue) => [issue.ref, issue] as const));
-  const { canonical, duplicates } = duplicateCanonicals(document.edges);
-  // EVERY graph reference resolves through the duplicate mapping before it is
-  // indexed, so a relationship written against a duplicate lands on the issue
-  // that will actually be worked. A ref with no mapping is its own canonical.
-  const resolve = (ref: IssueRef): IssueRef => canonical.get(ref) ?? ref;
-
-  const canonicalEdges = document.edges.map((edge) => ({
-    ...edge,
-    from: resolve(edge.from),
-    to: resolve(edge.to),
-  }));
-  // Built BEFORE the dependency graph, which needs it to drop the edges §4.3.7
-  // makes advisory.
-  const known = new Set(document.issues.map((issue) => issue.ref));
-  const together = components(canonicalEdges, 'together-with', known);
-  const { blockers, dependents } = dependencyGraph(document, resolve, together);
-
-  // An ACTIVE claim, expanded across the claimed issue's together unit. A hold
-  // that is not a claim — `parked` — excludes nobody, because nothing is
-  // running.
-  const claimed = new Set<IssueRef>();
-  for (const hold of holds) {
-    if (hold.active !== true) continue;
-    const ref = resolve(hold.ref);
-    claimed.add(ref);
-    for (const member of together.get(ref) ?? []) claimed.add(member);
   }
 
   return {
-    byRef,
-    blockers,
-    dependents,
-    duplicate: duplicates,
-    canonical,
-    cycle: cyclic(blockers),
-    serialize: components(canonicalEdges, 'serialize-with', known),
-    together,
-    held: new Map(holds.map((hold) => [hold.ref, hold] as const)),
-    symmetricEdges: canonicalEdges.filter(
-      (edge) => edge.kind === 'serialize-with' || edge.kind === 'together-with',
-    ),
-    claimed,
+    blockedBy,
+    decomposedFrom,
+    duplicateOf,
+    serializeWith,
+    togetherWith,
+    // The demo carries priority as the tracker's own convention (a mapped
+    // label), which §4.3.5 makes canonical. Declaring it in BOTH carriers would
+    // manufacture the §5.4 disagreement anomaly out of nothing.
+    priority: null,
+    evidence: null,
   };
 }
 
 /**
- * The reasons this issue alone may not start — everything in §6.2 except rule
- * 5, which is about the rest of a together group and would recurse for ever if
- * it were asked here.
+ * The document, projected onto the derivation's node input.
  *
- * An unresolvable reference is BLOCKING, never ignored (§6.7): unknown state is
- * not "closed", and reading it as closed would let a scheduler start work whose
- * dependency nobody can see.
+ * `declarationRead: 'read'` throughout, and it is a fact rather than an
+ * optimism: this document was never parsed out of an issue body, so no field
+ * could have been dropped on the way in. A host that DID parse bodies would
+ * carry the parser's own answer here.
+ */
+function toNodes(document: GraphDocument, holds: readonly ExecutorHold[]): readonly NodeInput[] {
+  const claimed = new Set(holds.filter((hold) => hold.active === true).map((hold) => hold.ref));
+  return document.issues.map((issue) => ({
+    id: issue.ref,
+    repo: null,
+    open: issue.state === 'open',
+    labels: issue.priority === undefined ? [] : [priorityLabel(issue.priority)],
+    // §6.2 rule 4's admission input, and the ONLY channel a claim reaches the
+    // model through. The rule itself — which member excludes which, and how a
+    // together unit's own atomic claim is exempted — is the reader's.
+    assigneeCount: claimed.has(issue.ref) ? 1 : 0,
+    data: declarationFor(issue.ref, document.edges),
+    declarationRead: 'read' as const,
+  }));
+}
+
+/**
+ * The demo's base ranking: newest first.
+ *
+ * `@issuegraph/derive` takes the host's own ordering as an INPUT and never
+ * computes one — the array index is the position, which is what a tracker's own
+ * `ORDER BY` already produced. This host has no ordered query, so it ranks the
+ * whole document by reference, newest first: §6.4's default tiebreak, and the
+ * reason the seed numbers its issues the way a tracker numbers them.
+ *
+ * `matchedOrderIndex` is rank PROVENANCE — which ordered-query entry matched —
+ * and there is exactly one "query" here, so every row carries `0`. The
+ * derivation does not read it.
+ */
+function baseRanking(document: GraphDocument): readonly ConfigRankedIssue[] {
+  return [...document.issues]
+    .sort((a, b) => newestFirst(a.ref, b.ref))
+    .map((issue) => ({ key: issue.ref, matchedOrderIndex: 0 }));
+}
+
+/**
+ * Newest first, over references a tracker assigns in ascending order.
+ *
+ * §6.4 permits a substituted tiebreak where the domain argues for one and
+ * requires only that it be DETERMINISTIC, which comparing references is. A
+ * reference is opaque (§4.2), so the numeric reading is a fast path and the
+ * codepoint comparison is what makes the ordering total.
+ */
+function newestFirst(a: IssueRef, b: IssueRef): number {
+  const numeric = Number(b) - Number(a);
+  if (Number.isFinite(numeric) && numeric !== 0) return numeric;
+  return b < a ? -1 : b > a ? 1 : 0;
+}
+
+/** One derivation of one document: the model it rests on, and the order. */
+interface Derivation {
+  readonly model: Model;
+  readonly order: DerivedIssueOrder;
+}
+
+/**
+ * Derive one document, once.
+ *
+ * TWO CALLS, ONE MODEL — and they cannot disagree. `deriveIssueOrder` builds
+ * its own model from `applyPriorityPrecedence(issues)`, which under the default
+ * precedence (`label`, §4.3.5's own ordering) returns the array untouched; both
+ * are pure functions of the same nodes. The demo needs the model directly for
+ * the two structural questions the order does not answer — which nodes sit in a
+ * `blocked-by` cycle (§6.6), and which component a chip should name — and asks
+ * it rather than reading either off a diagnostic sentence, because prose that is
+ * matched fails OPEN the day it is reworded.
+ */
+function derive(document: GraphDocument, holds: readonly ExecutorHold[]): Derivation {
+  const nodes = toNodes(document, holds);
+  return {
+    model: buildModel(nodes),
+    order: deriveIssueOrder({
+      issues: nodes,
+      config: { baseRanking: { source: 'config', order: baseRanking(document) } },
+    }),
+  };
+}
+
+/** Everything a chip needs to look up, resolved once per document. */
+interface Index {
+  readonly model: Model;
+  readonly byRef: ReadonlyMap<IssueRef, StoredIssue>;
+  readonly edges: readonly StoredEdge[];
+  readonly executor: ReadonlyMap<IssueRef, ExecutorHold>;
+  readonly claimed: ReadonlySet<IssueRef>;
+  readonly cyclic: ReadonlySet<IssueRef>;
+}
+
+function index(document: GraphDocument, holds: readonly ExecutorHold[], model: Model): Index {
+  return {
+    model,
+    byRef: new Map(document.issues.map((issue) => [issue.ref, issue])),
+    edges: document.edges,
+    executor: new Map(holds.map((hold) => [hold.ref, hold])),
+    claimed: new Set(holds.filter((hold) => hold.active === true).map((hold) => hold.ref)),
+    cyclic: new Set(model.cycles.flat()),
+  };
+}
+
+/**
+ * Every reason worth SAYING about this issue, in the demo's own words.
+ *
+ * Each one is a structural question put to the model — never a match against a
+ * readiness sentence, and never a rule restated beside it. The model resolves
+ * duplicates (§4.3.3), finds the cycles (§6.6) and computes both components
+ * (§4.3.4, §4.3.7); what is left here is looking up an issue's state in the
+ * demo's own document and choosing a word for the chip.
  */
 function ownHolds(ref: IssueRef, at: Index): Hold[] {
   const found: Hold[] = [];
@@ -585,77 +406,105 @@ function ownHolds(ref: IssueRef, at: Index): Hold[] {
   if (issue.state === 'closed') {
     found.push({ family: 'graph', label: 'closed', detail: 'the issue is closed' });
   }
-  if (at.duplicate.has(ref)) {
+
+  const executor = at.executor.get(ref);
+  if (at.model.duplicateCanonical(ref) !== null) {
     found.push({ family: 'executor', label: 'duplicate', detail: 'a duplicate is never worked' });
+    // A DUPLICATE DECLARES NOTHING (§4.3.3, and `buildModel` drops its edges
+    // entirely), so listing the relationships it happens to carry would explain
+    // a row with edges the model does not read. The one hold it can still earn
+    // is the executor's own, which the format never learns about either way.
+    if (executor !== undefined) {
+      found.push({ family: 'executor', label: executor.label, detail: executor.detail });
+    }
+    return found;
   }
-  if (at.cycle.has(ref)) {
+
+  if (at.cyclic.has(ref)) {
     found.push({
       family: 'graph',
       label: 'cycle',
       detail: 'in a blocked-by cycle, which is stuck until a groomer breaks it',
     });
   }
-  // The blockers here are ALREADY boundary-crossing and canonical — see
-  // `dependencyGraph`. Filtering again at read time is what let cycle detection
-  // and readiness disagree about the same edges.
-  for (const blocker of at.blockers.get(ref) ?? []) {
-    const target = at.byRef.get(blocker);
-    if (target === undefined) {
+
+  // §4.3.7: an edge BETWEEN two members of one together unit is internal and
+  // advisory — the unit advances together, so a member cannot wait on its own
+  // partner. Asked of the model's component rather than re-derived from edges.
+  const unit = new Set(at.model.togetherComponent(ref));
+
+  for (const edge of at.edges) {
+    if (edge.from !== ref) continue;
+    if (edge.kind === 'blocked-by') {
+      // §4.3.3: an edge naming a duplicate names its CANONICAL instead. The
+      // model's own answer, so this and readiness cannot read one edge two ways.
+      const target = at.model.duplicateCanonical(edge.to) ?? edge.to;
+      const blocker = at.byRef.get(target);
+      if (blocker === undefined) {
+        found.push({
+          family: 'graph',
+          label: 'unresolvable',
+          detail: `blocked-by ${target}, which this document cannot resolve — treated as blocking`,
+        });
+        continue;
+      }
+      if (target !== ref && unit.has(target)) continue;
+      if (blocker.state === 'open') {
+        found.push({ family: 'graph', label: 'blocked', detail: `blocked by ${target}` });
+      }
+      continue;
+    }
+    // An unresolved reference on a GROUP field, surfaced rather than silently
+    // dropped: dropping it is what turns a malformed document into one that
+    // merely looks thin, and a groomer has nothing to act on.
+    //
+    // THE TWO GROUP FIELDS ARE NOT ONE CASE, and reading them as one is a
+    // mis-generalization of §6.7 this demo shipped until the swap onto the
+    // published derivation caught it. §6.7 names `blocked-by` and
+    // `serialize-with` only: an unresolvable `serialize-with` "contributes no
+    // linkage but is likewise surfaced", so it links nothing and therefore
+    // excludes nothing. It says NOTHING about `together-with`, and the reader
+    // refuses the declarer there — correctly, by §4.3.7: a unit is claimed
+    // ATOMICALLY, and a member that cannot be identified cannot be claimed
+    // alongside. Measured, one field apart: the declarer comes back `ready`
+    // with an unresolvable `serialize-with` and NOT ready with an unresolvable
+    // `together-with`.
+    //
+    // Drawing both as non-blocking left a row the derivation was holding with
+    // nothing but a note on it — a station that says "held" and no reason a
+    // visitor could read. `order.test.ts` pins the chips against
+    // `IssueOrderSlot.ready` in both directions, which is what found it.
+    if (isSymmetricEdgeField(edge.kind) && !at.byRef.has(edge.to)) {
+      const linksNothing = edge.kind === 'serialize-with';
       found.push({
         family: 'graph',
         label: 'unresolvable',
-        detail: `blocked-by ${blocker}, which this document cannot resolve — treated as blocking`,
+        detail: linksNothing
+          ? `serialize-with ${edge.to}, which this document cannot resolve — it links nothing`
+          : `together-with ${edge.to}, which this document cannot resolve — the unit cannot be claimed atomically without it`,
+        ...(linksNothing ? { blocking: false as const } : {}),
       });
-      continue;
-    }
-    if (target.state === 'open') {
-      found.push({ family: 'graph', label: 'blocked', detail: `blocked by ${blocker}` });
     }
   }
-  // §6.7: an unresolved reference on a symmetric field contributes no linkage
-  // and is "likewise surfaced". Reported here rather than silently dropped —
-  // dropping it is what turns a malformed document into one that merely looks
-  // thin, and a groomer has nothing to act on.
-  for (const edge of at.symmetricEdges) {
-    if (edge.from !== ref) continue;
-    if (at.byRef.has(edge.to)) continue;
+
+  for (const member of at.model.serializeComponent(ref)) {
+    if (member === ref) continue;
+    // A GROUPMATE IS NOT A RIVAL. A together component is ONE atomic claim
+    // (§4.3.7), so a member of this issue's own unit holding that claim is this
+    // issue's claim too, not a second worker competing for the same semaphore.
+    // The reader excludes the unit from its own claim scan for exactly this
+    // reason; the chip has to agree with it or it would name a rival the model
+    // never counted.
+    if (unit.has(member)) continue;
+    if (!at.claimed.has(member)) continue;
+    if (at.byRef.get(member)?.state !== 'open') continue;
     found.push({
       family: 'graph',
-      label: 'unresolvable',
-      detail: `${edge.kind} ${edge.to}, which this document cannot resolve — it links nothing`,
-      // NON-BLOCKING, and this is the whole point of §6.7's asymmetry: it links
-      // nothing, so it excludes nothing. Surfaced for grooming, not counted
-      // against readiness.
-      blocking: false,
+      label: 'serialized',
+      detail: `serialize group member ${member} is actively claimed`,
     });
   }
 
-  const serialize = at.serialize.get(ref);
-  if (serialize !== undefined) {
-    const unit = at.together.get(ref);
-    for (const member of serialize) {
-      if (member === ref) continue;
-      // A GROUPMATE IS NOT A RIVAL. A together component is ONE atomic claim
-      // (§4.3.7), so a member of this issue's own unit holding that claim is
-      // this issue's claim too — not a second worker competing for the same
-      // semaphore. Expanding the claim across the unit and then reading the
-      // expansion back as competition made two members of one unit exclude
-      // each other, and both acquired a `serialized` hold for a group nobody
-      // else was working.
-      if (unit !== undefined && unit.has(member)) continue;
-      // §6.2 rule 4: admission turns on an ACTIVELY-CLAIMED member. `at.claimed`
-      // already carries the together expansion, so claiming one member of a
-      // unit excludes the group through any of them.
-      if (!at.claimed.has(member)) continue;
-      if (at.byRef.get(member)?.state !== 'open') continue;
-      found.push({
-        family: 'graph',
-        label: 'serialized',
-        detail: `serialize group member ${member} is actively claimed`,
-      });
-    }
-  }
-  const executor = at.held.get(ref);
   if (executor !== undefined) {
     found.push({ family: 'executor', label: executor.label, detail: executor.detail });
   }
@@ -665,284 +514,182 @@ function ownHolds(ref: IssueRef, at: Index): Hold[] {
 /**
  * Every reason an issue may not start, §6.2 rule 5 included: a together group is
  * ready as a unit or not at all, so a groupmate's hold is this issue's hold.
+ *
+ * This mirrors what the derivation does one layer up — `IssueOrderSlot`'s
+ * `holdReasons` is the UNION over the unit's members and its `ready` is the
+ * conjunction — so the chips a member shows are the reasons its slot is held.
+ * A member's own `blocked` chips are propagated too, because the reader does
+ * NOT contract the dependency graph across a unit: each member carries its own
+ * blockers and the union at the slot is what makes them the unit's.
+ *
+ * A together component contains only OPEN nodes — the reader unions the edge
+ * only when both endpoints are open — so there is no closed member to filter
+ * here, and a filter that no input can reach would read as evidence that one
+ * exists.
  */
 function holdsFor(ref: IssueRef, at: Index): readonly Hold[] {
   const own = ownHolds(ref, at);
-  const together = at.together.get(ref);
-  if (together === undefined) return own;
+  const unit = at.model.togetherComponent(ref);
+  if (unit.length <= 1) return own;
   const shared: Hold[] = [...own];
-  for (const member of together) {
+  for (const member of unit) {
     if (member === ref) continue;
-    if (at.byRef.get(member)?.state !== 'open') continue;
     for (const hold of ownHolds(member, at)) {
-      // `blocked` is skipped because the graph is CONTRACTED: every member
-      // already carries the unit's blockers directly, so propagating them here
-      // would report one dependency twice, once in its own words and once in a
-      // groupmate's. Everything else — an executor hold, a cycle, an
-      // unresolvable ref, a serialize exclusion — is genuinely the groupmate's
-      // and is what §6.2 rule 5 is about.
-      if (hold.label === 'blocked') continue;
-      shared.push({
-        ...hold,
-        detail: `${member}, in this together group, is held: ${hold.detail}`,
-      });
+      shared.push({ ...hold, detail: `${member}, in this together group, is held: ${hold.detail}` });
     }
   }
   return shared;
 }
 
-/** An effective priority, and the dependent that supplied it when it was inherited. */
-interface Effective {
-  readonly priority: Priority;
-  readonly from?: IssueRef;
-}
+/** A slot the derivation ranked, or `null` for a row it never ranked at all. */
+type Slot = IssueOrderSlot | null;
 
-/**
- * Effective priority (§6.3): the highest declared priority among the issue
- * itself and every OPEN issue that transitively depends on it through
- * `blocked-by`, composed with §4.3.7's rule that a together group's is the
- * highest over its members.
- *
- * "Importance flows backward along blocking edges. If a minor issue blocks an
- * urgent one, it is not minor — it is the most urgent thing in the system."
- * Computed regardless of holds (§6.8), so a held issue that blocks urgent work
- * still propagates that urgency, which is what surfaces the case where the most
- * urgent thing in the system is waiting on a hold nobody is looking at.
- *
- * A FIXED POINT, not a memoised depth-first walk, and the two composition
- * failures that bought the rewrite are worth recording rather than rediscovering:
- *
- * - **Group priority has to participate in the flow, not be applied after it.**
- *   Taking the group maximum as a post-processing pass left the BLOCKERS of a
- *   low-priority member at their own priority, even though that member's group
- *   is a P0 schedulable unit — so the real critical path could sort behind
- *   unrelated work, which is the exact inversion §6.3 exists to prevent.
- * - **A cycle made the answer depend on traversal order.** The re-entry
- *   fallback returned a member's declared priority and then CACHED it, so
- *   whichever member the walk reached first kept the wrong value while the
- *   other was promoted — and both transitively depend on the same urgent
- *   dependent. Iterating instead means every member of a strongly connected
- *   component ends at the same answer, whatever order they are visited in.
- *
- * It terminates because every write strictly LOWERS a value drawn from
- * {0,1,2,3} and nothing ever raises one, so the total descent is bounded.
- */
-function effectivePriorities(at: Index): Map<IssueRef, Effective> {
-  const resolved = new Map<IssueRef, Effective>();
-  for (const [ref, issue] of at.byRef) resolved.set(ref, { priority: declaredPriority(issue) });
-
-  /** Adopt a more urgent value, reporting whether anything moved. */
-  const raiseUrgency = (ref: IssueRef, candidate: Effective): boolean => {
-    const current = resolved.get(ref);
-    if (current === undefined || candidate.priority >= current.priority) return false;
-    resolved.set(ref, candidate);
-    return true;
-  };
-
-  let changed = true;
-  while (changed) {
-    changed = false;
-
-    // Backward along blocking edges: a blocker inherits its dependents' urgency.
-    for (const ref of at.byRef.keys()) {
-      for (const dependent of at.dependents.get(ref) ?? []) {
-        if (at.byRef.get(dependent)?.state !== 'open') continue;
-        const inherited = resolved.get(dependent);
-        if (inherited === undefined) continue;
-        if (raiseUrgency(ref, { priority: inherited.priority, from: dependent })) changed = true;
-      }
-    }
-
-    // Sideways across a together component: the group is one candidate, so its
-    // members share the highest priority among them. Closed members are skipped
-    // — a group closes member by member (§4.3.7), and one that has closed is no
-    // longer part of the schedulable unit.
-    for (const [ref, members] of at.together) {
-      if (at.byRef.get(ref)?.state !== 'open') continue;
-      for (const member of members) {
-        if (member === ref) continue;
-        if (at.byRef.get(member)?.state !== 'open') continue;
-        const value = resolved.get(member);
-        if (value === undefined) continue;
-        if (raiseUrgency(ref, { priority: value.priority, from: member })) changed = true;
-      }
-    }
-  }
-  return resolved;
-}
-
-/**
- * The demo's tiebreak, standing in for §6.4's "newest first".
- *
- * `StoredIssue` carries no timestamp — the store holds what a relationship
- * surface renders and nothing else — so the demo orders on the reference
- * itself, descending. Its seed numbers issues the way a tracker does, so a
- * higher number is a newer issue and this reads as newest-first. §6.4 permits a
- * substituted tiebreak where the domain argues for one and requires only that
- * it be DETERMINISTIC, which comparing references is.
- */
-function newestFirst(a: IssueRef, b: IssueRef): number {
-  const numeric = Number(b) - Number(a);
-  if (Number.isFinite(numeric) && numeric !== 0) return numeric;
-  return b.localeCompare(a);
+/** One drawn row, before it is described: where it sits and at what rank. */
+interface Placement {
+  readonly ref: IssueRef;
+  readonly rank: number;
+  readonly placement: ExplainedRow['placement'];
+  readonly slot: Slot;
 }
 
 /**
  * The whole order, in the form the demo renders.
  *
- * One pass: the store's rows are projected from this rather than computed
- * beside it, so the rail and the page can never disagree about one document.
+ * One derivation, projected. The store's rows come off this rather than being
+ * computed beside it, so the rail and the page can never disagree about one
+ * document.
  */
 export function explainOrder(
   document: GraphDocument,
   holds: readonly ExecutorHold[] = [],
   concurrencyCap = DEFAULT_CONCURRENCY_CAP,
 ): readonly ExplainedRow[] {
-  const at = index(document, holds);
-  const effective = effectivePriorities(at);
+  const { model, order } = derive(document, holds);
+  const at = index(document, holds, model);
 
   const holdsOf = new Map<IssueRef, readonly Hold[]>();
   for (const issue of document.issues) holdsOf.set(issue.ref, holdsFor(issue.ref, at));
 
-  // PLACEMENT IS DECIDED BY THE HOLD'S FAMILY, not by a per-issue test of the
-  // things that usually produce one. The design's rule is about the family —
-  // graph-derived holds render inline, executor-derived ones and duplicates
-  // collapse into the footer — and asking about the family directly is what
-  // makes a together group land in ONE place.
+  const executorHeld = (slot: IssueOrderSlot): boolean =>
+    slot.members.some((member) =>
+      (holdsOf.get(member) ?? []).some((hold) => hold.family === 'executor' && blocks(hold)),
+    );
+
+  // ---- placement: which rows exist, where they sit, and at what rank ----
   //
-  // The per-issue test this replaces read `at.held.has(ref) || duplicate`, which
-  // splits a schedulable unit: `holdsFor` propagates a parked member's hold to
-  // its groupmates (§6.2 rule 5), so the groupmate stayed in the spine carrying
-  // an executor-derived hold rendered inline — the exact distinction the demo
-  // states it never blurs. A group is ready as a unit or not at all, so it is
-  // placed as a unit too.
+  // PLACEMENT IS DECIDED PER SLOT, not per issue, and that is what keeps a
+  // together group in ONE place. The design's rule is about the hold's FAMILY —
+  // graph-derived holds render inline at their would-be rank, executor-derived
+  // ones and duplicates collapse into the footer — and a unit is one piece of
+  // work, so it is placed as one.
   //
-  // `closed` stays a property of the ISSUE rather than of the unit, and that is
-  // not an oversight: a together group closes member by member (§4.3.7), so one
-  // closed member is not a statement about the rest.
-  const spineRefs: IssueRef[] = [];
-  const footerRefs: IssueRef[] = [];
-  for (const issue of document.issues) {
-    const footer =
-      issue.state === 'closed' ||
-      (holdsOf.get(issue.ref) ?? []).some((hold) => hold.family === 'executor' && blocks(hold));
-    (footer ? footerRefs : spineRefs).push(issue.ref);
-  }
-
-  const priorityOf = (ref: IssueRef): Priority =>
-    effective.get(ref)?.priority ?? DEFAULT_PRIORITY;
-
-  // THE UNIT OF SELECTION IS THE TOGETHER COMPONENT, NOT THE ISSUE (§4.3.7:
-  // "together groups enter selection as single units: one candidate, one claim,
-  // group effective priority"). Sorting issues and then handing the group its
-  // first member's rank is what produced ranks that jump BACKWARD later in the
-  // array: two equally-prioritised members separated by another reference under
-  // the tiebreak each keep their own position while sharing one rank, and
-  // `OrderRow.rank` is documented as a position rendered in ascending order. So
-  // the component is grouped BEFORE the sort, and the rows come back in unit
-  // order — which makes the array monotonic by construction rather than by a
-  // rule every consumer has to remember.
-  const inSpine = new Set(spineRefs);
-  const units: IssueRef[][] = [];
-  const claimed = new Set<IssueRef>();
-  for (const ref of spineRefs) {
-    if (claimed.has(ref)) continue;
-    const members = [...(at.together.get(ref) ?? [ref])].filter((member) => inSpine.has(member));
-    if (members.length === 0) members.push(ref);
-    for (const member of members) claimed.add(member);
-    // Newest first WITHIN the unit too, so a group renders in the same order
-    // its members would have held individually.
-    members.sort(newestFirst);
-    units.push(members);
-  }
-
-  // A unit's effective priority is the highest over its members, and its
-  // tiebreak is its newest member — both the group reading of the rules a
-  // single issue gets for free.
-  const unitPriority = (members: readonly IssueRef[]): Priority =>
-    members.reduce<Priority>((best, ref) => (priorityOf(ref) < best ? priorityOf(ref) : best), 3);
-  const unitNewest = (members: readonly IssueRef[]): IssueRef => members[0] ?? '';
-  units.sort(
-    (a, b) => unitPriority(a) - unitPriority(b) || newestFirst(unitNewest(a), unitNewest(b)),
-  );
-
-  const rankOf = new Map<IssueRef, number>();
-  const ordered: IssueRef[] = [];
+  // A HELD SPINE SLOT KEEPS ITS POSITION rather than moving to the end, which is
+  // the derivation's own contract: "why isn't my P1 running" is answerable at
+  // the rank the work would have taken. The derivation numbers only READY slots
+  // (a held one carries `rank: null`, because it has no position in the
+  // sequence), so the demo draws every spine slot at its index and shows `—`
+  // where there is no number to show.
+  const placements: Placement[] = [];
+  const seen = new Set<IssueRef>();
   let next = 0;
-  for (const members of units) {
+
+  /** One rank for one unit of work, skipping anything already placed. */
+  const place = (refs: readonly IssueRef[], where: Placement['placement'], slot: Slot): void => {
+    const fresh = refs.filter((ref) => !seen.has(ref));
+    // NOTHING FRESH TAKES NO RANK. Incrementing regardless would leave a hole in
+    // the sequence for a row that was never drawn, and the ranks are what the
+    // hollow stations name.
+    if (fresh.length === 0) return;
     const rank = next;
     next += 1;
-    for (const member of members) {
-      rankOf.set(member, rank);
-      ordered.push(member);
+    for (const ref of fresh) {
+      seen.add(ref);
+      placements.push({ ref, rank, placement: where, slot });
     }
-  }
-  footerRefs.sort((a, b) => priorityOf(a) - priorityOf(b) || newestFirst(a, b));
-  for (const ref of footerRefs) {
-    rankOf.set(ref, next);
-    next += 1;
+  };
+
+  for (const slot of order.slots) if (!executorHeld(slot)) place(slot.members, 'spine', slot);
+
+  // The footer's three populations, none of which is a candidate the order
+  // ranks: slots an EXECUTOR is holding, issues the derivation EXCLUDED as
+  // duplicates (§4.3.3), and CLOSED issues. Their numbers exist only so a row
+  // has somewhere to sit — `showRank` is false throughout, because a position in
+  // a sequence nothing can start is not a fact about the work.
+  for (const slot of order.slots) if (executorHeld(slot)) place(slot.members, 'footer', slot);
+  for (const excluded of order.excluded) place([excluded.key], 'footer', null);
+  for (const issue of [...document.issues].sort((a, b) => newestFirst(a.ref, b.ref))) {
+    place([issue.ref], 'footer', null);
   }
 
-  // The ready STATIONS, in rank order and deduplicated: a together group is one
-  // candidate, so it consumes one slot rather than one per member. This is what
-  // the cap is counted against.
-  const readySlots: number[] = [];
-  for (const ref of ordered) {
-    if ((holdsOf.get(ref) ?? []).some(blocks)) continue;
-    const rank = rankOf.get(ref) ?? 0;
-    if (!readySlots.includes(rank)) readySlots.push(rank);
-  }
-  readySlots.sort((a, b) => a - b);
+  // The ranks a READY spine slot occupies, ascending because that is the order
+  // they were assigned in. This is what the concurrency cap is counted against:
+  // a together unit is one candidate, so it consumes one entry rather than one
+  // per member.
+  const readySlots = [
+    ...new Set(
+      placements
+        .filter((each) => each.placement === 'spine' && each.slot?.ready === true)
+        .map((each) => each.rank),
+    ),
+  ];
 
+  // ---- the rows ----
   const rows: ExplainedRow[] = [];
-  for (const ref of [...ordered, ...footerRefs]) {
+  for (const { ref, rank, placement, slot } of placements) {
     const issue = at.byRef.get(ref);
     if (issue === undefined) continue;
-    const spine = inSpine.has(ref);
-    const holdsHere = holdsOf.get(ref) ?? [];
-    const ready = !holdsHere.some(blocks);
-
+    // READINESS IS THE DERIVATION'S, and the chips are what it is SAID with. A
+    // footer row is not a candidate at all, so it is never ready — and a spine
+    // slot carries no blocking executor hold by construction, so there is
+    // nothing to add to `slot.ready`.
+    const ready = placement === 'spine' && slot?.ready === true;
     // A ready row inside the cap can start now; one beyond it starts when the
     // slot `concurrencyCap` places earlier is finished, which is the rank the
-    // hollow station names. Anything held is dashed, whichever family held it.
-    const slot = ready && spine ? readySlots.indexOf(rankOf.get(ref) ?? 0) : -1;
-    const beyondCap = slot >= concurrencyCap;
-    const readyAfter = beyondCap ? readySlots[slot - concurrencyCap] : undefined;
-    const station: Station = !ready ? 'dashed' : beyondCap ? 'hollow' : 'filled';
-
-    const declared = declaredPriority(issue);
-    const inherited = effective.get(ref) ?? { priority: declared };
-    const provenance: Provenance =
-      inherited.from !== undefined && inherited.priority < declared
-        ? {
-            form: 'promoted',
-            declared,
-            effective: inherited.priority,
-            from: inherited.from,
-          }
-        : issue.priority === undefined
-          ? { form: 'default-tier', priority: declared }
-          : { form: 'declared', priority: declared };
-
+    // hollow station names.
+    const position = ready ? readySlots.indexOf(rank) : -1;
+    const beyondCap = position >= concurrencyCap;
+    const readyAfter = beyondCap ? readySlots[position - concurrencyCap] : undefined;
     rows.push({
       issue,
-      rank: rankOf.get(ref) ?? 0,
-      // Graph-derived holds sit inline at their would-be rank and show `—`; the
-      // footer group earns no rank slot, because those are not facts about the
-      // work.
-      showRank: spine && ready,
-      placement: spine ? 'spine' : 'footer',
+      rank,
+      showRank: ready,
+      placement,
       ready,
-      station,
+      station: !ready ? 'dashed' : beyondCap ? 'hollow' : 'filled',
       ...(readyAfter === undefined ? {} : { readyAfterRank: readyAfter }),
-      holds: holdsHere,
-      provenance,
-      effectivePriority: inherited.priority,
-      serializeGroupSize: at.serialize.get(ref)?.size ?? 0,
-      togetherGroupSize: at.together.get(ref)?.size ?? 0,
+      holds: holdsOf.get(ref) ?? [],
+      provenance: provenanceOf(issue, order, model),
+      effectivePriority: asPriority(model.effectivePriority(ref)),
+      // FROM THE SLOT WHEREVER THERE IS ONE, so the sizes a row shows are the
+      // derivation's own — the union over a unit's members, counting candidates.
+      // A duplicate or a closed issue was never ranked and has no slot to read,
+      // so the model's components answer for it.
+      serializeGroupSize: slot?.serializeGroupSize ?? model.serializeComponent(ref).length,
+      togetherGroupSize: slot?.togetherGroupSize ?? model.togetherComponent(ref).length,
     });
   }
   return rows;
+}
+
+/**
+ * Where a row's rank came from, read off the derivation's priority view.
+ *
+ * The view carries §6.3's promotion and the dependents the urgency arrived
+ * through, so `promoted` is the derivation's verdict rather than a comparison
+ * made here. Only a CANDIDATE has one — a duplicate or a closed issue is not in
+ * the order — so those fall back to the model's own declared priority, which is
+ * the same accessor the derivation reads.
+ */
+function provenanceOf(issue: StoredIssue, order: DerivedIssueOrder, model: Model): Provenance {
+  const view = order.priority.get(issue.ref);
+  const declared = asPriority(view?.declared ?? model.declaredPriority(issue.ref).value);
+  const promoter = view?.promotedBy[0];
+  if (view !== undefined && view.promoted && promoter !== undefined) {
+    return { form: 'promoted', declared, effective: asPriority(view.effective), from: promoter };
+  }
+  return issue.priority === undefined
+    ? { form: 'default-tier', priority: declared }
+    : { form: 'declared', priority: declared };
 }
 
 /**
@@ -952,10 +699,6 @@ export function explainOrder(
  * members would report more work running than the concurrency cap allows — a
  * header contradicting the stations drawn directly beneath it. Deduplicating by
  * rank is what makes a count mean the same thing a station does.
- *
- * It lives here rather than in the rendering because it is a fact about the
- * ORDER, and because a number that has to agree with the stations should be
- * computed where the stations are — and where a test can reach it.
  */
 export function slotCount(rows: readonly ExplainedRow[]): number {
   return new Set(rows.map((row) => row.rank)).size;
@@ -990,8 +733,69 @@ export function createDeriver(holds: readonly ExecutorHold[] = []): OrderDeriver
           // The store documents this as "why it may not start, EMPTY WHEN
           // READY". A non-blocking annotation is not such a reason, so
           // including it would hand the store a ready row with reasons — a
-          // contract violation the reviewer did not name and the sweep found.
+          // contract violation.
           holdReasons: row.holds.filter(blocks).map((hold) => hold.detail),
         }),
       );
+}
+
+/**
+ * The `blocked-by` edges this document holds that LIE ON a cycle, by edge id.
+ *
+ * Asked of `@issuegraph/derive`'s own pre-write guard, one edge at a time. The
+ * guard answers "would `from blocked-by to` close a loop", and the walk starts
+ * at `to` — so asking it about an edge the document ALREADY holds asks whether
+ * `to` reaches `from` by some OTHER path, which is exactly "this edge is on a
+ * cycle". `deriveIssueOrder` returns the probe bound to the node set it derived
+ * from, so every question costs a walk and no round-trip.
+ *
+ * NOT `Model.cycles`, and the difference is the package's own, deliberately.
+ * `cycles` is §6.6's DETECT-ON-READ surface: it filters to open nodes and drops
+ * a duplicate's own edges, because a duplicate declares nothing and a closed
+ * blocker does not block today. The guard is asked about the FUTURE — the edge
+ * is about to be written and will outlive today's states — so it spans closed
+ * nodes and KEEPS a duplicate's edges, since clearing a `duplicate-of` brings
+ * them back with the cycle already written. Refusing more is the recoverable
+ * direction: a person can decline a refusal, and nobody can unstick a component
+ * after the fact.
+ *
+ * The demo takes BOTH surfaces from the package rather than picking one and
+ * calling the other wrong — the `cycle` chip reads `Model.cycles`, so what a row
+ * SAYS agrees with why the derivation held it, and the guard reads this, so what
+ * a write is REFUSED for agrees with the package's refusal.
+ */
+function cyclicEdges(document: GraphDocument): ReadonlySet<string> {
+  const { order } = derive(document, []);
+  const found = new Set<string>();
+  for (const edge of document.edges) {
+    if (edge.kind !== 'blocked-by') continue;
+    if (order.wouldCycle(edge.from, edge.to)) found.add(edge.id);
+  }
+  return found;
+}
+
+/**
+ * The host's graph guard, asked of the two DOCUMENTS rather than of the edit.
+ *
+ * A store that only ever wrote `blocked-by` would call `wouldCycleOnBlockedBy`
+ * on the mutation and be done. This surface writes all five kinds, and a cycle
+ * needs no new dependency to appear: `duplicate-of` COLLAPSES vertices.
+ * `#4 blocked-by #2`, `#2 blocked-by #3`, `#3 duplicate-of #4` closes
+ * `#4 -> #2 -> #4` with the last edit adding no dependency at all. Extending the
+ * guard kind by kind is a list that is always one entry short; asking the same
+ * package predicate of both documents has no list — and the walk is still the
+ * package's, edge for edge.
+ *
+ * The store hands a guard both documents precisely so it can ask this.
+ *
+ * Deliberately NOT a refusal of a cycle that already exists — §6.6 is explicit
+ * that a cycle is detected on read and surfaced for grooming, because
+ * write-time rejection pushes writers into describing the dependency in prose.
+ * Comparing which EDGES lie on one means only what this edit adds is refused,
+ * and the seed ships a cycle for exactly that reason.
+ */
+export function introducesCycle(current: GraphDocument, next: GraphDocument): boolean {
+  const before = cyclicEdges(current);
+  for (const id of cyclicEdges(next)) if (!before.has(id)) return true;
+  return false;
 }

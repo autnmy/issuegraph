@@ -1,24 +1,53 @@
 /**
- * The demo's coverage claim, made executable.
+ * What this file tests, and what it deliberately does not.
  *
- * "Every edge type, hold family and mutation state is reachable in it" is the
- * milestone's done-when, and a seed drifts: an edit that quietly drops the last
- * `together-with` leaves the demo still running and no longer demonstrating the
- * thing it exists to demonstrate. So the claim is a test rather than a sentence
- * in a README, and it enumerates the populations from the vocabulary rather than
- * from a hand-written list that can go one member short.
+ * `demo/src/order.ts` no longer DERIVES an order — `@issuegraph/derive` does,
+ * and that package carries its own tests, its own fixture-parity pin against
+ * the reference prototype's seed, and its own mechanical purity proofs. Testing
+ * the ready set, effective priority or the selection sort here would be a second
+ * test suite for a derivation this file does not contain, and it would go stale
+ * against the package rather than against the demo.
+ *
+ * So this suite covers the SEAM and nothing else. Three jobs:
+ *
+ *  1. THE PROJECTION IN. The store's document has to arrive at the derivation
+ *     as the same graph. Anything lost on the way in is an absence rendered as
+ *     a value — a dropped edge does not fail, it produces a plausible order for
+ *     a backlog that is not this one.
+ *  2. THE PROJECTION OUT, pinned against the derivation IN BOTH DIRECTIONS. The
+ *     chips a row shows are the demo's own words; whether the row may start is
+ *     the derivation's verdict. A row held with no blocking chip is a station
+ *     that says "held" with no reason a visitor can read, and a ready row
+ *     carrying one is the same lie inverted. That pin is what caught the one
+ *     real defect this rework surfaced (§6.7 generalized from `serialize-with`
+ *     to both group fields), so it is the load-bearing test here.
+ *  3. THE COVERAGE CLAIM, which is the milestone's own done-when and survives
+ *     the swap unchanged: every edge type, both hold families, all three
+ *     readiness stations and all three rank-provenance forms are reachable in
+ *     the seed without editing anything first.
+ *
+ * POPULATIONS ARE ENUMERATED FROM THE VOCABULARY (`EDGE_FIELDS`,
+ * `EDGE_CARDINALITY`), never from a hand-written list that can go one member
+ * short. A sixth edge field fails here instead of going undemonstrated.
  */
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { EDGE_FIELDS } from '@issuegraph/core';
-import type { EdgeKind, GraphDocument } from '@issuegraph/store';
+import {
+  EDGE_CARDINALITY,
+  EDGE_FIELDS,
+  PRIORITY_MAX,
+  PRIORITY_MIN,
+  type Priority,
+} from '@issuegraph/core';
+import { nodeKey, priorityLabelValue } from '@issuegraph/reader';
+import type { GraphDocument, StoredEdge, StoredIssue } from '@issuegraph/store';
 import { makeEdge } from '@issuegraph/store';
 
 import {
-  DEFAULT_CONCURRENCY_CAP,
   type ExplainedRow,
+  type Hold,
   createDeriver,
   explainOrder,
   introducesCycle,
@@ -26,1017 +55,450 @@ import {
 } from './order.ts';
 import { seedDocument, seedHolds } from './seed.ts';
 
-/** The document an added edge would produce — what the store hands a guard. */
-function withEdge(document: GraphDocument, kind: EdgeKind, from: string, to: string): GraphDocument {
-  return { issues: document.issues, edges: [...document.edges, makeEdge(kind, from, to)] };
+const PRIORITIES: readonly Priority[] = [0, 1, 2, 3];
+
+function blocks(hold: Hold): boolean {
+  return hold.blocking !== false;
 }
 
-/** What the guard answers for `from --kind--> to` against this document. */
-function guarded(document: GraphDocument, kind: EdgeKind, from: string, to: string): boolean {
-  return introducesCycle(document, withEdge(document, kind, from, to));
+function open(ref: string, priority?: Priority): StoredIssue {
+  return priority === undefined
+    ? { ref, title: `issue ${ref}`, state: 'open' }
+    : { ref, title: `issue ${ref}`, state: 'open', priority };
 }
 
-function rows(): readonly ExplainedRow[] {
-  return explainOrder(seedDocument(), seedHolds());
+function document(issues: readonly StoredIssue[], edges: readonly StoredEdge[]): GraphDocument {
+  return { issues, edges };
 }
 
-function row(ref: string): ExplainedRow {
-  const found = rows().find((candidate) => candidate.issue.ref === ref);
-  assert.ok(found, `the seed has no issue ${ref}`);
+function rowFor(rows: readonly ExplainedRow[], ref: string): ExplainedRow {
+  const found = rows.find((row) => row.issue.ref === ref);
+  assert.ok(found !== undefined, `no row for #${ref}`);
   return found;
 }
 
-test('the seed declares every edge type the format has', () => {
-  const declared = new Set<EdgeKind>(seedDocument().edges.map((edge) => edge.kind));
-  // Enumerated from the vocabulary, so a sixth field added to the spec fails
-  // here rather than going undemonstrated.
-  for (const field of EDGE_FIELDS) {
-    assert.ok(declared.has(field), `the seed declares no ${field} edge`);
+// ---------------------------------------------------------------------------
+// 1. The projection IN
+// ---------------------------------------------------------------------------
+
+test('the two key spaces are identical, so no translation layer can drift', () => {
+  // The demo's `IssueRef` is opaque and its document is one repository's, so
+  // `nodeKey` folds every node to the reference the demo already holds. Every
+  // model answer in `order.ts` is looked up by `IssueRef` on the strength of
+  // this; if it stopped holding, every lookup would silently miss and the page
+  // would render an order for a graph nobody declared.
+  for (const issue of seedDocument().issues) {
+    assert.equal(nodeKey({ id: issue.ref, repo: null }), issue.ref);
   }
 });
 
-test('both hold families are reachable, and they are never one treatment', () => {
-  const families = new Set(rows().flatMap((each) => each.holds.map((hold) => hold.family)));
+test('the priority label the demo writes is the one the reader reads', () => {
+  // §4.3.5 makes a tracker's own convention canonical over the frontmatter
+  // field, and a mapped label is how the demo's declared priority reaches the
+  // model. A spelling the reader does not recognise would not fail — it would
+  // present as "every issue is in the spec's default tier", which is a
+  // plausible page.
+  for (const priority of PRIORITIES) {
+    assert.equal(priorityLabelValue([`P${String(priority)}`]), priority);
+  }
+  // Enumerated from the vocabulary's own bounds, so widening the range fails
+  // here rather than leaving a tier unexercised.
+  assert.deepEqual(
+    PRIORITIES,
+    Array.from({ length: PRIORITY_MAX - PRIORITY_MIN + 1 }, (_, i) => PRIORITY_MIN + i),
+  );
+});
+
+test('every edge kind reaches the derivation, and none is silently dropped', () => {
+  // A kind lost in the projection produces no error: the order simply comes
+  // back as though the relationship had never been written. So each is asserted
+  // to CHANGE something the page renders, enumerated from `EDGE_FIELDS`.
+  const issues = [open('1', 1), open('2', 1), open('3', 1)];
+  const bare = explainOrder(document(issues, []));
+  const unchanged: string[] = [];
+  for (const kind of EDGE_FIELDS) {
+    const rows = explainOrder(document(issues, [makeEdge(kind, '1', '2')]));
+    const same = JSON.stringify(rows) === JSON.stringify(bare);
+    if (same) unchanged.push(kind);
+  }
+  // `decomposed-from` is PROVENANCE, never an ordering arrow (§4.3), so it is
+  // the one kind whose presence must change nothing. Asserting the set rather
+  // than skipping it makes that a claim the suite checks in both directions: a
+  // future kind that silently changes nothing shows up here.
+  assert.deepEqual(unchanged, ['decomposed-from']);
+});
+
+test('a second declaration of a single-valued field is ignored, not merged', () => {
+  // §4.3.4 and §4.3.7: a writer joins a group by pointing at any ONE existing
+  // member, so the group fields are single-valued and `blocked-by` is the only
+  // list. The demo's adapter refuses to write a second; the projection has to
+  // agree, or a document assembled another way would quietly express a graph
+  // the format cannot.
+  const issues = [open('1', 1), open('2', 1), open('3', 1)];
+  for (const kind of EDGE_FIELDS) {
+    if (EDGE_CARDINALITY[kind] !== 'single') continue;
+    const first = explainOrder(document(issues, [makeEdge(kind, '1', '2')]));
+    const both = explainOrder(
+      document(issues, [makeEdge(kind, '1', '2'), makeEdge(kind, '1', '3')]),
+    );
+    assert.equal(
+      JSON.stringify(both),
+      JSON.stringify(first),
+      `a second ${kind} from one issue changed the order`,
+    );
+  }
+});
+
+test('blocked-by is the only list field, and every entry of it blocks', () => {
+  assert.deepEqual(
+    EDGE_FIELDS.filter((kind) => EDGE_CARDINALITY[kind] === 'list'),
+    ['blocked-by'],
+  );
+  const issues = [open('1', 1), open('2', 1), open('3', 1)];
+  const rows = explainOrder(
+    document(issues, [makeEdge('blocked-by', '1', '2'), makeEdge('blocked-by', '1', '3')]),
+  );
+  const held = rowFor(rows, '1');
+  assert.equal(held.ready, false);
+  assert.equal(
+    held.holds.filter((hold) => hold.label === 'blocked').length,
+    2,
+    'a blocked-by list was collapsed to one entry on the way in',
+  );
+});
+
+// ---------------------------------------------------------------------------
+// 2. The projection OUT, pinned against the derivation
+// ---------------------------------------------------------------------------
+
+/**
+ * The pin, in both directions, over one document.
+ *
+ * Readiness is `IssueOrderSlot.ready` and the chips are the demo's wording for
+ * it. Neither direction is optional: a held row with no blocking chip renders a
+ * dashed station and no readable reason, and a ready row carrying one hands the
+ * store a `ready` `OrderRow` with `holdReasons`, which its own contract forbids.
+ */
+function assertChipsAgree(doc: GraphDocument, holds = seedHolds(), label = ''): void {
+  for (const row of explainOrder(doc, holds)) {
+    if (row.placement !== 'spine') continue;
+    const blocking = row.holds.filter(blocks);
+    if (row.ready) {
+      assert.equal(
+        blocking.length,
+        0,
+        `${label}#${row.issue.ref} is ready and carries blocking chips: ${JSON.stringify(blocking)}`,
+      );
+    } else {
+      assert.ok(
+        blocking.length > 0,
+        `${label}#${row.issue.ref} is held with no blocking chip — the station says held and says why nowhere`,
+      );
+    }
+  }
+}
+
+test('the chips agree with the derivation on the seed', () => {
+  assertChipsAgree(seedDocument());
+});
+
+test('the chips agree with the derivation on every single-edge document', () => {
+  // The seed is one graph. This sweeps every relationship kind against a
+  // RESOLVABLE and an UNRESOLVABLE target, which is where the two readings come
+  // apart: §6.7 gives `blocked-by` and `serialize-with` explicit treatments and
+  // is silent about `together-with`, whose declarer the reader refuses (§4.3.7,
+  // a unit cannot be claimed atomically around a member it cannot identify).
+  // Generalizing §6.7 across both group fields is exactly the defect this
+  // sweep found.
+  const issues = [open('1', 1), open('2', 1)];
+  for (const kind of EDGE_FIELDS) {
+    for (const target of ['2', '404']) {
+      assertChipsAgree(
+        document(issues, [makeEdge(kind, '1', target)]),
+        [],
+        `${kind} -> #${target}: `,
+      );
+    }
+  }
+});
+
+test('the chips agree with the derivation while an executor holds an issue', () => {
+  // Both flavours of executor hold, against a serialize group and a together
+  // unit — the two places §6.2's rules 4 and 5 interact with a host's own
+  // holds, and the only channel a claim reaches the model through.
+  const issues = [open('1', 1), open('2', 1), open('3', 1)];
+  const edges = [makeEdge('serialize-with', '1', '2'), makeEdge('together-with', '2', '3')];
+  for (const active of [true, false]) {
+    for (const ref of ['1', '2', '3']) {
+      assertChipsAgree(
+        document(issues, edges),
+        [{ ref, label: 'claimed', detail: 'held by a worker', active }],
+        `${active ? 'claim' : 'park'} on #${ref}: `,
+      );
+    }
+  }
+});
+
+test('an unresolvable serialize-with links nothing; an unresolvable together-with refuses', () => {
+  // The asymmetry stated directly, because the sweep above would also pass if
+  // BOTH were blocking. §6.7 is explicit that a `serialize-with` reference that
+  // cannot be resolved contributes no linkage — so it excludes nothing, and the
+  // chip is a note rather than a hold.
+  const issues = [open('1', 1)];
+  const serialize = rowFor(
+    explainOrder(document(issues, [makeEdge('serialize-with', '1', '404')])),
+    '1',
+  );
+  assert.equal(serialize.ready, true);
+  assert.equal(serialize.holds.filter(blocks).length, 0);
+  assert.equal(serialize.holds.length, 1, 'it is surfaced for grooming, not dropped');
+
+  const together = rowFor(
+    explainOrder(document(issues, [makeEdge('together-with', '1', '404')])),
+    '1',
+  );
+  assert.equal(together.ready, false);
+  assert.ok(together.holds.some(blocks), 'the refusal was drawn as a note');
+});
+
+test('the store never sees a footer row, and never a ready row with reasons', () => {
+  // Two contract points of `OrderDeriver`/`OrderRow` at once. The footer is not
+  // in the order — the store computes `entered` and `left` by comparing one
+  // order against the next, so a row that was never a candidate reads as a move
+  // — and `holdReasons` is documented as empty when ready.
+  const rows = createDeriver(seedHolds())(seedDocument());
+  const footer = explainOrder(seedDocument(), seedHolds())
+    .filter((row) => row.placement === 'footer')
+    .map((row) => row.issue.ref);
+  assert.ok(footer.length > 0, 'the seed no longer exercises the footer');
+  for (const row of rows) {
+    assert.ok(!footer.includes(row.ref), `#${row.ref} is a footer row and reached the store`);
+    if (row.ready) assert.deepEqual(row.holdReasons, []);
+  }
+});
+
+test('the ranks the store is handed never go backwards', () => {
+  // `OrderRow.rank` is documented as a position rendered in ascending order.
+  // A together unit shares one rank, so the array is non-decreasing rather than
+  // strictly increasing — which is the property to assert, since a strict one
+  // would fail on a correct unit.
+  const ranks = createDeriver(seedHolds())(seedDocument()).map((row) => row.rank);
+  for (let i = 1; i < ranks.length; i += 1) {
+    assert.ok((ranks[i] ?? 0) >= (ranks[i - 1] ?? 0), `rank went backwards at ${String(i)}`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 3. The coverage claim — the milestone's own done-when
+// ---------------------------------------------------------------------------
+
+test('every edge type is reachable in the seed without editing anything', () => {
+  // Enumerated from the vocabulary, not from a list beside it: a sixth edge
+  // field fails here rather than going undemonstrated.
+  const kinds = new Set(seedDocument().edges.map((edge) => edge.kind));
+  for (const field of EDGE_FIELDS) {
+    assert.ok(kinds.has(field), `the seed no longer exercises ${field}`);
+  }
+});
+
+test('both hold families are reachable, and they are drawn in different places', () => {
+  const rows = explainOrder(seedDocument(), seedHolds());
+  const families = new Set(rows.flatMap((row) => row.holds.map((hold) => hold.family)));
   assert.deepEqual([...families].sort(), ['executor', 'graph']);
 
-  // Graph-derived: inline in the spine at its would-be rank.
-  const blocked = row('5');
-  assert.equal(blocked.placement, 'spine');
-  assert.ok(blocked.holds.some((hold) => hold.family === 'graph' && hold.label === 'serialized'));
+  // The distinction the demo states it never blurs: a graph-derived hold sits
+  // INLINE at its would-be rank showing no number; an executor-derived one
+  // collapses into the footer group, which earns no rank slot at all.
+  //
+  // OVER CANDIDATES ONLY, and that qualification is the rule rather than a
+  // convenience. The spine is the ORDER, and a closed issue is not in it — it
+  // is not a candidate at all (§6.2), so the footer is where it belongs
+  // whichever family its `closed` hold is drawn from. Asserting otherwise
+  // demands that the page rank work nobody can do.
+  const candidate = (row: ExplainedRow): boolean =>
+    row.issue.state === 'open' &&
+    !row.holds.some((hold) => hold.family === 'executor' && blocks(hold));
 
-  // Executor-derived: the collapsed footer group, with no rank slot at all.
-  const parked = row('11');
-  assert.equal(parked.placement, 'footer');
-  assert.equal(parked.showRank, false);
-  assert.ok(parked.holds.some((hold) => hold.family === 'executor' && hold.label === 'parked'));
+  const graphHeld = rows.filter(
+    (row) =>
+      candidate(row) && !row.ready && row.holds.some((hold) => hold.family === 'graph' && blocks(hold)),
+  );
+  assert.ok(graphHeld.length > 0, 'no graph-derived hold on a candidate in the seed');
+  for (const row of graphHeld) {
+    assert.equal(row.placement, 'spine', `#${row.issue.ref} left the spine`);
+    assert.equal(row.showRank, false, `#${row.issue.ref} showed a rank it cannot occupy`);
+  }
+  for (const row of rows) {
+    if (candidate(row)) continue;
+    assert.equal(row.placement, 'footer', `#${row.issue.ref} stayed in the spine`);
+    assert.equal(row.showRank, false, `#${row.issue.ref} earned a rank slot it has no claim to`);
+  }
 });
 
-test('all three readiness stations are reachable', () => {
-  const stations = new Set(rows().map((each) => each.station));
+test('all three readiness stations are reachable in the seed', () => {
+  const rows = explainOrder(seedDocument(), seedHolds());
+  const stations = new Set(rows.map((row) => row.station));
   assert.deepEqual([...stations].sort(), ['dashed', 'filled', 'hollow']);
-});
 
-test('a station reads parallelism: filled inside the cap, hollow beyond it', () => {
-  const spine = rows().filter((each) => each.placement === 'spine');
-  const readySlots = [...new Set(spine.filter((each) => each.ready).map((each) => each.rank))].sort(
-    (a, b) => a - b,
-  );
-  assert.ok(readySlots.length > DEFAULT_CONCURRENCY_CAP, 'the seed cannot exercise the cap');
-
-  const filled = spine.filter((each) => each.station === 'filled');
-  assert.equal(
-    new Set(filled.map((each) => each.rank)).size,
-    DEFAULT_CONCURRENCY_CAP,
-    'exactly one filled station per slot inside the cap',
-  );
-  for (const each of filled) assert.equal(each.ready, true);
-
-  // A hollow station is READY. It names the slot whose completion frees its own,
-  // which is a sequencing statement rather than a hold.
-  for (const each of spine.filter((candidate) => candidate.station === 'hollow')) {
-    assert.equal(each.ready, true, 'a hollow station must be ready');
-    assert.deepEqual(each.holds, [], 'a hollow station carries no hold');
-    const slot = readySlots.indexOf(each.rank);
-    assert.equal(each.readyAfterRank, readySlots[slot - DEFAULT_CONCURRENCY_CAP]);
+  // A hollow station is a SEQUENCING statement, never a hold: it names the rank
+  // whose completion frees its slot, and that rank must exist and be earlier.
+  for (const row of rows.filter((each) => each.station === 'hollow')) {
+    assert.ok(row.ready, `#${row.issue.ref} is hollow and not ready`);
+    assert.ok(row.readyAfterRank !== undefined, `#${row.issue.ref} names no rank`);
+    assert.ok((row.readyAfterRank ?? 0) < row.rank);
   }
 });
 
-test('a graph-derived hold is dashed and sits inline at its would-be rank', () => {
-  // The design is explicit: blocked and serialized draw a DASHED station with
-  // the rank shown as an em dash, and they stay in the spine, because "why
-  // isn't my P1 running" must be answerable in place.
-  for (const ref of ['1', '5']) {
-    const held = row(ref);
-    assert.equal(held.station, 'dashed', `${ref} should be dashed`);
-    assert.equal(held.placement, 'spine', `${ref} should stay inline`);
-    assert.equal(held.showRank, false, `${ref} should show no rank`);
-  }
-});
-
-test('all three rank-provenance forms are reachable', () => {
-  const forms = new Set(rows().map((each) => each.provenance.form));
+test('all three rank-provenance forms are reachable in the seed', () => {
+  const forms = new Set(
+    explainOrder(seedDocument(), seedHolds()).map((row) => row.provenance.form),
+  );
   assert.deepEqual([...forms].sort(), ['declared', 'default-tier', 'promoted']);
 });
 
-test('effective priority flows backward along a blocking edge', () => {
-  // #2 is declared P3 and blocks a P0, so it IS the most urgent thing in the
-  // system — §6.3, rendered as `P3 → 0` naming the dependent.
-  const promoted = row('2');
-  assert.deepEqual(promoted.provenance, {
-    form: 'promoted',
-    declared: 3,
-    effective: 0,
-    from: '1',
-  });
-  assert.ok(promoted.rank < row('4').rank, 'a promoted P3 outranks an unpromoted default tier');
-});
-
-test('an unresolved priority falls to the spec default tier, not to zero', () => {
-  assert.deepEqual(row('4').provenance, { form: 'default-tier', priority: 2 });
-});
-
-test('a together group shares one rank and is ready as a unit', () => {
-  const first = row('7');
-  const second = row('9');
-  assert.equal(first.rank, second.rank, 'a together group shares one rank');
-  assert.equal(first.togetherGroupSize, 2);
-  assert.equal(first.ready, second.ready);
-});
-
-test('a together group is held as a unit too', () => {
-  // The group is ready in the seed; hold ONE member and the other inherits it,
-  // which is §6.2 rule 5 and is the half a seed alone cannot show.
-  const document = seedDocument();
-  const held = explainOrder(document, [
-    ...seedHolds(),
-    { ref: '7', label: 'claimed', detail: 'another worker holds this issue' },
-  ]);
-  const groupmate = held.find((each) => each.issue.ref === '9');
-  assert.ok(groupmate);
-  assert.equal(groupmate.ready, false);
-  assert.ok(
-    groupmate.holds.some((hold) => hold.detail.includes('7')),
-    'the groupmate names the member that is held',
-  );
-});
-
-test('an unresolvable reference blocks rather than being ignored', () => {
-  const unresolvable = row('14');
-  assert.equal(unresolvable.ready, false);
-  assert.equal(unresolvable.station, 'dashed');
-  assert.ok(unresolvable.holds.some((hold) => hold.label === 'unresolvable'));
-});
-
-test('a blocked-by cycle is surfaced as stuck, on both members', () => {
-  for (const ref of ['12', '13']) {
-    const member = row(ref);
-    assert.equal(member.ready, false);
-    assert.ok(member.holds.some((hold) => hold.label === 'cycle'), `${ref} is not reported cyclic`);
-  }
-});
-
-test('a duplicate is never worked, and the closure is transitive', () => {
-  assert.equal(row('10').placement, 'footer');
-  // A duplicate OF a duplicate is still a duplicate (§6.1's closure).
-  const document = seedDocument();
-  const chained = explainOrder(
-    { issues: [...document.issues, { ref: '15', title: 'Yet another rename', state: 'open' }],
-      edges: [...document.edges, makeEdge('duplicate-of', '15', '10')] },
-    seedHolds(),
-  );
-  const far = chained.find((each) => each.issue.ref === '15');
-  assert.ok(far);
-  assert.equal(far.placement, 'footer');
-  assert.ok(far.holds.some((hold) => hold.label === 'duplicate'));
-});
-
-test('decomposed-from carries provenance and no ordering effect', () => {
-  // #7 is decomposed from a closed parent and is still ready: provenance must
-  // not block, and the closed parent must not take a rank slot.
-  assert.equal(row('7').ready, true);
-  assert.equal(row('8').placement, 'footer');
-});
-
-test('the spine is ordered by effective priority, newest first within a tier', () => {
-  const spine = rows().filter((each) => each.placement === 'spine');
-  for (let i = 1; i < spine.length; i += 1) {
-    const previous = spine[i - 1];
-    const current = spine[i];
-    assert.ok(previous && current);
+test('a promotion names the dependent it inherited from, in the spec notation', () => {
+  // §6.3: urgency flows backward along blocked-by. The seed's #2 and #3 are
+  // declared P3 and block a P0, so both are promoted — and the derivation is
+  // what says so, including WHO it arrived through.
+  const rows = explainOrder(seedDocument(), seedHolds());
+  const promoted = rows.filter((row) => row.provenance.form === 'promoted');
+  assert.ok(promoted.length >= 2, 'the seed no longer exercises promotion');
+  for (const row of promoted) {
+    const { provenance } = row;
+    // Bound to a local so the discriminant narrows: reading `row.provenance`
+    // again is a fresh property access, which TypeScript will not narrow.
+    assert.ok(provenance.form === 'promoted');
+    assert.ok(provenance.effective < provenance.declared);
     assert.ok(
-      previous.effectivePriority < current.effectivePriority ||
-        (previous.effectivePriority === current.effectivePriority &&
-          (previous.rank === current.rank || Number(previous.issue.ref) > Number(current.issue.ref))),
-      `${previous.issue.ref} should not precede ${current.issue.ref}`,
+      rows.some((each) => each.issue.ref === provenance.from),
+      'a promotion named a dependent that is not in the document',
     );
   }
 });
 
-test('a together group is PLACED as a unit, not split across the two treatments', () => {
-  // Group a parked issue with a spine issue. The parked member's hold
-  // propagates to its groupmate (§6.2 rule 5), so the groupmate is held by the
-  // EXECUTOR family — and an executor-derived hold must never render inline.
-  const document = seedDocument();
-  const grouped = explainOrder(
-    { issues: document.issues, edges: [...document.edges, makeEdge('together-with', '11', '4')] },
-    seedHolds(),
-  );
-  for (const ref of ['11', '4']) {
-    const member = grouped.find((each) => each.issue.ref === ref);
-    assert.ok(member, `no row for ${ref}`);
-    assert.equal(member.placement, 'footer', `${ref} should be in the footer with its group`);
-  }
-  // The invariant behind it, stated as an invariant rather than as two cases:
-  // nothing in the spine carries an executor-derived hold.
-  for (const each of grouped.filter((row) => row.placement === 'spine')) {
-    assert.ok(
-      !each.holds.some((hold) => hold.family === 'executor'),
-      `${each.issue.ref} renders an executor-derived hold inline`,
+test('a serialize footprint includes the unit itself, so a unit alone is not serialized', () => {
+  // The derivation's `serializeGroupSize` is the union over a slot's MEMBERS'
+  // serialize components, and each component includes its own member — so a
+  // together unit of two with no `serialize-with` edge reads 2, exactly as a
+  // lone issue reads 1. That is the number `render.ts` decides a "serialized"
+  // badge from, and comparing it against 1 drew the badge on a pair nothing
+  // serializes. The property the comparison rests on is asserted here, where a
+  // test can reach it.
+  const rows = explainOrder(seedDocument(), seedHolds());
+
+  const unit = rows.filter((row) => row.togetherGroupSize > 1);
+  assert.ok(unit.length > 1, 'the seed no longer exercises a together unit');
+  for (const row of unit) {
+    assert.equal(
+      row.serializeGroupSize,
+      row.togetherGroupSize,
+      `#${row.issue.ref} is in a unit with no serialize edge, so its footprint is the unit`,
     );
   }
+
+  // The control: a row that IS serialized reaches beyond its own membership,
+  // so the comparison separates the two cases rather than suppressing both.
+  const serialized = rows.filter(
+    (row) => row.serializeGroupSize > Math.max(row.togetherGroupSize, 1),
+  );
+  assert.ok(serialized.length > 0, 'the seed no longer exercises a serialize group');
+  for (const row of serialized) {
+    assert.ok(row.holds.some((hold) => hold.label === 'serialized') || row.placement === 'footer');
+  }
 });
 
-test('INVARIANT: the returned rows never step backward in rank', () => {
-  // `OrderRow.rank` is a POSITION, rendered in ascending order, so a consumer
-  // walking the array must never see it decrease. Together members share a
-  // rank, which is why the test is non-decreasing rather than strictly
-  // increasing.
-  const check = (rows: readonly ExplainedRow[], what: string): void => {
-    for (let i = 1; i < rows.length; i += 1) {
-      const previous = rows[i - 1];
-      const current = rows[i];
-      assert.ok(previous && current);
-      assert.ok(
-        current.rank >= previous.rank,
-        `${what}: rank stepped back from ${previous.rank} (${previous.issue.ref}) to ${current.rank} (${current.issue.ref})`,
-      );
-    }
-  };
-
-  check(rows(), 'the seed');
-
-  const document = seedDocument();
-  // The reviewer's own scenario: group two equally-prioritised issues that the
-  // newest-first tiebreak separates. Handing the group its first member's rank
-  // while leaving both sorted individually is what made the array step back.
-  check(
-    explainOrder(
-      { issues: document.issues, edges: [...document.edges, makeEdge('together-with', '14', '4')] },
-      seedHolds(),
-    ),
-    'a together group whose members the tiebreak separates',
-  );
-  // And with three members spread across the tier.
-  check(
-    explainOrder(
-      {
-        issues: document.issues,
-        edges: [
-          ...document.edges,
-          makeEdge('together-with', '14', '4'),
-          makeEdge('together-with', '4', '13'),
-        ],
-      },
-      seedHolds(),
-    ),
-    'a three-member together group',
-  );
+test('a together unit is ONE slot, counted once against the cap', () => {
+  // §4.3.7: a together group enters selection as a single unit — one candidate,
+  // one claim. Counting its members would report more work running than the
+  // concurrency cap allows, in a header sitting directly above the stations
+  // that contradict it.
+  const rows = explainOrder(seedDocument(), seedHolds());
+  const unit = rows.filter((row) => row.togetherGroupSize > 1);
+  assert.ok(unit.length > 1, 'the seed no longer exercises a together unit');
+  assert.equal(new Set(unit.map((row) => row.rank)).size, 1, 'the unit took more than one rank');
+  assert.equal(slotCount(unit), 1);
 });
 
-test('a together group whose members the tiebreak separates stays contiguous', () => {
-  const document = seedDocument();
-  const grouped = explainOrder(
-    { issues: document.issues, edges: [...document.edges, makeEdge('together-with', '14', '4')] },
-    seedHolds(),
-  );
-  const positions = ['14', '4'].map((ref) => grouped.findIndex((each) => each.issue.ref === ref));
-  assert.ok(positions.every((at) => at >= 0), 'both members should be present');
-  assert.equal(Math.abs(positions[0]! - positions[1]!), 1, 'the unit should be adjacent');
-  const ranks = new Set(['14', '4'].map((ref) => grouped.find((each) => each.issue.ref === ref)!.rank));
-  assert.equal(ranks.size, 1, 'one candidate, one rank');
-});
+// ---------------------------------------------------------------------------
+// The cycle guard
+// ---------------------------------------------------------------------------
 
-test('a together group propagates its urgency THROUGH its blockers', () => {
-  // #4 is the spec default tier. Group it with P0 #1 — the group is then a P0
-  // schedulable unit — and block #4 on the otherwise-unremarkable #14. The
-  // blocker must inherit the GROUP's urgency, not #4's declared tier: taking
-  // the group maximum after the dependency walk left it at P2, so the real
-  // critical path could sort behind unrelated work.
-  const document = seedDocument();
-  const promoted = explainOrder(
-    {
-      issues: document.issues,
-      edges: [
-        ...document.edges,
-        makeEdge('together-with', '4', '1'),
-        makeEdge('blocked-by', '4', '14'),
-      ],
-    },
-    seedHolds(),
-  );
-  const blocker = promoted.find((each) => each.issue.ref === '14');
-  assert.ok(blocker);
+test('a new blocked-by cycle is refused, and an ordinary edge is not', () => {
+  const issues = [open('1', 1), open('2', 1), open('3', 1)];
+  const current = document(issues, [makeEdge('blocked-by', '1', '2')]);
   assert.equal(
-    blocker.effectivePriority,
-    0,
-    'a blocker of a P0 together unit must be the most urgent thing in the system',
-  );
-});
-
-test('effective priority does not depend on the order a cycle is walked', () => {
-  // #1 (P0) is made to depend on the seeded #12/#13 cycle. Both members are
-  // transitive dependencies of a P0, so BOTH must be promoted — a memoised walk
-  // cached whichever it reached first at its declared tier.
-  const document = seedDocument();
-  const withCycleDependency = {
-    issues: document.issues,
-    edges: [...document.edges, makeEdge('blocked-by', '1', '12')],
-  };
-  const rowsOf = (edges: readonly ReturnType<typeof makeEdge>[]): Map<string, number> =>
-    new Map(
-      explainOrder({ issues: document.issues, edges }, seedHolds()).map((each) => [
-        each.issue.ref,
-        each.effectivePriority,
-      ]),
-    );
-
-  const forward = rowsOf(withCycleDependency.edges);
-  assert.equal(forward.get('12'), 0, '#12 is a transitive dependency of a P0');
-  assert.equal(forward.get('13'), 0, '#13 is one too, through its cycle partner');
-
-  // The same graph with the edge list reversed must give the same answer.
-  const reversed = rowsOf([...withCycleDependency.edges].reverse());
-  for (const ref of ['12', '13', '1']) {
-    assert.equal(reversed.get(ref), forward.get(ref), `${ref} depends on traversal order`);
-  }
-});
-
-test('a ready together group is ONE scheduler slot, not one per member', () => {
-  // Group two issues that are both ready and both inside the cap. Counting rows
-  // would report two running from one slot, so the header would claim more work
-  // in flight than the cap allows — contradicting the stations beneath it.
-  const document = seedDocument();
-  const grouped = explainOrder(
-    { issues: document.issues, edges: [...document.edges, makeEdge('together-with', '3', '2')] },
-    seedHolds(),
-  );
-  const running = grouped.filter((each) => each.station === 'filled');
-  assert.ok(running.length > slotCount(running), 'the fixture does not exercise a shared slot');
-  assert.ok(
-    slotCount(running) <= DEFAULT_CONCURRENCY_CAP,
-    `${slotCount(running)} slots running exceeds the cap of ${DEFAULT_CONCURRENCY_CAP}`,
-  );
-
-  // And the invariant, over the whole spine rather than over this fixture: the
-  // filled stations never occupy more slots than the cap.
-  for (const edges of [document.edges, [...document.edges, makeEdge('together-with', '3', '2')]]) {
-    const all = explainOrder({ issues: document.issues, edges }, seedHolds());
-    assert.ok(
-      slotCount(all.filter((each) => each.station === 'filled')) <= DEFAULT_CONCURRENCY_CAP,
-      'filled stations exceed the concurrency cap',
-    );
-  }
-});
-
-test('a serialize group is admitted on an ACTIVE claim, not on any hold', () => {
-  // #11 is parked, which is not a claim: nothing is running, so nothing is
-  // excluded. Reading every executor hold as a claim held a serialize partner
-  // over work that no worker had.
-  const document = seedDocument();
-  const serialized = explainOrder(
-    { issues: document.issues, edges: [...document.edges, makeEdge('serialize-with', '4', '11')] },
-    seedHolds(),
-  );
-  const partner = serialized.find((each) => each.issue.ref === '4');
-  assert.ok(partner);
-  assert.ok(
-    !partner.holds.some((hold) => hold.label === 'serialized'),
-    'a parked partner held the group even though nothing is running',
-  );
-});
-
-test('a claim expands across the claimed unit before serialize admission', () => {
-  // Claiming #6 atomically claims its whole together unit (§4.3.7), so
-  // serializing with any member of that unit excludes you — even a member
-  // nobody claimed directly.
-  const document = seedDocument();
-  const serialized = explainOrder(
-    {
-      issues: document.issues,
-      edges: [
-        ...document.edges,
-        makeEdge('together-with', '6', '7'),
-        makeEdge('serialize-with', '4', '7'),
-      ],
-    },
-    seedHolds(),
-  );
-  const partner = serialized.find((each) => each.issue.ref === '4');
-  assert.ok(partner);
-  assert.ok(
-    partner.holds.some((hold) => hold.label === 'serialized'),
-    'the claim did not expand across the together unit, so the group admitted two workers',
-  );
-});
-
-test('a reference to a duplicate resolves to its canonical', () => {
-  // #10 is a duplicate of #4 and is never worked. A dependency written against
-  // #10 therefore has to LAND on #4 — otherwise #4 never inherits the
-  // dependent'"'"'s urgency, and closing #4 would not unblock anything.
-  const document = seedDocument();
-  const resolved = explainOrder(
-    { issues: document.issues, edges: [...document.edges, makeEdge('blocked-by', '1', '10')] },
-    seedHolds(),
-  );
-  const canonical = resolved.find((each) => each.issue.ref === '4');
-  assert.ok(canonical);
-  assert.equal(
-    canonical.effectivePriority,
-    0,
-    'the canonical did not inherit the urgency of the issue blocked by its duplicate',
-  );
-
-  const dependent = resolved.find((each) => each.issue.ref === '1');
-  assert.ok(dependent);
-  assert.ok(
-    dependent.holds.some((hold) => hold.detail.includes('blocked by 4')),
-    'the dependency stayed attached to the duplicate instead of the canonical',
-  );
-  assert.ok(
-    !dependent.holds.some((hold) => hold.detail.includes('blocked by 10')),
-    'the dependency is still reported against a duplicate that is never worked',
-  );
-});
-
-test('a chain of duplicates resolves to the far canonical, not one hop', () => {
-  const document = seedDocument();
-  const chained = explainOrder(
-    {
-      issues: [...document.issues, { ref: '15', title: 'Renaming that flag again', state: 'open' }],
-      edges: [
-        ...document.edges,
-        makeEdge('duplicate-of', '15', '10'),
-        makeEdge('blocked-by', '1', '15'),
-      ],
-    },
-    seedHolds(),
-  );
-  const canonical = chained.find((each) => each.issue.ref === '4');
-  assert.ok(canonical);
-  assert.equal(canonical.effectivePriority, 0, 'the closure stopped one hop short of the canonical');
-});
-
-test('blocking INSIDE a together unit is advisory, so it is not a cycle', () => {
-  // #12 and #13 block each other. Group them, and those edges become internal
-  // to one unit — advisory under §4.3.7, because a group is claimed and worked
-  // as a whole. Readiness already ignored them; cycle detection did not, so the
-  // page went on calling a perfectly well-formed group stuck.
-  const document = seedDocument();
-  const grouped = explainOrder(
-    { issues: document.issues, edges: [...document.edges, makeEdge('together-with', '12', '13')] },
-    seedHolds(),
-  );
-  for (const ref of ['12', '13']) {
-    const member = grouped.find((each) => each.issue.ref === ref);
-    assert.ok(member);
-    assert.ok(
-      !member.holds.some((hold) => hold.label === 'cycle'),
-      `${ref} is still reported cyclic on an edge the rules make advisory`,
-    );
-    assert.ok(
-      !member.holds.some((hold) => hold.label === 'blocked'),
-      `${ref} is still reported blocked by its own groupmate`,
-    );
-  }
-
-  // CONTROL: ungrouped, the same two edges ARE a cycle. Without this the test
-  // above passes just as well against a build that never detects one.
-  for (const ref of ['12', '13']) {
-    const member = explainOrder(document, seedHolds()).find((each) => each.issue.ref === ref);
-    assert.ok(member?.holds.some((hold) => hold.label === 'cycle'), `${ref} control failed`);
-  }
-});
-
-test('the cycle guard sees cycles that exist only after duplicate resolution', () => {
-  // #10 is a duplicate of #4. With #4 blocked-by #2 already landed, adding
-  // `#2 blocked-by #10` closes #4 → #2 → #4 once references resolve — invisible
-  // to a walk over raw endpoints, because raw #10 has no path to #2.
-  const document = seedDocument();
-  const landed = {
-    issues: document.issues,
-    edges: [...document.edges, makeEdge('blocked-by', '4', '2')],
-  };
-  assert.equal(
-    guarded(landed, 'blocked-by', '2', '10'),
+    introducesCycle(current, document(issues, [...current.edges, makeEdge('blocked-by', '2', '1')])),
     true,
-    'the guard missed a cycle that exists after duplicate resolution',
   );
-
-  // CONTROL: an edge that closes nothing is still allowed, so the guard is not
-  // simply refusing everything.
-  assert.equal(guarded(landed, 'blocked-by', '14', '9'), false, 'the guard refuses an innocent edge');
-});
-
-test('a cycle THROUGH a together unit is seen, because the unit is one node', () => {
-  // Opposite sides of the cycle touch different members: `#9 blocked-by #4`
-  // and `#4 blocked-by #7`, with {7,9} a together group. The schedulable-unit
-  // graph is {7,9} → 4 → {7,9} and all three are stuck, but a member-level walk
-  // cannot cross from #7 to #9, so excluding internal edges is not enough —
-  // the unit has to BE one node.
-  const document = seedDocument();
-  const edges = [...document.edges, makeEdge('blocked-by', '9', '4'), makeEdge('blocked-by', '4', '7')];
-  const stuck = explainOrder({ issues: document.issues, edges }, seedHolds());
-  for (const ref of ['4', '7', '9']) {
-    const member = stuck.find((each) => each.issue.ref === ref);
-    assert.ok(member, `no row for ${ref}`);
-    assert.ok(
-      member.holds.some((hold) => hold.label === 'cycle'),
-      `${ref} is in the deadlock and is not reported as stuck`,
-    );
-  }
-
-  // The guard has to refuse the edit that closes it, for the same reason and
-  // through the same graph.
-  const landed = { issues: document.issues, edges: [...document.edges, makeEdge('blocked-by', '9', '4')] };
   assert.equal(
-    guarded(landed, 'blocked-by', '4', '7'),
-    true,
-    'the guard let through an edge that deadlocks a whole unit',
+    introducesCycle(current, document(issues, [...current.edges, makeEdge('blocked-by', '2', '3')])),
+    false,
   );
-
-  // CONTROL: without the group, the same two edges are NOT a cycle — #4 blocks
-  // #9 and #7 blocks #4, which is an ordinary chain.
-  const ungrouped = {
-    issues: document.issues,
-    edges: [
-      ...document.edges.filter((edge) => edge.kind !== 'together-with'),
-      makeEdge('blocked-by', '9', '4'),
-    ],
-  };
-  assert.equal(guarded(ungrouped, 'blocked-by', '4', '7'), false, 'the control chain reads as a cycle');
 });
 
-test('a unit-level blocker is reported once, not once per groupmate', () => {
-  // The contraction gives every member the unit's blockers directly, so
-  // propagating a groupmate's `blocked` hold on top would state one dependency
-  // twice — in its own words and in the groupmate's.
-  const document = seedDocument();
-  const blocked = explainOrder(
-    { issues: document.issues, edges: [...document.edges, makeEdge('blocked-by', '9', '14')] },
-    seedHolds(),
-  );
-  for (const ref of ['7', '9']) {
-    const member = blocked.find((each) => each.issue.ref === ref);
-    assert.ok(member);
-    const blockedHolds = member.holds.filter((hold) => hold.label === 'blocked');
-    assert.equal(blockedHolds.length, 1, `${ref} reports its unit's one blocker ${blockedHolds.length} times`);
-    assert.ok(blockedHolds[0]?.detail.includes('14'));
-  }
-});
-
-test('the cycle guard is unit-level at BOTH ends of the edge', () => {
-  // Copying a unit's adjacency onto its members makes every member the same
-  // SOURCE of an edge; it does not make every member the same DESTINATION. So
-  // the arrival test has to compare units too, or the same cycle approached
-  // from the other end walks straight past it.
-  const document = seedDocument();
-
-  // Orientation A: the path leaves the unit. Land `#9 blocked-by #4`, then
-  // `#4 blocked-by #7`.
-  const a = { issues: document.issues, edges: [...document.edges, makeEdge('blocked-by', '9', '4')] };
-  assert.equal(guarded(a, 'blocked-by', '4', '7'), true, 'orientation A missed');
-
-  // Orientation B: the path ARRIVES at a different member. Land
-  // `#4 blocked-by #9`, then `#7 blocked-by #4` — `reaches` gets to #9, which
-  // is not #7 by reference but is #7 by unit.
-  const b = { issues: document.issues, edges: [...document.edges, makeEdge('blocked-by', '4', '9')] };
-  assert.equal(guarded(b, 'blocked-by', '7', '4'), true, 'orientation B missed');
-
-  // A member naming its own groupmate is an internal edge, never a cycle.
-  assert.equal(guarded(document, 'blocked-by', '7', '9'), false, 'an internal edge read as a cycle');
-
-  // CONTROL: an edge that closes nothing is still allowed in both fixtures, so
-  // the guard is not simply refusing everything once a group exists.
-  assert.equal(guarded(a, 'blocked-by', '14', '3'), false, 'the guard refuses an innocent edge');
-  assert.equal(guarded(b, 'blocked-by', '14', '3'), false, 'the guard refuses an innocent edge');
-});
-
-test("the store's order carries only rows that are IN the order", () => {
-  const document = seedDocument();
-  const derive = createDeriver(seedHolds());
-  const rows = derive(document);
-  const explained = explainOrder(document, seedHolds());
-
-  const footer = explained.filter((each) => each.placement === 'footer').map((each) => each.issue.ref);
-  assert.ok(footer.length > 0, 'the seed does not exercise the footer');
-  for (const ref of footer) {
-    assert.ok(!rows.some((row) => row.ref === ref), `${ref} is in the footer and in the order`);
-  }
-  assert.equal(rows.length, explained.length - footer.length);
-
-  // The point of the filter: an issue LEAVING the order must be absent from the
-  // next order, so the store can report it as `left` rather than as a move to a
-  // footer rank it never occupied.
-  const nowDuplicate = derive({
-    issues: document.issues,
-    edges: [...document.edges, makeEdge('duplicate-of', '3', '2')],
-  });
-  assert.ok(rows.some((row) => row.ref === '3'), 'the control failed: #3 should start in the order');
-  assert.ok(!nowDuplicate.some((row) => row.ref === '3'), '#3 stayed in the order after becoming a duplicate');
-});
-
-test('a cycle closed by COLLAPSING vertices is guarded, with no new dependency', () => {
-  // The edit that closes this cycle adds no `blocked-by` at all: it makes #3 a
-  // duplicate of #4, and duplicate resolution turns the chain #4 → #2 → #3 into
-  // #4 → #2 → #4. A guard keyed on the mutation's kind cannot see it, which is
-  // why the question is asked of the two documents instead.
-  const document = seedDocument();
-  const chain = {
-    issues: document.issues,
-    edges: [
-      ...document.edges.filter((edge) => !(edge.kind === 'duplicate-of' && edge.from === '10')),
-      makeEdge('blocked-by', '4', '2'),
-      makeEdge('blocked-by', '2', '3'),
-    ],
-  };
-  assert.equal(
-    guarded(chain, 'duplicate-of', '3', '4'),
-    true,
-    'a collapsing edit closed a cycle and the guard did not see it',
-  );
-
-  // The same collapse where no cycle results is still allowed — the guard is
-  // refusing the cycle, not the kind.
-  assert.equal(guarded(chain, 'duplicate-of', '14', '9'), false, 'an innocent collapse was refused');
-
-  // And `together-with` collapses too, so it is asked the same question.
-  assert.equal(guarded(chain, 'together-with', '3', '4'), true, 'a together collapse was missed');
-});
-
-test('an EXISTING cycle does not refuse unrelated edits', () => {
-  // The seed contains the #12/#13 cycle deliberately (§6.6 surfaces one rather
-  // than refusing it). Comparing counts instead of sets would make every edit
-  // made while it stands look like it introduced a cycle.
-  const document = seedDocument();
-  assert.ok(cyclicMembersPresent(document), 'the seed no longer carries a cycle to test against');
-  assert.equal(guarded(document, 'blocked-by', '4', '3'), false, 'an unrelated edit was refused');
-});
-
-function cyclicMembersPresent(document: GraphDocument): boolean {
-  return explainOrder(document, seedHolds()).some((row) =>
+test('a cycle that already exists is surfaced, never re-refused', () => {
+  // §6.6: a cycle is detected on read and surfaced for grooming, because
+  // write-time rejection pushes writers into describing the dependency in
+  // prose. The seed ships one for exactly that reason, so an unrelated edit on
+  // top of it must still be allowed.
+  const seed = seedDocument();
+  const cyclic = explainOrder(seed, seedHolds()).filter((row) =>
     row.holds.some((hold) => hold.label === 'cycle'),
   );
-}
-
-
-test('every member of a cycle is found, including one that joins it later', () => {
-  // #12 and #13 already block each other. Wire #14 into that component:
-  // `#12 blocked-by #14` and `#14 blocked-by #13`. A walk that marks a node
-  // done on the way out finishes #12 and #13 first and never revisits them, so
-  // #14 comes back clean although it is plainly in the same component.
-  const document = seedDocument();
-  const joined = {
-    issues: document.issues,
-    edges: [...document.edges, makeEdge('blocked-by', '12', '14'), makeEdge('blocked-by', '14', '13')],
-  };
-  const rowsOf = explainOrder(joined, seedHolds());
-  for (const ref of ['12', '13', '14']) {
-    const member = rowsOf.find((each) => each.issue.ref === ref);
-    assert.ok(member, `no row for ${ref}`);
-    assert.ok(
-      member.holds.some((hold) => hold.label === 'cycle'),
-      `${ref} is in the component and is not reported cyclic`,
-    );
-  }
-
-  // And the guard refuses the edit that pulls #14 in.
-  const before = {
-    issues: document.issues,
-    edges: [...document.edges, makeEdge('blocked-by', '12', '14')],
-  };
-  assert.equal(guarded(before, 'blocked-by', '14', '13'), true, 'the guard missed the join');
-
-  // CONTROL: an issue with a one-way path into the cycle is NOT in it — a test
-  // that called everything reachable cyclic would pass the assertions above.
-  const oneWay = {
-    issues: document.issues,
-    edges: [...document.edges, makeEdge('blocked-by', '14', '12')],
-  };
-  const outside = explainOrder(oneWay, seedHolds()).find((each) => each.issue.ref === '14');
-  assert.ok(outside);
-  assert.ok(
-    !outside.holds.some((hold) => hold.label === 'cycle'),
-    'an issue merely depending on a cycle was reported as being in it',
-  );
-});
-
-test('a duplicate with no resolvable canonical is still never worked', () => {
-  // Two issues pointing `duplicate-of` at each other resolve to nothing — each
-  // walk returns to where it started. Deriving "is a duplicate" from the
-  // canonical map therefore came back empty, and both re-entered the spine as
-  // ordinary work while still carrying the field. §6.2 rule 2 excludes an issue
-  // that IS a duplicate; it does not make that conditional on the reader being
-  // able to name what it duplicates.
-  const document = seedDocument();
-  const mutual = {
-    issues: document.issues,
-    edges: [...document.edges, makeEdge('duplicate-of', '2', '3'), makeEdge('duplicate-of', '3', '2')],
-  };
-  const rowsOf = explainOrder(mutual, seedHolds());
-  for (const ref of ['2', '3']) {
-    const member = rowsOf.find((each) => each.issue.ref === ref);
-    assert.ok(member, `no row for ${ref}`);
-    assert.equal(member.placement, 'footer', `${ref} re-entered the order`);
-    assert.ok(member.holds.some((hold) => hold.label === 'duplicate'), `${ref} lost its duplicate hold`);
-  }
-
-  // CONTROL: the issue POINTED AT is not itself a duplicate, so the fix does
-  // not simply mark everything it touches.
-  const canonicalRow = explainOrder(document, seedHolds()).find((each) => each.issue.ref === '4');
-  assert.ok(canonicalRow);
-  assert.equal(canonicalRow.placement, 'spine', 'the canonical was excluded along with its duplicate');
-});
-
-test('a CLOSED member of a together unit does not hold its open groupmates', () => {
-  // A together group closes member by member (§4.3.7) and readiness is
-  // evaluated over the members still open, so a closed member is no longer part
-  // of the schedulable unit. Contracting over ALL members copied its
-  // dependencies onto the ones that are left — holding live work on a
-  // dependency that belongs to finished work.
-  const document = seedDocument();
-  const withClosedMember = {
-    issues: document.issues,
-    edges: [
-      ...document.edges,
-      makeEdge('blocked-by', '8', '2'), // #8 is CLOSED in the seed
-      makeEdge('together-with', '8', '4'),
-    ],
-  };
-  const live = explainOrder(withClosedMember, seedHolds()).find((each) => each.issue.ref === '4');
-  assert.ok(live);
-  assert.ok(
-    !live.holds.some((hold) => hold.label === 'blocked'),
-    "an open member is held by its CLOSED groupmate's dependency",
-  );
-
-  // CONTROL: the same shape with an OPEN member does hold #4 — otherwise this
-  // test passes against a build that has stopped contracting at all.
-  const withOpenMember = {
-    issues: document.issues,
-    edges: [
-      ...document.edges,
-      makeEdge('blocked-by', '14', '2'),
-      makeEdge('together-with', '14', '4'),
-    ],
-  };
-  const held = explainOrder(withOpenMember, seedHolds()).find((each) => each.issue.ref === '4');
-  assert.ok(held);
-  assert.ok(
-    held.holds.some((hold) => hold.label === 'blocked'),
-    'the control failed: an open groupmate should hold the unit',
-  );
-});
-
-test('a groupmate holding the unit claim is not a serialize rival', () => {
-  // #5 and #6 are serialize-with in the seed and #6 is actively claimed. Group
-  // them: the claim expands across the together unit, and reading that
-  // expansion back as competition made each member exclude the other — a
-  // `serialized` hold for a group nobody else was working. A together
-  // component is ONE atomic claim, not two rivals.
-  const document = seedDocument();
-  const grouped = explainOrder(
-    { issues: document.issues, edges: [...document.edges, makeEdge('together-with', '5', '6')] },
-    seedHolds(),
-  );
-  for (const ref of ['5', '6']) {
-    const member = grouped.find((each) => each.issue.ref === ref);
-    assert.ok(member, `no row for ${ref}`);
-    assert.ok(
-      !member.holds.some((hold) => hold.label === 'serialized'),
-      `${ref} is excluded by its own claim unit`,
-    );
-  }
-
-  // CONTROL 1: an OUTSIDE issue serialized with the claimed unit is still
-  // excluded — otherwise this passes against a build that stopped enforcing
-  // serialize admission at all.
-  const outsider = explainOrder(
-    {
-      issues: document.issues,
-      edges: [
-        ...document.edges,
-        makeEdge('together-with', '5', '6'),
-        makeEdge('serialize-with', '4', '6'),
-      ],
-    },
-    seedHolds(),
-  ).find((each) => each.issue.ref === '4');
-  assert.ok(outsider);
-  assert.ok(
-    outsider.holds.some((hold) => hold.label === 'serialized'),
-    'the control failed: an outsider should still be excluded by the claimed unit',
-  );
-
-  // CONTROL 2: ungrouped, #5 IS excluded by claimed #6 — the seed's own case,
-  // which must not regress.
-  const ungrouped = explainOrder(document, seedHolds()).find((each) => each.issue.ref === '5');
-  assert.ok(ungrouped);
-  assert.ok(
-    ungrouped.holds.some((hold) => hold.label === 'serialized'),
-    'the control failed: an ungrouped serialize partner should be excluded',
-  );
-});
-
-test('a TAIL leading into a duplicate cycle resolves to nothing', () => {
-  // `#1 → #2`, `#2 → #3`, `#3 → #2`. The walk from #1 stops on the repeated #2,
-  // which differs from #1 — so it was recorded as #1's canonical: an arbitrary
-  // member of a cycle that HAS no canonical. A cycle resolves to nothing
-  // whether you enter it from inside or from a tail.
-  const document = seedDocument();
-  const tailed = {
-    issues: document.issues,
-    edges: [
-      ...document.edges.filter((edge) => edge.kind !== 'duplicate-of'),
-      makeEdge('duplicate-of', '1', '2'),
-      makeEdge('duplicate-of', '2', '3'),
-      makeEdge('duplicate-of', '3', '2'),
-      // A relationship written against the tail: if #1 resolved to an arbitrary
-      // cycle member, this dependency would silently reattach to it.
-      makeEdge('blocked-by', '14', '1'),
-    ],
-  };
-  const rowsOf = explainOrder(tailed, seedHolds());
-
-  // All three carry the field, so none of them is ever worked.
-  for (const ref of ['1', '2', '3']) {
-    const member = rowsOf.find((each) => each.issue.ref === ref);
-    assert.ok(member, `no row for ${ref}`);
-    assert.equal(member.placement, 'footer', `${ref} re-entered the order`);
-  }
-
-  // And the dependency stays attached to #1 rather than being moved onto a
-  // cycle member the reader picked arbitrarily.
-  const dependent = rowsOf.find((each) => each.issue.ref === '14');
-  assert.ok(dependent);
-  assert.ok(
-    dependent.holds.some((hold) => hold.detail.includes('blocked by 1')),
-    'the dependency was reattached to an arbitrary member of an unresolvable cycle',
-  );
-
-  // CONTROL: a well-formed chain still resolves all the way to its canonical —
-  // otherwise this passes against a build that resolves nothing at all.
-  const chain = {
-    issues: document.issues,
-    edges: [
-      ...document.edges.filter((edge) => edge.kind !== 'duplicate-of'),
-      makeEdge('duplicate-of', '1', '2'),
-      makeEdge('duplicate-of', '2', '3'),
-      makeEdge('blocked-by', '14', '1'),
-    ],
-  };
-  const resolved = explainOrder(chain, seedHolds()).find((each) => each.issue.ref === '14');
-  assert.ok(resolved);
-  assert.ok(
-    resolved.holds.some((hold) => hold.detail.includes('blocked by 3')),
-    'the control failed: a well-formed chain should resolve to its canonical',
-  );
-});
-
-test('an unresolved symmetric reference links nothing, and is surfaced', () => {
-  // §6.7: an unresolved `serialize-with` contributes NO linkage. Passed through
-  // as an ordinary vertex it becomes a SHARED one — `#4 → #404` and `#5 → #404`
-  // union #4 and #5 through an issue that does not exist, so a claim on one
-  // excludes the other for no reason anyone can see.
-  const document = seedDocument();
-  const dangling = {
-    issues: document.issues,
-    edges: [
-      ...document.edges,
-      makeEdge('serialize-with', '4', '404'),
-      makeEdge('serialize-with', '3', '404'),
-    ],
-  };
-  const rowsOf = explainOrder(dangling, [
-    ...seedHolds(),
-    { ref: '4', label: 'claimed', detail: 'another worker holds this issue', active: true },
-  ]);
-
-  const other = rowsOf.find((each) => each.issue.ref === '3');
-  assert.ok(other);
-  assert.ok(
-    !other.holds.some((hold) => hold.label === 'serialized'),
-    'two issues were linked through a reference that resolves to nothing',
-  );
-  assert.equal(other.serializeGroupSize, 0, 'the phantom vertex still forms a group');
-
-  // "Likewise surfaced" is the other half of §6.7 — dropping the linkage
-  // silently turns a malformed document into one that merely looks thin.
-  assert.ok(
-    other.holds.some((hold) => hold.label === 'unresolvable'),
-    'the unresolved reference was dropped without being reported',
-  );
-
-  // CONTROL: a RESOLVED serialize-with still links and still excludes, so this
-  // does not pass against a build that stopped forming components.
-  const resolved = explainOrder(
-    { issues: document.issues, edges: [...document.edges, makeEdge('serialize-with', '3', '4')] },
-    [
-      ...seedHolds(),
-      { ref: '4', label: 'claimed', detail: 'another worker holds this issue', active: true },
-    ],
-  ).find((each) => each.issue.ref === '3');
-  assert.ok(resolved);
-  assert.ok(
-    resolved.holds.some((hold) => hold.label === 'serialized'),
-    'the control failed: a resolved serialize partner should still exclude',
-  );
-});
-
-test('an unresolved SERIALIZATION reference is surfaced without blocking', () => {
-  // §6.7 draws an asymmetry that matters: an unresolved `blocked-by` is treated
-  // as BLOCKING, because unknown state is not "closed"; an unresolved reference
-  // on a SYMMETRIC field contributes no linkage and is merely surfaced. It
-  // links nothing, so it excludes nothing — reporting it as a hold removed
-  // otherwise-ready work from selection over a reference that does nothing.
-  const document = seedDocument();
-  const dangling = explainOrder(
-    { issues: document.issues, edges: [...document.edges, makeEdge('serialize-with', '4', '404')] },
-    seedHolds(),
-  ).find((each) => each.issue.ref === '4');
-  assert.ok(dangling);
-  assert.equal(dangling.ready, true, 'an unresolved serialization reference removed ready work');
-  assert.equal(dangling.placement, 'spine');
-  assert.ok(
-    dangling.holds.some((hold) => hold.label === 'unresolvable'),
-    'it must still be surfaced for grooming',
-  );
-
-  // CONTROL: the OTHER half of §6.7 is unchanged — an unresolved `blocked-by`
-  // still blocks, because unknown state is not "closed".
-  const blocked = explainOrder(document, seedHolds()).find((each) => each.issue.ref === '14');
-  assert.ok(blocked);
-  assert.equal(blocked.ready, false, 'an unresolved blocked-by stopped blocking');
-  assert.ok(blocked.holds.some((hold) => hold.label === 'unresolvable'));
-});
-
-test('a dependency on CLOSED work is satisfied, so it forms no cycle', () => {
-  // #8 is seeded closed. `#8 blocked-by #4` and `#4 blocked-by #8` draws a
-  // cycle on paper, but #4's dependency is already satisfied — nothing is
-  // waiting on anything. Keeping historical edges in the graph made the guard
-  // refuse the second edit and the deriver call #4 stuck.
-  const document = seedDocument();
-  const throughClosed = {
-    issues: document.issues,
-    edges: [...document.edges, makeEdge('blocked-by', '8', '4'), makeEdge('blocked-by', '4', '8')],
-  };
-  const row = explainOrder(throughClosed, seedHolds()).find((each) => each.issue.ref === '4');
-  assert.ok(row);
-  assert.ok(
-    !row.holds.some((hold) => hold.label === 'cycle'),
-    '#4 is reported stuck on a dependency that is already closed',
-  );
-  assert.ok(
-    !row.holds.some((hold) => hold.label === 'blocked'),
-    '#4 is reported blocked by closed work',
-  );
-
-  const landed = {
-    issues: document.issues,
-    edges: [...document.edges, makeEdge('blocked-by', '8', '4')],
-  };
+  assert.ok(cyclic.length > 1, 'the seed no longer ships a cycle');
   assert.equal(
-    guarded(landed, 'blocked-by', '4', '8'),
+    introducesCycle(seed, document(seed.issues, [...seed.edges, makeEdge('blocked-by', '4', '2')])),
     false,
-    'the guard refused an edit whose dependency is already satisfied',
   );
-
-  // CONTROL: the same shape through an OPEN issue IS a cycle, so this does not
-  // pass against a build that stopped detecting cycles.
-  const throughOpen = {
-    issues: document.issues,
-    edges: [...document.edges, makeEdge('blocked-by', '9', '4')],
-  };
-  assert.equal(guarded(throughOpen, 'blocked-by', '4', '9'), true, 'the control chain is not a cycle');
 });
 
-test('INVARIANT: a non-blocking annotation changes nothing a blocking hold would', () => {
-  // The concept was introduced in one place and consumed in four, and one
-  // consumer was missed — so this asserts the WHOLE contract rather than the
-  // one symptom that was reported. Every consumer of a hold must agree about
-  // which reasons keep work out of the ready set.
-  const document = seedDocument();
-  const annotated = {
-    issues: document.issues,
-    edges: [...document.edges, makeEdge('serialize-with', '4', '404')],
-  };
-  const plain = explainOrder(document, seedHolds());
-  const withNote = explainOrder(annotated, seedHolds());
-
-  const row = withNote.find((each) => each.issue.ref === '4');
-  const control = plain.find((each) => each.issue.ref === '4');
-  assert.ok(row && control);
-  assert.ok(row.holds.length > control.holds.length, 'the fixture did not add an annotation');
-
-  // 1. Readiness is unchanged.
-  assert.equal(row.ready, control.ready);
-  // 2. The STATION is unchanged — the slot count must not treat the annotated
-  //    row as unready, which would leave it filled outside the cap.
-  assert.equal(row.station, control.station);
-  // 3. Placement is unchanged.
-  assert.equal(row.placement, control.placement);
-
-  // 4. And the whole board still respects the cap. This is the symptom that was
-  //    reported: an annotated row omitted from the slot count is filled
-  //    regardless, so the board showed cap+1 running.
-  assert.ok(
-    slotCount(withNote.filter((each) => each.station === 'filled')) <= DEFAULT_CONCURRENCY_CAP,
-    'the board shows more filled slots than the concurrency cap allows',
+test('a cycle closed by COLLAPSING vertices is refused, with no new dependency', () => {
+  // This is why the guard is asked of two DOCUMENTS rather than of the edit. A
+  // cycle needs no new dependency to appear: `duplicate-of` collapses vertices,
+  // so the last edit here adds no `blocked-by` at all and still closes
+  // #4 -> #2 -> #4. Extending the guard kind by kind is a list that is always
+  // one entry short.
+  const issues = [open('2', 1), open('3', 1), open('4', 1)];
+  const current = document(issues, [
+    makeEdge('blocked-by', '4', '2'),
+    makeEdge('blocked-by', '2', '3'),
+  ]);
+  assert.equal(
+    introducesCycle(
+      current,
+      document(issues, [...current.edges, makeEdge('duplicate-of', '3', '4')]),
+    ),
+    true,
   );
+});
 
-  // 5. The store's own contract: `holdReasons` is "empty when ready".
-  const rows = createDeriver(seedHolds())(annotated);
-  for (const each of rows) {
-    if (!each.ready) continue;
-    assert.deepEqual(each.holdReasons, [], `${each.ref} is ready and carries reasons`);
-  }
+test('KNOWN GAP: a cycle through a together unit is not refused (issuegraph#43)', () => {
+  // The demo used to contract a together unit to one vertex before searching,
+  // and refused this. The published derivation does not contract, so the swap
+  // narrowed the refusal — and the state is a REAL deadlock: #1 waits on the
+  // unit, the unit waits on #1, and `Model.cycles` reports nothing.
+  //
+  // PINNED RATHER THAN PATCHED, on purpose. Re-adding contraction here would
+  // rebuild the second reading of the ordering rules this file exists to have
+  // removed, and it would disagree with every other consumer of the package.
+  // The finding belongs to the package and is filed as
+  // https://github.com/autnmy/issuegraph/issues/43; when it lands, this test
+  // fails and the demo is revisited rather than the gap being rediscovered.
+  const issues = [open('1', 1), open('2', 1), open('3', 1)];
+  const current = document(issues, [
+    makeEdge('together-with', '2', '3'),
+    makeEdge('blocked-by', '1', '2'),
+  ]);
+  assert.equal(
+    introducesCycle(current, document(issues, [...current.edges, makeEdge('blocked-by', '3', '1')])),
+    false,
+    'the package now contracts together units — remove this pin and delete the gap note',
+  );
+  // The control: the same shape with no unit is refused, so this test cannot
+  // pass against a build whose guard detects nothing at all.
+  const flat = document(issues, [makeEdge('blocked-by', '1', '2')]);
+  assert.equal(
+    introducesCycle(flat, document(issues, [...flat.edges, makeEdge('blocked-by', '2', '1')])),
+    true,
+  );
 });

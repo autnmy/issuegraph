@@ -120,7 +120,17 @@ function renderRow(row: ExplainedRow): HTMLElement {
     // Groups are never written down (§6.1), so the size is computed.
     heading.append(el('span', 'badge', `together, group of ${row.togetherGroupSize}`));
   }
-  if (row.serializeGroupSize > 1) {
+  // COMPARED AGAINST THE UNIT, NOT AGAINST 1. A slot's serialize footprint is
+  // the union over its MEMBERS' components and each member's component includes
+  // itself, so a together unit of two with no `serialize-with` edge anywhere
+  // reads 2 — under the same rule that makes a lone issue read 1. Tested
+  // against 1, that drew "serialized, group of 2" on a pair nothing serializes,
+  // which is a relationship the page invented.
+  //
+  // The number is the derivation's and is correct; what is a rendering decision
+  // is whether the group reaches BEYOND its own members, and that is this
+  // comparison. `order.test.ts` pins the property it rests on.
+  if (row.serializeGroupSize > Math.max(row.togetherGroupSize, 1)) {
     heading.append(el('span', 'badge', `serialized, group of ${row.serializeGroupSize}`));
   }
   body.append(heading);

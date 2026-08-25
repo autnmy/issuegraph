@@ -27,9 +27,9 @@ adapter that has no tracker behind it at all.
 Everything on this page that is not the store is **host** work, and that split is
 the demonstration:
 
-| the package supplies | the host supplies |
+| the packages supply | the host supplies |
 |---|---|
-| the document, the write loop, the edge states, the change summary | the data source, the order deriver, the cycle guard, every pixel |
+| the document, the write loop, the edge states, the change summary (`store`) — the selection order, the readiness verdict, effective priority, the cycle walk (`derive`, over `reader`) | the data source, the executor holds, the concurrency cap, the base ranking, every pixel |
 
 ## What it is not
 
@@ -38,12 +38,39 @@ to the viewer package, and drawing them here would make this a second
 implementation of the grammar that package exists to have one of. This is a list,
 and a list is enough to reach every state the port has to express.
 
-**The order deriver here is not the reference derivation.** The store takes the
-deriver as a port with *no default*, deliberately: a default would be a second
-implementation of the selection order. `src/order.ts` is what a host writes on
-the other side of that port — small, and reading SPEC.md §6.2, §6.3 and §6.4
-directly. When the reference derivation is published, that file is deleted and
-this demo imports it instead.
+**It does not derive an order.** The store takes the deriver as a port with *no
+default*, deliberately: a default would be a second implementation of the
+selection order. So a host has to supply one — and this host supplies
+`@issuegraph/derive`. `src/order.ts` is a **projection** in both directions: the
+store's document onto the derivation's node input, and the derivation's slots
+onto the stations this page draws.
+
+It used to be the other thing. Until `@issuegraph/derive` published there was
+nothing to import, so this file carried its own union-find, duplicate-chain walk,
+cycle search, effective-priority fixed point and selection sort, read off SPEC.md
+§6.2, §6.3 and §6.4. Its review measured what that cost: **31 findings across
+fifteen rounds, the largest cluster in exactly those algorithms**, and two of the
+last three rounds were regressions introduced while patching earlier ones. That
+is the argument for the port having no default, stated as evidence rather than as
+a design note.
+
+What is still the host's is still here, because the specification puts it here:
+the **executor holds** (§6.8 — hold semantics must never be encoded as format
+fields, so the format never learns why an executor declines ready work), the
+**concurrency cap** (§6.5 — dispatch policy is out of scope), and the **base
+ranking** (`derive` takes a host's own ordering as an input and never computes
+one). Those are inputs to a derivation, not a derivation.
+
+**One divergence is known and pinned, not patched.** The old hand-rolled deriver
+contracted a `together-with` unit to a single vertex before searching for cycles;
+the published one does not, so a `blocked-by` cycle running *through* a unit is no
+longer refused — and it is a real deadlock that `Model.cycles` reports nowhere.
+Re-adding contraction here would rebuild the second reading this rework removed,
+and would disagree with every other consumer of the package. So the demo adopts
+the package's answer, `order.test.ts` pins the gap with a control, and the finding
+is filed against the package as
+[#43](https://github.com/autnmy/issuegraph/issues/43). When it lands, that test
+fails and this demo is revisited.
 
 ## What you can reach from the page
 
@@ -77,7 +104,7 @@ Optimistic rendering is allowed; optimistic re-ordering is not.
 | file | what it is |
 |---|---|
 | `src/seed.ts` | the seeded backlog, chosen for coverage rather than realism |
-| `src/order.ts` | the host's order deriver and the rich rows the page renders |
+| `src/order.ts` | the projection onto `@issuegraph/derive`, and the rich rows the page renders |
 | `src/source.ts` | the in-memory adapter, with the two unhappy outcomes armable |
 | `src/render.ts` | plain DOM; every value a CSS custom property |
 | `src/main.ts` | the wiring, and the cycle guard |
@@ -87,6 +114,17 @@ Optimistic rendering is allowed; optimistic re-ordering is not.
 written down: a seed drifts, and an edit that quietly drops the last
 `together-with` would leave this page running and no longer demonstrating the
 thing it exists to demonstrate.
+
+`src/order.test.ts` covers the **seam** and deliberately nothing else — the
+projection in, the projection out, and the coverage claim. Testing the ready set
+or the selection sort here would be a second test suite for a derivation this
+demo does not contain. The load-bearing test is the one that pins every hold chip
+against `IssueOrderSlot.ready` in both directions: a row held with no blocking
+chip is a station that says "held" and says why nowhere. That pin is what caught
+the one real defect this swap surfaced — §6.7 names `blocked-by` and
+`serialize-with`, and the demo had generalized it across both group fields, while
+the reader refuses the declarer of an unresolvable `together-with` (§4.3.7: a unit
+cannot be claimed atomically around a member it cannot identify).
 
 ## Theming
 

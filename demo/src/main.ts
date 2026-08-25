@@ -1,11 +1,13 @@
 /**
  * The demo, wired.
  *
- * Everything here is HOST work — the shell, the controls, the deriver, the
- * adapter. The store below is the published package, unmodified and
- * unconfigured beyond the two ports it declares. That is the claim this page
- * exists to make good: if the demo needs an app installation, an auth flow or a
- * backend, the port is not a port.
+ * Everything here is HOST work — the shell, the controls, the adapter, and the
+ * two ports filled in below. The packages beneath are published and unmodified:
+ * `@issuegraph/store` holds the document and runs the write loop, and the
+ * `OrderDeriver` and `EdgeGuard` it declares are filled with
+ * `@issuegraph/derive` rather than with a second reading of the ordering rules
+ * (see `order.ts`). That is the claim this page exists to make good: if the demo
+ * needs an app installation, an auth flow or a backend, the port is not a port.
  *
  * No credentials of any kind are read, and nothing is persisted. Reloading the
  * page restores the seed, which is the honest behaviour for a demo whose whole
@@ -37,12 +39,16 @@ import { type DemoSource, type NextOutcome, createDemoSource } from './source.ts
  * guard kind by kind is a list that is always one entry short; comparing the
  * resulting graphs has no list.
  *
- * The store hands a guard both documents precisely so it can ask this.
+ * The store hands a guard both documents precisely so it can ask this. The WALK
+ * is still the package's — `introducesCycle` asks `@issuegraph/derive`'s own
+ * pre-write probe about each document's edges — so what a write is refused for
+ * agrees with the package's refusal rather than with a second opinion.
  *
  * Deliberately NOT a refusal of a cycle that already exists — §6.6 is explicit
  * that a cycle is detected on read and surfaced for grooming, because
  * write-time rejection pushes writers into describing the dependency in prose.
- * `introducesCycle` compares sets, so only what this edit adds is refused.
+ * `introducesCycle` compares which EDGES lie on one, so only what this edit adds
+ * is refused, and the seed can ship a cycle to be looked at.
  */
 
 function requireElement<T extends HTMLElement>(id: string): T {
