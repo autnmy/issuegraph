@@ -290,8 +290,10 @@ function declarationFor(ref: IssueRef, edges: readonly StoredEdge[]): Frontmatte
  * could have been dropped on the way in. A host that DID parse bodies would
  * carry the parser's own answer here.
  */
-function toNodes(document: GraphDocument, holds: readonly ExecutorHold[]): readonly NodeInput[] {
-  const claimed = new Set(holds.filter((hold) => hold.active === true).map((hold) => hold.ref));
+function nodesWith(
+  document: GraphDocument,
+  claimed: ReadonlySet<IssueRef>,
+): readonly NodeInput[] {
   return document.issues.map((issue) => ({
     id: issue.ref,
     repo: null,
@@ -304,6 +306,50 @@ function toNodes(document: GraphDocument, holds: readonly ExecutorHold[]): reado
     data: declarationFor(issue.ref, document.edges),
     declarationRead: 'read' as const,
   }));
+}
+
+/**
+ * The actively-claimed references, EXPANDED ACROSS THEIR TOGETHER UNITS.
+ *
+ * §4.3.7 makes a together unit one piece of work taken by one atomic claim, so
+ * claiming any member claims them all — and `assigneeCount` is the only channel
+ * a claim reaches the model through, so a host that reports it for the named
+ * member alone has told the model something false about the other members.
+ *
+ * THE READER CANNOT DO THIS FOR US, and assuming it did was the defect. Its own
+ * claim scan excludes a node's own together unit — which is why an earlier draft
+ * of this file reasoned that the invariant was "preserved BY THE READER" and
+ * skipped the expansion. That exclusion answers a different question: it stops a
+ * unit reading its own partner's assignment as a rival. It says nothing about a
+ * THIRD issue serialized against a member that was never marked assigned.
+ * Measured: with `#6 together-with #7` and `#7 serialize-with #4` over the
+ * seed's active claim on `#6`, the unit `{6,7,9}` is claimed and `#4` came back
+ * `ready` with no holds at all.
+ *
+ * TWO PASSES, AND THE FIRST ONE IS NOT CIRCULAR. Component membership is a
+ * function of the `together-with` edges alone (`model.ts` unions an edge when
+ * both endpoints resolve and are open), so a claim cannot change which unit a
+ * node is in — which is what makes it safe to ask the model for the units from a
+ * projection that carries no claims, and then project again with the answer.
+ * Deriving the components here instead would be a second union-find, which is
+ * one of the things this rework exists to have deleted.
+ */
+function claimedRefs(
+  document: GraphDocument,
+  holds: readonly ExecutorHold[],
+): ReadonlySet<IssueRef> {
+  const active = holds.filter((hold) => hold.active === true).map((hold) => hold.ref);
+  // The overwhelmingly common case, and worth short-circuiting: with no active
+  // claim there is nothing to expand and no reason to build a model to find out.
+  if (active.length === 0) return new Set();
+  const units = buildModel(nodesWith(document, new Set()));
+  const expanded = new Set<IssueRef>(active);
+  for (const ref of active) {
+    // A ref the document does not hold has no component; it still claims itself,
+    // which the seeding of `expanded` above already covers.
+    for (const member of units.togetherComponent(ref)) expanded.add(member);
+  }
+  return expanded;
 }
 
 /**
@@ -343,6 +389,12 @@ function newestFirst(a: IssueRef, b: IssueRef): number {
 interface Derivation {
   readonly model: Model;
   readonly order: DerivedIssueOrder;
+  /**
+   * The claims the model was TOLD about — expanded across together units. The
+   * chips read this rather than the raw hold table, so the rival a row names is
+   * the same one the derivation excluded it for.
+   */
+  readonly claimed: ReadonlySet<IssueRef>;
 }
 
 /**
@@ -358,13 +410,15 @@ interface Derivation {
  * matched fails OPEN the day it is reworded.
  */
 function derive(document: GraphDocument, holds: readonly ExecutorHold[]): Derivation {
-  const nodes = toNodes(document, holds);
+  const claimed = claimedRefs(document, holds);
+  const nodes = nodesWith(document, claimed);
   return {
     model: buildModel(nodes),
     order: deriveIssueOrder({
       issues: nodes,
       config: { baseRanking: { source: 'config', order: baseRanking(document) } },
     }),
+    claimed,
   };
 }
 
@@ -378,13 +432,20 @@ interface Index {
   readonly cyclic: ReadonlySet<IssueRef>;
 }
 
-function index(document: GraphDocument, holds: readonly ExecutorHold[], model: Model): Index {
+function index(
+  document: GraphDocument,
+  holds: readonly ExecutorHold[],
+  { model, claimed }: Derivation,
+): Index {
   return {
     model,
     byRef: new Map(document.issues.map((issue) => [issue.ref, issue])),
     edges: document.edges,
     executor: new Map(holds.map((hold) => [hold.ref, hold])),
-    claimed: new Set(holds.filter((hold) => hold.active === true).map((hold) => hold.ref)),
+    // THE SAME SET THE MODEL WAS GIVEN, not a second reading of the hold table.
+    // Two readings would let the chip name a rival the derivation did not
+    // exclude for — or, worse, stay silent about one it did.
+    claimed,
     cyclic: new Set(model.cycles.flat()),
   };
 }
@@ -564,8 +625,9 @@ export function explainOrder(
   holds: readonly ExecutorHold[] = [],
   concurrencyCap = DEFAULT_CONCURRENCY_CAP,
 ): readonly ExplainedRow[] {
-  const { model, order } = derive(document, holds);
-  const at = index(document, holds, model);
+  const derivation = derive(document, holds);
+  const { model, order } = derivation;
+  const at = index(document, holds, derivation);
 
   const holdsOf = new Map<IssueRef, readonly Hold[]>();
   for (const issue of document.issues) holdsOf.set(issue.ref, holdsFor(issue.ref, at));

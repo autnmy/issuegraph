@@ -178,6 +178,35 @@ function renderRow(row: ExplainedRow): HTMLElement {
  * document" means.
  */
 export function offersDelete(edge: ProjectedEdge, snapshot: StoreSnapshot): boolean {
+  // AN EDIT IN FLIGHT MAKES THE LANDED ANSWER STALE, which is the half the first
+  // version of this guard missed. A pending DELETE leaves its edge in `landed`
+  // until it settles, so the landed test alone kept the button up through the
+  // whole dispatch — and a second click queued a delete that the store then
+  // revalidated against the updated document and refused `unknown-edge`,
+  // reproducing the very state this predicate was added to prevent.
+  //
+  // A PENDING DELETE IS THE ONLY EDIT THAT REACHES THIS TEST TODAY, and saying so
+  // is more useful than implying a wider population. An edge's identity is
+  // derived from its kind and endpoints, so a `retype` or a `flip` projects
+  // under a NEW id while the old id LEAVES the projection entirely — measured:
+  // with a retype in flight the old id is no longer drawn at all, and the new
+  // one is not in `landed`, so the landed test below refuses it without this
+  // clause. Delete is the one operation that keeps its id and stays landed while
+  // it is in flight, which is exactly the stale-landed shape.
+  //
+  // The test is still written on the EDIT rather than on the verb, so an
+  // operation that later shares delete's shape is covered without an edit here —
+  // but it is a restatement of the row's own rule, not a guard against something
+  // reachable that the landed test misses.
+  //
+  // It also matches what the row already does: a pending write offers no
+  // `retry` and no `discard mine`, because there is nothing to act on until it
+  // settles. Delete was the one control that ignored that.
+  const pending = edge.writes.some(
+    (mutationId) =>
+      snapshot.writes.find((write) => write.mutationId === mutationId)?.state === 'pending',
+  );
+  if (pending) return false;
   return findEdge({ issues: snapshot.issues, edges: snapshot.landed }, edge.id) !== undefined;
 }
 

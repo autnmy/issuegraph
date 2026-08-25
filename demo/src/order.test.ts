@@ -222,10 +222,69 @@ test('the chips agree with the derivation on every single-edge document', () => 
   }
 });
 
+test('an atomic claim on a together unit excludes a serialize rival of ANY member', () => {
+  // §4.3.7: a unit is one piece of work taken by ONE claim, so claiming any
+  // member claims them all. `assigneeCount` is the only channel a claim reaches
+  // the model through, so the host has to say so for every member — the reader
+  // cannot infer it, and its own claim scan excludes a node's OWN unit, which
+  // answers a different question entirely.
+  //
+  // The scenario, over the seed's active claim on #6: #6 together-with #7 makes
+  // {6,7,9} one unit, and #7 serialize-with #4 puts #4 in a serialize group with
+  // a member of it. Before the expansion #4 came back ready with no holds.
+  const seed = seedDocument();
+  const doc = document(seed.issues, [
+    ...seed.edges,
+    makeEdge('together-with', '6', '7'),
+    makeEdge('serialize-with', '7', '4'),
+  ]);
+  const rows = explainOrder(doc, seedHolds());
+
+  const rival = rowFor(rows, '4');
+  assert.equal(rival.ready, false, '#4 is ready beside an atomically-claimed unit');
+  assert.ok(
+    rival.holds.some((hold) => hold.label === 'serialized' && blocks(hold)),
+    `#4 is held but says nothing about why: ${JSON.stringify(rival.holds)}`,
+  );
+
+  // The unit itself is still placed as ONE thing, and the expansion must not
+  // make its members exclude each other — the reader's own-unit exemption is
+  // what prevents that, and this is the control that it still applies.
+  for (const ref of ['6', '7', '9']) {
+    const member = rowFor(rows, ref);
+    assert.equal(member.placement, 'footer', `#${ref} left the footer`);
+    assert.ok(
+      !member.holds.some((hold) => hold.label === 'serialized'),
+      `#${ref} read its own groupmate's claim as a rival`,
+    );
+  }
+
+  assertChipsAgree(doc, seedHolds(), 'claimed unit: ');
+});
+
+test('a PARKED hold is not a claim, so it expands across nothing', () => {
+  // The asymmetry §6.2 rule 4 turns on: admission is about an ACTIVELY-CLAIMED
+  // member. Parked work is not running, so it excludes nobody — and expanding a
+  // park across a unit would hold a serialize rival for a group nothing is
+  // working, which is the opposite of what a width-1 semaphore is for.
+  const seed = seedDocument();
+  const edges = [
+    ...seed.edges,
+    makeEdge('together-with', '11', '7'),
+    makeEdge('serialize-with', '7', '4'),
+  ];
+  // #11 is the seed's PARKED hold. Same shape as the test above, inactive hold.
+  const parked = rowFor(explainOrder(document(seed.issues, edges), seedHolds()), '4');
+  assert.equal(parked.ready, true, 'a park excluded a serialize rival');
+});
+
 test('the chips agree with the derivation while an executor holds an issue', () => {
   // Both flavours of executor hold, against a serialize group and a together
   // unit — the two places §6.2's rules 4 and 5 interact with a host's own
   // holds, and the only channel a claim reaches the model through.
+  // The edges OVERLAP deliberately: #1 is serialized against #2, and #2 and #3
+  // are one together unit — so every claim below lands on a graph where the
+  // atomic-claim expansion and the reader's own-unit exemption both apply.
   const issues = [open('1', 1), open('2', 1), open('3', 1)];
   const edges = [makeEdge('serialize-with', '1', '2'), makeEdge('together-with', '2', '3')];
   for (const active of [true, false]) {
