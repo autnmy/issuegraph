@@ -338,13 +338,15 @@ export function standingFor(
   versions: readonly string[] | { readonly unreachable: string },
   version: string,
   payloads: { readonly local: TarballContents; readonly published: TarballContents } | undefined,
+  payloadFailure?: string,
 ): PublishStanding {
   if (!Array.isArray(versions)) {
     return { kind: 'unknown', reason: (versions as { readonly unreachable: string }).unreachable };
   }
   if (!versions.includes(version)) return { kind: 'new' };
   if (payloads === undefined) {
-    return { kind: 'unknown', reason: `${version} is published but its tarball could not be read` };
+    const because = payloadFailure === undefined ? '' : `: ${payloadFailure}`;
+    return { kind: 'unknown', reason: `${version} is published but its tarball could not be read${because}` };
   }
   const differences = diffTarballContents(payloads.local, payloads.published);
   return differences.length === 0 ? { kind: 'unchanged' } : { kind: 'stale', differences };
@@ -404,7 +406,12 @@ function readTarball(tarball: string): TarballContents {
  */
 function registryVersions(name: string, cwd: string): readonly string[] | { readonly unreachable: string } {
   try {
-    const parsed: unknown = JSON.parse(run('npm', ['view', name, 'versions', '--json'], cwd));
+    // `--prefer-online` for the same reason the post-publish verification uses
+    // it: a cached packument can be served without revalidation, and this guard
+    // gates an irreversible step on whether a version is already published.
+    // A stale YES blocks a correct release; a stale NO is worse — it reports a
+    // version as new, and the release then skips it as already published.
+    const parsed: unknown = JSON.parse(run('npm', ['view', name, 'versions', '--json', '--prefer-online'], cwd));
     if (typeof parsed === 'string') return [parsed];
     if (Array.isArray(parsed) && parsed.every((v): v is string => typeof v === 'string')) return parsed;
     return { unreachable: `npm view ${name} returned a version list this guard could not read` };
@@ -456,6 +463,7 @@ function main(): number {
 
       const versions = registryVersions(name, repoRoot);
       let payloads: { local: TarballContents; published: TarballContents } | undefined;
+      let payloadFailure: string | undefined;
 
       if (Array.isArray(versions) && versions.includes(version)) {
         try {
@@ -476,12 +484,16 @@ function main(): number {
           };
           payloads = { local: readTarball(only(localDir)), published: readTarball(only(publishedDir)) };
         } catch (error) {
+          // Fails CLOSED — `standingFor` reads an absent payload as `unknown` —
+          // but say WHY. Swallowing this left an operator with "the tarball
+          // could not be read" and no way to tell a network failure from a
+          // corrupt pack.
           payloads = undefined;
-          void error;
+          payloadFailure = error instanceof Error ? error.message.trim().split('\n')[0] : String(error);
         }
       }
 
-      const standing = standingFor(versions, version, payloads);
+      const standing = standingFor(versions, version, payloads, payloadFailure);
       findings.push({ name, version, standing });
 
       // What this release will actually upload: a version not on the registry.

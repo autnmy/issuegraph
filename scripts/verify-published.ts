@@ -64,25 +64,40 @@ const RETRY_DELAY_MS = 15_000;
 /** A package resolved in the consumer's tree, against what this release intends. */
 export interface ResolvedPackage {
   readonly name: string;
-  readonly resolved: string;
+  /** EVERY version present in the tree, since npm may nest more than one. */
+  readonly resolved: readonly string[];
   readonly intended: string;
 }
 
 /**
- * The packages whose resolved version is not the one this release intends.
+ * The packages of which the tree carries a version this release does not intend.
+ *
+ * Takes ALL versions per package, not one. npm nests a second copy whenever two
+ * branches need incompatible ranges, so a package can legitimately appear twice
+ * at different versions — and collapsing that to a single value means whichever
+ * copy is visited last wins. A STALE copy overwritten by an intended one leaves
+ * this returning empty, and the import-and-run smoke below then reports a false
+ * green while another code path still loads the stale one. That is a control
+ * passing without looking at its subject, which is this whole change's subject.
+ *
+ * So a package is reported when ANY of its copies differs from the intended
+ * version — not when the last one does.
  *
  * Pure, so the retry decision can be tested without a registry. Only packages
  * the workspace declares are judged: anything else in the tree is somebody
  * else's dependency and not this release's business.
  */
 export function mismatches(
-  resolved: Readonly<Record<string, string>>,
+  resolved: Readonly<Record<string, readonly string[]>>,
   intended: Readonly<Record<string, string>>,
 ): readonly ResolvedPackage[] {
   const found: ResolvedPackage[] = [];
-  for (const [name, version] of Object.entries(resolved)) {
+  for (const [name, versions] of Object.entries(resolved)) {
     const want = intended[name];
-    if (want !== undefined && want !== version) found.push({ name, resolved: version, intended: want });
+    if (want === undefined) continue;
+    if (versions.some((version) => version !== want)) {
+      found.push({ name, resolved: [...versions].sort(), intended: want });
+    }
   }
   return found.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
@@ -115,13 +130,32 @@ function intendedVersions(repoRoot: string): Readonly<Record<string, string>> {
   return intended;
 }
 
-/** Every `@issuegraph/*` version in the installed tree, however deeply nested. */
-function resolvedVersions(cwd: string): Readonly<Record<string, string>> {
+/**
+ * EVERY `@issuegraph/*` version in the installed tree, however deeply nested.
+ *
+ * A list per package, not a value: npm nests a second copy when two branches
+ * need incompatible ranges, and keeping only one of them is how a stale copy
+ * disappears behind an intended one. See `mismatches`.
+ */
+function resolvedVersions(cwd: string): Readonly<Record<string, readonly string[]>> {
   // `--all` because a stale dependency is the case that matters and it is NOT
   // at depth 0: for a `core`-only release the CLI sits at the top and `core` is
   // nested under `reader` and `writer`.
-  const listed: unknown = JSON.parse(run('npm', ['ls', '--all', '--json'], cwd));
-  const found: Record<string, string> = {};
+  //
+  // `npm ls` exits non-zero on any tree it considers invalid while still
+  // printing the JSON, so the status is deliberately ignored and the OUTPUT is
+  // what gets parsed. Unparseable output is a different matter and throws, which
+  // the caller turns into a failure rather than an empty all-clear.
+  let raw: string;
+  try {
+    raw = run('npm', ['ls', '--all', '--json'], cwd);
+  } catch (error) {
+    const stdout = error instanceof Error && 'stdout' in error ? String(error.stdout ?? '') : '';
+    if (stdout.trim() === '') throw error;
+    raw = stdout;
+  }
+  const listed: unknown = JSON.parse(raw);
+  const found: Record<string, string[]> = {};
   const walk = (node: unknown): void => {
     if (node === null || typeof node !== 'object') return;
     const dependencies = (node as { dependencies?: unknown }).dependencies;
@@ -129,7 +163,10 @@ function resolvedVersions(cwd: string): Readonly<Record<string, string>> {
     for (const [name, child] of Object.entries(dependencies as Record<string, unknown>)) {
       if (child !== null && typeof child === 'object') {
         const version = (child as { version?: unknown }).version;
-        if (name.startsWith(SCOPE) && typeof version === 'string') found[name] = version;
+        if (name.startsWith(SCOPE) && typeof version === 'string') {
+          const seen = (found[name] ??= []);
+          if (!seen.includes(version)) seen.push(version);
+        }
         walk(child);
       }
     }
@@ -162,7 +199,14 @@ async function main(): Promise<number> {
       writeFileSync(join(scratch, 'package.json'), JSON.stringify({ name: 'verify-published', private: true }));
 
       try {
-        run('npm', ['install', '--no-audit', '--no-fund', spec], scratch);
+        // `--prefer-online` is what makes RETRYING mean anything. npm caches
+        // packuments and revalidates them only when it decides they are stale,
+        // so a first attempt that cached a stale packument would be served the
+        // same answer from cache on every later attempt — the retries would burn
+        // through, never see the propagation they are waiting for, and false-red
+        // a release that published correctly. A fresh project directory does not
+        // help: the cache is the runner's, not the directory's.
+        run('npm', ['install', '--no-audit', '--no-fund', '--prefer-online', spec], scratch);
       } catch (error) {
         const detail = stderrOf(error);
         if (attempt === PROPAGATION_ATTEMPTS) {
@@ -179,7 +223,9 @@ async function main(): Promise<number> {
       // broken release, or a perfectly good one the CDN has not served yet.
       const stale = mismatches(resolvedVersions(scratch), intended);
       if (stale.length > 0) {
-        const summary = stale.map((p) => `${p.name}@${p.resolved} (want ${p.intended})`).join(', ');
+        const summary = stale
+          .map((p) => `${p.name}@${p.resolved.join('/')} (want ${p.intended})`)
+          .join(', ');
         if (attempt === PROPAGATION_ATTEMPTS) {
           console.error(`FAILED: after ${attempt} attempts the registry still serves: ${summary}`);
           console.error('Either propagation is unusually slow, or these versions were never published.');
