@@ -1,0 +1,18 @@
+{
+  "name": "issuegraph-skills",
+  "version": "0.1.0",
+  "description": "Read and write the Issuegraph block in GitHub issue bodies — dependency edges, priority, evidence, and derived selection order.",
+  "author": {
+    "name": "Autonomy"
+  },
+  "repository": "https://github.com/autnmy/issuegraph",
+  "license": "MIT",
+  "keywords": [
+    "issuegraph",
+    "github",
+    "issues",
+    "dependencies",
+    "selection-order"
+  ],
+  "homepage": "https://github.com/autnmy/issuegraph"
+}
