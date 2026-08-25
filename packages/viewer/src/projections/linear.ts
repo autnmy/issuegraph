@@ -26,6 +26,8 @@ import {
   slotTitle,
   station,
   stationFill,
+  stationsOf,
+  atStations,
 } from '../parts.ts';
 import { type LateralNeighbours, type Scene, resolveFocusKey } from '../scene.ts';
 import { treatmentFor } from '../vocabulary.ts';
@@ -142,8 +144,15 @@ function isolatedChip(count: number): ElementSpec | null {
 
 export function linearScene(
   document: NormalizedDocument,
-  options: SceneOptions = {},
+  rawOptions: SceneOptions = {},
 ): Scene {
+  // NAMED THE WAY THIS PROJECTION NAMES THEM, BEFORE ANYTHING IS DRAWN. A
+  // together unit is one row keyed by its lead, so a caller handing us a
+  // partner is naming a subject this projection has a different name for —
+  // and building the markup from the partner marked nothing `aria-current`
+  // and left the tab stop on the fallback.
+  const stations = stationsOf(document);
+  const options = atStations(rawOptions, stations);
   const inline = document.order.slots.filter((slot) => !isFooterSlot(slot));
   const footerSlots = document.order.slots.filter(isFooterSlot);
 
@@ -209,5 +218,15 @@ export function linearScene(
 
   // No lateral axis here, so nothing is reachable sideways that the order does
   // not already contain.
-  return { projection: 'linear', root, focusOrder, navigable: focusOrder, lateral, diagnostics: [] };
+  return {
+    projection: 'linear',
+    root,
+    focusOrder,
+    navigable: focusOrder,
+    lateral,
+    // A together unit is ONE row keyed by its lead, so its partners are drawn
+    // under that station and are absent from the order above.
+    stationOf: stations,
+    diagnostics: [],
+  };
 }
