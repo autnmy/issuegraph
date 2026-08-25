@@ -111,10 +111,18 @@ function ownsItsOwnActivation(
  * Reading both attributes here separates "what may take focus" from "what may
  * be pointed at" rather than making one attribute answer both.
  */
-function keyAt(target: MountElement | null | undefined, container: MountElement): string | null {
+function keyAt(
+  target: MountElement | null | undefined,
+  container: MountElement,
+  // WHICH IDENTITY IS BEING ASKED FOR. Pointing and focusing are different
+  // questions — see the note above — so the caller names the attributes rather
+  // than a second near-identical walk being written for the narrower one, which
+  // is how two walkers drift apart.
+  attributes: readonly string[] = [KEY_ATTRIBUTE, GROUP_ATTRIBUTE],
+): string | null {
   let cursor: MountElement | null = target ?? null;
   while (cursor !== null) {
-    for (const attribute of [KEY_ATTRIBUTE, GROUP_ATTRIBUTE]) {
+    for (const attribute of attributes) {
       const key = cursor.getAttribute(attribute);
       if (key !== null && key !== '') return key;
     }
@@ -212,6 +220,22 @@ export function mountViewer(
       ownsItsOwnActivation(event.target, container)
     ) {
       return;
+    }
+    // SYNC FOCUS FROM THE DOM BEFORE MOVING. `state.focused` tracks the viewer's
+    // OWN moves — its arrow keys and its clicks — and native Tab is neither. A
+    // reader who tabs into the deep link inside the third row leaves `focused`
+    // pointing wherever it was, so ArrowDown moved relative to the OLD row and
+    // sent focus BACKWARDS past the row they were standing in.
+    // FOCUS IDENTITY ONLY, hence the explicit attribute list: `GROUP_ATTRIBUTE`
+    // marks decoration that is deliberately outside the focus index, so adopting
+    // one would set `focused` to a key `navigate` cannot find — which resolves
+    // to -1 and throws the reader back to the top of the order. That is the same
+    // bug this fixes, arriving through the fix.
+    // `navigable`, NOT `focusOrder`: a gutter node reachable only sideways is a
+    // legitimate place to be standing, and `focusOrder` does not contain it.
+    const standingOn = keyAt(event.target, container, [KEY_ATTRIBUTE]);
+    if (standingOn !== null && standingOn !== state.focused && currentScene.navigable.includes(standingOn)) {
+      state = { ...state, focused: standingOn };
     }
     const result = navigate(currentScene, state, event.key);
     if (result.command.kind === 'none') return;

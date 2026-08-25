@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import { renderMarkup } from './element.ts';
 import { mountViewer } from './mount.ts';
 import { renderViewer } from './render.ts';
-import { KEY_ATTRIBUTE } from './scene.ts';
+import { GROUP_ATTRIBUTE, KEY_ATTRIBUTE } from './scene.ts';
 import { TestDocument, TestElement, TestNode } from './testing/document.ts';
 import { fixtureDocument, heldTogetherDocument } from './testing/fixtures.ts';
 
@@ -180,6 +180,53 @@ describe('mountViewer', () => {
 
     container.dispatch('keydown', { key: 'ArrowDown', target: link });
     assert.equal(handle.state.focused, '101');
+  });
+
+  it('moves from the row the reader is STANDING in, not the last one it moved to', () => {
+    // Native Tab walks the deep-link chips, and the viewer never hears about it:
+    // `state.focused` only tracks the viewer's own moves. So tabbing into the
+    // a row's link and pressing ArrowDown moved relative to the row focus had
+    // been left on rather than the one the reader is in.
+    // The fixture's order is 102, 101, 103, 105, 106, and focus is seeded on
+    // 102. Tabbing to 101's link and pressing ArrowDown must reach 103; reading
+    // the stale 102 lands on 101 — the row already being stood in, so the key
+    // press appears to do nothing at all.
+    const { container, handle } = mounted();
+    const row = container.find(KEY_ATTRIBUTE, '101');
+    assert.ok(row !== undefined, 'no row for 101');
+    const link = row.descendants().find((element) => element.tag === 'a');
+    assert.ok(link !== undefined, 'row 101 rendered no deep link');
+    assert.equal(
+      handle.state.focused,
+      '102',
+      'the fixture no longer seeds focus where this test assumes',
+    );
+
+    container.dispatch('keydown', { key: 'ArrowDown', target: link });
+
+    assert.equal(handle.state.focused, '103', 'moved from the stale row, not from 101');
+  });
+
+  it('does NOT adopt a decoration key, which is outside the focus index', () => {
+    // `data-ig-group` marks something a reader can point at but never focus, so
+    // adopting one would set `focused` to a key `navigate` cannot resolve — it
+    // indexes to -1 and throws the reader back to the top of the order, which is
+    // the very bug the sync above fixes, arriving through the fix.
+    const { container, handle } = mounted({ projection: 'graph' });
+    const decoration = container
+      .descendants()
+      .find(
+        (element) =>
+          element.getAttribute(GROUP_ATTRIBUTE) !== null &&
+          element.getAttribute(KEY_ATTRIBUTE) === null,
+      );
+    if (decoration === undefined) return; // this fixture drew no decoration; nothing to assert
+
+    const before = handle.state.focused;
+    container.dispatch('keydown', { key: 'ArrowDown', target: decoration });
+
+    assert.notEqual(handle.state.focused, decoration.getAttribute(GROUP_ATTRIBUTE));
+    assert.ok(before !== null);
   });
 
   it('reports a hover, and reports null when the pointer leaves', () => {
