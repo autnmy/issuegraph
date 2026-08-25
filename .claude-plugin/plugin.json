@@ -1,0 +1,18 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "issuegraph",
+  "version": "0.1.0",
+  "description": "Read and write the Issuegraph block in GitHub issue bodies \u2014 dependency edges, priority, evidence, and derived selection order.",
+  "author": {
+    "name": "Autonomy"
+  },
+  "repository": "https://github.com/autnmy/issuegraph",
+  "license": "MIT",
+  "keywords": [
+    "issuegraph",
+    "github",
+    "issues",
+    "dependencies",
+    "selection-order"
+  ]
+}
