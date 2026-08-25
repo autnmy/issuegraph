@@ -3,7 +3,7 @@ import { describe, test } from 'node:test';
 
 import type { NodeInput } from '@issuegraph/reader';
 
-import { wouldCycleOnBlockedBy } from './cycle.ts';
+import { buildTogetherComponents, wouldCycleOnBlockedBy } from './cycle.ts';
 import { deriveIssueOrder } from './order.ts';
 import {
   frontmatter,
@@ -75,6 +75,57 @@ describe('wouldCycleOnBlockedBy', () => {
       { ...issue(3) },
     ];
     assert.equal(wouldCycleOnBlockedBy(issues, '3', '1'), true);
+  });
+
+  test('resolves an ASCENDING together chain without going quadratic', () => {
+    // THE DIRECTION IS THE WHOLE TEST. `buildTogetherComponents` attaches
+    // `find(key)` under `find(target)`, so the tree shape follows the reference
+    // direction: DESCENDING refs hang each new key off the existing root — a
+    // flat star, O(1) finds, fine with or without path compression — while
+    // ASCENDING refs build a literal linked list. Writing this test the other
+    // way round passes against the unfixed code and proves nothing; that was
+    // verified by doing it, not assumed.
+    // Measured, n = 20,000: descending 4.9 ms either way; ascending 3,947 ms
+    // before the fix and 4.4 ms after.
+    const n = 20_000;
+    const chain = (ascending: boolean): NodeInput[] =>
+      Array.from({ length: n }, (_, i) => {
+        const partner = ascending ? i + 1 : i - 1;
+        const linked = ascending ? i < n - 1 : i > 0;
+        return {
+          ...issue(i),
+          data: frontmatter(linked ? { togetherWith: ref(partner) } : {}),
+        };
+      });
+
+    const resolveAll = (issues: NodeInput[]): { widest: number; ms: number } => {
+      const started = process.hrtime.bigint();
+      const resolve = buildTogetherComponents(issues, () => null);
+      let widest = 0;
+      for (const node of issues) widest = Math.max(widest, resolve(node.id).length);
+      return { widest, ms: Number(process.hrtime.bigint() - started) / 1e6 };
+    };
+
+    const descending = resolveAll(chain(false));
+    const ascending = resolveAll(chain(true));
+
+    // Both orders describe ONE unit of every issue. Deterministic, so a walk
+    // that is broken rather than merely slow fails here instead of on time.
+    assert.equal(descending.widest, n, 'the descending chain is not one unit');
+    assert.equal(ascending.widest, n, 'the ascending chain is not one unit');
+
+    // SELF-CALIBRATING, because an absolute millisecond budget is a promise
+    // about the machine rather than about the code. The descending order is
+    // linear with or without the fix, so it measures THIS machine on THIS
+    // shape and the ascending order has to stay within reach of it. The floor
+    // absorbs timer noise when both are only a few milliseconds. Observed
+    // ratio: about 1 when fixed, about 800 when not.
+    const budget = Math.max(250, descending.ms * 20);
+    assert.ok(
+      ascending.ms < budget,
+      `ascending chain took ${ascending.ms.toFixed(1)} ms against a ${budget.toFixed(1)} ms budget ` +
+        `(descending: ${descending.ms.toFixed(1)} ms) — the union-find is not compressing paths`,
+    );
   });
 
   test('still admits an edge to a unit that closes nothing', () => {
