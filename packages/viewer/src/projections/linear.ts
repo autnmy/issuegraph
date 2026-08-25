@@ -95,7 +95,11 @@ function slotRow(
   );
 }
 
-function excludedRow(
+// EXPORTED FOR THE GRAPH'S REFUSAL, which is the only other place an exclusion
+// has to be drawn: when the graph refuses, its rail is the whole order UI and
+// an exclusion rendered nowhere would make the refusal's own completeness claim
+// false. One row shape for both projections rather than a second that can drift.
+export function excludedRow(
   document: NormalizedDocument,
   key: string,
   canonical: string,

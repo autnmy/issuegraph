@@ -110,6 +110,34 @@ describe('normalizeDocument', () => {
     assert.ok(diagnostics.some((line) => line.includes('more than one serialize-with')));
   });
 
+  it('collapses an exact repeat of a directed edge, and keeps its reverse', () => {
+    // The dedupe covered symmetric fields only, so `A blocked-by B` listed twice
+    // survived as two edges — two identical graph paths, two badges, and a
+    // blocking count in the refusal summary inflated past what the canvas holds.
+    const twice = normalizeDocument({
+      issues: [issue('1'), issue('2')],
+      edges: [
+        { field: 'blocked-by', from: '1', to: '2' },
+        { field: 'blocked-by', from: '1', to: '2' },
+      ],
+      order: emptyOrder,
+    });
+    assert.equal(twice.document.edges.length, 1, 'an exact repeat survived as two edges');
+
+    // THE HALF THAT MUST NOT BE LOST: a directed field's reverse is a DIFFERENT
+    // claim, so it stays. Collapsing it would be the symmetric rule applied to a
+    // field that has no such equivalence.
+    const both = normalizeDocument({
+      issues: [issue('1'), issue('2')],
+      edges: [
+        { field: 'blocked-by', from: '1', to: '2' },
+        { field: 'blocked-by', from: '2', to: '1' },
+      ],
+      order: emptyOrder,
+    });
+    assert.equal(both.document.edges.length, 2, 'the distinct reverse edge was collapsed away');
+  });
+
   it('drops a together-with the order does not group, and says why', () => {
     // It is drawn as an ENCLOSURE around one slot's members, never as an arc, and
     // the enclosures come from the slot table — so an edge whose endpoints sit in

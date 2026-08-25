@@ -17,7 +17,12 @@
 import type { EdgeField } from '@issuegraph/core';
 
 import { clustersOf } from '../clusters.ts';
-import type { NormalizedDocument, ViewerEdge } from '../document.ts';
+import type {
+  NormalizedDocument,
+  ViewerEdge,
+  ViewerExclusion,
+  ViewerSlot,
+} from '../document.ts';
 import { type ElementSpec, element, svg } from '../element.ts';
 import {
   type EdgeGeometry,
@@ -31,7 +36,7 @@ import { emptyState, legend, slotLabel, slotTitle, station, stationFill } from '
 import { type LateralNeighbours, type Scene, resolveFocusKey } from '../scene.ts';
 import { type Theme, defaultTheme } from '../theme.ts';
 import { type EdgeTerminal, dashArrayFor, treatmentFor } from '../vocabulary.ts';
-import { type SceneOptions, isFooterSlot } from './linear.ts';
+import { type SceneOptions, excludedRow, isFooterSlot } from './linear.ts';
 
 /**
  * The node budget, from the design's scale table. Above the first threshold the
@@ -266,6 +271,30 @@ function nodeShape(
  * against remembered positions is the failure mode the design's implementation
  * note names; the numbers ride custom properties so the theme still owns them.
  */
+/**
+ * What the rail draws — ONE rule, because two callers read it.
+ *
+ * `spineRail` renders these rows and the focus index has to publish exactly the
+ * same set, or the projection draws a keyed row nothing can reach. That is not
+ * hypothetical: widening the rail for the refusal without widening the index
+ * left the footer slot and the exclusion drawn with `data-ig-key` and absent
+ * from `navigable` — the identical defect the canvas had two rounds ago,
+ * reintroduced by fixing its sibling. Deriving both from here is what makes the
+ * two provably agree rather than agree by inspection.
+ *
+ * `positioned` is the refusal signal inverted: with a canvas, a footer slot is
+ * drawn as a canvas node and an exclusion sits off the spine entirely, so the
+ * rail carries neither. Without one, the rail IS the order.
+ */
+function railContents(
+  document: NormalizedDocument,
+  positioned: boolean,
+): { slots: readonly ViewerSlot[]; excluded: readonly ViewerExclusion[] } {
+  return positioned
+    ? { slots: document.order.slots.filter((slot) => !isFooterSlot(slot)), excluded: [] }
+    : { slots: document.order.slots, excluded: document.order.excluded };
+}
+
 function spineRail(
   document: NormalizedDocument,
   layout: GraphLayout,
@@ -273,7 +302,18 @@ function spineRail(
   focused: string | null,
   positioned: boolean,
 ): ElementSpec {
-  const slots = document.order.slots.filter((slot) => !isFooterSlot(slot));
+  // A REFUSAL'S RAIL IS THE WHOLE ORDER UI, so it must carry what the canvas
+  // would otherwise have drawn. `positioned` is exactly the refusal signal — the
+  // only `false` call site is the refusal arm — and when the canvas is absent, a
+  // footer slot has nothing to draw it and an exclusion has no row at all.
+  // Measured on a refused document: the tracker-held slot's title, its hold
+  // reason, and the excluded key were all absent from the markup, while the
+  // refusal's own text said "The order list is complete at any size". That claim
+  // was written into this file and it was false.
+  // FILTERED ONLY WHEN THE CANVAS DRAWS THEM. In ordinary graph mode a footer
+  // slot IS drawn, as a canvas node, so keeping it out of the rail is what stops
+  // one slot appearing twice — the filter is right there and wrong here.
+  const { slots, excluded } = railContents(document, positioned);
   return element(
     'ol',
     // A plain list for the reason `linear.ts` gives: an interactive descendant
@@ -282,7 +322,8 @@ function spineRail(
     // spine nodes, so the rail returns to ordinary flow rather than positioning
     // itself against coordinates nothing rendered.
     { class: positioned ? 'ig-list ig-rail' : 'ig-list', 'aria-label': 'work order' },
-    slots.map((slot) => {
+    [
+    ...slots.map((slot) => {
       const box = layout.nodes.get(slot.lead);
       // THE REASON A SLOT IS HELD IS PART OF WHAT THIS ROW MEANS. `ViewerHold`
       // says the viewer renders the reason verbatim, and the linear projection
@@ -332,6 +373,15 @@ function spineRail(
         ],
       );
     }),
+    // AND THE EXCLUSIONS, on the same terms: they have no canvas node in any
+    // mode, so ordinary graph mode simply never showed them — which is correct
+    // there, because the spine rail sits ON the canvas and an exclusion is not
+    // on it. In a refusal there is no canvas, the rail is the entire order, and
+    // an exclusion left out is a row of the order that is missing.
+    ...excluded.map((exclusion) =>
+      excludedRow(document, exclusion.key, exclusion.canonical, { ...options, focused }),
+    ),
+    ],
   );
 }
 
@@ -440,7 +490,14 @@ export function graphScene(document: NormalizedDocument, options: GraphOptions =
   // is a subset of that, so "every published target is focusable" holds by
   // construction rather than by remembering.
   const refused = nodeCount === 0 || nodeCount > GRAPH_NODE_BUDGET;
-  const railed: ReadonlySet<string> = new Set(inline.map((slot) => slot.lead));
+  // FROM THE SAME RULE THE RAIL RENDERS FROM — see `railContents`. Hard-coding
+  // `inline` here was correct only while the rail rendered exactly `inline`, and
+  // it silently stopped being correct the moment the refusal's rail widened.
+  const shown = railContents(document, !refused);
+  const railed: ReadonlySet<string> = new Set([
+    ...shown.slots.map((slot) => slot.lead),
+    ...shown.excluded.map((exclusion) => exclusion.key),
+  ]);
   const focusable: ReadonlySet<string> = new Set([
     ...railed,
     ...(refused ? [] : layout.nodes.keys()),

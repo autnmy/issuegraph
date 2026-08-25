@@ -297,7 +297,9 @@ function indexEdges(
   // point at A. Each issue gets one declaration; who points at it is not its
   // budget to spend.
   const claimed = new Set<string>();
-  const symmetricSeen = new Set<string>();
+  // Every edge's identity, symmetric or directed — see the branch below for what
+  // each key collapses.
+  const edgeSeen = new Set<string>();
   for (const edge of edges) {
     if (!isEdgeField(edge.field)) {
       diagnostics.push(`edge ${edge.from} -> ${edge.to} names an unknown field and was dropped`);
@@ -369,14 +371,28 @@ function indexEdges(
     // document: `A serialize-with B` plus `B serialize-with A` is exactly what
     // the format asks an author to write, so reporting it would train readers
     // to ignore the diagnostics that do mean something.
-    if (isSymmetricEdgeField(edge.field)) {
-      const pair =
-        edge.from < edge.to
-          ? `${edge.field}\u0000${edge.from}\u0000${edge.to}`
-          : `${edge.field}\u0000${edge.to}\u0000${edge.from}`;
-      if (symmetricSeen.has(pair)) continue;
-      symmetricSeen.add(pair);
-    }
+    // ONE FACT IS DRAWN ONCE, WHICHEVER DIRECTION THE FIELD HAS. The symmetric
+    // arm canonicalizes the endpoint PAIR, because `A serialize-with B` and
+    // `B serialize-with A` are one undirected fact. A DIRECTED field has no such
+    // equivalence — `A blocked-by B` and `B blocked-by A` are two different
+    // claims — but an EXACT repeat of one of them is still one relationship
+    // written twice, and this reader kept both: two identical paths, two badges,
+    // and a blocking count in the refusal summary inflated past what the canvas
+    // contains. Measured: `A blocked-by B` listed twice survived as two edges.
+    // THE KEY IS WHAT DIFFERS, not the rule. Symmetric collapses the reverse;
+    // directed keeps it and collapses only the exact triple — so the distinct
+    // `B -> A` edge is preserved, which is the half that must not be lost.
+    // NO DIAGNOSTIC, for the reason the symmetric arm already gives: a repeat is
+    // the format's normal redundancy rather than a malformed document, and
+    // reporting it would train readers to ignore the drops that do mean
+    // something.
+    const identity = isSymmetricEdgeField(edge.field)
+      ? edge.from < edge.to
+        ? `${edge.field}\u0000${edge.from}\u0000${edge.to}`
+        : `${edge.field}\u0000${edge.to}\u0000${edge.from}`
+      : `${edge.field}\u0000${edge.from}\u0000${edge.to}`;
+    if (edgeSeen.has(identity)) continue;
+    edgeSeen.add(identity);
     kept.push(edge);
     for (const end of [edge.from, edge.to]) {
       const existing = edgesOf.get(end);

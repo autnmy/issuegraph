@@ -17,6 +17,36 @@ function render(input: ViewerDocument = fixtureDocument, options = {}): string {
   return renderMarkup(scene(input, options).root);
 }
 
+// A refused graph that also carries a tracker-held FOOTER slot and an exclusion —
+// the two row kinds the refusal's rail used to drop. Sized past the node budget
+// so the refusal is what renders.
+function refusedWithFooterAndExclusion(): ViewerDocument {
+  const issues = [];
+  const edges = [];
+  const slots = [];
+  for (let i = 0; i < 62; i += 1) {
+    issues.push({ key: `n${i}`, title: `Title n${i}`, open: true, priority: 2 as const });
+  }
+  for (let i = 0; i < 61; i += 1) {
+    edges.push({ field: 'blocked-by' as const, from: `n${i}`, to: `n${i + 1}` });
+  }
+  for (let i = 0; i < 60; i += 1) {
+    slots.push({ lead: `n${i}`, members: [`n${i}`], rank: i + 1, ready: true, holds: [] });
+  }
+  slots.push({
+    lead: 'n60',
+    members: ['n60'],
+    rank: null,
+    ready: false,
+    holds: [{ family: 'tracker' as const, reason: 'claimed by another run' }],
+  });
+  issues.push(
+    { key: 'exc1', title: 'Excluded one', open: true, priority: 2 as const },
+    { key: 'canon', title: 'Canonical', open: true, priority: 2 as const },
+  );
+  return { issues, edges, order: { slots, excluded: [{ key: 'exc1', canonical: 'canon', reason: 'duplicate-of' as const }] } };
+}
+
 describe('the graph projection', () => {
   it('draws a node for every laid-out key', () => {
     const markup = render();
@@ -497,6 +527,48 @@ describe('the graph projection', () => {
     assert.match(markup, /further components are not listed/);
     // The total is stated, so the reader can size what they are not seeing.
     assert.match(markup, /were found in total/);
+  });
+
+  it('keeps the footer and excluded rows when it refuses, which is what makes the claim true', () => {
+    // The refusal tells the reader "The order list is complete at any size", and
+    // in refusal mode the rail is the ONLY order UI — but it filtered out every
+    // footer slot and never carried `order.excluded`. Measured before the fix: a
+    // refused document lost the tracker-held slot's title, its hold reason and
+    // the excluded key entirely, while still printing that sentence.
+    const built = scene(refusedWithFooterAndExclusion());
+    const markup = renderMarkup(built.root);
+
+    assert.match(markup, /complete at any size/, 'this fixture no longer refuses');
+    assert.ok(markup.includes('Title n60'), 'the footer slot is missing from the refusal');
+    assert.ok(markup.includes('claimed by another run'), 'its hold reason is missing');
+    assert.match(markup, /data-ig-key="exc1"/, 'the excluded row is missing');
+  });
+
+  it('leaves nothing it drew in the refusal unreachable', () => {
+    // The same invariant the canvas carries, applied where the fix could break
+    // it — and it DID, on the first attempt: widening the rail without widening
+    // the focus index left the footer slot and the exclusion drawn with
+    // `data-ig-key` and absent from `navigable`.
+    const built = scene(refusedWithFooterAndExclusion());
+    const drawn = new Set(
+      [...renderMarkup(built.root).matchAll(/data-ig-key="([^"]+)"/g)].map(
+        (match) => match[1] as string,
+      ),
+    );
+
+    for (const key of drawn) {
+      assert.ok(built.navigable.includes(key), `${key} is drawn in the refusal but unreachable`);
+    }
+  });
+
+  it('does NOT move a footer slot into the rail when the canvas is drawn', () => {
+    // The other half, and the reason the rule is conditional rather than simply
+    // widened: in ordinary graph mode a footer slot IS drawn, as a canvas node,
+    // so carrying it in the rail too would render one slot twice.
+    const markup = renderMarkup(scene().root);
+    const appearances = [...markup.matchAll(/data-ig-key="105"/g)].length;
+
+    assert.equal(appearances, 1, 'the footer slot is drawn twice in ordinary graph mode');
   });
 
   it('still publishes no focus targets when it refuses', () => {
