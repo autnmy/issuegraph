@@ -78,7 +78,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath, URL } from 'node:url';
@@ -157,10 +157,10 @@ export function normalizeManifest(text: string): string {
   const manifest = parsed !== null && typeof parsed === 'object' ? { ...(parsed as Record<string, unknown>) } : parsed;
 
   // Sibling ranges are DERIVED, not authored — pnpm rewrites `workspace:^` from
-  // the sibling's version at pack time — so they are blanked rather than
-  // compared. Blanked, not deleted: a sibling dependency that was ADDED or
-  // REMOVED is an authored change and must still show up as a difference, which
-  // deleting the key would hide.
+  // the sibling's version at pack time — so the VERSION they carry is blanked
+  // rather than compared. Blanked, not deleted: a sibling dependency that was
+  // ADDED or REMOVED is an authored change and must still show up as a
+  // difference, which deleting the key would hide.
   if (manifest !== null && typeof manifest === 'object') {
     for (const field of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
       const block = (manifest as Record<string, unknown>)[field];
@@ -168,13 +168,39 @@ export function normalizeManifest(text: string): string {
       const rewritten = Object.fromEntries(
         Object.entries(block as Record<string, unknown>).map(([name, range]) => [
           name,
-          name.startsWith(WORKSPACE_SCOPE) ? '<workspace-derived>' : range,
+          name.startsWith(WORKSPACE_SCOPE) && typeof range === 'string' ? blankDerivedVersion(range) : range,
         ]),
       );
       (manifest as Record<string, unknown>)[field] = rewritten;
     }
   }
   return JSON.stringify(sortDeep(manifest));
+}
+
+/**
+ * Blank the VERSION a sibling range carries while keeping its OPERATOR.
+ *
+ * The operator is authored and the version is not: `workspace:^` packs to
+ * `^0.1.1` and `workspace:~` to `~0.1.1`, so blanking the whole range collapses
+ * two different authored declarations onto one value. A package that tightened
+ * `^` to `~` without bumping would then read as unchanged, be skipped by
+ * `pnpm publish --recursive`, and never reach a consumer — which is the very
+ * failure this guard exists to catch, rebuilt inside the guard.
+ *
+ * An ALLOWLIST of exactly the three shapes the `workspace:` protocol produces —
+ * `workspace:*` packs to a bare `X.Y.Z`, `workspace:~` to `~X.Y.Z` and
+ * `workspace:^` to `^X.Y.Z`. Anything else — a compound range, a tag, a URL, an
+ * `npm:` alias — is left as written and compared verbatim, so an unusual value
+ * fails toward being REPORTED rather than toward being hidden.
+ *
+ * Deliberately tighter than "any non-digit prefix", which was the first version
+ * and reached too far: it matched `npm:other@1.0.0` and blanked the ALIAS
+ * TARGET's version, hiding a change to a different package entirely.
+ */
+export function blankDerivedVersion(range: string): string {
+  const found = /^([~^]?)([0-9]+\.[0-9]+\.[0-9]+)$/.exec(range);
+  const operator = found?.[1];
+  return operator === undefined ? range : `${operator}<workspace-derived-version>`;
 }
 
 /**
@@ -536,6 +562,11 @@ function main(): number {
 
 // Only when run as a program. Importing this module — which the test does — must
 // not reach the network or exit the process.
-if (process.argv[1] !== undefined && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+// Compared as REAL paths. A string-built `file://` URL misses when the path
+// carries a space or is reached through a symlink — and a miss here is silent:
+// the module would load, do nothing, and exit 0, so the guard would report a
+// green having never run. That is the vacuous pass this whole change is about.
+const invokedAs = process.argv[1] === undefined ? undefined : realpathSync(process.argv[1]);
+if (invokedAs !== undefined && invokedAs === realpathSync(fileURLToPath(import.meta.url))) {
   process.exit(main());
 }

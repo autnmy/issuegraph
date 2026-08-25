@@ -20,25 +20,72 @@
  * irreversible, so this cannot prevent a bad release — what it does is make one
  * LOUD immediately rather than leaving it for the first consumer to discover.
  *
- * Run: `pnpm verify:published [version]`. Exit 0 clean, 1 on a broken install.
+ * ## It asserts WHICH release it verified, which is the whole difficulty
+ *
+ * npm's registry is read through a CDN, so for a window after a successful
+ * publish the old packument is still being served. That makes two opposite
+ * mistakes available, and a naive version of this script makes both:
+ *
+ * - **A false GREEN.** Installing the bare name `@issuegraph/cli` resolves the
+ *   `latest` tag. If propagation has not caught up, an OLDER and perfectly
+ *   working CLI installs, imports and runs — and the check reports success
+ *   having never exercised the release that just shipped. A control that passes
+ *   without looking at its subject is the exact defect this whole change is
+ *   about, so it must not be rebuilt here.
+ * - **A false RED.** The CLI may install fine while a DEPENDENCY is still being
+ *   served stale — for a `core`-only release, precisely the interesting case —
+ *   and the import then fails for a release that was published correctly.
+ *
+ * Both are answered by the same thing: the workspace knows exactly which
+ * versions this release intends, so the script reads them, installs the CLI
+ * PINNED to its intended version, and compares every resolved `@issuegraph/*`
+ * against what was intended.
+ *
+ * Retrying is then keyed on the DISTINCTION rather than on which call threw:
+ * a tree that has not caught up yet is retried, and a tree that matches the
+ * intended release but does not work fails IMMEDIATELY. Retrying the latter
+ * would only wait for a broken release to look fixed.
+ *
+ * Run: `pnpm verify:published`. Exit 0 clean, 1 on a broken release.
  */
 
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath, URL } from 'node:url';
 
 const PACKAGE = '@issuegraph/cli';
+const SCOPE = '@issuegraph/';
+
+const PROPAGATION_ATTEMPTS = 6;
+const RETRY_DELAY_MS = 15_000;
+
+/** A package resolved in the consumer's tree, against what this release intends. */
+export interface ResolvedPackage {
+  readonly name: string;
+  readonly resolved: string;
+  readonly intended: string;
+}
 
 /**
- * npm's registry is read through a CDN, so a version can 404 for a short window
- * after a successful publish. Retrying an INSTALL is therefore legitimate — but
- * only the install: a package that installs and then fails to import is a real
- * defect, and retrying that would turn this into a check that waits for a
- * broken release to look fixed.
+ * The packages whose resolved version is not the one this release intends.
+ *
+ * Pure, so the retry decision can be tested without a registry. Only packages
+ * the workspace declares are judged: anything else in the tree is somebody
+ * else's dependency and not this release's business.
  */
-const INSTALL_ATTEMPTS = 5;
-const RETRY_DELAY_MS = 15_000;
+export function mismatches(
+  resolved: Readonly<Record<string, string>>,
+  intended: Readonly<Record<string, string>>,
+): readonly ResolvedPackage[] {
+  const found: ResolvedPackage[] = [];
+  for (const [name, version] of Object.entries(resolved)) {
+    const want = intended[name];
+    if (want !== undefined && want !== version) found.push({ name, resolved: version, intended: want });
+  }
+  return found.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -46,68 +93,144 @@ function run(command: string, args: readonly string[], cwd: string): string {
   return execFileSync(command, [...args], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 }
 
+const stderrOf = (error: unknown): string =>
+  error instanceof Error && 'stderr' in error ? String(error.stderr ?? '') : String(error);
+
+/** What this release intends: every publishable workspace package and its version. */
+function intendedVersions(repoRoot: string): Readonly<Record<string, string>> {
+  const packagesDir = join(repoRoot, 'packages');
+  const intended: Record<string, string> = {};
+  for (const entry of readdirSync(packagesDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    let manifest: { name?: string; version?: string; private?: boolean };
+    try {
+      manifest = JSON.parse(readFileSync(join(packagesDir, entry.name, 'package.json'), 'utf8'));
+    } catch {
+      continue;
+    }
+    const { name, version } = manifest;
+    if (manifest.private === true || name === undefined || version === undefined) continue;
+    intended[name] = version;
+  }
+  return intended;
+}
+
+/** Every `@issuegraph/*` version in the installed tree, however deeply nested. */
+function resolvedVersions(cwd: string): Readonly<Record<string, string>> {
+  // `--all` because a stale dependency is the case that matters and it is NOT
+  // at depth 0: for a `core`-only release the CLI sits at the top and `core` is
+  // nested under `reader` and `writer`.
+  const listed: unknown = JSON.parse(run('npm', ['ls', '--all', '--json'], cwd));
+  const found: Record<string, string> = {};
+  const walk = (node: unknown): void => {
+    if (node === null || typeof node !== 'object') return;
+    const dependencies = (node as { dependencies?: unknown }).dependencies;
+    if (dependencies === null || typeof dependencies !== 'object') return;
+    for (const [name, child] of Object.entries(dependencies as Record<string, unknown>)) {
+      if (child !== null && typeof child === 'object') {
+        const version = (child as { version?: unknown }).version;
+        if (name.startsWith(SCOPE) && typeof version === 'string') found[name] = version;
+        walk(child);
+      }
+    }
+  };
+  walk(listed);
+  return found;
+}
+
 async function main(): Promise<number> {
-  const requested = process.argv[2];
-  const spec = requested === undefined ? PACKAGE : `${PACKAGE}@${requested}`;
-  const scratch = mkdtempSync(join(tmpdir(), 'issuegraph-verify-'));
+  const repoRoot = fileURLToPath(new URL('..', import.meta.url));
+  const intended = intendedVersions(repoRoot);
+  const cliVersion = intended[PACKAGE];
+  if (cliVersion === undefined) {
+    console.error(`FAILED: the workspace declares no ${PACKAGE}, so there is no release to verify.`);
+    return 1;
+  }
 
-  try {
-    // An empty directory with no lockfile, no workspace and no link to this
-    // checkout — the arrangement a consumer is actually in, and the one the
-    // workspace can never reproduce.
-    writeFileSync(join(scratch, 'package.json'), JSON.stringify({ name: 'verify-published', private: true }));
+  // PINNED, never the bare name. A bare spec resolves the `latest` tag, and a
+  // stale tag would install an older working CLI and report a false green.
+  const spec = `${PACKAGE}@${cliVersion}`;
+  console.log(`verifying ${spec}, expecting: ${Object.entries(intended).map(([n, v]) => `${n}@${v}`).join(', ')}`);
 
-    let installed = false;
-    for (let attempt = 1; attempt <= INSTALL_ATTEMPTS; attempt += 1) {
+  for (let attempt = 1; attempt <= PROPAGATION_ATTEMPTS; attempt += 1) {
+    const scratch = mkdtempSync(join(tmpdir(), 'issuegraph-verify-'));
+    try {
+      // An empty directory with no lockfile, no workspace and no link to this
+      // checkout — the arrangement a consumer is actually in, and the one the
+      // workspace can never reproduce. A FRESH directory per attempt, so a
+      // retry cannot inherit the stale tree it is retrying because of.
+      writeFileSync(join(scratch, 'package.json'), JSON.stringify({ name: 'verify-published', private: true }));
+
       try {
         run('npm', ['install', '--no-audit', '--no-fund', spec], scratch);
-        installed = true;
-        break;
       } catch (error) {
-        const detail = error instanceof Error && 'stderr' in error ? String(error.stderr ?? '') : String(error);
-        if (attempt === INSTALL_ATTEMPTS) {
+        const detail = stderrOf(error);
+        if (attempt === PROPAGATION_ATTEMPTS) {
           console.error(`FAILED to install ${spec} after ${attempt} attempts:\n${detail}`);
           return 1;
         }
-        console.log(`install attempt ${attempt} failed; the registry may not have propagated yet, retrying...`);
+        console.log(`attempt ${attempt}: install failed, the registry may not have propagated yet; retrying...`);
         await sleep(RETRY_DELAY_MS);
+        continue;
       }
+
+      // The tree must be the release this run intends BEFORE anything is
+      // imported. Otherwise a failure below cannot be attributed: it could be a
+      // broken release, or a perfectly good one the CDN has not served yet.
+      const stale = mismatches(resolvedVersions(scratch), intended);
+      if (stale.length > 0) {
+        const summary = stale.map((p) => `${p.name}@${p.resolved} (want ${p.intended})`).join(', ');
+        if (attempt === PROPAGATION_ATTEMPTS) {
+          console.error(`FAILED: after ${attempt} attempts the registry still serves: ${summary}`);
+          console.error('Either propagation is unusually slow, or these versions were never published.');
+          return 1;
+        }
+        console.log(`attempt ${attempt}: registry has not caught up (${summary}); retrying...`);
+        await sleep(RETRY_DELAY_MS);
+        continue;
+      }
+
+      console.log(`ok  installed the intended release into an empty directory`);
+
+      // From here a failure is a REAL defect and is never retried — the tree is
+      // exactly what this release published. Retrying now would only wait for a
+      // broken release to look fixed.
+      try {
+        // The LIBRARY entry. #36 broke this and the binary together, but they
+        // are separate surfaces and a consumer may use only one.
+        run('node', ['--input-type=module', '-e', `await import(${JSON.stringify(PACKAGE)})`], scratch);
+        console.log(`ok  import(${JSON.stringify(PACKAGE)}) resolved and evaluated`);
+
+        // The BINARY, on the acceptance case #36 names: a body carrying no
+        // block must parse and exit 0. This is what exited 1 on every call.
+        writeFileSync(join(scratch, 'body.md'), 'a body with no issuegraph block\n');
+        const parsed = run('sh', ['-c', './node_modules/.bin/issuegraph parse < body.md'], scratch);
+        console.log(`ok  issuegraph parse exited 0: ${parsed.trim().replace(/\s+/g, ' ')}`);
+      } catch (error) {
+        console.error(`FAILED: the intended release installs but does not work for a consumer.`);
+        console.error(stderrOf(error));
+        console.error('This is what a fresh `npm install` gets. Treat it as a broken release.');
+        return 1;
+      }
+
+      console.log(`\nverified: ${spec} installs, imports and runs from the registry.`);
+      return 0;
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
     }
-    if (!installed) return 1;
-
-    // `unknown` and narrowed, not annotated `string`: `npm ls` output is data
-    // this script does not control, and a type annotation over `JSON.parse` is a
-    // promise nothing checks.
-    const listed: unknown = JSON.parse(run('npm', ['ls', PACKAGE, '--json', '--depth=0'], scratch));
-    const resolved =
-      listed !== null && typeof listed === 'object'
-        ? (listed as { dependencies?: Record<string, { version?: unknown }> }).dependencies?.[PACKAGE]?.version
-        : undefined;
-    console.log(
-      `installed ${PACKAGE}@${typeof resolved === 'string' ? resolved : 'unknown'} into an empty directory`,
-    );
-
-    // The LIBRARY entry. #36 broke this and the binary together, but they are
-    // separate surfaces and a consumer may only use one.
-    run('node', ['--input-type=module', '-e', `await import(${JSON.stringify(PACKAGE)})`], scratch);
-    console.log(`ok  import(${JSON.stringify(PACKAGE)}) resolved and evaluated`);
-
-    // The BINARY, on the acceptance case #36 names: a body carrying no block
-    // must parse and exit 0. This is what exited 1 on every invocation.
-    writeFileSync(join(scratch, 'body.md'), 'a body with no issuegraph block\n');
-    const parsed = run('sh', ['-c', `./node_modules/.bin/issuegraph parse < body.md`], scratch);
-    console.log(`ok  issuegraph parse exited 0: ${parsed.trim().replace(/\s+/g, ' ')}`);
-
-    console.log(`\nverified: ${spec} installs, imports and runs from the registry.`);
-    return 0;
-  } catch (error) {
-    const detail = error instanceof Error && 'stderr' in error ? String(error.stderr ?? '') : String(error);
-    console.error(`FAILED: ${spec} is installed but does not work for a consumer.\n${detail}`);
-    console.error('This is what a fresh `npm install` gets. Treat it as a broken release.');
-    return 1;
-  } finally {
-    rmSync(scratch, { recursive: true, force: true });
   }
+
+  console.error(`FAILED: ${spec} could not be verified within ${PROPAGATION_ATTEMPTS} attempts.`);
+  return 1;
 }
 
-process.exit(await main());
+// Only when run as a program. Importing this module — which the test does — must
+// not reach the network or exit the process.
+// Compared as REAL paths. A string-built `file://` URL misses when the path
+// carries a space or is reached through a symlink — and a miss here is silent:
+// the module would load, do nothing, and exit 0, so the guard would report a
+// green having never run. That is the vacuous pass this whole change is about.
+const invokedAs = process.argv[1] === undefined ? undefined : realpathSync(process.argv[1]);
+if (invokedAs !== undefined && invokedAs === realpathSync(fileURLToPath(import.meta.url))) {
+  process.exit(await main());
+}

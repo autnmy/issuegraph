@@ -15,6 +15,7 @@ import assert from 'node:assert/strict';
 
 import {
   admitsVersion,
+  blankDerivedVersion,
   diffTarballContents,
   isBlocking,
   normalizeManifest,
@@ -149,6 +150,46 @@ test('normalizeManifest ignores a sibling range, which pnpm derives rather than 
   const a = '{"dependencies":{"@issuegraph/core":"^0.1.0"}}';
   const b = '{"dependencies":{"@issuegraph/core":"^0.1.1"}}';
   assert.equal(normalizeManifest(a), normalizeManifest(b));
+});
+
+test('normalizeManifest KEEPS the authored operator, so ^ tightened to ~ is still a change', () => {
+  // The version is derived; the OPERATOR is authored. Blanking both would let a
+  // package tighten `workspace:^` to `workspace:~` without a bump, read as
+  // unchanged, be skipped by the release, and never reach a consumer — this
+  // guard's own subject, rebuilt inside the guard.
+  const caret = '{"dependencies":{"@issuegraph/core":"^0.1.1"}}';
+  const tilde = '{"dependencies":{"@issuegraph/core":"~0.1.1"}}';
+  assert.notEqual(normalizeManifest(caret), normalizeManifest(tilde));
+
+  // …while the derived VERSION still does not matter, whichever operator it is.
+  assert.equal(
+    normalizeManifest(tilde),
+    normalizeManifest('{"dependencies":{"@issuegraph/core":"~0.9.9"}}'),
+  );
+});
+
+test('normalizeManifest treats an exact pin as different from a caret', () => {
+  // `workspace:*` packs to a bare `0.1.1`, `workspace:^` to `^0.1.1`. Two
+  // different authored declarations must not collapse onto one value.
+  const exact = '{"dependencies":{"@issuegraph/core":"0.1.1"}}';
+  const caret = '{"dependencies":{"@issuegraph/core":"^0.1.1"}}';
+  assert.notEqual(normalizeManifest(exact), normalizeManifest(caret));
+});
+
+test('blankDerivedVersion keeps the operator and drops only the version', () => {
+  assert.equal(blankDerivedVersion('^0.1.1'), '^<workspace-derived-version>');
+  assert.equal(blankDerivedVersion('~0.1.1'), '~<workspace-derived-version>');
+  assert.equal(blankDerivedVersion('0.1.1'), '<workspace-derived-version>');
+});
+
+test('blankDerivedVersion leaves a shape pnpm never emits exactly as written', () => {
+  // An allowlist: anything unusual is compared verbatim, so it fails toward
+  // being REPORTED rather than toward being hidden.
+  // `npm:other@1.0.0` is the sharp one: a permissive prefix match blanks the
+  // ALIAS TARGET's version, hiding a change to a different package entirely.
+  for (const range of ['0.1.1 || ^0.2.0', 'latest', 'npm:other@1.0.0', 'workspace:^', '0.1.x', '>=0.1.1']) {
+    assert.equal(blankDerivedVersion(range), range);
+  }
 });
 
 test('normalizeManifest still reports a sibling dependency being ADDED or REMOVED', () => {
