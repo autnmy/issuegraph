@@ -122,11 +122,29 @@ describe('reconcile', () => {
     assert.deepEqual(reconcile(tree(), state), { focused: '103', selected: '103' });
   });
 
-  it('keeps a selection the new projection does not draw', () => {
-    const state = { focused: '104', selected: '104' };
-    const next = reconcile(linear(), state);
+  it('names a selection the way the new projection names it', () => {
+    // `104` is a together unit's partner: the linear projection draws it inside
+    // `103`'s row and lists only `103`. This USED to assert the defect — it kept
+    // `selected: '104'` and let focus fall to `'102'`, an unrelated issue at the
+    // top of the order, and called that "reachable". It is a state no keyboard
+    // can produce and no click produces either.
+    // CARRYING THE SUBJECT IS EXACTLY WHAT THIS DOES. The unit is the subject;
+    // `103` is this projection's name for it. Reporting the partner instead is
+    // what LOST the subject, because nothing downstream could act on it.
+    const next = reconcile(linear(), { focused: '104', selected: '104' });
 
-    assert.equal(next.selected, '104');
+    assert.equal(next.selected, '103');
+    assert.equal(next.focused, '103');
+  });
+
+  it('still keeps a selection nothing in the new projection represents', () => {
+    // The other half, and the property the test above was reaching for: `107`
+    // is in the document, is not in the linear order, and no station stands in
+    // for it. There is no better name to give it, so it is carried whole and
+    // focus falls back — which is the original rule, still intact.
+    const next = reconcile(linear(), { focused: '107', selected: '107' });
+
+    assert.equal(next.selected, '107');
     assert.equal(next.focused, '102', 'focus did not fall back to something reachable');
   });
 

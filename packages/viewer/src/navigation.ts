@@ -68,9 +68,26 @@ export function reconcile(scene: Scene, state: NavigationState): NavigationState
   //
   // Focus goes through the SHARED rule, so what this reports and what the
   // projection rendered a tab stop on cannot diverge.
+  //
+  // CANONICALIZED THROUGH THE SCENE'S OWN STATIONS FIRST, and that is what makes
+  // "carried whole" true rather than merely stated. A key this projection draws
+  // under another key's station — a together unit's partner — is not a subject
+  // this projection can hold: `navigable` does not list it, so focus could not
+  // follow it and fell to the FIRST entry in the order, an unrelated issue.
+  // Reporting `selected` as the station keeps the subject and lets focus reach
+  // it; the tree publishes no stations, so a partner selected there stays
+  // itself, which is correct because the tree gives it its own row.
+  // HERE RATHER THAN AT THE ENTRY POINTS, because there are four of them —
+  // pointer, `handle.select`, a projection switch, a document update — and only
+  // this one sees the scene that decides the answer. Canonicalizing per entry
+  // point is what left `handle.select` and `setProjection` behaving differently
+  // from the click they are documented to be equivalent to.
+  const station = (key: string | null | undefined): string | null =>
+    key === null || key === undefined ? null : (scene.stationOf.get(key) ?? key);
+  const selected = station(state.selected);
   return {
-    focused: resolveFocusKey(scene.navigable, state.focused, state.selected),
-    selected: state.selected,
+    focused: resolveFocusKey(scene.navigable, station(state.focused), selected),
+    selected,
   };
 }
 

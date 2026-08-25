@@ -1,0 +1,9 @@
+{
+  "//": "The preset for a package that runs in a browser rather than in Node. It EXTENDS the base rather than changing it, so a Node package's settings are untouched and this file can land without editing shared config. `extends` replaces these keys wholesale, which is why `lib` and `types` are restated in full rather than added to.",
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": [],
+    "jsx": "react-jsx"
+  }
+}
