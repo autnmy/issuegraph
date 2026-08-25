@@ -1,0 +1,25 @@
+{
+  "name": "@issuegraph/demo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The in-memory demo: the proof that the data-source port is a port. Runs with no tracker, no auth and no backend. Never published.",
+  "license": "Apache-2.0",
+  "author": "Autonomy LLC",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "test": "node --test \"src/**/*.test.ts\"",
+    "serve": "node serve.mjs"
+  },
+  "dependencies": {
+    "@issuegraph/core": "workspace:^",
+    "@issuegraph/derive": "workspace:^",
+    "@issuegraph/reader": "workspace:^",
+    "@issuegraph/store": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "typescript": "^6.0.3"
+  }
+}

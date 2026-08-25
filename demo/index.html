@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Issuegraph — the in-memory demo</title>
+<meta name="description" content="A live Issuegraph backlog running on an in-memory data source: no tracker, no credentials, no backend. Every edge type, both hold families and every edge state are reachable.">
+<meta name="theme-color" content="#f7f8fa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0c0f14" media="(prefers-color-scheme: dark)">
+<link rel="stylesheet" href="./styles.css">
+<!--
+  The bare specifiers resolve here, in the page, rather than through a bundler.
+  A demo whose build step is `tsc` and whose runtime is the browser's own module
+  loader has nothing between the published package and the thing you are looking
+  at — which is the point: what runs below is the published graph exactly as an
+  installer would get it, each loaded from the `exports` entry its own manifest
+  declares.
+
+  FOUR PACKAGES, NOT ONE, AND THAT IS THE POINT OF THE REWORK. The order this
+  page draws is `@issuegraph/derive`'s, which reads through `@issuegraph/reader`
+  — so the page loads the real dependency graph rather than a demo-local
+  re-reading of the ordering rules.
+
+  `yaml` IS THE READER'S OWN RUNTIME DEPENDENCY, and it is mapped where the
+  reader itself resolves it: an installer gets it too, so leaving it out would
+  be the one place this page differed from a real install. It is the browser
+  build the package's own `exports` selects outside Node.
+-->
+<script type="importmap">
+{
+  "imports": {
+    "@issuegraph/core": "/packages/core/dist/index.js",
+    "@issuegraph/derive": "/packages/derive/dist/index.js",
+    "@issuegraph/reader": "/packages/reader/dist/index.js",
+    "@issuegraph/store": "/packages/store/dist/index.js",
+    "yaml": "/packages/reader/node_modules/yaml/browser/index.js"
+  }
+}
+</script>
+</head>
+<body>
+<header class="masthead">
+  <div>
+    <h1>The in-memory demo</h1>
+    <p class="lede">
+      A live backlog running on a data source that holds one document in a variable.
+      <strong>No tracker, no credentials, no backend.</strong> Edits are client-side and saved nowhere;
+      reload to get the seed back.
+    </p>
+  </div>
+  <span class="as-of" id="as-of"></span>
+</header>
+
+<section class="controls" aria-label="Demo controls">
+  <div class="control">
+    <label for="edit-from">Write an edge</label>
+    <div class="control-row">
+      <select id="edit-from" aria-label="From issue"></select>
+      <select id="edit-kind" aria-label="Relationship"></select>
+      <select id="edit-to" aria-label="To issue"></select>
+      <button class="button" id="edit-create" type="button">create</button>
+    </div>
+  </div>
+  <div class="control">
+    <label for="next-outcome">What the tracker answers next</label>
+    <div class="control-row">
+      <select id="next-outcome" aria-label="Next dispatch outcome">
+        <option value="apply">apply — the write lands</option>
+        <option value="reject">reject — the write is refused</option>
+        <option value="conflict">conflict — the document moved upstream</option>
+      </select>
+      <button class="button button-quiet" id="reset" type="button">reset</button>
+    </div>
+    <p class="hint">
+      An armed outcome fires once and disarms itself, so the retry it offers can actually land.
+    </p>
+  </div>
+</section>
+
+<main id="board"></main>
+
+<footer class="colophon">
+  <p>
+    The order below is <a href="https://github.com/autnmy/issuegraph/tree/main/packages/derive"><code>@issuegraph/derive</code></a>&rsquo;s,
+    not this page&rsquo;s: the store takes the deriver as a port with no default, and this page fills it with the
+    published derivation rather than a second reading of the ordering rules. What is still the host&rsquo;s
+    is what the specification puts there &mdash; the executor holds (&sect;6.8) and the concurrency cap
+    (&sect;6.5). Every colour and dimension on this page is a CSS custom property &mdash; no rule carries a
+    length literal, and a test enforces it &mdash; and no edge relies on hue alone.
+  </p>
+  <p>
+    <a href="/">The specification</a> ·
+    <a href="https://github.com/autnmy/issuegraph">Source</a>
+  </p>
+</footer>
+
+<script type="module" src="./dist/main.js"></script>
+</body>
+</html>

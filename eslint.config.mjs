@@ -22,6 +22,13 @@
  *
  * Scoped to `packages/` because that is what ships. `scripts/` is repository
  * tooling and is free to read the repository.
+ *
+ * `demo/` gets the SAME rules despite not shipping, and that is deliberate. It
+ * is the in-repo proof consumer, so the day it reaches past a package's public
+ * surface is the day the surface stopped being sufficient — and a demo quietly
+ * importing `@issuegraph/store/src/...` would hide exactly the defect it exists
+ * to expose. Its `no-relative-packages` is the load-bearing one: reaching into
+ * `../packages/store/src` would make the whole page prove nothing.
  */
 
 import importX from 'eslint-plugin-import-x';
@@ -39,7 +46,7 @@ export default [
     ignores: ['**/dist/**', '**/node_modules/**'],
   },
   {
-    files: ['packages/**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
+    files: ['packages/**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}', 'demo/**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
     languageOptions: {
       parser: tseslint.parser,
       ecmaVersion: 'latest',
