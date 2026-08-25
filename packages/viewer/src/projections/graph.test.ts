@@ -149,14 +149,23 @@ describe('the graph projection', () => {
       order: { slots: [], excluded: [] },
     });
     const markup = renderMarkup(built.root);
-    const drawn = /<text[^>]*class="ig-node-label"[^>]*>([^<]*)</.exec(markup)?.[1];
+    // SKIP THE `<title>` CHILD to reach the drawn text. It is emitted FIRST, so a
+    // capture that simply took everything up to the next `<` read the empty
+    // string — which is how the earlier version of this test passed while the
+    // full title sat in a `title` ATTRIBUTE that SVG ignores entirely.
+    const drawn = /<text[^>]*class="ig-node-label"[^>]*>(?:<title>[^<]*<\/title>)?([^<]*)</.exec(
+      markup,
+    )?.[1];
 
-    assert.ok(drawn !== undefined, 'no canvas label was drawn');
+    assert.ok(drawn !== undefined && drawn !== '', 'no canvas label was drawn');
     assert.ok(drawn.length < long.length, 'the full title was drawn at full width');
     assert.ok(drawn.endsWith('\u2026'), 'a shortened label must say it was shortened');
     assert.ok(long.startsWith(drawn.slice(0, -1)), 'the shortened label is not a prefix of the title');
-    // NOTHING IS LOST: the full title stays reachable on the node.
-    assert.ok(markup.includes(long), 'the full title is not recoverable anywhere in the markup');
+    // NOTHING IS LOST — AND IT MUST BE A CHILD ELEMENT, NOT AN ATTRIBUTE. SVG
+    // reads `<title>` as the tooltip and accessible description; a `title=`
+    // attribute is inert, so asserting only that the string appears SOMEWHERE in
+    // the markup is what let the inert version through.
+    assert.match(markup, new RegExp(`<title>${long}</title>`), 'the full title is not in an SVG <title> child');
   });
 
   it('draws no canvas label wider than the node it belongs to', () => {
@@ -174,7 +183,7 @@ describe('the graph projection', () => {
 
     let checked = 0;
     for (const match of markup.matchAll(
-      /<text[^>]*class="ig-node-label"[^>]*x="([\d.]+)" y="([\d.]+)"[^>]*>([^<]*)</g,
+      /<text[^>]*class="ig-node-label"[^>]*x="([\d.]+)" y="([\d.]+)"[^>]*>(?:<title>[^<]*<\/title>)?([^<]*)</g,
     )) {
       const x = Number(match[1]);
       const y = Number(match[2]);
@@ -200,6 +209,8 @@ describe('the graph projection', () => {
     // Truncation must not fire on a title that fits — a label shortened when it
     // did not need to be is the same defect pointing the other way.
     const markup = renderMarkup(scene().root);
+    // No `<title>` either: a label that fits carries nothing to recover, and one
+    // echoing the visible text would announce it twice.
     assert.match(markup, /<text[^>]*class="ig-node-label"[^>]*>Rework the retry budget</);
   });
 

@@ -194,21 +194,27 @@ function nodeShape(
             'text',
             {
               class: 'ig-node-label',
-              // THE FULL TITLE IS NOT LOST WHEN IT DOES NOT FIT. `fitLabel`
-              // shortens what is DRAWN; this carries what was cut. An SVG
-              // `<title>` child is the tooltip AND the accessible name, and it
-              // is added only on truncation — an untruncated label already reads
-              // in full, and a `<title>` echoing it would announce it twice.
-              // A railed node never reaches here at all: the rail row is its
-              // label, and its own CSS ellipsis handles the same overflow.
-              ...(drawn === full ? {} : { title: full }),
               x: box.x + theme.metrics['--ig-space'],
               // `dominant-baseline` centres the glyphs on the line rather than
               // a remembered offset, so the label stays centred at any scale.
               y: box.y + box.height / 2,
               'dominant-baseline': 'middle',
             },
-            [drawn],
+            [
+              // THE FULL TITLE IS NOT LOST WHEN IT DOES NOT FIT — and it has to
+              // be a CHILD ELEMENT to do that job. This was written as a `title`
+              // ATTRIBUTE, which SVG ignores entirely: no tooltip, no accessible
+              // description, nothing. The markup contained the string, so a test
+              // asserting the full title was "somewhere in the markup" passed
+              // while a reader hovering the shortened label recovered nothing.
+              // FIRST CHILD, because that is where SVG looks for it, and only on
+              // truncation — an untruncated label already reads in full, and a
+              // `<title>` echoing it would announce it twice.
+              // A railed node never reaches here at all: the rail row is its
+              // label, and its own CSS ellipsis handles the same overflow.
+              drawn === full ? null : svg('title', {}, [full]),
+              drawn,
+            ],
           ),
     ],
   );

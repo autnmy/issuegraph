@@ -65,6 +65,17 @@ export const viewerStylesheet = `
   border-color: var(--ig-accent);
 }
 
+/* A CANVAS-OWNED NODE IS SELECTABLE TOO, and only the rail rows had a selected
+   look — so clicking a gutter, excluded or tracker-held node set aria-current on
+   the group and changed nothing a reader could see. A pointer does not normally
+   raise :focus-visible either, so those selections had no visible state at all
+   on the channel most likely to make them. Same accent the rail uses, so one
+   selection reads the same whichever surface drew it. */
+.ig-node-group[aria-current='true'] .ig-node {
+  stroke: var(--ig-accent);
+  stroke-width: calc(var(--ig-stroke) * 2);
+}
+
 .ig-rank {
   color: var(--ig-text);
   font-family: var(--ig-font-mono);

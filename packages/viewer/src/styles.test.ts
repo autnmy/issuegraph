@@ -18,6 +18,21 @@ function withoutComments(css: string): string {
 }
 
 describe('the structural stylesheet', () => {
+
+  it('gives a selected canvas node a visible state, not just aria-current', () => {
+    // Only the rail rows had a selected look, so clicking a gutter, excluded or
+    // tracker-held node set `aria-current` on the SVG group and changed nothing
+    // a reader could see — and a pointer does not normally raise
+    // `:focus-visible`, so the channel most likely to make that selection had no
+    // visible state at all.
+    const css = withoutComments(viewerStylesheet);
+    assert.match(css, /\.ig-node-group\[aria-current='true'\] \.ig-node \{/);
+    assert.match(
+      css,
+      /\.ig-node-group\[aria-current='true'\] \.ig-node \{[^}]*--ig-accent/,
+      'the selected canvas node does not use the accent the rail selection uses',
+    );
+  });
   it('references only properties something actually sets', () => {
     // The other direction of the theme contract: a `var()` naming a property no
     // theme and no layout sets resolves to nothing, and the affected rule
