@@ -11,9 +11,10 @@
 
 import ts from 'typescript';
 
-import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
-import { dirname, join, relative } from 'node:path';
+import { readFileSync, existsSync, readdirSync, realpathSync } from 'node:fs';
+import { isAbsolute, join, relative } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';
 
 /** The major version a `>=X` / `^X` style engines range starts at. */
@@ -102,33 +103,50 @@ function firstUnparseableFile(dir) {
 }
 
 /**
- * The paths Node would try for a relative specifier, in the shapes an emitted
- * file actually uses.
- *
- * The empty suffix is the ESM shape TypeScript emits (`./foo.js`, already
- * carrying its extension); the rest are the CommonJS and bundler shapes, where
- * `./foo` may be `foo.js` or `foo/index.js`. Being GENEROUS here is deliberate:
- * this list decides what counts as RESOLVED, so a shape left off it becomes a
- * false failure, and a false failure in a guard is worse than a narrow one.
+ * Whether an emitted file is ESM, by Node's own rule: the extension decides, and
+ * a bare `.js` falls back to the package's `type`.
  */
-const RESOLUTION_SUFFIXES = ['', '.js', '.mjs', '.cjs', '.json', '/index.js', '/index.mjs', '/index.cjs'];
-
-/** Whether a relative specifier names something that is actually on disk. */
-function resolvesOnDisk(fromFile, specifier) {
-  // A bundler query or fragment names the same FILE with different handling —
-  // `./worker.js?worker`, `./data.txt?raw`. Browser packages emit these, and
-  // the file they name is what has to exist.
-  const path = specifier.split(/[?#]/)[0];
-  const base = join(dirname(fromFile), path);
-  return RESOLUTION_SUFFIXES.some((suffix) => {
-    const candidate = base + suffix;
-    return existsSync(candidate) && statSync(candidate).isFile();
-  });
+function isEsm(file, manifest) {
+  if (file.endsWith('.mjs')) return true;
+  if (file.endsWith('.cjs')) return false;
+  return manifest.type === 'module';
 }
 
 /**
- * The first relative import in a package's emitted files that resolves to
- * nothing.
+ * Where a relative specifier actually points — by NODE'S rules, not a table of
+ * suffixes maintained here.
+ *
+ * The table is what this replaced, and it was wrong in a way no amount of
+ * extending would fix: it accepted `./foo` for a `foo.js` that exists, which is
+ * CommonJS behaviour. The two module systems genuinely differ, so the rules are
+ * selected per file instead of applied universally.
+ *
+ * ESM does no searching at all — the specifier is resolved against the parent
+ * URL and that is the answer, no extension added and no directory index tried.
+ * `new URL` IS that rule, which is why this branch is one line and has no list
+ * to get wrong. `import.meta.resolve` is the obvious tool here and cannot do the
+ * job: its two-argument form needs `--experimental-import-meta-resolve`, so
+ * without the flag the parent is SILENTLY IGNORED and every specifier resolves
+ * against this file instead. Measured — it reported a sibling `.css` that plainly
+ * exists as missing, and would have failed every browser package.
+ *
+ * CommonJS does search extensions and directory indexes, and `require.resolve`
+ * both applies those rules and throws when nothing matches — so that branch
+ * answers existence too, and the caller's `existsSync` is a no-op for it.
+ */
+function resolveRelative(file, specifier, manifest) {
+  // A bundler query or fragment names the same FILE with different handling —
+  // `./worker.js?worker`, `./data.txt?raw`. Browser packages emit these.
+  const path = specifier.split(/[?#]/)[0];
+  const parent = pathToFileURL(file);
+  return isEsm(file, manifest)
+    ? fileURLToPath(new URL(path, parent))
+    : createRequire(parent).resolve(path);
+}
+
+/**
+ * The first relative import in a package's emitted files that does not resolve
+ * to a file the package will actually ship.
  *
  * Parsing is not enough, and this is the gap it leaves. An entry of
  * `export { x } from "./missing.js"` parses perfectly, every file that DOES
@@ -141,17 +159,39 @@ function resolvesOnDisk(fromFile, specifier) {
  * an emitted file takes — `import`, `export ... from`, `import()` with a literal
  * argument, and `require()` in CommonJS output.
  *
- * BARE specifiers are deliberately not checked. Resolving `react` needs a real
- * resolver and a node_modules layout, and a peer dependency legitimately absent
- * from the package's own tree would fail. A RELATIVE specifier needs neither: it
- * names a file the package itself is supposed to ship.
+ * BARE specifiers are deliberately not checked. A peer dependency legitimately
+ * absent from the package's own tree would fail, and that is a fact about the
+ * install rather than about the package. A RELATIVE specifier names a file the
+ * package itself is supposed to ship, which is a claim it can be held to.
  */
-function firstUnresolvedImport(dir) {
+function firstUnresolvedImport(dir, manifest) {
   for (const file of emittedJsFiles(dir)) {
     const { importedFiles } = ts.preProcessFile(readFileSync(file, 'utf8'), true, true);
     for (const { fileName: specifier } of importedFiles) {
       if (!specifier.startsWith('./') && !specifier.startsWith('../')) continue;
-      if (!resolvesOnDisk(file, specifier)) return { file, specifier };
+
+      let resolved;
+      try {
+        resolved = resolveRelative(file, specifier, manifest);
+      } catch {
+        return { file, specifier, why: 'which resolves to nothing' };
+      }
+      if (!existsSync(resolved)) return { file, specifier, why: 'which resolves to nothing' };
+
+      // AND IT MUST BE INSIDE THE PACKAGE. Existing somewhere on this disk is not
+      // the property that matters: `npm pack` ships the package DIRECTORY, so an
+      // edge climbing out of it — `../../shared.mjs` — resolves perfectly in a
+      // workspace checkout, loads perfectly in CI, and arrives at the consumer
+      // pointing at a file that was never published.
+      // COMPARE REALPATHS ON BOTH SIDES. `require.resolve` returns a resolved
+      // real path while `dir` is whatever the caller handed us, and on macOS a
+      // temp dir is `/var/...` symlinked to `/private/var/...` — so a package
+      // entirely inside itself read as escaping. A symlinked checkout is
+      // ordinary, not exotic; both sides have to be in the same namespace.
+      const within = relative(realpathSync(dir), realpathSync(resolved));
+      if (within === '' || within.startsWith('..') || isAbsolute(within)) {
+        return { file, specifier, why: `which resolves OUTSIDE the package, to ${resolved}` };
+      }
     }
   }
   return undefined;
@@ -249,12 +289,12 @@ export async function smokeTest(packagesDir, { log = () => {} } = {}) {
     // missing relative import is a defect in every target, browser or Node, so it
     // is never downgraded: the downgrade exists for a package Node cannot LOAD,
     // not for one that is incomplete.
-    const missing = firstUnresolvedImport(dir);
+    const missing = firstUnresolvedImport(dir, manifest);
     assert.equal(
       missing,
       undefined,
       `${manifest.name}: ${missing ? relative(dir, missing.file) : ''} imports "${missing?.specifier}", ` +
-        'which the package does not contain',
+        `${missing?.why}`,
     );
 
     let loaded;
