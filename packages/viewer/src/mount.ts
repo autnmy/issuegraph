@@ -183,11 +183,47 @@ export function mountViewer(
     });
     container.appendChild(root);
     currentScene = scene;
+    // A REDRAW CAN REMOVE THE HOVERED ISSUE, and `pointerleave` does not fire
+    // when it does: the element under the pointer is destroyed while the
+    // pointer stays inside the container, so the handler that clears `hovered`
+    // never runs. The host was then left holding a key for an issue this
+    // document no longer carries, and never received the documented
+    // `onHover(null)` until the pointer left the whole viewer.
+    // IN `draw()` RATHER THAN IN `update()`, because the removal is a property
+    // of REDRAWING, not of one entry point — `setProjection` and a selection
+    // redraw can drop the key just as `update` can.
+    // ASK THE DOCUMENT, NOT `keyed`. Decoration announces itself through
+    // GROUP_ATTRIBUTE and deliberately never enters the focus index, so a
+    // hover on an enclosure or a connector is absent from `keyed` on every
+    // redraw — clearing on that test would fire constantly on a hover that is
+    // perfectly live. Both attributes carry an ISSUE key, so membership in the
+    // normalized document is the test that answers for both.
+    if (hovered !== null && !normalized.byKey.has(hovered)) {
+      hovered = null;
+      currentOptions.onHover?.(null);
+    }
   };
 
   const emitSelect = (key: string | null): void => {
     state = { ...state, selected: key, focused: key ?? state.focused };
     draw();
+    // FOCUS FOLLOWS THE SUBJECT — the movement branch of `onKeyDown` already
+    // does this, and selection needs it for the same reason: `draw()` destroys
+    // the subtree holding focus and mounts a replacement. Without it a reader
+    // who pressed Enter dropped focus out of the viewer entirely, so no later
+    // arrow key reached the container and keyboard navigation was over.
+    // HERE AND NOT IN `draw()`, which is the tempting generalization and the
+    // wrong one: `update()` redraws too, and a host that refreshes the document
+    // while the reader is somewhere else on the page would have focus YANKED
+    // into the viewer. Restoring only where the viewer itself moved the subject
+    // keeps that impossible. Narrowing `draw()` correctly instead would need to
+    // know whether focus was already inside — an `activeElement` this module
+    // deliberately does not ask its host for.
+    // IT COVERS THE CLICK AND `select()` PATHS TOO, which is what the handle
+    // documents: selection "fires onSelect exactly as a click does", and a
+    // click moves focus. `:focus-visible` is what keeps the ring off a pointer
+    // user, so this costs a mouse reader nothing.
+    if (state.focused !== null) keyed.get(state.focused)?.focus?.();
     currentOptions.onSelect?.(key);
   };
 

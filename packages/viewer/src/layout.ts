@@ -153,13 +153,23 @@ export function layoutGraph(document: NormalizedDocument, theme: Theme): GraphLa
   const gutterWidth = metric(theme, '--ig-gutter-width');
   const spineWidth = metric(theme, '--ig-spine-width');
   const channelWidth = metric(theme, '--ig-gutter-width') / 2;
-  // THE CANVAS RESERVES WHAT THE ENCLOSURE NEEDS. A `together-with` enclosure
-  // pads clear of its members' bounds, so a unit on the first or last row drew
-  // at a negative coordinate or past the bottom edge — outside the viewBox, and
-  // outside the stage, which hides its overflow. Laying the whole drawing out
-  // inside that margin costs nothing and removes the clip everywhere at once,
-  // rather than special-casing the two rows where it happens to bite.
-  const pad = metric(theme, '--ig-space-tight');
+  // THE CANVAS RESERVES WHAT THE ENCLOSURE NEEDS, AND WHAT THE FOCUS RING DOES.
+  // A `together-with` enclosure pads clear of its members' bounds, so a unit on
+  // the first or last row drew at a negative coordinate or past the bottom edge
+  // — outside the viewBox, and outside the stage, which hides its overflow.
+  // The focus ring reaches FURTHER than the enclosure and was clipped by the
+  // same edge: `:focus-visible` sits `--ig-space-tight` clear of the element and
+  // is `--ig-focus-ring` thick, so it extends their SUM outward, while a margin
+  // of `--ig-space-tight` alone left the top segment outside the stage — and on
+  // a one-row graph the bottom segment with it. A partial ring is exactly the
+  // indicator a keyboard reader depends on, so the margin covers the larger of
+  // the two demands rather than the one that happens to be named here.
+  // SUMMED FROM THE TOKENS, never written as 8: geometry is theme data in this
+  // package, so a retheme that changes either token moves the reservation with
+  // it instead of silently reintroducing the clip.
+  // The ENCLOSURE's own inset stays `--ig-space-tight` — this is the canvas
+  // margin, which must merely be big enough for both, not the same quantity.
+  const pad = metric(theme, '--ig-space-tight') + metric(theme, '--ig-focus-ring');
 
   const { spine, left, right, slotMembers } = assignColumns(document);
 

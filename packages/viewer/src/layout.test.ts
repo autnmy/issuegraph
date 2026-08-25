@@ -64,6 +64,34 @@ describe('layoutGraph', () => {
     assert.equal(occupies(layout.rightChannel), false, 'the right channel is occupied');
   });
 
+  it('reserves the room the focus ring reaches, not just the enclosure', () => {
+    // `:focus-visible` sits `--ig-space-tight` clear of the element and is
+    // `--ig-focus-ring` thick, so it extends their SUM outward. The stage hides
+    // its vertical overflow, so a margin of `--ig-space-tight` alone clipped the
+    // first row's top ring segment — and on a one-row graph the bottom one too.
+    // Read from the theme rather than written as 8, so a retheme that moves
+    // either token moves this assertion with the layout it is checking.
+    const reach =
+      defaultTheme.metrics['--ig-space-tight'] + defaultTheme.metrics['--ig-focus-ring'];
+    const { document } = normalizeDocument({
+      issues: [{ key: 'a', title: 'Only row', open: true, priority: 2 }],
+      edges: [],
+      order: {
+        slots: [{ rank: 1, lead: 'a', members: ['a'], ready: true, holds: [] }],
+        excluded: [],
+      },
+    });
+    const layout = layoutGraph(document, defaultTheme);
+    const box = layout.nodes.get('a');
+
+    assert.ok(box !== undefined);
+    assert.ok(box.y >= reach, `row starts at y=${String(box.y)}, inside the ring's ${String(reach)}px reach`);
+    assert.ok(
+      box.y + box.height + reach <= layout.height,
+      'the ring below the last row falls outside the canvas',
+    );
+  });
+
   it('reserves the padding a together enclosure needs, at both ends', () => {
     // The enclosure pads clear of its members' bounds, so a unit on the first or
     // last row drew at a negative coordinate or past the bottom edge — outside

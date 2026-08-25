@@ -229,6 +229,68 @@ describe('mountViewer', () => {
     assert.ok(before !== null);
   });
 
+  it('keeps focus on the row it just selected with the keyboard', () => {
+    // `draw()` destroys the subtree holding focus and mounts a replacement, and
+    // only the movement branch was refocusing it — so pressing Enter dropped
+    // focus out of the viewer and no later arrow key reached the container.
+    const { container, handle } = mounted();
+    const before = container.find(KEY_ATTRIBUTE, '102');
+    assert.ok(before !== undefined);
+
+    container.dispatch('keydown', { key: 'Enter', target: before });
+
+    const after = container.find(KEY_ATTRIBUTE, handle.state.selected as string);
+    assert.ok(after !== undefined, 'the selected row was not rebuilt');
+    assert.equal(after.focusCount, 1, 'the rebuilt row was never focused');
+    // And the reader can still move, which is what the lost focus cost them.
+    container.dispatch('keydown', { key: 'ArrowDown' });
+    assert.notEqual(handle.state.focused, before.getAttribute(KEY_ATTRIBUTE));
+  });
+
+  it('clears a hover the redraw removed, and tells the host', () => {
+    // `pointerleave` does not fire when the hovered element is destroyed under a
+    // stationary pointer, so the host was left holding a key for an issue the
+    // document no longer carries.
+    const hovered: (string | null)[] = [];
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const handle = mountViewer(container, fixtureDocument, {
+      onHover: (key: string | null) => hovered.push(key),
+    });
+    const target = container.find(KEY_ATTRIBUTE, '103');
+    assert.ok(target !== undefined);
+    container.dispatch('pointerover', { target });
+    assert.deepEqual(hovered, ['103']);
+
+    handle.update({
+      issues: fixtureDocument.issues.filter((issue) => issue.key !== '103'),
+      edges: fixtureDocument.edges.filter(
+        (edge) => edge.from !== '103' && edge.to !== '103',
+      ),
+      order: { slots: [], excluded: [] },
+    });
+
+    assert.deepEqual(hovered, ['103', null], 'the host was never told the hover ended');
+  });
+
+  it('does NOT clear a hover the redraw kept', () => {
+    // The clear must key on the DOCUMENT, not on the focus index: decoration
+    // hovers are absent from `keyed` on every redraw and are perfectly live.
+    const hovered: (string | null)[] = [];
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const handle = mountViewer(container, fixtureDocument, {
+      onHover: (key: string | null) => hovered.push(key),
+    });
+    const target = container.find(KEY_ATTRIBUTE, '103');
+    assert.ok(target !== undefined);
+    container.dispatch('pointerover', { target });
+
+    handle.update(fixtureDocument);
+
+    assert.deepEqual(hovered, ['103'], 'a live hover was cleared by an unrelated redraw');
+  });
+
   it('reports a hover, and reports null when the pointer leaves', () => {
     const hovered: (string | null)[] = [];
     const { container } = mounted({ onHover: (key: string | null) => hovered.push(key) });
