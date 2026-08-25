@@ -22,6 +22,7 @@
  */
 
 import type { EdgeKind, ProjectedEdge, Store, StoreSnapshot } from '@issuegraph/store';
+import { findEdge } from '@issuegraph/store';
 
 import {
   DEFAULT_CONCURRENCY_CAP,
@@ -150,6 +151,36 @@ function renderRow(row: ExplainedRow): HTMLElement {
   return node;
 }
 
+/**
+ * Whether the relationships panel should offer to DELETE this edge.
+ *
+ * Only a LANDED one, because that is exactly what the store will accept: every
+ * non-create mutation is validated against the landed document, so an edge that
+ * exists only as an optimistic overlay — a create that was rejected, that
+ * conflicted, or that a guard refused — comes back `unknown-edge`.
+ *
+ * OFFERING IT ANYWAY WAS NOT A HARMLESS DEAD CONTROL, which is why this is a
+ * guard rather than a tidy-up. The refusal is itself a write, so one click
+ * stacked an `invalid` state and a second `discard mine` onto a row that was
+ * already `failed`, and the edge did not move — a page whose entire subject is
+ * the edge states behaving as designed, showing two of them at once for a
+ * reason that was the page's own doing. Reproduced in a browser before the fix
+ * and after it.
+ *
+ * The right control for an unlanded edge is `discard mine`, which the row
+ * already offers for every settled write. A PENDING one correctly offers
+ * neither: there is nothing to discard until it settles.
+ *
+ * ASKED THROUGH THE STORE'S OWN `findEdge`, never a hand-rolled id comparison.
+ * Edge identity is derived from content and the symmetric kinds collapse two
+ * spellings onto one id (`edgeId`) — rules the store owns — so asking it is what
+ * stops this predicate and the validator disagreeing about what "in this
+ * document" means.
+ */
+export function offersDelete(edge: ProjectedEdge, snapshot: StoreSnapshot): boolean {
+  return findEdge({ issues: snapshot.issues, edges: snapshot.landed }, edge.id) !== undefined;
+}
+
 function renderEdge(edge: ProjectedEdge, store: Store, snapshot: StoreSnapshot): HTMLElement {
   const node = el('li', `edge edge-${edge.kind}`);
   // `selected` is the one state that is not about a write, so it has to be
@@ -226,13 +257,15 @@ function renderEdge(edge: ProjectedEdge, store: Store, snapshot: StoreSnapshot):
     }
   }
 
-  node.append(
-    button(
-      'delete',
-      () => void store.propose({ op: 'delete', edgeId: edge.id }),
-      'button button-inline button-quiet',
-    ),
-  );
+  if (offersDelete(edge, snapshot)) {
+    node.append(
+      button(
+        'delete',
+        () => void store.propose({ op: 'delete', edgeId: edge.id }),
+        'button button-inline button-quiet',
+      ),
+    );
+  }
   return node;
 }
 
