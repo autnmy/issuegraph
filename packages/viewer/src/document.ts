@@ -20,7 +20,12 @@
  * what it dropped.
  */
 
-import { type EdgeField, isEdgeField, isSymmetricEdgeField } from '@issuegraph/core';
+import {
+  EDGE_CARDINALITY,
+  type EdgeField,
+  isEdgeField,
+  isSymmetricEdgeField,
+} from '@issuegraph/core';
 
 /**
  * How an issue's rank came about, in the three forms the format and a host's
@@ -271,27 +276,47 @@ function indexEdges(
   const kept: ViewerEdge[] = [];
   const edgesOf = new Map<string, ViewerEdge[]>();
   const outOfSetOrigins = new Map<string, string>();
-  // `decomposed-from` is SINGLE-CARDINALITY in the format, and the rule has to
-  // be applied HERE, where the edges are read — not later, per projection. A
-  // second origin that resolved while the first did not left the tree nesting
+  // SINGLE-CARDINALITY IS ASKED OF THE FORMAT, NOT LISTED HERE. `EDGE_CARDINALITY`
+  // names four single-reference fields and this guard used to enforce exactly
+  // one of them, so a document declaring two `duplicate-of` (or `serialize-with`,
+  // or `together-with`) edges from one issue kept both: two badges for one
+  // relationship and two graph paths, where the format promises one fact and
+  // this reader promises a diagnostic. Reading the constant means the fifth
+  // single field, whenever the spec adds one, is covered the day it lands.
+  // THE RULE BELONGS HERE, where the edges are read — not later, per projection.
+  // A second origin that resolved while the first did not left the tree nesting
   // an issue under one parent while printing that it came from another, with
   // neither the diagnostic nor the first-origin rule the projection promises.
   // First declared wins, whether or not it resolves.
-  const originClaimed = new Set<string>();
+  // KEYED ON (from, field), WHICH IS WHAT MAKES IT SAFE FOR THE SYMMETRIC FIELDS.
+  // `A together-with B` and `B together-with A` are one undirected fact written
+  // the way the format asks, and each endpoint declared ONCE — so keying on the
+  // endpoint PAIR would reject the reverse declaration as a repeat, and keying on
+  // the target would reject a legitimate three-member group in which B and C both
+  // point at A. Each issue gets one declaration; who points at it is not its
+  // budget to spend.
+  const claimed = new Set<string>();
   const symmetricSeen = new Set<string>();
   for (const edge of edges) {
     if (!isEdgeField(edge.field)) {
       diagnostics.push(`edge ${edge.from} -> ${edge.to} names an unknown field and was dropped`);
       continue;
     }
-    if (edge.field === 'decomposed-from') {
-      if (originClaimed.has(edge.from)) {
+    // BEFORE THE SYMMETRIC DEDUPE BELOW, AND THAT ORDER IS THE CORRECTNESS. The
+    // dedupe drops a symmetric edge's reverse declaration as a repeat of one
+    // fact — so counted after it, `B together-with A` would spend nothing, and a
+    // `B together-with C` arriving later would read as B's first declaration
+    // when it is really its second. Counting first means every declaration an
+    // author WROTE is counted, whatever the reader later collapses or drops.
+    if (EDGE_CARDINALITY[edge.field] === 'single') {
+      const claim = `${edge.field}\u0000${edge.from}`;
+      if (claimed.has(claim)) {
         diagnostics.push(
-          `${edge.from} declares more than one decomposed-from origin; only the first is kept and ${edge.to} was dropped`,
+          `${edge.from} declares more than one ${edge.field}; the format allows one, so only the first is kept and ${edge.to} was dropped`,
         );
         continue;
       }
-      originClaimed.add(edge.from);
+      claimed.add(claim);
     }
     const missing = !byKey.has(edge.from) ? edge.from : !byKey.has(edge.to) ? edge.to : null;
     if (missing !== null) {

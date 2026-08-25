@@ -156,10 +156,20 @@ export function clustersOf(
   }
 
   const clusters = connectedComponents(document, drawn).map((members) => {
-    const membership = new Set(members);
-    const blockedByEdges = document.edges.filter(
-      (edge) => edge.field === 'blocked-by' && membership.has(edge.from),
-    ).length;
+    // SUMMED OFF THE ADJACENCY ABOVE, NOT RE-FILTERED PER COMPONENT. This used to
+    // scan the WHOLE edge array once per component, which is quadratic in exactly
+    // the shape that reaches it: refusal mode exists for documents too big to
+    // draw, and a fragmented one is the worst case — 10,000 disconnected pairs
+    // means 10,000 components each scanning 10,000 edges, ~100 million checks to
+    // produce a SUMMARY. The refusal would then freeze the browser it was added
+    // to protect.
+    // The value is identical, not an approximation: `blockedBy` maps each origin
+    // to its `blocked-by` targets, members are distinct, and the filter counted
+    // exactly the edges whose origin is a member — so summing each member's list
+    // length counts the same edges once each. Linear in members, so the whole
+    // pass is linear in nodes plus edges.
+    let blockedByEdges = 0;
+    for (const member of members) blockedByEdges += blockedBy.get(member)?.length ?? 0;
     const { depth, hasCycle } = depthAndCycle(members, blockedBy);
     return { members, blockedByEdges, hasCycle, chainDepth: depth };
   });

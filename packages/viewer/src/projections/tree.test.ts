@@ -144,7 +144,7 @@ describe('the tree projection', () => {
     });
 
     assert.ok(
-      first.diagnostics.some((line) => /more than one decomposed-from origin/.test(line)),
+      first.diagnostics.some((line) => /more than one decomposed-from/.test(line)),
     );
     assert.equal(levelOf(renderMarkup(treeScene(first.document).root), '3'), '2');
   });

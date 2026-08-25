@@ -11,6 +11,91 @@ function issue(key: string, extra: Partial<ViewerDocument['issues'][number]> = {
 }
 
 describe('normalizeDocument', () => {
+  it('keeps one declaration per single-reference field, not just decomposed-from', () => {
+    // The format calls FOUR fields single-reference and this reader enforced
+    // exactly one of them, so two `duplicate-of` edges from one issue both
+    // survived — two badges for one relationship and two graph paths, where the
+    // format promises one fact and this reader promises a diagnostic.
+    for (const field of ['duplicate-of', 'serialize-with', 'together-with'] as const) {
+      const { document, diagnostics } = normalizeDocument({
+        issues: [issue('1'), issue('2'), issue('3')],
+        edges: [
+          { field, from: '1', to: '2' },
+          { field, from: '1', to: '3' },
+        ],
+        order: emptyOrder,
+      });
+
+      assert.equal(document.edges.length, 1, `${field} kept both declarations`);
+      assert.equal(document.edges[0]?.to, '2', `${field} did not keep the FIRST declaration`);
+      assert.ok(
+        diagnostics.some((line) => line.includes(`more than one ${field}`)),
+        `${field} dropped an edge without saying so`,
+      );
+    }
+  });
+
+  it('still lets both endpoints of a symmetric edge declare it', () => {
+    // The cardinality rule above counts DECLARATIONS PER ISSUE, and it has to,
+    // because `A together-with B` plus `B together-with A` is one undirected
+    // fact written the way the format asks — each endpoint declaring once. A
+    // rule keyed on the endpoint pair would read the reverse as a repeat and
+    // report a perfectly ordinary document as malformed.
+    const both = normalizeDocument({
+      issues: [issue('1'), issue('2')],
+      edges: [
+        { field: 'together-with', from: '1', to: '2' },
+        { field: 'together-with', from: '2', to: '1' },
+      ],
+      order: emptyOrder,
+    });
+
+    assert.equal(both.document.edges.length, 1);
+    assert.equal(
+      both.diagnostics.filter((line) => line.includes('more than one')).length,
+      0,
+      'the reverse declaration was reported as a cardinality violation',
+    );
+
+    // And a three-member group, where two members both point at the third, is
+    // two legitimate declarations — not one issue declaring twice.
+    const group = normalizeDocument({
+      issues: [issue('1'), issue('2'), issue('3')],
+      edges: [
+        { field: 'together-with', from: '2', to: '1' },
+        { field: 'together-with', from: '3', to: '1' },
+      ],
+      order: emptyOrder,
+    });
+
+    assert.equal(group.document.edges.length, 2);
+    assert.equal(
+      group.diagnostics.filter((line) => line.includes('more than one')).length,
+      0,
+      'a group formed by two members pointing at one was rejected',
+    );
+  });
+
+  it('counts a symmetric declaration the dedupe later collapses', () => {
+    // ORDER OF THE TWO RULES, made falsifiable. The dedupe drops `2 -> 1` as a
+    // repeat of one fact, so counted AFTER it that declaration would spend
+    // nothing and `2 -> 3` would read as issue 2's first — when it is really its
+    // second. Every declaration an author WROTE is counted, whatever the reader
+    // later collapses.
+    const { document, diagnostics } = normalizeDocument({
+      issues: [issue('1'), issue('2'), issue('3')],
+      edges: [
+        { field: 'serialize-with', from: '1', to: '2' },
+        { field: 'serialize-with', from: '2', to: '1' },
+        { field: 'serialize-with', from: '2', to: '3' },
+      ],
+      order: emptyOrder,
+    });
+
+    assert.equal(document.edges.length, 1, 'issue 2 got a second serialize-with edge');
+    assert.ok(diagnostics.some((line) => line.includes('more than one serialize-with')));
+  });
+
   it('collapses a symmetric edge declared from both ends into one undirected fact', () => {
     // Both endpoints declaring `serialize-with` is how the format asks an
     // author to write one undirected relationship down, so keeping both drew
