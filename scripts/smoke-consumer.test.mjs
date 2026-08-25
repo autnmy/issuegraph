@@ -119,6 +119,24 @@ test('a module that throws NULL still records parse-only', async () => {
   assert.equal(result.downgraded, 'null');
 });
 
+test('NOT AN EXEMPTION: a missing STATIC import fails, floor or no floor', async () => {
+  // The parse sweep reads the files that ARE there, so an absent one is
+  // structurally invisible to it. Node reports the missing file, and the
+  // downgrade must not swallow that: CI would otherwise pass a package whose
+  // first import 404s for every consumer.
+  const dir = fixture('export { x } from "./missing.js";\n');
+  await assert.rejects(smokeTest(dir), /imports a file the package does not contain/);
+});
+
+test('CONTROL: an uninstalled BARE import still downgrades — that is the install, not the package', async () => {
+  // The reason this keys on `err.url` rather than on the bare error code: a
+  // browser package's peer dependency is legitimately absent from its own tree,
+  // and failing it would break exactly the packages this PR exists to admit.
+  const dir = fixture('import "some-absent-package";\nexport const a = 1;\n');
+  const [result] = await smokeTest(dir);
+  assert.equal(result.check, 'parsed');
+});
+
 test('NOT AN EXEMPTION: broken syntax fails even with no declared floor', async () => {
   // The whole risk of a downgrade is that it becomes a pass for anything. A
   // SyntaxError proves the file was never valid, so it is never tolerated.

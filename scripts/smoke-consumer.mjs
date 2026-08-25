@@ -231,10 +231,33 @@ export async function smokeTest(packagesDir, { log = () => {} } = {}) {
       loaded = await import(pathToFileURL(entryPath).href);
     } catch (error) {
       // A package that CLAIMS a Node floor must still LOAD on it; only one making
-      // no such claim may stop at the sweeps above. Nothing here is special-cased
-      // on the error's type or code — the sweeps have already established the
-      // only properties that make a downgrade honest.
+      // no such claim may stop at the sweeps above.
       if (floor !== undefined) throw error;
+
+      // A MISSING FILE IS NEVER A DOWNGRADE, whatever the package targets. The
+      // parse sweep reads the files that ARE there and is structurally blind to
+      // one that is absent, so without this a floor-less entry of
+      // `export { x } from "./missing.js"` is reported as `parsed` and CI passes
+      // a package no consumer can load. That is the defect this whole file was
+      // hardened for, and removing the static resolver reintroduced it.
+      //
+      // ASK NODE, DO NOT MODEL IT — which is why this is six lines and not a
+      // resolver. `err.url` is populated ONLY when the unresolved specifier named
+      // a FILE; a bare specifier Node could not find in node_modules carries the
+      // same `code` and NO `url`. Measured on Node 25:
+      //
+      //   export { x } from "./missing.js"  -> ERR_MODULE_NOT_FOUND, url=file:///…/missing.js
+      //   import "some-absent-pkg"          -> ERR_MODULE_NOT_FOUND, url=(none)
+      //   import "./style.css"              -> ERR_UNKNOWN_FILE_EXTENSION
+      //
+      // That distinction is what keeps this from firing on a browser package's
+      // uninstalled PEER DEPENDENCY, which is a fact about the install rather
+      // than about the package — the reason a blanket `ERR_MODULE_NOT_FOUND`
+      // rule was rejected earlier. A control test pins it.
+      if (error?.code === 'ERR_MODULE_NOT_FOUND' && error.url) {
+        assert.fail(`${manifest.name}: ${runtime} imports a file the package does not contain — ${error.url}`);
+      }
+
       parseOnly = true;
       reason = describeThrown(error);
     }
