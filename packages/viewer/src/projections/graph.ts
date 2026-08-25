@@ -278,8 +278,17 @@ function spineRail(
  * narrows the document, because narrowing IS the host's job in a package that
  * renders exactly what it is given.
  */
-function refusal(document: NormalizedDocument, nodeCount: number, mode: 'capsules' | 'clusters'): ElementSpec {
-  const clusters = clustersOf(document);
+function refusal(
+  document: NormalizedDocument,
+  layout: GraphLayout,
+  nodeCount: number,
+  mode: 'capsules' | 'clusters',
+): ElementSpec {
+  // THE SAME KEY SET THE COUNT ABOVE CAME FROM. `nodeCount` is `layout.nodes`,
+  // so the component list has to partition `layout.nodes` or the two disagree —
+  // which is how an edge-free over-budget document listed no components at all
+  // under a sentence telling the reader to choose one.
+  const clusters = clustersOf(document, new Set(layout.nodes.keys()));
   const heading =
     mode === 'capsules'
       ? `${String(nodeCount)} related issues is past this canvas's budget of ${String(GRAPH_NODE_BUDGET)}, so it is not drawing them.`
@@ -292,24 +301,36 @@ function refusal(document: NormalizedDocument, nodeCount: number, mode: 'capsule
       'ol',
       { class: 'ig-list', 'aria-label': 'connected components' },
       shown.map((cluster) =>
-        element(
-          'li',
-          {
-            class: 'ig-capsule',
-            // Pointer identity, not focus identity: a refusal publishes no
-            // navigation targets, so this must not enter the focus index.
-            'data-ig-group': cluster.members[0] ?? null,
-          },
-          [
-          element('span', { class: 'ig-count' }, [`${String(cluster.members.length)} issues`]),
-          element('span', { class: 'ig-count' }, [`${String(cluster.blockedByEdges)} blocking`]),
-          element('span', { class: 'ig-count' }, [`depth ${String(cluster.chainDepth)}`]),
-          cluster.hasCycle
-            ? element('span', { class: 'ig-badge', 'data-edge': 'blocked-by' }, ['cycle'])
-            : null,
-          element('span', { class: 'ig-id' }, [cluster.members.slice(0, 3).join(', ')]),
-          ],
-        ),
+        element('li', {}, [
+          // A REAL CONTROL, NOT A CLICKABLE `li`. `data-ig-group` made the
+          // capsule dispatch on a POINTER click while the sentence below
+          // offered the action to everyone — so keyboard-only readers were
+          // told to choose a component and given no way to do it. A refusal
+          // publishes no navigation targets by design (one focus index, one
+          // element per key), which is exactly why the fix cannot be a
+          // tabindex: a native `button` is focusable and Enter/Space-activated
+          // on its own, without the refusal owning a focus index it has no
+          // other use for. The click it synthesizes carries the same
+          // `data-ig-group` the pointer path already reads, so both routes
+          // reach `onSelect` through one code path rather than two.
+          element(
+            'button',
+            {
+              type: 'button',
+              class: 'ig-capsule',
+              'data-ig-group': cluster.members[0] ?? null,
+            },
+            [
+              element('span', { class: 'ig-count' }, [`${String(cluster.members.length)} issues`]),
+              element('span', { class: 'ig-count' }, [`${String(cluster.blockedByEdges)} blocking`]),
+              element('span', { class: 'ig-count' }, [`depth ${String(cluster.chainDepth)}`]),
+              cluster.hasCycle
+                ? element('span', { class: 'ig-badge', 'data-edge': 'blocked-by' }, ['cycle'])
+                : null,
+              element('span', { class: 'ig-id' }, [cluster.members.slice(0, 3).join(', ')]),
+            ],
+          ),
+        ]),
       ),
     ),
     element('p', { class: 'ig-refusal-next' }, [
@@ -426,10 +447,10 @@ export function graphScene(document: NormalizedDocument, options: GraphOptions =
     canvas = emptyState('No issue in this document declares a relationship, so the canvas is empty.');
   } else if (nodeCount > CLUSTER_ONLY_BUDGET) {
     diagnostics.push(`graph refused: ${String(nodeCount)} nodes is past the cluster-only budget of ${String(CLUSTER_ONLY_BUDGET)}`);
-    canvas = refusal(document, nodeCount, 'clusters');
+    canvas = refusal(document, layout, nodeCount, 'clusters');
   } else if (nodeCount > GRAPH_NODE_BUDGET) {
     diagnostics.push(`graph refused: ${String(nodeCount)} nodes is past the node budget of ${String(GRAPH_NODE_BUDGET)}`);
-    canvas = refusal(document, nodeCount, 'capsules');
+    canvas = refusal(document, layout, nodeCount, 'capsules');
   } else {
     const edgeLayers: ElementSpec[] = [];
     for (const edge of document.edges) {

@@ -69,10 +69,18 @@ function buildForest(document: NormalizedDocument): Forest {
     let cursor: string | undefined = issue.key;
     while (cursor !== undefined && !settled.has(cursor)) {
       if (walking.has(cursor)) {
+        // PROMOTE THE CYCLE, NOT THE WALK THAT REACHED IT. `path` is everything
+        // this walk touched, so when an acyclic TAIL leads into a cycle — `A ->
+        // B` with `B -> C -> B` — it holds `A` as well. Promoting all of it
+        // rooted `A` and deleted its perfectly valid `A -> B` edge, so a
+        // malformed cycle two levels up silently erased a decomposition that
+        // was never part of it. Slicing at the repeated node is what makes the
+        // blast radius the cycle itself.
+        const cycle = path.slice(path.indexOf(cursor));
         diagnostics.push(
-          `decomposed-from cycle through ${path.join(' -> ')}; each member is drawn once as a root`,
+          `decomposed-from cycle through ${cycle.join(' -> ')}; each member is drawn once as a root`,
         );
-        for (const member of path) {
+        for (const member of cycle) {
           if (!rooted.has(member)) {
             rooted.add(member);
             roots.push(member);

@@ -23,7 +23,10 @@ export interface Cluster {
   readonly chainDepth: number;
 }
 
-function connectedComponents(document: NormalizedDocument): string[][] {
+function connectedComponents(
+  document: NormalizedDocument,
+  drawn: ReadonlySet<string> | undefined,
+): string[][] {
   const adjacency = new Map<string, string[]>();
   const touch = (key: string): string[] => {
     const existing = adjacency.get(key);
@@ -41,7 +44,22 @@ function connectedComponents(document: NormalizedDocument): string[][] {
   const components: string[][] = [];
   // Walk in the document's issue order so the component list is stable.
   for (const issue of document.issues) {
-    if (seen.has(issue.key) || !adjacency.has(issue.key)) continue;
+    if (seen.has(issue.key)) continue;
+    // AN EDGE-FREE NODE IS A COMPONENT OF ONE, and dropping it broke the only
+    // promise the refusal makes. The refusal fires on how many nodes the canvas
+    // would DRAW, but the component list was built from nodes that have an
+    // EDGE — so an over-budget document with no relationships in it refused to
+    // draw and then listed nothing, under a sentence pointing at the list.
+    // A partition of the drawn set cannot disagree with the count that
+    // triggered it, whatever the document contains.
+    if (!adjacency.has(issue.key)) {
+      if (drawn !== undefined && drawn.has(issue.key)) components.push([issue.key]);
+      continue;
+    }
+    // AN EDGE ENDPOINT THE CANVAS DOES NOT DRAW IS STILL NOT DRAWN. `drawn`
+    // bounds both arms or it bounds neither, and bounding only the singletons
+    // would trade an under-count for an over-count.
+    if (drawn !== undefined && !drawn.has(issue.key)) continue;
     const members: string[] = [];
     const stack = [issue.key];
     seen.add(issue.key);
@@ -117,7 +135,18 @@ function depthAndCycle(
 }
 
 /** Every component the document declares, largest first, then by first member. */
-export function clustersOf(document: NormalizedDocument): readonly Cluster[] {
+export function clustersOf(
+  document: NormalizedDocument,
+  /**
+   * The keys the canvas would actually draw — `layout.nodes`' key set.
+   *
+   * Passing it makes the returned components a PARTITION of exactly the nodes
+   * the refusal counted, which is the property the refusal's own text depends
+   * on. Omitting it keeps the older edge-derived reading for callers that are
+   * describing a document rather than explaining a refusal.
+   */
+  drawn?: ReadonlySet<string>,
+): readonly Cluster[] {
   const blockedBy = new Map<string, string[]>();
   for (const edge of document.edges) {
     if (edge.field !== 'blocked-by') continue;
@@ -126,7 +155,7 @@ export function clustersOf(document: NormalizedDocument): readonly Cluster[] {
     else existing.push(edge.to);
   }
 
-  const clusters = connectedComponents(document).map((members) => {
+  const clusters = connectedComponents(document, drawn).map((members) => {
     const membership = new Set(members);
     const blockedByEdges = document.edges.filter(
       (edge) => edge.field === 'blocked-by' && membership.has(edge.from),

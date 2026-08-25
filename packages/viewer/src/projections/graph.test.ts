@@ -273,6 +273,52 @@ describe('the graph projection', () => {
     assert.equal(labels.includes('Backfill the ledger'), false, 'a railed node is labelled twice');
   });
 
+  it('lists a component for every node it refused to draw, even with no edges at all', () => {
+    // The refusal counts LAID-OUT nodes while the component list was built
+    // from nodes carrying an EDGE, so an over-budget document with no
+    // relationships refused to draw and then listed nothing — under a
+    // sentence pointing at the list. A partition cannot disagree with the
+    // count that triggered it.
+    const size = GRAPH_NODE_BUDGET + 1;
+    const edgeless: ViewerDocument = {
+      issues: Array.from({ length: size }, (_, index) => ({
+        key: String(index + 1),
+        title: `Issue ${String(index + 1)}`,
+        open: true,
+        priority: 2,
+      })),
+      edges: [],
+      order: {
+        slots: Array.from({ length: size }, (_, index) => ({
+          rank: index + 1,
+          lead: String(index + 1),
+          members: [String(index + 1)],
+          ready: true,
+          holds: [],
+        })),
+        excluded: [],
+      },
+    };
+    const markup = render(edgeless);
+
+    assert.match(markup, /class="ig-refusal"/);
+    const capsules = [...markup.matchAll(/class="ig-capsule"/g)].length;
+    assert.equal(capsules, size, `refused ${String(size)} nodes but listed ${String(capsules)}`);
+  });
+
+  it('makes the refusal action reachable by keyboard, not only by pointer', () => {
+    // `data-ig-group` on a plain `li` dispatches on a POINTER click while the
+    // sentence below offers the action to everyone. A native button is
+    // focusable and Enter/Space-activated without the refusal owning a focus
+    // index it has no other use for.
+    const markup = render(crowdedDocument(GRAPH_NODE_BUDGET + 1));
+
+    assert.match(markup, /<button type="button" class="ig-capsule" data-ig-group="[^"]+"/);
+    // And it must NOT have become a focus target: one focus index, one element
+    // per key, and a refusal publishes no navigation targets.
+    assert.deepEqual([...scene(crowdedDocument(GRAPH_NODE_BUDGET + 1)).focusOrder], []);
+  });
+
   it('offers a refusal action a host can actually perform', () => {
     // A route forward nobody can take is worse than a plain refusal: the
     // capsules carried no identity, nothing dispatched from them, and this

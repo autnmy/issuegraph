@@ -20,7 +20,7 @@
  * what it dropped.
  */
 
-import { type EdgeField, isEdgeField } from '@issuegraph/core';
+import { type EdgeField, isEdgeField, isSymmetricEdgeField } from '@issuegraph/core';
 
 /**
  * How an issue's rank came about, in the three forms the format and a host's
@@ -278,6 +278,7 @@ function indexEdges(
   // neither the diagnostic nor the first-origin rule the projection promises.
   // First declared wins, whether or not it resolves.
   const originClaimed = new Set<string>();
+  const symmetricSeen = new Set<string>();
   for (const edge of edges) {
     if (!isEdgeField(edge.field)) {
       diagnostics.push(`edge ${edge.from} -> ${edge.to} names an unknown field and was dropped`);
@@ -308,6 +309,25 @@ function indexEdges(
     if (edge.from === edge.to) {
       diagnostics.push(`${edge.field} self-edge on ${edge.from} was dropped`);
       continue;
+    }
+    // A SYMMETRIC FIELD IS ONE UNDIRECTED FACT, so both endpoints declaring it
+    // is the NORMAL way to write it down, not a malformed document — and the
+    // reader that keeps both renders the one relationship twice: two badges,
+    // two paths, and a component edge count nobody can reconcile with what is
+    // drawn. Canonicalizing the pair collapses the reverse declaration AND a
+    // repeat of the same direction, because the identity of an undirected edge
+    // is its endpoint SET.
+    // NO DIAGNOSTIC. Unlike the drops above, nothing here is wrong with the
+    // document: `A serialize-with B` plus `B serialize-with A` is exactly what
+    // the format asks an author to write, so reporting it would train readers
+    // to ignore the diagnostics that do mean something.
+    if (isSymmetricEdgeField(edge.field)) {
+      const pair =
+        edge.from < edge.to
+          ? `${edge.field}\u0000${edge.from}\u0000${edge.to}`
+          : `${edge.field}\u0000${edge.to}\u0000${edge.from}`;
+      if (symmetricSeen.has(pair)) continue;
+      symmetricSeen.add(pair);
     }
     kept.push(edge);
     for (const end of [edge.from, edge.to]) {

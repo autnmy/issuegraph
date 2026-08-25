@@ -292,15 +292,22 @@ export const viewerStylesheet = `
   margin: var(--ig-space-tight) 0 0;
 }
 
+/* The capsule is a BUTTON, so the refusal's stated action is reachable by
+   keyboard and not only by pointer. That means undoing the UA's own button
+   look — font, alignment, width — rather than styling a bare box. */
 .ig-capsule {
   align-items: baseline;
   background: var(--ig-surface);
   border: var(--ig-stroke) solid var(--ig-line);
   border-radius: var(--ig-radius);
+  color: inherit;
   display: flex;
+  font: inherit;
   gap: var(--ig-space);
   margin-top: var(--ig-space-tight);
   padding: var(--ig-space-tight) var(--ig-space);
+  text-align: left;
+  width: 100%;
 }
 
 /* ── the decomposition tree ────────────────────────────────────────────── */

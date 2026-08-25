@@ -103,6 +103,33 @@ describe('the tree projection', () => {
     assert.deepEqual([...cyclic.focusOrder].sort(), ['1', '2', '3']);
   });
 
+  it('promotes only the cycle, leaving a valid decomposition that merely leads into one', () => {
+    // `1 -> 2` is sound; the cycle is `2 -> 3 -> 2` behind it. Promoting the
+    // whole walk rooted `1` and deleted its edge, so a malformed cycle two
+    // levels up erased a decomposition that was never part of it.
+    const tailed = scene({
+      issues: [issue('1'), issue('2'), issue('3')],
+      edges: [
+        { field: 'decomposed-from', from: '1', to: '2' },
+        { field: 'decomposed-from', from: '2', to: '3' },
+        { field: 'decomposed-from', from: '3', to: '2' },
+      ],
+      order: emptyOrder,
+    });
+    const markup = renderMarkup(tailed.root);
+
+    assert.equal(tailed.diagnostics.length, 1);
+    // The diagnostic names the cycle, not the walk that reached it.
+    assert.match(tailed.diagnostics[0] as string, /decomposed-from cycle through 2 -> 3/);
+    assert.doesNotMatch(tailed.diagnostics[0] as string, /through 1 ->/);
+    // `1` keeps its parent, so it is nested rather than promoted to a root.
+    assert.equal(levelOf(markup, '1'), '2');
+    // Every issue is still drawn exactly once.
+    for (const key of ['1', '2', '3']) {
+      assert.equal([...markup.matchAll(new RegExp(`data-ig-key="${key}"`, 'g'))].length, 1);
+    }
+  });
+
   it('keeps the first of two declared origins, whichever one resolves', () => {
     // The format makes `decomposed-from` single-cardinality and
     // `normalizeDocument` applies that where the edges are read, so the tree

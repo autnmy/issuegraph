@@ -11,6 +11,58 @@ function issue(key: string, extra: Partial<ViewerDocument['issues'][number]> = {
 }
 
 describe('normalizeDocument', () => {
+  it('collapses a symmetric edge declared from both ends into one undirected fact', () => {
+    // Both endpoints declaring `serialize-with` is how the format asks an
+    // author to write one undirected relationship down, so keeping both drew
+    // the same fact twice — two badges, two paths, and an edge count that no
+    // reader could reconcile with the drawing.
+    const { document, diagnostics } = normalizeDocument({
+      issues: [issue('1'), issue('2')],
+      edges: [
+        { field: 'serialize-with', from: '1', to: '2' },
+        { field: 'serialize-with', from: '2', to: '1' },
+      ],
+      order: emptyOrder,
+    });
+
+    assert.equal(document.edges.length, 1);
+    assert.equal(document.edgesOf.get('1')?.length, 1);
+    assert.equal(document.edgesOf.get('2')?.length, 1);
+    // Nothing is WRONG with the document, so it earns no diagnostic — a
+    // reader trained to ignore these stops reading the ones that matter.
+    assert.deepEqual(diagnostics, []);
+  });
+
+  it('collapses a repeat of the same symmetric direction too', () => {
+    // The identity of an undirected edge is its endpoint SET, so a repeat and
+    // a reverse are the same duplicate wearing different clothes.
+    const { document } = normalizeDocument({
+      issues: [issue('1'), issue('2')],
+      edges: [
+        { field: 'together-with', from: '1', to: '2' },
+        { field: 'together-with', from: '1', to: '2' },
+      ],
+      order: emptyOrder,
+    });
+
+    assert.equal(document.edges.length, 1);
+  });
+
+  it('does NOT collapse a directed edge declared in both directions', () => {
+    // `blocked-by` is directed, so `1 -> 2` and `2 -> 1` are two different
+    // claims — a mutual block, which is a cycle the reader must be shown.
+    const { document } = normalizeDocument({
+      issues: [issue('1'), issue('2')],
+      edges: [
+        { field: 'blocked-by', from: '1', to: '2' },
+        { field: 'blocked-by', from: '2', to: '1' },
+      ],
+      order: emptyOrder,
+    });
+
+    assert.equal(document.edges.length, 2);
+  });
+
   it('keeps a well-formed document intact and diagnoses nothing', () => {
     const { document, diagnostics } = normalizeDocument({
       issues: [issue('1'), issue('2')],
