@@ -1,7 +1,7 @@
 {
   "name": "@issuegraph/writer",
-  "version": "0.1.0",
-  "description": "Write the Issuegraph frontmatter block into an issue body — render a fresh block, splice generated edges in place without disturbing anything else, and re-delimit a block a fence left inert. Pure string work; no network, no tracker, no reads.",
+  "version": "0.1.1",
+  "description": "Write the Issuegraph frontmatter block into an issue body \u2014 render a fresh block, splice generated edges in place without disturbing anything else, and re-delimit a block a fence left inert. Pure string work; no network, no tracker, no reads.",
   "keywords": [
     "issuegraph",
     "dependency-graph",
