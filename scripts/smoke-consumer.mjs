@@ -53,7 +53,8 @@ function exportTargets(node, found = []) {
  * exactly the input this exists to catch.
  */
 function firstParseError(file) {
-  const out = ts.transpileModule(readFileSync(file, 'utf8'), {
+  const source = readFileSync(file, 'utf8');
+  const out = ts.transpileModule(source, {
     reportDiagnostics: true,
     // The REAL filename, not a placeholder. Without it TypeScript parses the
     // input AS TYPESCRIPT, so `export const x: number = 1` left in an emitted
@@ -64,7 +65,38 @@ function firstParseError(file) {
     compilerOptions: { target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.ESNext, allowJs: true },
   });
   const error = (out.diagnostics ?? []).find((d) => d.category === ts.DiagnosticCategory.Error);
-  return error ? ts.flattenDiagnosticMessageText(error.messageText, ' ') : undefined;
+  if (error) return ts.flattenDiagnosticMessageText(error.messageText, ' ');
+  return firstJsxNode(ts.createSourceFile(file, source, ts.ScriptTarget.ESNext, false, ts.ScriptKind.JS))
+    ? 'JSX syntax survived the build; no JavaScript runtime can parse it'
+    : undefined;
+}
+
+/**
+ * The first JSX node in a parsed file, or `undefined` if it contains none.
+ *
+ * ASKED OF THE AST, because the diagnostics CANNOT answer it. TypeScript picks
+ * its language variant from the FILE EXTENSION, and `.js`, `.mjs` and `.cjs` are
+ * all JSX-capable variants — so JSX left untransformed in an emitted file draws
+ * no diagnostic however the compiler options are set, and no option changes that.
+ * Measured on TypeScript 6.0.3, with the real filename supplied: an element and a
+ * fragment both report CLEAN, against `SyntaxError: Unexpected token '<'` from
+ * Node for both. That is the one shape `firstParseError` above could not see, and
+ * it is the shape a browser package ships when its JSX transform misfires — the
+ * exact build this workspace now admits.
+ *
+ * DELIBERATELY NARROW. The more derived instrument is "any Node `SyntaxError` at
+ * load is fatal", and it was rejected rather than overlooked: it would also
+ * reject syntax a browser accepts and the running Node does not yet parse — a
+ * newer import-attributes form, say — which is precisely the tolerance the
+ * floor-less downgrade exists to provide. This rejects source no JavaScript
+ * runtime anywhere will parse, and nothing else.
+ *
+ * `ts.forEachChild` returns the first truthy result its callback produces, so
+ * this stops at the first hit rather than walking the whole tree.
+ */
+function firstJsxNode(node) {
+  if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxFragment(node)) return node;
+  return ts.forEachChild(node, firstJsxNode);
 }
 
 const EMITTED_EXTENSIONS = ['.js', '.mjs', '.cjs'];

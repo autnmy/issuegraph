@@ -128,6 +128,29 @@ test('NOT AN EXEMPTION: a missing STATIC import fails, floor or no floor', async
   await assert.rejects(smokeTest(dir), /imports a file the package does not contain/);
 });
 
+test('NOT AN EXEMPTION: JSX left in an emitted file fails, floor or none', async () => {
+  // The gap this closes: TypeScript reads `.js` as a JSX-CAPABLE variant, so an
+  // untransformed element draws no diagnostic and the parse check passed it —
+  // while Node answers `SyntaxError: Unexpected token '<'` and the floor-less
+  // downgrade then swallowed that. Measured on TypeScript 6.0.3.
+  const dir = fixture('export const a = <div />;\n');
+  await assert.rejects(smokeTest(dir), /JSX syntax survived the build/);
+});
+
+test('NOT AN EXEMPTION: a JSX fragment fails too', async () => {
+  // A separate node kind from an element, so it is pinned separately: dropping
+  // `isJsxFragment` leaves the element test green.
+  const dir = fixture('export const a = <>x</>;\n');
+  await assert.rejects(smokeTest(dir), /JSX syntax survived the build/);
+});
+
+test('CONTROL: the JSX check reads the AST, not the text', async () => {
+  // Both of these carry `<` — one as a comparison, one inside a string literal.
+  // A textual scan for angle brackets fails this; an AST walk does not.
+  const dir = fixture('export const a = 1 < 2;\nexport const b = "<div />";\n');
+  assert.deepEqual((await smokeTest(dir)).map((r) => r.check), ['loaded']);
+});
+
 test('NOT AN EXEMPTION: a missing CommonJS require fails too', async () => {
   // CommonJS reports MODULE_NOT_FOUND with no `url`, so the ESM discriminator
   // does not reach it. Measured: relative and bare are identical apart from the
