@@ -456,7 +456,14 @@ export function deriveIssueOrder(input: DeriveIssueOrderInput): DerivedIssueOrde
     provenance,
     diagnostics: [...new Set(diagnostics)],
     wouldCycle: (from, to) =>
-      wouldCycleOnAdjacency(adjacency, model.duplicateCanonical, from, to, cycleOptions),
+      wouldCycleOnAdjacency(
+        adjacency,
+        model.duplicateCanonical,
+        model.togetherComponent,
+        from,
+        to,
+        cycleOptions,
+      ),
   };
 }
 

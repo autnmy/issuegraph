@@ -270,6 +270,46 @@ describe("overlapping cycles (SPEC 6.6 stuck groups)", () => {
     assert.deepEqual(m.cycles[0], ["1", "2", "3"]);
   });
 
+  test("reports a cycle that runs THROUGH a together unit", () => {
+    // §4.3.7 makes a together group ONE schedulable unit, so the search runs
+    // over units rather than over issues. Without that contraction this state
+    // was a permanent deadlock reported NOWHERE: #2 waits on its partner #3,
+    // #3 waits on #1, #1 waits on #2, and every readiness sentence named an
+    // ordinary open blocker while `cycles` and `diagnostics` were both empty.
+    // §6.6's whole argument for detect-on-read is that a groomer can see the
+    // cycle, and that argument fails for a cycle with no surface.
+    const m = buildModel([
+      node(1, { data: { blockedBy: [ref(2)] } }),
+      node(2, { data: { togetherWith: ref(3) } }),
+      node(3, { data: { blockedBy: [ref(1)] } }),
+    ]);
+    // REPORTED AS ISSUE KEYS, every open member of every unit in the group —
+    // a groomer needs issues it can open, not a vertex name.
+    assert.deepEqual(m.cycles, [["1", "2", "3"]]);
+    assert.equal(m.diagnostics.some((d) => d.includes("cycle")), true);
+  });
+
+  test("does NOT report a unit whose only circularity is internal", () => {
+    // The other side of the same rule, and the reason the contraction drops
+    // internal edges: §4.3.7 says a member-blocking-member edge is advisory and
+    // never a readiness input, because it "would deadlock the group against
+    // itself". Counting it would report every unit carrying its own ordering as
+    // stuck — a false stuck group on a shape the spec blesses.
+    const m = buildModel([
+      node(1, { data: { togetherWith: ref(2) } }),
+      node(2, { data: { blockedBy: [ref(1)] } }),
+    ]);
+    assert.deepEqual(m.cycles, []);
+  });
+
+  test("still reports a self-loop, which contraction must not swallow", () => {
+    // A singleton's unit IS itself, so "drop edges inside the unit" would erase
+    // §6.6's own self-loop case. The drop is therefore conditioned on the unit
+    // having more than one member, and this is what pins that condition.
+    const m = buildModel([node(9, { data: { blockedBy: [ref(9)] } })]);
+    assert.deepEqual(m.cycles, [["9"]]);
+  });
+
   test("reports a plain 3-ring whose middle nodes have no direct back-edge", () => {
     const m = buildModel([
       node(1, { data: { blockedBy: [ref(2)] } }),

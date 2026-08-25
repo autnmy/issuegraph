@@ -309,6 +309,12 @@ Ready issues are safe to run concurrently **by construction** — anything unsaf
 
 A `blocked-by` cycle is detected **on read** and surfaced as a stuck group; writers are not required to prevent it at write time. Write-time rejection pushes writers into describing the dependency in prose instead, which is strictly worse than a cycle a groomer can see. Issues in a cycle are not ready.
 
+**The cycle graph is over schedulable units, not over issues.** A `together` group is one unit of work (4.3.7), so a blocker on any member blocks every member: contract each group to a single vertex before searching, using **boundary-crossing edges only**. Internal `blocked-by` edges stay advisory, exactly as they are for readiness — they would make every group carrying its own ordering read as stuck. A self-loop on a single issue is unaffected, because a lone issue is its own unit.
+
+Without the contraction a real deadlock has no surface at all. `#1 blocked-by #2`, `#3 blocked-by #1`, `#2 together-with #3` can never start — #2 waits on its partner #3, #3 waits on #1, #1 waits on #2 — yet every issue reports an ordinary open blocker and the stuck group is empty. That is precisely the state detect-on-read exists to prevent, so a reader that does not contract is not conforming.
+
+A stuck group is reported as **issue keys**, every open member of every unit in it. A groomer needs issues it can open.
+
 ### 6.7 Unresolvable references
 
 A `blocked-by` reference that cannot be resolved MUST be treated as **blocking** (fail-safe: unknown state is not "closed") and MUST be surfaced for grooming. Unresolvable `serialize-with` references contribute no linkage but are likewise surfaced.

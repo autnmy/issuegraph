@@ -53,7 +53,26 @@
  *     back to its declarer really does close a loop. Filtering unresolved
  *     targets out would drop that refusal — the fail-open this file exists to
  *     prevent — and it is pinned by a test in both directions.
- *  3. An edge declared BY a duplicate is KEPT. `buildModel` drops a duplicate's
+ *  3. A TOGETHER UNIT IS ONE VERTEX, exactly as in `model.cycles`. §4.3.7
+ *     makes a together group one schedulable unit, so a blocker on any member
+ *     blocks every member — and without that contraction this guard admitted a
+ *     permanent deadlock: with `#1 blocked-by #2` and `#2 together-with #3`,
+ *     adding `#3 blocked-by #1` returned false while producing a component no
+ *     member of which can ever start. Two halves are needed and neither works
+ *     alone: `from` is matched against its WHOLE unit (reaching any member
+ *     reaches the unit), and the walk traverses every unit sibling's blockers
+ *     (a dependency can leave the unit through a member other than the one it
+ *     entered by).
+ *
+ *     INTERNAL EDGES ARE NOT EXEMPTED HERE, and that is a deliberate divergence
+ *     from `model.cycles`, which drops them per §4.3.7. This guard already
+ *     refused a circular internal pair before units were understood at all —
+ *     the raw walk found it — so exempting them now would REMOVE a refusal,
+ *     and every other choice in this file points the other way. §4.3.7 calls
+ *     circular internal ordering a smell for grooming to surface; refusing it
+ *     at the write is the recoverable direction, and a human can decline.
+ *
+ *  4. An edge declared BY a duplicate is KEPT. `buildModel` drops a duplicate's
  *     own edges entirely, and matching it here would be the one place copying
  *     the model makes this guard WEAKER: dropping an edge removes reachability,
  *     and a groomer who clears the `duplicate-of` brings it back with the cycle
@@ -88,6 +107,20 @@ export type BlockedByAdjacency = ReadonlyMap<string, readonly string[]>;
  * required positional argument is a compile error at every call site instead.
  */
 export type CanonicalOf = (key: string) => string | null;
+
+/**
+ * The model's `together-with` component for a key — `Model.togetherComponent`.
+ *
+ * Taken as a PARAMETER for the same reason `CanonicalOf` is, and required for
+ * the same reason: a default would be a second component walk beside the
+ * model's, and an OPTIONAL one would let a call site omit it and silently
+ * restore the un-contracted walk — which is the defect itself. A required
+ * positional argument is a compile error at every call site instead.
+ *
+ * `Model.togetherComponent` answers `[]` for a key it does not hold; callers
+ * here read that as "a unit of one", which is what an unknown key is.
+ */
+export type TogetherOf = (key: string) => readonly string[];
 
 export function buildBlockedByAdjacency(
   issues: readonly NodeInput[],
@@ -140,6 +173,7 @@ export function wouldCycleOnBlockedBy(
   return wouldCycleOnAdjacency(
     buildBlockedByAdjacency(issues, model.duplicateCanonical, options),
     model.duplicateCanonical,
+    model.togetherComponent,
     from,
     to,
     options,
@@ -214,11 +248,29 @@ function endpointSpellings(
 export function wouldCycleOnAdjacency(
   adjacency: BlockedByAdjacency,
   canonicalOf: CanonicalOf,
+  togetherOf: TogetherOf,
   rawFrom: string,
   rawTo: string,
   options: WouldCycleOptions = {},
 ): boolean {
-  const from = new Set(endpointSpellings(rawFrom, canonicalOf, options.homeRepo));
+  // A unit of one for a key the model does not hold — `togetherComponent`
+  // answers `[]` there, and an empty membership would make the node traverse
+  // nothing at all, silently dropping its own edges from the walk.
+  const unit = (key: string): readonly string[] => {
+    const members = togetherOf(key);
+    return members.length === 0 ? [key] : members;
+  };
+  // `from` IS ITS WHOLE UNIT. §4.3.7 makes the group one schedulable unit, so
+  // a path that reaches any member has reached `from` for scheduling purposes
+  // — and it is precisely this half that was missing: with `#1 blocked-by #2`
+  // and `#2 together-with #3`, the walk for `#3 blocked-by #1` reaches `#2`
+  // and stops, because `#2` is not `#3` by name.
+  const from = new Set(
+    endpointSpellings(rawFrom, canonicalOf, options.homeRepo).flatMap((spelling) => [
+      spelling,
+      ...unit(spelling),
+    ]),
+  );
   // Walk what `to` already depends on, from every spelling of it. Reaching any
   // spelling of `from` means the proposed edge would close the loop. Iterative,
   // so a deep chain cannot exhaust the stack.
@@ -234,7 +286,13 @@ export function wouldCycleOnAdjacency(
     if (from.has(current)) return true;
     if (seen.has(current)) continue;
     seen.add(current);
-    for (const next of adjacency.get(current) ?? []) stack.push(next);
+    // EVERY UNIT SIBLING'S BLOCKERS, not just this node's. The other half of
+    // the contraction: a dependency can leave the unit through a member other
+    // than the one the walk entered by, and following only `current` would
+    // stop at the doorway.
+    for (const member of unit(current)) {
+      for (const next of adjacency.get(member) ?? []) stack.push(next);
+    }
   }
   return false;
 }

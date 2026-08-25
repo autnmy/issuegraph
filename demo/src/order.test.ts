@@ -531,18 +531,17 @@ test('a cycle closed by COLLAPSING vertices is refused, with no new dependency',
   );
 });
 
-test('KNOWN GAP: a cycle through a together unit is not refused (issuegraph#43)', () => {
+test('a cycle running THROUGH a together unit is refused', () => {
   // The demo used to contract a together unit to one vertex before searching,
-  // and refused this. The published derivation does not contract, so the swap
-  // narrowed the refusal — and the state is a REAL deadlock: #1 waits on the
-  // unit, the unit waits on #1, and `Model.cycles` reports nothing.
+  // and the published derivation did not — so adopting the package narrowed the
+  // refusal onto a REAL deadlock: #1 waits on the unit, the unit waits on #1,
+  // and `Model.cycles` reported nothing at all.
   //
-  // PINNED RATHER THAN PATCHED, on purpose. Re-adding contraction here would
-  // rebuild the second reading of the ordering rules this file exists to have
-  // removed, and it would disagree with every other consumer of the package.
-  // The finding belongs to the package and is filed as
-  // https://github.com/autnmy/issuegraph/issues/43; when it lands, this test
-  // fails and the demo is revisited rather than the gap being rediscovered.
+  // THIS WAS PINNED AS A KNOWN GAP rather than patched here, because re-adding
+  // contraction in the demo would have rebuilt the second reading of the
+  // ordering rules this file exists to have removed. It was filed as
+  // https://github.com/autnmy/issuegraph/issues/43 and fixed IN THE PACKAGE,
+  // which is why the demo needed no change but this assertion.
   const issues = [open('1', 1), open('2', 1), open('3', 1)];
   const current = document(issues, [
     makeEdge('together-with', '2', '3'),
@@ -550,14 +549,15 @@ test('KNOWN GAP: a cycle through a together unit is not refused (issuegraph#43)'
   ]);
   assert.equal(
     introducesCycle(current, document(issues, [...current.edges, makeEdge('blocked-by', '3', '1')])),
-    false,
-    'the package now contracts together units — remove this pin and delete the gap note',
+    true,
+    'a cycle through a together unit was admitted',
   );
-  // The control: the same shape with no unit is refused, so this test cannot
-  // pass against a build whose guard detects nothing at all.
+  // The control: the same shape with no unit, so this test cannot pass against
+  // a build whose guard refuses everything.
   const flat = document(issues, [makeEdge('blocked-by', '1', '2')]);
   assert.equal(
-    introducesCycle(flat, document(issues, [...flat.edges, makeEdge('blocked-by', '2', '1')])),
-    true,
+    introducesCycle(flat, document(issues, [...flat.edges, makeEdge('blocked-by', '2', '4')])),
+    false,
+    'an edge that closes no cycle was refused',
   );
 });
