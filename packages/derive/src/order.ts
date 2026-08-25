@@ -78,7 +78,11 @@ import {
   applyPriorityPrecedence,
   resolvePrioritySignals,
 } from './precedence.ts';
-import { buildBlockedByAdjacency, wouldCycleOnAdjacency } from './cycle.ts';
+import {
+  buildBlockedByAdjacency,
+  buildTogetherComponents,
+  wouldCycleOnAdjacency,
+} from './cycle.ts';
 
 /**
  * One entry of the base ranking, carrying the node key and the provenance of
@@ -447,6 +451,10 @@ export function deriveIssueOrder(input: DeriveIssueOrderInput): DerivedIssueOrde
   // walk has to see the same edges the model sees (SPEC §4.3.3), and a caller
   // that already built a model must not pay for a second one.
   const adjacency = buildBlockedByAdjacency(issues, model.duplicateCanonical, cycleOptions);
+  // NOT `model.togetherComponent` — see divergence 3 in `cycle.ts`. The model
+  // unions only open endpoints, and this guard is asked about a graph that
+  // outlives the current states.
+  const together = buildTogetherComponents(issues, model.duplicateCanonical, cycleOptions);
 
   return {
     slots,
@@ -456,7 +464,14 @@ export function deriveIssueOrder(input: DeriveIssueOrderInput): DerivedIssueOrde
     provenance,
     diagnostics: [...new Set(diagnostics)],
     wouldCycle: (from, to) =>
-      wouldCycleOnAdjacency(adjacency, model.duplicateCanonical, from, to, cycleOptions),
+      wouldCycleOnAdjacency(
+        adjacency,
+        model.duplicateCanonical,
+        together,
+        from,
+        to,
+        cycleOptions,
+      ),
   };
 }
 
