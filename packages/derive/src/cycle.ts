@@ -53,7 +53,43 @@
  *     back to its declarer really does close a loop. Filtering unresolved
  *     targets out would drop that refusal — the fail-open this file exists to
  *     prevent — and it is pinned by a test in both directions.
- *  3. An edge declared BY a duplicate is KEPT. `buildModel` drops a duplicate's
+ *  3. A TOGETHER UNIT IS ONE VERTEX, and its membership is built HERE rather
+ *     than taken from `Model.togetherComponent`. §4.3.7
+ *     makes a together group one schedulable unit, so a blocker on any member
+ *     blocks every member — and without that contraction this guard admitted a
+ *     permanent deadlock: with `#1 blocked-by #2` and `#2 together-with #3`,
+ *     adding `#3 blocked-by #1` returned false while producing a component no
+ *     member of which can ever start. Two halves are needed and neither works
+ *     alone: `from` is matched against its WHOLE unit (reaching any member
+ *     reaches the unit), and the walk traverses every unit sibling's blockers
+ *     (a dependency can leave the unit through a member other than the one it
+ *     entered by).
+ *
+ *     THE MEMBERSHIP SPANS CLOSED NODES, which is divergence 1 applied to the
+ *     other axis and the reason the model's own answer cannot be reused. The
+ *     model unions only OPEN endpoints — correctly, because "a closed member has
+ *     left the unit" is true of readiness TODAY — so a unit with a closed member
+ *     is invisible to it. This guard is asked about the future: with
+ *     `#1 blocked-by #2` and a CLOSED `#2 together-with #3`, the model reports
+ *     `#3` in a unit of one, the guard admitted `#3 blocked-by #1`, and
+ *     reopening `#2` then contracts `{2,3}` into exactly the permanent cycle
+ *     this file exists to refuse — with the edge already written and nobody able
+ *     to unstick it. Measured both halves.
+ *
+ *     So `buildTogetherComponents` walks the raw declarations, the same shape
+ *     `buildBlockedByAdjacency` already uses for the other edge kind and for the
+ *     same reason. It still resolves targets through `canonicalOf`, so §4.3.3 is
+ *     not restated here either.
+ *
+ *     INTERNAL EDGES ARE NOT EXEMPTED HERE, and that is a deliberate divergence
+ *     from `model.cycles`, which drops them per §4.3.7. This guard already
+ *     refused a circular internal pair before units were understood at all —
+ *     the raw walk found it — so exempting them now would REMOVE a refusal,
+ *     and every other choice in this file points the other way. §4.3.7 calls
+ *     circular internal ordering a smell for grooming to surface; refusing it
+ *     at the write is the recoverable direction, and a human can decline.
+ *
+ *  4. An edge declared BY a duplicate is KEPT. `buildModel` drops a duplicate's
  *     own edges entirely, and matching it here would be the one place copying
  *     the model makes this guard WEAKER: dropping an edge removes reachability,
  *     and a groomer who clears the `duplicate-of` brings it back with the cycle
@@ -89,6 +125,20 @@ export type BlockedByAdjacency = ReadonlyMap<string, readonly string[]>;
  */
 export type CanonicalOf = (key: string) => string | null;
 
+/**
+ * The model's `together-with` component for a key — `Model.togetherComponent`.
+ *
+ * Taken as a PARAMETER for the same reason `CanonicalOf` is, and required for
+ * the same reason: a default would be a second component walk beside the
+ * model's, and an OPTIONAL one would let a call site omit it and silently
+ * restore the un-contracted walk — which is the defect itself. A required
+ * positional argument is a compile error at every call site instead.
+ *
+ * `Model.togetherComponent` answers `[]` for a key it does not hold; callers
+ * here read that as "a unit of one", which is what an unknown key is.
+ */
+export type TogetherOf = (key: string) => readonly string[];
+
 export function buildBlockedByAdjacency(
   issues: readonly NodeInput[],
   canonicalOf: CanonicalOf,
@@ -116,6 +166,58 @@ export function buildBlockedByAdjacency(
 }
 
 /**
+ * `key -> every key in its together unit`, over the RAW declarations and
+ * spanning closed nodes — see divergence 3.
+ *
+ * A key with no `together-with` anywhere answers a unit of one, which is what
+ * an unlinked issue is.
+ */
+export function buildTogetherComponents(
+  issues: readonly NodeInput[],
+  canonicalOf: CanonicalOf,
+  options: WouldCycleOptions = {},
+): TogetherOf {
+  const homeRepo = options.homeRepo;
+  const parent = new Map<string, string>();
+  const find = (key: string): string => {
+    let root = key;
+    for (;;) {
+      const next = parent.get(root);
+      if (next === undefined || next === root) return root;
+      root = next;
+    }
+  };
+  const add = (key: string): void => {
+    if (!parent.has(key)) parent.set(key, key);
+  };
+  const seen = new Set<string>();
+  for (const node of issues) {
+    const key = nodeKey(node, homeRepo);
+    if (seen.has(key)) continue; // first occurrence wins, like the model
+    seen.add(key);
+    add(key);
+    const target = node.data?.togetherWith;
+    if (target === null || target === undefined) continue;
+    const raw = refKey(target, nodeSourceRepo(node, homeRepo), homeRepo);
+    // §4.3.3 through the model's own answer, exactly as the blocked-by
+    // adjacency does it — an edge naming a duplicate names its canonical.
+    const resolved = canonicalOf(raw) ?? raw;
+    add(resolved);
+    const [a, b] = [find(key), find(resolved)];
+    if (a !== b) parent.set(a, b);
+  }
+  const members = new Map<string, string[]>();
+  for (const key of parent.keys()) {
+    const root = find(key);
+    const existing = members.get(root);
+    if (existing === undefined) members.set(root, [key]);
+    else existing.push(key);
+  }
+  for (const group of members.values()) group.sort();
+  return (key) => members.get(find(key)) ?? [key];
+}
+
+/**
  * Would adding `from blocked-by to` create a `blocked-by` cycle?
  *
  * Synchronous by signature — it takes no client, handle, or promise — which is
@@ -140,6 +242,7 @@ export function wouldCycleOnBlockedBy(
   return wouldCycleOnAdjacency(
     buildBlockedByAdjacency(issues, model.duplicateCanonical, options),
     model.duplicateCanonical,
+    buildTogetherComponents(issues, model.duplicateCanonical, options),
     from,
     to,
     options,
@@ -214,11 +317,29 @@ function endpointSpellings(
 export function wouldCycleOnAdjacency(
   adjacency: BlockedByAdjacency,
   canonicalOf: CanonicalOf,
+  togetherOf: TogetherOf,
   rawFrom: string,
   rawTo: string,
   options: WouldCycleOptions = {},
 ): boolean {
-  const from = new Set(endpointSpellings(rawFrom, canonicalOf, options.homeRepo));
+  // A unit of one for a key the model does not hold — `togetherComponent`
+  // answers `[]` there, and an empty membership would make the node traverse
+  // nothing at all, silently dropping its own edges from the walk.
+  const unit = (key: string): readonly string[] => {
+    const members = togetherOf(key);
+    return members.length === 0 ? [key] : members;
+  };
+  // `from` IS ITS WHOLE UNIT. §4.3.7 makes the group one schedulable unit, so
+  // a path that reaches any member has reached `from` for scheduling purposes
+  // — and it is precisely this half that was missing: with `#1 blocked-by #2`
+  // and `#2 together-with #3`, the walk for `#3 blocked-by #1` reaches `#2`
+  // and stops, because `#2` is not `#3` by name.
+  const from = new Set(
+    endpointSpellings(rawFrom, canonicalOf, options.homeRepo).flatMap((spelling) => [
+      spelling,
+      ...unit(spelling),
+    ]),
+  );
   // Walk what `to` already depends on, from every spelling of it. Reaching any
   // spelling of `from` means the proposed edge would close the loop. Iterative,
   // so a deep chain cannot exhaust the stack.
@@ -234,7 +355,13 @@ export function wouldCycleOnAdjacency(
     if (from.has(current)) return true;
     if (seen.has(current)) continue;
     seen.add(current);
-    for (const next of adjacency.get(current) ?? []) stack.push(next);
+    // EVERY UNIT SIBLING'S BLOCKERS, not just this node's. The other half of
+    // the contraction: a dependency can leave the unit through a member other
+    // than the one the walk entered by, and following only `current` would
+    // stop at the doorway.
+    for (const member of unit(current)) {
+      for (const next of adjacency.get(member) ?? []) stack.push(next);
+    }
   }
   return false;
 }

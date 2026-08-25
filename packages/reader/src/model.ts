@@ -719,31 +719,87 @@ export function buildModel(
     }
   }
 
-  // ---- cycles among open nodes (§6.6) ----
+  // ---- cycles among open nodes (§6.6), over SCHEDULABLE UNITS ----
   const cycles: (readonly string[])[] = [];
   {
     // SPEC §6.6: a "stuck group" is a strongly connected component of the
-    // open blocked-by graph (size > 1, or a self-loop). Iterative Tarjan —
-    // total on any graph size, and complete over OVERLAPPING cycles, which a
-    // back-edge walk misses when a shared node was finished by another branch.
+    // open blocked-by graph. THE VERTEX IS THE UNIT, NOT THE ISSUE, because
+    // §4.3.7 makes a together group one schedulable unit — ready as a unit or
+    // not at all. Running the search over raw issues therefore missed a whole
+    // class of real deadlock: `#1 blocked-by #2`, `#3 blocked-by #1`, and
+    // `#2 together-with #3` is permanently stuck (#2 waits on #3 as its unit
+    // partner, #3 waits on #1, #1 waits on #2) and reported NOWHERE — `cycles`
+    // empty, `diagnostics` empty, and three readiness sentences each naming an
+    // ordinary open blocker. §6.6's entire argument for detect-on-read is that
+    // a groomer can see a cycle; that argument fails for a cycle with no
+    // surface. Contracting each unit to one vertex is what the readiness rule
+    // above already does in its own way, so the two now read the same graph.
+    // Iterative Tarjan — total on any graph size, and complete over
+    // OVERLAPPING cycles, which a back-edge walk misses when a shared node was
+    // finished by another branch.
     const index = new Map<string, number>();
     const low = new Map<string, number>();
     const onStack = new Set<string>();
     const sccStack: string[] = [];
     let counter = 0;
-    const openBlockersCache = new Map<string, string[]>();
-    const openBlockers = (k: string): string[] => {
-      const cached = openBlockersCache.get(k);
+    // A unit is named by its union-find root — an opaque, stable id. It is
+    // never reported: the emission below expands every unit back to its member
+    // KEYS, because a groomer needs issues it can open, not a vertex name.
+    const unitOf = (k: string): string => together.find(k);
+    const openMembersCache = new Map<string, string[]>();
+    const openMembers = (u: string): string[] => {
+      const cached = openMembersCache.get(u);
       if (cached !== undefined) return cached;
-      const computed = (blockersOf.get(k) ?? []).filter(
-        (b) => (byKey.get(b) as ModelNode).open,
+      const computed = (togetherMembersByRoot.get(u) ?? [u]).filter(
+        (m) => (byKey.get(m) as ModelNode | undefined)?.open === true,
       );
-      openBlockersCache.set(k, computed);
+      openMembersCache.set(u, computed);
+      return computed;
+    };
+    const unitBlockersCache = new Map<string, string[]>();
+    const unitBlockers = (u: string): string[] => {
+      const cached = unitBlockersCache.get(u);
+      if (cached !== undefined) return cached;
+      const members = openMembers(u);
+      const out = new Set<string>();
+      for (const member of members) {
+        for (const b of blockersOf.get(member) ?? []) {
+          // Open blockers only, exactly as before: a closed blocker does not
+          // block today, and §6.6 scopes the search to open nodes.
+          if ((byKey.get(b) as ModelNode | undefined)?.open !== true) continue;
+          const blockerUnit = unitOf(b);
+          // §4.3.7: an INTERNAL blocked-by edge (member blocking member) is
+          // advisory and never a readiness input — it "would deadlock the
+          // group against itself" — so it must not become a self-loop here
+          // either, or every unit carrying its own advisory ordering would be
+          // reported as stuck.
+          // `b !== member` IS THE WHOLE CONDITION, and it is the SAME ONE
+          // readiness applies at `b !== k` below. An edge from an issue to
+          // ITSELF is not "advisory ordering between two members" — readiness
+          // treats it as load-bearing and refuses the whole unit for it — so
+          // exempting it here reported nothing while both issues were
+          // permanently unready. That is the exact invisible deadlock this
+          // block exists to end, reintroduced one case over: `#1 blocked-by #1`
+          // with `#1 together-with #2` gave empty `cycles`, empty
+          // `diagnostics`, and two issues that can never start.
+          // A UNIT SIZE TEST CANNOT EXPRESS THIS. Keying on "the unit has more
+          // than one member" drops a member's self-loop the moment it acquires
+          // a partner; keying on the EDGE is what distinguishes the two shapes,
+          // and it makes a singleton's self-loop fall out rather than needing
+          // its own clause.
+          if (blockerUnit === u && b !== member) continue;
+          out.add(blockerUnit);
+        }
+      }
+      const computed = [...out];
+      unitBlockersCache.set(u, computed);
       return computed;
     };
     for (const [rootKey, rootNode] of byKey) {
-      if (!rootNode.open || index.has(rootKey)) continue;
-      const frames: { key: string; nextEdge: number }[] = [{ key: rootKey, nextEdge: 0 }];
+      if (!rootNode.open) continue;
+      const rootUnit = unitOf(rootKey);
+      if (index.has(rootUnit)) continue;
+      const frames: { key: string; nextEdge: number }[] = [{ key: rootUnit, nextEdge: 0 }];
       while (frames.length > 0) {
         const frame = frames[frames.length - 1] as { key: string; nextEdge: number };
         if (frame.nextEdge === 0) {
@@ -753,7 +809,7 @@ export function buildModel(
           sccStack.push(frame.key);
           onStack.add(frame.key);
         }
-        const edges = openBlockers(frame.key);
+        const edges = unitBlockers(frame.key);
         if (frame.nextEdge < edges.length) {
           const b = edges[frame.nextEdge] as string;
           frame.nextEdge++;
@@ -771,17 +827,21 @@ export function buildModel(
           low.set(parent.key, Math.min(low.get(parent.key) as number, low.get(frame.key) as number));
         }
         if (low.get(frame.key) === index.get(frame.key)) {
-          const members: string[] = [];
+          const units: string[] = [];
           for (;;) {
             const m = sccStack.pop() as string;
             onStack.delete(m);
-            members.push(m);
+            units.push(m);
             if (m === frame.key) break;
           }
           const selfLoop =
-            members.length === 1 && openBlockers(members[0] as string).includes(members[0] as string);
-          if (members.length > 1 || selfLoop) {
-            const sorted = [...members].sort();
+            units.length === 1 && unitBlockers(units[0] as string).includes(units[0] as string);
+          if (units.length > 1 || selfLoop) {
+            // EXPANDED TO MEMBER KEYS. A stuck group of two units is a stuck
+            // group of every open issue in them — each is equally unable to
+            // start — and naming the units instead would hand a groomer an id
+            // that appears on no issue.
+            const sorted = [...new Set(units.flatMap(openMembers))].sort();
             cycles.push(sorted);
             diagnostics.push(`blocked-by cycle: ${sorted.join(" -> ")}`);
           }

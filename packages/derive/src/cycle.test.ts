@@ -32,6 +32,62 @@ describe('wouldCycleOnBlockedBy', () => {
     assert.equal(wouldCycleOnBlockedBy(issuegraphOrderSeed(), '512', '512'), true);
   });
 
+  test('refuses an edge that closes a cycle THROUGH a together unit', () => {
+    // §4.3.7 makes a together group one schedulable unit, so a blocker on any
+    // member blocks every member. Without that contraction this guard admitted
+    // a permanent deadlock: #2 waits on its partner #3, #3 waits on #1, #1
+    // waits on #2, and `Model.cycles` reported nothing either.
+    const issues: NodeInput[] = [
+      { ...issue(1, [2]) },
+      { ...issue(2), data: frontmatter({ togetherWith: ref(3) }) },
+      { ...issue(3) },
+    ];
+    assert.equal(wouldCycleOnBlockedBy(issues, '3', '1'), true);
+  });
+
+  test('follows a dependency that leaves a unit through its OTHER member', () => {
+    // The second half of the contraction, and it fails alone: the walk enters
+    // the unit at #2, whose own blockers are empty, and the path out is #3's.
+    // Following only the node it arrived at stops in the doorway.
+    //   unit {2,3}; #3 blocked-by #5; #5 blocked-by #1; propose #1 blocked-by #2
+    const issues: NodeInput[] = [
+      { ...issue(1) },
+      { ...issue(2), data: frontmatter({ togetherWith: ref(3) }) },
+      { ...issue(3, [5]) },
+      { ...issue(5, [1]) },
+    ];
+    assert.equal(wouldCycleOnBlockedBy(issues, '1', '2'), true);
+  });
+
+  test('contracts a unit whose partner is CLOSED, because the edge outlives it', () => {
+    // Divergence 1 on the other axis. The model unions only OPEN endpoints —
+    // correctly, since a closed member has left the unit today — so a unit with
+    // a closed member is invisible to `Model.togetherComponent`. This guard is
+    // asked about the future: admitting the edge and then reopening #2 produces
+    // the permanent cycle it exists to refuse, with the write already done.
+    const issues: NodeInput[] = [
+      { ...issue(1, [2]) },
+      {
+        ...issue(2),
+        open: false,
+        data: frontmatter({ togetherWith: ref(3) }),
+      },
+      { ...issue(3) },
+    ];
+    assert.equal(wouldCycleOnBlockedBy(issues, '3', '1'), true);
+  });
+
+  test('still admits an edge to a unit that closes nothing', () => {
+    // The control the two above need: a guard that refuses every edge touching
+    // a together unit would pass both of them and be useless.
+    const issues: NodeInput[] = [
+      { ...issue(1) },
+      { ...issue(2), data: frontmatter({ togetherWith: ref(3) }) },
+      { ...issue(3) },
+    ];
+    assert.equal(wouldCycleOnBlockedBy(issues, '1', '2'), false);
+  });
+
   test('allows an edge between two issues with no existing dependency', () => {
     // The seed carries no blocked-by relationship between #512 and #488.
     assert.equal(wouldCycleOnBlockedBy(issuegraphOrderSeed(), '512', '488'), false);
