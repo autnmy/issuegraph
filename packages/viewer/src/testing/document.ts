@@ -42,6 +42,8 @@ export class TestElement implements MountElement {
   readonly listeners = new Map<string, ((event: MountEvent) => void)[]>();
   parent: TestElement | null = null;
   focusCount = 0;
+  /** Calls a browser would have ignored — see `focus()`. */
+  refusedFocusCount = 0;
   readonly tag: string;
   readonly ownerDocument: SpecDocument;
   readonly namespace: string | null;
@@ -107,7 +109,27 @@ export class TestElement implements MountElement {
     if (index !== -1) existing.splice(index, 1);
   }
 
+  /**
+   * Focus, WITH THE BROWSER'S PRECONDITION — which is the point of the counter.
+   *
+   * This used to count every call unconditionally, and that made it lie in the
+   * one direction a focus test cannot afford: an element with no `tabindex` and
+   * no natively focusable tag cannot take focus in a browser, so `focus()` on it
+   * is a no-op. Counting it anyway let a whole class of defect pass 258 tests —
+   * the focus index held a canvas `<g>` for a railed key, every assertion of the
+   * form "focus was called on the element for this key" passed, and keyboard
+   * navigation did nothing at all in a real document.
+   * `refusedFocusCount` rather than a throw: a refusal is a fact a test may want
+   * to assert, and throwing from a DOM method the real one does not throw from
+   * would be a different lie.
+   */
   focus(): void {
+    const tabindex = this.attributes.get('tabindex');
+    const naturallyFocusable = this.tag === 'a' || this.tag === 'button';
+    if (tabindex === undefined && !naturallyFocusable) {
+      this.refusedFocusCount += 1;
+      return;
+    }
     this.focusCount += 1;
   }
 

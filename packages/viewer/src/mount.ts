@@ -211,11 +211,37 @@ export function mountViewer(
     // is absent from `keyed` on every redraw. The hover reconciliation below
     // needs both, and needs them from the SCENE rather than from `byKey`.
     const drawnHoverable = new Set<string>();
+    // WHICH KEYS ARE INDEXED BY SOMETHING THAT CAN ACTUALLY TAKE FOCUS. `keyed`
+    // is a FOCUS index — its only readers call `focus()` on what it holds — so
+    // holding an element a browser ignores makes it silently useless.
+    // FIRST-WINS WAS THE DEFECT, and the shape is specific: a RAILED lead is
+    // emitted twice with `data-ig-key` — the canvas `<g>`, which carries no
+    // `tabindex` because the rail row owns the tab stop, and then the row. The
+    // canvas comes first, so every ranked row's `focus()` landed on the group:
+    // arrow navigation moved nothing, and focus dropped out of the viewer after
+    // a selection redraw. It passed 258 tests because the test double counted
+    // every `focus()` call regardless of whether the element could take one.
+    // A LATER FOCUSABLE ELEMENT REPLACES A STORED UNFOCUSABLE ONE, rather than
+    // indexing only focusable elements: a key whose every element is unfocusable
+    // still belongs in the map, so `focus?.()` on it is a no-op rather than a
+    // lookup miss, and the pointer identity keeps working exactly as before.
+    // TABINDEX **OR** A NATURALLY FOCUSABLE TAG, the same pair the test double
+    // now applies — two notions of focusable that can disagree is how this class
+    // hides, and it just did.
+    const focusableKeys = new Set<string>();
     root = materialize(doc, scene.root, {
       onElement: (spec, node) => {
         const key = spec.attrs?.[KEY_ATTRIBUTE];
-        if (typeof key === 'string' && key !== '' && !keyed.has(key)) keyed.set(key, node);
-        if (typeof key === 'string' && key !== '') drawnHoverable.add(key);
+        if (typeof key === 'string' && key !== '') {
+          const tabindex = spec.attrs?.tabindex;
+          const canFocus =
+            (tabindex !== undefined && tabindex !== null) || spec.tag === 'a' || spec.tag === 'button';
+          if (!keyed.has(key) || (canFocus && !focusableKeys.has(key))) {
+            keyed.set(key, node);
+            if (canFocus) focusableKeys.add(key);
+          }
+          drawnHoverable.add(key);
+        }
         const group = spec.attrs?.[GROUP_ATTRIBUTE];
         if (typeof group === 'string' && group !== '') drawnHoverable.add(group);
       },

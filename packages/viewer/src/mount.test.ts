@@ -291,6 +291,32 @@ describe('mountViewer', () => {
     assert.deepEqual(hovered, ['103'], 'a live hover was cleared by an unrelated redraw');
   });
 
+  it('focuses the element that can actually take focus, not its canvas twin', () => {
+    // A RAILED LEAD IS EMITTED TWICE with `data-ig-key`: the canvas `<g>`, which
+    // carries no `tabindex` because the rail row owns the tab stop, and then the
+    // row itself. The focus index kept the FIRST it met and the canvas comes
+    // first, so every `focus()` for a ranked row landed on an element a browser
+    // ignores — arrow navigation moved nothing and post-selection focus dropped
+    // out of the viewer entirely.
+    // ASSERTED THROUGH `refusedFocusCount`, which is what makes this checkable:
+    // the test double used to count every call, so the old assertions passed on
+    // exactly the element that does nothing.
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const handle = mountViewer(container, fixtureDocument, { projection: 'graph' });
+
+    // Move to a railed lead, then select one, exercising both focus call sites.
+    container.dispatch('keydown', { key: 'ArrowDown', target: container });
+    handle.select('103');
+
+    const refused = container
+      .descendants()
+      .filter((element): element is TestElement => element instanceof TestElement)
+      .reduce((total, element) => total + element.refusedFocusCount, 0);
+    assert.equal(refused, 0, 'focus was called on an element a browser would ignore');
+    assert.ok(handle.state.focused !== null, 'nothing ended up focused');
+  });
+
   it('resolves a key this document does not carry to no selection at all', () => {
     // `select()` is documented to fire `onSelect` exactly as a click does, and a
     // click can only land on a key the canvas drew — so an unknown key has no
