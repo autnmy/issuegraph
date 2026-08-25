@@ -11,10 +11,9 @@
 
 import ts from 'typescript';
 
-import { readFileSync, existsSync, readdirSync, realpathSync, statSync } from 'node:fs';
-import { isAbsolute, join, relative } from 'node:path';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
-import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';
 
 /** The major version a `>=X` / `^X` style engines range starts at. */
@@ -98,120 +97,6 @@ function firstUnparseableFile(dir) {
   for (const file of emittedJsFiles(dir)) {
     const error = firstParseError(file);
     if (error !== undefined) return { file, error };
-  }
-  return undefined;
-}
-
-/**
- * Whether an emitted file is ESM, by Node's own rule: the extension decides, and
- * a bare `.js` falls back to the package's `type`.
- */
-function isEsm(file, manifest) {
-  if (file.endsWith('.mjs')) return true;
-  if (file.endsWith('.cjs')) return false;
-  return manifest.type === 'module';
-}
-
-/**
- * Where a relative specifier actually points — by NODE'S rules, not a table of
- * suffixes maintained here.
- *
- * The table is what this replaced, and it was wrong in a way no amount of
- * extending would fix: it accepted `./foo` for a `foo.js` that exists, which is
- * CommonJS behaviour. The two module systems genuinely differ, so the rules are
- * selected per file instead of applied universally.
- *
- * ESM does no searching at all — the specifier is resolved against the parent
- * URL and that is the answer, no extension added and no directory index tried.
- * `new URL` IS that rule, which is why this branch is one line and has no list
- * to get wrong. `import.meta.resolve` is the obvious tool here and cannot do the
- * job: its two-argument form needs `--experimental-import-meta-resolve`, so
- * without the flag the parent is SILENTLY IGNORED and every specifier resolves
- * against this file instead. Measured — it reported a sibling `.css` that plainly
- * exists as missing, and would have failed every browser package.
- *
- * CommonJS does search extensions and directory indexes, and `require.resolve`
- * both applies those rules and throws when nothing matches — so that branch
- * answers existence too, and the caller's `existsSync` is a no-op for it.
- */
-function resolveRelative(file, specifier, manifest) {
-  // THE BUNDLER QUERY IS STRIPPED ONLY FOR A PACKAGE THAT CLAIMS NO NODE FLOOR.
-  // `./worker.js?worker` and `./data.txt?raw` name the same FILE with different
-  // handling — but that is a BUNDLER convention, and NEITHER Node resolver
-  // implements it: both treat the query as part of the name. So stripping it
-  // universally modelled a bundler on behalf of a package that had promised to
-  // run on Node, and a `require('./ok.js?raw')` in a floor-declaring package
-  // resolved here while a consumer calling it got MODULE_NOT_FOUND.
-  // `engines.node` is the package's own statement about which is true of it: a
-  // declared floor asserts Node loads this, so Node's literal reading is the one
-  // that must hold. Absent, the target is a bundler and the convention applies.
-  const path = declaredFloorMajor(manifest.engines?.node) === undefined
-    ? specifier.split(/[?#]/)[0]
-    : specifier;
-  const parent = pathToFileURL(file);
-  return isEsm(file, manifest)
-    ? fileURLToPath(new URL(path, parent))
-    : createRequire(parent).resolve(path);
-}
-
-/**
- * The first relative import in a package's emitted files that does not resolve
- * to a file the package will actually ship.
- *
- * Parsing is not enough, and this is the gap it leaves. An entry of
- * `export { x } from "./missing.js"` parses perfectly, every file that DOES
- * exist parses too — so the load failure downgraded to parse-only and CI passed
- * on a package whose first import 404s. Nothing was broken; something was
- * absent, and an absence is invisible to a check that only reads what is there.
- *
- * `ts.preProcessFile` rather than a hand-walked AST: it is what TypeScript's own
- * program builder uses to find a file's edges, so it already covers every shape
- * an emitted file takes — `import`, `export ... from`, `import()` with a literal
- * argument, and `require()` in CommonJS output.
- *
- * BARE specifiers are deliberately not checked. A peer dependency legitimately
- * absent from the package's own tree would fail, and that is a fact about the
- * install rather than about the package. A RELATIVE specifier names a file the
- * package itself is supposed to ship, which is a claim it can be held to.
- */
-function firstUnresolvedImport(dir, manifest) {
-  for (const file of emittedJsFiles(dir)) {
-    const { importedFiles } = ts.preProcessFile(readFileSync(file, 'utf8'), true, true);
-    for (const { fileName: specifier } of importedFiles) {
-      if (!specifier.startsWith('./') && !specifier.startsWith('../')) continue;
-
-      let resolved;
-      try {
-        resolved = resolveRelative(file, specifier, manifest);
-      } catch {
-        return { file, specifier, why: 'which resolves to nothing' };
-      }
-      if (!existsSync(resolved)) return { file, specifier, why: 'which resolves to nothing' };
-      // A DIRECTORY IS NOT A MODULE IN ESM. `new URL` is a pure string join, so
-      // `./nested` resolves to the directory whether or not `nested/index.js`
-      // exists — and Node ESM refuses that with ERR_UNSUPPORTED_DIR_IMPORT, so
-      // an entry can load while a lazy `import('./nested')` fails for every
-      // consumer. CommonJS is unaffected: `require.resolve` has already resolved
-      // a directory to its index FILE, so this only ever fires on the ESM branch.
-      if (!statSync(resolved).isFile()) {
-        return { file, specifier, why: 'which resolves to a DIRECTORY, and ESM has no directory imports' };
-      }
-
-      // AND IT MUST BE INSIDE THE PACKAGE. Existing somewhere on this disk is not
-      // the property that matters: `npm pack` ships the package DIRECTORY, so an
-      // edge climbing out of it — `../../shared.mjs` — resolves perfectly in a
-      // workspace checkout, loads perfectly in CI, and arrives at the consumer
-      // pointing at a file that was never published.
-      // COMPARE REALPATHS ON BOTH SIDES. `require.resolve` returns a resolved
-      // real path while `dir` is whatever the caller handed us, and on macOS a
-      // temp dir is `/var/...` symlinked to `/private/var/...` — so a package
-      // entirely inside itself read as escaping. A symlinked checkout is
-      // ordinary, not exotic; both sides have to be in the same namespace.
-      const within = relative(realpathSync(dir), realpathSync(resolved));
-      if (within === '' || within.startsWith('..') || isAbsolute(within)) {
-        return { file, specifier, why: `which resolves OUTSIDE the package, to ${resolved}` };
-      }
-    }
   }
   return undefined;
 }
@@ -304,17 +189,33 @@ export async function smokeTest(packagesDir, { log = () => {} } = {}) {
       undefined,
       `${manifest.name}: ${broken ? relative(dir, broken.file) : ''} does not parse — ${broken?.error}`,
     );
-    // Parsing says nothing about whether the files a module NAMES are there. A
-    // missing relative import is a defect in every target, browser or Node, so it
-    // is never downgraded: the downgrade exists for a package Node cannot LOAD,
-    // not for one that is incomplete.
-    const missing = firstUnresolvedImport(dir, manifest);
-    assert.equal(
-      missing,
-      undefined,
-      `${manifest.name}: ${missing ? relative(dir, missing.file) : ''} imports "${missing?.specifier}", ` +
-        `${missing?.why}`,
-    );
+    // WHAT THIS CHECK DOES NOT COVER — stated here rather than left to be
+    // rediscovered, because the downgrade below is only as honest as this list.
+    //
+    // Parsing is not proof of soundness, and it cannot be made into proof. Two
+    // known gaps, both routed to #38 ("Verify the published artifact after a
+    // release"), which answers them BY CONSTRUCTION rather than by modelling:
+    //
+    //   1. EARLY ERRORS are not syntax errors. `const x = 1; const x = 2;` is a
+    //      duplicate lexical declaration — found at BINDING, not parsing — so
+    //      `transpileModule` reports nothing while every engine rejects it.
+    //      There is no static instrument for this: `node --check` is unsound for
+    //      `.js` (measured on Node 25: exit 0 for a syntactically broken file),
+    //      and `vm.Script` cannot accept module syntax at all.
+    //   2. AN IMPORT THAT NAMES A MISSING FILE is invisible here when it is
+    //      LAZY. Node resolves the entry's static graph during the import below,
+    //      so a broken static edge still surfaces; a `() => import('./gone.js')`
+    //      does not, because nothing calls it.
+    //
+    // An earlier revision of this file tried to close both statically, with a
+    // sweep that resolved every emitted file's relative imports. It drew ten of
+    // this PR's twelve review findings across five rounds — extension rules,
+    // directory imports, query strings, package boundaries, the npm packlist,
+    // the nearest package `type` — every one of them correct, and each one a
+    // layer deeper than the last. The surface is the union of the JavaScript
+    // spec, Node's two resolvers and npm's packlist rules; it does not close.
+    // Packing the artifact and loading it answers all of it at once, which is
+    // what #38 is for. This check is deliberately the cheap half.
 
     let loaded;
     // THE DOWNGRADE IS TRACKED SEPARATELY FROM ITS REASON, never inferred from

@@ -85,100 +85,12 @@ test('NOT AN EXEMPTION: a broken emitted SIBLING fails, not just the entry', asy
   await assert.rejects(smokeTest(dir), /broken\.js does not parse/);
 });
 
-test('NOT AN EXEMPTION: an unresolved relative import fails, floor or no floor', async () => {
-  // Everything present PARSES — the defect is what is ABSENT, which a check that
-  // only reads the files on disk cannot see. Node reported it as a load failure,
-  // so the downgrade swallowed it and CI passed on a package whose first import
-  // 404s.
-  const dir = fixture('export { x } from "./missing.js";\n');
-  await assert.rejects(smokeTest(dir), /imports "\.\/missing\.js", which resolves to nothing/);
-});
-
-test('NOT AN EXEMPTION: an unresolved import in a SIBLING, reached dynamically, fails', async () => {
-  // Two things at once: the sweep covers every emitted file rather than the
-  // entry, and a dynamic `import()` is an edge like any other — Node would never
-  // have raised this one, because nothing calls `load()` during the import.
-  const dir = fixture('import "./style.css";\nexport { b } from "./ok.js";\n', {}, {
-    'style.css': 'body{}',
-    'ok.js': 'export const b = 1;\nexport const load = () => import("./gone.js");\n',
-  });
-  await assert.rejects(smokeTest(dir), /imports "\.\/gone\.js"/);
-});
-
-test("NOT AN EXEMPTION: an ESM package's extensionless import fails — ESM adds no extension", async () => {
-  // This test previously asserted the OPPOSITE, because the check used a
-  // hand-written suffix list that accepted `./ok` for an `ok.js` that exists.
-  // That is CommonJS behaviour. In a `"type": "module"` package Node resolves
-  // `./ok` to `./ok`, so the edge is broken and consumers calling `load()` get
-  // ERR_MODULE_NOT_FOUND. Resolution is Node's own now, so the rules match.
-  const dir = fixture('export const a = 1;\nexport const load = () => import("./ok");\n',
-    {}, { 'ok.js': 'export const b = 1;\n' });
-  await assert.rejects(smokeTest(dir), /imports "\.\/ok", which resolves to nothing/);
-});
-
-test('CONTROL: a CommonJS package MAY use extensionless imports and directory indexes', async () => {
-  // The other half, and the reason the rules are selected per file rather than
-  // applied universally: CommonJS really does search extensions and index files,
-  // so tightening ESM must not fail a CJS package that is entirely correct.
-  const dir = fixture('module.exports = { a: 1, load: () => require("./ok") };\nrequire("./nested");\n',
-    { type: 'commonjs' }, { 'ok.js': 'module.exports = 1;\n' });
-  mkdirSync(join(dir, 'subject', 'dist', 'nested'), { recursive: true });
-  writeFileSync(join(dir, 'subject', 'dist', 'nested', 'index.js'), 'module.exports = 1;\n');
-  const [result] = await smokeTest(dir);
-  assert.equal(result.check, 'loaded');
-});
-
-test('NOT AN EXEMPTION: an ESM directory import fails, index file or not', async () => {
-  // `new URL` is a pure string join, so `./nested` resolves to the DIRECTORY —
-  // and Node ESM refuses that with ERR_UNSUPPORTED_DIR_IMPORT. The entry loads,
-  // so only a lazy edge exposes it, and every consumer calling it fails.
-  const dir = fixture('export const a = 1;\nexport const load = () => import("./nested");\n');
-  mkdirSync(join(dir, 'subject', 'dist', 'nested'), { recursive: true });
-  writeFileSync(join(dir, 'subject', 'dist', 'nested', 'index.js'), 'export const c = 1;\n');
-  await assert.rejects(smokeTest(dir), /resolves to a DIRECTORY/);
-});
-
-test('NOT AN EXEMPTION: a package that CLAIMS a Node floor may not use bundler query suffixes', async () => {
-  // The query convention is a BUNDLER one — neither Node resolver implements it,
-  // both treat the query as part of the filename. Stripping it universally
-  // modelled a bundler on behalf of a package that promised to run on Node.
-  const dir = fixture('module.exports = { load: () => require("./ok.js?raw") };\n',
-    { type: 'commonjs', engines: { node: `>=${running}` } }, { 'ok.js': 'module.exports = 1;\n' });
-  await assert.rejects(smokeTest(dir), /imports "\.\/ok\.js\?raw"/);
-});
-
-test('CONTROL: a bundler query suffix names the file, and still resolves', async () => {
-  const dir = fixture('import "./style.css";\nimport "./data.txt?raw";\n',
-    {}, { 'style.css': 'body{}', 'data.txt': 'x' });
-  const [result] = await smokeTest(dir);
-  assert.equal(result.check, 'parsed');
-});
-
-test('NOT AN EXEMPTION: an import that ESCAPES the package fails, however real the file', async () => {
-  // It resolves, it exists, and the entry loads — in THIS checkout. `npm pack`
-  // ships the package directory, so the consumer installs an edge pointing at a
-  // file that was never published.
-  const dir = fixture('export const a = 1;\nexport const load = () => import("../../outside.mjs");\n');
-  writeFileSync(join(dir, 'outside.mjs'), 'export const s = 1;\n');
-  await assert.rejects(smokeTest(dir), /resolves OUTSIDE the package/);
-});
-
 test('CONTROL: a valid sibling Node merely cannot load still downgrades', async () => {
   // The two cases above must not have made every import failure fatal.
   const dir = fixture('import "./style.css";\nexport { b } from "./ok.js";\n',
     {}, { 'style.css': 'body{}', 'ok.js': 'export const b = 1;\n' });
   const [result] = await smokeTest(dir);
   assert.equal(result.check, 'parsed');
-});
-
-test('NOT AN EXEMPTION: a LAZY unresolved import fails even when the entry LOADS', async () => {
-  // This entry loads perfectly. The check sat in the catch block, on the reasoning
-  // that a successful import proves Node resolved the graph — true only of the
-  // STATIC edges reachable from the entry, because Node resolves a dynamic
-  // `import()` when it is CALLED. So the package reported `loaded` while every
-  // consumer that calls `load()` gets a 404.
-  const dir = fixture('export const a = 1;\nexport const load = () => import("./gone.js");\n');
-  await assert.rejects(smokeTest(dir), /imports "\.\/gone\.js"/);
 });
 
 test('NOT AN EXEMPTION: an ORPHAN emitted file must parse even when the entry LOADS', async () => {
