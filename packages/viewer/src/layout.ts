@@ -86,6 +86,41 @@ function metric(theme: Theme, token: MetricToken): number {
  * terminating on its bound lands where the reader sees the box end. Clamped to
  * the column so the channels stay free.
  */
+/**
+ * The label as it fits the box the layout gave it.
+ *
+ * `boxWidth` CLAMPS to the column, so a title longer than the column gets a box
+ * narrower than its text — and an SVG `<text>` neither wraps nor clips, so the
+ * overflow ran straight across the routing channel and the neighbouring nodes,
+ * hiding the edges and labels the graph exists to show. Long issue titles are
+ * ordinary, so this was the common case rather than an edge one.
+ *
+ * IT MEASURES WITH THE SAME METRIC `boxWidth` SIZES WITH, which is the whole
+ * reason this belongs beside it rather than in the projection. Both read
+ * `--ig-char-width`, so the renderer's idea of what fits and the layout's cannot
+ * disagree — a separate estimate in the drawing code would be a second opinion
+ * about the same question, and the two would drift.
+ *
+ * THE ELLIPSIS IS THIS PACKAGE'S OWN TREATMENT, not a new convention: the rail's
+ * HTML rows already resolve an over-long title with `text-overflow: ellipsis`,
+ * so a canvas label that simply stopped mid-word would make the two surfaces
+ * disagree about what a truncated title looks like.
+ *
+ * NOTHING IS LOST TO A READER — the full title stays in the node's accessible
+ * name and its `<title>`, so this shortens what is DRAWN and never what is
+ * available.
+ */
+export function fitLabel(theme: Theme, label: string, width: number): string {
+  const room = width - metric(theme, '--ig-space') * 2;
+  const fits = Math.floor(room / metric(theme, '--ig-char-width'));
+  if (fits >= label.length) return label;
+  // Below two characters there is no room for a glyph AND the ellipsis, and an
+  // ellipsis alone names nothing — so the box has become too small to label at
+  // all, and drawing nothing is honester than drawing a lone dot.
+  if (fits < 2) return '';
+  return `${label.slice(0, fits - 1)}\u2026`;
+}
+
 function boxWidth(theme: Theme, label: string, columnWidth: number): number {
   const padding = metric(theme, '--ig-space') * 2;
   const measured = label.length * metric(theme, '--ig-char-width') + padding;

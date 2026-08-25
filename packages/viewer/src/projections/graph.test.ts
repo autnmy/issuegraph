@@ -134,6 +134,75 @@ describe('the graph projection', () => {
     assert.equal(/title=""/.test(markup), false, 'a slot with no holds got an empty tooltip');
   });
 
+  it('fits a long title to its node instead of drawing it across the canvas', () => {
+    // `boxWidth` clamps the rectangle to the column; an SVG `<text>` neither
+    // wraps nor clips, so the overflow ran across the routing channel and the
+    // neighbouring nodes, hiding the edges the graph exists to show. Long issue
+    // titles are ordinary, so this was the common case.
+    const long = 'A title far longer than any column this layout will ever allocate to a node';
+    const built = scene({
+      issues: [
+        { key: 'n1', title: long, open: true, priority: 2 },
+        { key: 'n2', title: 'N2', open: true, priority: 2 },
+      ],
+      edges: [{ field: 'blocked-by', from: 'n1', to: 'n2' }],
+      order: { slots: [], excluded: [] },
+    });
+    const markup = renderMarkup(built.root);
+    const drawn = /<text[^>]*class="ig-node-label"[^>]*>([^<]*)</.exec(markup)?.[1];
+
+    assert.ok(drawn !== undefined, 'no canvas label was drawn');
+    assert.ok(drawn.length < long.length, 'the full title was drawn at full width');
+    assert.ok(drawn.endsWith('\u2026'), 'a shortened label must say it was shortened');
+    assert.ok(long.startsWith(drawn.slice(0, -1)), 'the shortened label is not a prefix of the title');
+    // NOTHING IS LOST: the full title stays reachable on the node.
+    assert.ok(markup.includes(long), 'the full title is not recoverable anywhere in the markup');
+  });
+
+  it('draws no canvas label wider than the node it belongs to', () => {
+    // The invariant, checked against the GEOMETRY rather than against the
+    // truncation code — measured with the layout's own metric, so this fails if
+    // the renderer and the layout ever disagree about what fits.
+    // The shipped fixture is enough to break it: two of its titles are longer
+    // than the gutter column that clamps their boxes, so this defect was live on
+    // this package's own sample data, not only on a contrived one.
+    const document = normalizeDocument(fixtureDocument).document;
+    const layout = layoutGraph(document, defaultTheme);
+    const markup = renderMarkup(scene().root);
+    const pad = defaultTheme.metrics['--ig-space'] as number;
+    const charWidth = defaultTheme.metrics['--ig-char-width'] as number;
+
+    let checked = 0;
+    for (const match of markup.matchAll(
+      /<text[^>]*class="ig-node-label"[^>]*x="([\d.]+)" y="([\d.]+)"[^>]*>([^<]*)</g,
+    )) {
+      const x = Number(match[1]);
+      const y = Number(match[2]);
+      const text = match[3] as string;
+      // BOTH COORDINATES. A spine column puts several boxes at one `x`, so
+      // matching on `x` alone picked the first of them and measured this label
+      // against another node's width — which is how this test first reported a
+      // failure on a label that fits perfectly well.
+      const box = [...layout.nodes.values()].find(
+        (node) => Math.abs(node.x + pad - x) < 0.01 && Math.abs(node.y + node.height / 2 - y) < 0.01,
+      );
+      assert.ok(box !== undefined, `no node box sits at (${String(x)}, ${String(y)})`);
+      checked += 1;
+      assert.ok(
+        text.length * charWidth + pad * 2 <= box.width + 0.01,
+        `"${text}" needs ${String(text.length * charWidth + pad * 2)}px in a ${String(box.width)}px node`,
+      );
+    }
+    assert.ok(checked > 0, 'no canvas labels were drawn, so nothing was checked');
+  });
+
+  it('leaves a title that already fits exactly as it is', () => {
+    // Truncation must not fire on a title that fits — a label shortened when it
+    // did not need to be is the same defect pointing the other way.
+    const markup = renderMarkup(scene().root);
+    assert.match(markup, /<text[^>]*class="ig-node-label"[^>]*>Rework the retry budget</);
+  });
+
   it('offers lateral neighbours from the layout columns', () => {
     const lateral = scene().lateral;
     assert.equal(lateral.get('105')?.left, 'other/repo#7');

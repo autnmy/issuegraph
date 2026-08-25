@@ -237,7 +237,21 @@ export function mountViewer(
   };
 
   const emitSelect = (key: string | null): void => {
-    state = { ...state, selected: key, focused: key ?? state.focused };
+    // A KEY THIS DOCUMENT DOES NOT CARRY IS A SELECTION OF NOTHING, and it has
+    // to be resolved HERE, before the state is written. `select()` is documented
+    // to fire `onSelect` exactly as a click does — and a click can only ever
+    // land on a key the canvas drew, so an unknown key has no click to be
+    // equivalent to. A host holding a stale key from its own list is the
+    // ordinary way one arrives.
+    // WITHOUT THIS, THE TWO NOTIFICATIONS CONTRADICTED EACH OTHER. The state
+    // took the unknown key, `draw()` reconciled it away against `byKey` and
+    // reported `onSelect(null)`, and then this function reported `onSelect(key)`
+    // — so the host was told twice, ending on the key that does not exist,
+    // while the handle read `selected: null`. Resolving first means the state
+    // and the one notification agree, and the reconciliation in `draw()` finds
+    // nothing left to undo.
+    const resolved = key !== null && normalized.byKey.has(key) ? key : null;
+    state = { ...state, selected: resolved, focused: resolved ?? state.focused };
     draw();
     // FOCUS FOLLOWS THE SUBJECT — the movement branch of `onKeyDown` already
     // does this, and selection needs it for the same reason: `draw()` destroys
@@ -256,7 +270,7 @@ export function mountViewer(
     // click moves focus. `:focus-visible` is what keeps the ring off a pointer
     // user, so this costs a mouse reader nothing.
     if (state.focused !== null) keyed.get(state.focused)?.focus?.();
-    currentOptions.onSelect?.(key);
+    currentOptions.onSelect?.(resolved);
   };
 
   const onClick = (event: MountEvent): void => {

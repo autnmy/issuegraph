@@ -47,6 +47,48 @@ describe('clustersOf', () => {
     assert.ok(reads <= 4, `read document.edges ${reads} times for ${clusters.length} components`);
   });
 
+  it('does not count the edge that closes a cycle as chain depth', () => {
+    // The discovery pass refuses to follow a back-edge; the collecting pass
+    // walked the same adjacency and had no way to tell one, so it counted that
+    // edge against a memo never written and every cycle came out one edge long.
+    // `chainDepth` is documented as the longest ACYCLIC chain, and it is printed
+    // beside the cycle badge — an invented finite depth there is a number a
+    // reader takes at face value.
+    const cycle = (keys: readonly string[]): number => {
+      const issues = keys.map((key) => ({ key, title: key, open: true, priority: 2 as const }));
+      const edges = keys.map((key, index) => ({
+        field: 'blocked-by' as const,
+        from: key,
+        to: keys[(index + 1) % keys.length] as string,
+      }));
+      const document = normalizeDocument({ issues, edges, order: { slots: [], excluded: [] } })
+        .document;
+      const cluster = clustersOf(document)[0];
+      assert.equal(cluster?.hasCycle, true, 'the fixture should be cyclic');
+      return cluster?.chainDepth ?? -1;
+    };
+
+    assert.equal(cycle(['a', 'b']), 1, 'a two-node cycle has a one-edge acyclic chain');
+    assert.equal(cycle(['x', 'y', 'z']), 2, 'a three-node cycle has a two-edge acyclic chain');
+  });
+
+  it('still measures an acyclic chain in full', () => {
+    // The other half: skipping back-edges must not shorten a chain that has none.
+    const keys = ['p', 'q', 'r'];
+    const document = normalizeDocument({
+      issues: keys.map((key) => ({ key, title: key, open: true, priority: 2 as const })),
+      edges: [
+        { field: 'blocked-by' as const, from: 'p', to: 'q' },
+        { field: 'blocked-by' as const, from: 'q', to: 'r' },
+      ],
+      order: { slots: [], excluded: [] },
+    }).document;
+
+    const cluster = clustersOf(document)[0];
+    assert.equal(cluster?.hasCycle, false);
+    assert.equal(cluster?.chainDepth, 2);
+  });
+
   it('counts each component’s blocking edges exactly, not approximately', () => {
     // The cheap count has to be the SAME number the scan produced — a faster
     // summary that reports a different edge count is not a fix.

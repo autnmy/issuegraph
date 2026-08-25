@@ -93,6 +93,9 @@ function depthAndCycle(
   const memo = new Map<string, number>();
   const onPath = new Set<string>();
   let hasCycle = false;
+  // The edges the discovery pass refused to follow, keyed `from\u0000to` so a
+  // cycle through one member does not suppress that member's other edges.
+  const backEdges = new Set<string>();
 
   // ITERATIVE, NOT RECURSIVE. This runs on the graph's REFUSAL path, which is
   // reached precisely because the component is large — so a per-node call frame
@@ -113,6 +116,15 @@ function depthAndCycle(
         for (const next of blockedBy.get(frame.key) ?? []) {
           if (onPath.has(next)) {
             hasCycle = true;
+            // REMEMBER WHICH EDGE CLOSED THE CYCLE, not just that one did. The
+            // collecting pass below walks the same adjacency and has no other
+            // way to tell a back-edge from an ordinary one, so it counted this
+            // edge against a memo that was never written — `?? 0` — and every
+            // cycle came out one edge too long. Measured: a two-node cycle
+            // published `chainDepth: 2` beside its cycle badge when the longest
+            // acyclic chain through it is one edge, and a three-node cycle
+            // published 3 for a chain of two.
+            backEdges.add(`${frame.key}\u0000${next}`);
             continue;
           }
           if (!memo.has(next)) stack.push({ key: next, expanded: false });
@@ -121,6 +133,11 @@ function depthAndCycle(
       }
       let best = 0;
       for (const next of blockedBy.get(frame.key) ?? []) {
+        // SKIPPED, WHICH ALSO MAKES THE FALLBACK BELOW UNREACHABLE. Every other
+        // child was either pushed and memoized or was memoized already, so
+        // `?? 0` now covers nothing — it stays only because a missing memo must
+        // never silently become a depth of zero if this walk ever changes.
+        if (backEdges.has(`${frame.key}\u0000${next}`)) continue;
         best = Math.max(best, 1 + (memo.get(next) ?? 0));
       }
       memo.set(frame.key, best);

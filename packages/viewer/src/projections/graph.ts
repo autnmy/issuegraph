@@ -24,6 +24,7 @@ import {
   type GraphLayout,
   edgeGeometry,
   enclosureBounds,
+  fitLabel,
   layoutGraph,
 } from '../layout.ts';
 import { emptyState, legend, slotLabel, slotTitle, station, stationFill } from '../parts.ts';
@@ -157,6 +158,9 @@ function nodeShape(
   const selected = options.selected === key;
   const ownsTabStop = navigable.keys.includes(key) && !navigable.railed.has(key);
 
+  const full = issue?.title ?? key;
+  const drawn = fitLabel(theme, full, box.width);
+
   return svg(
     'g',
     {
@@ -190,13 +194,21 @@ function nodeShape(
             'text',
             {
               class: 'ig-node-label',
+              // THE FULL TITLE IS NOT LOST WHEN IT DOES NOT FIT. `fitLabel`
+              // shortens what is DRAWN; this carries what was cut. An SVG
+              // `<title>` child is the tooltip AND the accessible name, and it
+              // is added only on truncation — an untruncated label already reads
+              // in full, and a `<title>` echoing it would announce it twice.
+              // A railed node never reaches here at all: the rail row is its
+              // label, and its own CSS ellipsis handles the same overflow.
+              ...(drawn === full ? {} : { title: full }),
               x: box.x + theme.metrics['--ig-space'],
               // `dominant-baseline` centres the glyphs on the line rather than
               // a remembered offset, so the label stays centred at any scale.
               y: box.y + box.height / 2,
               'dominant-baseline': 'middle',
             },
-            [issue?.title ?? key],
+            [drawn],
           ),
     ],
   );

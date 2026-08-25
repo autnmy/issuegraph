@@ -291,6 +291,32 @@ describe('mountViewer', () => {
     assert.deepEqual(hovered, ['103'], 'a live hover was cleared by an unrelated redraw');
   });
 
+  it('resolves a key this document does not carry to no selection at all', () => {
+    // `select()` is documented to fire `onSelect` exactly as a click does, and a
+    // click can only land on a key the canvas drew — so an unknown key has no
+    // click to be equivalent to. A host holding a stale key from its own list is
+    // the ordinary way one arrives.
+    // Before this, the state took the key, `draw()` reconciled it away and
+    // reported null, and then the selection reported the key: the host was told
+    // TWICE, ending on a key that does not exist, while the handle read null.
+    const selected: (string | null)[] = [];
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const handle = mountViewer(container, fixtureDocument, {
+      onSelect: (key: string | null) => selected.push(key),
+    });
+
+    handle.select('no-such-issue');
+
+    assert.equal(handle.state.selected, null);
+    assert.deepEqual(selected, [null], 'the host was told twice, or told the wrong key');
+
+    // And a real key still selects, so the guard is a resolution and not a veto.
+    handle.select('101');
+    assert.equal(handle.state.selected, '101');
+    assert.deepEqual(selected, [null, '101']);
+  });
+
   it('drops a selection the updated document no longer carries, and says so', () => {
     // `reconcile` carries the selection through whole, which is right for a
     // PROJECTION switch and wrong for a document REPLACEMENT: the subject can
