@@ -127,6 +127,42 @@ test('CONTROL: a valid sibling Node merely cannot load still downgrades', async 
   assert.equal(result.check, 'parsed');
 });
 
+test('NOT AN EXEMPTION: a LAZY unresolved import fails even when the entry LOADS', async () => {
+  // This entry loads perfectly. The check sat in the catch block, on the reasoning
+  // that a successful import proves Node resolved the graph — true only of the
+  // STATIC edges reachable from the entry, because Node resolves a dynamic
+  // `import()` when it is CALLED. So the package reported `loaded` while every
+  // consumer that calls `load()` gets a 404.
+  const dir = fixture('export const a = 1;\nexport const load = () => import("./gone.js");\n');
+  await assert.rejects(smokeTest(dir), /imports "\.\/gone\.js"/);
+});
+
+test('NOT AN EXEMPTION: an ORPHAN emitted file must parse even when the entry LOADS', async () => {
+  // The same asymmetry on the other sweep. Nothing imports this file, so Node
+  // never looks at it — and the package ships source no consumer can load.
+  const dir = fixture('export const a = 1;\n', {}, { 'orphan.js': 'export const b = = ;\n' });
+  await assert.rejects(smokeTest(dir), /orphan\.js does not parse/);
+});
+
+test('a module that throws a NON-Error string still records parse-only', async () => {
+  // `throw "boom"` has no `.message`, so the reason came back `undefined` — the
+  // same value that meant "the entry loaded fine" — and the success branch then
+  // called `Object.keys` on an entry that never loaded.
+  const dir = fixture('throw "boom";\nexport const a = 1;\n');
+  const [result] = await smokeTest(dir);
+  assert.equal(result.check, 'parsed');
+  assert.equal(result.downgraded, 'boom');
+});
+
+test('a module that throws NULL still records parse-only', async () => {
+  // The harder half: reading `.message` off `null` threw INSIDE the catch, so the
+  // failure escaped smokeTest as a TypeError about the wrong thing entirely.
+  const dir = fixture('throw null;\nexport const a = 1;\n');
+  const [result] = await smokeTest(dir);
+  assert.equal(result.check, 'parsed');
+  assert.equal(result.downgraded, 'null');
+});
+
 test('NOT AN EXEMPTION: broken syntax fails even with no declared floor', async () => {
   // The whole risk of a downgrade is that it becomes a pass for anything. A
   // SyntaxError proves the file was never valid, so it is never tolerated.

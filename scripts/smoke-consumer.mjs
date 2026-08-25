@@ -158,14 +158,37 @@ function firstUnresolvedImport(dir) {
 }
 
 /**
+ * A readable one-line reason from a thrown value, which need NOT be an `Error`.
+ *
+ * `throw null` and `throw "boom"` are legal JavaScript, and a module whose
+ * top-level await rejects with a primitive lands here too. Reading `.message` off
+ * those either throws outright (`null`) or yields `undefined` (a string) — and
+ * `undefined` used to be the very value that meant "the entry loaded fine", so a
+ * module that never loaded took the success branch.
+ *
+ * `String` is not total either: it throws for a null-prototype object, which has
+ * no `toString`. The fallback is what stops a diagnostic becoming the failure it
+ * was trying to describe.
+ */
+function describeThrown(value) {
+  if (value instanceof Error && typeof value.message === 'string') return value.message;
+  try {
+    return String(value);
+  } catch {
+    return '<a thrown value that cannot be converted to a string>';
+  }
+}
+
+/**
  * Smoke-test every package under `packagesDir`. Returns one result per package.
  *
  * A package that declares `engines.node` is held to BOTH checks: this process
  * must be running that floor, and the built entry must load in it. A package
  * that declares none is not exempt from being checked — it is exempt from
- * claiming a Node floor, and it still has to PARSE. The difference between the
- * two is reported per package rather than left silent, because a check that
- * quietly weakens is indistinguishable from one that passed.
+ * claiming a Node floor. Every package, floor or not, must still PARSE and must
+ * name only files it actually ships. The difference between the two is reported
+ * per package rather than left silent, because a check that quietly weakens is
+ * indistinguishable from one that passed.
  */
 export async function smokeTest(packagesDir, { log = () => {} } = {}) {
   const results = [];
@@ -201,52 +224,73 @@ export async function smokeTest(packagesDir, { log = () => {} } = {}) {
       );
     }
 
+    // BOTH STATIC SWEEPS RUN FOR EVERY PACKAGE, whatever the load then does.
+    // They used to sit in the catch block below, on the reasoning that an import
+    // which SUCCEEDED had its graph resolved by Node itself. That is true only of
+    // the static edges REACHABLE FROM THE ENTRY, and it left two real defects
+    // invisible: Node resolves a dynamic `import()` when it is CALLED, not at
+    // load, so an entry can load cleanly while `() => import('./missing.js')`
+    // 404s for every consumer that calls the API; and Node never looks at an
+    // emitted file nothing imports, so an orphan carrying broken source ships
+    // unexamined. Both are STATIC facts about the files on disk, so neither has
+    // any business being conditional on a runtime outcome.
+    //
+    // Asked of the FILES, never of the error, because the ways a valid module can
+    // fail to LOAD in Node are an open set — and because a module can throw a
+    // `SyntaxError` at RUNTIME (`JSON.parse("{")` at module scope) from source
+    // that is perfectly fine.
+    const broken = firstUnparseableFile(dir);
+    assert.equal(
+      broken,
+      undefined,
+      `${manifest.name}: ${broken ? relative(dir, broken.file) : ''} does not parse — ${broken?.error}`,
+    );
+    // Parsing says nothing about whether the files a module NAMES are there. A
+    // missing relative import is a defect in every target, browser or Node, so it
+    // is never downgraded: the downgrade exists for a package Node cannot LOAD,
+    // not for one that is incomplete.
+    const missing = firstUnresolvedImport(dir);
+    assert.equal(
+      missing,
+      undefined,
+      `${manifest.name}: ${missing ? relative(dir, missing.file) : ''} imports "${missing?.specifier}", ` +
+        'which the package does not contain',
+    );
+
     let loaded;
-    let downgraded;
+    // THE DOWNGRADE IS TRACKED SEPARATELY FROM ITS REASON, never inferred from
+    // it. This used to be a lone `downgraded = error.message`, so a module
+    // throwing a non-Error — `throw "boom"`, or a top-level await rejecting with
+    // a primitive — produced `undefined`, which is the same value that meant "the
+    // entry loaded fine": the success branch then ran on an entry that never
+    // loaded. A boolean cannot be spoofed by the shape of what was thrown.
+    let parseOnly = false;
+    let reason = '';
     const entryPath = join(dir, runtime);
     try {
       loaded = await import(pathToFileURL(entryPath).href);
     } catch (error) {
-      // ONE question, asked of every failure: did the entry parse? Nothing is
-      // special-cased on the error's type or code, because that is the open set
-      // this check exists to stop enumerating.
-      //
-      // Not even `SyntaxError`, which is tempting to take at its word and would
-      // be wrong: a module can throw one at RUNTIME — `JSON.parse("{")` at module
-      // scope — and that is a package whose source is fine. The file itself is
-      // the evidence, so the file is what gets asked.
-      const broken = firstUnparseableFile(dir);
-      assert.equal(
-        broken,
-        undefined,
-        `${manifest.name}: ${broken ? relative(dir, broken.file) : ''} does not parse — ${broken?.error}`,
-      );
-      // It parsed — which says nothing about whether the files it names are
-      // there. A missing relative import is a defect in EVERY target, browser or
-      // Node, so it is never downgraded: the downgrade exists for a package Node
-      // cannot LOAD, not for one that is incomplete. Checked only on this path
-      // because it is the only one that turns a failure into a pass — an import
-      // that succeeded had its graph resolved by Node itself.
-      const missing = firstUnresolvedImport(dir);
-      assert.equal(
-        missing,
-        undefined,
-        `${manifest.name}: ${missing ? relative(dir, missing.file) : ''} imports "${missing?.specifier}", ` +
-          'which the package does not contain',
-      );
-      // A package that CLAIMS a Node floor must still LOAD on it;
-      // only one making no such claim may stop at having parsed.
+      // A package that CLAIMS a Node floor must still LOAD on it; only one making
+      // no such claim may stop at the sweeps above. Nothing here is special-cased
+      // on the error's type or code — the sweeps have already established the
+      // only properties that make a downgrade honest.
       if (floor !== undefined) throw error;
-      downgraded = error.message;
+      parseOnly = true;
+      reason = describeThrown(error);
     }
 
-    if (downgraded === undefined) {
+    if (parseOnly) {
+      log(`parse ${manifest.name}  ${runtime}  parsed, not loadable here — ${reason}`);
+    } else {
       assert.ok(Object.keys(loaded).length > 0, `${manifest.name} loaded but exported nothing`);
       log(`ok    ${manifest.name}  ${runtime}  loaded, ${Object.keys(loaded).length} exports, node ${process.version}`);
-    } else {
-      log(`parse ${manifest.name}  ${runtime}  parsed, not loadable here — ${downgraded}`);
     }
-    results.push({ name: manifest.name, entry: runtime, check: downgraded === undefined ? 'loaded' : 'parsed', downgraded });
+    results.push({
+      name: manifest.name,
+      entry: runtime,
+      check: parseOnly ? 'parsed' : 'loaded',
+      downgraded: parseOnly ? reason : undefined,
+    });
   }
 
   assert.ok(results.length > 0, 'no packages were smoke-tested; this job proved nothing');
