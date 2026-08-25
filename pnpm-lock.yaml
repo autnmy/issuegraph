@@ -24,6 +24,28 @@ importers:
         specifier: ^8.67.0
         version: 8.67.0(eslint@10.9.0)(typescript@6.0.3)
 
+  packages/cli:
+    dependencies:
+      '@issuegraph/core':
+        specifier: workspace:^
+        version: link:../core
+      '@issuegraph/derive':
+        specifier: workspace:^
+        version: link:../derive
+      '@issuegraph/reader':
+        specifier: workspace:^
+        version: link:../reader
+      '@issuegraph/writer':
+        specifier: workspace:^
+        version: link:../writer
+    devDependencies:
+      '@types/node':
+        specifier: ^22.18.0
+        version: 22.20.1
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
   packages/core:
     devDependencies:
       '@types/node':
@@ -51,6 +73,9 @@ importers:
       '@issuegraph/core':
         specifier: workspace:^
         version: link:../core
+      yaml:
+        specifier: ^2.9.0
+        version: 2.9.0
     devDependencies:
       '@types/node':
         specifier: ^22.18.0
@@ -669,6 +694,11 @@ packages:
     resolution: {integrity: sha512-BN22B5eaMMI9UMtjrGd5g5eCYPpCPDUy0FJXbYsaT5zYxjFOckS53SQDE3pWkVoWpHXVb3BrYcEN4Twa55B5cA==}
     engines: {node: '>=0.10.0'}
 
+  yaml@2.9.0:
+    resolution: {integrity: sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA==}
+    engines: {node: '>= 14.6'}
+    hasBin: true
+
   yocto-queue@0.1.0:
     resolution: {integrity: sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q==}
     engines: {node: '>=10'}
@@ -1226,5 +1256,7 @@ snapshots:
       isexe: 2.0.0
 
   word-wrap@1.2.5: {}
+
+  yaml@2.9.0: {}
 
   yocto-queue@0.1.0: {}

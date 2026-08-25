@@ -6,19 +6,35 @@
  * through a local restatement of it — which is what stops the two grammars
  * drifting now that they ship separately.
  *
- * THE DEFAULT OUTPUT IS FENCE-WRAPPED. §4.1 permits wrapping the block in a
- * code fence as display armor where the host renders bare frontmatter poorly
- * (a tracker that renders markdown shows a bare `---` block as a broken table),
- * and §4.1 also requires every conforming reader to see through the fence.
- * Bare output is available for hosts that render frontmatter natively.
+ * THE DEFAULT OUTPUT IS BARE, WITH A BLANK LINE BEFORE THE CLOSING DELIMITER.
+ * §4.1 has always said writers SHOULD write the block bare and permitted a code
+ * fence only as an exception, where the tracker's rendering mangles it. This
+ * writer used to take that exception by default, and the reason was real: on
+ * GFM a closing `---` makes the line above it a setext HEADING, so a bare block
+ * rendered as a rule followed by a giant `<h2>` of YAML.
+ *
+ * A blank line before the closing delimiter removes the mangling — measured
+ * against GitHub's renderer, the block then renders as rule / paragraph / rule
+ * — so the exception is no longer needed, and taking it costs something real.
+ *
+ * WHAT THE FENCE COSTS IS THE REVERSE EDGE. A `#`-sigil reference in a bare
+ * block is auto-linked by the tracker, which stamps a CROSS-REFERENCE on the
+ * target issue. That cross-reference is the only surface anywhere showing what
+ * an issue is BLOCKING: §4.3.1 deliberately has no `blocks` field, so a reverse
+ * index is otherwise reconstructed by hand. Fenced, bare-integer output renders
+ * none of it.
  *
  * SPELLING CHOICES, each pinned by round-trip:
  *
- *   - Same-repo refs render as BARE INTEGERS. The `#N` spelling needs quoting
- *     inside YAML flow and list contexts — a whitespace-preceded `#` opens a
- *     comment — and quoting is noise the bare form never needs.
- *   - Qualified refs render as unquoted `owner/repo#N`, safe unquoted under the
- *     same rule because no whitespace precedes the `#`.
+ *   - Refs render with a `#` SIGIL and are ALWAYS QUOTED. The quoting is not
+ *     style — it is mandatory, and the reason is the same YAML rule that used
+ *     to argue for bare integers: a whitespace-preceded `#` opens a comment.
+ *     Measured: `blocked-by: [#9094]` is a PARSE ERROR, and the block-sequence
+ *     spelling is worse — `- #9094` parses SUCCESSFULLY to `[null]`, with no
+ *     error and no warning, so an unquoted sigil would silently emit a block
+ *     declaring no edges. Quoted, both forms parse to the reference.
+ *   - Qualified refs render as `"owner/repo#123"`, quoted for consistency with
+ *     the same-repo form rather than because they need it.
  *   - Fields render in the SPEC's declaration order, absent fields omitted
  *     entirely; an input with nothing to say renders NO block (`null`), never
  *     an empty `issuegraph:` stub.
@@ -31,7 +47,15 @@
  * lives in the other package: `parseFrontmatter` never throws on any input.
  */
 
-import { PRIORITY_MAX, PRIORITY_MIN, isEvidence, isPriority, type Evidence } from '@issuegraph/core';
+import {
+  PRIORITY_MAX,
+  PRIORITY_MIN,
+  isEvidence,
+  isPriority,
+  isRefId,
+  isRepoQualifier,
+  type Evidence,
+} from '@issuegraph/core';
 import type { Frontmatter, IssueRef } from '@issuegraph/reader';
 
 /** The renderable fields — {@link Frontmatter} with every field optional. */
@@ -48,37 +72,41 @@ export interface RenderInput {
 export interface RenderOptions {
   /**
    * Wrap the block in a plain code fence — the §4.1 display armor for hosts
-   * that render bare frontmatter poorly. DEFAULT TRUE: the overwhelming
-   * majority of callers write issue bodies on such a host.
+   * that render bare frontmatter poorly.
+   *
+   * DEFAULT FALSE, which is a change: it used to default true. The blank line
+   * before the closing delimiter is what made bare output render correctly on
+   * the host that motivated the fence, and bare output is what auto-links the
+   * references. The option stays because §4.1's exception stays: a host whose
+   * renderer still mangles the bare form needs it.
    */
   readonly fenceWrapped?: boolean;
 }
 
 /**
- * The canonical ref spelling — a bare integer same-repo, an unquoted
- * `owner/repo#N` cross-repo — with the render contract's validation throws.
+ * The canonical ref spelling — a quoted `"#123"` same-repo, a quoted
+ * `"owner/repo#123"` cross-repo — with the render contract's validation throws.
  *
  * Exported because a splice inserts lines into a block this renderer did not
  * write, and those lines must spell refs exactly as it does.
+ *
+ * THE ID IS VALIDATED THROUGH `@issuegraph/core`, the same predicate the reader
+ * parses with. Spelling the rule here as well would be a second grammar, which
+ * is exactly what this specification's own reference implementation must not
+ * model — and the bound it carries is the READER'S: an id the reader would
+ * refuse must never be rendered, or the edge silently does not exist.
  */
 export function renderRef(ref: IssueRef): string {
-  // SAFE integer, not merely an integer, because the bound that matters is the
-  // READER'S. `Number.isInteger` accepts `9007199254740992` and `1e21`; the
-  // parser's own ref validation is `Number.isSafeInteger`, and `String(1e21)`
-  // is `"1e+21"` — a spelling no reader accepts. Rendering either emits a line
-  // that comes back DROPPED WITH A DIAGNOSTIC rather than throwing, which
-  // breaks the round-trip guarantee and this module's fail-loud contract at the
-  // same time: the edge silently does not exist. Verified in both directions.
-  if (!Number.isSafeInteger(ref.number) || ref.number < 1) {
+  if (!isRefId(ref.id)) {
     throw new Error(
-      `issuegraph render: ref number must be a positive integer within the safe range, got ${String(ref.number)}`,
+      `issuegraph render: ref id ${JSON.stringify(ref.id)} is not a valid tracker identifier`,
     );
   }
-  if (ref.repo === null) return String(ref.number);
-  if (!/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/.test(ref.repo)) {
+  if (ref.repo === null) return `"#${ref.id}"`;
+  if (!isRepoQualifier(ref.repo)) {
     throw new Error(`issuegraph render: ref repo ${JSON.stringify(ref.repo)} is not owner/repo-shaped`);
   }
-  return `${ref.repo}#${String(ref.number)}`;
+  return `"${ref.repo}#${ref.id}"`;
 }
 
 /**
@@ -86,8 +114,8 @@ export function renderRef(ref: IssueRef): string {
  * the input carries no fields at all — write nothing rather than an empty stub.
  *
  * The returned string is a complete block, leading `---` through trailing `---`
- * (plus the fence lines in the default wrapped form), ready to prepend to a
- * body with one blank line after it.
+ * (plus the fence lines when wrapped), ready to prepend to a body with one
+ * blank line after it.
  */
 export function renderFrontmatter(input: RenderInput, options: RenderOptions = {}): string | null {
   const lines: string[] = [];
@@ -114,8 +142,12 @@ export function renderFrontmatter(input: RenderInput, options: RenderOptions = {
     lines.push(`  evidence: ${input.evidence}`);
   }
   if (lines.length === 0) return null;
-  const block = ['---', 'issuegraph:', ...lines, '---'].join('\n');
-  return (options.fenceWrapped ?? true) ? ['```', block, '```'].join('\n') : block;
+  // THE BLANK LINE IS STRUCTURAL, not spacing. Without it a markdown renderer
+  // reads the closing `---` as a setext heading underline for the line above,
+  // turning the last field into an `<h2>`. A trailing blank line inside a
+  // frontmatter block is valid YAML, so it costs the parse nothing.
+  const block = ['---', 'issuegraph:', ...lines, '', '---'].join('\n');
+  return (options.fenceWrapped ?? false) ? ['```', block, '```'].join('\n') : block;
 }
 
 /**

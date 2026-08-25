@@ -214,7 +214,7 @@ describe('the derivation package is pure', () => {
     } as const;
     const before = deriveIssueOrder({ issues: issuegraphOrderSeed(), config });
     const unblocked = issuegraphOrderSeed().map((issue) =>
-      issue.number === 602 ? { ...issue, open: false } : issue,
+      issue.id === '602' ? { ...issue, open: false } : issue,
     );
     const after = deriveIssueOrder({ issues: unblocked, config });
 
