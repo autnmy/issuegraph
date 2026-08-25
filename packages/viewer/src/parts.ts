@@ -202,6 +202,31 @@ export function stationsOf(document: NormalizedDocument): ReadonlyMap<string, st
   return stations;
 }
 
+/**
+ * The caller's options, with `selected` and `focused` named the way THIS
+ * projection names them.
+ *
+ * APPLIED BEFORE THE SCENE IS BUILT, and that is the whole point of it being
+ * here rather than only in `reconcile`. Reconciling afterwards fixed the state
+ * a handle reports and left the MARKUP built from the un-canonicalized key: the
+ * station's row was never marked `aria-current`, the roving tab stop stayed on
+ * whatever the fallback resolved to, and `renderViewer` — which never calls
+ * `reconcile` at all — was simply wrong. A viewer whose reported state and
+ * rendered DOM disagree is the defect, whichever half is right.
+ *
+ * The projection publishes the SAME map it canonicalized with, so `reconcile`
+ * cannot reach a different answer than the markup did.
+ */
+export function atStations<T extends { selected?: string | null | undefined; focused?: string | null | undefined }>(
+  options: T,
+  stations: ReadonlyMap<string, string>,
+): T {
+  if (stations.size === 0) return options;
+  const at = (key: string | null | undefined): string | null | undefined =>
+    key === null || key === undefined ? key : (stations.get(key) ?? key);
+  return { ...options, selected: at(options.selected), focused: at(options.focused) };
+}
+
 /** The title of a slot, naming every member — a together unit is one row. */
 export function slotTitle(document: NormalizedDocument, slot: ViewerSlot): string {
   return slot.members

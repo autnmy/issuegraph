@@ -203,6 +203,26 @@ describe('mountViewer', () => {
             `${where}: selected ${selected}, which ${ended} cannot reach`,
           );
           assert.equal(handle.state.focused, selected, `${where}: focus left the selection`);
+          // AND THE DOM SAYS THE SAME THING. Checking only `handle.state` is
+          // what let a whole round through: the state was canonicalized after
+          // the markup had already been built from the un-canonicalized key, so
+          // the station's row was never marked and the tab stop sat on the
+          // fallback. A viewer whose reported state and rendered DOM disagree is
+          // the defect, whichever half happens to be right.
+          const marked = new Set(
+            container
+              .descendants()
+              .filter((element) => element.getAttribute('aria-current') === 'true')
+              .map((element) => element.getAttribute(KEY_ATTRIBUTE)),
+          );
+          const tabStops = new Set(
+            container
+              .descendants()
+              .filter((element) => element.getAttribute('tabindex') === '0')
+              .map((element) => element.getAttribute(KEY_ATTRIBUTE)),
+          );
+          assert.deepEqual([...marked], [selected], `${where}: the DOM marks a different selection`);
+          assert.deepEqual([...tabStops], [selected], `${where}: the tab stop is not on the selection`);
         }
         // AND THE HOST WAS TOLD THE SAME THING. A handle holding one key while
         // `onSelect` reported another is the same disagreement in a new place.

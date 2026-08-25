@@ -40,6 +40,7 @@ import {
   station,
   stationFill,
   stationsOf,
+  atStations,
 } from '../parts.ts';
 import { type LateralNeighbours, type Scene, resolveFocusKey } from '../scene.ts';
 import { type Theme, defaultTheme } from '../theme.ts';
@@ -499,7 +500,10 @@ function refusal(
   ]);
 }
 
-export function graphScene(document: NormalizedDocument, options: GraphOptions = {}): Scene {
+export function graphScene(document: NormalizedDocument, rawOptions: GraphOptions = {}): Scene {
+  // See `linearScene` — the same rule, applied before the canvas is laid out.
+  const stations = stationsOf(document);
+  const options = atStations(rawOptions, stations);
   const theme = options.theme ?? defaultTheme;
   const layout = layoutGraph(document, theme);
   const nodeCount = layout.nodes.size;
@@ -761,7 +765,7 @@ export function graphScene(document: NormalizedDocument, options: GraphOptions =
     lateral,
     // The same stations the canvas keys its member nodes to through
     // `GROUP_ATTRIBUTE` — one rule, so the markup and the published state agree.
-    stationOf: stationsOf(document),
+    stationOf: stations,
     diagnostics,
   };
 }
