@@ -181,6 +181,27 @@ export function legend(): ElementSpec {
   ]);
 }
 
+/**
+ * Every key a projection draws under some OTHER key's station, mapped to it.
+ *
+ * One rule for the linear and graph projections, which both render a together
+ * unit as a single row or node keyed by its lead. Written once because two
+ * copies of "which key stands in for which" is exactly how a projection's
+ * markup and its published `navigable` came to disagree in the first place.
+ *
+ * Only non-identity entries, so a lookup that misses means "represents itself"
+ * and no projection has to enumerate the keys that are already their own.
+ */
+export function stationsOf(document: NormalizedDocument): ReadonlyMap<string, string> {
+  const stations = new Map<string, string>();
+  for (const slot of document.order.slots) {
+    for (const member of slot.members) {
+      if (member !== slot.lead) stations.set(member, slot.lead);
+    }
+  }
+  return stations;
+}
+
 /** The title of a slot, naming every member — a together unit is one row. */
 export function slotTitle(document: NormalizedDocument, slot: ViewerSlot): string {
   return slot.members

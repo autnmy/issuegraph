@@ -251,6 +251,11 @@ export function treeScene(document: NormalizedDocument, options: SceneOptions = 
     focusOrder,
     navigable: focusOrder,
     lateral,
+    // EMPTY, AND NOT AN OVERSIGHT. The tree draws every key its own row, so a
+    // together unit's partner is its own subject here and stands in for
+    // nobody. Publishing the linear and graph stations would make selecting a
+    // partner in the tree jump to its lead — a row the reader did not click.
+    stationOf: new Map(),
     diagnostics: forest.diagnostics,
   };
 }

@@ -175,7 +175,11 @@ export function mountViewer(
     currentOptions.onHover?.(null);
   };
 
-  const draw = (): void => {
+  // `announceSelection` is false ONLY for the redraw `emitSelect` runs, which
+  // reports the settled selection itself — see there. Every other caller wants
+  // the notice, because a reconciliation that moves the selection has moved it
+  // out from under whoever set it.
+  const draw = (announceSelection = true): void => {
     // A DOCUMENT UPDATE CAN REMOVE THE SELECTED ISSUE, and `reconcile` carries
     // the selection through whole — deliberately, because a PROJECTION switch
     // changes representation rather than subject and dropping it there would
@@ -193,8 +197,16 @@ export function mountViewer(
     // be settled BEFORE the scene is built: `sceneFor` is handed
     // `state.selected`, so clearing afterwards would draw one frame marking a
     // selection that no longer exists.
-    const droppedSelection = state.selected !== null && !normalized.byKey.has(state.selected);
-    if (droppedSelection) state = { ...state, selected: null };
+    // WHAT THE SELECTION WAS BEFORE THIS DRAW TOUCHED IT. Two things can move
+    // it — the document-membership drop just below, and `reconcile`'s
+    // canonicalization to the station this projection draws it under — and the
+    // host has to hear about BOTH. Keying the notice on a single `dropped` flag
+    // covered only the first, so `setProjection` renamed the selection and told
+    // nobody: the handle read the station while the host still held the member.
+    const selectedBefore = state.selected;
+    if (state.selected !== null && !normalized.byKey.has(state.selected)) {
+      state = { ...state, selected: null };
+    }
     if (root !== null) container.removeChild(root);
     const scene = sceneFor(normalized, projection, {
       ...currentOptions,
@@ -277,7 +289,9 @@ export function mountViewer(
     // same divergence `clearHover` exists to prevent one line up. Fired AFTER
     // the DOM is in place, exactly as the hover clear is, so a host that redraws
     // from this callback finds the viewer already consistent.
-    if (droppedSelection) currentOptions.onSelect?.(null);
+    if (announceSelection && state.selected !== selectedBefore) {
+      currentOptions.onSelect?.(state.selected);
+    }
   };
 
   const emitSelect = (key: string | null): void => {
@@ -296,7 +310,11 @@ export function mountViewer(
     // nothing left to undo.
     const resolved = key !== null && normalized.byKey.has(key) ? key : null;
     state = { ...state, selected: resolved, focused: resolved ?? state.focused };
-    draw();
+    // SILENCED, because this function reports the result itself once the draw
+    // has settled it. Letting the draw announce too would fire `onSelect` twice
+    // for one selection whenever reconciliation renamed it — and a caller
+    // cannot tell a doubled notice from a second selection.
+    draw(false);
     // FOCUS FOLLOWS THE SUBJECT — the movement branch of `onKeyDown` already
     // does this, and selection needs it for the same reason: `draw()` destroys
     // the subtree holding focus and mounts a replacement. Without it a reader
@@ -314,7 +332,13 @@ export function mountViewer(
     // click moves focus. `:focus-visible` is what keeps the ring off a pointer
     // user, so this costs a mouse reader nothing.
     if (state.focused !== null) keyed.get(state.focused)?.focus?.();
-    currentOptions.onSelect?.(resolved);
+    // WHAT THE STATE ACTUALLY HOLDS, not what was asked for. `draw()` reconciles
+    // the selection against the scene, which canonicalizes a together unit's
+    // partner to the station that represents it — so reporting `resolved` here
+    // would tell the host a key the handle does not hold, which is the very
+    // disagreement between the two notifications this function was written to
+    // end. `select()` stays equivalent to the click it documents itself as.
+    currentOptions.onSelect?.(state.selected);
   };
 
   const onClick = (event: MountEvent): void => {

@@ -42,6 +42,25 @@ export interface Scene {
   readonly navigable: readonly string[];
   /** Key -> its lateral neighbours. Absent for keys with none. */
   readonly lateral: ReadonlyMap<string, LateralNeighbours>;
+  /**
+   * Key -> the key that REPRESENTS it in this projection. Absent for a key
+   * that represents itself, which is almost all of them.
+   *
+   * A `together-with` unit is one station in the linear and graph projections
+   * and its partners get no row of their own, so `navigable` deliberately does
+   * not hold them. That made a selection of a partner unstateable: the key is a
+   * real issue, so every entry point accepted it, and then focus could not
+   * follow it anywhere — `resolveFocusKey` found it in no order and fell to the
+   * FIRST entry, an unrelated issue. The tree publishes an EMPTY map, because
+   * it draws every key its own row and a partner there is its own subject.
+   *
+   * THIS IS NOT A DROP. `reconcile` carries a selection across a projection
+   * switch whole, deliberately — a switch changes representation, never
+   * subject. Mapping a partner to its lead keeps that promise rather than
+   * breaking it: the unit IS the subject, and this is the name this projection
+   * has for it.
+   */
+  readonly stationOf: ReadonlyMap<string, string>;
   /** Anything the projection had to drop or refuse, for the host to surface. */
   readonly diagnostics: readonly string[];
 }

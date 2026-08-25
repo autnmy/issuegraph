@@ -32,7 +32,15 @@ import {
   fitLabel,
   layoutGraph,
 } from '../layout.ts';
-import { emptyState, legend, slotLabel, slotTitle, station, stationFill } from '../parts.ts';
+import {
+  emptyState,
+  legend,
+  slotLabel,
+  slotTitle,
+  station,
+  stationFill,
+  stationsOf,
+} from '../parts.ts';
 import { type LateralNeighbours, type Scene, resolveFocusKey } from '../scene.ts';
 import { type Theme, defaultTheme } from '../theme.ts';
 import { type EdgeTerminal, dashArrayFor, treatmentFor } from '../vocabulary.ts';
@@ -745,5 +753,15 @@ export function graphScene(document: NormalizedDocument, options: GraphOptions =
     ],
   );
 
-  return { projection: 'graph', root, focusOrder, navigable: navigableKeys, lateral, diagnostics };
+  return {
+    projection: 'graph',
+    root,
+    focusOrder,
+    navigable: navigableKeys,
+    lateral,
+    // The same stations the canvas keys its member nodes to through
+    // `GROUP_ATTRIBUTE` — one rule, so the markup and the published state agree.
+    stationOf: stationsOf(document),
+    diagnostics,
+  };
 }

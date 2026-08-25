@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { renderMarkup } from './element.ts';
-import { mountViewer } from './mount.ts';
+import { type ViewerHandle, mountViewer } from './mount.ts';
 import { renderViewer } from './render.ts';
-import { GROUP_ATTRIBUTE, KEY_ATTRIBUTE } from './scene.ts';
+import { GROUP_ATTRIBUTE, KEY_ATTRIBUTE, type Projection } from './scene.ts';
 import { TestDocument, TestElement, TestNode } from './testing/document.ts';
 import { fixtureDocument, heldTogetherDocument } from './testing/fixtures.ts';
 
@@ -136,6 +136,81 @@ describe('mountViewer', () => {
     // either value on its own.
     assert.equal(handle.state.selected, '103');
     assert.equal(handle.state.focused, '103');
+  });
+
+  it('never holds a selection the active projection cannot reach — every entry point', () => {
+    // THE INVARIANT, NOT THE CASE. Three rounds found this same class through
+    // three different doors — a pointer, `handle.select`, a projection switch —
+    // each time because the guard named the door. What is actually true is that
+    // `state.selected` is either null or a key the ACTIVE projection publishes
+    // in `navigable`; anything else is a subject focus cannot follow, and
+    // `resolveFocusKey` then falls to the first entry, an unrelated issue.
+    // `104` is the probe: a together unit's partner, absent from the linear and
+    // graph orders, and its own row in the tree.
+    const doors = [
+      {
+        name: 'handle.select',
+        ends: null,
+        run: (handle: ViewerHandle): void => handle.select('104'),
+      },
+      {
+        name: 'a pointer on whatever draws 104',
+        ends: null,
+        run: (_handle: ViewerHandle, container: TestElement): void => {
+          const target = container
+            .descendants()
+            .find(
+              (element) =>
+                element.getAttribute(KEY_ATTRIBUTE) === '104' ||
+                element.getAttribute(GROUP_ATTRIBUTE) === '104',
+            );
+          if (target !== undefined) container.dispatch('click', { target });
+        },
+      },
+      {
+        // The one that CHANGES the active projection mid-test, which is why the
+        // invariant is checked against where the handle ended rather than where
+        // it started.
+        name: 'select, then switch to graph',
+        ends: 'graph',
+        run: (handle: ViewerHandle): void => {
+          handle.select('104');
+          handle.setProjection('graph');
+        },
+      },
+    ] as const;
+
+    for (const start of ['linear', 'graph', 'tree'] as const) {
+      for (const door of doors) {
+        const doc = new TestDocument();
+        const container = doc.createContainer();
+        const reported: (string | null)[] = [];
+        const handle = mountViewer(container, fixtureDocument, {
+          projection: start,
+          onSelect: (key: string | null) => reported.push(key),
+        });
+
+        door.run(handle, container);
+
+        const ended: Projection = door.ends ?? start;
+        const live = renderViewer(fixtureDocument, { projection: ended }).scene;
+        const where = `${start} / ${door.name}`;
+        const selected = handle.state.selected;
+
+        if (selected !== null) {
+          assert.ok(
+            live.navigable.includes(selected),
+            `${where}: selected ${selected}, which ${ended} cannot reach`,
+          );
+          assert.equal(handle.state.focused, selected, `${where}: focus left the selection`);
+        }
+        // AND THE HOST WAS TOLD THE SAME THING. A handle holding one key while
+        // `onSelect` reported another is the same disagreement in a new place.
+        if (reported.length > 0) {
+          assert.equal(reported[reported.length - 1], selected, `${where}: onSelect disagreed`);
+        }
+      }
+    }
   });
 
   it('ignores a click that lands on nothing keyed', () => {

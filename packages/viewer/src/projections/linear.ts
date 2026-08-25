@@ -26,6 +26,7 @@ import {
   slotTitle,
   station,
   stationFill,
+  stationsOf,
 } from '../parts.ts';
 import { type LateralNeighbours, type Scene, resolveFocusKey } from '../scene.ts';
 import { treatmentFor } from '../vocabulary.ts';
@@ -209,5 +210,15 @@ export function linearScene(
 
   // No lateral axis here, so nothing is reachable sideways that the order does
   // not already contain.
-  return { projection: 'linear', root, focusOrder, navigable: focusOrder, lateral, diagnostics: [] };
+  return {
+    projection: 'linear',
+    root,
+    focusOrder,
+    navigable: focusOrder,
+    lateral,
+    // A together unit is ONE row keyed by its lead, so its partners are drawn
+    // under that station and are absent from the order above.
+    stationOf: stationsOf(document),
+    diagnostics: [],
+  };
 }
