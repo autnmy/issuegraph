@@ -86,3 +86,22 @@ jobs:
 
       - name: Load the built package on the declared floor
         run: node scripts/smoke-consumer.mjs
+
+      # `pnpm check:publishable` is deliberately NOT a job here, and the reason is
+      # this repository's own release discipline: CHANGELOG.md states that "while
+      # the spec is a pre-1.0 draft, drafting churn lives in git history, not in
+      # version bumps — the version moves when there is a consumer-visible reason
+      # for it to move."
+      #
+      # That guard asks whether a package's content has drifted from its
+      # published version, so between releases it is EXPECTED to be true: as a
+      # per-PR gate it would red every pull request that edits package source
+      # until somebody bumped a version, which is precisely the churn the policy
+      # exists to avoid. A gate that fires on the healthy case is a gate somebody
+      # switches off.
+      #
+      # It runs where the decision is actually made instead — `publish.yml`,
+      # immediately before the irreversible step, and on dry runs too, so a
+      # release can be rehearsed to find out what needs bumping. Its DECISION
+      # LOGIC is still covered on every PR: `scripts/check-publishable.test.ts`
+      # is collected by `pnpm test`, which the `check` job above runs.

@@ -1,17 +1,21 @@
 {
-  "name": "@issuegraph/core",
+  "name": "@issuegraph/cli",
   "version": "0.1.1",
-  "description": "The Issuegraph format's shared vocabulary as frozen constants and derived types \u2014 field names, cardinality, defaults and value sets. No parsing, no I/O. The reader, the writer and the viewer all read the format through this.",
+  "description": "One command over the Issuegraph packages: read the block out of an issue body, derive the selection order from bodies you supply, and edit the block in place. Composes the reader, derive and writer packages; parses nothing itself, fetches nothing, and takes no credential.",
   "keywords": [
     "issuegraph",
     "dependency-graph",
     "backlog",
     "scheduling",
+    "cli",
     "frontmatter"
   ],
   "license": "Apache-2.0",
   "author": "Autonomy LLC",
   "type": "module",
+  "bin": {
+    "issuegraph": "./dist/bin.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -23,7 +27,9 @@
     "LICENSE",
     "README.md"
   ],
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/bin.js"
+  ],
   "publishConfig": {
     "access": "public",
     "provenance": true
@@ -31,7 +37,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/autnmy/issuegraph.git",
-    "directory": "packages/core"
+    "directory": "packages/cli"
   },
   "homepage": "https://github.com/autnmy/issuegraph#readme",
   "bugs": {
@@ -44,6 +50,12 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.test.json",
     "test": "node --test \"src/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@issuegraph/core": "workspace:^",
+    "@issuegraph/derive": "workspace:^",
+    "@issuegraph/reader": "workspace:^",
+    "@issuegraph/writer": "workspace:^"
   },
   "devDependencies": {
     "@types/node": "^22.18.0",

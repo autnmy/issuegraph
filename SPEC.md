@@ -1,6 +1,6 @@
 # Issuegraph — Specification
 
-**Version:** 0.2.0 (draft)
+**Version:** 0.3.0 (draft)
 **Status:** Draft for implementation. Not stable. Field names and semantics may change until 1.0. See [Versioning](#8-versioning-and-stability).
 
 Issuegraph is a specification for machine-readable work relationships and ordering, written directly onto the issues of an existing issue tracker. It defines a small data format (what you can write on an issue), writing rules (who writes it and when), and reading rules (how a scheduler turns a backlog into correctly ordered, safely parallel work).
@@ -61,7 +61,22 @@ issuegraph:
 Nothing bespoke is introduced here, deliberately: the delimiters, the YAML, and the top-of-document placement are the existing universal convention, chosen because every human, model, and parser already knows it. Rules:
 
 - Writers SHOULD open the body with the frontmatter. Readers MUST be tolerant of prefixed and wrapping content (a bot's banner, a callout, a code fence): the canonical data is the **first** `---`-delimited YAML block in the body containing a top-level `issuegraph` key; later claimants MUST be ignored.
-- Writers SHOULD write the frontmatter **bare** — the universal form, nothing wrapped. The one permitted exception: where the tracker's rendering mangles bare frontmatter (GFM, for instance, renders `---` as a rule and the line above one as a heading), writers MAY wrap it in a plain code fence. The fence is display armor only: the frontmatter text inside is unchanged and byte-portable, and readers see through it via the tolerance rule above.
+- Writers SHOULD write the frontmatter **bare** — the universal form, nothing wrapped — and SHOULD leave a **blank line before the closing delimiter**:
+
+  ```markdown
+  ---
+  issuegraph:
+    blocked-by: ["#123", "#124"]
+    priority: 1
+
+  ---
+  ```
+
+  The blank line is structural, not spacing. A markdown renderer reads a closing `---` directly under a non-blank line as a **setext heading underline**, which turns the last field into a heading and the whole block into a banner — the mangling that made the fence exception necessary in the first place. With the blank line the block renders as rule, paragraph, rule. A trailing blank line inside the block is valid YAML, so it costs the parse nothing.
+
+  Writing the block bare is what lets a tracker **auto-link** the `#`-sigil references in it, and auto-linking is worth more than it looks: a linked reference stamps a **cross-reference on the target issue**, which is the only surface anywhere showing what an issue is *blocking*. §4.3.1 deliberately has no `blocks` field, so without it the reverse edge is reconstructed by hand.
+
+  The one permitted exception: where the tracker's rendering still mangles bare frontmatter, writers MAY wrap it in a plain code fence. The fence is display armor only: the frontmatter text inside is unchanged and byte-portable, and readers see through it via the tolerance rule above.
 
   ````markdown
   ```
@@ -73,13 +88,64 @@ Nothing bespoke is introduced here, deliberately: the delimiters, the YAML, and 
   ```
   ````
 - The `issuegraph` key namespaces this specification's data. Other tools' keys MAY coexist in the same frontmatter and MUST be treated as inert by issuegraph readers.
+- **Readers MUST take the key their YAML parser reports; writers MUST write it literally.** The two halves are not symmetric, and each closes a different hole. A reader that instead matched one *spelling* of the key silently loses declarations written in another — a flow-root mapping (`{issuegraph: …}`, which is simply what a YAML serializer emits in flow style) reads as a body with no block at all, with no diagnostic to say otherwise. So readers ask the parser. Writers, in turn, MUST emit the key as the literal `issuegraph` — optionally quoted — as a key of the block's own root mapping, and MUST NOT escape-encode it: a tracker mirror needs to prefilter candidate bodies cheaply, in SQL or with a regex, and no such prefilter can be written against an open set of encodings. A body that violates the writer rule is still *read* by a conforming reader; what it forfeits is being *found* by a mirror that has not fetched it.
 - The frontmatter MUST NOT be hidden from rendering (e.g. inside an HTML comment): invisible data is data nobody maintains, and human writers cannot correct what they cannot see.
 - Issue body text is untrusted input in most pipelines. Readers MUST parse the frontmatter with a plain YAML data parser (no anchors resolving to arbitrary object construction, no custom tags) and MUST treat everything outside the recognized fields as inert.
 - Trackers with native equivalents (sub-issue APIs, dependency features, priority labels) MAY mirror issuegraph fields into native features for human ergonomics. **For relationship fields, the frontmatter is canonical**; on disagreement, the frontmatter wins, and the disagreement SHOULD be surfaced by grooming. The scalar fields (`priority`, `evidence`) run the other way — see 4.3.5 for the carrier-precedence rule.
 
 ### 4.2 Issue references
 
-A reference is either a bare integer (`123` — an issue in the same repository/project) or a qualified form (`owner/repo#123`). Readers MUST support both. All fields that carry relationships carry issue references — no other identifier type exists in the format.
+A reference is an **opaque tracker-scoped identifier**. It MAY carry a leading `#` sigil, and it MAY be qualified by a `owner/repo` prefix separated by `#`. All four of these are references, and readers MUST support all four:
+
+| form | meaning |
+|---|---|
+| `123` | an issue in the same repository/project |
+| `"#123"` | the same issue — the sigil is spelling, not identity |
+| `ABC-123` | a non-numeric tracker identifier (Jira, Linear, and anything else) |
+| `owner/repo#123` | an issue in another repository/project |
+
+The identifier is **opaque**: a reader compares references, it does not interpret them. `123` and `#123` denote the same issue and MUST parse to the same reference, so the sigil is never part of the stored identifier.
+
+**Opaque does not mean unconstrained, and the grammar is normative.** An identifier is one or more characters from `A-Z a-z 0-9 . _ -`, beginning with a letter or a digit. Anything else is not a reference: a reader MUST reject it (dropping the field with a diagnostic, per 4.1) and a writer MUST refuse to emit it.
+
+The bound exists because three separate mechanisms in this format read the identifier back, and each excludes something:
+
+- **The writer emits a reference inside a quoted scalar**, so `"` and `\` would break the very quoting the sigil rule below requires.
+- **`#` separates the sigil and the qualifier**, and **`/` separates `owner` from `repo`**, so neither can appear in an identifier without making a reference ambiguous.
+- **Whitespace cannot be part of an identifier.** Readers strip it from a plain scalar and preserve it inside quotes, so admitting it would make `123` and `" 123 "` two different references for the same issue.
+
+A specification that said "whatever string the tracker uses" would be unimplementable: two conforming readers would disagree about `" a b "`, and a conforming writer could emit a block its own reader cannot parse. So the class is stated, and this table is the conformance surface:
+
+| identifier | accepted | why |
+|---|---|---|
+| `231` | yes | numeric, canonical, in range |
+| `ABC-123` | yes | the Jira and Linear shape |
+| `a.b_c-1` | yes | every permitted punctuation mark |
+| `0` | no | not a positive integer |
+| `007` | no | an all-digits identifier must be canonical |
+| `a b` | no | whitespace |
+| `a/b` | no | `/` separates `owner` from `repo` |
+| `a#b` | no | `#` separates the sigil and the qualifier |
+| `a"b` | no | would break the writer's quoted rendering |
+| `ABC:123` | no | outside the class — see below |
+
+**An identifier is never typed.** Readers MUST take a plain scalar's identifier from its **source text**, not from whatever a YAML schema makes of it. `1e5`, `0x1F` and `007` are identifiers, not numbers — a reader that materializes them first sees `100000`, `31` and `7`, silently pointing the edge at a different issue and bypassing the canonical-number rule above. By the same rule a token a schema would read as a boolean is still just an identifier; it will not resolve against any tracker, and an unresolvable reference blocks (6.2), which is the safe direction.
+
+**Widening the class is a spec revision, not an implementation choice.** A tracker whose identifiers carry other punctuation is not modelled today, and the failure is loud on both sides rather than silent — the reader reports a dropped field and the writer throws — so a consumer learns immediately rather than filing a graph that lies. A future revision MAY widen it; the constraints it must keep are the three above.
+
+**Numeric identifiers carry one bound.** An all-digits identifier MUST be a positive integer exactly representable by the host language's integer type, written canonically (no leading zeros). This is not arithmetic on the identifier — it is what makes a reference survive a re-render: a value outside that range comes back from a naive round-trip in a spelling (`1e+21`) no reader accepts, so an identifier that parsed cleanly would be written back unparseable. Identifiers that are not all digits carry no such bound.
+
+**`#`-sigil references MUST be quoted.** `#` opens a comment in YAML, and the two unquoted spellings fail differently — one loudly, one silently:
+
+| written | result |
+|---|---|
+| `blocked-by: [#123, #124]` | a parse **error** |
+| `blocked-by:` / `  - #123` | parses to `[null, null]` — **silently empty** |
+| `blocked-by: ["#123", "#124"]` | the two references |
+
+The block-sequence case is why this is normative rather than advice: it is a successful parse, with no error and no warning, of a body that declares two edges and produces none. An issue whose blockers vanished reads exactly like an issue with no blockers — a park indistinguishable from a free issue. Readers SHOULD refuse a null list member rather than dropping it, for the same reason.
+
+A qualified reference needs no quoting, because no whitespace precedes its `#`; writers MAY quote it anyway for consistency.
 
 ### 4.3 Fields
 
@@ -266,7 +332,7 @@ Two rules keep the composition clean:
 
 ## 8. Versioning and stability
 
-This is **v0.2.0, a draft**. It is published for implementation, not for adoption claims: the intent is to implement it against at least one real backlog with a real automated pipeline, amend it from what breaks, and only then stamp 1.0. Fields that survive contact stay; fields nobody writes get cut. Breaking changes before 1.0 are expected and will be recorded in the changelog.
+This is **v0.3.0, a draft**. It is published for implementation, not for adoption claims: the intent is to implement it against at least one real backlog with a real automated pipeline, amend it from what breaks, and only then stamp 1.0. Fields that survive contact stay; fields nobody writes get cut. Breaking changes before 1.0 are expected and will be recorded in the changelog.
 
 ---
 

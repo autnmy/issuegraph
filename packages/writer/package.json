@@ -1,13 +1,14 @@
 {
-  "name": "@issuegraph/core",
+  "name": "@issuegraph/writer",
   "version": "0.1.1",
-  "description": "The Issuegraph format's shared vocabulary as frozen constants and derived types \u2014 field names, cardinality, defaults and value sets. No parsing, no I/O. The reader, the writer and the viewer all read the format through this.",
+  "description": "Write the Issuegraph frontmatter block into an issue body \u2014 render a fresh block, splice generated edges in place without disturbing anything else, and re-delimit a block a fence left inert. Pure string work; no network, no tracker, no reads.",
   "keywords": [
     "issuegraph",
     "dependency-graph",
     "backlog",
     "scheduling",
-    "frontmatter"
+    "frontmatter",
+    "serializer"
   ],
   "license": "Apache-2.0",
   "author": "Autonomy LLC",
@@ -31,7 +32,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/autnmy/issuegraph.git",
-    "directory": "packages/core"
+    "directory": "packages/writer"
   },
   "homepage": "https://github.com/autnmy/issuegraph#readme",
   "bugs": {
@@ -44,6 +45,10 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.test.json",
     "test": "node --test \"src/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@issuegraph/core": "workspace:^",
+    "@issuegraph/reader": "workspace:^"
   },
   "devDependencies": {
     "@types/node": "^22.18.0",
