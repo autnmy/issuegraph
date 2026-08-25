@@ -306,10 +306,30 @@ main {
   align-items: baseline;
   padding: var(--pad-edge-y) var(--gap);
   border-bottom: var(--border-width) solid var(--border);
-  cursor: pointer;
 }
 .edge:last-child { border-bottom: none; }
-.edge:hover { background: var(--canvas-3); }
+/*
+  The SELECT CONTROL is the interactive thing, not the row — the row is a list
+  item holding it beside the row's other actions. It is styled to read as the
+  row's identity rather than as a button, which is why it resets the chrome a
+  `<button>` brings and keeps the hover on itself.
+*/
+.edge-select {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-tight);
+  align-items: baseline;
+  flex: 1 1 auto;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.edge-select:hover { background: var(--canvas-3); }
+.edge-select[aria-pressed='true'] { color: var(--accent); }
 .glyph { font-size: var(--size-glyph); width: var(--glyph-width); text-align: center; }
 .edge-kind { font: var(--size-small) var(--mono); }
 .edge-pair { font: var(--size-small) var(--mono); color: var(--fg-3); }

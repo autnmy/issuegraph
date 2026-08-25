@@ -212,37 +212,60 @@ export function offersDelete(edge: ProjectedEdge, snapshot: StoreSnapshot): bool
 
 function renderEdge(edge: ProjectedEdge, store: Store, snapshot: StoreSnapshot): HTMLElement {
   const node = el('li', `edge edge-${edge.kind}`);
+
   // `selected` is the one state that is not about a write, so it has to be
-  // reachable the way a person reaches it — by choosing the thing. The guard on
-  // the target is what keeps `retry` and `delete` from also toggling selection.
+  // reachable the way a person reaches it — by choosing the thing. That is a
+  // REAL BUTTON holding only the edge's own identity, with the row's actions as
+  // its SIBLINGS.
   //
-  // Reachable by KEYBOARD as well as by pointer. A row that only answers a
-  // click puts one of the five states behind a mouse, which would make "every
-  // state is reachable" true only for some visitors.
+  // THE ROW ITSELF USED TO BE THE BUTTON, and it looked fine in every way this
+  // demo had been checked. `role="button"` makes an element's descendants
+  // PRESENTATIONAL, so nesting `retry`, `discard mine` and `delete` inside it
+  // put three controls in a place the accessibility layer is entitled to
+  // flatten — and it cost the row its own accessible NAME as well. Read out of
+  // the browser's accessibility tree, every relationship row came back as an
+  // unnamed `button` containing a `delete`: a screen-reader user tabbing the
+  // list heard "button" ten times with nothing to distinguish one relationship
+  // from another.
+  //
+  // That is this demo's own stated bar failing one layer down. The row was made
+  // keyboard-reachable in the first place because "a row that only answers a
+  // click puts one of the five states behind a mouse, which would make 'every
+  // state is reachable' true only for some visitors" — and an unnamed control
+  // makes `selected` unreachable in practice for exactly those visitors.
+  //
+  // A native `<button>` takes Enter and Space itself and computes its name from
+  // its own contents, so the two listeners this replaced — and the
+  // `event.target instanceof HTMLButtonElement` guards that kept them from
+  // firing on the action buttons — are gone rather than repaired. The nesting
+  // was what made those guards necessary; removing it removes them.
   const selected = snapshot.selection.includes(edge.id);
-  node.setAttribute('role', 'button');
-  node.setAttribute('aria-pressed', String(selected));
-  node.tabIndex = 0;
-  const toggle = (): void => {
+  // `document.createElement` rather than the `el` helper: this needs the typed
+  // `HTMLButtonElement` for `type`, and the `button` helper sets a text label
+  // where this one carries child spans.
+  const select = document.createElement('button');
+  select.className = 'edge-select';
+  select.type = 'button';
+  select.setAttribute('aria-pressed', String(selected));
+  // NAMED EXPLICITLY rather than left to name-from-content, and the glyph is
+  // hidden from the name for the same reason. The visible content is a glyph, a
+  // kind and an arrow pair — read aloud that is "circled division slash,
+  // blocked-by, number 1 rightwards arrow number 2", which is the row's
+  // punctuation rather than its meaning. The glyph is also redundant with the
+  // kind beside it: it is there so the kinds are separable without relying on
+  // hue, which is a VISUAL job.
+  select.setAttribute('aria-label', `${edge.kind} ${edge.from} to ${edge.to}`);
+  select.addEventListener('click', () => {
     store.select(
       selected ? snapshot.selection.filter((id) => id !== edge.id) : [...snapshot.selection, edge.id],
     );
-  };
-  node.addEventListener('click', (event) => {
-    if (event.target instanceof HTMLButtonElement) return;
-    toggle();
   });
-  node.addEventListener('keydown', (event) => {
-    if (event.target instanceof HTMLButtonElement) return;
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    // Space scrolls the page by default, which would move the board out from
-    // under the row the visitor just chose.
-    event.preventDefault();
-    toggle();
-  });
-  node.append(el('span', 'glyph', GLYPH[edge.kind]));
-  node.append(el('span', 'edge-kind', edge.kind));
-  node.append(el('span', 'edge-pair', `#${edge.from} → #${edge.to}`));
+  const glyph = el('span', 'glyph', GLYPH[edge.kind]);
+  glyph.setAttribute('aria-hidden', 'true');
+  select.append(glyph);
+  select.append(el('span', 'edge-kind', edge.kind));
+  select.append(el('span', 'edge-pair', `#${edge.from} → #${edge.to}`));
+  node.append(select);
 
   for (const state of edge.states) node.append(el('span', `state state-${state}`, state));
 
