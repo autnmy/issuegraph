@@ -105,6 +105,39 @@ describe('mountViewer', () => {
     assert.deepEqual(selected, ['1', '1']);
   });
 
+  it("resolves a pointer on a unit's partner to the unit's own station", () => {
+    // A together unit is ONE station with one focus key, so the partner's node
+    // must answer a pointer with the LEAD. It used to answer with itself:
+    // clicking `104` emitted `104`, selected `104`, and threw focus to `102` —
+    // not even the unit clicked, because neither the selection nor the
+    // requested key is in the order and focus fell back to its first entry.
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const selected: (string | null)[] = [];
+    const handle = mountViewer(container, fixtureDocument, {
+      projection: 'graph',
+      onSelect: (key: string | null) => selected.push(key),
+    });
+
+    const partner = container
+      .descendants()
+      .find(
+        (element) =>
+          element.getAttribute('class') === 'ig-node-group' &&
+          element.getAttribute(GROUP_ATTRIBUTE) === '103',
+      );
+
+    assert.ok(partner !== undefined, "the unit's partner drew no node");
+    assert.equal(partner.getAttribute(KEY_ATTRIBUTE), null, 'the partner is in the focus index');
+
+    container.dispatch('click', { target: partner });
+    assert.deepEqual(selected, ['103']);
+    // BOTH, because the defect was the disagreement between them rather than
+    // either value on its own.
+    assert.equal(handle.state.selected, '103');
+    assert.equal(handle.state.focused, '103');
+  });
+
   it('ignores a click that lands on nothing keyed', () => {
     const selected: (string | null)[] = [];
     const { container } = mounted({ onSelect: (key: string | null) => selected.push(key) });

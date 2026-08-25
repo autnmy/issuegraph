@@ -49,9 +49,36 @@ function refusedWithFooterAndExclusion(): ViewerDocument {
 
 describe('the graph projection', () => {
   it('draws a node for every laid-out key', () => {
-    const markup = render();
-    for (const key of ['101', '102', '103', '104', '105', '106', '107', 'other/repo#7']) {
-      assert.ok(markup.includes(`data-ig-key="${key}"`), `${key} was not drawn`);
+    // COUNTED, not matched on `data-ig-key`. This asserted its own name through
+    // one attribute, and that spelling stopped being the whole answer when a
+    // together unit's non-lead member began publishing its unit's LEAD through
+    // `data-ig-group` — a pointer must not name an identity the keyboard cannot
+    // reach. The member's node is still drawn; only the attribute it announces
+    // itself with changed, so the key-only match reported a node that exists as
+    // missing. The count is the property the name claims.
+    const built = scene();
+    const markup = renderMarkup(built.root);
+    const laidOut = layoutGraph(normalizeDocument(fixtureDocument).document, defaultTheme).nodes;
+
+    assert.equal(
+      [...markup.matchAll(/class="ig-node-group"/g)].length,
+      laidOut.size,
+      'a laid-out key was drawn no node',
+    );
+    // AND EACH KEY IS ACCOUNTED FOR — the count alone would pass if one node
+    // were drawn twice and another not at all.
+    for (const key of laidOut.keys()) {
+      const station =
+        built.navigable.includes(key)
+          ? key
+          : (normalizeDocument(fixtureDocument).document.order.slots.find((slot) =>
+              slot.members.includes(key),
+            )?.lead ?? key);
+      const attribute = station === key && built.navigable.includes(key) ? 'key' : 'group';
+      assert.ok(
+        markup.includes(`data-ig-${attribute}="${station}"`),
+        `${key} was not drawn (expected data-ig-${attribute}="${station}")`,
+      );
     }
   });
 
@@ -139,6 +166,38 @@ describe('the graph projection', () => {
     assert.match(markup, /tabindex="0"/);
     for (const key of ['a', 'b']) {
       assert.ok(built.navigable.includes(key), `${key} is drawn and keyed but unreachable by keyboard`);
+    }
+  });
+
+  it('leaves nothing a POINTER can name unreachable by keyboard', () => {
+    // The same invariant two earlier rounds already asserted — and it missed
+    // this, because both of those scanned `data-ig-key` alone. A pointer
+    // resolves through EITHER attribute, so a key published only as a group was
+    // invisible to them: a together unit's non-lead member carried its own
+    // `data-ig-key`, and clicking it emitted a key `navigable` does not hold.
+    // Measured before the fix: selection went to `104` and focus to `102` — not
+    // even the unit that was clicked — because `resolveFocusKey` found neither
+    // the selection nor the requested key in the order and fell back to its
+    // first entry. Scanning both attributes is what makes the invariant match
+    // what `keyAt` actually does.
+    // OVER BOTH SURFACES, because the canvas and the refusal draw different
+    // things and this class has now appeared on each of them.
+    for (const [label, built] of [
+      ['the canvas', scene()],
+      ['the refusal', scene(refusedWithFooterAndExclusion())],
+    ] as const) {
+      const markup = renderMarkup(built.root);
+      const pointable = new Set(
+        [...markup.matchAll(/data-ig-(?:key|group)="([^"]+)"/g)].map((match) => match[1] as string),
+      );
+
+      assert.ok(pointable.size > 0, `${label} published nothing pointable, so this proves nothing`);
+      for (const key of pointable) {
+        assert.ok(
+          built.navigable.includes(key),
+          `${label}: a pointer resolves to ${key}, which no keyboard can reach`,
+        );
+      }
     }
   });
 

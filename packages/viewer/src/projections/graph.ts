@@ -187,11 +187,35 @@ function nodeShape(
         .flatMap((slot) => slot.holds.map((hold) => hold.reason))
         .join(' · ');
 
+  // THE POINTER MUST NOT NAME AN IDENTITY THE KEYBOARD CANNOT REACH. A together
+  // unit is ONE station with one focus key, so its non-lead members are absent
+  // from `navigable` deliberately — and this published each of them as its own
+  // `data-ig-key` anyway. Measured on the fixture: clicking `104` emitted `104`,
+  // selected `104`, and threw focus to `102` — not even the unit that was
+  // clicked, because `resolveFocusKey` found neither the selection nor the
+  // requested key in the order and fell back to its first entry. No keyboard can
+  // produce that state.
+  // ROUTED TO THE STATION, NOT MADE A STATION. Giving the partner its own focus
+  // key is the other repair codex offered and it is the one round ten already
+  // rejected: it splits the unit into two stations, which `navigation.test.ts`
+  // forbids in as many words. So the member keeps its node and loses only its
+  // FOCUS identity, which it never legitimately had.
+  // `GROUP_ATTRIBUTE` IS EXACTLY THIS CHANNEL — the enclosure and the connector
+  // already answer a pointer with their unit's lead through it, and a member's
+  // node is the same question about the same unit. `keyAt` reads it as the
+  // fallback the focus index never sees.
+  // A KEY NO SLOT REPRESENTS FALLS BACK TO ITSELF, which is no worse than what
+  // it published before; the orphan pass above is what makes such a key
+  // navigable, and the invariant test is what proves it did.
+  const published = navigable.keys.includes(key);
+  const station = document.order.slots.find((slot) => slot.members.includes(key))?.lead ?? key;
+
   return svg(
     'g',
     {
       class: 'ig-node-group',
-      'data-ig-key': key,
+      'data-ig-key': published ? key : null,
+      'data-ig-group': published ? null : station,
       'data-column': box.column,
       'aria-current': selected ? 'true' : 'false',
       role: ownsTabStop ? 'img' : null,
