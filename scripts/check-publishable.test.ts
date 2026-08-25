@@ -27,6 +27,9 @@ import {
 const payload = (entries: Record<string, string>): TarballContents =>
   new Map(Object.entries(entries).map(([path, text]) => [path, Buffer.from(text, 'utf8')]));
 
+/** The set a package declaring `@issuegraph/core` through `workspace:` produces. */
+const DECLARED = new Set(['@issuegraph/core']);
+
 test('normalizeManifest makes key order irrelevant and value changes visible', () => {
   const a = '{"dependencies":{"yaml":"^2.9.0","zod":"^3.0.0"}}';
   const b = '{"dependencies":{"zod":"^3.0.0","yaml":"^2.9.0"}}';
@@ -149,7 +152,19 @@ test('isBlocking fails on stale and unknown, and only on those', () => {
 test('normalizeManifest ignores a sibling range, which pnpm derives rather than an author writing it', () => {
   const a = '{"dependencies":{"@issuegraph/core":"^0.1.0"}}';
   const b = '{"dependencies":{"@issuegraph/core":"^0.1.1"}}';
-  assert.equal(normalizeManifest(a), normalizeManifest(b));
+  assert.equal(normalizeManifest(a, DECLARED), normalizeManifest(b, DECLARED));
+});
+
+test('normalizeManifest blanks NOTHING when the manifest declares no workspace dep', () => {
+  // The hole this closes: blanking by NAME meant a package that authored a
+  // LITERAL `"@issuegraph/core": "^0.1.0"` and changed it to `^0.2.0` without
+  // bumping normalized both to the same placeholder, read as unchanged, and was
+  // skipped by the release — the authored update never reaching a consumer.
+  // pnpm rewrites `workspace:` at pack time, so only the SOURCE manifest can say
+  // which ranges were derived.
+  const a = '{"dependencies":{"@issuegraph/core":"^0.1.0"}}';
+  const b = '{"dependencies":{"@issuegraph/core":"^0.2.0"}}';
+  assert.notEqual(normalizeManifest(a, new Set()), normalizeManifest(b, new Set()));
 });
 
 test('normalizeManifest KEEPS the authored operator, so ^ tightened to ~ is still a change', () => {
@@ -159,12 +174,12 @@ test('normalizeManifest KEEPS the authored operator, so ^ tightened to ~ is stil
   // guard's own subject, rebuilt inside the guard.
   const caret = '{"dependencies":{"@issuegraph/core":"^0.1.1"}}';
   const tilde = '{"dependencies":{"@issuegraph/core":"~0.1.1"}}';
-  assert.notEqual(normalizeManifest(caret), normalizeManifest(tilde));
+  assert.notEqual(normalizeManifest(caret, DECLARED), normalizeManifest(tilde, DECLARED));
 
   // …while the derived VERSION still does not matter, whichever operator it is.
   assert.equal(
-    normalizeManifest(tilde),
-    normalizeManifest('{"dependencies":{"@issuegraph/core":"~0.9.9"}}'),
+    normalizeManifest(tilde, DECLARED),
+    normalizeManifest('{"dependencies":{"@issuegraph/core":"~0.9.9"}}', DECLARED),
   );
 });
 
@@ -173,7 +188,7 @@ test('normalizeManifest treats an exact pin as different from a caret', () => {
   // different authored declarations must not collapse onto one value.
   const exact = '{"dependencies":{"@issuegraph/core":"0.1.1"}}';
   const caret = '{"dependencies":{"@issuegraph/core":"^0.1.1"}}';
-  assert.notEqual(normalizeManifest(exact), normalizeManifest(caret));
+  assert.notEqual(normalizeManifest(exact, DECLARED), normalizeManifest(caret, DECLARED));
 });
 
 test('blankDerivedVersion keeps the operator and drops only the version', () => {
@@ -197,7 +212,7 @@ test('normalizeManifest still reports a sibling dependency being ADDED or REMOVE
   // losing a dependency is authored, and deleting the key would hide it.
   const withDep = '{"dependencies":{"@issuegraph/core":"^0.1.0"}}';
   const without = '{"dependencies":{}}';
-  assert.notEqual(normalizeManifest(withDep), normalizeManifest(without));
+  assert.notEqual(normalizeManifest(withDep, DECLARED), normalizeManifest(without, DECLARED));
 });
 
 test('normalizeManifest does NOT blank a third-party range', () => {

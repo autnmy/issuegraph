@@ -142,7 +142,7 @@ export type TarballContents = ReadonlyMap<string, Buffer>;
  * ordering and nothing else: every name and every value survives, so a genuine
  * manifest change is still a difference.
  */
-export function normalizeManifest(text: string): string {
+export function normalizeManifest(text: string, workspaceDeclared: ReadonlySet<string> = new Set()): string {
   const sortDeep = (value: unknown): unknown => {
     if (Array.isArray(value)) return value.map(sortDeep);
     if (value !== null && typeof value === 'object') {
@@ -168,7 +168,7 @@ export function normalizeManifest(text: string): string {
       const rewritten = Object.fromEntries(
         Object.entries(block as Record<string, unknown>).map(([name, range]) => [
           name,
-          name.startsWith(WORKSPACE_SCOPE) && typeof range === 'string' ? blankDerivedVersion(range) : range,
+          workspaceDeclared.has(name) && typeof range === 'string' ? blankDerivedVersion(range) : range,
         ]),
       );
       (manifest as Record<string, unknown>)[field] = rewritten;
@@ -301,7 +301,11 @@ export function unresolvableConsumers(
  * what makes a byte comparison the right instrument for everything except the
  * manifest.
  */
-export function diffTarballContents(local: TarballContents, published: TarballContents): readonly string[] {
+export function diffTarballContents(
+  local: TarballContents,
+  published: TarballContents,
+  workspaceDeclared: ReadonlySet<string> = new Set(),
+): readonly string[] {
   const differences: string[] = [];
   const paths = new Set([...local.keys(), ...published.keys()]);
   for (const path of [...paths].sort()) {
@@ -316,7 +320,10 @@ export function diffTarballContents(local: TarballContents, published: TarballCo
       continue;
     }
     if (path === 'package.json') {
-      if (normalizeManifest(a.toString('utf8')) !== normalizeManifest(b.toString('utf8'))) {
+      if (
+        normalizeManifest(a.toString('utf8'), workspaceDeclared) !==
+        normalizeManifest(b.toString('utf8'), workspaceDeclared)
+      ) {
         differences.push(`${path} (manifest content differs)`);
       }
       continue;
@@ -339,6 +346,7 @@ export function standingFor(
   version: string,
   payloads: { readonly local: TarballContents; readonly published: TarballContents } | undefined,
   payloadFailure?: string,
+  workspaceDeclared: ReadonlySet<string> = new Set(),
 ): PublishStanding {
   if (!Array.isArray(versions)) {
     return { kind: 'unknown', reason: (versions as { readonly unreachable: string }).unreachable };
@@ -348,7 +356,7 @@ export function standingFor(
     const because = payloadFailure === undefined ? '' : `: ${payloadFailure}`;
     return { kind: 'unknown', reason: `${version} is published but its tarball could not be read${because}` };
   }
-  const differences = diffTarballContents(payloads.local, payloads.published);
+  const differences = diffTarballContents(payloads.local, payloads.published, workspaceDeclared);
   return differences.length === 0 ? { kind: 'unchanged' } : { kind: 'stale', differences };
 }
 
@@ -365,6 +373,41 @@ interface Manifest {
   readonly name?: string;
   readonly version?: string;
   readonly private?: boolean;
+  readonly dependencies?: Readonly<Record<string, string>>;
+  readonly devDependencies?: Readonly<Record<string, string>>;
+  readonly peerDependencies?: Readonly<Record<string, string>>;
+  readonly optionalDependencies?: Readonly<Record<string, string>>;
+}
+
+/**
+ * The dependency names this package declares through the `workspace:` protocol.
+ *
+ * Read from the SOURCE manifest, because that is the only place the distinction
+ * survives: pnpm rewrites `workspace:^` to a concrete range at pack time, so
+ * both packed manifests look identical to an ordinary semver range and the
+ * declaration cannot be recovered from them.
+ *
+ * Blanking by NAME instead was too broad, and the hole was real: a package that
+ * authored a LITERAL `"@issuegraph/core": "^0.1.0"` and changed it to `^0.2.0`
+ * without bumping would have both manifests normalize to the same placeholder,
+ * read as unchanged, and be skipped by the release — the authored dependency
+ * update never reaching a consumer. Only a range pnpm actually derived may be
+ * ignored, and only the manifest can say which those are.
+ */
+function workspaceDeclared(manifest: Manifest): ReadonlySet<string> {
+  const declared = new Set<string>();
+  for (const block of [
+    manifest.dependencies,
+    manifest.devDependencies,
+    manifest.peerDependencies,
+    manifest.optionalDependencies,
+  ]) {
+    if (block === undefined || block === null) continue;
+    for (const [name, range] of Object.entries(block)) {
+      if (typeof range === 'string' && range.startsWith('workspace:')) declared.add(name);
+    }
+  }
+  return declared;
 }
 
 const run = (command: string, args: readonly string[], cwd: string): string =>
@@ -493,7 +536,7 @@ function main(): number {
         }
       }
 
-      const standing = standingFor(versions, version, payloads, payloadFailure);
+      const standing = standingFor(versions, version, payloads, payloadFailure, workspaceDeclared(manifest));
       findings.push({ name, version, standing });
 
       // What this release will actually upload: a version not on the registry.
