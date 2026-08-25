@@ -64,10 +64,32 @@ import { registryVersions } from './check-publishable.ts';
 /** The scope every package this repository publishes lives under. */
 export const WORKSPACE_SCOPE = '@issuegraph/';
 
+/**
+ * The executable #36 broke, named by the command it installs on PATH.
+ *
+ * The package that PROVIDES it is discovered from the manifests rather than
+ * named here, so renaming or moving the CLI cannot silently stop the binary
+ * being exercised — it fails loudly instead. A check that quietly stops
+ * checking is the vacuous pass this whole file exists to refuse.
+ */
+export const CLI_BIN = 'issuegraph';
+
 /** A package this workspace intends to publish, at the version it intends. */
 export interface IntendedPackage {
   readonly name: string;
   readonly version: string;
+  /** The executables it installs, by the name each takes on PATH. */
+  readonly bins: readonly string[];
+}
+
+/** The intended version of a package, for a message that names both. */
+export function wantedVersion(intended: readonly IntendedPackage[], name: string): string {
+  return intended.find((p) => p.name === name)?.version ?? '<not in this release>';
+}
+
+/** The packages providing a given executable. */
+export function providersOf(intended: readonly IntendedPackage[], bin: string): readonly IntendedPackage[] {
+  return intended.filter((p) => p.bins.includes(bin));
 }
 
 /**
@@ -124,7 +146,13 @@ export function intendedPackages(packagesDir: string): readonly IntendedPackage[
     const { name, version, private: isPrivate } = parsed as Record<string, unknown>;
     if (isPrivate === true) continue;
     if (typeof name !== 'string' || typeof version !== 'string') continue;
-    intended.push({ name, version });
+    const bin = (parsed as { readonly bin?: unknown }).bin;
+    // npm accepts both shapes: an object of name -> path, and a bare string,
+    // which installs under the PACKAGE's name. Reading only the object form
+    // would miss the second and silently stop exercising a binary.
+    const bins =
+      typeof bin === 'string' ? [name.split('/').pop() ?? name] : bin !== null && typeof bin === 'object' ? Object.keys(bin) : [];
+    intended.push({ name, version, bins });
   }
   return intended;
 }
@@ -187,16 +215,20 @@ export function collectInstances(tree: unknown): readonly Instance[] {
 }
 
 /**
- * What an installed tree says about the release, judged against what this
+ * What ONE package's own installed tree says, judged against what this
  * workspace intends.
  *
- * The ORDER of the two tests is the retry policy. A stale copy is reported as
- * propagation and retried; a package missing from a tree npm has already built
- * is reported as absent and is NOT retried, because no amount of waiting adds
- * it. Reversing them would make a store-only release — where the store is
- * absent rather than stale — burn every attempt before failing.
+ * `subject` is the package that was installed, and it is the only one required
+ * to be PRESENT — every other intended package is legitimately absent from an
+ * isolated install. What is still checked across the whole tree is VERSIONS: a
+ * transitive copy pinned to a superseded release is the nested-stale-copy case,
+ * and it is a defect wherever it appears.
  */
-export function reconcile(instances: readonly Instance[], intended: readonly IntendedPackage[]): TreeVerdict {
+export function reconcile(
+  instances: readonly Instance[],
+  intended: readonly IntendedPackage[],
+  subject: string,
+): TreeVerdict {
   const wanted = new Map(intended.map((p) => [p.name, p.version]));
 
   const stale = instances.filter((instance) => {
@@ -205,9 +237,7 @@ export function reconcile(instances: readonly Instance[], intended: readonly Int
   });
   if (stale.length > 0) return { kind: 'propagating', stale };
 
-  const present = new Set(instances.map((i) => i.name));
-  const names = intended.map((p) => p.name).filter((name) => !present.has(name));
-  if (names.length > 0) return { kind: 'absent', names };
+  if (!instances.some((i) => i.name === subject)) return { kind: 'absent', names: [subject] };
 
   return { kind: 'match' };
 }
@@ -311,27 +341,35 @@ function resolvedTree(cwd: string): unknown {
 }
 
 /**
- * Import every published package by NAME, from inside the installed project.
+ * Import ONE package by name, from inside a project that installed only it.
  *
- * Written to a file rather than passed to `node -e`, so every specifier
- * resolves from the project directory the way a consumer's own module does.
- * Each import is caught individually: one broken package must report itself
- * rather than hiding the state of the other six.
+ * Written to a file rather than passed to `node -e`, so the specifier resolves
+ * from the project directory the way a consumer's own module does.
  */
-function probeImports(projectDir: string, intended: readonly IntendedPackage[]): readonly ProbeResult[] {
+function probeImport(projectDir: string, name: string): ProbeResult {
   const probe = join(projectDir, 'probe.mjs');
-  const names = JSON.stringify(intended.map((p) => p.name));
   writeFileSync(
     probe,
-    `const results = [];\n` +
-      `for (const name of ${names}) {\n` +
-      `  try { await import(name); results.push({ name, ok: true }); }\n` +
-      `  catch (error) { results.push({ name, ok: false, error: String(error?.message ?? error).split('\\n')[0] }); }\n` +
-      `}\n` +
-      `process.stdout.write(JSON.stringify(results));\n`,
+    `try { await import(${JSON.stringify(name)}); process.stdout.write(JSON.stringify({ ok: true })); }\n` +
+      `catch (error) { process.stdout.write(JSON.stringify({ ok: false, error: String(error?.message ?? error).split('\\n')[0] })); }\n`,
   );
-  const parsed: unknown = JSON.parse(run('node', [probe], projectDir));
-  return Array.isArray(parsed) ? (parsed as readonly ProbeResult[]) : [];
+  try {
+    const parsed: unknown = JSON.parse(run('node', [probe], projectDir));
+    const ok = parsed !== null && typeof parsed === 'object' && (parsed as { ok?: unknown }).ok === true;
+    const error =
+      parsed !== null && typeof parsed === 'object' ? (parsed as { error?: unknown }).error : undefined;
+    // Built conditionally rather than with an `undefined` value, because
+    // `exactOptionalPropertyTypes` distinguishes an absent property from one
+    // present and undefined.
+    return typeof error === 'string' ? { name, ok, error } : { name, ok };
+  } catch (error) {
+    // The probe process itself died — an early error the engine raises before
+    // the `catch` above can run reaches here, so it is a package failure, not
+    // an infrastructure one.
+    // `split` is indexed, and `noUncheckedIndexedAccess` makes that
+    // `string | undefined`; the fallback keeps a diagnostic rather than none.
+    return { name, ok: false, error: String(error).trim().split('\n')[0] ?? String(error) };
+  }
 }
 
 /**
@@ -368,15 +406,15 @@ function runCli(projectDir: string): { readonly ok: boolean; readonly detail: st
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * Attempts, and the wait before each retry.
+ * Attempts, and the wait before each retry, while waiting for PROPAGATION.
  *
  * Sized against npm's OWN stated latency, not a guess: a publish prints
  * `Your package is being processed and may take a few minutes to become
  * available`, and that is the wait this has to cover. Measured on the release
  * that first published `@issuegraph/viewer` — `reader@0.2.1` was queryable
- * immediately while `derive@0.1.1` and `viewer@0.1.0` were not, so the lag is
- * per package rather than per release and a budget that covers the fastest one
- * reds a healthy release.
+ * immediately while `derive@0.1.1` took about three minutes, so the lag is per
+ * package rather than per release and a budget that covers the fastest one reds
+ * a healthy release.
  *
  * The earlier 5 x 10s was 40 seconds against a documented few minutes, and it
  * failed exactly that way on a release where all three packages had in fact
@@ -387,6 +425,20 @@ const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 const ATTEMPTS = 10;
 const BACKOFF_MS = 30_000;
 
+/** A project directory that has installed exactly one package. */
+function isolatedConsumer(scratch: string, spec: string): string {
+  const dir = mkdtempSync(join(scratch, 'consumer-'));
+  writeFileSync(
+    join(dir, 'package.json'),
+    `${JSON.stringify({ name: 'issuegraph-verify-consumer', version: '0.0.0', private: true, type: 'module' }, null, 2)}\n`,
+  );
+  // `--prefer-online` or the wait above is theatre: a fresh project directory
+  // does not defeat the runner's npm cache, so an attempt that cached a stale
+  // packument is served the same answer however long anything sleeps.
+  run('npm', ['install', spec, '--prefer-online', '--no-audit', '--no-fund'], dir);
+  return dir;
+}
+
 async function main(): Promise<number> {
   const repoRoot = fileURLToPath(new URL('..', import.meta.url));
   const intended = intendedPackages(join(repoRoot, 'packages'));
@@ -396,108 +448,102 @@ async function main(): Promise<number> {
     return 1;
   }
 
+  // REFUSE TO RUN VACUOUSLY. If nothing provides the executable, the binary
+  // half of #36's acceptance case would silently not be exercised and the check
+  // would still report a green — so the absence is the failure, not a skip.
+  const providers = providersOf(intended, CLI_BIN);
+  if (providers.length === 0) {
+    console.error(`verify-published: no published package installs a \`${CLI_BIN}\` executable,`);
+    console.error('      so the binary half of this check could not run. Refusing to report a green.');
+    return 1;
+  }
+
   const specs = pinnedSpecs(intended);
   console.log(`verifying ${intended.length} published package(s):`);
   for (const spec of specs) console.log(`  ${spec}`);
 
-  const projectDir = mkdtempSync(join(tmpdir(), 'issuegraph-verify-'));
+  const scratch = mkdtempSync(join(tmpdir(), 'issuegraph-verify-'));
   try {
-    // An empty project, not this repository: a consumer has no workspace, no
-    // lockfile and no `workspace:` link, and installing anywhere inside the
-    // repo would quietly resolve through one of them.
-    writeFileSync(
-      join(projectDir, 'package.json'),
-      `${JSON.stringify({ name: 'issuegraph-verify-consumer', version: '0.0.0', private: true, type: 'module' }, null, 2)}\n`,
-    );
+    // PHASE 1 — wait for the registry, and ONLY for the registry.
+    //
+    // Separated from the verification below so that "not published yet" and
+    // "published but broken" are never guessed at from one failed install. Once
+    // this loop passes, every intended version is known to be on the registry,
+    // so any later failure is a defect and is reported without retrying.
+    for (let attempt = 1; ; attempt += 1) {
+      const standing = registryStanding(intended, (name) => registryVersions(name, repoRoot));
+      if (standing.missing.length === 0 && standing.unreachable.length === 0) break;
 
-    for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
-      let installFailure: string | undefined;
-      try {
-        // `--prefer-online` or the retries are theatre: a fresh project
-        // directory does not defeat the runner's npm cache, so a first attempt
-        // that cached a stale packument is served the same answer on every
-        // retry, burning the attempts without ever observing propagation.
-        run('npm', ['install', ...specs, '--prefer-online', '--no-audit', '--no-fund'], projectDir);
-      } catch (error) {
-        const stderr = error !== null && typeof error === 'object' ? (error as { stderr?: unknown }).stderr : undefined;
-        installFailure = String(stderr ?? error).trim().split('\n').slice(-1)[0] ?? 'unknown install failure';
-      }
-
-      // WHY the install failed is asked of the REGISTRY, not of npm's output.
-      // A missing version is propagation and is retried; every version present
-      // and the install still failing is a defect, and retrying it just waits
-      // for a broken release to start looking fixed.
-      let installDiagnosis: { readonly retry: boolean; readonly why: string } | undefined;
-      if (installFailure !== undefined) {
-        const standing = registryStanding(intended, (name) => registryVersions(name, projectDir));
-        if (standing.missing.length > 0) {
-          installDiagnosis = { retry: true, why: `the registry does not yet carry ${standing.missing.join(', ')}` };
-        } else if (standing.unreachable.length > 0) {
-          installDiagnosis = { retry: true, why: `could not reach the registry for ${standing.unreachable.join(', ')}` };
-        } else {
-          installDiagnosis = {
-            retry: false,
-            why: `the registry carries every intended version, so this is not propagation: ${installFailure}`,
-          };
-        }
-      }
-
-      if (installDiagnosis?.retry === false) {
-        console.error('\nverify-published: the install failed for a reason that is not propagation.');
-        console.error(`      ${installDiagnosis.why}`);
+      const why =
+        standing.missing.length > 0
+          ? `the registry does not yet carry ${standing.missing.join(', ')}`
+          : `could not reach the registry for ${standing.unreachable.join(', ')}`;
+      if (attempt >= ATTEMPTS) {
+        console.error(`\nverify-published: the registry never caught up after ${ATTEMPTS} attempts.`);
+        console.error(`      last: ${why}`);
+        console.error('      Treated as a failure: an unanswered question is not an all-clear.');
         return 1;
       }
+      console.log(`  attempt ${attempt}/${ATTEMPTS}: not yet propagated (${why}); retrying`);
+      await delay(BACKOFF_MS);
+    }
 
-      const verdict: TreeVerdict =
-        installDiagnosis === undefined
-          ? reconcile(collectInstances(resolvedTree(projectDir)), intended)
-          : { kind: 'propagating', stale: [] };
+    // PHASE 2 — one ISOLATED consumer per package.
+    //
+    // Installing every package into ONE project is a false green, and the
+    // mechanism is npm's default hoisted layout rather than anything exotic: a
+    // package that imports a dependency it forgot to DECLARE still resolves it
+    // from the shared root, because a sibling put it there. Measured directly —
+    // installed alongside its undeclared dependency the import succeeds;
+    // installed alone the same package answers ERR_MODULE_NOT_FOUND, which is
+    // what every consumer would get. An undeclared dependency is #36's own
+    // class, so verifying it in the one arrangement that hides it would leave
+    // this check green on exactly the release it exists to catch.
+    const failures: string[] = [];
+    let cliDetail = 'not exercised';
 
+    for (const { name, version, bins } of intended) {
+      const dir = isolatedConsumer(scratch, `${name}@${version}`);
+      const verdict = reconcile(collectInstances(resolvedTree(dir)), intended, name);
+
+      if (verdict.kind === 'absent') {
+        failures.push(`${name} is not in its own installed tree, though npm reported the install succeeded`);
+        continue;
+      }
       if (verdict.kind === 'propagating') {
-        const why =
-          installDiagnosis?.why ??
-          verdict.stale.map((i) => `${i.path} is ${i.version}`).join('; ');
-        if (attempt === ATTEMPTS) {
-          console.error(`\nverify-published: the registry never caught up after ${ATTEMPTS} attempts.`);
-          console.error(`      last: ${why}`);
-          console.error('      Treated as a failure: an unanswered question is not an all-clear.');
-          return 1;
+        // Not propagation any more — phase 1 proved every intended version is
+        // published, so a copy at another version is a range in a PUBLISHED
+        // manifest resolving to a superseded release.
+        for (const i of verdict.stale) {
+          failures.push(`${name}: ${i.path} resolves ${i.version}, not the ${wantedVersion(intended, i.name)} this release publishes`);
         }
-        console.log(`  attempt ${attempt}/${ATTEMPTS}: not yet propagated (${why}); retrying`);
-        await delay(BACKOFF_MS);
         continue;
       }
 
-      if (verdict.kind === 'absent') {
-        // NOT retried. The install succeeded, so npm built a tree it considers
-        // complete; a package missing from it is a defect in what was published,
-        // and waiting does not add it.
-        console.error(`\nverify-published: the installed tree does not carry ${verdict.names.join(', ')}.`);
-        console.error('      The install succeeded, so this is the release, not propagation.');
-        return 1;
+      const probe = probeImport(dir, name);
+      if (!probe.ok) failures.push(`${name} does not import: ${probe.error ?? 'unknown'}`);
+
+      if (bins.includes(CLI_BIN)) {
+        const cli = runCli(dir);
+        cliDetail = cli.detail;
+        failures.push(...acceptanceFailures([], cli));
       }
-
-      // The tree matches the intended release. From here a failure is a DEFECT
-      // and is reported immediately — retrying would just wait for a broken
-      // release to start looking fixed.
-      const probes = probeImports(projectDir, intended);
-      const cli = runCli(projectDir);
-      const failures = acceptanceFailures(probes, cli);
-
-      if (failures.length > 0) {
-        console.error('\nverify-published: the published packages resolve, but do not work.');
-        for (const failure of failures) console.error(`      ${failure}`);
-        console.error('      The resolved tree matches the intended release, so this is NOT propagation.');
-        return 1;
-      }
-
-      console.log(`\nverified: ${intended.length} package(s) installed from the registry, imported, and \`issuegraph parse\` ${cli.detail}.`);
-      return 0;
     }
 
-    return 1;
+    if (failures.length > 0) {
+      console.error('\nverify-published: the published packages do not work as a consumer receives them.');
+      for (const failure of failures) console.error(`      ${failure}`);
+      console.error('      Every intended version is on the registry, so this is NOT propagation.');
+      return 1;
+    }
+
+    console.log(
+      `\nverified: ${intended.length} package(s) installed from the registry in isolation, imported, ` +
+        `and \`issuegraph parse\` ${cliDetail}.`,
+    );
+    return 0;
   } finally {
-    rmSync(projectDir, { recursive: true, force: true });
+    rmSync(scratch, { recursive: true, force: true });
   }
 }
 

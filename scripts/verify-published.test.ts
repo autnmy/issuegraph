@@ -21,6 +21,9 @@ import { after, test } from 'node:test';
 
 import {
   acceptanceFailures,
+  CLI_BIN,
+  providersOf,
+  wantedVersion,
   collectInstances,
   intendedPackages,
   pinnedSpecs,
@@ -50,7 +53,7 @@ function packagesFixture(manifests: Record<string, unknown>): string {
 }
 
 const intended = (entries: Record<string, string>): readonly IntendedPackage[] =>
-  Object.entries(entries).map(([name, version]) => ({ name, version }));
+  Object.entries(entries).map(([name, version]) => ({ name, version, bins: [] }));
 
 // ---------------------------------------------------------------- intended set
 
@@ -62,8 +65,8 @@ test('intendedPackages reads the name and version each manifest declares', () =>
   assert.deepEqual(
     [...intendedPackages(dir)].sort((a, b) => a.name.localeCompare(b.name)),
     [
-      { name: '@issuegraph/cli', version: '0.2.0' },
-      { name: '@issuegraph/core', version: '0.1.1' },
+      { name: '@issuegraph/cli', version: '0.2.0', bins: [] },
+      { name: '@issuegraph/core', version: '0.1.1', bins: [] },
     ],
   );
 });
@@ -99,6 +102,45 @@ test('CONTROL: the real workspace yields every package it publishes', () => {
     assert.ok(names.includes(expected), `missing ${expected}`);
   }
   for (const name of names) assert.ok(name.startsWith(WORKSPACE_SCOPE), `${name} is outside the scope`);
+});
+
+// -------------------------------------------------------------- bin discovery
+
+test('intendedPackages reports the executables a package installs', () => {
+  const dir = packagesFixture({
+    cli: { name: '@issuegraph/cli', version: '0.1.1', bin: { issuegraph: './dist/bin.js' } },
+    core: { name: '@issuegraph/core', version: '0.1.1' },
+  });
+  const found = intendedPackages(dir);
+  assert.deepEqual(found.find((p) => p.name === '@issuegraph/cli')?.bins, ['issuegraph']);
+  assert.deepEqual(found.find((p) => p.name === '@issuegraph/core')?.bins, []);
+});
+
+test('intendedPackages reads the BARE STRING bin form, which installs under the package name', () => {
+  // npm accepts both shapes. Reading only the object form would report no
+  // executable for a package that installs one, and the binary check would
+  // then silently never run.
+  const dir = packagesFixture({ cli: { name: '@issuegraph/cli', version: '0.1.1', bin: './dist/bin.js' } });
+  assert.deepEqual(intendedPackages(dir)[0]?.bins, ['cli']);
+});
+
+test('VACUITY GUARD: the real workspace does provide the executable this check runs', () => {
+  // If this ever fails, the binary half of #36's acceptance case is not being
+  // exercised — which the script treats as a failure rather than a skip.
+  const dir = join(import.meta.dirname, '..', 'packages');
+  const providers = providersOf(intendedPackages(dir), CLI_BIN);
+  assert.equal(providers.length, 1, `expected exactly one provider of ${CLI_BIN}`);
+  assert.equal(providers[0]?.name, '@issuegraph/cli');
+});
+
+test('providersOf finds nothing when no package declares the executable', () => {
+  assert.deepEqual(providersOf(intended({ '@issuegraph/core': '0.1.1' }), CLI_BIN), []);
+});
+
+test('wantedVersion names the intended version, and says so when there is none', () => {
+  const all = intended({ '@issuegraph/core': '0.1.1' });
+  assert.equal(wantedVersion(all, '@issuegraph/core'), '0.1.1');
+  assert.match(wantedVersion(all, '@issuegraph/nope'), /not in this release/);
 });
 
 // ------------------------------------------------------------------- pinning
@@ -185,12 +227,27 @@ test('collectInstances marks a node npm could not resolve, rather than dropping 
 
 test('reconcile: the intended tree matches', () => {
   const instances: Instance[] = [{ name: '@issuegraph/core', version: '0.1.1', path: '@issuegraph/core' }];
-  assert.deepEqual(reconcile(instances, intended({ '@issuegraph/core': '0.1.1' })), { kind: 'match' });
+  assert.deepEqual(reconcile(instances, intended({ '@issuegraph/core': '0.1.1' }), '@issuegraph/core'), {
+    kind: 'match',
+  });
+});
+
+test('ISOLATION: a package absent from an isolated tree is NOT required to be there', () => {
+  // Each package is verified in its own consumer, so every OTHER intended
+  // package is legitimately missing. Requiring them all would fail every
+  // isolated install — which is what the pre-isolation shape checked, and is
+  // why this test exists rather than a note.
+  const instances: Instance[] = [
+    { name: '@issuegraph/viewer', version: '0.1.0', path: '@issuegraph/viewer' },
+    { name: '@issuegraph/core', version: '0.1.1', path: '@issuegraph/viewer > @issuegraph/core' },
+  ];
+  const all = intended({ '@issuegraph/viewer': '0.1.0', '@issuegraph/core': '0.1.1', '@issuegraph/store': '0.1.0' });
+  assert.deepEqual(reconcile(instances, all, '@issuegraph/viewer'), { kind: 'match' });
 });
 
 test('REQUIREMENT 4: a stale copy is PROPAGATING, so it is retried', () => {
   const instances: Instance[] = [{ name: '@issuegraph/core', version: '0.1.0', path: '@issuegraph/core' }];
-  const verdict = reconcile(instances, intended({ '@issuegraph/core': '0.1.1' }));
+  const verdict = reconcile(instances, intended({ '@issuegraph/core': '0.1.1' }), '@issuegraph/core');
   assert.equal(verdict.kind, 'propagating');
   assert.ok(verdict.kind === 'propagating');
   assert.equal(verdict.stale[0]?.version, '0.1.0');
@@ -200,8 +257,10 @@ test('REQUIREMENT 4: an ABSENT package is not propagation, so it is NOT retried'
   // The install succeeded, so npm built a tree it considers complete. Waiting
   // does not add a package to it. Reading this as propagation would burn every
   // attempt on a store-only release and then fail for the wrong reason.
+  // The SUBJECT missing from its own tree is the defect; a sibling missing is
+  // expected under isolation and is covered by the test above.
   const instances: Instance[] = [{ name: '@issuegraph/core', version: '0.1.1', path: '@issuegraph/core' }];
-  const verdict = reconcile(instances, intended({ '@issuegraph/core': '0.1.1', '@issuegraph/store': '0.1.0' }));
+  const verdict = reconcile(instances, intended({ '@issuegraph/core': '0.1.1', '@issuegraph/store': '0.1.0' }), '@issuegraph/store');
   assert.equal(verdict.kind, 'absent');
   assert.ok(verdict.kind === 'absent');
   assert.deepEqual(verdict.names, ['@issuegraph/store']);
@@ -214,7 +273,7 @@ test('reconcile reports a stale copy even when another copy is correct', () => {
     { name: '@issuegraph/core', version: '0.1.1', path: '@issuegraph/core' },
     { name: '@issuegraph/core', version: '0.1.0', path: '@issuegraph/reader > @issuegraph/core' },
   ];
-  const verdict = reconcile(instances, intended({ '@issuegraph/core': '0.1.1' }));
+  const verdict = reconcile(instances, intended({ '@issuegraph/core': '0.1.1' }), '@issuegraph/core');
   assert.equal(verdict.kind, 'propagating');
   assert.ok(verdict.kind === 'propagating');
   assert.equal(verdict.stale.length, 1);
@@ -228,12 +287,14 @@ test('reconcile ignores a scope package the release does not publish', () => {
     { name: '@issuegraph/core', version: '0.1.1', path: '@issuegraph/core' },
     { name: '@issuegraph/unrelated', version: '9.9.9', path: '@issuegraph/unrelated' },
   ];
-  assert.deepEqual(reconcile(instances, intended({ '@issuegraph/core': '0.1.1' })), { kind: 'match' });
+  assert.deepEqual(reconcile(instances, intended({ '@issuegraph/core': '0.1.1' }), '@issuegraph/core'), {
+    kind: 'match',
+  });
 });
 
 test('reconcile: an unresolved node reads as stale, never as a match', () => {
   const instances: Instance[] = [{ name: '@issuegraph/core', version: '<unresolved>', path: '@issuegraph/core' }];
-  assert.equal(reconcile(instances, intended({ '@issuegraph/core': '0.1.1' })).kind, 'propagating');
+  assert.equal(reconcile(instances, intended({ '@issuegraph/core': '0.1.1' }), '@issuegraph/core').kind, 'propagating');
 });
 
 // ----------------------------------------------------------- registry standing
