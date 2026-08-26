@@ -2,7 +2,7 @@
 
 Everything that **mutates** an [Issuegraph](https://github.com/autnmy/issuegraph) document: the edit affordances, drawn as overlays on [`@issuegraph/viewer`](../viewer) and dispatched through [`@issuegraph/store`](../store).
 
-> **Not published yet.** The package is `private` until the change that assembles the workspace fixes its exports. It builds, typechecks, lints and tests with the rest of the workspace, so the seam it exists to keep is enforced from the first commit.
+> **Publishable from `0.1.0`.** The package was `private` until the change that assembles the workspace fixed its exports; that change has landed, so the manifest joins its siblings and the next release carries it. Publishing itself stays a deliberate act — `publish.yml` runs on a release or a manual dispatch, never on a push.
 
 Layer 2 of three, and the whole of its contract:
 

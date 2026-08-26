@@ -252,6 +252,30 @@ export const workspaceStylesheet = `
   border-left-color: var(--ig-edge-decomposed-from);
 }
 
+/* The button fills its row, so the whole relationship is the hit target rather
+   than the words inside it. Transparent and borderless: the li already carries
+   the border and the hue, and a second box around it would read as two
+   controls. */
+.ig-relationship-select {
+  flex: 1;
+  display: flex;
+  gap: var(--ig-space-tight);
+  align-items: baseline;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ig-relationship-select:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-tight);
+}
+
 .ig-relationship-kind {
   font-family: var(--ig-font-mono);
   color: var(--ig-text-body);

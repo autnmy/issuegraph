@@ -391,6 +391,41 @@ describe('selection crosses the zones from one value', () => {
   });
 });
 
+describe('every published command is operable by keyboard', () => {
+  it('puts each data-ig-command on a button, across every zone', () => {
+    // A PROPERTY OVER THE WHOLE SURFACE, not a check on the row that was wrong.
+    // A plain element carrying a command has no tab stop and no native
+    // Enter/Space activation, so the action is reachable by pointer and by
+    // nothing else — and a host wiring the published attributes cannot repair
+    // that without rebuilding semantics this package owes it. Written this way
+    // so the NEXT control to publish a command is covered too.
+    const document = backlogOf(4, {
+      edges: [
+        ['blocked-by', 'i0001', 'i0002'],
+        ['duplicate-of', 'i0003', 'i0004'],
+      ],
+    });
+    const markups = [
+      renderWorkspace(document, { ...WORDS, selection: { kind: 'issue', key: 'i0001' } }).markup,
+      renderWorkspace(document, {
+        ...WORDS,
+        selection: { kind: 'edge', edgeId: edgeIdentity('blocked-by', 'i0001', 'i0002') },
+      }).markup,
+      renderWorkspace(document, {
+        ...WORDS,
+        audit: { document: { issues: [], edges: [] }, graph: graphFor([]) },
+      }).markup,
+    ];
+
+    const carriers = markups.flatMap((markup) =>
+      [...markup.matchAll(/<([a-z]+)[^>]*\sdata-ig-command="/g)].map((match) => match[1]),
+    );
+    // Pin the denominator: a regex that matched nothing would pass vacuously.
+    assert.ok(carriers.length >= 3, `only ${String(carriers.length)} commands were emitted`);
+    assert.deepEqual([...new Set(carriers)], ['button']);
+  });
+});
+
 describe('the surface renders words it was given and invents none', () => {
   it('renders the host\'s empty-state sentence', () => {
     const result = renderWorkspace(backlogOf(3), WORDS);
@@ -464,6 +499,28 @@ describe('the workspace reports what it drew and hides nothing', () => {
     const result = renderWorkspace(document, { ...WORDS, rail: { start: 10, count: 4 } });
     assert.deepEqual([...result.diagnostics], []);
     assert.equal(result.view.rail.undrawn, 1);
+  });
+
+  it('reports a defect both zones can see exactly once', () => {
+    // The rail's render and the ladder's independently normalize the same
+    // document, so a defect visible in both is diagnosed twice — and nothing
+    // here carries zone attribution, so a host counting these would simply
+    // overstate the failures.
+    const document = backlogOf(4, { edges: [['blocked-by', 'i0001', 'i0001']] });
+    const result = renderWorkspace(document, WORDS);
+
+    // The premise: the defect really is reported, and really is one the rail's
+    // window keeps. A fixture whose diagnostic only ever came from one zone
+    // would pass whatever the composition did.
+    assert.ok(result.diagnostics.length > 0, 'the fixture produced no diagnostic at all');
+    for (const diagnostic of result.diagnostics) {
+      assert.equal(
+        result.diagnostics.filter((other) => other === diagnostic).length,
+        1,
+        diagnostic,
+      );
+    }
+    assert.ok(result.diagnostics.some((one) => one.includes('self-edge')), 'wrong diagnostic');
   });
 
   it('is pure: the same inputs twice give the same markup', () => {

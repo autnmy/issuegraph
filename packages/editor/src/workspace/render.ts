@@ -260,22 +260,44 @@ function markRail(
   return markSpec(root);
 }
 
+/**
+ * One relationship, as a row the reader can actually operate.
+ *
+ * THE COMMAND SITS ON A BUTTON, NOT ON THE `li`. A plain list item has no tab
+ * stop and no native Enter/Space activation, so a `data-ig-command` on one is
+ * reachable by pointer and by nothing else — and a host wiring the published
+ * attributes cannot fix that without rebuilding the semantics this package
+ * should have supplied. Every other command in the package is already on a
+ * button; `refusalSpec`'s capsule is the same `li` + `button` shape.
+ *
+ * The `li` keeps the hue and the direction, because those describe the
+ * relationship rather than the action.
+ */
 function relationshipSpec(relationship: InspectorRelationship): ElementSpec {
   return element(
     'li',
     {
       class: 'ig-relationship',
       'data-edge': relationship.field,
-      'data-ig-command': 'select-edge',
-      'data-ig-target': relationship.edgeId,
       // Omitted rather than falsified when the subject is not an issue: an edge
       // selection has no "my end", and `data-direction=""` would claim one.
       'data-direction': relationship.direction ?? undefined,
     },
     [
-      element('span', { class: 'ig-relationship-kind' }, [relationship.field]),
-      element('span', { class: 'ig-relationship-ref' }, [relationship.from]),
-      element('span', { class: 'ig-relationship-ref' }, [relationship.to]),
+      element(
+        'button',
+        {
+          type: 'button',
+          class: 'ig-relationship-select',
+          'data-ig-command': 'select-edge',
+          'data-ig-target': relationship.edgeId,
+        },
+        [
+          element('span', { class: 'ig-relationship-kind' }, [relationship.field]),
+          element('span', { class: 'ig-relationship-ref' }, [relationship.from]),
+          element('span', { class: 'ig-relationship-ref' }, [relationship.to]),
+        ],
+      ),
     ],
   );
 }
@@ -432,6 +454,12 @@ export function renderWorkspace(
       ...(overlay === null ? [] : [auditStylesheet]),
       workspaceStylesheet,
     ].join('\n'),
-    diagnostics: [...railRender.diagnostics, ...canvas.diagnostics],
+    // DEDUPED, BECAUSE THE TWO ZONES NORMALIZE THE SAME DOCUMENT. A defect
+    // visible in both — a self-edge on a drawn row, say — is reported by the
+    // rail's render and by the ladder's independently, and concatenating them
+    // states one input error twice. Nothing here carries zone attribution, so a
+    // host counting these would simply overstate the failures. Insertion order
+    // is preserved, so the rail's diagnostics still come first.
+    diagnostics: [...new Set([...railRender.diagnostics, ...canvas.diagnostics])],
   };
 }
