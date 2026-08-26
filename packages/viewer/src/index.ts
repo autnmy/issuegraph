@@ -19,6 +19,17 @@
  * because a published package can add an export later and can never take one
  * back.
  *
+ * ONE OF THOSE CONSUMERS IS `@issuegraph/editor`, which is why the markup
+ * grammar and the component summary are on the surface at all. Layer 2 draws
+ * edit affordances as overlays on this layer and refuses the canvas on this
+ * layer's budgets, and it composes through this file or not at all — its own
+ * README states the rule: what a sibling does not export gets exported
+ * deliberately, never reached past. The alternative for each was a second
+ * implementation out there: a second HTML escaper over untrusted document text,
+ * and a second components/cycle/depth pass whose input space drifts from this
+ * one. `svg`, `materialize` and the mount-side element types stay internal —
+ * nothing owes them yet.
+ *
  * @see https://github.com/autnmy/issuegraph/blob/main/SPEC.md
  */
 
@@ -77,3 +88,9 @@ export type { EdgeDash, EdgeTerminal, EdgeTreatment, OrderingEffect } from './vo
 export { EDGE_TREATMENTS, dashArrayFor, treatmentFor } from './vocabulary.ts';
 
 export { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET } from './projections/graph.ts';
+
+export type { Cluster } from './clusters.ts';
+export { clustersOf } from './clusters.ts';
+
+export type { AttrValue, ElementSpec, SpecChild } from './element.ts';
+export { element, renderMarkup } from './element.ts';

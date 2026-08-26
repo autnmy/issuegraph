@@ -6,8 +6,8 @@ import type { NodeInput } from '@issuegraph/reader';
 import { makeEdge } from '@issuegraph/store';
 import type { EdgeKind, GraphDocument, IssueRef, StoredIssue } from '@issuegraph/store';
 
-import { AUDIT_CLASSES, AUDIT_CLASS_SPECS, auditDocument } from './audit.ts';
-import type { AuditClass, AuditFinding, AuditGraph } from './audit.ts';
+import { AUDIT_CLASSES, AUDIT_CLASS_SPECS, auditDocument } from './findings.ts';
+import type { AuditClass, AuditFinding, AuditGraph } from './findings.ts';
 
 function issue(ref: IssueRef, state: StoredIssue['state'] = 'open'): StoredIssue {
   return { ref, title: `issue ${ref}`, state };

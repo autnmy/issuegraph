@@ -23,8 +23,8 @@
  * injection shape rather than a mirror that merely drifts.
  *
  * An attribute plus a stylesheet needs neither. {@link auditRowAttributes}
- * answers what an affected row carries, {@link auditStylesheet} draws the bar
- * from it, and the whole exchange is data. It also settles nothing about HOW
+ * answers what an affected row carries, `./styles.ts` draws the bar from it,
+ * and the whole exchange is data. It also settles nothing about HOW
  * overlays attach, which is a separate decision with its own change.
  *
  * ## Nothing here renders host text
@@ -40,8 +40,8 @@
 
 import type { IssueRef } from '@issuegraph/store';
 
-import { AUDIT_CLASSES, AUDIT_CLASS_SPECS } from './audit.ts';
-import type { AuditClass, AuditFinding, AuditSeverity } from './audit.ts';
+import { AUDIT_CLASSES, AUDIT_CLASS_SPECS } from './findings.ts';
+import type { AuditClass, AuditFinding, AuditSeverity } from './findings.ts';
 
 /**
  * The attribute an affected rail row carries. Its value is the severity that
@@ -219,87 +219,3 @@ export function renderAuditHeader(overlay: AuditOverlay, options: AuditHeaderOpt
     `</div>`,
   ].join('');
 }
-
-/**
- * Every custom property this surface reads.
- *
- * Its own tokens rather than the viewer's: an audit bar is not an edge, and
- * borrowing `--ig-edge-serialize-with` because it happens to be the same gold
- * would mean a host retheming its serialize edges silently retheming the audit.
- */
-export const AUDIT_TOKENS: readonly string[] = Object.freeze([
-  '--ig-audit-bar',
-  '--ig-audit-bar-width',
-]);
-
-/**
- * The defaults, as one CSS rule.
- *
- * Separate from {@link auditStylesheet} for the reason
- * `packages/viewer/src/styles.ts` gives: the stylesheet carries structure and
- * never a value, so every value lives here where a host can replace it by
- * declaring the same properties later. Overriding needs no API — they are
- * custom properties, which is the whole point of theming this way.
- */
-export function auditThemeCss(selector = ':root'): string {
-  return `${selector} {\n  --ig-audit-bar: #E2B912;\n  --ig-audit-bar-width: 2px;\n}\n`;
-}
-
-/**
- * The structural stylesheet. Layout and state only — every colour and length is
- * a `var(--ig-…)` reference, and `audit-surface.test.ts` scans these bytes for a
- * literal and fails on one, so the rule is enforced rather than remembered.
- *
- * The bar is an INSET BOX SHADOW rather than a border, because a border changes
- * a row's box and every affected row would shift by its width the moment a
- * finding appeared. §17d asks for a count that never moves; a rail that jumps
- * would be the same broken promise one element over.
- *
- * SCOPING, WHICH IS THE ONE PLACE THIS DEPARTS FROM THE VIEWER'S RULE. That
- * stylesheet scopes every selector under an `.ig-` class, because it owns the
- * elements it draws. The bar does not: it lands on a row the VIEWER rendered,
- * and adding a class to that row means rewriting a `class` attribute this layer
- * has no business touching. So the bar is scoped by
- * {@link AUDIT_SEVERITY_ATTRIBUTE} instead — this package's own namespaced
- * name, which bounds the blast radius to elements a host stamped on purpose.
- * The test below holds every selector to one of the two, so the discipline is
- * still enforced against the bytes rather than remembered.
- *
- * There is no transition, no animation and no `@keyframes` here, and there is a
- * test that says so.
- */
-export const auditStylesheet = `
-.ig-audit {
-  align-items: center;
-  display: inline-flex;
-  font-family: var(--ig-font-ui);
-  font-size: var(--ig-font-size-small);
-  gap: var(--ig-space-tight);
-}
-
-.ig-audit-toggle {
-  align-items: center;
-  background: none;
-  border: 0;
-  color: var(--ig-text-muted);
-  cursor: pointer;
-  display: inline-flex;
-  font: inherit;
-  gap: var(--ig-space-tight);
-  padding: 0;
-}
-
-.ig-audit-toggle[aria-pressed='true'] {
-  color: var(--ig-text);
-}
-
-.ig-audit-count {
-  color: var(--ig-text);
-  font-family: var(--ig-font-mono);
-  font-variant-numeric: tabular-nums;
-}
-
-[${AUDIT_SEVERITY_ATTRIBUTE}] {
-  box-shadow: inset var(--ig-audit-bar-width) 0 0 0 var(--ig-audit-bar);
-}
-`;

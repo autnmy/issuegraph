@@ -47,10 +47,10 @@
  *
  * ## The surface
  *
- * The audit is here. The overlays, the picker, the create paths, the
- * re-evaluate surface, the scale ladder and the first-pass queue each land as
- * their own change, and the final shape of this file is decided by the one that
- * assembles the workspace.
+ * The SCALE LADDER and the AUDIT. The overlays, the picker, the create paths,
+ * the re-evaluate surface and the first-pass queue each land as their own
+ * change, and the final shape of this file is decided by the one that assembles
+ * the workspace.
  *
  * A published package can add an export later and can never take one back, so
  * nothing is exported before something is owed.
@@ -66,19 +66,46 @@ export type {
   AuditInput,
   AuditSeverity,
   EncodingRefusal,
-} from './audit.ts';
-export { AUDIT_CLASSES, AUDIT_CLASS_SPECS, auditDocument } from './audit.ts';
+} from './audit/findings.ts';
+export { AUDIT_CLASSES, AUDIT_CLASS_SPECS, auditDocument } from './audit/findings.ts';
 
-export type { AuditHeaderOptions, AuditOverlay, AuditRow } from './audit-surface.ts';
+export type { AuditHeaderOptions, AuditOverlay, AuditRow } from './audit/surface.ts';
 export {
   AUDIT_COUNT_ATTRIBUTE,
   AUDIT_FILTER_ATTRIBUTE,
   AUDIT_SEVERITY_ATTRIBUTE,
-  AUDIT_TOKENS,
   auditFilterKeeps,
   auditOverlay,
   auditRowAttributes,
-  auditStylesheet,
-  auditThemeCss,
   renderAuditHeader,
-} from './audit-surface.ts';
+} from './audit/surface.ts';
+
+export { auditStylesheet } from './audit/styles.ts';
+
+export {
+  INITIAL_SCALE_STATE,
+  type ScaleCommand,
+  type ScaleState,
+  scaleReducer,
+} from './scale/commands.ts';
+
+export {
+  type IsolatedChip,
+  type ScaleCapsule,
+  type ScaleLadder,
+  type ScaleMatch,
+  type ScaleRefusal,
+  type ScaleRoute,
+  type ScaleRouteKind,
+  type ScaleSearch,
+  type ScaleTier,
+  scaleLadder,
+} from './scale/ladder.ts';
+
+export {
+  type ScaleLadderOptions,
+  type ScaleLadderResult,
+  renderScaleLadder,
+} from './scale/render.ts';
+
+export { scaleLadderStylesheet } from './scale/styles.ts';

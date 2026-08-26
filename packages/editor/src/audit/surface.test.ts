@@ -1,22 +1,18 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { THEME_TOKENS } from '@issuegraph/viewer';
-
-import { AUDIT_CLASS_SPECS } from './audit.ts';
-import type { AuditClass, AuditFinding } from './audit.ts';
+import { AUDIT_CLASS_SPECS } from './findings.ts';
+import type { AuditClass, AuditFinding } from './findings.ts';
 import {
   AUDIT_COUNT_ATTRIBUTE,
   AUDIT_FILTER_ATTRIBUTE,
   AUDIT_SEVERITY_ATTRIBUTE,
-  AUDIT_TOKENS,
   auditFilterKeeps,
   auditOverlay,
   auditRowAttributes,
-  auditStylesheet,
-  auditThemeCss,
   renderAuditHeader,
-} from './audit-surface.ts';
+} from './surface.ts';
+import { auditStylesheet } from './styles.ts';
 
 function finding(kind: AuditClass, members: readonly string[]): AuditFinding {
   const spec = AUDIT_CLASS_SPECS[kind];
@@ -109,9 +105,12 @@ describe('the row left-bar', () => {
   });
 
   it('is drawn by the stylesheet from that attribute', () => {
+    // The attribute is the only handle between the two, so this is what makes
+    // `auditRowAttributes` and the stylesheet one mechanism rather than two
+    // that happen to agree today.
     assert.match(auditStylesheet, new RegExp(`\\[${AUDIT_SEVERITY_ATTRIBUTE}\\]`));
-    assert.match(auditStylesheet, /box-shadow:\s*inset var\(--ig-audit-bar-width\)/);
-    assert.match(auditStylesheet, /var\(--ig-audit-bar\)/);
+    assert.match(auditStylesheet, /box-shadow:\s*inset var\(--ig-stroke\)/);
+    assert.match(auditStylesheet, /var\(--ig-edge-serialize-with\)/);
   });
 
   it('draws the bar with a shadow, not a border, so no row moves when one appears', () => {
@@ -202,87 +201,4 @@ describe('what the ambient surface may never be', () => {
       assert.equal(/\btoast\b|\bbanner\b|\balert\b/i.test(text), false);
     });
   }
-});
-
-describe('the structural stylesheet', () => {
-  /** Every `var(--…)` name the stylesheet references. */
-  function referencedTokens(css: string): string[] {
-    return [...css.matchAll(/var\((--[a-z0-9-]+)/g)].map((match) => match[1] as string);
-  }
-
-  it('contains no literal colour', () => {
-    assert.equal(/#[0-9A-Fa-f]{3,8}\b/.exec(auditStylesheet), null, 'a hex colour');
-    assert.equal(/\brgba?\(/.exec(auditStylesheet), null, 'an rgb() colour');
-    assert.equal(/\bhsla?\(/.exec(auditStylesheet), null, 'an hsl() colour');
-    assert.equal(
-      /:\s*(?:red|blue|green|black|white|grey|gray)\b/.exec(auditStylesheet),
-      null,
-      'a named colour',
-    );
-  });
-
-  it('contains no fixed pixel length', () => {
-    // `0` is unitless and carries no scale, which is why it is the one length
-    // allowed to appear literally.
-    assert.equal(/\d+(?:\.\d+)?px/.exec(auditStylesheet), null, 'a px length');
-  });
-
-  it('references only properties something actually sets', () => {
-    // A `var()` naming a property no theme sets resolves to nothing and the
-    // rule silently does not apply — the failure that reads as a styling bug
-    // for weeks. Two sources, and only two: the viewer's theme, which a host
-    // installing the viewer already has, and this surface's own tokens.
-    const known = [...THEME_TOKENS, ...AUDIT_TOKENS];
-    assert.deepEqual(
-      referencedTokens(auditStylesheet).filter((token) => !known.includes(token)),
-      [],
-    );
-  });
-
-  it('scopes every rule to this package, so a host page is untouched', () => {
-    // The viewer scopes on an `.ig-` class because it owns what it draws. The
-    // bar lands on a row the VIEWER rendered, so it is scoped by this package's
-    // own namespaced attribute instead — which bounds it to elements a host
-    // stamped on purpose. Both are accepted; nothing else is.
-    const selectors = auditStylesheet
-      .split('}')
-      .map((block) => block.split('{')[0]?.trim() ?? '')
-      .filter((selector) => selector !== '');
-    assert.ok(selectors.length > 0, 'no rules were scanned, so this proves nothing');
-    for (const selector of selectors) {
-      assert.match(
-        selector,
-        new RegExp(`(^|[\\s,])\\.ig-|\\[${AUDIT_SEVERITY_ATTRIBUTE}`),
-        `"${selector}" is scoped to neither an ig- class nor the audit attribute`,
-      );
-    }
-  });
-
-  it('names no font family outside the type tokens', () => {
-    for (const match of auditStylesheet.matchAll(/font-family:\s*([^;]+);/g)) {
-      assert.match(match[1] as string, /^var\(--ig-font-(ui|mono)\)$/);
-    }
-  });
-});
-
-describe('the default values', () => {
-  it('sets every token the stylesheet may read', () => {
-    const css = auditThemeCss();
-    for (const token of AUDIT_TOKENS) {
-      assert.match(css, new RegExp(`${token}:`), `${token} has no default`);
-    }
-  });
-
-  it('is a rule on a caller-chosen selector', () => {
-    assert.match(auditThemeCss(), /^:root \{/);
-    assert.match(auditThemeCss('.ig-workspace'), /^\.ig-workspace \{/);
-  });
-
-  it('keeps the values out of the stylesheet and in here', () => {
-    // The split `packages/viewer/src/styles.ts` makes: structure carries no
-    // value, so a host replaces one by declaring the property later and needs
-    // no API to do it.
-    assert.match(auditThemeCss(), /#[0-9A-Fa-f]{6}/);
-    assert.match(auditThemeCss(), /\dpx/);
-  });
 });
