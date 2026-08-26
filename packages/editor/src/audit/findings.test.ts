@@ -390,6 +390,47 @@ describe('a refused declaration is not a discharged blocker', () => {
   });
 });
 
+describe('a finding about a CLOSED issue is finished history, not a defect', () => {
+  it('does not flag a closed duplicate whose canonical has since closed', () => {
+    // The normal end of a lifecycle: closed as a duplicate, then the canonical
+    // work completed. Nothing is hidden and nothing is untracked, so a
+    // `dangerous` finding here would sit on completed history for ever.
+    const document = documentOf(
+      [issue('a', 'closed'), issue('b', 'closed')],
+      [['duplicate-of', 'a', 'b']],
+    );
+    assert.deepEqual(only(audit(document), 'dead-duplicate-ref'), []);
+  });
+
+  it('still flags an OPEN duplicate of a closed canonical — the control', () => {
+    // Without this the test above passes on a detector that stopped reporting
+    // the class at all.
+    const document = documentOf(
+      [issue('a'), issue('b', 'closed')],
+      [['duplicate-of', 'a', 'b']],
+    );
+    assert.equal(only(audit(document), 'dead-duplicate-ref').length, 1);
+  });
+
+  it('does not call a closed issue\'s blocker stale', () => {
+    // The sibling instance of the same class: "readiness is already satisfied"
+    // says nothing about an issue that is not waiting to start.
+    const document = documentOf(
+      [issue('a', 'closed'), issue('b', 'closed')],
+      [['blocked-by', 'a', 'b']],
+    );
+    assert.deepEqual(only(audit(document), 'stale-blocker'), []);
+  });
+
+  it('reports a duplicate the document does not carry, because unknown is not closed', () => {
+    // An absent issue is UNKNOWN, and an unknown must not silence a `dangerous`
+    // finding — the mirror of the rule on the target side, where only a proven
+    // closure raises one.
+    const document = documentOf([issue('b', 'closed')], [['duplicate-of', 'ghost', 'b']]);
+    assert.equal(only(audit(document), 'dead-duplicate-ref').length, 1);
+  });
+});
+
 describe('severity travels on the finding', () => {
   it('carries the class table onto every finding it produces', () => {
     // "Severity is data on the finding, not a colour chosen at the render site."

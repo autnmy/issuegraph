@@ -255,6 +255,34 @@ function edgesOfKind(document: GraphDocument, kind: StoredEdge['kind']): readonl
 }
 
 /**
+ * Whether a finding ABOUT this issue describes a live problem at all.
+ *
+ * TWO OF THE FOUR CLASSES NAME A HARM THAT REQUIRES AN OPEN SUBJECT, and on a
+ * closed one they report the ordinary end of a lifecycle as a defect:
+ *
+ *  - a dead duplicate ref claims *"its work is excluded from the order and
+ *    tracked nowhere"*, but a CLOSED duplicate has no outstanding work to
+ *    track. An issue closed as a duplicate, followed by its canonical being
+ *    completed, is the normal shape of finished history — and it would carry a
+ *    `dangerous` finding for ever after.
+ *  - a stale blocker claims readiness is already satisfied, which says nothing
+ *    about an issue that is not waiting to start.
+ *
+ * The other two classes have no such precondition and deliberately do not use
+ * this. §6.6 already restricts cycles to open nodes, and an encoding refusal is
+ * a fact about a DECLARATION — which the model reads from closed nodes too, so
+ * a closed issue's unreadable `duplicate-of` still misroutes live edges.
+ *
+ * PROVABLY CLOSED, NOT MERELY ABSENT. An issue the document does not carry is
+ * unknown, and an unknown must not silence a `dangerous` finding — the same
+ * rule the target side already applies in the other direction, where only a
+ * proven closure raises one.
+ */
+function livelySubject(closed: ReadonlySet<IssueRef>, ref: IssueRef): boolean {
+  return !closed.has(ref);
+}
+
+/**
  * The reader's stuck groups, one finding each.
  *
  * A PASS-THROUGH, AND DELIBERATELY SO. §6.6's answer already carries every rule
@@ -305,6 +333,7 @@ function staleBlockerFindings(
   const closed = closedRefs(document);
   const findings: AuditFinding[] = [];
   for (const edge of edgesOfKind(document, 'blocked-by')) {
+    if (!livelySubject(closed, edge.from)) continue;
     const effective = graph.duplicateCanonical(edge.to) ?? edge.to;
     if (!closed.has(effective)) continue;
     // A CLOSED BUT UNDER-READ TARGET IS STILL BLOCKING, so calling it stale
@@ -352,6 +381,7 @@ function deadDuplicateFindings(document: GraphDocument, graph: AuditGraph): Audi
   const closed = closedRefs(document);
   const findings: AuditFinding[] = [];
   for (const edge of edgesOfKind(document, 'duplicate-of')) {
+    if (!livelySubject(closed, edge.from)) continue;
     const canonical = graph.duplicateCanonical(edge.from) ?? edge.to;
     if (!closed.has(canonical)) continue;
     const via = canonical === edge.to ? '' : ` (through ${edge.to})`;
