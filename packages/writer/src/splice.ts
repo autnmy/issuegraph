@@ -650,6 +650,9 @@ function snapshotEdges(edges: GeneratedEdges): EdgeSnapshot {
   });
 }
 
+/** The run of backticks a fence line opens with, for the length rule below. */
+const FENCE_RUN = /^(`{3,})/;
+
 /**
  * Does the fence line at `index` OPEN a fence, or close one an earlier line
  * opened?
@@ -657,7 +660,7 @@ function snapshotEdges(edges: GeneratedEdges): EdgeSnapshot {
  * A BARE ``` MATCHES BOTH PATTERNS — `FENCE_CLOSE` is a strict subset of
  * `FENCE_OPEN` — so the question cannot be answered by looking at the line.
  * Whether a fence line opens or closes is a property of every fence line
- * BEFORE it, so this counts them: an even number before means this one opens.
+ * BEFORE it, so this walks them.
  *
  * WHY IT EXISTS. The whole-block removal used to decide "these neighbours are
  * my armor" from the two adjacent lines alone. A block sitting between the
@@ -670,13 +673,37 @@ function snapshotEdges(edges: GeneratedEdges): EdgeSnapshot {
  * `duplicate-of` could not be emptied, because provenance had no clear. The new
  * `--no-duplicate-of` reaches it, which is why this is repaired here rather
  * than recorded.
+ *
+ * IT TRACKS THE OPEN FENCE'S LENGTH RATHER THAN COUNTING FENCE-SHAPED LINES,
+ * and the first version of it did the latter — which was the same defect one
+ * level in. A four-backtick block may legitimately CONTAIN a three-backtick
+ * line (it is how you document a fence) and an info-string line; neither closes
+ * it, but both are fence-shaped, so a count went wrong by one per content line
+ * and the closer after them read as an opener. Measured: 5 fence lines in, 3
+ * out, two unrelated code blocks merged — the corruption this function exists
+ * to prevent, reintroduced by the function itself. Raised in review.
+ *
+ * THE RULE IS COMMONMARK'S: a fence opens with a run of three or more and an
+ * optional info string, and closes only on a BARE run AT LEAST AS LONG. So a
+ * shorter run, or any run carrying an info string, is content while a fence is
+ * open. An ODD number of such content lines is what flips the parity — an even
+ * number cancels out and a wrong model looks right, which is worth knowing
+ * before trusting a passing test here.
  */
 function opensFence(lines: readonly string[], index: number): boolean {
-  let fences = 0;
+  let openRun = 0;
   for (let i = 0; i < index; i++) {
-    if (FENCE_OPEN.test((lines[i] ?? '').trimEnd())) fences += 1;
+    const line = (lines[i] ?? '').trimEnd();
+    if (!FENCE_OPEN.test(line)) continue;
+    const run = (FENCE_RUN.exec(line)?.[1] ?? '').length;
+    if (openRun === 0) {
+      openRun = run;
+      continue;
+    }
+    // Inside a fence: only a bare run at least as long as the opener closes it.
+    if (FENCE_CLOSE.test(line) && run >= openRun) openRun = 0;
   }
-  return fences % 2 === 0;
+  return openRun === 0;
 }
 
 export function spliceGeneratedEdges(body: string, rawEdges: GeneratedEdges): SpliceResult {

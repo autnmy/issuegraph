@@ -879,6 +879,82 @@ describe('whole-block removal takes only its OWN armor', () => {
     assert.equal(next, 'Tail.');
   });
 
+  it('a LONGER fence containing a fence-shaped content line is still one block', () => {
+    // RAISED IN REVIEW, on the parity check itself. A four-backtick block may
+    // legitimately contain a three-backtick line — it is how you document a
+    // fence — and that line closes nothing. Counting every fence-SHAPED line
+    // made the parity wrong by one, so the closer below read as an opener and
+    // the removal ate it together with the next block's opener.
+    //
+    // Measured before the fix: 5 fence lines in, 3 out, and the two unrelated
+    // code blocks merged — exactly the corruption the parity check was added to
+    // prevent, reintroduced by the check itself.
+    //
+    // ODD is what breaks it: an even number of miscounted content lines cancels
+    // out and the wrong model looks right, which is why the first attempt at
+    // this test passed against the broken code.
+    const body = [
+      '````',
+      '```',
+      '````',
+      '---',
+      'issuegraph:',
+      '  duplicate-of: "#42"',
+      '---',
+      '```',
+      'a later code block',
+      '```',
+      '',
+      'Tail.',
+    ].join('\n');
+    const next = spliceGeneratedEdges(body, CLEAR_IT) as string;
+    assert.notEqual(next, null);
+    assert.equal((next.match(/^`{3,}/gm) ?? []).length, 5, next);
+    assert.ok(next.includes('a later code block'), next);
+    assert.ok(!next.includes('issuegraph:'), 'the block itself must still go');
+  });
+
+  it('an INFO-STRING line inside a longer fence closes nothing either', () => {
+    // The other half of the same finding. A closer carries no info string, so
+    // ```` ```js ```` is content wherever it appears — but it matches the
+    // OPEN pattern, so a shape-only test counts it.
+    const body = [
+      '````',
+      '```js',
+      '````',
+      '---',
+      'issuegraph:',
+      '  duplicate-of: "#42"',
+      '---',
+      '```',
+      'a later code block',
+      '```',
+      '',
+      'Tail.',
+    ].join('\n');
+    const next = spliceGeneratedEdges(body, CLEAR_IT) as string;
+    assert.equal((next.match(/^`{3,}/gm) ?? []).length, 5, next);
+    assert.ok(next.includes('a later code block'), next);
+  });
+
+  it('CONTROL: a SHORTER run inside a longer fence does not close it', () => {
+    // A closer must be at least as long as its opener. Three backticks cannot
+    // close a four-backtick block, which is the rule that makes the two tests
+    // above true rather than a special case about content.
+    const body = [
+      '````',
+      '```',
+      'still inside the four-backtick block',
+      '````',
+      '',
+      'Tail.',
+    ].join('\n');
+    // No block at all here — the point is only that the fence model agrees the
+    // four-backtick block is still open across the three-backtick line, which
+    // `no-block` demonstrates without depending on the removal path.
+    assert.equal(spliceGeneratedEdges(body, CLEAR_IT), null);
+  });
+
   it('CONTROL: an armored block after an unrelated code block still loses its armor', () => {
     // The parity scan must not over-correct: a genuinely armored block that
     // happens to follow a closed code block is still armored.
