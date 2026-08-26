@@ -48,9 +48,28 @@
  * ## The surface
  *
  * The SCALE LADDER, the AUDIT, the RE-EVALUATE SURFACE, the EDGE
- * MUTATION-STATE OVERLAYS, the TYPE PICKER and the CREATE PATHS. The
- * first-pass queue lands as its own change, and the final shape of this file is
- * decided by the one that assembles the workspace.
+ * MUTATION-STATE OVERLAYS, the TYPE PICKER, the CREATE PATHS and the
+ * THREE-ZONE WORKSPACE that assembles them. The first-pass queue lands as its
+ * own change; this file's shape is otherwise settled.
+ *
+ * The workspace is the assembly leaf, and what it adds is a SEAM rather than a
+ * sixth surface: `renderWorkspace` composes the rail, the ladder and the audit
+ * through the same public entry points a host would use, so nothing here is
+ * re-derived. The two facts it owns are the ones no single leaf could:
+ *
+ *   - ONE SELECTION crosses all three zones. §17b makes `selected` the only edge
+ *     state that also filters the inspector, so the workspace holds exactly one
+ *     value and the zones read it. Three synchronised copies is the shape it
+ *     exists to prevent.
+ *   - THE RAIL IS VIRTUALISED AND THE CANVAS REFUSES, and assembling them must
+ *     not average the two (§17f). The rail's MODEL stays complete at any backlog
+ *     size while its WINDOW is bounded; the ladder keeps the whole document, so
+ *     its budget does not follow the reader's scroll position.
+ *
+ * It is also where the deferred positioning from the leaves below lands: the
+ * audit's left-bar is applied by walking the rail's `ElementSpec` tree, which is
+ * how a mark reaches a row the viewer drew without this package ever splicing a
+ * rendered string.
  *
  * The create paths are the first thing here to be shaped by a requirement that
  * three surfaces be EQUIVALENT rather than merely present. They gather the same
@@ -223,3 +242,37 @@ export {
 } from './reevaluate/render.ts';
 
 export { reevaluateStylesheet } from './reevaluate/styles.ts';
+
+export {
+  type SelectionCommand,
+  type WorkspaceSelection,
+  INITIAL_SELECTION,
+  selectedKey,
+  selectionReducer,
+} from './workspace/selection.ts';
+
+export {
+  type RailWindow,
+  type RailWindowOptions,
+  RAIL_WINDOW,
+  railWindow,
+} from './workspace/rail.ts';
+
+export {
+  type InspectorPosition,
+  type InspectorRelationship,
+  type InspectorView,
+  inspectorView,
+} from './workspace/inspector.ts';
+
+export {
+  type Zone,
+  type WorkspaceOptions,
+  type WorkspaceResult,
+  type WorkspaceView,
+  type WorkspaceWords,
+  ZONES,
+  renderWorkspace,
+} from './workspace/render.ts';
+
+export { workspaceStylesheet } from './workspace/styles.ts';
