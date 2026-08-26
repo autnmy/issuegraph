@@ -62,9 +62,9 @@ export type {
   AuditClass,
   AuditClassSpec,
   AuditFinding,
+  AuditGraph,
   AuditInput,
   AuditSeverity,
-  CycleProbe,
   EncodingRefusal,
 } from './audit.ts';
 export { AUDIT_CLASSES, AUDIT_CLASS_SPECS, auditDocument } from './audit.ts';

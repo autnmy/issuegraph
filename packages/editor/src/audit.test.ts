@@ -1,21 +1,13 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { wouldCycleOnBlockedBy } from '@issuegraph/derive';
-import type { DeriveIssueOrderInput } from '@issuegraph/derive';
+import { buildModel } from '@issuegraph/reader';
+import type { NodeInput } from '@issuegraph/reader';
 import { makeEdge } from '@issuegraph/store';
 import type { EdgeKind, GraphDocument, IssueRef, StoredIssue } from '@issuegraph/store';
 
 import { AUDIT_CLASSES, AUDIT_CLASS_SPECS, auditDocument } from './audit.ts';
-import type { AuditClass, AuditFinding, CycleProbe } from './audit.ts';
-
-/**
- * The reader's node shape, reached through the surface the editor already
- * imports rather than by adding a dependency on `@issuegraph/reader`. It is
- * needed only here: the package itself never builds one, which is the whole
- * point of taking the probe as a port.
- */
-type NodeInput = DeriveIssueOrderInput['issues'][number];
+import type { AuditClass, AuditFinding, AuditGraph } from './audit.ts';
 
 function issue(ref: IssueRef, state: StoredIssue['state'] = 'open'): StoredIssue {
   return { ref, title: `issue ${ref}`, state };
@@ -29,15 +21,19 @@ function documentOf(
 }
 
 /**
- * The document as `@issuegraph/derive` reads it.
+ * The document as `@issuegraph/reader` reads it.
  *
  * REFS PASS THROUGH AS OPAQUE IDS, with no repo and no home repo — which makes
- * `nodeKey` and `refKey` identity functions, so the derive walk keys on exactly
- * the strings the store holds. That is the translation the package itself
- * refuses to do; doing it in a fixture, where the refs are chosen, costs
- * nothing and keeps the production path free of a second statement of §4.2.
+ * `nodeKey` and `refKey` identity functions, so the model keys on exactly the
+ * strings the store holds. That translation is the HOST's, which is why it
+ * lives in a fixture here and not in the package: a host builds the model, so
+ * it is the only party holding both spellings.
  */
 function asNodes(document: GraphDocument): readonly NodeInput[] {
+  const single = (kind: EdgeKind, from: IssueRef): { repo: null; id: string } | null => {
+    const edge = document.edges.find((held) => held.kind === kind && held.from === from);
+    return edge === undefined ? null : { repo: null, id: edge.to };
+  };
   return document.issues.map((held) => ({
     id: held.ref,
     repo: null,
@@ -48,10 +44,10 @@ function asNodes(document: GraphDocument): readonly NodeInput[] {
       blockedBy: document.edges
         .filter((edge) => edge.kind === 'blocked-by' && edge.from === held.ref)
         .map((edge) => ({ repo: null, id: edge.to })),
-      decomposedFrom: null,
-      duplicateOf: null,
-      serializeWith: null,
-      togetherWith: null,
+      decomposedFrom: single('decomposed-from', held.ref),
+      duplicateOf: single('duplicate-of', held.ref),
+      serializeWith: single('serialize-with', held.ref),
+      togetherWith: single('together-with', held.ref),
       priority: null,
       evidence: null,
     },
@@ -59,10 +55,17 @@ function asNodes(document: GraphDocument): readonly NodeInput[] {
   }));
 }
 
-/** The real thing from `@issuegraph/derive`, bound to one document. */
-function realProbe(document: GraphDocument): CycleProbe {
-  const nodes = asNodes(document);
-  return (from, to) => wouldCycleOnBlockedBy(nodes, from, to);
+/**
+ * The real read-time answers, from `@issuegraph/reader`'s own model.
+ *
+ * NOT `@issuegraph/derive`'s `wouldCycleOnBlockedBy`, and every test in the
+ * "composes the reader" block below exists to hold that line: the derive
+ * function is a pre-write guard whose divergences lean fail-safe for a write,
+ * which is the wrong direction for a statement about what a backlog IS.
+ */
+function graphOf(document: GraphDocument): AuditGraph {
+  const model = buildModel(asNodes(document));
+  return { cycles: model.cycles, duplicateCanonical: model.duplicateCanonical };
 }
 
 function kindsOf(findings: readonly AuditFinding[]): readonly AuditClass[] {
@@ -71,6 +74,10 @@ function kindsOf(findings: readonly AuditFinding[]): readonly AuditClass[] {
 
 function only(findings: readonly AuditFinding[], kind: AuditClass): readonly AuditFinding[] {
   return findings.filter((found) => found.kind === kind);
+}
+
+function audit(document: GraphDocument): readonly AuditFinding[] {
+  return auditDocument({ document, graph: graphOf(document) });
 }
 
 describe('the four finding classes', () => {
@@ -84,7 +91,7 @@ describe('the four finding classes', () => {
         ['blocked-by', 'c', 'a'],
       ],
     );
-    const found = only(auditDocument({ document, wouldCycle: realProbe(document) }), 'cycle');
+    const found = only(audit(document), 'cycle');
     assert.equal(found.length, 1);
     assert.deepEqual(found[0]?.members, ['a', 'b', 'c']);
     assert.equal(found[0]?.severity, 'blocks-work');
@@ -103,7 +110,7 @@ describe('the four finding classes', () => {
         ['blocked-by', 'e', 'a'],
       ],
     );
-    const found = only(auditDocument({ document, wouldCycle: realProbe(document) }), 'cycle');
+    const found = only(audit(document), 'cycle');
     assert.equal(found.length, 1);
     assert.deepEqual(found[0]?.members, ['a', 'b', 'c', 'd', 'e']);
   });
@@ -116,18 +123,12 @@ describe('the four finding classes', () => {
         ['blocked-by', 'b', 'c'],
       ],
     );
-    assert.deepEqual(
-      only(auditDocument({ document, wouldCycle: realProbe(document) }), 'cycle'),
-      [],
-    );
+    assert.deepEqual(only(audit(document), 'cycle'), []);
   });
 
   it('reports a blocked-by whose target is closed as a stale blocker', () => {
-    const document = documentOf(
-      [issue('a'), issue('b', 'closed')],
-      [['blocked-by', 'a', 'b']],
-    );
-    const found = only(auditDocument({ document, wouldCycle: realProbe(document) }), 'stale-blocker');
+    const document = documentOf([issue('a'), issue('b', 'closed')], [['blocked-by', 'a', 'b']]);
+    const found = only(audit(document), 'stale-blocker');
     assert.equal(found.length, 1);
     assert.deepEqual(found[0]?.members, ['a', 'b']);
     assert.equal(found[0]?.severity, 'misleading');
@@ -144,21 +145,12 @@ describe('the four finding classes', () => {
         ['blocked-by', 'a', 'elsewhere'],
       ],
     );
-    assert.deepEqual(
-      only(auditDocument({ document, wouldCycle: realProbe(document) }), 'stale-blocker'),
-      [],
-    );
+    assert.deepEqual(only(audit(document), 'stale-blocker'), []);
   });
 
   it('reports a duplicate-of whose canonical is closed as a dead duplicate ref', () => {
-    const document = documentOf(
-      [issue('a'), issue('b', 'closed')],
-      [['duplicate-of', 'a', 'b']],
-    );
-    const found = only(
-      auditDocument({ document, wouldCycle: realProbe(document) }),
-      'dead-duplicate-ref',
-    );
+    const document = documentOf([issue('a'), issue('b', 'closed')], [['duplicate-of', 'a', 'b']]);
+    const found = only(audit(document), 'dead-duplicate-ref');
     assert.equal(found.length, 1);
     assert.deepEqual(found[0]?.members, ['a', 'b']);
     assert.equal(found[0]?.severity, 'dangerous');
@@ -166,10 +158,7 @@ describe('the four finding classes', () => {
 
   it('leaves a duplicate-of pointing at an open canonical alone', () => {
     const document = documentOf([issue('a'), issue('b')], [['duplicate-of', 'a', 'b']]);
-    assert.deepEqual(
-      only(auditDocument({ document, wouldCycle: realProbe(document) }), 'dead-duplicate-ref'),
-      [],
-    );
+    assert.deepEqual(only(audit(document), 'dead-duplicate-ref'), []);
   });
 
   it('reports an issue whose declaration the reader refused', () => {
@@ -179,7 +168,7 @@ describe('the four finding classes', () => {
     const document = documentOf([issue('a'), issue('b')], []);
     const findings = auditDocument({
       document,
-      wouldCycle: realProbe(document),
+      graph: graphOf(document),
       encodingRefused: [{ ref: 'b', diagnostic: 'no `---` pair delimits the block' }],
     });
     const found = only(findings, 'encoding-refused');
@@ -197,7 +186,7 @@ describe('the four finding classes', () => {
     const found = only(
       auditDocument({
         document,
-        wouldCycle: realProbe(document),
+        graph: graphOf(document),
         encodingRefused: [{ ref: 'unloaded' }],
       }),
       'encoding-refused',
@@ -211,7 +200,7 @@ describe('the four finding classes', () => {
     const found = only(
       auditDocument({
         document,
-        wouldCycle: realProbe(document),
+        graph: graphOf(document),
         encodingRefused: [{ ref: 'a' }, { ref: 'a', diagnostic: 'again' }],
       }),
       'encoding-refused',
@@ -231,7 +220,7 @@ describe('the four finding classes', () => {
     );
     const findings = auditDocument({
       document,
-      wouldCycle: realProbe(document),
+      graph: graphOf(document),
       encodingRefused: [{ ref: 'a' }],
     });
     assert.deepEqual(kindsOf(findings), [
@@ -243,12 +232,11 @@ describe('the four finding classes', () => {
   });
 });
 
-describe('cycle detection composes @issuegraph/derive rather than re-deriving it', () => {
-  it('finds nothing when the probe finds nothing, even on a document that cycles', () => {
-    // THE LOAD-BEARING TEST. The document below contains a plain three-cycle,
-    // and a detector with a walk of its own would report it whatever the probe
-    // said. This asserts the walk is NOT here: with the port answering false,
-    // the class yields nothing.
+describe('the cycle class is the reader’s read-time answer, not a write guard', () => {
+  it('reports nothing the model reports nothing for, even on a document with blocked-by edges', () => {
+    // THE LOAD-BEARING TEST. A detector with a walk of its own would report the
+    // three-cycle below whatever the port said. With the port empty, the class
+    // yields nothing — so the walk is provably not here.
     const document = documentOf(
       [issue('a'), issue('b'), issue('c')],
       [
@@ -257,109 +245,128 @@ describe('cycle detection composes @issuegraph/derive rather than re-deriving it
         ['blocked-by', 'c', 'a'],
       ],
     );
-    const never: CycleProbe = () => false;
-    assert.deepEqual(only(auditDocument({ document, wouldCycle: never }), 'cycle'), []);
+    const silent: AuditGraph = { cycles: [], duplicateCanonical: () => null };
+    assert.deepEqual(only(auditDocument({ document, graph: silent }), 'cycle'), []);
   });
 
-  it('asks the probe once per blocked-by edge, and about nothing else', () => {
-    // The other direction: the port is asked exactly the question it answers —
-    // "would this blocked-by close a loop" — for the blocked-by edges and no
-    // others. A `duplicate-of` reaching the cycle probe would be a category
-    // error the probe cannot refuse.
+  it('does NOT call a together unit’s own internal ordering a cycle', () => {
+    // §6.6: internal blocked-by edges "stay advisory ... they would make every
+    // group carrying its own ordering read as stuck". The pre-write guard in
+    // `@issuegraph/derive` deliberately does NOT exempt them — correct before a
+    // write, wrong as a statement about what the backlog IS — so reading that
+    // guard as an edge-on-cycle test lights up every ordinary together group.
+    const document = documentOf(
+      [issue('a'), issue('b')],
+      [
+        ['together-with', 'a', 'b'],
+        ['blocked-by', 'a', 'b'],
+      ],
+    );
+    assert.deepEqual(only(audit(document), 'cycle'), []);
+  });
+
+  it('still reports the deadlock the contraction is what reveals', () => {
+    // The other side of that line, and §6.6's own worked example: #1 blocked-by
+    // #2, #3 blocked-by #1, #2 together-with #3 can never start, yet every
+    // issue reports an ordinary open blocker. Exempting internal edges must not
+    // cost this.
+    const document = documentOf(
+      [issue('1'), issue('2'), issue('3')],
+      [
+        ['blocked-by', '1', '2'],
+        ['blocked-by', '3', '1'],
+        ['together-with', '2', '3'],
+      ],
+    );
+    const found = only(audit(document), 'cycle');
+    assert.equal(found.length, 1);
+    assert.deepEqual(found[0]?.members, ['1', '2', '3']);
+  });
+
+  it('does not call a cycle through a CLOSED issue stuck', () => {
+    // The guard spans closed nodes on purpose — an edge outlives today's states
+    // — while §6.6 is a statement about now. A closed member does not block, so
+    // the rest can be ready and `blocks-work` would be false.
     const document = documentOf(
       [issue('a'), issue('b'), issue('c', 'closed')],
       [
         ['blocked-by', 'a', 'b'],
-        ['duplicate-of', 'a', 'c'],
+        ['blocked-by', 'b', 'c'],
+        ['blocked-by', 'c', 'a'],
       ],
     );
-    const asked: (readonly [IssueRef, IssueRef])[] = [];
-    auditDocument({
-      document,
-      wouldCycle: (from, to) => {
-        asked.push([from, to]);
-        return false;
-      },
-    });
-    assert.deepEqual(asked, [['a', 'b']]);
-  });
-
-  it('agrees with derive on a cycle that only the duplicate resolution reveals', () => {
-    // §4.3.3 makes an edge naming a duplicate name its CANONICAL instead, so
-    // this graph cycles only once that rule is applied — which is precisely the
-    // rule a second implementation out here would have had to restate. The
-    // fixture's own nodes therefore declare the duplicate, and the probe is
-    // derive's.
-    const nodes: readonly NodeInput[] = [
-      node('x', { blockedBy: ['y'] }),
-      node('y', { blockedBy: ['z'] }),
-      node('z', { duplicateOf: 'x' }),
-    ];
-    // `y blocked-by z` reads as `y blocked-by x`, so `x blocked-by y` closes it.
-    assert.equal(wouldCycleOnBlockedBy(nodes, 'x', 'y'), true);
-
-    const document: GraphDocument = {
-      issues: [issue('x'), issue('y'), issue('z')],
-      edges: [makeEdge('blocked-by', 'x', 'y'), makeEdge('blocked-by', 'y', 'z')],
-    };
-    const found = only(
-      auditDocument({
-        document,
-        wouldCycle: (from, to) => wouldCycleOnBlockedBy(nodes, from, to),
-      }),
-      'cycle',
-    );
-    assert.equal(found.length, 1);
-    // `z` IS NAMED, THOUGH THE LOOP IS x -> y -> x ONCE THE DUPLICATE RESOLVES.
-    // Both edges lie on it, and the one an owner has to edit to break it is
-    // `y blocked-by z` — which they cannot find if the finding names only the
-    // resolved endpoints. The component is the set of issues the finding is
-    // about, not the shortest walk through it.
-    assert.deepEqual(found[0]?.members, ['x', 'y', 'z']);
+    assert.deepEqual(only(audit(document), 'cycle'), []);
   });
 });
 
-/** A node with only the fields a fixture cares about; the rest are inert. */
-function node(
-  id: string,
-  declared: { blockedBy?: readonly string[]; duplicateOf?: string },
-): NodeInput {
-  return {
-    id,
-    repo: null,
-    open: true,
-    labels: [],
-    assigneeCount: 0,
-    data: {
-      blockedBy: (declared.blockedBy ?? []).map((ref) => ({ repo: null, id: ref })),
-      decomposedFrom: null,
-      duplicateOf: declared.duplicateOf === undefined ? null : { repo: null, id: declared.duplicateOf },
-      serializeWith: null,
-      togetherWith: null,
-      priority: null,
-      evidence: null,
-    },
-    declarationRead: 'read',
-  };
-}
+describe('duplicate chains resolve transitively', () => {
+  it('reports every dead reference in a chain, not only the last hop', () => {
+    // `a -> b -> c` with `c` closed: the reader excludes BOTH `a` and `b` from
+    // the order, so both references are dead. Testing each edge's immediate
+    // target reports `b` and misses `a`, because `b` itself is open — a silent
+    // miss in the one class whose point is work that looks handled and is not.
+    const document = documentOf(
+      [issue('a'), issue('b'), issue('c', 'closed')],
+      [
+        ['duplicate-of', 'a', 'b'],
+        ['duplicate-of', 'b', 'c'],
+      ],
+    );
+    const found = only(audit(document), 'dead-duplicate-ref');
+    assert.deepEqual(
+      found.map((one) => one.members),
+      [
+        ['a', 'b'],
+        ['b', 'c'],
+      ],
+    );
+    assert.match(found[0]?.detail ?? '', /duplicate-of c \(through b\)/);
+  });
+
+  it('calls a blocker that duplicates a closed issue stale', () => {
+    // §4.3.3 reads `blocked-by b` as `blocked-by c` when `b` duplicates `c`, so
+    // the effective blocker is closed and readiness is already satisfied.
+    const document = documentOf(
+      [issue('a'), issue('b'), issue('c', 'closed')],
+      [
+        ['blocked-by', 'a', 'b'],
+        ['duplicate-of', 'b', 'c'],
+      ],
+    );
+    const found = only(audit(document), 'stale-blocker');
+    assert.equal(found.length, 1);
+    assert.deepEqual(found[0]?.members, ['a', 'b']);
+    assert.match(found[0]?.detail ?? '', /blocked-by c \(via b, which duplicates it\)/);
+  });
+});
 
 describe('severity travels on the finding', () => {
   it('carries the class table onto every finding it produces', () => {
     // "Severity is data on the finding, not a colour chosen at the render site."
     // Asserted against the table rather than against four literals, so a class
     // added later is covered without this test being edited.
+    // The duplicate-of sits on `c`, NOT on a cycle member: §4.3.3 excludes a
+    // duplicate from the order and `buildModel` drops its own edges, so a
+    // duplicated cycle member is no longer in the cycle graph at all — the
+    // fixture would quietly stop exercising the class it was written for.
     const document = documentOf(
-      [issue('a'), issue('b'), issue('closed-1', 'closed'), issue('closed-2', 'closed')],
+      [
+        issue('a'),
+        issue('b'),
+        issue('c'),
+        issue('closed-1', 'closed'),
+        issue('closed-2', 'closed'),
+      ],
       [
         ['blocked-by', 'a', 'b'],
         ['blocked-by', 'b', 'a'],
         ['blocked-by', 'a', 'closed-1'],
-        ['duplicate-of', 'b', 'closed-2'],
+        ['duplicate-of', 'c', 'closed-2'],
       ],
     );
     const findings = auditDocument({
       document,
-      wouldCycle: realProbe(document),
+      graph: graphOf(document),
       encodingRefused: [{ ref: 'a' }],
     });
     assert.equal(new Set(kindsOf(findings)).size, AUDIT_CLASSES.length, 'not every class fired');
@@ -367,6 +374,8 @@ describe('severity travels on the finding', () => {
       const spec = AUDIT_CLASS_SPECS[found.kind];
       assert.equal(found.severity, spec.severity);
       assert.equal(found.keepAsHistory, spec.keepAsHistory);
+      assert.equal(Object.isFrozen(found), true);
+      assert.equal(Object.isFrozen(found.members), true);
     }
   });
 
@@ -402,21 +411,26 @@ describe('the detector is pure and total', () => {
         ['blocked-by', 'a', 'closed-1'],
       ],
     );
-    assert.deepEqual(
-      auditDocument({ document: forwards, wouldCycle: realProbe(forwards) }),
-      auditDocument({ document: backwards, wouldCycle: realProbe(backwards) }),
-    );
+    assert.deepEqual(audit(forwards), audit(backwards));
   });
 
   it('finds nothing in an empty document', () => {
     const document: GraphDocument = { issues: [], edges: [] };
-    assert.deepEqual(auditDocument({ document, wouldCycle: realProbe(document) }), []);
+    assert.deepEqual(audit(document), []);
   });
 
   it('reports what it can see when an edge names an issue the document lacks', () => {
     // An audit that threw on the data it is auditing would be worse than one
     // that reports what it can.
     const document = documentOf([issue('a')], [['blocked-by', 'a', 'gone']]);
-    assert.deepEqual(auditDocument({ document, wouldCycle: () => false }), []);
+    assert.deepEqual(audit(document), []);
+  });
+
+  it('draws no finding for a stuck group the reader reports empty', () => {
+    // A finding naming nobody would add to the header count while giving a
+    // reader nothing to navigate to.
+    const document = documentOf([issue('a')], []);
+    const empty: AuditGraph = { cycles: [[]], duplicateCanonical: () => null };
+    assert.deepEqual(auditDocument({ document, graph: empty }), []);
   });
 });

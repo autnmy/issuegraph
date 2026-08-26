@@ -126,36 +126,67 @@ export interface EncodingRefusal {
 }
 
 /**
- * Would `from blocked-by to` close a `blocked-by` cycle?
+ * The two answers the audit needs from a reader, and does not compute.
  *
- * THE PORT, AND THE WHOLE REASON THIS MODULE DOES NOT WALK THE GRAPH.
- * `@issuegraph/derive` already ships the walk, and `@issuegraph/store` already
- * declares the seat it arrives in — `EdgeGuard`, *"refusals that need to see
- * the graph, cycles above all"*. A second walk here would be the mirror whose
- * input space drifts, and it would drift in a specific, checkable way: the
- * store treats a reference as OPAQUE and never parses one, while the reader
- * normalises `owner/repo#N` against a home repo (§4.2). Translating between
- * those two spellings out here is a second statement of §4.2, and the first
- * cross-repo backlog is where the two would part company.
+ * THE PORT, AND THE WHOLE REASON THIS MODULE WALKS NOTHING. Both fields come
+ * straight off `buildModel(...)` in `@issuegraph/reader`: `cycles` is
+ * `Model.cycles`, `duplicateCanonical` is `Model.duplicateCanonical`. A second
+ * implementation of either here would be the mirror whose input space drifts,
+ * and both would drift in specific, checkable ways rather than hypothetical
+ * ones — see each field.
  *
- * `DerivedIssueOrder.wouldCycle` is the intended implementation: it is bound to
- * a node set the host has already built, so an audit that re-runs on every edit
- * costs one walk per `blocked-by` edge rather than one model build per edge.
- * `wouldCycleOnBlockedBy` satisfies the same signature for a host that has no
- * derived order to hand.
+ * IT IS THE READER'S ANSWER SPECIFICALLY, NOT `@issuegraph/derive`'s
+ * `wouldCycleOnBlockedBy`, AND THAT DISTINCTION IS THE WHOLE POINT. That
+ * function is a PRE-WRITE GUARD, and its documented divergences all lean the
+ * fail-safe way for a write that is about to happen: it spans closed nodes, and
+ * it does NOT exempt a together unit's internal `blocked-by` edges. Refusing
+ * too much is the recoverable direction before a write — a human can decline
+ * the refusal — and it is exactly the wrong direction for a statement about
+ * what a backlog IS. §6.6 says so in as many words: internal edges *"stay
+ * advisory... they would make every group carrying its own ordering read as
+ * stuck"*. Interpreting the write guard as an edge-on-cycle test therefore
+ * reports a `blocks-work` finding for every ordinary together group that
+ * carries its own ordering.
  *
- * REQUIRED, never defaulted. Cycle is the one finding that stops work outright,
- * so a host with no probe must not quietly receive three classes and read them
- * as four — that is the same absence-rendered-as-a-value this module exists to
- * refuse, arriving through its own front door. A required field is a compile
- * error at every call site instead.
+ * REQUIRED, never defaulted. Both classes that rest on this are the ones that
+ * matter most — the finding that stops work, and the finding that hides work —
+ * so a host with no reader must not quietly receive a thinner audit and read it
+ * as a complete one. That is the same absence-rendered-as-a-value the fourth
+ * class exists to refuse, arriving through this module's own front door.
  */
-export type CycleProbe = (from: IssueRef, to: IssueRef) => boolean;
+export interface AuditGraph {
+  /**
+   * `Model.cycles` — the `blocked-by` cycles among OPEN nodes (§6.6), each as
+   * sorted keys, contracted over schedulable units with internal edges dropped.
+   *
+   * Every rule in that sentence is one this module would otherwise have to
+   * restate, and §6.6 calls a reader that skips the contraction non-conforming.
+   */
+  readonly cycles: readonly (readonly IssueRef[])[];
+  /**
+   * `Model.duplicateCanonical` — the TRANSITIVE §4.3.3 canonical for a ref, or
+   * `null` when the ref is already canonical.
+   *
+   * Transitive is the load-bearing word. With `a duplicate-of b`, `b
+   * duplicate-of c` and `c` closed, the reader excludes BOTH `a` and `b` from
+   * the order — so both are dead references, and a test against each edge's
+   * immediate target sees only `b`, because `b` itself is open. The same
+   * resolution applies to a `blocked-by` naming a duplicate, which §4.3.3 reads
+   * as naming its canonical.
+   */
+  readonly duplicateCanonical: (ref: IssueRef) => IssueRef | null;
+}
 
 export interface AuditInput {
   readonly document: GraphDocument;
-  /** See {@link CycleProbe}. Required. */
-  readonly wouldCycle: CycleProbe;
+  /**
+   * See {@link AuditGraph}. Required, and stated in the STORE's own ref
+   * spelling — the host builds the model, so the host owns the translation
+   * between a store reference (opaque, never parsed) and a model key
+   * (normalised against a home repo, §4.2). That is the right side of the seam
+   * for it: the host is the only party holding both.
+   */
+  readonly graph: AuditGraph;
   /**
    * Refs the reader refused, from the host's own parse. Absent means the host
    * has nothing to report, which is not the same claim as "every issue parsed"
@@ -172,54 +203,6 @@ function closedRefs(document: GraphDocument): ReadonlySet<IssueRef> {
     if (issue.state === 'closed') closed.add(issue.ref);
   }
   return closed;
-}
-
-/**
- * Minimal union-find over refs, for grouping the edges that lie on a cycle.
- *
- * Fifteen lines rather than a shared structure, on the precedent
- * `@issuegraph/derive` sets for exactly this: a rule is worth sharing because
- * it can drift, and a union-find cannot. What is shared here is the CYCLE
- * PREDICATE, which is the part that encodes §6.6.
- */
-function componentsOf(pairs: readonly (readonly [IssueRef, IssueRef])[]): IssueRef[][] {
-  const parent = new Map<IssueRef, IssueRef>();
-  const find = (ref: IssueRef): IssueRef => {
-    let root = ref;
-    for (;;) {
-      const next = parent.get(root);
-      if (next === undefined || next === root) break;
-      root = next;
-    }
-    let cursor = ref;
-    for (;;) {
-      const next = parent.get(cursor);
-      if (next === undefined || next === root) break;
-      parent.set(cursor, root);
-      cursor = next;
-    }
-    return root;
-  };
-  const add = (ref: IssueRef): void => {
-    if (!parent.has(ref)) parent.set(ref, ref);
-  };
-  for (const [a, b] of pairs) {
-    add(a);
-    add(b);
-    const [rootA, rootB] = [find(a), find(b)];
-    if (rootA !== rootB) parent.set(rootA, rootB);
-  }
-  const members = new Map<IssueRef, IssueRef[]>();
-  for (const ref of parent.keys()) {
-    const root = find(ref);
-    const existing = members.get(root);
-    if (existing === undefined) members.set(root, [ref]);
-    else existing.push(ref);
-  }
-  const groups = [...members.values()];
-  for (const group of groups) group.sort();
-  groups.sort((a, b) => compareMembers(a, b));
-  return groups;
 }
 
 /** Lexicographic on the sorted member lists, so a finding list is stable. */
@@ -251,36 +234,37 @@ function edgesOfKind(document: GraphDocument, kind: StoredEdge['kind']): readonl
 }
 
 /**
- * Every `blocked-by` edge that lies on a cycle, grouped into the components
- * whose members can never be ready.
+ * The reader's stuck groups, one finding each.
  *
- * AN EDGE IS ON A CYCLE EXACTLY WHEN THE PROBE SAYS SO, and that reads
- * backwards until you hold the probe's semantics: it asks whether `to` already
- * depends on `from`. For an edge that is ALREADY in the document, an answer of
- * yes means there is a path back — which, with this edge, closes the loop.
+ * A PASS-THROUGH, AND DELIBERATELY SO. §6.6's answer already carries every rule
+ * that makes it correct — open nodes only, contracted over schedulable units,
+ * internal `blocked-by` edges dropped as advisory — and each of those is a rule
+ * this module would otherwise restate and eventually disagree with. What is
+ * left here is presentation: sorting, and the sentence.
  *
- * TWO CYCLES SHARING A NODE REPORT AS ONE FINDING. That is the union, and it is
- * deliberate rather than a limitation of the grouping: the finding's claim is
- * that none of its members can ever be ready, and that claim is true of the
- * whole union. Splitting it would need a second walk to name the individual
- * loops, which is the walk this module does not own.
+ * An empty group is skipped rather than drawn: a finding naming nobody would
+ * add to the header count while giving a reader nothing to navigate to.
  */
-function cycleFindings(document: GraphDocument, wouldCycle: CycleProbe): AuditFinding[] {
-  const onCycle: (readonly [IssueRef, IssueRef])[] = [];
-  for (const edge of edgesOfKind(document, 'blocked-by')) {
-    if (wouldCycle(edge.from, edge.to)) onCycle.push([edge.from, edge.to]);
-  }
-  return componentsOf(onCycle).map((members) =>
-    finding(
-      'cycle',
-      members,
-      `${members.join(' · ')} form a blocked-by cycle; no member can ever become ready`,
-    ),
-  );
+function cycleFindings(graph: AuditGraph): AuditFinding[] {
+  return graph.cycles
+    .filter((members) => members.length > 0)
+    .map((members) => [...members].sort())
+    .sort((a, b) => compareMembers(a, b))
+    .map((members) =>
+      finding(
+        'cycle',
+        members,
+        `${members.join(' · ')} form a blocked-by cycle; no member can ever become ready`,
+      ),
+    );
 }
 
 /**
- * A `blocked-by` whose target is closed.
+ * A `blocked-by` whose EFFECTIVE target is closed.
+ *
+ * EFFECTIVE, because §4.3.3 makes an edge naming a duplicate name its canonical
+ * instead — so a blocker that is itself a duplicate of a closed issue is a
+ * stale blocker, and testing the immediate target alone misses it.
  *
  * "LONG-closed" IS NOT AVAILABLE HERE and the shortfall is stated rather than
  * approximated: a document carries no timestamp, so how long ago a blocker
@@ -292,39 +276,57 @@ function cycleFindings(document: GraphDocument, wouldCycle: CycleProbe): AuditFi
  * closed, and reporting it would state as bookkeeping what is really a paging
  * boundary.
  */
-function staleBlockerFindings(document: GraphDocument): AuditFinding[] {
+function staleBlockerFindings(document: GraphDocument, graph: AuditGraph): AuditFinding[] {
   const closed = closedRefs(document);
-  return edgesOfKind(document, 'blocked-by')
-    .filter((edge) => closed.has(edge.to))
-    .map((edge) =>
+  const findings: AuditFinding[] = [];
+  for (const edge of edgesOfKind(document, 'blocked-by')) {
+    const effective = graph.duplicateCanonical(edge.to) ?? edge.to;
+    if (!closed.has(effective)) continue;
+    const via = effective === edge.to ? '' : ` (via ${edge.to}, which duplicates it)`;
+    findings.push(
       finding(
         'stale-blocker',
         [edge.from, edge.to].sort(),
-        `${edge.from} is blocked-by ${edge.to}, which is closed; readiness is already satisfied`,
+        `${edge.from} is blocked-by ${effective}${via}, which is closed; readiness is already satisfied`,
       ),
-    )
-    .sort((a, b) => compareMembers(a.members, b.members));
+    );
+  }
+  return findings.sort((a, b) => compareMembers(a.members, b.members));
 }
 
 /**
- * A `duplicate-of` whose canonical is closed.
+ * A `duplicate-of` whose TRANSITIVE canonical is closed.
  *
  * The dangerous one: §4.3.3 excludes a duplicate from the order entirely, so
  * with the canonical closed the work is tracked by nothing at all while the
  * backlog reads as though it were handled.
+ *
+ * TRANSITIVE IS WHAT MAKES IT COMPLETE. In a chain — `a duplicate-of b`, `b
+ * duplicate-of c`, `c` closed — the reader excludes both `a` and `b`, so both
+ * references are dead. Testing each edge's immediate target reports `b` and
+ * misses `a`, because `b` is open: the miss is silent, and it is a miss in the
+ * one class whose whole point is work that looks handled and is not.
+ *
+ * The fallback to the immediate target covers a chain the model could not
+ * resolve, where `duplicateCanonical` answers `null`. Reporting on what the
+ * edge itself names is the fail-safe direction for a `dangerous` class.
  */
-function deadDuplicateFindings(document: GraphDocument): AuditFinding[] {
+function deadDuplicateFindings(document: GraphDocument, graph: AuditGraph): AuditFinding[] {
   const closed = closedRefs(document);
-  return edgesOfKind(document, 'duplicate-of')
-    .filter((edge) => closed.has(edge.to))
-    .map((edge) =>
+  const findings: AuditFinding[] = [];
+  for (const edge of edgesOfKind(document, 'duplicate-of')) {
+    const canonical = graph.duplicateCanonical(edge.from) ?? edge.to;
+    if (!closed.has(canonical)) continue;
+    const via = canonical === edge.to ? '' : ` (through ${edge.to})`;
+    findings.push(
       finding(
         'dead-duplicate-ref',
         [edge.from, edge.to].sort(),
-        `${edge.from} is duplicate-of ${edge.to}, which is closed; its work is excluded from the order and tracked nowhere`,
+        `${edge.from} is duplicate-of ${canonical}${via}, which is closed; its work is excluded from the order and tracked nowhere`,
       ),
-    )
-    .sort((a, b) => compareMembers(a.members, b.members));
+    );
+  }
+  return findings.sort((a, b) => compareMembers(a.members, b.members));
 }
 
 /**
@@ -370,11 +372,11 @@ function encodingRefusedFindings(refusals: readonly EncodingRefusal[]): AuditFin
  * worse than one that reports what it can see.
  */
 export function auditDocument(input: AuditInput): readonly AuditFinding[] {
-  const { document, wouldCycle } = input;
+  const { document, graph } = input;
   return Object.freeze([
-    ...cycleFindings(document, wouldCycle),
-    ...staleBlockerFindings(document),
-    ...deadDuplicateFindings(document),
+    ...cycleFindings(graph),
+    ...staleBlockerFindings(document, graph),
+    ...deadDuplicateFindings(document, graph),
     ...encodingRefusedFindings(input.encodingRefused ?? []),
   ]);
 }
