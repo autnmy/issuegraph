@@ -20,6 +20,12 @@
  * questions at all: the brand-token scan over published text, and the manifest
  * checks, which read JSON — a closed grammar that has never produced a finding.
  *
+ * A LATER ADDITION, guarding a different boundary: `SIBLING_SUBPATHS` below
+ * keeps the OSS seam between the packages themselves. The rules above ask
+ * whether a package reaches OUT of this repository; that one asks whether a
+ * package reaches PAST a sibling's public surface. Both are import questions,
+ * so both belong here rather than in another text scanner.
+ *
  * Scoped to `packages/` because that is what ships. `scripts/` is repository
  * tooling and is free to read the repository.
  *
@@ -40,6 +46,33 @@ import tseslint from 'typescript-eslint';
  * wearing a public name.
  */
 const FORBIDDEN = ['@descant', '@descant/*', 'descant', 'descant/*', '@takumi', '@takumi/*', 'takumi', 'takumi/*'];
+
+/**
+ * Subpaths of a sibling `@issuegraph/*` package — that is, everything except the
+ * bare specifier.
+ *
+ * This is the OSS seam, and unlike the rules above it guards a boundary INSIDE
+ * this repository. The editor is layer 2 and the viewer is layer 1; they used to
+ * be one codebase, so the boundary was enforced by construction. Now that both
+ * ship as packages, the design's own words are that it "stops being enforced by
+ * construction and becomes discipline — layer 2 composes layer 1 through its
+ * public surface and never reaches past it."
+ *
+ * Two patterns, because a glob `*` does not cross a `/`: the first catches
+ * `@issuegraph/viewer/src`, the second everything below it.
+ *
+ * A published package can add an export later and can never take one back, which
+ * is why the answer to a missing export is to add one deliberately rather than
+ * to reach around the surface for it.
+ *
+ * NOT redundant with each package's `exports` map, which today declares `"."`
+ * alone and so already refuses these specifiers at resolution time. That refusal
+ * is a property of the package being IMPORTED: the day one of them publishes a
+ * subpath export for a good reason, every other package silently gains the
+ * ability to reach through it. This rule is a property of the package doing the
+ * importing, so it keeps holding.
+ */
+const SIBLING_SUBPATHS = ['@issuegraph/*/*', '@issuegraph/*/**'];
 
 export default [
   {
@@ -63,6 +96,11 @@ export default [
               group: FORBIDDEN,
               message:
                 'A published @issuegraph package may not depend on the consuming product. Move what you need into the package, or into @issuegraph/core.',
+            },
+            {
+              group: SIBLING_SUBPATHS,
+              message:
+                'Import a sibling @issuegraph package at its bare specifier. Reaching into its internals is the seam the package split exists to keep — if you need something it does not export, export it deliberately.',
             },
           ],
         },

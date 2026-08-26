@@ -79,3 +79,30 @@ test('KNOWN GAP: a template-literal absolute path is NOT caught', async () => {
   // future rule closes it, this test fails and should be deleted, not amended.
   assert.deepEqual(await rulesFor('export const load = () => import(`/home/runner/consumer.js`);\n'), []);
 });
+
+test('a deep import into a sibling package is caught — the OSS seam', async () => {
+  assert.deepEqual(
+    await rulesFor("import { normalizeDocument } from '@issuegraph/viewer/src/document.ts';\nexport const n = normalizeDocument;\n"),
+    ['no-restricted-imports'],
+  );
+});
+
+test('a one-segment subpath is caught too — a glob star does not cross a slash', async () => {
+  // `@issuegraph/*/*` alone would miss the deeper form above, and `@issuegraph/*/**`
+  // alone would miss this one. Both cases are asserted so neither pattern can be
+  // dropped as redundant.
+  assert.deepEqual(
+    await rulesFor("import { anything } from '@issuegraph/store/internals';\nexport const a = anything;\n"),
+    ['no-restricted-imports'],
+  );
+});
+
+test('CONTROL: the BARE sibling specifier is not caught', async () => {
+  // The negative control the two cases above need. A rule that fired on every
+  // `@issuegraph/*` import would also pass them, while forbidding the one thing
+  // layer 2 is supposed to do.
+  assert.deepEqual(
+    await rulesFor("import { edgeId } from '@issuegraph/store';\nexport const e = edgeId;\n"),
+    [],
+  );
+});

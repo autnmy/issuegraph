@@ -90,6 +90,22 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  packages/editor:
+    dependencies:
+      '@issuegraph/store':
+        specifier: workspace:^
+        version: link:../store
+      '@issuegraph/viewer':
+        specifier: workspace:^
+        version: link:../viewer
+    devDependencies:
+      '@types/node':
+        specifier: ^22.18.0
+        version: 22.20.1
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
   packages/reader:
     dependencies:
       '@issuegraph/core':
