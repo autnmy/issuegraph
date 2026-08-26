@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { diffOrder } from '@issuegraph/store';
-import { THEME_TOKENS, viewerStylesheet } from '@issuegraph/viewer';
+import { THEME_TOKENS, renderViewer, viewerStylesheet } from '@issuegraph/viewer';
 
 import { renderReevaluate } from './render.ts';
 import { reevaluateStylesheet } from './styles.ts';
@@ -17,8 +17,17 @@ function classesIn(markup: string): string[] {
   return [...markup.matchAll(/class="([^"]+)"/g)].flatMap((match) => (match[1] ?? '').split(' '));
 }
 
-/** A settled render with no change at all: the rail, and nothing this leaf adds. */
-const RAIL_ONLY = renderReevaluate(railOf(['a', 'b']), { words: WORDS }).markup;
+/**
+ * The classes LAYER 1 emits, taken from layer 1 itself.
+ *
+ * Not from a change-free render of this surface: the status region is mounted
+ * unconditionally now, so such a render carries this leaf's own chrome too —
+ * and treating that as "the rail's" would excuse exactly those classes from the
+ * unstyled check below. Asking the viewer directly cannot drift that way.
+ */
+const RAIL_CLASSES: ReadonlySet<string> = new Set(
+  classesIn(renderViewer(railOf(['a', 'b']), { projection: 'linear' }).markup),
+);
 
 /**
  * Every class this package can emit.
@@ -47,7 +56,7 @@ const EMITTED: ReadonlySet<string> = (() => {
         words: WORDS,
         change: diffOrder(still, orderOf(['a', 'b']), editOf()),
       }).markup,
-      RAIL_ONLY,
+      renderReevaluate(railOf(['a', 'b']), { words: WORDS }).markup,
     ].flatMap(classesIn),
   );
 })();
@@ -114,13 +123,11 @@ describe('the re-evaluate stylesheet carries structure, never a value', () => {
     // this one needs: a class emitted with no rule of its own is unstyled on a
     // host that installs this stylesheet and not the ladder's. The rail's own
     // classes are excluded — they are layer 1's to style, and `rail.styles`
-    // ships alongside this file. `ig-reevaluate` is this leaf's root and is
-    // present in every render, including the rail-only one, so it is added back
-    // rather than treated as the rail's.
-    const railClasses = new Set(classesIn(RAIL_ONLY).filter((name) => name !== 'ig-reevaluate'));
+    // ships alongside this file.
+    assert.ok(RAIL_CLASSES.size > 0, 'the rail emitted no classes at all');
     assert.deepEqual(
       [...EMITTED].filter(
-        (name) => name.startsWith('ig-') && !railClasses.has(name) && !styled.has(name),
+        (name) => name.startsWith('ig-') && !RAIL_CLASSES.has(name) && !styled.has(name),
       ),
       [],
     );

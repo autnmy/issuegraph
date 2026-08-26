@@ -118,6 +118,37 @@ describe('the computing state shows the previous order, greyed and labelled', ()
   });
 });
 
+describe('the status region is mounted before there is anything to say', () => {
+  it('renders an EMPTY live region when no edit has landed', () => {
+    // A `role="status"` node that is CREATED already carrying its text is not
+    // reliably announced — the region has to exist first and then have its
+    // contents change. Rendering it only alongside a summary loses the FIRST
+    // summary after a load, which is the one a reader is most likely waiting on.
+    const result = renderReevaluate(railOf(['a', 'b']), { words: WORDS });
+    assert.match(result.markup, /<div class="ig-change-line" role="status"><\/div>/);
+    assert.equal(result.view.summary, null);
+  });
+
+  it('claims nothing about an edit that has not happened', () => {
+    const markup = renderReevaluate(railOf(['a', 'b']), { words: WORDS }).markup;
+    // `data-unchanged="false"` would say an edit landed and moved nothing.
+    assert.equal(/data-unchanged/.test(markup), false);
+    assert.equal(/data-mutation/.test(markup), false);
+    // And a control that clears nothing is a control that does nothing.
+    assert.equal(/dismiss-change/.test(markup), false);
+  });
+
+  it('fills the SAME region once an edit lands', () => {
+    const result = renderReevaluate(railOf(['b', 'a']), {
+      words: WORDS,
+      change: diffOrder(orderOf(['a', 'b']), orderOf(['b', 'a']), editOf()),
+    });
+    assert.match(result.markup, /<div class="ig-change-line" role="status"><ul class="ig-change-parts"/);
+    // Exactly one status region, before and after — not a second one alongside.
+    assert.equal(result.markup.match(/role="status"/g)?.length, 1);
+  });
+});
+
 describe('nothing dismisses itself', () => {
   it('publishes the dismissal as a command for the store to perform', () => {
     const result = renderReevaluate(railOf(['b', 'a']), {

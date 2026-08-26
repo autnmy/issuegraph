@@ -94,53 +94,73 @@ function countWord(count: number, word: string): readonly ElementSpec[] {
   ];
 }
 
-function summarySpec(summary: ChangeSummary, words: ChangeWords): ElementSpec {
+function summarySpec(summary: ChangeSummary | null, words: ChangeWords): ElementSpec {
   return element(
     'div',
     {
       class: 'ig-change-summary',
-      'data-unchanged': summary.unchanged ? 'true' : 'false',
-      'data-op': summary.op,
-      'data-mutation': summary.mutationId,
+      // Omitted rather than falsified while there is nothing to report: an
+      // element() attribute whose value is `undefined` is not written at all,
+      // and `data-unchanged="false"` would claim an edit landed and moved
+      // nothing when no edit has landed.
+      'data-unchanged': summary === null ? undefined : summary.unchanged ? 'true' : 'false',
+      'data-op': summary?.op,
+      'data-mutation': summary?.mutationId,
     },
     [
-      // THE LIVE REGION IS THE STABLE WRAPPER, NOT THE CONTENT AND NOT THE
-      // WHOLE SUMMARY. `role="status"` announces its subtree when that subtree
-      // changes, which needs the region itself to persist across renders — and
-      // the content below does not: an edit that moved something renders a
-      // list, one that moved nothing renders a paragraph, so a role on either
-      // would come and go with it. Keeping the dismiss button OUTSIDE matters
-      // for the same reason from the other side: inside, its label would be
-      // re-announced with every summary.
+      // THE LIVE REGION IS ALWAYS MOUNTED, AND EMPTY UNTIL THERE IS SOMETHING
+      // TO SAY. A `role="status"` node that is CREATED already carrying its
+      // text is not reliably announced — the region has to exist first and
+      // then have its contents change — so rendering it only alongside a
+      // summary would silently lose the FIRST summary after a load, which is
+      // the one a reader is most likely to be waiting for.
+      //
+      // It is also why the region is this wrapper rather than the content
+      // inside it: an edit that moved something renders a list and one that
+      // moved nothing renders a paragraph, so a role on either would come and
+      // go with the shape. And the dismiss button stays OUTSIDE, or its label
+      // would be re-announced with every summary.
       //
       // It is a role, not a timer. Nothing about it expires and the region
       // stays put until the next edit or an explicit dismissal.
-      element('div', { class: 'ig-change-line', role: 'status' }, [
-        // THE ZERO CASE RENDERS, in the summary's own place. An edit that landed
-        // and moved nothing is the finding an owner auditing an encoding most
-        // needs, and drawing nothing for it is the defect this branch prevents.
-        summary.unchanged
-          ? element('p', { class: 'ig-change-unchanged' }, [words.unchanged])
-          : element(
-              'ul',
-              { class: 'ig-change-parts' },
-              summary.parts.map((part) =>
-                element('li', { class: 'ig-change-part', 'data-facet': part.facet }, [
-                  ...countWord(part.count, words.facets[part.facet]),
-                ]),
-              ),
-            ),
-      ]),
+      element(
+        'div',
+        { class: 'ig-change-line', role: 'status' },
+        summary === null
+          ? []
+          : [
+              // THE ZERO CASE RENDERS, in the summary's own place. An edit that
+              // landed and moved nothing is the finding an owner auditing an
+              // encoding most needs, and drawing nothing for it is the defect
+              // this branch prevents.
+              summary.unchanged
+                ? element('p', { class: 'ig-change-unchanged' }, [words.unchanged])
+                : element(
+                    'ul',
+                    { class: 'ig-change-parts' },
+                    summary.parts.map((part) =>
+                      element('li', { class: 'ig-change-part', 'data-facet': part.facet }, [
+                        ...countWord(part.count, words.facets[part.facet]),
+                      ]),
+                    ),
+                  ),
+            ],
+      ),
       // ITS OWN CLASS, not the ladder's `.ig-chip`. That class is defined only
       // in `scale/styles.ts`, so borrowing it would leave this control unstyled
       // for a host that installs this surface and not that one. Folding the two
       // chip looks into one rule is the assembling change's call, not this
       // leaf's — it is the change that first has both on screen at once.
-      element(
-        'button',
-        { type: 'button', class: 'ig-change-dismiss', 'data-ig-command': 'dismiss-change' },
-        [words.dismiss],
-      ),
+      //
+      // Absent with no summary: a control that clears nothing is a control that
+      // does nothing, and the region above is what has to persist, not this.
+      summary === null
+        ? null
+        : element(
+            'button',
+            { type: 'button', class: 'ig-change-dismiss', 'data-ig-command': 'dismiss-change' },
+            [words.dismiss],
+          ),
     ],
   );
 }
@@ -233,7 +253,7 @@ export function renderReevaluate(
       // are the ones the caller vouched for, and a chip's movement is drawn as
       // a chip rather than as a rank.
       view.held ? element('p', { class: 'ig-order-computing' }, [options.words.computing]) : null,
-      view.summary === null ? null : summarySpec(view.summary, options.words),
+      summarySpec(view.summary, options.words),
       view.chips.length === 0
         ? null
         : element(
