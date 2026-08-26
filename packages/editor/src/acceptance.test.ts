@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { diffOrder } from '@issuegraph/store';
+import { EDGE_FIELDS, isSymmetricEdgeField } from '@issuegraph/core';
+import { createScriptedSource, createStore, diffOrder, nextDocument } from '@issuegraph/store';
 import { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET } from '@issuegraph/viewer';
 
 import * as surface from './index.ts';
 import { componentKey, componentsSumming, documentOf } from './testing/documents.ts';
+import { OBJECT, PICKER_WORDS, SUBJECT, documentWith, onlyEdge } from './testing/picker.ts';
 import { WORDS, editOf, orderOf, railOf, railRow, ranks } from './testing/reevaluate.ts';
 
 /**
@@ -232,5 +234,104 @@ describe('done when: no timer, and no dismissal that is not user-initiated', () 
 
     assert.deepEqual(scheduled, []);
     assert.match(markup, /data-ig-command="dismiss-change"/);
+  });
+});
+
+/**
+ * The type picker's "done when", executable — same rule as above: the public
+ * surface only.
+ *
+ * The kind vocabulary comes from `@issuegraph/core` rather than from a list
+ * written here, so a field added to the format widens these cases instead of
+ * leaving them quietly partial.
+ */
+const { pickerView, renderPicker } = surface;
+
+describe('done when: a picker emits Proposals and never touches a DataSource', () => {
+  it('takes a document and an edge, and hands back one proposal per affordance', () => {
+    const document = documentWith('blocked-by');
+    const edge = onlyEdge(document);
+    const view = pickerView(document, edge.id);
+
+    assert.deepEqual(
+      view.options.map((option) => option.proposal),
+      EDGE_FIELDS.map((kind) => ({ op: 'retype', edgeId: edge.id, nextKind: kind })),
+    );
+    assert.deepEqual(view.flip?.proposal, { op: 'flip', edgeId: edge.id });
+  });
+});
+
+describe('done when: directed kinds state a direction and offer a flip; symmetric kinds do neither', () => {
+  for (const kind of EDGE_FIELDS) {
+    const symmetric = isSymmetricEdgeField(kind);
+
+    it(`drives ${kind}`, () => {
+      const document = documentWith(kind);
+      const { view, markup } = renderPicker(document, onlyEdge(document).id, {
+        words: PICKER_WORDS,
+      });
+
+      assert.equal(view.direction === null, symmetric);
+      assert.equal(view.flip === null, symmetric);
+      assert.equal(markup.includes('class="ig-picker-direction"'), !symmetric);
+      assert.equal(markup.includes('data-ig-command="flip"'), !symmetric);
+    });
+  }
+});
+
+describe('done when: no English sentence is constructed inside the package', () => {
+  it('hands out the pair and the kind, and renders only the host\'s words', () => {
+    const document = documentWith('blocked-by');
+    const view = pickerView(document, onlyEdge(document).id);
+    assert.deepEqual(view.direction, { kind: 'blocked-by', from: SUBJECT, to: OBJECT });
+
+    const { markup } = renderPicker(document, onlyEdge(document).id, { words: PICKER_WORDS });
+    const allowed = new Set([
+      ...Object.values(PICKER_WORDS.kinds),
+      PICKER_WORDS.heading,
+      PICKER_WORDS.flip,
+      PICKER_WORDS.current,
+      SUBJECT,
+      OBJECT,
+    ]);
+    const readable = [...markup.matchAll(/>([^<>]*)</g)]
+      .map((match) => (match[1] ?? '').trim())
+      .filter((text) => text !== '');
+    assert.ok(readable.length > 0);
+    assert.deepEqual(readable.filter((text) => !allowed.has(text)), []);
+  });
+});
+
+describe('done when: an invalid proposal is refused by the store, before any dispatch', () => {
+  it('offers the current kind and lets the store refuse it', async () => {
+    // The picker grows no second validity rule: it offers every kind, and
+    // `structuralRefusal` answers `unchanged-kind` without reaching the source.
+    const seed = documentWith('blocked-by');
+    const source = createScriptedSource(seed, nextDocument);
+    const store = createStore({
+      source,
+      derive: (document) =>
+        document.issues.map((issue, rank) => ({
+          ref: issue.ref,
+          rank,
+          ready: true,
+          holdReasons: [],
+        })),
+    });
+    await store.hydrate();
+
+    const current = pickerView(seed, onlyEdge(seed).id).options.find((option) => option.current);
+    assert.ok(current !== undefined);
+    await store.propose(current.proposal).settled;
+
+    assert.deepEqual([...source.pending()], []);
+    const record = store.getSnapshot().writes[0];
+    assert.ok(record !== undefined);
+    // Narrowed rather than asserted: `reason` is a structured refusal on an
+    // `invalid` record and a plain string on a `failed` one, so reading a code
+    // without establishing which state produced it would read a message's
+    // characters on the day the two got confused.
+    if (record.state !== 'invalid') throw new Error(`expected a refusal, got ${record.state}`);
+    assert.equal(record.reason.code, 'unchanged-kind');
   });
 });

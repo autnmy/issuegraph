@@ -47,10 +47,18 @@
  *
  * ## The surface
  *
- * The SCALE LADDER, the RE-EVALUATE SURFACE and the EDGE MUTATION-STATE
- * OVERLAYS. The picker, the create paths, the audit and the first-pass queue
+ * The SCALE LADDER, the RE-EVALUATE SURFACE, the EDGE MUTATION-STATE OVERLAYS
+ * and the TYPE PICKER. The create paths, the audit and the first-pass queue
  * each land as their own change, and the final shape of this file is decided by
  * the one that assembles the workspace.
+ *
+ * The picker is the first thing here to compose @issuegraph/core directly. The
+ * split between directed and symmetric relationships is a fact about the
+ * FORMAT, and core owns it; a local list out here would be the drifting second
+ * implementation the package family removes everywhere else. Core is the layer
+ * both siblings already sit on, and the seam refuses a sibling's SUBPATH rather
+ * than its bare specifier, so reaching for the shared foundation is not
+ * reaching past a surface.
  *
  * The re-evaluate surface is the first thing here to compose the STORE as well
  * as the viewer — it presents `diffOrder`'s output and computes no diff of its
@@ -119,6 +127,24 @@ export {
 } from './overlay/render.ts';
 
 export { edgeOverlayStylesheet } from './overlay/styles.ts';
+
+export {
+  type DirectionStatement,
+  type FlipControl,
+  type KindOption,
+  type PickerView,
+  pickerView,
+} from './picker/view.ts';
+
+export { type PickerWords } from './picker/words.ts';
+
+export {
+  type PickerOptions,
+  type PickerResult,
+  renderPicker,
+} from './picker/render.ts';
+
+export { pickerStylesheet } from './picker/styles.ts';
 
 export {
   type ChangeFacet,
