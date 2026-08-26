@@ -35,8 +35,6 @@
  */
 
 import {
-  FENCE_CLOSE,
-  FENCE_OPEN,
   locateBlock,
   locateSection,
   parseFrontmatter,
@@ -650,60 +648,56 @@ function snapshotEdges(edges: GeneratedEdges): EdgeSnapshot {
   });
 }
 
-/** The run of backticks a fence line opens with, for the length rule below. */
-const FENCE_RUN = /^(`{3,})/;
+/**
+ * A line that could be a fence — EITHER delimiter, any length, any info string,
+ * up to three leading spaces.
+ *
+ * DELIBERATELY LOOSER THAN THE READER'S `FENCE_OPEN`, and that is the whole
+ * point. This is only ever used to ask *"is anything else in this body
+ * fence-shaped?"*, and the safe answer to that question errs toward YES. The
+ * reader's pattern accepts one alphanumeric token, so it reads
+ * ```` ```js title="x" ```` and every `~~~` fence as ordinary prose — and a
+ * count built on it under-reports, which is the direction that deletes.
+ */
+const FENCE_SHAPED = /^ {0,3}(?:`{3,}|~{3,})/;
 
 /**
- * Does the fence line at `index` OPEN a fence, or close one an earlier line
- * opened?
+ * Are these two neighbours the ONLY fence-shaped lines in the body?
  *
- * A BARE ``` MATCHES BOTH PATTERNS — `FENCE_CLOSE` is a strict subset of
- * `FENCE_OPEN` — so the question cannot be answered by looking at the line.
- * Whether a fence line opens or closes is a property of every fence line
- * BEFORE it, so this walks them.
+ * WHY THIS REPLACED A FENCE-STATE WALK, and why the walk is not coming back.
+ * Deciding whether a given fence line opens or closes means deciding Markdown
+ * block structure, and every version of that heuristic died to a construct it
+ * had not modelled. Round 1 counted fence-SHAPED lines and a four-backtick
+ * block containing a three-backtick line broke the parity. Round 2 tracked the
+ * opener's length per CommonMark, and the reader's `FENCE_OPEN` — which the
+ * walk used to decide what counted as a fence at all — turned out to reject an
+ * info string containing a space, so an earlier ```` ```js title="x" ```` block
+ * was skipped and the corruption came back. Measured on that shape: 4 fence
+ * lines in, 2 out. Behind it, unpatched: `~~~` fences, indented fences, fences
+ * inside list items, HTML blocks.
  *
- * WHY IT EXISTS. The whole-block removal used to decide "these neighbours are
- * my armor" from the two adjacent lines alone. A block sitting between the
- * CLOSE of one code block and the OPEN of the next satisfied that test, so
- * removing the block deleted both fence lines and MERGED the two unrelated code
- * blocks into one — structural corruption of the body, in the package whose
- * whole contract is byte preservation.
+ * That is an unbounded surface, and each patch added a claim that produced the
+ * next finding. So this stops deciding. It asks a question that HAS a
+ * definite answer without a grammar — *how many lines in this body could be a
+ * fence?* — and deletes the pair only when the answer is exactly these two, in
+ * which case they can only be each other's partner.
  *
- * The path was unreachable for such a block until #18: a block carrying only
- * `duplicate-of` could not be emptied, because provenance had no clear. The new
- * `--no-duplicate-of` reaches it, which is why this is repaired here rather
- * than recorded.
- *
- * IT TRACKS THE OPEN FENCE'S LENGTH RATHER THAN COUNTING FENCE-SHAPED LINES,
- * and the first version of it did the latter — which was the same defect one
- * level in. A four-backtick block may legitimately CONTAIN a three-backtick
- * line (it is how you document a fence) and an info-string line; neither closes
- * it, but both are fence-shaped, so a count went wrong by one per content line
- * and the closer after them read as an opener. Measured: 5 fence lines in, 3
- * out, two unrelated code blocks merged — the corruption this function exists
- * to prevent, reintroduced by the function itself. Raised in review.
- *
- * THE RULE IS COMMONMARK'S: a fence opens with a run of three or more and an
- * optional info string, and closes only on a BARE run AT LEAST AS LONG. So a
- * shorter run, or any run carrying an info string, is content while a fence is
- * open. An ODD number of such content lines is what flips the parity — an even
- * number cancels out and a wrong model looks right, which is worth knowing
- * before trusting a passing test here.
+ * THE TRADE IS DELIBERATE AND ASYMMETRIC. Retaining armor wrongly leaves an
+ * empty ``` ``` pair in the body: cosmetic. Deleting it wrongly merges two
+ * unrelated code blocks: structural corruption, in the package whose whole
+ * contract is byte preservation. So an armored block in a body that ALSO
+ * carries a code block now keeps its fences, and that is the correct direction
+ * to be wrong in.
  */
-function opensFence(lines: readonly string[], index: number): boolean {
-  let openRun = 0;
-  for (let i = 0; i < index; i++) {
-    const line = (lines[i] ?? '').trimEnd();
-    if (!FENCE_OPEN.test(line)) continue;
-    const run = (FENCE_RUN.exec(line)?.[1] ?? '').length;
-    if (openRun === 0) {
-      openRun = run;
-      continue;
+function fencesAreOnlyThePair(lines: readonly string[]): boolean {
+  let fences = 0;
+  for (const line of lines) {
+    if (FENCE_SHAPED.test(line.trimEnd())) {
+      fences += 1;
+      if (fences > 2) return false;
     }
-    // Inside a fence: only a bare run at least as long as the opener closes it.
-    if (FENCE_CLOSE.test(line) && run >= openRun) openRun = 0;
   }
-  return openRun === 0;
+  return fences === 2;
 }
 
 export function spliceGeneratedEdges(body: string, rawEdges: GeneratedEdges): SpliceResult {
@@ -812,16 +806,17 @@ export function spliceGeneratedEdges(body: string, rawEdges: GeneratedEdges): Sp
       let to = blockEnd;
       const above = from > 0 ? (lines[from - 1] ?? '').trimEnd() : null;
       const below = to + 1 < lines.length ? (lines[to + 1] ?? '').trimEnd() : null;
-      // THE PARITY CHECK IS THE LOAD-BEARING HALF. Matching the two patterns
-      // says only that the neighbours are fence-SHAPED; `opensFence` says the
-      // one above actually opens a fence rather than closing an earlier code
-      // block. Without it this removal merged the blocks on either side.
+      // THE COUNT IS THE LOAD-BEARING HALF. Matching the two neighbours says
+      // only that they are fence-SHAPED; `fencesAreOnlyThePair` is what
+      // establishes they are each other's partner rather than the closer of one
+      // code block and the opener of the next. See its note for why this counts
+      // instead of deciding.
       if (
         above !== null &&
         below !== null &&
-        FENCE_OPEN.test(above) &&
-        FENCE_CLOSE.test(below) &&
-        opensFence(lines, from - 1)
+        FENCE_SHAPED.test(above) &&
+        FENCE_SHAPED.test(below) &&
+        fencesAreOnlyThePair(lines)
       ) {
         from -= 1;
         to += 1;

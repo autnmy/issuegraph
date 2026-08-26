@@ -955,9 +955,21 @@ describe('whole-block removal takes only its OWN armor', () => {
     assert.equal(spliceGeneratedEdges(body, CLEAR_IT), null);
   });
 
-  it('CONTROL: an armored block after an unrelated code block still loses its armor', () => {
-    // The parity scan must not over-correct: a genuinely armored block that
-    // happens to follow a closed code block is still armored.
+  it('KEEPS its armor when the body carries any other fence — the deliberate trade', () => {
+    // THIS TEST ASSERTED THE OPPOSITE UNTIL ROUND 3, and the inversion is the
+    // change rather than a regression. Deciding whether a given fence line
+    // opens or closes means deciding Markdown block structure, and every
+    // version of that heuristic died to a construct it had not modelled — a
+    // fence-shaped content line, then an info string containing a space, with
+    // `~~~` fences and indented fences behind them. So the removal stopped
+    // deciding: it deletes the pair only when those two are the ONLY
+    // fence-shaped lines in the body, where they can only be each other's
+    // partner.
+    //
+    // The cost is here: an armored block sharing a body with a code block keeps
+    // an empty ``` ``` pair. That is cosmetic. Getting it wrong the other way
+    // merges two unrelated code blocks, which is structural corruption in the
+    // package whose whole contract is byte preservation.
     const body = [
       '```js',
       'const x = 1;',
@@ -974,9 +986,61 @@ describe('whole-block removal takes only its OWN armor', () => {
     ].join('\n');
     const next = spliceGeneratedEdges(body, CLEAR_IT) as string;
     assert.notEqual(next, null);
-    assert.equal((next.match(/```/g) ?? []).length, 2, `the js block keeps its pair: ${next}`);
-    assert.ok(!next.includes('yaml'), `the armor goes with the block: ${next}`);
-    assert.ok(next.includes('const x = 1;'), next);
+    assert.ok(!next.includes('issuegraph:'), 'the block itself still goes');
+    assert.ok(next.includes('const x = 1;'), 'the unrelated code block is untouched');
+    assert.equal((next.match(/^`{3,}/gm) ?? []).length, 4, `all four fence lines survive: ${next}`);
+  });
+
+  it('an INFO STRING WITH A SPACE does not fool it — the round-3 finding', () => {
+    // The reader's `FENCE_OPEN` accepts one alphanumeric token, so
+    // ```` ```js title="x" ```` reads to it as ordinary prose. The fence-state
+    // walk therefore skipped that opener and treated the bare closer above the
+    // block as an opener. Measured before the fix: 4 fence lines in, 2 out, and
+    // the two unrelated blocks merged.
+    const body = [
+      '```js title="x"',
+      'const x = 1;',
+      '```',
+      '---',
+      'issuegraph:',
+      '  duplicate-of: "#42"',
+      '---',
+      '```',
+      'a later code block',
+      '```',
+      '',
+      'Tail.',
+    ].join('\n');
+    const next = spliceGeneratedEdges(body, CLEAR_IT) as string;
+    assert.notEqual(next, null);
+    assert.equal((next.match(/^`{3,}/gm) ?? []).length, 4, next);
+    assert.ok(next.includes('a later code block'), next);
+    assert.ok(!next.includes('issuegraph:'), 'the block itself still goes');
+  });
+
+  it('a TILDE fence counts too, though no reader pattern matches one', () => {
+    // The next construct queued behind the info string: `~~~` is a CommonMark
+    // fence and neither reader pattern accepts it. Counting uses a looser test
+    // than the reader's precisely so "is anything else here fence-shaped?"
+    // cannot be answered wrongly in the direction that deletes.
+    const body = [
+      '~~~js',
+      'const x = 1;',
+      '~~~',
+      '---',
+      'issuegraph:',
+      '  duplicate-of: "#42"',
+      '---',
+      '```',
+      'a later code block',
+      '```',
+      '',
+      'Tail.',
+    ].join('\n');
+    const next = spliceGeneratedEdges(body, CLEAR_IT) as string;
+    assert.notEqual(next, null);
+    assert.equal((next.match(/^(?:`{3,}|~{3,})/gm) ?? []).length, 4, next);
+    assert.ok(next.includes('a later code block'), next);
   });
 });
 
