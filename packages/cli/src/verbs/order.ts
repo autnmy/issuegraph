@@ -442,6 +442,22 @@ function inputDomainRefusal(document: OrderInputDocument): VerbResult | null {
 
   for (const [index, issue] of document.issues.entries()) {
     const at = `input.issues[${index}]`;
+    // THE TYPE IS PART OF THE DOMAIN AT THIS BOUNDARY. `deriveOrder` is exported
+    // and a JavaScript caller reaches it with no compiler in the way, so the
+    // annotations promise nothing here — the same reasoning `parseRef` records
+    // for taking `unknown`. Without this, `id: 123` reached `resolveRef` and
+    // threw a `TypeError` rather than returning the usage result this function
+    // promises, and `id: null` with no `number` fell through `issueId` to the
+    // valid-looking key `"undefined"` and was SILENTLY ACCEPTED — the worse of
+    // the two, because nothing refuses and the order is keyed by a lie.
+    // NULL IS NOT ABSENT HERE. `id?: string` does not admit it, and reading it
+    // as "unset" would re-open exactly the fall-through above.
+    if (issue.id !== undefined && typeof issue.id !== 'string') {
+      return refuse(`${at}.id`, `expected a string identifier, got ${JSON.stringify(issue.id)}`);
+    }
+    if (issue.number !== undefined && typeof issue.number !== 'number') {
+      return refuse(`${at}.number`, `expected a number, got ${JSON.stringify(issue.number)}`);
+    }
     if (issue.id === undefined && issue.number === undefined) {
       return refuse(`${at}.id`, 'expected an identifier: supply `id` (any tracker id) or `number`');
     }

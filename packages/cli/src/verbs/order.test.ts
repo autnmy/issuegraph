@@ -559,6 +559,37 @@ describe('opaque identifiers (SPEC §4.2)', () => {
     assert.ok(domain.includes('while'), `domain boundary: ${domain}`);
   });
 
+  test('refuses a non-STRING id at the direct derivation boundary', () => {
+    // `deriveOrder` is exported and a JavaScript caller reaches it with no
+    // compiler in the way, so the annotations promise nothing here. Measured
+    // before the fix: `id: 123` reached `resolveRef` and threw a `TypeError`
+    // instead of the usage result this function promises, and `id: null` with
+    // no `number` fell through to the key `"undefined"` and was SILENTLY
+    // ACCEPTED — an order keyed by a lie, which is the worse of the two.
+    //
+    // THE JSON PATH ALREADY TYPED IT through `asOpaqueId`; this is the other,
+    // deliberately separate boundary, and it is only reachable from here.
+    for (const bad of [123, null, {}, []] as const) {
+      const doc = {
+        baseRanking: { source: 'config', order: [] },
+        issues: [{ id: bad, open: true, labels: [], assigneeCount: 0, body: 'Prose.' }],
+      } as unknown as OrderInputDocument;
+
+      const result = deriveOrder(doc, 'order');
+      assert.equal(result.code, EXIT.usage, `${JSON.stringify(bad)} was not refused`);
+      assert.equal(result.stdout, '', `${JSON.stringify(bad)} produced output`);
+    }
+  });
+
+  test('refuses a non-NUMBER number at the same boundary', () => {
+    const doc = {
+      baseRanking: { source: 'config', order: [] },
+      issues: [{ number: '7', open: true, labels: [], assigneeCount: 0, body: 'Prose.' }],
+    } as unknown as OrderInputDocument;
+
+    assert.equal(deriveOrder(doc, 'order').code, EXIT.usage);
+  });
+
   test('refuses an id the READER could not reference', () => {
     // The bound is the reader's, asked rather than restated — so an id no
     // `blocked-by` could name is refused here rather than ranked and then
