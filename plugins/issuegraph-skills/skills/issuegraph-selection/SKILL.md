@@ -80,19 +80,23 @@ printf '%s' "$raw" | jq '{homeRepo:"owner/repo",
 # `ready` is what lets an INERT body's declared edges be treated as absent — the
 # derivation ranks such a node READY and never lists it in `underRead`. See "an
 # INERT block ranks as READY" below for the measurement.
-rows=$(jq -r '.issues[] | @base64' candidates.json) \
+# NO base64, AND NO PIPELINE WHOSE FIRST STAGE CAN FAIL SILENTLY. Each body is
+# written straight out of the document with `jq -j` and every step's status is
+# checked — see the note under this block for what the earlier shape did.
+count=$(jq '.issues | length' candidates.json) \
   || { echo "could not read candidates.json — this says NOTHING about the candidates" >&2; exit 1; }
-bad=0
-while IFS= read -r row; do
-  [ -n "$row" ] || continue
-  body=$(printf '%s' "$row" | base64 --decode | jq -r .body)
-  case "$(printf '%s' "$body" | issuegraph validate | jq -r .state)" in
+scratch=$(mktemp -d) || exit 1
+bad=0 i=0
+while [ "$i" -lt "$count" ]; do
+  jq -j --argjson i "$i" '.issues[$i].body // ""' candidates.json > "$scratch/body" || { bad=1; break; }
+  state=$(issuegraph validate --body-file "$scratch/body" | jq -r .state) || { bad=1; break; }
+  case "$state" in
     read|absent) : ;;
-    *) echo "REFUSING: an issue's block does not read — repair before trusting the order" >&2; bad=1 ;;
+    *) echo "REFUSING: issue at index $i declares a block that does not read ($state)" >&2; bad=1 ;;
   esac
-done <<EOF
-$rows
-EOF
+  i=$((i + 1))
+done
+rm -rf "$scratch"
 [ "$bad" -eq 0 ] || exit 1
 
 issuegraph ready --input candidates.json
@@ -104,6 +108,43 @@ diagnostic can never fire. `gh` returns it **upper case** (`COMPLETED`,
 lower-case `completed` — so `ascii_downcase` and the `"" -> null` arm are both
 load-bearing. Get it wrong and every closed blocker reads as *not* completed, or
 as completed, depending on which half you skip.
+
+⚠ **Three shapes here are load-bearing and none is stylistic.**
+
+**Nothing is piped through a decoder.** The earlier version encoded each body to
+base64 and decoded it per row, and `base64 --decode | jq -r .body` **masks the
+decoder's status**: `jq` exits 0 on empty input, so a decoder that fails for any
+reason yields an empty body, `validate` calls that `absent` — which this very
+allowlist accepts — and the preflight passes **every** issue. A guard that waves
+everything through on an unrelated failure is worse than no guard. Indexing the
+document with `jq -j` removes the decoder, and with it the question of whether the
+installed one accepts the flag.
+
+**The loop is a plain `while`, not a pipe into one.** `… | while read` runs the
+loop in a **subshell**, so `bad=1` is set on a copy and vanishes when the loop
+ends — the preflight would detect every unsafe body and still exit 0.
+
+**The refusal exits nonzero after the loop, rather than aborting inside it.** A
+caller runs this to decide whether the derived ordering is trustworthy, and that
+is a property of the whole set — so the useful behaviour is to report *every*
+unsafe body and then fail, not to stop at the first. (A failure to *read* a body
+does break out: that is not a verdict about the corpus, it is the loop losing the
+ability to give one.)
+
+## Why your P0 is not on the list
+
+Use `order`, not `ready`. **`order` keeps held issues in place at `rank: null`
+and tells you what is holding them**; `ready` deletes exactly that information.
+
+```console
+$ issuegraph order --input candidates.json | jq -c '[.slots[]|{rank,lead,ready,holdReasons}]'
+[{"rank":null,"lead":"3","ready":false,"holdReasons":["blocked-by 4 is open"]},
+ {"rank":1,"lead":"4","ready":true,"holdReasons":[]},
+ {"rank":2,"lead":"1","ready":true,"holdReasons":[]}]
+```
+
+*"Why isn't my P1 running"* is answerable in place. That is the whole reason the
+held slot is kept rather than dropped.
 
 ## ⚠ The trap: `"slots": []` does NOT mean "nothing is ready"
 
@@ -165,59 +206,12 @@ them is refused.**
 
 So `underRead` is necessary and not sufficient. **This is why the recipe at the
 top runs a per-body `state` check before it derives anything** — that loop is not
-an optional extra, it is what stops an inert body being ranked. It is written once,
-there, rather than repeated here; what follows is the same loop for reference if
-you are reading this section on its own:
+an optional extra, it is what stops an inert body being ranked.
 
-```sh
-# Rule 1: the enumeration's own status, before the loop can call an empty result
-# a clean one. A missing, unreadable or malformed candidates.json makes `jq` exit
-# non-zero and expand to an empty here-doc — the loop then inspects nothing and
-# `bad=0` reports a clean preflight over a set it never read.
-rows=$(jq -r '.issues[] | @base64' candidates.json) \
-  || { echo "could not read candidates.json — this says NOTHING about the candidates" >&2; exit 1; }
-
-bad=0
-while IFS= read -r row; do
-  [ -n "$row" ] || continue
-  body=$(printf '%s' "$row" | base64 --decode | jq -r .body)
-  state=$(printf '%s' "$body" | issuegraph validate | jq -r .state)
-  case "$state" in
-    read|absent) : ;;
-    *) echo "REFUSING: an issue's block is $state — repair before trusting the order" >&2; bad=1 ;;
-  esac
-done <<EOF
-$rows
-EOF
-[ "$bad" -eq 0 ] || exit 1
-```
-
-⚠ **Two shapes here are load-bearing and neither is stylistic.**
-
-**The loop is fed by a here-doc, not by a pipe.** `… | while read` runs the loop
-in a **subshell**, so `bad=1` is set on a copy and vanishes when the loop ends —
-the preflight would detect every unsafe body and still exit 0. Feeding it with a
-here-doc keeps the loop in the current shell, where the flag survives.
-
-**The refusal exits nonzero after the loop, rather than aborting inside it.** A
-caller runs this to decide whether the derived ordering is trustworthy, and that
-is a property of the whole set — so the useful behaviour is to report *every*
-unsafe body and then fail, not to stop at the first.
-
-## Why your P0 is not on the list
-
-Use `order`, not `ready`. **`order` keeps held issues in place at `rank: null`
-and tells you what is holding them**; `ready` deletes exactly that information.
-
-```console
-$ issuegraph order --input candidates.json | jq -c '[.slots[]|{rank,lead,ready,holdReasons}]'
-[{"rank":null,"lead":"3","ready":false,"holdReasons":["blocked-by 4 is open"]},
- {"rank":1,"lead":"4","ready":true,"holdReasons":[]},
- {"rank":2,"lead":"1","ready":true,"holdReasons":[]}]
-```
-
-*"Why isn't my P1 running"* is answerable in place. That is the whole reason the
-held slot is kept rather than dropped.
+> **It is written once, in that recipe, and deliberately not repeated here.** This
+> section carried a second copy until review found the two had drifted: the copy
+> was still decoding through `base64` after the recipe had stopped. One place to
+> copy from, one place to fix.
 
 ## Effective priority — the blocker inherits the urgency
 
