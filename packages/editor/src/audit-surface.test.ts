@@ -67,6 +67,20 @@ describe('the overlay', () => {
     assert.equal(overlay.byRef.size, 0);
   });
 
+  it('snapshots the findings, so the count cannot drift from the list', () => {
+    // `readonly AuditFinding[]` accepts a MUTABLE array, so a caller that
+    // assembles findings from several sources and later pushes one would leave
+    // `findings` growing while `count` and `rows` kept their snapshot — the
+    // header count disagreeing with the list behind it, which is the one thing
+    // this function promises cannot happen.
+    const live: AuditFinding[] = [finding('cycle', ['a', 'b'])];
+    const overlay = auditOverlay(live);
+    live.push(finding('encoding-refused', ['z']));
+    assert.equal(overlay.findings.length, 1);
+    assert.equal(overlay.count, overlay.findings.length);
+    assert.equal(Object.isFrozen(overlay.findings), true);
+  });
+
   it('indexes exactly the rows it lists', () => {
     // The index and the list are two views of one answer, so a lookup that
     // disagreed with the rail would draw a bar on a row the list calls clean.

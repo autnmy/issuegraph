@@ -157,7 +157,14 @@ export function auditOverlay(findings: readonly AuditFinding[]): AuditOverlay {
     count: findings.length,
     rows: Object.freeze(rows),
     byRef: new Map(rows.map((row) => [row.ref, row])),
-    findings,
+    // COPIED AND FROZEN, NOT CARRIED BY REFERENCE. `readonly AuditFinding[]`
+    // accepts a mutable array, so a caller that assembles findings from several
+    // sources and later pushes one would leave `findings` growing while
+    // `count`, `rows` and `byRef` kept the snapshot they were built from — the
+    // header count disagreeing with the list behind it, which is exactly the
+    // guarantee the doc above claims this function makes. Freezing the OUTER
+    // object does not reach the array it points at.
+    findings: Object.freeze([...findings]),
   });
 }
 
