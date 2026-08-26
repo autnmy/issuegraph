@@ -5,6 +5,12 @@ description: Read and write the Issuegraph block in a GitHub issue body using th
 
 # Issuegraph
 
+> **This is the reference — every verb and every flag.** For the three things
+> done constantly there are task-shaped skills that are usually the better entry
+> point: **issuegraph-selection** (what should I pick up, and why is that P0
+> held?), **issuegraph-creation** (put a correct block on a new issue), and
+> **issuegraph-grooming** (is this block being read, and how do I repair it?).
+
 `issuegraph` reads and edits the **Issuegraph block** inside an issue body — the machine-readable declaration of what an issue is waiting on.
 
 **It never touches the network and takes no credential.** The body goes in on stdin, the answer comes out on stdout. Closure state and labels are *inputs you supply*, which is what lets it run in a workflow with no token. Fetch the body with `gh`, pipe it in.
@@ -49,7 +55,13 @@ gh issue edit 1234 -R owner/repo --body-file new-body.md
 - `--no-blocked-by` / `--no-serialize-with` remove an entry.
 - `--priority` (0–3), `--evidence` (`asserted`|`verified`) and `--together-with` may only be set **when the body has no block yet**.
 - `splice --edges <json>` refreshes only the *owned generated* edges, leaving hand-written ones alone. Prefer it over `set` when a tool is maintaining edges automatically.
-- `backfill` repairs a block that a code fence left undelimited.
+- `backfill` repairs a block that a code fence left undelimited. **In a loop, use
+  `backfill --json`**: it puts the outcome (`delimited` / `already-canonical` /
+  `no-block` / `unrecoverable`) on stdout as data, so a caller can branch on it
+  without string-matching the stderr prose. On `unrecoverable` there is no `body`
+  key at all — nothing was repaired, so there is nothing to write back.
+  `validate` cannot substitute for it: a repairable block and an unrepairable one
+  produce byte-identical `validate` output.
 
 **Always write through the CLI rather than editing the block by hand.** Hand-editing is how a block ends up undelimited, duplicated, or unreadable.
 

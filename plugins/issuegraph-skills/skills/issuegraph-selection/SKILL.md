@@ -1,0 +1,154 @@
+---
+name: issuegraph-selection
+description: Order a set of candidate issues and answer which of them are ready to work, using the issuegraph CLI's `order` and `ready` verbs. Use when picking the next issue, asking why a high-priority issue is not running, or filtering a candidate set down to what can start now — instead of hand-walking blocked-by edges.
+---
+
+# Issuegraph — selection
+
+**The question this answers: _what should I pick up, and why is that P0 not on the list?_**
+
+It replaces a hand-walked `blocked-by` sweep. Hand-walking is where the estate's
+readable-block rate went: a reader that mishandles one shape of the grammar
+reports "no dependencies" for a body that declares two.
+
+```sh
+npm i -g @issuegraph/cli     # `issuegraph` on PATH
+```
+
+## The one call
+
+`order` and `ready` are **one derivation, two views**. `ready` is `order`
+filtered to the slots that can start now — never a second computation.
+
+```sh
+issuegraph ready --input candidates.json      # what can I start?
+issuegraph order --input candidates.json      # the whole order, held issues included
+```
+
+## What you feed it — and why it never fetches
+
+**The CLI takes no credential and makes no network call.** Readiness needs
+closure state, and closure state lives in the tracker, so **you supply it**. That
+is exactly what lets this run in a GitHub Action holding only issue bodies.
+
+```json
+{
+  "homeRepo": "owner/repo",
+  "baseRanking": { "source": "config", "order": [
+    { "key": "3", "matchedOrderIndex": 0 },
+    { "key": "1", "matchedOrderIndex": 1 }
+  ] },
+  "issues": [
+    { "number": 3, "open": true, "labels": ["p0"], "assigneeCount": 0, "body": "<the issue body>" },
+    { "number": 1, "open": true, "labels": ["p1"], "assigneeCount": 0, "body": "<the issue body>" }
+  ]
+}
+```
+
+- **`body` is the only edge source.** There is no field for pre-parsed edges, on
+  purpose — handing in your own `data` object is the hand-rolled grammar this
+  package exists to end.
+- **`baseRanking.order` must already be in rank order**; the array index *is* the
+  position. It is your tracker's own `ORDER BY`, not something to re-sort.
+- `id` (an opaque tracker token like `ENG-456`) works wherever `number` does.
+- `closedStateReason` matters: an issue closed *not planned* had its question
+  withdrawn, not answered.
+
+Build it from `gh` like this:
+
+```sh
+gh issue list -R owner/repo --state all --limit 500 \
+  --json number,state,labels,assignees,body \
+  | jq '{homeRepo:"owner/repo",
+         baseRanking:{source:"config", order:[to_entries[]|{key:(.value.number|tostring), matchedOrderIndex:.key}]},
+         issues:[.[]|{number, open:(.state=="OPEN"),
+                      labels:[.labels[].name], assigneeCount:(.assignees|length), body:(.body//"")}]}' \
+  | issuegraph ready
+```
+
+## ⚠ The trap: `"slots": []` does NOT mean "nothing is ready"
+
+**This is the one that costs you.** When a body's block is found but cannot be
+fully read, the derivation refuses that node **fail-safe** — its silence about an
+edge is not evidence that it has none. The run still **exits 0**, and `slots`
+comes back **empty**:
+
+```json
+{ "view": "ready", "slots": [], "underRead": ["1"],
+  "diagnostics": ["1: its own issuegraph declaration was not fully read; its silence about an edge is not evidence (fail-safe: refusing the node and its serialize component)"] }
+```
+
+An empty `slots` with a non-empty `underRead` means **"I could not tell"**, which
+is a different fact from **"nothing is ready"** — and the two are byte-identical
+if you only look at `slots`.
+
+**Always read `underRead` before you act on an empty result:**
+
+```sh
+issuegraph ready --input candidates.json > out.json
+jq -e '(.underRead|length) == 0' out.json >/dev/null \
+  || { echo "REFUSING: $(jq -c .underRead out.json) could not be read — repair them first"; }
+```
+
+Repair them with the **grooming** skill (`issuegraph backfill`), then re-derive.
+
+## Why your P0 is not on the list
+
+Use `order`, not `ready`. **`order` keeps held issues in place at `rank: null`
+and tells you what is holding them**; `ready` deletes exactly that information.
+
+```console
+$ issuegraph order --input candidates.json | jq -c '[.slots[]|{rank,lead,ready,holdReasons}]'
+[{"rank":null,"lead":"3","ready":false,"holdReasons":["blocked-by 4 is open"]},
+ {"rank":1,"lead":"4","ready":true,"holdReasons":[]},
+ {"rank":2,"lead":"1","ready":true,"holdReasons":[]}]
+```
+
+*"Why isn't my P1 running"* is answerable in place. That is the whole reason the
+held slot is kept rather than dropped.
+
+## Effective priority — the blocker inherits the urgency
+
+A P3 blocking a P0 **is** effectively P0, and the derivation says so rather than
+leaving you to notice. In the run above, `#4` is labelled `p3` and ranked first:
+
+```console
+$ issuegraph ready --input candidates.json | jq -c '.priority["4"]'
+{"declared":3,"effective":0,"promoted":true,"promotedBy":["3"],"notation":"P3 -> 0", …}
+```
+
+`promotedBy` names who lent it the urgency. **Working the blocker is working the
+blocked tier** — so do not drop to a lower tier while a tier's unready issues
+have ready blockers behind them.
+
+## Reading the rest of the answer
+
+| field | what it carries |
+|---|---|
+| `slots[]` | one slot per unit — a `together-with` group is **one** slot with several `members` |
+| `slots[].lead` | the member to address the slot by |
+| `slots[].rank` | the position; **`null` means held** (`order` only) |
+| `slots[].holdReasons` | why it is held, in words |
+| `priority` | declared vs effective, with `promotedBy` |
+| `underRead` | ⚠ nodes refused fail-safe — read this first |
+| `excluded` | nodes left out of the derivation entirely |
+| `diagnostics` | everything the derivation wants to say |
+
+## Rules
+
+- **Never hand-roll the walk.** No `grep blocked-by`, no YAML load, no
+  `jq`-over-frontmatter. Quoted historical frontmatter inside a `>` blockquote
+  matches a grep and reports a dependency discharged months ago; both the flow
+  form (`blocked-by: [1, 2]`) and the dash form are legal and a reader that
+  handles one under-reports the other.
+- **An edge is provenance, a label is state.** A `blocked-by` naming a closed
+  issue is correct history. What comes off when the gate clears is the `blocked`
+  **label** — never the edge.
+- Refuse a document that names one issue twice; there is no correct reading, and
+  the CLI refuses it rather than silently keeping the first.
+
+## Related
+
+- **issuegraph-creation** — render a block on a new issue
+- **issuegraph-grooming** — validate, repair and edit blocks that already exist
+- **issuegraph** — the full CLI reference
