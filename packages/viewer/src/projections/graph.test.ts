@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { type ViewerDocument, normalizeDocument } from '../document.ts';
-import { layoutGraph } from '../layout.ts';
+import { fitLabel, layoutGraph, measureLabel } from '../layout.ts';
 import { renderMarkup } from '../element.ts';
 import { crowdedDocument, fixtureDocument, heldTogetherDocument } from '../testing/fixtures.ts';
 import { viewerStylesheet } from '../styles.ts';
@@ -287,7 +287,6 @@ describe('the graph projection', () => {
     const layout = layoutGraph(document, defaultTheme);
     const markup = renderMarkup(scene().root);
     const pad = defaultTheme.metrics['--ig-space'] as number;
-    const charWidth = defaultTheme.metrics['--ig-char-width'] as number;
 
     let checked = 0;
     for (const match of markup.matchAll(
@@ -305,12 +304,94 @@ describe('the graph projection', () => {
       );
       assert.ok(box !== undefined, `no node box sits at (${String(x)}, ${String(y)})`);
       checked += 1;
+      // MEASURED WITH THE LABEL'S OWN MODEL. This used to multiply
+      // `text.length` by `--ig-char-width` — the MONO advance at the wrong font
+      // size, and exactly the assumption #44 named — so the guard carried the
+      // defect it was guarding against, and a UTF-16 length miscounted astral
+      // characters on top. The wide-glyph test below is what pins the model
+      // itself, against a number stated outside it.
       assert.ok(
-        text.length * charWidth + pad * 2 <= box.width + 0.01,
-        `"${text}" needs ${String(text.length * charWidth + pad * 2)}px in a ${String(box.width)}px node`,
+        measureLabel(defaultTheme, text) + pad * 2 <= box.width + 0.01,
+        `"${text}" needs ${String(measureLabel(defaultTheme, text) + pad * 2)}px in a ${String(box.width)}px node`,
       );
     }
     assert.ok(checked > 0, 'no canvas labels were drawn, so nothing was checked');
+  });
+
+  it('keeps an ALL-CAPITALS title inside its node, measured outside the model', () => {
+    // The failure #44 named, and the one a single average cannot survive: a
+    // title of wide capitals passed a count-based check and drew about 28% past
+    // its box, across the routing channel and the neighbouring nodes.
+    //
+    // BOUNDED BY A NUMBER STATED HERE, not by the layout's own model — a test
+    // that asked the model whether the model was right would prove nothing. A
+    // capital `W` in a UI sans face at `--ig-font-size-small` (11px) runs about
+    // 10px; that is the assumption, written where it can be argued with.
+    const WIDEST_GLYPH_PX = 10;
+    const width = 211.2;
+    const pad = defaultTheme.metrics['--ig-space'] as number;
+    const drawn = fitLabel(defaultTheme, 'W'.repeat(40), width);
+
+    assert.ok(drawn.endsWith('\u2026'), 'a title far past its box was not truncated');
+    assert.ok(
+      [...drawn].length * WIDEST_GLYPH_PX + pad * 2 <= width,
+      `${String([...drawn].length)} capitals need ${String([...drawn].length * WIDEST_GLYPH_PX + pad * 2)}px in a ${String(width)}px node`,
+    );
+  });
+
+  it('keeps a FULL-WIDTH title inside its node — emoji and CJK', () => {
+    // The classes are otherwise ASCII-only, so a glyph matching neither was
+    // charged the plain average while it draws near the full font size.
+    // Measured before the fix: 31 emoji "fitted" 187.2px of room and drew about
+    // 341px. That is a REGRESSION on the character count this replaced, which
+    // charged supplementary characters twice by accident of UTF-16 length — a
+    // model has to earn that conservatism deliberately rather than inherit it.
+    //
+    // BOUNDED BY A NUMBER STATED HERE, like the capitals test: a full-width
+    // glyph renders at about the font size, 11px at `--ig-font-size-small`.
+    const FULL_WIDTH_PX = 11;
+    const width = 211.2;
+    const pad = defaultTheme.metrics['--ig-space'] as number;
+
+    for (const [label, title] of [
+      ['emoji', '\u{1F600}'.repeat(40)],
+      ['CJK', '\u8AB2\u984C'.repeat(30)],
+      ['fullwidth latin', '\uFF21\uFF22'.repeat(30)],
+    ] as const) {
+      const drawn = fitLabel(defaultTheme, title, width);
+      assert.ok(drawn.endsWith('\u2026'), `${label}: a title far past its box was not truncated`);
+      assert.ok(
+        [...drawn].length * FULL_WIDTH_PX + pad * 2 <= width,
+        `${label}: ${String([...drawn].length)} glyphs need ${String([...drawn].length * FULL_WIDTH_PX + pad * 2)}px in a ${String(width)}px node`,
+      );
+    }
+  });
+
+  it('never truncates between the halves of an astral character', () => {
+    // `slice` counts UTF-16 code units, so a cut landing inside a surrogate
+    // pair drew a lone surrogate — a replacement glyph immediately before the
+    // ellipsis. Emoji and mathematical alphanumerics are the ordinary way a
+    // title reaches this.
+    //
+    // SWEPT ACROSS WIDTHS, because a single width proves nothing: whether a
+    // code-unit cut lands INSIDE a pair depends on the parity of the character
+    // count it stops at, so one box size passes against the broken code by
+    // luck. Verified — the first version of this test did exactly that.
+    const label = 'A\u{1D5D4}'.repeat(40);
+    let truncated = 0;
+    for (let width = 60; width <= 320; width += 1) {
+      const drawn = fitLabel(defaultTheme, label, width);
+      if (drawn === '') continue;
+      if (drawn.endsWith('\u2026')) truncated += 1;
+      for (const glyph of drawn) {
+        const code = glyph.codePointAt(0) ?? 0;
+        assert.ok(
+          code < 0xd800 || code > 0xdfff,
+          `width ${String(width)} drew a lone surrogate: ${JSON.stringify(drawn)}`,
+        );
+      }
+    }
+    assert.ok(truncated > 100, `only ${String(truncated)} widths truncated, so the sweep proves little`);
   });
 
   it('leaves a title that already fits exactly as it is', () => {

@@ -178,6 +178,7 @@ describe('the public surface', () => {
       'normalizeDocument',
       'reconcile',
       'renderViewer',
+      'resolveTheme',
       'themeCss',
       'treatmentFor',
       'viewerStylesheet',
