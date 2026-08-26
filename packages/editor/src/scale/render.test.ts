@@ -174,6 +174,48 @@ describe('the output is safe and complete', () => {
     assert.match(result.styles, /\.ig-ladder \{/);
   });
 
+  it('reports a normalization diagnostic ONCE, not once per normalize pass', () => {
+    // The canvas is handed to `renderViewer`, which normalizes what it is given.
+    // Narrowing the RAW input would send the same unclean values through a
+    // second time, and every diagnostic about a retained issue would arrive
+    // twice — a host that surfaces them shows each error doubled. Narrowing the
+    // already-normalized document makes the viewer's pass a no-op instead.
+    const document = documentOf({ components: [4] });
+    const withBadUrl = {
+      ...document,
+      issues: document.issues.map((issue, index) =>
+        index === 0 ? { ...issue, url: 'javascript:alert(1)' } : issue,
+      ),
+    };
+    const result = renderScaleLadder(withBadUrl);
+    assert.equal(result.ladder.tier, 'direct');
+    const about = result.diagnostics.filter((line) => line.includes('url whose scheme'));
+    assert.equal(about.length, 1, `diagnostics: ${JSON.stringify(result.diagnostics)}`);
+    // And it is still REPORTED — deduplicating by dropping it would be worse
+    // than reporting it twice.
+    assert.match(about[0] ?? '', /deep link was dropped/);
+  });
+
+  it('hands the canvas only what the ladder counted', () => {
+    // `keep` is built from the normalized document, so filtering the raw input
+    // against it can retain an issue normalization dropped — here a duplicate
+    // key, which the viewer keeps the FIRST of. The canvas would then carry a
+    // node the ladder never counted.
+    const document = documentOf({ components: [4] });
+    const first = document.issues[0];
+    assert.ok(first !== undefined);
+    const withDuplicate = {
+      ...document,
+      issues: [...document.issues, { ...first, title: 'a second copy' }],
+    };
+    const result = renderScaleLadder(withDuplicate);
+    assert.equal(result.ladder.nodeCount, result.ladder.canvas.issues.length);
+    assert.equal(
+      result.ladder.canvas.issues.filter((issue) => issue.key === first.key).length,
+      1,
+    );
+  });
+
   it('reports the ladder\'s diagnostics and the canvas\'s together', () => {
     const document = documentOf({ components: [4] });
     const result = renderScaleLadder(document, {

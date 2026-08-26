@@ -188,6 +188,18 @@ function relatedKeys(document: NormalizedDocument): ReadonlySet<string> {
 /**
  * The document restricted to `keep`.
  *
+ * IT NARROWS THE NORMALIZED DOCUMENT, NEVER THE RAW INPUT, and that is a
+ * correctness rule rather than a convenience. Two things go wrong otherwise.
+ *
+ * The canvas is handed straight to `renderViewer`, which normalizes whatever it
+ * is given — so raw values re-derive every diagnostic this function already
+ * collected about them, and a host surfacing diagnostics sees each one twice.
+ * Worse, `keep` is built from the NORMALIZED document: normalization drops a
+ * duplicate key and strips a url whose scheme the viewer will not link, so
+ * filtering the raw input against a normalized key set can hand the canvas an
+ * issue the ladder never counted — the ladder and the canvas disagreeing about
+ * the node count, which is the one thing this module promises they cannot do.
+ *
  * A SLOT SURVIVES ONLY IF EVERY MEMBER DOES. A together unit is one position
  * with several members, and half a unit is not a smaller unit — it is a
  * different claim about what gets worked together. Members of one unit are
@@ -341,7 +353,7 @@ export function scaleLadder(
   }
 
   const keep = focusedCluster === null ? related : new Set(focusedCluster.members);
-  const canvas = narrow(input, keep);
+  const canvas = narrow(document, keep);
   const nodeCount = keep.size;
   const { tier } = tierFor(nodeCount);
 
