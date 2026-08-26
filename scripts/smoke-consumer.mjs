@@ -210,6 +210,32 @@ export async function smokeTest(packagesDir, { log = () => {} } = {}) {
     if (!existsSync(manifestPath)) continue;
 
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+
+    // A PRIVATE PACKAGE IS NOT SMOKE-TESTED, because there is no consumer to be
+    // the smoke test's subject. This whole file exists to turn `engines.node`
+    // from a compatibility claim into a measured one — and a package `npm
+    // publish` will never upload makes that claim to nobody. Loading its build
+    // on the floor measures a promise it does not make.
+    //
+    // The same reasoning `scripts/check-publishable.ts` already applies when it
+    // skips a private manifest: the release path does not touch it, so neither
+    // does the guard that protects the release path.
+    //
+    // It is a NARROW exemption and not a way to opt out of scrutiny. A private
+    // package is still built, typechecked, linted, tested and isolation-scanned
+    // with everything else; what it is excused from is the one check whose
+    // subject is an installer. The day it goes public the flag comes off and it
+    // re-enters here with no other edit — which is the property that makes this
+    // safe to add for a package that is on its way to being published.
+    //
+    // `results.length > 0` at the end of this function is the guard against the
+    // obvious failure mode of a skip: if this ever excluded everything, that
+    // assertion still fails the job rather than reporting a vacuous pass.
+    if (manifest.private === true) {
+      log(`skip  ${manifest.name}  private: not published, so no consumer claim to measure`);
+      continue;
+    }
+
     const targets = exportTargets(manifest.exports);
     assert.ok(targets.length > 0, `${manifest.name} declares no exports; a consumer has nothing to import`);
 

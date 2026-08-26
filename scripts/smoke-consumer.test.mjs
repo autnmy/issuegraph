@@ -224,3 +224,55 @@ test('declaredFloorMajor reads the shapes an engines range actually takes', () =
   assert.equal(declaredFloorMajor(undefined), undefined);
   assert.equal(declaredFloorMajor('*'), undefined);
 });
+
+/** A two-package workspace, so a skip can be observed without emptying the run. */
+function pairFixture(subjectManifest) {
+  const root = mkdtempSync(join(tmpdir(), 'issuegraph-smoke-'));
+  roots.push(root);
+  for (const [name, extra] of [['subject', subjectManifest], ['bystander', {}]]) {
+    const dir = join(root, 'packages', name);
+    mkdirSync(join(dir, 'dist'), { recursive: true });
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({
+      name: `@issuegraph/${name}`,
+      version: '0.0.0',
+      type: 'module',
+      exports: { '.': { types: './dist/index.d.ts', default: './dist/index.js' } },
+      ...extra,
+    }, null, 2));
+    writeFileSync(join(dir, 'dist', 'index.js'), 'export const a = 1;\n');
+    writeFileSync(join(dir, 'dist', 'index.d.ts'), 'export declare const a: number;\n');
+  }
+  return join(root, 'packages');
+}
+
+test('a PRIVATE package is skipped — it makes no consumer claim to measure', async () => {
+  const results = await smokeTest(pairFixture({ private: true }));
+  assert.deepEqual(results.map((r) => r.name), ['@issuegraph/bystander']);
+});
+
+test('CONTROL: the same package without the flag is NOT skipped', async () => {
+  // The control the case above needs. Both packages here are byte-identical
+  // apart from `private`, so a pass below proves the skip is keyed on the flag
+  // rather than on anything incidental to the fixture.
+  const results = await smokeTest(pairFixture({}));
+  assert.deepEqual(results.map((r) => r.name).sort(), ['@issuegraph/bystander', '@issuegraph/subject']);
+});
+
+test('a private package does not get to empty the run — the vacuity guard still fires', async () => {
+  // The obvious failure mode of any skip: exclude everything and report a
+  // clean pass over nothing. `results.length > 0` is what stops that, and it
+  // has to keep firing now that a package can remove itself.
+  const root = mkdtempSync(join(tmpdir(), 'issuegraph-smoke-'));
+  roots.push(root);
+  const dir = join(root, 'packages', 'only');
+  mkdirSync(join(dir, 'dist'), { recursive: true });
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({
+    name: '@issuegraph/only',
+    version: '0.0.0',
+    type: 'module',
+    private: true,
+    exports: { '.': { default: './dist/index.js' } },
+  }, null, 2));
+  writeFileSync(join(dir, 'dist', 'index.js'), 'export const a = 1;\n');
+  await assert.rejects(() => smokeTest(join(root, 'packages')), /proved nothing/);
+});

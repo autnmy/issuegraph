@@ -37,7 +37,11 @@ const FORBIDDEN: readonly { readonly name: string; readonly pattern: RegExp }[] 
   { name: 'Function constructor', pattern: /\bnew\s+Function\s*\(/ },
   { name: 'dynamic import', pattern: /(?<![\w.])import\s*\(/ },
   { name: 'process', pattern: /\bprocess\.\w/ },
-  { name: 'node builtin', pattern: /from\s+'node:/ },
+  // BOTH QUOTE STYLES AND BOTH IMPORT FORMS. `from 'node:` alone missed
+  // `from "node:fs"` and the side-effect `import 'node:fs'` outright — and the
+  // load test cannot cover for it, because a node builtin loads perfectly well
+  // under Node. This scan is the only instrument that refuses one.
+  { name: 'node builtin', pattern: /(?:\bfrom\s*|\bimport\s*)['"]node:/ },
   { name: 'globalThis', pattern: /\bglobalThis\b/ },
 ]);
 
@@ -47,14 +51,39 @@ export interface Violation {
   readonly line: number;
 }
 
+/**
+ * Comments blanked to spaces, with every newline kept so line numbers still
+ * describe the original file.
+ *
+ * This replaced a rule that DISCARDED any line whose first non-space character
+ * opened a comment, which threw away the code after an inline one:
+ * `/* note *\/ export const save = () => fetch('/write')` scanned as clean, and
+ * the load test could not cover for it because nothing calls `save`. An
+ * ordinary annotation defeated the guard.
+ *
+ * Blanking is strictly better than discarding — it removes the comment and
+ * keeps the code — and it is the same treatment `scripts/check-isolation.ts`
+ * applies for the same reason. It over-blanks a `/*` inside a string literal,
+ * which can mask a later violation on that line; that is the one direction this
+ * is weaker than a parser, and the load test below is the second instrument.
+ */
+function withoutComments(source: string): string {
+  const blank = (text: string): string => text.replace(/[^\n]/g, ' ');
+  return source.replace(/\/\*[\s\S]*?\*\//g, blank).replace(/\/\/[^\n]*/g, blank);
+}
+
 /** Report every forbidden reference in one source. Exported so it can be controlled. */
 export function scanSource(file: string, source: string): Violation[] {
   const found: Violation[] = [];
-  source.split('\n').forEach((text, index) => {
-    // Comments describe the rule as often as they break it — "this module never
-    // calls fetch(" is a sentence, not a call — so a comment line is skipped.
-    const trimmed = text.trim();
-    if (trimmed.startsWith('*') || trimmed.startsWith('//') || trimmed.startsWith('/*')) return;
+  withoutComments(source).split('\n').forEach((text, index) => {
+    // A CONTINUATION line of a block comment — ` * and never touches
+    // localStorage` — still has to be skipped. In a real file its `/*` opener is
+    // present and the blanking above already removed it; this covers a fragment
+    // scanned on its own, which is what the prose control below passes.
+    //
+    // Applied AFTER blanking, deliberately: `/* note *\/ export …` no longer
+    // begins with a comment once the comment is gone, so the code survives.
+    if (text.trim().startsWith('*')) return;
     for (const rule of FORBIDDEN) {
       if (rule.pattern.test(text)) found.push({ file, name: rule.name, line: index + 1 });
     }
@@ -110,6 +139,51 @@ describe('the purity scan', () => {
   it('does not fire on prose that merely mentions a forbidden API', () => {
     const commentary = ['// this module never calls fetch(', ' * and never touches localStorage'].join('\n');
     assert.deepEqual(scanSource('commentary.ts', commentary), []);
+  });
+
+  it('still reads the CODE after an inline comment', () => {
+    // The rule that discarded a whole line whose first character opened a
+    // comment scanned this as clean, and the load test could not cover for it
+    // because nothing calls `save`.
+    const annotated = "/* instrumentation */ export const save = () => fetch('/write');";
+    assert.deepEqual(
+      scanSource('annotated.ts', annotated).map((violation) => violation.name),
+      ['fetch'],
+    );
+  });
+
+  it('reports a node builtin in every import form, not just single-quoted `from`', () => {
+    // Three forms the `from 'node:` pattern missed. They matter more than the
+    // others in this list: a node builtin LOADS fine under Node, so the load
+    // test below cannot catch one — this scan is the only instrument that
+    // refuses it.
+    for (const form of [
+      'import { readFile } from "node:fs";',
+      "import 'node:fs';",
+      'import "node:fs";',
+    ]) {
+      assert.deepEqual(
+        scanSource('form.ts', form).map((violation) => violation.name),
+        ['node builtin'],
+        form,
+      );
+    }
+  });
+
+  it('CONTROL: keeps reporting the single-quoted `from` form it always did', () => {
+    assert.deepEqual(
+      scanSource('classic.ts', "import { readFileSync } from 'node:fs';").map((v) => v.name),
+      ['node builtin'],
+    );
+  });
+
+  it('reports a violation on the line it is actually on, after a multi-line comment', () => {
+    // Blanking rather than deleting is what keeps this true. A stripper that
+    // removed comment TEXT would shift every line number after a block comment,
+    // and the report would name the wrong line — which for a guard is close to
+    // useless.
+    const source = ['/*', ' * a block comment', ' */', "const a = await fetch('/x');"].join('\n');
+    assert.deepEqual(scanSource('lines.ts', source), [{ file: 'lines.ts', name: 'fetch', line: 4 }]);
   });
 
   it('finds nothing in the shipped sources', () => {
