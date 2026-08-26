@@ -136,6 +136,33 @@ describe('the overlay', () => {
     assert.deepEqual(overlay.rows.map((row) => row.ref), ['x', 'y']);
   });
 
+  it('does not accept a prototype member as a finding class', () => {
+    // `AUDIT_CLASS_SPECS["constructor"]` on a plain object answers with an
+    // INHERITED member rather than undefined, so an invalid class survived the
+    // unknown-class check and produced a finding whose severity was undefined,
+    // which the row grammar then stamped into an attribute. The lookup goes
+    // through a Map now, which has no inherited keys, so the hazard is removed
+    // rather than guarded.
+    const hostile: readonly AuditFinding[] = [
+      JSON.parse(
+        '{"kind":"__proto__","severity":"blocks-work","keepAsHistory":false,"members":["a"],"detail":"x"}',
+      ),
+      JSON.parse(
+        '{"kind":"constructor","severity":"blocks-work","keepAsHistory":false,"members":["b"],"detail":"x"}',
+      ),
+      JSON.parse(
+        '{"kind":"toString","severity":"blocks-work","keepAsHistory":false,"members":["c"],"detail":"x"}',
+      ),
+    ];
+    const overlay = auditOverlay([...hostile, finding('cycle', ['x', 'y'])]);
+    assert.equal(overlay.count, 1);
+    assert.deepEqual(
+      overlay.rows.map((row) => row.ref),
+      ['x', 'y'],
+    );
+    for (const row of overlay.rows) assert.notEqual(row.severity, undefined);
+  });
+
   it('indexes exactly the rows it lists', () => {
     // The index and the list are two views of one answer, so a lookup that
     // disagreed with the rail would draw a bar on a row the list calls clean.

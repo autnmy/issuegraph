@@ -99,6 +99,23 @@ export const AUDIT_CLASS_SPECS = Object.freeze({
   'stale-blocker': Object.freeze({ severity: 'misleading', weight: 0, keepAsHistory: true }),
 } as const) satisfies Readonly<Record<AuditClass, AuditClassSpec>>;
 
+/**
+ * The same table, keyed so a lookup CANNOT answer with a prototype member.
+ *
+ * `AUDIT_CLASS_SPECS[kind]` on a plain object answers for `"__proto__"` and
+ * `"constructor"` with something inherited rather than `undefined`, so an
+ * invalid class survived the check below and produced a finding whose severity
+ * was `undefined` — which the row grammar then stamped into an attribute. A
+ * `Map` has no inherited keys, so the hazard is removed rather than guarded:
+ * there is no own-key rule here for a later reader to forget.
+ *
+ * The record stays the export, because it is the readable declaration and a
+ * consumer indexes it with a `kind` the type system has already checked.
+ */
+const SPEC_OF: ReadonlyMap<string, AuditClassSpec> = new Map(
+  AUDIT_CLASSES.map((kind) => [kind, AUDIT_CLASS_SPECS[kind]]),
+);
+
 /** One finding. Severity travels ON it, never looked up at the render site. */
 /**
  * One finding.
@@ -254,7 +271,7 @@ export function settledFinding(found: AuditFinding): AuditFinding | null {
   // classifying one finding differently: the row grammar already reads the
   // table, so a stored `severity` that disagreed with it was a second, editable
   // copy of a fact the table states.
-  const spec = AUDIT_CLASS_SPECS[found.kind];
+  const spec = SPEC_OF.get(found.kind);
   // A `kind` THE TABLE DOES NOT CARRY IS NOT A FINDING THIS MODULE CAN SETTLE,
   // and it is unreachable from TypeScript — `AuditClass` is a closed union — so
   // this covers the callers a type cannot: JavaScript, and anything
@@ -277,10 +294,11 @@ function finding(kind: AuditClass, members: readonly IssueRef[], detail: string)
   // has it and `settledFinding` cannot answer null here. Reading it through the
   // same door anyway is what keeps ONE place that derives the class-owned
   // fields; a second construction path is how the two come to disagree.
+  const spec = AUDIT_CLASS_SPECS[kind];
   const settled = settledFinding({
     kind,
-    severity: AUDIT_CLASS_SPECS[kind].severity,
-    keepAsHistory: AUDIT_CLASS_SPECS[kind].keepAsHistory,
+    severity: spec.severity,
+    keepAsHistory: spec.keepAsHistory,
     members,
     detail,
   });
@@ -293,32 +311,83 @@ function edgesOfKind(document: GraphDocument, kind: StoredEdge['kind']): readonl
 }
 
 /**
- * Whether a finding ABOUT this issue describes a live problem at all.
+ * One resolution of the document, shared by every class that asks about an
+ * EDGE'S ENDS rather than about the graph as a whole.
  *
- * TWO OF THE FOUR CLASSES NAME A HARM THAT REQUIRES AN OPEN SUBJECT, and on a
- * closed one they report the ordinary end of a lifecycle as a defect:
- *
- *  - a dead duplicate ref claims *"its work is excluded from the order and
- *    tracked nowhere"*, but a CLOSED duplicate has no outstanding work to
- *    track. An issue closed as a duplicate, followed by its canonical being
- *    completed, is the normal shape of finished history — and it would carry a
- *    `dangerous` finding for ever after.
- *  - a stale blocker claims readiness is already satisfied, which says nothing
- *    about an issue that is not waiting to start.
- *
- * The other two classes have no such precondition and deliberately do not use
- * this. §6.6 already restricts cycles to open nodes, and an encoding refusal is
- * a fact about a DECLARATION — which the model reads from closed nodes too, so
- * a closed issue's unreadable `duplicate-of` still misroutes live edges.
- *
- * PROVABLY CLOSED, NOT MERELY ABSENT. An issue the document does not carry is
- * unknown, and an unknown must not silence a `dangerous` finding — the same
- * rule the target side already applies in the other direction, where only a
- * proven closure raises one.
+ * IT EXISTS BECAUSE THE ALTERNATIVE DID NOT CONVERGE. `stale-blocker` and
+ * `dead-duplicate-ref` ask the same three questions of an edge — is the
+ * declarer live, does the target resolve somewhere closed, and is that answer
+ * knowable — and while each detector asked them for itself, successive review
+ * rounds found one detector missing one question at a time: the closed-subject
+ * test in one, then the under-read test in the other. Two detectors times three
+ * rules is six places to be right, and the ones nobody had written yet were
+ * worse. Asking once, here, makes a fifth class inherit all three instead of
+ * being reviewed into them.
  */
-function livelySubject(closed: ReadonlySet<IssueRef>, ref: IssueRef): boolean {
-  return !closed.has(ref);
+interface EdgeVerdict {
+  /**
+   * The issue the target's work ultimately defers to (§4.3.3), which is the
+   * one whose state the finding is really about.
+   */
+  readonly effective: IssueRef;
+  /** Provably closed. An issue the document does not carry is UNKNOWN, not closed. */
+  readonly effectiveClosed: boolean;
+  /**
+   * Whether anything about this edge is settled at all.
+   *
+   * FALSE WHENEVER EITHER END'S DECLARATION WAS REFUSED, and that is the rule
+   * both classes kept being found without. A declaration nobody could read may
+   * carry a `duplicate-of` redirecting the chain at an OPEN canonical — so a
+   * closed, under-read target is not a discharged blocker, and a duplicate
+   * resolving to one is not work tracked nowhere. Until it parses, nobody
+   * knows, and an audit that guesses in either direction is worse than one that
+   * says nothing.
+   */
+  readonly knowable: boolean;
+  /**
+   * Whether a finding about the DECLARER describes a live problem.
+   *
+   * Two of the four classes name a harm that needs an open subject: a dead
+   * duplicate ref claims work is *"tracked nowhere"*, and a stale blocker
+   * claims readiness is satisfied. On a closed declarer both report the
+   * ordinary end of a lifecycle as a defect, for ever.
+   */
+  readonly declarerLive: boolean;
 }
+
+/**
+ * The two classes that read this ask about an edge; the other two do not, and
+ * deliberately keep none of it. §6.6 already restricts cycles to open nodes,
+ * and an encoding refusal is a fact about a DECLARATION — which the model reads
+ * from closed nodes too, so a closed issue's unreadable `duplicate-of` still
+ * misroutes live edges.
+ */
+function verdictFor(
+  edge: StoredEdge,
+  closed: ReadonlySet<IssueRef>,
+  refused: ReadonlySet<IssueRef>,
+  graph: AuditGraph,
+  // WHICH END'S CANONICAL DECIDES THE ANSWER. A stale blocker asks where the
+  // TARGET's work went; a dead duplicate ref asks where the DECLARER's did.
+  resolveFrom: 'from' | 'to',
+): EdgeVerdict {
+  const subject = resolveFrom === 'from' ? edge.from : edge.to;
+  const effective = graph.duplicateCanonical(subject) ?? edge.to;
+  return {
+    effective,
+    effectiveClosed: closed.has(effective),
+    // THE TARGET SIDE ONLY, and the scope is load-bearing rather than
+    // incidental. What a refusal costs is knowledge of where the edge POINTS:
+    // the unreadable declaration is the one that might have redirected the
+    // chain. The DECLARER's own refusal says nothing about whether the issue on
+    // the other end is closed, so suppressing on it would hide a true finding —
+    // measured, by this package's own all-four-classes fixture, which went to
+    // three the moment that leg was added.
+    knowable: !refused.has(edge.to) && !refused.has(effective),
+    declarerLive: !closed.has(edge.from),
+  };
+}
+
 
 /**
  * The reader's stuck groups, one finding each.
@@ -371,21 +440,9 @@ function staleBlockerFindings(
   const closed = closedRefs(document);
   const findings: AuditFinding[] = [];
   for (const edge of edgesOfKind(document, 'blocked-by')) {
-    if (!livelySubject(closed, edge.from)) continue;
-    const effective = graph.duplicateCanonical(edge.to) ?? edge.to;
-    if (!closed.has(effective)) continue;
-    // A CLOSED BUT UNDER-READ TARGET IS STILL BLOCKING, so calling it stale
-    // would present a live fail-safe constraint as disposable bookkeeping —
-    // the worst direction for the one class whose whole message is "clearing
-    // this is bookkeeping". The reader keeps a dependent unready when the
-    // thing its edge resolved to was under-read, precisely because the
-    // declaration it could not read may carry a `duplicate-of` redirecting
-    // this edge at an OPEN canonical. Until it parses, nobody knows.
-    //
-    // The refusal set is the same input that raises the `encoding-refused`
-    // class, so the audit cannot say "this issue's declaration is unreadable"
-    // and "its blocker is safely dischargeable" about the same pair.
-    if (refused.has(effective) || refused.has(edge.to)) continue;
+    const verdict = verdictFor(edge, closed, refused, graph, 'to');
+    if (!verdict.declarerLive || !verdict.knowable || !verdict.effectiveClosed) continue;
+    const effective = verdict.effective;
     const via = effective === edge.to ? '' : ` (via ${edge.to}, which duplicates it)`;
     findings.push(
       finding(
@@ -415,13 +472,17 @@ function staleBlockerFindings(
  * resolve, where `duplicateCanonical` answers `null`. Reporting on what the
  * edge itself names is the fail-safe direction for a `dangerous` class.
  */
-function deadDuplicateFindings(document: GraphDocument, graph: AuditGraph): AuditFinding[] {
+function deadDuplicateFindings(
+  document: GraphDocument,
+  graph: AuditGraph,
+  refused: ReadonlySet<IssueRef>,
+): AuditFinding[] {
   const closed = closedRefs(document);
   const findings: AuditFinding[] = [];
   for (const edge of edgesOfKind(document, 'duplicate-of')) {
-    if (!livelySubject(closed, edge.from)) continue;
-    const canonical = graph.duplicateCanonical(edge.from) ?? edge.to;
-    if (!closed.has(canonical)) continue;
+    const verdict = verdictFor(edge, closed, refused, graph, 'from');
+    if (!verdict.declarerLive || !verdict.knowable || !verdict.effectiveClosed) continue;
+    const canonical = verdict.effective;
     const via = canonical === edge.to ? '' : ` (through ${edge.to})`;
     findings.push(
       finding(
@@ -483,7 +544,7 @@ export function auditDocument(input: AuditInput): readonly AuditFinding[] {
   return Object.freeze([
     ...cycleFindings(graph),
     ...staleBlockerFindings(document, graph, refused),
-    ...deadDuplicateFindings(document, graph),
+    ...deadDuplicateFindings(document, graph, refused),
     ...encodingRefusedFindings(refusals),
   ]);
 }

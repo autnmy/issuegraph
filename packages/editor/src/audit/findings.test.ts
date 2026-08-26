@@ -431,6 +431,56 @@ describe('a finding about a CLOSED issue is finished history, not a defect', () 
   });
 });
 
+describe('an unknowable target yields no verdict, in BOTH classes that read one', () => {
+  // The shared resolution's whole reason to exist: both classes ask the same
+  // three questions of an edge, and each was found missing a different one a
+  // round apart. These run the same shape through both.
+  it('does not call a duplicate of a closed-but-UNDER-READ canonical dead', () => {
+    // `b`'s dropped `duplicate-of` may redirect the chain at an OPEN canonical,
+    // in which case `a`'s work IS tracked and "tracked nowhere" is false.
+    const document = documentOf([issue('a'), issue('b', 'closed')], [['duplicate-of', 'a', 'b']]);
+    const findings = auditDocument({
+      document,
+      graph: graphOf(document),
+      encodingRefused: [{ ref: 'b' }],
+    });
+    assert.deepEqual(only(findings, 'dead-duplicate-ref'), []);
+    assert.equal(only(findings, 'encoding-refused').length, 1);
+  });
+
+  it('still calls a duplicate of a closed, fully-read canonical dead', () => {
+    // The control: without it the test above passes on a detector that stopped
+    // reporting the class at all.
+    const document = documentOf([issue('a'), issue('b', 'closed')], [['duplicate-of', 'a', 'b']]);
+    const findings = auditDocument({
+      document,
+      graph: graphOf(document),
+      encodingRefused: [{ ref: 'somebody-else' }],
+    });
+    assert.equal(only(findings, 'dead-duplicate-ref').length, 1);
+  });
+
+  it('still reports both classes when only the DECLARER was refused', () => {
+    // The scope of the suppression, pinned in the other direction. A refusal
+    // costs knowledge of where the edge POINTS, so the declarer's own refusal
+    // says nothing about whether the issue on the other end is closed.
+    const document = documentOf(
+      [issue('a'), issue('closed-1', 'closed'), issue('closed-2', 'closed')],
+      [
+        ['blocked-by', 'a', 'closed-1'],
+        ['duplicate-of', 'a', 'closed-2'],
+      ],
+    );
+    const findings = auditDocument({
+      document,
+      graph: graphOf(document),
+      encodingRefused: [{ ref: 'a' }],
+    });
+    assert.equal(only(findings, 'stale-blocker').length, 1);
+    assert.equal(only(findings, 'dead-duplicate-ref').length, 1);
+  });
+});
+
 describe('severity travels on the finding', () => {
   it('carries the class table onto every finding it produces', () => {
     // "Severity is data on the finding, not a colour chosen at the render site."
