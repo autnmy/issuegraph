@@ -35,14 +35,17 @@ The issue body.
 Then file it:
 
 ```sh
+d=$(mktemp -d) || exit 1
 printf '%s\n' "$BODY" \
-  | issuegraph set --blocked-by 8232 --evidence asserted > /tmp/body.md \
-  && gh issue create -R owner/repo --title "…" --body-file /tmp/body.md
+  | issuegraph set --blocked-by 8232 --evidence asserted > "$d/body.md" \
+  && [ -s "$d/body.md" ] \
+  && gh issue create -R owner/repo --title "…" --body-file "$d/body.md"
+rm -rf "$d"
 ```
 
 ⚠ **The `&&` is the whole safety of this.** When `set` refuses — an unwritable
 field, a body that already carries a block — it exits non-zero having written
-**nothing**, but the redirection has *already* created `/tmp/body.md` as a
+**nothing**, but the redirection has *already* created the file as a
 **0-byte file**. Without the chain the next line files an **empty issue**.
 Measured: `set` rc **4**, output file **0 bytes**.
 
@@ -129,11 +132,11 @@ create each leaf, never "later":
 # A PRIVATE SCRATCH FILE, because this one is a LOOP that FILES ISSUES. `/tmp` is
 # shared, so two decompositions running at once — different repos, different
 # parents — collide on one fixed path, and the loser files the other's body.
-# THE RULE IS "DOES IT WRITE", NOT "DOES IT LOOP". An earlier revision drew that
-# line at looping and was wrong: two people running a one-shot repair at the same
-# moment collide exactly as two loops do. Anything that WRITES gets its own
-# directory; a read-only example may keep a fixed path, since the worst it can do
-# is read somebody else's copy of a body it was only going to inspect.
+# EVERY RECIPE THAT PUTS A BODY ON DISK GETS ITS OWN DIRECTORY. This rule has been
+# narrowed twice and been wrong twice: first at "only loops" (two one-shots collide
+# exactly as two loops do), then at "only writes" (a read whose verdict gates a
+# filing is a write with extra steps). There is no carve-out now, because every
+# version of one has cost a finding and `mktemp -d` costs a line.
 scratch=$(mktemp -d) || exit 1
 leaf_file=$scratch/leaf.md              # NOT `leaf` — the loop below binds that
 
@@ -219,10 +222,18 @@ issue in disguise" shape, and it serialises work that could have run in parallel
 The block is worthless if it does not read. One call, and it is free:
 
 ```sh
-issuegraph set --blocked-by 8232 --evidence asserted < body.md > /tmp/body.md
-issuegraph parse --body-file /tmp/body.md | jq -e '.state == "read"' >/dev/null \
-  || { echo "the block does not read — do not file this"; exit 1; }
+d=$(mktemp -d) || exit 1
+issuegraph set --blocked-by 8232 --evidence asserted < body.md > "$d/body.md" \
+  && issuegraph parse --body-file "$d/body.md" | jq -e '.state == "read"' >/dev/null \
+  || { echo "the block does not read — do not file this" >&2; rm -rf "$d"; exit 1; }
+rm -rf "$d"
 ```
+
+**Isolated even though it only reads**, because its verdict **gates a filing**: on
+a shared path a concurrent run could have replaced the file between the write and
+the parse, and this would then report `read` about somebody else's body and let
+yours be filed.
+
 
 **Check `state`, not the exit code.** The codes are not uniform across verbs or
 states — `parse` exits **0** on an `inert` block while `validate` exits **5** —

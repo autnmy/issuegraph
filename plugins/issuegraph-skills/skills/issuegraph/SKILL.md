@@ -45,17 +45,23 @@ Use `ready` to answer *"what should I pick up?"* rather than hand-rolling a bloc
 ## Writing
 
 ```sh
-gh issue view 1234 -R owner/repo --json body > issue.json \
-  || { echo "could not read the issue; nothing was written" >&2; exit 1; }
-jq -j .body issue.json > orig.md || exit 1
+d=$(mktemp -d) || exit 1
+gh issue view 1234 -R owner/repo --json body > "$d/issue.json" \
+  || { echo "could not read the issue; nothing was written" >&2; rm -rf "$d"; exit 1; }
+jq -j .body "$d/issue.json" > "$d/orig.md" || { rm -rf "$d"; exit 1; }
 
-issuegraph set --blocked-by 987 --blocked-by owner/repo#654 --body-file orig.md \
-  > new-body.md \
-  && [ -s new-body.md ] \
-  && gh issue edit 1234 -R owner/repo --body-file new-body.md
+issuegraph set --blocked-by 987 --blocked-by owner/repo#654 --body-file "$d/orig.md" \
+  > "$d/new-body.md" \
+  && [ -s "$d/new-body.md" ] \
+  && gh issue edit 1234 -R owner/repo --body-file "$d/new-body.md"
+rm -rf "$d"
 ```
 
-⚠ **Three guards, and each one stops a different way of destroying the issue.**
+⚠ **Four guards, and each one stops a different way of destroying the issue.**
+
+**A private directory**, because two people running this at the same moment on
+different issues would otherwise share `new-body.md` in whatever directory they
+happened to be in — and one can then write the other's body to the wrong issue.
 
 **The fetch is checked** because a failed `gh issue view` feeds `set` an *empty*
 input — and `set` then happily renders a fresh block onto nothing and exits **0**,

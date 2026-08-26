@@ -176,7 +176,9 @@ not repaired, so there is nothing you could write back believing it had been.
 # A PRIVATE SCRATCH FILE: this runs over a whole backlog and EDITS issues, and
 # `/tmp` is shared — two sweeps at once on different repos would collide on one
 # fixed path and write each other's bodies. The single-shot repair above may use
-# `/tmp/body.md`; a loop that writes may not.
+# a private directory. There is NO carve-out for one-shots or for read-only
+# examples: the first produced a cross-issue write, and the second a verification
+# that could report on somebody else's body — and that verdict gates a filing.
 new=$(mktemp) || exit 1
 if out=$(issuegraph backfill --json --body-file body.md); then rc=0; else rc=$?; fi
 case "$(printf '%s' "$out" | jq -r '.outcome // ""')" in
@@ -232,7 +234,7 @@ forever and an unrepairable one gets written back unchanged.
 the *owned generated* edges and leaves hand-written content alone: a field you
 give it is owned (existing entries replaced), a field you omit is untouched.
 
-```console
+````console
 $ issuegraph splice --edges '{"blockedBy":["#9"]}' --body-file body.md
 ```
 ---
@@ -243,7 +245,7 @@ issuegraph:
 
 ---
 ```
-```
+````
 
 `--evidence` survived untouched because splice was not given it.
 
