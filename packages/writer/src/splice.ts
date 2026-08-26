@@ -662,6 +662,44 @@ function snapshotEdges(edges: GeneratedEdges): EdgeSnapshot {
 const FENCE_SHAPED = /^ {0,3}(?:`{3,}|~{3,})/;
 
 /**
+ * Are these two neighbours ONE armor pair — the shape a renderer emits?
+ *
+ * WHAT THIS DELIBERATELY IS NOT. It is not a CommonMark pairing rule, and the
+ * distinction is the whole reason it is safe. Three previous versions of the
+ * armor test tried to DECIDE Markdown structure from the lines themselves —
+ * parity of fence-shaped lines, then a fence-state walk, then a bare count —
+ * and each died to a construct it had not modelled. Deciding whether an
+ * arbitrary opener pairs with an arbitrary closer needs the delimiter char,
+ * the run lengths, the info string's legality and the closer's bareness, and
+ * review found a hole in every attempt at that.
+ *
+ * So this asks a question with no grammar in it: ARE THESE TWO LINES THE SAME
+ * BARE FENCE RUN? Byte identity plus bareness settles pairing by construction
+ * — same delimiter, equal length, no info string on either — with no rule to
+ * get wrong. And it is exactly what {@link renderFrontmatter} emits for
+ * `fenceWrapped`: `['```', block, '```']`, bare and identical on both sides.
+ * The entire population of armor this package writes satisfies it.
+ *
+ * MEASURED, on the shapes that reached here before it existed. Each has
+ * exactly two fence-shaped lines, so the count alone cleared them, and each
+ * deleted BOTH: `~~~` above with ``` below, ```` ```` ```` above with ``` below,
+ * and ```` ```yaml ```` above with ``` below. None is a legal CommonMark pair —
+ * a tilde fence closes only on tildes, a closer must be at least as long as
+ * its opener, and a closer may carry no info string — so in each case an
+ * unclosed fence ran to end of body and removing both lines restructured the
+ * document.
+ *
+ * THE TRADE IS THE SAME ONE, IN THE SAME DIRECTION. A hand-authored
+ * ```` ```yaml ```` / ``` pair IS legal CommonMark and is now retained rather
+ * than deleted: cosmetic residue. Deleting a line that was not armor
+ * restructures someone's issue body, in the package whose contract is byte
+ * preservation. This is the direction to be wrong in.
+ */
+function areOneArmorPair(above: string, below: string): boolean {
+  return above === below && /^ {0,3}(?:`{3,}|~{3,})[ \t]*$/.test(above);
+}
+
+/**
  * Are these two neighbours the ONLY fence-shaped lines in the body?
  *
  * WHY THIS REPLACED A FENCE-STATE WALK, and why the walk is not coming back.
@@ -806,16 +844,19 @@ export function spliceGeneratedEdges(body: string, rawEdges: GeneratedEdges): Sp
       let to = blockEnd;
       const above = from > 0 ? (lines[from - 1] ?? '').trimEnd() : null;
       const below = to + 1 < lines.length ? (lines[to + 1] ?? '').trimEnd() : null;
-      // THE COUNT IS THE LOAD-BEARING HALF. Matching the two neighbours says
-      // only that they are fence-SHAPED; `fencesAreOnlyThePair` is what
-      // establishes they are each other's partner rather than the closer of one
-      // code block and the opener of the next. See its note for why this counts
-      // instead of deciding.
+      // BOTH TESTS, AND NEITHER SUBSUMES THE OTHER — they rule out different
+      // ways of being wrong, so dropping either reopens a measured defect.
+      // `fencesAreOnlyThePair` rules out the neighbours belonging to OTHER
+      // blocks: with a third fence anywhere in the body, `above` can be the
+      // CLOSER of an earlier code block and `below` the OPENER of the next, and
+      // deleting them merges two unrelated blocks. `areOneArmorPair` rules out
+      // the neighbours not pairing with EACH OTHER: two fence-shaped lines that
+      // cannot close one another (`~~~` above, ``` below) still count as
+      // exactly two. See each function's note.
       if (
         above !== null &&
         below !== null &&
-        FENCE_SHAPED.test(above) &&
-        FENCE_SHAPED.test(below) &&
+        areOneArmorPair(above, below) &&
         fencesAreOnlyThePair(lines)
       ) {
         from -= 1;

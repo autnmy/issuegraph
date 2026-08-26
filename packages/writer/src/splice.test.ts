@@ -1042,6 +1042,59 @@ describe('whole-block removal takes only its OWN armor', () => {
     assert.equal((next.match(/^(?:`{3,}|~{3,})/gm) ?? []).length, 4, next);
     assert.ok(next.includes('a later code block'), next);
   });
+
+  // TWO FENCE-SHAPED NEIGHBOURS ARE NOT NECESSARILY A PAIR — the round-4
+  // finding. Each body below has exactly two fence-shaped lines, so the count
+  // clears them, and in each the two CANNOT close one another under CommonMark:
+  // a tilde fence closes only on tildes, a closer must be at least as long as
+  // its opener, and a closer may carry no info string. Measured before the fix:
+  // every one deleted BOTH lines, leaving prose that had been inside an
+  // unclosed fence sitting at top level.
+  for (const [label, above, below] of [
+    ['a TILDE above and a backtick below', '~~~', '```'],
+    ['a LONGER run above than below', '````', '```'],
+    ['an INFO STRING on the opener', '```yaml', '```'],
+  ] as const) {
+    it(`KEEPS neighbours that cannot pair: ${label}`, () => {
+      const body = [
+        above,
+        '---',
+        'issuegraph:',
+        '  duplicate-of: "#42"',
+        '---',
+        below,
+        '',
+        'Prose that was inside the fence.',
+      ].join('\n');
+      const next = spliceGeneratedEdges(body, CLEAR_IT) as string;
+      assert.notEqual(next, null);
+      assert.ok(!next.includes('issuegraph:'), 'the block itself still goes');
+      assert.ok(next.includes(above), `the opener survives: ${next}`);
+      assert.ok(next.includes(below), `the closer survives: ${next}`);
+      assert.equal((next.match(/^ {0,3}(?:`{3,}|~{3,})/gm) ?? []).length, 2, next);
+    });
+  }
+
+  it('CONTROL: an IDENTICAL bare pair — what the renderer emits — is still eaten', () => {
+    // The other half of the pair test, and the one that keeps it from being
+    // satisfiable by never deleting anything. `renderFrontmatter` emits
+    // `['```', block, '```']`, so byte identity plus bareness covers the entire
+    // population of armor this package writes.
+    const body = [
+      '```',
+      '---',
+      'issuegraph:',
+      '  duplicate-of: "#42"',
+      '---',
+      '```',
+      '',
+      'Prose.',
+    ].join('\n');
+    const next = spliceGeneratedEdges(body, CLEAR_IT) as string;
+    assert.notEqual(next, null);
+    assert.equal((next.match(/^ {0,3}(?:`{3,}|~{3,})/gm) ?? []).length, 0, `its own armor goes: ${next}`);
+    assert.ok(next.includes('Prose.'), next);
+  });
 });
 
 describe('a malformed edge value throws before anything is written (#18)', () => {
