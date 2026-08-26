@@ -107,6 +107,30 @@ describe('exclusions are carried whole, and that bound is stated', () => {
     assert.equal(rail.document.order.excluded.length, 1);
     assert.equal(rail.rows.length, 2);
   });
+
+  it('keeps the edges a visible excluded row owes a badge for', () => {
+    // Layer 1 draws each exclusion as a footer row that calls `edgeBadges` for
+    // its own key, so an excluded row owes badges exactly like a slot does.
+    // Selecting edges from the SLOT members alone dropped them: the row stayed
+    // on screen and silently lost its relationship as the reader scrolled past
+    // the slot at the other end.
+    const related = {
+      ...backlogOf(20),
+      edges: [{ field: 'blocked-by' as const, from: 'i0020', to: 'i0002' }],
+      order: {
+        slots: backlogOf(20).order.slots.filter((slot) => slot.lead !== 'i0020'),
+        excluded: [{ key: 'i0020', canonical: 'i0001', reason: 'duplicate-of' as const }],
+      },
+    };
+    // A window nowhere near `i0002`, the slot at the other end of that edge.
+    const rail = railWindow(related, { start: 10, count: 3 });
+    assert.equal(rail.document.order.excluded.length, 1, 'the exclusion stopped rendering');
+    assert.ok(
+      rail.document.edges.some((edge) => edge.from === 'i0020' && edge.to === 'i0002'),
+      'the visible excluded row lost its badge',
+    );
+    assert.ok(rail.document.issues.some((issue) => issue.key === 'i0002'));
+  });
 });
 
 describe('a held slot has no rank, and the window does not pretend otherwise', () => {

@@ -41,7 +41,7 @@
  * comes to hold two ids for one edge.
  */
 
-import { edgeIdentity } from '@issuegraph/core';
+import { edgeIdentity, isSymmetricEdgeField } from '@issuegraph/core';
 import type { EdgeField } from '@issuegraph/core';
 import type { ViewerDocument, ViewerHold, ViewerIssue, ViewerSlot } from '@issuegraph/viewer';
 import { normalizeDocument } from '@issuegraph/viewer';
@@ -56,11 +56,23 @@ export interface InspectorRelationship {
   readonly from: string;
   readonly to: string;
   /**
-   * Which end the subject is on, or `null` when the subject is not an issue.
+   * Which end the subject is on — `null` when there is no direction to state.
    *
    * A DIRECTION RELATIVE TO THE SUBJECT, not a sentence: "blocked-by, outgoing"
    * is a fact, and the English for it is the host's to write. The package
    * refuses to construct one, exactly as the picker does.
+   *
+   * NULL FOR A SYMMETRIC FIELD, and that is a fact about the FORMAT rather
+   * than a rendering choice. `serialize-with` and `together-with` state the
+   * same relationship whichever way round their endpoints are stored —
+   * `edgeIdentity` normalizes them for exactly that reason — so a direction
+   * read off the stored order is one that does not exist, and a host wording
+   * it would describe the relationship wrongly. `picker/view.ts` already
+   * refuses a direction for those two kinds; this now agrees with it instead
+   * of contradicting it from the next zone over.
+   *
+   * Also `null` when the subject is not an issue: an edge selection has no
+   * "my end" to be relative to.
    */
   readonly direction: 'outgoing' | 'incoming' | null;
 }
@@ -113,7 +125,9 @@ function relationshipsOf(
     from: edge.from,
     to: edge.to,
     direction:
-      subject === null || (edge.from !== subject && edge.to !== subject)
+      subject === null ||
+      isSymmetricEdgeField(edge.field) ||
+      (edge.from !== subject && edge.to !== subject)
         ? null
         : edge.from === subject
           ? ('outgoing' as const)
@@ -167,8 +181,15 @@ export function inspectorView(
             ? null
             : { rank: slot.rank, ready: slot.ready, holds: slot.holds },
       },
+      // FILTERED ON MEMBERSHIP, NOT ON DIRECTION. Those were the same question
+      // only while every edge touching the subject had one — and the moment a
+      // symmetric field correctly reported `null`, a `together-with` or
+      // `serialize-with` on the selected issue disappeared from the panel
+      // entirely. "Does this edge touch my subject" and "which end is my
+      // subject on" are different questions, and only the first belongs here.
       relationships: relationshipsOf(document, selection.key).filter(
-        (relationship) => relationship.direction !== null,
+        (relationship) =>
+          relationship.from === selection.key || relationship.to === selection.key,
       ),
       filtered: false,
     };

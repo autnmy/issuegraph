@@ -178,10 +178,19 @@ export function railWindow(
   const drawnLead = new Map<string, string>();
   for (const slot of rows) for (const member of slot.members) drawnLead.set(member, slot.lead);
 
-  const drawnMember = new Set(rows.flatMap((slot) => slot.members));
+  // EVERY KEY THAT RENDERS A ROW, WHICH IS NOT THE SAME AS EVERY SLOT MEMBER.
+  // Exclusions are carried whole, and layer 1 draws each one as a footer row
+  // that calls `edgeBadges` for its own key — so an excluded row owes badges
+  // exactly like a slot does. Built from the slots alone, an excluded issue
+  // related only to an out-of-window slot lost its badge as the reader
+  // scrolled, on a row that never left the screen.
+  const drawnMember = new Set([
+    ...rows.flatMap((slot) => slot.members),
+    ...input.order.excluded.map((exclusion) => exclusion.key),
+  ]);
 
-  // AN EDGE IS KEPT WHEN A DRAWN ROW OWES A BADGE FOR IT — one endpoint in the
-  // window is enough, because that row draws the badge and the other end is
+  // AN EDGE IS KEPT WHEN A DRAWN ROW OWES A BADGE FOR IT — one endpoint on
+  // screen is enough, because that row draws the badge and the other end is
   // named as text. `together-with` keeps its own rule: layer 1 draws it as an
   // ENCLOSURE around one slot's members, so an edge whose members no longer
   // share a drawn slot has nothing to draw it, and the viewer would report that

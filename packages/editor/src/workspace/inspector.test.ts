@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { EDGE_FIELDS, edgeIdentity } from '@issuegraph/core';
+import { EDGE_FIELDS, edgeIdentity, isSymmetricEdgeField } from '@issuegraph/core';
 
 import { inspectorView } from './inspector.ts';
 import { INITIAL_SELECTION } from './selection.ts';
@@ -87,6 +87,31 @@ describe('an edge selection FILTERS the list rather than opening another panel',
           : backlogOf(2, { edges: [[field, 'i0001', 'i0002']] });
       const view = inspectorView(document, { kind: 'issue', key: 'i0001' });
       assert.equal(view.relationships[0]?.edgeId, edgeIdentity(field, 'i0001', 'i0002'), field);
+    }
+  });
+
+  it('states no direction for a SYMMETRIC field, and still lists it', () => {
+    // Both halves, because fixing the first broke the second and the suite
+    // caught it: the issue branch used to filter on `direction !== null`, so
+    // the moment a symmetric field correctly reported none, the relationship
+    // vanished from the panel altogether. "Touches my subject" and "which end
+    // is my subject on" are different questions.
+    //
+    // The rule is the FORMAT's, not a rendering choice — `edgeIdentity`
+    // normalizes symmetric endpoints for the same reason — and `picker/view.ts`
+    // already refuses a direction for these two kinds.
+    for (const field of EDGE_FIELDS) {
+      const document =
+        field === 'together-with'
+          ? backlogOf(2, { unitOf: { i0002: 'i0001' }, edges: [[field, 'i0001', 'i0002']] })
+          : backlogOf(2, { edges: [[field, 'i0001', 'i0002']] });
+      const view = inspectorView(document, { kind: 'issue', key: 'i0001' });
+      assert.equal(view.relationships.length, 1, `${field} was dropped from the list`);
+      assert.equal(
+        view.relationships[0]?.direction,
+        isSymmetricEdgeField(field) ? null : 'outgoing',
+        field,
+      );
     }
   });
 
