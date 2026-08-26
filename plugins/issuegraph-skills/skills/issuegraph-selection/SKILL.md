@@ -57,15 +57,45 @@ is exactly what lets this run in a GitHub Action holding only issue bodies.
 Build it from `gh` like this:
 
 ```sh
-gh issue list -R owner/repo --state all --limit 500 \
-  --json number,state,stateReason,labels,assignees,body \
-  | jq '{homeRepo:"owner/repo",
-         baseRanking:{source:"config", order:[to_entries[]|{key:(.value.number|tostring), matchedOrderIndex:.key}]},
-         issues:[.[]|{number, open:(.state=="OPEN"),
-                      labels:[.labels[].name], assigneeCount:(.assignees|length), body:(.body//""),
-                      closedStateReason:(if (.stateReason // "") == "" then null
-                                         else (.stateReason|ascii_downcase) end)}]}' \
-  | issuegraph ready
+limit=500
+raw=$(gh issue list -R owner/repo --state all --limit "$limit" \
+        --json number,state,stateReason,labels,assignees,body) \
+  || { echo "could not list issues — this says NOTHING about the order" >&2; exit 1; }
+
+# A CAP THAT BINDS IS NOT AN ANSWER. `--limit` is a maximum, so a larger backlog
+# is silently truncated — and the missing rows are exactly the ones that hurt: an
+# older open P0, or a blocker some fetched issue depends on. Refuse rather than
+# present a partial derivation as the selection answer.
+[ "$(printf '%s' "$raw" | jq 'length')" -lt "$limit" ] \
+  || { echo "fetched exactly $limit issues — the backlog may be larger; this order is NOT complete" >&2; exit 1; }
+
+printf '%s' "$raw" | jq '{homeRepo:"owner/repo",
+       baseRanking:{source:"config", order:[to_entries[]|{key:(.value.number|tostring), matchedOrderIndex:.key}]},
+       issues:[.[]|{number, open:(.state=="OPEN"),
+                    labels:[.labels[].name], assigneeCount:(.assignees|length), body:(.body//""),
+                    closedStateReason:(if (.stateReason // "") == "" then null
+                                       else (.stateReason|ascii_downcase) end)}]}' > candidates.json || exit 1
+
+# THE PREFLIGHT RUNS BEFORE THE DERIVATION, NOT AFTER IT. Piping straight into
+# `ready` is what lets an INERT body's declared edges be treated as absent — the
+# derivation ranks such a node READY and never lists it in `underRead`. See "an
+# INERT block ranks as READY" below for the measurement.
+rows=$(jq -r '.issues[] | @base64' candidates.json) \
+  || { echo "could not read candidates.json — this says NOTHING about the candidates" >&2; exit 1; }
+bad=0
+while IFS= read -r row; do
+  [ -n "$row" ] || continue
+  body=$(printf '%s' "$row" | base64 --decode | jq -r .body)
+  case "$(printf '%s' "$body" | issuegraph validate | jq -r .state)" in
+    read|absent) : ;;
+    *) echo "REFUSING: an issue's block does not read — repair before trusting the order" >&2; bad=1 ;;
+  esac
+done <<EOF
+$rows
+EOF
+[ "$bad" -eq 0 ] || exit 1
+
+issuegraph ready --input candidates.json
 ```
 
 **`stateReason` has to be requested and normalised**, or the closure-reason
@@ -133,9 +163,11 @@ $ issuegraph ready --input two.json | jq -c '{slots:[.slots[]|{lead,ready}], und
 `1` is inert and `2` is unread. **They declare the same blocker and only one of
 them is refused.**
 
-So `underRead` is necessary and not sufficient. **Before you trust an ordering,
-check each body's `state`** — one `validate` per body, branching on `state` and
-not on the exit code, for the reason the grooming skill sets out:
+So `underRead` is necessary and not sufficient. **This is why the recipe at the
+top runs a per-body `state` check before it derives anything** — that loop is not
+an optional extra, it is what stops an inert body being ranked. It is written once,
+there, rather than repeated here; what follows is the same loop for reference if
+you are reading this section on its own:
 
 ```sh
 # Rule 1: the enumeration's own status, before the loop can call an empty result
