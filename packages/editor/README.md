@@ -87,14 +87,15 @@ Four findings about an *encoding*, as a pure detector plus a surface that never 
 Severity, and the "keep as history" affordance the last row alone carries, are **data on a frozen class table** — so no render site picks either, and a fifth class is a compile error until the table says what it costs.
 
 ```ts
-import { auditDocument, auditOverlay, renderAuditHeader, auditRowAttributes } from '@issuegraph/editor';
+import { auditOverlay, renderAuditHeader, auditRowAttributes } from '@issuegraph/editor';
 
-const findings = auditDocument({ document, graph, encodingRefused });
-const overlay = auditOverlay(findings);
+const overlay = auditOverlay({ document, graph, encodingRefused });
 
 renderAuditHeader(overlay);          // the persistent count and its filter toggle
 auditRowAttributes(overlay, ref);    // {} for a clean row; the severity mark for a flagged one
 ```
+
+`auditDocument` is exported too, for a host that wants the findings without a surface. **`auditOverlay` runs the audit rather than accepting one**, deliberately: taking a finding list made this a public boundary for values the compiler never checked, and every field, invariant and mutability escape then had to be defended one at a time. A host that persisted findings re-audits to draw them — which is the right way round anyway, since the audit is pure and cheap and a persisted finding may not describe the document being drawn.
 
 **Two of the four rest on a reader, and it is a required port.** `graph` carries `Model.cycles` and `Model.duplicateCanonical` straight off `buildModel`, in the *store's* own reference spelling — the host builds the model, so the host owns the translation between an opaque store reference and a normalised model key. It is required rather than optional because a host with no reader must not quietly receive a thinner audit and read it as a complete one.
 

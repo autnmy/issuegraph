@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { AUDIT_CLASS_SPECS } from './findings.ts';
-import type { AuditClass, AuditFinding } from './findings.ts';
+import { buildModel } from '@issuegraph/reader';
+import type { NodeInput } from '@issuegraph/reader';
+import { makeEdge } from '@issuegraph/store';
+import type { EdgeKind, GraphDocument, IssueRef, StoredIssue } from '@issuegraph/store';
+
+import type { AuditGraph } from './findings.ts';
 import {
   AUDIT_COUNT_ATTRIBUTE,
   AUDIT_FILTER_ATTRIBUTE,
@@ -14,42 +18,87 @@ import {
 } from './surface.ts';
 import { auditStylesheet } from './styles.ts';
 
-function finding(kind: AuditClass, members: readonly string[]): AuditFinding {
-  const spec = AUDIT_CLASS_SPECS[kind];
-  return {
-    kind,
-    severity: spec.severity,
-    keepAsHistory: spec.keepAsHistory,
-    members,
-    detail: `${kind} on ${members.join(', ')}`,
-  };
+function issue(ref: IssueRef, state: StoredIssue['state'] = 'open'): StoredIssue {
+  return { ref, title: `issue ${ref}`, state };
 }
+
+function documentOf(
+  issues: readonly StoredIssue[],
+  edges: readonly (readonly [EdgeKind, IssueRef, IssueRef])[],
+): GraphDocument {
+  return { issues, edges: edges.map(([kind, from, to]) => makeEdge(kind, from, to)) };
+}
+
+function graphOf(document: GraphDocument): AuditGraph {
+  const nodes: readonly NodeInput[] = document.issues.map((held) => ({
+    id: held.ref,
+    repo: null,
+    open: held.state === 'open',
+    labels: [],
+    assigneeCount: 0,
+    data: {
+      blockedBy: document.edges
+        .filter((edge) => edge.kind === 'blocked-by' && edge.from === held.ref)
+        .map((edge) => ({ repo: null, id: edge.to })),
+      decomposedFrom: null,
+      duplicateOf:
+        document.edges
+          .filter((edge) => edge.kind === 'duplicate-of' && edge.from === held.ref)
+          .map((edge) => ({ repo: null, id: edge.to }))[0] ?? null,
+      serializeWith: null,
+      togetherWith: null,
+      priority: null,
+      evidence: null,
+    },
+    declarationRead: 'read' as const,
+  }));
+  const model = buildModel(nodes);
+  return { cycles: model.cycles, duplicateCanonical: model.duplicateCanonical };
+}
+
+/** An overlay over a real document, which is now the only way to make one. */
+function overlayOf(
+  issues: readonly StoredIssue[],
+  edges: readonly (readonly [EdgeKind, IssueRef, IssueRef])[],
+  encodingRefused: readonly { readonly ref: IssueRef }[] = [],
+) {
+  const document = documentOf(issues, edges);
+  return auditOverlay({ document, graph: graphOf(document), encodingRefused });
+}
+
+/** A three-issue cycle: one finding naming three rows. */
+const CYCLE = {
+  issues: [issue('a'), issue('b'), issue('c')],
+  edges: [
+    ['blocked-by', 'a', 'b'],
+    ['blocked-by', 'b', 'c'],
+    ['blocked-by', 'c', 'a'],
+  ],
+} as const;
 
 describe('the overlay', () => {
   it('counts findings, not affected rows', () => {
-    // One cycle across four issues is ONE judgment call. Counting rows would
-    // report it as four pieces of work while the list behind the count has one.
-    const overlay = auditOverlay([finding('cycle', ['a', 'b', 'c', 'd'])]);
+    // One cycle across three issues is ONE judgment call. Counting rows would
+    // report it as three pieces of work while the list behind the count has one.
+    const overlay = overlayOf(CYCLE.issues, CYCLE.edges);
     assert.equal(overlay.count, 1);
-    assert.equal(overlay.rows.length, 4);
+    assert.equal(overlay.rows.length, 3);
   });
 
   it('lets the heaviest finding speak for a row carrying several', () => {
-    const overlay = auditOverlay([
-      finding('stale-blocker', ['a', 'closed']),
-      finding('cycle', ['a', 'b']),
-    ]);
-    const row = overlay.rows.find((candidate) => candidate.ref === 'a');
+    // `a` is in the cycle AND carries a stale blocker, so two findings name it.
+    const overlay = overlayOf(
+      [...CYCLE.issues, issue('gone', 'closed')],
+      [...CYCLE.edges, ['blocked-by', 'a', 'gone']],
+    );
+    const row = overlay.rowFor('a');
     assert.equal(row?.severity, 'blocks-work');
     assert.deepEqual(row?.kinds, ['cycle', 'stale-blocker']);
     assert.equal(row?.count, 2);
   });
 
-  it('orders rows and their classes deterministically', () => {
-    const overlay = auditOverlay([
-      finding('stale-blocker', ['c', 'a']),
-      finding('encoding-refused', ['b']),
-    ]);
+  it('orders rows deterministically', () => {
+    const overlay = overlayOf(CYCLE.issues, CYCLE.edges);
     assert.deepEqual(
       overlay.rows.map((row) => row.ref),
       ['a', 'b', 'c'],
@@ -57,179 +106,62 @@ describe('the overlay', () => {
   });
 
   it('has a count and no rows when nothing was found', () => {
-    const overlay = auditOverlay([]);
+    const overlay = overlayOf([issue('a'), issue('b')], [['blocked-by', 'a', 'b']]);
     assert.equal(overlay.count, 0);
     assert.deepEqual(overlay.rows, []);
-    assert.equal(overlay.byRef.size, 0);
+    assert.equal(overlay.rowFor('a'), undefined);
   });
 
-  it('snapshots the findings, so the count cannot drift from the list', () => {
-    // `readonly AuditFinding[]` accepts a MUTABLE array, so a caller that
-    // assembles findings from several sources and later pushes one would leave
-    // `findings` growing while `count` and `rows` kept their snapshot — the
-    // header count disagreeing with the list behind it, which is the one thing
-    // this function promises cannot happen.
-    const live: AuditFinding[] = [finding('cycle', ['a', 'b'])];
-    const overlay = auditOverlay(live);
-    live.push(finding('encoding-refused', ['z']));
-    assert.equal(overlay.findings.length, 1);
-    assert.equal(overlay.count, overlay.findings.length);
+  it('hands out nothing a consumer can mutate', () => {
+    // `ReadonlyMap` was a TypeScript restriction and nothing more: handing out
+    // the live index let a JavaScript consumer clear it, after which the
+    // lookups disagreed with `rows`, `findings` and `count`. The index is a
+    // closure now, so there is nothing to reach.
+    const overlay = overlayOf(CYCLE.issues, CYCLE.edges);
+    assert.equal(Object.isFrozen(overlay), true);
+    assert.equal(Object.isFrozen(overlay.rows), true);
+    assert.equal(Object.isFrozen(overlay.rows[0]), true);
+    assert.equal(Object.isFrozen(overlay.rows[0]?.kinds), true);
     assert.equal(Object.isFrozen(overlay.findings), true);
-  });
-
-  it('snapshots each finding\'s members too, not only the array holding them', () => {
-    // The array copy alone moves the aliasing down one level rather than
-    // removing it: a mutable `members` is assignable to the readonly field, so
-    // pushing a ref after construction changes what a consumer already
-    // rendered while `rows` and `byRef` keep the old snapshot. `members` is the
-    // last level — every other field is a primitive — so this is the whole of
-    // it rather than the next instalment.
-    const members: string[] = ['a', 'b'];
-    const live: AuditFinding[] = [{ ...finding('cycle', ['a', 'b']), members }];
-    const overlay = auditOverlay(live);
-    members.push('sneaked-in');
-    assert.deepEqual(overlay.findings[0]?.members, ['a', 'b']);
     assert.equal(Object.isFrozen(overlay.findings[0]), true);
     assert.equal(Object.isFrozen(overlay.findings[0]?.members), true);
-    assert.deepEqual(
-      overlay.rows.map((row) => row.ref),
-      [...(overlay.findings[0]?.members ?? [])],
-    );
-  });
-
-  it('derives the class-owned fields, so two render sites cannot disagree', () => {
-    // `severity` and `keepAsHistory` belong to the CLASS, not to the finding —
-    // and the row grammar already reads them off the table. A stored severity
-    // that disagreed was therefore a second, editable copy of a fact the table
-    // states, and it showed up as one render site calling a cycle
-    // `blocks-work` while another called it `misleading`.
-    const lying: AuditFinding = {
-      kind: 'cycle',
-      severity: 'misleading',
-      keepAsHistory: true,
-      members: ['a', 'b'],
-      detail: 'hand-built',
-    };
-    const overlay = auditOverlay([lying]);
-    assert.equal(overlay.findings[0]?.severity, 'blocks-work');
-    assert.equal(overlay.findings[0]?.keepAsHistory, false);
-    assert.equal(overlay.rows[0]?.severity, overlay.findings[0]?.severity);
-    // What genuinely belongs to the finding is kept.
-    assert.equal(overlay.findings[0]?.detail, 'hand-built');
-  });
-
-  it('drops a finding whose class nothing knows, rather than drawing it', () => {
-    // Unreachable from TypeScript — `AuditClass` is closed — so this is the
-    // JavaScript and deserialized case. Drawing it would put a row on the rail
-    // whose severity nothing can resolve: an absence rendered as a value, in
-    // the surface that exists to report absences.
-    // DESERIALIZED RATHER THAN CAST. `JSON.parse` is the route a value like
-    // this actually arrives by, and it needs no cast — which matters, because
-    // this repository forbids them, and a test that had to escape the type
-    // system to reach a guard would be evidence the guard was unreachable
-    // rather than evidence it works.
-    const fromWire: AuditFinding = JSON.parse(
-      '{"kind":"invented","severity":"blocks-work","keepAsHistory":false,"members":["a"],"detail":"from a wire"}',
-    );
-    const overlay = auditOverlay([fromWire, finding('cycle', ['x', 'y'])]);
-    assert.equal(overlay.count, 1);
-    assert.deepEqual(overlay.rows.map((row) => row.ref), ['x', 'y']);
-  });
-
-  it('does not accept a prototype member as a finding class', () => {
-    // `AUDIT_CLASS_SPECS["constructor"]` on a plain object answers with an
-    // INHERITED member rather than undefined, so an invalid class survived the
-    // unknown-class check and produced a finding whose severity was undefined,
-    // which the row grammar then stamped into an attribute. The lookup goes
-    // through a Map now, which has no inherited keys, so the hazard is removed
-    // rather than guarded.
-    const hostile: readonly AuditFinding[] = [
-      JSON.parse(
-        '{"kind":"__proto__","severity":"blocks-work","keepAsHistory":false,"members":["a"],"detail":"x"}',
-      ),
-      JSON.parse(
-        '{"kind":"constructor","severity":"blocks-work","keepAsHistory":false,"members":["b"],"detail":"x"}',
-      ),
-      JSON.parse(
-        '{"kind":"toString","severity":"blocks-work","keepAsHistory":false,"members":["c"],"detail":"x"}',
-      ),
-    ];
-    const overlay = auditOverlay([...hostile, finding('cycle', ['x', 'y'])]);
-    assert.equal(overlay.count, 1);
-    assert.deepEqual(
-      overlay.rows.map((row) => row.ref),
-      ['x', 'y'],
-    );
-    for (const row of overlay.rows) assert.notEqual(row.severity, undefined);
-  });
-
-  it('drops every malformed persisted finding instead of losing the whole audit', () => {
-    // The failure this replaced was total: one bad entry threw at the clone and
-    // took the header and every row with it, in the one component whose job is
-    // to report that something is wrong. Each row below is a different way a
-    // rebuilt payload can be malformed, and the guard is exhaustive over the
-    // fields that are READ rather than one check per round.
-    const malformed: readonly AuditFinding[] = [
-      JSON.parse('{"kind":"cycle","detail":"members missing entirely"}'),
-      JSON.parse('{"kind":"cycle","members":null,"detail":"members null"}'),
-      JSON.parse('{"kind":"cycle","members":"a,b","detail":"members not an array"}'),
-      JSON.parse('{"kind":"cycle","members":["a",7],"detail":"a member that is not a ref"}'),
-      JSON.parse('{"kind":"cycle","members":["a"]}'),
-      JSON.parse('{"kind":"cycle","members":["a"],"detail":42}'),
-      JSON.parse('{"members":["a"],"detail":"no kind at all"}'),
-      JSON.parse('null'),
-    ];
-    const overlay = auditOverlay([...malformed, finding('cycle', ['x', 'y'])]);
-    assert.equal(overlay.count, 1);
-    assert.deepEqual(
-      overlay.rows.map((row) => row.ref),
-      ['x', 'y'],
-    );
-    assert.doesNotThrow(() => renderAuditHeader(overlay));
-  });
-
-  it('counts a row once per FINDING, however often a finding names it', () => {
-    // `['a', 'a']` is a perfectly valid `readonly string[]`, so no type test
-    // catches it — and the row grammar counts one entry per member, so it
-    // reported one finding as two against `AuditRow.count`'s documented
-    // meaning. Members are a SET at the boundary now.
-    const repeated: AuditFinding = JSON.parse(
-      '{"kind":"cycle","severity":"blocks-work","keepAsHistory":false,"members":["a","a","b"],"detail":"x"}',
-    );
-    const overlay = auditOverlay([repeated]);
-    assert.equal(overlay.count, 1);
-    assert.deepEqual(overlay.findings[0]?.members, ['a', 'b']);
-    assert.deepEqual(
-      overlay.rows.map((row) => [row.ref, row.count]),
-      [
-        ['a', 1],
-        ['b', 1],
-      ],
-    );
-  });
-
-  it('sorts a caller\'s members, so two runs over one document agree', () => {
-    const unsorted: AuditFinding = JSON.parse(
-      '{"kind":"cycle","severity":"blocks-work","keepAsHistory":false,"members":["c","a","b"],"detail":"x"}',
-    );
-    assert.deepEqual(auditOverlay([unsorted]).findings[0]?.members, ['a', 'b', 'c']);
+    assert.equal(typeof overlay.rowFor, 'function');
   });
 
   it('indexes exactly the rows it lists', () => {
-    // The index and the list are two views of one answer, so a lookup that
+    // The lookup and the list are two views of one answer, so a lookup that
     // disagreed with the rail would draw a bar on a row the list calls clean.
-    const overlay = auditOverlay([
-      finding('cycle', ['a', 'b']),
-      finding('stale-blocker', ['c', 'closed']),
-    ]);
-    assert.deepEqual([...overlay.byRef.keys()].sort(), overlay.rows.map((row) => row.ref));
-    for (const row of overlay.rows) assert.equal(overlay.byRef.get(row.ref), row);
+    const overlay = overlayOf(
+      [...CYCLE.issues, issue('gone', 'closed'), issue('d'), issue('untouched')],
+      [...CYCLE.edges, ['blocked-by', 'd', 'gone']],
+    );
+    for (const row of overlay.rows) assert.equal(overlay.rowFor(row.ref), row);
+    // `gone` IS named — it is half of the stale-blocker finding — so the clean
+    // ref has to be one no finding mentions at all.
+    assert.notEqual(overlay.rowFor('gone'), undefined);
+    assert.equal(overlay.rowFor('untouched'), undefined);
+  });
+
+  it('names no row twice, however a finding was built', () => {
+    // A self-blocking edge hands the detector the same ref twice; members are a
+    // SET, so the row is counted once. `['a','a']` is a valid `readonly
+    // string[]`, so no type test would have caught this.
+    const overlay = overlayOf([issue('a', 'closed')], []);
+    assert.deepEqual(overlay.rows, []);
+    const selfBlocked = overlayOf([issue('a'), issue('gone', 'closed')], [['blocked-by', 'a', 'gone']]);
+    assert.deepEqual(
+      selfBlocked.rows.map((row) => [row.ref, row.count]),
+      [
+        ['a', 1],
+        ['gone', 1],
+      ],
+    );
   });
 });
 
 describe('the row left-bar', () => {
   it('gives an affected row the severity attribute the stylesheet draws from', () => {
-    const overlay = auditOverlay([finding('dead-duplicate-ref', ['a', 'closed'])]);
+    const overlay = overlayOf([issue('a'), issue('canonical', 'closed')], [['duplicate-of', 'a', 'canonical']]);
     assert.deepEqual(auditRowAttributes(overlay, 'a'), {
       [AUDIT_SEVERITY_ATTRIBUTE]: 'dangerous',
     });
@@ -238,7 +170,7 @@ describe('the row left-bar', () => {
   it('gives a clean row an empty record, never an undefined value', () => {
     // A caller spreads this unconditionally. Returning `undefined` for a clean
     // row is one `if` away from stamping the STRING "undefined" into the DOM.
-    const overlay = auditOverlay([finding('cycle', ['a', 'b'])]);
+    const overlay = overlayOf(CYCLE.issues, CYCLE.edges);
     assert.deepEqual(auditRowAttributes(overlay, 'untouched'), {});
   });
 
@@ -261,7 +193,7 @@ describe('the row left-bar', () => {
   });
 
   it('keeps the audit filter to the rows a finding names', () => {
-    const overlay = auditOverlay([finding('cycle', ['a', 'b'])]);
+    const overlay = overlayOf(CYCLE.issues, CYCLE.edges);
     assert.equal(auditFilterKeeps(overlay, 'a'), true);
     assert.equal(auditFilterKeeps(overlay, 'untouched'), false);
   });
@@ -269,7 +201,7 @@ describe('the row left-bar', () => {
 
 describe('the header count', () => {
   it('renders the count', () => {
-    const markup = renderAuditHeader(auditOverlay([finding('cycle', ['a', 'b'])]));
+    const markup = renderAuditHeader(overlayOf(CYCLE.issues, CYCLE.edges));
     assert.match(markup, new RegExp(`${AUDIT_COUNT_ATTRIBUTE}="1"`));
     assert.match(markup, /<span class="ig-audit-count">1<\/span>/);
   });
@@ -278,7 +210,7 @@ describe('the header count', () => {
     // "Always the same click" (§17d). A control that appears only when there is
     // bad news is a control the eye has to re-find, and audit is a FILTER, not
     // a mode you enter (§17a).
-    const markup = renderAuditHeader(auditOverlay([]));
+    const markup = renderAuditHeader(overlayOf([issue('a')], []));
     assert.match(markup, new RegExp(`${AUDIT_COUNT_ATTRIBUTE}="0"`));
     assert.match(markup, /<button type="button"/);
     assert.match(markup, new RegExp(AUDIT_FILTER_ATTRIBUTE));
@@ -287,14 +219,14 @@ describe('the header count', () => {
   });
 
   it('freezes what it hands out, so a render site cannot edit a finding', () => {
-    const overlay = auditOverlay([finding('cycle', ['a', 'b'])]);
+    const overlay = overlayOf(CYCLE.issues, CYCLE.edges);
     assert.equal(Object.isFrozen(overlay), true);
     assert.equal(Object.isFrozen(overlay.rows), true);
     assert.equal(Object.isFrozen(overlay.rows[0]?.kinds), true);
   });
 
   it('says whether the filter is on, so a screen reader can too', () => {
-    const overlay = auditOverlay([finding('cycle', ['a', 'b'])]);
+    const overlay = overlayOf(CYCLE.issues, CYCLE.edges);
     assert.match(renderAuditHeader(overlay), /aria-pressed="false"/);
     assert.match(renderAuditHeader(overlay, { filtered: true }), /aria-pressed="true"/);
   });
@@ -304,7 +236,13 @@ describe('the header count', () => {
     // reaches the markup is a number. A finding's `detail` is prose about
     // issues a host supplied, and whatever lists it owns its escaping.
     const markup = renderAuditHeader(
-      auditOverlay([finding('cycle', ['<script>alert(1)</script>', 'b'])]),
+      overlayOf(
+        [issue('<script>alert(1)</script>'), issue('b')],
+        [
+          ['blocked-by', '<script>alert(1)</script>', 'b'],
+          ['blocked-by', 'b', '<script>alert(1)</script>'],
+        ],
+      ),
     );
     assert.equal(markup.includes('<script>'), false);
     assert.equal(markup.includes('alert'), false);
@@ -316,7 +254,7 @@ describe('what the ambient surface may never be', () => {
   // comment: no modals, toasts, red banners, badge animation, blocking the edit
   // loop, or auto-fix.
   const surfaces: readonly (readonly [string, string])[] = [
-    ['the header markup', renderAuditHeader(auditOverlay([finding('cycle', ['a', 'b'])]))],
+    ['the header markup', renderAuditHeader(overlayOf(CYCLE.issues, CYCLE.edges))],
     ['the stylesheet', auditStylesheet],
   ];
 

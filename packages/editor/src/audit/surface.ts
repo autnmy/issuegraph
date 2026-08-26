@@ -40,8 +40,8 @@
 
 import type { IssueRef } from '@issuegraph/store';
 
-import { AUDIT_CLASSES, AUDIT_CLASS_SPECS, settledFinding } from './findings.ts';
-import type { AuditClass, AuditFinding, AuditSeverity } from './findings.ts';
+import { AUDIT_CLASSES, AUDIT_CLASS_SPECS, auditDocument } from './findings.ts';
+import type { AuditClass, AuditFinding, AuditInput, AuditSeverity } from './findings.ts';
 
 /**
  * The attribute an affected rail row carries. Its value is the severity that
@@ -79,9 +79,9 @@ export interface AuditRow {
  *
  * AN IN-PROCESS VALUE, NOT A PAYLOAD — the same distinction
  * `@issuegraph/viewer` draws between its normalized document and the plain
- * shape a host sends over a wire. {@link AuditOverlay.byRef} is a `Map`, so
- * this does not serialize; what crosses a boundary is the findings, and a
- * receiver rebuilds the overlay from them with {@link auditOverlay}.
+ * shape a host sends over a wire. {@link AuditOverlay.rowFor} is a closure, so
+ * this does not serialize; what crosses a boundary is the DOCUMENT, and a
+ * receiver builds its own overlay from it.
  */
 export interface AuditOverlay {
   /**
@@ -95,11 +95,17 @@ export interface AuditOverlay {
   /** One entry per affected ref, sorted, so two renders agree. */
   readonly rows: readonly AuditRow[];
   /**
-   * Ref -> its row. The same index `@issuegraph/viewer` carries on a normalized
-   * document, for the same reason: a rail asks about every row it draws, and a
-   * scan per question turns one render into a quadratic walk of the backlog.
+   * The row for a ref, or `undefined` when it is clean.
+   *
+   * A FUNCTION RATHER THAN THE INDEX ITSELF, and the difference is not
+   * cosmetic: `ReadonlyMap` is a TypeScript restriction and nothing more, so
+   * handing out the live `Map` let a JavaScript consumer call `.clear()` on it
+   * — after which the lookups disagreed with `rows`, `findings` and `count`,
+   * which is the inconsistency this whole value exists to prevent. A closure
+   * over a private index cannot be reached at all, and still answers in
+   * constant time, which a scan per row would not.
    */
-  readonly byRef: ReadonlyMap<IssueRef, AuditRow>;
+  readonly rowFor: (ref: IssueRef) => AuditRow | undefined;
   /** The findings themselves, carried through unchanged. */
   readonly findings: readonly AuditFinding[];
 }
@@ -115,23 +121,19 @@ const CLASS_ORDER: ReadonlyMap<AuditClass, number> = new Map(
  * nor reads the document, so the count on screen and the list behind it can
  * never disagree about what was found.
  */
-export function auditOverlay(input: readonly AuditFinding[]): AuditOverlay {
-  // SETTLED ON ENTRY, BOTH LEVELS. `readonly AuditFinding[]` accepts a mutable
-  // array of mutable objects, so everything below — the count, the rows, the
-  // index — would otherwise be a snapshot of values the caller can still
-  // change underneath it. Doing this at the door means there is one place
-  // where an incoming finding stops being someone else's, rather than a copy
-  // per field added as each one is noticed.
-  const findings: readonly AuditFinding[] = Object.freeze(
-    input
-      .map(settledFinding)
-      // A finding whose `kind` the class table does not carry is dropped rather
-      // than drawn. It is unreachable from TypeScript, so this covers a
-      // JavaScript caller or a deserialized value; and drawing one would put a
-      // row on the rail whose severity nothing could resolve — an absence
-      // rendered as a value, in the surface that exists to report absences.
-      .filter((found): found is AuditFinding => found !== null),
-  );
+export function auditOverlay(input: AuditInput): AuditOverlay {
+  // IT RUNS THE AUDIT RATHER THAN ACCEPTING ONE. Taking a finding list made
+  // this a public boundary for values TypeScript never checked, and six review
+  // rounds each found a different way for one to be wrong — a mutable array, a
+  // mutable `members`, a `severity` disagreeing with its `kind`, a prototype
+  // key, a ref named twice, a finding naming nobody. That surface is not
+  // enumerable, so it is gone instead of defended: every finding here was built
+  // by the detector, with its invariants established rather than checked.
+  //
+  // The cost is a host that persisted findings must re-audit to draw them. That
+  // is the right way round anyway — the audit is pure and cheap, and a
+  // persisted finding may not describe the document being drawn.
+  const findings = auditDocument(input);
   const byRef = new Map<IssueRef, { kinds: Set<AuditClass>; count: number }>();
   for (const found of findings) {
     for (const ref of found.members) {
@@ -169,10 +171,12 @@ export function auditOverlay(input: readonly AuditFinding[]): AuditOverlay {
     });
   }
   rows.sort((a, b) => (a.ref < b.ref ? -1 : a.ref > b.ref ? 1 : 0));
+  const index = new Map(rows.map((row) => [row.ref, row]));
   return Object.freeze({
     count: findings.length,
-    rows: Object.freeze(rows),
-    byRef: new Map(rows.map((row) => [row.ref, row])),
+    rows: Object.freeze(rows.map((row) => Object.freeze(row))),
+    // The index is captured, never exposed — see `rowFor`.
+    rowFor: (ref: IssueRef) => index.get(ref),
     findings,
   });
 }
@@ -189,14 +193,14 @@ export function auditRowAttributes(
   overlay: AuditOverlay,
   ref: IssueRef,
 ): Readonly<Record<string, string>> {
-  const row = overlay.byRef.get(ref);
+  const row = overlay.rowFor(ref);
   if (row === undefined) return Object.freeze({});
   return Object.freeze({ [AUDIT_SEVERITY_ATTRIBUTE]: row.severity });
 }
 
 /** Whether the audit filter would keep this row. Clean rows are hidden by it. */
 export function auditFilterKeeps(overlay: AuditOverlay, ref: IssueRef): boolean {
-  return overlay.byRef.has(ref);
+  return overlay.rowFor(ref) !== undefined;
 }
 
 export interface AuditHeaderOptions {

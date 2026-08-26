@@ -294,7 +294,7 @@ describe('done when: the header count and the row left-bar render, and nothing e
     ],
     [['blocked-by', 'a', 'gone']],
   );
-  const overlay = auditOverlay(auditDocument({ document, graph: graphFor(document) }));
+  const overlay = auditOverlay({ document, graph: graphFor(document) });
 
   it('renders the count', () => {
     assert.equal(overlay.count, 1);

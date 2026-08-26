@@ -99,22 +99,6 @@ export const AUDIT_CLASS_SPECS = Object.freeze({
   'stale-blocker': Object.freeze({ severity: 'misleading', weight: 0, keepAsHistory: true }),
 } as const) satisfies Readonly<Record<AuditClass, AuditClassSpec>>;
 
-/**
- * The same table, keyed so a lookup CANNOT answer with a prototype member.
- *
- * `AUDIT_CLASS_SPECS[kind]` on a plain object answers for `"__proto__"` and
- * `"constructor"` with something inherited rather than `undefined`, so an
- * invalid class survived the check below and produced a finding whose severity
- * was `undefined` — which the row grammar then stamped into an attribute. A
- * `Map` has no inherited keys, so the hazard is removed rather than guarded:
- * there is no own-key rule here for a later reader to forget.
- *
- * The record stays the export, because it is the readable declaration and a
- * consumer indexes it with a `kind` the type system has already checked.
- */
-const SPEC_OF: ReadonlyMap<string, AuditClassSpec> = new Map(
-  AUDIT_CLASSES.map((kind) => [kind, AUDIT_CLASS_SPECS[kind]]),
-);
 
 /** One finding. Severity travels ON it, never looked up at the render site. */
 /**
@@ -122,20 +106,17 @@ const SPEC_OF: ReadonlyMap<string, AuditClassSpec> = new Map(
  *
  * `severity` and `keepAsHistory` are FIELDS, because the design asks for them
  * to be — *"severity is data on the finding, not a colour chosen at the render
- * site"* — but they are never a caller's to choose. {@link settledFinding}
- * derives both from `kind` on the way in, so the class table is the single
- * source and a finding whose severity disagrees with its class cannot survive
- * the boundary in either direction.
+ * site"* — but they are never a caller's to choose. They are read off the class
+ * table where a finding is built, so the table is the single source and a
+ * finding whose severity disagrees with its class cannot be constructed.
  *
- * WHY THE RULE IS RUNTIME RATHER THAN A TYPE. Tying the two fields to `kind`
- * through a mapped union does refuse the disagreement at compile time, and it
- * was written and measured: constructing one then needs either a cast — which
- * this repository's standards forbid outright — or a four-row builder table,
- * which is the enumeration whose second instance is what started this. Neither
- * pays for itself, because the compile-time version cannot reach the callers
- * that actually produce an inconsistent finding: JavaScript, and anything
- * deserialized from storage or a wire. The runtime rule covers those and the
- * TypeScript ones alike.
+ * NOTHING ELSE CONSTRUCTS ONE. Every finding in existence comes from this
+ * module's own builder, which reads both fields off the table — so there is no
+ * disagreement to refuse, from TypeScript or anywhere else. An earlier revision
+ * accepted findings from a caller and tried to enforce the relationship in the
+ * TYPE instead; that needs either a cast, which this repository forbids, or a
+ * four-row builder table, and it still could not reach a value deserialized
+ * from a wire. Removing the boundary was cheaper than either.
  */
 export interface AuditFinding {
   readonly kind: AuditClass;
@@ -146,9 +127,9 @@ export interface AuditFinding {
    * names its whole component; the other three name one issue, or the two ends
    * of the edge that produced them.
    *
-   * Both properties are established by {@link settledFinding}, not merely
-   * expected of a caller — the row grammar counts an entry per member, so a
-   * repeated ref reported one finding as two.
+   * Both properties are established where a finding is built, not merely
+   * expected — the row grammar counts an entry per member, so a repeated ref
+   * would report one finding as two.
    */
   readonly members: readonly IssueRef[];
   /** What the reader can be told, in one sentence. Never parsed, never a code. */
@@ -271,86 +252,49 @@ function compareMembers(a: readonly IssueRef[], b: readonly IssueRef[]): number 
  * "settled" is how the two come to disagree.
  */
 /**
- * Whether a value carries the fields {@link settledFinding} READS.
+ * A finding, with every invariant established by construction.
  *
- * A TYPE GUARD OVER `unknown`, AND THAT IS THE HONEST SIGNATURE. The values
- * this defends against are precisely the ones TypeScript never saw — a
- * JavaScript caller, or anything rebuilt from storage or a wire — so a
- * parameter claiming they are already `AuditFinding`s would assert a guarantee
- * the source cannot provide.
+ * THERE IS NO LONGER A BOUNDARY HERE TO DEFEND, AND THAT IS THE CHANGE. This
+ * function used to be reachable with a caller's own object, so it grew a
+ * validator: a class lookup that a prototype key could satisfy, a members list
+ * that might not be an array, a `severity` that might disagree with `kind`, a
+ * members list carrying a ref twice, then one carrying none. Six review rounds,
+ * each a different way for a value TypeScript never checked to be wrong, and
+ * two claims of closure that were premature because the surface is not
+ * enumerable.
  *
- * IT COVERS TYPES; THE INVARIANTS ARE NORMALIZED BELOW, AND THE SPLIT IS WHY
- * AN EARLIER CLAIM OF CLOSURE HERE WAS PREMATURE. Successive rounds found this
- * boundary malformed one field at a time — a caller's array, a caller's
- * `members`, a caller's disagreeing `severity`, a prototype key in `kind`, then
- * a `members` list carrying a ref twice. The first four are TYPE failures and
- * this guard answers them; the last is not — `['a', 'a']` is a perfectly valid
- * `readonly string[]`, and no type test would have caught it.
+ * So the boundary was removed rather than hardened a seventh time:
+ * {@link ../surface.ts auditOverlay} now derives its findings by running the
+ * audit instead of accepting a list, and every finding in existence comes from
+ * here. What were runtime defences are invariants again:
  *
- * So the contract is stated in full rather than one round at a time, and it is
- * short enough to be exhaustive:
+ *     kind            a literal from AUDIT_CLASSES, at four call sites
+ *     severity        read from the table, never passed in
+ *     keepAsHistory   read from the table, never passed in
+ *     members         a sorted set, non-empty
+ *     detail          built here
  *
- *     kind            a class the table carries          validated here
- *     members         strings, then SORTED and DEDUPED   validated here, normalized below
- *     detail          a string                           validated here
- *     severity        derived from kind                  never read from the input
- *     keepAsHistory   derived from kind                  never read from the input
- *
- * Every field of the interface appears in that table, and `members` is the only
- * one carrying an invariant beyond its type. Adding a read field, or an
- * invariant to an existing one, is what would reopen this — nothing else.
+ * `members` is still normalized rather than assumed, because the detectors
+ * build it from document data — a self-blocking edge really does hand this
+ * `['a', 'a']`. Non-empty is asserted rather than filtered: a finding naming
+ * nobody would add to the header count while giving a reader nothing to open,
+ * and no detector can produce one, so silence would hide a defect rather than
+ * tolerate an input.
  */
-function isSettleable(value: unknown): value is AuditFinding {
-  if (typeof value !== 'object' || value === null) return false;
-  const candidate: Record<string, unknown> = { ...value };
-  if (typeof candidate['kind'] !== 'string' || !SPEC_OF.has(candidate['kind'])) return false;
-  const members = candidate['members'];
-  if (!Array.isArray(members) || members.some((member) => typeof member !== 'string')) return false;
-  return typeof candidate['detail'] === 'string';
-}
-
-export function settledFinding(found: AuditFinding): AuditFinding | null {
-  // ANSWERING `null` RATHER THAN THROWING is this module's own rule, that an
-  // audit must not die on the data it is auditing — and the cost of getting it
-  // wrong is the whole surface: one malformed persisted finding took the header
-  // and every row with it, in the one component whose job is to report that
-  // something is wrong.
-  if (!isSettleable(found)) return null;
-  const spec = SPEC_OF.get(found.kind);
-  if (spec === undefined) return null;
-  // DERIVED FROM `kind`, NEVER COPIED — which is what stops two render sites
-  // classifying one finding differently: the row grammar already reads the
-  // table, so a stored `severity` that disagreed with it was a second, editable
-  // copy of a fact the table states.
-  return Object.freeze({
-    kind: found.kind,
-    severity: spec.severity,
-    keepAsHistory: spec.keepAsHistory,
-    // A SET, SORTED — established here rather than expected of the caller. The
-    // row grammar counts one entry per member, so a repeated ref reported one
-    // finding as two on that row, against `AuditRow.count`'s own documented
-    // meaning. Sorting is the other half: it is what makes two runs over one
-    // document produce equal findings, and a caller's order is not that.
-    members: Object.freeze([...new Set(found.members)].sort()),
-    detail: found.detail,
-  });
-}
-
 function finding(kind: AuditClass, members: readonly IssueRef[], detail: string): AuditFinding {
-  // Every call site passes a literal from `AUDIT_CLASSES`, so the table always
-  // has it and `settledFinding` cannot answer null here. Reading it through the
-  // same door anyway is what keeps ONE place that derives the class-owned
-  // fields; a second construction path is how the two come to disagree.
   const spec = AUDIT_CLASS_SPECS[kind];
-  const settled = settledFinding({
+  // A SORTED SET. Sorting is what makes two runs over one document produce
+  // equal findings; deduplication matters because the row grammar counts one
+  // entry per member, and a self-blocking edge hands this the same ref twice.
+  const named = Object.freeze([...new Set(members)].sort());
+  if (named.length === 0) throw new Error(`unreachable: a ${kind} finding names no issues`);
+  return Object.freeze({
     kind,
     severity: spec.severity,
     keepAsHistory: spec.keepAsHistory,
-    members,
+    members: named,
     detail,
   });
-  if (settled === null) throw new Error(`unreachable: ${kind} is not in the class table`);
-  return settled;
 }
 
 function edgesOfKind(document: GraphDocument, kind: StoredEdge['kind']): readonly StoredEdge[] {
