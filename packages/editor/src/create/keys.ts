@@ -35,19 +35,27 @@
  * this module keeps getting asked about. A host's whole wiring is "reduce a
  * non-`none` intent, and `preventDefault()` it" — so every press this map
  * claims wrongly is a keystroke stolen from its real owner, and one it hands
- * back is simply the platform working. There are three owners:
+ * back is simply the platform working. There are four owners:
  *
  *   - THE HOST, for a key §17b never bound. An unbound key is `none`.
  *   - THE PLATFORM, for a modified chord — `Cmd+R` is reload, not relate. See
  *     {@link KeyPress}.
  *   - AN EDITABLE CONTROL, for a printable key while it has focus. `1` typed
  *     into the target search is the character `1`, not a kind selection.
+ *   - AN INPUT METHOD, for `⏎` and `Escape` while it is composing — they
+ *     confirm and cancel the candidate.
  *
- * The last two arrived as review findings on consecutive rounds, which is what
- * moved them from special cases to a stated rule: both are "does someone else
- * own this press", asked before the binding's own meaning is consulted. A
- * fourth owner, if one appears, belongs beside them rather than inside an arm
- * of the switch.
+ * The last three arrived as review findings on consecutive rounds, which is
+ * what moved them from special cases to a stated rule: each is "does someone
+ * else own this press", asked before the binding's own meaning is consulted.
+ * The fourth cost one field and one clause precisely because the third had
+ * already been answered as a rule rather than patched as an instance — a fifth
+ * belongs beside them, and not inside an arm of the switch.
+ *
+ * Note the last two do NOT collapse into one another, which is the trap. The
+ * IME owns exactly the two keys that SURVIVE editable focus, so a
+ * `survivesEditing` flag can never express it: those two are only reachable in
+ * a focused box, which is also the only place composition happens.
  *
  * Ownership is DATA on the binding table — `survivesEditing` — so no call site
  * decides it and a new binding cannot be added without answering the question.
@@ -210,6 +218,17 @@ export interface KeyPress {
   readonly ctrlKey?: boolean;
   readonly metaKey?: boolean;
   readonly altKey?: boolean;
+  /**
+   * `KeyboardEvent.isComposing` — whether an input method is mid-composition.
+   *
+   * The two keys this protects are exactly the two that survive editable focus.
+   * While an IME is composing, `⏎` CONFIRMS the candidate and `Escape` CANCELS
+   * the composition; both belong to the input method, and claiming them commits
+   * a stale target or discards the draft while the reader is still spelling the
+   * word they meant to search for. Anyone entering CJK text hits it on the
+   * ordinary path, which is why it is not an exotic case.
+   */
+  readonly isComposing?: boolean;
 }
 
 /**
@@ -223,6 +242,19 @@ export interface KeyPress {
  */
 function chorded(press: KeyPress): boolean {
   return press.ctrlKey === true || press.metaKey === true || press.altKey === true;
+}
+
+/**
+ * Whether an input method is mid-composition, and therefore owns this press.
+ *
+ * Its own predicate rather than another clause inside {@link chorded}: a chord
+ * is a fact about which MODIFIERS are held, composition is a fact about the
+ * INPUT METHOD's state, and folding them together would make the name lie about
+ * half of what it tests. They are asked in the same breath below because the
+ * question they answer is the same one.
+ */
+function composing(press: KeyPress): boolean {
+  return press.isComposing === true;
 }
 
 /**
@@ -246,11 +278,15 @@ function normalize(key: string): string {
  * expression, because the decision was already made by the table.
  */
 export function keyIntent(press: KeyPress, context: KeyboardContext): KeyIntent {
-  // BEFORE THE TABLE, because a chord is not a miss to be looked up — it is a
-  // press this map has no claim on at all. Answering `none` is what lets a host
-  // call `preventDefault()` on everything else without stealing the platform's
-  // own shortcuts.
-  if (chorded(press)) return NONE;
+  // BEFORE THE TABLE, because neither of these is a miss to be looked up — each
+  // is a press this map has no claim on at all. Answering `none` is what lets a
+  // host call `preventDefault()` on everything else without stealing the
+  // platform's own shortcuts or the input method's.
+  // COMPOSITION BITES THE TWO KEYS THAT SURVIVE EDITABLE FOCUS, which is why it
+  // cannot be left to the `survivesEditing` flag: `⏎` and `Escape` are exactly
+  // the bindings that reach a focused search box, and exactly the two an IME
+  // needs while composing.
+  if (chorded(press) || composing(press)) return NONE;
 
   const binding = BINDINGS.get(normalize(press.key));
   if (binding === undefined) return NONE;

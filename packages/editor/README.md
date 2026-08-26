@@ -161,11 +161,14 @@ element.addEventListener('keydown', (event) => {
 });
 ```
 
-There are three owners:
+There are four owners:
 
 - **The host**, for a key §17b never bound. An unbound key is `none`.
 - **The platform**, for a modified chord. `KeyPress` is structurally a subset of `KeyboardEvent`, so the event goes straight in — a bare key name cannot tell `R` from `Cmd+R`, and the handler above would hijack reload, new-tab and tab-selection. `Ctrl`, `Meta` and `Alt` answer `none` **before** the table is consulted, because a chord is not a lookup miss. `Shift` is deliberately *not* among them: §17b names its bindings in capitals and `Shift+r` is how a keyboard reports `R`, so treating shift as a modifier would unbind the design itself.
 - **An editable control**, for a printable key while it has focus. The flow is `R → digit → search → ⏎`, so the search box is focused for the whole middle of it — and since most issue references contain a digit, a map that claimed `1`–`5` there would eat nearly every query. `⌫` is the same case and less obvious: in a focused text box it deletes a *character*, not the reader's selected edge.
+- **An input method**, for `⏎` and `Escape` while `isComposing` — they confirm and cancel the candidate. Passing the event straight in carries this for free; unpacking `event.key` would drop it.
+
+The last two do **not** collapse into one another, which is the trap. The IME owns exactly the two keys that *survive* editable focus, so `survivesEditing` can never express it: those two are only reachable inside a focused box, which is also the only place composition happens.
 
 `⏎` and `Escape` **survive** editing, which is why this is a per-binding flag rather than one "silence everything while a box has focus" rule: the search is focused at exactly the moment `⏎` has to commit the target. Which bindings survive is **data on the table** (`survivesEditing`), so no call site decides it and a new binding is a compile error until the table answers.
 

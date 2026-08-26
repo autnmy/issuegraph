@@ -230,6 +230,53 @@ describe('an editable control owns its printable keys', () => {
   });
 });
 
+describe('an input method owns ⏎ and Escape while it is composing', () => {
+  // The trap this covers: the IME owns exactly the two keys that SURVIVE
+  // editable focus, so `survivesEditing` can never express it — those two are
+  // only reachable in a focused box, which is also the only place composition
+  // happens. Anyone entering CJK text hits this on the ordinary path.
+  const composing = (over: Partial<KeyboardContext> = {}): KeyboardContext => ({
+    ...context(over),
+    editableFocus: true,
+  });
+
+  const owned = [
+    { key: 'Enter', why: 'confirms the IME candidate, not the target' },
+    { key: 'Escape', why: 'cancels the composition, not the draft' },
+  ] as const;
+
+  for (const { key, why } of owned) {
+    it(`hands ${key} back while composing — it ${why}`, () => {
+      const ctx = composing({ focused: SUBJECT, match: OBJECT });
+      assert.deepEqual(keyIntent({ key, isComposing: true }, ctx), { kind: 'none' });
+      // The control, and it is the whole point of this suite: the SAME key in
+      // the SAME context binds when nothing is composing. These two survive
+      // editable focus, so without this the assertion above could pass for the
+      // `editableFocus` reason rather than the composition one.
+      assert.notDeepEqual(keyIntent({ key }, ctx), { kind: 'none' });
+      assert.notDeepEqual(keyIntent({ key, isComposing: false }, ctx), { kind: 'none' });
+    });
+  }
+
+  it('holds on the canvas too, not only in a focused box', () => {
+    // `isComposing` is a fact about the press, so it does not depend on this
+    // package's view of focus.
+    assert.deepEqual(
+      keyIntent({ key: 'Enter', isComposing: true }, context({ match: OBJECT })),
+      { kind: 'none' },
+    );
+  });
+
+  it('surrenders a composing press whatever the key', () => {
+    for (const key of ['r', '1', 't', 'Backspace', 'Enter', 'Escape']) {
+      assert.deepEqual(
+        keyIntent({ key, isComposing: true }, composing({ focused: SUBJECT, match: OBJECT, selectedEdge: edgeIdFor('blocked-by') })),
+        { kind: 'none' },
+      );
+    }
+  });
+});
+
 describe('shifted and unshifted are the same key', () => {
   it('does NOT treat shift as a modifier, because §17b names its keys in capitals', () => {
     // The discriminating case: shift must fold, while ctrl/meta/alt must block.
