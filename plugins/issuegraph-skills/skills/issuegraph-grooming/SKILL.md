@@ -35,8 +35,12 @@ about — an absence rendered as a value — arriving through a different door:
    subshell; the variable you set there does not survive, so the check reports
    the state it would have had if it found nothing.
 
-A recipe below that looks under-defended against one of these is relying on this
-section, not overlooking it.
+**Where the rules are applied in full, and where they are not.** Every recipe that
+can **WRITE** — an issue edit, an issue create — implements all three inline,
+because a copied recipe that writes is one that can destroy something. The
+one-shot **read** examples (`… | issuegraph parse`) are shown bare: their failure
+prints on your terminal, and there is nothing to corrupt. If you lift a read
+example into automation, rule 1 becomes yours to add.
 
 ## 1. Audit — what is wrong with this block?
 
@@ -79,15 +83,32 @@ It never re-spells or removes a line, and it refuses outright any shape it canno
 establish with certainty.
 
 ```sh
-gh issue view 1234 -R owner/repo --json body -q .body | issuegraph backfill > /tmp/body.md \
+# Rule 1 FIRST: the fetch's own status, before anything consumes its output.
+body=$(gh issue view 1234 -R owner/repo --json body -q .body) \
+  || { echo "could not read the issue; nothing was written" >&2; exit 1; }
+
+printf '%s' "$body" | issuegraph backfill > /tmp/body.md \
+  && [ -s /tmp/body.md ] \
   && gh issue edit 1234 -R owner/repo --body-file /tmp/body.md
 ```
 
-⚠ **The `&&` is not style — without it this recipe wipes the issue.** On
-`unrecoverable` the command exits **4** and writes nothing to stdout, but the
-redirection has *already* created `/tmp/body.md` as a **0-byte file**. In an
-ordinary shell (no `set -e`) the next line then runs and replaces the entire
-issue body with nothing. Measured: `backfill` rc **4**, output file **0 bytes**.
+⚠ **This recipe can wipe an issue through TWO different doors, and both are
+measured.** They are worth separating because guarding one leaves the other open
+— which is exactly what an earlier revision of this block did.
+
+**The transform refusing.** On `unrecoverable`, `backfill` exits **4** having
+written nothing, while the redirection has *already* created `/tmp/body.md` as a
+**0-byte file**. Without the `&&`, the next line replaces the whole body with
+nothing.
+
+**The fetch failing.** This is the subtler one. If `gh issue view` fails, the
+pipeline hands `backfill` an **empty input** — and backfill answers `no-block` at
+exit **0**, because an empty body genuinely has no block. So the `&&` *passes*,
+the file is empty, and the edit runs. Measured end to end: fetch fails → backfill
+rc **0**, output **0 bytes** → the edit fires. Guarding the transform does not
+guard the fetch; only reading the fetch's own status does.
+
+`[ -s ]` is the belt behind both.
 
 In a loop, gate on the outcome instead — see below.
 

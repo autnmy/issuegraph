@@ -134,12 +134,17 @@ for leaf in "$@"; do
   # "$PREV"}` expands to TWO words in bash and sh and to ONE in zsh, where the CLI
   # then rejects `--blocked-by 902` as an unknown option — so in zsh the loop
   # writes no edges at all while looking correct. Measured in all three shells.
+  # Rule 1 again: the body helper's own status, before anything renders it. A
+  # failing helper otherwise yields an empty body, `set` renders a block onto
+  # nothing, and the loop files an EMPTY leaf and chains the next one to it.
+  text=$(leaf_body "$leaf") || break
+  [ -n "$text" ] || break
   if [ -n "$PREV" ]; then
-    printf '%s\n' "$(leaf_body "$leaf")" \
+    printf '%s\n' "$text" \
       | issuegraph set --decomposed-from "$PARENT" --blocked-by "$PREV" \
                        --priority "$LEAF_PRIORITY" --evidence asserted > /tmp/leaf.md || break
   else
-    printf '%s\n' "$(leaf_body "$leaf")" \
+    printf '%s\n' "$text" \
       | issuegraph set --decomposed-from "$PARENT" \
                        --priority "$LEAF_PRIORITY" --evidence asserted > /tmp/leaf.md || break
   fi
