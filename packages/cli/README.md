@@ -44,6 +44,8 @@ On `unread` the JSON carries **no `data` field at all** — not `data: null`, wh
 
 Input arrives on **stdin** unless a file option is given. Data verbs write **JSON to stdout**; body verbs write **the resulting body to stdout and nothing else**, so redirection is safe. Every note, warning and error goes to stderr.
 
+**One opt-in exception:** `backfill --json` emits the outcome as JSON instead of the body — see below. The default is unchanged, so a caller only ever sees JSON by asking for it.
+
 | verb | what it does |
 |---|---|
 | `parse` | read one issue body and report what it declares |
@@ -109,6 +111,43 @@ issuegraph set --blocked-by 123 --blocked-by 124 --evidence verified < body.md >
 issuegraph splice --edges '{"blockedBy":["7"],"serializeWith":null}' < body.md
 issuegraph backfill < body.md
 ```
+
+### `backfill --json` — the outcome as data
+
+`backfill` normally writes the repaired body, and reports which of its four
+outcomes happened only as prose on stderr. That is fine at a prompt and unusable
+in a loop: branching on it would mean matching another package's message text,
+which stops matching silently when the wording changes.
+
+`--json` puts the outcome on stdout instead:
+
+```console
+$ issuegraph backfill --json --body-file body.md
+{
+  "outcome": "delimited",
+  "body": "…the repaired body…",
+  "diagnostics": []
+}
+```
+
+| `outcome` | means | do |
+|---|---|---|
+| `delimited` | repaired | write `body` back |
+| `already-canonical` | the block was already fine | nothing |
+| `no-block` | there is no block | nothing |
+| `unrecoverable` | cannot be repaired without guessing | leave it; a human decides |
+
+**On `unrecoverable` there is no `body` key at all** — not an empty string, and
+not `null`. The input was not repaired, so there is nothing a caller could write
+back believing it had been. That is the same shape `parse` uses for `unread`.
+
+**The exit code is unchanged by the flag.** `unrecoverable` is a refused write
+either way, so it still exits `4`; the payload carries the outcome and the code
+carries the decision. A shell reads the code, a program reads the value.
+
+**`validate` cannot substitute for this.** A repairable block and an unrepairable
+one produce byte-identical `validate` output — `{"state":"inert","ok":false,
+"blockDefect":"undelimited"}` — so this boundary is the only place they differ.
 
 References take any spelling the reader accepts: `123`, `#123`, or `owner/repo#123`.
 

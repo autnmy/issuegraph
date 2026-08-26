@@ -5,6 +5,11 @@
  * reaches stdout, so `issuegraph set … < body > new-body` is safe; every note,
  * warning and refusal goes to stderr.
  *
+ * ONE EXCEPTION, and it is opt-in: `backfill --json` emits the OUTCOME as JSON
+ * instead of the body. The default is unchanged, so the redirection above still
+ * behaves; a caller only sees JSON by asking for it. See {@link backfill} for why
+ * it exists and why a refusal carries no `body` key.
+ *
  * Every byte of editing is `@issuegraph/writer`'s. Nothing here builds a line.
  *
  * WHY `set` AND `splice` ARE BOTH KEPT. They mirror the writer's own split and
