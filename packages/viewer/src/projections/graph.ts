@@ -43,7 +43,7 @@ import {
   atStations,
 } from '../parts.ts';
 import { type LateralNeighbours, type Scene, resolveFocusKey } from '../scene.ts';
-import { type Theme, defaultTheme } from '../theme.ts';
+import { type Theme, resolveTheme } from '../theme.ts';
 import { type EdgeTerminal, dashArrayFor, treatmentFor } from '../vocabulary.ts';
 import { type SceneOptions, excludedRow, isFooterSlot } from './linear.ts';
 
@@ -504,7 +504,7 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
   // See `linearScene` — the same rule, applied before the canvas is laid out.
   const stations = stationsOf(document);
   const options = atStations(rawOptions, stations);
-  const theme = options.theme ?? defaultTheme;
+  const theme = resolveTheme(options.theme);
   const layout = layoutGraph(document, theme);
   const nodeCount = layout.nodes.size;
 

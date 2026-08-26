@@ -24,7 +24,7 @@
  */
 
 import type { NormalizedDocument, ViewerEdge } from './document.ts';
-import type { MetricToken, Theme } from './theme.ts';
+import { type MetricToken, type Theme, defaultTheme } from './theme.ts';
 
 /**
  * Custom properties carrying LAYOUT OUTPUT rather than theme input.
@@ -78,7 +78,18 @@ export interface GraphLayout {
 }
 
 function metric(theme: Theme, token: MetricToken): number {
-  return theme.metrics[token];
+  // FALLS BACK TO THE DEFAULT, AS A BACKSTOP RATHER THAN AS THE FIX.
+  // `resolveTheme` fills a caller's theme at the entry points, which is where a
+  // hole belongs closed; this covers the exported low-level functions a consumer
+  // can reach directly with a theme built against an EARLIER version.
+  //
+  // A MISSING METRIC DOES NOT FAIL LOUDLY, which is what makes it worth a line:
+  // it reads `undefined`, arithmetic on it yields `NaN`, and every comparison
+  // against `NaN` is false — so a fitting check silently passes everything.
+  // Measured when `--ig-label-char-width` was added: a 0.1.0 theme made
+  // `fitLabel` return a 60-character title with an ellipsis APPENDED, which is
+  // worse overflow than the defect that token was added to fix.
+  return theme.metrics[token] ?? defaultTheme.metrics[token];
 }
 
 /**
