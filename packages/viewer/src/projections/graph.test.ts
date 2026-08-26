@@ -339,6 +339,34 @@ describe('the graph projection', () => {
     );
   });
 
+  it('keeps a FULL-WIDTH title inside its node — emoji and CJK', () => {
+    // The classes are otherwise ASCII-only, so a glyph matching neither was
+    // charged the plain average while it draws near the full font size.
+    // Measured before the fix: 31 emoji "fitted" 187.2px of room and drew about
+    // 341px. That is a REGRESSION on the character count this replaced, which
+    // charged supplementary characters twice by accident of UTF-16 length — a
+    // model has to earn that conservatism deliberately rather than inherit it.
+    //
+    // BOUNDED BY A NUMBER STATED HERE, like the capitals test: a full-width
+    // glyph renders at about the font size, 11px at `--ig-font-size-small`.
+    const FULL_WIDTH_PX = 11;
+    const width = 211.2;
+    const pad = defaultTheme.metrics['--ig-space'] as number;
+
+    for (const [label, title] of [
+      ['emoji', '\u{1F600}'.repeat(40)],
+      ['CJK', '\u8AB2\u984C'.repeat(30)],
+      ['fullwidth latin', '\uFF21\uFF22'.repeat(30)],
+    ] as const) {
+      const drawn = fitLabel(defaultTheme, title, width);
+      assert.ok(drawn.endsWith('\u2026'), `${label}: a title far past its box was not truncated`);
+      assert.ok(
+        [...drawn].length * FULL_WIDTH_PX + pad * 2 <= width,
+        `${label}: ${String([...drawn].length)} glyphs need ${String([...drawn].length * FULL_WIDTH_PX + pad * 2)}px in a ${String(width)}px node`,
+      );
+    }
+  });
+
   it('never truncates between the halves of an astral character', () => {
     // `slice` counts UTF-16 code units, so a cut landing inside a surrogate
     // pair drew a lone surrogate — a replacement glyph immediately before the

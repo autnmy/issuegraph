@@ -139,10 +139,45 @@ function metric(theme: Theme, token: MetricToken): number {
 const WIDE_GLYPH = /[ABCDEFGHKLNOPQRSTUVXYZmw@%&MW]/u;
 const NARROW_GLYPH = /[iIjl|!.,;:'`()[\]{} \t-]/u;
 
+/**
+ * A glyph that renders at roughly the full font size — CJK, Hangul, fullwidth
+ * forms, and everything in the supplementary planes (emoji, mathematical
+ * alphanumerics).
+ *
+ * WITHOUT THIS THE CLASSES ARE ASCII-ONLY, and a code point matching neither
+ * was charged the plain average — so an emoji title was measured at 6px a
+ * glyph while it draws near 11px. Measured: 31 emoji "fitted" 187.2px of room
+ * and draw about 341px. That is a REGRESSION on the count this replaced, which
+ * charged a supplementary character twice by accident of UTF-16 length; a model
+ * has to earn that conservatism deliberately rather than inherit it.
+ *
+ * THE SUPPLEMENTARY TEST IS THE BROAD ONE ON PURPOSE. Emoji, and the alphabets
+ * a title is most likely to reach this with, live above the BMP, and charging a
+ * rare narrow supplementary glyph too much costs a character while charging an
+ * emoji too little runs the label across the graph.
+ */
+function isFullWidth(glyph: string): boolean {
+  const cp = glyph.codePointAt(0) ?? 0;
+  return (
+    cp > 0xffff ||
+    (cp >= 0x1100 && cp <= 0x115f) ||
+    (cp >= 0x2600 && cp <= 0x27bf) ||
+    (cp >= 0x2e80 && cp <= 0xa4cf) ||
+    (cp >= 0xac00 && cp <= 0xd7a3) ||
+    (cp >= 0xf900 && cp <= 0xfaff) ||
+    (cp >= 0xfe30 && cp <= 0xfe6f) ||
+    (cp >= 0xff00 && cp <= 0xff60) ||
+    (cp >= 0xffe0 && cp <= 0xffe6)
+  );
+}
+
 function labelWidth(glyphs: readonly string[], average: number): number {
   let total = 0;
   for (const glyph of glyphs) {
-    const scale = WIDE_GLYPH.test(glyph) ? 1.7 : NARROW_GLYPH.test(glyph) ? 0.55 : 1;
+    // FULL-WIDTH FIRST: it is the only class that can overflow badly, and a
+    // supplementary glyph must not fall through to the plain average because
+    // the ASCII classes cannot see it.
+    const scale = isFullWidth(glyph) ? 1.9 : WIDE_GLYPH.test(glyph) ? 1.7 : NARROW_GLYPH.test(glyph) ? 0.55 : 1;
     total += average * scale;
   }
   return total;
