@@ -47,10 +47,10 @@
  *
  * ## The surface
  *
- * Deliberately empty. The overlays, the picker, the create paths, the
- * re-evaluate surface, the audit, the scale ladder and the first-pass queue each
- * land as their own change, and the final shape of this file is decided by the
- * one that assembles the workspace.
+ * The SCALE LADDER, and nothing else yet. The overlays, the picker, the create
+ * paths, the re-evaluate surface, the audit and the first-pass queue each land
+ * as their own change, and the final shape of this file is decided by the one
+ * that assembles the workspace.
  *
  * A published package can add an export later and can never take one back, so
  * nothing is exported before something is owed.
@@ -58,4 +58,30 @@
  * @see https://github.com/autnmy/issuegraph/blob/main/SPEC.md
  */
 
-export {};
+export {
+  INITIAL_SCALE_STATE,
+  type ScaleCommand,
+  type ScaleState,
+  scaleReducer,
+} from './scale/commands.ts';
+
+export {
+  type IsolatedChip,
+  type ScaleCapsule,
+  type ScaleLadder,
+  type ScaleMatch,
+  type ScaleRefusal,
+  type ScaleRoute,
+  type ScaleRouteKind,
+  type ScaleSearch,
+  type ScaleTier,
+  scaleLadder,
+} from './scale/ladder.ts';
+
+export {
+  type ScaleLadderOptions,
+  type ScaleLadderResult,
+  renderScaleLadder,
+} from './scale/render.ts';
+
+export { scaleLadderStylesheet } from './scale/styles.ts';
