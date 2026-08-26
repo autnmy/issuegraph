@@ -254,6 +254,25 @@ export interface KeyPress {
    * ordinary path, which is why it is not an exotic case.
    */
   readonly isComposing?: boolean;
+  /**
+   * `KeyboardEvent.repeat` — whether the OS generated this event by auto-repeat
+   * rather than the reader pressing the key again.
+   *
+   * EVERY BINDING IN THIS VOCABULARY IS A ONE-SHOT COMMAND, so a repeat is not
+   * a second act: holding `⌫` past the repeat delay is one decision to delete
+   * one edge, and emitting a proposal per event breaks the one-act/one-proposal
+   * contract `draft.ts` and the store are both built on. The store makes it
+   * visible rather than harmless — a pending delete keeps its edge drawn and
+   * selection is client state, so the queued proposals settle into
+   * `unknown-edge` records after the first one lands.
+   *
+   * It is blanket rather than a per-binding flag because there is no repeatable
+   * binding here to distinguish: `R`, `1`–`5`, `⏎`, `⌫` and `T` are all
+   * discrete commands, none of them a continuous motion like an arrow key. Add
+   * one that genuinely repeats and that is when this earns a column on the
+   * table — not before.
+   */
+  readonly repeat?: boolean;
 }
 
 /**
@@ -280,6 +299,18 @@ function chorded(press: KeyPress): boolean {
  */
 function composing(press: KeyPress): boolean {
   return press.isComposing === true;
+}
+
+/**
+ * Whether the OS generated this press by auto-repeat.
+ *
+ * A DIFFERENT QUESTION FROM THE OTHER TWO, which is why it is not folded into
+ * either. Those ask who OWNS the press; this one asks whether it is a fresh ACT
+ * at all. The reader holding a key means one decision, however many events the
+ * repeat delay produces.
+ */
+function repeated(press: KeyPress): boolean {
+  return press.repeat === true;
 }
 
 /**
@@ -324,14 +355,19 @@ function normalize(key: string): string {
  * expression, because the decision was already made by the table.
  */
 export function keyIntent(press: KeyPress, context: KeyboardContext): KeyIntent {
-  // THE PRESS ITSELF SAYS IT IS NOT OURS, before any lookup — neither of these
-  // is a miss to be looked up. Both read a field off the event, so neither is
-  // the open-ended widget question `CreateInteraction` replaced.
+  // THE PRESS ITSELF DISQUALIFIES IT, before any lookup — none of these is a
+  // miss to be looked up. All three read a field off the event, so none is the
+  // open-ended widget question `CreateInteraction` replaced: `KeyboardEvent`'s
+  // shape is fixed by the platform rather than by how many controls a host has.
+  // TWO QUESTIONS, NOT ONE. The first two ask who OWNS the press — the platform
+  // holds `Cmd+R`, an input method holds `⏎` while composing. The third asks
+  // whether it is a fresh ACT at all, which is a different thing and the reason
+  // it is its own predicate.
   // COMPOSITION BITES THE TWO BINDINGS THAT REACH THE TARGET SEARCH, which is
   // why it cannot be folded into `reachesTargetSearch`: `⏎` and `Escape` are
   // exactly the two that reach a focused search box, and exactly the two an IME
   // needs while composing.
-  if (chorded(press) || composing(press)) return NONE;
+  if (chorded(press) || composing(press) || repeated(press)) return NONE;
 
   const binding = BINDINGS.get(normalize(press.key));
   if (binding === undefined) return NONE;

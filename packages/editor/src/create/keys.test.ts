@@ -320,6 +320,55 @@ describe('an input method owns ⏎ and Escape while it is composing', () => {
   });
 });
 
+describe('auto-repeat is one act, not many', () => {
+  // Every binding here is a one-shot command, so a held key is one decision
+  // however many events the OS repeat delay produces. The store makes the
+  // breakage visible rather than harmless: a pending delete keeps its edge
+  // drawn and selection is client state, so queued proposals settle into
+  // `unknown-edge` records once the first lands.
+  const everyBinding = ['r', '1', '2', '3', '4', '5', 't', 'Backspace', 'Delete', 'Enter', 'Escape'];
+
+  for (const key of everyBinding) {
+    it(`ignores a repeated ${key}`, () => {
+      const ctx = context({
+        focused: SUBJECT,
+        match: OBJECT,
+        selectedEdge: edgeIdFor('blocked-by'),
+      });
+      assert.deepEqual(keyIntent({ key, repeat: true }, ctx), { kind: 'none' });
+      // The control: the first press of the SAME key in the SAME context still
+      // acts. Without it every assertion above could pass on a silent map.
+      assert.notDeepEqual(keyIntent({ key }, ctx), { kind: 'none' });
+      assert.notDeepEqual(keyIntent({ key, repeat: false }, ctx), { kind: 'none' });
+    });
+  }
+
+  it('emits exactly one delete for a held ⌫, not one per repeat event', () => {
+    // The reported failure, as the sequence that produces it: keydown, then the
+    // OS repeating while the reader still holds the key.
+    const ctx = context({ selectedEdge: edgeIdFor('blocked-by') });
+    const held = [
+      keyIntent({ key: 'Backspace' }, ctx),
+      keyIntent({ key: 'Backspace', repeat: true }, ctx),
+      keyIntent({ key: 'Backspace', repeat: true }, ctx),
+      keyIntent({ key: 'Backspace', repeat: true }, ctx),
+    ];
+    assert.equal(held.filter((intent) => intent.kind === 'propose').length, 1);
+  });
+
+  it('emits exactly one create for a held ⏎', () => {
+    // The same contract on the other binding that produces a Proposal — and the
+    // more expensive one to get wrong, since each would be a fresh edge.
+    const ctx = context({ match: OBJECT });
+    const held = [
+      keyIntent({ key: 'Enter' }, ctx),
+      keyIntent({ key: 'Enter', repeat: true }, ctx),
+      keyIntent({ key: 'Enter', repeat: true }, ctx),
+    ];
+    assert.equal(held.filter((intent) => intent.kind === 'create').length, 1);
+  });
+});
+
 describe('shifted and unshifted are the same key', () => {
   it('does NOT treat shift as a modifier, because §17b names its keys in capitals', () => {
     // The discriminating case: shift must fold, while ctrl/meta/alt must block.

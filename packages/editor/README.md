@@ -178,10 +178,16 @@ Which bindings reach `target-search` is **data on the binding table**, so no cal
 
 `interaction` is **required, not optional**. Every default is wrong for some host, and the plausible one — assume the canvas — is the one that steals keystrokes.
 
-**Two press-level facts stay on `KeyPress`**, and they are bounded in a way the widget list never was: both are fields on the event itself.
+**Three press-level facts stay on `KeyPress`**, and they are bounded in a way the widget list never was: all are fields on the event itself, and `KeyboardEvent`'s shape is fixed by the platform rather than by how many controls a host has. They answer **two** questions — who owns the press, and whether it is a fresh act at all.
+
+*Who owns it:*
 
 - **A modified chord.** `KeyPress` is structurally a subset of `KeyboardEvent`, so the event goes straight in — a bare key name cannot tell `R` from `Cmd+R`, and the handler above would hijack reload, new-tab and tab-selection. `Ctrl`, `Meta` and `Alt` answer `none` before the table is consulted. `Shift` is deliberately *not* among them: §17b names its bindings in capitals and `Shift+r` is how a keyboard reports `R`, so treating shift as a modifier would unbind the design itself.
 - **`isComposing`.** While an input method is composing, `⏎` confirms the candidate and `Escape` cancels the composition. It cannot be folded into the table: the IME owns exactly the two bindings that *reach* the target search, which is also the only place composition happens.
+
+*Whether it is a fresh act:*
+
+- **`repeat`.** Every binding here is a one-shot command, so a held key is one decision however many events the OS repeat delay produces. Emitting a proposal per event breaks the one-act/one-`Proposal` contract the store is built on — and the store makes that visible rather than harmless: a pending delete keeps its edge drawn and selection is client state, so the queued proposals settle into `unknown-edge` records once the first lands. It is blanket rather than a per-binding flag because there is no repeatable binding here to distinguish — `R`, `1`–`5`, `⏎`, `⌫` and `T` are all discrete commands, none a continuous motion like an arrow key.
 
 **`T` opens the picker; it does not emit a retype.** The proposals come from `pickerView`, which already owns them — a second emitter out here would be free to disagree about what a retype is.
 
