@@ -47,10 +47,14 @@
  *
  * ## The surface
  *
- * The SCALE LADDER, and nothing else yet. The overlays, the picker, the create
- * paths, the re-evaluate surface, the audit and the first-pass queue each land
- * as their own change, and the final shape of this file is decided by the one
- * that assembles the workspace.
+ * The SCALE LADDER and the RE-EVALUATE SURFACE. The overlays, the picker, the
+ * create paths, the audit and the first-pass queue each land as their own
+ * change, and the final shape of this file is decided by the one that assembles
+ * the workspace.
+ *
+ * The re-evaluate surface is the first thing here to compose the STORE as well
+ * as the viewer — it presents `diffOrder`'s output and computes no diff of its
+ * own — and the first to require words from its host rather than writing them.
  *
  * A published package can add an export later and can never take one back, so
  * nothing is exported before something is owed.
@@ -85,3 +89,24 @@ export {
 } from './scale/render.ts';
 
 export { scaleLadderStylesheet } from './scale/styles.ts';
+
+export {
+  type ChangeFacet,
+  type ChangeSummary,
+  type PlacedChip,
+  type ReevaluateView,
+  type SummaryPart,
+  CHANGE_FACETS,
+  reevaluateView,
+  summaryOf,
+} from './reevaluate/view.ts';
+
+export { type ChangeWords } from './reevaluate/words.ts';
+
+export {
+  type ReevaluateOptions,
+  type ReevaluateResult,
+  renderReevaluate,
+} from './reevaluate/render.ts';
+
+export { reevaluateStylesheet } from './reevaluate/styles.ts';
