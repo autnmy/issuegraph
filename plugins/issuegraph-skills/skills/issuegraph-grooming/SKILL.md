@@ -27,19 +27,27 @@ gh issue view 1234 -R owner/repo --json body -q .body | issuegraph validate
 
 ## ⚠ Read `state`, NEVER the exit code
 
-**`validate` and `parse` both exit 0 on a block that is unreadable or inert.**
-The condition is in stdout. A caller that branches on the exit code alone reads
-both failures as success.
+The exit code is **not** a substitute for `state`, and the reason is sharper than
+"it might not be": the two verbs answer differently for the same body, and the
+one cell that fails **open** is the one a caller is most likely to hit.
 
-| `state` | means | do |
-|---|---|---|
-| `read` | the block parsed | use `data` |
-| `unread` | delimited, and its contents could not be read — **edges were NOT reported** | treat as UNKNOWN, **never** as "no edges" |
-| `inert` | a key exists but **no `---` pair delimits it**, so nothing reads it | `backfill` (see below) |
-| `absent` | there is genuinely no block | nothing to do |
+Measured on the built binary:
 
-**`unread` and `inert` both look exactly like "this issue has no dependencies"**
-if you only check that the command succeeded.
+| `state` | means | `parse` | `validate` | do |
+|---|---|---|---|---|
+| `read` | the block parsed | `0` | `0` | use `data` |
+| `absent` | there is genuinely no block | `0` | `0` | nothing to do |
+| `unread` | delimited, and its contents could not be read — **edges were NOT reported** | `3` | `3` | treat as UNKNOWN, **never** as "no edges" |
+| `inert` | a key exists but **no `---` pair delimits it**, so nothing reads it | **`0`** ⚠ | `5` | `backfill` (see below) |
+
+**`parse` on an `inert` block exits 0.** That is the cell that costs you: an
+undelimited block is the shape hand-authored blocks overwhelmingly take, and a
+caller checking only `parse`'s exit code reads it as success and its payload as
+"this issue has no dependencies". `state` is the field that says otherwise.
+
+Branching on the code is also not *portable between the two verbs* — the same
+`inert` body is `0` from one and `5` from the other — so a recipe that swaps
+`parse` for `validate` silently changes meaning. Read `state` in both.
 
 ## 2. Repair — `backfill`
 
@@ -48,9 +56,17 @@ It never re-spells or removes a line, and it refuses outright any shape it canno
 establish with certainty.
 
 ```sh
-gh issue view 1234 -R owner/repo --json body -q .body | issuegraph backfill > /tmp/body.md
-gh issue edit 1234 -R owner/repo --body-file /tmp/body.md
+gh issue view 1234 -R owner/repo --json body -q .body | issuegraph backfill > /tmp/body.md \
+  && gh issue edit 1234 -R owner/repo --body-file /tmp/body.md
 ```
+
+⚠ **The `&&` is not style — without it this recipe wipes the issue.** On
+`unrecoverable` the command exits **4** and writes nothing to stdout, but the
+redirection has *already* created `/tmp/body.md` as a **0-byte file**. In an
+ordinary shell (no `set -e`) the next line then runs and replaces the entire
+issue body with nothing. Measured: `backfill` rc **4**, output file **0 bytes**.
+
+In a loop, gate on the outcome instead — see below.
 
 ### Grooming a whole backlog? Use `--json`
 

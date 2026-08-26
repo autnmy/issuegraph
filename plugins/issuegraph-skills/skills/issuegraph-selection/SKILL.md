@@ -58,13 +58,22 @@ Build it from `gh` like this:
 
 ```sh
 gh issue list -R owner/repo --state all --limit 500 \
-  --json number,state,labels,assignees,body \
+  --json number,state,stateReason,labels,assignees,body \
   | jq '{homeRepo:"owner/repo",
          baseRanking:{source:"config", order:[to_entries[]|{key:(.value.number|tostring), matchedOrderIndex:.key}]},
          issues:[.[]|{number, open:(.state=="OPEN"),
-                      labels:[.labels[].name], assigneeCount:(.assignees|length), body:(.body//"")}]}' \
+                      labels:[.labels[].name], assigneeCount:(.assignees|length), body:(.body//""),
+                      closedStateReason:(if (.stateReason // "") == "" then null
+                                         else (.stateReason|ascii_downcase) end)}]}' \
   | issuegraph ready
 ```
+
+**`stateReason` has to be requested and normalised**, or the closure-reason
+diagnostic can never fire. `gh` returns it **upper case** (`COMPLETED`,
+`NOT_PLANNED`) and `""` for an open issue, while the derivation compares against
+lower-case `completed` — so `ascii_downcase` and the `"" -> null` arm are both
+load-bearing. Get it wrong and every closed blocker reads as *not* completed, or
+as completed, depending on which half you skip.
 
 ## ⚠ The trap: `"slots": []` does NOT mean "nothing is ready"
 
@@ -90,7 +99,47 @@ jq -e '(.underRead|length) == 0' out.json >/dev/null \
   || { echo "REFUSING: $(jq -c .underRead out.json) could not be read — repair them first"; }
 ```
 
-Repair them with the **grooming** skill (`issuegraph backfill`), then re-derive.
+**`backfill` will NOT repair these.** `underRead` is the `unread` state — a block
+whose **delimiters are fine** and whose *contents* did not parse, most often
+unquoted `#`-refs. `backfill` only inserts missing delimiters, so on such a body
+it reports `already-canonical` and changes nothing (measured). The fix is to
+correct the block's contents — quote the refs — which the **grooming** skill
+covers. Then re-derive.
+
+## ⚠ And `underRead` does not catch everything — an INERT block ranks as READY
+
+This is the gap to know about, because the fail-safe does not cover it.
+
+`underRead` carries the `unread` state only. A body whose block is **inert** — an
+`issuegraph:` key inside a fence with no `---` pair, the shape hand-authored
+blocks overwhelmingly take — declares nothing *to the reader*, so the derivation
+sees a node with no edges and **ranks it `ready: true`**. It never appears in
+`underRead`.
+
+Measured on two nodes, both declaring `blocked-by: "#9"`:
+
+```console
+$ issuegraph ready --input two.json | jq -c '{slots:[.slots[]|{lead,ready}], underRead}'
+{"slots":[{"lead":"1","ready":true}],"underRead":["2"]}
+```
+
+`1` is inert and `2` is unread. **They declare the same blocker and only one of
+them is refused.**
+
+So `underRead` is necessary and not sufficient. **Before you trust an ordering,
+check each body's `state`** — one `validate` per body, branching on `state` and
+not on the exit code, for the reason the grooming skill sets out:
+
+```sh
+jq -r '.issues[] | @base64' candidates.json | while read -r row; do
+  body=$(printf '%s' "$row" | base64 --decode | jq -r .body)
+  state=$(printf '%s' "$body" | issuegraph validate | jq -r .state)
+  case "$state" in
+    read|absent) : ;;
+    *) echo "REFUSING: an issue's block is $state — repair before trusting the order" ;;
+  esac
+done
+```
 
 ## Why your P0 is not on the list
 
