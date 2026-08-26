@@ -37,11 +37,12 @@
  */
 
 import { backfillFrontmatter, renderFrontmatter, spliceGeneratedEdges } from '@issuegraph/writer';
-import type { GeneratedEdges, IssueRef } from '@issuegraph/writer';
+import type { BackfillOutcome, GeneratedEdges, IssueRef } from '@issuegraph/writer';
 import { parseFrontmatter } from '@issuegraph/reader';
 import type { Evidence } from '@issuegraph/core';
 
 import { classifyDeclaration, unreadErrorLines } from '../declaration.ts';
+import { toJson } from '../json.ts';
 import type { Declaration } from '../declaration.ts';
 import {
   EDGE_JSON_KEYS,
@@ -338,31 +339,97 @@ export function spliceEdges(body: string, edges: GeneratedEdges): VerbResult {
   });
 }
 
+/** How `backfill` should answer. */
+export interface BackfillOptions {
+  /**
+   * Emit the OUTCOME as JSON on stdout instead of the repaired body.
+   *
+   * Off by default, because the body-in/body-out shape is what makes
+   * `issuegraph backfill < body > new-body` work in a shell.
+   */
+  readonly json: boolean;
+}
+
+/**
+ * The stderr line for each outcome, as a TOTAL record rather than a ladder.
+ *
+ * Total over {@link BackfillOutcome}, so a fifth outcome added to the writer is
+ * a compile error here instead of a body that silently prints nothing. The
+ * refusal is in this table too — it is a line about an outcome like the other
+ * three, and keeping it out was what let the two spellings drift.
+ */
+const BACKFILL_NOTE: Readonly<Record<BackfillOutcome, string>> = Object.freeze({
+  delimited: 'issuegraph: backfilled — the block is now delimited and readable',
+  'already-canonical':
+    'issuegraph: nothing to do — the block was already canonical; the body is unchanged',
+  'no-block': 'issuegraph: nothing to do — this body carries no block; the body is unchanged',
+  unrecoverable:
+    'issuegraph: refusing to backfill — this block cannot be repaired without guessing what it meant',
+});
+
 /**
  * `backfill` — repair a block a code fence left inert, by adding the `---` pair
  * its author omitted and changing nothing else.
  *
  * The four outcomes map to two codes: three of them are honest answers with a
  * body to emit, and only `unrecoverable` is a refusal.
+ *
+ * ---------------------------------------------------------------------------
+ * WHY `--json` EXISTS, AND WHY NOTHING ELSE WOULD DO
+ * ---------------------------------------------------------------------------
+ * Without it the outcome is observable ONLY as the prose on stderr, and a
+ * programmatic caller that needs to branch on it — write this body, skip that
+ * one, escalate the third to a human — has no choice but to string-match
+ * another package's message text. A reworded message then stops matching
+ * silently and FAILS OPEN, which is the same class of defect this package
+ * exists to refuse.
+ *
+ * `validate` cannot stand in for it, and this is the measurement rather than an
+ * intuition. These two bodies produce BYTE-IDENTICAL `validate` output —
+ * `{"state":"inert","ok":false,"blockDefect":"undelimited"}` — while `backfill`
+ * repairs the first and refuses the second:
+ *
+ *     x                                     issuegraph:
+ *                                             blocked-by: [8232]
+ *     ```yaml
+ *     issuegraph:
+ *       blocked-by: [8232]
+ *     ```
+ *
+ * So `delimited` and `unrecoverable` are distinguishable at this boundary and
+ * nowhere else. A backlog-repair caller — write this body, skip that one,
+ * escalate the third — branches on exactly that distinction, which is why one
+ * could not adopt this binary at all before the flag existed.
+ *
+ * THE EXIT CODE IS UNCHANGED BY THE FLAG, deliberately. `exit.ts` states the
+ * contract: the code carries the COMMAND'S DECISION and the payload carries the
+ * declaration's state. `unrecoverable` is a refused write whether or not the
+ * caller asked for JSON, so a flag that softened it to `ok` would make the
+ * shell reading and the program reading disagree about the same run.
+ *
+ * `body` IS OMITTED ON A REFUSAL, at the wire level as well as the type level —
+ * the same shape `parse` uses for `unread`. The input was NOT repaired, so a
+ * `body` key here is a value a caller could write back believing it had been.
+ * There is nothing to emit, so nothing is emitted.
  */
-export function backfill(body: string): VerbResult {
+export function backfill(body: string, options: BackfillOptions = { json: false }): VerbResult {
   const result = backfillFrontmatter(body);
   const notes = result.diagnostics.map((d) => `  ${d}`);
+  const stderr = [BACKFILL_NOTE[result.outcome], ...notes];
+  const refused = result.outcome === 'unrecoverable';
+  const code = refused ? EXIT.refusedWrite : EXIT.ok;
 
-  if (result.outcome === 'unrecoverable') {
+  if (options.json) {
     return {
-      stdout: '',
-      stderr: ['issuegraph: refusing to backfill — this block cannot be repaired without guessing what it meant', ...notes],
-      code: EXIT.refusedWrite,
+      stdout: toJson(
+        refused
+          ? { outcome: result.outcome, diagnostics: result.diagnostics }
+          : { outcome: result.outcome, body: result.body, diagnostics: result.diagnostics },
+      ),
+      stderr,
+      code,
     };
   }
 
-  const note =
-    result.outcome === 'delimited'
-      ? 'issuegraph: backfilled — the block is now delimited and readable'
-      : result.outcome === 'already-canonical'
-        ? 'issuegraph: nothing to do — the block was already canonical; the body is unchanged'
-        : 'issuegraph: nothing to do — this body carries no block; the body is unchanged';
-
-  return { stdout: result.body, stderr: [note, ...notes], code: EXIT.ok };
+  return { stdout: refused ? '' : result.body, stderr, code };
 }

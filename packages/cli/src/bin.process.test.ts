@@ -23,7 +23,7 @@ import { describe, test } from 'node:test';
 
 import { EXIT } from './exit.ts';
 import { VERB_NAMES } from './argv.ts';
-import { ABSENT_BODY, HAZARD_BODY, QUOTED_BODY } from './testing/fixtures.ts';
+import { ABSENT_BODY, HAZARD_BODY, INERT_BODY, QUOTED_BODY, UNREPAIRABLE_BODY } from './testing/fixtures.ts';
 
 const BIN = fileURLToPath(new URL('../dist/bin.js', import.meta.url));
 
@@ -224,5 +224,71 @@ describe('order at the process boundary', () => {
     const allSlots = (all as { slots: { ready: boolean }[] }).slots;
     const readySlots = (only as { slots: { ready: boolean }[] }).slots;
     assert.deepEqual(readySlots, allSlots.filter((s) => s.ready));
+  });
+});
+
+/**
+ * `backfill --json` at the process boundary.
+ *
+ * This is the surface a consumer actually has. A repair tool written in another
+ * language, or in a workflow step, does not import this package — it SPAWNS the
+ * binary — so an in-process assertion cannot discharge the claim that the
+ * outcome is reachable without reading prose.
+ */
+describe('the built binary reports the backfill outcome as data', () => {
+  test('THE MEASUREMENT: `validate` cannot separate these two bodies', () => {
+    // The premise the flag exists for, asserted against the binary rather than
+    // recalled from a comment. If a future change makes `validate`
+    // discriminating, this reddens and the flag's justification is re-opened
+    // honestly instead of quietly ceasing to be true.
+    const inert = run(['validate'], INERT_BODY);
+    const unrepairable = run(['validate'], UNREPAIRABLE_BODY);
+    assert.equal(inert.stdout, unrepairable.stdout, 'precondition: validate must be blind here');
+    assert.equal(json(inert.stdout)['blockDefect'], 'undelimited');
+  });
+
+  test('…and `backfill --json` does, machine-readably', () => {
+    const repaired = run(['backfill', '--json'], INERT_BODY);
+    assert.equal(repaired.status, EXIT.ok);
+    assert.equal(json(repaired.stdout)['outcome'], 'delimited');
+
+    const refused = run(['backfill', '--json'], UNREPAIRABLE_BODY);
+    assert.equal(refused.status, EXIT.refusedWrite);
+    assert.equal(json(refused.stdout)['outcome'], 'unrecoverable');
+  });
+
+  test('a refused backfill emits no `body` key for a caller to write back', () => {
+    const refused = run(['backfill', '--json'], UNREPAIRABLE_BODY);
+    assert.equal(Object.hasOwn(json(refused.stdout), 'body'), false, refused.stdout);
+  });
+
+  test('the repaired body it reports is one the binary itself then reads', () => {
+    // End to end through the process boundary: repair, feed the reported body
+    // back to `parse`, and require the edge to be there. A JSON payload nobody
+    // round-trips is a claim, not a result.
+    const repaired = run(['backfill', '--json'], INERT_BODY);
+    const body = json(repaired.stdout)['body'];
+    assert.equal(typeof body, 'string');
+
+    const reparsed = run(['parse'], String(body));
+    assert.equal(reparsed.status, EXIT.ok);
+    assert.equal(json(reparsed.stdout)['state'], 'read');
+  });
+
+  test('without the flag the binary still writes the BODY to stdout', () => {
+    // `issuegraph backfill < body > new-body` must keep working; the flag is
+    // additive and the default is unchanged.
+    const result = run(['backfill'], INERT_BODY);
+    assert.equal(result.status, EXIT.ok);
+    assert.equal(result.stdout.includes('"outcome"'), false, 'stdout must be the body, not JSON');
+    assert.equal(run(['parse'], result.stdout).status, EXIT.ok);
+  });
+
+  test('the flag is refused on a verb that does not offer it', () => {
+    // The grammar is an allowlist; this pins that `--json` was added to ONE verb
+    // rather than leaking into the shared body-file option group.
+    const result = run(['set', '--json'], ABSENT_BODY);
+    assert.equal(result.status, EXIT.usage);
+    assert.ok(result.stderr.includes('--json'), result.stderr);
   });
 });

@@ -56,4 +56,5 @@ export { validateBody } from './verbs/validate.ts';
 export { asOrderInput, deriveOrder, orderFromJson, InputError } from './verbs/order.ts';
 export type { OrderInputDocument, OrderInputIssue, OrderView } from './verbs/order.ts';
 export { backfill, setFields, spliceEdges } from './verbs/write.ts';
+export type { BackfillOptions } from './verbs/write.ts';
 export type { SetFields } from './verbs/write.ts';
