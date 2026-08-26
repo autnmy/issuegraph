@@ -3,14 +3,9 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
-    "allowImportingTsExtensions": true,
-    "rewriteRelativeImportExtensions": true
+    "lib": ["ES2023", "DOM"],
+    "types": []
   },
-  "include": [
-    "src"
-  ],
-  "exclude": [
-    "src/**/*.test.ts",
-    "src/testing"
-  ]
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts", "src/testing"]
 }

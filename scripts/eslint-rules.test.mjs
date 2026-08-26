@@ -176,7 +176,7 @@ test('PURITY: a Node builtin is caught in every import form', async () => {
 test('PURITY: the remaining forbidden reaches are caught', async () => {
   const cases = [
     ["export const s = () => localStorage.getItem('k');\n", 'no-restricted-globals'],
-    ['export const c = () => document.cookie;\n', 'no-restricted-properties'],
+    ['export const c = () => document.cookie;\n', 'no-restricted-globals'],
     ["export const l = () => import('./other.js');\n", 'no-restricted-syntax'],
     ["export const e = () => eval('1');\n", 'no-restricted-syntax'],
     ["export const f = () => new Function('return 1');\n", 'no-restricted-syntax'],
@@ -217,4 +217,49 @@ test('CONTROL: a legitimate bare sibling import reports nothing', async () => {
     await purityRulesFor("import { edgeId } from '@issuegraph/store';\nexport const e = edgeId;\n"),
     [],
   );
+});
+
+test('PURITY: a QUALIFIED global reach is caught — window.fetch and friends', async () => {
+  // `no-restricted-globals` reports an UNQUALIFIED reference only, so banning
+  // `fetch` alone left `window.fetch('/write')` green — and the load test
+  // cannot cover for it, because nothing calls the function. Worse, the regex
+  // scanner these rules replaced DID catch that spelling, so the move to the
+  // AST was a regression here until the namespace OBJECTS went on the list.
+  //
+  // Banning the objects is what makes this a rule instead of a list of
+  // spellings: enumerating (object, property) pairs is combinatorial and always
+  // one member short.
+  for (const source of [
+    "export const s = () => window.fetch('/w');\n",
+    "export const s = () => self.localStorage.getItem('k');\n",
+    "export const b = () => navigator.sendBeacon('/b');\n",
+    'export const c = () => document.cookie;\n',
+  ]) {
+    assert.deepEqual(await purityRulesFor(source), ['no-restricted-globals'], source);
+  }
+});
+
+test('CONTROL: `document` as a PARAMETER is not a global reach', async () => {
+  // The viewer names a parameter `document` throughout `parts.ts`. A parameter
+  // shadows the global and this rule reports unresolved references only — but
+  // that is exactly the kind of claim that should be pinned rather than
+  // reasoned about, because getting it wrong would break a shipping package.
+  assert.deepEqual(
+    await purityRulesFor('type D = { k: string };\nexport const t = (document: D) => document.k;\n'),
+    [],
+  );
+});
+
+test('PURITY: an UNPREFIXED Node builtin is caught, not just `node:`', async () => {
+  // `import { readFile } from 'fs'` is a valid builtin import that a `node:*`
+  // pattern never sees, and Node's ambient typings let it compile. The list is
+  // read from `builtinModules` rather than typed out, so it cannot drift as
+  // Node adds modules.
+  for (const source of [
+    "import { readFile } from 'fs';\nexport const r = readFile;\n",
+    "import { readFile } from 'fs/promises';\nexport const r = readFile;\n",
+    "import { readFileSync } from 'node:fs';\nexport const r = readFileSync;\n",
+  ]) {
+    assert.deepEqual(await purityRulesFor(source), ['no-restricted-imports'], source);
+  }
 });

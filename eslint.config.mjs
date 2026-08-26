@@ -43,6 +43,8 @@
  * `../packages/store/src` would make the whole page prove nothing.
  */
 
+import { builtinModules } from 'node:module';
+
 import importX from 'eslint-plugin-import-x';
 import tseslint from 'typescript-eslint';
 
@@ -113,10 +115,48 @@ const BASE_IMPORT_PATTERNS = [
  */
 const BROWSER_PACKAGES = ['packages/viewer/**/*.ts', 'packages/editor/**/*.ts'];
 
-/** Globals whose mere presence in a rendering package breaks the claim. */
+/**
+ * Globals whose mere presence in a rendering package breaks the claim.
+ *
+ * THE SECOND GROUP IS THE NAMESPACE OBJECTS, and banning them is what makes
+ * this a rule rather than a list of spellings. `no-restricted-globals` reports
+ * an unqualified reference only, so with `fetch` alone
+ * `window.fetch('/write')` passed — and the load test cannot cover for it,
+ * because nothing calls the function. The regex scanner this replaced DID catch
+ * that spelling (`/\bfetch\s*\(/` matches `window.fetch(`), so the move to the
+ * AST was a regression on exactly this case until the objects went on the list.
+ *
+ * Enumerating `(object, property)` pairs instead would be combinatorial and
+ * always one member short — `window.fetch`, `self.fetch`, `globalThis.fetch`,
+ * `window.localStorage`, and so on. Removing the objects removes every reach
+ * THROUGH them at once, including ones nobody has thought of.
+ *
+ * `document` is on the list and does NOT break the viewer, which uses
+ * `document` as a PARAMETER name throughout `parts.ts`: a parameter shadows the
+ * global, and this rule reports unresolved references only. Verified by running
+ * it over both packages, and pinned by a control test.
+ */
 const FORBIDDEN_GLOBALS = [
   'fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource',
   'localStorage', 'sessionStorage', 'indexedDB', 'process', 'globalThis',
+  'window', 'self', 'navigator', 'document',
+];
+
+/**
+ * Every Node builtin, in both spellings, read from Node rather than typed out.
+ *
+ * `node:*` alone missed the bare form — `import { readFile } from 'fs'` is a
+ * valid builtin import that the pattern never saw, and Node's ambient typings
+ * let it compile. A hand-written list would be the same defect deferred: it is
+ * correct until Node adds a module, and nothing would fail when it does.
+ * `builtinModules` is the authority, so the list cannot drift.
+ *
+ * The `/*` variants cover deep specifiers such as `fs/promises`.
+ */
+const NODE_BUILTIN_SPECIFIERS = [
+  'node:*',
+  ...builtinModules,
+  ...builtinModules.map((name) => `${name}/*`),
 ];
 
 export default [
@@ -192,11 +232,13 @@ export default [
           message: `A rendering package may not reach for ${name}. It fetches nothing, authenticates nothing and persists nothing — the host does, through the injected data source.`,
         })),
       ],
-      'no-restricted-properties': [
-        'error',
-        { object: 'navigator', property: 'sendBeacon', message: 'A rendering package sends nothing.' },
-        { object: 'document', property: 'cookie', message: 'A rendering package reads no credentials.' },
-      ],
+      // NO `no-restricted-properties` HERE, deliberately. It used to carry
+      // `navigator.sendBeacon` and `document.cookie`, and both are now
+      // SUBSUMED: the objects themselves are banned above, so every property
+      // reached through them is refused already. Keeping a rule that can only
+      // fire where another has fired first is a second thing to maintain that
+      // proves nothing, and it reads as though those two properties were the
+      // ones that mattered.
       // EXTENDS the base patterns rather than replacing them — see
       // BASE_IMPORT_PATTERNS on why a bare restatement here would be a silent
       // downgrade for these two packages.
@@ -206,9 +248,9 @@ export default [
           patterns: [
             ...BASE_IMPORT_PATTERNS,
             {
-              group: ['node:*'],
+              group: NODE_BUILTIN_SPECIFIERS,
               message:
-                'A rendering package may not import a Node builtin — it has to run in a browser. Note the load test cannot catch this for you: a builtin imports perfectly well under Node.',
+                'A rendering package may not import a Node builtin — it has to run in a browser. Both spellings are banned: `fs` is as much a builtin as `node:fs`. Note the load test cannot catch this for you: a builtin imports perfectly well under Node.',
             },
           ],
         },
