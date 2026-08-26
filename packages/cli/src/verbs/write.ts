@@ -251,14 +251,40 @@ export function setFields(body: string, fields: SetFields): VerbResult {
         };
       }
       const spliced = spliceGeneratedEdges(body, toGeneratedEdges(fields));
-      if (spliced === null) {
-        return {
-          stdout: '',
-          stderr: ['issuegraph: refusing to write — the writer could not edit this block and keep it readable'],
-          code: EXIT.refusedWrite,
-        };
+      // ONE MESSAGE PER OUTCOME. Under the old `string | null` contract these
+      // were one sentence covering three different situations, so the operator
+      // was told "could not edit this block" whichever had happened and had no
+      // way to tell which repair applied.
+      switch (spliced.outcome) {
+        case 'spliced':
+          return { stdout: spliced.body, stderr: [], code: EXIT.ok };
+        case 'no-block':
+          return {
+            stdout: '',
+            stderr: [
+              'issuegraph: refusing to write — this body carries no readable block to edit. `issuegraph set` on a body with no block prepends one.',
+            ],
+            code: EXIT.refusedWrite,
+          };
+        case 'uneditable-block':
+          return {
+            stdout: '',
+            stderr: [
+              'issuegraph: refusing to write — the block is readable but not line-editable (its section is a flow mapping) and carries entries this command does not own.',
+              '  Editing it would demote the block and drop those entries. Rewrite the block from its current value instead.',
+            ],
+            code: EXIT.refusedWrite,
+          };
+        case 'not-written':
+          return {
+            stdout: '',
+            stderr: [
+              `issuegraph: refusing to write — the edit did not land: ${spliced.detail}.`,
+              '  The body was left untouched; this is a writer defect, not a bad input.',
+            ],
+            code: EXIT.refusedWrite,
+          };
       }
-      return { stdout: spliced, stderr: [], code: EXIT.ok };
     }
 
     // `absent`: render a fresh block and prepend it, in the canonical position.
@@ -289,16 +315,26 @@ export function setFields(body: string, fields: SetFields): VerbResult {
 export function spliceEdges(body: string, edges: GeneratedEdges): VerbResult {
   return performWrite(body, edges, EDGE_JSON_KEYS, () => {
     const spliced = spliceGeneratedEdges(body, edges);
-    if (spliced === null) {
-      return {
-        stdout: '',
-        stderr: [
-          'issuegraph: refusing to splice — this body carries no delimited block to edit. `issuegraph set` prepends one; `issuegraph backfill` repairs an undelimited one.',
-        ],
-        code: EXIT.refusedWrite,
-      };
+    if (spliced.outcome !== 'spliced') {
+      // The three refusals differ in what the operator should DO, which is the
+      // whole reason the writer stopped returning `null` for all of them.
+      const stderr =
+        spliced.outcome === 'no-block'
+          ? [
+              'issuegraph: refusing to splice — this body carries no delimited block to edit. `issuegraph set` prepends one; `issuegraph backfill` repairs an undelimited one.',
+            ]
+          : spliced.outcome === 'uneditable-block'
+            ? [
+                'issuegraph: refusing to splice — the block is readable but not line-editable (its section is a flow mapping) and carries entries this command does not own.',
+                '  Editing it would demote the block and drop those entries. Rewrite the block from its current value instead.',
+              ]
+            : [
+                `issuegraph: refusing to splice — the edit did not land: ${spliced.detail}.`,
+                '  The body was left untouched; this is a writer defect, not a bad input.',
+              ];
+      return { stdout: '', stderr, code: EXIT.refusedWrite };
     }
-    return { stdout: spliced, stderr: [], code: EXIT.ok };
+    return { stdout: spliced.body, stderr: [], code: EXIT.ok };
   });
 }
 
