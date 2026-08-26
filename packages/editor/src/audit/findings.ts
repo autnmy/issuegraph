@@ -142,9 +142,13 @@ export interface AuditFinding {
   readonly severity: AuditSeverity;
   readonly keepAsHistory: boolean;
   /**
-   * Every issue the finding is about, sorted so two runs over one document
-   * agree. A cycle names its whole component; the other three name one issue,
-   * or the two ends of the edge that produced them.
+   * Every issue the finding is about: a SET, sorted, with no ref twice. A cycle
+   * names its whole component; the other three name one issue, or the two ends
+   * of the edge that produced them.
+   *
+   * Both properties are established by {@link settledFinding}, not merely
+   * expected of a caller — the row grammar counts an entry per member, so a
+   * repeated ref reported one finding as two.
    */
   readonly members: readonly IssueRef[];
   /** What the reader can be told, in one sentence. Never parsed, never a code. */
@@ -275,19 +279,26 @@ function compareMembers(a: readonly IssueRef[], b: readonly IssueRef[]): number 
  * parameter claiming they are already `AuditFinding`s would assert a guarantee
  * the source cannot provide.
  *
- * IT IS EXHAUSTIVE OVER WHAT IS READ, WHICH IS THE POINT RATHER THAN A DETAIL.
- * Four rounds of review found this boundary malformed one field at a time — a
- * caller's array, a caller's `members`, a caller's disagreeing `severity`, a
- * prototype key in `kind` — and answering each in turn is an enumeration with
- * no end. So the rule is stated once, over the whole shape: `kind` must name a
- * class the table carries, `members` must be an array of strings, `detail` must
- * be a string. `severity` and `keepAsHistory` are absent from this list because
- * they are never read from the input at all — they are derived below — so there
- * is no malformed value of either that could reach anything.
+ * IT COVERS TYPES; THE INVARIANTS ARE NORMALIZED BELOW, AND THE SPLIT IS WHY
+ * AN EARLIER CLAIM OF CLOSURE HERE WAS PREMATURE. Successive rounds found this
+ * boundary malformed one field at a time — a caller's array, a caller's
+ * `members`, a caller's disagreeing `severity`, a prototype key in `kind`, then
+ * a `members` list carrying a ref twice. The first four are TYPE failures and
+ * this guard answers them; the last is not — `['a', 'a']` is a perfectly valid
+ * `readonly string[]`, and no type test would have caught it.
  *
- * That closes the seam rather than narrowing it: every field of the interface
- * is either validated here or ignored by construction. Adding a READ field
- * without adding it here is the only way to reopen it.
+ * So the contract is stated in full rather than one round at a time, and it is
+ * short enough to be exhaustive:
+ *
+ *     kind            a class the table carries          validated here
+ *     members         strings, then SORTED and DEDUPED   validated here, normalized below
+ *     detail          a string                           validated here
+ *     severity        derived from kind                  never read from the input
+ *     keepAsHistory   derived from kind                  never read from the input
+ *
+ * Every field of the interface appears in that table, and `members` is the only
+ * one carrying an invariant beyond its type. Adding a read field, or an
+ * invariant to an existing one, is what would reopen this — nothing else.
  */
 function isSettleable(value: unknown): value is AuditFinding {
   if (typeof value !== 'object' || value === null) return false;
@@ -315,7 +326,12 @@ export function settledFinding(found: AuditFinding): AuditFinding | null {
     kind: found.kind,
     severity: spec.severity,
     keepAsHistory: spec.keepAsHistory,
-    members: Object.freeze([...found.members]),
+    // A SET, SORTED — established here rather than expected of the caller. The
+    // row grammar counts one entry per member, so a repeated ref reported one
+    // finding as two on that row, against `AuditRow.count`'s own documented
+    // meaning. Sorting is the other half: it is what makes two runs over one
+    // document produce equal findings, and a caller's order is not that.
+    members: Object.freeze([...new Set(found.members)].sort()),
     detail: found.detail,
   });
 }

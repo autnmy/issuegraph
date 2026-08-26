@@ -188,6 +188,33 @@ describe('the overlay', () => {
     assert.doesNotThrow(() => renderAuditHeader(overlay));
   });
 
+  it('counts a row once per FINDING, however often a finding names it', () => {
+    // `['a', 'a']` is a perfectly valid `readonly string[]`, so no type test
+    // catches it — and the row grammar counts one entry per member, so it
+    // reported one finding as two against `AuditRow.count`'s documented
+    // meaning. Members are a SET at the boundary now.
+    const repeated: AuditFinding = JSON.parse(
+      '{"kind":"cycle","severity":"blocks-work","keepAsHistory":false,"members":["a","a","b"],"detail":"x"}',
+    );
+    const overlay = auditOverlay([repeated]);
+    assert.equal(overlay.count, 1);
+    assert.deepEqual(overlay.findings[0]?.members, ['a', 'b']);
+    assert.deepEqual(
+      overlay.rows.map((row) => [row.ref, row.count]),
+      [
+        ['a', 1],
+        ['b', 1],
+      ],
+    );
+  });
+
+  it('sorts a caller\'s members, so two runs over one document agree', () => {
+    const unsorted: AuditFinding = JSON.parse(
+      '{"kind":"cycle","severity":"blocks-work","keepAsHistory":false,"members":["c","a","b"],"detail":"x"}',
+    );
+    assert.deepEqual(auditOverlay([unsorted]).findings[0]?.members, ['a', 'b', 'c']);
+  });
+
   it('indexes exactly the rows it lists', () => {
     // The index and the list are two views of one answer, so a lookup that
     // disagreed with the rail would draw a bar on a row the list calls clean.
