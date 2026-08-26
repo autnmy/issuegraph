@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import type { EdgeState, ProjectedEdge } from '@issuegraph/store';
+import { EDGE_STATES, type EdgeState, type ProjectedEdge } from '@issuegraph/store';
 import {
   type ElementSpec,
   type SpecChild,
@@ -10,7 +10,7 @@ import {
   renderViewer,
 } from '@issuegraph/viewer';
 
-import { STATE_ATTRIBUTE, overlayFor } from './grammar.ts';
+import { STATE_ATTRIBUTE, overlayFor, treatmentForState } from './grammar.ts';
 import { OVERLAY_CLASS, attachEdgeOverlays, renderOverlayMark } from './render.ts';
 
 /**
@@ -70,6 +70,99 @@ function classesOf(spec: ElementSpec): readonly string[] {
   const value = spec.attrs?.['class'];
   return typeof value === 'string' ? value.split(' ') : [];
 }
+
+/**
+ * A `together-with` unit and a `serialize-with` pair.
+ *
+ * These two exist because the viewer draws them UNLIKE an ordinary edge, and
+ * each broke the matcher in its own way: `together-with` is not drawn as an
+ * edge path at all, and `serialize-with` is drawn as TWO paths sharing one
+ * accessible name.
+ */
+const ODD_DOCUMENT: ViewerDocument = {
+  issues: [
+    { key: '#1', title: 'One', open: true, priority: 1 },
+    { key: '#2', title: 'Two', open: true, priority: 1 },
+    { key: '#3', title: 'Three', open: true, priority: 2 },
+    { key: '#4', title: 'Four', open: true, priority: 2 },
+  ],
+  edges: [
+    { field: 'together-with', from: '#1', to: '#2' },
+    { field: 'serialize-with', from: '#3', to: '#4' },
+  ],
+  order: {
+    slots: [
+      { rank: 1, lead: '#1', members: ['#1', '#2'], ready: true, holds: [] },
+      { rank: 2, lead: '#3', members: ['#3'], ready: true, holds: [] },
+      { rank: 3, lead: '#4', members: ['#4'], ready: true, holds: [] },
+    ],
+    excluded: [],
+  },
+};
+
+function oddSceneOf(): ReturnType<typeof renderViewer>['scene'] {
+  return renderViewer(ODD_DOCUMENT, { projection: 'graph' }).scene;
+}
+
+/** A projected edge for one of `ODD_DOCUMENT`'s relationships. */
+function oddEdge(
+  kind: 'together-with' | 'serialize-with',
+  states: readonly EdgeState[],
+): ProjectedEdge {
+  const [from, to] = kind === 'together-with' ? ['#1', '#2'] : ['#3', '#4'];
+  return {
+    // `edgeIdentity`: symmetric fields sort their endpoints, and a `#` encodes.
+    id: `${kind}|%23${String(from).slice(1)}|%23${String(to).slice(1)}`,
+    kind,
+    from: from ?? '',
+    to: to ?? '',
+    states,
+    writes: [],
+  };
+}
+
+describe('the two relationships the viewer draws differently', () => {
+  it('overlays a together-with, which is drawn as a connector and NOT as an edge', () => {
+    // `graph.ts:657` skips `together-with` when it builds edge paths — it
+    // shares a rank rather than ordering anything, so it is an enclosure plus a
+    // connector. Matching only `.ig-edge` by accessible name left every state
+    // on one of the five relationships permanently `unattached`.
+    //
+    // The connector publishes `edgeIdentity` on `data-ig-group`, and that
+    // string IS `ProjectedEdge.id`, so this matches on identity rather than on
+    // a reconstructed sentence.
+    const edge = oddEdge('together-with', ['pending-write']);
+    const { scene, unattached } = attachEdgeOverlays(oddSceneOf(), [edge]);
+    assert.deepEqual(unattached, [], 'a together-with overlay matched nothing');
+    const overlaid = walk(scene.root).filter(
+      (spec) => spec.attrs?.[STATE_ATTRIBUTE] === 'pending-write',
+    );
+    assert.equal(overlaid.length, 1);
+    assert.equal(classesOf(overlaid[0] ?? { tag: 'x' }).includes('ig-connector'), true);
+  });
+
+  it('ghosts BOTH strokes of a double line but adds its marks once', () => {
+    // `serialize-with` is drawn as two `.ig-edge` paths carrying the SAME
+    // accessible name, so both match. Attributes must reach both — half a
+    // double line left at full strength is a visibly wrong ghost — while the
+    // halo and the conflict companion must be added once, not per stroke.
+    const edge = oddEdge('serialize-with', ['selected', 'conflict']);
+    const { scene, unattached } = attachEdgeOverlays(oddSceneOf(), [edge]);
+    assert.deepEqual(unattached, []);
+
+    const overlaid = walk(scene.root).filter(
+      (spec) => spec.attrs?.[STATE_ATTRIBUTE] === 'selected conflict',
+    );
+    assert.equal(overlaid.length, 2, 'a double line was only half overlaid');
+
+    const halos = walk(scene.root).filter((spec) => classesOf(spec).includes('ig-overlay-halo'));
+    const versions = walk(scene.root).filter((spec) =>
+      classesOf(spec).includes('ig-overlay-version'),
+    );
+    assert.equal(halos.length, 1, 'the halo was drawn once per stroke');
+    assert.equal(versions.length, 1, 'the conflict companion was drawn once per stroke');
+  });
+});
 
 describe('an overlay attaches to the edge the viewer actually drew', () => {
   it('finds it — the positive control for the whole matching scheme', () => {
@@ -277,16 +370,85 @@ describe('the four redundant channels survive every overlay', () => {
   });
 });
 
+describe('the dash the table declares is the dash that renders', () => {
+  it('draws a clone for EVERY declared dash, not just the marching one', () => {
+    // Driven from the table rather than from a list here, so a state that gains
+    // a dash later cannot be silently left unrendered. An earlier draft handled
+    // `marching` alone, so `invalid`'s dotted ghost — the shape channel that
+    // distinguishes it without colour — never appeared at all.
+    for (const state of EDGE_STATES) {
+      const declared = treatmentForState(state).dash;
+      if (declared === null || state === 'selected') continue;
+      const { scene } = attachEdgeOverlays(sceneOf(), [projected(state)]);
+      const dashes = walk(scene.root).filter((spec) =>
+        classesOf(spec).includes('ig-overlay-dash'),
+      );
+      assert.equal(dashes.length, 1, `${state} declares ${declared} and rendered no dash clone`);
+      assert.equal(
+        classesOf(dashes[0] ?? { tag: 'x' }).includes(`ig-overlay-${declared}`),
+        true,
+        `${state}'s clone does not carry its declared ${declared} pattern`,
+      );
+    }
+  });
+
+  it('keeps the relationship hue on a state that adds none of its own', () => {
+    // The clone drops `class`, so it is no longer `.ig-edge` and the viewer's
+    // `.ig-edge[data-edge=…]` hue rules stop reaching it. A `currentColor`
+    // stroke then resolved to inherited body text — a grey line painted OVER
+    // the edge, collapsing the hue channel exactly while a write was pending.
+    const { scene } = attachEdgeOverlays(sceneOf(), [projected('pending-write')]);
+    const dash = walk(scene.root).find((spec) => classesOf(spec).includes('ig-overlay-dash'));
+    assert.equal(dash?.attrs?.['stroke'], 'var(--ig-edge-blocked-by)');
+  });
+
+  it('paints a refusal in the state hue instead, because that IS the signal', () => {
+    const { scene } = attachEdgeOverlays(sceneOf(), [projected('invalid')]);
+    const dash = walk(scene.root).find((spec) => classesOf(spec).includes('ig-overlay-dash'));
+    assert.equal(dash?.attrs?.['stroke'], 'var(--ig-state-invalid)');
+  });
+
+  it('never writes a dash onto the edge itself, so the kind keeps its pattern', () => {
+    for (const state of ['pending-write', 'invalid'] as const) {
+      const before = walk(sceneOf().root)
+        .filter((spec) => classesOf(spec).includes('ig-edge'))
+        .map((spec) => spec.attrs?.['stroke-dasharray']);
+      const { scene } = attachEdgeOverlays(sceneOf(), [projected(state)]);
+      const after = walk(scene.root)
+        .filter((spec) => classesOf(spec).includes('ig-edge'))
+        .map((spec) => spec.attrs?.['stroke-dasharray']);
+      assert.deepEqual(after, before, `${state} spent the kind's dash channel`);
+    }
+  });
+});
+
 describe('a conflict holds both versions and merges neither', () => {
-  it('draws the second version', () => {
+  it('draws EXACTLY two strokes for the edge — the pair, not a third line', () => {
+    // COUNTS EVERY STROKE, not just the added ones. The first draft counted
+    // `.ig-overlay-version` alone, found the two clones it had added, and
+    // passed — while the original edge sat between them and the reader saw
+    // THREE lines where the design promises a pair.
+    const before = walk(sceneOf().root).filter((spec) =>
+      classesOf(spec).includes('ig-edge'),
+    ).length;
     const { scene } = attachEdgeOverlays(sceneOf(), [projected('conflict')]);
-    const versions = walk(scene.root).filter((spec) =>
+    const after = walk(scene.root);
+
+    const versions = after.filter((spec) => classesOf(spec).includes('ig-overlay-version'));
+    const originals = after.filter((spec) => classesOf(spec).includes('ig-edge'));
+    assert.equal(originals.length, before, 'the edge itself was added to or removed');
+    assert.equal(versions.length, 1, 'the companion is ONE stroke; the edge is the other version');
+    assert.equal(originals.length + versions.length, 2, 'the reader sees something other than a pair');
+  });
+
+  it('offsets the companion clear of the version it sits beside', () => {
+    const { scene } = attachEdgeOverlays(sceneOf(), [projected('conflict')]);
+    const companion = walk(scene.root).find((spec) =>
       classesOf(spec).includes('ig-overlay-version'),
     );
-    // Two strokes, offset either side — the pair reads as two lines at any
-    // scale, which is how the viewer draws `serialize-with`'s double.
-    assert.equal(versions.length, 2);
-    assert.notEqual(versions[0]?.attrs?.['transform'], versions[1]?.attrs?.['transform']);
+    const original = walk(scene.root).find((spec) => classesOf(spec).includes('ig-edge'));
+    assert.notEqual(companion?.attrs?.['transform'], original?.attrs?.['transform']);
+    assert.match(String(companion?.attrs?.['transform']), /^translate\(0 [\d.]+\)/);
   });
 
   it('offers no affordance that reads as a merge', () => {

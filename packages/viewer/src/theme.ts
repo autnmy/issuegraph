@@ -135,8 +135,16 @@ export const defaultTheme: Theme = Object.freeze({
     // family, because what separates them for a reader is SHAPE (dotted ghost
     // versus the ✕ terminal), not hue. They stay separate tokens so a host that
     // wants to separate them by colour can, without redefining a relationship.
-    '--ig-state-invalid': '#F2555A',
-    '--ig-state-failed': '#FF8A5C',
+    //
+    // LIGHTER THAN THEY LOOK THEY SHOULD BE, and deliberately. Both states draw
+    // at reduced opacity, and contrast is a property of what LANDS on the
+    // surface rather than of the value written here: at 0.5 opacity a saturated
+    // `#F2555A` composites to 2.18:1 — under the 3:1 non-text bar — while
+    // measuring a perfectly respectable 5.31:1 uncomposited. The editor's
+    // grammar test measures the composite, because that is where the opacity
+    // this pairs with is declared.
+    '--ig-state-invalid': '#FFA8AD',
+    '--ig-state-failed': '#FFAF8E',
     // Two versions are held and neither is adopted. Gold rather than red: a
     // conflict is not a failure, and the design's own table says so.
     '--ig-state-conflict': '#F5C542',

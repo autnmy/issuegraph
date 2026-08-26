@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { EDGE_STATES, type EdgeState, type ProjectedEdge } from '@issuegraph/store';
-import { THEME_TOKENS } from '@issuegraph/viewer';
+import { THEME_TOKENS, defaultTheme } from '@issuegraph/viewer';
 
 import {
   OVERLAY_TREATMENTS,
@@ -78,6 +78,92 @@ describe('the treatment table', () => {
 
   it('is frozen', () => {
     assert.ok(Object.isFrozen(OVERLAY_TREATMENTS));
+  });
+});
+
+/**
+ * WCAG relative luminance, over a colour composited onto a surface.
+ *
+ * A SECOND COPY OF THIS MATH, DELIBERATELY. The viewer keeps its own beside its
+ * fixtures and says why it is not shipped: "the viewer RENDERS, it does not
+ * audit. Shipping a contrast function would invite a host to gate on it." That
+ * reasoning applies here too, so this package audits its own claim with its own
+ * test-only copy rather than the viewer widening its surface for a consumer.
+ *
+ * It is `over()` that makes this test say something the viewer's cannot: the
+ * viewer measures a token, and a token is not what lands on the screen when the
+ * state that uses it draws at half opacity.
+ */
+function channel(value: number): number {
+  const scaled = value / 255;
+  return scaled <= 0.04045 ? scaled / 12.92 : Math.pow((scaled + 0.055) / 1.055, 2.4);
+}
+
+function luminance(hex: string): number {
+  const value = Number.parseInt(hex.slice(1), 16);
+  return (
+    0.2126 * channel((value >> 16) & 255) +
+    0.7152 * channel((value >> 8) & 255) +
+    0.0722 * channel(value & 255)
+  );
+}
+
+function contrastRatio(a: string, b: string): number {
+  const first = luminance(a);
+  const second = luminance(b);
+  return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+}
+
+/** `fg` drawn at `alpha` over `bg` — what the compositor actually produces. */
+function over(fg: string, bg: string, alpha: number): string {
+  const f = Number.parseInt(fg.slice(1), 16);
+  const b = Number.parseInt(bg.slice(1), 16);
+  const mix = (shift: number): number =>
+    Math.round(alpha * ((f >> shift) & 255) + (1 - alpha) * ((b >> shift) & 255));
+  return `#${[mix(16), mix(8), mix(0)].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+}
+
+const SURFACES = ['--ig-bg', '--ig-surface', '--ig-surface-2'] as const;
+
+describe('a state hue clears the contrast bar AS RENDERED, not as written', () => {
+  it('measures every state hue composited at the opacity its treatment draws with', () => {
+    // THE BUG THIS EXISTS FOR: the viewer's theme test measures the token
+    // uncomposited, where `#F2555A` reads a comfortable 5.31:1. `invalid` draws
+    // at 0.5 opacity, and the composite over the shipped surfaces is 2.18:1 —
+    // under the 3:1 non-text bar. The suite asserted an accessibility guarantee
+    // the code did not provide.
+    //
+    // It lives HERE rather than in the viewer because the opacity is declared
+    // here. Measuring it there would mean a second copy of a number that this
+    // table owns, and the two would drift the first time one was tuned.
+    for (const state of EDGE_STATES) {
+      const { hueToken, opacity } = treatmentForState(state);
+      if (hueToken === null) continue;
+      const hue = defaultTheme.colors[hueToken as keyof typeof defaultTheme.colors];
+      const alpha = opacity ?? 1;
+      for (const surface of SURFACES) {
+        const bg = defaultTheme.colors[surface];
+        const ratio = contrastRatio(over(hue, bg, alpha), bg);
+        assert.ok(
+          ratio >= 3,
+          `${state} draws ${hueToken} at ${String(alpha)} opacity on ${surface}: ` +
+            `${ratio.toFixed(2)}:1, below the 3:1 non-text minimum`,
+        );
+      }
+    }
+  });
+
+  it('is measuring a real composite, not passing because alpha is always 1', () => {
+    // The positive control for the instrument itself. If `over()` were a no-op
+    // — or if no state carried an opacity — the assertion above would silently
+    // become the viewer's test again, which is the test that already passed
+    // while the rendering was non-compliant.
+    const ghosted = EDGE_STATES.filter((state) => {
+      const { hueToken, opacity } = treatmentForState(state);
+      return hueToken !== null && opacity !== null && opacity < 1;
+    });
+    assert.ok(ghosted.length > 0, 'no state both paints a hue and reduces opacity');
+    assert.notEqual(over('#FFFFFF', '#000000', 0.5), '#ffffff', 'over() is not compositing');
   });
 });
 

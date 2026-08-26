@@ -44,11 +44,20 @@ export const edgeOverlayStylesheet = `
   stroke-linecap: round;
 }
 
-.ig-overlay-marching {
+/* The stroke is set per element from the treatment table — a state's own hue
+   where it has one, the relationship's where it does not — for the same reason
+   the viewer sets its dash per element: one source for a channel. */
+.ig-overlay-dash {
   fill: none;
-  stroke: currentColor;
+}
+
+.ig-overlay-marching {
   stroke-dasharray: 4 4;
   animation: ig-overlay-march 1s linear infinite;
+}
+
+.ig-overlay-dotted {
+  stroke-dasharray: 1 3;
 }
 
 @keyframes ig-overlay-march {
@@ -63,15 +72,20 @@ export const edgeOverlayStylesheet = `
   }
 }
 
-.ig-edge[data-ig-state~='invalid'] {
+/* NOT prefixed with the edge class. A together-with relationship is drawn as a
+   connector rather than an edge path, so an edge-anchored rule left one of the
+   five relationships unstyled in every state. Only an overlaid element carries
+   the attribute at all, so the bare selector reaches exactly the intended set.
+   (No backticks in here: this is inside a template literal, and one ends it.) */
+[data-ig-state~='invalid'] {
   stroke: var(--ig-state-invalid);
 }
 
-.ig-edge[data-ig-state~='failed'] {
+[data-ig-state~='failed'] {
   stroke: var(--ig-state-failed);
 }
 
-.ig-edge[data-ig-state~='conflict'] {
+[data-ig-state~='conflict'] {
   stroke: var(--ig-state-conflict);
 }
 

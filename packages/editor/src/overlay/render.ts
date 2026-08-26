@@ -89,6 +89,20 @@ const EDGE_CLASS = 'ig-edge';
 /** The class the viewer puts on a terminal marker. NEVER matched — see below. */
 const TERMINAL_CLASS = 'ig-terminal';
 
+/**
+ * The class the viewer puts on a `together-with` connector.
+ *
+ * A `together-with` relationship is NOT drawn as an edge path — `graph.ts:657`
+ * skips it outright, because it shares a rank rather than ordering anything —
+ * so it is drawn as an enclosure plus this connector. Without matching it, one
+ * of the five relationships could never be overlaid at all: every state on a
+ * `together-with` came back `unattached`.
+ */
+const CONNECTOR_CLASS = 'ig-connector';
+
+/** The attribute the connector publishes its edge identity on. */
+const GROUP_ATTRIBUTE = 'data-ig-group';
+
 export interface OverlayOptions {
   readonly theme?: Theme | undefined;
 }
@@ -116,7 +130,36 @@ function classesOf(attrs: Readonly<Record<string, AttrValue>> | undefined): read
 }
 
 function isEdgePath(spec: ElementSpec): boolean {
-  return classesOf(spec.attrs).includes(EDGE_CLASS);
+  const names = classesOf(spec.attrs);
+  return names.includes(EDGE_CLASS) || names.includes(CONNECTOR_CLASS);
+}
+
+/**
+ * Which overlay this element carries, if any.
+ *
+ * TWO KEYS, AND IDENTITY IS THE BETTER ONE. A connector publishes
+ * `edgeIdentity(field, from, to)` on `data-ig-group`, and that string IS
+ * `StoredEdge.id` — the same function derives both — so `ProjectedEdge.id`
+ * matches it with no new dependency and no reconstruction. An ordinary edge
+ * path publishes no identity at all, which is the only reason the accessible
+ * name is used for those.
+ */
+function overlayOn(
+  spec: ElementSpec,
+  byIdentity: ReadonlyMap<string, EdgeOverlay>,
+  byName: ReadonlyMap<string, EdgeOverlay>,
+): { readonly key: string; readonly overlay: EdgeOverlay } | null {
+  const group = spec.attrs?.[GROUP_ATTRIBUTE];
+  if (typeof group === 'string') {
+    const overlay = byIdentity.get(group);
+    if (overlay !== undefined) return { key: group, overlay };
+  }
+  const label = spec.attrs?.['aria-label'];
+  if (typeof label === 'string' && classesOf(spec.attrs).includes(EDGE_CLASS)) {
+    const overlay = byName.get(label);
+    if (overlay !== undefined) return { key: label, overlay };
+  }
+  return null;
 }
 
 /**
@@ -145,6 +188,7 @@ function clonePath(spec: ElementSpec, overrides: Readonly<Record<string, AttrVal
 function overlayMarks(
   spec: ElementSpec,
   overlay: EdgeOverlay,
+  edge: ProjectedEdge,
   theme: Theme,
 ): { readonly behind: readonly ElementSpec[]; readonly front: readonly ElementSpec[] } {
   const behind: ElementSpec[] = [];
@@ -163,32 +207,53 @@ function overlayMarks(
   }
 
   const line = overlay.line;
-  if (line !== null && line.dash === 'marching') {
+  if (line !== null && line.dash !== null) {
+    // EVERY dash the table declares, not just the marching one. `invalid` asks
+    // for `dotted` and an earlier draft drew only `marching`, so the dotted
+    // ghost silently never appeared — the table declared a shape channel that
+    // nothing rendered, which is a field that lies rather than a missing case.
+    //
+    // Drawn on a CLONE so the kind's own dash survives underneath: the pattern
+    // is one of the four channels the type identity rests on, and writing
+    // `stroke-dasharray` onto the edge itself would spend it.
     front.push(
       clonePath(spec, {
-        class: `${OVERLAY_CLASS} ig-overlay-marching`,
-        // The pattern belongs to the animation, so it is set here and animated
-        // by `stroke-dashoffset` in the stylesheet. Nothing in this module
-        // advances it.
+        class: `${OVERLAY_CLASS} ig-overlay-dash ig-overlay-${line.dash}`,
+        // THE HUE HAS TO BE STATED. The clone drops `class`, so it is no longer
+        // `.ig-edge` and the viewer's `.ig-edge[data-edge=…]` hue rules stop
+        // applying to it — a `currentColor` stroke then resolved to the
+        // inherited body-text grey and painted OVER the edge, collapsing the
+        // hue channel exactly while a write was pending.
+        //
+        // The state's own hue where it has one (a refusal is red), and the
+        // RELATIONSHIP's hue where it does not (a pending write is still a
+        // `blocked-by`). Both are read from their owning table — the viewer's
+        // `treatmentFor` for the kind — never copied.
+        stroke: `var(${line.hueToken ?? treatmentFor(edge.kind).hueToken})`,
         'stroke-dasharray': null,
       }),
     );
   }
 
   if (line !== null && line.stroke === 'doubled') {
-    // BOTH VERSIONS, HELD. §17b: a conflict shows the two and never merges
-    // them. Drawn the way the viewer draws `serialize-with` — a second stroke
-    // offset by one stroke width, so the pair reads as two lines at any scale
-    // rather than as one thick one.
-    const offset = theme.metrics['--ig-stroke'];
+    // BOTH VERSIONS, HELD — and that means the edge plus ONE companion, not the
+    // edge plus a pair. An earlier draft added two offset clones and left the
+    // original between them, so a single-stroke relationship rendered THREE
+    // lines and the promised pair was nowhere in it.
+    //
+    // The original edge is the version the user wrote; this is the one the
+    // adapter reported. §17b: they are held side by side and never merged.
+    const offset = theme.metrics['--ig-stroke'] * 2;
     front.push(
       clonePath(spec, {
         class: `${OVERLAY_CLASS} ig-overlay-version`,
-        transform: `translate(0 ${String(-offset)})`,
-      }),
-      clonePath(spec, {
-        class: `${OVERLAY_CLASS} ig-overlay-version`,
-        transform: `translate(0 ${String(offset)})`,
+        // Composed onto whatever the viewer already set rather than replacing
+        // it: `serialize-with` is drawn as two paths that each carry their own
+        // offset, and overwriting that would move a stroke on top of its twin.
+        transform:
+          typeof spec.attrs?.['transform'] === 'string'
+            ? `translate(0 ${String(offset)}) ${spec.attrs['transform']}`
+            : `translate(0 ${String(offset)})`,
       }),
     );
   }
@@ -228,9 +293,7 @@ function edgeAttributes(base: string, overlay: EdgeOverlay): Record<string, Attr
  */
 function overlayTree(
   spec: ElementSpec,
-  byName: ReadonlyMap<string, EdgeOverlay>,
-  attached: Set<string>,
-  theme: Theme,
+  context: OverlayContext,
 ): ElementSpec {
   const children = spec.children ?? [];
   const next: SpecChild[] = [];
@@ -252,31 +315,54 @@ function overlayTree(
     }
 
     if (!isEdgePath(child)) {
-      next.push(overlayTree(child, byName, attached, theme));
+      next.push(overlayTree(child, context));
       continue;
     }
 
-    const label = child.attrs?.['aria-label'];
-    // Narrowed in its own statement rather than inside the lookup, so `name`
-    // stays a `string` for `attached` below. An `aria-label` is typed
-    // `AttrValue`, which admits a number and `undefined`.
-    const name = typeof label === 'string' ? label : null;
-    const overlay = name === null ? undefined : byName.get(name);
-    if (name === null || overlay === undefined || overlay.states.length === 0) {
+    const match = overlayOn(child, context.byIdentity, context.byName);
+    if (match === null || match.overlay.states.length === 0) {
       next.push(child);
       continue;
     }
-    attached.add(name);
 
-    const { behind, front } = overlayMarks(child, overlay, theme);
+    const edge = context.edgeOf.get(match.key);
+    if (edge === undefined) {
+      next.push(child);
+      continue;
+    }
+    context.attached.add(match.key);
+
+    // ATTRIBUTES ON EVERY MATCHING STROKE, MARKS ONLY ONCE — and the split is
+    // not tidiness. `serialize-with` is drawn as TWO `.ig-edge` paths carrying
+    // the SAME accessible name, so both match. Ghosting only one would leave
+    // half a double line at full strength; adding the halo and the conflict
+    // companion to both would draw each of them twice.
+    const marked = context.marked.has(match.key);
+    context.marked.add(match.key);
+    const { behind, front } = marked
+      ? { behind: [], front: [] }
+      : overlayMarks(child, match.overlay, edge, context.theme);
+
     next.push(
       ...behind,
-      { ...child, attrs: { ...child.attrs, ...edgeAttributes(name, overlay) } },
+      { ...child, attrs: { ...child.attrs, ...edgeAttributes(edgeName(edge), match.overlay) } },
       ...front,
     );
   }
 
   return { ...spec, children: next };
+}
+
+/** Everything the walk carries down. Grouped so the recursion takes one value. */
+interface OverlayContext {
+  readonly byIdentity: ReadonlyMap<string, EdgeOverlay>;
+  readonly byName: ReadonlyMap<string, EdgeOverlay>;
+  readonly edgeOf: ReadonlyMap<string, ProjectedEdge>;
+  /** Keys that matched at least one element. */
+  readonly attached: Set<string>;
+  /** Keys whose positional marks have already been drawn. */
+  readonly marked: Set<string>;
+  readonly theme: Theme;
 }
 
 /**
@@ -294,25 +380,41 @@ export function attachEdgeOverlays(
   const theme = resolveTheme(options.theme);
   const overlays = edges.map(overlayFor);
 
+  const byIdentity = new Map<string, EdgeOverlay>();
   const byName = new Map<string, EdgeOverlay>();
+  const edgeOf = new Map<string, ProjectedEdge>();
   for (const [index, overlay] of overlays.entries()) {
     const edge = edges[index];
     if (edge === undefined || overlay.states.length === 0) continue;
-    byName.set(edgeName(edge), overlay);
+    byIdentity.set(edge.id, overlay);
+    edgeOf.set(edge.id, edge);
+    const name = edgeName(edge);
+    byName.set(name, overlay);
+    edgeOf.set(name, edge);
   }
 
   const attached = new Set<string>();
-  const root = overlayTree(scene.root, byName, attached, theme);
+  const context: OverlayContext = {
+    byIdentity,
+    byName,
+    edgeOf,
+    attached,
+    marked: new Set<string>(),
+    theme,
+  };
+  const root = overlayTree(scene.root, context);
 
   // REPORTED, NOT DROPPED. An overlay whose edge the scene does not draw is
   // ordinary — the graph projection has a node budget and falls back to
   // clusters — but it is also what a broken match looks like, and the two must
   // not be indistinguishable. A host can surface it; a test can pin it.
+  //
+  // Either key counts: a `together-with` is only ever drawn as a connector, so
+  // it matches by identity and never by name.
   const unattached = overlays.filter((overlay, index) => {
     const edge = edges[index];
-    return (
-      edge !== undefined && overlay.states.length > 0 && !attached.has(edgeName(edge))
-    );
+    if (edge === undefined || overlay.states.length === 0) return false;
+    return !attached.has(edge.id) && !attached.has(edgeName(edge));
   });
 
   return { scene: { ...scene, root }, overlays, unattached };
