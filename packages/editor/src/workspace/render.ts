@@ -57,6 +57,7 @@ import {
   type ViewerDocument,
   KEY_ATTRIBUTE,
   element,
+  normalizeDocument,
   renderMarkup,
   renderViewer,
   resolveTheme,
@@ -371,6 +372,28 @@ export function renderWorkspace(
   const theme = resolveTheme(options.theme);
   const overlay = options.audit === undefined ? null : auditOverlay(options.audit);
 
+  // NORMALIZE ONCE, AT THE TOP, AND DERIVE EVERYTHING FROM THAT — this replaces
+  // four separate defects rather than fixing them one at a time, and the class
+  // is worth naming because it is not obvious from any one of them.
+  //
+  // Every zone normalizes the document it is handed; this function did NOT, so
+  // it derived the window, the severity map, the filter set and the inspector's
+  // relationships from the RAW input while the zones drew the normalized one.
+  // Anything layer 1 drops — a duplicate placement, a self-edge, an edge naming
+  // an issue the document does not carry — therefore survived in this
+  // function's answers and vanished from the picture beside them. Two of the
+  // shapes that reached: the inspector published a `select-edge` command for an
+  // edge no zone had drawn, and a duplicate placement straddling a window
+  // boundary became VALID whenever its earlier copy fell outside the window, so
+  // the visible order changed with the scroll position.
+  //
+  // Normalizing here makes those unrepresentable instead of handled.
+  // `normalizeDocument` is idempotent — measured: re-normalizing its own output
+  // yields zero further diagnostics — so the zones' own passes now find nothing
+  // left to drop, and this is the one place that reports what was dropped.
+  const sound = normalizeDocument(input);
+  const document = sound.document;
+
   // THE FILTER NARROWS THE RAIL, AND ONLY THE RAIL. §17a gives the audit a
   // filter for focus and deliberately no mode; the canvas answers "what
   // surrounds this issue", which the filter says nothing about.
@@ -382,15 +405,20 @@ export function renderWorkspace(
   const filtered = overlay !== null && options.auditFiltered === true;
   const railInput: ViewerDocument = filtered
     ? {
-        ...input,
+        ...document,
         order: {
-          ...input.order,
-          slots: input.order.slots.filter((slot) =>
+          // EXCLUSIONS ARE ROWS TOO, and filtering only the slots left the clean
+          // ones on screen while the header said the filter was on — the toggle
+          // narrowing part of the rail and claiming to have narrowed it.
+          slots: document.order.slots.filter((slot) =>
             slot.members.some((member) => auditFilterKeeps(overlay, member)),
+          ),
+          excluded: document.order.excluded.filter((exclusion) =>
+            auditFilterKeeps(overlay, exclusion.key),
           ),
         },
       }
-    : input;
+    : document;
 
   const rail = railWindow(railInput, options.rail ?? {});
   const railRender = renderViewer(rail.document, {
@@ -407,12 +435,21 @@ export function renderWorkspace(
     const severity = severityForRow(overlay, slot.members);
     if (severity !== undefined) severityByKey.set(slot.lead, severity);
   }
+  // EXCLUSIONS CARRY A KEY AND RENDER A ROW, so the bar belongs on them too.
+  // Built from the slots alone, the map missed exactly the row a
+  // `dead-duplicate-ref` finding is about — the class most associated with an
+  // exclusion in the first place — and the ambient warning went missing on the
+  // one row it most obviously described.
+  for (const exclusion of rail.document.order.excluded) {
+    const severity = severityForRow(overlay, [exclusion.key]);
+    if (severity !== undefined) severityByKey.set(exclusion.key, severity);
+  }
 
   // THE CANVAS IS THE WHOLE DOCUMENT, NOT THE WINDOW. The window is the rail's
   // scrolling position and says nothing about what surrounds the selected
   // issue; handing the ladder a windowed document would make its budgets — and
   // therefore its refusal — depend on where the reader had scrolled to.
-  const canvas = renderScaleLadder(input, {
+  const canvas = renderScaleLadder(document, {
     state: options.scale ?? INITIAL_SCALE_STATE,
     theme,
     // THE SAME ONE VALUE THE RAIL READ. Without this the canvas drew the
@@ -422,7 +459,7 @@ export function renderWorkspace(
     selected: selectedKey(selection),
   });
 
-  const inspector = inspectorView(input, selection);
+  const inspector = inspectorView(document, selection);
 
   const markup = [
     `<div class="ig-workspace">`,
@@ -454,12 +491,14 @@ export function renderWorkspace(
       ...(overlay === null ? [] : [auditStylesheet]),
       workspaceStylesheet,
     ].join('\n'),
-    // DEDUPED, BECAUSE THE TWO ZONES NORMALIZE THE SAME DOCUMENT. A defect
-    // visible in both — a self-edge on a drawn row, say — is reported by the
-    // rail's render and by the ladder's independently, and concatenating them
-    // states one input error twice. Nothing here carries zone attribution, so a
-    // host counting these would simply overstate the failures. Insertion order
-    // is preserved, so the rail's diagnostics still come first.
-    diagnostics: [...new Set([...railRender.diagnostics, ...canvas.diagnostics])],
+    // THE NORMALIZE PASS REPORTS FIRST, because it is now the one that actually
+    // drops anything; the zones re-normalize an already-sound document and find
+    // nothing left. Still deduped: the two zones each normalize what they are
+    // given, so an identical string from both would otherwise state one input
+    // error twice, and nothing here carries zone attribution to tell them
+    // apart. Insertion order is preserved.
+    diagnostics: [
+      ...new Set([...sound.diagnostics, ...railRender.diagnostics, ...canvas.diagnostics]),
+    ],
   };
 }

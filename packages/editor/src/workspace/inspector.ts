@@ -31,6 +31,7 @@
 import { edgeIdentity } from '@issuegraph/core';
 import type { EdgeField } from '@issuegraph/core';
 import type { ViewerDocument, ViewerHold, ViewerIssue, ViewerSlot } from '@issuegraph/viewer';
+import { normalizeDocument } from '@issuegraph/viewer';
 
 import type { WorkspaceSelection } from './selection.ts';
 
@@ -120,10 +121,21 @@ function slotFor(document: ViewerDocument, key: string): ViewerSlot | undefined 
  * lands, the order recomputes — and is not a condition a reader can fix.
  */
 export function inspectorView(
-  document: ViewerDocument,
+  raw: ViewerDocument,
   selection: WorkspaceSelection,
 ): InspectorView {
   if (selection.kind === 'none') return EMPTY;
+
+  // IT NORMALIZES ITS OWN INPUT, so the list can never disagree with what the
+  // other zones drew. Reading the raw edges published relationships layer 1 had
+  // already dropped — a dangling edge, a repeated one, a self-edge — each with
+  // a live `select-edge` command on it, so the inspector offered the reader an
+  // edge that exists on no other surface.
+  //
+  // Inside rather than at the call site, because this is exported: a host
+  // calling it directly gets the same answer the workspace does. Idempotent, so
+  // the workspace normalizing first costs a pass and changes nothing.
+  const document = normalizeDocument(raw).document;
 
   if (selection.kind === 'issue') {
     const issue = document.issues.find((candidate) => candidate.key === selection.key);

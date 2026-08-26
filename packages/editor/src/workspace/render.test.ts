@@ -391,6 +391,111 @@ describe('selection crosses the zones from one value', () => {
   });
 });
 
+describe('the workspace derives from the normalized document, like the zones do', () => {
+  it('shows the same order at every scroll position, on a document that places one issue twice', () => {
+    // THE CLASS ROUND 3 FOUND, and the reason this normalizes once rather than
+    // patching four places. Layer 1 keeps the FIRST placement of a key and
+    // drops the later one. Slicing the RAW slots handed the viewer a window in
+    // which only the later copy appeared — so it became the valid one, and the
+    // visible order changed with the reader's scroll position.
+    const base = backlogOf(6);
+    const document = {
+      ...base,
+      order: {
+        ...base.order,
+        slots: [
+          ...base.order.slots,
+          { rank: 7, lead: 'i0001', members: ['i0001'], ready: true, holds: [] },
+        ],
+      },
+    };
+    // The duplicate is the LAST slot, so a window at the tail is exactly where
+    // the earlier copy is out of sight.
+    const tail = renderWorkspace(document, { ...WORDS, rail: { start: 5, count: 2 } });
+    assert.equal(drawnKeys(tail.markup).includes('i0001'), false);
+    // And the workspace says so once, from the one pass that dropped it.
+    assert.ok(tail.diagnostics.some((one) => one.includes('already placed')));
+  });
+
+  it('does not offer the inspector an edge no zone drew', () => {
+    const base = backlogOf(3);
+    const document = {
+      ...base,
+      edges: [
+        { field: 'blocked-by' as const, from: 'i0001', to: 'ghost' },
+        { field: 'blocked-by' as const, from: 'i0001', to: 'i0002' },
+      ],
+    };
+    const result = renderWorkspace(document, {
+      ...WORDS,
+      selection: { kind: 'issue', key: 'i0001' },
+    });
+    assert.equal(result.view.inspector.relationships.length, 1);
+    assert.equal(/ghost/.test(result.markup), false);
+  });
+});
+
+describe('an excluded row is a row, and the audit treats it like one', () => {
+  // A `dead-duplicate-ref` names the DUPLICATE, and a duplicate is exactly what
+  // puts a key in `excluded` — so this is the class most associated with an
+  // exclusion, on the surface that was ignoring exclusions.
+  const audit = {
+    document: {
+      issues: [
+        { ref: 'i0001', title: 'issue i0001', state: 'open' as const },
+        { ref: 'i0002', title: 'issue i0002', state: 'open' as const },
+        { ref: 'i0003', title: 'issue i0003', state: 'closed' as const },
+      ],
+      edges: [
+        { id: edgeIdentity('duplicate-of', 'i0002', 'i0003'), kind: 'duplicate-of' as const, from: 'i0002', to: 'i0003' },
+      ],
+    },
+    graph: graphFor(['i0001', 'i0002', 'i0003']),
+  };
+
+  const base = backlogOf(3);
+  const withExclusion = {
+    ...base,
+    order: {
+      slots: base.order.slots.filter((slot) => slot.lead !== 'i0002'),
+      excluded: [{ key: 'i0002', canonical: 'i0001', reason: 'duplicate-of' as const }],
+    },
+  };
+
+  it('marks the excluded row when the audit has a finding for it', () => {
+    const result = renderWorkspace(withExclusion, { ...WORDS, audit });
+    assert.ok(result.view.audit?.rowFor('i0002') !== undefined, 'the fixture found nothing on i0002');
+    const row = result.markup.match(/data-ig-key="i0002"[^>]*>/)?.[0];
+    assert.ok(row !== undefined, 'the excluded row was not drawn');
+    assert.match(row, new RegExp(`${AUDIT_SEVERITY_ATTRIBUTE}="`));
+  });
+
+  it('hides a CLEAN excluded row when the filter is on', () => {
+    // Filtering only the slots left clean exclusion rows on screen while the
+    // header said the filter was active — the toggle narrowing part of the rail
+    // and claiming to have narrowed it.
+    // `i0004` CARRIES NO FINDING, which is the whole point and took a failed
+    // run to get right: a `dead-duplicate-ref` names BOTH ends — the duplicate
+    // and the dead ref it points at — so the obvious candidates for a "clean"
+    // excluded row were both dirty, and the test would have asserted the filter
+    // hides a row it is supposed to keep.
+    const four = backlogOf(4);
+    const clean = {
+      ...four,
+      order: {
+        slots: four.order.slots.filter((slot) => slot.lead !== 'i0004'),
+        excluded: [{ key: 'i0004', canonical: 'i0001', reason: 'duplicate-of' as const }],
+      },
+    };
+    const on = renderWorkspace(clean, { ...WORDS, audit, auditFiltered: true });
+    assert.equal(on.view.audit?.rowFor('i0004'), undefined, 'the fixture made i0004 dirty');
+    assert.equal(/data-ig-key="i0004"/.test(on.markup), false);
+    // An affected row is still there, or the filter narrowed to nothing and
+    // this would pass on a rail showing no rows at all.
+    assert.match(on.markup, /data-ig-key="i0002"/);
+  });
+});
+
 describe('every published command is operable by keyboard', () => {
   it('puts each data-ig-command on a button, across every zone', () => {
     // A PROPERTY OVER THE WHOLE SURFACE, not a check on the row that was wrong.

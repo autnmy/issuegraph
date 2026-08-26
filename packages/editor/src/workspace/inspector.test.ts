@@ -72,11 +72,42 @@ describe('an edge selection FILTERS the list rather than opening another panel',
     // The identity is the one the picker, the overlays and the store already
     // use. A second spelling out here is how a host comes to hold two ids for
     // one edge — which is why this drives EVERY field rather than one.
+    //
+    // `together-with` GETS ITS OWN FIXTURE, and that is the normalization this
+    // view now shares with the zones rather than a special case: layer 1 draws
+    // that edge as an enclosure around ONE slot's members, so an edge whose
+    // endpoints sit in separate slots has nothing to draw it and is dropped.
+    // A fixture that ignored this passed only while the inspector was reading
+    // raw edges — that is, only while it was listing relationships no other
+    // zone had drawn.
     for (const field of EDGE_FIELDS) {
-      const document = backlogOf(2, { edges: [[field, 'i0001', 'i0002']] });
+      const document =
+        field === 'together-with'
+          ? backlogOf(2, { unitOf: { i0002: 'i0001' }, edges: [[field, 'i0001', 'i0002']] })
+          : backlogOf(2, { edges: [[field, 'i0001', 'i0002']] });
       const view = inspectorView(document, { kind: 'issue', key: 'i0001' });
       assert.equal(view.relationships[0]?.edgeId, edgeIdentity(field, 'i0001', 'i0002'), field);
     }
+  });
+
+  it('lists nothing layer 1 dropped, so the zones cannot disagree about what exists', () => {
+    // A dangling edge, a self-edge and a duplicate placement all survive in a
+    // raw ViewerDocument and are dropped by every zone that draws one. Listing
+    // them published a live `select-edge` command for an edge that exists on no
+    // other surface.
+    const document = {
+      ...backlogOf(2),
+      edges: [
+        { field: 'blocked-by' as const, from: 'i0001', to: 'ghost' },
+        { field: 'blocked-by' as const, from: 'i0001', to: 'i0001' },
+        { field: 'blocked-by' as const, from: 'i0001', to: 'i0002' },
+      ],
+    };
+    const view = inspectorView(document, { kind: 'issue', key: 'i0001' });
+    assert.deepEqual(
+      view.relationships.map((one) => [one.from, one.to]),
+      [['i0001', 'i0002']],
+    );
   });
 });
 
