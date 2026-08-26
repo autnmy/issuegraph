@@ -86,6 +86,14 @@ issuegraph validate --body-file issue-body.md
 }
 ```
 
+**An issue is identified by `id` or by `number`.** `number` is the original spelling and every existing caller may keep it. `id` accepts an **opaque tracker-scoped identifier** as SPEC §4.2 defines one — `ABC-123`, `ENG-456` — so a Jira or Linear corpus can be ordered:
+
+```json
+{ "id": "ABC-123", "open": true, "labels": ["P1"], "assigneeCount": 0, "body": "…" }
+```
+
+Supply one or the other. Both is accepted while they agree, so a migration from `number` to `id` need not be a flag day; both disagreeing is refused, because one issue named two ways has no correct reading. Neither is refused too — an issue with no identifier cannot be named by any body in the corpus. Whichever you send is the key every `blocked-by` in the corpus resolves against, and the key the output's `lead` and `members` report.
+
 ```sh
 issuegraph ready --input issues.json
 ```

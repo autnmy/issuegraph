@@ -32,7 +32,22 @@ import { toJson } from '../json.ts';
 
 /** One issue as the caller supplies it: its body, plus the tracker facts we do not fetch. */
 export interface OrderInputIssue {
-  readonly number: number;
+  /**
+   * The tracker's own identifier, as SPEC §4.2 defines one — an OPAQUE
+   * tracker-scoped token. `ABC-123` and `ENG-456` are identifiers exactly as
+   * `231` is, so a Jira or Linear corpus is addressable here.
+   *
+   * OPTIONAL ONLY BECAUSE `number` PREDATES IT. Supply one or the other; both
+   * is fine when they agree, and refused when they do not, because a caller
+   * naming one issue two ways has no correct reading. Neither is refused too:
+   * an issue with no identifier cannot be referenced by any body in the corpus.
+   */
+  readonly id?: string;
+  /**
+   * The numeric identifier — this verb's original contract, kept because every
+   * existing caller supplies it. Equivalent to `id: String(number)`.
+   */
+  readonly number?: number;
   readonly repo?: string | null;
   readonly open: boolean;
   readonly labels: readonly string[];
@@ -195,12 +210,29 @@ function asBaseRanking(value: unknown, at: string): IssueOrderBaseRanking {
  * shape: a rule owned elsewhere, restated here, and drifting. The ref grammar is
  * already asked rather than reimplemented; the number bound now is too.
  */
-function isReferenceableId(value: number): boolean {
-  const ref = resolveRef(String(value));
+function isReferenceableId(value: string): boolean {
+  const ref = resolveRef(value);
   // COMPARED AS THE READER STORES IT. An identifier is an opaque string
-  // (SPEC 4.2), so the round-trip through `resolveRef` comes back as text; the
-  // CLI's own input schema keeps `number`, and this is the boundary.
-  return ref !== null && ref.id === String(value);
+  // (SPEC §4.2), so the round-trip through `resolveRef` comes back as text.
+  // TAKES THE STRING, NOT THE NUMBER, since §4.2 widened: the numeric spelling
+  // is now one CASE of the opaque one rather than the domain itself, so asking
+  // about a number and asking about an id is the same question and this answers
+  // both. A second numeric predicate would be exactly the drifting restatement
+  // this function's own history is a warning about.
+  return ref !== null && ref.id === value;
+}
+
+/**
+ * The identifier this issue is keyed by — `id` when supplied, else `number`.
+ *
+ * TOTAL ONLY BEHIND VALIDATION, deliberately rather than defensively: both
+ * entry points ({@link asIssue} for JSON, {@link inputDomainRefusal} for a
+ * typed document) refuse an issue carrying neither, and `runOrder` calls the
+ * latter before anything else. A sentinel here instead would push a null check
+ * into every call site to describe a state the boundary has already excluded.
+ */
+function issueId(issue: OrderInputIssue): string {
+  return issue.id ?? String(issue.number);
 }
 
 /**
@@ -217,8 +249,17 @@ function isAssigneeCount(value: number): boolean {
 
 function asIssueNumber(value: unknown, at: string): number {
   const parsed = asInteger(value, at);
-  if (!isReferenceableId(parsed)) {
+  if (!isReferenceableId(String(parsed))) {
     fail(at, `expected an issue number the reader can reference, got ${parsed}`);
+  }
+  return parsed;
+}
+
+/** An opaque identifier the READER would also accept as a reference (§4.2). */
+function asOpaqueId(value: unknown, at: string): string {
+  const parsed = asString(value, at);
+  if (!isReferenceableId(parsed)) {
+    fail(at, `expected an identifier the reader can reference, got ${JSON.stringify(parsed)}`);
   }
   return parsed;
 }
@@ -264,8 +305,23 @@ function asIssue(value: unknown, at: string): OrderInputIssue {
   const record = asRecord(value, at);
   const repo = record['repo'];
   const closedStateReason = record['closedStateReason'];
+  const rawId = record['id'];
+  const rawNumber = record['number'];
+  if (rawId === undefined && rawNumber === undefined) {
+    fail(`${at}.id`, 'expected an identifier: supply `id` (any tracker id) or `number`');
+  }
+  const id = rawId === undefined ? undefined : asOpaqueId(rawId, `${at}.id`);
+  const number = rawNumber === undefined ? undefined : asIssueNumber(rawNumber, `${at}.number`);
+  // BOTH IS FINE WHEN THEY AGREE. A caller migrating from `number` to `id` will
+  // send both for a while, and refusing that would make the migration a flag
+  // day. Disagreement is the case with no correct reading — the same doctrine
+  // `duplicateKeyRefusal` applies to one issue named twice.
+  if (id !== undefined && number !== undefined && id !== String(number)) {
+    fail(`${at}.id`, `names ${JSON.stringify(id)} while ${at}.number names ${number}`);
+  }
   return {
-    number: asIssueNumber(record['number'], `${at}.number`),
+    ...(id === undefined ? {} : { id }),
+    ...(number === undefined ? {} : { number }),
     // `exactOptionalPropertyTypes` is on: an absent key and an explicit
     // `undefined` are different types, so the key is only added when supplied.
     ...(repo === undefined ? {} : { repo: repo === null ? null : asRepoQualifier(repo, `${at}.repo`) }),
@@ -327,7 +383,7 @@ export type OrderView = 'order' | 'ready';
 function duplicateKeyRefusal(document: OrderInputDocument): VerbResult | null {
   const seen = new Map<string, number>();
   for (const [index, issue] of document.issues.entries()) {
-    const key = nodeKey({ id: String(issue.number), repo: issue.repo ?? null }, document.homeRepo);
+    const key = nodeKey({ id: issueId(issue), repo: issue.repo ?? null }, document.homeRepo);
     const first = seen.get(key);
     if (first !== undefined) {
       return {
@@ -386,8 +442,24 @@ function inputDomainRefusal(document: OrderInputDocument): VerbResult | null {
 
   for (const [index, issue] of document.issues.entries()) {
     const at = `input.issues[${index}]`;
-    if (!isReferenceableId(issue.number)) {
-      return refuse(`${at}.number`, `expected an issue number the reader can reference, got ${issue.number}`);
+    if (issue.id === undefined && issue.number === undefined) {
+      return refuse(`${at}.id`, 'expected an identifier: supply `id` (any tracker id) or `number`');
+    }
+    if (
+      issue.id !== undefined &&
+      issue.number !== undefined &&
+      issue.id !== String(issue.number)
+    ) {
+      return refuse(
+        `${at}.id`,
+        `names ${JSON.stringify(issue.id)} while ${at}.number names ${issue.number}`,
+      );
+    }
+    if (!isReferenceableId(issueId(issue))) {
+      return refuse(
+        issue.id === undefined ? `${at}.number` : `${at}.id`,
+        `expected an identifier the reader can reference, got ${JSON.stringify(issueId(issue))}`,
+      );
     }
     // `!= null` covers both spellings: an absent key and an explicit `null` are
     // the SAME fact here — the issue is home-repo data — and neither is a repo
@@ -435,10 +507,10 @@ export function deriveOrder(document: OrderInputDocument, view: OrderView): Verb
     const decl = classifyDeclaration(parse);
     const repo = issue.repo ?? null;
     if (decl.state === 'unread') {
-      underRead.push(nodeKey({ id: String(issue.number), repo }, document.homeRepo));
+      underRead.push(nodeKey({ id: issueId(issue), repo }, document.homeRepo));
     }
     return {
-      id: String(issue.number),
+      id: issueId(issue),
       ...(issue.repo === undefined ? {} : { repo: issue.repo }),
       open: issue.open,
       ...(issue.closedStateReason === undefined
