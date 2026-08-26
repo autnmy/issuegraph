@@ -8,6 +8,7 @@ import { KEY_ATTRIBUTE } from '@issuegraph/viewer';
 import { AUDIT_SEVERITY_ATTRIBUTE } from '../audit/surface.ts';
 import type { AuditGraph } from '../audit/findings.ts';
 import { ZONES, renderWorkspace } from './render.ts';
+import { selectionReducer } from './selection.ts';
 import { WORKSPACE_WORDS, backlogOf, drawnKeys, zonesIn } from '../testing/workspace.ts';
 
 /** A graph port built from the reader's own model, as a host would build it. */
@@ -537,14 +538,31 @@ describe('the surface renders words it was given and invents none', () => {
     assert.match(result.markup, /pick a row to inspect it/);
   });
 
+  it('clears to nothing selected, which is what the control now says it does', () => {
+    // THE CORRECTED CONTRACT, MADE EXECUTABLE. The module doc used to promise
+    // that clearing "widens the list back", the word field was called
+    // `clearFilter`, and the fixture duly labelled the button "show every
+    // relationship" — three statements of a behaviour the design does not have,
+    // on a button that empties the panel. §17b makes the inspector a projection
+    // of the SELECTION, and `none` has no subject to list relationships for.
+    const document = backlogOf(3, { edges: [['blocked-by', 'i0001', 'i0002']] });
+    const edgeId = edgeIdentity('blocked-by', 'i0001', 'i0002');
+    const cleared = selectionReducer({ kind: 'edge', edgeId }, { kind: 'clear' });
+    const result = renderWorkspace(document, { ...WORDS, selection: cleared });
+
+    assert.deepEqual(result.view.inspector.subject, { kind: 'none' });
+    assert.deepEqual(result.view.inspector.relationships, []);
+    assert.match(result.markup, /pick a row to inspect it/);
+  });
+
   it('renders the clear control only while a filter is narrowing the list', () => {
     const document = backlogOf(3, { edges: [['blocked-by', 'i0001', 'i0002']] });
     const filtered = renderWorkspace(document, {
       ...WORDS,
       selection: { kind: 'edge', edgeId: edgeIdentity('blocked-by', 'i0001', 'i0002') },
     });
-    assert.match(filtered.markup, /show every relationship/);
-    assert.equal(/show every relationship/.test(renderWorkspace(document, WORDS).markup), false);
+    assert.match(filtered.markup, /clear the selection/);
+    assert.equal(/clear the selection/.test(renderWorkspace(document, WORDS).markup), false);
   });
 });
 
@@ -606,26 +624,38 @@ describe('the workspace reports what it drew and hides nothing', () => {
     assert.equal(result.view.rail.undrawn, 1);
   });
 
-  it('reports a defect both zones can see exactly once', () => {
-    // The rail's render and the ladder's independently normalize the same
-    // document, so a defect visible in both is diagnosed twice — and nothing
-    // here carries zone attribution, so a host counting these would simply
-    // overstate the failures.
-    const document = backlogOf(4, { edges: [['blocked-by', 'i0001', 'i0001']] });
-    const result = renderWorkspace(document, WORDS);
+  it('reports every occurrence, and the zones add nothing', () => {
+    // BOTH HALVES, because they are what replaced a dedupe that was correct
+    // when it was added and wrong two commits later.
+    //
+    // Half one: a single pass emits one diagnostic PER OCCURRENCE, so two
+    // identical self-edges are two facts about how malformed the input is —
+    // a count a host acts on, and one a `Set` silently halved.
+    const twice = {
+      ...backlogOf(4),
+      edges: [
+        { field: 'blocked-by' as const, from: 'i0001', to: 'i0001' },
+        { field: 'blocked-by' as const, from: 'i0001', to: 'i0001' },
+      ],
+    };
+    const result = renderWorkspace(twice, WORDS);
+    assert.equal(
+      result.diagnostics.filter((one) => one.includes('self-edge')).length,
+      2,
+      result.diagnostics.join(' | '),
+    );
 
-    // The premise: the defect really is reported, and really is one the rail's
-    // window keeps. A fixture whose diagnostic only ever came from one zone
-    // would pass whatever the composition did.
-    assert.ok(result.diagnostics.length > 0, 'the fixture produced no diagnostic at all');
-    for (const diagnostic of result.diagnostics) {
-      assert.equal(
-        result.diagnostics.filter((other) => other === diagnostic).length,
-        1,
-        diagnostic,
-      );
-    }
-    assert.ok(result.diagnostics.some((one) => one.includes('self-edge')), 'wrong diagnostic');
+    // Half two, and it is what makes dropping the dedupe safe rather than a
+    // regression: the zones receive an already-normalized document, so they
+    // contribute nothing and there is no cross-zone duplication left to guard
+    // against. Asserted as EQUALITY with the one pass that drops things.
+    const single = {
+      ...backlogOf(4),
+      edges: [{ field: 'blocked-by' as const, from: 'i0001', to: 'ghost' }],
+    };
+    const one = renderWorkspace(single, WORDS);
+    assert.equal(one.diagnostics.length, 1, one.diagnostics.join(' | '));
+    assert.match(one.diagnostics[0] ?? '', /ghost/);
   });
 
   it('is pure: the same inputs twice give the same markup', () => {

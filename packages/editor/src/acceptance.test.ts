@@ -732,7 +732,7 @@ const {
 
 const WORKSPACE_WORDS: surface.WorkspaceWords = {
   nothingSelected: 'pick a row to inspect it',
-  clearFilter: 'show every relationship',
+  clearSelection: 'clear the selection',
   relationships: 'relationships',
 };
 

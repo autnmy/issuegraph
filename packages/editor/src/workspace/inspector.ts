@@ -15,8 +15,21 @@
  * The distinction matters and it is easy to lose. With an edge selected the
  * inspector shows the same relationship list, narrowed to that one edge —
  * rather than a separate edge inspector. So the reader's frame of reference
- * never jumps, and clearing the selection widens the list back rather than
- * navigating anywhere.
+ * never jumps.
+ *
+ * CLEARING RETURNS TO NOTHING SELECTED, NOT TO A WIDER LIST — and an earlier
+ * revision of this comment said the opposite, which is how a control came to be
+ * worded "show every relationship" while it emptied the panel. §17b makes the
+ * inspector a projection of the SELECTION, and `none` is a selection with no
+ * subject, so there is no list for it to widen to.
+ *
+ * The alternative was considered and not taken: `none` could list every
+ * relationship in the document, which would make the three states a clean
+ * narrowing — all, then one issue's, then one edge's — and make "show every
+ * relationship" literally true. It also invents a fourth thing for the panel to
+ * be, on a zone whose whole contract is that it shows what is selected. The
+ * cheaper repair was to stop the prose promising a behaviour the design does
+ * not have.
  *
  * ## Edge identity comes from `@issuegraph/core`
  *

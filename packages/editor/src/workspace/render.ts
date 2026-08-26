@@ -92,8 +92,16 @@ export type Zone = (typeof ZONES)[number];
 export interface WorkspaceWords {
   /** Shown in the inspector when nothing is selected. */
   readonly nothingSelected: string;
-  /** The control that clears an edge filter. */
-  readonly clearFilter: string;
+  /**
+   * The control that returns to nothing selected.
+   *
+   * NAMED FOR WHAT IT DOES, after a round of review found the previous name
+   * inviting a host to write the wrong sentence: called `clearFilter`, it read
+   * as "widen the list back", and the fixture here duly labelled it "show every
+   * relationship" — a button that emptied the panel it promised to fill. The
+   * command it publishes is `clear`, and that is the whole of its behaviour.
+   */
+  readonly clearSelection: string;
   /** Names the relationships list. */
   readonly relationships: string;
 }
@@ -348,7 +356,7 @@ function inspectorSpec(view: InspectorView, words: WorkspaceWords): ElementSpec 
           ? element(
               'button',
               { type: 'button', class: 'ig-inspector-clear', 'data-ig-command': 'clear' },
-              [words.clearFilter],
+              [words.clearSelection],
             )
           : null,
         view.relationships.length === 0
@@ -491,14 +499,21 @@ export function renderWorkspace(
       ...(overlay === null ? [] : [auditStylesheet]),
       workspaceStylesheet,
     ].join('\n'),
-    // THE NORMALIZE PASS REPORTS FIRST, because it is now the one that actually
-    // drops anything; the zones re-normalize an already-sound document and find
-    // nothing left. Still deduped: the two zones each normalize what they are
-    // given, so an identical string from both would otherwise state one input
-    // error twice, and nothing here carries zone attribution to tell them
-    // apart. Insertion order is preserved.
-    diagnostics: [
-      ...new Set([...sound.diagnostics, ...railRender.diagnostics, ...canvas.diagnostics]),
-    ],
+    // CONCATENATED, NOT DEDUPED — and the dedupe that used to sit here is worth
+    // recording rather than deleting quietly, because it was CORRECT when it
+    // was added and became wrong two commits later without being touched.
+    //
+    // It was added when both zones normalized the raw document independently
+    // and reported the same defect twice. Normalizing once removed that source,
+    // and the same `Set` then had only one thing left to collapse: the
+    // deliberately REPEATED diagnostics a single pass emits, one per occurrence
+    // — two identical self-edges, the same unknown member in several slots.
+    // Understating how many times an input is malformed is worse than the
+    // duplication it was guarding against, and it is a count a host acts on.
+    //
+    // Nothing replaces it, because nothing needs to: the zones now receive an
+    // already-sound document, so they contribute nothing to this list at all.
+    // `reports every occurrence, and the zones add nothing` pins both halves.
+    diagnostics: [...sound.diagnostics, ...railRender.diagnostics, ...canvas.diagnostics],
   };
 }

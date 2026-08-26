@@ -23,7 +23,7 @@ import type { WorkspaceWords } from '../index.ts';
  */
 export const WORKSPACE_WORDS: WorkspaceWords = {
   nothingSelected: 'pick a row to inspect it',
-  clearFilter: 'show every relationship',
+  clearSelection: 'clear the selection',
   relationships: 'relationships',
 };
 
