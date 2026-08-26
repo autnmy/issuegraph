@@ -211,6 +211,8 @@ The window is an **offset**, not a rank, because a held slot has `rank: null` an
 
 **Selection is one value, shared, never copied.** §17b makes `selected` the only edge state that also filters the inspector, so the workspace owns exactly one `WorkspaceSelection` and each zone reads it. It is a discriminated union rather than two nullable fields for a reason worth stating: `{ issue, edge }` can represent *both at once*, which is not a state this design has — every reader would need a rule for it, and the bug would surface as two zones disagreeing about what is selected rather than as a type error.
 
+A selection naming a **member** of a `together-with` unit resolves to that unit's lead, because the unit is one row and `ViewerSlot.lead` is documented as the detail surface's subject — the projections canonicalize the same way before drawing, so all three zones name one issue for one selection.
+
 An edge selection **filters** the relationship list rather than opening a different panel, so the reader's frame of reference never jumps. Clearing returns to *nothing selected* rather than to a wider list — `none` is a selection with no subject, so there is no list to widen to, and the control is named `clearSelection` for exactly that reason. It also resolves to no viewer key, because `selected` renders `aria-current` on a *node* and an edge is not one.
 
 The selection reaches the **canvas** too, through an additive `selected` on `ScaleLadderOptions`. Without it the canvas drew the selected issue as ordinary while the rail marked it current — the single selection disagreeing with itself between two zones on every render, which is precisely what holding one value was supposed to make impossible.

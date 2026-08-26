@@ -165,9 +165,23 @@ export function inspectorView(
   const document = normalizeDocument(raw).document;
 
   if (selection.kind === 'issue') {
-    const issue = document.issues.find((candidate) => candidate.key === selection.key);
+    // CANONICALIZED TO THE SLOT LEAD, because a together unit is ONE row and
+    // layer 1 has already decided which member speaks for it. `ViewerSlot.lead`
+    // is documented as "the detail surface's subject", and both projections run
+    // their options through `atStations` before drawing — so a selection naming
+    // a PARTNER marked the lead current in the rail and on the canvas while this
+    // panel showed the partner's title and relationships. Two zones naming
+    // different issues for one selection, which is the exact thing holding a
+    // single selection value was supposed to make impossible.
+    //
+    // Falls back to the key itself when the order does not place it: an
+    // excluded or unplaced issue is its own subject, and there is no lead to
+    // defer to.
+    const placement = slotFor(document, selection.key);
+    const subject = placement?.lead ?? selection.key;
+    const issue = document.issues.find((candidate) => candidate.key === subject);
     if (issue === undefined) return EMPTY;
-    const slot = slotFor(document, selection.key);
+    const slot = placement;
     return {
       subject: {
         kind: 'issue',
@@ -187,9 +201,8 @@ export function inspectorView(
       // `serialize-with` on the selected issue disappeared from the panel
       // entirely. "Does this edge touch my subject" and "which end is my
       // subject on" are different questions, and only the first belongs here.
-      relationships: relationshipsOf(document, selection.key).filter(
-        (relationship) =>
-          relationship.from === selection.key || relationship.to === selection.key,
+      relationships: relationshipsOf(document, subject).filter(
+        (relationship) => relationship.from === subject || relationship.to === subject,
       ),
       filtered: false,
     };

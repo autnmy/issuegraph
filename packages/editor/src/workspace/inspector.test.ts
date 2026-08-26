@@ -136,6 +136,43 @@ describe('an edge selection FILTERS the list rather than opening another panel',
   });
 });
 
+describe('a selection naming a unit MEMBER resolves to the row that speaks for it', () => {
+  // A together unit is ONE row and layer 1 has already decided which member
+  // speaks for it: `ViewerSlot.lead` is documented as "the detail surface's
+  // subject", and both projections run their options through `atStations`
+  // before drawing. Reading the raw key here made the rail and the canvas mark
+  // the lead current while this panel showed the partner.
+  const unit = backlogOf(4, {
+    unitOf: { i0002: 'i0001' },
+    edges: [['blocked-by', 'i0001', 'i0003']],
+  });
+
+  it('inspects the lead when the partner is selected', () => {
+    const partner = inspectorView(unit, { kind: 'issue', key: 'i0002' });
+    const lead = inspectorView(unit, { kind: 'issue', key: 'i0001' });
+    if (partner.subject.kind !== 'issue') throw new Error('expected an issue subject');
+    assert.equal(partner.subject.issue.key, 'i0001');
+    assert.deepEqual(partner, lead, 'the two selections disagree about the unit');
+  });
+
+  it('lists the LEAD\'s relationships, not the partner\'s', () => {
+    const partner = inspectorView(unit, { kind: 'issue', key: 'i0002' });
+    assert.deepEqual(
+      partner.relationships.map((one) => [one.from, one.to]),
+      [['i0001', 'i0003']],
+    );
+  });
+
+  it('leaves an issue the order does not place as its own subject', () => {
+    // No slot means no lead to defer to. An excluded or unplaced issue speaks
+    // for itself.
+    const loose = { ...unit, order: { slots: [], excluded: [] } };
+    const view = inspectorView(loose, { kind: 'issue', key: 'i0002' });
+    if (view.subject.kind !== 'issue') throw new Error('expected an issue subject');
+    assert.equal(view.subject.issue.key, 'i0002');
+  });
+});
+
 describe('an unresolvable selection renders as nothing, never as last render\'s answer', () => {
   it('empties for an issue the document no longer carries', () => {
     // A write lands and the order recomputes; a selection naming a row that has
