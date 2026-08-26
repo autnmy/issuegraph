@@ -132,7 +132,7 @@ create each leaf, never "later":
 # of thumb: a single-shot example may use `/tmp/body.md`; anything that loops over
 # issues gets its own.
 scratch=$(mktemp -d) || exit 1
-leaf=$scratch/leaf.md
+leaf_file=$scratch/leaf.md              # NOT `leaf` — the loop below binds that
 
 PREV=                                   # empty: the first leaf blocks on nothing
 LEAF_PRIORITY=2                         # see below — it can only be set HERE
@@ -158,20 +158,20 @@ for leaf in "$@"; do
   if [ -n "$PREV" ]; then
     printf '%s\n' "$text" \
       | issuegraph set --decomposed-from "$PARENT" --blocked-by "$PREV" \
-                       --priority "$LEAF_PRIORITY" --evidence asserted > "$leaf" || break
+                       --priority "$LEAF_PRIORITY" --evidence asserted > "$leaf_file" || break
   else
     printf '%s\n' "$text" \
       | issuegraph set --decomposed-from "$PARENT" \
-                       --priority "$LEAF_PRIORITY" --evidence asserted > "$leaf" || break
+                       --priority "$LEAF_PRIORITY" --evidence asserted > "$leaf_file" || break
   fi
   # NEVER file a body you did not verify was written. A refused `set` exits
   # non-zero having written nothing, while the redirection has already made the
   # file — so without the `|| break` above and the `[ -s ]` below the loop files
   # an EMPTY leaf and then carries its number into the dependency chain.
-  [ -s "$leaf" ] || break
+  [ -s "$leaf_file" ] || break
   # `gh issue create` prints the new issue's URL — take the number off the end
   # and CARRY IT, or the chain is never written.
-  url=$(gh issue create -R "$REPO" --title "$title" --body-file "$leaf") || break
+  url=$(gh issue create -R "$REPO" --title "$title" --body-file "$leaf_file") || break
   PREV=${url##*/}
   made=$((made + 1))
 done
