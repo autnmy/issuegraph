@@ -56,9 +56,10 @@ A tracker's issue body is a document a human edits. If you own the scheduling ed
 import { renderFrontmatter, spliceGeneratedEdges } from '@issuegraph/writer';
 
 const edges = {
-  blockedBy: [{ repo: null, id: '231' }],
-  serializeWith: null,          // scheduling edge, present: remove it
-  // duplicateOf omitted        // absent: not mine, do not touch
+  blockedBy: { set: [{ repo: null, id: '231' }] },
+  serializeWith: { clear: true },   // remove the entry
+  duplicateOf: { clear: true },     // retract a dedupe verdict — same spelling
+  // decomposedFrom omitted         // absent: not mine, do not touch
 };
 
 const result = spliceGeneratedEdges(issue.body, edges);
@@ -94,16 +95,38 @@ switch (result.outcome) {
 
 **Ownership is per field and opt-in.** A field you *omit* is left byte-untouched. That distinction is load-bearing — round-tripping parsed values back through a splice would silently launder away unparseable items and exotic spellings the parser tolerates with a diagnostic, so omission is the honest "not mine" signal.
 
-**What a present `null` means is not uniform**, and the asymmetry is deliberate:
+**All four fields are written the same way.** Three states, three spellings, nothing overloaded:
 
-| field | omitted | present |
-|---|---|---|
-| `blockedBy` | untouched | replaced; `[]` removes |
-| `serializeWith` | untouched | replaced; `null` removes |
-| `decomposedFrom` | untouched | a ref replaces or inserts; **`null` also leaves it untouched** |
-| `duplicateOf` | untouched | a ref replaces or inserts; **`null` also leaves it untouched** |
+| value | meaning |
+|---|---|
+| *omitted* | leave the entry byte-untouched — the only way to say *not mine* |
+| `{ set: value }` | replace the entry, or insert one if the block lacks it |
+| `{ clear: true }` | remove the entry |
 
-The bottom two are provenance and a verdict, where the established caller shape is *write it when the block lacks one, never clobber one that is already there* — such a caller passes `null` precisely to mean **leave it alone**, so spending `null` on removal would delete provenance on every refresh of a block that has it. The cost is real and stated rather than hidden: **there is currently no way to clear `decomposed-from` or `duplicate-of` through this call.**
+`{ set: [] }` on `blockedBy` is the same edit as `{ clear: true }` — a list with no entries renders no lines — and a test pins that they agree.
+
+**A malformed value throws**, before anything is read or written. `decomposedFrom: null`, a bare ref, a bare array, `{ clear: false }`, or `{ set, clear }` together are all programmer errors, and this package throws on those rather than guessing, exactly as it does for a malformed ref. A caller that half-applies is worse than one that stops.
+
+<details>
+<summary>Why the wrapper replaced a bare value, and what it broke (0.3.0)</summary>
+
+`null` used to do two incompatible jobs one field apart. For `serializeWith` it **removed** the entry; for `decomposedFrom` and `duplicateOf` it meant **leave it alone**, because the established caller shape for provenance is *write it when the block lacks one, never clobber one that is already there* — and such a caller passes `null` precisely to say so:
+
+```ts
+decomposedFrom: parsed.decomposedFrom === null ? ref : null,   // pre-0.3.0
+```
+
+Reading that `null` as a removal would delete provenance on every refresh of a block that has one. So `null` was taken, and those two fields could be set and replaced but **never cleared** — a groomer that decided an issue was not a duplicate after all had to re-render the whole block, which is the lossy path this call exists to avoid.
+
+**Migrating: omit the key, do not translate the `null`.** The old idiom's `null` meant *leave alone*, so its replacement is absence — a mechanical rewrite to `{ clear: true }` reintroduces exactly the data loss the wrapper was added to prevent:
+
+```ts
+...(parsed.decomposedFrom === null ? { decomposedFrom: { set: ref } } : {}),   // 0.3.0
+```
+
+A ref becomes `{ set: ref }`, an array becomes `{ set: [...] }`, and a `serializeWith: null` that really did mean remove becomes `{ clear: true }`. TypeScript rejects every old spelling at the call site; JavaScript callers get a throw.
+
+</details>
 
 It answers `no-block` rather than guessing whenever the block is one a parser would refuse — an inline value on the key, a child that is not a mapping entry. A body that comes back `spliced` and parses to nothing is the one failure a writer must never produce, which is why `spliced` is verified on both questions: that the result still reads, **and** that every field the call owns is what the call asked for.
 

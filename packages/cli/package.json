@@ -1,6 +1,6 @@
 {
   "name": "@issuegraph/cli",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "One command over the Issuegraph packages: read the block out of an issue body, derive the selection order from bodies you supply, and edit the block in place. Composes the reader, derive and writer packages; parses nothing itself, fetches nothing, and takes no credential.",
   "keywords": [
     "issuegraph",
