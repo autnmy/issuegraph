@@ -134,11 +134,19 @@ for leaf in "$@"; do
   # "$PREV"}` expands to TWO words in bash and sh and to ONE in zsh, where the CLI
   # then rejects `--blocked-by 902` as an unknown option — so in zsh the loop
   # writes no edges at all while looking correct. Measured in all three shells.
-  # Rule 1 again: the body helper's own status, before anything renders it. A
-  # failing helper otherwise yields an empty body, `set` renders a block onto
-  # nothing, and the loop files an EMPTY leaf and chains the next one to it.
-  text=$(leaf_body "$leaf") || break
-  [ -n "$text" ] || break
+  # EVERY caller-supplied value is resolved and checked HERE, before anything is
+  # rendered or filed — so the write path below contains no helper call at all.
+  # That is deliberate: guarding them one at a time is a list, and a list of
+  # "which helpers need checking" is one somebody finishes wrong. Resolving them
+  # all up front leaves nothing to enumerate.
+  #
+  # A helper's status is otherwise MASKED inside a command substitution: `--title
+  # "$(leaf_title "$leaf")"` reports only `gh`'s status, so a helper that fails
+  # after emitting partial output files an incorrectly titled issue and chains the
+  # next leaf to it.
+  text=$(leaf_body "$leaf")   || break
+  title=$(leaf_title "$leaf") || break
+  [ -n "$text" ] && [ -n "$title" ] || break
   if [ -n "$PREV" ]; then
     printf '%s\n' "$text" \
       | issuegraph set --decomposed-from "$PARENT" --blocked-by "$PREV" \
@@ -155,7 +163,7 @@ for leaf in "$@"; do
   [ -s /tmp/leaf.md ] || break
   # `gh issue create` prints the new issue's URL — take the number off the end
   # and CARRY IT, or the chain is never written.
-  url=$(gh issue create -R "$REPO" --title "$(leaf_title "$leaf")" --body-file /tmp/leaf.md) || break
+  url=$(gh issue create -R "$REPO" --title "$title" --body-file /tmp/leaf.md) || break
   PREV=${url##*/}
   made=$((made + 1))
 done

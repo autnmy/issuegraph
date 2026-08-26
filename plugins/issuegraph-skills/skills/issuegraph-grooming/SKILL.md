@@ -155,7 +155,11 @@ not repaired, so there is nothing you could write back believing it had been.
 # backlog pass instead of reaching the escalation branch. Verified both ways.
 if out=$(issuegraph backfill --json --body-file body.md); then rc=0; else rc=$?; fi
 case "$(printf '%s' "$out" | jq -r '.outcome // ""')" in
-  delimited)                  printf '%s' "$out" | jq -r .body > /tmp/new.md
+  delimited)                  # `jq -j`, NOT `-r`: `-r` appends its own newline, so every
+                              # repaired body would gain one — changing user content beyond
+                              # the two delimiter lines `backfill` promises to insert.
+                              # Measured: 51-byte body -> 52 with `-r`, 51 with `-j`.
+                              printf '%s' "$out" | jq -j .body > /tmp/new.md
                               # `[ -s ]` even here, where the outcome already promises a
                               # body: every write in these skills is gated on the file being
                               # non-empty, because the one that is not empties an issue.
