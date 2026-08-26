@@ -68,13 +68,15 @@ function shippedSources(directory = SOURCE_DIR, prefix = ''): { file: string; so
 
 describe('the shipped modules load with no DOM', () => {
   it('scans a set that actually contains the package', () => {
-    // A load over an empty set passes vacuously. Pin the denominator — the same
-    // guard the removed scan carried, which the loop below needs just as much.
+    // A load over an empty set passes vacuously. Pin the denominator.
+    //
+    // The floor is 1 rather than the viewer's 10 because the surface is
+    // deliberately empty for now — but it is a floor, not a permission: what it
+    // rules out is the directory read returning NOTHING, which is what would
+    // make the loop below meaningless.
     const files = shippedSources().map(({ file }) => file);
     assert.ok(files.includes('index.ts'));
-    assert.ok(files.includes('mount.ts'));
-    assert.ok(files.includes('projections/graph.ts'));
-    assert.ok(files.length >= 10, `only ${String(files.length)} sources were scanned`);
+    assert.ok(files.length >= 1, `only ${String(files.length)} sources were scanned`);
     assert.equal(files.some((file) => file.endsWith('.test.ts')), false);
   });
 
@@ -96,11 +98,13 @@ describe('the shipped modules load with no DOM', () => {
 
     try {
       for (const { file } of shippedSources()) {
-        const loaded: Record<string, unknown> = await import(`./${file}`);
-        assert.ok(
-          Object.keys(loaded).length > 0,
-          `${file} loaded but exported nothing, so the import proved nothing`,
-        );
+        // NOT asserted to export something, which is where this departs from the
+        // viewer's copy. The surface is deliberately empty until the assembly
+        // change decides it, so "exported nothing" is the CORRECT state here and
+        // that assertion would fail on a healthy package. What the import still
+        // proves is the thing this test is for: the module evaluates with the
+        // browser globals gone.
+        await import(`./${file}`);
       }
     } finally {
       for (const [name, descriptor] of saved) {

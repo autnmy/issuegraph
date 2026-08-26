@@ -1,0 +1,57 @@
+{
+  "name": "@issuegraph/editor",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Everything that mutates an Issuegraph document: edit affordances drawn as overlays on a viewer, dispatching through a store. Composes the viewer and the store through their public surfaces and performs no write itself.",
+  "keywords": [
+    "issuegraph",
+    "dependency-graph",
+    "backlog",
+    "scheduling",
+    "editor"
+  ],
+  "license": "Apache-2.0",
+  "author": "Autonomy LLC",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/autnmy/issuegraph.git",
+    "directory": "packages/editor"
+  },
+  "homepage": "https://github.com/autnmy/issuegraph#readme",
+  "bugs": {
+    "url": "https://github.com/autnmy/issuegraph/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "test": "node --test --test-timeout=20000 \"src/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@issuegraph/store": "workspace:^",
+    "@issuegraph/viewer": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "typescript": "^6.0.3"
+  }
+}
