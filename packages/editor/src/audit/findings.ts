@@ -88,7 +88,7 @@ export interface AuditClassSpec {
  * is a compile error until this states what it costs — which is what stops a
  * fifth finding arriving with its severity chosen wherever it is first drawn.
  */
-export const AUDIT_CLASS_SPECS: Readonly<Record<AuditClass, AuditClassSpec>> = Object.freeze({
+export const AUDIT_CLASS_SPECS = Object.freeze({
   cycle: Object.freeze({ severity: 'blocks-work', weight: 3, keepAsHistory: false }),
   'dead-duplicate-ref': Object.freeze({ severity: 'dangerous', weight: 2, keepAsHistory: false }),
   'encoding-refused': Object.freeze({
@@ -97,9 +97,29 @@ export const AUDIT_CLASS_SPECS: Readonly<Record<AuditClass, AuditClassSpec>> = O
     keepAsHistory: false,
   }),
   'stale-blocker': Object.freeze({ severity: 'misleading', weight: 0, keepAsHistory: true }),
-});
+} as const) satisfies Readonly<Record<AuditClass, AuditClassSpec>>;
 
 /** One finding. Severity travels ON it, never looked up at the render site. */
+/**
+ * One finding.
+ *
+ * `severity` and `keepAsHistory` are FIELDS, because the design asks for them
+ * to be — *"severity is data on the finding, not a colour chosen at the render
+ * site"* — but they are never a caller's to choose. {@link settledFinding}
+ * derives both from `kind` on the way in, so the class table is the single
+ * source and a finding whose severity disagrees with its class cannot survive
+ * the boundary in either direction.
+ *
+ * WHY THE RULE IS RUNTIME RATHER THAN A TYPE. Tying the two fields to `kind`
+ * through a mapped union does refuse the disagreement at compile time, and it
+ * was written and measured: constructing one then needs either a cast — which
+ * this repository's standards forbid outright — or a four-row builder table,
+ * which is the enumeration whose second instance is what started this. Neither
+ * pays for itself, because the compile-time version cannot reach the callers
+ * that actually produce an inconsistent finding: JavaScript, and anything
+ * deserialized from storage or a wire. The runtime rule covers those and the
+ * TypeScript ones alike.
+ */
 export interface AuditFinding {
   readonly kind: AuditClass;
   readonly severity: AuditSeverity;
@@ -229,25 +249,43 @@ function compareMembers(a: readonly IssueRef[], b: readonly IssueRef[]): number 
  * by the same rule this module applies to what it BUILDS. Two spellings of
  * "settled" is how the two come to disagree.
  */
-export function settledFinding(found: AuditFinding): AuditFinding {
+export function settledFinding(found: AuditFinding): AuditFinding | null {
+  // DERIVED FROM `kind`, NEVER COPIED — which is what stops two render sites
+  // classifying one finding differently: the row grammar already reads the
+  // table, so a stored `severity` that disagreed with it was a second, editable
+  // copy of a fact the table states.
+  const spec = AUDIT_CLASS_SPECS[found.kind];
+  // A `kind` THE TABLE DOES NOT CARRY IS NOT A FINDING THIS MODULE CAN SETTLE,
+  // and it is unreachable from TypeScript — `AuditClass` is a closed union — so
+  // this covers the callers a type cannot: JavaScript, and anything
+  // deserialized. Answering `null` rather than throwing keeps the module's own
+  // rule, that an audit must not die on the data it is auditing; the caller
+  // drops it, which is the only honest thing to do with a finding whose class
+  // nothing knows.
+  if (spec === undefined) return null;
   return Object.freeze({
     kind: found.kind,
-    severity: found.severity,
-    keepAsHistory: found.keepAsHistory,
+    severity: spec.severity,
+    keepAsHistory: spec.keepAsHistory,
     members: Object.freeze([...found.members]),
     detail: found.detail,
   });
 }
 
 function finding(kind: AuditClass, members: readonly IssueRef[], detail: string): AuditFinding {
-  const spec = AUDIT_CLASS_SPECS[kind];
-  return settledFinding({
+  // Every call site passes a literal from `AUDIT_CLASSES`, so the table always
+  // has it and `settledFinding` cannot answer null here. Reading it through the
+  // same door anyway is what keeps ONE place that derives the class-owned
+  // fields; a second construction path is how the two come to disagree.
+  const settled = settledFinding({
     kind,
-    severity: spec.severity,
-    keepAsHistory: spec.keepAsHistory,
+    severity: AUDIT_CLASS_SPECS[kind].severity,
+    keepAsHistory: AUDIT_CLASS_SPECS[kind].keepAsHistory,
     members,
     detail,
   });
+  if (settled === null) throw new Error(`unreachable: ${kind} is not in the class table`);
+  return settled;
 }
 
 function edgesOfKind(document: GraphDocument, kind: StoredEdge['kind']): readonly StoredEdge[] {

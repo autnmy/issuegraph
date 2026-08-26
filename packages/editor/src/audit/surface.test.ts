@@ -97,6 +97,45 @@ describe('the overlay', () => {
     );
   });
 
+  it('derives the class-owned fields, so two render sites cannot disagree', () => {
+    // `severity` and `keepAsHistory` belong to the CLASS, not to the finding —
+    // and the row grammar already reads them off the table. A stored severity
+    // that disagreed was therefore a second, editable copy of a fact the table
+    // states, and it showed up as one render site calling a cycle
+    // `blocks-work` while another called it `misleading`.
+    const lying: AuditFinding = {
+      kind: 'cycle',
+      severity: 'misleading',
+      keepAsHistory: true,
+      members: ['a', 'b'],
+      detail: 'hand-built',
+    };
+    const overlay = auditOverlay([lying]);
+    assert.equal(overlay.findings[0]?.severity, 'blocks-work');
+    assert.equal(overlay.findings[0]?.keepAsHistory, false);
+    assert.equal(overlay.rows[0]?.severity, overlay.findings[0]?.severity);
+    // What genuinely belongs to the finding is kept.
+    assert.equal(overlay.findings[0]?.detail, 'hand-built');
+  });
+
+  it('drops a finding whose class nothing knows, rather than drawing it', () => {
+    // Unreachable from TypeScript — `AuditClass` is closed — so this is the
+    // JavaScript and deserialized case. Drawing it would put a row on the rail
+    // whose severity nothing can resolve: an absence rendered as a value, in
+    // the surface that exists to report absences.
+    // DESERIALIZED RATHER THAN CAST. `JSON.parse` is the route a value like
+    // this actually arrives by, and it needs no cast — which matters, because
+    // this repository forbids them, and a test that had to escape the type
+    // system to reach a guard would be evidence the guard was unreachable
+    // rather than evidence it works.
+    const fromWire: AuditFinding = JSON.parse(
+      '{"kind":"invented","severity":"blocks-work","keepAsHistory":false,"members":["a"],"detail":"from a wire"}',
+    );
+    const overlay = auditOverlay([fromWire, finding('cycle', ['x', 'y'])]);
+    assert.equal(overlay.count, 1);
+    assert.deepEqual(overlay.rows.map((row) => row.ref), ['x', 'y']);
+  });
+
   it('indexes exactly the rows it lists', () => {
     // The index and the list are two views of one answer, so a lookup that
     // disagreed with the rail would draw a bar on a row the list calls clean.

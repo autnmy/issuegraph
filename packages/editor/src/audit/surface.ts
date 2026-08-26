@@ -122,7 +122,16 @@ export function auditOverlay(input: readonly AuditFinding[]): AuditOverlay {
   // change underneath it. Doing this at the door means there is one place
   // where an incoming finding stops being someone else's, rather than a copy
   // per field added as each one is noticed.
-  const findings: readonly AuditFinding[] = Object.freeze(input.map(settledFinding));
+  const findings: readonly AuditFinding[] = Object.freeze(
+    input
+      .map(settledFinding)
+      // A finding whose `kind` the class table does not carry is dropped rather
+      // than drawn. It is unreachable from TypeScript, so this covers a
+      // JavaScript caller or a deserialized value; and drawing one would put a
+      // row on the rail whose severity nothing could resolve — an absence
+      // rendered as a value, in the surface that exists to report absences.
+      .filter((found): found is AuditFinding => found !== null),
+  );
   const byRef = new Map<IssueRef, { kinds: Set<AuditClass>; count: number }>();
   for (const found of findings) {
     for (const ref of found.members) {
