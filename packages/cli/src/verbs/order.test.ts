@@ -4,7 +4,7 @@ import { describe, test } from 'node:test';
 import { EXIT } from '../exit.ts';
 import { HAZARD_BODY } from '../testing/fixtures.ts';
 import { resolveRef } from '../refs.ts';
-import { deriveOrder, orderFromJson } from './order.ts';
+import { asOrderInput, deriveOrder, orderFromJson, InputError } from './order.ts';
 import type { OrderInputDocument } from './order.ts';
 
 interface Slot {
@@ -46,10 +46,28 @@ function document(issues: readonly Record<string, unknown>[]): string {
   return JSON.stringify({
     baseRanking: {
       source: 'config',
-      order: issues.map((i) => ({ key: String(i['number']), matchedOrderIndex: 0 })),
+      order: issues.map((i) => ({
+        key: String(i['id'] ?? i['number']),
+        matchedOrderIndex: 0,
+      })),
     },
     issues,
   });
+}
+
+/** The same issue keyed by an OPAQUE tracker id rather than a number (SPEC §4.2). */
+function opaque(
+  id: string,
+  body: string,
+  overrides: { open?: boolean; labels?: readonly string[] } = {},
+): Record<string, unknown> {
+  return {
+    id,
+    open: overrides.open ?? true,
+    labels: overrides.labels ?? ['P2'],
+    assigneeCount: 0,
+    body,
+  };
 }
 
 function run(input: string, view: 'order' | 'ready' = 'order'): { result: ReturnType<typeof orderFromJson>; out: OrderOutput } {
@@ -465,5 +483,131 @@ describe('input validation — a bad document is a USAGE error, never unread', (
     const issues = [{ ...issue(1, 'no block'), data: { blockedBy: [{ repo: null, id: '999' }] } }];
     const { out } = run(document(issues));
     assert.equal(out.slots.find((s) => s.lead === '1')?.ready, true, 'a fabricated blocker must not gate anything');
+  });
+});
+
+describe('opaque identifiers (SPEC §4.2)', () => {
+  test('orders a corpus whose ids are not numbers, resolving refs between them', () => {
+    // The gap #33 named: §4.2 defines a reference as an OPAQUE tracker-scoped
+    // token, and this verb refused anything but an integer at the boundary — so
+    // a Jira or Linear corpus could not be ordered at all, even though the
+    // reader resolves `blocked-by: ABC-124` perfectly well.
+    const { out } = run(
+      document([opaque('ABC-123', blockedBy('ABC-124'), { labels: ['P1'] }), opaque('ABC-124', 'Prose.')]),
+    );
+
+    const held = out.slots.find((slot) => slot.lead === 'ABC-123');
+    const ready = out.slots.find((slot) => slot.lead === 'ABC-124');
+    assert.ok(held !== undefined && ready !== undefined, 'an opaque-id slot is missing');
+    // THE REFERENCE RESOLVED, which is the half a looser id check would miss:
+    // accepting the id but failing to key nodes by it would leave this hold
+    // reported as an unresolvable ref instead.
+    assert.deepEqual(held.holdReasons, ['blocked-by ABC-124 is open']);
+    assert.equal(ready.ready, true);
+  });
+
+  test('still accepts the numeric spelling it has always accepted', () => {
+    // `number` is the published contract and every existing caller sends it.
+    const { out } = run(document([issue(1, blockedBy('2')), issue(2, 'Prose.')]));
+    assert.ok(out.slots.some((slot) => slot.lead === '1'));
+    assert.ok(out.slots.some((slot) => slot.lead === '2'));
+  });
+
+  test('accepts both spellings when they agree', () => {
+    // A caller migrating from `number` to `id` sends both for a while; refusing
+    // that would make the migration a flag day.
+    const both = { ...issue(7, 'Prose.'), id: '7' };
+    const { out } = run(document([both]));
+    assert.ok(out.slots.some((slot) => slot.lead === '7'));
+  });
+
+  /**
+   * BOTH BOUNDARIES, SEPARATELY. `asOrderInput` is the JSON schema boundary and
+   * `deriveOrder` is the domain one, and they are deliberately redundant — the
+   * package already asserts that over duplicate keys. Testing only through
+   * `orderFromJson` cannot tell them apart, because it runs the schema check and
+   * then hands the result straight to the domain check: deleting either guard
+   * still refuses, so a test that goes through the front door alone passes with
+   * one of them gone. Verified by removing each and watching this file stay
+   * green before it was written this way.
+   */
+  function refusals(issues: readonly Record<string, unknown>[]): { schema: string; domain: string } {
+    const json = document(issues);
+    let schema = '';
+    try {
+      asOrderInput(JSON.parse(json));
+    } catch (error) {
+      schema = error instanceof InputError ? error.message : `threw ${String(error)}`;
+    }
+    const typed = deriveOrder(JSON.parse(json) as OrderInputDocument, 'order');
+    assert.equal(typed.code, EXIT.usage, 'the domain boundary accepted it');
+    return { schema, domain: typed.stderr.join('\n') };
+  }
+
+  test('refuses an issue carrying NEITHER spelling, at both boundaries', () => {
+    const { number: _dropped, ...idless } = issue(1, 'Prose.');
+    const { schema, domain } = refusals([idless]);
+    assert.ok(schema.includes('supply `id`'), `schema boundary: ${JSON.stringify(schema)}`);
+    assert.ok(domain.includes('supply `id`'), `domain boundary: ${domain}`);
+  });
+
+  test('refuses the two spellings when they DISAGREE, at both boundaries', () => {
+    // One issue named two ways has no correct reading — the same doctrine
+    // `duplicateKeyRefusal` applies to one issue declared twice.
+    const { schema, domain } = refusals([{ ...issue(7, 'Prose.'), id: 'ABC-9' }]);
+    assert.ok(schema.includes('while'), `schema boundary: ${JSON.stringify(schema)}`);
+    assert.ok(domain.includes('while'), `domain boundary: ${domain}`);
+  });
+
+  test('refuses a non-STRING id at the direct derivation boundary', () => {
+    // `deriveOrder` is exported and a JavaScript caller reaches it with no
+    // compiler in the way, so the annotations promise nothing here. Measured
+    // before the fix: `id: 123` reached `resolveRef` and threw a `TypeError`
+    // instead of the usage result this function promises, and `id: null` with
+    // no `number` fell through to the key `"undefined"` and was SILENTLY
+    // ACCEPTED — an order keyed by a lie, which is the worse of the two.
+    //
+    // THE JSON PATH ALREADY TYPED IT through `asOpaqueId`; this is the other,
+    // deliberately separate boundary, and it is only reachable from here.
+    const cyclic: Record<string, unknown> = {};
+    cyclic['self'] = cyclic;
+    // BIGINT AND A CYCLIC OBJECT ARE IN THIS LIST DELIBERATELY. The guard
+    // entered its rejection branch for both and then escaped with a `TypeError`
+    // while `JSON.stringify` built the message — the very defect the guard was
+    // added for, arriving one line later. Naming a rejected value must not
+    // become the failure it is reporting.
+    for (const bad of [123, null, {}, [], 1n, cyclic] as const) {
+      const doc = {
+        baseRanking: { source: 'config', order: [] },
+        issues: [{ id: bad, open: true, labels: [], assigneeCount: 0, body: 'Prose.' }],
+      } as unknown as OrderInputDocument;
+
+      // `String`, not `JSON.stringify` — this list contains a bigint and a
+      // cyclic object precisely because stringifying them throws, and a test
+      // message that falls into the trap it is testing reports the wrong thing.
+      const result = deriveOrder(doc, 'order');
+      assert.equal(result.code, EXIT.usage, `${String(bad)} was not refused`);
+      assert.equal(result.stdout, '', `${String(bad)} produced output`);
+    }
+  });
+
+  test('refuses a non-NUMBER number at the same boundary', () => {
+    for (const bad of ['7', 1n, {}] as const) {
+      const doc = {
+        baseRanking: { source: 'config', order: [] },
+        issues: [{ number: bad, open: true, labels: [], assigneeCount: 0, body: 'Prose.' }],
+      } as unknown as OrderInputDocument;
+
+      assert.equal(deriveOrder(doc, 'order').code, EXIT.usage, `${String(bad)} was not refused`);
+    }
+  });
+
+  test('refuses an id the READER could not reference', () => {
+    // The bound is the reader's, asked rather than restated — so an id no
+    // `blocked-by` could name is refused here rather than ranked and then
+    // unaddressable.
+    const bad = orderFromJson(document([opaque('has space', 'Prose.')]), 'order');
+    assert.equal(bad.code, EXIT.usage);
+    assert.ok(bad.stderr.join('\n').includes('reference'), bad.stderr.join('\n'));
   });
 });
