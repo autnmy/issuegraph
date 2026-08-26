@@ -562,6 +562,44 @@ describe('an absent declarer is unknown, and the two classes want opposite defau
   });
 });
 
+describe('a weak target may add a constraint and never satisfy one', () => {
+  it('does not resolve a blocker through a target the document does not carry', () => {
+    // The reader canonicalizes a reference only when its target is
+    // REFERENCEABLE, and a declarer-only node is not: it is in the key map and
+    // explicitly does not become referenceable, because a weak node may add
+    // constraints and may never satisfy one. `a blocked-by weak`, `weak
+    // duplicate-of done`, `done` closed leaves `a` blocked by an UNRESOLVABLE
+    // ref — and reporting it stale invites removing an active fail-safe
+    // constraint.
+    const document = documentOf([issue('a'), issue('done', 'closed')], [['blocked-by', 'a', 'weak']]);
+    const graph: AuditGraph = {
+      cycles: [],
+      // The model answers for a weak key it holds; the audit must not ask about
+      // one the document does not carry.
+      duplicateCanonical: (ref) => (ref === 'weak' ? 'done' : null),
+    };
+    assert.deepEqual(
+      auditDocument({ document, graph }).filter((one) => one.kind === 'stale-blocker'),
+      [],
+    );
+  });
+
+  it('still resolves through a target the document DOES carry — the control', () => {
+    // The full-node case, which is what `referenceable` admits and what the
+    // reader really does canonicalize.
+    const document = documentOf(
+      [issue('a'), issue('dup'), issue('done', 'closed')],
+      [
+        ['blocked-by', 'a', 'dup'],
+        ['duplicate-of', 'dup', 'done'],
+      ],
+    );
+    const found = audit(document).filter((one) => one.kind === 'stale-blocker');
+    assert.equal(found.length, 1);
+    assert.match(found[0]?.detail ?? '', /blocked-by done \(via dup, which duplicates it\)/);
+  });
+});
+
 describe('severity travels on the finding', () => {
   it('carries the class table onto every finding it produces', () => {
     // "Severity is data on the finding, not a colour chosen at the render site."

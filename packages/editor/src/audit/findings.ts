@@ -218,6 +218,27 @@ export interface AuditInput {
   readonly encodingRefused?: readonly EncodingRefusal[] | undefined;
 }
 
+/**
+ * Every ref the document carries, whatever its state.
+ *
+ * IT STANDS IN FOR THE READER'S `referenceable` SET, which is what decides
+ * whether a reference resolves through a `duplicate-of` at all. That set holds
+ * FULL nodes only — a declarer-only node is added to the key map and
+ * explicitly "does not become referenceable" — because a weak node may add
+ * constraints and may never satisfy one. A host builds both this document and
+ * the model from the same issues, so the refs it carries are exactly the full
+ * nodes; anything else it knows about arrives as a declarer.
+ *
+ * WHERE THE PROXY IS WRONG IT IS WRONG SAFELY: it can only ever be NARROWER
+ * than `referenceable`, so a target it does not carry goes unresolved and the
+ * finding is withheld. That is the same direction the stale-blocker class
+ * already takes for an absent declarer, and the opposite of the failure it
+ * replaces.
+ */
+function carriedRefs(document: GraphDocument): ReadonlySet<IssueRef> {
+  return new Set(document.issues.map((issue) => issue.ref));
+}
+
 /** The refs the document holds as OPEN issues. Absence here means UNKNOWN. */
 function openRefs(document: GraphDocument): ReadonlySet<IssueRef> {
   const open = new Set<IssueRef>();
@@ -405,6 +426,7 @@ function verdictFor(
   edge: StoredEdge,
   closed: ReadonlySet<IssueRef>,
   open: ReadonlySet<IssueRef>,
+  carried: ReadonlySet<IssueRef>,
   refused: ReadonlySet<IssueRef>,
   graph: AuditGraph,
   // WHICH END'S CANONICAL DECIDES THE ANSWER. A stale blocker asks where the
@@ -412,7 +434,15 @@ function verdictFor(
   resolveFrom: 'from' | 'to',
 ): EdgeVerdict {
   const subject = resolveFrom === 'from' ? edge.from : edge.to;
-  const effective = graph.duplicateCanonical(subject) ?? edge.to;
+  // RESOLVED ONLY THROUGH A REFERENCEABLE SUBJECT. `duplicateCanonical` answers
+  // for any key the model holds, including the declarer-only tier — but the
+  // reader canonicalizes a reference only when its target is REFERENCEABLE, and
+  // a weak node is not. Asking unconditionally turned an unresolvable blocker,
+  // which the reader treats as BLOCKING, into a discharged one: `a blocked-by
+  // weak`, `weak duplicate-of done`, `done` closed reported readiness as
+  // satisfied while `a` was in fact still held.
+  const effective =
+    (carried.has(subject) ? graph.duplicateCanonical(subject) : null) ?? edge.to;
   return {
     effective,
     effectiveClosed: closed.has(effective),
@@ -481,9 +511,10 @@ function staleBlockerFindings(
 ): AuditFinding[] {
   const closed = closedRefs(document);
   const open = openRefs(document);
+  const carried = carriedRefs(document);
   const findings: AuditFinding[] = [];
   for (const edge of edgesOfKind(document, 'blocked-by')) {
-    const verdict = verdictFor(edge, closed, open, refused, graph, 'to');
+    const verdict = verdictFor(edge, closed, open, carried, refused, graph, 'to');
     // PROVABLY OPEN, not merely not-closed — see `declarerOpen`.
     if (!verdict.declarerOpen || !verdict.knowable || !verdict.effectiveClosed) continue;
     // A blocked-by written on a DUPLICATE is not read by the model at all, so
@@ -528,9 +559,10 @@ function deadDuplicateFindings(
 ): AuditFinding[] {
   const closed = closedRefs(document);
   const open = openRefs(document);
+  const carried = carriedRefs(document);
   const findings: AuditFinding[] = [];
   for (const edge of edgesOfKind(document, 'duplicate-of')) {
-    const verdict = verdictFor(edge, closed, open, refused, graph, 'from');
+    const verdict = verdictFor(edge, closed, open, carried, refused, graph, 'from');
     // NOT provably closed, which deliberately admits an unknown declarer — see
     // `declarerLive`, and the asymmetry with the stale-blocker case above.
     if (!verdict.declarerLive || !verdict.knowable || !verdict.effectiveClosed) continue;
