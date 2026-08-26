@@ -45,16 +45,29 @@ Use `ready` to answer *"what should I pick up?"* rather than hand-rolling a bloc
 ## Writing
 
 ```sh
-gh issue view 1234 -R owner/repo --json body -q .body \
-  | issuegraph set --blocked-by 987 --blocked-by owner/repo#654 \
+gh issue view 1234 -R owner/repo --json body > issue.json \
+  || { echo "could not read the issue; nothing was written" >&2; exit 1; }
+jq -j .body issue.json > orig.md || exit 1
+
+issuegraph set --blocked-by 987 --blocked-by owner/repo#654 --body-file orig.md \
   > new-body.md \
+  && [ -s new-body.md ] \
   && gh issue edit 1234 -R owner/repo --body-file new-body.md
 ```
 
-⚠ **Keep the `&&`.** A refused `set` exits non-zero having written **nothing**,
-but the redirection has already created `new-body.md` as a **0-byte file** — so
-an unchained `gh issue edit` replaces the whole issue body with nothing.
-Measured: `set` rc **4**, output file **0 bytes**.
+⚠ **Three guards, and each one stops a different way of destroying the issue.**
+
+**The fetch is checked** because a failed `gh issue view` feeds `set` an *empty*
+input — and `set` then happily renders a fresh block onto nothing and exits **0**,
+so the chain continues and the edit replaces the entire body with just that block.
+Measured: fetch fails → `set` rc **0**, output **49 bytes** of block and no body.
+
+**The body never passes through `$(…)`**, which strips every trailing newline and
+would silently write back a body that differs from the original.
+
+**The `&&` and `[ -s ]`** cover the other end: a refused `set` exits non-zero
+having written nothing, while the redirection has already created the file — so
+an unchained edit replaces the body with **0 bytes**.
 
 - References accept `123`, `#123`, or `owner/repo#123`. **Repeat `--blocked-by` for each entry** — it is a list.
 - `--no-blocked-by` / `--no-serialize-with` remove an entry.

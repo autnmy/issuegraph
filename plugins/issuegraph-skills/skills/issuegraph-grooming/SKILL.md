@@ -83,11 +83,14 @@ It never re-spells or removes a line, and it refuses outright any shape it canno
 establish with certainty.
 
 ```sh
-# Rule 1 FIRST: the fetch's own status, before anything consumes its output.
-body=$(gh issue view 1234 -R owner/repo --json body -q .body) \
+# The fetch goes to a FILE and its status is checked, and the body is extracted
+# with `jq -j` — never through `$(…)`. Both halves matter and they fail
+# differently; see below.
+gh issue view 1234 -R owner/repo --json body > /tmp/issue.json \
   || { echo "could not read the issue; nothing was written" >&2; exit 1; }
+jq -j .body /tmp/issue.json > /tmp/orig.md || exit 1
 
-printf '%s' "$body" | issuegraph backfill > /tmp/body.md \
+issuegraph backfill --body-file /tmp/orig.md > /tmp/body.md \
   && [ -s /tmp/body.md ] \
   && gh issue edit 1234 -R owner/repo --body-file /tmp/body.md
 ```
@@ -109,6 +112,15 @@ rc **0**, output **0 bytes** → the edit fires. Guarding the transform does not
 guard the fetch; only reading the fetch's own status does.
 
 `[ -s ]` is the belt behind both.
+
+⚠ **And the body never passes through `$(…)`, which is why the fetch lands in a
+file.** A command substitution **strips every trailing newline**, so
+`body=$(gh issue view …)` silently deletes them and the edit writes back a body
+that differs from the original — the same content modification `jq -j` exists to
+prevent, arriving from the opposite direction. Measured: a 20-byte body ending in
+three newlines comes back **17 bytes** through `$(…)` and **20** through
+`jq -j` to a file. `backfill` promises to insert two delimiter lines and change
+nothing else; a substitution anywhere on the path breaks that promise.
 
 In a loop, gate on the outcome instead — see below.
 
@@ -253,9 +265,18 @@ never existed.
 
 ```sh
 # Rule 1: the fetch's status, captured BEFORE anything reads its output.
-rows=$(gh issue list -R owner/repo --state open --limit 1000 \
+limit=1000
+rows=$(gh issue list -R owner/repo --state open --limit "$limit" \
          --json number,body --jq '.[] | @json') \
   || { echo "could not list issues — this says NOTHING about the corpus" >&2; exit 1; }
+
+# A CAP THAT BINDS IS NOT A CLEAN CORPUS. `--limit` is a maximum, so a backlog
+# larger than it is silently truncated and everything past the cap goes
+# uninspected — while the sweep still prints "0 unreadable" and exits 0. If the
+# fetch came back exactly at the limit, say so rather than reporting a result
+# about a set you did not see.
+[ "$(printf '%s\n' "$rows" | grep -c .)" -lt "$limit" ] \
+  || { echo "fetched exactly $limit issues — the backlog may be larger; this result is NOT a clean corpus" >&2; exit 1; }
 
 found=0
 while IFS= read -r row; do
