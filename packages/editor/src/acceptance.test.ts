@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import { EDGE_FIELDS, isSymmetricEdgeField } from '@issuegraph/core';
 import { buildModel } from '@issuegraph/reader';
-import type { EdgeKind, GraphDocument } from '@issuegraph/store';
+import type { EdgeKind, GraphDocument, Proposal } from '@issuegraph/store';
 import {
   createScriptedSource,
   createStore,
@@ -549,3 +549,166 @@ describe('done when: an invalid proposal is refused by the store, before any dis
     assert.equal(record.reason.code, 'unchanged-kind');
   });
 });
+
+const {
+  IDLE_CREATE_DRAFT,
+  createReducer,
+  keyIntent,
+  pickerPlacement,
+} = surface;
+
+/** Drive a command sequence through the shared reducer, returning what it emitted. */
+function createdBy(commands: readonly surface.CreateCommand[]): Proposal | null {
+  let draft = IDLE_CREATE_DRAFT;
+  let last: Proposal | null = null;
+  for (const command of commands) {
+    const result = createReducer(draft, command);
+    draft = result.draft;
+    if (result.proposal !== null) last = result.proposal;
+  }
+  return last;
+}
+
+/** The create commands the keyboard path produces for `R` → `n` → `⏎`. */
+function keyboardCommands(kind: EdgeKind): readonly surface.CreateCommand[] {
+  const digit = String(EDGE_FIELDS.indexOf(kind) + 1);
+  const presses = [
+    keyIntent('r', { focused: SUBJECT, match: null, selectedEdge: null }),
+    keyIntent(digit, { focused: null, match: null, selectedEdge: null }),
+    keyIntent('Enter', { focused: null, match: OBJECT, selectedEdge: null }),
+  ];
+  return presses.flatMap((intent) => (intent.kind === 'create' ? [intent.command] : []));
+}
+
+describe('done when: the three paths emit IDENTICAL proposals for the same edit', () => {
+  for (const kind of EDGE_FIELDS) {
+    it(`agrees across canvas, inspector and keyboard for ${kind}`, () => {
+      // The three gather the same facts in the orders §17b gives them: the
+      // canvas drags to a target before asking for a type, while the inspector
+      // and the keyboard choose a type and then search for a target.
+      const canvas = createdBy([
+        { kind: 'begin', source: SUBJECT },
+        { kind: 'target', ref: OBJECT },
+        { kind: 'type', edgeKind: kind },
+      ]);
+      const inspector = createdBy([
+        { kind: 'begin', source: SUBJECT },
+        { kind: 'type', edgeKind: kind },
+        { kind: 'target', ref: OBJECT },
+      ]);
+      // The keyboard path is driven through its REAL key map rather than a
+      // hand-written command list, so this is the whole path and not a
+      // restatement of it.
+      const keyboard = createdBy(keyboardCommands(kind));
+
+      const expected = { op: 'create', kind, from: SUBJECT, to: OBJECT };
+      assert.deepEqual(canvas, expected);
+      assert.deepEqual(inspector, expected);
+      assert.deepEqual(keyboard, expected);
+    });
+  }
+
+  it('emits exactly one proposal per path, never a delete-plus-create', () => {
+    let draft = IDLE_CREATE_DRAFT;
+    const emitted: Proposal[] = [];
+    for (const command of keyboardCommands('blocked-by')) {
+      const result = createReducer(draft, command);
+      draft = result.draft;
+      if (result.proposal !== null) emitted.push(result.proposal);
+    }
+    assert.equal(emitted.length, 1);
+  });
+});
+
+describe('done when: each path deletes and retypes, through one emitter each', () => {
+  it('deletes a selected edge to the same proposal a click would', () => {
+    const seed = documentWith('blocked-by');
+    const edgeId = onlyEdge(seed).id;
+    // Canvas and inspector delete controls hand the store this proposal; the
+    // keyboard reaches it with `⌫`. One shape, arrived at three ways.
+    assert.deepEqual(keyIntent('Backspace', { focused: null, match: null, selectedEdge: edgeId }), {
+      kind: 'propose',
+      proposal: { op: 'delete', edgeId },
+    });
+  });
+
+  it('retypes through the PICKER rather than a second emitter', () => {
+    const seed = documentWith('blocked-by');
+    const edgeId = onlyEdge(seed).id;
+    const intent = keyIntent('t', { focused: null, match: null, selectedEdge: edgeId });
+    // `T` answers with the edge to open the picker on — not with a retype of its
+    // own. The proposals then come from the one module that owns them.
+    assert.deepEqual(intent, { kind: 'retype', edgeId });
+    const option = pickerView(seed, edgeId).options.find((entry) => entry.kind === 'duplicate-of');
+    assert.ok(option !== undefined);
+    assert.deepEqual(option.proposal, { op: 'retype', edgeId, nextKind: 'duplicate-of' });
+  });
+});
+
+describe('done when: a together-with edge is selectable and deletable', () => {
+  it('deletes a together-with edge through the ordinary path, with no special case', () => {
+    // The viewer gives the connector its own EDGE identity precisely so an
+    // enclosure — which has no line to click — is individually selectable. By
+    // the time it reaches here it is an edge id like any other.
+    const seed = documentWith('together-with');
+    const edgeId = onlyEdge(seed).id;
+    assert.deepEqual(keyIntent('Backspace', { focused: null, match: null, selectedEdge: edgeId }), {
+      kind: 'propose',
+      proposal: { op: 'delete', edgeId },
+    });
+    assert.deepEqual(keyIntent('t', { focused: null, match: null, selectedEdge: edgeId }), {
+      kind: 'retype',
+      edgeId,
+    });
+  });
+});
+
+describe('done when: drop-point placement derives from measured bounds', () => {
+  it('reads the container it was measured in rather than assuming a viewport', () => {
+    const container = { x: 120, y: 64, width: 640, height: 480 };
+    const picker = { width: 180, height: 120 };
+    assert.deepEqual(pickerPlacement({ x: 200, y: 100 }, picker, container), {
+      x: 200,
+      y: 100,
+      flippedX: false,
+      flippedY: false,
+    });
+    // Near the far edge it flips back across the drop point, and the result is
+    // still wholly inside the measured container.
+    const flipped = pickerPlacement({ x: 750, y: 530 }, picker, container);
+    assert.equal(flipped.flippedX, true);
+    assert.equal(flipped.flippedY, true);
+    assert.ok(flipped.x + picker.width <= container.x + container.width);
+    assert.ok(flipped.y + picker.height <= container.y + container.height);
+  });
+});
+
+describe('done when: no create path dispatches to a DataSource', () => {
+  it('builds every path beside a live source and leaves it untouched', async () => {
+    const seed = documentWith('blocked-by');
+    const source = createScriptedSource(seed, nextDocument);
+    const store = createStore({
+      source,
+      derive: (document: GraphDocument) =>
+        document.issues.map((issue, rank) => ({
+          ref: issue.ref,
+          rank,
+          ready: true,
+          holdReasons: [],
+        })),
+    });
+    await store.hydrate();
+
+    // The structural half: none of these takes a store or a port, so there is
+    // nothing in scope for them to reach. This drives all of them anyway and
+    // asserts the source saw nothing — the behavioural half, and the one that
+    // would fail if a future edit here reached for a store.
+    createdBy(keyboardCommands('duplicate-of'));
+    keyIntent('Backspace', { focused: null, match: null, selectedEdge: onlyEdge(seed).id });
+    pickerPlacement({ x: 10, y: 10 }, { width: 10, height: 10 }, { x: 0, y: 0, width: 100, height: 100 });
+
+    assert.deepEqual([...source.pending()], []);
+    assert.deepEqual(store.getSnapshot().writes, []);
+  });
+});
+

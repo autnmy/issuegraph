@@ -113,9 +113,44 @@ auditRowAttributes(overlay, ref);    // {} for a clean row; the severity mark fo
 
 **The bar is CSS on this package's own attribute, not an element drawn into a viewer row.** Layer 1's markup primitive is deliberately not on its public surface, so an overlay drawn from out here would have to re-implement HTML escaping — duplication with an injection shape rather than a mirror that merely drifts. `auditRowAttributes` answers what a row carries, `auditStylesheet` draws the bar from it, and the exchange is data.
 
+## The three equivalent create paths
+
+§17b asks for three ways to create an edge — **canvas** (drag to a target, picker at the drop point), **inspector** (`+ add` → type → issue search) and **keyboard** (`R` → `1`–`5` → search → `⏎`) — and is explicit that they are *equivalent*, not a primary path with two shortcuts. That matters at size rather than in principle: the canvas is a **local** instrument, so at any real backlog most targets are off it, and the inspector is *the only path* to those. A design where drag is the real path stops working at the size it was built for.
+
+**Equivalence is a property of the shape here, not a promise a test keeps.** The three gather the same three facts in different orders:
+
+```
+canvas      source → target → kind
+inspector   source → kind   → target
+keyboard    source → kind   → target
+```
+
+So the draft is modelled as a **set of slots, not a sequence of steps** — each filled by its own command, in any order, with the `create` proposal emitted on whichever transition completes the set. There is exactly one emitter, and none of the three paths is named in the code at all.
+
+```ts
+import { IDLE_CREATE_DRAFT, createReducer, keyIntent, pickerPlacement } from '@issuegraph/editor';
+
+let { draft, proposal } = createReducer(IDLE_CREATE_DRAFT, { kind: 'begin', source: '530' });
+({ draft, proposal } = createReducer(draft, { kind: 'type', edgeKind: 'blocked-by' }));
+({ draft, proposal } = createReducer(draft, { kind: 'target', ref: '602' }));
+// proposal → { op: 'create', kind: 'blocked-by', from: '530', to: '602' }
+```
+
+**The draft carries no path identity**, deliberately. A `source` filled by a drag and one filled by `R` are the same fact, and a field recording which arrived would be a place for the paths to grow apart. What genuinely differs between them is where the picker is *drawn*, and that is geometry — `pickerPlacement`, from measured bounds — rather than state.
+
+**Direction is the gather order**, `from` = source. Nothing infers it: §17b states direction and offers a flip, and the picker re-derives after the edit lands, so a wrong guess is one act from correct. That is the same reasoning `picker/view.ts` records for retyping across the directed/symmetric split.
+
+**The keyboard is a full loop with no pointer step.** `keyIntent` is a pure key map — a key name and a context in, an intent out, no DOM — exactly as the viewer's `navigation.ts` is, so the whole map is exhaustively testable on a runtime with no DOM at all. The digits read `EDGE_FIELDS` from `@issuegraph/core` rather than restating it, so a sixth field gets a `6` for free and the picker and the keyboard cannot disagree. `⌫` binds **both** `Backspace` and `Delete`, because the key §17b draws as `⌫` reports differently across keyboards and binding one would make "no pointer" false on the other. An unbound key answers `none` and is left to the host.
+
+**`T` opens the picker; it does not emit a retype.** The proposals come from `pickerView`, which already owns them — a second emitter out here would be free to disagree about what a retype is.
+
+**A `together-with` edge needs no special case.** The viewer gives its connector an *edge* identity precisely because an enclosure has no line to click, so by the time a selection arrives here it is an ordinary edge id and `⌫` and `T` work on it unchanged.
+
+**Validity stays in the store.** These modules emit intent; `structuralRefusal` owns `self-edge`, `duplicate-edge` and `unknown-issue`. A second validity rule out here is exactly what `picker/view.ts` refused, and for the same reason.
+
 ## Status
 
-Landing separately, each on its own change: the edge mutation-state overlays, the type picker and direction sentence, the three equivalent create paths, the re-evaluate surface, the first-pass review queue, and the three-zone workspace that assembles them, wires the commands to a DOM and fixes this package's exports.
+Landing separately, each on its own change: the first-pass review queue, and the three-zone workspace that assembles the surfaces, wires the commands to a DOM and fixes this package's exports.
 
 ## Licence
 

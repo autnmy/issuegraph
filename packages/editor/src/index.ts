@@ -48,9 +48,17 @@
  * ## The surface
  *
  * The SCALE LADDER, the AUDIT, the RE-EVALUATE SURFACE, the EDGE
- * MUTATION-STATE OVERLAYS and the TYPE PICKER. The create paths and the
- * first-pass queue each land as their own change, and the final shape of this
- * file is decided by the one that assembles the workspace.
+ * MUTATION-STATE OVERLAYS, the TYPE PICKER and the CREATE PATHS. The
+ * first-pass queue lands as its own change, and the final shape of this file is
+ * decided by the one that assembles the workspace.
+ *
+ * The create paths are the first thing here to be shaped by a requirement that
+ * three surfaces be EQUIVALENT rather than merely present. They gather the same
+ * three facts in different orders, so the draft is modelled as a set of slots
+ * rather than a sequence of steps, and there is exactly one emitter — which is
+ * what makes "the inspector is not a fallback" structural instead of a promise.
+ * The only thing that genuinely differs between them is where the picker is
+ * drawn, and that is geometry rather than state.
 
  *
  * The picker is the first thing here to compose @issuegraph/core directly. The
@@ -170,6 +178,24 @@ export {
 } from './picker/render.ts';
 
 export { pickerStylesheet } from './picker/styles.ts';
+
+export {
+  type CreateCommand,
+  type CreateDraft,
+  type CreateResult,
+  IDLE_CREATE_DRAFT,
+  createReducer,
+} from './create/draft.ts';
+
+export { type KeyIntent, type KeyboardContext, keyIntent } from './create/keys.ts';
+
+export {
+  type Bounds,
+  type PickerPlacement,
+  type Point,
+  type Size,
+  pickerPlacement,
+} from './create/placement.ts';
 
 export {
   type ChangeFacet,
