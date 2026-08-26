@@ -92,6 +92,9 @@ importers:
 
   packages/editor:
     dependencies:
+      '@issuegraph/core':
+        specifier: workspace:^
+        version: link:../core
       '@issuegraph/store':
         specifier: workspace:^
         version: link:../store
