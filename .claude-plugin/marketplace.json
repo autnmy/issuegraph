@@ -11,7 +11,7 @@
   "plugins": [
     {
       "name": "issuegraph-skills",
-      "description": "Task-shaped skills over the `issuegraph` CLI, so the three things done constantly are a call with a memorable name: SELECTION (order a candidate set, answer what is ready, and why a P0 is held), CREATION (render a correct block on a new issue, including a decomposition's leaves), and GROOMING (validate, repair an inert block, refresh generated edges). Each composes the CLI and re-implements no parsing. They lead with the traps that fail silently: `parse` and `validate` exit 0 on an unreadable block, so `state` is the field to read; and an empty `ready` result with a non-empty `underRead` means \"I could not tell\", not \"nothing is ready\".",
+      "description": "Task-shaped skills over the `issuegraph` CLI, so the three things done constantly are a call with a memorable name: SELECTION (order a candidate set, answer what is ready, and why a P0 is held), CREATION (render a correct block on a new issue, including a decomposition's leaves), and GROOMING (validate, repair an inert block, refresh generated edges). Each composes the CLI and re-implements no parsing. They lead with the traps that fail silently: the `state` field is the condition to branch on and the exit code is not \u2014 `parse` exits 0 on an INERT block while `validate` exits 5, and both exit 3 on an UNREAD one, so the two verbs disagree about the same body; and an empty `ready` result with a non-empty `underRead` means \"I could not tell\", not \"nothing is ready\".",
       "source": "./plugins/issuegraph-skills",
       "author": {
         "name": "autnmy",

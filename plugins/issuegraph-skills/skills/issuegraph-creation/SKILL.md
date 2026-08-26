@@ -107,14 +107,28 @@ The split's deliverable is **the leaves plus their edges**. Write them as you
 create each leaf, never "later":
 
 ```sh
+PREV=                                   # empty: the first leaf blocks on nothing
 for leaf in "$@"; do
   printf '%s\n' "$(leaf_body "$leaf")" \
     | issuegraph set --decomposed-from "$PARENT" \
                      ${PREV:+--blocked-by "$PREV"} \
                      --evidence asserted > /tmp/leaf.md
-  gh issue create -R "$REPO" --title "$(leaf_title "$leaf")" --body-file /tmp/leaf.md
+  # `gh issue create` prints the new issue's URL — take the number off the end
+  # and CARRY IT, or the chain is never written.
+  url=$(gh issue create -R "$REPO" --title "$(leaf_title "$leaf")" --body-file /tmp/leaf.md) || break
+  PREV=${url##*/}
 done
 ```
+
+⚠ **`PREV` has to be assigned from each creation, and that line is the whole
+chain.** Left unassigned it is empty on every iteration, so `${PREV:+…}` expands
+to nothing and **not one `blocked-by` is written** — a decomposition with a real
+order ships with no order, silently. Pre-set to some earlier issue instead and it
+is worse: every leaf points at that same issue rather than at its predecessor.
+
+**Only chain leaves that genuinely must run in order.** If they are independent,
+leave `PREV` empty and write no `blocked-by` at all — a false chain is the "one
+issue in disguise" shape, and it serialises work that could have run in parallel.
 
 - `blocked-by` only where a **real** order exists. Do not fake mutual exclusion
   with a false `blocked-by` — that is what `serialize-with` is for.

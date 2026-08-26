@@ -105,7 +105,11 @@ issuegraph:
 not repaired, so there is nothing you could write back believing it had been.
 
 ```sh
-out=$(issuegraph backfill --json --body-file body.md); rc=$?
+# `if out=$(...)` — NOT `out=$(...); rc=$?`. Under `set -e` a plain assignment
+# inherits the command's status, so an `unrecoverable` body (exit 4) aborts the
+# whole sweep before the `case` ever runs: one unrepairable issue kills the
+# backlog pass instead of reaching the escalation branch. Verified both ways.
+if out=$(issuegraph backfill --json --body-file body.md); then rc=0; else rc=$?; fi
 case "$(printf '%s' "$out" | jq -r .outcome)" in
   delimited)     printf '%s' "$out" | jq -r .body > /tmp/new.md
                  gh issue edit "$n" -R "$REPO" --body-file /tmp/new.md ;;
