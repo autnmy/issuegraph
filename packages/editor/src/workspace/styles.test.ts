@@ -1,12 +1,41 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { METRIC_TOKENS, THEME_TOKENS, renderViewer } from '@issuegraph/viewer';
+import { METRIC_TOKENS, THEME_TOKENS, renderViewer, viewerStylesheet } from '@issuegraph/viewer';
 
 import { AUDIT_SEVERITY_ATTRIBUTE } from '../audit/surface.ts';
 import { ZONES, renderWorkspace } from './render.ts';
 import { workspaceStylesheet } from './styles.ts';
 import { WORKSPACE_WORDS, backlogOf } from '../testing/workspace.ts';
+
+/**
+ * Every `calc(...)` body in the sheet, matched on BALANCED parentheses.
+ *
+ * Not a regular expression: a depth-limited pattern is the shape that fails
+ * OPEN. The first version here allowed one level of nesting, which was enough
+ * for `calc(var(--a) * 40)` and not for
+ * `calc((var(--a) + var(--b)) * var(--c))` — so the moment the spacer grew a
+ * grouped sum, the guard would have matched nothing at that site and reported
+ * clean on the one expression it most needed to read.
+ */
+function calcExpressions(css: string): string[] {
+  const found: string[] = [];
+  for (let at = css.indexOf('calc('); at !== -1; at = css.indexOf('calc(', at + 1)) {
+    const open = at + 'calc'.length;
+    let depth = 0;
+    for (let cursor = open; cursor < css.length; cursor += 1) {
+      if (css[cursor] === '(') depth += 1;
+      else if (css[cursor] === ')') {
+        depth -= 1;
+        if (depth === 0) {
+          found.push(css.slice(open + 1, cursor));
+          break;
+        }
+      }
+    }
+  }
+  return found;
+}
 
 /** The stylesheet with its comments removed — a comment is not a declaration. */
 function withoutComments(css: string): string {
@@ -134,9 +163,7 @@ describe('the workspace stylesheet carries structure, never a value', () => {
     // renderer sets inline — `--ig-rail-rows` — is a unitless count and is
     // correctly not a metric, which is what makes the spacer's own calc legal.
     const metrics: ReadonlySet<string> = new Set(METRIC_TOKENS);
-    const calcs = [...css.matchAll(/calc\(([^()]*(?:\([^()]*\)[^()]*)*)\)/g)].map(
-      (match) => match[1] ?? '',
-    );
+    const calcs = calcExpressions(css);
     assert.ok(calcs.length > 0, 'the stylesheet contains no calc() at all');
 
     for (const expression of calcs) {
@@ -159,6 +186,31 @@ describe('the workspace stylesheet carries structure, never a value', () => {
         );
       }
     }
+  });
+
+  it('sizes the spacer by the whole row PITCH, not the row height', () => {
+    // A .ig-slot is min-height plus margin-bottom, so row-to-row is the sum.
+    // Sized on the height alone the spacer undercut every omitted row by the
+    // gap — 44 of a 50px pitch on the default theme — and a host dividing its
+    // scroll position by the measured pitch could not reach the tail of the
+    // order at all. Systematic and exactly correctable, unlike the variable
+    // row-height approximation that remains.
+    const rule = css.match(/\.ig-rail-spacer\s*\{([^}]*)\}/)?.[1];
+    assert.ok(rule !== undefined, 'nothing sizes the spacer');
+    for (const token of ['--ig-row-height', '--ig-space-tight']) {
+      assert.ok(rule.includes(token), `the pitch omits ${token}`);
+    }
+    // The count is a factor, or the spacer is one row tall whatever it omits.
+    assert.match(rule, /\*\s*var\(--ig-rail-rows/);
+
+    // POSITIVE CONTROL on layer 1, so this only claims what is still true of
+    // it: if the slot ever stops carrying that margin, this fails loudly
+    // rather than leaving the rule above looking over-built.
+    const viewerCss = withoutComments(viewerStylesheet);
+    const slot = viewerCss.match(/\.ig-slot\s*\{([^}]*)\}/)?.[1];
+    assert.ok(slot !== undefined, 'layer 1 no longer styles .ig-slot');
+    assert.match(slot, /margin-bottom:\s*var\(--ig-space-tight\)/);
+    assert.match(slot, /min-height:\s*var\(--ig-row-height\)/);
   });
 
   it('gives each zone a fixed area rather than letting content negotiate it', () => {

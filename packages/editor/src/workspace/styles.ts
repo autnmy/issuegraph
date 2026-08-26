@@ -127,13 +127,25 @@ export const workspaceStylesheet = `
    literal, so a backtick closes it — and the failure is a parse error pages
    away from the character that caused it.
 
-   One row height for all of them: --ig-rail-rows is the count, set inline by
-   the renderer, and --ig-row-height is the theme's own metric. A row carrying
-   holds is taller than a bare one, so the scrollbar is proportional rather than
-   exact — the standard cost of fixed-height virtualisation, and the alternative
-   needs a mount to measure with. */
+   THE PITCH IS THE OUTER BOX, NOT THE ROW HEIGHT. A .ig-slot is
+   min-height: --ig-row-height PLUS margin-bottom: --ig-space-tight, so
+   row-to-row is the sum of the two. Sized on --ig-row-height alone, this
+   undercounted EVERY omitted row by the gap — 44 of a 50px pitch on the default
+   theme, so 300 omitted rows left the scroll extent 1,800px short and a host
+   dividing its scroll position by the measured pitch could reach about offset
+   264 of 300. The tail of the order became unreachable by the very mechanism
+   added to make it reachable.
+
+   That is a SYSTEMATIC undercount, not the approximation below, which is why it
+   is corrected exactly rather than tolerated: the gap is constant per row and
+   both terms are theme metrics.
+
+   --ig-rail-rows is the count, set inline by the renderer. What remains
+   approximate is only VARIABLE row height — a row carrying holds is taller than
+   a bare one — so the scrollbar stays proportional rather than exact. Measuring
+   that needs a mount, which this package does not have. */
 .ig-rail-spacer {
-  height: calc(var(--ig-row-height) * var(--ig-rail-rows, 0));
+  height: calc((var(--ig-row-height) + var(--ig-space-tight)) * var(--ig-rail-rows, 0));
 }
 
 .ig-inspector {

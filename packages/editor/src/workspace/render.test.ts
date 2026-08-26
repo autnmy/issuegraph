@@ -268,11 +268,17 @@ describe('the rail publishes the geometry a scroll container needs', () => {
   });
 
   it('sizes them from the theme rather than a literal height', () => {
+    // THE SHEET IS INSTALLED AND THE RULE IS THEME-DRIVEN — the exact
+    // expression is `styles.test.ts`'s to pin, and it does, including that the
+    // pitch carries the row gap. Restating the shape here made this fail on a
+    // correct change to it, which is a test asserting a spelling rather than a
+    // property.
     const result = renderWorkspace(document, { ...WORDS, rail: { start: 10, count: 5 } });
-    assert.match(
-      result.styles,
-      /\.ig-rail-spacer\s*\{[^}]*height:\s*calc\(var\(--ig-row-height\) \* var\(--ig-rail-rows/,
-    );
+    const rule = result.styles.match(/\.ig-rail-spacer\s*\{([^}]*)\}/)?.[1];
+    assert.ok(rule !== undefined, 'the spacer rule was not installed');
+    assert.match(rule, /height:\s*calc\(/);
+    assert.match(rule, /var\(--ig-rail-rows/);
+    assert.equal(/\b\d+(\.\d+)?(px|rem|em|pt)\b/.test(rule), false, 'a literal length');
   });
 });
 
