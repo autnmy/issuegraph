@@ -138,6 +138,13 @@ check each body's `state`** — one `validate` per body, branching on `state` an
 not on the exit code, for the reason the grooming skill sets out:
 
 ```sh
+# Rule 1: the enumeration's own status, before the loop can call an empty result
+# a clean one. A missing, unreadable or malformed candidates.json makes `jq` exit
+# non-zero and expand to an empty here-doc — the loop then inspects nothing and
+# `bad=0` reports a clean preflight over a set it never read.
+rows=$(jq -r '.issues[] | @base64' candidates.json) \
+  || { echo "could not read candidates.json — this says NOTHING about the candidates" >&2; exit 1; }
+
 bad=0
 while IFS= read -r row; do
   [ -n "$row" ] || continue
@@ -148,7 +155,7 @@ while IFS= read -r row; do
     *) echo "REFUSING: an issue's block is $state — repair before trusting the order" >&2; bad=1 ;;
   esac
 done <<EOF
-$(jq -r '.issues[] | @base64' candidates.json)
+$rows
 EOF
 [ "$bad" -eq 0 ] || exit 1
 ```

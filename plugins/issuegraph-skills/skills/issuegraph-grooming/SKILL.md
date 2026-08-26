@@ -164,14 +164,18 @@ case "$(printf '%s' "$out" | jq -r '.outcome // ""')" in
                               # repaired body would gain one — changing user content beyond
                               # the two delimiter lines `backfill` promises to insert.
                               # Measured: 51-byte body -> 52 with `-r`, 51 with `-j`.
-                              printf '%s' "$out" | jq -j .body > "$new"
-                              # `[ -s ]` even here, where the outcome already promises a
-                              # body: every write in these skills is gated on the file being
-                              # non-empty, because the one that is not empties an issue.
-                              # AND the write's own failure is RECORDED — a transient API or
+                              # ONE conditional, and the EXTRACTION is inside it. `[ -s ]`
+                              # proves the file is non-empty, which is not the same as proving
+                              # the render finished: a `jq` that dies part-way (a full disk)
+                              # leaves a NON-EMPTY truncated file, and the edit would then
+                              # overwrite a real issue with half a body. Non-emptiness is a
+                              # belt; the producer's status is the braces.
+                              # The write's own failure is recorded too — a transient API or
                               # permission error must not leave the sweep reporting success
                               # over an issue it did not repair.
-                              if [ -s "$new" ] && gh issue edit "$n" -R "$REPO" --body-file "$new"
+                              if printf '%s' "$out" | jq -j .body > "$new" \
+                                   && [ -s "$new" ] \
+                                   && gh issue edit "$n" -R "$REPO" --body-file "$new"
                               then :
                               else echo "#$n: repaired body was NOT written" >&2; broke=1
                               fi ;;
