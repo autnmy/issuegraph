@@ -218,6 +218,15 @@ export interface AuditInput {
   readonly encodingRefused?: readonly EncodingRefusal[] | undefined;
 }
 
+/** The refs the document holds as OPEN issues. Absence here means UNKNOWN. */
+function openRefs(document: GraphDocument): ReadonlySet<IssueRef> {
+  const open = new Set<IssueRef>();
+  for (const issue of document.issues) {
+    if (issue.state === 'open') open.add(issue.ref);
+  }
+  return open;
+}
+
 /** Whether the document holds this ref as a CLOSED issue. */
 function closedRefs(document: GraphDocument): ReadonlySet<IssueRef> {
   const closed = new Set<IssueRef>();
@@ -336,14 +345,31 @@ interface EdgeVerdict {
    */
   readonly knowable: boolean;
   /**
-   * Whether a finding about the DECLARER describes a live problem.
+   * The declarer is not PROVABLY closed. An issue the document does not carry
+   * is unknown, and reads as live here.
    *
-   * Two of the four classes name a harm that needs an open subject: a dead
-   * duplicate ref claims work is *"tracked nowhere"*, and a stale blocker
-   * claims readiness is satisfied. On a closed declarer both report the
-   * ordinary end of a lifecycle as a defect, for ever.
+   * THE RIGHT TEST FOR A `dangerous` CLASS AND THE WRONG ONE FOR A `misleading`
+   * ONE, which is why both are offered rather than one. A dead duplicate ref
+   * warns that live work is tracked nowhere: a false alarm on an issue nobody
+   * loaded costs a look, while silence hides exactly what the class is for. So
+   * unknown must not suppress it.
    */
   readonly declarerLive: boolean;
+  /**
+   * The declarer is PROVABLY open — present in the document and not closed.
+   *
+   * The stale-blocker class needs this stricter one, because its message runs
+   * the other way: it tells a reader a blocker is safely clearable. On an
+   * absent declarer nobody has established there is live work waiting at all,
+   * so the finding would invite deleting a constraint on no evidence — and a
+   * partial or paged document, which this package explicitly supports, is
+   * exactly where an absent declarer arises.
+   *
+   * The asymmetry is the point. Both classes ask about the same issue and want
+   * opposite defaults, because a false positive costs a look in one and a
+   * deleted constraint in the other.
+   */
+  readonly declarerOpen: boolean;
   /**
    * Whether the reader reads this edge's declaration AT ALL.
    *
@@ -378,6 +404,7 @@ interface EdgeVerdict {
 function verdictFor(
   edge: StoredEdge,
   closed: ReadonlySet<IssueRef>,
+  open: ReadonlySet<IssueRef>,
   refused: ReadonlySet<IssueRef>,
   graph: AuditGraph,
   // WHICH END'S CANONICAL DECIDES THE ANSWER. A stale blocker asks where the
@@ -398,6 +425,7 @@ function verdictFor(
     // three the moment that leg was added.
     knowable: !refused.has(edge.to) && !refused.has(effective),
     declarerLive: !closed.has(edge.from),
+    declarerOpen: open.has(edge.from),
     declarerEdgesRead: graph.duplicateCanonical(edge.from) === null,
   };
 }
@@ -452,10 +480,12 @@ function staleBlockerFindings(
   refused: ReadonlySet<IssueRef>,
 ): AuditFinding[] {
   const closed = closedRefs(document);
+  const open = openRefs(document);
   const findings: AuditFinding[] = [];
   for (const edge of edgesOfKind(document, 'blocked-by')) {
-    const verdict = verdictFor(edge, closed, refused, graph, 'to');
-    if (!verdict.declarerLive || !verdict.knowable || !verdict.effectiveClosed) continue;
+    const verdict = verdictFor(edge, closed, open, refused, graph, 'to');
+    // PROVABLY OPEN, not merely not-closed — see `declarerOpen`.
+    if (!verdict.declarerOpen || !verdict.knowable || !verdict.effectiveClosed) continue;
     // A blocked-by written on a DUPLICATE is not read by the model at all, so
     // it holds nothing and there is no readiness for a closed target to have
     // satisfied. `dead-duplicate-ref` deliberately does not consult this — see
@@ -497,9 +527,12 @@ function deadDuplicateFindings(
   refused: ReadonlySet<IssueRef>,
 ): AuditFinding[] {
   const closed = closedRefs(document);
+  const open = openRefs(document);
   const findings: AuditFinding[] = [];
   for (const edge of edgesOfKind(document, 'duplicate-of')) {
-    const verdict = verdictFor(edge, closed, refused, graph, 'from');
+    const verdict = verdictFor(edge, closed, open, refused, graph, 'from');
+    // NOT provably closed, which deliberately admits an unknown declarer — see
+    // `declarerLive`, and the asymmetry with the stale-blocker case above.
     if (!verdict.declarerLive || !verdict.knowable || !verdict.effectiveClosed) continue;
     const canonical = verdict.effective;
     const via = canonical === edge.to ? '' : ` (through ${edge.to})`;

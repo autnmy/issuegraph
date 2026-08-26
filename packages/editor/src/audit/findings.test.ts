@@ -532,6 +532,36 @@ describe('an edge the reader never reads holds nothing', () => {
   });
 });
 
+describe('an absent declarer is unknown, and the two classes want opposite defaults', () => {
+  it('does not call an ABSENT issue\'s blocker stale', () => {
+    // The message runs "you can clear this". On a declarer the document does
+    // not carry, nobody has established there is live work waiting at all — and
+    // a partial or paged document is exactly where that arises — so the finding
+    // would invite deleting a constraint on no evidence.
+    const document = documentOf([issue('gone', 'closed')], [['blocked-by', 'absent', 'gone']]);
+    assert.deepEqual(only(audit(document), 'stale-blocker'), []);
+  });
+
+  it('still calls a PRESENT open issue\'s blocker stale — the control', () => {
+    const document = documentOf(
+      [issue('a'), issue('gone', 'closed')],
+      [['blocked-by', 'a', 'gone']],
+    );
+    assert.equal(only(audit(document), 'stale-blocker').length, 1);
+  });
+
+  it('DOES report an absent declarer\'s dead duplicate ref', () => {
+    // The asymmetry, pinned. This class warns that live work is tracked
+    // nowhere: a false alarm on an issue nobody loaded costs a look, while
+    // silence hides exactly what the class exists for.
+    const document = documentOf(
+      [issue('canonical', 'closed')],
+      [['duplicate-of', 'absent', 'canonical']],
+    );
+    assert.equal(only(audit(document), 'dead-duplicate-ref').length, 1);
+  });
+});
+
 describe('severity travels on the finding', () => {
   it('carries the class table onto every finding it produces', () => {
     // "Severity is data on the finding, not a colour chosen at the render site."
