@@ -47,10 +47,20 @@
  *
  * ## The surface
  *
- * The SCALE LADDER and the EDGE MUTATION-STATE OVERLAYS. The picker, the create
- * paths, the re-evaluate surface, the audit and the first-pass queue each land
- * as their own change, and the final shape of this file is decided by the one
- * that assembles the workspace.
+ * The SCALE LADDER, the RE-EVALUATE SURFACE and the EDGE MUTATION-STATE
+ * OVERLAYS. The picker, the create paths, the audit and the first-pass queue
+ * each land as their own change, and the final shape of this file is decided by
+ * the one that assembles the workspace.
+ *
+ * The re-evaluate surface is the first thing here to compose the STORE as well
+ * as the viewer — it presents `diffOrder`'s output and computes no diff of its
+ * own — and the first to require words from its host rather than writing them.
+ *
+ * The overlays are the first to compose the store's PROJECTION, and they draw
+ * only what reuses a path's own position: a halo, a ghost, a dash. Anything
+ * needing a new position — the chips, the ✕, the inline reason, a conflict's
+ * second version — is declared as a mark for the layer that computed the
+ * layout, which is the workspace this file's final shape waits on.
  *
  * A published package can add an export later and can never take one back, so
  * nothing is exported before something is owed.
@@ -109,3 +119,24 @@ export {
 } from './overlay/render.ts';
 
 export { edgeOverlayStylesheet } from './overlay/styles.ts';
+
+export {
+  type ChangeFacet,
+  type ChangeSummary,
+  type PlacedChip,
+  type ReevaluateView,
+  type SummaryPart,
+  CHANGE_FACETS,
+  reevaluateView,
+  summaryOf,
+} from './reevaluate/view.ts';
+
+export { type ChangeWords } from './reevaluate/words.ts';
+
+export {
+  type ReevaluateOptions,
+  type ReevaluateResult,
+  renderReevaluate,
+} from './reevaluate/render.ts';
+
+export { reevaluateStylesheet } from './reevaluate/styles.ts';

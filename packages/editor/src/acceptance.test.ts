@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { diffOrder } from '@issuegraph/store';
 import { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET } from '@issuegraph/viewer';
 
 import * as surface from './index.ts';
 import { componentKey, componentsSumming, documentOf } from './testing/documents.ts';
+import { WORDS, editOf, orderOf, railOf, railRow, ranks } from './testing/reevaluate.ts';
 
 /**
  * The scale ladder's "done when", executable.
@@ -105,5 +107,130 @@ describe('done when: search-to-focus works above the cluster-only budget', () =>
     assert.equal(result.ladder.tier, 'direct');
     assert.match(result.markup, /data-projection="graph"/);
     assert.ok(result.ladder.canvas.issues.some((issue) => issue.key === match.key));
+  });
+});
+
+/**
+ * The re-evaluate surface's "done when", executable — same rule as above: the
+ * public surface only.
+ *
+ * The changes are built with the STORE'S own `diffOrder`, so what a consumer
+ * gets is exercised against the computation this leaf presents rather than
+ * against a fixture that could outlive it.
+ */
+const { renderReevaluate, reevaluateStylesheet } = surface;
+
+describe('done when: a summary renders from the counts, and a chip from each delta', () => {
+  it('words the counts from the host and chips only the rows that moved', () => {
+    const change = diffOrder(
+      orderOf(['a', 'b', 'c']),
+      orderOf(['b', 'a', 'c']),
+      editOf(),
+    );
+    const result = renderReevaluate(railOf(['b', 'a', 'c']), {
+      words: WORDS,
+      change,
+    });
+
+    assert.match(result.markup, /data-facet="moved"[^>]*><span class="ig-change-count">2</);
+    assert.match(result.markup, /class="ig-change-word">rows moved</);
+    assert.deepEqual(
+      [...result.markup.matchAll(/<li class="ig-delta-chip" data-ig-key="([^"]+)"/g)]
+        .map((match) => match[1])
+        .sort(),
+      ['a', 'b'],
+    );
+    assert.deepEqual([...result.diagnostics], []);
+  });
+});
+
+describe('done when: unaffected rows are left completely alone', () => {
+  it('renders their markup unchanged across an edit', () => {
+    const before = renderReevaluate(railOf(['a', 'b', 'c', 'd']), {
+      words: WORDS,
+    });
+    const after = renderReevaluate(railOf(['b', 'a', 'c', 'd']), {
+      words: WORDS,
+      change: diffOrder(orderOf(['a', 'b', 'c', 'd']), orderOf(['b', 'a', 'c', 'd']), editOf()),
+    });
+
+    for (const key of ['c', 'd']) {
+      assert.equal(railRow(after.markup, key), railRow(before.markup, key), key);
+    }
+    assert.notEqual(railRow(after.markup, 'a'), railRow(before.markup, 'a'));
+  });
+});
+
+describe('done when: the all-zero change renders a visible "changed nothing" summary', () => {
+  it('draws it in the summary\'s own place rather than drawing nothing', () => {
+    const same = orderOf(['a', 'b']);
+    const result = renderReevaluate(railOf(['a', 'b']), {
+      words: WORDS,
+      change: diffOrder(same, orderOf(['a', 'b']), editOf()),
+    });
+
+    assert.equal(result.view.summary?.unchanged, true);
+    assert.match(result.markup, /<p class="ig-change-unchanged">this edit changed nothing<\/p>/);
+  });
+});
+
+describe('done when: the computing state shows the previous order, greyed and labelled', () => {
+  const held = renderReevaluate(railOf(['a', 'b', 'c']), {
+    words: WORDS,
+    status: 'held',
+    change: diffOrder(orderOf(['a', 'b', 'c']), orderOf(['c', 'a', 'b']), editOf()),
+  });
+
+  it('labels the surface and greys the rail through the stylesheet', () => {
+    assert.match(held.markup, /data-order="held"/);
+    assert.match(held.markup, /write landed, order computing/);
+    // A subtree-wide `filter`, not a colour: the viewer sets colours directly on
+    // its own descendants, and a specified value beats an inherited one — so a
+    // `color` here would leave the stale order in its normal palette.
+    assert.match(
+      reevaluateStylesheet,
+      /\[data-order='held'\][^{]*\.ig-viewer\s*\{[^}]*filter:\s*grayscale/,
+    );
+  });
+
+  it('renders no rank that came from the partially-derived order', () => {
+    // The rail still prints the ranks the caller vouched for. `c` is the row
+    // the pending change moves to the front, and it still renders 3.
+    assert.deepEqual(ranks(held.markup), ['1', '2', '3']);
+  });
+});
+
+describe('done when: no timer, and no dismissal that is not user-initiated', () => {
+  it('publishes dismissal as a command and schedules nothing', () => {
+    const timers = ['setTimeout', 'setInterval', 'queueMicrotask', 'requestAnimationFrame'];
+    const saved = new Map(
+      timers.map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const),
+    );
+    const scheduled: string[] = [];
+    for (const name of timers) {
+      Object.defineProperty(globalThis, name, {
+        value: () => {
+          scheduled.push(name);
+        },
+        configurable: true,
+        writable: true,
+      });
+    }
+
+    let markup = '';
+    try {
+      markup = renderReevaluate(railOf(['b', 'a']), {
+        words: WORDS,
+        change: diffOrder(orderOf(['a', 'b']), orderOf(['b', 'a']), editOf()),
+      }).markup;
+    } finally {
+      for (const [name, descriptor] of saved) {
+        if (descriptor === undefined) Reflect.deleteProperty(globalThis, name);
+        else Object.defineProperty(globalThis, name, descriptor);
+      }
+    }
+
+    assert.deepEqual(scheduled, []);
+    assert.match(markup, /data-ig-command="dismiss-change"/);
   });
 });
