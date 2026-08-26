@@ -8,6 +8,12 @@
  * the predicate behind them found five dishonest flags rather than two, and the
  * fix removes the class by generating the flag table from `fields.ts` instead of
  * listing it. These tests pin the predicate, not the two reported spellings.
+ *
+ * ONE OF THOSE TWO INSTANCES NO LONGER EXISTS. #18 made every owned field
+ * clearable, so there is no unperformable clear left to refuse — the flag table
+ * is still generated, and the tests below now pin that it offers a `--no-` form
+ * for every owned field and for none of the render-only three. The CLASS is
+ * unchanged; one of its two original spellings closed.
  */
 
 import assert from 'node:assert/strict';
@@ -15,7 +21,7 @@ import { describe, test } from 'node:test';
 
 import { parseArgv } from './argv.ts';
 import { EXIT } from './exit.ts';
-import { CLEARABLE_JSON_KEYS, EDGE_JSON_KEYS, RENDER_ONLY, SPLICE_CLEARABLE, SPLICE_WRITABLE } from './fields.ts';
+import { EDGE_JSON_KEYS, RENDER_ONLY, SPLICE_CLEARABLE, SPLICE_WRITABLE } from './fields.ts';
 import { dispatch } from './run.ts';
 import { CANONICAL_BODY } from './testing/fixtures.ts';
 
@@ -47,13 +53,17 @@ describe('a clear is offered only where the writer can perform one', () => {
   });
 
   test('every NON-clearable writable field has NO --no- flag', () => {
-    // The sweep. `decomposed-from` and `duplicate-of` were the two reported;
-    // `together-with`, `priority` and `evidence` share the predicate and were
-    // found by applying it rather than by a second review round.
+    // The sweep, still worth keeping. It used to cover five fields:
+    // `decomposed-from` and `duplicate-of` were the two reported, and
+    // `together-with`, `priority` and `evidence` were found by applying the
+    // predicate rather than by a second review round. #18 made the first two
+    // clearable, so three remain — and those three are a DIFFERENT limit: the
+    // splice cannot amend them in an existing block at all, so there is nothing
+    // for a `--no-` form to remove.
     const nonClearable = [...SPLICE_WRITABLE, ...RENDER_ONLY].filter(
       (field) => !SPLICE_CLEARABLE.includes(field),
     );
-    assert.equal(nonClearable.length, 5, 'the sweep should cover five fields, not the two reported');
+    assert.deepEqual([...nonClearable], [...RENDER_ONLY], 'exactly the render-only fields, and nothing else');
     for (const field of nonClearable) {
       const parsed = parseArgv(['set', `--no-${field}`]);
       assert.ok(parsed.kind === 'usage-error', `--no-${field} must not be accepted`);
@@ -61,19 +71,37 @@ describe('a clear is offered only where the writer can perform one', () => {
     }
   });
 
-  test('the reported instance: --no-duplicate-of no longer exits 0 having changed nothing', () => {
+  test('#18: --no-duplicate-of now EXISTS and removes the entry', () => {
+    // It used to be a usage error, because the writer could not perform the
+    // clear and a flag that exits 0 having changed nothing is the defect this
+    // package exists to refuse. The retraction is real now, so the flag is too.
     const result = run(['set', '--no-duplicate-of'], FULL_BODY);
-    assert.equal(result.code, EXIT.usage);
-    assert.equal(result.stdout, '', 'a refusal writes no body');
+    assert.equal(result.code, EXIT.ok);
+    assert.ok(!result.stdout.includes('duplicate-of'), result.stdout);
+  });
+
+  test('#18: --no-decomposed-from likewise', () => {
+    const result = run(['set', '--no-decomposed-from'], FULL_BODY);
+    assert.equal(result.code, EXIT.ok);
+    assert.ok(!result.stdout.includes('decomposed-from'), result.stdout);
   });
 
   test('CONTROL: --no-serialize-with really does remove the entry, and exits 0', () => {
-    // Without this control the test above would pass for a CLI that had simply
+    // Without this control the tests above would pass for a CLI that had simply
     // stopped clearing anything.
     const result = run(['set', '--no-serialize-with'], FULL_BODY);
     assert.equal(result.code, EXIT.ok);
     assert.ok(!result.stdout.includes('serialize-with'), result.stdout);
     assert.ok(result.stdout.includes('duplicate-of'), 'an unowned field must survive');
+  });
+
+  test('CONTROL: a --field and its --no- form together are still contradictory', () => {
+    // The two new flags inherit the contradiction check by being in the same
+    // list the flag surface is generated from. Pinned on one of them, because
+    // that inheritance is the thing that could quietly not happen.
+    const result = run(['set', '--duplicate-of', '#5', '--no-duplicate-of'], FULL_BODY);
+    assert.equal(result.code, EXIT.usage);
+    assert.equal(result.stdout, '', 'a refusal writes no body');
   });
 });
 
@@ -90,33 +118,35 @@ describe('splice --edges validates its payload', () => {
     }
   });
 
-  test('a null on a key the writer cannot clear is refused with the reason', () => {
-    for (const key of EDGE_JSON_KEYS) {
-      if (CLEARABLE_JSON_KEYS.includes(key)) continue;
-      if (key === 'blockedBy') continue; // cleared with [], not null
+  test('#18: a null on ANY single-valued key clears it', () => {
+    // It used to be refused for `decomposedFrom` and `duplicateOf`, because the
+    // writer read `null` there as "leave untouched" and accepting it would have
+    // reported a clear the command never performed. Every one of them is a real
+    // clear now, so no invocation that used to succeed changed — only ones that
+    // used to exit `refusedWrite`.
+    for (const [key, spelling] of [
+      ['serializeWith', 'serialize-with'],
+      ['decomposedFrom', 'decomposed-from'],
+      ['duplicateOf', 'duplicate-of'],
+    ] as const) {
       const result = run(['splice', '--edges', JSON.stringify({ [key]: null })], FULL_BODY);
-      assert.equal(result.code, EXIT.usage, `${key}: null should be refused`);
-      assert.ok(result.stderr.join('\n').includes('leave untouched'), result.stderr.join('\n'));
+      assert.equal(result.code, EXIT.ok, `${key}: ${result.stderr.join('\n')}`);
+      assert.ok(!result.stdout.includes(spelling), result.stdout);
     }
   });
 
-  test('null-clearable is NARROWER than clearable — a list field is not in it', () => {
-    // REGRESSION PIN. `clearable` says a field's OWN empty value removes it; for
-    // `blocked-by` that value is `[]`, not `null`. A derivation that filtered on
-    // `clearable` alone put `blockedBy` in here, which made the constant's
-    // documented contract false — and did it silently, because `spliceEdges`
-    // only ever tests this set against the SINGLE-valued keys, and the test
-    // below already skipped `blockedBy` by name. Nothing went red.
-    assert.deepEqual([...CLEARABLE_JSON_KEYS], ['serializeWith']);
-    assert.ok(!CLEARABLE_JSON_KEYS.includes('blockedBy'), 'blockedBy is cleared with [], not null');
-    // ...and it IS clearable, which is exactly why the two questions differ.
-    assert.ok(SPLICE_CLEARABLE.includes('blocked-by'));
-  });
+  test('#18: an empty blockedBy array still clears, and is not read as a null', () => {
+    // `blocked-by` is cleared with `[]` at this boundary, never with `null` —
+    // a `null` there is refused as a non-array before any clear test is
+    // reached. The two questions used to need a whole derived constant to keep
+    // apart; the list/single distinction is all that is left of it.
+    const cleared = run(['splice', '--edges', '{"blockedBy":[]}'], FULL_BODY);
+    assert.equal(cleared.code, EXIT.ok, cleared.stderr.join('\n'));
+    assert.ok(!cleared.stdout.includes('blocked-by'), cleared.stdout);
 
-  test('CONTROL: a null on the one clearable key still clears', () => {
-    const result = run(['splice', '--edges', '{"serializeWith":null}'], FULL_BODY);
-    assert.equal(result.code, EXIT.ok);
-    assert.ok(!result.stdout.includes('serialize-with'), result.stdout);
+    const nulled = run(['splice', '--edges', '{"blockedBy":null}'], FULL_BODY);
+    assert.equal(nulled.code, EXIT.usage, nulled.stderr.join('\n'));
+    assert.ok(nulled.stderr.join('\n').includes('array'), nulled.stderr.join('\n'));
   });
 
   test('CONTROL: an ordinary write through a recognised key still lands', () => {

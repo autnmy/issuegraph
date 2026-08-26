@@ -122,17 +122,21 @@ The writer's capabilities differ per field, and the CLI refuses what it cannot p
 |---|---|---|
 | `blocked-by` | yes | yes — `--no-blocked-by` |
 | `serialize-with` | yes | yes — `--no-serialize-with` |
-| `decomposed-from` | yes | **no** |
-| `duplicate-of` | yes | **no** |
+| `decomposed-from` | yes | yes — `--no-decomposed-from` |
+| `duplicate-of` | yes | yes — `--no-duplicate-of` |
 | `together-with` | **no** | no |
 | `priority` | **no** | no |
 | `evidence` | **no** | no |
 
-The last three reach a body that has **no block yet** (rendered) and cannot be amended in one that has: the specification makes a tracker's own convention canonical for them and the frontmatter field a mirror.
+The last three reach a body that has **no block yet** (rendered) and cannot be amended in one that has: the specification makes a tracker's own convention canonical for them and the frontmatter field a mirror. There is no `--no-` form for them because there is nothing for it to remove.
 
-The middle two can be written but not removed: the writer reads an empty value there as *leave untouched*, deliberately, because they carry provenance and a dedupe verdict rather than scheduling state — a machine refreshing its owned edges must not erase them by omission.
+The four edges the splice owns can each be written *and* removed. That is new in `0.3.0`: before it, `decomposed-from` and `duplicate-of` could be written but not cleared, because the writer read an empty value there as *leave untouched* — deliberately, so a machine refreshing its own edges could not erase provenance by omission, and at the cost of no way to retract a dedupe verdict at all. The writer gave removal its own spelling, so omission still means *not mine* and both `--no-` flags exist now.
 
-So there is **no `--no-decomposed-from` or `--no-duplicate-of`**, an `--edges` payload containing `null` for either is refused, and an **unrecognised `--edges` key is refused too** rather than ignored. The refusal lives on the operation, so it holds for `setFields` and `spliceEdges` alike when you call them as a library — omitting a key is how you say *leave it alone*, and it is the only way.
+**Omitting a key is still the only way to say *leave it alone*.** A key you name is a key this command will write or remove.
+
+An **unrecognised `--edges` key is refused** rather than ignored. That refusal lives on the operation, so it holds for `setFields` and `spliceEdges` alike when you call them as a library.
+
+**`--edges` takes the same flat shape it always did**, and the wrapping happens inside. `{"duplicateOf": "#5"}` writes, `{"duplicateOf": null}` clears, `{"blockedBy": []}` clears. Only the last of those changed meaning in `0.3.0`, and only from a refusal — no invocation that used to succeed behaves differently.
 
 The `order` document must also name each issue **once**: two entries for one key are refused rather than deduplicated, because the derivation keeps the first and this package restating that rule is how the two drift. A write command that exits `0` having silently done nothing tells its caller a thing happened that did not, and automation cannot detect it — which is the same defect this package exists to refuse, one layer up.
 

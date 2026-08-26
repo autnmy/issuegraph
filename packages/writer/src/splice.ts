@@ -35,8 +35,6 @@
  */
 
 import {
-  FENCE_CLOSE,
-  FENCE_OPEN,
   locateBlock,
   locateSection,
   parseFrontmatter,
@@ -81,7 +79,7 @@ function settle(
   body: string,
   next: string,
   intent: 'edit' | 'remove',
-  edges: GeneratedEdges,
+  edges: EdgeSnapshot,
 ): SpliceResult {
   const after = parseFrontmatter(next);
   const before = parseFrontmatter(body);
@@ -156,15 +154,15 @@ function sameRef(a: IssueRef | null, b: IssueRef | null): boolean {
  * here even in principle. Line preservation protects those; this checks what
  * this call claims to have written.
  */
-function ownedFieldMismatch(edges: GeneratedEdges, after: Frontmatter | null): string | null {
+function ownedFieldMismatch(edges: EdgeSnapshot, after: Frontmatter | null): string | null {
   for (const key of SPLICE_OWNED_FIELDS) {
-    if (!owns(edges, key)) continue;
+    if (!edges.owned.has(key)) continue;
     const { property } = SPLICE_FIELD_OWNERSHIP[key];
     if (property === 'blockedBy') {
-      const wanted = edges.blockedBy ?? [];
+      const wanted = edges.blockedBy;
       // A NULL PARSE IS AN EMPTY DECLARATION HERE, not a failure: the
       // whole-block removal path legitimately ends with no block, and clearing
-      // `blocked-by` to `[]` is what asked for that.
+      // `blocked-by` is what asked for that.
       const got = after === null ? [] : after.blockedBy;
       const same =
         wanted.length === got.length && wanted.every((ref, i) => sameRef(ref, got[i] ?? null));
@@ -173,7 +171,11 @@ function ownedFieldMismatch(edges: GeneratedEdges, after: Frontmatter | null): s
       }
       continue;
     }
-    const wanted = edges[property] ?? null;
+    // A CLEAR IS VERIFIED LIKE ANY OTHER WRITE, which the previous shape could
+    // not express: a field whose only empty spelling meant *leave alone* had no
+    // removal for this to check. The snapshot records a clear as `null`, so
+    // "asked for none, the result reads #7" is a reportable failure now.
+    const wanted = edges[property];
     const got = after === null ? null : after[property];
     if (!sameRef(wanted, got)) {
       return `${key} did not land: asked for ${wanted === null ? 'none' : renderRef(wanted)}, the result reads ${got === null ? 'none' : renderRef(got)}`;
@@ -183,33 +185,85 @@ function ownedFieldMismatch(edges: GeneratedEdges, after: Frontmatter | null): s
 }
 
 /**
- * The generated edge fields a writer owns for one splice call.
+ * How one owned field is written: a value to put there, or a request to REMOVE
+ * what is there. Absence — the property not appearing on {@link GeneratedEdges}
+ * at all — is the third state, and still means *leave it byte-untouched*.
  *
- * OWNERSHIP IS PER-FIELD AND OPT-IN: a field the input omits is left
- * byte-untouched, because not every writer owns every edge — a groomer owns
- * `duplicate-of` on an issue whose scheduling edges belong to other writers —
- * and round-tripping parsed values back through a splice would silently launder
- * away unparseable items and exotic spellings the parser tolerates with a
- * diagnostic.
+ * WHY A WRAPPER RATHER THAN A BARE VALUE. The bare form spent `null` on two
+ * incompatible jobs one field apart. For `serialize-with` a present `null`
+ * REMOVED the entry; for `decomposed-from` and `duplicate-of` it meant *leave
+ * it alone*, because the established caller shape for provenance is "write it
+ * when the block lacks one, never clobber one that is already there" and such a
+ * caller passes `null` precisely to say so:
  *
- * WHAT AN EXPLICIT EMPTY VALUE MEANS IS NOT UNIFORM, and the asymmetry is
- * deliberate. `blockedBy` and `serializeWith` are SCHEDULING edges, so a present
- * `[]` or `null` is an owned REMOVAL. `decomposedFrom` and `duplicateOf` are
- * PROVENANCE and VERDICT, where the established caller shape is "write it when
- * the block lacks one, never clobber one that is already there" — it passes
- * `null` precisely to mean *leave it alone*, so spending `null` on removal
- * instead would delete provenance on every refresh of a block that has it.
- * There is consequently no way to CLEAR those two through this call; that gap
- * is real and is tracked rather than closed by overloading a value that already
- * has a caller.
+ * ```ts
+ * decomposedFrom: parsed.decomposedFrom === null ? decomposedFrom : null,
+ * ```
  *
- * WHICH FIELD IS WHICH IS {@link SPLICE_FIELD_OWNERSHIP}, NOT THIS PARAGRAPH.
- * The rule above is the RATIONALE; the table is the answer, it is exported, and
- * {@link owns} derives from it — so a consumer asks rather than reading prose,
- * and prose cannot drift away from behaviour. Restating the per-field mechanics
- * here is what made four separate copies of this rule; the notes below name
- * each field's ROLE and defer the mechanics to the table.
+ * Reading that `null` as a removal would delete provenance on every refresh of
+ * a block that has it — a silent data loss on the path the call exists to
+ * serve. So `null` was taken, and those two fields had NO WAY TO CLEAR at all,
+ * which is what [#18](https://github.com/autnmy/issuegraph/issues/18) reports.
+ * Absent / `{ set }` / `{ clear }` are three spellings for three meanings, so
+ * nothing is overloaded and all four fields read the same.
+ *
+ * TWO REJECTED ALTERNATIVES, because the next reader will think of both. A
+ * DISTINCT SENTINEL (a `CLEAR` symbol, so `null` keeps its meaning) is cheaper
+ * and leaves THREE spellings of one concept — `[]`, `null`, `CLEAR` — which is
+ * the restatement problem this package has already paid for four times; a
+ * symbol also cannot cross a JSON boundary, so `@issuegraph/cli` would need a
+ * fourth. A SEPARATE `clearGeneratedEdges` VERB reads well and forces a caller
+ * that sets one edge while clearing another into TWO calls with two independent
+ * results, where the second can fail after the first already changed the body —
+ * the half-written block this module's contract says it makes impossible.
+ *
+ * `clear?: never` / `set?: never` ON THE OPPOSITE ARM IS LOAD-BEARING. Excess
+ * property checking fires only on a FRESH object literal — the same rule that
+ * makes the `satisfies` POSITION matter for {@link SPLICE_FIELD_OWNERSHIP} — so
+ * without them `{ set: ref, clear: true }` compiles clean the moment it arrives
+ * through a variable. It is checked at runtime as well, because a published
+ * package's type annotation is a promise to TypeScript callers and nothing at
+ * all to JavaScript ones.
  */
+export type EdgeWrite<T> =
+  | { readonly set: T; readonly clear?: never }
+  | { readonly clear: true; readonly set?: never };
+
+/**
+ * ONE CALL'S EDGES, READ EXACTLY ONCE.
+ *
+ * WHY A SNAPSHOT RATHER THAN READING `edges` WHERE IT IS NEEDED. The input is a
+ * caller's object, and reading a property off it is a CALL, not a lookup: a
+ * getter can answer differently every time. The shape this replaces read each
+ * owned property THREE times — once to validate it, once to build the inserted
+ * lines, once to verify the result — and a value that changed between those
+ * reads made all three disagree.
+ *
+ * Measured on a stateful getter returning a ref and then `null`: the guard
+ * accepted a SET, the builder wrote a CLEAR, `ownedFieldMismatch` asked for
+ * `null`, found `null`, and agreed — and the call returned `spliced`. The
+ * caller was told its write succeeded while the entry it asked to SET had been
+ * removed. No refusal, no crash, a persisted wrong body. Found independently by
+ * two reviewers on different models, which is the corroboration that made it
+ * worth fixing structurally rather than patching the one read that showed it.
+ *
+ * THE REPAIR IS NOT A FOURTH CHECK. Every owned property is read ONCE, here,
+ * and ownership, insertion and verification all read this — so a value that
+ * changes afterwards cannot be seen to change. Same move
+ * {@link ownedFieldMismatch} records for its own class: one mechanical
+ * guarantee rather than one fix per shape.
+ *
+ * `blockedBy` is always an array. A clear and an unnamed field both flatten to
+ * `[]`, because a list with no entries renders no lines either way.
+ */
+interface EdgeSnapshot {
+  /** The fields this call owns — the ones it named at all. */
+  readonly owned: ReadonlySet<SpliceOwnedField>;
+  readonly blockedBy: readonly IssueRef[];
+  readonly serializeWith: IssueRef | null;
+  readonly decomposedFrom: IssueRef | null;
+  readonly duplicateOf: IssueRef | null;
+}
 /**
  * What one splice call did — a distinguished result, because `string | null`
  * made a caller guess between outcomes that need OPPOSITE repairs.
@@ -257,15 +311,36 @@ export type SpliceResult =
       readonly detail: string;
     };
 
+/**
+ * The generated edge fields a writer owns for one splice call.
+ *
+ * OWNERSHIP IS PER-FIELD AND OPT-IN: a field the input omits is left
+ * byte-untouched, because not every writer owns every edge — a groomer owns
+ * `duplicate-of` on an issue whose scheduling edges belong to other writers —
+ * and round-tripping parsed values back through a splice would silently launder
+ * away unparseable items and exotic spellings the parser tolerates with a
+ * diagnostic.
+ *
+ * ALL FOUR FIELDS BEHAVE IDENTICALLY, which they did not before #18: absent
+ * leaves the entry alone, `{ set }` replaces or inserts, `{ clear: true }`
+ * removes. {@link EdgeWrite} carries why the uniform shape replaced a bare
+ * value, and which two alternatives were rejected.
+ *
+ * THE PER-FIELD NOTES BELOW NAME EACH FIELD'S ROLE AND NOTHING ELSE. They used
+ * to state each field's clear MECHANICS too, which made them one of the four
+ * copies of a rule that {@link SPLICE_FIELD_OWNERSHIP} owns — and copies of
+ * that particular rule produced four of the eleven findings in #26. The role is
+ * what a caller cannot derive from the table; the mechanics are what it can.
+ */
 export interface GeneratedEdges {
-  /** A SCHEDULING edge. Clearable — see {@link SPLICE_FIELD_OWNERSHIP}. */
-  readonly blockedBy?: readonly IssueRef[];
-  /** A SCHEDULING edge. Clearable — see {@link SPLICE_FIELD_OWNERSHIP}. */
-  readonly serializeWith?: IssueRef | null;
-  /** PROVENANCE. Not clearable — see {@link SPLICE_FIELD_OWNERSHIP}. */
-  readonly decomposedFrom?: IssueRef | null;
-  /** A dedupe VERDICT (§4.3.3, §5.1). Not clearable — see {@link SPLICE_FIELD_OWNERSHIP}. */
-  readonly duplicateOf?: IssueRef | null;
+  /** A SCHEDULING edge. */
+  readonly blockedBy?: EdgeWrite<readonly IssueRef[]>;
+  /** A SCHEDULING edge. */
+  readonly serializeWith?: EdgeWrite<IssueRef>;
+  /** PROVENANCE: which issue this one was split out of (§5.2). */
+  readonly decomposedFrom?: EdgeWrite<IssueRef>;
+  /** A dedupe VERDICT (§4.3.3, §5.1). */
+  readonly duplicateOf?: EdgeWrite<IssueRef>;
 }
 
 /**
@@ -286,21 +361,20 @@ export const SPLICE_OWNED_FIELDS = Object.freeze([
 /** An edge field {@link spliceGeneratedEdges} can own. */
 export type SpliceOwnedField = (typeof SPLICE_OWNED_FIELDS)[number];
 
-/** What this splice can do with one owned field. */
+/**
+ * What this splice can do with one owned field.
+ *
+ * IT USED TO CARRY A `clearable` FLAG, and #18 DELETED it rather than setting
+ * it `true` on every row. The flag answered "does an explicit empty value
+ * remove this entry" — a question {@link EdgeWrite} abolished, because
+ * `{ clear: true }` removes every field and no field has an overloaded empty
+ * value left. A uniformly-`true` flag would have kept four consumers reading a
+ * constant, and would have left `@issuegraph/cli`'s whole clear-refusal path
+ * alive with nothing to refuse.
+ */
 export interface SpliceFieldOwnership {
   /** The {@link GeneratedEdges} property that carries this field's value. */
   readonly property: keyof GeneratedEdges;
-  /**
-   * Whether an explicit empty value (`[]` for a list, `null` for a single)
-   * REMOVES the entry. When `false`, an empty value means *leave untouched* and
-   * there is no way to clear the field through this call.
-   *
-   * IT IS ALSO THE OWNERSHIP PREDICATE, which is why one flag carries both
-   * facts rather than two that could disagree: a clearable field is owned when
-   * its property is present at all, and a non-clearable one only when that
-   * property is non-null — because for the latter, `null` is already spoken for.
-   */
-  readonly clearable: boolean;
 }
 
 /**
@@ -327,10 +401,10 @@ export interface SpliceFieldOwnership {
  * two-directional is worse than none, because the comment above would be false.
  */
 export const SPLICE_FIELD_OWNERSHIP = Object.freeze({
-  'blocked-by': Object.freeze({ property: 'blockedBy', clearable: true }),
-  'serialize-with': Object.freeze({ property: 'serializeWith', clearable: true }),
-  'decomposed-from': Object.freeze({ property: 'decomposedFrom', clearable: false }),
-  'duplicate-of': Object.freeze({ property: 'duplicateOf', clearable: false }),
+  'blocked-by': Object.freeze({ property: 'blockedBy' }),
+  'serialize-with': Object.freeze({ property: 'serializeWith' }),
+  'decomposed-from': Object.freeze({ property: 'decomposedFrom' }),
+  'duplicate-of': Object.freeze({ property: 'duplicateOf' }),
 } satisfies Readonly<Record<SpliceOwnedField, SpliceFieldOwnership>>);
 
 const SPLICE_OWNED_FIELD_SET: ReadonlySet<string> = new Set<string>(SPLICE_OWNED_FIELDS);
@@ -351,9 +425,23 @@ export function isSpliceOwnedField(value: unknown): value is SpliceOwnedField {
  * Whether this call owns the named field.
  *
  * DERIVED FROM {@link SPLICE_FIELD_OWNERSHIP}, not a switch restating it — see
- * that table's note. `clearable` selects the predicate, for the reason
- * {@link SpliceFieldOwnership.clearable} gives.
+ * that table's note.
+ *
+ * ONE PREDICATE FOR ALL FOUR FIELDS. It used to branch on `clearable`, because
+ * a non-clearable field could only be owned when its property was non-`null` —
+ * `null` there meant *leave alone*, so treating presence as ownership would
+ * have deleted the entry. {@link EdgeWrite} removed the overload, so presence
+ * is the whole question and the branch is gone with the flag.
+ *
+ * IT ASKS THE SNAPSHOT, NOT THE CALLER'S OBJECT. Ownership used to be decided
+ * by re-reading `edges[property]`, which is a getter call on a value the caller
+ * controls — so a field could be owned when the walk asked and unowned when the
+ * verifier did. {@link EdgeSnapshot} settles it once.
  */
+function owns(edges: EdgeSnapshot, key: string): boolean {
+  return isSpliceOwnedField(key) && edges.owned.has(key);
+}
+
 /** The parser's empty form, for an uneditable block whose YAML did not parse. */
 const EMPTY_FRONTMATTER: Frontmatter = Object.freeze({
   blockedBy: [],
@@ -365,17 +453,11 @@ const EMPTY_FRONTMATTER: Frontmatter = Object.freeze({
   evidence: null,
 });
 
-function owns(edges: GeneratedEdges, key: string): boolean {
-  if (!isSpliceOwnedField(key)) return false;
-  const { property, clearable } = SPLICE_FIELD_OWNERSHIP[key];
-  return clearable ? edges[property] !== undefined : edges[property] != null;
-}
-
 /**
- * Splice the owned generated edges into the canonical block, returning the new
- * body — or `null` when `body` carries no closed keyed block this writer can
- * edit, in which case the caller prepends a fresh block instead (§4.1's
- * canonical position, `renderFrontmatter`'s output).
+ * Splice the owned generated edges into the canonical block, returning a
+ * {@link SpliceResult}. Only `no-block` licenses the caller's prepend fallback
+ * (§4.1's canonical position, `renderFrontmatter`'s output); the other two
+ * failure arms need the opposite repair, which is why they are distinguished.
  *
  * Inserted lines adopt the section's own child indent, so an author's two- or
  * four-space style survives, and the renderer's canonical ref spelling.
@@ -395,7 +477,275 @@ function owns(edges: GeneratedEdges, key: string): boolean {
  * need opposite repairs — prepending in the second case demotes the canonical
  * block and drops every field this call does not own. See {@link SpliceResult}.
  */
-export function spliceGeneratedEdges(body: string, edges: GeneratedEdges): SpliceResult {
+/**
+ * Name a value in a message, without becoming the failure being reported.
+ *
+ * `JSON.stringify` IS NOT AVAILABLE HERE. It throws on a bigint and on a cyclic
+ * structure, and this runs on an object a DIRECT caller supplied — so the
+ * obvious builder enters its rejection branch correctly and then escapes with a
+ * TypeError raised while describing the value, which is the very defect the
+ * rejection exists to report. `@issuegraph/cli` shipped exactly that and had to
+ * fix it one line inside its own guard; this is the same formatter, local
+ * because the dependency runs the other way (the CLI depends on this package).
+ *
+ * Nothing below reaches a `toString` a caller controls. `Object.keys` does not
+ * recurse, so a cycle is fine, and `String` is applied only to primitives whose
+ * conversion the VALUE cannot override.
+ *
+ * THE FUNCTION ARM IS NOT TIDINESS, it is the hole this formatter shipped with.
+ * A function is a reference type carrying its own `toString`, and `typeof` tags
+ * it `'function'` rather than `'object'` — so it fell past the object arm, past
+ * the string arm, and into `String(value)`. Measured: a function with a
+ * throwing `toString` made `assertEdgeWrites` escape with that function's own
+ * `Error` instead of the `TypeError` naming the field, which is EXACTLY the
+ * defect this formatter was written to prevent, reproduced one branch over.
+ *
+ * The test that was supposed to pin this used a plain arrow function, whose
+ * `toString` is perfectly safe, so it passed against the broken code. Raised in
+ * review; the test now carries a throwing one and keeps the plain one as a
+ * control.
+ *
+ * Global tampering with `Number.prototype.toString` is deliberately NOT in
+ * scope: a caller who does that has also broken `Object.keys`, and defending
+ * against it here would buy nothing.
+ */
+function describeValue(value: unknown): string {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'an array';
+  const type = typeof value;
+  if (type === 'function') return 'a function';
+  if (type === 'object') {
+    const keys = Object.keys(value as object);
+    return keys.length === 0 ? 'an object with no keys' : `an object with keys ${keys.join(', ')}`;
+  }
+  if (type === 'string') return `the string ${value as string}`;
+  return `${type} ${String(value)}`;
+}
+
+/** A refusal that names the field, the value, and what is wrong with it. */
+function refuseWrite(key: SpliceOwnedField, value: unknown, defect: string): TypeError {
+  return new TypeError(
+    `issuegraph splice: ${key} must be { set: … } or { clear: true }, got ${describeValue(value)} — ${defect}`,
+  );
+}
+
+/**
+ * Read one owned field's write, ONCE, and return what should end up in the
+ * block — the value for a set, `null` for a clear.
+ *
+ * EVERY PROPERTY IS READ INTO A LOCAL BEFORE ANYTHING IS DECIDED, and that is
+ * the point rather than a style: `record['set']` is a getter call on a caller's
+ * object, so testing it and then returning it are two different reads that can
+ * disagree. {@link EdgeSnapshot} explains what that cost.
+ *
+ * IT REFUSES `{ set: null }`, and this arm is the one that matters. `null` is
+ * the pre-#18 spelling, so the naive mechanical migration is to wrap it —
+ * `decomposedFrom: null` becomes `decomposedFrom: { set: null }` — and that
+ * shape used to pass every check and REMOVE the entry. Silently: the builder
+ * wrote nothing, the verifier asked for `null`, the parse returned `null`, and
+ * the call reported success. The exact provenance data loss #18 exists to
+ * prevent, arriving through the fix for it. Both a local reviewer and an
+ * independent cross-model pass found it, at full confidence.
+ *
+ * IT ALSO CHECKS THE PAYLOAD'S SHAPE, so a wrong one is named by its field
+ * rather than escaping from inside `renderRef`. `{ set: "#9" }` — a ref spelled
+ * as a string, which is a plausible thing to write — used to report `ref id
+ * undefined is not a valid tracker identifier`, naming neither the field nor
+ * what was actually wrong. Ref CONTENTS stay `renderRef`'s to judge; this only
+ * asks whether the payload is the right kind of thing.
+ */
+function readEdgeWrite(key: SpliceOwnedField, write: unknown): readonly IssueRef[] | IssueRef | null {
+  if (typeof write !== 'object' || write === null || Array.isArray(write)) {
+    // Phrased as the DEFECT, like the arms below — `got 42 — a write is an
+    // object` read as an assertion that it WAS one. Raised in review.
+    throw refuseWrite(key, write, 'it is not a plain object');
+  }
+  const record: Readonly<Record<string, unknown>> = write as Readonly<Record<string, unknown>>;
+  const set = record['set'];
+  const clear = record['clear'];
+  const setting = set !== undefined;
+  const clearing = clear !== undefined;
+
+  if (setting && clearing) throw refuseWrite(key, write, 'it names both, and they contradict each other');
+  if (!setting && !clearing) throw refuseWrite(key, write, 'it names neither');
+  if (clearing) {
+    if (clear !== true) throw refuseWrite(key, write, '`clear` is only ever `true`');
+    return null;
+  }
+  if (set === null) {
+    throw refuseWrite(key, write, '`set` carries no value — a removal is spelled `{ clear: true }`');
+  }
+  if (SPLICE_FIELD_OWNERSHIP[key].property === 'blockedBy') {
+    if (!Array.isArray(set)) throw refuseWrite(key, write, '`set` on a list field is an array of refs');
+    return set as readonly IssueRef[];
+  }
+  // `Array.isArray` as well as the `typeof` test: an array IS an object, so
+  // `{ set: [] }` on a single field slipped through the type check alone and
+  // reached `renderRef`, which reported `ref id undefined` — naming neither
+  // the field nor the actual mistake.
+  if (typeof set !== 'object' || Array.isArray(set)) {
+    throw refuseWrite(key, write, '`set` on a single field is a ref');
+  }
+  return set as IssueRef;
+}
+
+/**
+ * Refuse a malformed edge value BEFORE anything is read or written.
+ *
+ * WHY A THROW RATHER THAN A REFUSING RESULT. This module's package note states
+ * the discipline: a parser takes untrusted issue text and must never throw,
+ * while a writer takes its caller's own control-plane data, so a contract
+ * violation is a programmer error and throws before anything is written.
+ * `render.ts` already refuses a malformed ref the same way.
+ *
+ * WHY IT EXISTS AT ALL, given TypeScript rejects every old shape. The
+ * annotation is a promise to TypeScript callers and nothing at all to
+ * JavaScript ones, so the reachable population is a plain-JS caller still
+ * holding the pre-#18 spelling — and for that caller the one unacceptable
+ * outcome is having it read as a CLEAR, which is the exact silent data loss #18
+ * was filed to prevent, arriving through the fix for it. Measured on the two
+ * shapes that were silent rather than merely broken: `{ blockedBy: [ref] }`
+ * spliced clean and left `blocked-by: []` — every blocker the caller was trying
+ * to SET, removed — and `{ set, clear }` together took the clear. The remaining
+ * shapes surfaced as a `TypeError` from inside `renderRef` or a property read
+ * on `null`, naming neither the field nor the value.
+ *
+ * IT RUNS AHEAD OF `locateBlock`, so a call carrying one good field and one bad
+ * one cannot half-apply.
+ */
+function snapshotEdges(edges: GeneratedEdges): EdgeSnapshot {
+  const owned = new Set<SpliceOwnedField>();
+  const values: Record<string, readonly IssueRef[] | IssueRef | null> = {
+    blockedBy: [],
+    serializeWith: null,
+    decomposedFrom: null,
+    duplicateOf: null,
+  };
+
+  for (const key of SPLICE_OWNED_FIELDS) {
+    const { property } = SPLICE_FIELD_OWNERSHIP[key];
+    // ONE READ OF THE OUTER PROPERTY TOO, not just of `set`/`clear` inside it.
+    // `edges.duplicateOf` is itself a getter on a caller's object, so a
+    // snapshot that only froze the inner wrapper would leave the same hole one
+    // level up — validated as `{ set: ref }`, read again as `{ clear: true }`.
+    //
+    // Read through the ownership table and widened to `unknown` rather than
+    // casting `edges` to an index signature: the table is already the single
+    // source of which property carries which field, and a cast would let a
+    // property that is NOT in the table be read here without anything noticing.
+    const write: unknown = edges[property];
+    if (write === undefined) continue;
+    owned.add(key);
+    values[property] = readEdgeWrite(key, write);
+  }
+
+  return Object.freeze({
+    owned,
+    blockedBy: (values['blockedBy'] ?? []) as readonly IssueRef[],
+    serializeWith: values['serializeWith'] as IssueRef | null,
+    decomposedFrom: values['decomposedFrom'] as IssueRef | null,
+    duplicateOf: values['duplicateOf'] as IssueRef | null,
+  });
+}
+
+/**
+ * A line that could be a fence — EITHER delimiter, any length, any info string,
+ * up to three leading spaces.
+ *
+ * DELIBERATELY LOOSER THAN THE READER'S `FENCE_OPEN`, and that is the whole
+ * point. This is only ever used to ask *"is anything else in this body
+ * fence-shaped?"*, and the safe answer to that question errs toward YES. The
+ * reader's pattern accepts one alphanumeric token, so it reads
+ * ```` ```js title="x" ```` and every `~~~` fence as ordinary prose — and a
+ * count built on it under-reports, which is the direction that deletes.
+ */
+const FENCE_SHAPED = /^ {0,3}(?:`{3,}|~{3,})/;
+
+/**
+ * Are these two neighbours ONE armor pair — the shape a renderer emits?
+ *
+ * WHAT THIS DELIBERATELY IS NOT. It is not a CommonMark pairing rule, and the
+ * distinction is the whole reason it is safe. Three previous versions of the
+ * armor test tried to DECIDE Markdown structure from the lines themselves —
+ * parity of fence-shaped lines, then a fence-state walk, then a bare count —
+ * and each died to a construct it had not modelled. Deciding whether an
+ * arbitrary opener pairs with an arbitrary closer needs the delimiter char,
+ * the run lengths, the info string's legality and the closer's bareness, and
+ * review found a hole in every attempt at that.
+ *
+ * So this asks a question with no grammar in it: ARE THESE TWO LINES THE SAME
+ * BARE FENCE RUN? Byte identity plus bareness settles pairing by construction
+ * — same delimiter, equal length, no info string on either — with no rule to
+ * get wrong. And it is exactly what {@link renderFrontmatter} emits for
+ * `fenceWrapped`: `['```', block, '```']`, bare and identical on both sides.
+ * The entire population of armor this package writes satisfies it.
+ *
+ * MEASURED, on the shapes that reached here before it existed. Each has
+ * exactly two fence-shaped lines, so the count alone cleared them, and each
+ * deleted BOTH: `~~~` above with ``` below, ```` ```` ```` above with ``` below,
+ * and ```` ```yaml ```` above with ``` below. None is a legal CommonMark pair —
+ * a tilde fence closes only on tildes, a closer must be at least as long as
+ * its opener, and a closer may carry no info string — so in each case an
+ * unclosed fence ran to end of body and removing both lines restructured the
+ * document.
+ *
+ * THE TRADE IS THE SAME ONE, IN THE SAME DIRECTION. A hand-authored
+ * ```` ```yaml ```` / ``` pair IS legal CommonMark and is now retained rather
+ * than deleted: cosmetic residue. Deleting a line that was not armor
+ * restructures someone's issue body, in the package whose contract is byte
+ * preservation. This is the direction to be wrong in.
+ */
+function areOneArmorPair(above: string, below: string): boolean {
+  return above === below && /^ {0,3}(?:`{3,}|~{3,})[ \t]*$/.test(above);
+}
+
+/**
+ * Are these two neighbours the ONLY fence-shaped lines in the body?
+ *
+ * WHY THIS REPLACED A FENCE-STATE WALK, and why the walk is not coming back.
+ * Deciding whether a given fence line opens or closes means deciding Markdown
+ * block structure, and every version of that heuristic died to a construct it
+ * had not modelled. Round 1 counted fence-SHAPED lines and a four-backtick
+ * block containing a three-backtick line broke the parity. Round 2 tracked the
+ * opener's length per CommonMark, and the reader's `FENCE_OPEN` — which the
+ * walk used to decide what counted as a fence at all — turned out to reject an
+ * info string containing a space, so an earlier ```` ```js title="x" ```` block
+ * was skipped and the corruption came back. Measured on that shape: 4 fence
+ * lines in, 2 out. Behind it, unpatched: `~~~` fences, indented fences, fences
+ * inside list items, HTML blocks.
+ *
+ * That is an unbounded surface, and each patch added a claim that produced the
+ * next finding. So this stops deciding. It asks a question that HAS a
+ * definite answer without a grammar — *how many lines in this body could be a
+ * fence?* — and deletes the pair only when the answer is exactly these two, in
+ * which case they can only be each other's partner.
+ *
+ * THE TRADE IS DELIBERATE AND ASYMMETRIC. Retaining armor wrongly leaves an
+ * empty ``` ``` pair in the body: cosmetic. Deleting it wrongly merges two
+ * unrelated code blocks: structural corruption, in the package whose whole
+ * contract is byte preservation. So an armored block in a body that ALSO
+ * carries a code block now keeps its fences, and that is the correct direction
+ * to be wrong in.
+ */
+function fencesAreOnlyThePair(lines: readonly string[]): boolean {
+  let fences = 0;
+  for (const line of lines) {
+    if (FENCE_SHAPED.test(line.trimEnd())) {
+      fences += 1;
+      if (fences > 2) return false;
+    }
+  }
+  return fences === 2;
+}
+
+export function spliceGeneratedEdges(body: string, rawEdges: GeneratedEdges): SpliceResult {
+  // READ AND VALIDATE THE CALLER'S EDGES ONCE, BEFORE ANYTHING ELSE. Every site
+  // below reads `edges`, never `rawEdges` — see {@link EdgeSnapshot} for what a
+  // second read of a caller's property cost. This also runs ahead of
+  // `locateBlock`, so a malformed request is refused rather than answered
+  // `no-block`, and a call carrying one good field and one bad one cannot
+  // half-apply.
+  const edges = snapshotEdges(rawEdges);
   const located = locateBlock(body);
   if (located.lines === null) return { outcome: 'no-block' };
   const section = locateSection(located.lines);
@@ -452,14 +802,22 @@ export function spliceGeneratedEdges(body: string, edges: GeneratedEdges): Splic
   // the SPEC declaration order among the owned fields.
   const pad = ' '.repeat(section.childIndent);
   const itemPad = ' '.repeat(section.childIndent + 2);
+  // A CLEAR INSERTS NOTHING; the removal above is the whole edit. `written`
+  // reads both a clear and an unnamed field as "nothing goes here", so one
+  // emptiness test covers all three cases rather than one per field.
+  //
+  // `{ set: [] }` AND `{ clear: true }` PRODUCE THE SAME BYTES on `blockedBy`,
+  // deliberately. A list with no entries renders no lines, so the two are one
+  // outcome; refusing either would be a rule with no defect behind it. A test
+  // pins that they agree, so the equivalence cannot drift into a difference.
   const ins: string[] = [];
-  if (edges.blockedBy !== undefined && edges.blockedBy.length > 0) {
+  if (edges.blockedBy.length > 0) {
     ins.push(`${pad}blocked-by:`);
     for (const ref of edges.blockedBy) ins.push(`${itemPad}- ${renderRef(ref)}`);
   }
-  if (edges.decomposedFrom != null) ins.push(`${pad}decomposed-from: ${renderRef(edges.decomposedFrom)}`);
-  if (edges.duplicateOf != null) ins.push(`${pad}duplicate-of: ${renderRef(edges.duplicateOf)}`);
-  if (edges.serializeWith != null) ins.push(`${pad}serialize-with: ${renderRef(edges.serializeWith)}`);
+  if (edges.decomposedFrom !== null) ins.push(`${pad}decomposed-from: ${renderRef(edges.decomposedFrom)}`);
+  if (edges.duplicateOf !== null) ins.push(`${pad}duplicate-of: ${renderRef(edges.duplicateOf)}`);
+  if (edges.serializeWith !== null) ins.push(`${pad}serialize-with: ${renderRef(edges.serializeWith)}`);
 
   const insertAt = firstOwned ?? sectionHeader + 1;
 
@@ -486,7 +844,21 @@ export function spliceGeneratedEdges(body: string, edges: GeneratedEdges): Splic
       let to = blockEnd;
       const above = from > 0 ? (lines[from - 1] ?? '').trimEnd() : null;
       const below = to + 1 < lines.length ? (lines[to + 1] ?? '').trimEnd() : null;
-      if (above !== null && below !== null && FENCE_OPEN.test(above) && FENCE_CLOSE.test(below)) {
+      // BOTH TESTS, AND NEITHER SUBSUMES THE OTHER — they rule out different
+      // ways of being wrong, so dropping either reopens a measured defect.
+      // `fencesAreOnlyThePair` rules out the neighbours belonging to OTHER
+      // blocks: with a third fence anywhere in the body, `above` can be the
+      // CLOSER of an earlier code block and `below` the OPENER of the next, and
+      // deleting them merges two unrelated blocks. `areOneArmorPair` rules out
+      // the neighbours not pairing with EACH OTHER: two fence-shaped lines that
+      // cannot close one another (`~~~` above, ``` below) still count as
+      // exactly two. See each function's note.
+      if (
+        above !== null &&
+        below !== null &&
+        areOneArmorPair(above, below) &&
+        fencesAreOnlyThePair(lines)
+      ) {
         from -= 1;
         to += 1;
       }

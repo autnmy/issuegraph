@@ -56,9 +56,10 @@ A tracker's issue body is a document a human edits. If you own the scheduling ed
 import { renderFrontmatter, spliceGeneratedEdges } from '@issuegraph/writer';
 
 const edges = {
-  blockedBy: [{ repo: null, id: '231' }],
-  serializeWith: null,          // scheduling edge, present: remove it
-  // duplicateOf omitted        // absent: not mine, do not touch
+  blockedBy: { set: [{ repo: null, id: '231' }] },
+  serializeWith: { clear: true },   // remove the entry
+  duplicateOf: { clear: true },     // retract a dedupe verdict — same spelling
+  // decomposedFrom omitted         // absent: not mine, do not touch
 };
 
 const result = spliceGeneratedEdges(issue.body, edges);
@@ -68,7 +69,14 @@ switch (result.outcome) {
     return result.body;
   case 'no-block':
     // Nothing readable to edit — prepend a fresh block. Lossless, and ONLY here.
-    return renderFrontmatter(edges) + '\n\n' + issue.body;
+    //
+    // `renderFrontmatter` takes a DIFFERENT input: flat values, and it also
+    // accepts the render-only fields (`priority`, `evidence`, `together-with`)
+    // that `GeneratedEdges` has no concept of. So state what the fresh block
+    // should contain rather than reusing the splice's edges — a clear has
+    // nothing to render, and passing the wrapper through reaches `renderRef`
+    // as a ref and throws.
+    return renderFrontmatter({ blockedBy: [{ repo: null, id: '231' }] }) + '\n\n' + issue.body;
   case 'uneditable-block':
   case 'not-written':
     // `result.data` is the block's parsed value. Re-render it plus your own
@@ -76,6 +84,8 @@ switch (result.outcome) {
     return null;
 }
 ```
+
+**The two inputs are deliberately different shapes.** `spliceGeneratedEdges` edits four fields in a block somebody else wrote, so it needs to say *clear this one* and *leave that one alone*. `renderFrontmatter` writes a whole block from nothing, where "clear" has no meaning and there is no existing entry to leave alone — so it takes the values directly, and takes the three render-only fields as well. Reusing one object for both reads as a convenience and is a category error.
 
 **Four outcomes, because two of them need opposite repairs.**
 
@@ -94,16 +104,46 @@ switch (result.outcome) {
 
 **Ownership is per field and opt-in.** A field you *omit* is left byte-untouched. That distinction is load-bearing — round-tripping parsed values back through a splice would silently launder away unparseable items and exotic spellings the parser tolerates with a diagnostic, so omission is the honest "not mine" signal.
 
-**What a present `null` means is not uniform**, and the asymmetry is deliberate:
+**All four fields are written the same way.** Three states, three spellings, nothing overloaded:
 
-| field | omitted | present |
-|---|---|---|
-| `blockedBy` | untouched | replaced; `[]` removes |
-| `serializeWith` | untouched | replaced; `null` removes |
-| `decomposedFrom` | untouched | a ref replaces or inserts; **`null` also leaves it untouched** |
-| `duplicateOf` | untouched | a ref replaces or inserts; **`null` also leaves it untouched** |
+| value | meaning |
+|---|---|
+| *omitted* | leave the entry byte-untouched — the only way to say *not mine* |
+| `{ set: value }` | replace the entry, or insert one if the block lacks it |
+| `{ clear: true }` | remove the entry |
 
-The bottom two are provenance and a verdict, where the established caller shape is *write it when the block lacks one, never clobber one that is already there* — such a caller passes `null` precisely to mean **leave it alone**, so spending `null` on removal would delete provenance on every refresh of a block that has it. The cost is real and stated rather than hidden: **there is currently no way to clear `decomposed-from` or `duplicate-of` through this call.**
+`{ set: [] }` on `blockedBy` is the same edit as `{ clear: true }` — a list with no entries renders no lines — and a test pins that they agree.
+
+**A malformed value throws**, before anything is read or written. `decomposedFrom: null`, `{ set: null }`, a bare ref, a bare array, `{ clear: false }`, and `{ set, clear }` together are all programmer errors, and this package throws on those rather than guessing, exactly as it does for a malformed ref. A caller that half-applies is worse than one that stops.
+
+**The one mistake it cannot catch is a well-formed `{ clear: true }` you did not mean.** That is the migration hazard below, and it is the only way to lose data through this call.
+
+### Migrating from `0.2.x`: omit the key, do not translate the `null`
+
+Before `0.3.0`, `null` did two incompatible jobs one field apart. For `serializeWith` it **removed** the entry; for `decomposedFrom` and `duplicateOf` it meant **leave it alone**, because the established caller shape for provenance is *write it when the block lacks one, never clobber one that is already there*:
+
+```ts
+decomposedFrom: parsed.decomposedFrom === null ? ref : null,   // 0.2.x
+```
+
+That trailing `null` meant *leave it alone*, so **its replacement is absence** — not `{ clear: true }`:
+
+```ts
+...(parsed.decomposedFrom === null ? { decomposedFrom: { set: ref } } : {}),   // 0.3.0
+```
+
+A mechanical rewrite to `{ clear: true }` deletes provenance on every refresh of a block that has it — the exact data loss this release exists to make impossible. It is well-typed and the runtime guard cannot detect it, because a caller asking to clear and a caller who meant to leave the field alone send identical bytes. This is the one migration step to do by reading rather than by search-and-replace.
+
+Everything else is mechanical: a ref becomes `{ set: ref }`, an array becomes `{ set: [...] }`, and a `serializeWith: null` that really did mean remove becomes `{ clear: true }`. TypeScript rejects every old spelling at the call site; JavaScript callers get a throw.
+
+<details>
+<summary>Why the gap existed before 0.3.0</summary>
+
+`null` being taken is why `decomposed-from` and `duplicate-of` could be set and replaced but **never cleared**. A groomer that decided an issue was not a duplicate after all had to re-render the whole block — the lossy path this call exists to avoid, which discards extension fields, comments, and sibling top-level keys.
+
+Two alternatives were rejected. A **distinct sentinel** (a `CLEAR` symbol, so `null` keeps its meaning) leaves three spellings of one concept — `[]`, `null`, `CLEAR` — and cannot cross a JSON boundary, so `@issuegraph/cli` would need a fourth. A **separate `clearGeneratedEdges` verb** forces a caller that sets one edge while clearing another into two calls with two independent results, where the second can fail after the first already moved the body.
+
+</details>
 
 It answers `no-block` rather than guessing whenever the block is one a parser would refuse — an inline value on the key, a child that is not a mapping entry. A body that comes back `spliced` and parses to nothing is the one failure a writer must never produce, which is why `spliced` is verified on both questions: that the result still reads, **and** that every field the call owns is what the call asked for.
 

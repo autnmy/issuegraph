@@ -24,11 +24,14 @@
  *   `priority` and `evidence` reach a body with NO block (via render) and cannot
  *   be amended in one that has. The specification makes a tracker's own
  *   convention canonical for those, and the frontmatter field a mirror.
- * - Of the four edges it does own, only `blocked-by` and `serialize-with` can be
- *   REMOVED. For `decomposed-from` and `duplicate-of` the writer reads an empty
- *   value as "leave untouched" — deliberately, since they carry provenance and a
- *   dedupe verdict rather than scheduling state, and a machine refreshing its
- *   owned edges must not erase them by omission.
+ * - All four edges it owns can be REMOVED as well as written, since
+ *   [#18](https://github.com/autnmy/issuegraph/issues/18). They could not
+ *   before: the writer read an empty value on `decomposed-from` and
+ *   `duplicate-of` as "leave untouched", deliberately, so a machine refreshing
+ *   its owned edges could not erase provenance by omission — which also left no
+ *   way to retract a dedupe verdict at all. The writer's `EdgeWrite` gives
+ *   removal its own spelling, so omission still means "not mine" and
+ *   `--no-<field>` now exists for every owned edge.
  *
  * BOTH ARE REFUSED WITH THE REASON, never silently dropped. A write command that
  * exits 0 having changed nothing is the same defect this package exists to
@@ -43,13 +46,7 @@ import type { Evidence } from '@issuegraph/core';
 
 import { classifyDeclaration, unreadErrorLines } from '../declaration.ts';
 import type { Declaration } from '../declaration.ts';
-import {
-  EDGE_JSON_KEYS,
-  RENDER_ONLY,
-  clearRefusalReason,
-  unperformableClear,
-  writeRequestRefusal,
-} from '../fields.ts';
+import { EDGE_JSON_KEYS, RENDER_ONLY, edgeWrite, writeRequestRefusal } from '../fields.ts';
 import type { AssertTrue, SameKeys, WriteRefusal } from '../fields.ts';
 import { EXIT } from '../exit.ts';
 import type { VerbResult } from '../exit.ts';
@@ -58,9 +55,10 @@ import type { VerbResult } from '../exit.ts';
  * The fields `set` accepts.
  *
  * Absent means "leave alone". A `null` (or `[]` for the list) is a CLEAR
- * REQUEST — and a clear is only performable for the fields `fields.ts` lists as
- * clearable. Asking to clear any of the others in a body that already has a
- * block is refused rather than accepted and dropped; see the module note.
+ * REQUEST, and since #18 a clear is performable for every field the splice
+ * owns. This surface stays FLAT while the writer's is wrapped: a flag surface
+ * distinguishes absent from `null` on its own, so `null` carries one meaning
+ * here. `fields.ts`'s `edgeWrite` is the single translation.
  */
 export interface SetFields {
   readonly blockedBy?: readonly IssueRef[];
@@ -108,11 +106,16 @@ function renderOnlyRequested(fields: SetFields): readonly string[] {
 }
 
 function toGeneratedEdges(fields: SetFields): GeneratedEdges {
+  // Absent stays absent — that is still the only way to say "not mine" — and a
+  // present value becomes the writer's wrapped spelling through the one shared
+  // translator. Spreading conditionally rather than assigning `undefined` is
+  // load-bearing under `exactOptionalPropertyTypes`, and is also what keeps
+  // "the caller did not name this field" distinguishable downstream.
   return {
-    ...(fields.blockedBy === undefined ? {} : { blockedBy: fields.blockedBy }),
-    ...(fields.serializeWith === undefined ? {} : { serializeWith: fields.serializeWith }),
-    ...(fields.decomposedFrom === undefined ? {} : { decomposedFrom: fields.decomposedFrom }),
-    ...(fields.duplicateOf === undefined ? {} : { duplicateOf: fields.duplicateOf }),
+    ...(fields.blockedBy === undefined ? {} : { blockedBy: edgeWrite(fields.blockedBy) }),
+    ...(fields.serializeWith === undefined ? {} : { serializeWith: edgeWrite(fields.serializeWith) }),
+    ...(fields.decomposedFrom === undefined ? {} : { decomposedFrom: edgeWrite(fields.decomposedFrom) }),
+    ...(fields.duplicateOf === undefined ? {} : { duplicateOf: edgeWrite(fields.duplicateOf) }),
   };
 }
 
@@ -131,23 +134,20 @@ function refuse(refusal: WriteRefusal): VerbResult {
       code: EXIT.usage,
     };
   }
-  if (refusal.kind === 'unsupported-key') {
-    // `usage`, matching what `--edges` already reports for an unrecognised key
-    // at the process boundary: the request is malformed, not a performable
-    // request the writer declines.
-    return {
-      stdout: '',
-      stderr: [
-        `issuegraph: ${JSON.stringify(refusal.key)} is not a field this write can set. ` +
-          `Allowed: ${refusal.allowed.join(', ')}`,
-      ],
-      code: EXIT.usage,
-    };
-  }
+  // `unsupported-key`. `usage`, matching what `--edges` already reports for an
+  // unrecognised key at the process boundary: the request is malformed, not a
+  // performable request the writer declines.
+  //
+  // A THIRD ARM USED TO FOLLOW, for a clear the writer could not perform. #18
+  // made every owned field clearable, so `WriteRefusal` lost that kind and this
+  // function lost the branch — see `fields.ts`.
   return {
     stdout: '',
-    stderr: [`issuegraph: refusing to write — ${clearRefusalReason(refusal.field)}`],
-    code: EXIT.refusedWrite,
+    stderr: [
+      `issuegraph: ${JSON.stringify(refusal.key)} is not a field this write can set. ` +
+        `Allowed: ${refusal.allowed.join(', ')}`,
+    ],
+    code: EXIT.usage,
   };
 }
 
@@ -177,7 +177,7 @@ function refuse(refusal: WriteRefusal): VerbResult {
  */
 function performWrite(
   body: string,
-  request: { readonly decomposedFrom?: unknown; readonly duplicateOf?: unknown },
+  request: object,
   allowed: readonly string[],
   perform: (declaration: Declaration) => VerbResult,
 ): VerbResult {
@@ -220,25 +220,13 @@ export function setFields(body: string, fields: SetFields): VerbResult {
     }
 
     if (decl.state === 'read') {
-      // A CLEAR THE WRITER CANNOT PERFORM IS REFUSED HERE, not only in the flag
-      // table. The flags are one caller; this package is importable, so a program
-      // holding `SetFields` reaches the same assignment, and refusing only at the
-      // command line would leave the silent no-op available through the library.
-      //
-      // IT ASKS `unperformableClear` rather than listing the two fields again.
-      // The list that used to sit here was a fourth copy of a rule the writer now
-      // exports, and `fields.ts` already says why there must be exactly one
-      // implementation: each previous fix added the check at the one site that
-      // lacked it, which is why the next round found the next site.
-      const unclearable = unperformableClear(fields);
-      if (unclearable !== null) {
-        return {
-          stdout: '',
-          stderr: [`issuegraph: refusing to write — ${clearRefusalReason(unclearable)}`],
-          code: EXIT.refusedWrite,
-        };
-      }
-
+      // A CLEAR-REFUSAL USED TO OPEN THIS BRANCH, for the two fields the writer
+      // could set but not remove. #18 made every owned field clearable, so it is
+      // gone — and with it the last of the four sites that each learned the same
+      // rule separately. The render-only refusal below is a DIFFERENT limit and
+      // stays: those three fields reach a body with no block yet and cannot be
+      // amended in one that has, because the specification makes a tracker's own
+      // convention canonical for them.
       const renderOnly = renderOnlyRequested(fields);
       if (renderOnly.length > 0) {
         return {

@@ -35,12 +35,17 @@ export type { RenderInput, RenderOptions } from './render.ts';
 
 /**
  * The splice's OWNERSHIP DOMAIN is exported alongside the call it governs: which
- * fields {@link spliceGeneratedEdges} can own, and which of those an explicit
- * empty value clears. A consumer that validates a write request before making
- * one needs both answers, and reading them out of a doc comment is how four
- * separate restatements of this rule came to exist. {@link owns} inside the
- * package derives from the same table, so asking it and behaving are the same
- * thing rather than two things that agree today.
+ * fields {@link spliceGeneratedEdges} can own, and — through {@link EdgeWrite} —
+ * the one shape all four of them are written and cleared with. A consumer that
+ * validates a write request before making one needs both answers, and reading
+ * them out of a doc comment is how four separate restatements of this rule came
+ * to exist. {@link owns} inside the package derives from the same table, so
+ * asking it and behaving are the same thing rather than two things that agree
+ * today.
+ *
+ * The table no longer carries a `clearable` flag: #18 made every owned field
+ * clearable through `{ clear: true }`, so the question the flag answered — does
+ * an explicit empty value remove this — has no cases left.
  */
 export {
   isSpliceOwnedField,
@@ -49,6 +54,7 @@ export {
   spliceGeneratedEdges,
 } from './splice.ts';
 export type {
+  EdgeWrite,
   GeneratedEdges,
   SpliceFieldOwnership,
   SpliceOwnedField,
