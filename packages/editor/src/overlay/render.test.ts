@@ -441,14 +441,44 @@ describe('a conflict holds both versions and merges neither', () => {
     assert.equal(originals.length + versions.length, 2, 'the reader sees something other than a pair');
   });
 
-  it('offsets the companion clear of the version it sits beside', () => {
-    const { scene } = attachEdgeOverlays(sceneOf(), [projected('conflict')]);
-    const companion = walk(scene.root).find((spec) =>
-      classesOf(spec).includes('ig-overlay-version'),
-    );
-    const original = walk(scene.root).find((spec) => classesOf(spec).includes('ig-edge'));
-    assert.notEqual(companion?.attrs?.['transform'], original?.attrs?.['transform']);
-    assert.match(String(companion?.attrs?.['transform']), /^translate\(0 [\d.]+\)/);
+  it('puts the companion somewhere no existing stroke already is', () => {
+    // A POSITION ASSERTION, because an element count cannot see this. The
+    // previous implementation composed its offset onto the path's own
+    // transform, and on a `serialize-with` — drawn as two paths at -stroke and
+    // +stroke — that landed the companion at exactly +stroke, underneath the
+    // second path. The count said two versions; the reader saw one.
+    //
+    // Driven over BOTH shapes: a single-stroke kind and a double one.
+    for (const [label, scene, edges] of [
+      ['single-stroke', sceneOf(), [projected('conflict')]],
+      ['double-stroke', oddSceneOf(), [oddEdge('serialize-with', ['conflict'])]],
+    ] as const) {
+      const { scene: overlaid } = attachEdgeOverlays(scene, edges);
+      const all = walk(overlaid.root);
+      const companion = all.find((spec) => classesOf(spec).includes('ig-overlay-version'));
+      assert.ok(companion !== undefined, `${label}: no companion drawn`);
+
+      const offsetOf = (spec: ElementSpec): number => {
+        const transform = spec.attrs?.['transform'];
+        if (typeof transform !== 'string') return 0;
+        // Every offset this code path produces is a single vertical translate,
+        // so summing them resolves a composed transform as well as a bare one.
+        return [...transform.matchAll(/translate\(0 (-?[\d.]+)\)/g)].reduce(
+          (total, match) => total + Number(match[1]),
+          0,
+        );
+      };
+
+      const strokes = all.filter((spec) => classesOf(spec).includes('ig-edge'));
+      assert.ok(strokes.length > 0, `${label}: no edge stroke to compare against`);
+      const taken = strokes.map(offsetOf);
+      assert.equal(
+        taken.includes(offsetOf(companion)),
+        false,
+        `${label}: the companion sits at ${String(offsetOf(companion))}, ` +
+          `where a stroke already is (${taken.join(', ')})`,
+      );
+    }
   });
 
   it('offers no affordance that reads as a merge', () => {
@@ -456,6 +486,34 @@ describe('a conflict holds both versions and merges neither', () => {
       renderMarkup(renderOverlayMark(overlayFor(projected('conflict')), mark)),
     );
     for (const markup of marks) assert.equal(/merge/i.test(markup), false);
+  });
+});
+
+describe('every mark either draws itself or says it is a slot', () => {
+  it('leaves no mark silently empty', () => {
+    // THE CLASS, not one instance of it. `terminal-cross` shipped as an empty
+    // span carrying colour and typography and no shape, so `failed` lost the
+    // one cue that separates it from `invalid` without colour. Two other marks
+    // are empty ON PURPOSE — the host writes their content — so the rule is
+    // that emptiness must be DECLARED, and this drives every mark rather than
+    // re-checking the one that was wrong.
+    const overlay = overlayFor(projected('selected', 'pending-write', 'invalid', 'failed', 'conflict'));
+    assert.ok(overlay.marks.length >= 4, 'the fixture does not exercise every mark');
+
+    for (const mark of overlay.marks) {
+      const spec = renderOverlayMark(overlay, mark, 'would-cycle');
+      const children = spec.children ?? [];
+      const declaredSlot = spec.attrs?.['data-ig-slot'] !== undefined;
+      assert.ok(
+        children.length > 0 || declaredSlot,
+        `${mark} renders nothing and does not declare itself a slot`,
+      );
+    }
+  });
+
+  it('draws the failed cross as a real glyph', () => {
+    const spec = renderOverlayMark(overlayFor(projected('failed')), 'terminal-cross');
+    assert.deepEqual(spec.children, ['✕']);
   });
 });
 

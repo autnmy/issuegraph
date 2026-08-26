@@ -243,17 +243,25 @@ function overlayMarks(
     //
     // The original edge is the version the user wrote; this is the one the
     // adapter reported. §17b: they are held side by side and never merged.
-    const offset = theme.metrics['--ig-stroke'] * 2;
+    //
+    // THE OFFSET IS ABSOLUTE, AND IT CLEARS THE KIND'S OWN SPREAD. Composing
+    // onto the path's existing transform looked safer and was worse: the
+    // viewer draws a `double` kind as two paths at -stroke and +stroke, only
+    // the first of them is given the companion, and `+2·stroke` composed onto
+    // its `-stroke` landed the companion at exactly `+stroke` — precisely
+    // underneath the second path, so a conflicted `serialize-with` added a held
+    // version nobody could see. An element count cannot detect that; a position
+    // assertion can, and now does.
+    //
+    // Replacing is sound because the viewer sets a transform on an edge path
+    // for ONE reason — the double spread — so there is no base position being
+    // discarded here.
+    const stroke = theme.metrics['--ig-stroke'];
+    const spread = treatmentFor(edge.kind).dash === 'double' ? 3 : 2;
     front.push(
       clonePath(spec, {
         class: `${OVERLAY_CLASS} ig-overlay-version`,
-        // Composed onto whatever the viewer already set rather than replacing
-        // it: `serialize-with` is drawn as two paths that each carry their own
-        // offset, and overwriting that would move a stroke on top of its twin.
-        transform:
-          typeof spec.attrs?.['transform'] === 'string'
-            ? `translate(0 ${String(offset)}) ${spec.attrs['transform']}`
-            : `translate(0 ${String(offset)})`,
+        transform: `translate(0 ${String(stroke * spread)})`,
       }),
     );
   }
@@ -448,25 +456,46 @@ export function renderOverlayMark(
         ['writing…'],
       );
     case 'terminal-cross':
-      // ADDED BESIDE the type's terminal, never over it: its own class, and no
-      // `data-edge`, so nothing about the kind's marker changes.
-      return element('span', {
-        class: `${OVERLAY_CLASS} ig-overlay-cross`,
-        'data-ig-overlay': 'failed',
-        role: 'img',
-        'aria-label': 'failed',
-      });
+      return element(
+        'span',
+        {
+          class: `${OVERLAY_CLASS} ig-overlay-cross`,
+          'data-ig-overlay': 'failed',
+          role: 'img',
+          'aria-label': 'failed',
+        },
+        // THE GLYPH IS THE MARK. An earlier draft returned this span EMPTY,
+        // carrying colour and typography and no shape — so `failed` lost the
+        // one cue that separates it from `invalid` without colour, which is the
+        // whole reason a terminal mark is drawn rather than a hue changed.
+        //
+        // A glyph rather than a word, for the same reason the viewer's edge
+        // vocabulary uses ⊘ ⇄ ⧉ ≡ ⑃: it is the non-colour channel, and it needs
+        // no translation.
+        ['✕'],
+      );
     case 'inline-reason':
+      // A SLOT, NOT A GLYPH — and the distinction is deliberate rather than an
+      // oversight of the same class as the empty ✕ above. This element is
+      // EMPTY because the sentence is the host's: the package publishes the
+      // store's stable `InvalidCode` and the host keys its own message off it,
+      // exactly as `change.ts` ships counts rather than prose. `data-ig-slot`
+      // says so out loud, so an empty element here reads as intended rather
+      // than as the bug it looked like one case up.
       return element('span', {
         class: `${OVERLAY_CLASS} ig-overlay-reason`,
         'data-ig-overlay': 'reason',
-        // The CODE, and nothing else. A host renders the sentence.
+        'data-ig-slot': 'reason',
         'data-ig-code': reasonCode ?? null,
       });
     case 'second-version':
+      // Also a slot. The held version is DRAWN by `attachEdgeOverlays` as the
+      // companion stroke; what a host adds here is whatever labels or offers to
+      // act on it — view-diff, retry-on-latest, discard-mine. Never a merge.
       return element('span', {
         class: `${OVERLAY_CLASS} ig-overlay-held`,
         'data-ig-overlay': 'conflict',
+        'data-ig-slot': 'held-version',
         'aria-label': overlayLabel('', overlay).trim(),
       });
   }
