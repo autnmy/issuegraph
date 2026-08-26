@@ -32,6 +32,21 @@ describe('the overlay stylesheet carries structure, never a value', () => {
     assert.equal(/\b\d+(\.\d+)?(px|rem|em|pt)\b/.test(css), false, 'a fixed length');
   });
 
+  it('declares no opacity, so every alpha is measurable in the grammar', () => {
+    // THE RULE THIS FILE STATED AND THEN BROKE. State opacities were moved to
+    // the treatment table so the composited-contrast check could read them; the
+    // halo was then styled here at 0.35 because it is not a state — and it was
+    // the one alpha that check could not see, and the one below the 3:1 bar.
+    //
+    // Enforced rather than restated: an alpha in CSS is an alpha nothing
+    // measures.
+    assert.equal(
+      /(^|[^-\w])opacity\s*:/.test(css),
+      false,
+      'an opacity here is invisible to the composited-contrast check',
+    );
+  });
+
   it('never selects a terminal marker', () => {
     // The terminal is one of the four redundant channels the type identity
     // rests on. `render.ts` refuses to touch the ELEMENT; this refuses to reach

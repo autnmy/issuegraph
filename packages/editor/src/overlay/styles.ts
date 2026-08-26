@@ -7,9 +7,15 @@
  * 2 adds. `styles.test.ts` scans these bytes for a literal colour, a fixed
  * length and a token the theme does not define.
  *
- * IT DOES NOT RESTATE THE TABLE. `grammar.ts` is the single source for a
- * state's opacity, and `render.ts` writes it onto the edge as an attribute — so
- * there is deliberately no `opacity` rule for a state here. A rule would be a
+ * IT DECLARES NO OPACITY AT ALL. `grammar.ts` is the single source for every
+ * alpha this package applies, and `render.ts` writes each onto its element —
+ * so there is deliberately no `opacity` rule here, for a state OR for a mark.
+ *
+ * That rule was written for the state opacities and then broken by the halo,
+ * which was styled here at 0.35 because it is not a state. The composited
+ * contrast check reads the grammar, so the one alpha it could not see was the
+ * one that failed the 3:1 bar. `styles.test.ts` now enforces the rule instead
+ * of stating it. A rule would be a
  * second copy of a number, and the two would drift the first time one was
  * tuned. What CSS owns is what CSS can express and the table cannot: the halo's
  * stroke, the marching animation, and the hue each state paints with.
@@ -40,7 +46,6 @@ export const edgeOverlayStylesheet = `
 .ig-overlay-halo {
   fill: none;
   stroke: var(--ig-focus);
-  opacity: 0.35;
   stroke-linecap: round;
 }
 

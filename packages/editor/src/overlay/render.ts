@@ -95,7 +95,13 @@ import {
   treatmentFor,
 } from '@issuegraph/viewer';
 
-import { STATE_ATTRIBUTE, type EdgeOverlay, overlayFor, overlayLabel } from './grammar.ts';
+import {
+  HALO_OPACITY,
+  STATE_ATTRIBUTE,
+  type EdgeOverlay,
+  overlayFor,
+  overlayLabel,
+} from './grammar.ts';
 
 /** The class every mark this module adds carries, so a host can find them. */
 export const OVERLAY_CLASS = 'ig-overlay';
@@ -227,6 +233,8 @@ function overlayMarks(
       clonePath(spec, {
         ...inherited,
         class: `${OVERLAY_CLASS} ig-overlay-halo`,
+        // From the grammar, never from the stylesheet — see `HALO_OPACITY`.
+        opacity: HALO_OPACITY,
         // Widened from the theme's own stroke rather than from a literal, so a
         // host thickening its lines keeps the halo proportionate to them.
         'stroke-width': theme.metrics['--ig-stroke'] * 3,

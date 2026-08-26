@@ -5,7 +5,9 @@ import { EDGE_STATES, type EdgeState, type ProjectedEdge } from '@issuegraph/sto
 import { THEME_TOKENS, defaultTheme } from '@issuegraph/viewer';
 
 import {
+  HALO_OPACITY,
   OVERLAY_TREATMENTS,
+  compositedHues,
   type OverlayAffordance,
   overlayFor,
   overlayLabel,
@@ -155,21 +157,33 @@ describe('a state hue clears the contrast bar AS RENDERED, not as written', () =
     // It lives HERE rather than in the viewer because the opacity is declared
     // here. Measuring it there would mean a second copy of a number that this
     // table owns, and the two would drift the first time one was tuned.
-    for (const state of EDGE_STATES) {
-      const { hueToken, opacity } = treatmentForState(state);
-      if (hueToken === null) continue;
-      const hue = defaultTheme.colors[hueToken as keyof typeof defaultTheme.colors];
-      const alpha = opacity ?? 1;
+    // RANGES OVER EVERY ALPHA THE PACKAGE APPLIES, from `compositedHues()`.
+    // An earlier revision walked the treatment table's `opacity` field alone,
+    // so the SELECTION HALO — drawn as its own element at its own alpha, in the
+    // stylesheet — was the one thing this check could not see, and it was the
+    // one measuring 2.0:1.
+    for (const { token, alpha } of compositedHues()) {
+      const hue = defaultTheme.colors[token as keyof typeof defaultTheme.colors];
       for (const surface of SURFACES) {
         const bg = defaultTheme.colors[surface];
         const ratio = contrastRatio(over(hue, bg, alpha), bg);
         assert.ok(
           ratio >= 3,
-          `${state} draws ${hueToken} at ${String(alpha)} opacity on ${surface}: ` +
+          `${token} drawn at ${String(alpha)} opacity on ${surface}: ` +
             `${ratio.toFixed(2)}:1, below the 3:1 non-text minimum`,
         );
       }
     }
+  });
+
+  it('covers the halo, which is the alpha that escaped the last version', () => {
+    // A positive control on the LIST rather than on the maths. If
+    // `compositedHues()` stopped reporting the halo, the assertion above would
+    // quietly narrow back to the states and pass on a halo nobody measured.
+    const halo = compositedHues().find(({ token }) => token === '--ig-focus');
+    assert.ok(halo !== undefined, 'the halo is not in the composited set');
+    assert.equal(halo.alpha, HALO_OPACITY);
+    assert.ok(HALO_OPACITY < 1, 'a halo at full opacity would need no composite check');
   });
 
   it('is measuring a real composite, not passing because alpha is always 1', () => {

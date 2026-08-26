@@ -190,6 +190,48 @@ export const OVERLAY_TREATMENTS = Object.freeze({
   },
 } as const satisfies Record<EdgeState, OverlayTreatment>);
 
+/**
+ * The alpha the selection halo is drawn at.
+ *
+ * IT LIVES HERE, BESIDE THE TABLE, AND NOT IN THE STYLESHEET — which is where
+ * it started, and that is the whole reason it is worth a named export.
+ *
+ * `styles.ts` already carried the rule that a state's opacity belongs to this
+ * table because a second copy would drift. The halo broke that rule quietly: it
+ * is not a state opacity, so it was written as a CSS declaration instead, and
+ * `grammar.test.ts`'s composited-contrast check reads this table — so the one
+ * alpha the check could not see was the one that failed. At 0.35 the halo
+ * measured about 2.0:1 on the dark surfaces and 1.75:1 on the light ones, under
+ * the 3:1 non-text bar, while every assertion stayed green.
+ *
+ * 0.75 clears the bar on both documented themes with margin. The halo is the
+ * selection cue; if it is not legible, selection is not visible.
+ */
+export const HALO_OPACITY = 0.75;
+
+/**
+ * Every (token, alpha) pair this package composites, as data.
+ *
+ * The contrast claim is about what LANDS on the surface, so it has to range
+ * over the alphas actually applied — and an alpha that is not in this list is
+ * one the check cannot see. Deriving the list rather than writing it by hand is
+ * what stops a third opacity appearing somewhere and going unmeasured.
+ */
+export function compositedHues(): readonly { token: string; alpha: number }[] {
+  const pairs: { token: string; alpha: number }[] = [];
+  for (const state of EDGE_STATES) {
+    const { hueToken, opacity } = treatmentForState(state);
+    if (hueToken === null) continue;
+    // The halo is drawn as its own element at its own alpha; every other state
+    // paints the edge, which carries the treatment's opacity.
+    pairs.push({
+      token: hueToken,
+      alpha: state === 'selected' ? HALO_OPACITY : (opacity ?? 1),
+    });
+  }
+  return pairs;
+}
+
 /** The treatment for a state. Total over the store's state set. */
 export function treatmentForState(state: EdgeState): OverlayTreatment {
   return OVERLAY_TREATMENTS[state];
