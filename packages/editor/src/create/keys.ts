@@ -135,6 +135,43 @@ const BINDINGS: ReadonlyMap<string, Binding> = new Map<string, Binding>([
 const NONE: KeyIntent = Object.freeze({ kind: 'none' });
 
 /**
+ * One key press. Structurally a subset of the DOM's `KeyboardEvent`, so a host
+ * passes the event straight in rather than unpacking it.
+ *
+ * TAKING THE PRESS RATHER THAN THE KEY NAME IS THE POINT. An earlier revision
+ * took a bare `key: string`, which cannot tell `R` from `Cmd+R` — so a shell
+ * that forwarded `event.key` and called `preventDefault()` for any non-`none`
+ * intent would hijack reload, new-tab and tab-selection, and no amount of care
+ * on the host's part could recover the distinction this function had already
+ * discarded. The modifiers are part of what a press IS; asking for them is the
+ * only way this map can honestly answer "not mine".
+ *
+ * The three that BLOCK are optional so `{ key: 'r' }` still means an
+ * unmodified press, which is what a test writes and what a synthetic press from
+ * a non-DOM shell has.
+ */
+export interface KeyPress {
+  /** The `KeyboardEvent.key` value. */
+  readonly key: string;
+  readonly ctrlKey?: boolean;
+  readonly metaKey?: boolean;
+  readonly altKey?: boolean;
+}
+
+/**
+ * Whether this press is a chord that belongs to the platform, not to us.
+ *
+ * `shiftKey` IS DELIBERATELY ABSENT. §17b names its bindings in capitals, and
+ * `Shift+r` is how a keyboard reports `R` — so treating shift as a modifier
+ * would unbind the very keys the design specifies. Shift changes which key was
+ * pressed and is folded by `normalize`; Ctrl, Meta and Alt change whose
+ * shortcut it is, which is a different question and the one that matters here.
+ */
+function chorded(press: KeyPress): boolean {
+  return press.ctrlKey === true || press.metaKey === true || press.altKey === true;
+}
+
+/**
  * Fold a `KeyboardEvent.key` into the table's spelling.
  *
  * Lower-casing is what makes `R` and `r` the same key, which matters because
@@ -154,8 +191,14 @@ function normalize(key: string): string {
  * union — the boundary rule's permitted shape — and every arm is a single
  * expression, because the decision was already made by the table.
  */
-export function keyIntent(key: string, context: KeyboardContext): KeyIntent {
-  const binding = BINDINGS.get(normalize(key));
+export function keyIntent(press: KeyPress, context: KeyboardContext): KeyIntent {
+  // BEFORE THE TABLE, because a chord is not a miss to be looked up — it is a
+  // press this map has no claim on at all. Answering `none` is what lets a host
+  // call `preventDefault()` on everything else without stealing the platform's
+  // own shortcuts.
+  if (chorded(press)) return NONE;
+
+  const binding = BINDINGS.get(normalize(press.key));
   if (binding === undefined) return NONE;
 
   switch (binding.kind) {

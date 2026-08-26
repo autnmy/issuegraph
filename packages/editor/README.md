@@ -140,7 +140,20 @@ let { draft, proposal } = createReducer(IDLE_CREATE_DRAFT, { kind: 'begin', sour
 
 **Direction is the gather order**, `from` = source. Nothing infers it: §17b states direction and offers a flip, and the picker re-derives after the edit lands, so a wrong guess is one act from correct. That is the same reasoning `picker/view.ts` records for retyping across the directed/symmetric split.
 
-**The keyboard is a full loop with no pointer step.** `keyIntent` is a pure key map — a key name and a context in, an intent out, no DOM — exactly as the viewer's `navigation.ts` is, so the whole map is exhaustively testable on a runtime with no DOM at all. The digits read `EDGE_FIELDS` from `@issuegraph/core` rather than restating it, so a sixth field gets a `6` for free and the picker and the keyboard cannot disagree. `⌫` binds **both** `Backspace` and `Delete`, because the key §17b draws as `⌫` reports differently across keyboards and binding one would make "no pointer" false on the other. An unbound key answers `none` and is left to the host.
+**The keyboard is a full loop with no pointer step.** `keyIntent` is a pure key map — a key **press** and a context in, an intent out, no DOM — exactly as the viewer's `navigation.ts` is, so the whole map is exhaustively testable on a runtime with no DOM at all. The digits read `EDGE_FIELDS` from `@issuegraph/core` rather than restating it, so a sixth field gets a `6` for free and the picker and the keyboard cannot disagree. `⌫` binds **both** `Backspace` and `Delete`, because the key §17b draws as `⌫` reports differently across keyboards and binding one would make "no pointer" false on the other. An unbound key answers `none` and is left to the host.
+
+**It takes the press, not the key name, and that is load-bearing.** `KeyPress` is structurally a subset of the DOM's `KeyboardEvent`, so a host passes the event straight in:
+
+```ts
+element.addEventListener('keydown', (event) => {
+  const intent = keyIntent(event, { focused, match, selectedEdge });
+  if (intent.kind === 'none') return;   // the platform's key, not ours
+  event.preventDefault();
+  // …reduce the intent
+});
+```
+
+A bare key name cannot tell `R` from `Cmd+R`, so exactly that shell — forward the key, `preventDefault()` anything this map claims — would hijack reload, new-tab and tab-selection, and no care on the host's part could recover a distinction the map had already discarded. `Ctrl`, `Meta` and `Alt` therefore answer `none` **before** the table is consulted, because a chord is not a lookup miss: it is a press this map has no claim on. `Shift` is deliberately *not* among them — §17b names its bindings in capitals, and `Shift+r` is how a keyboard reports `R`, so treating shift as a modifier would unbind the design itself.
 
 **`T` opens the picker; it does not emit a retype.** The proposals come from `pickerView`, which already owns them — a second emitter out here would be free to disagree about what a retype is.
 

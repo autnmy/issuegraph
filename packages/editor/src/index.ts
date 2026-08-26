@@ -187,7 +187,12 @@ export {
   createReducer,
 } from './create/draft.ts';
 
-export { type KeyIntent, type KeyboardContext, keyIntent } from './create/keys.ts';
+export {
+  type KeyIntent,
+  type KeyPress,
+  type KeyboardContext,
+  keyIntent,
+} from './create/keys.ts';
 
 export {
   type Bounds,
