@@ -39,6 +39,20 @@ export const COLOR_TOKENS = Object.freeze([
   '--ig-edge-together-with',
   '--ig-edge-duplicate-of',
   '--ig-edge-decomposed-from',
+  // EDIT-STATE HUES, and they are deliberately NOT the edge-kind hues above.
+  // An overlay states what is happening to an edge; a kind hue states what the
+  // edge IS. Spending `--ig-edge-blocked-by` on "invalid" would make one token
+  // mean two things — a host retheming the relationship would silently
+  // recolour the state, and an invalid `duplicate-of` would read as a
+  // `blocked-by`. That collapses the hue channel the colour-blind-safety claim
+  // rests on, so the states get their own.
+  //
+  // `selected` and `pending-write` are absent BY DESIGN rather than forgotten:
+  // selection is `--ig-focus`, which already carries exactly that meaning, and
+  // a pending write is drawn with opacity and a dash and asks for no hue at all.
+  '--ig-state-invalid',
+  '--ig-state-failed',
+  '--ig-state-conflict',
 ] as const);
 
 export type ColorToken = (typeof COLOR_TOKENS)[number];
@@ -117,6 +131,15 @@ export const defaultTheme: Theme = Object.freeze({
     '--ig-edge-together-with': '#17BCEE',
     '--ig-edge-duplicate-of': '#B037F1',
     '--ig-edge-decomposed-from': '#E7317A',
+    // Refused before any write, and rejected by the write — a shared red
+    // family, because what separates them for a reader is SHAPE (dotted ghost
+    // versus the ✕ terminal), not hue. They stay separate tokens so a host that
+    // wants to separate them by colour can, without redefining a relationship.
+    '--ig-state-invalid': '#F2555A',
+    '--ig-state-failed': '#FF8A5C',
+    // Two versions are held and neither is adopted. Gold rather than red: a
+    // conflict is not a failure, and the design's own table says so.
+    '--ig-state-conflict': '#F5C542',
   }),
   type: Object.freeze({
     '--ig-font-ui': "Geist, ui-sans-serif, system-ui, sans-serif",

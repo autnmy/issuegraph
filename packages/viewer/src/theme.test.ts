@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import {
   EDGE_TOKENS as EDGES,
+  STATE_TOKENS as STATES,
   SURFACE_TOKENS as SURFACES,
   TEXT_TOKENS as TEXT,
   contrastRatio,
@@ -66,6 +67,22 @@ describe('the default theme meets WCAG AA', () => {
         assert.ok(
           ratio >= 3,
           `${edge} on ${surface} measures ${ratio.toFixed(2)}:1, below the 3:1 non-text minimum`,
+        );
+      }
+    }
+  });
+
+  it('holds every edit-state hue to that same non-text bar', () => {
+    // A state hue that does not clear it is a real defect and not a cosmetic
+    // one: the ghost, the ✕ and the conflict's pair are the ONLY evidence a
+    // write went wrong, and an overlay drawn at reduced opacity starts from
+    // this ratio rather than improving on it.
+    for (const state of STATES) {
+      for (const surface of SURFACES) {
+        const ratio = contrastRatio(defaultTheme.colors[state], defaultTheme.colors[surface]);
+        assert.ok(
+          ratio >= 3,
+          `${state} on ${surface} measures ${ratio.toFixed(2)}:1, below the 3:1 non-text minimum`,
         );
       }
     }

@@ -47,7 +47,7 @@
  *
  * ## The surface
  *
- * The SCALE LADDER, and nothing else yet. The overlays, the picker, the create
+ * The SCALE LADDER and the EDGE MUTATION-STATE OVERLAYS. The picker, the create
  * paths, the re-evaluate surface, the audit and the first-pass queue each land
  * as their own change, and the final shape of this file is decided by the one
  * that assembles the workspace.
@@ -85,3 +85,27 @@ export {
 } from './scale/render.ts';
 
 export { scaleLadderStylesheet } from './scale/styles.ts';
+
+export {
+  OVERLAY_TREATMENTS,
+  STATE_ATTRIBUTE,
+  type EdgeOverlay,
+  type OverlayAffordance,
+  type OverlayDash,
+  type OverlayMark,
+  type OverlayStroke,
+  type OverlayTreatment,
+  overlayFor,
+  overlayLabel,
+  treatmentForState,
+} from './overlay/grammar.ts';
+
+export {
+  OVERLAY_CLASS,
+  type AttachResult,
+  type OverlayOptions,
+  attachEdgeOverlays,
+  renderOverlayMark,
+} from './overlay/render.ts';
+
+export { edgeOverlayStylesheet } from './overlay/styles.ts';

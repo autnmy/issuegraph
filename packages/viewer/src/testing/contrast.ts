@@ -50,3 +50,19 @@ export const EDGE_TOKENS = Object.freeze([
   '--ig-edge-duplicate-of',
   '--ig-edge-decomposed-from',
 ] as const);
+
+/**
+ * Edit-state hues, held to the same 3:1 NON-TEXT minimum and for the same
+ * reason: an overlay is a stroke, a ghost line or a terminal mark — a graphical
+ * object, never text.
+ *
+ * They are a SEPARATE list rather than more entries in `EDGE_TOKENS` because
+ * the two answer different questions, and a reader of a failure message needs
+ * to know which. Both lists are swept, so nothing is measured less strictly by
+ * being here.
+ */
+export const STATE_TOKENS = Object.freeze([
+  '--ig-state-invalid',
+  '--ig-state-failed',
+  '--ig-state-conflict',
+] as const);
