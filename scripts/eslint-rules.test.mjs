@@ -263,3 +263,73 @@ test('PURITY: an UNPREFIXED Node builtin is caught, not just `node:`', async () 
     assert.deepEqual(await purityRulesFor(source), ['no-restricted-imports'], source);
   }
 });
+
+/** The rule ids for a source at an arbitrary path inside the workspace. */
+async function rulesAt(relativePath, source) {
+  const results = await eslint.lintText(source, { filePath: `${repoRoot}${relativePath}` });
+  const ids = results.flatMap((result) => result.messages.map((message) => message.ruleId ?? 'PARSE-ERROR'));
+  return [...new Set(ids)].sort();
+}
+
+test('SEAM: a DYNAMIC sibling deep import is caught, in a non-rendering package too', async () => {
+  // `no-restricted-imports` visits static import and export DECLARATIONS. It
+  // does not visit `import('…')`, so every pattern in the config — the consumer
+  // ban and the seam ban alike — was bypassed by the dynamic form. Verified
+  // against the pre-fix config: this reported nothing.
+  //
+  // `packages/store` deliberately, not the editor: the rendering packages ban
+  // every dynamic import outright, so testing there would pass for the wrong
+  // reason and say nothing about the seam.
+  assert.deepEqual(
+    await rulesAt("packages/store/src/__violation-fixture__.ts", "export const a = () => import('@issuegraph/viewer/src/document.js');\n"),
+    ['no-restricted-syntax'],
+  );
+  // ONLY the syntax rule, and that is the finding: core's
+  // `no-restricted-imports` does not report this at all. Measured two ways —
+  // the CLI over a real file and `lintText` at the same path — after a first
+  // reading suggested both fired. The selector is the whole defence here.
+
+});
+
+test('SEAM: a DYNAMIC consumer import is caught — the same hole, the other pattern', async () => {
+  assert.deepEqual(
+    await rulesAt("packages/store/src/__violation-fixture__.ts", "export const a = () => import('@descant/types');\n"),
+    ['no-restricted-syntax'],
+  );
+});
+
+test('CONTROL: a dynamic BARE sibling import, and a dynamic relative one, report nothing', async () => {
+  // The negative control the two cases above need. A selector that fired on
+  // every `ImportExpression` outside the rendering packages would pass them
+  // both while forbidding something a package may legitimately do.
+  assert.deepEqual(
+    await rulesAt("packages/store/src/__violation-fixture__.ts", "export const a = () => import('@issuegraph/viewer');\n"),
+    [],
+  );
+  assert.deepEqual(
+    await rulesAt("packages/store/src/__violation-fixture__.ts", "export const a = () => import('./local.js');\n"),
+    [],
+  );
+});
+
+test('PURITY: the rules reach .mts, .cts and .tsx, not just .ts', async () => {
+  // The purity block was scoped to `.ts` while the import block already covered
+  // the whole family, so a `network.mts` in a rendering package compiled,
+  // emitted to dist, published, and was linted by neither purity rule.
+  // Verified against the pre-fix config: the first case reported nothing.
+  const cases = [
+    ['packages/editor/src/__violation-fixture__.mts', "export const s = () => fetch('/w');\n", 'no-restricted-globals'],
+    ['packages/editor/src/__violation-fixture__.cts', "import { readFile } from 'fs';\nexport const r = readFile;\n", 'no-restricted-imports'],
+    ['packages/editor/src/__violation-fixture__.tsx', "export const s = () => window.fetch('/w');\n", 'no-restricted-globals'],
+  ];
+  for (const [path, source, expected] of cases) {
+    assert.deepEqual(await rulesAt(path, source), [expected], path);
+  }
+});
+
+test('CONTROL: ordinary pure code in an .mts rendering module reports nothing', async () => {
+  assert.deepEqual(
+    await rulesAt('packages/editor/src/__violation-fixture__.mts', 'export const add = (a: number, b: number) => a + b;\n'),
+    [],
+  );
+});

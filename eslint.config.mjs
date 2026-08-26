@@ -106,6 +106,52 @@ const BASE_IMPORT_PATTERNS = [
 ];
 
 /**
+ * Every extension TypeScript emits from, as one brace glob.
+ *
+ * The purity block was scoped to `.ts` alone while the import block above
+ * already covered the whole family — so a `network.mts` in a rendering package
+ * was compiled by its `tsconfig.json`, emitted to `dist`, published, and lint
+ * saw none of the purity rules. Two lists that can disagree is the defect;
+ * there is now one.
+ */
+const TS_EXTENSIONS = '{ts,tsx,mts,cts}';
+
+/**
+ * `no-restricted-imports` visits STATIC import and export declarations. It does
+ * not visit `import('…')`, so every pattern in this file — the consumer ban and
+ * the sibling-seam ban alike — is bypassed by the dynamic form.
+ *
+ * That is the same hole `require()` opened, and it is closed the same way and
+ * for the same reason: both are calls rather than declarations, so a rule that
+ * reads declarations cannot see either. Scoped by selector rather than banned
+ * outright, because a non-rendering package may legitimately load something at
+ * runtime; what it may not do is reach around a sibling's surface or name the
+ * consumer while doing it.
+ */
+const DYNAMIC_IMPORT_SELECTORS = [
+  {
+    selector: 'ImportExpression[source.value=/^@issuegraph\\/[^/]+\\//]',
+    message:
+      'Import a sibling @issuegraph package at its bare specifier. A dynamic import reaches past the seam exactly as a static one does, and no-restricted-imports cannot see it.',
+  },
+  {
+    selector: 'ImportExpression[source.value=/^(@descant|descant|@takumi|takumi)(\\/|$)/]',
+    message:
+      'A published @issuegraph package may not depend on the consuming product, dynamically or otherwise.',
+  },
+];
+
+/** The syntax bans every package carries, composed so neither block can drop one. */
+const BASE_SYNTAX = [
+  {
+    selector: "CallExpression[callee.name='require']",
+    message:
+      'require() is not available in these ESM packages, and it bypasses every import rule in this config — including the sibling-seam ban. Use an import.',
+  },
+  ...DYNAMIC_IMPORT_SELECTORS,
+];
+
+/**
  * The packages that render, and therefore may not reach for a runtime.
  *
  * `viewer` and `editor` claim "no fetching, no auth, no persistence" — the
@@ -113,7 +159,7 @@ const BASE_IMPORT_PATTERNS = [
  * make no such claim and legitimately read files, so this is scoped rather
  * than global.
  */
-const BROWSER_PACKAGES = ['packages/viewer/**/*.ts', 'packages/editor/**/*.ts'];
+const BROWSER_PACKAGES = [`packages/viewer/**/*.${TS_EXTENSIONS}`, `packages/editor/**/*.${TS_EXTENSIONS}`];
 
 /**
  * Globals whose mere presence in a rendering package breaks the claim.
@@ -184,14 +230,7 @@ export default [
       // while lint stays green. Every package here is `"type": "module"`, where
       // `require` is not defined at all — so banning it outright costs nothing
       // and closes that door. No source in packages/ or demo/ uses one.
-      'no-restricted-syntax': [
-        'error',
-        {
-          selector: "CallExpression[callee.name='require']",
-          message:
-            'require() is not available in these ESM packages, and it bypasses every import rule in this config — including the sibling-seam ban. Use an import.',
-        },
-      ],
+      'no-restricted-syntax': ['error', ...BASE_SYNTAX],
     },
   },
   {
@@ -255,13 +294,13 @@ export default [
           ],
         },
       ],
+      // COMPOSED, for the same reason `no-restricted-imports` is: flat config
+      // REPLACES a rule's options rather than merging them, so restating only
+      // the browser bans here would drop the seam and consumer bans for the two
+      // packages that need them most.
       'no-restricted-syntax': [
         'error',
-        {
-          selector: "CallExpression[callee.name='require']",
-          message:
-            'require() is not available in these ESM packages, and it bypasses every import rule in this config — including the Node-builtin ban directly above.',
-        },
+        ...BASE_SYNTAX,
         { selector: 'ImportExpression', message: 'A rendering package loads nothing at runtime.' },
         { selector: "CallExpression[callee.name='eval']", message: 'A rendering package evaluates nothing.' },
         { selector: "NewExpression[callee.name='Function']", message: 'A rendering package evaluates nothing.' },
