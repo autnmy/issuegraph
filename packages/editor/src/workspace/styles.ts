@@ -46,11 +46,24 @@ export const workspaceStylesheet = `
     'header header header'
     'rail canvas inspector';
   /* The rail and the inspector are sized in TYPE, not in pixels: a host that
-     scales the type scales the zones with it, which a fixed track would not. */
+     scales the type scales the zones with it, which a fixed track would not.
+
+     A LENGTH TIMES A UNITLESS COUNT, which is the viewer's own idiom
+     (styles.ts writes min-width: calc(var(--ig-char-width) * 4)). An earlier
+     version multiplied --ig-char-width by --ig-label-char-width, having read
+     the second as "how many characters wide a label is". It is not: it is the
+     average width OF one character, and themeCss renders every metric with px
+     — so the expression was calc(7.8px * 6px), which is not a length. CSS
+     discards a declaration it cannot parse, so the whole template went with it
+     and all three zones fell back to auto columns: long content could then
+     squeeze the canvas, which is the one thing fixed positions exist to stop.
+     Nothing failed loudly, because an invalid declaration is simply absent.
+
+     40 is a reading measure for a title plus its id, in characters. */
   grid-template-columns:
-    calc(var(--ig-char-width) * var(--ig-label-char-width))
+    calc(var(--ig-char-width) * 40)
     1fr
-    calc(var(--ig-char-width) * var(--ig-label-char-width));
+    calc(var(--ig-char-width) * 40);
   grid-template-rows: auto 1fr;
   gap: var(--ig-space);
   background: var(--ig-bg);

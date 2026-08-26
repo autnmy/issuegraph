@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { THEME_TOKENS, renderViewer } from '@issuegraph/viewer';
+import { METRIC_TOKENS, THEME_TOKENS, renderViewer } from '@issuegraph/viewer';
 
 import { AUDIT_SEVERITY_ATTRIBUTE } from '../audit/surface.ts';
 import { ZONES, renderWorkspace } from './render.ts';
@@ -120,6 +120,45 @@ describe('the workspace stylesheet carries structure, never a value', () => {
     // add it.
     assert.equal(/prefers-color-scheme/.test(css), false, 'a second palette');
     assert.equal(/color-scheme\s*:/.test(css), false, 'a scheme declaration');
+  });
+
+  it('never multiplies one length by another, anywhere in the sheet', () => {
+    // THE CLASS, not the one expression that had it. `themeCss` renders every
+    // METRIC token with `px`, so multiplying two of them yields `7.8px * 6px` —
+    // not a length, and CSS discards a declaration it cannot parse. The failure
+    // is silent by construction: nothing errors, the rule is simply absent, and
+    // the layout it was holding up quietly falls back.
+    //
+    // The metric list comes from the viewer, so a token promoted to a length
+    // later is covered without editing this test. A local custom property the
+    // renderer sets inline — `--ig-rail-rows` — is a unitless count and is
+    // correctly not a metric, which is what makes the spacer's own calc legal.
+    const metrics: ReadonlySet<string> = new Set(METRIC_TOKENS);
+    const calcs = [...css.matchAll(/calc\(([^()]*(?:\([^()]*\)[^()]*)*)\)/g)].map(
+      (match) => match[1] ?? '',
+    );
+    assert.ok(calcs.length > 0, 'the stylesheet contains no calc() at all');
+
+    for (const expression of calcs) {
+      if (!expression.includes('*')) continue;
+      // SPLIT ON SPACED OPERATORS ONLY. CSS requires whitespace around `+` and
+      // `-` inside calc precisely because a bare hyphen is part of an
+      // identifier — and a first version of this guard split on `[+-]`, which
+      // shattered every `--ig-…` name, left no factor holding a whole `var()`,
+      // counted zero lengths and passed on the very expression it was written
+      // for. It ran, it was green, and it proved nothing.
+      for (const product of expression.split(/\s[+-]\s/)) {
+        if (!product.includes('*')) continue;
+        const lengths = product
+          .split('*')
+          .filter((factor) => [...factor.matchAll(/var\((--[a-z0-9-]+)/g)]
+            .some((match) => metrics.has(match[1] ?? '')));
+        assert.ok(
+          lengths.length <= 1,
+          `calc(${expression}) multiplies ${String(lengths.length)} lengths together`,
+        );
+      }
+    }
   });
 
   it('gives each zone a fixed area rather than letting content negotiate it', () => {
