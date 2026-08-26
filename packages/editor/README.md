@@ -113,9 +113,91 @@ auditRowAttributes(overlay, ref);    // {} for a clean row; the severity mark fo
 
 **The bar is CSS on this package's own attribute, not an element drawn into a viewer row.** Layer 1's markup primitive is deliberately not on its public surface, so an overlay drawn from out here would have to re-implement HTML escaping — duplication with an injection shape rather than a mirror that merely drifts. `auditRowAttributes` answers what a row carries, `auditStylesheet` draws the bar from it, and the exchange is data.
 
+## The three equivalent create paths
+
+§17b asks for three ways to create an edge — **canvas** (drag to a target, picker at the drop point), **inspector** (`+ add` → type → issue search) and **keyboard** (`R` → `1`–`5` → search → `⏎`) — and is explicit that they are *equivalent*, not a primary path with two shortcuts. That matters at size rather than in principle: the canvas is a **local** instrument, so at any real backlog most targets are off it, and the inspector is *the only path* to those. A design where drag is the real path stops working at the size it was built for.
+
+**Equivalence is a property of the shape here, not a promise a test keeps.** The three gather the same three facts in different orders:
+
+```
+canvas      source → target → kind
+inspector   source → kind   → target
+keyboard    source → kind   → target
+```
+
+So the draft is modelled as a **set of slots, not a sequence of steps** — each filled by its own command, in any order, with the `create` proposal emitted on whichever transition completes the set. There is exactly one emitter, and none of the three paths is named in the code at all.
+
+```ts
+import { IDLE_CREATE_DRAFT, createReducer, keyIntent, pickerPlacement } from '@issuegraph/editor';
+
+let { draft, proposal } = createReducer(IDLE_CREATE_DRAFT, { kind: 'begin', source: '530' });
+({ draft, proposal } = createReducer(draft, { kind: 'type', edgeKind: 'blocked-by' }));
+({ draft, proposal } = createReducer(draft, { kind: 'target', ref: '602' }));
+// proposal → { op: 'create', kind: 'blocked-by', from: '530', to: '602' }
+```
+
+**The draft carries no path identity**, deliberately. A `source` filled by a drag and one filled by `R` are the same fact, and a field recording which arrived would be a place for the paths to grow apart. What genuinely differs between them is where the picker is *drawn*, and that is geometry — `pickerPlacement`, from measured bounds — rather than state.
+
+**Direction is the gather order**, `from` = source. Nothing infers it: §17b states direction and offers a flip, and the picker re-derives after the edit lands, so a wrong guess is one act from correct. That is the same reasoning `picker/view.ts` records for retyping across the directed/symmetric split.
+
+**The keyboard is a full loop with no pointer step.** `keyIntent` is a pure key map — a key **press** and a context in, an intent out, no DOM — exactly as the viewer's `navigation.ts` is, so the whole map is exhaustively testable on a runtime with no DOM at all. The digits read `EDGE_FIELDS` from `@issuegraph/core` rather than restating it, so a sixth field gets a `6` for free and the picker and the keyboard cannot disagree. `⌫` binds **both** `Backspace` and `Delete`, because the key §17b draws as `⌫` reports differently across keyboards and binding one would make "no pointer" false on the other. An unbound key answers `none` and is left to the host.
+
+### `none` means someone else owns this press
+
+The map's whole contract, and the thing to get right when wiring it. A host's handler is "reduce a non-`none` intent, and `preventDefault()` it" — so every press the map claims wrongly is a keystroke stolen from its real owner:
+
+```ts
+element.addEventListener('keydown', (event) => {
+  const intent = keyIntent(event, {
+    focused,
+    match,
+    selectedEdge,
+    // Which of the create flow's own interactions is the keyboard in?
+    // Only the shell can see this.
+    interaction: activeInteraction(),   // 'canvas' | 'target-search' | 'elsewhere'
+  });
+  if (intent.kind === 'none') return;   // someone else's key — let it through
+  event.preventDefault();
+  // …reduce the intent
+});
+```
+
+**It asks about *our* interaction, not about who else might own the key** — and that is the design decision worth reading, because it replaced the obvious one. Four review rounds each found a different owner the map had failed to anticipate: the platform's `Cmd+R`, the target search's digits, an input method's `⏎`, then an unrelated editable control's `Escape`. Every fix was correct and every one invited the next, because they answered an unanswerable question. *Who else might own this press?* is an inventory of the **host's** widgets — unbounded from in here, and one entry longer every time a host grows a control.
+
+So `CreateInteraction` enumerates **this design's own flow**, which §17b fixes at three states, and the host says which one it is in:
+
+| state | what reaches the map |
+|---|---|
+| `canvas` | every binding |
+| `target-search` | only `⏎` and `Escape` |
+| `elsewhere` | nothing |
+
+`elsewhere` is what closes the set: it is *everything that is not our own search box* — an inline title, a filter, a modal, a control this package has never heard of. A fifth widget adds no code here, and `Escape` is surrendered along with the rest, because that control needs `Escape` to cancel its own edit.
+
+Which bindings reach `target-search` is **data on the binding table**, so no call site decides it and a sixth binding is a compile error until the table answers. `⏎` and `Escape` reach it because the search box is focused at exactly the moment `⏎` must commit the target — the middle of `R → digit → search → ⏎`. Its printable keys do not: most issue references carry a digit, so a map that claimed `1`–`5` there would eat nearly every query, and `⌫` deletes a *character* rather than the reader's selected edge.
+
+`interaction` is **required, not optional**. Every default is wrong for some host, and the plausible one — assume the canvas — is the one that steals keystrokes.
+
+**Three press-level facts stay on `KeyPress`**, and they are bounded in a way the widget list never was: all are fields on the event itself, and `KeyboardEvent`'s shape is fixed by the platform rather than by how many controls a host has. They answer **two** questions — who owns the press, and whether it is a fresh act at all.
+
+*Who owns it:*
+
+- **A modified chord.** `KeyPress` is structurally a subset of `KeyboardEvent`, so the event goes straight in — a bare key name cannot tell `R` from `Cmd+R`, and the handler above would hijack reload, new-tab and tab-selection. `Ctrl`, `Meta` and `Alt` answer `none` before the table is consulted. `Shift` is deliberately *not* among them: §17b names its bindings in capitals and `Shift+r` is how a keyboard reports `R`, so treating shift as a modifier would unbind the design itself.
+- **`isComposing`.** While an input method is composing, `⏎` confirms the candidate and `Escape` cancels the composition. It cannot be folded into the table: the IME owns exactly the two bindings that *reach* the target search, which is also the only place composition happens.
+
+*Whether it is a fresh act:*
+
+- **`repeat`.** Every binding here is a one-shot command, so a held key is one decision however many events the OS repeat delay produces. Emitting a proposal per event breaks the one-act/one-`Proposal` contract the store is built on — and the store makes that visible rather than harmless: a pending delete keeps its edge drawn and selection is client state, so the queued proposals settle into `unknown-edge` records once the first lands. It is blanket rather than a per-binding flag because there is no repeatable binding here to distinguish — `R`, `1`–`5`, `⏎`, `⌫` and `T` are all discrete commands, none a continuous motion like an arrow key.
+
+**`T` opens the picker; it does not emit a retype.** The proposals come from `pickerView`, which already owns them — a second emitter out here would be free to disagree about what a retype is.
+
+**A `together-with` edge needs no special case.** The viewer gives its connector an *edge* identity precisely because an enclosure has no line to click, so by the time a selection arrives here it is an ordinary edge id and `⌫` and `T` work on it unchanged.
+
+**Validity stays in the store.** These modules emit intent; `structuralRefusal` owns `self-edge`, `duplicate-edge` and `unknown-issue`. A second validity rule out here is exactly what `picker/view.ts` refused, and for the same reason.
+
 ## Status
 
-Landing separately, each on its own change: the edge mutation-state overlays, the type picker and direction sentence, the three equivalent create paths, the re-evaluate surface, the first-pass review queue, and the three-zone workspace that assembles them, wires the commands to a DOM and fixes this package's exports.
+Landing separately, each on its own change: the first-pass review queue, and the three-zone workspace that assembles the surfaces, wires the commands to a DOM and fixes this package's exports.
 
 ## Licence
 
