@@ -24,7 +24,7 @@ import {
 } from './navigation.ts';
 import { type RenderOptions, sceneFor } from './render.ts';
 import { GROUP_ATTRIBUTE, KEY_ATTRIBUTE, type Projection, type Scene } from './scene.ts';
-import { type Theme, defaultTheme } from './theme.ts';
+import { type Theme, resolveTheme } from './theme.ts';
 
 /** The slice of an element `mount` needs beyond building. */
 export interface MountElement extends SpecElement {
@@ -163,7 +163,7 @@ export function mountViewer(
   // Set by the first `draw()` below, which runs before any listener can fire.
   let currentScene: Scene | null = null;
 
-  const theme: Theme = options.theme ?? defaultTheme;
+  const theme: Theme = resolveTheme(options.theme);
 
   // ONE PLACE THAT CLEARS A HOVER, because forgetting a site is exactly how this
   // kept going wrong: `pointerleave` had it, then a redraw needed it, and now

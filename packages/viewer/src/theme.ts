@@ -69,6 +69,7 @@ export const METRIC_TOKENS = Object.freeze([
   '--ig-gutter-width',
   '--ig-spine-width',
   '--ig-char-width',
+  '--ig-label-char-width',
   '--ig-focus-ring',
 ] as const);
 
@@ -150,6 +151,19 @@ export const defaultTheme: Theme = Object.freeze({
     // Layout measures text with it, so a host changing the type scale changes
     // this too and the boxes stay around their contents.
     '--ig-char-width': 7.8,
+    // The AVERAGE advance of one character in the LABEL face at
+    // `--ig-font-size-small` — a different face and a different size from
+    // `--ig-char-width`, which is documented as the MONO advance at
+    // `--ig-font-size`. Measuring one with the other is what let a wide-glyph
+    // title overflow its node: 24 all-capital characters "fitted" 187.2px of
+    // room and drew about 240px, straight across the routing channel.
+    //
+    // AN AVERAGE, because `fitLabel` scales it per character class rather than
+    // assuming every glyph is the same width — see `labelWidth` there. A flat
+    // CEILING was tried and is wrong in the other direction: at the widest
+    // glyph's advance, ordinary titles truncate at roughly half their length,
+    // which this package's own fixtures caught immediately.
+    '--ig-label-char-width': 6,
     '--ig-focus-ring': 2,
   }),
 });
@@ -177,6 +191,30 @@ export function extendTheme(base: Theme, override: ThemeOverride): Theme {
 }
 
 /**
+ * A caller's theme, with anything it does not carry filled from the default.
+ *
+ * EVERY ENTRY POINT THAT ACCEPTS A THEME GOES THROUGH THIS, because a `Theme`
+ * is a plain object a host may have built against an EARLIER version of this
+ * package and stored. Adding a token then puts a hole in it, and the hole does
+ * not fail loudly: a missing metric reads `undefined`, arithmetic on it yields
+ * `NaN`, and every comparison against `NaN` is false. Measured when
+ * `--ig-label-char-width` was added — a 0.1.0 theme made `fitLabel` return a
+ * 60-character title with an ellipsis APPENDED, which is worse overflow than
+ * the defect that token was added to fix, and `themeCss` emitted
+ * `undefinedpx`.
+ *
+ * A TypeScript caller is told about a new token by the compiler; a JavaScript
+ * one is not, and neither is a theme deserialized from storage. This is the
+ * boundary where that difference stops mattering.
+ *
+ * IT REUSES `extendTheme` rather than merging again — a full `Theme` is a valid
+ * `ThemeOverride`, and a second merge is a second rule to keep in step.
+ */
+export function resolveTheme(theme?: Theme | undefined): Theme {
+  return theme === undefined ? defaultTheme : extendTheme(defaultTheme, theme);
+}
+
+/**
  * Render a theme as one CSS rule of custom properties.
  *
  * Values are emitted verbatim for colours and type — a theme's author owns
@@ -184,9 +222,13 @@ export function extendTheme(base: Theme, override: ThemeOverride): Theme {
  * the numbers become CSS.
  */
 export function themeCss(theme: Theme, selector = ':root'): string {
+  // RESOLVED HERE TOO: this is an exported entry point taking a caller's theme
+  // and emitting the CSS a host installs, and an absent token wrote a literal
+  // `undefinedpx`, which is not a value any browser reads.
+  const filled = resolveTheme(theme);
   const lines: string[] = [];
-  for (const token of COLOR_TOKENS) lines.push(`  ${token}: ${theme.colors[token]};`);
-  for (const token of TYPE_TOKENS) lines.push(`  ${token}: ${theme.type[token]};`);
-  for (const token of METRIC_TOKENS) lines.push(`  ${token}: ${String(theme.metrics[token])}px;`);
+  for (const token of COLOR_TOKENS) lines.push(`  ${token}: ${filled.colors[token]};`);
+  for (const token of TYPE_TOKENS) lines.push(`  ${token}: ${filled.type[token]};`);
+  for (const token of METRIC_TOKENS) lines.push(`  ${token}: ${String(filled.metrics[token])}px;`);
   return `${selector} {\n${lines.join('\n')}\n}\n`;
 }

@@ -1557,3 +1557,85 @@ describe('parseRef', () => {
     }
   });
 });
+
+describe('an unparseable block is selected by KEY POSITION, not by mention', () => {
+  const VALID = ['---', 'issuegraph:', '  blocked-by:', '    - "#7"', '', '---'].join('\n');
+
+  test('a mention inside a SCALAR no longer shadows a later valid block', () => {
+    // §4.1 takes the FIRST block carrying the key, so a malformed block selected
+    // on a bare substring match hides every later declaration. Measured before
+    // the fix: `data: null`, one diagnostic, and the real edges never loaded.
+    const r = parseFrontmatter(['---', 'note: "issuegraph:', '---', '', VALID].join('\n'));
+
+    assert.deepEqual(r.data?.blockedBy, [{ repo: null, id: '7' }]);
+    assert.deepEqual(r.diagnostics, []);
+  });
+
+  test('a mention inside a COMMENT no longer shadows one either', () => {
+    const r = parseFrontmatter(
+      ['---', '# issuegraph: not a key', 'a: [1,', '---', '', VALID].join('\n'),
+    );
+
+    assert.deepEqual(r.data?.blockedBy, [{ repo: null, id: '7' }]);
+    assert.deepEqual(r.diagnostics, []);
+  });
+
+  test('a MALFORMED FLOW-ROOT block is still selected, which is why the arm exists', () => {
+    // The regression guard, and the reason the fallback cannot simply become the
+    // line-anchored test: a flow-root key follows `{`, not a line start. Without
+    // this arm the block reports as NO BLOCK — `data: null`, ZERO diagnostics,
+    // indistinguishable from an issue that declared nothing. That silent absence
+    // is the bug the fallback was added for.
+    const r = parseFrontmatter(['---', '{ issuegraph: { blocked-by: [ "#1" ]', '---'].join('\n'));
+
+    assert.equal(r.data, null);
+    assert.equal(r.diagnostics.length, 1, 'the malformed flow-root went unreported');
+    assert.equal(isUnreadDeclaration(r), true);
+  });
+
+  test('a malformed FLOW explicit key is still selected, not dropped', () => {
+    // `{? issuegraph : …}` — YAML's explicit-key indicator inside a flow
+    // mapping. The bare-mention fallback caught this by accident; the first
+    // version of the key-position anchor did not, which was a real regression
+    // on a spelling the reader accepts.
+    //
+    // THE BLOCK-STYLE EXPLICIT KEY IS A DIFFERENT MATTER and is NOT covered
+    // here, deliberately: `? issuegraph` on its own line carries no `:` after
+    // the key, so this pattern never matched it and neither did the bare
+    // mention — the PARSER path is what reads that spelling. Review reported the
+    // two as one regression; only this half was.
+    const r = parseFrontmatter(['---', '{? issuegraph : { blocked-by: [ "#1" ]', '---'].join('\n'));
+
+    assert.equal(r.data, null);
+    assert.equal(r.diagnostics.length, 1, 'the malformed explicit key went unreported');
+    assert.equal(isUnreadDeclaration(r), true);
+  });
+
+  test('a malformed key carrying a NODE PROPERTY is still selected', () => {
+    // `&anchor` and `!tag` are legal before a mapping key, and the parser reads
+    // a well-formed `&key issuegraph:` — the control below proves it — so a
+    // MALFORMED one has to be selected for the same reason every other
+    // malformed spelling is. Measured before the fix: `data: null` with ZERO
+    // diagnostics, the silent absence this whole arm exists to prevent.
+    const r = parseFrontmatter(['---', '&key issuegraph:', '  blocked-by: [', '---'].join('\n'));
+
+    assert.equal(r.data, null);
+    assert.equal(r.diagnostics.length, 1, 'the malformed anchored key went unreported');
+    assert.equal(isUnreadDeclaration(r), true);
+  });
+
+  test('CONTROL: a WELL-FORMED anchored key reads normally', () => {
+    // Without this the test above would pass for a reader that had stopped
+    // accepting the spelling altogether.
+    const r = parseFrontmatter(
+      ['---', '&key issuegraph:', '  blocked-by: ["#7"]', '---'].join('\n'),
+    );
+
+    assert.deepEqual(r.data?.blockedBy, [{ repo: null, id: '7' }]);
+  });
+
+  test('CONTROL: a well-formed flow-root still parses', () => {
+    const r = parseFrontmatter(['---', '{ issuegraph: { blocked-by: ["#1"] } }', '---'].join('\n'));
+    assert.deepEqual(r.data?.blockedBy, [{ repo: null, id: '1' }]);
+  });
+});

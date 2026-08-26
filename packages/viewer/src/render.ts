@@ -14,7 +14,7 @@ import { type GraphOptions, graphScene } from './projections/graph.ts';
 import { linearScene } from './projections/linear.ts';
 import { treeScene } from './projections/tree.ts';
 import type { Projection, Scene } from './scene.ts';
-import { type Theme, defaultTheme, themeCss } from './theme.ts';
+import { type Theme, resolveTheme, themeCss } from './theme.ts';
 import { viewerStylesheet } from './styles.ts';
 
 export interface RenderOptions extends GraphOptions {
@@ -56,7 +56,7 @@ export function sceneFor(
  */
 export function renderViewer(input: ViewerDocument, options: RenderOptions = {}): RenderResult {
   const { document, diagnostics } = normalizeDocument(input);
-  const theme: Theme = options.theme ?? defaultTheme;
+  const theme: Theme = resolveTheme(options.theme);
   const scene = sceneFor(document, options.projection ?? 'linear', { ...options, theme });
 
   return {
