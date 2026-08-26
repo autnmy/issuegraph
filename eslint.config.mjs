@@ -117,6 +117,31 @@ const BASE_IMPORT_PATTERNS = [
 const TS_EXTENSIONS = '{ts,tsx,mts,cts}';
 
 /**
+ * A dynamic import whose specifier cannot be READ.
+ *
+ * This is the assumption the two value-based selectors below rest on, made
+ * enforceable. They read `source.value`, which exists only on a `Literal`. A
+ * template literal has no `value`, so ``import(`@issuegraph/viewer/src/x.js`)``
+ * slipped past both — and so would a concatenation, or anything else computed.
+ *
+ * Adding a template-literal case would have closed one more spelling and left
+ * the rest, which is the shape of every finding on these rules since round two.
+ * So this refuses a dynamic import whose specifier cannot be read at all: the
+ * value-based rules then cover every specifier that REACHES them, because an
+ * unreadable one no longer does.
+ *
+ * `check-isolation.ts` records the same class — a specifier built by
+ * concatenation is invisible — and routes it rather than patching per round.
+ * This closes it for `import()` instead, which is cheap here because a
+ * published package has no reason to build a specifier at runtime.
+ */
+const UNREADABLE_SPECIFIER = {
+  selector: "ImportExpression:not([source.type='Literal'])",
+  message:
+    'A dynamic import in a published package must name a plain string literal. A template literal or a computed specifier cannot be read by the seam and consumer rules, so it is refused rather than waved through.',
+};
+
+/**
  * `no-restricted-imports` visits STATIC import and export declarations. It does
  * not visit `import('…')`, so every pattern in this file — the consumer ban and
  * the sibling-seam ban alike — is bypassed by the dynamic form.
@@ -235,6 +260,28 @@ export default [
   },
   {
     /**
+     * `UNREADABLE_SPECIFIER` applies to what SHIPS, and to nothing else.
+     *
+     * Its own message says "in a published package", and a test is not one.
+     * The purity tests legitimately load every shipped module through
+     * ``import(`./${file}`)`` — a computed specifier, and the only way to walk
+     * a directory — so applying this to them would fail correct code.
+     *
+     * A SEPARATE BLOCK rather than an `ignores` on the block above, because an
+     * `ignores` there would drop the consumer ban and the seam ban from tests
+     * too. Those still apply everywhere; only this one narrows.
+     *
+     * `BASE_SYNTAX` is repeated here for the reason it is repeated everywhere in
+     * this file: flat config REPLACES a rule's options rather than merging them.
+     */
+    files: ['packages/**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}', 'demo/**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
+    ignores: ['**/*.test.*', '**/testing/**'],
+    rules: {
+      'no-restricted-syntax': ['error', ...BASE_SYNTAX, UNREADABLE_SPECIFIER],
+    },
+  },
+  {
+    /**
      * The purity rules for the two packages that RENDER.
      *
      * These replace a hand-rolled scanner that lived in each package's
@@ -303,7 +350,15 @@ export default [
         ...BASE_SYNTAX,
         { selector: 'ImportExpression', message: 'A rendering package loads nothing at runtime.' },
         { selector: "CallExpression[callee.name='eval']", message: 'A rendering package evaluates nothing.' },
-        { selector: "NewExpression[callee.name='Function']", message: 'A rendering package evaluates nothing.' },
+        {
+          // BOTH SPELLINGS OF ONE CAPABILITY, in one selector. `Function('…')`
+          // without `new` constructs exactly the same function as
+          // `new Function('…')`, and a selector naming only `NewExpression`
+          // caught one of them. `:matches()` takes both node types rather than
+          // this becoming two entries that can drift apart.
+          selector: ":matches(NewExpression, CallExpression)[callee.name='Function']",
+          message: 'A rendering package evaluates nothing — with or without `new`.',
+        },
       ],
     },
   },

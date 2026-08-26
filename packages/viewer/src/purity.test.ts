@@ -40,7 +40,13 @@ function shippedSources(directory = SOURCE_DIR, prefix = ''): { file: string; so
       found.push(...shippedSources(join(directory, entry.name), relative));
       continue;
     }
-    if (!entry.name.endsWith('.ts') || entry.name.endsWith('.test.ts')) continue;
+    // THE SAME EXTENSION FAMILY THE LINT RULES COVER. `tsconfig.json` compiles
+    // and publishes `.mts`, `.cts` and `.tsx` as readily as `.ts`, so a filter
+    // naming one of them left the load half blind to the other three — and the
+    // load half is the ONLY instrument for an import-time computed access that
+    // no AST rule can recognise. Declining this as "lint refuses it first" was
+    // wrong: lint is exactly what cannot see that case.
+    if (!/\.(ts|mts|cts|tsx)$/.test(entry.name) || /\.test\.(ts|mts|cts|tsx)$/.test(entry.name)) continue;
     found.push({ file: relative, source: readFileSync(join(directory, entry.name), 'utf8') });
   }
   return found;

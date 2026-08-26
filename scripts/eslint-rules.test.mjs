@@ -73,11 +73,23 @@ test('a DYNAMIC absolute path is caught — the form a text scan reads worst', a
   );
 });
 
-test('KNOWN GAP: a template-literal absolute path is NOT caught', async () => {
-  // Recorded rather than hidden. This is why scripts/check-isolation.ts keeps a
-  // text-level escape check: it reads this form, and ESLint does not. If a
-  // future rule closes it, this test fails and should be deleted, not amended.
-  assert.deepEqual(await rulesFor('export const load = () => import(`/home/runner/consumer.js`);\n'), []);
+// THE KNOWN GAP THAT USED TO SIT HERE IS CLOSED, and it was deleted rather than
+// amended because that is what it asked for: "If a future rule closes it, this
+// test fails and should be deleted, not amended."
+//
+// It recorded that ESLint could not read ``import(`/home/runner/consumer.js`)``
+// — a template literal has no `source.value`. `UNREADABLE_SPECIFIER` in
+// `eslint.config.mjs` now refuses any dynamic import whose specifier cannot be
+// read at all, so that form is caught, and the case below pins it.
+//
+// It was not the target. That rule was added to close a template-literal reach
+// past the SIBLING SEAM; this gap fell to the same change because both are the
+// same defect — a rule reading a value that a computed specifier does not have.
+test('the former known gap: a template-literal absolute path IS now caught', async () => {
+  assert.deepEqual(
+    await rulesFor('export const load = () => import(`/home/runner/consumer.js`);\n'),
+    ['no-restricted-syntax'],
+  );
 });
 
 test('a deep import into a sibling package is caught — the OSS seam', async () => {
@@ -330,6 +342,64 @@ test('PURITY: the rules reach .mts, .cts and .tsx, not just .ts', async () => {
 test('CONTROL: ordinary pure code in an .mts rendering module reports nothing', async () => {
   assert.deepEqual(
     await rulesAt('packages/editor/src/__violation-fixture__.mts', 'export const add = (a: number, b: number) => a + b;\n'),
+    [],
+  );
+});
+
+test('PURITY: `Function(...)` without `new` is caught too', async () => {
+  // It constructs exactly the same function as `new Function(...)`, and a
+  // selector naming only `NewExpression` caught one of the two spellings.
+  // `:matches(NewExpression, CallExpression)` takes both rather than this
+  // becoming two entries that can drift apart.
+  for (const source of [
+    'export const s = () => Function("return 1")();\n',
+    "export const s = () => new Function('return 1');\n",
+  ]) {
+    assert.deepEqual(await purityRulesFor(source), ['no-restricted-syntax'], source);
+  }
+});
+
+test('SEAM: an UNREADABLE dynamic specifier is refused, not just a matching one', async () => {
+  // The value-based selectors read `source.value`, which exists only on a
+  // `Literal` — so a template literal slipped past them, and so would anything
+  // computed. Rather than adding a template-literal case and leaving the rest,
+  // the precondition those selectors rest on is now enforced: a dynamic import
+  // in shipped code must name a plain string literal.
+  //
+  // The second case is the one that shows this is a removal rather than another
+  // spelling: NOTHING reported a concatenated specifier, and it is closed.
+  for (const source of [
+    'export const a = () => import(`@issuegraph/viewer/src/document.js`);\n',
+    "export const a = (p) => import('@issuegraph/viewer/' + p);\n",
+  ]) {
+    assert.deepEqual(
+      await rulesAt('packages/store/src/__violation-fixture__.ts', source),
+      ['no-restricted-syntax'],
+      source,
+    );
+  }
+});
+
+test('CONTROL: a literal dynamic import is still allowed where it is legitimate', async () => {
+  // The rule refuses UNREADABLE specifiers, not dynamic imports. A
+  // non-rendering package may still load its own module at runtime — and a
+  // rule that forbade that would pass every case above while breaking `cli`.
+  assert.deepEqual(
+    await rulesAt('packages/cli/src/__violation-fixture__.ts', "export const a = () => import('./thing.js');\n"),
+    [],
+  );
+  assert.deepEqual(
+    await rulesAt('packages/store/src/__violation-fixture__.ts', "export const a = () => import('@issuegraph/viewer');\n"),
+    [],
+  );
+});
+
+test('CONTROL: a TEST may still use a computed specifier — it does not ship', async () => {
+  // The purity tests load every shipped module through `import(`./${file}`)`,
+  // which is the only way to walk a directory. The rule is scoped to what
+  // ships, so applying it to a test would fail correct code.
+  assert.deepEqual(
+    await rulesAt('packages/store/src/__violation-fixture__.test.ts', 'export const a = (f) => import(`./${f}`);\n'),
     [],
   );
 });
