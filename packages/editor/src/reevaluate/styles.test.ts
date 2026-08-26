@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { diffOrder } from '@issuegraph/store';
-import { THEME_TOKENS } from '@issuegraph/viewer';
+import { THEME_TOKENS, viewerStylesheet } from '@issuegraph/viewer';
 
 import { renderReevaluate } from './render.ts';
 import { reevaluateStylesheet } from './styles.ts';
@@ -82,6 +82,24 @@ describe('the re-evaluate stylesheet carries structure, never a value', () => {
     assert.equal(/\banimation\b/.test(css), false, 'an animation');
     assert.equal(/\btransition\b/.test(css), false, 'a transition');
     assert.equal(/@keyframes/.test(css), false, 'a keyframes block');
+  });
+
+  it('greys the held rail with a property the rail\'s own colours cannot beat', () => {
+    // THE POSITIVE CONTROL FIRST: this only matters because layer 1 sets colours
+    // on its own descendants, and a specified value beats an inherited one. If
+    // that ever stops being true this assertion fails loudly rather than leaving
+    // the rule below looking over-built.
+    const viewerCss = withoutComments(viewerStylesheet);
+    assert.match(viewerCss, /\.ig-title\s*\{[^}]*color:/, 'layer 1 no longer colours .ig-title');
+    assert.match(viewerCss, /\.ig-station[^{]*\{[^}]*background:/, 'layer 1 no longer fills stations');
+
+    const held = css.match(/\.ig-reevaluate\[data-order='held'\][^{]*\{([^}]*)\}/)?.[1];
+    assert.ok(held !== undefined, 'nothing greys the held rail');
+    // A subtree-wide property, so a descendant layer 1 colours later is covered
+    // by construction. Enumerating the descendants to override is the
+    // one-spelling-at-a-time class this repository has already paid for.
+    assert.match(held, /filter:/);
+    assert.equal(/(^|;)\s*color:/.test(held), false, 'a bare colour the descendants override');
   });
 
   it('styles the selectors this package actually renders, and no others', () => {

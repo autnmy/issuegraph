@@ -2,7 +2,7 @@
  * The re-evaluate surface, as markup: the rail, a summary of what the last edit
  * did to it, and a delta chip for each row that changed.
  *
- * ## It is an OVERLAY. It draws nothing inside a row
+ * ## It draws nothing inside a row
  *
  * The rail is `@issuegraph/viewer`'s linear projection, composed here as a SPEC
  * rather than as a string — `renderViewer` hands back `scene.root`, so the
@@ -12,11 +12,24 @@
  *
  * That is what makes the design's rule structural instead of asserted:
  * **unaffected rows are left completely alone** because this package never
- * touches a row. The chips are siblings of the rail, each carrying the
- * viewer's own `KEY_ATTRIBUTE`, which is how a mount positions one over its
- * row. The rejected alternative — splice chips into the rail's markup string —
- * would have re-introduced exactly the hand-built escaping surface the spec
- * grammar exists to remove.
+ * touches a row. The rejected alternative — splice chips into the rail's markup
+ * string — would have re-introduced exactly the hand-built escaping surface the
+ * spec grammar exists to remove.
+ *
+ * ## The chips are a KEYED LIST, and this package does not position them
+ *
+ * Said plainly because the earlier wording did not: `data-ig-key` has no
+ * browser behaviour of its own. The chips render as a list beside the rail, and
+ * putting one ON its row needs that row's geometry — which only a mount has,
+ * and this package has no mount. Naming it an overlay while shipping a
+ * normal-flow list claimed a positioning this markup cannot do.
+ *
+ * So the list is built to stand on its own instead: every chip NAMES the row it
+ * describes, which is what lets a reader account for the rows that got no chip.
+ * The key is published for the mount that will position them, and that mount
+ * lands with the change that assembles the workspace — the same boundary the
+ * scale ladder already draws when it defers listener wiring and focus
+ * restoration to whoever owns the mount.
  *
  * ## Two rejected alternatives from the design, recorded so they stay rejected
  *
@@ -175,13 +188,18 @@ function memberSpec(delta: RankDelta, words: ChangeWords): ElementSpec {
  * A `together-with` unit is one row and several refs, so its members are nested
  * inside a single chip rather than given one each. Each keeps its own
  * `data-ref`, so a host can still tell which member moved.
+ *
+ * IT NAMES ITS ROW IN TEXT, not only in `KEY_ATTRIBUTE`. Unpositioned, a chip
+ * that carried its key only as an attribute said nothing a reader could see
+ * about WHICH row moved — and the rows that did not move are accounted for
+ * precisely by not being named here. The key is data, not language, so naming
+ * it costs the host no word.
  */
 function chipSpec(chip: PlacedChip, words: ChangeWords): ElementSpec {
-  return element(
-    'li',
-    { class: 'ig-delta-chip', [KEY_ATTRIBUTE]: chip.key },
-    chip.deltas.map((delta) => memberSpec(delta, words)),
-  );
+  return element('li', { class: 'ig-delta-chip', [KEY_ATTRIBUTE]: chip.key }, [
+    element('span', { class: 'ig-delta-key' }, [chip.key]),
+    ...chip.deltas.map((delta) => memberSpec(delta, words)),
+  ]);
 }
 
 /** Render the order, and what the last edit did to it. */
@@ -220,7 +238,7 @@ export function renderReevaluate(
         ? null
         : element(
             'ul',
-            { class: 'ig-delta-overlay' },
+            { class: 'ig-delta-list' },
             view.chips.map((chip) => chipSpec(chip, options.words)),
           ),
       // The viewer's own tree, nested rather than concatenated.

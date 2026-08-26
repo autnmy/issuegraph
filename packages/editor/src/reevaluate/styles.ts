@@ -33,9 +33,25 @@ export const reevaluateStylesheet = `
 }
 
 /* Greyed one step, and never hidden: a stale order that is labelled is still
-   the most useful thing on the screen. */
+   the most useful thing on the screen.
+
+   A FILTER, NOT A COLOUR, and that is the whole point of this rule. color on
+   the rail greys almost nothing: the viewer's own stylesheet sets color
+   directly on .ig-title, .ig-id and .ig-hold, and carries the stations
+   and badges in background and border-color, none of which inherit at all.
+   A specified value beats an inherited one, so the stale order would have kept
+   its normal palette while this rule looked like it was doing something.
+
+   The enumeration is the trap here, not the oversight: listing the descendants
+   to override is the "a static rule names one spelling of a capability"
+   class this repository has already paid for several times over, and it would
+   go stale the first time layer 1 colours something new. filter applies to
+   an element AND its whole subtree whatever properties that subtree sets, so
+   a descendant added later is covered by construction. styles.test.ts pins
+   both halves: that layer 1 really does colour its own descendants, and that
+   this rule is not a bare color. */
 .ig-reevaluate[data-order='held'] .ig-viewer {
-  color: var(--ig-text-muted);
+  filter: grayscale(1);
 }
 
 .ig-order-computing {
@@ -105,7 +121,7 @@ export const reevaluateStylesheet = `
   outline-offset: var(--ig-space-tight);
 }
 
-.ig-delta-overlay {
+.ig-delta-list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -125,6 +141,19 @@ export const reevaluateStylesheet = `
 }
 
 .ig-delta-member {
+  display: flex;
+  gap: var(--ig-space-tight);
+  align-items: baseline;
+}
+
+.ig-delta-key {
+  font-family: var(--ig-font-mono);
+  color: var(--ig-text-muted);
+}
+
+/* The count and its word are adjacent spans with no text between them, so
+   without this they render as 2up. Same reason .ig-change-part has one. */
+.ig-delta-move {
   display: flex;
   gap: var(--ig-space-tight);
   align-items: baseline;

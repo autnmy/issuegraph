@@ -184,7 +184,13 @@ describe('done when: the computing state shows the previous order, greyed and la
   it('labels the surface and greys the rail through the stylesheet', () => {
     assert.match(held.markup, /data-order="held"/);
     assert.match(held.markup, /write landed, order computing/);
-    assert.match(reevaluateStylesheet, /\[data-order='held'\][^{]*\.ig-viewer\s*\{[^}]*var\(--ig-/);
+    // A subtree-wide `filter`, not a colour: the viewer sets colours directly on
+    // its own descendants, and a specified value beats an inherited one — so a
+    // `color` here would leave the stale order in its normal palette.
+    assert.match(
+      reevaluateStylesheet,
+      /\[data-order='held'\][^{]*\.ig-viewer\s*\{[^}]*filter:\s*grayscale/,
+    );
   });
 
   it('renders no rank that came from the partially-derived order', () => {

@@ -38,6 +38,19 @@ describe('unaffected rows are left completely alone', () => {
     assert.match(result.markup, /data-direction="up"/);
     assert.match(result.markup, /data-direction="down"/);
   });
+
+  it('names the row each chip is about, so the unchipped rows are accounted for', () => {
+    // Nothing here positions a chip over its row — `data-ig-key` has no browser
+    // behaviour on its own — so a chip that carried its key only as an attribute
+    // said nothing visible about WHICH row moved.
+    const result = renderReevaluate(railOf(['b', 'a', 'c']), {
+      words: WORDS,
+      change: diffOrder(orderOf(['a', 'b', 'c']), orderOf(['b', 'a', 'c']), editOf()),
+    });
+    assert.match(result.markup, /<span class="ig-delta-key">a<\/span>/);
+    assert.match(result.markup, /<span class="ig-delta-key">b<\/span>/);
+    assert.equal(/<span class="ig-delta-key">c<\/span>/.test(result.markup), false);
+  });
 });
 
 describe('an edit that changed nothing renders, in the summary\'s own place', () => {
