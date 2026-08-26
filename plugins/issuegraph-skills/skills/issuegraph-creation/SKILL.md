@@ -128,9 +128,12 @@ create each leaf, never "later":
 ```sh
 # A PRIVATE SCRATCH FILE, because this one is a LOOP that FILES ISSUES. `/tmp` is
 # shared, so two decompositions running at once — different repos, different
-# parents — collide on one fixed path, and the loser files the other's body. Rule
-# of thumb: a single-shot example may use `/tmp/body.md`; anything that loops over
-# issues gets its own.
+# parents — collide on one fixed path, and the loser files the other's body.
+# THE RULE IS "DOES IT WRITE", NOT "DOES IT LOOP". An earlier revision drew that
+# line at looping and was wrong: two people running a one-shot repair at the same
+# moment collide exactly as two loops do. Anything that WRITES gets its own
+# directory; a read-only example may keep a fixed path, since the worst it can do
+# is read somebody else's copy of a body it was only going to inspect.
 scratch=$(mktemp -d) || exit 1
 leaf_file=$scratch/leaf.md              # NOT `leaf` — the loop below binds that
 

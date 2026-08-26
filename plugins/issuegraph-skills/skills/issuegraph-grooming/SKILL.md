@@ -83,16 +83,24 @@ It never re-spells or removes a line, and it refuses outright any shape it canno
 establish with certainty.
 
 ```sh
+# A PRIVATE DIRECTORY, because this recipe WRITES. `/tmp` is shared, so two people
+# — or two jobs — repairing DIFFERENT issues at the same time collide on these
+# paths, and one can transform the other's fetched body and then write it back to
+# the wrong issue. Being a one-shot does not help: it is concurrency, not looping,
+# that collides.
+d=$(mktemp -d) || exit 1
+
 # The fetch goes to a FILE and its status is checked, and the body is extracted
 # with `jq -j` — never through `$(…)`. Both halves matter and they fail
 # differently; see below.
-gh issue view 1234 -R owner/repo --json body > /tmp/issue.json \
-  || { echo "could not read the issue; nothing was written" >&2; exit 1; }
-jq -j .body /tmp/issue.json > /tmp/orig.md || exit 1
+gh issue view 1234 -R owner/repo --json body > "$d/issue.json" \
+  || { echo "could not read the issue; nothing was written" >&2; rm -rf "$d"; exit 1; }
+jq -j .body "$d/issue.json" > "$d/orig.md" || { rm -rf "$d"; exit 1; }
 
-issuegraph backfill --body-file /tmp/orig.md > /tmp/body.md \
-  && [ -s /tmp/body.md ] \
-  && gh issue edit 1234 -R owner/repo --body-file /tmp/body.md
+issuegraph backfill --body-file "$d/orig.md" > "$d/body.md" \
+  && [ -s "$d/body.md" ] \
+  && gh issue edit 1234 -R owner/repo --body-file "$d/body.md"
+rm -rf "$d"
 ```
 
 ⚠ **This recipe can wipe an issue through TWO different doors, and both are
@@ -148,14 +156,14 @@ These two bodies produce byte-identical `validate` output —
 `{"state":"inert","ok":false,"blockDefect":"undelimited"}` — while `backfill`
 repairs the first and refuses the second:
 
-```
+````
 x                                      issuegraph:
                                          blocked-by: [8232]
 ```yaml
 issuegraph:
   blocked-by: [8232]
 ```
-```
+````
 
 **On `unrecoverable` there is no `body` key in the JSON at all** — the input was
 not repaired, so there is nothing you could write back believing it had been.
