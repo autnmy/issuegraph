@@ -47,9 +47,14 @@ Use `ready` to answer *"what should I pick up?"* rather than hand-rolling a bloc
 ```sh
 gh issue view 1234 -R owner/repo --json body -q .body \
   | issuegraph set --blocked-by 987 --blocked-by owner/repo#654 \
-  > new-body.md
-gh issue edit 1234 -R owner/repo --body-file new-body.md
+  > new-body.md \
+  && gh issue edit 1234 -R owner/repo --body-file new-body.md
 ```
+
+⚠ **Keep the `&&`.** A refused `set` exits non-zero having written **nothing**,
+but the redirection has already created `new-body.md` as a **0-byte file** — so
+an unchained `gh issue edit` replaces the whole issue body with nothing.
+Measured: `set` rc **4**, output file **0 bytes**.
 
 - References accept `123`, `#123`, or `owner/repo#123`. **Repeat `--blocked-by` for each entry** — it is a list.
 - `--no-blocked-by` / `--no-serialize-with` remove an entry.
@@ -67,7 +72,20 @@ gh issue edit 1234 -R owner/repo --body-file new-body.md
 
 ## Read the `state` field, NOT the exit code
 
-**`parse` exits 0 even when the block is unreadable or inert.** The condition is reported in stdout, and a caller that branches on the exit code alone will read both failures as success. Verified against `@issuegraph/cli@0.1.1`:
+**The exit code is not a substitute for `state`, and not because it "might" differ — the two read verbs answer DIFFERENTLY for the same body.** Measured on the built binary:
+
+| `state` | `parse` | `validate` |
+|---|---|---|
+| `read` | `0` | `0` |
+| `absent` | `0` | `0` |
+| `unread` | `3` | `3` |
+| `inert` | **`0`** ⚠ | `5` |
+
+**`parse` on an `inert` block exits 0** — and undelimited is the shape hand-authored blocks overwhelmingly take, so that is the cell that fails open: the caller reads success, and the payload reads like an issue with no dependencies. The two verbs also **disagree** on that row, so a recipe that swaps one for the other silently changes meaning.
+
+This table is the authority; the task-shaped skills point at it rather than restate it.
+
+The condition is always reported in stdout:
 
 | `state` | means | what to do |
 |---|---|---|
@@ -85,7 +103,7 @@ STATE=$(gh issue view 1234 -R owner/repo --json body -q .body \
 
 Note also that **a code fence is armor, not a delimiter** — the CLI says so in its own diagnostic. A block wrapped in ``` but missing its `---` pair is inert, and inert blocks are invisible to every reader.
 
-The documented exit codes (`1` internal, `2` usage, `3` unreadDeclaration, `4` refusedWrite, `5` inertDeclaration) exist for the failure modes each names, but **do not assume a given verb reaches them** — `parse` reports these conditions through `state` at exit 0. Check `state` first; use the exit code only to catch usage errors and crashes.
+The documented exit codes are `1` internal, `2` usage, `3` unreadDeclaration, `4` refusedWrite, `5` inertDeclaration — but **do not assume a given verb reaches the one you expect**: the table above is what each verb actually returns, and `parse` reports `inert` through `state` at exit **0** while `validate` returns `5` for it. Check `state` first; use the exit code to catch usage errors and crashes, and — for a write verb — to tell a refusal from a success before you consume its output.
 
 ## Traps worth knowing
 

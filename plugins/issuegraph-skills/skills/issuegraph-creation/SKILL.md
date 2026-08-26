@@ -36,9 +36,15 @@ Then file it:
 
 ```sh
 printf '%s\n' "$BODY" \
-  | issuegraph set --blocked-by 8232 --evidence asserted > /tmp/body.md
-gh issue create -R owner/repo --title "…" --body-file /tmp/body.md
+  | issuegraph set --blocked-by 8232 --evidence asserted > /tmp/body.md \
+  && gh issue create -R owner/repo --title "…" --body-file /tmp/body.md
 ```
+
+⚠ **The `&&` is the whole safety of this.** When `set` refuses — an unwritable
+field, a body that already carries a block — it exits non-zero having written
+**nothing**, but the redirection has *already* created `/tmp/body.md` as a
+**0-byte file**. Without the chain the next line files an **empty issue**.
+Measured: `set` rc **4**, output file **0 bytes**.
 
 **References take any spelling** — `123`, `#123`, `owner/repo#123` — and the CLI
 emits the quoted, sigilled form. **`--blocked-by` is the only repeatable one**;
@@ -112,7 +118,12 @@ for leaf in "$@"; do
   printf '%s\n' "$(leaf_body "$leaf")" \
     | issuegraph set --decomposed-from "$PARENT" \
                      ${PREV:+--blocked-by "$PREV"} \
-                     --evidence asserted > /tmp/leaf.md
+                     --evidence asserted > /tmp/leaf.md || break
+  # NEVER file a body you did not verify was written. A refused `set` exits
+  # non-zero having written nothing, while the redirection has already made the
+  # file — so without the `|| break` above and the `[ -s ]` below the loop files
+  # an EMPTY leaf and then carries its number into the dependency chain.
+  [ -s /tmp/leaf.md ] || break
   # `gh issue create` prints the new issue's URL — take the number off the end
   # and CARRY IT, or the chain is never written.
   url=$(gh issue create -R "$REPO" --title "$(leaf_title "$leaf")" --body-file /tmp/leaf.md) || break
@@ -147,8 +158,11 @@ issuegraph parse --body-file /tmp/body.md | jq -e '.state == "read"' >/dev/null 
   || { echo "the block does not read — do not file this"; exit 1; }
 ```
 
-**Check `state`, not the exit code** — `parse` exits 0 even when the block is
-unreadable. That is the single most expensive mistake available here.
+**Check `state`, not the exit code.** The codes are not uniform across verbs or
+states — `parse` exits **0** on an `inert` block while `validate` exits **5** —
+so a `state` test is the only reading that holds. The measured table lives in the
+**issuegraph** reference skill; it is not restated here, because a contract
+spelled in three places drifts in one of them (this paragraph was that one).
 
 ## Related
 

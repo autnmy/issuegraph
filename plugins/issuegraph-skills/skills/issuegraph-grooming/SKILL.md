@@ -112,7 +112,10 @@ not repaired, so there is nothing you could write back believing it had been.
 if out=$(issuegraph backfill --json --body-file body.md); then rc=0; else rc=$?; fi
 case "$(printf '%s' "$out" | jq -r .outcome)" in
   delimited)     printf '%s' "$out" | jq -r .body > /tmp/new.md
-                 gh issue edit "$n" -R "$REPO" --body-file /tmp/new.md ;;
+                 # `[ -s ]` even here, where the outcome already promises a body:
+                 # every write in these skills is gated on the file being non-empty,
+                 # because the one that is not is the one that empties an issue.
+                 [ -s /tmp/new.md ] && gh issue edit "$n" -R "$REPO" --body-file /tmp/new.md ;;
   unrecoverable) echo "#$n needs a human (exit $rc)" ;;
   *)             : ;;   # nothing to do
 esac
