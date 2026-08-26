@@ -73,9 +73,49 @@ state = scaleReducer(state, { kind: 'focus', key: ladder.capsules[0].lead });
 
 **`ladder.canvas` is the canvas zone's document, never the rail's.** Narrowing the canvas is not narrowing the order. The complete order rail is rendered from the whole document by the workspace that assembles the zones.
 
+## The ambient audit
+
+Four findings about an *encoding*, as a pure detector plus a surface that never nags.
+
+| Finding | Severity | Note |
+|---|---|---|
+| **cycle** | `blocks-work` | the only one that stops work outright — no member can ever be ready |
+| **dead duplicate ref** | `dangerous` | excluded from the order while nothing tracks its work: looks handled, isn't |
+| **encoding refused** | `blocks-own-edges` | its edges are incomplete until it parses, and it reads as merely unencoded |
+| **stale blocker** | `misleading` | a closed blocker already satisfies readiness; clearing is bookkeeping |
+
+Severity, and the "keep as history" affordance the last row alone carries, are **data on a frozen class table** — so no render site picks either, and a fifth class is a compile error until the table says what it costs.
+
+```ts
+import { auditOverlay, renderAuditHeader, auditRowAttributes } from '@issuegraph/editor';
+
+const overlay = auditOverlay({ document, graph, encodingRefused });
+
+renderAuditHeader(overlay);          // the persistent count and its filter toggle
+auditRowAttributes(overlay, ref);    // {} for a clean row; the severity mark for a flagged one
+```
+
+`auditDocument` is exported too, for a host that wants the findings without a surface. **`auditOverlay` runs the audit rather than accepting one**, deliberately: taking a finding list made this a public boundary for values the compiler never checked, and every field, invariant and mutability escape then had to be defended one at a time. A host that persisted findings re-audits to draw them — which is the right way round anyway, since the audit is pure and cheap and a persisted finding may not describe the document being drawn.
+
+**Two of the four rest on a reader, and it is a required port.** `graph` carries `Model.cycles` and `Model.duplicateCanonical` straight off `buildModel`, in the *store's* own reference spelling — the host builds the model, so the host owns the translation between an opaque store reference and a normalised model key. It is required rather than optional because a host with no reader must not quietly receive a thinner audit and read it as a complete one.
+
+**It is the reader's answer specifically, not the write guard.** `@issuegraph/derive`'s `wouldCycleOnBlockedBy` is a *pre-write* refusal, and its divergences all lean fail-safe for a write that is about to happen: it spans closed nodes, and it does not exempt a together unit's internal `blocked-by` edges. Over-refusing is the recoverable direction before a write and simply a false finding in an audit — §6.6 says internal edges *"stay advisory … they would make every group carrying its own ordering read as stuck"*. Reading the guard as an edge-on-cycle test flags every ordinary together group that carries its own ordering.
+
+**Duplicate resolution is transitive, and both classes need it.** With `a duplicate-of b`, `b duplicate-of c` and `c` closed, the reader excludes *both* `a` and `b`, so both references are dead — and testing each edge's immediate target reports `b` while missing `a`, because `b` is open. §4.3.3 also reads a `blocked-by` naming a duplicate as naming its **canonical**, so the same resolution decides a stale blocker.
+
+**A finding about a closed issue is finished history.** Two of the four classes name a harm that needs an open subject — a dead duplicate ref claims work is tracked nowhere, and a stale blocker claims readiness is satisfied — so on a closed one they would report the ordinary end of a lifecycle as a defect, permanently. The other two have no such precondition and deliberately keep none: §6.6 already restricts cycles to open nodes, and an encoding refusal is a fact about a *declaration*, which the model reads from closed nodes too.
+
+**A refused declaration is not a discharged blocker, and a partial parse is not an absent one.** Two shortfalls that pull the same way. The reader keeps a dependent unready when the thing its edge resolved to was under-read — the declaration it could not read may carry a `duplicate-of` redirecting that edge at an **open** canonical — so a closed-but-refused target is excluded from the stale-blocker class rather than presented as dischargeable bookkeeping. And a dropped *field* returns non-null data carrying the surviving relationships, so the refusal says the edges are **incomplete and untrusted**, never that there are none.
+
+**"Long-closed" is not available here.** A document carries no timestamp, so every closed blocker is reported — the safe direction for a finding whose whole severity is `misleading`, and one a host can narrow with a date it does have.
+
+**Ambient, and the list of things it is not.** A persistent header count that never moves and never animates, a `--ig-stroke` gold left-bar on affected rail rows, and a filter — not a mode, because *"a mode you must enter is a mode you forget"*. No modals, toasts, red banners, badge animation, or **auto-fix**: every finding is a judgment call, so the surface offers navigation and never a remedy. That prohibition is asserted over the emitted markup and the stylesheet bytes rather than stated here alone.
+
+**The bar is CSS on this package's own attribute, not an element drawn into a viewer row.** Layer 1's markup primitive is deliberately not on its public surface, so an overlay drawn from out here would have to re-implement HTML escaping — duplication with an injection shape rather than a mirror that merely drifts. `auditRowAttributes` answers what a row carries, `auditStylesheet` draws the bar from it, and the exchange is data.
+
 ## Status
 
-Landing separately, each on its own change: the edge mutation-state overlays, the type picker and direction sentence, the three equivalent create paths, the re-evaluate surface, the ambient audit, the first-pass review queue, and the three-zone workspace that assembles them, wires the commands to a DOM and fixes this package's exports.
+Landing separately, each on its own change: the edge mutation-state overlays, the type picker and direction sentence, the three equivalent create paths, the re-evaluate surface, the first-pass review queue, and the three-zone workspace that assembles them, wires the commands to a DOM and fixes this package's exports.
 
 ## Licence
 

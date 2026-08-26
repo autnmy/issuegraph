@@ -47,10 +47,11 @@
  *
  * ## The surface
  *
- * The SCALE LADDER, the RE-EVALUATE SURFACE, the EDGE MUTATION-STATE OVERLAYS
- * and the TYPE PICKER. The create paths, the audit and the first-pass queue
- * each land as their own change, and the final shape of this file is decided by
- * the one that assembles the workspace.
+ * The SCALE LADDER, the AUDIT, the RE-EVALUATE SURFACE, the EDGE
+ * MUTATION-STATE OVERLAYS and the TYPE PICKER. The create paths and the
+ * first-pass queue each land as their own change, and the final shape of this
+ * file is decided by the one that assembles the workspace.
+
  *
  * The picker is the first thing here to compose @issuegraph/core directly. The
  * split between directed and symmetric relationships is a fact about the
@@ -75,6 +76,30 @@
  *
  * @see https://github.com/autnmy/issuegraph/blob/main/SPEC.md
  */
+
+export type {
+  AuditClass,
+  AuditClassSpec,
+  AuditFinding,
+  AuditGraph,
+  AuditInput,
+  AuditSeverity,
+  EncodingRefusal,
+} from './audit/findings.ts';
+export { AUDIT_CLASSES, AUDIT_CLASS_SPECS, auditDocument } from './audit/findings.ts';
+
+export type { AuditHeaderOptions, AuditOverlay, AuditRow } from './audit/surface.ts';
+export {
+  AUDIT_COUNT_ATTRIBUTE,
+  AUDIT_FILTER_ATTRIBUTE,
+  AUDIT_SEVERITY_ATTRIBUTE,
+  auditFilterKeeps,
+  auditOverlay,
+  auditRowAttributes,
+  renderAuditHeader,
+} from './audit/surface.ts';
+
+export { auditStylesheet } from './audit/styles.ts';
 
 export {
   INITIAL_SCALE_STATE,

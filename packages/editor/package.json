@@ -52,6 +52,7 @@
     "@issuegraph/viewer": "workspace:^"
   },
   "devDependencies": {
+    "@issuegraph/reader": "workspace:^",
     "@types/node": "^22.18.0",
     "typescript": "^6.0.3"
   }
