@@ -29,12 +29,28 @@
  * here would be a second retype emitter, and the two would be free to disagree
  * about what a retype IS — which is the whole reason that module exists.
  *
- * ## An unbound key is `none`, never a swallowed key
+ * ## `none` means SOMEONE ELSE OWNS THIS PRESS
  *
- * The same contract `NavigationCommand`'s `none` carries: this map claims only
- * the keys §17b gives it, and everything else is the host's to handle. A map
- * that returned "handled" for an unbound key would silently eat the host's own
- * shortcuts.
+ * The same contract `NavigationCommand`'s `none` carries, and the single idea
+ * this module keeps getting asked about. A host's whole wiring is "reduce a
+ * non-`none` intent, and `preventDefault()` it" — so every press this map
+ * claims wrongly is a keystroke stolen from its real owner, and one it hands
+ * back is simply the platform working. There are three owners:
+ *
+ *   - THE HOST, for a key §17b never bound. An unbound key is `none`.
+ *   - THE PLATFORM, for a modified chord — `Cmd+R` is reload, not relate. See
+ *     {@link KeyPress}.
+ *   - AN EDITABLE CONTROL, for a printable key while it has focus. `1` typed
+ *     into the target search is the character `1`, not a kind selection.
+ *
+ * The last two arrived as review findings on consecutive rounds, which is what
+ * moved them from special cases to a stated rule: both are "does someone else
+ * own this press", asked before the binding's own meaning is consulted. A
+ * fourth owner, if one appears, belongs beside them rather than inside an arm
+ * of the switch.
+ *
+ * Ownership is DATA on the binding table — `survivesEditing` — so no call site
+ * decides it and a new binding cannot be added without answering the question.
  */
 
 import { EDGE_FIELDS } from '@issuegraph/core';
@@ -80,6 +96,21 @@ export interface KeyboardContext {
    * it is, through the ordinary path, with nothing here to keep in step.
    */
   readonly selectedEdge: EdgeId | null;
+  /**
+   * Whether an editable control — the target search, an inline title — owns
+   * text entry right now.
+   *
+   * REQUIRED, NOT OPTIONAL, and that is deliberate. An omitted flag would
+   * default to "nothing is being edited", which is the answer that silently
+   * steals the reader's keystrokes; making it required turns a host that has
+   * not thought about it into a compile error instead. It is the one direction
+   * a default could not fail safely in.
+   *
+   * The host answers it — this package has no DOM, and "is an editable control
+   * focused" is a question only the shell can see (`document.activeElement`,
+   * a `contenteditable`, its own search's state).
+   */
+  readonly editableFocus: boolean;
 }
 
 /**
@@ -97,13 +128,24 @@ export type KeyIntent =
   | { readonly kind: 'retype'; readonly edgeId: EdgeId };
 
 /** What a bound key does, before a context has been consulted. */
-type Binding =
+type BindingAction =
   | { readonly kind: 'relate' }
   | { readonly kind: 'choose-type'; readonly edgeKind: EdgeKind }
   | { readonly kind: 'commit-target' }
   | { readonly kind: 'delete-edge' }
   | { readonly kind: 'retype-edge' }
   | { readonly kind: 'cancel' };
+
+/**
+ * An action, plus whether it still applies while a text control owns the key.
+ *
+ * DATA ON THE TABLE, NOT A TEST AT THE CALL SITE — the same shape
+ * `audit/findings.ts` uses for severity, and for the same payoff: no site picks
+ * the answer, and a sixth binding is a compile error until the table says
+ * whether an editable control owns it. Written as an intersection so the
+ * discriminated union still narrows in the switch below.
+ */
+type Binding = BindingAction & { readonly survivesEditing: boolean };
 
 /**
  * The vocabulary, as data.
@@ -115,21 +157,33 @@ type Binding =
  * once, here, closes it.
  */
 const BINDINGS: ReadonlyMap<string, Binding> = new Map<string, Binding>([
-  ['r', { kind: 'relate' }],
+  // `r`, the digits and `t` are PRINTABLE. While a text control has focus they
+  // are that control's characters, so they do not survive editing.
+  ['r', { kind: 'relate', survivesEditing: false }],
   ...EDGE_FIELDS.map((edgeKind, index): readonly [string, Binding] => [
     String(index + 1),
-    { kind: 'choose-type', edgeKind },
+    { kind: 'choose-type', edgeKind, survivesEditing: false },
   ]),
-  ['enter', { kind: 'commit-target' }],
+  // `⏎` and `Escape` SURVIVE, and they are the reason this is a per-binding flag
+  // rather than one "printable" test: the flow §17b specifies is
+  // `R → digit → search → ⏎`, so the search box is focused at precisely the
+  // moment `⏎` has to commit the target. A rule that silenced the whole map
+  // while editing would break the loop it exists to deliver. `Escape` survives
+  // for the same reason it is always available: a draft you cannot abandon is
+  // worse than one you cannot start.
+  ['enter', { kind: 'commit-target', survivesEditing: true }],
   // BOTH SPELLINGS OF THE DELETE KEY. §17b writes it `⌫`, which is `Backspace`
   // on the keyboards that have it and `Delete` on those that do not — most
   // notably Apple's, where the key in that position reports `Backspace` and the
   // key labelled `Delete` is the forward one. Binding one of the two would make
   // "no pointer" false on whichever hardware got the other.
-  ['backspace', { kind: 'delete-edge' }],
-  ['delete', { kind: 'delete-edge' }],
-  ['t', { kind: 'retype-edge' }],
-  ['escape', { kind: 'cancel' }],
+  // NOT SURVIVING EDITING is the non-obvious half: in a focused text box `⌫`
+  // deletes a CHARACTER, and a map that claimed it would delete the reader's
+  // selected edge while they were correcting a typo in the search.
+  ['backspace', { kind: 'delete-edge', survivesEditing: false }],
+  ['delete', { kind: 'delete-edge', survivesEditing: false }],
+  ['t', { kind: 'retype-edge', survivesEditing: false }],
+  ['escape', { kind: 'cancel', survivesEditing: true }],
 ]);
 
 const NONE: KeyIntent = Object.freeze({ kind: 'none' });
@@ -200,6 +254,12 @@ export function keyIntent(press: KeyPress, context: KeyboardContext): KeyIntent 
 
   const binding = BINDINGS.get(normalize(press.key));
   if (binding === undefined) return NONE;
+
+  // THE SECOND OWNER. A chord belongs to the platform; a printable key belongs
+  // to whatever text control has focus. Both are the same question — does
+  // someone else own this press — which is why they sit together here rather
+  // than being answered per binding further down.
+  if (context.editableFocus && !binding.survivesEditing) return NONE;
 
   switch (binding.kind) {
     case 'relate':

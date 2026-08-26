@@ -142,18 +142,34 @@ let { draft, proposal } = createReducer(IDLE_CREATE_DRAFT, { kind: 'begin', sour
 
 **The keyboard is a full loop with no pointer step.** `keyIntent` is a pure key map — a key **press** and a context in, an intent out, no DOM — exactly as the viewer's `navigation.ts` is, so the whole map is exhaustively testable on a runtime with no DOM at all. The digits read `EDGE_FIELDS` from `@issuegraph/core` rather than restating it, so a sixth field gets a `6` for free and the picker and the keyboard cannot disagree. `⌫` binds **both** `Backspace` and `Delete`, because the key §17b draws as `⌫` reports differently across keyboards and binding one would make "no pointer" false on the other. An unbound key answers `none` and is left to the host.
 
-**It takes the press, not the key name, and that is load-bearing.** `KeyPress` is structurally a subset of the DOM's `KeyboardEvent`, so a host passes the event straight in:
+### `none` means someone else owns this press
+
+The map's whole contract, and the thing to get right when wiring it. A host's handler is "reduce a non-`none` intent, and `preventDefault()` it" — so every press the map claims wrongly is a keystroke stolen from its real owner:
 
 ```ts
 element.addEventListener('keydown', (event) => {
-  const intent = keyIntent(event, { focused, match, selectedEdge });
-  if (intent.kind === 'none') return;   // the platform's key, not ours
+  const intent = keyIntent(event, {
+    focused,
+    match,
+    selectedEdge,
+    // Does a text control have focus right now? Only the shell can see this.
+    editableFocus: document.activeElement === searchInput,
+  });
+  if (intent.kind === 'none') return;   // someone else's key — let it through
   event.preventDefault();
   // …reduce the intent
 });
 ```
 
-A bare key name cannot tell `R` from `Cmd+R`, so exactly that shell — forward the key, `preventDefault()` anything this map claims — would hijack reload, new-tab and tab-selection, and no care on the host's part could recover a distinction the map had already discarded. `Ctrl`, `Meta` and `Alt` therefore answer `none` **before** the table is consulted, because a chord is not a lookup miss: it is a press this map has no claim on. `Shift` is deliberately *not* among them — §17b names its bindings in capitals, and `Shift+r` is how a keyboard reports `R`, so treating shift as a modifier would unbind the design itself.
+There are three owners:
+
+- **The host**, for a key §17b never bound. An unbound key is `none`.
+- **The platform**, for a modified chord. `KeyPress` is structurally a subset of `KeyboardEvent`, so the event goes straight in — a bare key name cannot tell `R` from `Cmd+R`, and the handler above would hijack reload, new-tab and tab-selection. `Ctrl`, `Meta` and `Alt` answer `none` **before** the table is consulted, because a chord is not a lookup miss. `Shift` is deliberately *not* among them: §17b names its bindings in capitals and `Shift+r` is how a keyboard reports `R`, so treating shift as a modifier would unbind the design itself.
+- **An editable control**, for a printable key while it has focus. The flow is `R → digit → search → ⏎`, so the search box is focused for the whole middle of it — and since most issue references contain a digit, a map that claimed `1`–`5` there would eat nearly every query. `⌫` is the same case and less obvious: in a focused text box it deletes a *character*, not the reader's selected edge.
+
+`⏎` and `Escape` **survive** editing, which is why this is a per-binding flag rather than one "silence everything while a box has focus" rule: the search is focused at exactly the moment `⏎` has to commit the target. Which bindings survive is **data on the table** (`survivesEditing`), so no call site decides it and a new binding is a compile error until the table answers.
+
+`editableFocus` is **required, not optional** — an omitted flag would default to "nothing is being edited", which is the one direction a default cannot fail safely in.
 
 **`T` opens the picker; it does not emit a retype.** The proposals come from `pickerView`, which already owns them — a second emitter out here would be free to disagree about what a retype is.
 

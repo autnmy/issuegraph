@@ -7,7 +7,12 @@ import { makeEdge } from '@issuegraph/store';
 import { type KeyboardContext, keyIntent } from './keys.ts';
 import { OBJECT, SUBJECT } from '../testing/picker.ts';
 
-const EMPTY: KeyboardContext = Object.freeze({ focused: null, match: null, selectedEdge: null });
+const EMPTY: KeyboardContext = Object.freeze({
+  focused: null,
+  match: null,
+  selectedEdge: null,
+  editableFocus: false,
+});
 
 const context = (over: Partial<KeyboardContext>): KeyboardContext => ({ ...EMPTY, ...over });
 
@@ -158,6 +163,69 @@ describe('a modified chord belongs to the platform, not to this map', () => {
     assert.deepEqual(
       keyIntent({ key: 'r', ctrlKey: false, metaKey: false, altKey: false }, context({ focused: SUBJECT })),
       keyIntent({ key: 'r' }, context({ focused: SUBJECT })),
+    );
+  });
+});
+
+describe('an editable control owns its printable keys', () => {
+  // The flow §17b specifies is `R → digit → search → ⏎`, so the search box is
+  // focused for the whole middle of it. A map that claimed printable keys there
+  // would eat the reader's own query — and since most issue references contain
+  // a digit, that breaks the loop for nearly every target.
+  const editing = (over: Partial<KeyboardContext> = {}): KeyboardContext => ({
+    ...context(over),
+    editableFocus: true,
+  });
+
+  const surrendered = [
+    { key: 'r', why: 'a letter in the query' },
+    { key: '1', why: 'a digit in an issue reference' },
+    { key: '3', why: 'a digit in an issue reference' },
+    { key: '5', why: 'a digit in an issue reference' },
+    { key: 't', why: 'a letter in the query' },
+    { key: 'Backspace', why: 'correcting a typo deletes a CHARACTER, not an edge' },
+    { key: 'Delete', why: 'correcting a typo deletes a CHARACTER, not an edge' },
+  ] as const;
+
+  for (const { key, why } of surrendered) {
+    it(`hands ${key} back while editing — ${why}`, () => {
+      const ctx = editing({ focused: SUBJECT, match: OBJECT, selectedEdge: edgeIdFor('blocked-by') });
+      assert.deepEqual(keyIntent({ key }, ctx), { kind: 'none' });
+      // The control: the SAME key in the SAME context binds when nothing is
+      // being edited. Without it this would pass on a missing subject rather
+      // than on the editable focus.
+      assert.notDeepEqual(keyIntent({ key }, { ...ctx, editableFocus: false }), { kind: 'none' });
+    });
+  }
+
+  it('still commits the target on ⏎, which is the whole point of the flow', () => {
+    // The discriminating case for a per-binding flag over a blanket "silence
+    // everything while editing": the search box is focused exactly when `⏎`
+    // has to work.
+    assert.deepEqual(keyIntent({ key: 'Enter' }, editing({ match: OBJECT })), {
+      kind: 'create',
+      command: { kind: 'target', ref: OBJECT },
+    });
+  });
+
+  it('still withdraws on Escape while editing', () => {
+    assert.deepEqual(keyIntent({ key: 'Escape' }, editing()), {
+      kind: 'create',
+      command: { kind: 'cancel' },
+    });
+  });
+
+  it('drives the full R → digit → search → ⏎ loop across the focus change', () => {
+    // `R` and the digit are pressed on the canvas; the search box then takes
+    // focus and `⏎` commits. End to end, with the focus moving mid-flow.
+    const steps = [
+      keyIntent({ key: 'r' }, context({ focused: SUBJECT })),
+      keyIntent({ key: '1' }, context({})),
+      keyIntent({ key: 'Enter' }, editing({ match: OBJECT })),
+    ];
+    assert.deepEqual(
+      steps.map((step) => (step.kind === 'create' ? step.command.kind : step.kind)),
+      ['begin', 'type', 'target'],
     );
   });
 });
