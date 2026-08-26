@@ -181,8 +181,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  *
  * Refs are given as STRINGS in the same three spellings the flags accept, so the
  * CLI has one ref grammar rather than two — and that one is the reader's.
- * Absent leaves a field untouched; a value sets it; `null` clears it, but only
- * for the keys the writer can actually clear.
+ * Absent leaves a field untouched; a value sets it; `null` clears a
+ * SINGLE-VALUED key. The list-valued `blockedBy` clears with `[]` instead, and
+ * a `null` there is refused as the wrong type before any clear is considered.
+ *
+ * THE DISTINCTION IS CARDINALITY, NOT CLEARABILITY, and it stopped being safe
+ * to blur at #18. Every owned key is clearable now, so "only the keys the
+ * writer can actually clear" — what this said — reads as though `blockedBy`
+ * takes a `null`. That is the exact conflation the `CLEARABLE_JSON_KEYS` this
+ * change deleted was written to warn about. Raised in review.
  *
  * EVERY KEY IS CHECKED AGAINST THE ALLOWLIST, and an unrecognised one is a usage
  * error rather than a shrug. `splice` is a WRITE command, so ignoring a key it
@@ -254,7 +261,10 @@ function collectEdges(text: string): Collected<GeneratedEdges> {
       // so accepting it would have reported a clear it never performed. #18
       // gave removal its own spelling, so the clear is real now and the
       // narrower null-clearable list this consulted is gone. Nothing that
-      // previously succeeded changed: this input exited `refusedWrite`.
+      // previously succeeded changed: this input exited `usage`, refused at the
+      // payload boundary rather than by the writer. (It said `refusedWrite`
+      // until review caught it — a different code with a different meaning, and
+      // the compatibility run measured the old binary at exit 2.)
       // Explicit type argument: inferred from a bare `null` the translator
       // would hand back `EdgeWrite<null>`, which is not the field's type.
       edges[key] = edgeWrite<IssueRef>(null);

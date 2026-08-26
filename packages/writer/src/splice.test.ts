@@ -917,15 +917,47 @@ describe('a malformed edge value throws before anything is written (#18)', () =>
     // very defect the guard was added for, one line later.
     const cyclic: Record<string, unknown> = {};
     cyclic['self'] = cyclic;
-    for (const value of [1n, cyclic, Symbol('s'), () => undefined]) {
+
+    // A FUNCTION CARRYING A THROWING `toString`, which is the case this test
+    // MISSED. It used a plain arrow function — whose `toString` is perfectly
+    // safe — so it passed against a formatter that fell straight through to
+    // `String(value)` for anything `typeof`-tagged `'function'`. Measured: the
+    // call escaped with this function's own `Error: gotcha` instead of the
+    // `TypeError` naming the field. Raised in review.
+    const hostile = (): undefined => undefined;
+    (hostile as unknown as Record<string, unknown>)['toString'] = (): never => {
+      throw new Error('gotcha');
+    };
+    // An object with the same hostility, which was already safe: objects are
+    // described with `Object.keys`, never with `String`. Kept so the two paths
+    // cannot silently swap which of them is the covered one.
+    const hostileObject: Record<string, unknown> = { set: undefined };
+    hostileObject['toString'] = (): never => {
+      throw new Error('gotcha');
+    };
+
+    const HOSTILE: readonly (readonly [label: string, value: unknown])[] = [
+      ['a bigint', 1n],
+      ['a cyclic object', cyclic],
+      ['a symbol', Symbol('s')],
+      ['a plain function (the CONTROL that used to be the whole test)', () => undefined],
+      ['a function with a throwing toString', hostile],
+      ['an object with a throwing toString', hostileObject],
+    ];
+
+    for (const [label, value] of HOSTILE) {
       let caught: unknown;
       try {
         spliceResult(BODY, { duplicateOf: value } as unknown as GeneratedEdges);
       } catch (error) {
         caught = error;
       }
-      assert.ok(caught instanceof TypeError, String(value === cyclic ? '[cyclic]' : String(value)));
-      assert.ok(String(caught).includes('duplicate-of'), String(caught));
+      assert.ok(caught instanceof TypeError, `${label}: escaped with ${String(caught)}`);
+      assert.ok(String(caught).includes('duplicate-of'), `${label}: ${String(caught)}`);
+      assert.ok(
+        String(caught).includes('issuegraph splice:'),
+        `${label}: the message is not this package's — ${String(caught)}`,
+      );
     }
   });
 

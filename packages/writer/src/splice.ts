@@ -434,9 +434,6 @@ function owns(edges: GeneratedEdges, key: string): boolean {
  * {@link SpliceResult}. Only `no-block` licenses the caller's prepend fallback
  * (§4.1's canonical position, `renderFrontmatter`'s output); the other two
  * failure arms need the opposite repair, which is why they are distinguished.
- * (This sentence said `null` until #18 — a leftover from before #27 replaced
- * the nullable string, and false three paragraphs above the paragraph saying
- * so.)
  *
  * Inserted lines adopt the section's own child indent, so an author's two- or
  * four-space style survives, and the renderer's canonical ref spelling.
@@ -467,14 +464,32 @@ function owns(edges: GeneratedEdges, key: string): boolean {
  * fix it one line inside its own guard; this is the same formatter, local
  * because the dependency runs the other way (the CLI depends on this package).
  *
- * Nothing below can throw: `Object.keys` does not recurse, so a cycle is fine;
- * `String` is applied only to primitives, never to an object whose `toString`
- * a caller controls.
+ * Nothing below reaches a `toString` a caller controls. `Object.keys` does not
+ * recurse, so a cycle is fine, and `String` is applied only to primitives whose
+ * conversion the VALUE cannot override.
+ *
+ * THE FUNCTION ARM IS NOT TIDINESS, it is the hole this formatter shipped with.
+ * A function is a reference type carrying its own `toString`, and `typeof` tags
+ * it `'function'` rather than `'object'` — so it fell past the object arm, past
+ * the string arm, and into `String(value)`. Measured: a function with a
+ * throwing `toString` made `assertEdgeWrites` escape with that function's own
+ * `Error` instead of the `TypeError` naming the field, which is EXACTLY the
+ * defect this formatter was written to prevent, reproduced one branch over.
+ *
+ * The test that was supposed to pin this used a plain arrow function, whose
+ * `toString` is perfectly safe, so it passed against the broken code. Raised in
+ * review; the test now carries a throwing one and keeps the plain one as a
+ * control.
+ *
+ * Global tampering with `Number.prototype.toString` is deliberately NOT in
+ * scope: a caller who does that has also broken `Object.keys`, and defending
+ * against it here would buy nothing.
  */
 function describeValue(value: unknown): string {
   if (value === null) return 'null';
   if (Array.isArray(value)) return 'an array';
   const type = typeof value;
+  if (type === 'function') return 'a function';
   if (type === 'object') {
     const keys = Object.keys(value as object);
     return keys.length === 0 ? 'an object with no keys' : `an object with keys ${keys.join(', ')}`;
@@ -486,7 +501,9 @@ function describeValue(value: unknown): string {
 /** Why a value is not an {@link EdgeWrite}, or `null` when it is one. */
 function edgeWriteDefect(write: unknown): string | null {
   if (typeof write !== 'object' || write === null || Array.isArray(write)) {
-    return 'a write is an object';
+    // Phrased as the DEFECT, like the three below it — `got 42 — a write is an
+    // object` read as an assertion that it was one. Raised in review.
+    return 'it is not a plain object';
   }
   const record: Readonly<Record<string, unknown>> = write as Readonly<Record<string, unknown>>;
   const setting = record['set'] !== undefined;
