@@ -3,9 +3,12 @@ import { describe, it } from 'node:test';
 
 import {
   EDGE_TOKENS as EDGES,
+  GHOSTED_STATE_TOKENS as GHOSTED,
+  GHOST_ALPHA,
   STATE_TOKENS as STATES,
   SURFACE_TOKENS as SURFACES,
   TEXT_TOKENS as TEXT,
+  composite,
   contrastRatio,
 } from './testing/contrast.ts';
 import {
@@ -17,9 +20,11 @@ import {
   extendTheme,
   themeCss,
   resolveTheme,
+  type ColorToken,
   type Theme,
 } from './theme.ts';
 import { fitLabel } from './layout.ts';
+import { paperTheme } from './acceptance.test.ts';
 
 
 describe('the theme contract', () => {
@@ -102,6 +107,55 @@ describe('the default theme meets WCAG AA', () => {
   it('states every colour as a hex value the ratio test can read', () => {
     for (const token of COLOR_TOKENS) {
       assert.match(defaultTheme.colors[token], /^#[0-9A-Fa-f]{6}$/, token);
+    }
+  });
+});
+
+describe('the second documented theme keeps up with the first', () => {
+  it('overrides EVERY colour token, so a new one cannot be forgotten', () => {
+    // THE CLASS, not the instance. Three state tokens were added to the dark
+    // theme and not to this one, so a host following the documented light
+    // palette kept dark-optimised hues and the mutation states were close to
+    // invisible on white. Any token added from here on fails this test until
+    // the light theme answers for it.
+    const overridden = Object.entries(paperTheme.colors)
+      .filter(([token, value]) => value !== defaultTheme.colors[token as ColorToken])
+      .map(([token]) => token);
+    assert.deepEqual(
+      COLOR_TOKENS.filter((token) => !overridden.includes(token)),
+      [],
+      'the light theme inherits a dark-theme colour',
+    );
+  });
+
+  it('clears the non-text bar for every state hue at full strength, on both themes', () => {
+    for (const [name, theme] of [['dark', defaultTheme], ['light', paperTheme]] as const) {
+      for (const state of STATES) {
+        for (const surface of SURFACES) {
+          const bg = theme.colors[surface];
+          const ratio = contrastRatio(theme.colors[state], bg);
+          assert.ok(ratio >= 3, `${name}: ${state} on ${surface} measures ${ratio.toFixed(2)}:1`);
+        }
+      }
+    }
+  });
+
+  it('keeps the GHOSTED state hues legible once they are faded', () => {
+    // A FLOOR, deliberately, rather than a mirror of a consumer's table — see
+    // `GHOSTED_STATE_TOKENS`. It covers only the tokens meant to be faded: a
+    // conflict draws two held versions at full strength, so holding its hue to
+    // a fade it never receives would reject a perfectly good value.
+    for (const [name, theme] of [['dark', defaultTheme], ['light', paperTheme]] as const) {
+      for (const state of GHOSTED) {
+        for (const surface of SURFACES) {
+          const bg = theme.colors[surface];
+          const ratio = contrastRatio(composite(theme.colors[state], bg, GHOST_ALPHA), bg);
+          assert.ok(
+            ratio >= 3,
+            `${name}: ${state} ghosted onto ${surface} measures ${ratio.toFixed(2)}:1`,
+          );
+        }
+      }
     }
   });
 });

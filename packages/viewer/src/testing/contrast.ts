@@ -66,3 +66,42 @@ export const STATE_TOKENS = Object.freeze([
   '--ig-state-failed',
   '--ig-state-conflict',
 ] as const);
+
+/**
+ * The state tokens this package expects a consumer to draw GHOSTED, and the
+ * strongest fade it expects them to survive.
+ *
+ * Stated here rather than imported, because the opacity itself belongs to the
+ * consumer's own treatment table and a copy of that number would drift. What
+ * this expresses is the viewer's side of the bargain: a token named for a
+ * refused or rejected edit has to stay legible when it is faded, so its VALUE
+ * is chosen for that. A consumer that fades harder than this fails its own
+ * composited test rather than silently passing ours.
+ *
+ * `--ig-state-conflict` is absent on purpose: two held versions are drawn at
+ * full strength, because a conflict is not a fade — it is two things to
+ * compare.
+ */
+export const GHOSTED_STATE_TOKENS = Object.freeze([
+  '--ig-state-invalid',
+  '--ig-state-failed',
+] as const);
+
+/** The strongest fade {@link GHOSTED_STATE_TOKENS} are expected to survive. */
+export const GHOST_ALPHA = 0.5;
+
+/**
+ * `fg` drawn at `alpha` over `bg` — what the compositor actually produces.
+ *
+ * Contrast is a property of what LANDS on the surface, and a hue drawn at half
+ * opacity is not the hue the token names: a value measuring a comfortable
+ * 5.31:1 on its own composited to 2.18:1 once it was ghosted, under the
+ * non-text bar, while the uncomposited assertion stayed green.
+ */
+export function composite(fg: string, bg: string, alpha: number): string {
+  const front = Number.parseInt(fg.slice(1), 16);
+  const back = Number.parseInt(bg.slice(1), 16);
+  const mix = (shift: number): number =>
+    Math.round(alpha * ((front >> shift) & 255) + (1 - alpha) * ((back >> shift) & 255));
+  return `#${[mix(16), mix(8), mix(0)].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+}

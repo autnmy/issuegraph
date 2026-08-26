@@ -89,11 +89,6 @@ export const edgeOverlayStylesheet = `
   stroke: var(--ig-state-conflict);
 }
 
-.ig-overlay-version {
-  fill: none;
-  stroke: var(--ig-state-conflict);
-}
-
 .ig-overlay-chip {
   background: var(--ig-surface-2);
   color: var(--ig-text-muted);

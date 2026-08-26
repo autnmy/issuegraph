@@ -76,6 +76,25 @@ describe('the treatment table', () => {
     assert.deepEqual([...ranks].sort((a, b) => a - b), ranks, 'the table is not in severity order');
   });
 
+  it('carries a mark for any treatment the composer has to draw', () => {
+    // `doubled` is not rendered by `attachEdgeOverlays` — a second version sits
+    // BESIDE the line, and that needs the path's perpendicular, which layer 2
+    // does not have. It is therefore a claim about what the COMPOSER draws, and
+    // it is only honest while something carries it there.
+    //
+    // Without this, `stroke: 'doubled'` is exactly the defect an earlier round
+    // found in `dash: 'dotted'`: a field declaring a treatment that nothing
+    // anywhere renders.
+    for (const state of EDGE_STATES) {
+      const treatment = treatmentForState(state);
+      if (treatment.stroke !== 'doubled') continue;
+      assert.ok(
+        treatment.marks.includes('second-version'),
+        `${state} declares a doubled stroke and carries no mark to draw it`,
+      );
+    }
+  });
+
   it('is frozen', () => {
     assert.ok(Object.isFrozen(OVERLAY_TREATMENTS));
   });

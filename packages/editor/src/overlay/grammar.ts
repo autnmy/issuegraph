@@ -61,6 +61,12 @@ import { EDGE_STATES, type EdgeId, type EdgeState, type ProjectedEdge } from '@i
  * `halo` is the odd one and is deliberately in the same vocabulary: it is a
  * second stroke drawn behind the line, so naming it here keeps "what happens to
  * the line" answerable from one field.
+ *
+ * `doubled` is drawn by the COMPOSER, not by `attachEdgeOverlays`. A second
+ * version has to sit beside the line, and "beside" is the path's perpendicular
+ * — geometry this layer does not have. So it is declared here and carried by
+ * the `second-version` mark, and `grammar.test.ts` holds the two together so
+ * the field cannot become a claim nothing renders.
  */
 export type OverlayStroke = 'none' | 'halo' | 'ghost' | 'doubled';
 

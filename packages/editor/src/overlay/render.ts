@@ -12,17 +12,34 @@
  * So this module draws every treatment that can be stated WITHOUT a position,
  * and declares the rest as marks for whoever owns the layout.
  *
- * The trick that makes the first set large is that the viewer has already
- * solved the geometry and published the answer: an edge is a `<path>` carrying
- * its own `d`. A halo is that path again, stroked wider and drawn behind. A
- * conflict's second version is that path again, offset — the same construction
- * the viewer itself uses for `serialize-with`'s double line. A ghost is an
- * attribute on it. **Cloning a solved path needs no knowledge of where it
- * goes**, which is what keeps the halo, the ghost, the marching dash and the
- * conflict's pair on this side of the seam.
+ * ## The line, and it was drawn by evidence rather than by taste
  *
- * What is left genuinely cannot be: `node-chip` sits on two nodes, and
- * `terminal-cross` and `inline-reason` need the line's end. Those travel as
+ * **An overlay that REUSES the path's own position can be drawn here. One that
+ * needs a NEW position cannot.**
+ *
+ * A halo is the path again, stroked wider. A marching or dotted ghost is the
+ * path again, patterned differently. Neither moves, so neither needs to know
+ * where the path goes, and cloning a solved `d` is enough.
+ *
+ * A conflict's second version is the case that looks identical and is not: it
+ * has to sit BESIDE the line, and "beside" is the path's perpendicular — which
+ * cannot be recovered from a `d` this layer does not interpret. Four review
+ * rounds each found a different way that goes wrong: three strokes where a pair
+ * was promised, a companion hidden underneath its twin, a companion that had
+ * lost the relationship's own double-line shape, and finally a vertical offset
+ * sliding ALONG a `together-with` connector that happens to run vertically —
+ * `connectorPath` emits exactly that whenever the two boxes are equal width.
+ *
+ * Each fix was correct and the next round found the next property, because the
+ * missing thing was never a property: it was the geometry. So the companion is
+ * no longer drawn here at all. It travels as the `second-version` mark, placed
+ * by the layer that computed the layout — the same treatment `node-chip`,
+ * `terminal-cross` and `inline-reason` already get, and the same argument
+ * `index.ts` makes for the `together-with` connector living in the viewer.
+ *
+ * What is left genuinely cannot be drawn here: `node-chip` sits on two nodes,
+ * `terminal-cross` and `inline-reason` need the line's end, and
+ * `second-version` needs its perpendicular. Those travel as
  * {@link EdgeOverlay.marks} for the composer to place, declared rather than
  * half-drawn here.
  *
@@ -244,47 +261,6 @@ function overlayMarks(
         // `treatmentFor` for the kind — never copied.
         stroke: `var(${line.hueToken ?? treatmentFor(edge.kind).hueToken})`,
         'stroke-dasharray': null,
-      }),
-    );
-  }
-
-  if (line !== null && line.stroke === 'doubled') {
-    // BOTH VERSIONS, HELD — and that means the edge plus ONE companion, not the
-    // edge plus a pair. An earlier draft added two offset clones and left the
-    // original between them, so a single-stroke relationship rendered THREE
-    // lines and the promised pair was nowhere in it.
-    //
-    // The original edge is the version the user wrote; this is the one the
-    // adapter reported. §17b: they are held side by side and never merged.
-    //
-    // THE OFFSET IS ABSOLUTE, AND IT CLEARS THE KIND'S OWN SPREAD. Composing
-    // onto the path's existing transform looked safer and was worse: the
-    // viewer draws a `double` kind as two paths at -stroke and +stroke, only
-    // the first of them is given the companion, and `+2·stroke` composed onto
-    // its `-stroke` landed the companion at exactly `+stroke` — precisely
-    // underneath the second path, so a conflicted `serialize-with` added a held
-    // version nobody could see. An element count cannot detect that; a position
-    // assertion can, and now does.
-    //
-    // SHIFTED, NOT REPOSITIONED — which is what lets the companion keep the
-    // relationship's own shape. A `double` kind is two strokes at -s and +s;
-    // cloning ONE of them at an absolute offset produced a single-stroke
-    // companion beside a double-stroke original, so the two "held versions"
-    // did not look like the same relationship. Each stroke is cloned and moved
-    // by the SAME delta, so the companion is the kind's shape, translated.
-    //
-    // The delta clears the kind's own spread with a stroke's gap either side.
-    const stroke = theme.metrics['--ig-stroke'];
-    const delta = (treatmentFor(edge.kind).dash === 'double' ? 4 : 2) * stroke;
-    const existing = spec.attrs?.['transform'];
-    front.push(
-      clonePath(spec, {
-        ...inherited,
-        class: `${OVERLAY_CLASS} ig-overlay-version`,
-        transform:
-          typeof existing === 'string'
-            ? `translate(0 ${String(delta)}) ${existing}`
-            : `translate(0 ${String(delta)})`,
       }),
     );
   }

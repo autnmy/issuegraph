@@ -40,6 +40,13 @@ export const paperTheme = extendTheme(defaultTheme, {
     '--ig-edge-together-with': '#0A5B8A',
     '--ig-edge-duplicate-of': '#6B2E9E',
     '--ig-edge-decomposed-from': '#A31257',
+    // DARK, because a state hue is drawn at reduced opacity and contrast is a
+    // property of what LANDS on the surface. The dark theme's light pinks
+    // composite to about 1.3:1 on white; these clear the 3:1 non-text bar at
+    // the most aggressive ghost a consumer draws them at.
+    '--ig-state-invalid': '#5A0000',
+    '--ig-state-failed': '#3D0F00',
+    '--ig-state-conflict': '#5C4300',
   },
 });
 

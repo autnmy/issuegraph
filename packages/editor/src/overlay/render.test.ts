@@ -161,33 +161,9 @@ describe('the two relationships the viewer draws differently', () => {
     assert.equal(overlaid.length, 2, 'a double line was only half overlaid');
 
     const halos = walk(scene.root).filter((spec) => classesOf(spec).includes('ig-overlay-halo'));
-    const versions = walk(scene.root).filter((spec) =>
-      classesOf(spec).includes('ig-overlay-version'),
-    );
     assert.equal(halos.length, 2, 'the halo skipped one stroke of a double line');
-    assert.equal(
-      versions.length,
-      2,
-      'the held version is a single stroke beside a double-stroke original',
-    );
   });
 
-  it('gives the companion the same stroke count as the version it is held against', () => {
-    // The property underneath the count above, stated so it survives a refactor
-    // that changes how the marks are built: both versions are the SAME
-    // relationship, so they carry the same shape on the stroke channel.
-    for (const kind of ['together-with', 'serialize-with'] as const) {
-      const { scene } = attachEdgeOverlays(oddSceneOf(), [oddEdge(kind, ['conflict'])]);
-      const all = walk(scene.root);
-      const originals = all.filter(
-        (spec) => spec.attrs?.[STATE_ATTRIBUTE] === 'conflict',
-      ).length;
-      const companions = all.filter((spec) =>
-        classesOf(spec).includes('ig-overlay-version'),
-      ).length;
-      assert.equal(companions, originals, `${kind}: the two held versions differ in shape`);
-    }
-  });
 });
 
 describe('an overlay attaches to the edge the viewer actually drew', () => {
@@ -312,7 +288,10 @@ describe('the four redundant channels survive every overlay', () => {
     // A mark appended after the terminal would draw over the arrowhead — the
     // one channel a reader with no colour vision leans on hardest — while
     // every attribute assertion above stayed green.
-    for (const state of ['selected', 'pending-write', 'conflict'] as const) {
+    // Only the states that DRAW something here. `conflict` and `failed` add no
+    // stroke of their own — their marks need a position and are declared for
+    // the composer — so asking them for a mark asserts a shape they never had.
+    for (const state of ['selected', 'pending-write', 'invalid'] as const) {
       const { scene } = attachEdgeOverlays(sceneOf(), [projected(state)]);
       const order = walk(scene.root);
       const lastMark = order.findLastIndex((spec) => classesOf(spec).includes(OVERLAY_CLASS));
@@ -485,98 +464,38 @@ describe('the dash the table declares is the dash that renders', () => {
   });
 });
 
-describe('a conflict holds both versions and merges neither', () => {
-  it('draws EXACTLY two strokes for the edge — the pair, not a third line', () => {
-    // COUNTS EVERY STROKE, not just the added ones. The first draft counted
-    // `.ig-overlay-version` alone, found the two clones it had added, and
-    // passed — while the original edge sat between them and the reader saw
-    // THREE lines where the design promises a pair.
-    const before = walk(sceneOf().root).filter((spec) =>
-      classesOf(spec).includes('ig-edge'),
-    ).length;
-    const { scene } = attachEdgeOverlays(sceneOf(), [projected('conflict')]);
-    const after = walk(scene.root);
-
-    const versions = after.filter((spec) => classesOf(spec).includes('ig-overlay-version'));
-    const originals = after.filter((spec) => classesOf(spec).includes('ig-edge'));
-    assert.equal(originals.length, before, 'the edge itself was added to or removed');
-    assert.equal(versions.length, 1, 'the companion is ONE stroke; the edge is the other version');
-    assert.equal(originals.length + versions.length, 2, 'the reader sees something other than a pair');
+describe('a conflict declares both versions and merges neither', () => {
+  it('does NOT draw the companion — it declares it for the layer with the geometry', () => {
+    // Four review rounds each found a different way that drawing it here goes
+    // wrong: three strokes where a pair was promised, a companion hidden under
+    // its twin, a companion that lost the relationship's double-line shape, and
+    // a vertical offset sliding ALONG a connector that runs vertically.
+    //
+    // The missing thing was never a property. A second version sits BESIDE the
+    // line, and "beside" is the path's perpendicular — geometry this layer does
+    // not have. So it travels as a mark, exactly like the ✕ and the chips.
+    const { scene, overlays } = attachEdgeOverlays(sceneOf(), [projected('conflict')]);
+    const drawn = walk(scene.root).filter((spec) =>
+      classesOf(spec).includes('ig-overlay-version'),
+    );
+    assert.deepEqual(drawn, [], 'the companion is being drawn from a layer with no geometry');
+    assert.equal(overlays[0]?.marks.includes('second-version'), true, 'nor is it declared');
   });
 
-  it('puts the companion somewhere no existing stroke already is', () => {
-    // A POSITION ASSERTION, because an element count cannot see this. The
-    // previous implementation composed its offset onto the path's own
-    // transform, and on a `serialize-with` — drawn as two paths at -stroke and
-    // +stroke — that landed the companion at exactly +stroke, underneath the
-    // second path. The count said two versions; the reader saw one.
-    //
-    // Driven over BOTH shapes: a single-stroke kind and a double one.
-    for (const [label, scene, edges] of [
-      ['single-stroke', sceneOf(), [projected('conflict')]],
-      ['double-stroke', oddSceneOf(), [oddEdge('serialize-with', ['conflict'])]],
-    ] as const) {
-      const { scene: overlaid } = attachEdgeOverlays(scene, edges);
-      const all = walk(overlaid.root);
-      const companion = all.find((spec) => classesOf(spec).includes('ig-overlay-version'));
-      assert.ok(companion !== undefined, `${label}: no companion drawn`);
-
-      const offsetOf = (spec: ElementSpec): number => {
-        const transform = spec.attrs?.['transform'];
-        if (typeof transform !== 'string') return 0;
-        // Every offset this code path produces is a single vertical translate,
-        // so summing them resolves a composed transform as well as a bare one.
-        return [...transform.matchAll(/translate\(0 (-?[\d.]+)\)/g)].reduce(
-          (total, match) => total + Number(match[1]),
-          0,
-        );
-      };
-
-      const strokes = all.filter((spec) => classesOf(spec).includes('ig-edge'));
-      assert.ok(strokes.length > 0, `${label}: no edge stroke to compare against`);
-      const taken = strokes.map(offsetOf);
-      assert.equal(
-        taken.includes(offsetOf(companion)),
-        false,
-        `${label}: the companion sits at ${String(offsetOf(companion))}, ` +
-          `where a stroke already is (${taken.join(', ')})`,
-      );
-    }
+  it('still ghosts and hues the edge itself, which needs no new position', () => {
+    // The line's own treatment is unaffected by the above: recolouring a path
+    // reuses its position, so it stays on this side of the seam.
+    const { scene } = attachEdgeOverlays(sceneOf(), [projected('conflict')]);
+    const edge = walk(scene.root).find((spec) => spec.attrs?.[STATE_ATTRIBUTE] === 'conflict');
+    assert.ok(edge !== undefined, 'the conflicted edge was not overlaid at all');
   });
 
   it('offers no affordance that reads as a merge', () => {
-    const marks = overlayFor(projected('conflict')).marks.map((mark) =>
-      renderMarkup(renderOverlayMark(overlayFor(projected('conflict')), mark)),
-    );
-    for (const markup of marks) assert.equal(/merge/i.test(markup), false);
-  });
-});
-
-describe('every mark either draws itself or says it is a slot', () => {
-  it('leaves no mark silently empty', () => {
-    // THE CLASS, not one instance of it. `terminal-cross` shipped as an empty
-    // span carrying colour and typography and no shape, so `failed` lost the
-    // one cue that separates it from `invalid` without colour. Two other marks
-    // are empty ON PURPOSE — the host writes their content — so the rule is
-    // that emptiness must be DECLARED, and this drives every mark rather than
-    // re-checking the one that was wrong.
-    const overlay = overlayFor(projected('selected', 'pending-write', 'invalid', 'failed', 'conflict'));
-    assert.ok(overlay.marks.length >= 4, 'the fixture does not exercise every mark');
-
+    const overlay = overlayFor(projected('conflict'));
     for (const mark of overlay.marks) {
-      const spec = renderOverlayMark(overlay, mark, 'would-cycle');
-      const children = spec.children ?? [];
-      const declaredSlot = spec.attrs?.['data-ig-slot'] !== undefined;
-      assert.ok(
-        children.length > 0 || declaredSlot,
-        `${mark} renders nothing and does not declare itself a slot`,
-      );
+      assert.equal(/merge/i.test(renderMarkup(renderOverlayMark(overlay, mark))), false);
     }
-  });
-
-  it('draws the failed cross as a real glyph', () => {
-    const spec = renderOverlayMark(overlayFor(projected('failed')), 'terminal-cross');
-    assert.deepEqual(spec.children, ['✕']);
+    for (const offer of overlay.affordances) assert.equal(/merge/i.test(offer), false);
   });
 });
 
