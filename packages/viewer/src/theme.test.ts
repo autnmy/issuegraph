@@ -15,7 +15,10 @@ import {
   defaultTheme,
   extendTheme,
   themeCss,
+  resolveTheme,
+  type Theme,
 } from './theme.ts';
+import { fitLabel } from './layout.ts';
 
 
 describe('the theme contract', () => {
@@ -132,5 +135,45 @@ describe('extendTheme', () => {
 
     for (const token of COLOR_TOKENS) assert.equal(inverted.colors[token], '#123456');
     assert.notEqual(themeCss(inverted), themeCss(defaultTheme));
+  });
+});
+
+describe('a theme built against an earlier version', () => {
+  /** A complete `Theme` a 0.1.0 consumer could have built and stored. */
+  function withoutNewestMetric(): Theme {
+    const metrics: Record<string, number> = { ...defaultTheme.metrics };
+    delete metrics['--ig-label-char-width'];
+    return { ...defaultTheme, metrics } as unknown as Theme;
+  }
+
+  it('does not turn a missing metric into NaN geometry', () => {
+    // A missing metric does not fail loudly: it reads `undefined`, arithmetic
+    // yields `NaN`, and every comparison against `NaN` is false — so a fitting
+    // check silently passes everything. Measured before the fallback: a
+    // 60-character title came back WHOLE with an ellipsis appended, which is
+    // worse overflow than the defect `--ig-label-char-width` was added to fix.
+    const drawn = fitLabel(withoutNewestMetric(), 'W'.repeat(60), 211.2);
+
+    assert.ok([...drawn].length < 30, `a stale theme kept ${String([...drawn].length)} of 60 characters`);
+    assert.ok(drawn.endsWith('\u2026'));
+  });
+
+  it('never emits an undefined custom property', () => {
+    // `themeCss` wrote a literal `undefinedpx`, which is not a value any
+    // browser reads — so the host installed a stylesheet with a hole in it.
+    const css = themeCss(withoutNewestMetric());
+
+    assert.equal(/undefined/.test(css), false, css);
+    assert.match(css, /--ig-label-char-width: 6px;/);
+  });
+
+  it('fills colours and type the same way, not just metrics', () => {
+    // The token that prompted this was a metric; the rule is about a THEME
+    // being older than the package, which is not specific to one group.
+    const colors: Record<string, string> = { ...defaultTheme.colors };
+    delete colors['--ig-accent'];
+    const filled = resolveTheme({ ...defaultTheme, colors } as unknown as Theme);
+
+    assert.equal(filled.colors['--ig-accent'], defaultTheme.colors['--ig-accent']);
   });
 });
