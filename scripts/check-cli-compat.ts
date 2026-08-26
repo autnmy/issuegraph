@@ -15,9 +15,17 @@
  * measurement guards nothing. This is that measurement, committed.
  *
  * HOW IT DECIDES. Every case runs through BOTH binaries with identical argv and
- * identical stdin, and is compared on stdout AND exit code. A case is declared
- * `same` or `changed`, and each case says which it EXPECTS — so a run that
- * cannot tell the two apart fails loudly instead of reporting agreement.
+ * identical stdin, and is compared on stdout, stderr AND exit code. A case is
+ * declared `same` or `changed`, and each case says which it EXPECTS — so a run
+ * that cannot tell the two apart fails loudly instead of reporting agreement.
+ *
+ * STDERR IS COMPARED BECAUSE IT CARRIES THE REFUSALS, and leaving it out made
+ * this check blind exactly where it is most needed. A refusal writes NOTHING to
+ * stdout, so on a malformed payload, an unrecognised key, or a render-only
+ * field, stdout is empty and the exit code is unchanged — and a diagnostic that
+ * changed incompatibly, or vanished, would be reported as `same`. This CLI puts
+ * every note, warning and refusal on stderr by design, which makes it part of
+ * the observable output rather than decoration. Raised in review.
  *
  * THAT LAST PART IS THE POINT, and it is not hypothetical. The first hand-run
  * of this comparison reported "SAME" for all 25 cases while both binaries were
@@ -102,12 +110,13 @@ const CASES: readonly Case[] = [
 interface Run {
   readonly code: number | null;
   readonly stdout: string;
+  readonly stderr: string;
 }
 
 function run(binary: string, argv: readonly string[]): Run {
   const result = spawnSync('node', [binary, ...argv], { input: BODY, encoding: 'utf8' });
   if (result.error !== undefined) throw result.error;
-  return { code: result.status, stdout: result.stdout };
+  return { code: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
 /**
@@ -173,12 +182,22 @@ function main(): void {
     }
 
     compared += 1;
-    const same = before.code === after.code && before.stdout === after.stdout;
+    const same =
+      before.code === after.code && before.stdout === after.stdout && before.stderr === after.stderr;
     const asExpected = same === expectSame;
     if (!asExpected) unexpected += 1;
+    // NAME WHICH STREAM MOVED. "changed" alone sends a reader to diff two
+    // binaries by hand; on a refusal case the answer is almost always stderr,
+    // and saying so is the difference between a one-line read and an
+    // investigation.
+    const moved = [
+      before.code === after.code ? '' : 'exit',
+      before.stdout === after.stdout ? '' : 'stdout',
+      before.stderr === after.stderr ? '' : 'stderr',
+    ].filter((part) => part !== '');
     lines.push(
       `  ${same ? 'same   ' : 'changed'} ${baselineVersion}=exit${String(before.code)} now=exit${String(after.code)}  ` +
-        `${label.padEnd(38)} ${asExpected ? '' : '<-- UNEXPECTED'}`,
+        `${label.padEnd(38)} ${same ? '' : `[${moved.join('+')}] `}${asExpected ? '' : '<-- UNEXPECTED'}`,
     );
   }
 
