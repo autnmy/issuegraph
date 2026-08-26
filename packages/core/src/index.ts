@@ -122,6 +122,76 @@ export function isSymmetricEdgeField(field: EdgeField): field is SymmetricEdgeFi
   return SYMMETRIC_EDGE_FIELD_SET.has(field);
 }
 
+/**
+ * Percent-encode one reference. TOTAL over JavaScript strings — nothing throws.
+ *
+ * `encodeURIComponent` throws `URIError` on an unpaired surrogate, because a
+ * lone half of a pair is not encodable as UTF-8. A reference is whatever an
+ * adapter hands us and a `String` may legally hold one — a key decoded from
+ * `"\ud800"` is the ordinary way it arrives — and the viewer's own contract is
+ * that a malformed document yields DIAGNOSTICS rather than an exception. An
+ * identity function that throws turns such a document into a failed render, so
+ * the encoding has to be total rather than the callers each guarding it.
+ *
+ * WALKED IN ONE PASS RATHER THAN TRIED-AND-CAUGHT, so there is a single path
+ * that every input exercises. A fast path plus a rescue path is two encodings
+ * that agree only where they are both tested, and the rescue one would be
+ * reached solely by malformed input — the least-tested code answering the
+ * least-expected question.
+ *
+ * Output is UNCHANGED for every well-formed string: BMP code points and valid
+ * surrogate pairs go through `encodeURIComponent` exactly as before, which is
+ * what keeps this identical to the identity `@issuegraph/store` already
+ * derives. A lone surrogate becomes `%uXXXX`, a form `encodeURIComponent` never
+ * emits — it escapes nothing to a literal `%u` — so two distinct references
+ * cannot collide, and the `|` separator still cannot appear inside one.
+ */
+function encodeRef(value: string): string {
+  let out = '';
+  for (let index = 0; index < value.length; index += 1) {
+    const unit = value.charCodeAt(index);
+    const high = unit >= 0xd800 && unit <= 0xdbff;
+    if (high && index + 1 < value.length) {
+      const next = value.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        out += encodeURIComponent(value.slice(index, index + 2));
+        index += 1;
+        continue;
+      }
+    }
+    if (unit >= 0xd800 && unit <= 0xdfff) {
+      out += `%u${unit.toString(16).toUpperCase().padStart(4, '0')}`;
+      continue;
+    }
+    out += encodeURIComponent(value.charAt(index));
+  }
+  return out;
+}
+
+/**
+ * The identity of one relationship, as a pure function of its content.
+ *
+ * HERE RATHER THAN IN THE STORE, because two layers need the same answer. The
+ * store gives every `StoredEdge` this identity; the viewer stamps it on the
+ * `together-with` connector so a click can name an edge rather than an issue.
+ * Those are different packages and the viewer cannot depend on the store — so
+ * spelling the format twice was the alternative, and a format spelled twice is
+ * one that disagrees with itself the first time either copy is touched.
+ *
+ * References are percent-encoded before joining, so the separator cannot appear
+ * inside a reference: `encodeURIComponent` escapes `|`, which means no
+ * reference — however a tracker spells it — can forge another edge's identity.
+ *
+ * The symmetric fields (§4.3.4, §4.3.7) sort their endpoints, so both spellings
+ * of one relationship collapse to one identity. The directed fields do not,
+ * because for them the direction IS the fact: `A blocked-by B` and
+ * `B blocked-by A` are opposite claims about which issue may start.
+ */
+export function edgeIdentity(field: EdgeField, from: string, to: string): string {
+  const [first, second] = isSymmetricEdgeField(field) && to < from ? [to, from] : [from, to];
+  return `${field}|${encodeRef(first)}|${encodeRef(second)}`;
+}
+
 /** Narrow an arbitrary string to a scalar field name. */
 export function isScalarField(value: string): value is ScalarField {
   return SCALAR_FIELD_SET.has(value);

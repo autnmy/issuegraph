@@ -158,6 +158,25 @@ export function mountViewer(
   };
   let root: SpecElement | null = null;
   let keyed = new Map<string, SpecElement>();
+  // EVERY IDENTITY THE LAST DRAW PUT UNDER THE POINTER — issues AND decoration.
+  // Rebuilt by each `draw()` from the scene it just materialized, and read by
+  // BOTH the hover reconciliation and `emitSelect`, because "what the pointer
+  // can name" is one question. A click and a hover resolve their target through
+  // the same `keyAt` walk, so answering them from two different sets is how a
+  // mark becomes hoverable but unselectable.
+  let pointable = new Set<string>();
+  /**
+   * Whether a key still names something the reader can be looking at.
+   *
+   * ASKED TWICE PER DRAW, from either side of the rebuild of `pointable`, and
+   * that is exactly why it is a function rather than a copied condition: before
+   * the rebuild it means "the last scene drew this", after it means "this one
+   * does", and both are the question that site needs. Two hand-written copies
+   * of it would answer differently the first time either was touched — the
+   * failure this file has already recorded twice, once for focus keys and once
+   * for the hover.
+   */
+  const stillDrawn = (key: string): boolean => normalized.byKey.has(key) || pointable.has(key);
   let hovered: string | null = null;
   let destroyed = false;
   // Set by the first `draw()` below, which runs before any listener can fire.
@@ -204,7 +223,22 @@ export function mountViewer(
     // covered only the first, so `setProjection` renamed the selection and told
     // nobody: the handle read the station while the host still held the member.
     const selectedBefore = state.selected;
-    if (state.selected !== null && !normalized.byKey.has(state.selected)) {
+    // A DECORATION SELECTION IS NOT AN ISSUE AND MUST SURVIVE THIS TEST. The
+    // subject can be a `together-with` connector, whose identity is an edge and
+    // is therefore absent from `byKey` by construction — dropping on document
+    // membership alone deselected it on the very next redraw. Whether the NEW
+    // scene still draws it is a different question, and it is answered below,
+    // after materialize, exactly where the hover clear answers it.
+    //
+    // AND NOT AT ALL BEFORE THE FIRST DRAW, which is what `currentScene` tests.
+    // `pointable` is empty until a scene has been materialized, so on mount
+    // this check has NO evidence about decoration — it would clear a connector
+    // identity a host passed as `selected`, making a selection impossible to
+    // restore across a remount even though every later redraw preserves it.
+    // The post-materialize check settles it a few lines down, against a scene
+    // that exists; deferring costs one frame in which nothing renders an edge
+    // selection anyway.
+    if (currentScene !== null && state.selected !== null && !stillDrawn(state.selected)) {
       state = { ...state, selected: null };
     }
     if (root !== null) container.removeChild(root);
@@ -220,9 +254,10 @@ export function mountViewer(
     // `keyed` and a NARROWER one than the document. `keyed` holds focus
     // identities only; decoration announces itself through `GROUP_ATTRIBUTE` and
     // deliberately never enters the focus index, so an enclosure or a connector
-    // is absent from `keyed` on every redraw. The hover reconciliation below
-    // needs both, and needs them from the SCENE rather than from `byKey`.
-    const drawnHoverable = new Set<string>();
+    // is absent from `keyed` on every redraw. The hover reconciliation and the
+    // selection both need both, and need them from the SCENE rather than from
+    // `byKey` — a decoration identity is in no document.
+    pointable = new Set<string>();
     // WHICH KEYS ARE INDEXED BY SOMETHING THAT CAN ACTUALLY TAKE FOCUS. `keyed`
     // is a FOCUS index — its only readers call `focus()` on what it holds — so
     // holding an element a browser ignores makes it silently useless.
@@ -252,10 +287,10 @@ export function mountViewer(
             keyed.set(key, node);
             if (canFocus) focusableKeys.add(key);
           }
-          drawnHoverable.add(key);
+          pointable.add(key);
         }
         const group = spec.attrs?.[GROUP_ATTRIBUTE];
-        if (typeof group === 'string' && group !== '') drawnHoverable.add(group);
+        if (typeof group === 'string' && group !== '') pointable.add(group);
       },
     });
     container.appendChild(root);
@@ -280,10 +315,19 @@ export function mountViewer(
     // switching destroys the element while its issue stays in `byKey` — the
     // document test then preserves a hover on something that is no longer on
     // screen, and the host never receives the documented `onHover(null)` until
-    // the pointer leaves the whole viewer. `drawnHoverable` carries both
+    // the pointer leaves the whole viewer. `pointable` carries both
     // attributes from the scene just materialized, so it answers for decoration
     // and for issues, on every redraw, from the thing the pointer can touch.
-    if (hovered !== null && !drawnHoverable.has(hovered)) clearHover();
+    if (hovered !== null && !pointable.has(hovered)) clearHover();
+    // THE SAME QUESTION FOR THE SELECTION, and it has to be asked here rather
+    // than above: only a materialized scene knows whether this draw still drew
+    // the connector the reader selected. An issue selection is already settled
+    // by `byKey` and by `reconcile`; this covers the decoration case those two
+    // cannot see. It runs BEFORE the notice below, so a subject that went away
+    // is reported exactly once, through the same channel as every other change.
+    if (state.selected !== null && !stillDrawn(state.selected)) {
+      state = { ...state, selected: null };
+    }
     // TOLD, NOT JUST DROPPED. The host was told a selection began, so leaving it
     // to infer the ending from a document it happens to have replaced is the
     // same divergence `clearHover` exists to prevent one line up. Fired AFTER
@@ -308,8 +352,20 @@ export function mountViewer(
     // while the handle read `selected: null`. Resolving first means the state
     // and the one notification agree, and the reconciliation in `draw()` finds
     // nothing left to undo.
-    const resolved = key !== null && normalized.byKey.has(key) ? key : null;
-    state = { ...state, selected: resolved, focused: resolved ?? state.focused };
+    // DECORATION IS A SUBJECT TOO. The document answers for issues; `pointable`
+    // answers for the marks this scene drew that are not issues — today the
+    // `together-with` connector, whose identity is an edge. Without the second
+    // arm a connector click resolved to `null`, so the host was told a
+    // selection ENDED by the one gesture that was starting one.
+    const resolved = key !== null && stillDrawn(key) ? key : null;
+    // FOCUS FOLLOWS AN ISSUE, NEVER A DECORATION IDENTITY. `navigable` lists
+    // issues, and `navigate` resolves a key it cannot find to -1 and throws the
+    // reader back to the top of the order — which is why `onKeyDown` already
+    // narrows its own adoption to `KEY_ATTRIBUTE`. Selecting a connector must
+    // leave the tab stop where the reader left it, so the focus arm asks the
+    // document rather than reusing `resolved`.
+    const focusable = resolved !== null && normalized.byKey.has(resolved) ? resolved : null;
+    state = { ...state, selected: resolved, focused: focusable ?? state.focused };
     // SILENCED, because this function reports the result itself once the draw
     // has settled it. Letting the draw announce too would fire `onSelect` twice
     // for one selection whenever reconciliation renamed it — and a caller

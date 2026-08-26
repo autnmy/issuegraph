@@ -466,6 +466,73 @@ export function edgeGeometry(
   };
 }
 
+/**
+ * The path joining two members of one together unit, clear of every member box.
+ *
+ * ONE CONNECTOR PER DECLARED EDGE, which is why this takes two keys rather than
+ * a position in the member list. A group is joined by pointing at any existing
+ * member (§4.3.7), so `2 together-with 1` plus `3 together-with 1` is an
+ * ordinary STAR whose members lay out as three consecutive rows — and a
+ * connector drawn between adjacent rows would claim a `2`–`3` relationship the
+ * document never declares while leaving the real `1`–`3` edge undrawable.
+ *
+ * TWO ROUTES, and the branch is the whole of it. Members of a slot are placed
+ * consecutively in one column, so an edge between NEIGHBOURING rows crosses
+ * only the gap between them and is drawn straight. An edge that spans a row —
+ * which only a star can produce — would run through the node between them, so
+ * it is routed out to a lane in the enclosure's own padding. The lane sits left
+ * of `x`, and every member box in a column starts at exactly `x`, so the
+ * vertical run is provably outside every occupied x-range rather than merely
+ * looking clear.
+ *
+ * Endpoints come from measured bounds on both routes, per the kit's
+ * implementation note: a hit target derived from an eyeballed offset drifts the
+ * first time the type scale moves.
+ */
+export function connectorPath(
+  layout: GraphLayout,
+  members: readonly string[],
+  from: string,
+  to: string,
+  theme: Theme,
+): string | null {
+  const a = layout.nodes.get(from);
+  const b = layout.nodes.get(to);
+  if (a === undefined || b === undefined) return null;
+
+  const [upper, lower] = a.y <= b.y ? [a, b] : [b, a];
+  const round = (value: number): string => (Math.round(value * 100) / 100).toFixed(2);
+
+  // Anything belonging to this unit that sits strictly between the two rows.
+  const between = members.some((member) => {
+    if (member === from || member === to) return false;
+    const box = layout.nodes.get(member);
+    return box !== undefined && box.y > upper.y && box.y < lower.y;
+  });
+
+  if (!between) {
+    const x1 = upper.x + upper.width / 2;
+    const x2 = lower.x + lower.width / 2;
+    return `M ${round(x1)} ${round(upper.y + upper.height)} L ${round(x2)} ${round(lower.y)}`;
+  }
+
+  const pad = metric(theme, '--ig-space-tight');
+  const boxes = members
+    .map((member) => layout.nodes.get(member))
+    .filter((box): box is NodeBox => box !== undefined);
+  // HALF A PAD INSIDE THE ENCLOSURE, so the run clears every box without
+  // landing on the enclosure's own stroke and reading as part of it.
+  const laneX = Math.min(...boxes.map((box) => box.x)) - pad / 2;
+  const upperY = upper.y + upper.height / 2;
+  const lowerY = lower.y + lower.height / 2;
+  return [
+    `M ${round(upper.x)} ${round(upperY)}`,
+    `L ${round(laneX)} ${round(upperY)}`,
+    `L ${round(laneX)} ${round(lowerY)}`,
+    `L ${round(lower.x)} ${round(lowerY)}`,
+  ].join(' ');
+}
+
 /** The box enclosing a together unit's members, padded clear of their bounds. */
 export function enclosureBounds(
   layout: GraphLayout,

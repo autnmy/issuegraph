@@ -14,7 +14,7 @@
  * so and offers the next move instead of drawing a hairball.
  */
 
-import type { EdgeField } from '@issuegraph/core';
+import { type EdgeField, edgeIdentity } from '@issuegraph/core';
 
 import { clustersOf } from '../clusters.ts';
 import type {
@@ -28,6 +28,7 @@ import {
   type EdgeGeometry,
   type GraphLayout,
   edgeGeometry,
+  connectorPath,
   enclosureBounds,
   fitLabel,
   layoutGraph,
@@ -691,18 +692,43 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
           'aria-label': `${members.join(' and ')} share one rank`,
         }),
       );
-      for (let index = 1; index < members.length; index += 1) {
-        const previous = layout.nodes.get(members[index - 1] as string);
-        const current = layout.nodes.get(members[index] as string);
-        if (previous === undefined || current === undefined) continue;
+      const inUnit = new Set(members);
+      for (const edge of document.edges) {
+        // ONE CONNECTOR PER DECLARED EDGE, NOT ONE PER ADJACENT PAIR. Walking
+        // the member list pairwise assumed a group is written as a chain — but
+        // a writer joins one by pointing at ANY existing member (§4.3.7), so
+        // `2 together-with 1` and `3 together-with 1` is an ordinary star. That
+        // walk drew a `2`–`3` connector for a relationship the document does
+        // not contain, so the identity it published resolved to no
+        // `StoredEdge`, while the real `1`–`3` edge got no connector at all.
+        // Reading the edges themselves cannot invent one and cannot miss one.
+        if (edge.field !== 'together-with') continue;
+        if (!inUnit.has(edge.from) || !inUnit.has(edge.to)) continue;
+        const d = connectorPath(layout, members, edge.from, edge.to, theme);
+        if (d === null) continue;
         enclosures.push(
-          svg('line', {
+          svg('path', {
             class: 'ig-connector',
-            'data-ig-group': lead,
-            x1: previous.x + previous.width / 2,
-            y1: previous.y + previous.height,
-            x2: current.x + current.width / 2,
-            y2: current.y,
+            fill: 'none',
+            // THE PAIR'S OWN IDENTITY, NOT THE SLOT'S. Every connector in a
+            // unit used to carry the lead, so a three-member unit drew two
+            // marks a pointer could not tell apart and a click on either named
+            // the unit — the one thing an editor cannot delete, retype or
+            // report a write against. `edgeIdentity` is the SAME function the
+            // store derives `StoredEdge.id` with, so what `onSelect` hands the
+            // host is a key `findEdge` resolves rather than a shape it has to
+            // be taught.
+            //
+            // STILL `data-ig-group`, and that is not an oversight about the
+            // "addressable via the key scheme" wording. Decoration announces
+            // itself on this attribute precisely so it stays OUT of the focus
+            // index — one element per key, or `focus()` lands on a
+            // non-tabbable mark instead of the node it decorates. `keyAt`
+            // reads both attributes for POINTER identity, which is the
+            // question a click asks, so the connector is addressable without
+            // re-opening that.
+            'data-ig-group': edgeIdentity(edge.field, edge.from, edge.to),
+            d,
           }),
         );
       }

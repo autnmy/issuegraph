@@ -86,7 +86,11 @@ Every relationship is separable on **four** channels — dash, terminal marker, 
 
 The `together-with` **connector** lives in this layer, declared deliberately: a click target cannot be added from outside without the viewer knowing where members are.
 
-**Two identities, not one.** Every focusable element carries `data-ig-key`, and exactly one element per key does — otherwise focus lands on whichever the renderer emitted first. The enclosure and its connector are decoration painted *behind* the nodes, so they carry `data-ig-group` instead and stay out of the focus index while remaining clickable: `mountViewer` reads both, so a pointer on either still names its slot.
+**Two identities, not one.** Every focusable element carries `data-ig-key`, and exactly one element per key does — otherwise focus lands on whichever the renderer emitted first. The enclosure and its connector are decoration painted *behind* the nodes, so they carry `data-ig-group` instead and stay out of the focus index while remaining clickable: `mountViewer` reads both, so a pointer on either is answered.
+
+**They name different subjects, and a host must not assume an issue key.** The enclosure names its **slot** — its `data-ig-group` is the slot's lead, so clicking it selects the unit. A connector names the **edge it joins**, and its identity is the one `edgeIdentity` derives, which is exactly the `id` `@issuegraph/store` gives the matching `StoredEdge` — so `findEdge(document, key)` resolves it. One connector is drawn per declared `together-with` edge rather than per adjacent member, because a group is joined by pointing at any existing member (§4.3.7) and a star would otherwise publish a pair the document never declared.
+
+So `onSelect` reports **either** an issue key or an edge identity. Distinguish them the way you already hold your data — an issue key is a key in the document you passed in — rather than by parsing the string. Selecting a connector deliberately does **not** move the keyboard tab stop: `navigable` lists issues, and focus is left where the reader put it.
 
 ## Theming
 

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { edgeIdentity } from '@issuegraph/core';
+
 import { renderMarkup } from './element.ts';
 import { type ViewerHandle, mountViewer } from './mount.ts';
 import { renderViewer } from './render.ts';
@@ -75,12 +77,20 @@ describe('mountViewer', () => {
     assert.deepEqual(selected, ['102']);
   });
 
-  it('resolves a pointer on decoration to the slot it decorates', () => {
+  it('resolves the enclosure to its slot and the connector to its edge', () => {
     // The enclosure and its connector are deliberately OUTSIDE the focus index
     // — one element per key, or `focus()` lands on the non-tabbable rect
     // painted behind the node. They are still visible marks a reader can click,
     // and the design states the connector IS a click target, so they keep
     // POINTER identity through a separate attribute.
+    //
+    // THEY DECORATE DIFFERENT SUBJECTS, which is why they no longer answer
+    // alike. The enclosure is the unit, so it names the slot's lead. The
+    // connector is the line joining two members, so it names the EDGE — the
+    // same identity `@issuegraph/store` derives `StoredEdge.id` with, so a host
+    // resolves it with `findEdge` rather than being taught a second format.
+    // Answering with the lead made every connector in a unit indistinguishable
+    // from the enclosure and from each other.
     const doc = new TestDocument();
     const container = doc.createContainer();
     const selected: (string | null)[] = [];
@@ -102,7 +112,127 @@ describe('mountViewer', () => {
 
     container.dispatch('click', { target: enclosure });
     container.dispatch('click', { target: connector });
-    assert.deepEqual(selected, ['1', '1']);
+    assert.deepEqual(selected, ['1', edgeIdentity('together-with', '1', '2')]);
+  });
+
+  it('leaves focus where it was when a connector is selected', () => {
+    // THE GUARD THAT REPLACES THE OLD FLAT INVARIANT, and it has to exist for
+    // the graph projection to be allowed to publish a pointer identity that
+    // `navigable` does not hold. `navigable` lists issues; an edge identity is
+    // absent from it by construction, and `navigate` resolves a key it cannot
+    // find to -1 and throws the reader back to the top of the order — the exact
+    // failure `onKeyDown` already narrows to `KEY_ATTRIBUTE` to avoid.
+    //
+    // So selecting a connector must move the SUBJECT without moving the TAB
+    // STOP. Written against the handle's own reported focus rather than against
+    // a `focus()` spy, because what must not change is the state a later arrow
+    // key navigates from.
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const handle = mountViewer(container, heldTogetherDocument, { projection: 'graph' });
+
+    // FOCUS IS MOVED OFF THE FIRST ENTRY FIRST, and that is the whole
+    // difference between this test and a vacuous one. `reconcile` resolves a
+    // focus key it cannot find to `navigable[0]` — so with focus already
+    // sitting there, the broken behaviour and the correct one produce the SAME
+    // reported state and the assertion cannot see the defect. Measured: the
+    // first draft of this test passed with the narrowing reverted.
+    const elsewhere = container
+      .descendants()
+      .find((element) => {
+        const key = element.getAttribute(KEY_ATTRIBUTE);
+        return key !== null && key !== '' && key !== handle.state.focused;
+      });
+    assert.ok(elsewhere !== undefined, 'only one key is drawn, so this proves nothing');
+    container.dispatch('click', { target: elsewhere });
+    const away = handle.state.focused;
+    assert.notEqual(away, null, 'focus did not move, so the guard is untested');
+
+    const connector = container
+      .descendants()
+      .find((element) => element.getAttribute('class') === 'ig-connector');
+    assert.ok(connector !== undefined, 'no connector was drawn');
+
+    container.dispatch('click', { target: connector });
+
+    assert.equal(handle.state.selected, edgeIdentity('together-with', '1', '2'));
+    assert.equal(handle.state.focused, away, 'selecting an edge moved the keyboard tab stop');
+  });
+
+  it('restores a connector selection passed in at mount', () => {
+    // THE FIRST DRAW HAS NO PRIOR SCENE, so `pointable` is empty and the
+    // pre-scene check had no evidence about a decoration identity — it cleared
+    // one before the graph was ever materialized. Every LATER redraw preserved
+    // it, so a host could hold a connector selection for as long as it stayed
+    // mounted and could never restore one across a remount, which is exactly
+    // the case a host restoring saved state hits.
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const edge = edgeIdentity('together-with', '1', '2');
+    const handle = mountViewer(container, heldTogetherDocument, {
+      projection: 'graph',
+      selected: edge,
+    });
+
+    assert.equal(handle.state.selected, edge);
+  });
+
+  it('still clears a selection passed in at mount that nothing draws', () => {
+    // THE OTHER HALF, and without it the fix above is indistinguishable from
+    // simply not checking. Deferring the decoration question to after
+    // materialize must not become "accept anything a host passes": an identity
+    // no scene drew is a selection of nothing and has to be cleared, and the
+    // host has to be TOLD rather than left holding it.
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const selected: (string | null)[] = [];
+    const handle = mountViewer(container, heldTogetherDocument, {
+      projection: 'graph',
+      selected: edgeIdentity('together-with', '404', '405'),
+      onSelect: (key: string | null) => selected.push(key),
+    });
+
+    assert.equal(handle.state.selected, null);
+    assert.deepEqual(selected, [null], 'the host was not told the selection was refused');
+  });
+
+  it('keeps a connector selection across a redraw, and drops it when one stops drawing it', () => {
+    // A decoration identity is absent from `byKey` by construction, so the
+    // document-membership drop in `draw()` deselected it on the very next
+    // redraw — a selection that could not survive the frame after it was made.
+    // The question a redraw must actually ask is whether THIS scene still drew
+    // the mark, which is the same question the hover clear asks and is answered
+    // from the same set.
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const selected: (string | null)[] = [];
+    const handle = mountViewer(container, heldTogetherDocument, {
+      projection: 'graph',
+      onSelect: (key: string | null) => selected.push(key),
+    });
+
+    const connector = container
+      .descendants()
+      .find((element) => element.getAttribute('class') === 'ig-connector');
+    assert.ok(connector !== undefined, 'no connector was drawn');
+    container.dispatch('click', { target: connector });
+
+    const edge = edgeIdentity('together-with', '1', '2');
+    assert.equal(handle.state.selected, edge);
+
+    // An unrelated redraw: the same document again. The mark is still drawn, so
+    // the subject survives and the host is told nothing new.
+    const announced = selected.length;
+    handle.update(heldTogetherDocument);
+    assert.equal(handle.state.selected, edge, 'a redraw that still draws the connector dropped it');
+    assert.equal(selected.length, announced, 'an unchanged selection was re-announced');
+
+    // The linear projection draws no canvas, so the connector is gone. The
+    // subject goes with it, and the host is TOLD rather than left holding a key
+    // for a mark that is no longer on screen.
+    handle.setProjection('linear');
+    assert.equal(handle.state.selected, null, 'a projection that draws no connector kept the selection');
+    assert.equal(selected.at(-1), null, 'the host was not told the selection ended');
   });
 
   it("resolves a pointer on a unit's partner to the unit's own station", () => {

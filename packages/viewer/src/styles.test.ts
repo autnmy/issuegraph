@@ -150,6 +150,27 @@ describe('the structural stylesheet', () => {
     }
   });
 
+  it('draws the together connector at the contrast-checked hue and the hairline width', () => {
+    // WHAT MAKES THE CONTRAST CLAIM ABOUT THE DRAWN CONNECTOR. `theme.test.ts`
+    // already holds `--ig-edge-together-with` to the 3:1 non-text bar on all
+    // three plain surfaces — but a token nothing uses proves nothing about a
+    // line on screen. This is the link between the two: the connector is
+    // painted with THAT token, so the measurement there is a measurement of
+    // this. A literal hex here would pass the theme test and still ship an
+    // unmeasured colour.
+    const css = withoutComments(viewerStylesheet);
+    const rule = /\.ig-connector\s*\{([^}]*)\}/.exec(css);
+    assert.ok(rule !== null, 'the stylesheet draws no connector');
+
+    const body = rule[1] ?? '';
+    assert.match(body, /stroke:\s*var\(--ig-edge-together-with\)/);
+    assert.match(body, /stroke-width:\s*var\(--ig-stroke-connector\)/);
+    assert.ok(
+      !/#[0-9a-fA-F]{3,8}|\brgba?\(/.test(body),
+      'the connector names a literal colour, which no contrast test measures',
+    );
+  });
+
   it('sets no stroke-dasharray for an edge — the vocabulary owns that channel', () => {
     // One source for the pattern channel. A dash set here and a dash set in
     // `vocabulary.ts` is two, and the colour-blind-safety claim rests on it.
