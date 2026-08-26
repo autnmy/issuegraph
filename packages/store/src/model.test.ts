@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { edgeIdentity } from '@issuegraph/core';
+
 import { edgeId, findEdge, hasIssue, makeEdge, sameEdgeSet } from './model.ts';
 import { sameValue } from './equality.ts';
 import { mixedIssues, threeOpenIssues, withEdge } from './testing/fixtures.ts';
@@ -66,4 +68,20 @@ test('an issue-list comparison notices a changed field, not only a changed lengt
   );
   assert.ok(!sameValue(document.issues, closedOne));
   assert.ok(!sameValue(document.issues, document.issues.slice(1)));
+});
+
+test('the store identity is the shared one, for every field and both orders', () => {
+  // THE POINT OF THE DELEGATION, PINNED. `@issuegraph/viewer` stamps
+  // `edgeIdentity` on a `together-with` connector so a click can name an edge,
+  // and it cannot import this package — so the two would drift the first time
+  // either was touched. This test is what makes "the host resolves that key
+  // with `findEdge`" a fact rather than an intention.
+  // BOTH ORDERS, because the symmetric fields are where a divergence would
+  // hide: an implementation that forgot to sort would still agree on the
+  // spelling the test happened to pick.
+  for (const field of ['blocked-by', 'decomposed-from', 'duplicate-of', 'serialize-with', 'together-with'] as const) {
+    for (const [from, to] of [['1', '2'], ['2', '1'], ['owner/repo#9', '1']] as const) {
+      assert.equal(edgeId(field, from, to), edgeIdentity(field, from, to));
+    }
+  }
 });

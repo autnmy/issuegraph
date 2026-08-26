@@ -8,7 +8,7 @@
  * @see https://github.com/autnmy/issuegraph/blob/main/SPEC.md
  */
 
-import { type EdgeField, type Priority, isSymmetricEdgeField } from '@issuegraph/core';
+import { type EdgeField, type Priority, edgeIdentity } from '@issuegraph/core';
 
 /**
  * An issue reference, exactly as the adapter emits it.
@@ -78,18 +78,18 @@ export interface GraphDocument {
 /**
  * The identity of an edge, as a pure function of its content.
  *
- * References are percent-encoded before joining, so the separator cannot appear
- * inside a reference: `encodeURIComponent` escapes `|`, which means no reference
- * — however a tracker spells it — can forge the identity of a different edge.
+ * THE RULE ITSELF LIVES IN `@issuegraph/core`, and this is deliberately a thin
+ * delegation rather than a second implementation. The viewer stamps the same
+ * identity on a `together-with` connector so a click can name an edge, and it
+ * cannot depend on this package — so the format had to move to the one layer
+ * both already depend on. Two spellings of an identity is how a host comes to
+ * hold an id that matches no `StoredEdge`.
  *
- * The two symmetric kinds (§4.3.4, §4.3.7) sort their endpoints, so the two
- * spellings of one relationship collapse to one identity. The directed kinds do
- * not, because for them the direction IS the fact: `A blocked-by B` and
- * `B blocked-by A` are opposite claims about which issue may start.
+ * Kept as a named export because it is the store's vocabulary — callers here
+ * think in `EdgeKind` and `IssueRef`, not in the format's field names.
  */
 export function edgeId(kind: EdgeKind, from: IssueRef, to: IssueRef): EdgeId {
-  const [first, second] = isSymmetricEdgeField(kind) && to < from ? [to, from] : [from, to];
-  return `${kind}|${encodeURIComponent(first)}|${encodeURIComponent(second)}`;
+  return edgeIdentity(kind, from, to);
 }
 
 /** An edge with its identity filled in from its content. */

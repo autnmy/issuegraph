@@ -8,6 +8,7 @@ import {
   DEFAULT_PRIORITY,
   EDGE_CARDINALITY,
   EDGE_FIELDS,
+  edgeIdentity,
   EVIDENCE_VALUES,
   FIELDS,
   FRONTMATTER_KEY,
@@ -259,4 +260,41 @@ test('isRefId agrees with SPEC.md §4.2 on every case the spec states', () => {
   for (const { id, accepted } of cases) {
     assert.equal(isRefId(id), accepted, `§4.2 says ${JSON.stringify(id)} is ${accepted ? 'accepted' : 'rejected'}`);
   }
+});
+
+test('an edge identity keeps direction for the directed fields', () => {
+  // For a directed field the direction IS the fact: `A blocked-by B` and
+  // `B blocked-by A` are opposite claims about which issue may start, so they
+  // must never collapse to one identity.
+  for (const field of ['blocked-by', 'decomposed-from', 'duplicate-of'] as const) {
+    assert.notEqual(edgeIdentity(field, '1', '2'), edgeIdentity(field, '2', '1'));
+  }
+});
+
+test('an edge identity collapses both spellings of a symmetric field', () => {
+  // §4.3.4 and §4.3.7 describe their components as undirected, so one
+  // relationship written from either end is one edge.
+  for (const field of ['serialize-with', 'together-with'] as const) {
+    assert.equal(edgeIdentity(field, '1', '2'), edgeIdentity(field, '2', '1'));
+  }
+});
+
+test('an edge identity separates the fields from one another', () => {
+  const seen = new Set(EDGE_FIELDS.map((field) => edgeIdentity(field, '1', '2')));
+  assert.equal(seen.size, EDGE_FIELDS.length, 'two fields share one identity for the same pair');
+});
+
+test('a reference cannot forge another edge identity through the separator', () => {
+  // The separator is what a hostile or merely odd reference would have to
+  // contain to impersonate a different edge, so it is percent-encoded before
+  // joining. Without that, `1|2` and `2|3` join to the same string.
+  assert.notEqual(edgeIdentity('blocked-by', '1|2', '3'), edgeIdentity('blocked-by', '1', '2|3'));
+});
+
+test('an edge identity survives a qualified reference intact', () => {
+  // §4.2 admits `owner/repo#123`, and the identity has to round-trip it — a
+  // scheme that mangled the qualifier would silently merge two repositories.
+  const id = edgeIdentity('blocked-by', 'owner/repo#9', '1');
+  assert.equal(id, `blocked-by|${encodeURIComponent('owner/repo#9')}|1`);
+  assert.notEqual(id, edgeIdentity('blocked-by', 'other/repo#9', '1'));
 });

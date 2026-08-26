@@ -14,7 +14,7 @@
  * so and offers the next move instead of drawing a hairball.
  */
 
-import type { EdgeField } from '@issuegraph/core';
+import { type EdgeField, edgeIdentity } from '@issuegraph/core';
 
 import { clustersOf } from '../clusters.ts';
 import type {
@@ -692,13 +692,32 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
         }),
       );
       for (let index = 1; index < members.length; index += 1) {
-        const previous = layout.nodes.get(members[index - 1] as string);
-        const current = layout.nodes.get(members[index] as string);
+        const from = members[index - 1] as string;
+        const to = members[index] as string;
+        const previous = layout.nodes.get(from);
+        const current = layout.nodes.get(to);
         if (previous === undefined || current === undefined) continue;
         enclosures.push(
           svg('line', {
             class: 'ig-connector',
-            'data-ig-group': lead,
+            // THE PAIR'S OWN IDENTITY, NOT THE SLOT'S. Every connector in a
+            // unit used to carry the lead, so a three-member unit drew two
+            // marks a pointer could not tell apart and a click on either named
+            // the unit — the one thing an editor cannot delete, retype or
+            // report a write against. `edgeIdentity` is the SAME function the
+            // store derives `StoredEdge.id` with, so what `onSelect` hands the
+            // host is a key `findEdge` resolves rather than a shape it has to
+            // be taught.
+            //
+            // STILL `data-ig-group`, and that is not an oversight about the
+            // "addressable via the key scheme" wording. Decoration announces
+            // itself on this attribute precisely so it stays OUT of the focus
+            // index — one element per key, or `focus()` lands on a
+            // non-tabbable mark instead of the node it decorates. `keyAt`
+            // reads both attributes for POINTER identity, which is the
+            // question a click asks, so the connector is addressable without
+            // re-opening that.
+            'data-ig-group': edgeIdentity('together-with', from, to),
             x1: previous.x + previous.width / 2,
             y1: previous.y + previous.height,
             x2: current.x + current.width / 2,

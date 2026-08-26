@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { edgeIdentity } from '@issuegraph/core';
+
 import { type ViewerDocument, normalizeDocument } from '../document.ts';
 import { fitLabel, layoutGraph, measureLabel } from '../layout.ts';
 import { renderMarkup } from '../element.ts';
@@ -182,20 +184,45 @@ describe('the graph projection', () => {
     // what `keyAt` actually does.
     // OVER BOTH SURFACES, because the canvas and the refusal draw different
     // things and this class has now appeared on each of them.
-    for (const [label, built] of [
-      ['the canvas', scene()],
-      ['the refusal', scene(refusedWithFooterAndExclusion())],
+    // THE INVARIANT IS ABOUT ISSUES, and saying so is the change rather than a
+    // relaxation. A `together-with` connector publishes an EDGE identity, which
+    // `navigable` will never hold because `navigable` lists issues — so a flat
+    // "everything pointable is navigable" would forbid the connector from
+    // being a hit target at all, which the design fixes as its one declared
+    // layer-1 crossing. The harm the original invariant caught was focus
+    // landing on an unrelated ISSUE, and that is now prevented directly:
+    // `emitSelect` moves focus only for a key the document carries, pinned by
+    // 'leaves focus where it was when a connector is selected' in mount.test.
+    // NOTHING IS LET THROUGH UNCHECKED. A non-issue identity has to be an edge
+    // THIS DOCUMENT DECLARES, reconstructed with the same function the markup
+    // was built from — so a stray attribute, a typo, or an identity for an edge
+    // that is not there still fails, exactly as before.
+    for (const [label, input] of [
+      ['the canvas', fixtureDocument],
+      ['the refusal', refusedWithFooterAndExclusion()],
     ] as const) {
+      const normalized = normalizeDocument(input).document;
+      const built = graphScene(normalized, {});
       const markup = renderMarkup(built.root);
       const pointable = new Set(
         [...markup.matchAll(/data-ig-(?:key|group)="([^"]+)"/g)].map((match) => match[1] as string),
       );
+      const declaredEdges = new Set(
+        normalized.edges.map((edge) => edgeIdentity(edge.field, edge.from, edge.to)),
+      );
 
       assert.ok(pointable.size > 0, `${label} published nothing pointable, so this proves nothing`);
       for (const key of pointable) {
+        if (normalized.byKey.has(key)) {
+          assert.ok(
+            built.navigable.includes(key),
+            `${label}: a pointer resolves to issue ${key}, which no keyboard can reach`,
+          );
+          continue;
+        }
         assert.ok(
-          built.navigable.includes(key),
-          `${label}: a pointer resolves to ${key}, which no keyboard can reach`,
+          declaredEdges.has(key),
+          `${label}: a pointer resolves to ${key}, which is neither an issue nor an edge this document declares`,
         );
       }
     }
@@ -466,9 +493,85 @@ describe('the graph projection', () => {
     assert.notEqual(enclosureAt, -1);
     assert.equal(/class="ig-enclosure"[^>]*data-ig-key=/.test(markup), false);
     assert.match(markup, /class="ig-enclosure"[^>]*data-ig-group="1"/);
-    assert.match(markup, /class="ig-connector"[^>]*data-ig-group="1"/);
+    // THE ENCLOSURE NAMES THE UNIT, THE CONNECTOR NAMES THE PAIR. Both stay out
+    // of the focus index — which is what this test is about — but they answer
+    // the pointer with different subjects: clicking the enclosure selects the
+    // unit, clicking the line between two members selects the edge joining them.
+    assert.match(
+      markup,
+      new RegExp(`class="ig-connector"[^>]*data-ig-group="${edgeIdentity('together-with', '1', '2')}"`),
+    );
+    assert.equal(/class="ig-connector"[^>]*data-ig-key=/.test(markup), false);
     assert.ok(groupAt > enclosureAt);
     assert.match(markup, /data-ig-key="1"[^>]*tabindex="0"/);
+  });
+
+  it('gives each member PAIR in a unit its own connector identity', () => {
+    // A three-member unit draws TWO connectors. Both used to carry the slot's
+    // lead, so an overlay could not tell them apart and a click on either named
+    // the unit — which is the one subject an editor cannot delete or retype.
+    // THREE MEMBERS, not two, because a two-member unit has exactly one
+    // connector and would pass this test with the old shared value.
+    const threeWay: ViewerDocument = {
+      issues: [
+        { key: '1', title: 'Lead', open: true, priority: 2 },
+        { key: '2', title: 'Partner', open: true, priority: 2 },
+        { key: '3', title: 'Third', open: true, priority: 2 },
+      ],
+      edges: [
+        { field: 'together-with', from: '1', to: '2' },
+        { field: 'together-with', from: '2', to: '3' },
+      ],
+      order: {
+        slots: [{ rank: 1, lead: '1', members: ['1', '2', '3'], ready: true, holds: [] }],
+        excluded: [],
+      },
+    };
+
+    const markup = render(threeWay);
+    const identities = [...markup.matchAll(/class="ig-connector" data-ig-group="([^"]+)"/g)].map(
+      (match) => match[1] as string,
+    );
+
+    assert.deepEqual(identities, [
+      edgeIdentity('together-with', '1', '2'),
+      edgeIdentity('together-with', '2', '3'),
+    ]);
+    assert.equal(new Set(identities).size, 2, 'two connectors shared one identity');
+  });
+
+  it('derives connector endpoints from the members measured bounds', () => {
+    // PINNED AGAINST THE LAYOUT, not against a screenshot and not against
+    // hand-copied numbers. The kit's implementation note is that a hit target
+    // is derived from measured bounds rather than an eyeballed offset, and a
+    // literal would keep passing after the geometry moved under it — which is
+    // exactly the drift the note exists to prevent.
+    const normalized = normalizeDocument(heldTogetherDocument).document;
+    const layout = layoutGraph(normalized, defaultTheme);
+    const lead = layout.nodes.get('1');
+    const partner = layout.nodes.get('2');
+    assert.ok(lead !== undefined && partner !== undefined);
+
+    const markup = render(heldTogetherDocument);
+    const drawn = /class="ig-connector"[^>]*x1="([^"]+)" y1="([^"]+)" x2="([^"]+)" y2="([^"]+)"/.exec(
+      markup,
+    );
+    assert.ok(drawn !== null, 'no connector was drawn');
+
+    assert.deepEqual(drawn.slice(1, 5).map(Number), [
+      lead.x + lead.width / 2,
+      lead.y + lead.height,
+      partner.x + partner.width / 2,
+      partner.y,
+    ]);
+
+    // AND IT SPANS THE ROW GAP RATHER THAN CROSSING EITHER BOX. Members are
+    // placed consecutively in one column, so the line runs from the bottom edge
+    // of one to the top edge of the next; a connector that started anywhere
+    // inside a node would be occluded by it and could not be clicked.
+    assert.equal(Number(drawn[2]), lead.y + lead.height);
+    assert.equal(Number(drawn[4]), partner.y);
+    assert.ok(Number(drawn[4]) >= Number(drawn[2]), 'the connector runs back into the node above it');
   });
 
   it('gives every terminal marker its own hue, not the inherited text colour', () => {

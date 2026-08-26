@@ -122,6 +122,30 @@ export function isSymmetricEdgeField(field: EdgeField): field is SymmetricEdgeFi
   return SYMMETRIC_EDGE_FIELD_SET.has(field);
 }
 
+/**
+ * The identity of one relationship, as a pure function of its content.
+ *
+ * HERE RATHER THAN IN THE STORE, because two layers need the same answer. The
+ * store gives every `StoredEdge` this identity; the viewer stamps it on the
+ * `together-with` connector so a click can name an edge rather than an issue.
+ * Those are different packages and the viewer cannot depend on the store — so
+ * spelling the format twice was the alternative, and a format spelled twice is
+ * one that disagrees with itself the first time either copy is touched.
+ *
+ * References are percent-encoded before joining, so the separator cannot appear
+ * inside a reference: `encodeURIComponent` escapes `|`, which means no
+ * reference — however a tracker spells it — can forge another edge's identity.
+ *
+ * The symmetric fields (§4.3.4, §4.3.7) sort their endpoints, so both spellings
+ * of one relationship collapse to one identity. The directed fields do not,
+ * because for them the direction IS the fact: `A blocked-by B` and
+ * `B blocked-by A` are opposite claims about which issue may start.
+ */
+export function edgeIdentity(field: EdgeField, from: string, to: string): string {
+  const [first, second] = isSymmetricEdgeField(field) && to < from ? [to, from] : [from, to];
+  return `${field}|${encodeURIComponent(first)}|${encodeURIComponent(second)}`;
+}
+
 /** Narrow an arbitrary string to a scalar field name. */
 export function isScalarField(value: string): value is ScalarField {
   return SCALAR_FIELD_SET.has(value);
