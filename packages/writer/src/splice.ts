@@ -40,6 +40,7 @@ import {
   locateBlock,
   locateSection,
   parseFrontmatter,
+  type Frontmatter,
   type IssueRef,
 } from '@issuegraph/reader';
 
@@ -76,39 +77,109 @@ import { renderRef } from './render.ts';
  *     non-null data AND a diagnostic, and refusing there would destroy the
  *     preservation guarantee one field over.
  */
-function readableOrNull(body: string, next: string, intent: 'edit' | 'remove'): string | null {
+function settle(
+  body: string,
+  next: string,
+  intent: 'edit' | 'remove',
+  edges: GeneratedEdges,
+): SpliceResult {
   const after = parseFrontmatter(next);
+  const before = parseFrontmatter(body);
 
-  // A SPLICE MUST NEVER TURN A READABLE DECLARATION INTO AN UNREADABLE ONE,
-  // and this comparison is what makes the control total rather than partial.
-  //
+  // A SPLICE MUST NEVER TURN A READABLE DECLARATION INTO AN UNREADABLE ONE.
   // The predicate below cannot see the worst case on its own, because it asks
   // only about the RESULT: a body whose block the edit destroyed so thoroughly
   // that it is no longer discoverable parses as `data: null` with NO
   // diagnostic — absence is silent by design — which is indistinguishable from
-  // "this body never had a block" and slips straight through. Measured: an
-  // explicit-key section (`? issuegraph` / `:` / `  priority: 1`) spliced for
-  // `blocked-by` handed back a NON-NULL body in which the requested edge was
-  // not written, `priority` was gone, and the reader reported no declaration at
-  // all — the caller told it had succeeded. That is the silent half-write this
-  // module's contract says it makes impossible.
-  //
-  // Asking whether the block was readable BEFORE closes it: destroying a
-  // declaration is a failed write whatever the wreckage looks like afterwards.
-  // The `before` parse is the only way to tell that from a body that never
-  // declared anything, and the whole-block REMOVAL path below is why it is a
-  // comparison rather than a flat refusal of `data: null`.
+  // "this body never had a block". Measured: an explicit-key section
+  // (`? issuegraph` / `:` / `  priority: 1`) spliced for `blocked-by` handed
+  // back a NON-NULL body in which the requested edge was not written,
+  // `priority` was gone, and the reader reported no declaration at all.
   //
   // THE INTENT IS PASSED IN RATHER THAN INFERRED, because the whole-block
-  // REMOVAL path legitimately ends with no declaration at all — inferring
-  // "the block vanished, so the edit failed" would refuse the one success
-  // whose correct outcome is an absent block.
-  if (intent === 'edit') {
-    const before = parseFrontmatter(body);
-    if (before.data !== null && after.data === null) return null;
+  // REMOVAL path legitimately ends with no declaration at all — inferring "the
+  // block vanished, so the edit failed" would refuse the one success whose
+  // correct outcome is an absent block.
+  if (intent === 'edit' && before.data !== null && after.data === null) {
+    return {
+      outcome: 'not-written',
+      data: before.data,
+      detail: 'the edit destroyed a declaration that was readable before it',
+    };
   }
 
-  return after.data === null && after.diagnostics.length > 0 ? null : next;
+  if (after.data === null && after.diagnostics.length > 0) {
+    return {
+      outcome: 'not-written',
+      data: before.data,
+      detail: `the result is not readable: ${after.diagnostics[0] ?? 'unreadable'}`,
+    };
+  }
+
+  // DID THE EDIT LAND? Everything above asks only whether the result can be
+  // READ, and a body can read perfectly while containing none of what was asked
+  // for. Measured: an empty INDENTED section took a fixed child indent of two,
+  // so `blocked-by` was written as a SIBLING of `issuegraph:` — the body
+  // parsed, the call reported success, and the edge was never in the
+  // declaration. That shape passed every readability check cleanly.
+  //
+  // ONE MECHANICAL CHECK RATHER THAN ONE FIX PER SHAPE. Three separate review
+  // findings were instances of this class, each repaired at its own site. The
+  // function already knows exactly which fields it owns, so it re-reads the
+  // result and compares.
+  const mismatch = ownedFieldMismatch(edges, after.data);
+  if (mismatch !== null) {
+    return { outcome: 'not-written', data: before.data, detail: mismatch };
+  }
+
+  return { outcome: 'spliced', body: next };
+}
+
+/** Two refs, compared as the parser hands them back. */
+function sameRef(a: IssueRef | null, b: IssueRef | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a.repo === b.repo && a.id === b.id;
+}
+
+/**
+ * Which owned field is not what the call asked for, if any.
+ *
+ * COMPARED AGAINST THE PARSER'S OWN ANSWER, so the writer's canonical spelling
+ * is not restated here: a caller passing `{ repo: null, id: '9' }` gets `"#9"`
+ * rendered and `{ repo: null, id: '9' }` back, and those compare equal. That
+ * round-trip is already pinned by `expectedParseOfRender`, so this leans on it
+ * rather than re-deriving it.
+ *
+ * ONLY OWNED FIELDS. A field the call did not name is left byte-untouched by
+ * construction — the splice removes and reinserts owned lines only — and an
+ * UNRECOGNISED field is not in `Frontmatter` at all, so it cannot be compared
+ * here even in principle. Line preservation protects those; this checks what
+ * this call claims to have written.
+ */
+function ownedFieldMismatch(edges: GeneratedEdges, after: Frontmatter | null): string | null {
+  for (const key of SPLICE_OWNED_FIELDS) {
+    if (!owns(edges, key)) continue;
+    const { property } = SPLICE_FIELD_OWNERSHIP[key];
+    if (property === 'blockedBy') {
+      const wanted = edges.blockedBy ?? [];
+      // A NULL PARSE IS AN EMPTY DECLARATION HERE, not a failure: the
+      // whole-block removal path legitimately ends with no block, and clearing
+      // `blocked-by` to `[]` is what asked for that.
+      const got = after === null ? [] : after.blockedBy;
+      const same =
+        wanted.length === got.length && wanted.every((ref, i) => sameRef(ref, got[i] ?? null));
+      if (!same) {
+        return `blocked-by did not land: asked for ${wanted.length} ref(s), the result reads ${got.length}`;
+      }
+      continue;
+    }
+    const wanted = edges[property] ?? null;
+    const got = after === null ? null : after[property];
+    if (!sameRef(wanted, got)) {
+      return `${key} did not land: asked for ${wanted === null ? 'none' : renderRef(wanted)}, the result reads ${got === null ? 'none' : renderRef(got)}`;
+    }
+  }
+  return null;
 }
 
 /**
@@ -139,6 +210,53 @@ function readableOrNull(body: string, next: string, intent: 'edit' | 'remove'): 
  * here is what made four separate copies of this rule; the notes below name
  * each field's ROLE and defer the mechanics to the table.
  */
+/**
+ * What one splice call did — a distinguished result, because `string | null`
+ * made a caller guess between outcomes that need OPPOSITE repairs.
+ *
+ * `null` used to mean both "there is no block, prepend one" (lossless) and
+ * "I could not edit the block that is there" — and prepending in the second
+ * case demotes the canonical block under §4.1's first-block rule, so every
+ * field the call did not own silently disappears. #25 closed the data loss by
+ * THROWING for the uneditable case, which removed the silence and left a caller
+ * that wants to handle it nothing to branch on but an exception message. This
+ * is the branch.
+ *
+ * BOTH FAILURE ARMS CARRY THE PARSED VALUE, because the one correct repair is
+ * the same for both: re-render the whole block from `data` plus the edges the
+ * call owns. Handing back the outcome without the value would leave the caller
+ * to re-parse a body it was just told is not writable.
+ *
+ * THAT REPAIR IS LOSSY FOR UNRECOGNISED FIELDS, and the design should say so
+ * rather than imply a clean rewrite is available: a renderer emits only what the
+ * parser models, exactly as `backfillFrontmatter`'s header explains for its own
+ * case. A caller that cannot accept that loss should leave the body alone.
+ */
+export type SpliceResult =
+  /** The edit was made and verified. */
+  | { readonly outcome: 'spliced'; readonly body: string }
+  /**
+   * No closed keyed block to edit. The documented prepend is correct and
+   * lossless here, and ONLY here.
+   */
+  | { readonly outcome: 'no-block' }
+  /**
+   * Readable, but not line-editable — a flow mapping, which is what a YAML
+   * serializer emits in flow style — and it carries entries this call does not
+   * own. Known BEFORE anything is attempted.
+   */
+  | { readonly outcome: 'uneditable-block'; readonly data: Frontmatter }
+  /**
+   * The edit was attempted and did not land: the result stopped being readable,
+   * or an owned field is not what the call asked for. Discovered AFTER, by
+   * re-reading the result — which is the difference from `uneditable-block`.
+   */
+  | {
+      readonly outcome: 'not-written';
+      readonly data: Frontmatter | null;
+      readonly detail: string;
+    };
+
 export interface GeneratedEdges {
   /** A SCHEDULING edge. Clearable — see {@link SPLICE_FIELD_OWNERSHIP}. */
   readonly blockedBy?: readonly IssueRef[];
@@ -236,6 +354,17 @@ export function isSpliceOwnedField(value: unknown): value is SpliceOwnedField {
  * that table's note. `clearable` selects the predicate, for the reason
  * {@link SpliceFieldOwnership.clearable} gives.
  */
+/** The parser's empty form, for an uneditable block whose YAML did not parse. */
+const EMPTY_FRONTMATTER: Frontmatter = Object.freeze({
+  blockedBy: [],
+  decomposedFrom: null,
+  duplicateOf: null,
+  serializeWith: null,
+  togetherWith: null,
+  priority: null,
+  evidence: null,
+});
+
 function owns(edges: GeneratedEdges, key: string): boolean {
   if (!isSpliceOwnedField(key)) return false;
   const { property, clearable } = SPLICE_FIELD_OWNERSHIP[key];
@@ -256,13 +385,19 @@ function owns(edges: GeneratedEdges, key: string): boolean {
  * must not survive either. When only the section empties but sibling top-level
  * keys remain, the bare `issuegraph:` header is dropped and the rest stays.
  *
- * EVERY NON-NULL RETURN IS PARSE-VERIFIED (see {@link readableOrNull}). A body
- * this hands back is one whose block a conforming reader can still read; if the
- * result would not be, the answer is `null` and the caller prepends instead.
+ * EVERY `spliced` RETURN IS PARSE-VERIFIED (see {@link settle}), on BOTH
+ * questions: the result still reads, AND every field this call owns is what the
+ * call asked for. A body handed back is one whose block a conforming reader can
+ * read and whose graph says what the caller requested.
+ *
+ * THE RESULT IS A UNION, NOT `string | null`. `null` conflated "there is no
+ * block, prepend one" with "I could not edit the block that is there", and those
+ * need opposite repairs — prepending in the second case demotes the canonical
+ * block and drops every field this call does not own. See {@link SpliceResult}.
  */
-export function spliceGeneratedEdges(body: string, edges: GeneratedEdges): string | null {
+export function spliceGeneratedEdges(body: string, edges: GeneratedEdges): SpliceResult {
   const located = locateBlock(body);
-  if (located.lines === null) return null;
+  if (located.lines === null) return { outcome: 'no-block' };
   const section = locateSection(located.lines);
   if (section !== null && !section.lineEditable) {
     // READABLE, BUT NOT EDITABLE LINE BY LINE — a flow mapping, which is what a
@@ -276,14 +411,14 @@ export function spliceGeneratedEdges(body: string, edges: GeneratedEdges): strin
     // and the extension was demoted in silence — §4.1 makes such a field inert
     // to the READER, never disposable by a WRITER.
     if (section.fields.length > 0) {
-      throw new Error(
-        'issuegraph splice: this block is readable but not line-editable (its section is a flow mapping), ' +
-          'and it carries entries this call does not own. Returning null would send you down the prepend ' +
-          'fallback, which demotes the original block and silently drops those entries. Rewrite the block ' +
-          'from its parsed value instead, or leave it alone.',
-      );
+      // A DISTINGUISHED ARM RATHER THAN A THROW. #25 made this throw, which
+      // removed the silence and left a caller nothing to branch on but an
+      // exception message — the string-matching this repo refuses everywhere
+      // else. The parsed value rides along because re-rendering the block from
+      // it, plus the edges this call owns, is the one correct repair.
+      return { outcome: 'uneditable-block', data: parseFrontmatter(body).data ?? EMPTY_FRONTMATTER };
     }
-    return null;
+    return { outcome: 'no-block' };
   }
   if (section === null) {
     // NULL NOW MEANS EXACTLY ONE THING: there is no readable section — the YAML
@@ -291,7 +426,7 @@ export function spliceGeneratedEdges(body: string, edges: GeneratedEdges): strin
     // scalar or a sequence. Nothing readable is at stake, so the caller's
     // documented prepend loses nothing. The readable-but-uneditable case is
     // handled above and never reaches here.
-    return null;
+    return { outcome: 'no-block' };
   }
 
   const lines = body.split('\n');
@@ -356,7 +491,7 @@ export function spliceGeneratedEdges(body: string, edges: GeneratedEdges): strin
         to += 1;
       }
       if (to + 1 < lines.length && (lines[to + 1] as string).trim() === '') to += 1;
-      return readableOrNull(body, [...lines.slice(0, from), ...lines.slice(to + 1)].join('\n'), 'remove');
+      return settle(body, [...lines.slice(0, from), ...lines.slice(to + 1)].join('\n'), 'remove', edges);
     }
     // The section emptied but sibling top-level content remains: drop the bare
     // `issuegraph:` header, keep the rest of the block.
@@ -365,9 +500,10 @@ export function spliceGeneratedEdges(body: string, edges: GeneratedEdges): strin
     if (headerAt !== -1) interior.splice(headerAt, 1);
   }
 
-  return readableOrNull(
+  return settle(
     body,
     [...lines.slice(0, blockStart + 1), ...interior, ...lines.slice(blockEnd)].join('\n'),
     ins.length === 0 && sectionSurvivors === 0 ? 'remove' : 'edit',
+    edges,
   );
 }

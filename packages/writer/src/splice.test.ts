@@ -18,9 +18,24 @@ import {
   isSpliceOwnedField,
   SPLICE_FIELD_OWNERSHIP,
   SPLICE_OWNED_FIELDS,
-  spliceGeneratedEdges,
+  spliceGeneratedEdges as spliceResult,
   type GeneratedEdges,
 } from './splice.ts';
+
+/**
+ * The pre-#27 `string | null` shape.
+ *
+ * These assertions were written against that contract and they pin BEHAVIOUR —
+ * which body comes out, and when none does. Rewriting forty-one call sites to
+ * carry an outcome they do not test would churn the diff without strengthening
+ * anything, and would make the real question harder to see. So the old shape is
+ * reconstructed here in one place, and the OUTCOMES get their own tests at the
+ * foot of this file, where the distinction is the subject rather than noise.
+ */
+function spliceGeneratedEdges(body: string, edges: GeneratedEdges): string | null {
+  const result = spliceResult(body, edges);
+  return result.outcome === 'spliced' ? result.body : null;
+}
 
 const NEW_EDGES: GeneratedEdges = {
   blockedBy: [{ repo: null, id: '12' }],
@@ -132,7 +147,7 @@ describe('spliceGeneratedEdges', () => {
       '',
       'Body.',
     ].join('\n');
-    assert.throws(() => spliceGeneratedEdges(body, NEW_EDGES), /not line-editable/);
+    assert.equal(spliceResult(body, NEW_EDGES).outcome, 'uneditable-block');
   });
 
   it('THROWS for a flow section carrying only an UNRECOGNISED extension', () => {
@@ -143,7 +158,7 @@ describe('spliceGeneratedEdges', () => {
     // disposable by a WRITER. The count now comes from the section's own
     // entries.
     const body = ['---', '{issuegraph: {future-edge: "#5", note: "keep me"}}', '---', '', 'Body.'].join('\n');
-    assert.throws(() => spliceGeneratedEdges(body, NEW_EDGES), /not line-editable/);
+    assert.equal(spliceResult(body, NEW_EDGES).outcome, 'uneditable-block');
   });
 
   it('but still returns null when the uneditable block has NOTHING to lose', () => {
@@ -670,5 +685,86 @@ describe('the splice ownership domain', () => {
       // The un-owned neighbour survives either way — the splice is surgical.
       assert.equal(data?.priority, 1, field);
     }
+  });
+});
+
+describe('the splice result is distinguished (#27) and verified (#28)', () => {
+  const WANT: GeneratedEdges = { blockedBy: [{ repo: null, id: '9' }] };
+
+  it('no-block is the ONLY outcome that licenses the prepend', () => {
+    // The conflation this union exists to end: `null` meant both "there is no
+    // block, prepend one" — lossless — and "I could not edit the block that is
+    // there", where prepending demotes the canonical block under §4.1 and every
+    // field the call does not own goes with it.
+    assert.equal(spliceResult('Just prose, no block.\n', WANT).outcome, 'no-block');
+  });
+
+  it('uneditable-block hands back the parsed value, so the caller can re-render', () => {
+    // A flow mapping carrying an entry this call does not own. Before #27 this
+    // THREW, which removed the silence and left a caller nothing to branch on
+    // but an exception message.
+    const body = '---\nissuegraph: { priority: 1 }\n---\n\nProse.';
+    const result = spliceResult(body, WANT);
+
+    assert.equal(result.outcome, 'uneditable-block');
+    // THE VALUE IS THE USEFUL PART: re-rendering the block from it plus the
+    // call's own edges is the one correct repair.
+    assert.equal(result.outcome === 'uneditable-block' ? result.data.priority : null, 1);
+  });
+
+  it('spliced carries the body', () => {
+    const body = '---\nissuegraph:\n  priority: 1\n---\n\nProse.';
+    const result = spliceResult(body, WANT);
+
+    assert.equal(result.outcome, 'spliced');
+    assert.ok(result.outcome === 'spliced' && result.body.includes('"#9"'));
+  });
+
+  it('every spliced result actually CONTAINS what was asked for', () => {
+    // #28's invariant, as a property over shapes rather than one case per bug.
+    // Readability is not the same question: a body can parse perfectly while
+    // containing none of the edit. Measured on the historical fixed-child-indent
+    // defect — `blocked-by` written as a SIBLING of `issuegraph:` — the result
+    // parsed, the call reported success, and `blockedBy` came back `[]`. Every
+    // shape below went through that door.
+    const SHAPES: readonly (readonly [string, string])[] = [
+      ['empty section alone', '---\nissuegraph:\n---'],
+      ['empty section, sibling after', '---\nissuegraph:\nother: 1\n---'],
+      ['empty section, sibling before', '---\nother: 1\nissuegraph:\n---'],
+      ['two-space children', '---\nissuegraph:\n  priority: 1\n---'],
+      ['four-space children', '---\nissuegraph:\n    priority: 1\n---'],
+      ['eight-space children', '---\nissuegraph:\n        priority: 1\n---'],
+      ['existing blocked-by, block style', '---\nissuegraph:\n  blocked-by:\n    - "#1"\n---'],
+      ['existing blocked-by, flow style', '---\nissuegraph:\n  blocked-by: ["#1"]\n---'],
+      ['quoted owned key', '---\nissuegraph:\n  "blocked-by":\n    - "#1"\n---'],
+      ['quoted section header', '---\n"issuegraph":\n  priority: 1\n---'],
+      ['unrecognised sibling field', '---\nissuegraph:\n  future-edge: "#5"\n---'],
+      ['CRLF endings', '---\r\nissuegraph:\r\n  priority: 1\r\n---'],
+    ];
+
+    let spliced = 0;
+    for (const [label, body] of SHAPES) {
+      const result = spliceResult(body, WANT);
+      if (result.outcome !== 'spliced') continue;
+      spliced += 1;
+      const after = parseFrontmatter(result.body).data;
+      assert.deepEqual(
+        after?.blockedBy,
+        [{ repo: null, id: '9' }],
+        `${label}: reported spliced, but the edge is not in the declaration`,
+      );
+    }
+    // Without this the test would pass for a splice that refused everything.
+    assert.ok(spliced >= SHAPES.length - 2, `only ${spliced} of ${SHAPES.length} shapes spliced at all`);
+  });
+
+  it('clearing to [] leaves no refs behind, which is the same check inverted', () => {
+    const body = '---\nissuegraph:\n  blocked-by:\n    - "#1"\n    - "#2"\n  priority: 1\n---';
+    const result = spliceResult(body, { blockedBy: [] });
+
+    assert.equal(result.outcome, 'spliced');
+    const after = result.outcome === 'spliced' ? parseFrontmatter(result.body).data : null;
+    assert.deepEqual(after?.blockedBy, []);
+    assert.equal(after?.priority, 1, 'an unowned field was not preserved');
   });
 });

@@ -48,7 +48,12 @@ export {
   SPLICE_OWNED_FIELDS,
   spliceGeneratedEdges,
 } from './splice.ts';
-export type { GeneratedEdges, SpliceFieldOwnership, SpliceOwnedField } from './splice.ts';
+export type {
+  GeneratedEdges,
+  SpliceFieldOwnership,
+  SpliceOwnedField,
+  SpliceResult,
+} from './splice.ts';
 
 export { backfillFrontmatter } from './backfill.ts';
 export type { BackfillOutcome, BackfillResult } from './backfill.ts';

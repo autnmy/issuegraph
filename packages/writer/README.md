@@ -53,20 +53,44 @@ An input with nothing to say renders `null`, never an empty `issuegraph:` stub.
 A tracker's issue body is a document a human edits. If you own the scheduling edges but not the rest, `spliceGeneratedEdges` refreshes yours and leaves **every other byte alone** — unknown children, sibling top-level keys, comments, the fence armor.
 
 ```ts
-import { spliceGeneratedEdges } from '@issuegraph/writer';
+import { renderFrontmatter, spliceGeneratedEdges } from '@issuegraph/writer';
 
-const next = spliceGeneratedEdges(issue.body, {
+const edges = {
   blockedBy: [{ repo: null, id: '231' }],
   serializeWith: null,          // scheduling edge, present: remove it
   // duplicateOf omitted        // absent: not mine, do not touch
-});
+};
 
-if (next === null) {
-  // No block this writer can edit — prepend a fresh one instead.
+const result = spliceGeneratedEdges(issue.body, edges);
+
+switch (result.outcome) {
+  case 'spliced':
+    return result.body;
+  case 'no-block':
+    // Nothing readable to edit — prepend a fresh block. Lossless, and ONLY here.
+    return renderFrontmatter(edges) + '\n\n' + issue.body;
+  case 'uneditable-block':
+  case 'not-written':
+    // `result.data` is the block's parsed value. Re-render it plus your own
+    // edges, or leave the body alone — see below.
+    return null;
 }
 ```
 
-**`null` means "prepend a fresh block", and that is only safe because it is never returned for a block that would lose fields.** A block that *reads* fine but cannot be edited line-by-line — a flow mapping, which is what a YAML serializer emits in flow style — **throws** instead. Prepending there would demote the original block under §4.1's first-block rule and silently drop every field the call did not own. Giving callers a value to branch on rather than an exception is [#27](https://github.com/autnmy/issuegraph/issues/27).
+**Four outcomes, because two of them need opposite repairs.**
+
+| outcome | what happened | what to do |
+|---|---|---|
+| `spliced` | the edit was made **and verified** | use `body` |
+| `no-block` | nothing readable to edit | prepend a fresh block — lossless, and only here |
+| `uneditable-block` | readable but not line-editable (a flow mapping, which is what a YAML serializer emits in flow style) **and** it carries entries you do not own | re-render from `data` plus your edges, or leave it alone |
+| `not-written` | the edit was attempted and did not land | same, and report it: this is a writer defect, not a bad input |
+
+**Prepending is safe only on `no-block`.** Under §4.1's first-block rule, prepending in front of a block you could not edit **demotes** it, and every field the call did not own goes with it. That is why these are four outcomes rather than one nullable string.
+
+**Re-rendering from `data` is lossy for unrecognised fields** — a renderer emits only what the parser models. If you cannot accept that loss, leave the body alone.
+
+**`spliced` is verified on both questions**: the result still reads, *and* every field the call owns is what the call asked for. A body can parse perfectly while containing none of the edit, which is a class this package used to ship one fix at a time.
 
 **Ownership is per field and opt-in.** A field you *omit* is left byte-untouched. That distinction is load-bearing — round-tripping parsed values back through a splice would silently launder away unparseable items and exotic spellings the parser tolerates with a diagnostic, so omission is the honest "not mine" signal.
 
@@ -81,7 +105,7 @@ if (next === null) {
 
 The bottom two are provenance and a verdict, where the established caller shape is *write it when the block lacks one, never clobber one that is already there* — such a caller passes `null` precisely to mean **leave it alone**, so spending `null` on removal would delete provenance on every refresh of a block that has it. The cost is real and stated rather than hidden: **there is currently no way to clear `decomposed-from` or `duplicate-of` through this call.**
 
-It returns `null` rather than guessing whenever the block is one a parser would refuse — an inline value on the key, a child that is not a mapping entry. A body that comes back non-null and parses to nothing is the one failure a writer must never produce.
+It answers `no-block` rather than guessing whenever the block is one a parser would refuse — an inline value on the key, a child that is not a mapping entry. A body that comes back `spliced` and parses to nothing is the one failure a writer must never produce, which is why `spliced` is verified on both questions: that the result still reads, **and** that every field the call owns is what the call asked for.
 
 ## Repairing an inert block
 
