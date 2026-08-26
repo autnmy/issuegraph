@@ -298,3 +298,43 @@ test('an edge identity survives a qualified reference intact', () => {
   assert.equal(id, `blocked-by|${encodeURIComponent('owner/repo#9')}|1`);
   assert.notEqual(id, edgeIdentity('blocked-by', 'other/repo#9', '1'));
 });
+
+test('an edge identity is total over strings — a lone surrogate does not throw', () => {
+  // `encodeURIComponent` throws `URIError` on an unpaired surrogate, and a
+  // reference is whatever an adapter hands over — a key decoded from `"\\ud800"`
+  // holds one legally. The viewer stamps this identity while RENDERING, and its
+  // contract is that a malformed document yields diagnostics rather than an
+  // exception, so a throwing identity turns odd data into a failed render.
+  for (const malformed of ['\uD800', '\uDC00', 'a\uD800b', '\uD800\uD800']) {
+    assert.doesNotThrow(() => edgeIdentity('blocked-by', malformed, '1'));
+  }
+});
+
+test('an edge identity leaves every well-formed reference byte-identical', () => {
+  // The encoding is walked by hand to stay total, so this is what pins it to
+  // `encodeURIComponent` for everything that IS encodable — including astral
+  // characters, where a per-code-unit walk is exactly what would go wrong.
+  // Without this the total encoding could quietly diverge from the identity
+  // `@issuegraph/store` derives, and the two layers would stop agreeing.
+  for (const ref of ['1', 'owner/repo#9', 'a b', 'ä', 'a\u{1F600}b', '1|2', '%', '']) {
+    assert.equal(
+      edgeIdentity('blocked-by', ref, 'x'),
+      `blocked-by|${encodeURIComponent(ref)}|x`,
+      `${JSON.stringify(ref)} did not encode the way encodeURIComponent does`,
+    );
+  }
+});
+
+test('a lone surrogate cannot collide with another reference', () => {
+  // `%uXXXX` is a form `encodeURIComponent` never emits — it escapes nothing to
+  // a literal `%u` — so the escape hatch cannot be forged by an ordinary
+  // reference, and two different malformed keys stay different.
+  assert.notEqual(
+    edgeIdentity('blocked-by', '\uD800', '1'),
+    edgeIdentity('blocked-by', '\uD801', '1'),
+  );
+  assert.notEqual(
+    edgeIdentity('blocked-by', '\uD800', '1'),
+    edgeIdentity('blocked-by', '%uD800', '1'),
+  );
+});

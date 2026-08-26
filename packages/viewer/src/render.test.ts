@@ -207,3 +207,31 @@ describe('renderViewer', () => {
     }
   });
 });
+
+describe('a document whose keys are not encodable', () => {
+  it('renders a together unit with a lone surrogate key instead of throwing', () => {
+    // THE CONTRACT THIS FILE ALREADY STATES: a malformed document produces
+    // diagnostics rather than a throw. Drawing connectors began stamping an
+    // edge identity on each one, and `encodeURIComponent` throws `URIError` on
+    // an unpaired surrogate — so a key a `String` may legally hold turned a
+    // render into an exception, on the one projection that draws connectors.
+    // ASSERTED ON `renderViewer`, the public entry the contract is written
+    // about, rather than on the encoder in isolation: the encoder having been
+    // made total is the fix, and this is the promise the fix exists to keep.
+    const document = {
+      issues: [
+        { key: '\uD800', title: 'Lone high surrogate', open: true, priority: 2 as const },
+        { key: '2', title: 'Partner', open: true, priority: 2 as const },
+      ],
+      edges: [{ field: 'together-with' as const, from: '\uD800', to: '2' }],
+      order: {
+        slots: [{ rank: 1, lead: '\uD800', members: ['\uD800', '2'], ready: true, holds: [] }],
+        excluded: [],
+      },
+    };
+
+    assert.doesNotThrow(() => renderViewer(document, { projection: 'graph' }));
+    const rendered = renderViewer(document, { projection: 'graph' });
+    assert.match(rendered.markup, /class="ig-connector"/, 'the connector was dropped rather than drawn');
+  });
+});
