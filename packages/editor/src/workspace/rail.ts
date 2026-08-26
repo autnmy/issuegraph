@@ -31,20 +31,24 @@
  * is the inconsistency this value exists to prevent. A closure cannot be
  * reached at all, and still answers in constant time.
  *
- * ## What gets windowed, and the one edge this has to drop
+ * ## What gets windowed
  *
- * Slots are sliced. ISSUES ARE NOT: `normalizeDocument` reports a slot member
- * that is not an issue, and never the reverse, so keeping the whole issue list
- * costs no diagnostic and keeps every edge on a drawn row resolvable.
+ * Slots are sliced, and the issues and edges are cut down to exactly what the
+ * drawn rows need — a drawn slot's members, an exclusion's key, and the
+ * endpoints of any edge a drawn row owes a badge for.
  *
- * `together-with` is the exception, and it is layer 1's rule rather than a
- * choice made here: that edge draws as an ENCLOSURE around one slot's members,
- * so the viewer drops — and reports — any whose members no longer share a
- * drawn slot. Windowing can put a unit outside the window, which would emit a
- * diagnostic about a row nobody asked to see. Those edges are therefore left
- * out of the windowed document and counted on {@link RailWindow.undrawn}
- * instead, so the fact is reported as a property of the WINDOW rather than
- * leaking out as a document defect.
+ * KEEPING THE WHOLE ISSUE LIST WAS THE OBVIOUS THING AND IT WAS WRONG. See the
+ * note at the filter itself for what it cost: the linear projection renders a
+ * count of the keys that appear in no slot and on no edge, so every edgeless
+ * issue outside the window was reported to the reader as isolated — the rail
+ * describing the reader's scroll position as though it were the document.
+ *
+ * `together-with` keeps its own rule, and it is layer 1's rather than a choice
+ * made here: that edge draws as an ENCLOSURE around one slot's members, so the
+ * viewer drops — and reports — any whose members no longer share a drawn slot.
+ * Those edges are left out of the windowed document and counted on
+ * {@link RailWindow.undrawn} instead, so the fact is reported as a property of
+ * the WINDOW rather than leaking out as a document defect.
  */
 
 import { edgeIdentity } from '@issuegraph/core';
@@ -87,7 +91,7 @@ export interface RailWindow {
   readonly after: number;
   /** The drawn slots, in order. */
   readonly rows: readonly ViewerSlot[];
-  /** The document to hand the viewer: every issue, the windowed slots. */
+  /** The document to hand the viewer: the windowed slots, and what they need. */
   readonly document: ViewerDocument;
   /**
    * `together-with` edges left out because their unit is outside the window.
@@ -174,11 +178,49 @@ export function railWindow(
   const drawnLead = new Map<string, string>();
   for (const slot of rows) for (const member of slot.members) drawnLead.set(member, slot.lead);
 
+  const drawnMember = new Set(rows.flatMap((slot) => slot.members));
+
+  // AN EDGE IS KEPT WHEN A DRAWN ROW OWES A BADGE FOR IT — one endpoint in the
+  // window is enough, because that row draws the badge and the other end is
+  // named as text. `together-with` keeps its own rule: layer 1 draws it as an
+  // ENCLOSURE around one slot's members, so an edge whose members no longer
+  // share a drawn slot has nothing to draw it, and the viewer would report that
+  // as a document defect rather than as a fact about the window.
   const drawable = (edge: ViewerDocument['edges'][number]): boolean =>
-    edge.field !== 'together-with' ||
-    (drawnLead.get(edge.from) !== undefined && drawnLead.get(edge.from) === drawnLead.get(edge.to));
+    edge.field === 'together-with'
+      ? drawnLead.get(edge.from) !== undefined && drawnLead.get(edge.from) === drawnLead.get(edge.to)
+      : drawnMember.has(edge.from) || drawnMember.has(edge.to);
 
   const edges = input.edges.filter(drawable);
+
+  // ISSUES ARE WINDOWED TOO, AND AN EARLIER VERSION OF THIS GOT IT WRONG in a
+  // way worth recording, because the reasoning that produced it was nearly
+  // right. It kept the WHOLE issue list, justified on the grounds that
+  // `normalizeDocument` reports a slot member that is not an issue and never
+  // the reverse — which is true, and is about DIAGNOSTICS. It is not about what
+  // gets DRAWN: the linear projection also renders a footer counting the keys
+  // that appear "in no slot and on no edge", so every edgeless issue outside
+  // the window was reported to the reader as an isolated issue. Windowing made
+  // the rail state a falsehood about the document, quietly, with no diagnostic
+  // anywhere — a justification that covered the surface it named and not the
+  // one that mattered.
+  //
+  // So the set is exactly what the drawn rows need, and nothing beyond it:
+  //
+  //   - a member of a drawn slot, or
+  //   - an exclusion's key, since an exclusion is a position too and the viewer
+  //     drops one whose key it cannot find, or
+  //   - an endpoint of a kept edge, so a badge pointing out of the window still
+  //     resolves rather than being dropped with a diagnostic.
+  //
+  // Every issue that survives is therefore placed, excluded, or on an edge —
+  // so windowing adds nothing to `isolated` and the footer goes back to
+  // describing the document rather than the scroll position.
+  const keep = new Set([
+    ...drawnMember,
+    ...input.order.excluded.map((exclusion) => exclusion.key),
+    ...edges.flatMap((edge) => [edge.from, edge.to]),
+  ]);
 
   // EXCLUSIONS ARE CARRIED WHOLE, and that is a stated bound rather than an
   // oversight. An excluded issue is one the order deliberately never works, so
@@ -187,7 +229,7 @@ export function railWindow(
   // coordinate, for a population that is duplicates and is small by
   // construction. A host that needs them bounded filters before calling.
   const document: ViewerDocument = {
-    issues: input.issues,
+    issues: input.issues.filter((issue) => keep.has(issue.key)),
     edges,
     order: { slots: rows, excluded: input.order.excluded },
   };

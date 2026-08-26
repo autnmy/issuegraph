@@ -160,6 +160,59 @@ describe('the ambient audit marks rail rows without touching the rail', () => {
     assert.match(row, new RegExp(`${AUDIT_SEVERITY_ATTRIBUTE}="`));
   });
 
+  it('shows the HEAVIEST member\'s severity on a unit, not the first one it meets', () => {
+    // THE DISCRIMINATING CELL, and it took a mutation control to notice it was
+    // missing: every other fixture here gives a unit's members the SAME
+    // severity, where "heaviest" and "first match" agree and neither
+    // implementation can be told from the other.
+    //
+    // So this one is built so they disagree. `overlay.rows` is sorted by `ref`,
+    // lexicographically — so the lighter finding sits FIRST — and the unit's
+    // lead is the member carrying it:
+    //
+    //   i0001  stale-blocker  weight 0   misleading    <- lexically first, the lead
+    //   i0002  cycle          weight 3   blocks-work   <- the one that must win
+    //
+    // A first-match reading marks the row `misleading` and understates a cycle.
+    const auditInput = {
+      document: {
+        issues: [
+          { ref: 'i0001', title: 'issue i0001', state: 'open' as const },
+          { ref: 'i0002', title: 'issue i0002', state: 'open' as const },
+          { ref: 'i0003', title: 'issue i0003', state: 'open' as const },
+          { ref: 'gone', title: 'issue gone', state: 'closed' as const },
+        ],
+        edges: [
+          { id: edgeIdentity('blocked-by', 'i0001', 'gone'), kind: 'blocked-by' as const, from: 'i0001', to: 'gone' },
+          { id: edgeIdentity('blocked-by', 'i0002', 'i0003'), kind: 'blocked-by' as const, from: 'i0002', to: 'i0003' },
+          { id: edgeIdentity('blocked-by', 'i0003', 'i0002'), kind: 'blocked-by' as const, from: 'i0003', to: 'i0002' },
+        ],
+      },
+      graph: graphFor(['i0001', 'i0002', 'i0003', 'gone'], {
+        i0001: ['gone'],
+        i0002: ['i0003'],
+        i0003: ['i0002'],
+      }),
+    };
+
+    // The premise, asserted rather than assumed: the two members really do carry
+    // different severities, and the lighter one really does sort first.
+    const overlay = renderWorkspace(backlogOf(3), { ...WORDS, audit: auditInput }).view.audit;
+    assert.equal(overlay?.rowFor('i0001')?.severity, 'misleading');
+    assert.equal(overlay?.rowFor('i0002')?.severity, 'blocks-work');
+    // THE ORDERING, not the whole list: a stale-blocker names the closed issue
+    // as well, so pinning every row here would make this premise break on a
+    // row that has nothing to do with what is being discriminated.
+    const order = (overlay?.rows ?? []).map((row) => row.ref);
+    assert.ok(order.indexOf('i0001') < order.indexOf('i0002'), order.join(','));
+
+    const document = backlogOf(3, { unitOf: { i0002: 'i0001' } });
+    const result = renderWorkspace(document, { ...WORDS, audit: auditInput });
+    const row = result.markup.match(/<li class="ig-slot" data-ig-key="i0001"[^>]*>/)?.[0];
+    assert.ok(row !== undefined, 'the unit row was not drawn');
+    assert.match(row, new RegExp(`${AUDIT_SEVERITY_ATTRIBUTE}="blocks-work"`));
+  });
+
   it('renders identical rail rows with the audit off', () => {
     // The marks are the ONLY difference: nothing else about the rail changes
     // when an audit is supplied, which is what "ambient" has to mean.
@@ -176,6 +229,98 @@ describe('the ambient audit marks rail rows without touching the rail', () => {
       markup.replace(new RegExp(` ${AUDIT_SEVERITY_ATTRIBUTE}="[^"]*"`, 'g'), '');
     assert.ok(fromRail(on.markup).includes(AUDIT_SEVERITY_ATTRIBUTE), 'nothing was marked');
     assert.equal(strip(fromRail(on.markup)), fromRail(off.markup));
+  });
+});
+
+describe('the rail publishes the geometry a scroll container needs', () => {
+  const document = backlogOf(312);
+
+  it('spaces the rows it did not draw, at both ends', () => {
+    const result = renderWorkspace(document, { ...WORDS, rail: { start: 100, count: 12 } });
+    const spacers = [
+      ...result.markup.matchAll(
+        /<div class="ig-rail-spacer" data-edge="([^"]+)"[^>]*style="--ig-rail-rows:(\d+)"/g,
+      ),
+    ].map((match) => [match[1], Number(match[2])] as const);
+    // Without these the zone is exactly as tall as the drawn rows, so native
+    // scrolling stops at the end of the first window and a host has no offset
+    // to turn into the next `start`.
+    assert.deepEqual(spacers, [
+      ['before', 100],
+      ['after', 200],
+    ]);
+  });
+
+  it('omits a spacer with nothing to space, at either end', () => {
+    const top = renderWorkspace(document, { ...WORDS, rail: { start: 0, count: 12 } });
+    assert.deepEqual(
+      [...top.markup.matchAll(/data-edge="(before|after)"/g)].map((match) => match[1]),
+      ['after'],
+    );
+    const end = renderWorkspace(document, { ...WORDS, rail: { start: 300, count: 12 } });
+    assert.deepEqual(
+      [...end.markup.matchAll(/data-edge="(before|after)"/g)].map((match) => match[1]),
+      ['before'],
+    );
+    const whole = renderWorkspace(backlogOf(4), WORDS);
+    assert.equal(/ig-rail-spacer/.test(whole.markup), false);
+  });
+
+  it('sizes them from the theme rather than a literal height', () => {
+    const result = renderWorkspace(document, { ...WORDS, rail: { start: 10, count: 5 } });
+    assert.match(
+      result.styles,
+      /\.ig-rail-spacer\s*\{[^}]*height:\s*calc\(var\(--ig-row-height\) \* var\(--ig-rail-rows/,
+    );
+  });
+});
+
+describe('the audit filter is state the workspace holds, not a dead toggle', () => {
+  const refs = ['i0001', 'i0002', 'i0003', 'i0004'];
+  const audit = {
+    document: {
+      issues: refs.map((ref) => ({ ref, title: `issue ${ref}`, state: 'open' as const })),
+      edges: [
+        { id: edgeIdentity('blocked-by', 'i0001', 'i0002'), kind: 'blocked-by' as const, from: 'i0001', to: 'i0002' },
+        { id: edgeIdentity('blocked-by', 'i0002', 'i0001'), kind: 'blocked-by' as const, from: 'i0002', to: 'i0001' },
+      ],
+    },
+    graph: graphFor(refs, { i0001: ['i0002'], i0002: ['i0001'] }),
+  };
+
+  it('narrows the rail to the affected rows and presses the toggle', () => {
+    const on = renderWorkspace(backlogOf(4), { ...WORDS, audit, auditFiltered: true });
+    assert.deepEqual(drawnKeys(on.markup), ['i0001', 'i0002']);
+    assert.match(on.markup, /aria-pressed="true"/);
+    assert.equal(on.view.auditFiltered, true);
+    assert.equal(on.view.rail.total, 2);
+  });
+
+  it('leaves every row and an unpressed toggle when it is off', () => {
+    const off = renderWorkspace(backlogOf(4), { ...WORDS, audit });
+    assert.deepEqual(drawnKeys(off.markup), refs);
+    assert.match(off.markup, /aria-pressed="false"/);
+    assert.equal(off.view.auditFiltered, false);
+  });
+
+  it('narrows BEFORE the window, so it works past the first screen', () => {
+    // Filtering only what the window had already reached reads as doing nothing
+    // on a long backlog — which is the whole population this control is for.
+    const many = backlogOf(300);
+    const on = renderWorkspace(many, { ...WORDS, audit, auditFiltered: true, rail: { count: 5 } });
+    assert.deepEqual(drawnKeys(on.markup), ['i0001', 'i0002']);
+  });
+
+  it('keeps a unit whose affected member does not lead it', () => {
+    const document = backlogOf(4, { unitOf: { i0002: 'i0003' } });
+    const on = renderWorkspace(document, { ...WORDS, audit, auditFiltered: true });
+    assert.ok(drawnKeys(on.markup).includes('i0003'), 'the unit row was filtered out');
+  });
+
+  it('is ignored with no audit to filter by', () => {
+    const none = renderWorkspace(backlogOf(4), { ...WORDS, auditFiltered: true });
+    assert.equal(none.view.auditFiltered, false);
+    assert.deepEqual(drawnKeys(none.markup), refs);
   });
 });
 
@@ -205,6 +350,31 @@ describe('selection crosses the zones from one value', () => {
     // 1 writes `aria-current` on every row and answers `false` for the ones that
     // are not, so a test for the attribute's presence passes on any rail at all.
     assert.equal(/aria-current="true"/.test(result.markup), false);
+  });
+
+  it('marks the selected issue current on the CANVAS too, from the same value', () => {
+    // The canvas is one of the three zones. Left untold, it drew the selected
+    // issue as ordinary while the rail marked it current — the single selection
+    // this surface advertises disagreeing with itself between two zones.
+    const result = renderWorkspace(document, {
+      ...WORDS,
+      selection: { kind: 'issue', key: 'i0002' },
+    });
+    const canvas = result.markup.slice(
+      result.markup.indexOf('data-zone="canvas"'),
+      result.markup.indexOf('data-zone="inspector"'),
+    );
+    assert.match(canvas, /data-ig-key="i0002"[^>]*aria-current="true"/);
+    // ONE KEY, NOT ONE OCCURRENCE. The graph projection draws each issue twice
+    // — an SVG node group and a row in its own mini-rail — and both carry the
+    // state, so counting occurrences asserts a layout detail rather than the
+    // property. What must be true is that exactly one ISSUE reads as current.
+    const current = new Set(
+      [...canvas.matchAll(/data-ig-key="([^"]+)"[^>]*aria-current="true"/g)].map(
+        (match) => match[1],
+      ),
+    );
+    assert.deepEqual([...current], ['i0002']);
   });
 
   it('publishes what a control does as data, and wires nothing', () => {

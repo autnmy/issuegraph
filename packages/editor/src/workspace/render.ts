@@ -69,7 +69,9 @@ import { auditStylesheet } from '../audit/styles.ts';
 import {
   AUDIT_SEVERITY_ATTRIBUTE,
   type AuditOverlay,
+  auditFilterKeeps,
   auditOverlay,
+  heaviestRow,
   renderAuditHeader,
 } from '../audit/surface.ts';
 import { type ScaleState, INITIAL_SCALE_STATE } from '../scale/commands.ts';
@@ -114,6 +116,20 @@ export interface WorkspaceOptions {
    * a zero the reader can trust and a zero nobody computed are different facts.
    */
   readonly audit?: AuditInput | undefined;
+  /**
+   * Whether the audit filter is narrowing the rail to affected rows.
+   *
+   * THE HEADER PUBLISHES THE TOGGLE, SO SOMETHING HAS TO HOLD ITS STATE.
+   * `renderAuditHeader` draws a `button` with `aria-pressed`, and without this
+   * option every render answered `false` and left the rail unnarrowed — a
+   * control that could not complete the action it advertised, which is the
+   * finding the scale ladder already records paying for once. The ladder's note
+   * is also the resolution: layer 2 CAN narrow, and the assembling surface is
+   * the layer that holds the state to narrow with.
+   *
+   * Ignored with no audit, because there is nothing to filter by.
+   */
+  readonly auditFiltered?: boolean | undefined;
   readonly theme?: Theme | undefined;
   /** The selector the theme's custom properties are written onto. */
   readonly themeSelector?: string | undefined;
@@ -125,6 +141,14 @@ export interface WorkspaceView {
   readonly inspector: InspectorView;
   /** `null` when no audit input was supplied — see {@link WorkspaceOptions.audit}. */
   readonly audit: AuditOverlay | null;
+  /**
+   * Whether the rail was narrowed to affected rows.
+   *
+   * DERIVED, not echoed: it is `auditFiltered` AND an audit to filter by, so a
+   * caller reading this is reading what actually happened rather than what was
+   * asked for.
+   */
+  readonly auditFiltered: boolean;
 }
 
 export interface WorkspaceResult {
@@ -147,20 +171,52 @@ function zone(name: Zone, inner: string): string {
   return `<section class="ig-zone" data-zone="${name}">${inner}</section>`;
 }
 
+/**
+ * The height the rows outside the window would have taken.
+ *
+ * WITHOUT THESE THE SCROLL CONTAINER CANNOT REACH THE ORDER. The rail zone
+ * scrolls, and a zone containing only the drawn rows is exactly as tall as
+ * those rows — so native scrolling stops at the end of the first window, and a
+ * host has no scroll offset to turn into the next `start`. `addressOf` keeps
+ * the MODEL complete, and a reader who cannot scroll to rank 287 does not care.
+ *
+ * ONE ROW HEIGHT FOR ALL OF THEM, which is an approximation and is stated as
+ * one: a row carrying holds is taller than a bare one, so the scrollbar is
+ * proportional rather than exact. That is the standard cost of fixed-height
+ * virtualisation and the alternative — measuring rows — needs a mount, which
+ * this package does not have and will not grow.
+ *
+ * `aria-hidden`, because a spacer is geometry: it names no row, and a reader
+ * moving by rank uses the order rather than the scrollbar.
+ */
+function railSpacer(rows: number, edge: 'before' | 'after'): string {
+  return rows === 0
+    ? ''
+    : renderMarkup(
+        element('div', {
+          class: 'ig-rail-spacer',
+          'data-edge': edge,
+          'aria-hidden': 'true',
+          // Through `element`, so the one dynamic value here is escaped by the
+          // same renderer as every other attribute in this package.
+          style: `--ig-rail-rows:${String(rows)}`,
+        }),
+      );
+}
+
 /** The heaviest severity across a row's members, or `undefined` when clean. */
 function severityForRow(
   overlay: AuditOverlay | null,
   members: readonly string[],
 ): AuditSeverity | undefined {
-  if (overlay === null) return undefined;
-  // ORDER COMES FROM THE OVERLAY'S OWN ROWS, not from a weight table restated
-  // here. `AuditRow.severity` is already the heaviest finding on that ref, and
-  // `overlay.rows` is sorted, so "first match wins" over that order picks the
-  // heaviest member without this file holding a second copy of the ranking.
-  for (const row of overlay.rows) {
-    if (members.includes(row.ref)) return row.severity;
-  }
-  return undefined;
+  // THE RANKING BELONGS NEXT TO THE WEIGHTS, which is why this delegates rather
+  // than scanning. An earlier version walked `overlay.rows` and took the first
+  // member it matched, on the stated grounds that those rows are "sorted" — and
+  // they are, by `ref`, LEXICOGRAPHICALLY. So it returned whichever member
+  // sorted earliest, and a `stale-blocker` on `a` masked a `cycle` on `b`: the
+  // bar still appeared, understating what it was about. The comment asserting
+  // the justification was the defect, not the loop.
+  return overlay === null ? undefined : heaviestRow(overlay, members)?.severity;
 }
 
 /**
@@ -293,7 +349,28 @@ export function renderWorkspace(
   const theme = resolveTheme(options.theme);
   const overlay = options.audit === undefined ? null : auditOverlay(options.audit);
 
-  const rail = railWindow(input, options.rail ?? {});
+  // THE FILTER NARROWS THE RAIL, AND ONLY THE RAIL. §17a gives the audit a
+  // filter for focus and deliberately no mode; the canvas answers "what
+  // surrounds this issue", which the filter says nothing about.
+  //
+  // It narrows BEFORE the window, or it would narrow only whichever rows the
+  // window had already reached and read as doing nothing on a long backlog. On
+  // members rather than the lead, for the reason the bar is: a finding can name
+  // a member that does not lead its unit.
+  const filtered = overlay !== null && options.auditFiltered === true;
+  const railInput: ViewerDocument = filtered
+    ? {
+        ...input,
+        order: {
+          ...input.order,
+          slots: input.order.slots.filter((slot) =>
+            slot.members.some((member) => auditFilterKeeps(overlay, member)),
+          ),
+        },
+      }
+    : input;
+
+  const rail = railWindow(railInput, options.rail ?? {});
   const railRender = renderViewer(rail.document, {
     projection: 'linear',
     theme,
@@ -316,21 +393,33 @@ export function renderWorkspace(
   const canvas = renderScaleLadder(input, {
     state: options.scale ?? INITIAL_SCALE_STATE,
     theme,
+    // THE SAME ONE VALUE THE RAIL READ. Without this the canvas drew the
+    // selected issue as ordinary while the rail marked it current, so the
+    // single selection this surface advertises disagreed with itself between
+    // two zones on every render.
+    selected: selectedKey(selection),
   });
 
   const inspector = inspectorView(input, selection);
 
   const markup = [
     `<div class="ig-workspace">`,
-    overlay === null ? '' : zone('header', renderAuditHeader(overlay)),
-    zone('rail', renderMarkup(markRail(railRender.scene.root, (key) => severityByKey.get(key)))),
+    overlay === null ? '' : zone('header', renderAuditHeader(overlay, { filtered })),
+    zone(
+      'rail',
+      [
+        railSpacer(rail.before, 'before'),
+        renderMarkup(markRail(railRender.scene.root, (key) => severityByKey.get(key))),
+        railSpacer(rail.after, 'after'),
+      ].join(''),
+    ),
     zone('canvas', canvas.markup),
     zone('inspector', renderMarkup(inspectorSpec(inspector, options.words))),
     `</div>`,
   ].join('');
 
   return {
-    view: { selection, rail, inspector, audit: overlay },
+    view: { selection, rail, inspector, audit: overlay, auditFiltered: filtered },
     markup,
     // THE THEME IS WRITTEN ONCE. Both leaves below emit their own copy of the
     // viewer's stylesheet and the theme rule, so taking `canvas.styles`

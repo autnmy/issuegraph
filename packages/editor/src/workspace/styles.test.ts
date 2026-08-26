@@ -44,6 +44,10 @@ const RENDERS = [
     words: WORKSPACE_WORDS,
     selection: { kind: 'edge', edgeId: 'blocked-by|i0001|i0002' },
   }),
+  // A WINDOW WITH ROWS ON BOTH SIDES OF IT. The spacers only render when the
+  // window is narrower than the order, so without this render their rule looks
+  // orphaned and the "no unstyled class" direction never sees them at all.
+  renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, rail: { start: 2, count: 2 } }),
 ];
 
 /** Every class THIS package's workspace emits, across those states. */
@@ -67,14 +71,29 @@ const COMPOSED: ReadonlySet<string> = new Set([
 describe('the workspace stylesheet carries structure, never a value', () => {
   const css = withoutComments(workspaceStylesheet);
 
-  it('references only tokens the theme actually defines', () => {
-    // A `var(--ig-…)` the theme does not resolve is a silent nothing: the
-    // declaration is dropped, so the surface loses its look on exactly the host
-    // that installed a second theme correctly.
+  it('references only properties something actually resolves', () => {
+    // A `var(--ig-…)` nothing resolves is a silent nothing: the declaration is
+    // dropped, so the surface loses its look on exactly the host that installed
+    // a second theme correctly.
+    //
+    // TWO RESOLVERS, NOT ONE. Most come from the theme. The rest are LOCAL —
+    // set inline by this package's own renderer on the element that needs them,
+    // the same way layer 1 carries `--ig-stage-w` and `--ig-row-x`. Those are
+    // derived from the rendered markup rather than allowed by a hand-written
+    // exemption, so a `var()` for a property nothing sets is still caught.
+    const setInline = new Set(
+      RENDERS.flatMap((result) => [...result.markup.matchAll(/(--[a-z0-9-]+)\s*:/g)]).map(
+        (match) => match[1] ?? '',
+      ),
+    );
+    assert.ok(setInline.size > 0, 'the renderer sets no local properties at all');
+
     const referenced = [...css.matchAll(/var\((--[a-z0-9-]+)/g)].map((match) => match[1]);
     assert.ok(referenced.length > 0, 'the stylesheet references no tokens at all');
     assert.deepEqual(
-      referenced.filter((token) => token === undefined || !THEME_TOKENS.includes(token)),
+      referenced.filter(
+        (token) => token === undefined || !(THEME_TOKENS.includes(token) || setInline.has(token)),
+      ),
       [],
     );
   });

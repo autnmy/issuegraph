@@ -105,6 +105,24 @@ export const workspaceStylesheet = `
   box-shadow: inset var(--ig-spine-width) 0 0 0 var(--ig-state-invalid);
 }
 
+/* THE ROWS OUTSIDE THE WINDOW, AS HEIGHT. The rail scrolls, so without a spacer
+   at each end the container is exactly as tall as the drawn rows and native
+   scrolling stops at the end of the first window — leaving a host no offset to
+   turn into the next start, and a reader no way to reach rank 287 of 312.
+
+   NO BACKTICKS ANYWHERE IN THIS FILE'S COMMENTS. The stylesheet is a template
+   literal, so a backtick closes it — and the failure is a parse error pages
+   away from the character that caused it.
+
+   One row height for all of them: --ig-rail-rows is the count, set inline by
+   the renderer, and --ig-row-height is the theme's own metric. A row carrying
+   holds is taller than a bare one, so the scrollbar is proportional rather than
+   exact — the standard cost of fixed-height virtualisation, and the alternative
+   needs a mount to measure with. */
+.ig-rail-spacer {
+  height: calc(var(--ig-row-height) * var(--ig-rail-rows, 0));
+}
+
 .ig-inspector {
   display: flex;
   flex-direction: column;

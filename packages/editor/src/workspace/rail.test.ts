@@ -143,14 +143,41 @@ describe('windowing keeps every issue and drops only what layer 1 could not draw
     ],
   });
 
-  it('keeps the whole issue list, so an edge onto an undrawn row still resolves', () => {
+  it('keeps an edge onto an undrawn row, and the issue it points at', () => {
     const rail = railWindow(document, { start: 0, count: 2 });
-    assert.equal(rail.document.issues.length, 20);
-    // `i0015` is outside the window, and its blocked-by edge survives — the
-    // viewer reports a slot member it cannot find, never an issue outside the
-    // order.
+    // `i0001` is drawn and owes a badge, so the edge survives — and `i0015`
+    // survives with it, or the viewer would drop the edge with a diagnostic.
     assert.ok(
       rail.document.edges.some((edge) => edge.field === 'blocked-by' && edge.to === 'i0015'),
+    );
+    assert.ok(rail.document.issues.some((issue) => issue.key === 'i0015'));
+  });
+
+  it('leaves no issue both unplaced and edgeless, at any window', () => {
+    // The rule the whole-issue-list version broke: the linear projection counts
+    // the keys that appear in no slot and on no edge and prints that count to
+    // the reader, so an edgeless issue outside the window read as ISOLATED.
+    // Every surviving issue must be placed, excluded, or on an edge.
+    for (const options of [{ count: 1 }, { start: 5, count: 3 }, { start: 18, count: 2 }, {}]) {
+      const rail = railWindow(document, options);
+      const placed = new Set(rail.rows.flatMap((slot) => slot.members));
+      const excluded = new Set(rail.document.order.excluded.map((one) => one.key));
+      const onAnEdge = new Set(rail.document.edges.flatMap((edge) => [edge.from, edge.to]));
+      assert.deepEqual(
+        rail.document.issues
+          .map((issue) => issue.key)
+          .filter((key) => !placed.has(key) && !excluded.has(key) && !onAnEdge.has(key)),
+        [],
+        JSON.stringify(options),
+      );
+    }
+  });
+
+  it('drops an edge no drawn row owes a badge for', () => {
+    const rail = railWindow(document, { start: 10, count: 2 });
+    assert.deepEqual(
+      rail.document.edges.filter((edge) => edge.to === 'i0015' && edge.from === 'i0001'),
+      [],
     );
   });
 

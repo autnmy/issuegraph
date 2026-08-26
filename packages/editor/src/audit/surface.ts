@@ -212,6 +212,42 @@ export function auditFilterKeeps(overlay: AuditOverlay, ref: IssueRef): boolean 
   return overlay.rowFor(ref) !== undefined;
 }
 
+/** How heavy a row's worst finding is, from the class table and nothing else. */
+function rowWeight(row: AuditRow): number {
+  return row.kinds.reduce(
+    (heaviest, kind) => Math.max(heaviest, AUDIT_CLASS_SPECS[kind].weight),
+    Number.NEGATIVE_INFINITY,
+  );
+}
+
+/**
+ * The heaviest row among several refs, or `undefined` when all of them are clean.
+ *
+ * FOR A ROW THAT SPEAKS FOR MORE THAN ONE ISSUE. A `together-with` unit is one
+ * rail row and several refs, so a caller drawing a bar for that row has to pick
+ * which member's severity it shows — and the answer is the heaviest, exactly as
+ * {@link AuditRow.severity} picks the heaviest CLASS within one ref.
+ *
+ * IT LIVES HERE BECAUSE THE WEIGHTS DO. The obvious alternative is for the
+ * caller to rank the rows itself, and the obvious shortcut — take the first
+ * matching entry in `rows` — is wrong in a way that looks right: `rows` is
+ * sorted by `ref`, lexicographically, so "first match" returns whichever member
+ * sorts earliest and a `stale-blocker` on `a` masks a `cycle` on `b`. Ranking
+ * belongs next to the table it ranks by, so no caller holds a second copy of it.
+ */
+export function heaviestRow(
+  overlay: AuditOverlay,
+  refs: readonly IssueRef[],
+): AuditRow | undefined {
+  let heaviest: AuditRow | undefined;
+  for (const ref of refs) {
+    const row = overlay.rowFor(ref);
+    if (row === undefined) continue;
+    if (heaviest === undefined || rowWeight(row) > rowWeight(heaviest)) heaviest = row;
+  }
+  return heaviest;
+}
+
 export interface AuditHeaderOptions {
   /** Whether the filter is currently narrowing the rail. Defaults to `false`. */
   readonly filtered?: boolean | undefined;
