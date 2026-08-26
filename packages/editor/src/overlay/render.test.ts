@@ -141,11 +141,16 @@ describe('the two relationships the viewer draws differently', () => {
     assert.equal(classesOf(overlaid[0] ?? { tag: 'x' }).includes('ig-connector'), true);
   });
 
-  it('ghosts BOTH strokes of a double line but adds its marks once', () => {
+  it('overlays a double line on BOTH its strokes, so the kind keeps its shape', () => {
     // `serialize-with` is drawn as two `.ig-edge` paths carrying the SAME
-    // accessible name, so both match. Attributes must reach both — half a
-    // double line left at full strength is a visibly wrong ghost — while the
-    // halo and the conflict companion must be added once, not per stroke.
+    // accessible name, so both match — and every mark built from a stroke
+    // belongs to that stroke.
+    //
+    // AN EARLIER REVISION ASSERTED THE OPPOSITE, that these marks are drawn
+    // once for the pair, and that is what produced a single-stroke conflict
+    // companion standing beside a double-stroke original: two "held versions"
+    // that did not look like the same relationship. Halo-one-of-two would have
+    // been the next instance. The rule is per stroke.
     const edge = oddEdge('serialize-with', ['selected', 'conflict']);
     const { scene, unattached } = attachEdgeOverlays(oddSceneOf(), [edge]);
     assert.deepEqual(unattached, []);
@@ -159,8 +164,29 @@ describe('the two relationships the viewer draws differently', () => {
     const versions = walk(scene.root).filter((spec) =>
       classesOf(spec).includes('ig-overlay-version'),
     );
-    assert.equal(halos.length, 1, 'the halo was drawn once per stroke');
-    assert.equal(versions.length, 1, 'the conflict companion was drawn once per stroke');
+    assert.equal(halos.length, 2, 'the halo skipped one stroke of a double line');
+    assert.equal(
+      versions.length,
+      2,
+      'the held version is a single stroke beside a double-stroke original',
+    );
+  });
+
+  it('gives the companion the same stroke count as the version it is held against', () => {
+    // The property underneath the count above, stated so it survives a refactor
+    // that changes how the marks are built: both versions are the SAME
+    // relationship, so they carry the same shape on the stroke channel.
+    for (const kind of ['together-with', 'serialize-with'] as const) {
+      const { scene } = attachEdgeOverlays(oddSceneOf(), [oddEdge(kind, ['conflict'])]);
+      const all = walk(scene.root);
+      const originals = all.filter(
+        (spec) => spec.attrs?.[STATE_ATTRIBUTE] === 'conflict',
+      ).length;
+      const companions = all.filter((spec) =>
+        classesOf(spec).includes('ig-overlay-version'),
+      ).length;
+      assert.equal(companions, originals, `${kind}: the two held versions differ in shape`);
+    }
   });
 });
 
@@ -389,6 +415,43 @@ describe('the dash the table declares is the dash that renders', () => {
         true,
         `${state}'s clone does not carry its declared ${declared} pattern`,
       );
+    }
+  });
+
+  it('draws every clone at the opacity its treatment declares, not at full strength', () => {
+    // THE SIXTH INSTANCE OF ONE CLASS, and the reason the marks are now derived
+    // from the treatment in one place. A ghost that fades the edge and leaves
+    // the dotted line drawn over it at full strength is not a ghost: the state
+    // whose whole signal is "faded" rendered at the same weight as a live edge.
+    //
+    // Driven over every state that declares an opacity, so a state that gains
+    // one later is covered without this test being remembered.
+    for (const state of EDGE_STATES) {
+      const declared = treatmentForState(state).opacity;
+      if (declared === null) continue;
+      const { scene } = attachEdgeOverlays(sceneOf(), [projected(state)]);
+      // The EDGE always carries it. A clone is only produced by a state that
+      // adds a stroke of its own — `failed` is a ghost with no dash and no
+      // companion, so it has none, and demanding one asserts a shape the
+      // treatment never claimed.
+      const edges = walk(scene.root).filter(
+        (spec) => spec.attrs?.[STATE_ATTRIBUTE] !== undefined,
+      );
+      assert.ok(edges.length > 0, `${state} overlaid nothing`);
+      for (const overlaid of edges) {
+        assert.equal(overlaid.attrs?.['opacity'], declared, `${state} left the edge unfaded`);
+      }
+
+      const clones = walk(scene.root).filter((spec) =>
+        classesOf(spec).includes(OVERLAY_CLASS),
+      );
+      for (const clone of clones) {
+        assert.equal(
+          clone.attrs?.['opacity'],
+          declared,
+          `${state} drew a ${classesOf(clone).join('.')} at full strength`,
+        );
+      }
     }
   });
 

@@ -194,9 +194,21 @@ function overlayMarks(
   const behind: ElementSpec[] = [];
   const front: ElementSpec[] = [];
 
+  // EVERY CLONE INHERITS THE TREATMENT, rather than the edge getting it and the
+  // clones being re-specified one property at a time. Six of this PR's review
+  // findings were one class — a clone that did not inherit the hue, the
+  // opacity, the dash, the stroke count or the position of the thing it was
+  // cloned from — and each was fixed on its own until the shape of the mistake
+  // was visible. Deriving it once is what stops the seventh.
+  const inherited: Record<string, AttrValue> =
+    overlay.line?.opacity === null || overlay.line?.opacity === undefined
+      ? {}
+      : { opacity: overlay.line.opacity };
+
   if (overlay.halo) {
     behind.push(
       clonePath(spec, {
+        ...inherited,
         class: `${OVERLAY_CLASS} ig-overlay-halo`,
         // Widened from the theme's own stroke rather than from a literal, so a
         // host thickening its lines keeps the halo proportionate to them.
@@ -218,6 +230,7 @@ function overlayMarks(
     // `stroke-dasharray` onto the edge itself would spend it.
     front.push(
       clonePath(spec, {
+        ...inherited,
         class: `${OVERLAY_CLASS} ig-overlay-dash ig-overlay-${line.dash}`,
         // THE HUE HAS TO BE STATED. The clone drops `class`, so it is no longer
         // `.ig-edge` and the viewer's `.ig-edge[data-edge=…]` hue rules stop
@@ -253,15 +266,25 @@ function overlayMarks(
     // version nobody could see. An element count cannot detect that; a position
     // assertion can, and now does.
     //
-    // Replacing is sound because the viewer sets a transform on an edge path
-    // for ONE reason — the double spread — so there is no base position being
-    // discarded here.
+    // SHIFTED, NOT REPOSITIONED — which is what lets the companion keep the
+    // relationship's own shape. A `double` kind is two strokes at -s and +s;
+    // cloning ONE of them at an absolute offset produced a single-stroke
+    // companion beside a double-stroke original, so the two "held versions"
+    // did not look like the same relationship. Each stroke is cloned and moved
+    // by the SAME delta, so the companion is the kind's shape, translated.
+    //
+    // The delta clears the kind's own spread with a stroke's gap either side.
     const stroke = theme.metrics['--ig-stroke'];
-    const spread = treatmentFor(edge.kind).dash === 'double' ? 3 : 2;
+    const delta = (treatmentFor(edge.kind).dash === 'double' ? 4 : 2) * stroke;
+    const existing = spec.attrs?.['transform'];
     front.push(
       clonePath(spec, {
+        ...inherited,
         class: `${OVERLAY_CLASS} ig-overlay-version`,
-        transform: `translate(0 ${String(stroke * spread)})`,
+        transform:
+          typeof existing === 'string'
+            ? `translate(0 ${String(delta)}) ${existing}`
+            : `translate(0 ${String(delta)})`,
       }),
     );
   }
@@ -340,16 +363,20 @@ function overlayTree(
     }
     context.attached.add(match.key);
 
-    // ATTRIBUTES ON EVERY MATCHING STROKE, MARKS ONLY ONCE — and the split is
-    // not tidiness. `serialize-with` is drawn as TWO `.ig-edge` paths carrying
-    // the SAME accessible name, so both match. Ghosting only one would leave
-    // half a double line at full strength; adding the halo and the conflict
-    // companion to both would draw each of them twice.
-    const marked = context.marked.has(match.key);
-    context.marked.add(match.key);
-    const { behind, front } = marked
-      ? { behind: [], front: [] }
-      : overlayMarks(child, match.overlay, edge, context.theme);
+    // PER STROKE, NOT PER EDGE — and this is the class fix, not a preference.
+    //
+    // `serialize-with` is drawn as TWO `.ig-edge` paths, and an earlier
+    // revision drew the stroke-derived marks ONCE for the pair. That is what
+    // produced a single-stroke conflict companion beside a double-stroke
+    // original, and it would have produced a halo around one of two parallel
+    // lines next. Every mark built here is CLONED FROM A STROKE, so it belongs
+    // to that stroke: clone them all and the kind's shape survives for free
+    // instead of being re-derived for each new case.
+    //
+    // The marks that are genuinely per-edge — the chips, the ✕, the reason —
+    // are not built here at all. They need a position this layer does not have,
+    // so they travel as declared marks and are placed once by the composer.
+    const { behind, front } = overlayMarks(child, match.overlay, edge, context.theme);
 
     next.push(
       ...behind,
@@ -368,8 +395,6 @@ interface OverlayContext {
   readonly edgeOf: ReadonlyMap<string, ProjectedEdge>;
   /** Keys that matched at least one element. */
   readonly attached: Set<string>;
-  /** Keys whose positional marks have already been drawn. */
-  readonly marked: Set<string>;
   readonly theme: Theme;
 }
 
@@ -407,7 +432,6 @@ export function attachEdgeOverlays(
     byName,
     edgeOf,
     attached,
-    marked: new Set<string>(),
     theme,
   };
   const root = overlayTree(scene.root, context);
