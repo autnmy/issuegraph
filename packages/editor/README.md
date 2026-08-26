@@ -81,7 +81,7 @@ Four findings about an *encoding*, as a pure detector plus a surface that never 
 |---|---|---|
 | **cycle** | `blocks-work` | the only one that stops work outright — no member can ever be ready |
 | **dead duplicate ref** | `dangerous` | excluded from the order while nothing tracks its work: looks handled, isn't |
-| **encoding refused** | `blocks-own-edges` | until it parses the issue has no edges, and reads as merely unencoded |
+| **encoding refused** | `blocks-own-edges` | its edges are incomplete until it parses, and it reads as merely unencoded |
 | **stale blocker** | `misleading` | a closed blocker already satisfies readiness; clearing is bookkeeping |
 
 Severity, and the "keep as history" affordance the last row alone carries, are **data on a frozen class table** — so no render site picks either, and a fifth class is a compile error until the table says what it costs.
@@ -101,6 +101,8 @@ auditRowAttributes(overlay, ref);    // {} for a clean row; the severity mark fo
 **It is the reader's answer specifically, not the write guard.** `@issuegraph/derive`'s `wouldCycleOnBlockedBy` is a *pre-write* refusal, and its divergences all lean fail-safe for a write that is about to happen: it spans closed nodes, and it does not exempt a together unit's internal `blocked-by` edges. Over-refusing is the recoverable direction before a write and simply a false finding in an audit — §6.6 says internal edges *"stay advisory … they would make every group carrying its own ordering read as stuck"*. Reading the guard as an edge-on-cycle test flags every ordinary together group that carries its own ordering.
 
 **Duplicate resolution is transitive, and both classes need it.** With `a duplicate-of b`, `b duplicate-of c` and `c` closed, the reader excludes *both* `a` and `b`, so both references are dead — and testing each edge's immediate target reports `b` while missing `a`, because `b` is open. §4.3.3 also reads a `blocked-by` naming a duplicate as naming its **canonical**, so the same resolution decides a stale blocker.
+
+**A refused declaration is not a discharged blocker, and a partial parse is not an absent one.** Two shortfalls that pull the same way. The reader keeps a dependent unready when the thing its edge resolved to was under-read — the declaration it could not read may carry a `duplicate-of` redirecting that edge at an **open** canonical — so a closed-but-refused target is excluded from the stale-blocker class rather than presented as dischargeable bookkeeping. And a dropped *field* returns non-null data carrying the surviving relationships, so the refusal says the edges are **incomplete and untrusted**, never that there are none.
 
 **"Long-closed" is not available here.** A document carries no timestamp, so every closed blocker is reported — the safe direction for a finding whose whole severity is `misleading`, and one a host can narrow with a date it does have.
 

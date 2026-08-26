@@ -8,7 +8,7 @@
  *     cycle               nothing in the component can EVER be ready
  *     stale blocker       bookkeeping; a closed blocker already satisfies readiness
  *     dead duplicate ref  the issue is out of the order and nothing tracks its work
- *     encoding refused    the issue has NO edges, and looks merely unencoded
+ *     encoding refused    its edges are incomplete, and it looks merely unencoded
  *
  * THE FOURTH IS THE ONE THAT IS EASY TO DROP, and it is the reason this module
  * takes more than a document. It is not a relationship finding — it is the
@@ -215,16 +215,37 @@ function compareMembers(a: readonly IssueRef[], b: readonly IssueRef[]): number 
   return a.length - b.length;
 }
 
+/**
+ * A finding with nothing left aliased to anyone else's object.
+ *
+ * BOTH LEVELS, AND THAT IS THE WHOLE POINT. `Object.freeze` is shallow, and
+ * `readonly AuditFinding[]` accepts a MUTABLE array of MUTABLE objects — so
+ * freezing the outer value leaves both the finding and its `members` writable
+ * through the caller's own reference, and a later push changes what a consumer
+ * already rendered. Fixing one level at a time just moves the aliasing down,
+ * and `members` is the last level there is: every other field is a primitive.
+ *
+ * Exported so {@link ../surface.ts auditOverlay} normalizes what it is HANDED
+ * by the same rule this module applies to what it BUILDS. Two spellings of
+ * "settled" is how the two come to disagree.
+ */
+export function settledFinding(found: AuditFinding): AuditFinding {
+  return Object.freeze({
+    kind: found.kind,
+    severity: found.severity,
+    keepAsHistory: found.keepAsHistory,
+    members: Object.freeze([...found.members]),
+    detail: found.detail,
+  });
+}
+
 function finding(kind: AuditClass, members: readonly IssueRef[], detail: string): AuditFinding {
   const spec = AUDIT_CLASS_SPECS[kind];
-  return Object.freeze({
+  return settledFinding({
     kind,
     severity: spec.severity,
     keepAsHistory: spec.keepAsHistory,
-    // FROZEN, because `readonly` is a compile-time claim and a finding travels
-    // to render sites this package does not compile. Every member list here is
-    // built fresh, so nothing a caller passed in is frozen underneath them.
-    members: Object.freeze(members),
+    members,
     detail,
   });
 }
@@ -276,12 +297,28 @@ function cycleFindings(graph: AuditGraph): AuditFinding[] {
  * closed, and reporting it would state as bookkeeping what is really a paging
  * boundary.
  */
-function staleBlockerFindings(document: GraphDocument, graph: AuditGraph): AuditFinding[] {
+function staleBlockerFindings(
+  document: GraphDocument,
+  graph: AuditGraph,
+  refused: ReadonlySet<IssueRef>,
+): AuditFinding[] {
   const closed = closedRefs(document);
   const findings: AuditFinding[] = [];
   for (const edge of edgesOfKind(document, 'blocked-by')) {
     const effective = graph.duplicateCanonical(edge.to) ?? edge.to;
     if (!closed.has(effective)) continue;
+    // A CLOSED BUT UNDER-READ TARGET IS STILL BLOCKING, so calling it stale
+    // would present a live fail-safe constraint as disposable bookkeeping —
+    // the worst direction for the one class whose whole message is "clearing
+    // this is bookkeeping". The reader keeps a dependent unready when the
+    // thing its edge resolved to was under-read, precisely because the
+    // declaration it could not read may carry a `duplicate-of` redirecting
+    // this edge at an OPEN canonical. Until it parses, nobody knows.
+    //
+    // The refusal set is the same input that raises the `encoding-refused`
+    // class, so the audit cannot say "this issue's declaration is unreadable"
+    // and "its blocker is safely dischargeable" about the same pair.
+    if (refused.has(effective) || refused.has(edge.to)) continue;
     const via = effective === edge.to ? '' : ` (via ${edge.to}, which duplicates it)`;
     findings.push(
       finding(
@@ -356,7 +393,7 @@ function encodingRefusedFindings(refusals: readonly EncodingRefusal[]): AuditFin
       finding(
         'encoding-refused',
         [refusal.ref],
-        `${refusal.ref} declares relationships the reader refused${because}; until it parses the issue has no edges`,
+        `${refusal.ref} declares relationships the reader refused${because}; the edges it declares are incomplete and cannot be trusted until it parses`,
       ),
     );
   }
@@ -373,10 +410,12 @@ function encodingRefusedFindings(refusals: readonly EncodingRefusal[]): AuditFin
  */
 export function auditDocument(input: AuditInput): readonly AuditFinding[] {
   const { document, graph } = input;
+  const refusals = input.encodingRefused ?? [];
+  const refused = new Set(refusals.map((refusal) => refusal.ref));
   return Object.freeze([
     ...cycleFindings(graph),
-    ...staleBlockerFindings(document, graph),
+    ...staleBlockerFindings(document, graph, refused),
     ...deadDuplicateFindings(document, graph),
-    ...encodingRefusedFindings(input.encodingRefused ?? []),
+    ...encodingRefusedFindings(refusals),
   ]);
 }

@@ -77,6 +77,26 @@ describe('the overlay', () => {
     assert.equal(Object.isFrozen(overlay.findings), true);
   });
 
+  it('snapshots each finding\'s members too, not only the array holding them', () => {
+    // The array copy alone moves the aliasing down one level rather than
+    // removing it: a mutable `members` is assignable to the readonly field, so
+    // pushing a ref after construction changes what a consumer already
+    // rendered while `rows` and `byRef` keep the old snapshot. `members` is the
+    // last level — every other field is a primitive — so this is the whole of
+    // it rather than the next instalment.
+    const members: string[] = ['a', 'b'];
+    const live: AuditFinding[] = [{ ...finding('cycle', ['a', 'b']), members }];
+    const overlay = auditOverlay(live);
+    members.push('sneaked-in');
+    assert.deepEqual(overlay.findings[0]?.members, ['a', 'b']);
+    assert.equal(Object.isFrozen(overlay.findings[0]), true);
+    assert.equal(Object.isFrozen(overlay.findings[0]?.members), true);
+    assert.deepEqual(
+      overlay.rows.map((row) => row.ref),
+      [...(overlay.findings[0]?.members ?? [])],
+    );
+  });
+
   it('indexes exactly the rows it lists', () => {
     // The index and the list are two views of one answer, so a lookup that
     // disagreed with the rail would draw a bar on a row the list calls clean.

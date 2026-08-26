@@ -340,6 +340,56 @@ describe('duplicate chains resolve transitively', () => {
   });
 });
 
+describe('a refused declaration is not a discharged blocker', () => {
+  it('does not call a closed BUT UNDER-READ blocker stale', () => {
+    // The reader keeps a dependent unready when the thing its edge resolved to
+    // was under-read, because the declaration it could not read may carry a
+    // `duplicate-of` redirecting the edge at an OPEN canonical. Calling that
+    // stale presents a live fail-safe constraint as disposable bookkeeping —
+    // the worst direction for the one class whose whole message is "clearing
+    // this is bookkeeping".
+    const document = documentOf([issue('a'), issue('b', 'closed')], [['blocked-by', 'a', 'b']]);
+    const findings = auditDocument({
+      document,
+      graph: graphOf(document),
+      encodingRefused: [{ ref: 'b' }],
+    });
+    assert.deepEqual(only(findings, 'stale-blocker'), []);
+    // ...and it still says what IS wrong with `b`, so nothing is lost.
+    assert.equal(only(findings, 'encoding-refused').length, 1);
+  });
+
+  it('still calls a closed, fully-read blocker stale', () => {
+    // The control: without it the test above passes on a detector that
+    // suppressed every stale blocker.
+    const document = documentOf([issue('a'), issue('b', 'closed')], [['blocked-by', 'a', 'b']]);
+    const findings = auditDocument({
+      document,
+      graph: graphOf(document),
+      encodingRefused: [{ ref: 'somebody-else' }],
+    });
+    assert.equal(only(findings, 'stale-blocker').length, 1);
+  });
+
+  it('does not claim a refused issue has NO edges', () => {
+    // A dropped FIELD returns non-null data carrying the surviving
+    // relationships, so "the issue has no edges" is false for the commonest
+    // refusal there is — and an audit that overstates what it found is the
+    // same defect as one that understates it.
+    const document = documentOf([issue('a'), issue('b')], [['blocked-by', 'a', 'b']]);
+    const found = only(
+      auditDocument({
+        document,
+        graph: graphOf(document),
+        encodingRefused: [{ ref: 'a' }],
+      }),
+      'encoding-refused',
+    );
+    assert.equal(/has no edges/.test(found[0]?.detail ?? ''), false);
+    assert.match(found[0]?.detail ?? '', /incomplete and cannot be trusted/);
+  });
+});
+
 describe('severity travels on the finding', () => {
   it('carries the class table onto every finding it produces', () => {
     // "Severity is data on the finding, not a colour chosen at the render site."

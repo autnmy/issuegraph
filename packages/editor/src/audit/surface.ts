@@ -40,7 +40,7 @@
 
 import type { IssueRef } from '@issuegraph/store';
 
-import { AUDIT_CLASSES, AUDIT_CLASS_SPECS } from './findings.ts';
+import { AUDIT_CLASSES, AUDIT_CLASS_SPECS, settledFinding } from './findings.ts';
 import type { AuditClass, AuditFinding, AuditSeverity } from './findings.ts';
 
 /**
@@ -115,7 +115,14 @@ const CLASS_ORDER: ReadonlyMap<AuditClass, number> = new Map(
  * nor reads the document, so the count on screen and the list behind it can
  * never disagree about what was found.
  */
-export function auditOverlay(findings: readonly AuditFinding[]): AuditOverlay {
+export function auditOverlay(input: readonly AuditFinding[]): AuditOverlay {
+  // SETTLED ON ENTRY, BOTH LEVELS. `readonly AuditFinding[]` accepts a mutable
+  // array of mutable objects, so everything below — the count, the rows, the
+  // index — would otherwise be a snapshot of values the caller can still
+  // change underneath it. Doing this at the door means there is one place
+  // where an incoming finding stops being someone else's, rather than a copy
+  // per field added as each one is noticed.
+  const findings: readonly AuditFinding[] = Object.freeze(input.map(settledFinding));
   const byRef = new Map<IssueRef, { kinds: Set<AuditClass>; count: number }>();
   for (const found of findings) {
     for (const ref of found.members) {
@@ -157,14 +164,7 @@ export function auditOverlay(findings: readonly AuditFinding[]): AuditOverlay {
     count: findings.length,
     rows: Object.freeze(rows),
     byRef: new Map(rows.map((row) => [row.ref, row])),
-    // COPIED AND FROZEN, NOT CARRIED BY REFERENCE. `readonly AuditFinding[]`
-    // accepts a mutable array, so a caller that assembles findings from several
-    // sources and later pushes one would leave `findings` growing while
-    // `count`, `rows` and `byRef` kept the snapshot they were built from — the
-    // header count disagreeing with the list behind it, which is exactly the
-    // guarantee the doc above claims this function makes. Freezing the OUTER
-    // object does not reach the array it points at.
-    findings: Object.freeze([...findings]),
+    findings,
   });
 }
 
