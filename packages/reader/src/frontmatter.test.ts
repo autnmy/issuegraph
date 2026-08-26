@@ -1593,6 +1593,24 @@ describe('an unparseable block is selected by KEY POSITION, not by mention', () 
     assert.equal(isUnreadDeclaration(r), true);
   });
 
+  test('a malformed FLOW explicit key is still selected, not dropped', () => {
+    // `{? issuegraph : …}` — YAML's explicit-key indicator inside a flow
+    // mapping. The bare-mention fallback caught this by accident; the first
+    // version of the key-position anchor did not, which was a real regression
+    // on a spelling the reader accepts.
+    //
+    // THE BLOCK-STYLE EXPLICIT KEY IS A DIFFERENT MATTER and is NOT covered
+    // here, deliberately: `? issuegraph` on its own line carries no `:` after
+    // the key, so this pattern never matched it and neither did the bare
+    // mention — the PARSER path is what reads that spelling. Review reported the
+    // two as one regression; only this half was.
+    const r = parseFrontmatter(['---', '{? issuegraph : { blocked-by: [ "#1" ]', '---'].join('\n'));
+
+    assert.equal(r.data, null);
+    assert.equal(r.diagnostics.length, 1, 'the malformed explicit key went unreported');
+    assert.equal(isUnreadDeclaration(r), true);
+  });
+
   test('CONTROL: a well-formed flow-root still parses', () => {
     const r = parseFrontmatter(['---', '{ issuegraph: { blocked-by: ["#1"] } }', '---'].join('\n'));
     assert.deepEqual(r.data?.blockedBy, [{ repo: null, id: '1' }]);

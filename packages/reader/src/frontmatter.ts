@@ -180,13 +180,22 @@ const FRONTMATTER_KEY_LINE = new RegExp(`^${FRONTMATTER_KEY_PATTERN}`);
  * real edges never loaded. Measured on `---\nnote: "issuegraph:\n---` followed
  * by a valid block: `data: null`, one diagnostic, and the good block ignored.
  *
- * A KEY POSITION IS LINE START, `{`, OR `,` — the three places YAML can begin a
+ * A KEY POSITION IS LINE START, `{`, `,`, OR `?` — the places YAML can begin a
  * mapping key. Line start is the block-style spelling (already tried above, and
  * repeated here because this arm also runs on lines the anchored test skipped);
  * `{` and `,` are the FLOW spellings, which is what keeps the case this fallback
  * was added for: `{ issuegraph: { blocked-by: [ "#1" ]` — a malformed flow-root
  * — is still selected, so `parseFrontmatter` can say why it is unreadable rather
  * than reporting no block at all.
+ *
+ * `?` IS THE EXPLICIT-KEY INDICATOR, and it is here because the first version of
+ * this anchor dropped a spelling the bare mention used to catch: `{? issuegraph
+ * : …}`. Review reported it as a regression on the BLOCK-style explicit key
+ * (`? issuegraph` on its own line), and that half is not true — that line
+ * carries no `:` after the key, so this pattern never matched it and the old one
+ * did not either; the parser path is what reads it. The FLOW-style explicit key
+ * is the real case, and it was a regression. Measured both before changing
+ * anything.
  *
  * IT STILL OVER-SELECTS, NARROWLY, and that is the right side to err on. A
  * comma inside a quoted scalar (`{a: "x, issuegraph: y"}`) still reads as a key
@@ -200,7 +209,7 @@ const FRONTMATTER_KEY_LINE = new RegExp(`^${FRONTMATTER_KEY_PATTERN}`);
  * concern, exactly as {@link FRONTMATTER_KEY_LINE} is.
  */
 const FRONTMATTER_KEY_AT_KEY_POSITION = new RegExp(
-  `(^|[{,])[ \t]*${FRONTMATTER_KEY_PATTERN}`,
+  `(^|[{,?])[ \t]*${FRONTMATTER_KEY_PATTERN}`,
 );
 
 /**
