@@ -53,13 +53,15 @@ An input with nothing to say renders `null`, never an empty `issuegraph:` stub.
 A tracker's issue body is a document a human edits. If you own the scheduling edges but not the rest, `spliceGeneratedEdges` refreshes yours and leaves **every other byte alone** — unknown children, sibling top-level keys, comments, the fence armor.
 
 ```ts
-import { spliceGeneratedEdges } from '@issuegraph/writer';
+import { renderFrontmatter, spliceGeneratedEdges } from '@issuegraph/writer';
 
-const result = spliceGeneratedEdges(issue.body, {
+const edges = {
   blockedBy: [{ repo: null, id: '231' }],
   serializeWith: null,          // scheduling edge, present: remove it
   // duplicateOf omitted        // absent: not mine, do not touch
-});
+};
+
+const result = spliceGeneratedEdges(issue.body, edges);
 
 switch (result.outcome) {
   case 'spliced':
@@ -103,7 +105,7 @@ switch (result.outcome) {
 
 The bottom two are provenance and a verdict, where the established caller shape is *write it when the block lacks one, never clobber one that is already there* — such a caller passes `null` precisely to mean **leave it alone**, so spending `null` on removal would delete provenance on every refresh of a block that has it. The cost is real and stated rather than hidden: **there is currently no way to clear `decomposed-from` or `duplicate-of` through this call.**
 
-It returns `null` rather than guessing whenever the block is one a parser would refuse — an inline value on the key, a child that is not a mapping entry. A body that comes back non-null and parses to nothing is the one failure a writer must never produce.
+It answers `no-block` rather than guessing whenever the block is one a parser would refuse — an inline value on the key, a child that is not a mapping entry. A body that comes back `spliced` and parses to nothing is the one failure a writer must never produce, which is why `spliced` is verified on both questions: that the result still reads, **and** that every field the call owns is what the call asked for.
 
 ## Repairing an inert block
 
