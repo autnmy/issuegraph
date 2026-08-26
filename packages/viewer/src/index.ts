@@ -61,7 +61,7 @@ export type {
   ThemeOverride,
   TypeToken,
 } from './theme.ts';
-export {
+export { resolveTheme,
   COLOR_TOKENS,
   METRIC_TOKENS,
   THEME_TOKENS,
