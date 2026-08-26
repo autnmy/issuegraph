@@ -126,6 +126,14 @@ The split's deliverable is **the leaves plus their edges**. Write them as you
 create each leaf, never "later":
 
 ```sh
+# A PRIVATE SCRATCH FILE, because this one is a LOOP that FILES ISSUES. `/tmp` is
+# shared, so two decompositions running at once — different repos, different
+# parents — collide on one fixed path, and the loser files the other's body. Rule
+# of thumb: a single-shot example may use `/tmp/body.md`; anything that loops over
+# issues gets its own.
+scratch=$(mktemp -d) || exit 1
+leaf=$scratch/leaf.md
+
 PREV=                                   # empty: the first leaf blocks on nothing
 LEAF_PRIORITY=2                         # see below — it can only be set HERE
 made=0; total=$#
@@ -150,23 +158,24 @@ for leaf in "$@"; do
   if [ -n "$PREV" ]; then
     printf '%s\n' "$text" \
       | issuegraph set --decomposed-from "$PARENT" --blocked-by "$PREV" \
-                       --priority "$LEAF_PRIORITY" --evidence asserted > /tmp/leaf.md || break
+                       --priority "$LEAF_PRIORITY" --evidence asserted > "$leaf" || break
   else
     printf '%s\n' "$text" \
       | issuegraph set --decomposed-from "$PARENT" \
-                       --priority "$LEAF_PRIORITY" --evidence asserted > /tmp/leaf.md || break
+                       --priority "$LEAF_PRIORITY" --evidence asserted > "$leaf" || break
   fi
   # NEVER file a body you did not verify was written. A refused `set` exits
   # non-zero having written nothing, while the redirection has already made the
   # file — so without the `|| break` above and the `[ -s ]` below the loop files
   # an EMPTY leaf and then carries its number into the dependency chain.
-  [ -s /tmp/leaf.md ] || break
+  [ -s "$leaf" ] || break
   # `gh issue create` prints the new issue's URL — take the number off the end
   # and CARRY IT, or the chain is never written.
-  url=$(gh issue create -R "$REPO" --title "$title" --body-file /tmp/leaf.md) || break
+  url=$(gh issue create -R "$REPO" --title "$title" --body-file "$leaf") || break
   PREV=${url##*/}
   made=$((made + 1))
 done
+rm -rf "$scratch"
 [ "$made" -eq "$total" ] || {
   echo "INCOMPLETE SPLIT: created $made of $total leaves; the chain stops there" >&2
   exit 1

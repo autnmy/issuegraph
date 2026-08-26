@@ -153,20 +153,25 @@ not repaired, so there is nothing you could write back believing it had been.
 # inherits the command's status, so an `unrecoverable` body (exit 4) aborts the
 # whole sweep before the `case` ever runs: one unrepairable issue kills the
 # backlog pass instead of reaching the escalation branch. Verified both ways.
+# A PRIVATE SCRATCH FILE: this runs over a whole backlog and EDITS issues, and
+# `/tmp` is shared — two sweeps at once on different repos would collide on one
+# fixed path and write each other's bodies. The single-shot repair above may use
+# `/tmp/body.md`; a loop that writes may not.
+new=$(mktemp) || exit 1
 if out=$(issuegraph backfill --json --body-file body.md); then rc=0; else rc=$?; fi
 case "$(printf '%s' "$out" | jq -r '.outcome // ""')" in
   delimited)                  # `jq -j`, NOT `-r`: `-r` appends its own newline, so every
                               # repaired body would gain one — changing user content beyond
                               # the two delimiter lines `backfill` promises to insert.
                               # Measured: 51-byte body -> 52 with `-r`, 51 with `-j`.
-                              printf '%s' "$out" | jq -j .body > /tmp/new.md
+                              printf '%s' "$out" | jq -j .body > "$new"
                               # `[ -s ]` even here, where the outcome already promises a
                               # body: every write in these skills is gated on the file being
                               # non-empty, because the one that is not empties an issue.
                               # AND the write's own failure is RECORDED — a transient API or
                               # permission error must not leave the sweep reporting success
                               # over an issue it did not repair.
-                              if [ -s /tmp/new.md ] && gh issue edit "$n" -R "$REPO" --body-file /tmp/new.md
+                              if [ -s "$new" ] && gh issue edit "$n" -R "$REPO" --body-file "$new"
                               then :
                               else echo "#$n: repaired body was NOT written" >&2; broke=1
                               fi ;;
@@ -175,6 +180,7 @@ case "$(printf '%s' "$out" | jq -r '.outcome // ""')" in
   *)                          echo "#$n: backfill did not answer (exit $rc) — NOT skipped" >&2; broke=1 ;;
 esac
 # ...after the sweep:
+rm -f "$new"
 [ "${broke:-0}" -eq 0 ] && [ "${human:-0}" -eq 0 ] || exit 1
 ```
 
