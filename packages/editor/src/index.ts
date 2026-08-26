@@ -47,14 +47,20 @@
  *
  * ## The surface
  *
- * The SCALE LADDER and the RE-EVALUATE SURFACE. The overlays, the picker, the
- * create paths, the audit and the first-pass queue each land as their own
- * change, and the final shape of this file is decided by the one that assembles
- * the workspace.
+ * The SCALE LADDER, the RE-EVALUATE SURFACE and the EDGE MUTATION-STATE
+ * OVERLAYS. The picker, the create paths, the audit and the first-pass queue
+ * each land as their own change, and the final shape of this file is decided by
+ * the one that assembles the workspace.
  *
  * The re-evaluate surface is the first thing here to compose the STORE as well
  * as the viewer — it presents `diffOrder`'s output and computes no diff of its
  * own — and the first to require words from its host rather than writing them.
+ *
+ * The overlays are the first to compose the store's PROJECTION, and they draw
+ * only what reuses a path's own position: a halo, a ghost, a dash. Anything
+ * needing a new position — the chips, the ✕, the inline reason, a conflict's
+ * second version — is declared as a mark for the layer that computed the
+ * layout, which is the workspace this file's final shape waits on.
  *
  * A published package can add an export later and can never take one back, so
  * nothing is exported before something is owed.
@@ -89,6 +95,30 @@ export {
 } from './scale/render.ts';
 
 export { scaleLadderStylesheet } from './scale/styles.ts';
+
+export {
+  OVERLAY_TREATMENTS,
+  STATE_ATTRIBUTE,
+  type EdgeOverlay,
+  type OverlayAffordance,
+  type OverlayDash,
+  type OverlayMark,
+  type OverlayStroke,
+  type OverlayTreatment,
+  overlayFor,
+  overlayLabel,
+  treatmentForState,
+} from './overlay/grammar.ts';
+
+export {
+  OVERLAY_CLASS,
+  type AttachResult,
+  type OverlayOptions,
+  attachEdgeOverlays,
+  renderOverlayMark,
+} from './overlay/render.ts';
+
+export { edgeOverlayStylesheet } from './overlay/styles.ts';
 
 export {
   type ChangeFacet,
