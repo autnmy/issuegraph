@@ -47,10 +47,10 @@
  *
  * ## The surface
  *
- * Deliberately empty. The overlays, the picker, the create paths, the
- * re-evaluate surface, the audit, the scale ladder and the first-pass queue each
- * land as their own change, and the final shape of this file is decided by the
- * one that assembles the workspace.
+ * The audit is here. The overlays, the picker, the create paths, the
+ * re-evaluate surface, the scale ladder and the first-pass queue each land as
+ * their own change, and the final shape of this file is decided by the one that
+ * assembles the workspace.
  *
  * A published package can add an export later and can never take one back, so
  * nothing is exported before something is owed.
@@ -58,4 +58,27 @@
  * @see https://github.com/autnmy/issuegraph/blob/main/SPEC.md
  */
 
-export {};
+export type {
+  AuditClass,
+  AuditClassSpec,
+  AuditFinding,
+  AuditInput,
+  AuditSeverity,
+  CycleProbe,
+  EncodingRefusal,
+} from './audit.ts';
+export { AUDIT_CLASSES, AUDIT_CLASS_SPECS, auditDocument } from './audit.ts';
+
+export type { AuditHeaderOptions, AuditOverlay, AuditRow } from './audit-surface.ts';
+export {
+  AUDIT_COUNT_ATTRIBUTE,
+  AUDIT_FILTER_ATTRIBUTE,
+  AUDIT_SEVERITY_ATTRIBUTE,
+  AUDIT_TOKENS,
+  auditFilterKeeps,
+  auditOverlay,
+  auditRowAttributes,
+  auditStylesheet,
+  auditThemeCss,
+  renderAuditHeader,
+} from './audit-surface.ts';

@@ -99,6 +99,9 @@ importers:
         specifier: workspace:^
         version: link:../viewer
     devDependencies:
+      '@issuegraph/derive':
+        specifier: workspace:^
+        version: link:../derive
       '@types/node':
         specifier: ^22.18.0
         version: 22.20.1
