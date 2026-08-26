@@ -163,6 +163,31 @@ describe('the overlay', () => {
     for (const row of overlay.rows) assert.notEqual(row.severity, undefined);
   });
 
+  it('drops every malformed persisted finding instead of losing the whole audit', () => {
+    // The failure this replaced was total: one bad entry threw at the clone and
+    // took the header and every row with it, in the one component whose job is
+    // to report that something is wrong. Each row below is a different way a
+    // rebuilt payload can be malformed, and the guard is exhaustive over the
+    // fields that are READ rather than one check per round.
+    const malformed: readonly AuditFinding[] = [
+      JSON.parse('{"kind":"cycle","detail":"members missing entirely"}'),
+      JSON.parse('{"kind":"cycle","members":null,"detail":"members null"}'),
+      JSON.parse('{"kind":"cycle","members":"a,b","detail":"members not an array"}'),
+      JSON.parse('{"kind":"cycle","members":["a",7],"detail":"a member that is not a ref"}'),
+      JSON.parse('{"kind":"cycle","members":["a"]}'),
+      JSON.parse('{"kind":"cycle","members":["a"],"detail":42}'),
+      JSON.parse('{"members":["a"],"detail":"no kind at all"}'),
+      JSON.parse('null'),
+    ];
+    const overlay = auditOverlay([...malformed, finding('cycle', ['x', 'y'])]);
+    assert.equal(overlay.count, 1);
+    assert.deepEqual(
+      overlay.rows.map((row) => row.ref),
+      ['x', 'y'],
+    );
+    assert.doesNotThrow(() => renderAuditHeader(overlay));
+  });
+
   it('indexes exactly the rows it lists', () => {
     // The index and the list are two views of one answer, so a lookup that
     // disagreed with the rail would draw a bar on a row the list calls clean.

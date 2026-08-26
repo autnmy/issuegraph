@@ -266,20 +266,51 @@ function compareMembers(a: readonly IssueRef[], b: readonly IssueRef[]): number 
  * by the same rule this module applies to what it BUILDS. Two spellings of
  * "settled" is how the two come to disagree.
  */
+/**
+ * Whether a value carries the fields {@link settledFinding} READS.
+ *
+ * A TYPE GUARD OVER `unknown`, AND THAT IS THE HONEST SIGNATURE. The values
+ * this defends against are precisely the ones TypeScript never saw — a
+ * JavaScript caller, or anything rebuilt from storage or a wire — so a
+ * parameter claiming they are already `AuditFinding`s would assert a guarantee
+ * the source cannot provide.
+ *
+ * IT IS EXHAUSTIVE OVER WHAT IS READ, WHICH IS THE POINT RATHER THAN A DETAIL.
+ * Four rounds of review found this boundary malformed one field at a time — a
+ * caller's array, a caller's `members`, a caller's disagreeing `severity`, a
+ * prototype key in `kind` — and answering each in turn is an enumeration with
+ * no end. So the rule is stated once, over the whole shape: `kind` must name a
+ * class the table carries, `members` must be an array of strings, `detail` must
+ * be a string. `severity` and `keepAsHistory` are absent from this list because
+ * they are never read from the input at all — they are derived below — so there
+ * is no malformed value of either that could reach anything.
+ *
+ * That closes the seam rather than narrowing it: every field of the interface
+ * is either validated here or ignored by construction. Adding a READ field
+ * without adding it here is the only way to reopen it.
+ */
+function isSettleable(value: unknown): value is AuditFinding {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate: Record<string, unknown> = { ...value };
+  if (typeof candidate['kind'] !== 'string' || !SPEC_OF.has(candidate['kind'])) return false;
+  const members = candidate['members'];
+  if (!Array.isArray(members) || members.some((member) => typeof member !== 'string')) return false;
+  return typeof candidate['detail'] === 'string';
+}
+
 export function settledFinding(found: AuditFinding): AuditFinding | null {
+  // ANSWERING `null` RATHER THAN THROWING is this module's own rule, that an
+  // audit must not die on the data it is auditing — and the cost of getting it
+  // wrong is the whole surface: one malformed persisted finding took the header
+  // and every row with it, in the one component whose job is to report that
+  // something is wrong.
+  if (!isSettleable(found)) return null;
+  const spec = SPEC_OF.get(found.kind);
+  if (spec === undefined) return null;
   // DERIVED FROM `kind`, NEVER COPIED — which is what stops two render sites
   // classifying one finding differently: the row grammar already reads the
   // table, so a stored `severity` that disagreed with it was a second, editable
   // copy of a fact the table states.
-  const spec = SPEC_OF.get(found.kind);
-  // A `kind` THE TABLE DOES NOT CARRY IS NOT A FINDING THIS MODULE CAN SETTLE,
-  // and it is unreachable from TypeScript — `AuditClass` is a closed union — so
-  // this covers the callers a type cannot: JavaScript, and anything
-  // deserialized. Answering `null` rather than throwing keeps the module's own
-  // rule, that an audit must not die on the data it is auditing; the caller
-  // drops it, which is the only honest thing to do with a finding whose class
-  // nothing knows.
-  if (spec === undefined) return null;
   return Object.freeze({
     kind: found.kind,
     severity: spec.severity,
