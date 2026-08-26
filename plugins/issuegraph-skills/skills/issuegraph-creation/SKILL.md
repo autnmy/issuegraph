@@ -104,8 +104,21 @@ Four ways, all silent, all of which the CLI gets right for you:
    wrap the CLI's output — keeping the `---` pair *inside* it.
 3. **The blank line before the closing `---` is load-bearing** on GitHub —
    without it the block renders as a heading. The CLI emits it.
-4. **An invented `evidence` value is dropped**, not rejected. `measured`,
-   `observed` and `reasoned` have all been filed; all three vanished.
+4. **An invented `evidence` value vanishes from a hand-written body** — `measured`,
+   `observed` and `reasoned` have all been filed, and all three were dropped.
+   **The CLI is the half that refuses it**, which is the clearest single reason to
+   write through it: `--evidence measured` is a usage error, **exit 2**, and no
+   body is emitted at all.
+
+   ```console
+   $ issuegraph set --blocked-by 1 --evidence measured < body.md
+   issuegraph: set: --evidence "measured" is not one of asserted, verified   # exit 2
+   ```
+
+   The two surfaces behave **oppositely**, and it is worth keeping them apart:
+   the **flag** is validated and rejects; a value already sitting **in a body** is
+   dropped by the reader with a diagnostic, which also makes the whole block
+   `unread`. So hand-writing loses the field silently; the CLI will not let you.
 
 ## Decomposing a parent — write the edges at split time
 
@@ -114,11 +127,21 @@ create each leaf, never "later":
 
 ```sh
 PREV=                                   # empty: the first leaf blocks on nothing
+made=0; total=$#
 for leaf in "$@"; do
-  printf '%s\n' "$(leaf_body "$leaf")" \
-    | issuegraph set --decomposed-from "$PARENT" \
-                     ${PREV:+--blocked-by "$PREV"} \
-                     --evidence asserted > /tmp/leaf.md || break
+  # TWO EXPLICIT CALLS, not one with a conditional argument. `${PREV:+--blocked-by
+  # "$PREV"}` expands to TWO words in bash and sh and to ONE in zsh, where the CLI
+  # then rejects `--blocked-by 902` as an unknown option — so in zsh the loop
+  # writes no edges at all while looking correct. Measured in all three shells.
+  if [ -n "$PREV" ]; then
+    printf '%s\n' "$(leaf_body "$leaf")" \
+      | issuegraph set --decomposed-from "$PARENT" --blocked-by "$PREV" \
+                       --evidence asserted > /tmp/leaf.md || break
+  else
+    printf '%s\n' "$(leaf_body "$leaf")" \
+      | issuegraph set --decomposed-from "$PARENT" \
+                       --evidence asserted > /tmp/leaf.md || break
+  fi
   # NEVER file a body you did not verify was written. A refused `set` exits
   # non-zero having written nothing, while the redirection has already made the
   # file — so without the `|| break` above and the `[ -s ]` below the loop files
@@ -128,8 +151,19 @@ for leaf in "$@"; do
   # and CARRY IT, or the chain is never written.
   url=$(gh issue create -R "$REPO" --title "$(leaf_title "$leaf")" --body-file /tmp/leaf.md) || break
   PREV=${url##*/}
+  made=$((made + 1))
 done
+[ "$made" -eq "$total" ] || {
+  echo "INCOMPLETE SPLIT: created $made of $total leaves; the chain stops there" >&2
+  exit 1
+}
 ```
+
+⚠ **`break` succeeds, so the loop exits 0 however early it stopped.** Without the
+count check a decomposition that filed three of seven leaves reports success — and
+the leaves it did file carry a `blocked-by` chain that simply ends, which is worse
+than none: it looks like a deliberate ordering. A partial split needs a human, so
+it must exit nonzero and say how far it got.
 
 ⚠ **`PREV` has to be assigned from each creation, and that line is the whole
 chain.** Left unassigned it is empty on every iteration, so `${PREV:+…}` expands

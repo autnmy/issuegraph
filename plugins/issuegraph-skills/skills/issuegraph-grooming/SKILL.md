@@ -115,7 +115,13 @@ case "$(printf '%s' "$out" | jq -r '.outcome // ""')" in
                               # `[ -s ]` even here, where the outcome already promises a
                               # body: every write in these skills is gated on the file being
                               # non-empty, because the one that is not empties an issue.
-                              [ -s /tmp/new.md ] && gh issue edit "$n" -R "$REPO" --body-file /tmp/new.md ;;
+                              # AND the write's own failure is RECORDED — a transient API or
+                              # permission error must not leave the sweep reporting success
+                              # over an issue it did not repair.
+                              if [ -s /tmp/new.md ] && gh issue edit "$n" -R "$REPO" --body-file /tmp/new.md
+                              then :
+                              else echo "#$n: repaired body was NOT written" >&2; broke=1
+                              fi ;;
   already-canonical|no-block) : ;;                       # genuinely nothing to do
   unrecoverable)              echo "#$n needs a human (exit $rc)" >&2; human=1 ;;
   *)                          echo "#$n: backfill did not answer (exit $rc) — NOT skipped" >&2; broke=1 ;;
