@@ -210,12 +210,24 @@ describe('the four finding classes', () => {
 
   it('reports every class from one document, in the order §17d states them', () => {
     const document = documentOf(
-      [issue('a'), issue('b'), issue('c'), issue('closed-1', 'closed'), issue('closed-2', 'closed')],
+      [
+        issue('a'),
+        issue('b'),
+        issue('c'),
+        issue('d'),
+        issue('closed-1', 'closed'),
+        issue('closed-2', 'closed'),
+      ],
       [
         ['blocked-by', 'a', 'b'],
         ['blocked-by', 'b', 'a'],
         ['blocked-by', 'c', 'closed-1'],
-        ['duplicate-of', 'c', 'closed-2'],
+        // THE TWO EDGES SIT ON DIFFERENT ISSUES ON PURPOSE. A duplicate
+        // contributes no relationship edges (4.3.3), so hanging the duplicate-of
+        // on the same issue as the blocked-by silently suppresses the
+        // stale-blocker and the fixture stops exercising the class it was written
+        // for.
+        ['duplicate-of', 'd', 'closed-2'],
       ],
     );
     const findings = auditDocument({
@@ -464,20 +476,59 @@ describe('an unknowable target yields no verdict, in BOTH classes that read one'
     // The scope of the suppression, pinned in the other direction. A refusal
     // costs knowledge of where the edge POINTS, so the declarer's own refusal
     // says nothing about whether the issue on the other end is closed.
+    // Two declarers, because a duplicate contributes no relationship edges —
+    // one issue carrying both would suppress its own stale-blocker for an
+    // unrelated reason and prove nothing about refusals.
     const document = documentOf(
-      [issue('a'), issue('closed-1', 'closed'), issue('closed-2', 'closed')],
+      [issue('a'), issue('b'), issue('closed-1', 'closed'), issue('closed-2', 'closed')],
       [
         ['blocked-by', 'a', 'closed-1'],
-        ['duplicate-of', 'a', 'closed-2'],
+        ['duplicate-of', 'b', 'closed-2'],
       ],
     );
     const findings = auditDocument({
       document,
       graph: graphOf(document),
-      encodingRefused: [{ ref: 'a' }],
+      encodingRefused: [{ ref: 'a' }, { ref: 'b' }],
     });
     assert.equal(only(findings, 'stale-blocker').length, 1);
     assert.equal(only(findings, 'dead-duplicate-ref').length, 1);
+  });
+});
+
+describe('an edge the reader never reads holds nothing', () => {
+  it('does not call a DUPLICATE\'s blocked-by stale', () => {
+    // §4.3.3: a duplicate contributes no relationship edges, and `buildModel`
+    // skips such a node outright — an issue nobody may work cannot block one.
+    // So this edge decides no readiness, and "readiness is already satisfied"
+    // is a claim about an edge that decides nothing.
+    const document = documentOf(
+      [issue('a'), issue('canonical'), issue('gone', 'closed')],
+      [
+        ['duplicate-of', 'a', 'canonical'],
+        ['blocked-by', 'a', 'gone'],
+      ],
+    );
+    assert.deepEqual(only(audit(document), 'stale-blocker'), []);
+  });
+
+  it('still calls a NON-duplicate\'s blocked-by stale — the control', () => {
+    const document = documentOf(
+      [issue('a'), issue('gone', 'closed')],
+      [['blocked-by', 'a', 'gone']],
+    );
+    assert.equal(only(audit(document), 'stale-blocker').length, 1);
+  });
+
+  it('still reports a duplicate-of declared by a duplicate, which is its premise', () => {
+    // The rule is per class, not blanket. The reader walks a duplicate's own
+    // `duplicate-of` directly, ahead of the skip — and a class about duplicates
+    // that ignored every duplicate would report nothing at all.
+    const document = documentOf(
+      [issue('a'), issue('closed-canonical', 'closed')],
+      [['duplicate-of', 'a', 'closed-canonical']],
+    );
+    assert.equal(only(audit(document), 'dead-duplicate-ref').length, 1);
   });
 });
 

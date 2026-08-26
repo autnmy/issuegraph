@@ -384,6 +384,28 @@ interface EdgeVerdict {
    * ordinary end of a lifecycle as a defect, for ever.
    */
   readonly declarerLive: boolean;
+  /**
+   * Whether the reader reads this edge's declaration AT ALL.
+   *
+   * A DUPLICATE CONTRIBUTES NO RELATIONSHIP EDGES (§4.3.3, and `buildModel`
+   * skips such a node outright): an issue nobody may work cannot block one.
+   * So a `blocked-by` written on a duplicate never participates in readiness,
+   * and saying its closed target means "readiness is already satisfied" is a
+   * claim about an edge that decides nothing.
+   *
+   * ITS OWN `duplicate-of` IS STILL READ, which is why this is a field each
+   * class answers for itself rather than a blanket suppression: the reader
+   * walks that one directly, ahead of the skip. For `dead-duplicate-ref` the
+   * declarer being a duplicate is the PREMISE, so that class deliberately does
+   * not consult this — and would report nothing at all if it did.
+   *
+   * THE TARGET SIDE NEEDS NO EQUIVALENT, and it was checked rather than
+   * assumed: an edge naming a duplicate is resolved through to its canonical
+   * rather than dropped, because dropping would stop it blocking work that is
+   * still open under another number. That is what the resolution above already
+   * does.
+   */
+  readonly declarerEdgesRead: boolean;
 }
 
 /**
@@ -416,6 +438,7 @@ function verdictFor(
     // three the moment that leg was added.
     knowable: !refused.has(edge.to) && !refused.has(effective),
     declarerLive: !closed.has(edge.from),
+    declarerEdgesRead: graph.duplicateCanonical(edge.from) === null,
   };
 }
 
@@ -473,6 +496,11 @@ function staleBlockerFindings(
   for (const edge of edgesOfKind(document, 'blocked-by')) {
     const verdict = verdictFor(edge, closed, refused, graph, 'to');
     if (!verdict.declarerLive || !verdict.knowable || !verdict.effectiveClosed) continue;
+    // A blocked-by written on a DUPLICATE is not read by the model at all, so
+    // it holds nothing and there is no readiness for a closed target to have
+    // satisfied. `dead-duplicate-ref` deliberately does not consult this — see
+    // the field.
+    if (!verdict.declarerEdgesRead) continue;
     const effective = verdict.effective;
     const via = effective === edge.to ? '' : ` (via ${edge.to}, which duplicates it)`;
     findings.push(

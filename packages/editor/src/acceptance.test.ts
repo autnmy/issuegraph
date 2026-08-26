@@ -182,6 +182,7 @@ describe('done when: a pure function returns the four finding classes from a doc
       ['c', 'open'],
       ['d', 'open'],
       ['e', 'open'],
+      ['f', 'open'],
       ['gone', 'closed'],
       ['dead', 'closed'],
     ],
@@ -191,7 +192,12 @@ describe('done when: a pure function returns the four finding classes from a doc
       ['blocked-by', 'c', 'd'],
       ['blocked-by', 'd', 'a'],
       ['blocked-by', 'e', 'gone'],
-      ['duplicate-of', 'e', 'dead'],
+      // THE TWO EDGES SIT ON DIFFERENT ISSUES ON PURPOSE. A duplicate
+      // contributes no relationship edges (4.3.3), so hanging the duplicate-of
+      // on the same issue as the blocked-by silently suppresses the
+      // stale-blocker and the fixture stops exercising the class it was written
+      // for.
+      ['duplicate-of', 'f', 'dead'],
     ],
   );
   const findings = auditDocument({
