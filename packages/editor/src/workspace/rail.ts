@@ -53,6 +53,7 @@
 
 import { edgeIdentity } from '@issuegraph/core';
 import type { ViewerDocument, ViewerSlot } from '@issuegraph/viewer';
+import { normalizeDocument } from '@issuegraph/viewer';
 
 /**
  * How many rows a window holds when the host does not say.
@@ -151,9 +152,26 @@ function clampWindow(total: number, options: RailWindowOptions): { start: number
  * refuse, because the rail is the zone that is not allowed to.
  */
 export function railWindow(
-  input: ViewerDocument,
+  raw: ViewerDocument,
   options: RailWindowOptions = {},
 ): RailWindow {
+  // IT NORMALIZES ITS OWN INPUT, like `inspectorView` and `renderWorkspace`.
+  // Every exported function in this module that takes a `ViewerDocument` now
+  // does, and that is the point: the reasoning was applied to one sibling and
+  // not the other, which left two public helpers with different contracts for
+  // the same argument.
+  //
+  // Slicing RAW slots is scroll-dependent on a malformed document. Layer 1
+  // keeps the FIRST placement of a key and drops the later one, so a duplicate
+  // straddling the window boundary became the valid placement whenever its
+  // earlier copy fell outside the slice — the visible order changing with the
+  // reader's position. `renderWorkspace` normalizing first fixed that for the
+  // workspace path and for nothing else; a direct caller of this still saw it.
+  //
+  // Idempotent, so the workspace normalizing first costs a pass and changes
+  // nothing. `total` therefore counts the slots the rail can actually show,
+  // which is the number a caller is asking about.
+  const input = normalizeDocument(raw).document;
   const slots = input.order.slots;
   const total = slots.length;
   const { start, count } = clampWindow(total, options);

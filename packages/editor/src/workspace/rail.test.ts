@@ -94,10 +94,15 @@ describe('exclusions are carried whole, and that bound is stated', () => {
   // window slices. Windowing it would need a second window with its own
   // coordinate. Pinned so the bound stays a decision rather than becoming a
   // surprise.
+  // THE EXCLUDED KEY IS REMOVED FROM THE SLOTS, because one issue holds one
+  // position: layer 1 drops an exclusion whose key is already placed. The
+  // earlier version of this fixture had `i0020` in both, and passed only while
+  // `railWindow` was slicing raw slots — that is, only while it was windowing a
+  // document no zone would have drawn.
   const document = {
     ...backlogOf(20),
     order: {
-      ...backlogOf(20).order,
+      slots: backlogOf(20).order.slots.filter((slot) => slot.lead !== 'i0020'),
       excluded: [{ key: 'i0020', canonical: 'i0001', reason: 'duplicate-of' as const }],
     },
   };
@@ -106,6 +111,33 @@ describe('exclusions are carried whole, and that bound is stated', () => {
     const rail = railWindow(document, { start: 0, count: 2 });
     assert.equal(rail.document.order.excluded.length, 1);
     assert.equal(rail.rows.length, 2);
+  });
+
+  it('normalizes its own input, so a direct caller sees the same order the zones draw', () => {
+    // The last of the three exported entry points to do this. Slicing RAW slots
+    // is scroll-dependent on a malformed document: layer 1 keeps the FIRST
+    // placement of a key, so a duplicate straddling the window boundary becomes
+    // the valid one whenever its earlier copy falls outside the slice.
+    const base = backlogOf(6);
+    const doubled = {
+      ...base,
+      order: {
+        ...base.order,
+        slots: [
+          ...base.order.slots,
+          { rank: 7, lead: 'i0001', members: ['i0001'], ready: true, holds: [] },
+        ],
+      },
+    };
+    // A window over the tail, where only the LATER copy would be in the slice.
+    const tail = railWindow(doubled, { start: 5, count: 2 });
+    assert.equal(
+      tail.rows.filter((slot) => slot.lead === 'i0001').length,
+      0,
+      'the duplicate placement survived the window',
+    );
+    // And `total` counts what the rail can actually show.
+    assert.equal(tail.total, 6);
   });
 
   it('keeps the edges a visible excluded row owes a badge for', () => {
