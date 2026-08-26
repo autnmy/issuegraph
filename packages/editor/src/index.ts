@@ -19,12 +19,19 @@
  * the seam "stops being enforced by construction and becomes discipline — layer 2
  * composes layer 1 through its public surface and never reaches past it."
  *
- * Discipline that nothing checks is a comment. `seam.test.ts` is the check:
- * every import of a sibling package must be its BARE specifier, so a reach into
- * `@issuegraph/viewer/src/...` fails a test rather than a code review that might
- * not happen. `purity.test.ts` is the other half — the package may not acquire a
- * network, storage or credential dependency, measured the same way the viewer
- * measures its own.
+ * Discipline that nothing checks is a comment. The check is in
+ * `eslint.config.mjs`, over the AST: every import of a sibling package must be
+ * its BARE specifier, and `require()` is banned outright because it is the one
+ * call that walks past every import rule. A reach into
+ * `@issuegraph/viewer/src/...` fails lint rather than a code review that might
+ * not happen, and `scripts/eslint-rules.test.mjs` proves the rules fire by
+ * running them against deliberate violations.
+ *
+ * The same config carries the purity claim for this package and the viewer — no
+ * fetch, no storage, no credentials, no Node builtin. `purity.test.ts` keeps the
+ * half no static rule can do: it loads every shipped module with the browser
+ * globals removed, which is what catches a computed access like
+ * `globalThis['fet' + 'ch']`.
  *
  * ## The one declared crossing
  *

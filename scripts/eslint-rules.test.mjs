@@ -106,3 +106,115 @@ test('CONTROL: the BARE sibling specifier is not caught', async () => {
     [],
   );
 });
+
+/**
+ * The rule ids reported for a source string, as if it lived inside a RENDERING
+ * package. The purity rules are scoped to `packages/{viewer,editor}`, so the
+ * `packages/core` path above deliberately does not carry them.
+ */
+async function purityRulesFor(source) {
+  const results = await eslint.lintText(source, {
+    filePath: `${repoRoot}packages/editor/src/__violation-fixture__.ts`,
+  });
+  const ids = results.flatMap((result) => result.messages.map((message) => message.ruleId ?? 'PARSE-ERROR'));
+  return [...new Set(ids)].sort();
+}
+
+/**
+ * These replace a regex scanner that lived in each rendering package's
+ * `purity.test.ts`. It drew four findings across two review rounds, and the
+ * last was caused by the fix for the round before it — which is why the
+ * scanner is gone rather than patched again, and why the two cases it got
+ * wrong are pinned FIRST below.
+ */
+
+test('PURITY: a `//` inside a STRING no longer hides the code after it', async () => {
+  // The regression the regex scanner had: blanking `//` comments also blanked
+  // everything after a `//` inside a string literal, so this scanned clean.
+  // `https://` in a source line is about as common as it gets.
+  assert.deepEqual(
+    await purityRulesFor("const url = 'https://api';\nexport const save = () => fetch(url);\n"),
+    ['no-restricted-globals'],
+  );
+});
+
+test('PURITY: an inline block comment no longer hides the code after it', async () => {
+  // The finding BEFORE that one: a line whose first character opened a comment
+  // was discarded whole, taking the code with it.
+  assert.deepEqual(
+    await purityRulesFor("/* instrumentation */ export const save = () => fetch('/write');\n"),
+    ['no-restricted-globals'],
+  );
+});
+
+test('PURITY: a deferred require of a Node builtin is caught', async () => {
+  // The load test cannot cover this one: nothing calls the function, and a
+  // builtin imports perfectly well under Node anyway.
+  assert.deepEqual(
+    await purityRulesFor("export const load = () => require('node:fs');\n"),
+    ['no-restricted-syntax'],
+  );
+});
+
+test('SEAM: a require() deep import walks past no-restricted-imports, so syntax catches it', async () => {
+  assert.deepEqual(
+    await purityRulesFor("export const d = () => require('@issuegraph/viewer/src/document.js');\n"),
+    ['no-restricted-syntax'],
+  );
+});
+
+test('PURITY: a Node builtin is caught in every import form', async () => {
+  for (const form of [
+    "import { readFileSync } from 'node:fs';\nexport const r = readFileSync;\n",
+    'import { readFile } from "node:fs";\nexport const r = readFile;\n',
+    "import 'node:fs';\nexport const a = 1;\n",
+  ]) {
+    assert.deepEqual(await purityRulesFor(form), ['no-restricted-imports'], form);
+  }
+});
+
+test('PURITY: the remaining forbidden reaches are caught', async () => {
+  const cases = [
+    ["export const s = () => localStorage.getItem('k');\n", 'no-restricted-globals'],
+    ['export const c = () => document.cookie;\n', 'no-restricted-properties'],
+    ["export const l = () => import('./other.js');\n", 'no-restricted-syntax'],
+    ["export const e = () => eval('1');\n", 'no-restricted-syntax'],
+    ["export const f = () => new Function('return 1');\n", 'no-restricted-syntax'],
+  ];
+  for (const [source, expected] of cases) {
+    assert.deepEqual(await purityRulesFor(source), [expected], source);
+  }
+});
+
+test('CONTROL: the base import bans still apply inside a rendering package', async () => {
+  // The trap flat config sets for this change: a later object's options for the
+  // same rule REPLACE the earlier ones rather than merging, so the block that
+  // adds `node:*` could silently drop the consumer ban and the seam ban for the
+  // two packages that need them most.
+  assert.deepEqual(
+    await purityRulesFor("import { parse } from '@descant/types';\nexport const p = parse;\n"),
+    ['no-restricted-imports'],
+  );
+  assert.deepEqual(
+    await purityRulesFor("import { x } from '@issuegraph/viewer/src/document.ts';\nexport const y = x;\n"),
+    ['no-restricted-imports'],
+  );
+});
+
+test('CONTROL: the purity rules are SCOPED — a non-rendering package may read files', async () => {
+  // `cli`, `reader` and `writer` make no browser claim and legitimately touch
+  // the filesystem. A global ban would have broken them, and a rule that fired
+  // everywhere would pass every case above while being wrong.
+  assert.deepEqual(await rulesFor("import { readFileSync } from 'node:fs';\nexport const r = readFileSync;\n"), []);
+});
+
+test('CONTROL: ordinary pure code in a rendering package reports nothing', async () => {
+  assert.deepEqual(await purityRulesFor('export const add = (a: number, b: number) => a + b;\n'), []);
+});
+
+test('CONTROL: a legitimate bare sibling import reports nothing', async () => {
+  assert.deepEqual(
+    await purityRulesFor("import { edgeId } from '@issuegraph/store';\nexport const e = edgeId;\n"),
+    [],
+  );
+});

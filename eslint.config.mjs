@@ -1,7 +1,13 @@
 /**
- * Import rules for the published packages.
+ * Import and purity rules for the published packages.
  *
- * These four rules replace a hand-rolled scanner that read module syntax with a
+ * TWICE NOW, a hand-rolled scanner that read source with a regular expression
+ * has been replaced by rules over the AST. The import rules below replaced the
+ * first; the purity rules in the second config object replaced the second, for
+ * the same reason and after the same shape of evidence. If a third scanner is
+ * ever proposed here, this is the note that should stop it.
+ *
+ * These rules replace a hand-rolled scanner that read module syntax with a
  * regular expression. Module syntax is an open grammar, and eight review rounds
  * on that scanner produced findings in both directions — specifier forms it
  * could not read (template literals, comments between the keyword and the
@@ -74,6 +80,45 @@ const FORBIDDEN = ['@descant', '@descant/*', 'descant', 'descant/*', '@takumi', 
  */
 const SIBLING_SUBPATHS = ['@issuegraph/*/*', '@issuegraph/*/**'];
 
+/**
+ * The import restrictions every published package carries. Named so the
+ * browser-package block below can EXTEND them instead of restating them.
+ *
+ * In flat config a later object's options for the same rule REPLACE the earlier
+ * ones for matching files — they do not merge. So a second `no-restricted-imports`
+ * that listed only `node:` would silently drop the consumer ban and the seam ban
+ * for exactly the two packages that need them most. Composing from one array is
+ * what makes that impossible rather than remembered.
+ */
+const BASE_IMPORT_PATTERNS = [
+  {
+    group: FORBIDDEN,
+    message:
+      'A published @issuegraph package may not depend on the consuming product. Move what you need into the package, or into @issuegraph/core.',
+  },
+  {
+    group: SIBLING_SUBPATHS,
+    message:
+      'Import a sibling @issuegraph package at its bare specifier. Reaching into its internals is the seam the package split exists to keep — if you need something it does not export, export it deliberately.',
+  },
+];
+
+/**
+ * The packages that render, and therefore may not reach for a runtime.
+ *
+ * `viewer` and `editor` claim "no fetching, no auth, no persistence" — the
+ * claim that makes them installable by anyone. `cli`, `reader` and `writer`
+ * make no such claim and legitimately read files, so this is scoped rather
+ * than global.
+ */
+const BROWSER_PACKAGES = ['packages/viewer/**/*.ts', 'packages/editor/**/*.ts'];
+
+/** Globals whose mere presence in a rendering package breaks the claim. */
+const FORBIDDEN_GLOBALS = [
+  'fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource',
+  'localStorage', 'sessionStorage', 'indexedDB', 'process', 'globalThis',
+];
+
 export default [
   {
     ignores: ['**/dist/**', '**/node_modules/**'],
@@ -87,28 +132,98 @@ export default [
     },
     plugins: { 'import-x': importX },
     rules: {
-      // Names the consumer directly.
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: FORBIDDEN,
-              message:
-                'A published @issuegraph package may not depend on the consuming product. Move what you need into the package, or into @issuegraph/core.',
-            },
-            {
-              group: SIBLING_SUBPATHS,
-              message:
-                'Import a sibling @issuegraph package at its bare specifier. Reaching into its internals is the seam the package split exists to keep — if you need something it does not export, export it deliberately.',
-            },
-          ],
-        },
-      ],
+      // Names the consumer directly, or reaches past a sibling's public surface.
+      'no-restricted-imports': ['error', { patterns: BASE_IMPORT_PATTERNS }],
       // Reaches into a sibling package's internals by walking up out of its own.
       'import-x/no-relative-packages': 'error',
       // Leaves the machine's filesystem layout in a published artifact.
       'import-x/no-absolute-path': 'error',
+      // `require()` is the hole in every rule above: `no-restricted-imports`
+      // reads module syntax and does not inspect a call, so
+      // `require('@issuegraph/viewer/src/document.js')` walks past the seam ban
+      // while lint stays green. Every package here is `"type": "module"`, where
+      // `require` is not defined at all — so banning it outright costs nothing
+      // and closes that door. No source in packages/ or demo/ uses one.
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "CallExpression[callee.name='require']",
+          message:
+            'require() is not available in these ESM packages, and it bypasses every import rule in this config — including the sibling-seam ban. Use an import.',
+        },
+      ],
+    },
+  },
+  {
+    /**
+     * The purity rules for the two packages that RENDER.
+     *
+     * These replace a hand-rolled scanner that lived in each package's
+     * `purity.test.ts` and read source with regular expressions. It drew four
+     * findings across two review rounds, and the last one was caused by the fix
+     * for the round before it: blanking `//` comments also blanked everything
+     * after a `//` inside a string, so `const url = 'https://api'; … fetch(url)`
+     * scanned clean. Verified, not argued.
+     *
+     * That is the same lesson the import rules above already record — module
+     * syntax is an open grammar and a regex over it is wrong in both directions
+     * — arriving a second time by a different door. Comments, string literals,
+     * template literals, regex literals and `require()` are all handled by
+     * construction once a parser reads the code, and none of them can be
+     * "handled" by another pattern.
+     *
+     * Each package keeps the OTHER half of its purity test — the load with the
+     * browser globals removed — because that half never was a scan: it catches
+     * a computed access like `globalThis['fet' + 'ch']`, which no static rule
+     * sees.
+     *
+     * TESTS AND TEST HELPERS ARE EXCLUDED, and they have to be: the load test
+     * legitimately imports `node:test`, reads `globalThis` and deletes globals.
+     * That is the same boundary `shippedSources()` drew — what ships, not what
+     * proves it.
+     */
+    files: BROWSER_PACKAGES,
+    ignores: ['**/*.test.ts', '**/testing/**'],
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        ...FORBIDDEN_GLOBALS.map((name) => ({
+          name,
+          message: `A rendering package may not reach for ${name}. It fetches nothing, authenticates nothing and persists nothing — the host does, through the injected data source.`,
+        })),
+      ],
+      'no-restricted-properties': [
+        'error',
+        { object: 'navigator', property: 'sendBeacon', message: 'A rendering package sends nothing.' },
+        { object: 'document', property: 'cookie', message: 'A rendering package reads no credentials.' },
+      ],
+      // EXTENDS the base patterns rather than replacing them — see
+      // BASE_IMPORT_PATTERNS on why a bare restatement here would be a silent
+      // downgrade for these two packages.
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            ...BASE_IMPORT_PATTERNS,
+            {
+              group: ['node:*'],
+              message:
+                'A rendering package may not import a Node builtin — it has to run in a browser. Note the load test cannot catch this for you: a builtin imports perfectly well under Node.',
+            },
+          ],
+        },
+      ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "CallExpression[callee.name='require']",
+          message:
+            'require() is not available in these ESM packages, and it bypasses every import rule in this config — including the Node-builtin ban directly above.',
+        },
+        { selector: 'ImportExpression', message: 'A rendering package loads nothing at runtime.' },
+        { selector: "CallExpression[callee.name='eval']", message: 'A rendering package evaluates nothing.' },
+        { selector: "NewExpression[callee.name='Function']", message: 'A rendering package evaluates nothing.' },
+      ],
     },
   },
 ];
