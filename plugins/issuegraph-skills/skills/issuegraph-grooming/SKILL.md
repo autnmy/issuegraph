@@ -110,16 +110,33 @@ not repaired, so there is nothing you could write back believing it had been.
 # whole sweep before the `case` ever runs: one unrepairable issue kills the
 # backlog pass instead of reaching the escalation branch. Verified both ways.
 if out=$(issuegraph backfill --json --body-file body.md); then rc=0; else rc=$?; fi
-case "$(printf '%s' "$out" | jq -r .outcome)" in
-  delimited)     printf '%s' "$out" | jq -r .body > /tmp/new.md
-                 # `[ -s ]` even here, where the outcome already promises a body:
-                 # every write in these skills is gated on the file being non-empty,
-                 # because the one that is not is the one that empties an issue.
-                 [ -s /tmp/new.md ] && gh issue edit "$n" -R "$REPO" --body-file /tmp/new.md ;;
-  unrecoverable) echo "#$n needs a human (exit $rc)" ;;
-  *)             : ;;   # nothing to do
+case "$(printf '%s' "$out" | jq -r '.outcome // ""')" in
+  delimited)                  printf '%s' "$out" | jq -r .body > /tmp/new.md
+                              # `[ -s ]` even here, where the outcome already promises a
+                              # body: every write in these skills is gated on the file being
+                              # non-empty, because the one that is not empties an issue.
+                              [ -s /tmp/new.md ] && gh issue edit "$n" -R "$REPO" --body-file /tmp/new.md ;;
+  already-canonical|no-block) : ;;                       # genuinely nothing to do
+  unrecoverable)              echo "#$n needs a human (exit $rc)" >&2; human=1 ;;
+  *)                          echo "#$n: backfill did not answer (exit $rc) — NOT skipped" >&2; broke=1 ;;
 esac
+# ...after the sweep:
+[ "${broke:-0}" -eq 0 ] && [ "${human:-0}" -eq 0 ] || exit 1
 ```
+
+⚠ **The wildcard must not mean "nothing to do".** `backfill` failing for any
+reason that is *not* its structured refusal — an unreadable `--body-file`, an
+option an older binary does not have, an internal error — leaves `out` **empty**,
+so `jq` yields an empty outcome and a `*) : ;;` arm silently skips that issue
+while the sweep reports success. **Enumerate the outcomes you handle and treat
+everything else as an error**, which is what makes the two arms above different:
+`already-canonical` and `no-block` really are nothing to do; an empty outcome is
+"I could not tell", and the two must not share a branch.
+
+⚠ **The sweep exits nonzero at the END, not on the first bad issue.** Aborting
+inside the loop is the `set -e` defect one section up, inverted — one unrepairable
+issue would take the whole pass down. Completing the pass and failing afterwards
+gives you both: every issue attempted, and a status a caller can branch on.
 
 **Never match the stderr prose to recover the outcome.** A reworded message stops
 matching silently and fails open — which is how a repairable block gets skipped

@@ -96,8 +96,15 @@ if you only look at `slots`.
 ```sh
 issuegraph ready --input candidates.json > out.json
 jq -e '(.underRead|length) == 0' out.json >/dev/null \
-  || { echo "REFUSING: $(jq -c .underRead out.json) could not be read — repair them first"; }
+  || { echo "REFUSING: $(jq -c .underRead out.json) could not be read — repair them first" >&2; exit 1; }
 ```
+
+⚠ **The `exit 1` is the guard.** `echo` returns **0**, so a refusal branch that
+only prints leaves the snippet exiting successfully — and a caller using it to
+decide whether to act on `out.json` proceeds into exactly the indeterminate order
+it just refused. **A check that detects the bad state and returns success is not
+a check**, which is this skill's own subject arriving one layer up. The message
+goes to stderr for the same reason: stdout is the answer.
 
 **`backfill` will NOT repair these.** `underRead` is the `unread` state — a block
 whose **delimiters are fine** and whose *contents* did not parse, most often
@@ -131,15 +138,32 @@ check each body's `state`** — one `validate` per body, branching on `state` an
 not on the exit code, for the reason the grooming skill sets out:
 
 ```sh
-jq -r '.issues[] | @base64' candidates.json | while read -r row; do
+bad=0
+while IFS= read -r row; do
+  [ -n "$row" ] || continue
   body=$(printf '%s' "$row" | base64 --decode | jq -r .body)
   state=$(printf '%s' "$body" | issuegraph validate | jq -r .state)
   case "$state" in
     read|absent) : ;;
-    *) echo "REFUSING: an issue's block is $state — repair before trusting the order" ;;
+    *) echo "REFUSING: an issue's block is $state — repair before trusting the order" >&2; bad=1 ;;
   esac
-done
+done <<EOF
+$(jq -r '.issues[] | @base64' candidates.json)
+EOF
+[ "$bad" -eq 0 ] || exit 1
 ```
+
+⚠ **Two shapes here are load-bearing and neither is stylistic.**
+
+**The loop is fed by a here-doc, not by a pipe.** `… | while read` runs the loop
+in a **subshell**, so `bad=1` is set on a copy and vanishes when the loop ends —
+the preflight would detect every unsafe body and still exit 0. Feeding it with a
+here-doc keeps the loop in the current shell, where the flag survives.
+
+**The refusal exits nonzero after the loop, rather than aborting inside it.** A
+caller runs this to decide whether the derived ordering is trustworthy, and that
+is a property of the whole set — so the useful behaviour is to report *every*
+unsafe body and then fail, not to stop at the first.
 
 ## Why your P0 is not on the list
 
