@@ -433,16 +433,25 @@ function verdictFor(
   // TARGET's work went; a dead duplicate ref asks where the DECLARER's did.
   resolveFrom: 'from' | 'to',
 ): EdgeVerdict {
-  const subject = resolveFrom === 'from' ? edge.from : edge.to;
-  // RESOLVED ONLY THROUGH A REFERENCEABLE SUBJECT. `duplicateCanonical` answers
-  // for any key the model holds, including the declarer-only tier — but the
-  // reader canonicalizes a reference only when its target is REFERENCEABLE, and
-  // a weak node is not. Asking unconditionally turned an unresolvable blocker,
-  // which the reader treats as BLOCKING, into a discharged one: `a blocked-by
-  // weak`, `weak duplicate-of done`, `done` closed reported readiness as
-  // satisfied while `a` was in fact still held.
+  // THE TWO ENDS RESOLVE UNDER DIFFERENT RULES, because the reader applies its
+  // referenceability gate in exactly one of the two places:
+  //
+  //  - A RELATIONSHIP TARGET is canonicalized only when it is REFERENCEABLE.
+  //    `duplicateCanonical` answers for any key the model holds, the
+  //    declarer-only tier included, but a weak node is not referenceable — it
+  //    may add constraints and may never satisfy one. Asking unconditionally
+  //    turned an unresolvable blocker, which the reader treats as BLOCKING,
+  //    into a discharged one.
+  //  - A DECLARER'S OWN CHAIN carries no such gate. `duplicateCanonicalOf`
+  //    starts from the key map, which holds weak nodes too, and the gate inside
+  //    it applies to the NEXT hop. So an absent declarer's chain resolves, and
+  //    gating it discarded the transitive answer the dead-duplicate class is
+  //    built on — the very case that class deliberately reports on an unknown
+  //    declarer.
   const effective =
-    (carried.has(subject) ? graph.duplicateCanonical(subject) : null) ?? edge.to;
+    resolveFrom === 'to'
+      ? ((carried.has(edge.to) ? graph.duplicateCanonical(edge.to) : null) ?? edge.to)
+      : (graph.duplicateCanonical(edge.from) ?? edge.to);
   return {
     effective,
     effectiveClosed: closed.has(effective),

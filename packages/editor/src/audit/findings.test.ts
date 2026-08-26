@@ -584,6 +584,23 @@ describe('a weak target may add a constraint and never satisfy one', () => {
     );
   });
 
+  it('DOES resolve an absent declarer\'s own duplicate chain', () => {
+    // The other end of the same rule, and the one a blanket gate broke. The
+    // reader's chain closure starts from the key map, which holds weak nodes,
+    // and its referenceability gate applies to the NEXT hop — so an absent
+    // declarer's chain resolves, and this class is built on exactly that.
+    const document = documentOf([issue('b'), issue('c', 'closed')], [['duplicate-of', 'absent', 'b']]);
+    const graph: AuditGraph = {
+      cycles: [],
+      duplicateCanonical: (ref) => (ref === 'absent' || ref === 'b' ? 'c' : null),
+    };
+    const found = auditDocument({ document, graph }).filter(
+      (one) => one.kind === 'dead-duplicate-ref',
+    );
+    assert.equal(found.length, 1);
+    assert.match(found[0]?.detail ?? '', /duplicate-of c \(through b\)/);
+  });
+
   it('still resolves through a target the document DOES carry — the control', () => {
     // The full-node case, which is what `referenceable` admits and what the
     // reader really does canonicalize.
