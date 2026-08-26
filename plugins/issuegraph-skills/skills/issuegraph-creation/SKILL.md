@@ -66,7 +66,7 @@ issuegraph set --blocked-by 123 --blocked-by owner/repo#654 < body.md
 | `priority` | 0–3 | the tracker has no priority label |
 | `evidence` | `asserted` \| `verified` | **always** |
 
-**`evidence` takes exactly two values and anything else is dropped silently**, leaving the block looking complete.
+**`evidence` takes exactly two values, and the CLI refuses anything else** — `--evidence measured` is a usage error at exit 2 with no body emitted. (A bad value already sitting in a hand-written body behaves oppositely: the reader drops it and the block reads `unread`. The two surfaces are set out under "Why hand-writing fails" below.)
 
 - **`asserted`** — you did not reproduce the claim. The next worker verifies
   first. **This is what every machine-filed issue carries.**
@@ -127,6 +127,7 @@ create each leaf, never "later":
 
 ```sh
 PREV=                                   # empty: the first leaf blocks on nothing
+LEAF_PRIORITY=2                         # see below — it can only be set HERE
 made=0; total=$#
 for leaf in "$@"; do
   # TWO EXPLICIT CALLS, not one with a conditional argument. `${PREV:+--blocked-by
@@ -136,11 +137,11 @@ for leaf in "$@"; do
   if [ -n "$PREV" ]; then
     printf '%s\n' "$(leaf_body "$leaf")" \
       | issuegraph set --decomposed-from "$PARENT" --blocked-by "$PREV" \
-                       --evidence asserted > /tmp/leaf.md || break
+                       --priority "$LEAF_PRIORITY" --evidence asserted > /tmp/leaf.md || break
   else
     printf '%s\n' "$(leaf_body "$leaf")" \
       | issuegraph set --decomposed-from "$PARENT" \
-                       --evidence asserted > /tmp/leaf.md || break
+                       --priority "$LEAF_PRIORITY" --evidence asserted > /tmp/leaf.md || break
   fi
   # NEVER file a body you did not verify was written. A refused `set` exits
   # non-zero having written nothing, while the redirection has already made the
@@ -180,7 +181,13 @@ issue in disguise" shape, and it serialises work that could have run in parallel
 - `serialize-with` where you forecast a conflict: two leaves gutting one surface.
 - **Do not `together-with` leaves of your own split.** If two halves cannot stand
   alone, do not split them.
-- Give every leaf a priority.
+- **Give every leaf a priority, and note it must be done in the `set` call above.**
+  `priority` is render-only: once the block exists, `issuegraph set --priority`
+  **refuses** it (exit 4, "cannot be amended in one that has"). So a leaf created
+  without one cannot be given one through the CLI at all — the recipe passes
+  `--priority` up front for exactly that reason. Where the tracker carries
+  `p0`–`p3` labels those are canonical and the field is a mirror; where it does
+  not, this call is the only chance to set it.
 
 ## Verify what you wrote, before you file it
 

@@ -15,6 +15,29 @@ the work gets handed to whoever asked.
 npm i -g @issuegraph/cli     # `issuegraph` on PATH
 ```
 
+## How to read the recipes here
+
+**They are fragments, not programs.** Each one shows the CLI call it is about;
+none of them is a hardened script, and dropping one into automation unchanged is
+your decision to make, not mine.
+
+**Three rules bind all of them, so they are stated once here rather than
+re-derived in each.** Every one is the same mistake this whole toolchain is
+about — an absence rendered as a value — arriving through a different door:
+
+1. **A fetch that fails must not read as an empty result.** `gh issue list`
+   failing on auth or connectivity yields no rows, and a loop over no rows
+   reports a clean corpus. Capture its status before you use its output.
+2. **Never consume a file you have not proved non-empty.** A redirection creates
+   the file even when the command wrote nothing, so `cmd > f` followed by
+   `--body-file f` can write an empty body over a real one.
+3. **Never accumulate a count or a flag inside a pipe.** `… | while` runs in a
+   subshell; the variable you set there does not survive, so the check reports
+   the state it would have had if it found nothing.
+
+A recipe below that looks under-defended against one of these is relying on this
+section, not overlooking it.
+
 ## 1. Audit — what is wrong with this block?
 
 ```sh
@@ -194,6 +217,11 @@ never existed.
 ## Sweeping a backlog
 
 ```sh
+# Rule 1: the fetch's status, captured BEFORE anything reads its output.
+rows=$(gh issue list -R owner/repo --state open --limit 1000 \
+         --json number,body --jq '.[] | @json') \
+  || { echo "could not list issues — this says NOTHING about the corpus" >&2; exit 1; }
+
 found=0
 while IFS= read -r row; do
   [ -n "$row" ] || continue
@@ -204,16 +232,17 @@ while IFS= read -r row; do
     *) echo "#$n is $state"; found=$((found + 1)) ;;
   esac
 done <<EOF
-$(gh issue list -R owner/repo --state open --limit 1000 --json number,body --jq '.[] | @json')
+$rows
 EOF
 echo "$found unreadable"
 [ "$found" -eq 0 ]      # exit status IS the answer: 0 = the corpus is clean
 ```
 
-**A here-doc rather than a pipe, for the reason the whole skill keeps running
-into:** `… | while` puts the loop in a **subshell**, so `found` is incremented on
-a copy and the count is zero however many it printed. The status is the answer
-here, so that would have reported a clean corpus over a broken one.
+This one shows rules 1 and 3 together because it is where they bite hardest — the
+sweep's **exit status is its answer**, so either mistake reports a clean corpus it
+never looked at. A failed `gh` expands to nothing, the loop sees no rows, and
+`found=0` is indistinguishable from a healthy backlog; and inside a pipe the
+counter would be zero however many rows it printed. Measured both ways.
 
 Two things to hold on to:
 
