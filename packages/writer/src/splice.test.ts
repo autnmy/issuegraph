@@ -830,6 +830,80 @@ describe('the splice result is distinguished (#27) and verified (#28)', () => {
   });
 });
 
+describe('whole-block removal takes only its OWN armor', () => {
+  /**
+   * NEWLY REACHABLE BECAUSE OF #18, which is why it is fixed here rather than
+   * filed. Before this change a block carrying only `duplicate-of` could not be
+   * emptied at all — provenance had no clear — so the whole-block removal path
+   * was unreachable for it. `--no-duplicate-of` reaches it now.
+   *
+   * The armor test used to read the two neighbouring lines in isolation, and a
+   * BARE ``` matches `FENCE_OPEN` and `FENCE_CLOSE` alike. So a block sitting
+   * between the close of an earlier code block and the open of a later one read
+   * as armored. Measured: both fence lines were deleted and the two unrelated
+   * code blocks MERGED INTO ONE — structural corruption of the body, in the one
+   * package whose entire contract is byte preservation.
+   */
+  const CLEAR_IT: GeneratedEdges = { duplicateOf: { clear: true } };
+
+  it('does not eat fences belonging to the code blocks around it', () => {
+    const body = [
+      '```',
+      'an earlier code block',
+      '```',
+      '---',
+      'issuegraph:',
+      '  duplicate-of: "#42"',
+      '---',
+      '```',
+      'a later code block',
+      '```',
+      '',
+      'Tail.',
+    ].join('\n');
+    const next = spliceGeneratedEdges(body, CLEAR_IT) as string;
+    assert.notEqual(next, null);
+    // Four fence lines in, four fence lines out. Counting them is the whole
+    // assertion: losing any pair silently merges two code blocks.
+    assert.equal((next.match(/```/g) ?? []).length, 4, next);
+    assert.ok(next.includes('an earlier code block'), next);
+    assert.ok(next.includes('a later code block'), next);
+    assert.ok(!next.includes('issuegraph:'), 'the block itself must still go');
+  });
+
+  it('CONTROL: it still eats its OWN armor', () => {
+    // Without this control the test above would pass for a splice that had
+    // simply stopped removing fences at all, leaving an empty ``` ``` pair.
+    const block = renderFrontmatter({ duplicateOf: { repo: null, id: '42' } }, { fenceWrapped: true }) as string;
+    const next = spliceGeneratedEdges(`${block}\n\nTail.`, CLEAR_IT);
+    assert.equal(next, 'Tail.');
+  });
+
+  it('CONTROL: an armored block after an unrelated code block still loses its armor', () => {
+    // The parity scan must not over-correct: a genuinely armored block that
+    // happens to follow a closed code block is still armored.
+    const body = [
+      '```js',
+      'const x = 1;',
+      '```',
+      '',
+      '```yaml',
+      '---',
+      'issuegraph:',
+      '  duplicate-of: "#42"',
+      '---',
+      '```',
+      '',
+      'Tail.',
+    ].join('\n');
+    const next = spliceGeneratedEdges(body, CLEAR_IT) as string;
+    assert.notEqual(next, null);
+    assert.equal((next.match(/```/g) ?? []).length, 2, `the js block keeps its pair: ${next}`);
+    assert.ok(!next.includes('yaml'), `the armor goes with the block: ${next}`);
+    assert.ok(next.includes('const x = 1;'), next);
+  });
+});
+
 describe('a malformed edge value throws before anything is written (#18)', () => {
   /**
    * WHY THIS SUITE IS THE OTHER HALF OF #18. Replacing a bare value with
@@ -855,28 +929,117 @@ describe('a malformed edge value throws before anything is written (#18)', () =>
   const REF = { repo: null, id: '5' } as const;
   const BODY = '---\nissuegraph:\n  blocked-by:\n    - "#1"\n  duplicate-of: "#2"\n  priority: 1\n---\n\nBody.';
 
-  const MALFORMED: readonly (readonly [label: string, edges: unknown])[] = [
-    ['the old provenance spelling: null', { decomposedFrom: null }],
-    ['the old single spelling: a bare ref', { duplicateOf: REF }],
-    ['the old list spelling: a bare array', { blockedBy: [REF] }],
-    ['neither key', { serializeWith: {} }],
-    ['a misspelled key', { duplicateOf: { st: REF } }],
-    ['clear: false — a third meaning nobody needs', { duplicateOf: { clear: false } }],
-    ['both arms at once', { duplicateOf: { set: REF, clear: true } }],
-    ['a number', { duplicateOf: 42 }],
-    ['an array', { duplicateOf: [] }],
-    ['set with no value', { duplicateOf: { set: undefined } }],
+  /**
+   * EACH ROW CARRIES THE REASON IT MUST REPORT, not just "it threw".
+   *
+   * Asserting only that a prefixed `TypeError` escaped would pass for a guard
+   * whose four reason branches had all been garbled into one — the message is
+   * the entire value of refusing here rather than crashing somewhere downstream,
+   * so the message is what the test pins. Raised in review.
+   */
+  const MALFORMED: readonly (readonly [label: string, edges: unknown, reason: string])[] = [
+    ['the old provenance spelling: null', { decomposedFrom: null }, 'not a plain object'],
+    ['the old single spelling: a bare ref', { duplicateOf: REF }, 'names neither'],
+    ['the old list spelling: a bare array', { blockedBy: [REF] }, 'not a plain object'],
+    ['neither key', { serializeWith: {} }, 'names neither'],
+    ['a misspelled key', { duplicateOf: { st: REF } }, 'names neither'],
+    ['clear: false — a third meaning nobody needs', { duplicateOf: { clear: false } }, 'only ever `true`'],
+    ['both arms at once', { duplicateOf: { set: REF, clear: true } }, 'names both'],
+    ['a number', { duplicateOf: 42 }, 'not a plain object'],
+    ['an array', { duplicateOf: [] }, 'not a plain object'],
+    ['set with no value', { duplicateOf: { set: undefined } }, 'names neither'],
+
+    // THE ROW THIS SUITE WAS MISSING, and the only one whose old behaviour was
+    // SILENT. `{ set: null }` is the naive mechanical wrap of the pre-#18
+    // spelling — a caller migrating `decomposedFrom: null` by adding `set:`
+    // around it — and it removed the entry and reported success. That is the
+    // exact data loss #18 exists to prevent, arriving through the fix for it.
+    // Found by two independent reviewers on different models.
+    ['set: null on a single — the naive wrap of the old spelling', { decomposedFrom: { set: null } }, 'carries no value'],
+    ['set: null on the verdict', { duplicateOf: { set: null } }, 'carries no value'],
+    ['set: null on a scheduling edge', { serializeWith: { set: null } }, 'carries no value'],
+    ['set: null on the list', { blockedBy: { set: null } }, 'carries no value'],
+
+    // A PAYLOAD OF THE WRONG SHAPE is named by the field rather than escaping
+    // from inside `renderRef`. `{ set: "#9" }` — a ref spelled as a string
+    // instead of an `IssueRef` — is a plausible caller mistake that used to
+    // report `ref id undefined is not a valid tracker identifier`.
+    ['a single set to a string', { duplicateOf: { set: '#9' } }, 'is a ref'],
+    ['a single set to a number', { duplicateOf: { set: 42 } }, 'is a ref'],
+    ['a single set to an array', { duplicateOf: { set: [] } }, 'is a ref'],
+    ['a list set to a number', { blockedBy: { set: 42 } }, 'is an array'],
+    ['a list set to a bare ref', { blockedBy: { set: REF } }, 'is an array'],
   ];
 
-  for (const [label, edges] of MALFORMED) {
+  for (const [label, edges, reason] of MALFORMED) {
     it(`throws on ${label}`, () => {
       assert.throws(
         () => spliceResult(BODY, edges as GeneratedEdges),
-        (error: unknown) => error instanceof TypeError && /issuegraph splice:/.test(String(error)),
-        label,
+        (error: unknown) =>
+          error instanceof TypeError &&
+          /issuegraph splice:/.test(String(error)) &&
+          String(error).includes(reason),
+        `${label} — expected the message to say ${JSON.stringify(reason)}`,
       );
     });
   }
+
+  it('THE SNAPSHOT: a value that CHANGES between reads cannot make the call lie', () => {
+    // A stateful getter returned a valid ref while the guard looked, then
+    // `null` when the insert builder and the verifier looked. Measured before
+    // the fix: the property was read THREE times, the existing entry was
+    // removed, `ownedFieldMismatch` compared null against null and agreed, and
+    // the call returned `spliced` — reporting success for the exact opposite of
+    // what it was asked to do. No refusal, no crash, a persisted wrong body.
+    //
+    // The fix is not another check: each owned property is read ONCE into a
+    // snapshot, and ownership, insertion and verification all read that. A
+    // value that changes afterwards cannot be seen to change, which is why this
+    // test asserts an OUTCOME rather than a read count.
+    const seeded = '---\nissuegraph:\n  duplicate-of: "#42"\n  priority: 1\n---\n\nBody.';
+    let reads = 0;
+    const stateful = {
+      get set(): typeof REF | null {
+        return reads++ === 0 ? REF : null;
+      },
+    };
+    const result = spliceResult(seeded, { duplicateOf: stateful } as unknown as GeneratedEdges);
+
+    // Either outcome is defensible — refuse it, or honour the first read. What
+    // is NOT defensible is `spliced` with the entry gone, which is what the
+    // caller never asked for and was told had succeeded.
+    if (result.outcome === 'spliced') {
+      const data = parseFrontmatter(result.body).data;
+      assert.deepEqual(
+        data?.duplicateOf,
+        REF,
+        'reported success while REMOVING the entry the call asked it to set',
+      );
+      assert.equal(data?.priority, 1, 'and the unowned neighbour must survive either way');
+    }
+  });
+
+  it('a getter on the OUTER property is snapshotted too', () => {
+    // The same hole one level up: `edges.duplicateOf` itself is a getter. The
+    // guard reads the property to validate it and every later site reads it
+    // again, so a snapshot taken only of the INNER wrapper would still let this
+    // one through.
+    const seeded = '---\nissuegraph:\n  duplicate-of: "#42"\n  priority: 1\n---\n\nBody.';
+    let reads = 0;
+    const edges = {
+      get duplicateOf(): unknown {
+        return reads++ === 0 ? { set: REF } : { clear: true };
+      },
+    };
+    const result = spliceResult(seeded, edges as unknown as GeneratedEdges);
+    if (result.outcome === 'spliced') {
+      assert.deepEqual(
+        parseFrontmatter(result.body).data?.duplicateOf,
+        REF,
+        'reported success while REMOVING the entry the call asked it to set',
+      );
+    }
+  });
 
   it('runs AHEAD of locateBlock, so a malformed request is not answered `no-block`', () => {
     // THE ORDERING, TESTED WHERE IT IS ACTUALLY OBSERVABLE. "The body was not

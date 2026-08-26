@@ -81,7 +81,7 @@ function settle(
   body: string,
   next: string,
   intent: 'edit' | 'remove',
-  edges: GeneratedEdges,
+  edges: EdgeSnapshot,
 ): SpliceResult {
   const after = parseFrontmatter(next);
   const before = parseFrontmatter(body);
@@ -156,12 +156,12 @@ function sameRef(a: IssueRef | null, b: IssueRef | null): boolean {
  * here even in principle. Line preservation protects those; this checks what
  * this call claims to have written.
  */
-function ownedFieldMismatch(edges: GeneratedEdges, after: Frontmatter | null): string | null {
+function ownedFieldMismatch(edges: EdgeSnapshot, after: Frontmatter | null): string | null {
   for (const key of SPLICE_OWNED_FIELDS) {
-    if (!owns(edges, key)) continue;
+    if (!edges.owned.has(key)) continue;
     const { property } = SPLICE_FIELD_OWNERSHIP[key];
     if (property === 'blockedBy') {
-      const wanted = written(edges.blockedBy) ?? [];
+      const wanted = edges.blockedBy;
       // A NULL PARSE IS AN EMPTY DECLARATION HERE, not a failure: the
       // whole-block removal path legitimately ends with no block, and clearing
       // `blocked-by` is what asked for that.
@@ -175,9 +175,9 @@ function ownedFieldMismatch(edges: GeneratedEdges, after: Frontmatter | null): s
     }
     // A CLEAR IS VERIFIED LIKE ANY OTHER WRITE, which the previous shape could
     // not express: a field whose only empty spelling meant *leave alone* had no
-    // removal for this to check. `written` reads a clear as `null`, so "asked
-    // for none, the result reads #7" is a reportable failure now.
-    const wanted = written(edges[property]);
+    // removal for this to check. The snapshot records a clear as `null`, so
+    // "asked for none, the result reads #7" is a reportable failure now.
+    const wanted = edges[property];
     const got = after === null ? null : after[property];
     if (!sameRef(wanted, got)) {
       return `${key} did not land: asked for ${wanted === null ? 'none' : renderRef(wanted)}, the result reads ${got === null ? 'none' : renderRef(got)}`;
@@ -232,17 +232,39 @@ export type EdgeWrite<T> =
   | { readonly clear: true; readonly set?: never };
 
 /**
- * What a write puts in the block: the value for a `set`, and `null` for a clear
- * or for a field this call does not name.
+ * ONE CALL'S EDGES, READ EXACTLY ONCE.
  *
- * ONE READER FOR EVERY SITE that asks "what should be there when this is done".
- * The insert builder and {@link ownedFieldMismatch} ask the same question of
- * the same value, and answering it twice is how this package accumulated four
- * copies of its last per-field rule.
+ * WHY A SNAPSHOT RATHER THAN READING `edges` WHERE IT IS NEEDED. The input is a
+ * caller's object, and reading a property off it is a CALL, not a lookup: a
+ * getter can answer differently every time. The shape this replaces read each
+ * owned property THREE times — once to validate it, once to build the inserted
+ * lines, once to verify the result — and a value that changed between those
+ * reads made all three disagree.
+ *
+ * Measured on a stateful getter returning a ref and then `null`: the guard
+ * accepted a SET, the builder wrote a CLEAR, `ownedFieldMismatch` asked for
+ * `null`, found `null`, and agreed — and the call returned `spliced`. The
+ * caller was told its write succeeded while the entry it asked to SET had been
+ * removed. No refusal, no crash, a persisted wrong body. Found independently by
+ * two reviewers on different models, which is the corroboration that made it
+ * worth fixing structurally rather than patching the one read that showed it.
+ *
+ * THE REPAIR IS NOT A FOURTH CHECK. Every owned property is read ONCE, here,
+ * and ownership, insertion and verification all read this — so a value that
+ * changes afterwards cannot be seen to change. Same move
+ * {@link ownedFieldMismatch} records for its own class: one mechanical
+ * guarantee rather than one fix per shape.
+ *
+ * `blockedBy` is always an array. A clear and an unnamed field both flatten to
+ * `[]`, because a list with no entries renders no lines either way.
  */
-function written<T>(write: EdgeWrite<T> | undefined): T | null {
-  if (write === undefined || write.clear === true) return null;
-  return write.set;
+interface EdgeSnapshot {
+  /** The fields this call owns — the ones it named at all. */
+  readonly owned: ReadonlySet<SpliceOwnedField>;
+  readonly blockedBy: readonly IssueRef[];
+  readonly serializeWith: IssueRef | null;
+  readonly decomposedFrom: IssueRef | null;
+  readonly duplicateOf: IssueRef | null;
 }
 /**
  * What one splice call did — a distinguished result, because `string | null`
@@ -411,8 +433,17 @@ export function isSpliceOwnedField(value: unknown): value is SpliceOwnedField {
  * a non-clearable field could only be owned when its property was non-`null` —
  * `null` there meant *leave alone*, so treating presence as ownership would
  * have deleted the entry. {@link EdgeWrite} removed the overload, so presence
- * is now the whole question and the branch is gone with the flag.
+ * is the whole question and the branch is gone with the flag.
+ *
+ * IT ASKS THE SNAPSHOT, NOT THE CALLER'S OBJECT. Ownership used to be decided
+ * by re-reading `edges[property]`, which is a getter call on a value the caller
+ * controls — so a field could be owned when the walk asked and unowned when the
+ * verifier did. {@link EdgeSnapshot} settles it once.
  */
+function owns(edges: EdgeSnapshot, key: string): boolean {
+  return isSpliceOwnedField(key) && edges.owned.has(key);
+}
+
 /** The parser's empty form, for an uneditable block whose YAML did not parse. */
 const EMPTY_FRONTMATTER: Frontmatter = Object.freeze({
   blockedBy: [],
@@ -423,11 +454,6 @@ const EMPTY_FRONTMATTER: Frontmatter = Object.freeze({
   priority: null,
   evidence: null,
 });
-
-function owns(edges: GeneratedEdges, key: string): boolean {
-  if (!isSpliceOwnedField(key)) return false;
-  return edges[SPLICE_FIELD_OWNERSHIP[key].property] !== undefined;
-}
 
 /**
  * Splice the owned generated edges into the canonical block, returning a
@@ -498,20 +524,71 @@ function describeValue(value: unknown): string {
   return `${type} ${String(value)}`;
 }
 
-/** Why a value is not an {@link EdgeWrite}, or `null` when it is one. */
-function edgeWriteDefect(write: unknown): string | null {
+/** A refusal that names the field, the value, and what is wrong with it. */
+function refuseWrite(key: SpliceOwnedField, value: unknown, defect: string): TypeError {
+  return new TypeError(
+    `issuegraph splice: ${key} must be { set: … } or { clear: true }, got ${describeValue(value)} — ${defect}`,
+  );
+}
+
+/**
+ * Read one owned field's write, ONCE, and return what should end up in the
+ * block — the value for a set, `null` for a clear.
+ *
+ * EVERY PROPERTY IS READ INTO A LOCAL BEFORE ANYTHING IS DECIDED, and that is
+ * the point rather than a style: `record['set']` is a getter call on a caller's
+ * object, so testing it and then returning it are two different reads that can
+ * disagree. {@link EdgeSnapshot} explains what that cost.
+ *
+ * IT REFUSES `{ set: null }`, and this arm is the one that matters. `null` is
+ * the pre-#18 spelling, so the naive mechanical migration is to wrap it —
+ * `decomposedFrom: null` becomes `decomposedFrom: { set: null }` — and that
+ * shape used to pass every check and REMOVE the entry. Silently: the builder
+ * wrote nothing, the verifier asked for `null`, the parse returned `null`, and
+ * the call reported success. The exact provenance data loss #18 exists to
+ * prevent, arriving through the fix for it. Both a local reviewer and an
+ * independent cross-model pass found it, at full confidence.
+ *
+ * IT ALSO CHECKS THE PAYLOAD'S SHAPE, so a wrong one is named by its field
+ * rather than escaping from inside `renderRef`. `{ set: "#9" }` — a ref spelled
+ * as a string, which is a plausible thing to write — used to report `ref id
+ * undefined is not a valid tracker identifier`, naming neither the field nor
+ * what was actually wrong. Ref CONTENTS stay `renderRef`'s to judge; this only
+ * asks whether the payload is the right kind of thing.
+ */
+function readEdgeWrite(key: SpliceOwnedField, write: unknown): readonly IssueRef[] | IssueRef | null {
   if (typeof write !== 'object' || write === null || Array.isArray(write)) {
-    // Phrased as the DEFECT, like the three below it — `got 42 — a write is an
-    // object` read as an assertion that it was one. Raised in review.
-    return 'it is not a plain object';
+    // Phrased as the DEFECT, like the arms below — `got 42 — a write is an
+    // object` read as an assertion that it WAS one. Raised in review.
+    throw refuseWrite(key, write, 'it is not a plain object');
   }
   const record: Readonly<Record<string, unknown>> = write as Readonly<Record<string, unknown>>;
-  const setting = record['set'] !== undefined;
-  const clearing = record['clear'] !== undefined;
-  if (setting && clearing) return 'it names both, and they contradict each other';
-  if (!setting && !clearing) return 'it names neither';
-  if (clearing && record['clear'] !== true) return '`clear` is only ever `true`';
-  return null;
+  const set = record['set'];
+  const clear = record['clear'];
+  const setting = set !== undefined;
+  const clearing = clear !== undefined;
+
+  if (setting && clearing) throw refuseWrite(key, write, 'it names both, and they contradict each other');
+  if (!setting && !clearing) throw refuseWrite(key, write, 'it names neither');
+  if (clearing) {
+    if (clear !== true) throw refuseWrite(key, write, '`clear` is only ever `true`');
+    return null;
+  }
+  if (set === null) {
+    throw refuseWrite(key, write, '`set` carries no value — a removal is spelled `{ clear: true }`');
+  }
+  if (SPLICE_FIELD_OWNERSHIP[key].property === 'blockedBy') {
+    if (!Array.isArray(set)) throw refuseWrite(key, write, '`set` on a list field is an array of refs');
+    return set as readonly IssueRef[];
+  }
+  // `Array.isArray` as well as the `typeof` test: an array IS an object, so
+  // `{ set: [] }` on a single field slipped through the type check alone and
+  // reached `renderRef`, which reported `ref id undefined` — naming neither
+  // the field nor the actual mistake.
+  if (typeof set !== 'object' || Array.isArray(set)) {
+    throw refuseWrite(key, write, '`set` on a single field is a ref');
+  }
+  return set as IssueRef;
 }
 
 /**
@@ -538,25 +615,78 @@ function edgeWriteDefect(write: unknown): string | null {
  * IT RUNS AHEAD OF `locateBlock`, so a call carrying one good field and one bad
  * one cannot half-apply.
  */
-function assertEdgeWrites(edges: GeneratedEdges): void {
+function snapshotEdges(edges: GeneratedEdges): EdgeSnapshot {
+  const owned = new Set<SpliceOwnedField>();
+  const values: Record<string, readonly IssueRef[] | IssueRef | null> = {
+    blockedBy: [],
+    serializeWith: null,
+    decomposedFrom: null,
+    duplicateOf: null,
+  };
+
   for (const key of SPLICE_OWNED_FIELDS) {
-    // Read through the ownership table and widen to `unknown` rather than
+    const { property } = SPLICE_FIELD_OWNERSHIP[key];
+    // ONE READ OF THE OUTER PROPERTY TOO, not just of `set`/`clear` inside it.
+    // `edges.duplicateOf` is itself a getter on a caller's object, so a
+    // snapshot that only froze the inner wrapper would leave the same hole one
+    // level up — validated as `{ set: ref }`, read again as `{ clear: true }`.
+    //
+    // Read through the ownership table and widened to `unknown` rather than
     // casting `edges` to an index signature: the table is already the single
     // source of which property carries which field, and a cast would let a
     // property that is NOT in the table be read here without anything noticing.
-    const write: unknown = edges[SPLICE_FIELD_OWNERSHIP[key].property];
+    const write: unknown = edges[property];
     if (write === undefined) continue;
-    const defect = edgeWriteDefect(write);
-    if (defect !== null) {
-      throw new TypeError(
-        `issuegraph splice: ${key} must be { set: … } or { clear: true }, got ${describeValue(write)} — ${defect}`,
-      );
-    }
+    owned.add(key);
+    values[property] = readEdgeWrite(key, write);
   }
+
+  return Object.freeze({
+    owned,
+    blockedBy: (values['blockedBy'] ?? []) as readonly IssueRef[],
+    serializeWith: values['serializeWith'] as IssueRef | null,
+    decomposedFrom: values['decomposedFrom'] as IssueRef | null,
+    duplicateOf: values['duplicateOf'] as IssueRef | null,
+  });
 }
 
-export function spliceGeneratedEdges(body: string, edges: GeneratedEdges): SpliceResult {
-  assertEdgeWrites(edges);
+/**
+ * Does the fence line at `index` OPEN a fence, or close one an earlier line
+ * opened?
+ *
+ * A BARE ``` MATCHES BOTH PATTERNS — `FENCE_CLOSE` is a strict subset of
+ * `FENCE_OPEN` — so the question cannot be answered by looking at the line.
+ * Whether a fence line opens or closes is a property of every fence line
+ * BEFORE it, so this counts them: an even number before means this one opens.
+ *
+ * WHY IT EXISTS. The whole-block removal used to decide "these neighbours are
+ * my armor" from the two adjacent lines alone. A block sitting between the
+ * CLOSE of one code block and the OPEN of the next satisfied that test, so
+ * removing the block deleted both fence lines and MERGED the two unrelated code
+ * blocks into one — structural corruption of the body, in the package whose
+ * whole contract is byte preservation.
+ *
+ * The path was unreachable for such a block until #18: a block carrying only
+ * `duplicate-of` could not be emptied, because provenance had no clear. The new
+ * `--no-duplicate-of` reaches it, which is why this is repaired here rather
+ * than recorded.
+ */
+function opensFence(lines: readonly string[], index: number): boolean {
+  let fences = 0;
+  for (let i = 0; i < index; i++) {
+    if (FENCE_OPEN.test((lines[i] ?? '').trimEnd())) fences += 1;
+  }
+  return fences % 2 === 0;
+}
+
+export function spliceGeneratedEdges(body: string, rawEdges: GeneratedEdges): SpliceResult {
+  // READ AND VALIDATE THE CALLER'S EDGES ONCE, BEFORE ANYTHING ELSE. Every site
+  // below reads `edges`, never `rawEdges` — see {@link EdgeSnapshot} for what a
+  // second read of a caller's property cost. This also runs ahead of
+  // `locateBlock`, so a malformed request is refused rather than answered
+  // `no-block`, and a call carrying one good field and one bad one cannot
+  // half-apply.
+  const edges = snapshotEdges(rawEdges);
   const located = locateBlock(body);
   if (located.lines === null) return { outcome: 'no-block' };
   const section = locateSection(located.lines);
@@ -622,17 +752,13 @@ export function spliceGeneratedEdges(body: string, edges: GeneratedEdges): Splic
   // outcome; refusing either would be a rule with no defect behind it. A test
   // pins that they agree, so the equivalence cannot drift into a difference.
   const ins: string[] = [];
-  const blockedBy = written(edges.blockedBy) ?? [];
-  const decomposedFrom = written(edges.decomposedFrom);
-  const duplicateOf = written(edges.duplicateOf);
-  const serializeWith = written(edges.serializeWith);
-  if (blockedBy.length > 0) {
+  if (edges.blockedBy.length > 0) {
     ins.push(`${pad}blocked-by:`);
-    for (const ref of blockedBy) ins.push(`${itemPad}- ${renderRef(ref)}`);
+    for (const ref of edges.blockedBy) ins.push(`${itemPad}- ${renderRef(ref)}`);
   }
-  if (decomposedFrom !== null) ins.push(`${pad}decomposed-from: ${renderRef(decomposedFrom)}`);
-  if (duplicateOf !== null) ins.push(`${pad}duplicate-of: ${renderRef(duplicateOf)}`);
-  if (serializeWith !== null) ins.push(`${pad}serialize-with: ${renderRef(serializeWith)}`);
+  if (edges.decomposedFrom !== null) ins.push(`${pad}decomposed-from: ${renderRef(edges.decomposedFrom)}`);
+  if (edges.duplicateOf !== null) ins.push(`${pad}duplicate-of: ${renderRef(edges.duplicateOf)}`);
+  if (edges.serializeWith !== null) ins.push(`${pad}serialize-with: ${renderRef(edges.serializeWith)}`);
 
   const insertAt = firstOwned ?? sectionHeader + 1;
 
@@ -659,7 +785,17 @@ export function spliceGeneratedEdges(body: string, edges: GeneratedEdges): Splic
       let to = blockEnd;
       const above = from > 0 ? (lines[from - 1] ?? '').trimEnd() : null;
       const below = to + 1 < lines.length ? (lines[to + 1] ?? '').trimEnd() : null;
-      if (above !== null && below !== null && FENCE_OPEN.test(above) && FENCE_CLOSE.test(below)) {
+      // THE PARITY CHECK IS THE LOAD-BEARING HALF. Matching the two patterns
+      // says only that the neighbours are fence-SHAPED; `opensFence` says the
+      // one above actually opens a fence rather than closing an earlier code
+      // block. Without it this removal merged the blocks on either side.
+      if (
+        above !== null &&
+        below !== null &&
+        FENCE_OPEN.test(above) &&
+        FENCE_CLOSE.test(below) &&
+        opensFence(lines, from - 1)
+      ) {
         from -= 1;
         to += 1;
       }

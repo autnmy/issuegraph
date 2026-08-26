@@ -425,10 +425,26 @@ describe('a write request naming a field the writer cannot act on', () => {
     assert.equal(setFields(CANONICAL_BODY, { serializeWith: null }).code, EXIT.ok);
   });
 
-  test('an unsupported key is reported ahead of a clear the writer cannot perform', () => {
+  test('an unsupported key is reported ahead of the OTHER refusal in the same request', () => {
     // Both are wrong with the request; the misspelling is the one the caller can
     // act on, and reporting the other would describe a request they did not make.
-    const message = setFromJs({ serialiseWith: REF_7, decomposedFrom: null }).stderr.join('\n');
+    //
+    // THE SECOND DEFECT USED TO BE `decomposedFrom: null`, an unperformable
+    // clear. #18 made that a real clear, so the pairing stopped being a pairing
+    // and this test quietly became a single-defect test that could no longer
+    // fail for the ordering it names. `priority` restores it: a render-only
+    // field is still refused in a body that already has a block, so there are
+    // genuinely two defects and the unsupported key must still win. Raised in
+    // review.
+    const result = setFromJs({ serialiseWith: REF_7, priority: 2 });
+    const message = result.stderr.join('\n');
     assert.ok(message.includes('serialiseWith'), message);
+    // ASSERTED ON THE EXIT CODE, not on the absence of the word "priority" —
+    // the unsupported-key message lists every ALLOWED field, and `priority` is
+    // one of them, so a substring test reads as a failure when the ordering is
+    // in fact correct. `usage` is the unsupported-key code; `refusedWrite` is
+    // the render-only one. Which code comes back IS the ordering.
+    assert.equal(result.code, EXIT.usage, `the unsupported key must win: ${message}`);
+    assert.ok(!message.includes('owns generated edges only'), `the render-only refusal must not fire: ${message}`);
   });
 });

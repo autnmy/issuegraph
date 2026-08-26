@@ -105,26 +105,34 @@ switch (result.outcome) {
 
 `{ set: [] }` on `blockedBy` is the same edit as `{ clear: true }` — a list with no entries renders no lines — and a test pins that they agree.
 
-**A malformed value throws**, before anything is read or written. `decomposedFrom: null`, a bare ref, a bare array, `{ clear: false }`, or `{ set, clear }` together are all programmer errors, and this package throws on those rather than guessing, exactly as it does for a malformed ref. A caller that half-applies is worse than one that stops.
+**A malformed value throws**, before anything is read or written. `decomposedFrom: null`, `{ set: null }`, a bare ref, a bare array, `{ clear: false }`, and `{ set, clear }` together are all programmer errors, and this package throws on those rather than guessing, exactly as it does for a malformed ref. A caller that half-applies is worse than one that stops.
 
-<details>
-<summary>Why the wrapper replaced a bare value, and what it broke (0.3.0)</summary>
+**The one mistake it cannot catch is a well-formed `{ clear: true }` you did not mean.** That is the migration hazard below, and it is the only way to lose data through this call.
 
-`null` used to do two incompatible jobs one field apart. For `serializeWith` it **removed** the entry; for `decomposedFrom` and `duplicateOf` it meant **leave it alone**, because the established caller shape for provenance is *write it when the block lacks one, never clobber one that is already there* — and such a caller passes `null` precisely to say so:
+### Migrating from `0.2.x`: omit the key, do not translate the `null`
+
+Before `0.3.0`, `null` did two incompatible jobs one field apart. For `serializeWith` it **removed** the entry; for `decomposedFrom` and `duplicateOf` it meant **leave it alone**, because the established caller shape for provenance is *write it when the block lacks one, never clobber one that is already there*:
 
 ```ts
-decomposedFrom: parsed.decomposedFrom === null ? ref : null,   // pre-0.3.0
+decomposedFrom: parsed.decomposedFrom === null ? ref : null,   // 0.2.x
 ```
 
-Reading that `null` as a removal would delete provenance on every refresh of a block that has one. So `null` was taken, and those two fields could be set and replaced but **never cleared** — a groomer that decided an issue was not a duplicate after all had to re-render the whole block, which is the lossy path this call exists to avoid.
-
-**Migrating: omit the key, do not translate the `null`.** The old idiom's `null` meant *leave alone*, so its replacement is absence — a mechanical rewrite to `{ clear: true }` reintroduces exactly the data loss the wrapper was added to prevent:
+That trailing `null` meant *leave it alone*, so **its replacement is absence** — not `{ clear: true }`:
 
 ```ts
 ...(parsed.decomposedFrom === null ? { decomposedFrom: { set: ref } } : {}),   // 0.3.0
 ```
 
-A ref becomes `{ set: ref }`, an array becomes `{ set: [...] }`, and a `serializeWith: null` that really did mean remove becomes `{ clear: true }`. TypeScript rejects every old spelling at the call site; JavaScript callers get a throw.
+A mechanical rewrite to `{ clear: true }` deletes provenance on every refresh of a block that has it — the exact data loss this release exists to make impossible. It is well-typed and the runtime guard cannot detect it, because a caller asking to clear and a caller who meant to leave the field alone send identical bytes. This is the one migration step to do by reading rather than by search-and-replace.
+
+Everything else is mechanical: a ref becomes `{ set: ref }`, an array becomes `{ set: [...] }`, and a `serializeWith: null` that really did mean remove becomes `{ clear: true }`. TypeScript rejects every old spelling at the call site; JavaScript callers get a throw.
+
+<details>
+<summary>Why the gap existed before 0.3.0</summary>
+
+`null` being taken is why `decomposed-from` and `duplicate-of` could be set and replaced but **never cleared**. A groomer that decided an issue was not a duplicate after all had to re-render the whole block — the lossy path this call exists to avoid, which discards extension fields, comments, and sibling top-level keys.
+
+Two alternatives were rejected. A **distinct sentinel** (a `CLEAR` symbol, so `null` keeps its meaning) leaves three spellings of one concept — `[]`, `null`, `CLEAR` — and cannot cross a JSON boundary, so `@issuegraph/cli` would need a fourth. A **separate `clearGeneratedEdges` verb** forces a caller that sets one edge while clearing another into two calls with two independent results, where the second can fail after the first already moved the body.
 
 </details>
 

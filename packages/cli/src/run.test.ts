@@ -8,6 +8,12 @@
  * the predicate behind them found five dishonest flags rather than two, and the
  * fix removes the class by generating the flag table from `fields.ts` instead of
  * listing it. These tests pin the predicate, not the two reported spellings.
+ *
+ * ONE OF THOSE TWO INSTANCES NO LONGER EXISTS. #18 made every owned field
+ * clearable, so there is no unperformable clear left to refuse — the flag table
+ * is still generated, and the tests below now pin that it offers a `--no-` form
+ * for every owned field and for none of the render-only three. The CLASS is
+ * unchanged; one of its two original spellings closed.
  */
 
 import assert from 'node:assert/strict';
