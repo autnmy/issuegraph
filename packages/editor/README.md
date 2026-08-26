@@ -2,7 +2,7 @@
 
 Everything that **mutates** an [Issuegraph](https://github.com/autnmy/issuegraph) document: the edit affordances, drawn as overlays on [`@issuegraph/viewer`](../viewer) and dispatched through [`@issuegraph/store`](../store).
 
-> **Not published yet.** The package is `private` while its surface is empty. It builds, typechecks, lints and tests with the rest of the workspace so the seam it exists to keep is enforced from the first commit — but a package with no API is not one anybody should be able to install. It goes public with the change that assembles the workspace and fixes its exports.
+> **Not published yet.** The package is `private` until the change that assembles the workspace fixes its exports. It builds, typechecks, lints and tests with the rest of the workspace, so the seam it exists to keep is enforced from the first commit.
 
 Layer 2 of three, and the whole of its contract:
 
@@ -42,9 +42,40 @@ A `together-with` edge has to be individually selectable, retypeable and deletab
 
 It is written down as a **declared** crossing rather than discovered later. Treat it as the precedent for declaring a crossing, never as permission for more.
 
+## The scale ladder
+
+The first surface to land, and the one that explains what layer 2 is for.
+
+The canvas is a **local** instrument — it answers "what surrounds this issue" — while the order list is complete at any size. So past its budget the canvas **refuses rather than degrades**: a refusal with a route forward reads as competence; a hairball reads as a bug.
+
+| Nodes | Behaviour |
+|---|---|
+| ≤ `GRAPH_NODE_BUDGET` | draw the neighbourhood |
+| up to `CLUSTER_ONLY_BUDGET` | component **capsules** — size, `blocked-by` count, chain depth, cycle flag |
+| beyond it | capsules truncated, and **search leads** |
+
+Both thresholds are the viewer's own exports, read rather than restated, so the ladder and the canvas cannot disagree about what "past budget" means.
+
+```ts
+import { renderScaleLadder, scaleReducer, INITIAL_SCALE_STATE } from '@issuegraph/editor';
+
+let state = INITIAL_SCALE_STATE;
+let { markup, styles, ladder } = renderScaleLadder(document, { state });
+
+// Every control publishes what it does: `data-ig-command`, plus `data-ig-target`
+// for a focus. Read them, reduce, render again.
+state = scaleReducer(state, { kind: 'focus', key: ladder.capsules[0].lead });
+```
+
+**Why this is here and not in the viewer.** Layer 1 already decides the same three tiers and draws a refusal — deliberately an *informational* one, because that package does not narrow: it renders exactly what it is given, so a control it published could never finish the action it advertised. Narrowing is the host's, and this is the host. What lands here is only the half layer 1 refused to own: a component the reader can choose, a search that reaches one, and a chip that opens the issues the canvas leaves out.
+
+**"Isolated" here means edge-free**, which is *not* `NormalizedDocument.isolated` — that field means "in no slot **and** on no edge", and in a grooming view every issue holds an order position, so it is empty however many relationship-free issues the backlog has. Isolated issues are the majority (248 of 312 in the design's own sample) and are excluded from the canvas by default; the chip states the count, because the count is the information they carry, and opens them **as a list**.
+
+**`ladder.canvas` is the canvas zone's document, never the rail's.** Narrowing the canvas is not narrowing the order. The complete order rail is rendered from the whole document by the workspace that assembles the zones.
+
 ## Status
 
-The surface is deliberately empty. Landing separately, each on its own change: the edge mutation-state overlays, the type picker and direction sentence, the three equivalent create paths, the re-evaluate surface, the ambient audit, the scale ladder, the first-pass review queue, and the three-zone workspace that assembles them and fixes this package's exports.
+Landing separately, each on its own change: the edge mutation-state overlays, the type picker and direction sentence, the three equivalent create paths, the re-evaluate surface, the ambient audit, the first-pass review queue, and the three-zone workspace that assembles them, wires the commands to a DOM and fixes this package's exports.
 
 ## Licence
 

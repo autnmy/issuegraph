@@ -160,6 +160,12 @@ describe('the public surface', () => {
   it('exports exactly what the package documents', () => {
     // A published package can add an export later and can never take one back,
     // so the surface is pinned rather than left to grow by accident.
+    //
+    // `clustersOf`, `element` and `renderMarkup` were added for
+    // `@issuegraph/editor`, which composes this package through its public
+    // surface and never reaches past it. Each replaced a second implementation
+    // out there — a components/cycle/depth pass whose input space would drift
+    // from this one, and a hand-rolled escaper over untrusted document text.
     assert.deepEqual(Object.keys(surface).sort(), [
       'CLUSTER_ONLY_BUDGET',
       'COLOR_TOKENS',
@@ -169,14 +175,17 @@ describe('the public surface', () => {
       'METRIC_TOKENS',
       'THEME_TOKENS',
       'TYPE_TOKENS',
+      'clustersOf',
       'dashArrayFor',
       'defaultTheme',
+      'element',
       'extendTheme',
       'initialNavigationState',
       'mountViewer',
       'navigate',
       'normalizeDocument',
       'reconcile',
+      'renderMarkup',
       'renderViewer',
       'resolveTheme',
       'themeCss',
