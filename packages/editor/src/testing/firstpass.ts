@@ -21,6 +21,7 @@ import type { FirstPassWords } from '../firstpass/words.ts';
  * content is a test's choice and not a default this file is smuggling in.
  */
 export const FIRST_PASS_WORDS: FirstPassWords = Object.freeze({
+  label: 'First pass',
   answers: Object.freeze({ apply: 'Yes', reject: 'No', skip: 'Later' }),
   answersLabel: 'Your answer',
   undo: 'Undo',

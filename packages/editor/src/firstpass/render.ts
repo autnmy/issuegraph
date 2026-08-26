@@ -34,8 +34,17 @@
  * ## It names itself without claiming a heading level
  *
  * Same call `picker/render.ts` records: a heading would be a claim about the
- * HOST's document outline, which a package rendered into an unknown page cannot
- * make.
+ * HOST's document outline — whether this surface is a section of something, and
+ * at what depth — which a package rendered into an unknown page cannot make.
+ *
+ * That refusal used to be the whole of it, and it left the root `<section>`
+ * with no accessible name at all: a screen-reader user navigating by landmarks
+ * met an unnamed generic region and could not tell it from any other. The
+ * refusal was right and the silence that followed it was not, so the region now
+ * carries an `aria-label` from {@link ./words.ts FirstPassWords} — which names
+ * the surface without asserting anything about where it sits in an outline. A
+ * host that wants it in the outline still wraps it in a heading of its own
+ * choosing.
  */
 
 import {
@@ -252,6 +261,11 @@ export function renderFirstPass(state: QueueState, options: FirstPassOptions): F
     'section',
     {
       class: 'ig-firstpass',
+      // NAMED WITHOUT CLAIMING AN OUTLINE POSITION. The heading refusal above
+      // is unchanged — a heading LEVEL is a claim about the host's document
+      // structure — but an unnamed `<section>` is a landmark a screen-reader
+      // user cannot identify, so the region carries the host's own name here.
+      'aria-label': words.label,
       'data-ig-state': view.state,
       [ANSWERED_ATTRIBUTE]: String(view.progress.answered),
       [FOUND_ATTRIBUTE]: String(view.progress.found),

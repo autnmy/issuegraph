@@ -179,11 +179,36 @@ describe('it ships the theme and its own sheet', () => {
   });
 });
 
-describe('it claims no heading level', () => {
-  it('names itself without one', () => {
+describe('it claims no heading level, and is still findable', () => {
+  it('draws no heading', () => {
     // A heading would be a claim about the HOST's document outline, which a
     // package rendered into an unknown page cannot make.
     const { markup } = renderFirstPass(openQueue(candidates(1)), OPTIONS);
     assert.equal(/<h[1-6]\b/.test(markup), false);
+  });
+
+  it('names the region anyway, in EVERY state', () => {
+    // Refusing the heading without supplying a name left the root section
+    // exposed to a landmark reader as an unnamed generic region. Asserted over
+    // all three states, because the root is drawn by one code path and a future
+    // per-state root would have to break this to exist.
+    let answered = openQueue(candidates(1));
+    answered = queueReducer(answered, { kind: 'answer', answer: 'skip' }).state;
+    for (const [name, state] of [
+      ['asking', openQueue(candidates(2))],
+      ['finished', answered],
+      ['empty', openQueue([])],
+    ] as const) {
+      const { markup } = renderFirstPass(state, OPTIONS);
+      assert.match(markup, new RegExp(`<section[^>]*aria-label="${FIRST_PASS_WORDS.label}"`), name);
+    }
+  });
+
+  it('takes the name from the host rather than writing one', () => {
+    const { markup } = renderFirstPass(openQueue(candidates(1)), {
+      words: { ...FIRST_PASS_WORDS, label: 'Erstdurchgang' },
+    });
+    assert.match(markup, /aria-label="Erstdurchgang"/);
+    assert.equal(markup.includes(FIRST_PASS_WORDS.label), false);
   });
 });
