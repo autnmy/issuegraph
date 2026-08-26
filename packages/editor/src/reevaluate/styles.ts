@@ -146,7 +146,8 @@ export const reevaluateStylesheet = `
   align-items: baseline;
 }
 
-.ig-delta-key {
+.ig-delta-key,
+.ig-delta-ref {
   font-family: var(--ig-font-mono);
   color: var(--ig-text-muted);
 }

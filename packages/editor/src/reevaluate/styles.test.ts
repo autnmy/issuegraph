@@ -6,7 +6,7 @@ import { THEME_TOKENS, renderViewer, viewerStylesheet } from '@issuegraph/viewer
 
 import { renderReevaluate } from './render.ts';
 import { reevaluateStylesheet } from './styles.ts';
-import { WORDS, editOf, orderOf, railOf } from '../testing/reevaluate.ts';
+import { WORDS, editOf, orderOf, railOf, unitRailOf } from '../testing/reevaluate.ts';
 
 /** The stylesheet with its comments removed — a comment is not a declaration. */
 function withoutComments(css: string): string {
@@ -18,48 +18,79 @@ function classesIn(markup: string): string[] {
 }
 
 /**
- * The classes LAYER 1 emits, taken from layer 1 itself.
+ * Every document these renders are taken over, in one place.
  *
- * Not from a change-free render of this surface: the status region is mounted
- * unconditionally now, so such a render carries this leaf's own chrome too —
- * and treating that as "the rail's" would excuse exactly those classes from the
- * unstyled check below. Asking the viewer directly cannot drift that way.
+ * BOTH sets below are derived from this SAME list — what this surface emits,
+ * and what layer 1 emits underneath it. Deriving them from different documents
+ * is what made an earlier version wrong in both directions at once: a rail with
+ * no edges draws no badges, so layer 1's badge classes looked like this
+ * package's and reported as unstyled, while a state this surface renders only
+ * for a multi-member unit had no render at all and its rules looked orphaned.
  */
-const RAIL_CLASSES: ReadonlySet<string> = new Set(
-  classesIn(renderViewer(railOf(['a', 'b']), { projection: 'linear' }).markup),
-);
+const DOCUMENTS = [
+  { document: railOf(['b', 'a', 'c', 'new']), change: undefined, status: undefined },
+  {
+    document: railOf(['b', 'a', 'c', 'new']),
+    change: diffOrder(
+      orderOf(['a', 'b', 'c', 'gone'], ['b']),
+      orderOf(['b', 'a', 'c', 'new']),
+      editOf(),
+    ),
+    status: undefined,
+  },
+  {
+    document: railOf(['b', 'a', 'c', 'new']),
+    change: diffOrder(
+      orderOf(['a', 'b', 'c', 'gone'], ['b']),
+      orderOf(['b', 'a', 'c', 'new']),
+      editOf(),
+    ),
+    status: 'held' as const,
+  },
+  {
+    // An edit that landed and moved nothing renders a different summary shape.
+    document: railOf(['a', 'b']),
+    change: diffOrder(orderOf(['a', 'b']), orderOf(['a', 'b']), editOf()),
+    status: undefined,
+  },
+  {
+    // A chip speaking for TWO members, the only shape that names them.
+    document: unitRailOf(),
+    change: diffOrder(
+      orderOf(['lead', 'partner', 'other']),
+      orderOf(['other', 'lead', 'partner']),
+      editOf(),
+    ),
+    status: undefined,
+  },
+];
 
 /**
  * Every class this package can emit.
  *
  * The union of SEVERAL renders, not one, because the surface's states exclude
- * each other: an edit either moved something or it did not, and a rail is
- * either held or settled. One render would leave half the stylesheet looking
- * orphaned and the test would fail on rules that are perfectly alive.
+ * each other: an edit either moved something or it did not, a rail is either
+ * held or settled, and a chip speaks for one member or several. One render
+ * would leave most of the stylesheet looking orphaned.
  */
-const EMITTED: ReadonlySet<string> = (() => {
-  const moved = diffOrder(
-    orderOf(['a', 'b', 'c', 'gone'], ['b']),
-    orderOf(['b', 'a', 'c', 'new']),
-    editOf(),
-  );
-  const still = orderOf(['a', 'b']);
-  return new Set(
-    [
-      renderReevaluate(railOf(['b', 'a', 'c', 'new']), { words: WORDS, change: moved }).markup,
-      renderReevaluate(railOf(['b', 'a', 'c', 'new']), {
+const EMITTED: ReadonlySet<string> = new Set(
+  DOCUMENTS.flatMap(({ document, change, status }) =>
+    classesIn(
+      renderReevaluate(document, {
         words: WORDS,
-        change: moved,
-        status: 'held',
+        ...(change === undefined ? {} : { change }),
+        ...(status === undefined ? {} : { status }),
       }).markup,
-      renderReevaluate(railOf(['a', 'b']), {
-        words: WORDS,
-        change: diffOrder(still, orderOf(['a', 'b']), editOf()),
-      }).markup,
-      renderReevaluate(railOf(['a', 'b']), { words: WORDS }).markup,
-    ].flatMap(classesIn),
-  );
-})();
+    ),
+  ),
+);
+
+/** The classes LAYER 1 emits, over those same documents, taken from layer 1. */
+const RAIL_CLASSES: ReadonlySet<string> = new Set(
+  DOCUMENTS.flatMap(({ document }) =>
+    classesIn(renderViewer(document, { projection: 'linear' }).markup),
+  ),
+);
 
 describe('the re-evaluate stylesheet carries structure, never a value', () => {
   const css = withoutComments(reevaluateStylesheet);

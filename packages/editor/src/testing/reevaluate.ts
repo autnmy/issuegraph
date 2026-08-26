@@ -69,6 +69,32 @@ export function railOf(keys: readonly string[]): ViewerDocument {
 }
 
 /**
+ * A rail whose rank-2 row is a two-member `together-with` unit.
+ *
+ * The unit is one ROW keyed by its lead while the order carries a row per ref,
+ * so this is the shape where a chip speaks for more than one issue — and the
+ * only shape that exercises attributing each fact to the member it is about.
+ */
+export function unitRailOf(): ViewerDocument {
+  return {
+    issues: ['lead', 'partner', 'other'].map((key) => ({
+      key,
+      title: `Issue ${key}`,
+      open: true,
+      priority: 2,
+    })),
+    edges: [{ field: 'together-with', from: 'lead', to: 'partner' }],
+    order: {
+      slots: [
+        { rank: 1, lead: 'other', members: ['other'], ready: true, holds: [] },
+        { rank: 2, lead: 'lead', members: ['lead', 'partner'], ready: true, holds: [] },
+      ],
+      excluded: [],
+    },
+  };
+}
+
+/**
  * A host vocabulary.
  *
  * Every entry is distinct and none of it is a substring of another, so an

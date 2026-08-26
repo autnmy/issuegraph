@@ -176,8 +176,15 @@ function summarySpec(summary: ChangeSummary | null, words: ChangeWords): Element
  * wants the endpoints reads them off `view.chips[].deltas`, which carries every
  * `RankDelta` untouched.
  */
-function memberSpec(delta: RankDelta, words: ChangeWords): ElementSpec {
+function memberSpec(delta: RankDelta, words: ChangeWords, named: boolean): ElementSpec {
   return element('span', { class: 'ig-delta-member', 'data-ref': delta.ref }, [
+    // NAMED ONLY WHEN THE NAME ADDS SOMETHING. On a chip whose single member IS
+    // the row, the row key above has already said it and repeating it is noise.
+    // Everywhere else the ref is load-bearing: two members reading
+    // `lead 1 down 1 down` says the row moved twice rather than that a unit of
+    // two each moved down one, and a lone member that is NOT the lead is a
+    // change to an issue the row key does not name at all.
+    named ? element('span', { class: 'ig-delta-ref' }, [delta.ref]) : null,
     delta.movement === undefined
       ? null
       : element(
@@ -216,9 +223,14 @@ function memberSpec(delta: RankDelta, words: ChangeWords): ElementSpec {
  * it costs the host no word.
  */
 function chipSpec(chip: PlacedChip, words: ChangeWords): ElementSpec {
+  // One member whose ref IS the row: the key names it, so naming it again would
+  // be the only text on the chip that says nothing. Any other shape — several
+  // members, or a lone member the row is not named after — needs each fact
+  // attributed, or the chip reads as one row's facts repeated.
+  const named = chip.deltas.length > 1 || chip.deltas[0]?.ref !== chip.key;
   return element('li', { class: 'ig-delta-chip', [KEY_ATTRIBUTE]: chip.key }, [
     element('span', { class: 'ig-delta-key' }, [chip.key]),
-    ...chip.deltas.map((delta) => memberSpec(delta, words)),
+    ...chip.deltas.map((delta) => memberSpec(delta, words, named)),
   ]);
 }
 

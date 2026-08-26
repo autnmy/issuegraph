@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import { diffOrder } from '@issuegraph/store';
 
 import { renderReevaluate } from './render.ts';
-import { WORDS, editOf, orderOf, railOf, railRow, ranks } from '../testing/reevaluate.ts';
+import { WORDS, editOf, orderOf, railOf, railRow, ranks, unitRailOf } from '../testing/reevaluate.ts';
 
 describe('unaffected rows are left completely alone', () => {
   it('renders their markup byte-identically across an edit', () => {
@@ -115,6 +115,52 @@ describe('the computing state shows the previous order, greyed and labelled', ()
     const result = renderReevaluate(railOf(['a']), { words: WORDS });
     assert.match(result.markup, /data-order="settled"/);
     assert.equal(/class="ig-order-computing"/.test(result.markup), false);
+  });
+});
+
+describe('a chip attributes each fact to the issue it is about', () => {
+  it('names every member when a unit moves, so it does not read as one row twice', () => {
+    // Unattributed, a two-member unit each moving down one renders
+    // `lead 1 down 1 down` — which says the row moved TWICE.
+    const result = renderReevaluate(unitRailOf(), {
+      words: WORDS,
+      change: diffOrder(
+        orderOf(['lead', 'partner', 'other']),
+        orderOf(['other', 'lead', 'partner']),
+        editOf(),
+      ),
+    });
+    const chip = result.markup.match(/<li class="ig-delta-chip" data-ig-key="lead">.*?<\/li>/)?.[0];
+    assert.ok(chip !== undefined, 'no chip for the unit');
+    assert.match(chip, /<span class="ig-delta-ref">lead<\/span>/);
+    assert.match(chip, /<span class="ig-delta-ref">partner<\/span>/);
+  });
+
+  it('names a lone member the row is NOT named after', () => {
+    // The row key is the lead; the issue that changed is the partner. Saying
+    // only `lead` would attribute the change to an issue that did not change.
+    const result = renderReevaluate(unitRailOf(), {
+      words: WORDS,
+      change: diffOrder(
+        orderOf(['other', 'partner'], ['partner']),
+        orderOf(['other', 'partner']),
+        editOf(),
+      ),
+    });
+    const chip = result.markup.match(/<li class="ig-delta-chip" data-ig-key="lead">.*?<\/li>/)?.[0];
+    assert.ok(chip !== undefined, 'no chip for the unit');
+    assert.match(chip, /<span class="ig-delta-ref">partner<\/span>/);
+  });
+
+  it('does NOT repeat the row key when the only member IS the row', () => {
+    // The ordinary case. The key already names it, so a ref span would be the
+    // one piece of text on the chip that says nothing.
+    const result = renderReevaluate(railOf(['b', 'a']), {
+      words: WORDS,
+      change: diffOrder(orderOf(['a', 'b']), orderOf(['b', 'a']), editOf()),
+    });
+    assert.match(result.markup, /class="ig-delta-key">a</);
+    assert.equal(/class="ig-delta-ref"/.test(result.markup), false);
   });
 });
 
