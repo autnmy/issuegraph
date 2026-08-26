@@ -49,6 +49,51 @@ function refusedWithFooterAndExclusion(): ViewerDocument {
   return { issues, edges, order: { slots, excluded: [{ key: 'exc1', canonical: 'canon', reason: 'duplicate-of' as const }] } };
 }
 
+/**
+ * Every connector the markup draws, as `{ id, d }` in document order.
+ *
+ * PARSED RATHER THAN MATCHED PER IDENTITY, because `edgeIdentity` joins with
+ * `|` — which is ALTERNATION inside a RegExp. Interpolating one into a pattern
+ * un-escaped turns `data-ig-group="together-with|1|3"` into three alternatives,
+ * the last a bare `3`, so the pattern matches almost any markup. Written that
+ * way first: one assertion passed vacuously and another matched with an
+ * undefined capture group, which is the only reason it was caught. Reading the
+ * attributes out once and comparing them as STRINGS cannot fail that way.
+ */
+function connectors(markup: string): { id: string; d: string }[] {
+  return [...markup.matchAll(/<path class="ig-connector"[^>]*?data-ig-group="([^"]*)"[^>]*?\sd="([^"]*)"/g)].map(
+    (match) => ({ id: match[1] as string, d: match[2] as string }),
+  );
+}
+
+// A together unit written as a CHAIN — 1–2, 2–3 — which is what a pairwise walk
+// over the member list happens to reproduce.
+const togetherChain: ViewerDocument = {
+  issues: [
+    { key: '1', title: 'Lead', open: true, priority: 2 },
+    { key: '2', title: 'Partner', open: true, priority: 2 },
+    { key: '3', title: 'Third', open: true, priority: 2 },
+  ],
+  edges: [
+    { field: 'together-with', from: '1', to: '2' },
+    { field: 'together-with', from: '2', to: '3' },
+  ],
+  order: {
+    slots: [{ rank: 1, lead: '1', members: ['1', '2', '3'], ready: true, holds: [] }],
+    excluded: [],
+  },
+};
+
+// The SAME unit written as a STAR — 2–1, 3–1. §4.3.7 makes the two equivalent,
+// and only this one exposes an identity inferred from adjacency.
+const togetherStar: ViewerDocument = {
+  ...togetherChain,
+  edges: [
+    { field: 'together-with', from: '2', to: '1' },
+    { field: 'together-with', from: '3', to: '1' },
+  ],
+};
+
 describe('the graph projection', () => {
   it('draws a node for every laid-out key', () => {
     // COUNTED, not matched on `data-ig-key`. This asserted its own name through
@@ -497,47 +542,51 @@ describe('the graph projection', () => {
     // of the focus index — which is what this test is about — but they answer
     // the pointer with different subjects: clicking the enclosure selects the
     // unit, clicking the line between two members selects the edge joining them.
-    assert.match(
-      markup,
-      new RegExp(`class="ig-connector"[^>]*data-ig-group="${edgeIdentity('together-with', '1', '2')}"`),
+    assert.deepEqual(
+      connectors(markup).map((connector) => connector.id),
+      [edgeIdentity('together-with', '1', '2')],
     );
     assert.equal(/class="ig-connector"[^>]*data-ig-key=/.test(markup), false);
     assert.ok(groupAt > enclosureAt);
     assert.match(markup, /data-ig-key="1"[^>]*tabindex="0"/);
   });
 
-  it('gives each member PAIR in a unit its own connector identity', () => {
+  it('gives each declared together edge its own connector identity', () => {
     // A three-member unit draws TWO connectors. Both used to carry the slot's
     // lead, so an overlay could not tell them apart and a click on either named
     // the unit — which is the one subject an editor cannot delete or retype.
     // THREE MEMBERS, not two, because a two-member unit has exactly one
     // connector and would pass this test with the old shared value.
-    const threeWay: ViewerDocument = {
-      issues: [
-        { key: '1', title: 'Lead', open: true, priority: 2 },
-        { key: '2', title: 'Partner', open: true, priority: 2 },
-        { key: '3', title: 'Third', open: true, priority: 2 },
-      ],
-      edges: [
-        { field: 'together-with', from: '1', to: '2' },
-        { field: 'together-with', from: '2', to: '3' },
-      ],
-      order: {
-        slots: [{ rank: 1, lead: '1', members: ['1', '2', '3'], ready: true, holds: [] }],
-        excluded: [],
-      },
-    };
-
-    const markup = render(threeWay);
-    const identities = [...markup.matchAll(/class="ig-connector" data-ig-group="([^"]+)"/g)].map(
-      (match) => match[1] as string,
-    );
+    const identities = connectors(render(togetherChain)).map((connector) => connector.id);
 
     assert.deepEqual(identities, [
       edgeIdentity('together-with', '1', '2'),
       edgeIdentity('together-with', '2', '3'),
     ]);
     assert.equal(new Set(identities).size, 2, 'two connectors shared one identity');
+  });
+
+  it('draws a STAR group from its declared edges, not from adjacent members', () => {
+    // A writer joins a group by pointing at any existing member (§4.3.7), so a
+    // star is ordinary rather than exotic — and it is the shape a chain fixture
+    // cannot catch. Walking members pairwise published `together-with|2|3`, a
+    // relationship this document does not contain, so the identity resolved to
+    // no `StoredEdge`; meanwhile the real `1`–`3` edge had no connector at all.
+    // EVERY identity is checked against the declared set in BOTH directions —
+    // that nothing is invented, and that nothing is missed.
+    const normalized = normalizeDocument(togetherStar).document;
+    const drawn = connectors(renderMarkup(graphScene(normalized, {}).root)).map(
+      (connector) => connector.id,
+    );
+    const declared = normalized.edges
+      .filter((edge) => edge.field === 'together-with')
+      .map((edge) => edgeIdentity(edge.field, edge.from, edge.to));
+
+    assert.deepEqual([...drawn].sort(), [...declared].sort());
+    assert.ok(
+      !drawn.includes(edgeIdentity('together-with', '2', '3')),
+      'a connector was drawn for a relationship the document never declared',
+    );
   });
 
   it('derives connector endpoints from the members measured bounds', () => {
@@ -552,26 +601,49 @@ describe('the graph projection', () => {
     const partner = layout.nodes.get('2');
     assert.ok(lead !== undefined && partner !== undefined);
 
-    const markup = render(heldTogetherDocument);
-    const drawn = /class="ig-connector"[^>]*x1="([^"]+)" y1="([^"]+)" x2="([^"]+)" y2="([^"]+)"/.exec(
-      markup,
-    );
-    assert.ok(drawn !== null, 'no connector was drawn');
+    const drawn = connectors(render(heldTogetherDocument))[0];
+    assert.ok(drawn !== undefined, 'no connector was drawn');
 
-    assert.deepEqual(drawn.slice(1, 5).map(Number), [
+    // Adjacent rows, so the route is the straight segment across the gap.
+    const expected = [
       lead.x + lead.width / 2,
       lead.y + lead.height,
       partner.x + partner.width / 2,
       partner.y,
-    ]);
+    ].map((value) => value.toFixed(2));
+    assert.equal(drawn.d, `M ${expected[0]} ${expected[1]} L ${expected[2]} ${expected[3]}`);
+  });
 
-    // AND IT SPANS THE ROW GAP RATHER THAN CROSSING EITHER BOX. Members are
-    // placed consecutively in one column, so the line runs from the bottom edge
-    // of one to the top edge of the next; a connector that started anywhere
-    // inside a node would be occluded by it and could not be clicked.
-    assert.equal(Number(drawn[2]), lead.y + lead.height);
-    assert.equal(Number(drawn[4]), partner.y);
-    assert.ok(Number(drawn[4]) >= Number(drawn[2]), 'the connector runs back into the node above it');
+  it('routes a row-spanning connector clear of every member box', () => {
+    // Only a star produces one: its outer edge spans the row between its
+    // endpoints, and a straight line there would run behind the node in
+    // between — a hit target hidden by the thing it is meant to sit beside.
+    // ASSERTED AGAINST THE BOXES, not against the lane constant, so the test
+    // states the property (clear of every occupied x-range) rather than
+    // restating the implementation's arithmetic.
+    const normalized = normalizeDocument(togetherStar).document;
+    const layout = layoutGraph(normalized, defaultTheme);
+    const markup = renderMarkup(graphScene(normalized, {}).root);
+
+    const spanning = connectors(markup).find(
+      (connector) => connector.id === edgeIdentity('together-with', '1', '3'),
+    );
+    assert.ok(spanning !== undefined, 'the row-spanning edge drew no connector');
+
+    const xs = [...spanning.d.matchAll(/[ML] (-?[\d.]+) (-?[\d.]+)/g)].map((m) => Number(m[1]));
+    const verticalRun = Math.min(...xs);
+    const boxes = ['1', '2', '3'].map((key) => layout.nodes.get(key));
+
+    for (const box of boxes) {
+      assert.ok(box !== undefined);
+      assert.ok(
+        verticalRun < box.x,
+        `the connector runs at x=${verticalRun}, inside ${box.key}'s occupied range starting at ${box.x}`,
+      );
+    }
+    // And it is a routed path rather than the straight two-point form, which is
+    // what would put it back through the node between its endpoints.
+    assert.ok(xs.length > 2, 'the spanning connector was drawn straight through the row between');
   });
 
   it('gives every terminal marker its own hue, not the inherited text colour', () => {

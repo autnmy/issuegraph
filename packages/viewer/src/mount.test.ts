@@ -159,6 +159,43 @@ describe('mountViewer', () => {
     assert.equal(handle.state.focused, away, 'selecting an edge moved the keyboard tab stop');
   });
 
+  it('restores a connector selection passed in at mount', () => {
+    // THE FIRST DRAW HAS NO PRIOR SCENE, so `pointable` is empty and the
+    // pre-scene check had no evidence about a decoration identity — it cleared
+    // one before the graph was ever materialized. Every LATER redraw preserved
+    // it, so a host could hold a connector selection for as long as it stayed
+    // mounted and could never restore one across a remount, which is exactly
+    // the case a host restoring saved state hits.
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const edge = edgeIdentity('together-with', '1', '2');
+    const handle = mountViewer(container, heldTogetherDocument, {
+      projection: 'graph',
+      selected: edge,
+    });
+
+    assert.equal(handle.state.selected, edge);
+  });
+
+  it('still clears a selection passed in at mount that nothing draws', () => {
+    // THE OTHER HALF, and without it the fix above is indistinguishable from
+    // simply not checking. Deferring the decoration question to after
+    // materialize must not become "accept anything a host passes": an identity
+    // no scene drew is a selection of nothing and has to be cleared, and the
+    // host has to be TOLD rather than left holding it.
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const selected: (string | null)[] = [];
+    const handle = mountViewer(container, heldTogetherDocument, {
+      projection: 'graph',
+      selected: edgeIdentity('together-with', '404', '405'),
+      onSelect: (key: string | null) => selected.push(key),
+    });
+
+    assert.equal(handle.state.selected, null);
+    assert.deepEqual(selected, [null], 'the host was not told the selection was refused');
+  });
+
   it('keeps a connector selection across a redraw, and drops it when one stops drawing it', () => {
     // A decoration identity is absent from `byKey` by construction, so the
     // document-membership drop in `draw()` deselected it on the very next

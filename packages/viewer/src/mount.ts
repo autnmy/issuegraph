@@ -229,7 +229,16 @@ export function mountViewer(
     // membership alone deselected it on the very next redraw. Whether the NEW
     // scene still draws it is a different question, and it is answered below,
     // after materialize, exactly where the hover clear answers it.
-    if (state.selected !== null && !stillDrawn(state.selected)) {
+    //
+    // AND NOT AT ALL BEFORE THE FIRST DRAW, which is what `currentScene` tests.
+    // `pointable` is empty until a scene has been materialized, so on mount
+    // this check has NO evidence about decoration — it would clear a connector
+    // identity a host passed as `selected`, making a selection impossible to
+    // restore across a remount even though every later redraw preserves it.
+    // The post-materialize check settles it a few lines down, against a scene
+    // that exists; deferring costs one frame in which nothing renders an edge
+    // selection anyway.
+    if (currentScene !== null && state.selected !== null && !stillDrawn(state.selected)) {
       state = { ...state, selected: null };
     }
     if (root !== null) container.removeChild(root);
