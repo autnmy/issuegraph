@@ -573,9 +573,9 @@ function createdBy(commands: readonly surface.CreateCommand[]): Proposal | null 
 function keyboardCommands(kind: EdgeKind): readonly surface.CreateCommand[] {
   const digit = String(EDGE_FIELDS.indexOf(kind) + 1);
   const presses = [
-    keyIntent({ key: 'r' }, { focused: SUBJECT, match: null, selectedEdge: null, editableFocus: false }),
-    keyIntent({ key: digit }, { focused: null, match: null, selectedEdge: null, editableFocus: false }),
-    keyIntent({ key: 'Enter' }, { focused: null, match: OBJECT, selectedEdge: null, editableFocus: false }),
+    keyIntent({ key: 'r' }, { focused: SUBJECT, match: null, selectedEdge: null, interaction: 'canvas' }),
+    keyIntent({ key: digit }, { focused: null, match: null, selectedEdge: null, interaction: 'canvas' }),
+    keyIntent({ key: 'Enter' }, { focused: null, match: OBJECT, selectedEdge: null, interaction: 'canvas' }),
   ];
   return presses.flatMap((intent) => (intent.kind === 'create' ? [intent.command] : []));
 }
@@ -626,7 +626,7 @@ describe('done when: each path deletes and retypes, through one emitter each', (
     const edgeId = onlyEdge(seed).id;
     // Canvas and inspector delete controls hand the store this proposal; the
     // keyboard reaches it with `⌫`. One shape, arrived at three ways.
-    assert.deepEqual(keyIntent({ key: 'Backspace' }, { focused: null, match: null, selectedEdge: edgeId, editableFocus: false }), {
+    assert.deepEqual(keyIntent({ key: 'Backspace' }, { focused: null, match: null, selectedEdge: edgeId, interaction: 'canvas' }), {
       kind: 'propose',
       proposal: { op: 'delete', edgeId },
     });
@@ -635,7 +635,7 @@ describe('done when: each path deletes and retypes, through one emitter each', (
   it('retypes through the PICKER rather than a second emitter', () => {
     const seed = documentWith('blocked-by');
     const edgeId = onlyEdge(seed).id;
-    const intent = keyIntent({ key: 't' }, { focused: null, match: null, selectedEdge: edgeId, editableFocus: false });
+    const intent = keyIntent({ key: 't' }, { focused: null, match: null, selectedEdge: edgeId, interaction: 'canvas' });
     // `T` answers with the edge to open the picker on — not with a retype of its
     // own. The proposals then come from the one module that owns them.
     assert.deepEqual(intent, { kind: 'retype', edgeId });
@@ -652,11 +652,11 @@ describe('done when: a together-with edge is selectable and deletable', () => {
     // the time it reaches here it is an edge id like any other.
     const seed = documentWith('together-with');
     const edgeId = onlyEdge(seed).id;
-    assert.deepEqual(keyIntent({ key: 'Backspace' }, { focused: null, match: null, selectedEdge: edgeId, editableFocus: false }), {
+    assert.deepEqual(keyIntent({ key: 'Backspace' }, { focused: null, match: null, selectedEdge: edgeId, interaction: 'canvas' }), {
       kind: 'propose',
       proposal: { op: 'delete', edgeId },
     });
-    assert.deepEqual(keyIntent({ key: 't' }, { focused: null, match: null, selectedEdge: edgeId, editableFocus: false }), {
+    assert.deepEqual(keyIntent({ key: 't' }, { focused: null, match: null, selectedEdge: edgeId, interaction: 'canvas' }), {
       kind: 'retype',
       edgeId,
     });
@@ -704,7 +704,7 @@ describe('done when: no create path dispatches to a DataSource', () => {
     // asserts the source saw nothing — the behavioural half, and the one that
     // would fail if a future edit here reached for a store.
     createdBy(keyboardCommands('duplicate-of'));
-    keyIntent({ key: 'Backspace' }, { focused: null, match: null, selectedEdge: onlyEdge(seed).id, editableFocus: false });
+    keyIntent({ key: 'Backspace' }, { focused: null, match: null, selectedEdge: onlyEdge(seed).id, interaction: 'canvas' });
     pickerPlacement({ x: 10, y: 10 }, { width: 10, height: 10 }, { x: 0, y: 0, width: 100, height: 100 });
 
     assert.deepEqual([...source.pending()], []);

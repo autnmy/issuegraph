@@ -11,7 +11,7 @@ const EMPTY: KeyboardContext = Object.freeze({
   focused: null,
   match: null,
   selectedEdge: null,
-  editableFocus: false,
+  interaction: 'canvas',
 });
 
 const context = (over: Partial<KeyboardContext>): KeyboardContext => ({ ...EMPTY, ...over });
@@ -167,14 +167,14 @@ describe('a modified chord belongs to the platform, not to this map', () => {
   });
 });
 
-describe('an editable control owns its printable keys', () => {
+describe('the target search owns its printable keys', () => {
   // The flow §17b specifies is `R → digit → search → ⏎`, so the search box is
   // focused for the whole middle of it. A map that claimed printable keys there
   // would eat the reader's own query — and since most issue references contain
   // a digit, that breaks the loop for nearly every target.
   const editing = (over: Partial<KeyboardContext> = {}): KeyboardContext => ({
     ...context(over),
-    editableFocus: true,
+    interaction: 'target-search',
   });
 
   const surrendered = [
@@ -194,7 +194,7 @@ describe('an editable control owns its printable keys', () => {
       // The control: the SAME key in the SAME context binds when nothing is
       // being edited. Without it this would pass on a missing subject rather
       // than on the editable focus.
-      assert.notDeepEqual(keyIntent({ key }, { ...ctx, editableFocus: false }), { kind: 'none' });
+      assert.notDeepEqual(keyIntent({ key }, { ...ctx, interaction: 'canvas' }), { kind: 'none' });
     });
   }
 
@@ -230,6 +230,49 @@ describe('an editable control owns its printable keys', () => {
   });
 });
 
+describe('a control this package never heard of owns the keyboard entirely', () => {
+  // `elsewhere` is what closed the enumeration. Four review rounds each named a
+  // different owner — the platform, the target search, an input method, then an
+  // unrelated editable control — because the map was answering "who ELSE might
+  // own this press", which is an inventory of the host's widgets and cannot be
+  // bounded from in here. This state is every one of them that is not our own
+  // search box, so a fifth control needs no new code.
+  const elsewhere = (over: Partial<KeyboardContext> = {}): KeyboardContext => ({
+    ...context(over),
+    interaction: 'elsewhere',
+  });
+
+  const everyBinding = ['r', '1', '2', '3', '4', '5', 't', 'Backspace', 'Delete', 'Enter', 'Escape'];
+
+  for (const key of everyBinding) {
+    it(`hands ${key} back`, () => {
+      const ctx = elsewhere({
+        focused: SUBJECT,
+        match: OBJECT,
+        selectedEdge: edgeIdFor('blocked-by'),
+      });
+      assert.deepEqual(keyIntent({ key }, ctx), { kind: 'none' });
+      // The control: the same key, the same subjects, on the canvas. Without it
+      // every assertion above could pass on a missing subject instead.
+      assert.notDeepEqual(keyIntent({ key }, { ...ctx, interaction: 'canvas' }), { kind: 'none' });
+    });
+  }
+
+  it('surrenders Escape in particular, which the target search keeps', () => {
+    // The finding that produced this state. An inline title, a filter box or a
+    // modal needs `Escape` to cancel ITS OWN edit — and the documented handler
+    // calls `preventDefault()` on anything non-`none`, so claiming it makes the
+    // control uncancellable even when no create draft exists.
+    // The discriminating pair: `elsewhere` surrenders it, `target-search` does
+    // not, so this cannot pass by the map having gone silent everywhere.
+    assert.deepEqual(keyIntent({ key: 'Escape' }, elsewhere()), { kind: 'none' });
+    assert.deepEqual(
+      keyIntent({ key: 'Escape' }, { ...context({}), interaction: 'target-search' }),
+      { kind: 'create', command: { kind: 'cancel' } },
+    );
+  });
+});
+
 describe('an input method owns ⏎ and Escape while it is composing', () => {
   // The trap this covers: the IME owns exactly the two keys that SURVIVE
   // editable focus, so `survivesEditing` can never express it — those two are
@@ -237,7 +280,7 @@ describe('an input method owns ⏎ and Escape while it is composing', () => {
   // happens. Anyone entering CJK text hits this on the ordinary path.
   const composing = (over: Partial<KeyboardContext> = {}): KeyboardContext => ({
     ...context(over),
-    editableFocus: true,
+    interaction: 'target-search',
   });
 
   const owned = [
@@ -252,7 +295,7 @@ describe('an input method owns ⏎ and Escape while it is composing', () => {
       // The control, and it is the whole point of this suite: the SAME key in
       // the SAME context binds when nothing is composing. These two survive
       // editable focus, so without this the assertion above could pass for the
-      // `editableFocus` reason rather than the composition one.
+      // `target-search` reason rather than the composition one.
       assert.notDeepEqual(keyIntent({ key }, ctx), { kind: 'none' });
       assert.notDeepEqual(keyIntent({ key, isComposing: false }, ctx), { kind: 'none' });
     });

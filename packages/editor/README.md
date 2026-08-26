@@ -152,8 +152,9 @@ element.addEventListener('keydown', (event) => {
     focused,
     match,
     selectedEdge,
-    // Does a text control have focus right now? Only the shell can see this.
-    editableFocus: document.activeElement === searchInput,
+    // Which of the create flow's own interactions is the keyboard in?
+    // Only the shell can see this.
+    interaction: activeInteraction(),   // 'canvas' | 'target-search' | 'elsewhere'
   });
   if (intent.kind === 'none') return;   // someone else's key — let it through
   event.preventDefault();
@@ -161,18 +162,26 @@ element.addEventListener('keydown', (event) => {
 });
 ```
 
-There are four owners:
+**It asks about *our* interaction, not about who else might own the key** — and that is the design decision worth reading, because it replaced the obvious one. Four review rounds each found a different owner the map had failed to anticipate: the platform's `Cmd+R`, the target search's digits, an input method's `⏎`, then an unrelated editable control's `Escape`. Every fix was correct and every one invited the next, because they answered an unanswerable question. *Who else might own this press?* is an inventory of the **host's** widgets — unbounded from in here, and one entry longer every time a host grows a control.
 
-- **The host**, for a key §17b never bound. An unbound key is `none`.
-- **The platform**, for a modified chord. `KeyPress` is structurally a subset of `KeyboardEvent`, so the event goes straight in — a bare key name cannot tell `R` from `Cmd+R`, and the handler above would hijack reload, new-tab and tab-selection. `Ctrl`, `Meta` and `Alt` answer `none` **before** the table is consulted, because a chord is not a lookup miss. `Shift` is deliberately *not* among them: §17b names its bindings in capitals and `Shift+r` is how a keyboard reports `R`, so treating shift as a modifier would unbind the design itself.
-- **An editable control**, for a printable key while it has focus. The flow is `R → digit → search → ⏎`, so the search box is focused for the whole middle of it — and since most issue references contain a digit, a map that claimed `1`–`5` there would eat nearly every query. `⌫` is the same case and less obvious: in a focused text box it deletes a *character*, not the reader's selected edge.
-- **An input method**, for `⏎` and `Escape` while `isComposing` — they confirm and cancel the candidate. Passing the event straight in carries this for free; unpacking `event.key` would drop it.
+So `CreateInteraction` enumerates **this design's own flow**, which §17b fixes at three states, and the host says which one it is in:
 
-The last two do **not** collapse into one another, which is the trap. The IME owns exactly the two keys that *survive* editable focus, so `survivesEditing` can never express it: those two are only reachable inside a focused box, which is also the only place composition happens.
+| state | what reaches the map |
+|---|---|
+| `canvas` | every binding |
+| `target-search` | only `⏎` and `Escape` |
+| `elsewhere` | nothing |
 
-`⏎` and `Escape` **survive** editing, which is why this is a per-binding flag rather than one "silence everything while a box has focus" rule: the search is focused at exactly the moment `⏎` has to commit the target. Which bindings survive is **data on the table** (`survivesEditing`), so no call site decides it and a new binding is a compile error until the table answers.
+`elsewhere` is what closes the set: it is *everything that is not our own search box* — an inline title, a filter, a modal, a control this package has never heard of. A fifth widget adds no code here, and `Escape` is surrendered along with the rest, because that control needs `Escape` to cancel its own edit.
 
-`editableFocus` is **required, not optional** — an omitted flag would default to "nothing is being edited", which is the one direction a default cannot fail safely in.
+Which bindings reach `target-search` is **data on the binding table**, so no call site decides it and a sixth binding is a compile error until the table answers. `⏎` and `Escape` reach it because the search box is focused at exactly the moment `⏎` must commit the target — the middle of `R → digit → search → ⏎`. Its printable keys do not: most issue references carry a digit, so a map that claimed `1`–`5` there would eat nearly every query, and `⌫` deletes a *character* rather than the reader's selected edge.
+
+`interaction` is **required, not optional**. Every default is wrong for some host, and the plausible one — assume the canvas — is the one that steals keystrokes.
+
+**Two press-level facts stay on `KeyPress`**, and they are bounded in a way the widget list never was: both are fields on the event itself.
+
+- **A modified chord.** `KeyPress` is structurally a subset of `KeyboardEvent`, so the event goes straight in — a bare key name cannot tell `R` from `Cmd+R`, and the handler above would hijack reload, new-tab and tab-selection. `Ctrl`, `Meta` and `Alt` answer `none` before the table is consulted. `Shift` is deliberately *not* among them: §17b names its bindings in capitals and `Shift+r` is how a keyboard reports `R`, so treating shift as a modifier would unbind the design itself.
+- **`isComposing`.** While an input method is composing, `⏎` confirms the candidate and `Escape` cancels the composition. It cannot be folded into the table: the IME owns exactly the two bindings that *reach* the target search, which is also the only place composition happens.
 
 **`T` opens the picker; it does not emit a retype.** The proposals come from `pickerView`, which already owns them — a second emitter out here would be free to disagree about what a retype is.
 

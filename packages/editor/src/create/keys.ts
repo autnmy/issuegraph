@@ -35,30 +35,33 @@
  * this module keeps getting asked about. A host's whole wiring is "reduce a
  * non-`none` intent, and `preventDefault()` it" — so every press this map
  * claims wrongly is a keystroke stolen from its real owner, and one it hands
- * back is simply the platform working. There are four owners:
+ * back is simply the platform working.
  *
- *   - THE HOST, for a key §17b never bound. An unbound key is `none`.
- *   - THE PLATFORM, for a modified chord — `Cmd+R` is reload, not relate. See
- *     {@link KeyPress}.
- *   - AN EDITABLE CONTROL, for a printable key while it has focus. `1` typed
- *     into the target search is the character `1`, not a kind selection.
- *   - AN INPUT METHOD, for `⏎` and `Escape` while it is composing — they
- *     confirm and cancel the candidate.
+ * ## Why this asks about OUR interaction rather than about other owners
  *
- * The last three arrived as review findings on consecutive rounds, which is
- * what moved them from special cases to a stated rule: each is "does someone
- * else own this press", asked before the binding's own meaning is consulted.
- * The fourth cost one field and one clause precisely because the third had
- * already been answered as a rule rather than patched as an instance — a fifth
- * belongs beside them, and not inside an arm of the switch.
+ * Four review rounds each found a different owner this map had failed to
+ * anticipate: the platform's `Cmd+R`, the target search's digits, an input
+ * method's `⏎`, and then an unrelated editable control's `Escape`. Each fix was
+ * correct and each invited the next, because they were all answers to an
+ * unanswerable question — *who else might own this press?* That list is an
+ * inventory of the HOST's widgets, and this package cannot see it, cannot bound
+ * it, and gets one more entry every time a host grows a control.
  *
- * Note the last two do NOT collapse into one another, which is the trap. The
- * IME owns exactly the two keys that SURVIVE editable focus, so a
- * `survivesEditing` flag can never express it: those two are only reachable in
- * a focused box, which is also the only place composition happens.
+ * So the question is inverted. {@link CreateInteraction} enumerates OUR OWN
+ * interaction, which §17b fixes at three states, and the host says which one it
+ * is in. A fifth widget adds no code here: the host reports `elsewhere` and the
+ * map is silent. What was an open-ended list of other people's claims became a
+ * closed description of this design's own flow.
  *
- * Ownership is DATA on the binding table — `survivesEditing` — so no call site
- * decides it and a new binding cannot be added without answering the question.
+ * Two press-level facts remain, and they are bounded in a way the widget list
+ * never was — a modifier set and a composition flag are fields on the event
+ * itself, not things a host invents. See {@link KeyPress}.
+ *
+ * That leaves the contract: an unbound key is `none`; a press some other part
+ * of the host owns is `none`; everything else is this vocabulary's.
+ *
+ * Which bindings reach the target search is DATA on the binding table, so no
+ * call site decides it and a sixth binding cannot be added without answering.
  */
 
 import { EDGE_FIELDS } from '@issuegraph/core';
@@ -105,21 +108,43 @@ export interface KeyboardContext {
    */
   readonly selectedEdge: EdgeId | null;
   /**
-   * Whether an editable control — the target search, an inline title — owns
-   * text entry right now.
+   * Which of this design's own interactions the keyboard is in.
    *
-   * REQUIRED, NOT OPTIONAL, and that is deliberate. An omitted flag would
-   * default to "nothing is being edited", which is the answer that silently
-   * steals the reader's keystrokes; making it required turns a host that has
-   * not thought about it into a compile error instead. It is the one direction
-   * a default could not fail safely in.
+   * REQUIRED, NOT OPTIONAL. Every default is wrong for some host, and the
+   * plausible one — "assume the canvas" — is the one that steals keystrokes; a
+   * host that has not thought about it should get a compile error, not silence.
    *
-   * The host answers it — this package has no DOM, and "is an editable control
-   * focused" is a question only the shell can see (`document.activeElement`,
-   * a `contenteditable`, its own search's state).
+   * The host answers it because the host is the only one who can: this package
+   * has no DOM, and which control holds focus is visible only to the shell.
+   * Crucially, answering it needs no knowledge of THIS package — a host maps
+   * its own world onto three states it already understands.
    */
-  readonly editableFocus: boolean;
+  readonly interaction: CreateInteraction;
 }
+
+/**
+ * Where the keyboard is, in terms of the create flow §17b specifies.
+ *
+ * Three states, and the set is closed by the DESIGN rather than by the host's
+ * inventory of controls — which is the whole reason it replaced a growing list
+ * of other owners.
+ *
+ * - `canvas` — the create vocabulary is live. Every binding reaches it.
+ * - `target-search` — the create flow's OWN search box has focus. Only the
+ *   bindings that must survive it reach: `⏎` commits the target and `Escape`
+ *   withdraws, which is precisely the middle of `R → digit → search → ⏎`. Its
+ *   printable keys belong to the box — most issue references carry a digit, so
+ *   a map that claimed `1`–`5` here would eat nearly every query — and `⌫`
+ *   deletes a CHARACTER rather than the reader's selected edge.
+ * - `elsewhere` — something else owns the keyboard entirely: an inline title,
+ *   a filter box, a modal, a control this package has never heard of. NOTHING
+ *   reaches, `Escape` included, because that control needs `Escape` to cancel
+ *   its own edit.
+ *
+ * `elsewhere` is what makes the set closed. It is the state for everything not
+ * named, so a host growing a fifth control changes nothing here.
+ */
+export type CreateInteraction = 'canvas' | 'target-search' | 'elsewhere';
 
 /**
  * What a key means. `none` leaves the key to the host.
@@ -153,7 +178,7 @@ type BindingAction =
  * whether an editable control owns it. Written as an intersection so the
  * discriminated union still narrows in the switch below.
  */
-type Binding = BindingAction & { readonly survivesEditing: boolean };
+type Binding = BindingAction & { readonly reachesTargetSearch: boolean };
 
 /**
  * The vocabulary, as data.
@@ -167,10 +192,10 @@ type Binding = BindingAction & { readonly survivesEditing: boolean };
 const BINDINGS: ReadonlyMap<string, Binding> = new Map<string, Binding>([
   // `r`, the digits and `t` are PRINTABLE. While a text control has focus they
   // are that control's characters, so they do not survive editing.
-  ['r', { kind: 'relate', survivesEditing: false }],
+  ['r', { kind: 'relate', reachesTargetSearch: false }],
   ...EDGE_FIELDS.map((edgeKind, index): readonly [string, Binding] => [
     String(index + 1),
-    { kind: 'choose-type', edgeKind, survivesEditing: false },
+    { kind: 'choose-type', edgeKind, reachesTargetSearch: false },
   ]),
   // `⏎` and `Escape` SURVIVE, and they are the reason this is a per-binding flag
   // rather than one "printable" test: the flow §17b specifies is
@@ -179,7 +204,7 @@ const BINDINGS: ReadonlyMap<string, Binding> = new Map<string, Binding>([
   // while editing would break the loop it exists to deliver. `Escape` survives
   // for the same reason it is always available: a draft you cannot abandon is
   // worse than one you cannot start.
-  ['enter', { kind: 'commit-target', survivesEditing: true }],
+  ['enter', { kind: 'commit-target', reachesTargetSearch: true }],
   // BOTH SPELLINGS OF THE DELETE KEY. §17b writes it `⌫`, which is `Backspace`
   // on the keyboards that have it and `Delete` on those that do not — most
   // notably Apple's, where the key in that position reports `Backspace` and the
@@ -188,10 +213,10 @@ const BINDINGS: ReadonlyMap<string, Binding> = new Map<string, Binding>([
   // NOT SURVIVING EDITING is the non-obvious half: in a focused text box `⌫`
   // deletes a CHARACTER, and a map that claimed it would delete the reader's
   // selected edge while they were correcting a typo in the search.
-  ['backspace', { kind: 'delete-edge', survivesEditing: false }],
-  ['delete', { kind: 'delete-edge', survivesEditing: false }],
-  ['t', { kind: 'retype-edge', survivesEditing: false }],
-  ['escape', { kind: 'cancel', survivesEditing: true }],
+  ['backspace', { kind: 'delete-edge', reachesTargetSearch: false }],
+  ['delete', { kind: 'delete-edge', reachesTargetSearch: false }],
+  ['t', { kind: 'retype-edge', reachesTargetSearch: false }],
+  ['escape', { kind: 'cancel', reachesTargetSearch: true }],
 ]);
 
 const NONE: KeyIntent = Object.freeze({ kind: 'none' });
@@ -258,6 +283,27 @@ function composing(press: KeyPress): boolean {
 }
 
 /**
+ * Whether a binding is live in the interaction the host reports.
+ *
+ * A DECISION TABLE OVER THE THREE STATES, exhaustive so a fourth interaction —
+ * were the design ever to grow one — is a compile error here rather than a
+ * silently permissive default. `elsewhere` returning `false` for EVERY binding
+ * is the whole of the fix for an unrelated control's `Escape`: that control
+ * needs `Escape` to cancel its own edit, and a create draft it knows nothing
+ * about must not consume it.
+ */
+function reaches(binding: Binding, interaction: CreateInteraction): boolean {
+  switch (interaction) {
+    case 'canvas':
+      return true;
+    case 'target-search':
+      return binding.reachesTargetSearch;
+    case 'elsewhere':
+      return false;
+  }
+}
+
+/**
  * Fold a `KeyboardEvent.key` into the table's spelling.
  *
  * Lower-casing is what makes `R` and `r` the same key, which matters because
@@ -278,24 +324,19 @@ function normalize(key: string): string {
  * expression, because the decision was already made by the table.
  */
 export function keyIntent(press: KeyPress, context: KeyboardContext): KeyIntent {
-  // BEFORE THE TABLE, because neither of these is a miss to be looked up — each
-  // is a press this map has no claim on at all. Answering `none` is what lets a
-  // host call `preventDefault()` on everything else without stealing the
-  // platform's own shortcuts or the input method's.
-  // COMPOSITION BITES THE TWO KEYS THAT SURVIVE EDITABLE FOCUS, which is why it
-  // cannot be left to the `survivesEditing` flag: `⏎` and `Escape` are exactly
-  // the bindings that reach a focused search box, and exactly the two an IME
+  // THE PRESS ITSELF SAYS IT IS NOT OURS, before any lookup — neither of these
+  // is a miss to be looked up. Both read a field off the event, so neither is
+  // the open-ended widget question `CreateInteraction` replaced.
+  // COMPOSITION BITES THE TWO BINDINGS THAT REACH THE TARGET SEARCH, which is
+  // why it cannot be folded into `reachesTargetSearch`: `⏎` and `Escape` are
+  // exactly the two that reach a focused search box, and exactly the two an IME
   // needs while composing.
   if (chorded(press) || composing(press)) return NONE;
 
   const binding = BINDINGS.get(normalize(press.key));
   if (binding === undefined) return NONE;
 
-  // THE SECOND OWNER. A chord belongs to the platform; a printable key belongs
-  // to whatever text control has focus. Both are the same question — does
-  // someone else own this press — which is why they sit together here rather
-  // than being answered per binding further down.
-  if (context.editableFocus && !binding.survivesEditing) return NONE;
+  if (!reaches(binding, context.interaction)) return NONE;
 
   switch (binding.kind) {
     case 'relate':

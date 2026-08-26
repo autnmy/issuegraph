@@ -188,6 +188,7 @@ export {
 } from './create/draft.ts';
 
 export {
+  type CreateInteraction,
   type KeyIntent,
   type KeyPress,
   type KeyboardContext,
