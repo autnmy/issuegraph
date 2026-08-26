@@ -128,6 +128,23 @@ describe('the overlay', () => {
     assert.equal(typeof overlay.rowFor, 'function');
   });
 
+  it('gives no row to a ref the document does not carry', () => {
+    // A refusal may name an issue outside a paged document, and the detector
+    // keeps that finding on purpose. But a ROW is a rail row, so one for an
+    // unloaded ref advertises an entry that does not exist — a consumer
+    // iterating `rows` to filter or navigate would offer an unreachable issue.
+    // The finding and the count keep it; the index does not.
+    const overlay = overlayOf([issue('a')], [], [{ ref: 'unloaded' }, { ref: 'a' }]);
+    assert.equal(overlay.count, 2);
+    assert.deepEqual(
+      overlay.rows.map((row) => row.ref),
+      ['a'],
+    );
+    assert.equal(overlay.rowFor('unloaded'), undefined);
+    assert.equal(auditFilterKeeps(overlay, 'unloaded'), false);
+    assert.deepEqual(auditRowAttributes(overlay, 'unloaded'), {});
+  });
+
   it('indexes exactly the rows it lists', () => {
     // The lookup and the list are two views of one answer, so a lookup that
     // disagreed with the rail would draw a bar on a row the list calls clean.

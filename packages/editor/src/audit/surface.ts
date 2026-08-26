@@ -134,9 +134,18 @@ export function auditOverlay(input: AuditInput): AuditOverlay {
   // is the right way round anyway — the audit is pure and cheap, and a
   // persisted finding may not describe the document being drawn.
   const findings = auditDocument(input);
+  // ROWS ARE RAIL ROWS, so only a ref the document carries can have one. A
+  // refusal may name an issue outside a paged document — the detector supports
+  // that on purpose, because filtering findings to the loaded set would drop
+  // them on exactly the issues paging has not reached — but a ROW for such a
+  // ref advertises a rail entry that does not exist, and a consumer iterating
+  // `rows` to filter or navigate would offer an unreachable issue. The finding
+  // and the header count keep it; the row index does not.
+  const carried = new Set(input.document.issues.map((issue) => issue.ref));
   const byRef = new Map<IssueRef, { kinds: Set<AuditClass>; count: number }>();
   for (const found of findings) {
     for (const ref of found.members) {
+      if (!carried.has(ref)) continue;
       const existing = byRef.get(ref);
       if (existing === undefined) {
         byRef.set(ref, { kinds: new Set([found.kind]), count: 1 });
