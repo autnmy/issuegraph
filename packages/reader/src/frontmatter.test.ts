@@ -1611,6 +1611,29 @@ describe('an unparseable block is selected by KEY POSITION, not by mention', () 
     assert.equal(isUnreadDeclaration(r), true);
   });
 
+  test('a malformed key carrying a NODE PROPERTY is still selected', () => {
+    // `&anchor` and `!tag` are legal before a mapping key, and the parser reads
+    // a well-formed `&key issuegraph:` — the control below proves it — so a
+    // MALFORMED one has to be selected for the same reason every other
+    // malformed spelling is. Measured before the fix: `data: null` with ZERO
+    // diagnostics, the silent absence this whole arm exists to prevent.
+    const r = parseFrontmatter(['---', '&key issuegraph:', '  blocked-by: [', '---'].join('\n'));
+
+    assert.equal(r.data, null);
+    assert.equal(r.diagnostics.length, 1, 'the malformed anchored key went unreported');
+    assert.equal(isUnreadDeclaration(r), true);
+  });
+
+  test('CONTROL: a WELL-FORMED anchored key reads normally', () => {
+    // Without this the test above would pass for a reader that had stopped
+    // accepting the spelling altogether.
+    const r = parseFrontmatter(
+      ['---', '&key issuegraph:', '  blocked-by: ["#7"]', '---'].join('\n'),
+    );
+
+    assert.deepEqual(r.data?.blockedBy, [{ repo: null, id: '7' }]);
+  });
+
   test('CONTROL: a well-formed flow-root still parses', () => {
     const r = parseFrontmatter(['---', '{ issuegraph: { blocked-by: ["#1"] } }', '---'].join('\n'));
     assert.deepEqual(r.data?.blockedBy, [{ repo: null, id: '1' }]);

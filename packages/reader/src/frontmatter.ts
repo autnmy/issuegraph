@@ -188,6 +188,14 @@ const FRONTMATTER_KEY_LINE = new RegExp(`^${FRONTMATTER_KEY_PATTERN}`);
  * — is still selected, so `parseFrontmatter` can say why it is unreadable rather
  * than reporting no block at all.
  *
+ * A NODE PROPERTY MAY SIT BETWEEN THE POSITION AND THE KEY. `&anchor` and
+ * `!tag` are legal before a mapping key and the parser accepts them — a
+ * WELL-FORMED `&key issuegraph:` is read and its edges load — so a MALFORMED one
+ * has to be selected for the same reason every other malformed spelling is.
+ * Without this it was not: measured, `&key issuegraph:` with a broken value came
+ * back `data: null` with ZERO diagnostics, which is the silent absence this
+ * whole arm exists to prevent, and a later valid block was selected instead.
+ *
  * `?` IS THE EXPLICIT-KEY INDICATOR, and it is here because the first version of
  * this anchor dropped a spelling the bare mention used to catch: `{? issuegraph
  * : …}`. Review reported it as a regression on the BLOCK-style explicit key
@@ -209,7 +217,7 @@ const FRONTMATTER_KEY_LINE = new RegExp(`^${FRONTMATTER_KEY_PATTERN}`);
  * concern, exactly as {@link FRONTMATTER_KEY_LINE} is.
  */
 const FRONTMATTER_KEY_AT_KEY_POSITION = new RegExp(
-  `(^|[{,?])[ \t]*${FRONTMATTER_KEY_PATTERN}`,
+  `(^|[{,?])[ \t]*(?:[&!][^ \t]*[ \t]+)*${FRONTMATTER_KEY_PATTERN}`,
 );
 
 /**
