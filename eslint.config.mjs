@@ -211,6 +211,13 @@ const FORBIDDEN_GLOBALS = [
   'fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource',
   'localStorage', 'sessionStorage', 'indexedDB', 'process', 'globalThis',
   'window', 'self', 'navigator', 'document',
+  // `eval` IS A REFERENCE BAN, not a call ban, and that is the whole point.
+  // `CallExpression[callee.name='eval']` reads one spelling; `const run = eval`
+  // then calls it under another name, and an INDIRECT eval runs in global scope,
+  // so the alias is the more dangerous form rather than a curiosity. Banning the
+  // reference covers the direct call, the alias and `(0, eval)` at once — the
+  // same shape as banning the namespace objects above.
+  'eval',
 ];
 
 /**
@@ -349,7 +356,12 @@ export default [
         'error',
         ...BASE_SYNTAX,
         { selector: 'ImportExpression', message: 'A rendering package loads nothing at runtime.' },
-        { selector: "CallExpression[callee.name='eval']", message: 'A rendering package evaluates nothing.' },
+        // NO `CallExpression[callee.name='eval']` HERE. It is SUBSUMED by the
+        // `eval` reference ban in FORBIDDEN_GLOBALS, which catches the direct
+        // call, the alias and `(0, eval)` alike — so this could only ever fire
+        // where that one already had. Same reasoning that retired
+        // `no-restricted-properties`: a rule that cannot fire alone is a second
+        // thing to maintain that proves nothing.
         {
           // BOTH SPELLINGS OF ONE CAPABILITY, in one selector. `Function('…')`
           // without `new` constructs exactly the same function as

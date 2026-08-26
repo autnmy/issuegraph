@@ -40,13 +40,27 @@ function shippedSources(directory = SOURCE_DIR, prefix = ''): { file: string; so
       found.push(...shippedSources(join(directory, entry.name), relative));
       continue;
     }
-    // THE SAME EXTENSION FAMILY THE LINT RULES COVER. `tsconfig.json` compiles
-    // and publishes `.mts`, `.cts` and `.tsx` as readily as `.ts`, so a filter
-    // naming one of them left the load half blind to the other three — and the
-    // load half is the ONLY instrument for an import-time computed access that
-    // no AST rule can recognise. Declining this as "lint refuses it first" was
-    // wrong: lint is exactly what cannot see that case.
-    if (!/\.(ts|mts|cts|tsx)$/.test(entry.name) || /\.test\.(ts|mts|cts|tsx)$/.test(entry.name)) continue;
+    // WHAT NODE CAN ACTUALLY IMPORT, which is narrower than what TypeScript
+    // emits — and the two are different questions, so they get different lists.
+    //
+    // The LINT rules cover the whole `{ts,tsx,mts,cts}` family statically, and
+    // must: a `.tsx` carrying a forbidden reach has to be refused. This loop
+    // EXECUTES an import, so it is bounded by the runtime instead. Measured on
+    // Node 22: `.ts` and `.mts` import; `.cts` fails, and `.tsx` fails with
+    // ERR_UNKNOWN_FILE_EXTENSION because type stripping does not do JSX.
+    //
+    // A previous revision admitted all four here, which would have turned
+    // ADDING a `.tsx` module into a purity-suite failure — a false red, before
+    // the check it was blocking could run. Loading `dist` instead would fix the
+    // extension but make the test depend on a prior build, which `pnpm --filter
+    // <pkg> test` does not guarantee.
+    //
+    // THE RESIDUAL, recorded rather than hidden: an import-time computed access
+    // inside a `.tsx` or `.cts` module is seen by neither instrument — lint
+    // cannot recognise it and this cannot load it. Neither extension is in use
+    // in a rendering package today. Widen this the moment one is, and prefer
+    // `dist` at that point.
+    if (!/\.(ts|mts)$/.test(entry.name) || /\.test\.(ts|mts)$/.test(entry.name)) continue;
     found.push({ file: relative, source: readFileSync(join(directory, entry.name), 'utf8') });
   }
   return found;

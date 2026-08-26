@@ -190,7 +190,10 @@ test('PURITY: the remaining forbidden reaches are caught', async () => {
     ["export const s = () => localStorage.getItem('k');\n", 'no-restricted-globals'],
     ['export const c = () => document.cookie;\n', 'no-restricted-globals'],
     ["export const l = () => import('./other.js');\n", 'no-restricted-syntax'],
-    ["export const e = () => eval('1');\n", 'no-restricted-syntax'],
+    // `no-restricted-globals`, not `-syntax`: the direct-call selector was
+    // retired once the eval REFERENCE was banned, since it could only fire
+    // where the reference ban already had.
+    ["export const e = () => eval('1');\n", 'no-restricted-globals'],
     ["export const f = () => new Function('return 1');\n", 'no-restricted-syntax'],
   ];
   for (const [source, expected] of cases) {
@@ -402,4 +405,25 @@ test('CONTROL: a TEST may still use a computed specifier — it does not ship', 
     await rulesAt('packages/store/src/__violation-fixture__.test.ts', 'export const a = (f) => import(`./${f}`);\n'),
     [],
   );
+});
+
+test('PURITY: every spelling of eval is caught, because the REFERENCE is banned', async () => {
+  // `CallExpression[callee.name='eval']` read one spelling. `const run = eval`
+  // then calls it under another name — and an INDIRECT eval runs in global
+  // scope, so the alias is the more dangerous form rather than a curiosity.
+  // Banning the reference covers all three at once.
+  for (const source of [
+    "const execute = eval;\nexport const s = () => execute('1');\n",
+    "export const s = () => (0, eval)('1');\n",
+    "export const s = () => eval('1');\n",
+  ]) {
+    assert.ok(
+      (await purityRulesFor(source)).includes('no-restricted-globals'),
+      source,
+    );
+  }
+});
+
+test('CONTROL: ordinary code near none of this reports nothing', async () => {
+  assert.deepEqual(await purityRulesFor('export const add = (a: number, b: number) => a + b;\n'), []);
 });
