@@ -99,6 +99,9 @@ importers:
         specifier: workspace:^
         version: link:../viewer
     devDependencies:
+      '@issuegraph/reader':
+        specifier: workspace:^
+        version: link:../reader
       '@types/node':
         specifier: ^22.18.0
         version: 22.20.1

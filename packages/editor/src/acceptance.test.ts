@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { buildModel } from '@issuegraph/reader';
+import type { EdgeKind, GraphDocument } from '@issuegraph/store';
+import { makeEdge } from '@issuegraph/store';
 import { diffOrder } from '@issuegraph/store';
 import { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET } from '@issuegraph/viewer';
 
@@ -107,6 +110,212 @@ describe('done when: search-to-focus works above the cluster-only budget', () =>
     assert.equal(result.ladder.tier, 'direct');
     assert.match(result.markup, /data-projection="graph"/);
     assert.ok(result.ladder.canvas.issues.some((issue) => issue.key === match.key));
+  });
+});
+
+/**
+ * The ambient audit's "done when", executable, through the same public surface.
+ *
+ * The graph port is built from `@issuegraph/reader`'s own model, which is what
+ * a host does: the audit composes the read-time answer rather than deriving a
+ * second one, and a fixture that stubbed the port would prove nothing about
+ * that composition.
+ */
+const {
+  AUDIT_CLASSES,
+  AUDIT_CLASS_SPECS,
+  AUDIT_SEVERITY_ATTRIBUTE,
+  auditDocument,
+  auditOverlay,
+  auditRowAttributes,
+  auditStylesheet,
+  renderAuditHeader,
+} = surface;
+
+function backlog(
+  issues: readonly (readonly [string, 'open' | 'closed'])[],
+  edges: readonly (readonly [EdgeKind, string, string])[],
+): GraphDocument {
+  return {
+    issues: issues.map(([ref, state]) => ({ ref, title: `issue ${ref}`, state })),
+    edges: edges.map(([kind, from, to]) => makeEdge(kind, from, to)),
+  };
+}
+
+function graphFor(document: GraphDocument): surface.AuditGraph {
+  const model = buildModel(
+    document.issues.map((issue) => ({
+      id: issue.ref,
+      repo: null,
+      open: issue.state === 'open',
+      labels: [],
+      assigneeCount: 0,
+      data: {
+        blockedBy: document.edges
+          .filter((edge) => edge.kind === 'blocked-by' && edge.from === issue.ref)
+          .map((edge) => ({ repo: null, id: edge.to })),
+        decomposedFrom: null,
+        duplicateOf:
+          document.edges
+            .filter((edge) => edge.kind === 'duplicate-of' && edge.from === issue.ref)
+            .map((edge) => ({ repo: null, id: edge.to }))[0] ?? null,
+        serializeWith: null,
+        togetherWith:
+          document.edges
+            .filter((edge) => edge.kind === 'together-with' && edge.from === issue.ref)
+            .map((edge) => ({ repo: null, id: edge.to }))[0] ?? null,
+        priority: null,
+        evidence: null,
+      },
+      declarationRead: 'read' as const,
+    })),
+  );
+  return { cycles: model.cycles, duplicateCanonical: model.duplicateCanonical };
+}
+
+describe('done when: a pure function returns the four finding classes from a document', () => {
+  // One document carrying all four at once, including a cycle LONGER THAN THREE
+  // — a detector that recognised only a mutual pair or a triangle would pass a
+  // per-class fixture and fail here.
+  const document = backlog(
+    [
+      ['a', 'open'],
+      ['b', 'open'],
+      ['c', 'open'],
+      ['d', 'open'],
+      ['e', 'open'],
+      ['f', 'open'],
+      ['gone', 'closed'],
+      ['dead', 'closed'],
+    ],
+    [
+      ['blocked-by', 'a', 'b'],
+      ['blocked-by', 'b', 'c'],
+      ['blocked-by', 'c', 'd'],
+      ['blocked-by', 'd', 'a'],
+      ['blocked-by', 'e', 'gone'],
+      // THE TWO EDGES SIT ON DIFFERENT ISSUES ON PURPOSE. A duplicate
+      // contributes no relationship edges (4.3.3), so hanging the duplicate-of
+      // on the same issue as the blocked-by silently suppresses the
+      // stale-blocker and the fixture stops exercising the class it was written
+      // for.
+      ['duplicate-of', 'f', 'dead'],
+    ],
+  );
+  const findings = auditDocument({
+    document,
+    graph: graphFor(document),
+    encodingRefused: [{ ref: 'c', diagnostic: 'no `---` pair delimits the block' }],
+  });
+
+  it('returns all four, and the cycle names every one of its four members', () => {
+    assert.deepEqual([...new Set(findings.map((found) => found.kind))].sort(), [
+      ...AUDIT_CLASSES,
+    ].sort());
+    const cycle = findings.find((found) => found.kind === 'cycle');
+    assert.deepEqual(cycle?.members, ['a', 'b', 'c', 'd']);
+  });
+
+  it('covers the encoding refusal, which no parsed document could carry', () => {
+    const refused = findings.find((found) => found.kind === 'encoding-refused');
+    assert.deepEqual(refused?.members, ['c']);
+  });
+
+  it('is pure: the same document twice gives the same findings', () => {
+    assert.deepEqual(auditDocument({ document, graph: graphFor(document) }), [
+      ...auditDocument({ document, graph: graphFor(document) }),
+    ]);
+  });
+});
+
+describe('done when: cycle detection composes the reader rather than re-deriving it', () => {
+  it('reports nothing the model reports nothing for', () => {
+    // A walk of its own would find the three-cycle below whatever the port said.
+    const document = backlog(
+      [
+        ['a', 'open'],
+        ['b', 'open'],
+        ['c', 'open'],
+      ],
+      [
+        ['blocked-by', 'a', 'b'],
+        ['blocked-by', 'b', 'c'],
+        ['blocked-by', 'c', 'a'],
+      ],
+    );
+    const silent = { cycles: [], duplicateCanonical: () => null };
+    const found = auditDocument({ document, graph: silent }).filter(
+      (one) => one.kind === 'cycle',
+    );
+    assert.deepEqual(found, []);
+  });
+
+  it('inherits §6.6 exactly: a together group\'s own ordering is not stuck', () => {
+    const document = backlog(
+      [
+        ['a', 'open'],
+        ['b', 'open'],
+      ],
+      [
+        ['together-with', 'a', 'b'],
+        ['blocked-by', 'a', 'b'],
+      ],
+    );
+    const found = auditDocument({ document, graph: graphFor(document) });
+    assert.deepEqual(found.filter((one) => one.kind === 'cycle'), []);
+  });
+});
+
+describe('done when: severity is data on the finding, not a colour at the render site', () => {
+  it('carries the class table onto every finding', () => {
+    const document = backlog(
+      [
+        ['a', 'open'],
+        ['gone', 'closed'],
+      ],
+      [['blocked-by', 'a', 'gone']],
+    );
+    for (const found of auditDocument({ document, graph: graphFor(document) })) {
+      assert.equal(found.severity, AUDIT_CLASS_SPECS[found.kind].severity);
+    }
+  });
+
+  it('offers "keep as history" on stale blocker and on nothing else', () => {
+    assert.deepEqual(
+      AUDIT_CLASSES.filter((kind) => AUDIT_CLASS_SPECS[kind].keepAsHistory),
+      ['stale-blocker'],
+    );
+  });
+});
+
+describe('done when: the header count and the row left-bar render, and nothing else does', () => {
+  const document = backlog(
+    [
+      ['a', 'open'],
+      ['gone', 'closed'],
+    ],
+    [['blocked-by', 'a', 'gone']],
+  );
+  const overlay = auditOverlay({ document, graph: graphFor(document) });
+
+  it('renders the count', () => {
+    assert.equal(overlay.count, 1);
+    assert.match(renderAuditHeader(overlay), /<span class="ig-audit-count">1<\/span>/);
+  });
+
+  it('marks the affected row, and the stylesheet draws a bar from that mark', () => {
+    assert.deepEqual(auditRowAttributes(overlay, 'a'), {
+      [AUDIT_SEVERITY_ATTRIBUTE]: 'misleading',
+    });
+    assert.match(auditStylesheet, new RegExp(`\\[${AUDIT_SEVERITY_ATTRIBUTE}\\][^}]*box-shadow`));
+  });
+
+  it('has no modal, no auto-fix affordance and no animation hook', () => {
+    for (const text of [renderAuditHeader(overlay), auditStylesheet]) {
+      assert.equal(/dialog|aria-modal|\bmodal\b/i.test(text), false, 'a modal');
+      assert.equal(/auto-?fix|\bfix\b|\brepair\b/i.test(text), false, 'an auto-fix');
+      assert.equal(/@keyframes|animation|animate|transition/i.test(text), false, 'an animation');
+    }
   });
 });
 
