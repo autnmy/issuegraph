@@ -569,25 +569,37 @@ describe('opaque identifiers (SPEC §4.2)', () => {
     //
     // THE JSON PATH ALREADY TYPED IT through `asOpaqueId`; this is the other,
     // deliberately separate boundary, and it is only reachable from here.
-    for (const bad of [123, null, {}, []] as const) {
+    const cyclic: Record<string, unknown> = {};
+    cyclic['self'] = cyclic;
+    // BIGINT AND A CYCLIC OBJECT ARE IN THIS LIST DELIBERATELY. The guard
+    // entered its rejection branch for both and then escaped with a `TypeError`
+    // while `JSON.stringify` built the message — the very defect the guard was
+    // added for, arriving one line later. Naming a rejected value must not
+    // become the failure it is reporting.
+    for (const bad of [123, null, {}, [], 1n, cyclic] as const) {
       const doc = {
         baseRanking: { source: 'config', order: [] },
         issues: [{ id: bad, open: true, labels: [], assigneeCount: 0, body: 'Prose.' }],
       } as unknown as OrderInputDocument;
 
+      // `String`, not `JSON.stringify` — this list contains a bigint and a
+      // cyclic object precisely because stringifying them throws, and a test
+      // message that falls into the trap it is testing reports the wrong thing.
       const result = deriveOrder(doc, 'order');
-      assert.equal(result.code, EXIT.usage, `${JSON.stringify(bad)} was not refused`);
-      assert.equal(result.stdout, '', `${JSON.stringify(bad)} produced output`);
+      assert.equal(result.code, EXIT.usage, `${String(bad)} was not refused`);
+      assert.equal(result.stdout, '', `${String(bad)} produced output`);
     }
   });
 
   test('refuses a non-NUMBER number at the same boundary', () => {
-    const doc = {
-      baseRanking: { source: 'config', order: [] },
-      issues: [{ number: '7', open: true, labels: [], assigneeCount: 0, body: 'Prose.' }],
-    } as unknown as OrderInputDocument;
+    for (const bad of ['7', 1n, {}] as const) {
+      const doc = {
+        baseRanking: { source: 'config', order: [] },
+        issues: [{ number: bad, open: true, labels: [], assigneeCount: 0, body: 'Prose.' }],
+      } as unknown as OrderInputDocument;
 
-    assert.equal(deriveOrder(doc, 'order').code, EXIT.usage);
+      assert.equal(deriveOrder(doc, 'order').code, EXIT.usage, `${String(bad)} was not refused`);
+    }
   });
 
   test('refuses an id the READER could not reference', () => {

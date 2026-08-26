@@ -423,6 +423,31 @@ function duplicateKeyRefusal(document: OrderInputDocument): VerbResult | null {
  * THE ORDER OF THE FIELDS IS THE ORDER `asIssue` READS THEM, so a document with
  * two faults is reported the same way whichever entry point it arrives through.
  */
+/**
+ * A rejected value, named in a refusal, without the naming becoming the failure.
+ *
+ * `JSON.stringify` THROWS on a bigint and on a cyclic structure, and it runs on
+ * an object supplied by a DIRECT caller here — so the guards below entered their
+ * rejection branch correctly and then escaped with a `TypeError` while building
+ * the message. Measured: `{ id: 1n }` and a self-referential object both left
+ * `deriveOrder` throwing instead of returning the usage result it promises,
+ * which is the very defect those guards were added for, arriving one line later.
+ *
+ * A `toJSON` that throws reaches this too, and so does a getter — which is why
+ * the fallback names the KIND rather than trying harder to serialize.
+ */
+function describeValue(value: unknown): string {
+  try {
+    const json = JSON.stringify(value);
+    if (json !== undefined) return json.length <= 80 ? json : `${json.slice(0, 77)}...`;
+  } catch {
+    // Fall through: the caller gets a kind rather than a crash.
+  }
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'an array';
+  return `a ${typeof value}`;
+}
+
 function inputDomainRefusal(document: OrderInputDocument): VerbResult | null {
   // Phrased exactly as the parse-time failures are, and rendered exactly as
   // `orderFromJson` renders an `InputError`, so one document cannot produce two
@@ -436,7 +461,7 @@ function inputDomainRefusal(document: OrderInputDocument): VerbResult | null {
   if (document.homeRepo !== undefined && !isRepoQualifier(document.homeRepo)) {
     return refuse(
       'input.homeRepo',
-      `expected an owner/repo qualifier the reader can reference, got ${JSON.stringify(document.homeRepo)}`,
+      `expected an owner/repo qualifier the reader can reference, got ${describeValue(document.homeRepo)}`,
     );
   }
 
@@ -453,10 +478,10 @@ function inputDomainRefusal(document: OrderInputDocument): VerbResult | null {
     // NULL IS NOT ABSENT HERE. `id?: string` does not admit it, and reading it
     // as "unset" would re-open exactly the fall-through above.
     if (issue.id !== undefined && typeof issue.id !== 'string') {
-      return refuse(`${at}.id`, `expected a string identifier, got ${JSON.stringify(issue.id)}`);
+      return refuse(`${at}.id`, `expected a string identifier, got ${describeValue(issue.id)}`);
     }
     if (issue.number !== undefined && typeof issue.number !== 'number') {
-      return refuse(`${at}.number`, `expected a number, got ${JSON.stringify(issue.number)}`);
+      return refuse(`${at}.number`, `expected a number, got ${describeValue(issue.number)}`);
     }
     if (issue.id === undefined && issue.number === undefined) {
       return refuse(`${at}.id`, 'expected an identifier: supply `id` (any tracker id) or `number`');
@@ -468,13 +493,13 @@ function inputDomainRefusal(document: OrderInputDocument): VerbResult | null {
     ) {
       return refuse(
         `${at}.id`,
-        `names ${JSON.stringify(issue.id)} while ${at}.number names ${issue.number}`,
+        `names ${describeValue(issue.id)} while ${at}.number names ${describeValue(issue.number)}`,
       );
     }
     if (!isReferenceableId(issueId(issue))) {
       return refuse(
         issue.id === undefined ? `${at}.number` : `${at}.id`,
-        `expected an identifier the reader can reference, got ${JSON.stringify(issueId(issue))}`,
+        `expected an identifier the reader can reference, got ${describeValue(issueId(issue))}`,
       );
     }
     // `!= null` covers both spellings: an absent key and an explicit `null` are
@@ -483,7 +508,7 @@ function inputDomainRefusal(document: OrderInputDocument): VerbResult | null {
     if (issue.repo != null && !isRepoQualifier(issue.repo)) {
       return refuse(
         `${at}.repo`,
-        `expected an owner/repo qualifier the reader can reference, got ${JSON.stringify(issue.repo)}`,
+        `expected an owner/repo qualifier the reader can reference, got ${describeValue(issue.repo)}`,
       );
     }
     if (!isAssigneeCount(issue.assigneeCount)) {
