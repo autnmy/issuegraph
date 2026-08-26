@@ -69,6 +69,7 @@ export const METRIC_TOKENS = Object.freeze([
   '--ig-gutter-width',
   '--ig-spine-width',
   '--ig-char-width',
+  '--ig-label-char-width',
   '--ig-focus-ring',
 ] as const);
 
@@ -150,6 +151,19 @@ export const defaultTheme: Theme = Object.freeze({
     // Layout measures text with it, so a host changing the type scale changes
     // this too and the boxes stay around their contents.
     '--ig-char-width': 7.8,
+    // The AVERAGE advance of one character in the LABEL face at
+    // `--ig-font-size-small` — a different face and a different size from
+    // `--ig-char-width`, which is documented as the MONO advance at
+    // `--ig-font-size`. Measuring one with the other is what let a wide-glyph
+    // title overflow its node: 24 all-capital characters "fitted" 187.2px of
+    // room and drew about 240px, straight across the routing channel.
+    //
+    // AN AVERAGE, because `fitLabel` scales it per character class rather than
+    // assuming every glyph is the same width — see `labelWidth` there. A flat
+    // CEILING was tried and is wrong in the other direction: at the widest
+    // glyph's advance, ordinary titles truncate at roughly half their length,
+    // which this package's own fixtures caught immediately.
+    '--ig-label-char-width': 6,
     '--ig-focus-ring': 2,
   }),
 });
