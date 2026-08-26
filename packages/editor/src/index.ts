@@ -48,9 +48,17 @@
  * ## The surface
  *
  * The SCALE LADDER, the AUDIT, the RE-EVALUATE SURFACE, the EDGE
- * MUTATION-STATE OVERLAYS, the TYPE PICKER and the CREATE PATHS. The
- * first-pass queue lands as its own change, and the final shape of this file is
- * decided by the one that assembles the workspace.
+ * MUTATION-STATE OVERLAYS, the TYPE PICKER, the CREATE PATHS and the FIRST
+ * PASS. The final shape of this file is decided by the change that assembles
+ * the workspace.
+ *
+ * The first pass is the first thing here to take a PORT of its own. The create
+ * paths take a target from the host because searching a backlog needs the
+ * backlog; the first pass goes further and takes the whole question set,
+ * because the evidence §17e describes — two bodies referencing one path, a
+ * comment linking an issue — is not derivable from a `GraphDocument` at all. A
+ * heuristic shipped in here would be an un-themeable product opinion inside a
+ * published package, which is the same reason the store fetches nothing.
  *
  * The create paths are the first thing here to be shaped by a requirement that
  * three surfaces be EQUIVALENT rather than merely present. They gather the same
@@ -223,3 +231,63 @@ export {
 } from './reevaluate/render.ts';
 
 export { reevaluateStylesheet } from './reevaluate/styles.ts';
+
+export type {
+  Candidate,
+  CandidateEvidence,
+  CandidateId,
+  CandidateSource,
+} from './firstpass/candidates.ts';
+
+export {
+  type Answer,
+  type Answered,
+  type QueueCommand,
+  type QueueProgress,
+  type QueueResult,
+  type QueueState,
+  currentCandidate,
+  isAnswered,
+  openQueue,
+  queueProgress,
+  queueReducer,
+  skippedCandidates,
+} from './firstpass/queue.ts';
+
+export {
+  type BatchDirection,
+  type BatchOutcome,
+  type BatchPlan,
+  type BatchRefusal,
+  type BatchRequest,
+  type BatchSettlement,
+  planBatch,
+  resumeBatch,
+} from './firstpass/batch.ts';
+
+export {
+  type FirstPassContext,
+  type FirstPassInteraction,
+  type FirstPassIntent,
+  firstPassIntent,
+} from './firstpass/keys.ts';
+
+export {
+  type FirstPassQuestion,
+  type FirstPassView,
+  firstPassView,
+} from './firstpass/view.ts';
+
+export { type FirstPassWords } from './firstpass/words.ts';
+
+export {
+  ANSWERED_ATTRIBUTE,
+  ANSWER_ATTRIBUTE,
+  EVIDENCE_TOKEN_ATTRIBUTE,
+  FOUND_ATTRIBUTE,
+  type FirstPassOptions,
+  type FirstPassResult,
+  renderFirstPass,
+} from './firstpass/render.ts';
+
+export { firstPassStylesheet } from './firstpass/styles.ts';
