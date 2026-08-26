@@ -194,14 +194,26 @@ never existed.
 ## Sweeping a backlog
 
 ```sh
-gh issue list -R owner/repo --state open --limit 1000 --json number,body \
-  | jq -c '.[]' \
-  | while read -r row; do
-      n=$(printf '%s' "$row" | jq -r .number)
-      state=$(printf '%s' "$row" | jq -r '.body // ""' | issuegraph validate | jq -r .state)
-      [ "$state" = "read" ] || [ "$state" = "absent" ] || echo "#$n is $state"
-    done
+found=0
+while IFS= read -r row; do
+  [ -n "$row" ] || continue
+  n=$(printf '%s' "$row" | jq -r .number)
+  state=$(printf '%s' "$row" | jq -r '.body // ""' | issuegraph validate | jq -r .state)
+  case "$state" in
+    read|absent) : ;;
+    *) echo "#$n is $state"; found=$((found + 1)) ;;
+  esac
+done <<EOF
+$(gh issue list -R owner/repo --state open --limit 1000 --json number,body --jq '.[] | @json')
+EOF
+echo "$found unreadable"
+[ "$found" -eq 0 ]      # exit status IS the answer: 0 = the corpus is clean
 ```
+
+**A here-doc rather than a pipe, for the reason the whole skill keeps running
+into:** `… | while` puts the loop in a **subshell**, so `found` is incremented on
+a copy and the count is zero however many it printed. The status is the answer
+here, so that would have reported a clean corpus over a broken one.
 
 Two things to hold on to:
 
