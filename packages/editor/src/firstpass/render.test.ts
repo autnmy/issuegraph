@@ -29,10 +29,22 @@ describe('rendering a candidate answers nothing', () => {
     // Listener wiring and dispatch belong to the mount, exactly as the picker
     // and the ladder defer them.
     const { markup } = renderFirstPass(openQueue(candidates(1)), OPTIONS);
-    for (const answer of ['apply', 'reject', 'skip', 'undo']) {
+    for (const answer of ['apply', 'reject', 'skip']) {
       assert.match(markup, new RegExp(`data-ig-answer="${answer}"`), answer);
     }
     assert.equal(/\bon[a-z]+=/.test(markup), false, 'an inline handler');
+  });
+
+  it('publishes undo as a COMMAND, never as a fourth answer', () => {
+    // `Answer` is a closed union of three. A shell reading `data-ig-answer` and
+    // switching over it must never be handed a value outside that type.
+    const answered = queueReducer(openQueue(candidates(2)), {
+      kind: 'answer',
+      answer: 'skip',
+    }).state;
+    const { markup } = renderFirstPass(answered, OPTIONS);
+    assert.match(markup, /data-ig-command="undo"/);
+    assert.equal(markup.includes('data-ig-answer="undo"'), false);
   });
 });
 
@@ -41,7 +53,13 @@ describe('every readable byte comes from the host or from the document', () => {
     // A total claim rather than a spot check: every text node must be a
     // FirstPassWords entry, an issue reference, or the document's own kind
     // spelling. A word added later fails rather than slipping in.
-    const { markup } = renderFirstPass(openQueue(candidates(2)), OPTIONS);
+    // Driven one answer in, so the undo control is present and its word is
+    // genuinely under test rather than absent and trivially allowed.
+    const state = queueReducer(openQueue(candidates(2)), {
+      kind: 'answer',
+      answer: 'skip',
+    }).state;
+    const { markup } = renderFirstPass(state, OPTIONS);
     const texts = [...markup.matchAll(/>([^<>]+)</g)]
       .map((match) => (match[1] ?? '').trim())
       .filter((text) => text !== '');
@@ -50,10 +68,10 @@ describe('every readable byte comes from the host or from the document', () => {
       FIRST_PASS_WORDS.undo,
       FIRST_PASS_WORDS.evidence,
       FIRST_PASS_WORDS.answersLabel,
-      FIRST_PASS_WORDS.progress(0, 2),
-      'both bodies reference file 0',
-      '100',
-      '101',
+      FIRST_PASS_WORDS.progress(1, 2),
+      'both bodies reference file 1',
+      '200',
+      '201',
       'blocked-by',
     ]);
     assert.deepEqual(
@@ -114,6 +132,31 @@ describe('the three states read differently', () => {
     assert.match(markup, /data-ig-state="finished"/);
     assert.match(markup, new RegExp(FIRST_PASS_WORDS.finished));
     assert.equal(markup.includes('data-ig-answer='), false, 'nothing left to answer');
+  });
+
+  it('KEEPS UNDO after the last answer, which is the one most worth taking back', () => {
+    // An accidental `Y` on the final candidate creates the duplicate-of §17e
+    // says silently removes real work from the order — and the queue then has
+    // no candidate left to show. Dropping the control at that exact moment left
+    // a reader without a keyboard no way back from the answer that matters most.
+    let state = openQueue(candidates(1));
+    state = queueReducer(state, { kind: 'answer', answer: 'apply' }).state;
+    const { markup } = renderFirstPass(state, OPTIONS);
+    assert.match(markup, /data-ig-command="undo"/);
+  });
+
+  it('draws no undo before anything has been answered', () => {
+    // The other edge of the same rule. `keys.ts` returns `none` for undo with an
+    // empty history, so a control drawn here would be inert — and an affordance
+    // that is sometimes inert teaches a reader answering at speed to distrust it.
+    const { markup } = renderFirstPass(openQueue(candidates(3)), OPTIONS);
+    assert.equal(markup.includes('data-ig-command="undo"'), false);
+    assert.equal(markup.includes(FIRST_PASS_WORDS.undo), false);
+  });
+
+  it('draws no undo on an empty queue, because nothing can have been answered', () => {
+    const { markup } = renderFirstPass(openQueue([]), OPTIONS);
+    assert.equal(markup.includes('data-ig-command="undo"'), false);
   });
 
   it('says nothing was found when nothing was', () => {

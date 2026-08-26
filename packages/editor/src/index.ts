@@ -283,6 +283,7 @@ export { type FirstPassWords } from './firstpass/words.ts';
 export {
   ANSWERED_ATTRIBUTE,
   ANSWER_ATTRIBUTE,
+  COMMAND_ATTRIBUTE,
   EVIDENCE_TOKEN_ATTRIBUTE,
   FOUND_ATTRIBUTE,
   type FirstPassOptions,

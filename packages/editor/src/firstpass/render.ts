@@ -54,6 +54,16 @@ import type { FirstPassWords } from './words.ts';
 
 /** The attribute a shell reads to know which answer a control stands for. */
 export const ANSWER_ATTRIBUTE = 'data-ig-answer';
+/**
+ * The attribute on the undo control.
+ *
+ * ITS OWN ATTRIBUTE, not `data-ig-answer="undo"`. {@link ./queue.ts Answer} is
+ * a closed union of three, and undo is not one of them — so a shell reading
+ * `data-ig-answer` and switching over `Answer` would be handed a value outside
+ * the type it was told to expect. `data-ig-command` is the spelling
+ * `picker/render.ts` already uses for a control that is not a choice.
+ */
+export const COMMAND_ATTRIBUTE = 'data-ig-command';
 /** The attribute carrying an evidence item's machine-readable token. */
 export const EVIDENCE_TOKEN_ATTRIBUTE = 'data-ig-evidence';
 /** Answers given, on the root. */
@@ -163,6 +173,39 @@ function answersSpec(words: FirstPassWords): ElementSpec {
   );
 }
 
+/**
+ * The undo control, drawn whenever there is an answer to withdraw.
+ *
+ * ## It survives the finished state, and that is the point of the rule
+ *
+ * The last answer is the one most in need of taking back — an accidental `Y` on
+ * the final candidate creates the `duplicate-of` §17e says "silently removes
+ * real work from the order", and the queue then has no candidate left to show.
+ * An earlier revision replaced every control with the finished message at that
+ * exact moment, so a reader without a keyboard had no way back from the one
+ * answer that matters most.
+ *
+ * ## One rule, so the pointer and the keyboard cannot disagree
+ *
+ * `keys.ts` gates undo on `canUndo` — anything answered — and deliberately
+ * keeps it live once `hasCandidate` is false. Drawing the control on the same
+ * condition is what makes the two paths the same path. The previous version
+ * disagreed at BOTH edges, in opposite directions: it drew a dead control
+ * before anything was answered, and dropped a live one after the last answer.
+ *
+ * A control that does nothing is worse than no control, which is why this
+ * returns `null` rather than a disabled button: the queue is answered at speed,
+ * and an affordance that is sometimes inert teaches the reader to distrust it.
+ */
+function undoSpec(progress: QueueProgress, words: FirstPassWords): ElementSpec | null {
+  if (progress.answered === 0) return null;
+  return element(
+    'button',
+    { type: 'button', class: 'ig-firstpass-undo', [COMMAND_ATTRIBUTE]: 'undo' },
+    [words.undo],
+  );
+}
+
 /** The progress line. The host's sentence over this package's two numbers. */
 function progressSpec(progress: QueueProgress, words: FirstPassWords): ElementSpec {
   return element('p', { class: 'ig-firstpass-progress' }, [
@@ -185,20 +228,22 @@ export function renderFirstPass(state: QueueState, options: FirstPassOptions): F
   const body = ((): readonly (ElementSpec | null)[] => {
     switch (view.state) {
       case 'asking':
-        return [
-          questionSpec(view.question, words),
-          answersSpec(words),
-          element(
-            'button',
-            { type: 'button', class: 'ig-firstpass-undo', [ANSWER_ATTRIBUTE]: 'undo' },
-            [words.undo],
-          ),
-        ];
+        return [questionSpec(view.question, words), answersSpec(words), undoSpec(view.progress, words)];
       case 'finished':
-        return [element('p', { class: 'ig-firstpass-finished' }, [words.finished])];
+        // UNDO OUTLIVES THE QUESTIONS. `finished` always carries at least one
+        // answer — a queue that found nothing is `empty` instead — so the
+        // control is always drawn here, which is exactly the case that needs it.
+        return [
+          element('p', { class: 'ig-firstpass-finished' }, [words.finished]),
+          undoSpec(view.progress, words),
+        ];
       case 'empty':
         // A DIFFERENT SENTENCE FROM `finished`, which is the whole reason the
         // view model separates them. See `view.ts`.
+        //
+        // NO UNDO, and it needs no test to be sure of it: `empty` means the host
+        // found nothing, and nothing found is nothing that can have been
+        // answered — so `undoSpec` would return `null` here anyway.
         return [element('p', { class: 'ig-firstpass-empty' }, [words.noCandidates])];
     }
   })();
