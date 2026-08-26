@@ -167,12 +167,41 @@ export const FRONTMATTER_KEY_PATTERN = `["']*${FRONTMATTER_KEY}["']*[ \\t]*:`;
 const FRONTMATTER_KEY_LINE = new RegExp(`^${FRONTMATTER_KEY_PATTERN}`);
 
 /**
- * The same rule UNANCHORED, for the one question that must be asked of a block
- * whose YAML did not parse: "did this plausibly mean to carry a declaration?"
- * A failed parse cannot answer it, and treating silence as "no" is what makes a
- * malformed block indistinguishable from an absent one.
+ * The same rule at a position that could plausibly BE a mapping key, for the one
+ * question that must be asked of a block whose YAML did not parse: "did this
+ * plausibly mean to carry a declaration?" A failed parse cannot answer it, and
+ * treating silence as "no" is what makes a malformed block indistinguishable
+ * from an absent one.
+ *
+ * ANCHORED TO A KEY POSITION RATHER THAN TO NOTHING AT ALL. The predecessor was
+ * a bare substring test, and it selected any malformed block whose text merely
+ * MENTIONED the key — inside a quoted scalar, inside a comment. Under §4.1's
+ * first-block rule that block then shadowed a later VALID declaration, whose
+ * real edges never loaded. Measured on `---\nnote: "issuegraph:\n---` followed
+ * by a valid block: `data: null`, one diagnostic, and the good block ignored.
+ *
+ * A KEY POSITION IS LINE START, `{`, OR `,` — the three places YAML can begin a
+ * mapping key. Line start is the block-style spelling (already tried above, and
+ * repeated here because this arm also runs on lines the anchored test skipped);
+ * `{` and `,` are the FLOW spellings, which is what keeps the case this fallback
+ * was added for: `{ issuegraph: { blocked-by: [ "#1" ]` — a malformed flow-root
+ * — is still selected, so `parseFrontmatter` can say why it is unreadable rather
+ * than reporting no block at all.
+ *
+ * IT STILL OVER-SELECTS, NARROWLY, and that is the right side to err on. A
+ * comma inside a quoted scalar (`{a: "x, issuegraph: y"}`) still reads as a key
+ * position. Deciding otherwise would mean tokenizing the very text that failed
+ * to tokenize. Over-selecting costs one advisory diagnostic; under-selecting is
+ * the silent absence above, which is strictly worse.
+ *
+ * BUILT AROUND {@link FRONTMATTER_KEY_PATTERN} RATHER THAN EDITING IT. That
+ * constant is exported for mirrors on the other side of a language boundary and
+ * is deliberately held to a portable regex subset; this anchor is a local
+ * concern, exactly as {@link FRONTMATTER_KEY_LINE} is.
  */
-const FRONTMATTER_KEY_MENTION = new RegExp(FRONTMATTER_KEY_PATTERN);
+const FRONTMATTER_KEY_AT_KEY_POSITION = new RegExp(
+  `(^|[{,])[ \t]*${FRONTMATTER_KEY_PATTERN}`,
+);
 
 /**
  * A reference to an issue (§4.2).
@@ -485,12 +514,15 @@ function blockCarriesKey(block: readonly string[]): boolean {
     // prefilter above and reports itself correctly, so the two spellings
     // disagreed about a body that plainly meant to declare something.
     //
-    // UNANCHORED ON PURPOSE. This arm decides only whether to SELECT the block
-    // so `parseFrontmatter` can say WHY it is unreadable — it never decides
-    // what the block means. Over-selecting costs one advisory diagnostic;
-    // under-selecting is the silent absence above. That is the same trade the
-    // `undelimited` arm already makes deliberately.
-    return block.some((line) => FRONTMATTER_KEY_MENTION.test(line));
+    // AT A KEY POSITION, NOT ANYWHERE. This arm decides only whether to SELECT
+    // the block so `parseFrontmatter` can say WHY it is unreadable — it never
+    // decides what the block means, so it errs toward selecting. But a bare
+    // substring test errs too far: it selected a block that merely MENTIONED
+    // the key in a scalar or a comment, and §4.1's first-block rule then let
+    // that block shadow a later VALID declaration. Restricting to the positions
+    // YAML can start a mapping key keeps the malformed-flow case this arm
+    // exists for and drops the mention case. See the constant for the residue.
+    return block.some((line) => FRONTMATTER_KEY_AT_KEY_POSITION.test(line));
   }
   const root = doc.contents;
   if (!isMap(root)) return false;

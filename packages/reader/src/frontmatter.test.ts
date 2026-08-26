@@ -1557,3 +1557,44 @@ describe('parseRef', () => {
     }
   });
 });
+
+describe('an unparseable block is selected by KEY POSITION, not by mention', () => {
+  const VALID = ['---', 'issuegraph:', '  blocked-by:', '    - "#7"', '', '---'].join('\n');
+
+  test('a mention inside a SCALAR no longer shadows a later valid block', () => {
+    // §4.1 takes the FIRST block carrying the key, so a malformed block selected
+    // on a bare substring match hides every later declaration. Measured before
+    // the fix: `data: null`, one diagnostic, and the real edges never loaded.
+    const r = parseFrontmatter(['---', 'note: "issuegraph:', '---', '', VALID].join('\n'));
+
+    assert.deepEqual(r.data?.blockedBy, [{ repo: null, id: '7' }]);
+    assert.deepEqual(r.diagnostics, []);
+  });
+
+  test('a mention inside a COMMENT no longer shadows one either', () => {
+    const r = parseFrontmatter(
+      ['---', '# issuegraph: not a key', 'a: [1,', '---', '', VALID].join('\n'),
+    );
+
+    assert.deepEqual(r.data?.blockedBy, [{ repo: null, id: '7' }]);
+    assert.deepEqual(r.diagnostics, []);
+  });
+
+  test('a MALFORMED FLOW-ROOT block is still selected, which is why the arm exists', () => {
+    // The regression guard, and the reason the fallback cannot simply become the
+    // line-anchored test: a flow-root key follows `{`, not a line start. Without
+    // this arm the block reports as NO BLOCK — `data: null`, ZERO diagnostics,
+    // indistinguishable from an issue that declared nothing. That silent absence
+    // is the bug the fallback was added for.
+    const r = parseFrontmatter(['---', '{ issuegraph: { blocked-by: [ "#1" ]', '---'].join('\n'));
+
+    assert.equal(r.data, null);
+    assert.equal(r.diagnostics.length, 1, 'the malformed flow-root went unreported');
+    assert.equal(isUnreadDeclaration(r), true);
+  });
+
+  test('CONTROL: a well-formed flow-root still parses', () => {
+    const r = parseFrontmatter(['---', '{ issuegraph: { blocked-by: ["#1"] } }', '---'].join('\n'));
+    assert.deepEqual(r.data?.blockedBy, [{ repo: null, id: '1' }]);
+  });
+});
