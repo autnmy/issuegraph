@@ -37,10 +37,17 @@ function spliceGeneratedEdges(body: string, edges: GeneratedEdges): string | nul
   return result.outcome === 'spliced' ? result.body : null;
 }
 
+/**
+ * A refresh a scheduling writer would make: it owns the two scheduling edges
+ * and names NEITHER provenance field.
+ *
+ * `decomposedFrom: null` used to sit here meaning *leave it alone*. #18 gave
+ * removal its own spelling, so absence carries that meaning by itself and a
+ * present value can only ever be a write — see the `#18` describe block below.
+ */
 const NEW_EDGES: GeneratedEdges = {
-  blockedBy: [{ repo: null, id: '12' }],
-  serializeWith: { repo: null, id: '3' },
-  decomposedFrom: null,
+  blockedBy: { set: [{ repo: null, id: '12' }] },
+  serializeWith: { set: { repo: null, id: '3' } },
 };
 
 describe('spliceGeneratedEdges', () => {
@@ -181,7 +188,7 @@ describe('spliceGeneratedEdges', () => {
     assert.equal(spliceGeneratedEdges(body, NEW_EDGES), null);
   });
 
-  it('leaves an existing decomposed-from untouched when the input passes null', () => {
+  it('leaves an existing decomposed-from untouched when the input omits it', () => {
     const block = renderFrontmatter({
       decomposedFrom: { repo: null, id: '9' },
       blockedBy: [{ repo: null, id: '7' }],
@@ -194,7 +201,7 @@ describe('spliceGeneratedEdges', () => {
     const block = renderFrontmatter({ blockedBy: [{ repo: null, id: '7' }] }) as string;
     const next = spliceGeneratedEdges(`${block}\n\nBody.`, {
       ...NEW_EDGES,
-      decomposedFrom: { repo: null, id: '42' },
+      decomposedFrom: { set: { repo: null, id: '42' } },
     }) as string;
     assert.deepEqual(parseFrontmatter(next).data?.decomposedFrom, { repo: null, id: '42' });
   });
@@ -203,9 +210,9 @@ describe('spliceGeneratedEdges', () => {
     const block = renderFrontmatter({ blockedBy: [{ repo: null, id: '7' }] }) as string;
     assert.equal(
       spliceGeneratedEdges(`${block}\n\nThe brief body.`, {
-        blockedBy: [],
-        serializeWith: null,
-        decomposedFrom: null,
+        blockedBy: { clear: true },
+        serializeWith: { clear: true },
+        decomposedFrom: { clear: true },
       }),
       'The brief body.',
     );
@@ -216,9 +223,9 @@ describe('spliceGeneratedEdges', () => {
       '\n',
     );
     const next = spliceGeneratedEdges(body, {
-      blockedBy: [],
-      serializeWith: null,
-      decomposedFrom: null,
+      blockedBy: { clear: true },
+      serializeWith: { clear: true },
+      decomposedFrom: { clear: true },
     }) as string;
     assert.ok(next.includes('labels-hint: platform'));
     assert.ok(!next.includes('issuegraph:'));
@@ -234,7 +241,7 @@ describe('spliceGeneratedEdges', () => {
     const block = renderFrontmatter({ blockedBy: [{ repo: null, id: '7' }], priority: 2 }) as string;
     const next = spliceGeneratedEdges(`${block}\n\nBody.`, {
       ...NEW_EDGES,
-      duplicateOf: { repo: null, id: '99' },
+      duplicateOf: { set: { repo: null, id: '99' } },
     }) as string;
     const data = parseFrontmatter(next).data;
     assert.deepEqual(data?.duplicateOf, { repo: null, id: '99' });
@@ -250,7 +257,7 @@ describe('spliceGeneratedEdges', () => {
     }) as string;
     const next = spliceGeneratedEdges(`${block}\n\nBody.`, {
       ...NEW_EDGES,
-      duplicateOf: { repo: 'acme/widgets', id: '6' },
+      duplicateOf: { set: { repo: 'acme/widgets', id: '6' } },
     }) as string;
     const data = parseFrontmatter(next).data;
     assert.deepEqual(data?.duplicateOf, { repo: 'acme/widgets', id: '6' });
@@ -258,16 +265,18 @@ describe('spliceGeneratedEdges', () => {
     assert.equal((next.match(/duplicate-of:/g) ?? []).length, 1);
   });
 
-  it('leaves an existing duplicate-of untouched when the input omits or nulls the field', () => {
+  it('leaves an existing duplicate-of untouched when the input OMITS the field', () => {
+    // It used to assert this for a present `null` as well. That arm is gone
+    // with the overload: `null` is not an `EdgeWrite` at all now, and the guard
+    // throws on it rather than reading it as either meaning — see the
+    // malformed-value suite. Omission is the only way to say "not mine", which
+    // is exactly what makes it unambiguous.
     const block = renderFrontmatter({
       duplicateOf: { repo: null, id: '9' },
       blockedBy: [{ repo: null, id: '7' }],
     }) as string;
-    const body = `${block}\n\nBody.`;
-    const omitted = spliceGeneratedEdges(body, NEW_EDGES) as string;
+    const omitted = spliceGeneratedEdges(`${block}\n\nBody.`, NEW_EDGES) as string;
     assert.deepEqual(parseFrontmatter(omitted).data?.duplicateOf, { repo: null, id: '9' });
-    const nulled = spliceGeneratedEdges(body, { ...NEW_EDGES, duplicateOf: null }) as string;
-    assert.deepEqual(parseFrontmatter(nulled).data?.duplicateOf, { repo: null, id: '9' });
   });
 
   it('leaves blocked-by and serialize-with byte-untouched when omitted from the input', () => {
@@ -293,7 +302,7 @@ describe('spliceGeneratedEdges', () => {
       '',
       'Body.',
     ].join('\n');
-    const next = spliceGeneratedEdges(body, { duplicateOf: { repo: null, id: '99' } }) as string;
+    const next = spliceGeneratedEdges(body, { duplicateOf: { set: { repo: null, id: '99' } } }) as string;
     // The exotic spelling AND the unparseable item both survive byte-for-byte —
     // proof the entries were never re-rendered.
     assert.ok(next.includes("    - '#7'"));
@@ -302,16 +311,16 @@ describe('spliceGeneratedEdges', () => {
     assert.deepEqual(parseFrontmatter(next).data?.duplicateOf, { repo: null, id: '99' });
   });
 
-  it('still treats an explicit empty set / null as owned-remove', () => {
+  it('treats an explicit clear as an owned remove', () => {
     const block = renderFrontmatter({
       blockedBy: [{ repo: null, id: '7' }],
       serializeWith: { repo: null, id: '4' },
       priority: 1,
     }) as string;
     const next = spliceGeneratedEdges(`${block}\n\nBody.`, {
-      blockedBy: [],
-      serializeWith: null,
-      decomposedFrom: null,
+      blockedBy: { clear: true },
+      serializeWith: { clear: true },
+      decomposedFrom: { clear: true },
     }) as string;
     const data = parseFrontmatter(next).data;
     assert.deepEqual(data?.blockedBy, []);
@@ -395,33 +404,79 @@ describe('YAML comments inside the block', () => {
   });
 });
 
-describe('an explicit null does NOT clear provenance or a verdict', () => {
-  it('is the documented asymmetry, and a live caller depends on it', () => {
-    // `blockedBy` / `serializeWith` treat a present value as an owned removal.
-    // `decomposedFrom` / `duplicateOf` do not, because the established caller
-    // shape is "write it when the block lacks one, never clobber one that is
-    // already there" — it passes `null` to mean LEAVE IT ALONE. Making `null`
-    // remove would delete provenance on every refresh of a block that has it.
-    // Pinned here because it reads like an inconsistency and is not one.
-    const block = renderFrontmatter({
-      blockedBy: [{ repo: null, id: '7' }],
-      serializeWith: { repo: null, id: '4' },
-      decomposedFrom: { repo: null, id: '9' },
-      duplicateOf: { repo: null, id: '5' },
-    }) as string;
-    const next = spliceGeneratedEdges(`${block}\n\nBody.`, {
-      blockedBy: [],
-      serializeWith: null,
-      decomposedFrom: null,
-      duplicateOf: null,
+describe('every owned field clears the same way, and OMISSION is what leaves one alone (#18)', () => {
+  // WHAT THIS BLOCK REPLACED. It used to pin the opposite: that a present
+  // `null` removed `blocked-by` and `serialize-with` but LEFT `decomposed-from`
+  // and `duplicate-of` exactly where they were. That asymmetry was correct, and
+  // it was the whole of #18 — the established caller shape for provenance is
+  // "write it when the block lacks one, never clobber one that is already
+  // there", and such a caller passes `null` to mean LEAVE IT ALONE, so reading
+  // `null` as a removal would have deleted provenance on every refresh. The
+  // cost was that those two fields could be set and replaced but never cleared.
+  //
+  // `{ clear: true }` gives removal its own spelling, so absence now carries
+  // the whole "leave alone" meaning by itself. BOTH halves are pinned below,
+  // because the second one used to come for free and no longer does.
+  const SEEDED = renderFrontmatter({
+    blockedBy: [{ repo: null, id: '7' }],
+    serializeWith: { repo: null, id: '4' },
+    decomposedFrom: { repo: null, id: '9' },
+    duplicateOf: { repo: null, id: '5' },
+  }) as string;
+
+  it('a clear removes every owned field, provenance and verdict included', () => {
+    const next = spliceGeneratedEdges(`${SEEDED}\n\nBody.`, {
+      blockedBy: { clear: true },
+      serializeWith: { clear: true },
+      decomposedFrom: { clear: true },
+      duplicateOf: { clear: true },
+    });
+    // Nothing owned survives, so nothing holds the block open either.
+    assert.equal(next, 'Body.');
+  });
+
+  it('clears ONE field and leaves the other three exactly where they were', () => {
+    // The retraction #18 was filed for: a groomer that decided an issue is NOT
+    // a duplicate after all, without disturbing edges other writers own.
+    const next = spliceGeneratedEdges(`${SEEDED}\n\nBody.`, {
+      duplicateOf: { clear: true },
     }) as string;
     const data = parseFrontmatter(next).data;
-    // Scheduling edges: a present value removes.
-    assert.deepEqual(data?.blockedBy, []);
-    assert.equal(data?.serializeWith, null);
-    // Provenance and verdict: null leaves them exactly where they were.
+    assert.equal(data?.duplicateOf, null, 'the verdict is retracted');
     assert.deepEqual(data?.decomposedFrom, { repo: null, id: '9' });
-    assert.deepEqual(data?.duplicateOf, { repo: null, id: '5' });
+    assert.deepEqual(data?.blockedBy, [{ repo: null, id: '7' }]);
+    assert.deepEqual(data?.serializeWith, { repo: null, id: '4' });
+  });
+
+  it('THE REGRESSION #18 EXISTS TO PREVENT: a refresh that omits provenance does not delete it', () => {
+    // The failure mode that made `null`-as-removal unsafe, restated against the
+    // shape that replaced it. A writer refreshing only its own edges names
+    // `blockedBy` and nothing else; both provenance fields must come through
+    // byte-identical every time, or the retraction above has bought a silent
+    // data loss on the commonest path there is.
+    //
+    // VERIFIED BY NEUTERING: make `owns` treat an absent property as owned and
+    // this fails with `decomposedFrom: null`. Without running that, the
+    // assertion proves only that the code did nothing unusual today.
+    const next = spliceGeneratedEdges(`${SEEDED}\n\nBody.`, {
+      blockedBy: { set: [{ repo: null, id: '12' }] },
+    }) as string;
+    const data = parseFrontmatter(next).data;
+    assert.deepEqual(data?.blockedBy, [{ repo: null, id: '12' }], 'the owned field was refreshed');
+    assert.deepEqual(data?.decomposedFrom, { repo: null, id: '9' }, 'provenance survived the refresh');
+    assert.deepEqual(data?.duplicateOf, { repo: null, id: '5' }, 'the verdict survived the refresh');
+    assert.deepEqual(data?.serializeWith, { repo: null, id: '4' }, 'and so did the unowned scheduling edge');
+  });
+
+  it('an empty `set` and a `clear` are the same edit on a list field', () => {
+    // A list with no entries renders no lines, so the two spellings cannot
+    // differ. Pinned so the equivalence cannot drift into a difference a caller
+    // would have to learn — the insert builder says the same thing in a comment.
+    const body = `${SEEDED}\n\nBody.`;
+    assert.equal(
+      spliceGeneratedEdges(body, { blockedBy: { set: [] } }),
+      spliceGeneratedEdges(body, { blockedBy: { clear: true } }),
+    );
   });
 });
 
@@ -480,7 +535,7 @@ describe('the splice verifies its own output', () => {
       '',
       'Body.',
     ].join('\n');
-    const next = spliceGeneratedEdges(body, { duplicateOf: { repo: null, id: '99' } }) as string;
+    const next = spliceGeneratedEdges(body, { duplicateOf: { set: { repo: null, id: '99' } } }) as string;
     assert.notEqual(next, null);
     assert.ok(next.includes('    - "not a ref"'), 'preserved byte-for-byte');
     const parse = parseFrontmatter(next);
@@ -494,9 +549,9 @@ describe('the splice verifies its own output', () => {
     const block = renderFrontmatter({ blockedBy: [{ repo: null, id: '7' }] }) as string;
     assert.equal(
       spliceGeneratedEdges(`${block}\n\nThe brief body.`, {
-        blockedBy: [],
-        serializeWith: null,
-        decomposedFrom: null,
+        blockedBy: { clear: true },
+        serializeWith: { clear: true },
+        decomposedFrom: { clear: true },
       }),
       'The brief body.',
     );
@@ -518,7 +573,7 @@ describe('the positive control is comparative, not just a shape test', () => {
     const body = ['---', '? issuegraph', ':', '  priority: 1', '---', '', 'Body.'].join('\n');
     assert.notEqual(parseFrontmatter(body).data, null, 'the reader can read this before the splice');
 
-    const next = spliceGeneratedEdges(body, { blockedBy: [{ repo: null, id: '9' }] });
+    const next = spliceGeneratedEdges(body, { blockedBy: { set: [{ repo: null, id: '9' }] } });
     assert.equal(next, null, 'so a splice that would destroy it must refuse rather than hand back wreckage');
   });
 
@@ -528,7 +583,7 @@ describe('the positive control is comparative, not just a shape test', () => {
     // outcome is an absent block — so the intent is threaded rather than
     // guessed from the result.
     const body = ['---', 'issuegraph:', '  blocked-by:', '    - "#1"', '---', '', 'Body.'].join('\n');
-    const next = spliceGeneratedEdges(body, { blockedBy: [] });
+    const next = spliceGeneratedEdges(body, { blockedBy: { clear: true } });
     assert.notEqual(next, null);
     assert.equal(parseFrontmatter(next as string).data, null, 'the block is gone, which is the point');
     assert.deepEqual(parseFrontmatter(next as string).diagnostics, []);
@@ -537,7 +592,7 @@ describe('the positive control is comparative, not just a shape test', () => {
   it('CONTROL: an ordinary edit still round-trips', () => {
     // The comparative check must not refuse the common path.
     const body = ['---', 'issuegraph:', '  blocked-by:', '    - "#1"', '  priority: 1', '---', '', 'Body.'].join('\n');
-    const next = spliceGeneratedEdges(body, { blockedBy: [{ repo: null, id: '9' }] }) as string;
+    const next = spliceGeneratedEdges(body, { blockedBy: { set: [{ repo: null, id: '9' }] } }) as string;
     const parse = parseFrontmatter(next);
     assert.deepEqual(parse.data?.blockedBy, [{ repo: null, id: '9' }]);
     assert.equal(parse.data?.priority, 1, 'the unowned field survived');
@@ -555,7 +610,7 @@ describe('an empty section takes its child indent from the header', () => {
     // never written. Silent under-blocking: the issue reads unblocked when the
     // writer meant to block it.
     const body = ['---', '  issuegraph:', '---', '', 'Body.'].join('\n');
-    const next = spliceGeneratedEdges(body, { blockedBy: [{ repo: null, id: '9' }] }) as string;
+    const next = spliceGeneratedEdges(body, { blockedBy: { set: [{ repo: null, id: '9' }] } }) as string;
     assert.notEqual(next, null);
     assert.deepEqual(
       parseFrontmatter(next).data?.blockedBy,
@@ -568,7 +623,7 @@ describe('an empty section takes its child indent from the header', () => {
     // The fallback must key on the header's column, not add a fixed offset to
     // whatever it finds — a flush header keeps the canonical indent.
     const body = ['---', 'issuegraph:', 'other: x', '---'].join('\n');
-    const next = spliceGeneratedEdges(body, { blockedBy: [{ repo: null, id: '9' }] }) as string;
+    const next = spliceGeneratedEdges(body, { blockedBy: { set: [{ repo: null, id: '9' }] } }) as string;
     assert.ok(next.includes('\n  blocked-by:'), 'two spaces for a flush header');
     assert.deepEqual(parseFrontmatter(next).data?.blockedBy, [{ repo: null, id: '9' }]);
   });
@@ -577,7 +632,7 @@ describe('an empty section takes its child indent from the header', () => {
     // The fallback only applies when there is nothing to measure; an author's
     // existing style still wins where one exists.
     const body = ['---', '  issuegraph:', '    priority: 1', '---'].join('\n');
-    const next = spliceGeneratedEdges(body, { blockedBy: [{ repo: null, id: '9' }] }) as string;
+    const next = spliceGeneratedEdges(body, { blockedBy: { set: [{ repo: null, id: '9' }] } }) as string;
     assert.ok(next.includes('\n    blocked-by:'), "four spaces, from the section's own child");
     const parse = parseFrontmatter(next);
     assert.deepEqual(parse.data?.blockedBy, [{ repo: null, id: '9' }]);
@@ -616,11 +671,16 @@ describe('the splice ownership domain', () => {
     assert.deepEqual(properties, ['blockedBy', 'serializeWith', 'decomposedFrom', 'duplicateOf']);
   });
 
-  it('records scheduling edges as clearable and provenance as not', () => {
-    assert.equal(SPLICE_FIELD_OWNERSHIP['blocked-by'].clearable, true);
-    assert.equal(SPLICE_FIELD_OWNERSHIP['serialize-with'].clearable, true);
-    assert.equal(SPLICE_FIELD_OWNERSHIP['decomposed-from'].clearable, false);
-    assert.equal(SPLICE_FIELD_OWNERSHIP['duplicate-of'].clearable, false);
+  it('carries NO clearable flag — #18 left that question with no cases', () => {
+    // The flag answered "does an explicit empty value remove this entry", and
+    // `{ clear: true }` removes every field, so there is nothing left to ask.
+    // Asserted as ABSENCE rather than as `true` on four rows: a well-meaning
+    // restoration of the flag fails here, instead of quietly re-splitting the
+    // fields into two classes the rest of the package would have to learn about
+    // all over again.
+    for (const field of SPLICE_OWNED_FIELDS) {
+      assert.deepEqual(Object.keys(SPLICE_FIELD_OWNERSHIP[field]), ['property'], field);
+    }
   });
 
   it('is frozen, table and rows alike', () => {
@@ -652,36 +712,37 @@ describe('the splice ownership domain', () => {
     });
   });
 
-  it('THE DERIVATION PIN: clearable says what an empty value actually does', () => {
-    // For each owned field, splice an explicit empty value into a block that
-    // HAS that entry, and assert the entry is gone iff the table says clearable.
-    // This is what stops the exported table from being a description that can
-    // drift: `owns` reads these same rows, so a wrong row is a wrong splice.
+  it('THE DERIVATION PIN: every row in the table actually clears through the splice', () => {
+    // For each owned field, splice a clear into a block that HAS that entry and
+    // assert the entry is gone. This is what stops the exported table from
+    // being a description that can drift: `owns` reads these same rows, so a
+    // wrong row is a wrong splice.
+    //
+    // It used to assert "gone IFF the table says clearable". #18 removed the
+    // flag and the conditional with it, so the expectation is unconditional
+    // across all four now — which is the change, stated as a test rather than
+    // as a sentence in a doc comment.
     const ref = { repo: null, id: '9' };
-    const empties: Readonly<Record<string, GeneratedEdges>> = {
-      'blocked-by': { blockedBy: [] },
-      'serialize-with': { serializeWith: null },
-      'decomposed-from': { decomposedFrom: null },
-      'duplicate-of': { duplicateOf: null },
+    const clears: Readonly<Record<string, GeneratedEdges>> = {
+      'blocked-by': { blockedBy: { clear: true } },
+      'serialize-with': { serializeWith: { clear: true } },
+      'decomposed-from': { decomposedFrom: { clear: true } },
+      'duplicate-of': { duplicateOf: { clear: true } },
     };
     for (const field of SPLICE_OWNED_FIELDS) {
-      const { property, clearable } = SPLICE_FIELD_OWNERSHIP[field];
+      const { property } = SPLICE_FIELD_OWNERSHIP[field];
       const seeded =
         property === 'blockedBy'
           ? renderFrontmatter({ blockedBy: [ref], priority: 1 })
           : renderFrontmatter({ blockedBy: [ref], priority: 1, [property]: ref });
       const body = `${seeded as string}\n\nTail.`;
-      const next = spliceGeneratedEdges(body, empties[field] as GeneratedEdges);
+      const next = spliceGeneratedEdges(body, clears[field] as GeneratedEdges);
       assert.notEqual(next, null, field);
       const data = parseFrontmatter(next as string).data;
       const present = property === 'blockedBy'
         ? (data?.blockedBy.length ?? 0) > 0
         : data?.[property as 'serializeWith' | 'decomposedFrom' | 'duplicateOf'] != null;
-      assert.equal(
-        present,
-        !clearable,
-        `${field}: clearable=${clearable} but the entry is ${present ? 'still present' : 'gone'}`,
-      );
+      assert.equal(present, false, `${field}: the clear did not remove the entry`);
       // The un-owned neighbour survives either way — the splice is surgical.
       assert.equal(data?.priority, 1, field);
     }
@@ -689,7 +750,7 @@ describe('the splice ownership domain', () => {
 });
 
 describe('the splice result is distinguished (#27) and verified (#28)', () => {
-  const WANT: GeneratedEdges = { blockedBy: [{ repo: null, id: '9' }] };
+  const WANT: GeneratedEdges = { blockedBy: { set: [{ repo: null, id: '9' }] } };
 
   it('no-block is the ONLY outcome that licenses the prepend', () => {
     // The conflation this union exists to end: `null` meant both "there is no
@@ -760,11 +821,145 @@ describe('the splice result is distinguished (#27) and verified (#28)', () => {
 
   it('clearing to [] leaves no refs behind, which is the same check inverted', () => {
     const body = '---\nissuegraph:\n  blocked-by:\n    - "#1"\n    - "#2"\n  priority: 1\n---';
-    const result = spliceResult(body, { blockedBy: [] });
+    const result = spliceResult(body, { blockedBy: { set: [] } });
 
     assert.equal(result.outcome, 'spliced');
     const after = result.outcome === 'spliced' ? parseFrontmatter(result.body).data : null;
     assert.deepEqual(after?.blockedBy, []);
     assert.equal(after?.priority, 1, 'an unowned field was not preserved');
+  });
+});
+
+describe('a malformed edge value throws before anything is written (#18)', () => {
+  /**
+   * WHY THIS SUITE IS THE OTHER HALF OF #18. Replacing a bare value with
+   * {@link EdgeWrite} makes the old shape a COMPILE ERROR, which closes the
+   * break for TypeScript callers and does nothing at all for the others — a
+   * published package's type annotation is a promise to a compiler, exactly as
+   * `@issuegraph/core`'s predicates were corrected on.
+   *
+   * The reachable population is therefore plain-JavaScript callers still
+   * holding `decomposedFrom: null`, and for them the ONLY unacceptable outcome
+   * is that it be read as a clear: that is the precise silent data loss #18 was
+   * filed to prevent, arriving through the fix for it. So the writer throws,
+   * which is this package's stated discipline — a writer takes its caller's own
+   * control-plane data, so a contract violation is a programmer error.
+   *
+   * MEASURED BEFORE THE GUARD EXISTED, and the two rows that matter are the
+   * silent ones: `{ blockedBy: [ref] }` — the old list spelling — read as a
+   * CLEAR and removed every blocker the caller was trying to set, and
+   * `{ set, clear }` together silently took the clear. The rest surfaced as a
+   * `TypeError` from inside `renderRef` or a property read on `null`, naming
+   * neither the field nor the value.
+   */
+  const REF = { repo: null, id: '5' } as const;
+  const BODY = '---\nissuegraph:\n  blocked-by:\n    - "#1"\n  duplicate-of: "#2"\n  priority: 1\n---\n\nBody.';
+
+  const MALFORMED: readonly (readonly [label: string, edges: unknown])[] = [
+    ['the old provenance spelling: null', { decomposedFrom: null }],
+    ['the old single spelling: a bare ref', { duplicateOf: REF }],
+    ['the old list spelling: a bare array', { blockedBy: [REF] }],
+    ['neither key', { serializeWith: {} }],
+    ['a misspelled key', { duplicateOf: { st: REF } }],
+    ['clear: false — a third meaning nobody needs', { duplicateOf: { clear: false } }],
+    ['both arms at once', { duplicateOf: { set: REF, clear: true } }],
+    ['a number', { duplicateOf: 42 }],
+    ['an array', { duplicateOf: [] }],
+    ['set with no value', { duplicateOf: { set: undefined } }],
+  ];
+
+  for (const [label, edges] of MALFORMED) {
+    it(`throws on ${label}`, () => {
+      assert.throws(
+        () => spliceResult(BODY, edges as GeneratedEdges),
+        (error: unknown) => error instanceof TypeError && /issuegraph splice:/.test(String(error)),
+        label,
+      );
+    });
+  }
+
+  it('runs AHEAD of locateBlock, so a malformed request is not answered `no-block`', () => {
+    // THE ORDERING, TESTED WHERE IT IS ACTUALLY OBSERVABLE. "The body was not
+    // modified" cannot fail here — a body is a string, and this function
+    // returns a new one rather than mutating its argument — so an assertion
+    // about the input would pass against any ordering whatsoever.
+    //
+    // A body with NO BLOCK is where the difference shows. Guard first: the
+    // malformed value throws. Guard after `locateBlock`: the call returns
+    // `no-block`, the caller takes the documented prepend, and a request that
+    // was malformed is answered as though it were fine. Verified by neutering —
+    // moving the call below the `no-block` return makes this the only failure.
+    assert.throws(
+      () => spliceResult('Just prose, no block.\n', { duplicateOf: null } as unknown as GeneratedEdges),
+      TypeError,
+    );
+  });
+
+  it('checks EVERY named field, not just the first one it finds', () => {
+    // A guard that returned at the first well-formed field would wave the
+    // malformed one through, which is the shape the loop makes impossible.
+    assert.throws(
+      () =>
+        spliceResult(BODY, {
+          blockedBy: { set: [REF] },
+          serializeWith: { set: REF },
+          duplicateOf: null,
+        } as unknown as GeneratedEdges),
+      (error: unknown) => String(error).includes('duplicate-of'),
+    );
+  });
+
+  it('names the field and the value, and does not throw while doing it', () => {
+    // THE #53 LESSON, one package over: `JSON.stringify` throws on a bigint and
+    // on a cyclic structure, and this formatter runs on data a DIRECT caller
+    // supplied — so a naive message builder enters its rejection branch
+    // correctly and then escapes with a TypeError from inside the message. The
+    // very defect the guard was added for, one line later.
+    const cyclic: Record<string, unknown> = {};
+    cyclic['self'] = cyclic;
+    for (const value of [1n, cyclic, Symbol('s'), () => undefined]) {
+      let caught: unknown;
+      try {
+        spliceResult(BODY, { duplicateOf: value } as unknown as GeneratedEdges);
+      } catch (error) {
+        caught = error;
+      }
+      assert.ok(caught instanceof TypeError, String(value === cyclic ? '[cyclic]' : String(value)));
+      assert.ok(String(caught).includes('duplicate-of'), String(caught));
+    }
+  });
+
+  it('CONTROL: an explicitly-undefined field is absent, not malformed', () => {
+    // Absent and explicitly-undefined mean the same thing everywhere else in
+    // this codebase, so refusing one of them would be a rule with no defect
+    // behind it — and `exactOptionalPropertyTypes` already stops TypeScript
+    // callers writing it.
+    // Cast, because `exactOptionalPropertyTypes` means a TypeScript caller
+    // cannot write this at all — which is the point: the shape is reachable
+    // only from JavaScript, and it must be treated as absent there too.
+    const next = spliceResult(BODY, {
+      blockedBy: { set: [REF] },
+      duplicateOf: undefined,
+    } as unknown as GeneratedEdges);
+    assert.equal(next.outcome, 'spliced');
+    const data = next.outcome === 'spliced' ? parseFrontmatter(next.body).data : null;
+    assert.deepEqual(data?.duplicateOf, { repo: null, id: '2' }, 'the untouched field survived');
+  });
+
+  it('CONTROL: every well-formed shape still passes the guard', () => {
+    const WELL_FORMED: readonly GeneratedEdges[] = [
+      { blockedBy: { set: [REF] } },
+      { blockedBy: { set: [] } },
+      { blockedBy: { clear: true } },
+      { serializeWith: { set: REF } },
+      { serializeWith: { clear: true } },
+      { decomposedFrom: { set: REF } },
+      { decomposedFrom: { clear: true } },
+      { duplicateOf: { set: REF } },
+      { duplicateOf: { clear: true } },
+    ];
+    for (const edges of WELL_FORMED) {
+      assert.doesNotThrow(() => spliceResult(BODY, edges), JSON.stringify(edges));
+    }
   });
 });

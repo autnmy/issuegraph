@@ -112,11 +112,17 @@ describe('usage errors at the process boundary', () => {
 
 describe('a write command never exits 0 having silently done nothing', () => {
   // Both reported findings, at the boundary a caller's automation actually reads.
-  test('a clear the writer cannot perform is refused, not accepted and ignored', () => {
-    const body = ['---', 'issuegraph:', '  duplicate-of: 42', '---', '', 'Prose.'].join('\n');
+  test('#18: --no-duplicate-of is a real clear now, and the BODY is what proves it', () => {
+    // This used to assert a REFUSAL, because the writer could not perform the
+    // clear and a flag exiting 0 having changed nothing is precisely the defect
+    // this suite is named for. The clear is real since #18, so the guarantee is
+    // unchanged and only its evidence moved: from the exit code to the body.
+    // Asserting `EXIT.ok` alone would pass for a command that did nothing.
+    const body = ['---', 'issuegraph:', '  duplicate-of: 42', '  blocked-by:', '    - 1', '---', '', 'Prose.'].join('\n');
     const result = run(['set', '--no-duplicate-of'], body);
-    assert.notEqual(result.status, EXIT.ok);
-    assert.equal(result.stdout, '');
+    assert.equal(result.status, EXIT.ok, result.stderr);
+    assert.ok(!result.stdout.includes('duplicate-of'), result.stdout);
+    assert.ok(result.stdout.includes('blocked-by'), 'an unowned field must survive');
   });
 
   test('an unrecognised --edges key is refused, not ignored', () => {

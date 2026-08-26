@@ -103,10 +103,18 @@ describe('set', () => {
   });
 });
 
-describe('a clear the writer cannot perform is refused on EVERY path', () => {
-  // The class, swept. `setFields` was fixed first and review found `spliceEdges`
-  // still open, so both now go through one shared test rather than two inline
-  // copies — a second copy is how a third path gets missed.
+describe('every clear is PERFORMED on every path, since #18', () => {
+  // WHAT THIS BLOCK REPLACED. It used to assert that clearing `decomposed-from`
+  // or `duplicate-of` was REFUSED on both paths — correctly, because the writer
+  // read an empty value there as "leave untouched" and a command that accepted
+  // the request and exited 0 would report work it never did. #18 gave removal
+  // its own spelling in the writer, so the request is performable and the
+  // refusal has nothing left to refuse.
+  //
+  // The sweep it existed for is kept: `setFields` and `spliceEdges` are still
+  // exercised through one shared body, because `setFields` was fixed first and
+  // review found `spliceEdges` still open. A second copy is how a third path
+  // gets missed.
   const WITH_PROVENANCE = [
     '---',
     'issuegraph:',
@@ -118,33 +126,45 @@ describe('a clear the writer cannot perform is refused on EVERY path', () => {
     'Prose.',
   ].join('\n');
 
-  test('setFields refuses it', () => {
-    for (const fields of [{ decomposedFrom: null }, { duplicateOf: null }] as const) {
+  test('setFields performs it — a flat null is a clear at this boundary', () => {
+    for (const [fields, gone] of [
+      [{ decomposedFrom: null }, 'decomposed-from'],
+      [{ duplicateOf: null }, 'duplicate-of'],
+    ] as const) {
       const result = setFields(WITH_PROVENANCE, fields);
-      assert.equal(result.code, EXIT.refusedWrite);
-      assert.equal(result.stdout, '');
+      assert.equal(result.code, EXIT.ok, gone);
+      assert.ok(!result.stdout.includes(gone), result.stdout);
+      // Surgical: the OTHER provenance entry and the scheduling edge stay.
+      assert.ok(result.stdout.includes('serialize-with: 9'), result.stdout);
     }
   });
 
-  test('spliceEdges refuses it too — the exported path a library caller reaches', () => {
-    for (const edges of [{ decomposedFrom: null }, { duplicateOf: null }] as const) {
+  test('spliceEdges performs it too — the exported path a library caller reaches', () => {
+    for (const [edges, gone] of [
+      [{ decomposedFrom: { clear: true } }, 'decomposed-from'],
+      [{ duplicateOf: { clear: true } }, 'duplicate-of'],
+    ] as const) {
       const result = spliceEdges(WITH_PROVENANCE, edges);
-      assert.equal(result.code, EXIT.refusedWrite);
-      assert.equal(result.stdout, '', 'a refusal writes no body');
+      assert.equal(result.code, EXIT.ok, gone);
+      assert.ok(!result.stdout.includes(gone), result.stdout);
+      assert.ok(result.stdout.includes('serialize-with: 9'), result.stdout);
     }
   });
 
-  test('both paths give the SAME code and the same reason', () => {
+  test('both paths produce the SAME body from the same request', () => {
+    // The flat spelling and the wrapped one are one translation apart, so a
+    // difference between them would be a bug in that translation rather than a
+    // difference a caller should have to learn.
     const a = setFields(WITH_PROVENANCE, { duplicateOf: null });
-    const b = spliceEdges(WITH_PROVENANCE, { duplicateOf: null });
+    const b = spliceEdges(WITH_PROVENANCE, { duplicateOf: { clear: true } });
     assert.equal(a.code, b.code);
-    assert.deepEqual(a.stderr, b.stderr);
+    assert.equal(a.stdout, b.stdout);
   });
 
-  test('CONTROL: omitting the key leaves the entry alone at exit 0', () => {
-    // The intent `null` might have expressed is already expressible by omission,
-    // which is why refusing it breaks nothing.
-    const result = spliceEdges(WITH_PROVENANCE, { blockedBy: [REF_1] });
+  test('CONTROL: omitting the key still leaves the entry alone at exit 0', () => {
+    // The distinction #18 turns on: absence is the ONLY way to say "not mine",
+    // and it has to keep meaning that now that a present value can remove.
+    const result = spliceEdges(WITH_PROVENANCE, { blockedBy: { set: [REF_1] } });
     assert.equal(result.code, EXIT.ok);
     // BARE, not `"#42"`. These entries are UNOWNED by this call, so the splice
     // preserves them byte-for-byte — the author's spelling survives. Only
@@ -153,10 +173,10 @@ describe('a clear the writer cannot perform is refused on EVERY path', () => {
     assert.ok(result.stdout.includes('decomposed-from: 7'), result.stdout);
   });
 
-  test('CONTROL: the clear the writer CAN perform still works on both paths', () => {
+  test('CONTROL: the clear that always worked still works on both paths', () => {
     for (const result of [
       setFields(WITH_PROVENANCE, { serializeWith: null }),
-      spliceEdges(WITH_PROVENANCE, { serializeWith: null }),
+      spliceEdges(WITH_PROVENANCE, { serializeWith: { clear: true } }),
     ]) {
       assert.equal(result.code, EXIT.ok);
       assert.ok(!result.stdout.includes('serialize-with'), result.stdout);
@@ -164,7 +184,7 @@ describe('a clear the writer cannot perform is refused on EVERY path', () => {
   });
 
   test('CONTROL: an ordinary write to those same fields still lands', () => {
-    const result = spliceEdges(WITH_PROVENANCE, { duplicateOf: { repo: null, id: '99' } });
+    const result = spliceEdges(WITH_PROVENANCE, { duplicateOf: { set: { repo: null, id: '99' } } });
     assert.equal(result.code, EXIT.ok);
     assert.ok(result.stdout.includes('duplicate-of: "#99"'), result.stdout);
   });
@@ -177,72 +197,103 @@ describe('the write funnel — one gate, every path', () => {
    * operation. Three review rounds each found the next write path missing the
    * check the previous round added; this is that pattern's stop-condition.
    */
-  const WRITE_OPERATIONS: readonly (readonly [name: string, run: (body: string, request: never) => ReturnType<typeof setFields>])[] = [
-    ['setFields', (body, request) => setFields(body, request)],
-    ['spliceEdges', (body, request) => spliceEdges(body, request)],
-  ];
+  /**
+   * EACH ROW CARRIES ITS OWN SPELLING OF THE SAME INTENT since #18. The two
+   * surfaces are one translation apart — `setFields` is flat, `spliceEdges`
+   * takes the writer's wrapped `EdgeWrite` — so a single shared request literal
+   * would have to be one of the two, and the funnel would then be testing one
+   * path with a request the other cannot express. The INTENTS are what the
+   * table shares; only their spelling differs.
+   */
+  const WRITE_OPERATIONS = [
+    {
+      name: 'setFields',
+      run: (body: string, request: never) => setFields(body, request),
+      nothing: {},
+      clearDuplicate: { duplicateOf: null },
+      setBlockedBy: { blockedBy: [REF_7] },
+    },
+    {
+      name: 'spliceEdges',
+      run: (body: string, request: never) => spliceEdges(body, request),
+      nothing: {},
+      clearDuplicate: { duplicateOf: { clear: true } },
+      setBlockedBy: { blockedBy: { set: [REF_7] } },
+    },
+  ] as const;
 
   const WITH_BLOCK = ['---', 'issuegraph:', '  blocked-by:', '    - 1', '  duplicate-of: 42', '---', '', 'Prose.'].join('\n');
 
   test('every write operation refuses a request that asks for nothing', () => {
-    for (const [name, run] of WRITE_OPERATIONS) {
-      const result = run(WITH_BLOCK, {} as never);
+    for (const { name, run, nothing } of WRITE_OPERATIONS) {
+      const result = run(WITH_BLOCK, nothing as never);
       assert.equal(result.code, EXIT.usage, `${name} accepted an empty request`);
       assert.equal(result.stdout, '', `${name} wrote a body for an empty request`);
     }
   });
 
-  test('every write operation refuses a clear the writer cannot perform', () => {
-    for (const [name, run] of WRITE_OPERATIONS) {
-      const result = run(WITH_BLOCK, { duplicateOf: null } as never);
-      assert.equal(result.code, EXIT.refusedWrite, `${name} accepted an unperformable clear`);
-      assert.equal(result.stdout, '', `${name} wrote a body for a refused clear`);
+  test('every write operation PERFORMS a clear — the row that used to refuse one', () => {
+    // It asserted `refusedWrite` until #18, for the two fields the writer could
+    // set but not remove. Every owned field is clearable now, so the row stays
+    // in the funnel with its expectation inverted rather than being deleted:
+    // "does every path treat this request the same way" is the question the
+    // table exists for, and the answer moving from refuse to perform does not
+    // retire it.
+    for (const { name, run, clearDuplicate } of WRITE_OPERATIONS) {
+      const result = run(WITH_BLOCK, clearDuplicate as never);
+      assert.equal(result.code, EXIT.ok, `${name} refused a clear it can perform`);
+      assert.ok(!result.stdout.includes('duplicate-of'), `${name}: ${result.stdout}`);
+      assert.deepEqual(edgesOf(result.stdout), ['1'], `${name}: an unowned edge must survive`);
     }
   });
 
   test('every write operation refuses an unread block', () => {
-    for (const [name, run] of WRITE_OPERATIONS) {
-      const result = run(HAZARD_BODY, { blockedBy: [REF_7] } as never);
+    for (const { name, run, setBlockedBy } of WRITE_OPERATIONS) {
+      const result = run(HAZARD_BODY, setBlockedBy as never);
       assert.equal(result.code, EXIT.unreadDeclaration, `${name} wrote into an unread block`);
       assert.equal(result.stdout, '');
     }
   });
 
   test('CONTROL: every write operation still performs an ordinary write', () => {
-    // Without this the three tests above would pass for a package that had
-    // simply stopped writing anything at all.
-    for (const [name, run] of WRITE_OPERATIONS) {
-      const result = run(WITH_BLOCK, { blockedBy: [REF_7] } as never);
+    // Without this the tests above would pass for a package that had simply
+    // stopped writing anything at all.
+    for (const { name, run, setBlockedBy } of WRITE_OPERATIONS) {
+      const result = run(WITH_BLOCK, setBlockedBy as never);
       assert.equal(result.code, EXIT.ok, `${name} refused a valid write`);
       assert.deepEqual(edgesOf(result.stdout), ['7'], name);
     }
   });
 
-  test('the refusals are identical across paths, so they cannot drift apart', () => {
-    for (const request of [{}, { duplicateOf: null }]) {
-      const [a, b] = WRITE_OPERATIONS.map(([, run]) => run(WITH_BLOCK, request as never));
+  test('the paths answer identically, so they cannot drift apart', () => {
+    // Refusals AND successes. A shared refusal was the original point; since
+    // #18 the clear succeeds on both paths, and two paths that agree on how to
+    // say no while disagreeing on what they write would be worse than either.
+    for (const intent of ['nothing', 'clearDuplicate', 'setBlockedBy'] as const) {
+      const [a, b] = WRITE_OPERATIONS.map((op) => op.run(WITH_BLOCK, op[intent] as never));
       assert.ok(a !== undefined && b !== undefined);
-      assert.equal(a.code, b.code);
-      assert.deepEqual(a.stderr, b.stderr);
+      assert.equal(a.code, b.code, intent);
+      assert.deepEqual(a.stderr, b.stderr, intent);
+      assert.equal(a.stdout, b.stdout, intent);
     }
   });
 });
 
 describe('splice', () => {
   test('an owned field present replaces its entries', () => {
-    const result = spliceEdges(QUOTED_BODY, { blockedBy: [REF_1] });
+    const result = spliceEdges(QUOTED_BODY, { blockedBy: { set: [REF_1] } });
     assert.equal(result.code, EXIT.ok);
     assert.deepEqual(edgesOf(result.stdout), ['1']);
   });
 
   test('an owned field ABSENT leaves its entries untouched', () => {
-    const result = spliceEdges(QUOTED_BODY, { serializeWith: REF_7 });
+    const result = spliceEdges(QUOTED_BODY, { serializeWith: { set: REF_7 } });
     assert.equal(result.code, EXIT.ok);
     assert.deepEqual(edgesOf(result.stdout), ['123', '124']);
   });
 
   test('an explicit empty list removes entries without inserting', () => {
-    const result = spliceEdges(CANONICAL_BODY, { blockedBy: [] });
+    const result = spliceEdges(CANONICAL_BODY, { blockedBy: { set: [] } });
     assert.equal(result.code, EXIT.ok);
     const decl = classifyDeclaration(parseFrontmatter(result.stdout));
     assert.ok(decl.state === 'read');
@@ -251,14 +302,14 @@ describe('splice', () => {
   });
 
   test('refuses a body with no block — unlike set, it never prepends', () => {
-    const result = spliceEdges(ABSENT_BODY, { blockedBy: [REF_1] });
+    const result = spliceEdges(ABSENT_BODY, { blockedBy: { set: [REF_1] } });
     assert.equal(result.code, EXIT.refusedWrite);
     assert.equal(result.stdout, '');
     assert.ok(result.stderr.join('\n').includes('set'), 'the refusal should point at the verb that does prepend');
   });
 
   test('refuses the hazard', () => {
-    const result = spliceEdges(HAZARD_BODY, { blockedBy: [REF_1] });
+    const result = spliceEdges(HAZARD_BODY, { blockedBy: { set: [REF_1] } });
     assert.equal(result.code, EXIT.unreadDeclaration);
     assert.equal(result.stdout, '');
   });
@@ -352,8 +403,8 @@ describe('a write request naming a field the writer cannot act on', () => {
     assert.equal(setFields(CANONICAL_BODY, { serializeWith: REF_7 }).code, EXIT.ok);
     assert.equal(setFields(CANONICAL_BODY, { decomposedFrom: REF_7 }).code, EXIT.ok);
     assert.equal(setFields(CANONICAL_BODY, { duplicateOf: REF_7 }).code, EXIT.ok);
-    assert.equal(spliceEdges(CANONICAL_BODY, { blockedBy: [REF_7] }).code, EXIT.ok);
-    assert.equal(spliceEdges(CANONICAL_BODY, { serializeWith: null }).code, EXIT.ok);
+    assert.equal(spliceEdges(CANONICAL_BODY, { blockedBy: { set: [REF_7] } }).code, EXIT.ok);
+    assert.equal(spliceEdges(CANONICAL_BODY, { serializeWith: { clear: true } }).code, EXIT.ok);
   });
 
   test('an explicitly-undefined value asks for nothing, exactly as an absent key does', () => {

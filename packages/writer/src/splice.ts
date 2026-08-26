@@ -161,10 +161,10 @@ function ownedFieldMismatch(edges: GeneratedEdges, after: Frontmatter | null): s
     if (!owns(edges, key)) continue;
     const { property } = SPLICE_FIELD_OWNERSHIP[key];
     if (property === 'blockedBy') {
-      const wanted = edges.blockedBy ?? [];
+      const wanted = written(edges.blockedBy) ?? [];
       // A NULL PARSE IS AN EMPTY DECLARATION HERE, not a failure: the
       // whole-block removal path legitimately ends with no block, and clearing
-      // `blocked-by` to `[]` is what asked for that.
+      // `blocked-by` is what asked for that.
       const got = after === null ? [] : after.blockedBy;
       const same =
         wanted.length === got.length && wanted.every((ref, i) => sameRef(ref, got[i] ?? null));
@@ -173,7 +173,11 @@ function ownedFieldMismatch(edges: GeneratedEdges, after: Frontmatter | null): s
       }
       continue;
     }
-    const wanted = edges[property] ?? null;
+    // A CLEAR IS VERIFIED LIKE ANY OTHER WRITE, which the previous shape could
+    // not express: a field whose only empty spelling meant *leave alone* had no
+    // removal for this to check. `written` reads a clear as `null`, so "asked
+    // for none, the result reads #7" is a reportable failure now.
+    const wanted = written(edges[property]);
     const got = after === null ? null : after[property];
     if (!sameRef(wanted, got)) {
       return `${key} did not land: asked for ${wanted === null ? 'none' : renderRef(wanted)}, the result reads ${got === null ? 'none' : renderRef(got)}`;
@@ -183,33 +187,63 @@ function ownedFieldMismatch(edges: GeneratedEdges, after: Frontmatter | null): s
 }
 
 /**
- * The generated edge fields a writer owns for one splice call.
+ * How one owned field is written: a value to put there, or a request to REMOVE
+ * what is there. Absence — the property not appearing on {@link GeneratedEdges}
+ * at all — is the third state, and still means *leave it byte-untouched*.
  *
- * OWNERSHIP IS PER-FIELD AND OPT-IN: a field the input omits is left
- * byte-untouched, because not every writer owns every edge — a groomer owns
- * `duplicate-of` on an issue whose scheduling edges belong to other writers —
- * and round-tripping parsed values back through a splice would silently launder
- * away unparseable items and exotic spellings the parser tolerates with a
- * diagnostic.
+ * WHY A WRAPPER RATHER THAN A BARE VALUE. The bare form spent `null` on two
+ * incompatible jobs one field apart. For `serialize-with` a present `null`
+ * REMOVED the entry; for `decomposed-from` and `duplicate-of` it meant *leave
+ * it alone*, because the established caller shape for provenance is "write it
+ * when the block lacks one, never clobber one that is already there" and such a
+ * caller passes `null` precisely to say so:
  *
- * WHAT AN EXPLICIT EMPTY VALUE MEANS IS NOT UNIFORM, and the asymmetry is
- * deliberate. `blockedBy` and `serializeWith` are SCHEDULING edges, so a present
- * `[]` or `null` is an owned REMOVAL. `decomposedFrom` and `duplicateOf` are
- * PROVENANCE and VERDICT, where the established caller shape is "write it when
- * the block lacks one, never clobber one that is already there" — it passes
- * `null` precisely to mean *leave it alone*, so spending `null` on removal
- * instead would delete provenance on every refresh of a block that has it.
- * There is consequently no way to CLEAR those two through this call; that gap
- * is real and is tracked rather than closed by overloading a value that already
- * has a caller.
+ * ```ts
+ * decomposedFrom: parsed.decomposedFrom === null ? decomposedFrom : null,
+ * ```
  *
- * WHICH FIELD IS WHICH IS {@link SPLICE_FIELD_OWNERSHIP}, NOT THIS PARAGRAPH.
- * The rule above is the RATIONALE; the table is the answer, it is exported, and
- * {@link owns} derives from it — so a consumer asks rather than reading prose,
- * and prose cannot drift away from behaviour. Restating the per-field mechanics
- * here is what made four separate copies of this rule; the notes below name
- * each field's ROLE and defer the mechanics to the table.
+ * Reading that `null` as a removal would delete provenance on every refresh of
+ * a block that has it — a silent data loss on the path the call exists to
+ * serve. So `null` was taken, and those two fields had NO WAY TO CLEAR at all,
+ * which is what [#18](https://github.com/autnmy/issuegraph/issues/18) reports.
+ * Absent / `{ set }` / `{ clear }` are three spellings for three meanings, so
+ * nothing is overloaded and all four fields read the same.
+ *
+ * TWO REJECTED ALTERNATIVES, because the next reader will think of both. A
+ * DISTINCT SENTINEL (a `CLEAR` symbol, so `null` keeps its meaning) is cheaper
+ * and leaves THREE spellings of one concept — `[]`, `null`, `CLEAR` — which is
+ * the restatement problem this package has already paid for four times; a
+ * symbol also cannot cross a JSON boundary, so `@issuegraph/cli` would need a
+ * fourth. A SEPARATE `clearGeneratedEdges` VERB reads well and forces a caller
+ * that sets one edge while clearing another into TWO calls with two independent
+ * results, where the second can fail after the first already changed the body —
+ * the half-written block this module's contract says it makes impossible.
+ *
+ * `clear?: never` / `set?: never` ON THE OPPOSITE ARM IS LOAD-BEARING. Excess
+ * property checking fires only on a FRESH object literal — the same rule that
+ * makes the `satisfies` POSITION matter for {@link SPLICE_FIELD_OWNERSHIP} — so
+ * without them `{ set: ref, clear: true }` compiles clean the moment it arrives
+ * through a variable. It is checked at runtime as well, because a published
+ * package's type annotation is a promise to TypeScript callers and nothing at
+ * all to JavaScript ones.
  */
+export type EdgeWrite<T> =
+  | { readonly set: T; readonly clear?: never }
+  | { readonly clear: true; readonly set?: never };
+
+/**
+ * What a write puts in the block: the value for a `set`, and `null` for a clear
+ * or for a field this call does not name.
+ *
+ * ONE READER FOR EVERY SITE that asks "what should be there when this is done".
+ * The insert builder and {@link ownedFieldMismatch} ask the same question of
+ * the same value, and answering it twice is how this package accumulated four
+ * copies of its last per-field rule.
+ */
+function written<T>(write: EdgeWrite<T> | undefined): T | null {
+  if (write === undefined || write.clear === true) return null;
+  return write.set;
+}
 /**
  * What one splice call did — a distinguished result, because `string | null`
  * made a caller guess between outcomes that need OPPOSITE repairs.
@@ -257,15 +291,36 @@ export type SpliceResult =
       readonly detail: string;
     };
 
+/**
+ * The generated edge fields a writer owns for one splice call.
+ *
+ * OWNERSHIP IS PER-FIELD AND OPT-IN: a field the input omits is left
+ * byte-untouched, because not every writer owns every edge — a groomer owns
+ * `duplicate-of` on an issue whose scheduling edges belong to other writers —
+ * and round-tripping parsed values back through a splice would silently launder
+ * away unparseable items and exotic spellings the parser tolerates with a
+ * diagnostic.
+ *
+ * ALL FOUR FIELDS BEHAVE IDENTICALLY, which they did not before #18: absent
+ * leaves the entry alone, `{ set }` replaces or inserts, `{ clear: true }`
+ * removes. {@link EdgeWrite} carries why the uniform shape replaced a bare
+ * value, and which two alternatives were rejected.
+ *
+ * THE PER-FIELD NOTES BELOW NAME EACH FIELD'S ROLE AND NOTHING ELSE. They used
+ * to state each field's clear MECHANICS too, which made them one of the four
+ * copies of a rule that {@link SPLICE_FIELD_OWNERSHIP} owns — and copies of
+ * that particular rule produced four of the eleven findings in #26. The role is
+ * what a caller cannot derive from the table; the mechanics are what it can.
+ */
 export interface GeneratedEdges {
-  /** A SCHEDULING edge. Clearable — see {@link SPLICE_FIELD_OWNERSHIP}. */
-  readonly blockedBy?: readonly IssueRef[];
-  /** A SCHEDULING edge. Clearable — see {@link SPLICE_FIELD_OWNERSHIP}. */
-  readonly serializeWith?: IssueRef | null;
-  /** PROVENANCE. Not clearable — see {@link SPLICE_FIELD_OWNERSHIP}. */
-  readonly decomposedFrom?: IssueRef | null;
-  /** A dedupe VERDICT (§4.3.3, §5.1). Not clearable — see {@link SPLICE_FIELD_OWNERSHIP}. */
-  readonly duplicateOf?: IssueRef | null;
+  /** A SCHEDULING edge. */
+  readonly blockedBy?: EdgeWrite<readonly IssueRef[]>;
+  /** A SCHEDULING edge. */
+  readonly serializeWith?: EdgeWrite<IssueRef>;
+  /** PROVENANCE: which issue this one was split out of (§5.2). */
+  readonly decomposedFrom?: EdgeWrite<IssueRef>;
+  /** A dedupe VERDICT (§4.3.3, §5.1). */
+  readonly duplicateOf?: EdgeWrite<IssueRef>;
 }
 
 /**
@@ -286,21 +341,20 @@ export const SPLICE_OWNED_FIELDS = Object.freeze([
 /** An edge field {@link spliceGeneratedEdges} can own. */
 export type SpliceOwnedField = (typeof SPLICE_OWNED_FIELDS)[number];
 
-/** What this splice can do with one owned field. */
+/**
+ * What this splice can do with one owned field.
+ *
+ * IT USED TO CARRY A `clearable` FLAG, and #18 DELETED it rather than setting
+ * it `true` on every row. The flag answered "does an explicit empty value
+ * remove this entry" — a question {@link EdgeWrite} abolished, because
+ * `{ clear: true }` removes every field and no field has an overloaded empty
+ * value left. A uniformly-`true` flag would have kept four consumers reading a
+ * constant, and would have left `@issuegraph/cli`'s whole clear-refusal path
+ * alive with nothing to refuse.
+ */
 export interface SpliceFieldOwnership {
   /** The {@link GeneratedEdges} property that carries this field's value. */
   readonly property: keyof GeneratedEdges;
-  /**
-   * Whether an explicit empty value (`[]` for a list, `null` for a single)
-   * REMOVES the entry. When `false`, an empty value means *leave untouched* and
-   * there is no way to clear the field through this call.
-   *
-   * IT IS ALSO THE OWNERSHIP PREDICATE, which is why one flag carries both
-   * facts rather than two that could disagree: a clearable field is owned when
-   * its property is present at all, and a non-clearable one only when that
-   * property is non-null — because for the latter, `null` is already spoken for.
-   */
-  readonly clearable: boolean;
 }
 
 /**
@@ -327,10 +381,10 @@ export interface SpliceFieldOwnership {
  * two-directional is worse than none, because the comment above would be false.
  */
 export const SPLICE_FIELD_OWNERSHIP = Object.freeze({
-  'blocked-by': Object.freeze({ property: 'blockedBy', clearable: true }),
-  'serialize-with': Object.freeze({ property: 'serializeWith', clearable: true }),
-  'decomposed-from': Object.freeze({ property: 'decomposedFrom', clearable: false }),
-  'duplicate-of': Object.freeze({ property: 'duplicateOf', clearable: false }),
+  'blocked-by': Object.freeze({ property: 'blockedBy' }),
+  'serialize-with': Object.freeze({ property: 'serializeWith' }),
+  'decomposed-from': Object.freeze({ property: 'decomposedFrom' }),
+  'duplicate-of': Object.freeze({ property: 'duplicateOf' }),
 } satisfies Readonly<Record<SpliceOwnedField, SpliceFieldOwnership>>);
 
 const SPLICE_OWNED_FIELD_SET: ReadonlySet<string> = new Set<string>(SPLICE_OWNED_FIELDS);
@@ -351,8 +405,13 @@ export function isSpliceOwnedField(value: unknown): value is SpliceOwnedField {
  * Whether this call owns the named field.
  *
  * DERIVED FROM {@link SPLICE_FIELD_OWNERSHIP}, not a switch restating it — see
- * that table's note. `clearable` selects the predicate, for the reason
- * {@link SpliceFieldOwnership.clearable} gives.
+ * that table's note.
+ *
+ * ONE PREDICATE FOR ALL FOUR FIELDS. It used to branch on `clearable`, because
+ * a non-clearable field could only be owned when its property was non-`null` —
+ * `null` there meant *leave alone*, so treating presence as ownership would
+ * have deleted the entry. {@link EdgeWrite} removed the overload, so presence
+ * is now the whole question and the branch is gone with the flag.
  */
 /** The parser's empty form, for an uneditable block whose YAML did not parse. */
 const EMPTY_FRONTMATTER: Frontmatter = Object.freeze({
@@ -367,15 +426,17 @@ const EMPTY_FRONTMATTER: Frontmatter = Object.freeze({
 
 function owns(edges: GeneratedEdges, key: string): boolean {
   if (!isSpliceOwnedField(key)) return false;
-  const { property, clearable } = SPLICE_FIELD_OWNERSHIP[key];
-  return clearable ? edges[property] !== undefined : edges[property] != null;
+  return edges[SPLICE_FIELD_OWNERSHIP[key].property] !== undefined;
 }
 
 /**
- * Splice the owned generated edges into the canonical block, returning the new
- * body — or `null` when `body` carries no closed keyed block this writer can
- * edit, in which case the caller prepends a fresh block instead (§4.1's
- * canonical position, `renderFrontmatter`'s output).
+ * Splice the owned generated edges into the canonical block, returning a
+ * {@link SpliceResult}. Only `no-block` licenses the caller's prepend fallback
+ * (§4.1's canonical position, `renderFrontmatter`'s output); the other two
+ * failure arms need the opposite repair, which is why they are distinguished.
+ * (This sentence said `null` until #18 — a leftover from before #27 replaced
+ * the nullable string, and false three paragraphs above the paragraph saying
+ * so.)
  *
  * Inserted lines adopt the section's own child indent, so an author's two- or
  * four-space style survives, and the renderer's canonical ref spelling.
@@ -395,7 +456,90 @@ function owns(edges: GeneratedEdges, key: string): boolean {
  * need opposite repairs — prepending in the second case demotes the canonical
  * block and drops every field this call does not own. See {@link SpliceResult}.
  */
+/**
+ * Name a value in a message, without becoming the failure being reported.
+ *
+ * `JSON.stringify` IS NOT AVAILABLE HERE. It throws on a bigint and on a cyclic
+ * structure, and this runs on an object a DIRECT caller supplied — so the
+ * obvious builder enters its rejection branch correctly and then escapes with a
+ * TypeError raised while describing the value, which is the very defect the
+ * rejection exists to report. `@issuegraph/cli` shipped exactly that and had to
+ * fix it one line inside its own guard; this is the same formatter, local
+ * because the dependency runs the other way (the CLI depends on this package).
+ *
+ * Nothing below can throw: `Object.keys` does not recurse, so a cycle is fine;
+ * `String` is applied only to primitives, never to an object whose `toString`
+ * a caller controls.
+ */
+function describeValue(value: unknown): string {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'an array';
+  const type = typeof value;
+  if (type === 'object') {
+    const keys = Object.keys(value as object);
+    return keys.length === 0 ? 'an object with no keys' : `an object with keys ${keys.join(', ')}`;
+  }
+  if (type === 'string') return `the string ${value as string}`;
+  return `${type} ${String(value)}`;
+}
+
+/** Why a value is not an {@link EdgeWrite}, or `null` when it is one. */
+function edgeWriteDefect(write: unknown): string | null {
+  if (typeof write !== 'object' || write === null || Array.isArray(write)) {
+    return 'a write is an object';
+  }
+  const record: Readonly<Record<string, unknown>> = write as Readonly<Record<string, unknown>>;
+  const setting = record['set'] !== undefined;
+  const clearing = record['clear'] !== undefined;
+  if (setting && clearing) return 'it names both, and they contradict each other';
+  if (!setting && !clearing) return 'it names neither';
+  if (clearing && record['clear'] !== true) return '`clear` is only ever `true`';
+  return null;
+}
+
+/**
+ * Refuse a malformed edge value BEFORE anything is read or written.
+ *
+ * WHY A THROW RATHER THAN A REFUSING RESULT. This module's package note states
+ * the discipline: a parser takes untrusted issue text and must never throw,
+ * while a writer takes its caller's own control-plane data, so a contract
+ * violation is a programmer error and throws before anything is written.
+ * `render.ts` already refuses a malformed ref the same way.
+ *
+ * WHY IT EXISTS AT ALL, given TypeScript rejects every old shape. The
+ * annotation is a promise to TypeScript callers and nothing at all to
+ * JavaScript ones, so the reachable population is a plain-JS caller still
+ * holding the pre-#18 spelling — and for that caller the one unacceptable
+ * outcome is having it read as a CLEAR, which is the exact silent data loss #18
+ * was filed to prevent, arriving through the fix for it. Measured on the two
+ * shapes that were silent rather than merely broken: `{ blockedBy: [ref] }`
+ * spliced clean and left `blocked-by: []` — every blocker the caller was trying
+ * to SET, removed — and `{ set, clear }` together took the clear. The remaining
+ * shapes surfaced as a `TypeError` from inside `renderRef` or a property read
+ * on `null`, naming neither the field nor the value.
+ *
+ * IT RUNS AHEAD OF `locateBlock`, so a call carrying one good field and one bad
+ * one cannot half-apply.
+ */
+function assertEdgeWrites(edges: GeneratedEdges): void {
+  for (const key of SPLICE_OWNED_FIELDS) {
+    // Read through the ownership table and widen to `unknown` rather than
+    // casting `edges` to an index signature: the table is already the single
+    // source of which property carries which field, and a cast would let a
+    // property that is NOT in the table be read here without anything noticing.
+    const write: unknown = edges[SPLICE_FIELD_OWNERSHIP[key].property];
+    if (write === undefined) continue;
+    const defect = edgeWriteDefect(write);
+    if (defect !== null) {
+      throw new TypeError(
+        `issuegraph splice: ${key} must be { set: … } or { clear: true }, got ${describeValue(write)} — ${defect}`,
+      );
+    }
+  }
+}
+
 export function spliceGeneratedEdges(body: string, edges: GeneratedEdges): SpliceResult {
+  assertEdgeWrites(edges);
   const located = locateBlock(body);
   if (located.lines === null) return { outcome: 'no-block' };
   const section = locateSection(located.lines);
@@ -452,14 +596,26 @@ export function spliceGeneratedEdges(body: string, edges: GeneratedEdges): Splic
   // the SPEC declaration order among the owned fields.
   const pad = ' '.repeat(section.childIndent);
   const itemPad = ' '.repeat(section.childIndent + 2);
+  // A CLEAR INSERTS NOTHING; the removal above is the whole edit. `written`
+  // reads both a clear and an unnamed field as "nothing goes here", so one
+  // emptiness test covers all three cases rather than one per field.
+  //
+  // `{ set: [] }` AND `{ clear: true }` PRODUCE THE SAME BYTES on `blockedBy`,
+  // deliberately. A list with no entries renders no lines, so the two are one
+  // outcome; refusing either would be a rule with no defect behind it. A test
+  // pins that they agree, so the equivalence cannot drift into a difference.
   const ins: string[] = [];
-  if (edges.blockedBy !== undefined && edges.blockedBy.length > 0) {
+  const blockedBy = written(edges.blockedBy) ?? [];
+  const decomposedFrom = written(edges.decomposedFrom);
+  const duplicateOf = written(edges.duplicateOf);
+  const serializeWith = written(edges.serializeWith);
+  if (blockedBy.length > 0) {
     ins.push(`${pad}blocked-by:`);
-    for (const ref of edges.blockedBy) ins.push(`${itemPad}- ${renderRef(ref)}`);
+    for (const ref of blockedBy) ins.push(`${itemPad}- ${renderRef(ref)}`);
   }
-  if (edges.decomposedFrom != null) ins.push(`${pad}decomposed-from: ${renderRef(edges.decomposedFrom)}`);
-  if (edges.duplicateOf != null) ins.push(`${pad}duplicate-of: ${renderRef(edges.duplicateOf)}`);
-  if (edges.serializeWith != null) ins.push(`${pad}serialize-with: ${renderRef(edges.serializeWith)}`);
+  if (decomposedFrom !== null) ins.push(`${pad}decomposed-from: ${renderRef(decomposedFrom)}`);
+  if (duplicateOf !== null) ins.push(`${pad}duplicate-of: ${renderRef(duplicateOf)}`);
+  if (serializeWith !== null) ins.push(`${pad}serialize-with: ${renderRef(serializeWith)}`);
 
   const insertAt = firstOwned ?? sectionHeader + 1;
 
