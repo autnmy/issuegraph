@@ -48,14 +48,22 @@
  * ## The surface
  *
  * The SCALE LADDER, the AUDIT, the RE-EVALUATE SURFACE, the EDGE
- * MUTATION-STATE OVERLAYS, the TYPE PICKER, the CREATE PATHS and the
- * THREE-ZONE WORKSPACE that assembles them. The first-pass queue lands as its
- * own change; this file's shape is otherwise settled.
+ * MUTATION-STATE OVERLAYS, the TYPE PICKER, the CREATE PATHS, the FIRST PASS
+ * and the THREE-ZONE WORKSPACE that assembles them. This file's shape is
+ * settled: the workspace was the change that decided it.
  *
- * The workspace is the assembly leaf, and what it adds is a SEAM rather than a
- * sixth surface: `renderWorkspace` composes the rail, the ladder and the audit
- * through the same public entry points a host would use, so nothing here is
- * re-derived. The two facts it owns are the ones no single leaf could:
+ * The first pass is the first thing here to take a PORT of its own. The create
+ * paths take a target from the host because searching a backlog needs the
+ * backlog; the first pass goes further and takes the whole question set,
+ * because the evidence §17e describes — two bodies referencing one path, a
+ * comment linking an issue — is not derivable from a `GraphDocument` at all. A
+ * heuristic shipped in here would be an un-themeable product opinion inside a
+ * published package, which is the same reason the store fetches nothing.
+ *
+ * The workspace is the assembly leaf, and what it adds is a SEAM rather than
+ * another surface: `renderWorkspace` composes the rail, the ladder and the
+ * audit through the same public entry points a host would use, so nothing here
+ * is re-derived. The two facts it owns are the ones no single leaf could:
  *
  *   - ONE SELECTION crosses all three zones. §17b makes `selected` the only edge
  *     state that also filters the inspector, so the workspace holds exactly one
@@ -96,7 +104,7 @@
  * only what reuses a path's own position: a halo, a ghost, a dash. Anything
  * needing a new position — the chips, the ✕, the inline reason, a conflict's
  * second version — is declared as a mark for the layer that computed the
- * layout, which is the workspace this file's final shape waits on.
+ * layout. The workspace is that layer, and it landed.
  *
  * A published package can add an export later and can never take one back, so
  * nothing is exported before something is owed.
@@ -243,6 +251,69 @@ export {
 
 export { reevaluateStylesheet } from './reevaluate/styles.ts';
 
+
+export type {
+  Candidate,
+  CandidateEvidence,
+  CandidateId,
+  CandidateSource,
+} from './firstpass/candidates.ts';
+
+export {
+  type Answer,
+  type Answered,
+  type QueueCommand,
+  type QueueProgress,
+  type QueueResult,
+  type QueueState,
+  currentCandidate,
+  isAnswered,
+  openQueue,
+  queueProgress,
+  queueReducer,
+  skippedCandidates,
+} from './firstpass/queue.ts';
+
+export {
+  type BatchDirection,
+  type BatchOutcome,
+  type BatchPlan,
+  type BatchRefusal,
+  type BatchRequest,
+  type BatchSettlement,
+  planBatch,
+  resumeBatch,
+} from './firstpass/batch.ts';
+
+export {
+  type FirstPassContext,
+  type FirstPassInteraction,
+  type FirstPassIntent,
+  firstPassIntent,
+} from './firstpass/keys.ts';
+
+export {
+  type FirstPassQuestion,
+  type FirstPassView,
+  firstPassView,
+} from './firstpass/view.ts';
+
+export { type FirstPassWords } from './firstpass/words.ts';
+
+export {
+  ANSWERED_ATTRIBUTE,
+  ANSWER_ATTRIBUTE,
+  COMMAND_ATTRIBUTE,
+  EVIDENCE_TOKEN_ATTRIBUTE,
+  FOUND_ATTRIBUTE,
+  type FirstPassOptions,
+  type FirstPassResult,
+  renderFirstPass,
+} from './firstpass/render.ts';
+
+export { firstPassStylesheet } from './firstpass/styles.ts';
+
+
 export {
   type SelectionCommand,
   type WorkspaceSelection,
@@ -276,3 +347,4 @@ export {
 } from './workspace/render.ts';
 
 export { workspaceStylesheet } from './workspace/styles.ts';
+
