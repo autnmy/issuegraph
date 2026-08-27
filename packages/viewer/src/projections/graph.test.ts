@@ -164,6 +164,75 @@ describe('the graph projection', () => {
     assert.equal(/class="ig-edge" data-edge="together-with"/.test(render()), false);
   });
 
+  it('gives every ordinary edge the same pointer identity the connector has', () => {
+    // THE INPUT HALF OF AN EDGE SELECTION. A `together-with` connector has
+    // carried `edgeIdentity(...)` since it became a click target; every other
+    // relationship was a bare path with no identity, so `keyAt` walked straight
+    // past it — a click on a `blocked-by` line resolved to an ancestor or to
+    // nothing. Four of the five relationships could not be pointed at.
+    //
+    // ASSERTED OVER EVERY NON-`together-with` EDGE THE DOCUMENT DECLARES rather
+    // than over a chosen one, so a kind that stops carrying it cannot hide
+    // behind a sibling that still does.
+    //
+    // ATTRIBUTES ARE READ OUT AND COMPARED AS STRINGS. `edgeIdentity` joins
+    // with `|`, which is ALTERNATION in a RegExp — see `connectors` above for
+    // what interpolating one into a pattern does.
+    const normalized = normalizeDocument(fixtureDocument).document;
+    const markup = render();
+    const drawn = new Set(
+      [...markup.matchAll(/<path class="ig-edge"[^>]*?data-ig-group="([^"]*)"/g)].map(
+        (match) => match[1] as string,
+      ),
+    );
+
+    const expected = normalized.edges
+      .filter((edge) => edge.field !== 'together-with')
+      .map((edge) => edgeIdentity(edge.field, edge.from, edge.to));
+    assert.ok(expected.length > 0, 'the fixture declares no ordinary edge, so this proves nothing');
+    for (const identity of expected) {
+      assert.ok(drawn.has(identity), `no edge path publishes ${identity}`);
+    }
+  });
+
+  it('gives a terminal marker the identity of the edge it caps', () => {
+    // The arrowhead is part of the line a reader sees, so a click on it has to
+    // name the same edge. Without this the mark at the end of a selectable line
+    // resolves to nothing, and the click reads as having missed.
+    const markup = render();
+    const terminals = new Set(
+      [...markup.matchAll(/<(?:path|circle) class="ig-terminal"[^>]*?data-ig-group="([^"]*)"/g)].map(
+        (match) => match[1] as string,
+      ),
+    );
+    assert.ok(terminals.size > 0, 'no terminal publishes an identity');
+
+    const declared = new Set(
+      normalizeDocument(fixtureDocument)
+        .document.edges.map((edge) => edgeIdentity(edge.field, edge.from, edge.to)),
+    );
+    for (const identity of terminals) {
+      assert.ok(declared.has(identity), `a terminal names ${identity}, which is no declared edge`);
+    }
+  });
+
+  it('keeps an edge identity OUT of the focus index', () => {
+    // `data-ig-GROUP`, never `data-ig-key`. `navigable` lists issues, so an
+    // edge is not a keyboard target — and an identity in the focus index would
+    // make `focus()` land on a path no browser will focus, which is the exact
+    // defect the two attributes were separated to end.
+    const built = scene();
+    const markup = renderMarkup(built.root);
+    const keys = new Set(
+      [...markup.matchAll(/data-ig-key="([^"]*)"/g)].map((match) => match[1] as string),
+    );
+    for (const edge of normalizeDocument(fixtureDocument).document.edges) {
+      const identity = edgeIdentity(edge.field, edge.from, edge.to);
+      assert.equal(keys.has(identity), false, `${identity} entered the focus index`);
+      assert.equal(built.navigable.includes(identity), false, `${identity} is navigable`);
+    }
+  });
+
   it('keeps the spine rail in rank order with its stations', () => {
     const markup = render();
     const rail = markup.slice(markup.indexOf('aria-label="work order"'));

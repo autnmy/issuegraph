@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { edgeIdentity } from '@issuegraph/core';
 import { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET } from '@issuegraph/viewer';
 
 import { componentKey, componentsSumming, documentOf } from '../testing/documents.ts';
@@ -222,5 +223,70 @@ describe('the output is safe and complete', () => {
       state: { ...INITIAL_SCALE_STATE, focus: 'gone-99' },
     });
     assert.ok(result.diagnostics.some((line) => line.includes('gone-99')));
+  });
+});
+
+describe('the canvas draws the selected EDGE', () => {
+  // The other half of `selected`. A workspace holds ONE selection of one of two
+  // kinds, and the viewer's own `selected` renders `aria-current` on a NODE —
+  // so before this option the canvas was the single zone that could not read an
+  // edge selection: the inspector filtered to the edge while the graph drew it
+  // as an ordinary line.
+  const document = relatedDocument(10);
+  const first = edgeIdentity('blocked-by', componentKey(0, 1), componentKey(0, 2));
+
+  it('marks it with the selection halo, on the edge the reader picked', () => {
+    const result = renderScaleLadder(document, { selectedEdge: first });
+
+    assert.match(result.markup, /class="ig-overlay ig-overlay-halo"/);
+    // THE STATE LANDS ON THE EDGE ITSELF, not only on a decoration beside it —
+    // a halo drawn against some other line would satisfy a bare class match.
+    assert.match(result.markup, /class="ig-edge"[^>]*data-ig-state="selected"/);
+    const marked = [
+      ...result.markup.matchAll(/<path class="ig-edge"[^>]*?data-ig-group="([^"]*)"[^>]*?data-ig-state="selected"/g),
+    ].map((match) => match[1] as string);
+    assert.deepEqual(marked, [first]);
+    assert.deepEqual([...result.diagnostics], []);
+  });
+
+  it('ships the sheet that styles the halo, so the mark is not invisible', () => {
+    // A canvas that can draw a class and a stylesheet a caller has to remember
+    // separately is a mark that renders as nothing on exactly the host that did
+    // everything else right.
+    const result = renderScaleLadder(document, { selectedEdge: first });
+    assert.match(result.styles, /\.ig-overlay-halo \{/);
+  });
+
+  it('leaves the canvas untouched when nothing is selected', () => {
+    const bare = renderScaleLadder(document);
+    assert.equal(/ig-overlay/.test(bare.markup), false);
+    assert.equal(
+      renderScaleLadder(document, { selectedEdge: null }).markup,
+      bare.markup,
+      'an explicit null is not the same as no selection',
+    );
+  });
+
+  it('draws nothing for an identity this canvas does not draw', () => {
+    // A selection is a NAME, and every zone resolves a name against the
+    // document it is rendering. The document moved under it, or the ladder
+    // narrowed to a component this edge is not in — either way the honest
+    // render is nothing selected, and it is not a diagnostic: the canvas has
+    // nothing to report about an edge it was never given.
+    const absent = edgeIdentity('blocked-by', 'nowhere-1', 'nowhere-2');
+    const result = renderScaleLadder(document, { selectedEdge: absent });
+    assert.equal(/ig-overlay/.test(result.markup), false);
+    assert.deepEqual([...result.diagnostics], []);
+  });
+
+  it('draws no halo on a tier whose canvas is a refusal', () => {
+    // Past the node budget there is no canvas at all, so there is no line to
+    // mark — and an overlay attached to a refusal would be a halo around
+    // nothing.
+    const result = renderScaleLadder(relatedDocument(GRAPH_NODE_BUDGET + 1), {
+      selectedEdge: first,
+    });
+    assert.equal(result.ladder.tier, 'capsules');
+    assert.equal(/ig-overlay/.test(result.markup), false);
   });
 });

@@ -42,6 +42,11 @@ import {
   viewerStylesheet,
 } from '@issuegraph/viewer';
 
+import { edgeIdentity } from '@issuegraph/core';
+import type { ProjectedEdge } from '@issuegraph/store';
+
+import { attachEdgeOverlays } from '../overlay/render.ts';
+import { edgeOverlayStylesheet } from '../overlay/styles.ts';
 import { INITIAL_SCALE_STATE, type ScaleState } from './commands.ts';
 import {
   type IsolatedChip,
@@ -70,6 +75,27 @@ export interface ScaleLadderOptions {
    * mark on a tier whose canvas is a refusal.
    */
   readonly selected?: string | null | undefined;
+  /**
+   * The selected EDGE's identity, drawn on the canvas as a selection halo.
+   *
+   * THE OTHER HALF OF `selected`, AND IT COULD NOT BE FOLDED INTO IT. A
+   * workspace holds one selection of one of two kinds, and the viewer's own
+   * `selected` renders `aria-current` on a NODE — so an edge identity handed to
+   * that option matches nothing, and the canvas drew the selected edge as
+   * ordinary while the inspector was filtered to it. One value, two zones, and
+   * the canvas was the zone that could not read it.
+   *
+   * THE LADDER APPLIES THE OVERLAY ITSELF rather than publishing its scene for
+   * a caller to decorate. Exposing the scene would have left two ways to obtain
+   * this canvas's markup — `result.markup`, and a re-render of the decorated
+   * scene — with the first silently wrong for an edge selection. A result with
+   * a stale field beside a correct one is worse than a narrower option.
+   *
+   * Resolved against `ladder.canvas`, which is what this canvas actually draws:
+   * a narrowed tier, or a refusal that draws no canvas at all, renders as
+   * nothing selected rather than as a halo on a line that is not there.
+   */
+  readonly selectedEdge?: string | null | undefined;
 }
 
 export interface ScaleLadderResult {
@@ -214,6 +240,55 @@ export function renderScaleLadder(
       ? renderViewer(ladder.canvas, { projection: 'graph', theme, selected: options.selected ?? null })
       : null;
 
+  // THE SELECTION HALO, ATTACHED TO THE SCENE THE CANVAS JUST DREW.
+  //
+  // Resolved against `ladder.canvas.edges` — the document this canvas was
+  // rendered from — rather than against the caller's input. An identity that
+  // names an edge this tier does not draw resolves to nothing here, which is
+  // the same promise every other zone makes: a selection is a NAME, and a name
+  // that no longer resolves renders as nothing selected.
+  const selectedEdge =
+    canvas === null || options.selectedEdge === null || options.selectedEdge === undefined
+      ? null
+      : (ladder.canvas.edges.find(
+          (edge) => edgeIdentity(edge.field, edge.from, edge.to) === options.selectedEdge,
+        ) ?? null);
+  // `states: ['selected']` AND NOTHING ELSE, deliberately. The write states are
+  // the store's to report — this synthesises the one state that is not about a
+  // write, which is exactly how `EDGE_STATES` describes `selected`. An edge
+  // that is ALSO mid-write is overlaid by whoever holds those writes; the two
+  // compose, because `overlayFor` reads a list.
+  const selectedOverlay: ProjectedEdge | null =
+    selectedEdge === null
+      ? null
+      : {
+          id: edgeIdentity(selectedEdge.field, selectedEdge.from, selectedEdge.to),
+          kind: selectedEdge.field,
+          from: selectedEdge.from,
+          to: selectedEdge.to,
+          states: ['selected'],
+          writes: [],
+        };
+  // `unattached` IS DELIBERATELY NOT SURFACED HERE, and the reason is a fact
+  // about this call site rather than about the value.
+  //
+  // `attachEdgeOverlays` reports an overlay whose edge the scene did not draw
+  // because a caller can hand it edges from anywhere. This one hands it exactly
+  // one edge, found moments earlier IN `ladder.canvas` — the same document the
+  // scene beside it was rendered from — and layer 1 states that geometry cannot
+  // fail for a kept edge: `edgeGeometry` returns `null` only when "a caller
+  // built a layout from a different document than the edge came from".
+  //
+  // So the one state this would report is one the inputs cannot reach, and the
+  // near miss it looks like — the viewer refusing under a `direct` tier —
+  // already reports itself through `canvas.diagnostics`. A diagnostic string no
+  // test can make appear is a claim about behaviour nobody can check; the
+  // reasoning is worth more here than the branch.
+  const overlaid =
+    canvas === null || selectedOverlay === null
+      ? null
+      : attachEdgeOverlays(canvas.scene, [selectedOverlay], { theme });
+
   const chrome = element('section', { class: 'ig-ladder', 'data-tier': ladder.tier }, [
     ladder.focus === null
       ? null
@@ -233,8 +308,12 @@ export function renderScaleLadder(
     // `renderMarkup`, so no attribute value in this package is ever
     // concatenated into markup by hand — which is the escaping surface a
     // second, hand-rolled renderer would have introduced.
-    markup: `${canvas?.markup ?? ''}${renderMarkup(chrome)}`,
-    styles: `${viewerStylesheet}\n${themeCss(theme, options.themeSelector ?? ':root')}\n${scaleLadderStylesheet}`,
+    markup: `${overlaid === null ? (canvas?.markup ?? '') : renderMarkup(overlaid.scene.root)}${renderMarkup(chrome)}`,
+    // THE OVERLAY'S OWN SHEET TRAVELS WITH THE MARKUP THAT NEEDS IT. The halo
+    // is a class this package styles, so a canvas that can draw one and a
+    // stylesheet a caller has to remember separately is a mark that renders
+    // invisibly whenever the caller forgets.
+    styles: `${viewerStylesheet}\n${themeCss(theme, options.themeSelector ?? ':root')}\n${scaleLadderStylesheet}\n${edgeOverlayStylesheet}`,
     diagnostics: [...ladder.diagnostics, ...(canvas?.diagnostics ?? [])],
   };
 }

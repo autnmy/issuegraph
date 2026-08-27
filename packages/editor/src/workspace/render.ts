@@ -67,6 +67,7 @@ import {
 
 import type { AuditInput, AuditSeverity } from '../audit/findings.ts';
 import { auditStylesheet } from '../audit/styles.ts';
+import { edgeOverlayStylesheet } from '../overlay/styles.ts';
 import {
   AUDIT_SEVERITY_ATTRIBUTE,
   type AuditOverlay,
@@ -81,7 +82,12 @@ import { scaleLadderStylesheet } from '../scale/styles.ts';
 
 import { type InspectorRelationship, type InspectorView, inspectorView } from './inspector.ts';
 import { type RailWindow, type RailWindowOptions, railWindow } from './rail.ts';
-import { type WorkspaceSelection, INITIAL_SELECTION, selectedKey } from './selection.ts';
+import {
+  type WorkspaceSelection,
+  INITIAL_SELECTION,
+  selectedEdgeId,
+  selectedKey,
+} from './selection.ts';
 import { workspaceStylesheet } from './styles.ts';
 
 /** The four fixed positions. A closed union, which is what keeps `zone` safe. */
@@ -465,6 +471,12 @@ export function renderWorkspace(
     // single selection this surface advertises disagreed with itself between
     // two zones on every render.
     selected: selectedKey(selection),
+    // AND ITS OTHER HALF. The union has two payloads, and reading only the
+    // issue one left the canvas the single zone that could not see an edge
+    // selection: the inspector filtered to the edge while the canvas drew it
+    // as ordinary — the same disagreement the line above closed for issues,
+    // still open for the other kind.
+    selectedEdge: selectedEdgeId(selection),
   });
 
   const inspector = inspectorView(document, selection);
@@ -496,6 +508,16 @@ export function renderWorkspace(
       viewerStylesheet,
       themeCss(theme, options.themeSelector ?? ':root'),
       scaleLadderStylesheet,
+      // THE CANVAS CAN DRAW A SELECTION HALO NOW, so the sheet that styles one
+      // has to be installed. It is listed here rather than inherited from
+      // `canvas.styles` for the reason directly above: that value carries its
+      // own copy of the viewer sheet and the theme.
+      // UNCONDITIONAL, unlike the audit sheet beside it. An audit overlay is a
+      // whole zone a caller opts into; an edge selection arrives from a click
+      // AFTER this render, so a sheet installed only when something is already
+      // selected is one that is missing on exactly the render that first needs
+      // it.
+      edgeOverlayStylesheet,
       ...(overlay === null ? [] : [auditStylesheet]),
       workspaceStylesheet,
     ].join('\n'),
