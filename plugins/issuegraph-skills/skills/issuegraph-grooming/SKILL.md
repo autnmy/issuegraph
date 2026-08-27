@@ -97,15 +97,44 @@ gh issue view 1234 -R owner/repo --json body > "$d/issue.json" \
   || { echo "could not read the issue; nothing was written" >&2; rm -rf "$d"; exit 1; }
 jq -j .body "$d/issue.json" > "$d/orig.md" || { rm -rf "$d"; exit 1; }
 
+# BRANCH ON THE OUTCOME, NOT ON WHETHER BYTES CAME BACK. `--json` reports which
+# of the four outcomes happened, and only `delimited` changed anything — so it is
+# the only one that may reach `gh issue edit`.
+#
+# A SIZE CHECK CANNOT STAND IN FOR THAT, and the case it gets wrong is ordinary:
+# an issue whose body is genuinely EMPTY yields `no-block` at exit 0 with a
+# zero-byte body, which is a correct no-op. A `[ -s ]` gate reads that as failure
+# and reports a grooming run that broke on an issue there was nothing to repair.
+#
 # THE STATUS IS CAPTURED BEFORE THE CLEANUP AND RETURNED AFTER IT. `rm -rf`
-# succeeds, so an unconditional cleanup makes IT the recipe's exit status — and a
-# failed `set`, a refused `[ -s ]` or a failed `gh issue edit` then reports 0
-# while the issue was never updated. A caller that branches on this recipe reads
-# a write that did not happen as a write that did.
+# succeeds, so an unconditional cleanup would make IT the recipe's exit status,
+# and a failed `gh issue edit` would report 0 while the issue was never updated.
 rc=0
-issuegraph backfill --body-file "$d/orig.md" > "$d/body.md" \
-  && [ -s "$d/body.md" ] \
-  && gh issue edit 1234 -R owner/repo --body-file "$d/body.md" || rc=$?
+if issuegraph backfill --json --body-file "$d/orig.md" > "$d/out.json"; then
+  outcome=$(jq -r .outcome "$d/out.json") || outcome=
+  case "$outcome" in
+    delimited)
+      # The ONLY outcome that rewrote the body, so the only one that writes.
+      jq -j .body "$d/out.json" > "$d/body.md" \
+        && [ -s "$d/body.md" ] \
+        && gh issue edit 1234 -R owner/repo --body-file "$d/body.md" || rc=$?
+      ;;
+    already-canonical|no-block)
+      # Nothing to repair. A successful no-op, not a failure.
+      echo "#1234: nothing to repair ($outcome)"
+      ;;
+    *)
+      echo "#1234: unexpected outcome '${outcome:-<unreadable>}'; nothing written" >&2
+      rc=1
+      ;;
+  esac
+else
+  # Exit 4 is `unrecoverable` — the block cannot be repaired without guessing.
+  # Reported, never written, and it needs a human.
+  rc=$?
+  echo "#1234: backfill refused (exit $rc); needs a human" >&2
+  jq -r '.diagnostics[]?' "$d/out.json" 2>/dev/null >&2
+fi
 rm -rf "$d"
 exit "$rc"
 ```

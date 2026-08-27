@@ -69,8 +69,15 @@ raw=$(gh issue list -R owner/repo --state all --limit "$limit" \
 [ "$(printf '%s' "$raw" | jq 'length')" -lt "$limit" ] \
   || { echo "fetched exactly $limit issues — the backlog may be larger; this order is NOT complete" >&2; exit 1; }
 
+# `matchedOrderIndex` IS A QUERY BAND, NOT A RANK. Rank comes from the ARRAY
+# POSITION of `order`, which is why the rows must be emitted in the order the
+# query returned them. The field records WHICH configured query matched a row, so
+# many rows legitimately share one value and the derivation never reads it. This
+# recipe runs ONE query, so every row is band 0; numbering them 0,1,2,… would
+# render as "matched query 7" for a repo with a single query and is simply false.
+# Build the array from several ordered queries and each band gets its own index.
 printf '%s' "$raw" | jq '{homeRepo:"owner/repo",
-       baseRanking:{source:"config", order:[to_entries[]|{key:(.value.number|tostring), matchedOrderIndex:.key}]},
+       baseRanking:{source:"config", order:[.[]|{key:(.number|tostring), matchedOrderIndex:0}]},
        issues:[.[]|{number, open:(.state=="OPEN"),
                     labels:[.labels[].name], assigneeCount:(.assignees|length), body:(.body//""),
                     closedStateReason:(if (.stateReason // "") == "" then null
