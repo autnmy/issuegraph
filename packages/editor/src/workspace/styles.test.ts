@@ -95,6 +95,12 @@ const COMPOSED: ReadonlySet<string> = new Set([
   'ig-audit-toggle',
   'ig-audit-count',
   'ig-audit-label',
+  // The canvas's selection halo. `renderScaleLadder` draws it when an edge is
+  // selected and ships `edgeOverlayStylesheet` with it, and `renderWorkspace`
+  // installs that sheet alongside this one — so these are styled, by the leaf
+  // that owns them, exactly like the ladder chrome above.
+  'ig-overlay',
+  'ig-overlay-halo',
 ]);
 
 describe('the workspace stylesheet carries structure, never a value', () => {

@@ -359,6 +359,39 @@ describe('selection crosses the zones from one value', () => {
     assert.equal(/aria-current="true"/.test(result.markup), false);
   });
 
+  it('marks the selected EDGE on the canvas, from that same one value', () => {
+    // THE OTHER HALF OF THE ZONE THAT WAS BEHIND. The issue half was closed
+    // when the canvas was handed `selectedKey`; the edge half stayed open,
+    // because `selectedKey` answers `null` for an edge by design — the viewer's
+    // `selected` renders `aria-current` on a NODE. So the inspector filtered to
+    // the edge while the canvas drew it as an ordinary line, which is the same
+    // disagreement, on the other kind.
+    const edgeId = edgeIdentity('blocked-by', 'i0001', 'i0002');
+    const result = renderWorkspace(document, { ...WORDS, selection: { kind: 'edge', edgeId } });
+    const canvas = result.markup.slice(
+      result.markup.indexOf('data-zone="canvas"'),
+      result.markup.indexOf('data-zone="inspector"'),
+    );
+
+    // THE STATE IS ON THE EDGE ITSELF, and it is THAT edge. A bare
+    // `ig-overlay-halo` match would pass on a halo drawn around any line, which
+    // is exactly the failure this zone had.
+    // ATTRIBUTES READ OUT AND COMPARED AS STRINGS: `edgeIdentity` joins with
+    // `|`, which is alternation inside a RegExp.
+    const marked = [
+      ...canvas.matchAll(/<path class="ig-edge"[^>]*?data-ig-group="([^"]*)"[^>]*?data-ig-state="selected"/g),
+    ].map((match) => match[1] as string);
+    assert.deepEqual(marked, [edgeId]);
+    assert.match(canvas, /class="ig-overlay ig-overlay-halo"/);
+
+    // AND THE SHEET THAT STYLES IT, or the mark renders as nothing on a host
+    // that installed exactly what this function returned.
+    assert.match(result.styles, /\.ig-overlay-halo \{/);
+
+    // The rail is untouched: an edge is not a node, so no row is current.
+    assert.equal(/aria-current="true"/.test(result.markup), false);
+  });
+
   it('marks the selected issue current on the CANVAS too, from the same value', () => {
     // The canvas is one of the three zones. Left untold, it drew the selected
     // issue as ordinary while the rail marked it current — the single selection

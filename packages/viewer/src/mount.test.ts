@@ -115,6 +115,85 @@ describe('mountViewer', () => {
     assert.deepEqual(selected, ['1', edgeIdentity('together-with', '1', '2')]);
   });
 
+  it('resolves an ordinary edge path, and its terminal, to that edge', () => {
+    // THE HALF THAT DID NOT EXIST. The connector above has been a click target
+    // since it was given an identity; a `blocked-by`, `serialize-with`,
+    // `duplicate-of` or `decomposed-from` line was drawn as a bare path, so
+    // `keyAt` climbed past it and answered with an ancestor or with nothing.
+    // Four of the five relationships could not originate a selection here.
+    //
+    // THE TERMINAL IS ASSERTED BESIDE THE PATH because they are separate
+    // sibling elements — a marker is not a child of the stroke it caps, so it
+    // inherits nothing from it, and an arrowhead that answered `null` beside a
+    // selectable line would read as the click having missed.
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const selected: (string | null)[] = [];
+    mountViewer(container, fixtureDocument, {
+      projection: 'graph',
+      onSelect: (key: string | null) => selected.push(key),
+    });
+
+    const edge = container
+      .descendants()
+      .find((element) => element.getAttribute('class') === 'ig-edge');
+    assert.ok(edge !== undefined, 'no ordinary edge was drawn');
+    const identity = edge.getAttribute(GROUP_ATTRIBUTE);
+    assert.ok(identity !== null && identity !== '', 'an edge path publishes no identity');
+    assert.equal(edge.getAttribute(KEY_ATTRIBUTE), null, 'an edge entered the focus index');
+
+    const terminal = container
+      .descendants()
+      .find(
+        (element) =>
+          element.getAttribute('class') === 'ig-terminal' &&
+          element.getAttribute(GROUP_ATTRIBUTE) === identity,
+      );
+    assert.ok(terminal !== undefined, 'no terminal names the edge it caps');
+
+    container.dispatch('click', { target: edge });
+    container.dispatch('click', { target: terminal });
+    // THE SAME IDENTITY TWICE, and that repetition is the assertion: the two
+    // elements answer ALIKE rather than merely both answering something. This
+    // layer re-announces a re-selected subject rather than toggling it — the
+    // toggle belongs to whoever holds the selection — so a second value of
+    // `null` here would mean the terminal had resolved to nothing.
+    assert.deepEqual(selected, [identity, identity]);
+  });
+
+  it('leaves focus where it was when an ordinary edge is selected', () => {
+    // The same guard the connector has, for the paths that just joined it:
+    // `navigable` lists issues, so an edge identity is absent from it and a tab
+    // stop moved onto one would throw the reader back to the top of the order
+    // on the next arrow key.
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const handle = mountViewer(container, fixtureDocument, { projection: 'graph' });
+
+    // FOCUS IS MOVED OFF THE FIRST ENTRY FIRST, for the reason the connector's
+    // version of this test records: `reconcile` resolves an unfound focus key
+    // to `navigable[0]`, so with focus already there the broken and the correct
+    // behaviour report the same state.
+    const elsewhere = container.descendants().find((element) => {
+      const key = element.getAttribute(KEY_ATTRIBUTE);
+      return key !== null && key !== '' && key !== handle.state.focused;
+    });
+    assert.ok(elsewhere !== undefined, 'only one key is drawn, so this proves nothing');
+    container.dispatch('click', { target: elsewhere });
+    const away = handle.state.focused;
+    assert.notEqual(away, null, 'focus did not move, so the guard is untested');
+
+    const edge = container
+      .descendants()
+      .find((element) => element.getAttribute('class') === 'ig-edge');
+    assert.ok(edge !== undefined, 'no ordinary edge was drawn');
+
+    container.dispatch('click', { target: edge });
+
+    assert.equal(handle.state.selected, edge.getAttribute(GROUP_ATTRIBUTE));
+    assert.equal(handle.state.focused, away, 'selecting an edge moved the keyboard tab stop');
+  });
+
   it('leaves focus where it was when a connector is selected', () => {
     // THE GUARD THAT REPLACES THE OLD FLAT INVARIANT, and it has to exist for
     // the graph projection to be allowed to publish a pointer identity that

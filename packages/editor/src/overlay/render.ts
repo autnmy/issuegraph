@@ -160,12 +160,16 @@ function isEdgePath(spec: ElementSpec): boolean {
 /**
  * Which overlay this element carries, if any.
  *
- * TWO KEYS, AND IDENTITY IS THE BETTER ONE. A connector publishes
+ * TWO KEYS, AND IDENTITY IS THE BETTER ONE. Every edge mark publishes
  * `edgeIdentity(field, from, to)` on `data-ig-group`, and that string IS
  * `StoredEdge.id` — the same function derives both — so `ProjectedEdge.id`
- * matches it with no new dependency and no reconstruction. An ordinary edge
- * path publishes no identity at all, which is the only reason the accessible
- * name is used for those.
+ * matches it with no new dependency and no reconstruction.
+ *
+ * THE NAME IS A FALLBACK THAT NO LONGER HAS A KNOWN CALLER, and it is kept
+ * rather than deleted for one reason: this package matches against markup layer
+ * 1 owns, and a viewer that has not yet shipped the identity on ordinary edge
+ * paths still renders against this reader. Deleting it would turn a version
+ * skew into silently unattached overlays instead of a working match.
  */
 function overlayOn(
   spec: ElementSpec,
@@ -193,6 +197,17 @@ function overlayOn(
  * take focus, or be read out a second time by a screen reader.
  */
 function clonePath(spec: ElementSpec, overrides: Readonly<Record<string, AttrValue>>): ElementSpec {
+  // `data-ig-group` IS CARRIED, and it is the one identifying attribute that
+  // stays — because dropping it would make a clone a DEAD ZONE over its own
+  // edge. A dash clone is drawn in FRONT of the stroke, so it is what a pointer
+  // lands on; with no identity the viewer's walk climbs past it to the canvas
+  // group and reports a click on the edge as a click on nothing, clearing the
+  // very selection the reader was making. The halo behind it widens the target
+  // for the same edge, which is the same answer either way.
+  // It is a POINTER identity and not a focus one — that separation is exactly
+  // why the viewer publishes decoration on this attribute — so a clone still
+  // takes no tab stop, and `aria-hidden` below still keeps it out of the
+  // accessibility tree.
   const { class: _class, role: _role, 'aria-label': _label, ...geometry } = spec.attrs ?? {};
   return {
     tag: spec.tag,
@@ -331,6 +346,26 @@ function overlayTree(
 
     if (!isEdgePath(child)) {
       next.push(overlayTree(child, context));
+      continue;
+    }
+
+    // AN EDGE THIS MODULE HAS ALREADY OVERLAID IS NOT OVERLAID AGAIN, and this
+    // is a DELIBERATE refusal now rather than a side effect of the match key.
+    //
+    // It used to be one. The overlay rewrites `aria-label`, and the accessible
+    // name was the ONLY key an ordinary edge path could be matched by — so a
+    // second pass fell through and the scene survived by accident. Edge paths
+    // publish `data-ig-group` now, and an identity is not rewritten by
+    // decoration, so that accident is gone: a second pass would have matched
+    // again and drawn a second halo behind the first.
+    //
+    // Attaching to this module's own output stays OUT of contract — a host
+    // renders a fresh scene and attaches to that. What this pins is that going
+    // out of contract is REPORTED rather than silently corrupting: the element
+    // is left exactly as it is and its key never reaches `attached`, so the
+    // overlay comes back in `unattached` where a host or a test can see it.
+    if (child.attrs?.[STATE_ATTRIBUTE] !== undefined && child.attrs[STATE_ATTRIBUTE] !== null) {
+      next.push(child);
       continue;
     }
 

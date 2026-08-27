@@ -318,6 +318,7 @@ export {
   type SelectionCommand,
   type WorkspaceSelection,
   INITIAL_SELECTION,
+  selectedEdgeId,
   selectedKey,
   selectionReducer,
 } from './workspace/selection.ts';

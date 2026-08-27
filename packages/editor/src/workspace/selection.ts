@@ -87,3 +87,21 @@ export function selectionReducer(
 export function selectedKey(selection: WorkspaceSelection): string | null {
   return selection.kind === 'issue' ? selection.key : null;
 }
+
+/**
+ * The edge identity the CANVAS should draw as selected, if any.
+ *
+ * The mirror of {@link selectedKey}, and it exists for the same reason that one
+ * does: the union has two payloads and a zone reads exactly the one that
+ * belongs to it. `selectedKey` answers the viewer's `aria-current`, which is a
+ * NODE question; this answers the canvas's selection overlay, which is an EDGE
+ * question. Neither zone gets to ask the other's.
+ *
+ * An issue selection resolves to no edge for the same reason the other returns
+ * no key: an issue key and an edge identity are different name spaces, and
+ * handing one to the reader of the other either matches nothing — the quiet
+ * failure — or matches the wrong thing.
+ */
+export function selectedEdgeId(selection: WorkspaceSelection): string | null {
+  return selection.kind === 'edge' ? selection.edgeId : null;
+}

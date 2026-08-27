@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { edgeIdentity } from '@issuegraph/core';
 import { EDGE_STATES, type EdgeState, type ProjectedEdge } from '@issuegraph/store';
 import {
   type ElementSpec,
@@ -69,6 +70,16 @@ function sceneOf(): ReturnType<typeof renderViewer>['scene'] {
 function classesOf(spec: ElementSpec): readonly string[] {
   const value = spec.attrs?.['class'];
   return typeof value === 'string' ? value.split(' ') : [];
+}
+
+/** The same tree with every pointer identity removed — an older viewer's markup. */
+function strip(spec: ElementSpec): ElementSpec {
+  const { 'data-ig-group': _identity, ...attrs } = spec.attrs ?? {};
+  return {
+    ...spec,
+    attrs,
+    children: spec.children?.map((child) => (typeof child === 'string' ? child : strip(child))),
+  };
 }
 
 /**
@@ -168,16 +179,46 @@ describe('the two relationships the viewer draws differently', () => {
 
 describe('an overlay attaches to the edge the viewer actually drew', () => {
   it('finds it — the positive control for the whole matching scheme', () => {
-    // THIS TEST IS THE POINT OF THE FILE. Edge paths publish no identity, so an
-    // edge is matched by the accessible name the viewer gives it. The LABEL
-    // comes from the viewer's own `treatmentFor`, but the SHAPE of the sentence
-    // cannot be imported — so it is pinned here, against a real rendered scene.
+    // THIS TEST IS THE POINT OF THE FILE. The match is against markup LAYER 1
+    // owns, and neither the identity attribute nor the accessible name can be
+    // imported from it — so both are pinned here, against a real rendered
+    // scene rather than a hand-built one.
     //
-    // Without this control a viewer that restyles its edge label would leave
-    // the overlays silently ceasing to attach, with every unit test above still
+    // Without this control a viewer that renamed either would leave the
+    // overlays silently ceasing to attach, with every unit test above still
     // green because they never render a viewer at all.
     const { unattached } = attachEdgeOverlays(sceneOf(), [projected('selected')]);
     assert.deepEqual(unattached, [], 'the overlay matched no edge in a scene that draws one');
+  });
+
+  it('matches an edge path that carries NO identity, by its accessible name', () => {
+    // THE FALLBACK, AND WHY IT IS STILL HERE. Ordinary edge paths publish
+    // `data-ig-group` now, so nothing in this repository reaches the name
+    // branch — and an untested branch justified only by prose is one nobody can
+    // check.
+    //
+    // These packages publish separately at `0.x`, so a consumer can pair an
+    // older `@issuegraph/viewer` with this one. That scene is exactly what is
+    // built below: an edge path with a name and no identity. Without the
+    // fallback the skew would not fail loudly, it would silently attach
+    // nothing.
+    const scene = sceneOf();
+    const stripped = strip(scene.root);
+    assert.equal(
+      walk(stripped).some((spec) => spec.attrs?.['data-ig-group'] !== undefined),
+      false,
+      'the fixture still carries an identity, so this proves nothing',
+    );
+
+    const { unattached, scene: overlaid } = attachEdgeOverlays(
+      { ...scene, root: stripped },
+      [projected('selected')],
+    );
+    assert.deepEqual(unattached, [], 'a named edge path went unmatched with no identity to fall back from');
+    assert.equal(
+      walk(overlaid.root).filter((spec) => classesOf(spec).includes('ig-overlay-halo')).length,
+      1,
+    );
   });
 
   it('writes the states onto the edge it matched', () => {
@@ -193,7 +234,19 @@ describe('an overlay attaches to the edge the viewer actually drew', () => {
     // An unattached overlay is ordinary — the graph projection has a node
     // budget and falls back to clusters — but it is also what a broken match
     // looks like. The two must not be indistinguishable.
-    const absent: ProjectedEdge = { ...projected('failed'), from: '#999', to: '#998' };
+    // THE IDENTITY FOLLOWS THE ENDPOINTS, which is what a real `ProjectedEdge`
+    // always satisfies — the store derives `StoredEdge.id` from the content —
+    // and spreading new endpoints over the old `id` produced an edge no store
+    // could hand out. It stopped being harmless the moment edge paths began
+    // publishing their identity: the stale `id` matched the drawn edge, so this
+    // test's "absent" edge attached to a present one and the assertion below
+    // failed for a reason that had nothing to do with what it is checking.
+    const absent: ProjectedEdge = {
+      ...projected('failed'),
+      id: edgeIdentity('blocked-by', '#999', '#998'),
+      from: '#999',
+      to: '#998',
+    };
     const { unattached } = attachEdgeOverlays(sceneOf(), [absent]);
     assert.equal(unattached.length, 1);
   });
@@ -213,10 +266,16 @@ describe('an overlay attaches to the edge the viewer actually drew', () => {
   it('reports an already-overlaid scene rather than doubling its labels', () => {
     // ATTACHING TO ITS OWN OUTPUT IS OUT OF CONTRACT, and this pins what
     // happens anyway, because the failure worth ruling out is silent
-    // corruption. The overlay rewrites `aria-label` — which is the very key the
-    // match reads — so a second pass matches nothing: the scene keeps the
-    // overlays it already had, and the edge is reported `unattached` rather
-    // than being announced `… — writing — writing`.
+    // corruption. An element already carrying the state attribute is refused
+    // outright: the scene keeps the overlays it already had, and the edge is
+    // reported `unattached` rather than being announced `… — writing — writing`
+    // behind a second halo.
+    //
+    // THAT REFUSAL USED TO BE AN ACCIDENT AND IS NOW A RULE. The overlay
+    // rewrites `aria-label`, which was the only key an ordinary edge path could
+    // be matched by, so a second pass simply failed to match. Edge paths carry
+    // `data-ig-group` now — an identity decoration does not rewrite — so the
+    // accident is gone and the refusal is stated in `overlayTree` instead.
     //
     // Recorded as a test rather than left as a comment so the workspace leaf
     // that assembles this finds the boundary already drawn: re-render, then

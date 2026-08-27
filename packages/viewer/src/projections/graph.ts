@@ -63,12 +63,20 @@ function terminalMarker(
   terminal: EdgeTerminal,
   geometry: EdgeGeometry,
   field: EdgeField,
+  identity: string,
   theme: Theme,
 ): ElementSpec | null {
   const { end, endAngle } = geometry;
   const degrees = (endAngle * 180) / Math.PI;
   const transform = `translate(${end.x.toFixed(2)} ${end.y.toFixed(2)}) rotate(${degrees.toFixed(2)})`;
-  const common = { class: 'ig-terminal', 'data-edge': field, transform };
+  // THE TERMINAL IS PART OF THE EDGE A READER SEES, so it answers to the same
+  // identity as the stroke it caps. Without this the arrowhead is a hole in
+  // its own line: the path beside it selects and the mark at its end resolves
+  // to nothing, which reads as the click having missed.
+  // Overlays are unaffected — `attachEdgeOverlays` skips `ig-terminal` on the
+  // CLASS, before it ever looks at an identity, precisely so an overlay never
+  // draws over one of the four redundant channels.
+  const common = { class: 'ig-terminal', 'data-edge': field, 'data-ig-group': identity, transform };
   // Every dimension is theme data. A marker sized by a literal would stay put
   // while a host scaled the type around it, and the shape channel the
   // colour-blind-safety claim leans on is exactly what would stop reading.
@@ -119,6 +127,23 @@ function edgePaths(edge: ViewerEdge, geometry: EdgeGeometry, theme: Theme): Elem
   const base = {
     class: 'ig-edge',
     'data-edge': edge.field,
+    // THE SAME POINTER IDENTITY THE CONNECTOR ALREADY PUBLISHES. A
+    // `together-with` connector has carried `edgeIdentity(...)` on
+    // `data-ig-group` since it became a click target; every OTHER relationship
+    // was drawn as a bare path with no identity at all, so `keyAt` walked past
+    // it, found the canvas `<g>`, and a click on a `blocked-by` line either
+    // named an unrelated issue or resolved to nothing. Four of the five
+    // relationships could not be pointed at on the canvas.
+    //
+    // `data-ig-GROUP`, not `data-ig-key`, for the reason that attribute exists:
+    // the focus index takes one element per key, and an edge is not a
+    // navigation target — `navigable` lists issues. Pointer identity and focus
+    // identity are different questions, and this one is only the first.
+    //
+    // `edgeIdentity` is the SAME function the store derives `StoredEdge.id`
+    // with, so what `onSelect` hands the host is a key `findEdge` resolves
+    // rather than a shape it has to be taught.
+    'data-ig-group': edgeIdentity(edge.field, edge.from, edge.to),
     d: geometry.d,
     'stroke-dasharray': dash,
     role: 'img',
@@ -661,7 +686,13 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
       const geometry = edgeGeometry(layout, edge);
       if (geometry === null) continue;
       edgeLayers.push(...edgePaths(edge, geometry, theme));
-      const marker = terminalMarker(treatmentFor(edge.field).terminal, geometry, edge.field, theme);
+      const marker = terminalMarker(
+        treatmentFor(edge.field).terminal,
+        geometry,
+        edge.field,
+        edgeIdentity(edge.field, edge.from, edge.to),
+        theme,
+      );
       if (marker !== null) edgeLayers.push(marker);
     }
 
