@@ -11,14 +11,19 @@
   "plugins": [
     {
       "name": "issuegraph-skills",
-      "description": "Read and write the Issuegraph block in GitHub issue bodies through the `issuegraph` CLI — dependency edges, priority, evidence, and derived selection order. Covers the parse/validate/order/ready/set/splice/backfill verbs, and leads with the trap that `parse` exits 0 even when the block was unreadable, so the `state` field in stdout is the condition to read, not the exit code.",
+      "description": "Read and write the Issuegraph block in GitHub issue bodies through the `issuegraph` CLI — dependency edges, priority, evidence, and derived selection order. Four skills: the full CLI reference, plus selection (order/ready), creation (set) and grooming (validate/backfill/splice). Leads with the trap that `parse` exits 0 even when the block was unreadable, so the `state` field in stdout is the condition to read, not the exit code.",
       "source": "./plugins/issuegraph-skills",
       "author": {
         "name": "autnmy",
         "url": "https://github.com/autnmy"
       },
       "homepage": "https://github.com/autnmy/issuegraph",
-      "tags": ["issuegraph", "github-issues", "dependencies", "selection-order"]
+      "tags": [
+        "issuegraph",
+        "github-issues",
+        "dependencies",
+        "selection-order"
+      ]
     }
   ]
 }

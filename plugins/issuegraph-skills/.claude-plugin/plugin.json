@@ -1,7 +1,7 @@
 {
   "name": "issuegraph-skills",
-  "version": "0.1.0",
-  "description": "Read and write the Issuegraph block in GitHub issue bodies — dependency edges, priority, evidence, and derived selection order.",
+  "version": "0.2.0",
+  "description": "Read and write the Issuegraph block in GitHub issue bodies — dependency edges, priority, evidence, and derived selection order. Carries the CLI reference plus task skills for selection, creation and grooming.",
   "author": {
     "name": "Autonomy"
   },
