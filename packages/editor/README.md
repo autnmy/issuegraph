@@ -2,7 +2,7 @@
 
 Everything that **mutates** an [Issuegraph](https://github.com/autnmy/issuegraph) document: the edit affordances, drawn as overlays on [`@issuegraph/viewer`](../viewer) and dispatched through [`@issuegraph/store`](../store).
 
-> **Not published yet.** The package is `private` until the change that assembles the workspace fixes its exports. It builds, typechecks, lints and tests with the rest of the workspace, so the seam it exists to keep is enforced from the first commit.
+> **Publishable from `0.1.0`.** The package was `private` until the change that assembles the workspace fixed its exports; that change has landed, so the manifest joins its siblings and the next release carries it. Publishing itself stays a deliberate act — `publish.yml` runs on a release or a manual dispatch, never on a push.
 
 Layer 2 of three, and the whole of its contract:
 
@@ -195,9 +195,39 @@ Which bindings reach `target-search` is **data on the binding table**, so no cal
 
 **Validity stays in the store.** These modules emit intent; `structuralRefusal` owns `self-edge`, `duplicate-edge` and `unknown-issue`. A second validity rule out here is exactly what `picker/view.ts` refused, and for the same reason.
 
+## The three-zone workspace
+
+The assembly leaf: the rail on the left, the canvas in the centre, the inspector on the right, and the ambient audit count in the header. `renderWorkspace` composes each zone through the entry point that already owns it, so nothing below is re-derived here.
+
+**Positions are fixed, and that is §17f rather than a layout preference.** The rail answers *"what gets worked next"* for the whole backlog and must never refuse; the canvas answers *"what surrounds this issue"* and refuses above its budget. Assembling them must not average the two — so the grid gives each zone its own track, and a large document grows the canvas's refusal instead of squeezing the rail out.
+
+**The rail is virtualised, which is what lets it stay complete.** Those read as opposites and are not: the MODEL holds every slot and `addressOf` answers for every rank in the order, while the WINDOW bounds only how many rows are drawn. A reader looking at rows 1–50 of 312 can still ask what is at rank 287 and get an answer. Windowing is therefore a rail *requirement* — the alternative, a rail that paginates, has stopped answering its question.
+
+The window is an **offset**, not a rank, because a held slot has `rank: null` and ranks are not a coordinate you can slice on. Every out-of-range value is clamped rather than refused: this reads a scroll position, and taking the rail down over a rounding error is the one thing it may not do.
+
+**A spacer at each end carries the height of the rows that were not drawn**, so the scroll container is as tall as the order rather than as tall as the window — otherwise native scrolling stops at the end of the first window and a host has no offset to turn into the next `start`. The pitch is the whole outer row box — `--ig-row-height` plus the slot's `--ig-space-tight` margin — because sizing on the height alone undercounts every omitted row by the gap and puts the tail of the order out of reach. What stays approximate is only variable row height: a row carrying holds is taller than a bare one, so the scrollbar is proportional rather than exact, and measuring that needs a mount this package does not have.
+
+**The issues and edges are windowed alongside the slots**, down to exactly what the drawn rows need. Keeping the whole issue list is the obvious thing and it is wrong: the linear projection renders a count of the keys that appear in no slot and on no edge, so every edgeless issue outside the window was reported to the reader as *isolated* — the rail describing the reader's scroll position as though it were the document.
+
+**Selection is one value, shared, never copied.** §17b makes `selected` the only edge state that also filters the inspector, so the workspace owns exactly one `WorkspaceSelection` and each zone reads it. It is a discriminated union rather than two nullable fields for a reason worth stating: `{ issue, edge }` can represent *both at once*, which is not a state this design has — every reader would need a rule for it, and the bug would surface as two zones disagreeing about what is selected rather than as a type error.
+
+A selection naming a **member** of a `together-with` unit resolves to that unit's lead, because the unit is one row and `ViewerSlot.lead` is documented as the detail surface's subject — the projections canonicalize the same way before drawing, so all three zones name one issue for one selection.
+
+An edge selection **filters** the relationship list rather than opening a different panel, so the reader's frame of reference never jumps. Clearing returns to *nothing selected* rather than to a wider list — `none` is a selection with no subject, so there is no list to widen to, and the control is named `clearSelection` for exactly that reason. It also resolves to no viewer key, because `selected` renders `aria-current` on a *node* and an edge is not one.
+
+The selection reaches the **canvas** too, through an additive `selected` on `ScaleLadderOptions`. Without it the canvas drew the selected issue as ordinary while the rail marked it current — the single selection disagreeing with itself between two zones on every render, which is precisely what holding one value was supposed to make impossible.
+
+**The audit is ambient.** A persistent count in the header and a 2px left-bar on affected rail rows — no modal, no auto-fix, no animation, and a filter rather than a mode. The bar is applied by walking the rail's `ElementSpec` tree and adding `data-ig-audit` to the keyed rows, never by splicing the rendered string: `scene.root` is data and `KEY_ATTRIBUTE` is published, so this is a pure transform over a public value and no attribute in this package is escaped by anything but `renderMarkup`.
+
+`auditFiltered` is the toggle's state, and the workspace holds it: the header draws a `button` with `aria-pressed`, so without somewhere to keep that the control could never complete the action it advertised. The filter narrows the rail **before** the window, or it would narrow only the rows the window had already reached and read as doing nothing on a long backlog. It narrows the rail and nothing else — §17a gives the audit a filter for focus, and the canvas answers a different question.
+
+Ranking a unit's members is `heaviestRow`'s job, in the audit module, **because the weights live there**. The shortcut — take the first matching entry in `overlay.rows` — is wrong in a way that looks right: those rows are sorted by `ref`, lexicographically, so a `stale-blocker` on `a` masks a `cycle` on `b`. A row's severity is the heaviest across its **members**, not its lead. A `together-with` unit is one row and several refs, and a finding can name a member that does not lead — read off the lead alone, an affected unit renders clean, which is the audit failing silently on exactly the rows where an encoding error is hardest to see.
+
+**Dark only.** The pass-2 brief carries "light + dark" over from pass 1; light was cut after that pass. There is no forked token set and no `prefers-color-scheme` block — the palette is the viewer's, reached through its custom properties.
+
 ## Status
 
-Landing separately, each on its own change: the first-pass review queue, and the three-zone workspace that assembles the surfaces, wires the commands to a DOM and fixes this package's exports.
+The first-pass review queue lands as its own change. Wiring the published `data-ig-command` controls to real listeners remains a **mount's** job and therefore a host's: this package renders, and every control says what it does as data so the host can read it, reduce, and render again.
 
 ## Licence
 

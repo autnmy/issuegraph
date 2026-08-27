@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { EDGE_FIELDS, isSymmetricEdgeField } from '@issuegraph/core';
+import { EDGE_FIELDS, edgeIdentity, isSymmetricEdgeField } from '@issuegraph/core';
 import { buildModel } from '@issuegraph/reader';
 import type { EdgeKind, GraphDocument, Proposal } from '@issuegraph/store';
 import {
@@ -712,3 +712,224 @@ describe('done when: no create path dispatches to a DataSource', () => {
   });
 });
 
+/**
+ * The three-zone workspace's "done when", executable — same rule as every block
+ * above: the PUBLIC surface only, so what is asserted is what a consumer gets.
+ *
+ * This is the assembly leaf, so the interesting assertions are about the SEAM
+ * between zones rather than about any one of them: that the rail stays complete
+ * while the canvas refuses, that one selection value reaches all three, and that
+ * the audit marks the rail without the rail knowing about it.
+ */
+const {
+  INITIAL_SELECTION,
+  RAIL_WINDOW,
+  ZONES,
+  railWindow,
+  renderWorkspace,
+  selectionReducer,
+} = surface;
+
+const WORKSPACE_WORDS: surface.WorkspaceWords = {
+  nothingSelected: 'pick a row to inspect it',
+  clearSelection: 'clear the selection',
+  relationships: 'relationships',
+};
+
+/** A backlog of `total` issues, ranked in key order. */
+function ranked(total: number, edges: readonly (readonly [EdgeKind, string, string])[] = []) {
+  const keys = Array.from({ length: total }, (_, i) => `i${String(i + 1).padStart(4, '0')}`);
+  return {
+    issues: keys.map((key) => ({ key, title: `Issue ${key}`, open: true, priority: 2 })),
+    edges: edges.map(([field, from, to]) => ({ field, from, to })),
+    order: {
+      slots: keys.map((key, index) => ({
+        rank: index + 1,
+        lead: key,
+        members: [key],
+        ready: true,
+        holds: [],
+      })),
+      excluded: [],
+    },
+  };
+}
+
+describe('done when: the three zones render at their fixed positions, dark-only', () => {
+  it('draws rail, canvas and inspector, themed through the viewer\'s own properties', () => {
+    const result = renderWorkspace(ranked(8), { words: WORKSPACE_WORDS });
+    assert.deepEqual(
+      [...result.markup.matchAll(/data-zone="([^"]+)"/g)].map((match) => match[1]),
+      ['rail', 'canvas', 'inspector'],
+    );
+    // NO FORKED TOKEN SET. Light was cut after pass 1, so there is one palette
+    // and it is layer 1's — reached through custom properties the host resolves.
+    assert.match(result.styles, /--ig-bg:/);
+    assert.equal(/prefers-color-scheme/.test(surface.workspaceStylesheet), false);
+    assert.deepEqual([...result.diagnostics], []);
+  });
+
+  it('names its zones from a closed union, so no caller value reaches an attribute', () => {
+    assert.deepEqual([...ZONES], ['header', 'rail', 'canvas', 'inspector']);
+  });
+});
+
+describe('done when: the rail is virtualised and complete — 312 rows, every rank addressable', () => {
+  const document = ranked(312);
+
+  it('addresses all 312 while drawing a window of 12', () => {
+    const result = renderWorkspace(document, {
+      words: WORKSPACE_WORDS,
+      rail: { start: 0, count: 12 },
+    });
+    const drawn = [...result.markup.matchAll(/<li class="ig-slot" data-ig-key="([^"]+)"/g)];
+    assert.equal(drawn.length, 12);
+
+    // THE CRITERION ITSELF, driven over every rank rather than sampled.
+    const rail = result.view.rail;
+    assert.equal(rail.total, 312);
+    for (let rank = 1; rank <= 312; rank += 1) {
+      assert.equal(rail.addressOf(rank)?.rank, rank, `rank ${String(rank)}`);
+    }
+  });
+
+  it('never refuses, at any backlog size, however the window is asked for', () => {
+    // §17f: the rail answers "what gets worked next" for all 312 and must never
+    // refuse — the exact property the canvas is allowed NOT to have.
+    for (const options of [{}, { start: -1 }, { start: 9_000 }, { count: 0 }, { count: 9_000 }]) {
+      const rail = railWindow(document, options);
+      assert.equal(rail.total, 312);
+      assert.equal(rail.before + rail.count + rail.after, 312);
+      assert.ok(rail.addressOf(312) !== undefined);
+    }
+    assert.equal(railWindow(document).count, RAIL_WINDOW);
+  });
+
+  it('does not average the two zones: the canvas still refuses over the same document', () => {
+    // Assembling a rail that never refuses with a canvas that must is the one
+    // thing §17f forbids. Both properties, on ONE render of ONE document.
+    //
+    // CHAINED, not the bare `ranked(312)` above: with no edges every issue is
+    // ISOLATED, the ladder collapses them into its count chip and has nothing
+    // over budget to refuse — so the assertion would pass vacuously on a canvas
+    // that had simply been handed nothing to draw.
+    const keys = Array.from({ length: 312 }, (_, i) => `i${String(i + 1).padStart(4, '0')}`);
+    const chained = ranked(
+      312,
+      keys.slice(1).map((key, index) => ['blocked-by', key, keys[index] ?? ''] as const),
+    );
+
+    const result = renderWorkspace(chained, { words: WORKSPACE_WORDS });
+    assert.equal(result.view.rail.total, 312);
+    // The rail still addresses every rank while the canvas is refusing.
+    assert.ok(result.view.rail.addressOf(312) !== undefined);
+    assert.ok(renderScaleLadder(chained).ladder.refusal !== null);
+    assert.match(result.markup, /class="ig-refusal"/);
+  });
+});
+
+describe('done when: selecting an edge on the canvas filters the inspector, from ONE value', () => {
+  const document = ranked(4, [['blocked-by', 'i0001', 'i0002']]);
+  const edgeId = edgeIdentity('blocked-by', 'i0001', 'i0002');
+
+  it('reaches all three zones from the single selection the reducer produced', () => {
+    // Built through the REDUCER rather than as a literal, so this is the whole
+    // path a host takes: read the command off a control, reduce, render again.
+    const selection = selectionReducer(INITIAL_SELECTION, { kind: 'select-edge', edgeId });
+    const result = renderWorkspace(document, { words: WORKSPACE_WORDS, selection });
+
+    assert.equal(result.view.inspector.filtered, true);
+    assert.equal(result.view.inspector.relationships.length, 1);
+    assert.match(result.markup, /data-subject="edge"/);
+    // An edge is not a node, so no rail row is current — the one selection is
+    // read correctly by both zones rather than being copied into two.
+    assert.equal(/aria-current="true"/.test(result.markup), false);
+  });
+
+  it('widens back to the issue\'s own relationships when the filter is cleared', () => {
+    const cleared = selectionReducer({ kind: 'edge', edgeId }, { kind: 'clear' });
+    const onIssue = selectionReducer(cleared, { kind: 'select-issue', key: 'i0001' });
+    const result = renderWorkspace(document, { words: WORKSPACE_WORDS, selection: onIssue });
+    assert.equal(result.view.inspector.filtered, false);
+    assert.match(result.markup, /data-ig-key="i0001"[^>]*aria-current="true"/);
+  });
+});
+
+describe('done when: the audit count sits in the header, never animates, and bars the rail', () => {
+  const refs = ['i0001', 'i0002', 'i0003'];
+  const auditInput = {
+    document: {
+      issues: refs.map((ref) => ({ ref, title: `issue ${ref}`, state: 'open' as const })),
+      edges: [makeEdge('blocked-by', 'i0001', 'i0002'), makeEdge('blocked-by', 'i0002', 'i0001')],
+    },
+    graph: graphFor({
+      issues: refs.map((ref) => ({ ref, title: `issue ${ref}`, state: 'open' as const })),
+      edges: [makeEdge('blocked-by', 'i0001', 'i0002'), makeEdge('blocked-by', 'i0002', 'i0001')],
+    }),
+  };
+
+  it('draws the count in the header and a left-bar on the affected rows only', () => {
+    const result = renderWorkspace(ranked(3), {
+      words: WORKSPACE_WORDS,
+      audit: auditInput,
+    });
+    assert.equal([...result.markup.matchAll(/data-zone="header"/g)].length, 1);
+    assert.match(result.markup, /<span class="ig-audit-count">\d+<\/span>/);
+
+    const marked = [
+      ...result.markup.matchAll(/data-ig-key="([^"]+)"[^>]*data-ig-audit="/g),
+    ].map((match) => match[1]);
+    assert.deepEqual(marked.sort(), ['i0001', 'i0002']);
+  });
+
+  it('is ambient: no modal, no auto-fix, no animation anywhere in what it ships', () => {
+    const result = renderWorkspace(ranked(3), { words: WORKSPACE_WORDS, audit: auditInput });
+    for (const text of [result.markup, surface.workspaceStylesheet]) {
+      assert.equal(/dialog|aria-modal|\bmodal\b/i.test(text), false, 'a modal');
+      assert.equal(/auto-?fix|\brepair\b/i.test(text), false, 'an auto-fix');
+      assert.equal(/@keyframes|animation|animate|transition/i.test(text), false, 'an animation');
+    }
+  });
+});
+
+describe('done when: the package\'s public surface is final and self-sufficient', () => {
+  it('exports the workspace a host needs, and every module the audit marks reach', () => {
+    // A consumer assembling the workspace needs the renderer, the stylesheet,
+    // the selection reducer and the rail model. Anything it cannot reach here it
+    // would have to re-derive, which is the drift the seam exists to prevent.
+    for (const name of [
+      'renderWorkspace',
+      'workspaceStylesheet',
+      'selectionReducer',
+      'INITIAL_SELECTION',
+      'selectedKey',
+      'railWindow',
+      'RAIL_WINDOW',
+      'inspectorView',
+      'ZONES',
+    ]) {
+      assert.ok(name in surface, `${name} is not exported`);
+    }
+  });
+
+  it('renders the whole surface without a DOM', () => {
+    // The package is published as a pure renderer, and the workspace is the
+    // piece most likely to reach for a mount. `purity.test.ts` covers import
+    // time; this covers a full render.
+    const removed = ['document', 'window', 'navigator', 'fetch', 'localStorage'];
+    const saved = new Map(
+      removed.map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const),
+    );
+    for (const name of removed) {
+      Object.defineProperty(globalThis, name, { value: undefined, configurable: true, writable: true });
+    }
+    try {
+      assert.ok(renderWorkspace(ranked(20), { words: WORKSPACE_WORDS }).markup.length > 0);
+    } finally {
+      for (const [name, descriptor] of saved) {
+        if (descriptor === undefined) Reflect.deleteProperty(globalThis, name);
+        else Object.defineProperty(globalThis, name, descriptor);
+      }
+    }
+  });
+});

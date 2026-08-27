@@ -57,6 +57,19 @@ export interface ScaleLadderOptions {
   readonly theme?: Theme | undefined;
   /** The selector the theme's custom properties are written onto. */
   readonly themeSelector?: string | undefined;
+  /**
+   * The selected issue key, handed to the viewer as `aria-current`.
+   *
+   * ADDITIVE AND OPTIONAL, for the surface that assembles this beside a rail.
+   * A workspace holds ONE selection and every zone reads it, so a canvas that
+   * could not be told what is selected made the shared value disagree with
+   * itself between zones on every render — the rail marking a row current while
+   * the graph drew the same issue as ordinary.
+   *
+   * Reaches the viewer only on the tier that draws one; there is nothing to
+   * mark on a tier whose canvas is a refusal.
+   */
+  readonly selected?: string | null | undefined;
 }
 
 export interface ScaleLadderResult {
@@ -198,7 +211,7 @@ export function renderScaleLadder(
 
   const canvas =
     ladder.tier === 'direct'
-      ? renderViewer(ladder.canvas, { projection: 'graph', theme })
+      ? renderViewer(ladder.canvas, { projection: 'graph', theme, selected: options.selected ?? null })
       : null;
 
   const chrome = element('section', { class: 'ig-ladder', 'data-tier': ladder.tier }, [
