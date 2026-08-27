@@ -32,7 +32,7 @@ import type { ResolvedInputs } from './run.ts';
  * second copy of the version into `dist`. The release process owns keeping this
  * in step, exactly as it owns the manifest.
  */
-const VERSION = '0.1.0';
+const VERSION = '0.3.0';
 
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];

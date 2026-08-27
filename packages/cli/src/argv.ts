@@ -132,7 +132,13 @@ export const VERBS = Object.freeze({
   backfill: {
     summary: 'repair a block a code fence left undelimited',
     input: 'body',
-    options: Object.freeze({ ...BODY_FILE }),
+    options: Object.freeze({
+      ...BODY_FILE,
+      '--json': opt(
+        0,
+        'report the OUTCOME as JSON instead of emitting the repaired body (for a programmatic caller)',
+      ),
+    }),
   },
 } as const satisfies Readonly<Record<string, VerbSpec>>);
 

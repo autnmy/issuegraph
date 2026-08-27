@@ -63,3 +63,17 @@ export const CANONICAL_BODY = [
   '',
   'The body.',
 ].join('\n');
+
+/**
+ * A key at column zero with NO fence and no `---` pair — the one shape
+ * `backfill` REFUSES, because nothing establishes the key as frontmatter rather
+ * than prose and repairing it would mean guessing what the author meant.
+ *
+ * IT IS THE DISCRIMINATOR FIXTURE, and its whole value is that it is
+ * indistinguishable from {@link INERT_BODY} anywhere else in this binary:
+ * `validate` reports `{state:"inert", ok:false, blockDefect:"undelimited"}` for
+ * BOTH, byte for byte. Only `backfill` separates them — one is repaired, this
+ * one is refused — which is the measurement that made `backfill --json`
+ * necessary rather than convenient.
+ */
+export const UNREPAIRABLE_BODY = ['issuegraph:', '  blocked-by:', '    - "#1"', '', 'The body.'].join('\n');

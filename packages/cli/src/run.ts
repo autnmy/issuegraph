@@ -311,7 +311,7 @@ export function dispatch(parsed: ParsedArgv, inputs: ResolvedInputs, version: st
     case 'ready':
       return orderFromJson(input, 'ready');
     case 'backfill':
-      return backfill(input);
+      return backfill(input, { json: parsed.options.has('--json') });
     case 'set': {
       const fields = collectSetFields(parsed.options);
       return fields.ok ? setFields(input, fields.value) : fields.result;

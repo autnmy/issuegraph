@@ -11,14 +11,21 @@
   "plugins": [
     {
       "name": "issuegraph-skills",
-      "description": "Read and write the Issuegraph block in GitHub issue bodies through the `issuegraph` CLI — dependency edges, priority, evidence, and derived selection order. Covers the parse/validate/order/ready/set/splice/backfill verbs, and leads with the trap that `parse` exits 0 even when the block was unreadable, so the `state` field in stdout is the condition to read, not the exit code.",
+      "description": "Task-shaped skills over the `issuegraph` CLI, so the three things done constantly are a call with a memorable name: SELECTION (order a candidate set, answer what is ready, and why a P0 is held), CREATION (render a correct block on a new issue, including a decomposition's leaves), and GROOMING (validate, repair an inert block, refresh generated edges). Each composes the CLI and re-implements no parsing. They lead with the traps that fail silently: the `state` field is the condition to branch on and the exit code is not \u2014 `parse` exits 0 on an INERT block while `validate` exits 5, and both exit 3 on an UNREAD one, so the two verbs disagree about the same body; and an empty `ready` result with a non-empty `underRead` means \"I could not tell\", not \"nothing is ready\".",
       "source": "./plugins/issuegraph-skills",
       "author": {
         "name": "autnmy",
         "url": "https://github.com/autnmy"
       },
       "homepage": "https://github.com/autnmy/issuegraph",
-      "tags": ["issuegraph", "github-issues", "dependencies", "selection-order"]
+      "tags": [
+        "issuegraph",
+        "github-issues",
+        "dependencies",
+        "selection-order",
+        "grooming",
+        "triage"
+      ]
     }
   ]
 }

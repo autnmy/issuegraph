@@ -5,7 +5,14 @@ import { parseFrontmatter } from '@issuegraph/reader';
 
 import { classifyDeclaration } from '../declaration.ts';
 import { EXIT } from '../exit.ts';
-import { ABSENT_BODY, CANONICAL_BODY, HAZARD_BODY, INERT_BODY, QUOTED_BODY } from '../testing/fixtures.ts';
+import {
+  ABSENT_BODY,
+  CANONICAL_BODY,
+  HAZARD_BODY,
+  INERT_BODY,
+  QUOTED_BODY,
+  UNREPAIRABLE_BODY,
+} from '../testing/fixtures.ts';
 import { backfill, setFields, spliceEdges } from './write.ts';
 
 /**
@@ -446,5 +453,123 @@ describe('a write request naming a field the writer cannot act on', () => {
     // the render-only one. Which code comes back IS the ordering.
     assert.equal(result.code, EXIT.usage, `the unsupported key must win: ${message}`);
     assert.ok(!message.includes('owns generated edges only'), `the render-only refusal must not fire: ${message}`);
+  });
+});
+
+/**
+ * `backfill --json` — the OUTCOME as data.
+ *
+ * Every assertion here is about a caller that cannot read prose. The verb's
+ * stderr is unchanged and is not what these test.
+ */
+describe('backfill --json', () => {
+  /** The parsed payload, with the shape assertions a reader needs done once. */
+  function payload(body: string): Record<string, unknown> {
+    const result = backfill(body, { json: true });
+    const parsed: unknown = JSON.parse(result.stdout);
+    assert.ok(typeof parsed === 'object' && parsed !== null, 'the payload must be an object');
+    return parsed as Record<string, unknown>;
+  }
+
+  test('THE DISCRIMINATOR: two bodies `validate` cannot tell apart get different outcomes', () => {
+    // THE PRECONDITION IS THE TEST. Without it this reads as two unrelated
+    // assertions about two fixtures; with it, it is the claim that this flag
+    // carries information available NOWHERE else in the binary.
+    //
+    // Asserted through `validate`'s own classifier rather than a remembered
+    // string, so a future change that made `validate` discriminating would
+    // redden this precondition and retire the test honestly, instead of leaving
+    // it passing for a reason that had stopped being true.
+    const inert = classifyDeclaration(parseFrontmatter(INERT_BODY));
+    const unrepairable = classifyDeclaration(parseFrontmatter(UNREPAIRABLE_BODY));
+    assert.equal(inert.state, 'inert');
+    assert.equal(unrepairable.state, 'inert');
+    assert.equal(
+      inert.state === 'inert' ? inert.blockDefect : null,
+      unrepairable.state === 'inert' ? unrepairable.blockDefect : null,
+      'precondition: the two bodies must be indistinguishable to the classifier `validate` uses',
+    );
+
+    assert.equal(payload(INERT_BODY).outcome, 'delimited');
+    assert.equal(payload(UNREPAIRABLE_BODY).outcome, 'unrecoverable');
+  });
+
+  test('a repaired body is reported AND is the body that reads', () => {
+    const parsed = payload(INERT_BODY);
+    assert.equal(parsed.outcome, 'delimited');
+    assert.equal(typeof parsed.body, 'string');
+    // Through the reader, never a byte comparison — the writer owns its layout.
+    assert.deepEqual(edgesOf(String(parsed.body)), ['1']);
+  });
+
+  test('a refusal carries NO `body` key at all, at the wire level', () => {
+    const result = backfill(UNREPAIRABLE_BODY, { json: true });
+    assert.equal(result.code, EXIT.refusedWrite);
+
+    const parsed = payload(UNREPAIRABLE_BODY);
+    assert.equal(parsed.outcome, 'unrecoverable');
+    // `Object.hasOwn`, not `=== undefined`: the claim is that the key is ABSENT
+    // from the JSON, not merely that it reads as undefined. A `"body": null`
+    // would satisfy the weaker test and is exactly the value a caller could
+    // write back believing the input had been repaired.
+    assert.equal(Object.hasOwn(parsed, 'body'), false, result.stdout);
+    assert.ok(Array.isArray(parsed.diagnostics) && parsed.diagnostics.length > 0);
+  });
+
+  test('the two unchanged-body outcomes still carry the body they did not change', () => {
+    for (const [body, outcome] of [
+      [CANONICAL_BODY, 'already-canonical'],
+      [ABSENT_BODY, 'no-block'],
+    ] as const) {
+      const parsed = payload(body);
+      assert.equal(parsed.outcome, outcome);
+      assert.equal(parsed.body, body, `${outcome} must round-trip its input byte for byte`);
+    }
+  });
+
+  test('the flag changes the PAYLOAD and never the exit code', () => {
+    // `exit.ts`: the code carries the command's decision, the payload carries
+    // the declaration's state. A flag that softened `unrecoverable` to `ok`
+    // would make a shell reading and a program reading disagree about one run.
+    for (const body of [INERT_BODY, CANONICAL_BODY, ABSENT_BODY, UNREPAIRABLE_BODY, HAZARD_BODY, QUOTED_BODY]) {
+      assert.equal(
+        backfill(body, { json: true }).code,
+        backfill(body).code,
+        'the exit code must not depend on --json',
+      );
+      assert.deepEqual(
+        backfill(body, { json: true }).stderr,
+        backfill(body).stderr,
+        'the stderr must not depend on --json',
+      );
+    }
+  });
+
+  test('default is body mode, so a bare call is unchanged', () => {
+    // The regression guard for `issuegraph backfill < body > new-body`.
+    assert.equal(backfill(INERT_BODY).stdout, backfill(INERT_BODY, { json: false }).stdout);
+    assert.deepEqual(edgesOf(backfill(INERT_BODY).stdout), ['1']);
+  });
+
+  test('body mode emits NOTHING on a refusal', () => {
+    // Pre-existing behaviour, pinned here because the refusal arm was rewritten:
+    // a caller redirecting stdout to a file must not be handed the unrepaired
+    // input to write back.
+    const result = backfill(UNREPAIRABLE_BODY);
+    assert.equal(result.code, EXIT.refusedWrite);
+    assert.equal(result.stdout, '');
+  });
+
+  test('every outcome says something on stderr', () => {
+    // The note table is total over the writer's outcome union, so a fifth
+    // outcome is a compile error rather than a silent empty line. This is the
+    // runtime half: each of the four reachable outcomes actually prints.
+    for (const body of [INERT_BODY, CANONICAL_BODY, ABSENT_BODY, UNREPAIRABLE_BODY]) {
+      const [first] = backfill(body, { json: true }).stderr;
+      assert.ok(
+        typeof first === 'string' && first.startsWith('issuegraph: '),
+        `no note for ${JSON.stringify(body.slice(0, 20))}`,
+      );
+    }
   });
 });

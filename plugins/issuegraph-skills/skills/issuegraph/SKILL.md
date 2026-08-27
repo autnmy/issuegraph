@@ -5,6 +5,12 @@ description: Read and write the Issuegraph block in a GitHub issue body using th
 
 # Issuegraph
 
+> **This is the reference — every verb and every flag.** For the three things
+> done constantly there are task-shaped skills that are usually the better entry
+> point: **issuegraph-selection** (what should I pick up, and why is that P0
+> held?), **issuegraph-creation** (put a correct block on a new issue), and
+> **issuegraph-grooming** (is this block being read, and how do I repair it?).
+
 `issuegraph` reads and edits the **Issuegraph block** inside an issue body — the machine-readable declaration of what an issue is waiting on.
 
 **It never touches the network and takes no credential.** The body goes in on stdin, the answer comes out on stdout. Closure state and labels are *inputs you supply*, which is what lets it run in a workflow with no token. Fetch the body with `gh`, pipe it in.
@@ -23,6 +29,15 @@ gh issue view 1234 -R owner/repo --json body -q .body | issuegraph parse
 gh issue view 1234 -R owner/repo --json body -q .body | issuegraph validate
 ```
 
+> ⚠ **These two are shown bare, and that is a choice with a condition attached.**
+> A failed `gh issue view` writes nothing, and `issuegraph` on empty stdin answers
+> `{"state": "absent", "ok": true}` at **exit 0** — a fetch that never happened is
+> indistinguishable from an issue that declares nothing. At a terminal that is
+> harmless: the failure prints in front of you and there is nothing to corrupt.
+> **The moment you lift one of these into a script, capture the fetch's status
+> before its output reaches the parser.** Every writing recipe in these skills
+> does; a read you act on automatically has to as well.
+
 `parse` emits JSON: `blockedBy`, `serializeWith`, `decomposedFrom`, `duplicateOf`, `togetherWith`, `priority`, `evidence`. Each reference carries `{repo, id}` — `repo` is `null` for a same-repo reference.
 
 ## Selection order
@@ -39,23 +54,73 @@ Use `ready` to answer *"what should I pick up?"* rather than hand-rolling a bloc
 ## Writing
 
 ```sh
-gh issue view 1234 -R owner/repo --json body -q .body \
-  | issuegraph set --blocked-by 987 --blocked-by owner/repo#654 \
-  > new-body.md
-gh issue edit 1234 -R owner/repo --body-file new-body.md
+d=$(mktemp -d) || exit 1
+gh issue view 1234 -R owner/repo --json body > "$d/issue.json" \
+  || { echo "could not read the issue; nothing was written" >&2; rm -rf "$d"; exit 1; }
+jq -j .body "$d/issue.json" > "$d/orig.md" || { rm -rf "$d"; exit 1; }
+
+# THE STATUS IS CAPTURED BEFORE THE CLEANUP AND RETURNED AFTER IT. `rm -rf`
+# succeeds, so an unconditional cleanup makes IT the recipe's exit status — and a
+# failed `set`, a refused `[ -s ]` or a failed `gh issue edit` then reports 0
+# while the issue was never updated. A caller that branches on this recipe reads
+# a write that did not happen as a write that did.
+rc=0
+issuegraph set --blocked-by 987 --blocked-by owner/repo#654 --body-file "$d/orig.md" \
+  > "$d/new-body.md" \
+  && [ -s "$d/new-body.md" ] \
+  && gh issue edit 1234 -R owner/repo --body-file "$d/new-body.md" || rc=$?
+rm -rf "$d"
+exit "$rc"
 ```
+
+⚠ **Four guards, and each one stops a different way of destroying the issue.**
+
+**A private directory**, because two people running this at the same moment on
+different issues would otherwise share `new-body.md` in whatever directory they
+happened to be in — and one can then write the other's body to the wrong issue.
+
+**The fetch is checked** because a failed `gh issue view` feeds `set` an *empty*
+input — and `set` then happily renders a fresh block onto nothing and exits **0**,
+so the chain continues and the edit replaces the entire body with just that block.
+Measured: fetch fails → `set` rc **0**, output **49 bytes** of block and no body.
+
+**The body never passes through `$(…)`**, which strips every trailing newline and
+would silently write back a body that differs from the original.
+
+**The `&&` and `[ -s ]`** cover the other end: a refused `set` exits non-zero
+having written nothing, while the redirection has already created the file — so
+an unchained edit replaces the body with **0 bytes**.
 
 - References accept `123`, `#123`, or `owner/repo#123`. **Repeat `--blocked-by` for each entry** — it is a list.
 - `--no-blocked-by` / `--no-serialize-with` remove an entry.
 - `--priority` (0–3), `--evidence` (`asserted`|`verified`) and `--together-with` may only be set **when the body has no block yet**.
 - `splice --edges <json>` refreshes only the *owned generated* edges, leaving hand-written ones alone. Prefer it over `set` when a tool is maintaining edges automatically.
-- `backfill` repairs a block that a code fence left undelimited.
+- `backfill` repairs a block that a code fence left undelimited. **In a loop, use
+  `backfill --json`**: it puts the outcome (`delimited` / `already-canonical` /
+  `no-block` / `unrecoverable`) on stdout as data, so a caller can branch on it
+  without string-matching the stderr prose. On `unrecoverable` there is no `body`
+  key at all — nothing was repaired, so there is nothing to write back.
+  `validate` cannot substitute for it: a repairable block and an unrepairable one
+  produce byte-identical `validate` output.
 
 **Always write through the CLI rather than editing the block by hand.** Hand-editing is how a block ends up undelimited, duplicated, or unreadable.
 
 ## Read the `state` field, NOT the exit code
 
-**`parse` exits 0 even when the block is unreadable or inert.** The condition is reported in stdout, and a caller that branches on the exit code alone will read both failures as success. Verified against `@issuegraph/cli@0.1.1`:
+**The exit code is not a substitute for `state`, and not because it "might" differ — the two read verbs answer DIFFERENTLY for the same body.** Measured on the built binary:
+
+| `state` | `parse` | `validate` |
+|---|---|---|
+| `read` | `0` | `0` |
+| `absent` | `0` | `0` |
+| `unread` | `3` | `3` |
+| `inert` | **`0`** ⚠ | `5` |
+
+**`parse` on an `inert` block exits 0** — and undelimited is the shape hand-authored blocks overwhelmingly take, so that is the cell that fails open: the caller reads success, and the payload reads like an issue with no dependencies. The two verbs also **disagree** on that row, so a recipe that swaps one for the other silently changes meaning.
+
+This table is the authority; the task-shaped skills point at it rather than restate it.
+
+The condition is always reported in stdout:
 
 | `state` | means | what to do |
 |---|---|---|
@@ -73,7 +138,7 @@ STATE=$(gh issue view 1234 -R owner/repo --json body -q .body \
 
 Note also that **a code fence is armor, not a delimiter** — the CLI says so in its own diagnostic. A block wrapped in ``` but missing its `---` pair is inert, and inert blocks are invisible to every reader.
 
-The documented exit codes (`1` internal, `2` usage, `3` unreadDeclaration, `4` refusedWrite, `5` inertDeclaration) exist for the failure modes each names, but **do not assume a given verb reaches them** — `parse` reports these conditions through `state` at exit 0. Check `state` first; use the exit code only to catch usage errors and crashes.
+The documented exit codes are `1` internal, `2` usage, `3` unreadDeclaration, `4` refusedWrite, `5` inertDeclaration — but **do not assume a given verb reaches the one you expect**: the table above is what each verb actually returns, and `parse` reports `inert` through `state` at exit **0** while `validate` returns `5` for it. Check `state` first; use the exit code to catch usage errors and crashes, and — for a write verb — to tell a refusal from a success before you consume its output.
 
 ## Traps worth knowing
 
