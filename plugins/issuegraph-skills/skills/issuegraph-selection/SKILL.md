@@ -57,17 +57,27 @@ is exactly what lets this run in a GitHub Action holding only issue bodies.
 Build it from `gh` like this:
 
 ```sh
+# A PRIVATE DIRECTORY FOR THE WHOLE RECIPE, not just the preflight. The
+# candidate document is BUILT here, COUNTED here, PREFLIGHTED here and READ here,
+# and a fixed `candidates.json` in the working directory is shared state: two
+# selection runs in one checkout race, and the second can overwrite the file
+# after the first has counted and preflighted it but before `ready` reads it. The
+# order that comes back then describes another repository, or a mixture of two
+# snapshots, with nothing in the output saying so.
+scratch=$(mktemp -d) || exit 1
+candidates="$scratch/candidates.json"
+
 limit=500
 raw=$(gh issue list -R owner/repo --state all --limit "$limit" \
         --json number,state,stateReason,labels,assignees,body) \
-  || { echo "could not list issues — this says NOTHING about the order" >&2; exit 1; }
+  || { echo "could not list issues — this says NOTHING about the order" >&2; rm -rf "$scratch"; exit 1; }
 
 # A CAP THAT BINDS IS NOT AN ANSWER. `--limit` is a maximum, so a larger backlog
 # is silently truncated — and the missing rows are exactly the ones that hurt: an
 # older open P0, or a blocker some fetched issue depends on. Refuse rather than
 # present a partial derivation as the selection answer.
 [ "$(printf '%s' "$raw" | jq 'length')" -lt "$limit" ] \
-  || { echo "fetched exactly $limit issues — the backlog may be larger; this order is NOT complete" >&2; exit 1; }
+  || { echo "fetched exactly $limit issues — the backlog may be larger; this order is NOT complete" >&2; rm -rf "$scratch"; exit 1; }
 
 # `matchedOrderIndex` IS A QUERY BAND, NOT A RANK. Rank comes from the ARRAY
 # POSITION of `order`, which is why the rows must be emitted in the order the
@@ -81,7 +91,7 @@ printf '%s' "$raw" | jq '{homeRepo:"owner/repo",
        issues:[.[]|{number, open:(.state=="OPEN"),
                     labels:[.labels[].name], assigneeCount:(.assignees|length), body:(.body//""),
                     closedStateReason:(if (.stateReason // "") == "" then null
-                                       else (.stateReason|ascii_downcase) end)}]}' > candidates.json || exit 1
+                                       else (.stateReason|ascii_downcase) end)}]}' > "$candidates" || { rm -rf "$scratch"; exit 1; }
 
 # THE PREFLIGHT RUNS BEFORE THE DERIVATION, NOT AFTER IT. Piping straight into
 # `ready` is what lets an INERT body's declared edges be treated as absent — the
@@ -90,12 +100,11 @@ printf '%s' "$raw" | jq '{homeRepo:"owner/repo",
 # NO base64, AND NO PIPELINE WHOSE FIRST STAGE CAN FAIL SILENTLY. Each body is
 # written straight out of the document with `jq -j` and every step's status is
 # checked — see the note under this block for what the earlier shape did.
-count=$(jq '.issues | length' candidates.json) \
-  || { echo "could not read candidates.json — this says NOTHING about the candidates" >&2; exit 1; }
-scratch=$(mktemp -d) || exit 1
+count=$(jq '.issues | length' "$candidates") \
+  || { echo "could not read the candidate document — this says NOTHING about the candidates" >&2; rm -rf "$scratch"; exit 1; }
 bad=0 i=0
 while [ "$i" -lt "$count" ]; do
-  jq -j --argjson i "$i" '.issues[$i].body // ""' candidates.json > "$scratch/body" || { bad=1; break; }
+  jq -j --argjson i "$i" '.issues[$i].body // ""' "$candidates" > "$scratch/body" || { bad=1; break; }
   state=$(issuegraph validate --body-file "$scratch/body" | jq -r .state) || { bad=1; break; }
   case "$state" in
     read|absent) : ;;
@@ -103,10 +112,12 @@ while [ "$i" -lt "$count" ]; do
   esac
   i=$((i + 1))
 done
-rm -rf "$scratch"
-[ "$bad" -eq 0 ] || exit 1
+[ "$bad" -eq 0 ] || { rm -rf "$scratch"; exit 1; }
 
-issuegraph ready --input candidates.json
+# READ IT BEFORE THE CLEANUP — the document lives in the directory being removed.
+issuegraph ready --input "$candidates"; rc=$?
+rm -rf "$scratch"
+exit "$rc"
 ```
 
 **`stateReason` has to be requested and normalised**, or the closure-reason

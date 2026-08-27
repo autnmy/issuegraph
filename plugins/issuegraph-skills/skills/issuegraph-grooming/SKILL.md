@@ -129,11 +129,22 @@ if issuegraph backfill --json --body-file "$d/orig.md" > "$d/out.json"; then
       ;;
   esac
 else
-  # Exit 4 is `unrecoverable` — the block cannot be repaired without guessing.
-  # Reported, never written, and it needs a human.
+  # ONLY EXIT 4 IS A VERDICT ABOUT THE BLOCK. It is `refusedWrite`: the block
+  # cannot be repaired without guessing, and the `--json` payload still carries
+  # the outcome and the diagnostics that say why.
+  #
+  # EVERY OTHER NON-ZERO EXIT IS AN EXECUTION ERROR, and calling it "needs a
+  # human" blames the issue for the caller's problem. `2` is what an older CLI
+  # returns for an unrecognised `--json`, and what an unreadable `--body-file`
+  # returns; `1` is an internal fault. Measured: bad flag → 2, missing file → 2,
+  # two claimant keys → 4 with a payload.
   rc=$?
-  echo "#1234: backfill refused (exit $rc); needs a human" >&2
-  jq -r '.diagnostics[]?' "$d/out.json" 2>/dev/null >&2
+  if [ "$rc" -eq 4 ]; then
+    echo "#1234: cannot be repaired without guessing — needs a human" >&2
+    jq -r '.diagnostics[]?' "$d/out.json" 2>/dev/null >&2
+  else
+    echo "#1234: backfill could not run (exit $rc) — an execution error, not a verdict on the block" >&2
+  fi
 fi
 rm -rf "$d"
 exit "$rc"
