@@ -36,11 +36,18 @@ Then file it:
 
 ```sh
 d=$(mktemp -d) || exit 1
+# THE STATUS IS CAPTURED BEFORE THE CLEANUP AND RETURNED AFTER IT. `rm -rf`
+# succeeds, so an unconditional cleanup makes IT the recipe's exit status — and a
+# failed `set`, a refused `[ -s ]` or a failed `gh issue edit` then reports 0
+# while the issue was never updated. A caller that branches on this recipe reads
+# a write that did not happen as a write that did.
+rc=0
 printf '%s\n' "$BODY" \
   | issuegraph set --blocked-by 8232 --evidence asserted > "$d/body.md" \
   && [ -s "$d/body.md" ] \
-  && gh issue create -R owner/repo --title "…" --body-file "$d/body.md"
+  && gh issue create -R owner/repo --title "…" --body-file "$d/body.md" || rc=$?
 rm -rf "$d"
+exit "$rc"
 ```
 
 ⚠ **The `&&` is the whole safety of this.** When `set` refuses — an unwritable

@@ -97,10 +97,17 @@ gh issue view 1234 -R owner/repo --json body > "$d/issue.json" \
   || { echo "could not read the issue; nothing was written" >&2; rm -rf "$d"; exit 1; }
 jq -j .body "$d/issue.json" > "$d/orig.md" || { rm -rf "$d"; exit 1; }
 
+# THE STATUS IS CAPTURED BEFORE THE CLEANUP AND RETURNED AFTER IT. `rm -rf`
+# succeeds, so an unconditional cleanup makes IT the recipe's exit status — and a
+# failed `set`, a refused `[ -s ]` or a failed `gh issue edit` then reports 0
+# while the issue was never updated. A caller that branches on this recipe reads
+# a write that did not happen as a write that did.
+rc=0
 issuegraph backfill --body-file "$d/orig.md" > "$d/body.md" \
   && [ -s "$d/body.md" ] \
-  && gh issue edit 1234 -R owner/repo --body-file "$d/body.md"
+  && gh issue edit 1234 -R owner/repo --body-file "$d/body.md" || rc=$?
 rm -rf "$d"
+exit "$rc"
 ```
 
 ⚠ **This recipe can wipe an issue through TWO different doors, and both are
