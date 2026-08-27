@@ -335,11 +335,28 @@ rows=$(gh issue list -R owner/repo --state open --limit "$limit" \
 [ "$(printf '%s\n' "$rows" | grep -c .)" -lt "$limit" ] \
   || { echo "fetched exactly $limit issues — the backlog may be larger; this result is NOT a clean corpus" >&2; exit 1; }
 
+# EVERY STAGE IS PROVED BEFORE `absent` IS BELIEVED — this is rule 1, and the
+# sweep is where breaking it costs most. `validate` on empty stdin answers
+# `{"state":"absent","ok":true}` at exit 0, so ANY upstream stage that fails
+# silently lands on the allowlist and the sweep reports a clean corpus over rows
+# it never read. Measured: a `gh issue view` for a nonexistent issue prints
+# nothing, and piping that straight in yields `absent` at exit 0.
+#
+# A PIPELINE CANNOT DO THIS. `state=$(… | issuegraph validate | jq -r .state)`
+# takes the LAST command's status, so a failed `jq -r .body` or a failed
+# `validate` is invisible. Each stage goes to a file and is checked on its own.
+scratch=$(mktemp -d) || exit 1
 found=0
 while IFS= read -r row; do
   [ -n "$row" ] || continue
-  n=$(printf '%s' "$row" | jq -r .number)
-  state=$(printf '%s' "$row" | jq -r '.body // ""' | issuegraph validate | jq -r .state)
+  n=$(printf '%s' "$row" | jq -r .number) \
+    || { echo "could not decode a row — this sweep is NOT a clean corpus" >&2; found=$((found + 1)); continue; }
+  printf '%s' "$row" | jq -j '.body // ""' > "$scratch/body" \
+    || { echo "#$n: could not extract the body — not inspected" >&2; found=$((found + 1)); continue; }
+  issuegraph validate --body-file "$scratch/body" > "$scratch/v.json" \
+    || : # a non-zero exit IS a real verdict here (3 unread, 5 inert); `state` carries it
+  state=$(jq -r .state "$scratch/v.json") \
+    || { echo "#$n: validate emitted no readable state — not inspected" >&2; found=$((found + 1)); continue; }
   case "$state" in
     read|absent) : ;;
     *) echo "#$n is $state"; found=$((found + 1)) ;;
@@ -347,6 +364,7 @@ while IFS= read -r row; do
 done <<EOF
 $rows
 EOF
+rm -rf "$scratch"
 echo "$found unreadable"
 [ "$found" -eq 0 ]      # exit status IS the answer: 0 = the corpus is clean
 ```

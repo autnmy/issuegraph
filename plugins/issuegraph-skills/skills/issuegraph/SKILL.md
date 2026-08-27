@@ -29,6 +29,15 @@ gh issue view 1234 -R owner/repo --json body -q .body | issuegraph parse
 gh issue view 1234 -R owner/repo --json body -q .body | issuegraph validate
 ```
 
+> ⚠ **These two are shown bare, and that is a choice with a condition attached.**
+> A failed `gh issue view` writes nothing, and `issuegraph` on empty stdin answers
+> `{"state": "absent", "ok": true}` at **exit 0** — a fetch that never happened is
+> indistinguishable from an issue that declares nothing. At a terminal that is
+> harmless: the failure prints in front of you and there is nothing to corrupt.
+> **The moment you lift one of these into a script, capture the fetch's status
+> before its output reaches the parser.** Every writing recipe in these skills
+> does; a read you act on automatically has to as well.
+
 `parse` emits JSON: `blockedBy`, `serializeWith`, `decomposedFrom`, `duplicateOf`, `togetherWith`, `priority`, `evidence`. Each reference carries `{repo, id}` — `repo` is `null` for a same-repo reference.
 
 ## Selection order
