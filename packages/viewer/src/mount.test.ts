@@ -378,15 +378,20 @@ describe('mountViewer', () => {
   it('carries an edge selection into a graph that REFUSES to draw', () => {
     // THE PROJECTION STATE THAT DRAWS NEITHER AN ARC NOR A BADGE. Past
     // `GRAPH_NODE_BUDGET` the canvas is replaced by the refusal, whose capsules
-    // publish no edge identity, and the rail it renders instead used to carry
-    // rank, station and title only. So an edge had no representation anywhere in
-    // a refused graph — and because an edge identity is in no document, the
-    // switch cleared the selection and told the host `onSelect(null)`.
+    // publish no edge identity, and whose rail carries rank, station and title
+    // only. So an edge has no representation anywhere in a refused graph.
     //
-    // THE THIRD TIME THIS RAIL HAS DROPPED SOMETHING THE CANVAS CARRIES — after
-    // the hold reasons and the excluded rows. `spineRail` already states the rule
-    // it broke: a refusal's rail is the whole order UI, so it must carry what the
-    // canvas would otherwise have drawn.
+    // WHICH IS FINE, AND THAT IS THE POINT OF THE TEST. A refusal is a mode that
+    // deliberately declines to render relationship detail at scale, so the fix
+    // for this cannot be to render more: the document answers for the edge, and
+    // the subject survives a projection that draws nothing for it exactly as an
+    // issue selection always has.
+    //
+    // AN EARLIER ATTEMPT DID RENDER MORE — `edgeBadges` in the refusal's rail —
+    // and review measured the cost: on a dense document `blocked-by` is a LIST
+    // field, so ~300 nodes admit ~90,000 directed edges, and badging both
+    // endpoint rows materializes hundreds of thousands of spans in the one mode
+    // whose entire job is to avoid drawing at that size. It was removed.
     const issues = [];
     const edges = [];
     const slots = [];
