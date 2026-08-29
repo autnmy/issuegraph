@@ -375,6 +375,56 @@ describe('mountViewer', () => {
     }
   });
 
+  it('carries an edge selection into a graph that REFUSES to draw', () => {
+    // THE PROJECTION STATE THAT DRAWS NEITHER AN ARC NOR A BADGE. Past
+    // `GRAPH_NODE_BUDGET` the canvas is replaced by the refusal, whose capsules
+    // publish no edge identity, and the rail it renders instead used to carry
+    // rank, station and title only. So an edge had no representation anywhere in
+    // a refused graph — and because an edge identity is in no document, the
+    // switch cleared the selection and told the host `onSelect(null)`.
+    //
+    // THE THIRD TIME THIS RAIL HAS DROPPED SOMETHING THE CANVAS CARRIES — after
+    // the hold reasons and the excluded rows. `spineRail` already states the rule
+    // it broke: a refusal's rail is the whole order UI, so it must carry what the
+    // canvas would otherwise have drawn.
+    const issues = [];
+    const edges = [];
+    const slots = [];
+    for (let i = 0; i < 62; i += 1) {
+      issues.push({ key: `n${String(i)}`, title: `Title n${String(i)}`, open: true, priority: 2 as const });
+    }
+    for (let i = 0; i < 61; i += 1) {
+      edges.push({ field: 'blocked-by' as const, from: `n${String(i)}`, to: `n${String(i + 1)}` });
+    }
+    for (let i = 0; i < 61; i += 1) {
+      slots.push({ lead: `n${String(i)}`, members: [`n${String(i)}`], rank: i + 1, ready: true, holds: [] });
+    }
+    const crowded = { issues, edges, order: { slots, excluded: [] } };
+
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const reported: (string | null)[] = [];
+    const handle = mountViewer(container, crowded, {
+      projection: 'linear',
+      onSelect: (key: string | null) => reported.push(key),
+    });
+
+    const edge = edgeIdentity('blocked-by', 'n0', 'n1');
+    handle.select(edge);
+    assert.equal(handle.state.selected, edge, 'the linear projection refused the selection');
+
+    handle.setProjection('graph');
+    // THE REFUSAL IS WHAT MUST BE RENDERING, or this test passes against an
+    // ordinary canvas and proves nothing about the case it names.
+    const refusal = container
+      .descendants()
+      .find((element) => element.getAttribute('class') === 'ig-refusal');
+    assert.ok(refusal !== undefined, 'the graph did not refuse, so the refused rail was never exercised');
+
+    assert.equal(handle.state.selected, edge, 'a refused graph dropped the edge selection');
+    assert.deepEqual(reported, [edge], 'the host was told the selection ended');
+  });
+
   it('names the edge, not the row, when a badge is pointed at', () => {
     // THE OTHER HALF OF GIVING A BADGE AN IDENTITY, and it is a real behaviour
     // change rather than a side effect worth hiding: `keyAt` walks

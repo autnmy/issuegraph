@@ -34,6 +34,7 @@ import {
   layoutGraph,
 } from '../layout.ts';
 import {
+  edgeBadges,
   emptyState,
   legend,
   slotLabel,
@@ -429,6 +430,28 @@ function spineRail(
           ),
           station(stationFill(slot)),
           element('span', { class: 'ig-title' }, [slotTitle(document, slot)]),
+          // AND THE RELATIONSHIPS, ON THE SAME TERMS AS THE HOLDS AND THE
+          // EXCLUSIONS ABOVE — a third instance of this rail dropping something
+          // the canvas carries, found the same way. With a canvas, an edge is
+          // drawn as an arc publishing `edgeIdentity(...)`; a refusal draws no
+          // arcs, so without this the ONLY representation of a relationship
+          // disappears exactly when the rail is claiming to be the whole order.
+          // THE CONSEQUENCE IS A LOST SELECTION, not just a missing badge. A
+          // badge is what puts an edge in `mount`'s `pointable` set, and an edge
+          // identity is in no document — so a selection made in the linear or
+          // tree projection was cleared on a switch INTO a refused graph, with
+          // the host told `onSelect(null)`. That is the same defect the badge
+          // identity was added to fix, surviving in the one projection state
+          // that draws neither an arc nor a badge.
+          // ONLY WHEN THE RAIL IS UNPOSITIONED, and that is the whole reason it
+          // is safe. A positioned row sits ON its node's box — `--ig-row-h` IS
+          // the node height — so badges there would overflow geometry the layout
+          // computed for a node, which is why the holds above went onto the
+          // label rather than into the row. A refusal positions nothing, so the
+          // row is in ordinary flow and carries them exactly as a linear row
+          // does. In positioned mode the canvas draws the arcs anyway, so there
+          // is nothing missing to restore.
+          positioned ? null : edgeBadges(document, slot.members),
         ],
       );
     }),
