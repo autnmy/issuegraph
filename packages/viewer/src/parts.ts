@@ -7,7 +7,7 @@
  * is held", and a change to the grammar lands in every projection at once.
  */
 
-import type { EdgeField } from '@issuegraph/core';
+import { type EdgeField, edgeIdentity } from '@issuegraph/core';
 
 import type {
   NormalizedDocument,
@@ -17,6 +17,7 @@ import type {
   ViewerSlot,
 } from './document.ts';
 import { type ElementSpec, element } from './element.ts';
+import { GROUP_ATTRIBUTE } from './scene.ts';
 import { EDGE_ORDER, treatmentFor } from './vocabulary.ts';
 
 /** How a readiness station is filled — the parallelism channel. */
@@ -108,14 +109,42 @@ export function holdLine(hold: ViewerHold): ElementSpec {
   return element('p', { class: 'ig-hold', 'data-family': hold.family }, [hold.reason]);
 }
 
-/** A badge naming one relationship, on all four channels at once. */
-function edgeBadge(field: EdgeField, detail: string): ElementSpec {
+/**
+ * A badge naming one relationship, on all four channels at once.
+ *
+ * IT CARRIES THE EDGE'S POINTER IDENTITY, the same one the canvas publishes.
+ * `mount`'s `pointable` set is built from `data-ig-key` and this attribute, and
+ * an edge identity is in no document — so `data-ig-group` is its ONLY route
+ * into that set. Without it an edge was pointable on the graph canvas and
+ * nowhere else, and `stillDrawn` therefore answered `false` the moment a switch
+ * to the linear or tree projection redrew the scene: the selection was cleared
+ * and the host told `onSelect(null)`, contradicting `setProjection`'s own
+ * promise that only the representation changes.
+ *
+ * THE BADGE IS WHAT REPRESENTS AN EDGE HERE. These projections draw no arc, but
+ * they do draw the relationship — so the honest answer to "is this subject still
+ * on screen" is yes, and naming it is what makes that answer readable. This is
+ * the same move `Scene.stationOf` makes for a `together-with` partner: MAP the
+ * subject onto what represents it, rather than exempt it from the drawn-check.
+ * One mechanism in the parts every projection shares, rather than a special case
+ * in the shell.
+ *
+ * `data-ig-GROUP`, not `data-ig-key`, for the reason `graph.ts` gives at length
+ * where it makes the same choice: an edge is not a navigation target, so it must
+ * not enter the focus index.
+ *
+ * A CLICK ON A BADGE NOW NAMES THE EDGE rather than the row carrying it, because
+ * `keyAt` walks target-upward. That is the intended half of "an edge is pointable
+ * in every projection", and it is what the canvas already does for an arc.
+ */
+function edgeBadge(field: EdgeField, edgeId: string, detail: string): ElementSpec {
   const treatment = treatmentFor(field);
   return element(
     'span',
     {
       class: 'ig-badge',
       'data-edge': field,
+      [GROUP_ATTRIBUTE]: edgeId,
       title: `${treatment.label} ${detail}`,
       'aria-label': `${treatment.label} ${detail}`,
     },
@@ -150,16 +179,26 @@ export function edgeBadges(document: NormalizedDocument, keys: readonly string[]
     for (const key of keys) {
       for (const edge of document.edgesOf.get(key) ?? []) {
         if (edge.field !== field) continue;
-        const identity = `${edge.field}\u0000${edge.from}\u0000${edge.to}`;
-        if (seen.has(identity)) continue;
-        seen.add(identity);
+        // THE SAME IDENTITY THE BADGE PUBLISHES, so this function holds ONE
+        // spelling of "which edge is this" rather than two that can drift apart
+        // the first time either is touched.
+        // IT IS NOT A BEHAVIOUR CHANGE, and saying so is the point: the private
+        // key it replaces deduped exactly the same set here, because
+        // `normalizeDocument` has ALREADY collapsed a symmetric field's reverse
+        // declaration before an edge reaches `edgesOf`. What this buys is that
+        // the value the dedupe reasons about and the value the markup publishes
+        // are the same value, so neither can answer for one edge while the other
+        // answers for two.
+        const edgeId = edgeIdentity(edge.field, edge.from, edge.to);
+        if (seen.has(edgeId)) continue;
+        seen.add(edgeId);
         const treatment = treatmentFor(field);
         // A symmetric edge states one fact whichever end you read it from, so it
         // is announced as one relationship rather than as two directions.
         const outgoing = mine.has(edge.from);
         const other = outgoing ? edge.to : edge.from;
         const detail = treatment.symmetric || outgoing ? other : `${other} (incoming)`;
-        badges.push(edgeBadge(field, detail));
+        badges.push(edgeBadge(field, edgeId, detail));
       }
     }
   }
