@@ -425,6 +425,74 @@ describe('mountViewer', () => {
     assert.deepEqual(reported, [edge], 'the host was told the selection ended');
   });
 
+  it('keeps an edge NO projection draws a mark for, and still clears one the document lost', () => {
+    // THE CASE NO AMOUNT OF BADGING REACHES. Both endpoints are gutter nodes —
+    // on an edge, so not `isolated`, but in no slot and no exclusion — so
+    // neither gets a rail row in a refused graph and there is no canvas to draw
+    // an arc. `edgeBadges` enumerates a ROW's keys, so a row that does not exist
+    // owes no badge, and the edge had no representation to be pointable through.
+    //
+    // ANSWERED BY ASKING THE DOCUMENT RATHER THAN BY DRAWING MORE. An issue was
+    // never held to the rendered standard — `byKey` answers for one whether or
+    // not the active projection draws its row — so this is the edge reaching the
+    // parity an issue already had, not a new leniency.
+    const issues = [];
+    const edges = [];
+    const slots = [];
+    for (let i = 0; i < 62; i += 1) {
+      issues.push({ key: `n${String(i)}`, title: `Title n${String(i)}`, open: true, priority: 2 as const });
+    }
+    for (let i = 0; i < 61; i += 1) {
+      edges.push({ field: 'blocked-by' as const, from: `n${String(i)}`, to: `n${String(i + 1)}` });
+    }
+    // Slots for n0..n59 ONLY, so n60 and n61 are gutter nodes and the edge
+    // between them is drawn by no row in any projection.
+    for (let i = 0; i < 60; i += 1) {
+      slots.push({ lead: `n${String(i)}`, members: [`n${String(i)}`], rank: i + 1, ready: true, holds: [] });
+    }
+    const crowded = { issues, edges, order: { slots, excluded: [] } };
+    const gutterEdge = edgeIdentity('blocked-by', 'n60', 'n61');
+
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const reported: (string | null)[] = [];
+    const handle = mountViewer(container, crowded, {
+      projection: 'tree',
+      selected: gutterEdge,
+      onSelect: (key: string | null) => reported.push(key),
+    });
+    assert.equal(handle.state.selected, gutterEdge, 'the document did not answer for the edge');
+
+    handle.setProjection('graph');
+    const refusal = container
+      .descendants()
+      .find((element) => element.getAttribute('class') === 'ig-refusal');
+    assert.ok(refusal !== undefined, 'the graph did not refuse, so this is not the case under test');
+    // NEITHER ENDPOINT HAS A ROW, or the badge fix would be what carried this
+    // and the assertion below would prove nothing about the document leg.
+    assert.equal(
+      container.descendants().find((element) => element.getAttribute(GROUP_ATTRIBUTE) === gutterEdge),
+      undefined,
+      'something drew a mark for this edge, so it is not the undrawn case',
+    );
+    assert.equal(handle.state.selected, gutterEdge, 'a projection drawing no mark for the edge dropped it');
+    assert.deepEqual(reported, [], 'the host was told a surviving selection had ended');
+
+    // THE OTHER HALF, and without it the change above is indistinguishable from
+    // "accept any edge-shaped string". The evidence widened; the acceptance did
+    // not. An edge the document does not carry still fails every leg.
+    const doc2 = new TestDocument();
+    const container2 = doc2.createContainer();
+    const refused: (string | null)[] = [];
+    const handle2 = mountViewer(container2, crowded, {
+      projection: 'tree',
+      selected: edgeIdentity('blocked-by', 'n60', 'nowhere'),
+      onSelect: (key: string | null) => refused.push(key),
+    });
+    assert.equal(handle2.state.selected, null, 'an edge this document does not carry was accepted');
+    assert.deepEqual(refused, [null], 'the host was not told the selection was refused');
+  });
+
   it('names the edge, not the row, when a badge is pointed at', () => {
     // THE OTHER HALF OF GIVING A BADGE AN IDENTITY, and it is a real behaviour
     // change rather than a side effect worth hiding: `keyAt` walks
