@@ -19,6 +19,7 @@ const parse = parseFrontmatter(issue.body);
 
 parse.data?.blockedBy;   // [{ repo: null, id: '231' }, …]
 parse.diagnostics;       // human-readable reasons a field or the block was dropped
+parse.findings;          // the same losses, each attributed to the field — or the block — that lost it
 parse.blockDefect;       // 'undelimited' | 'unterminated' | null
 ```
 
@@ -33,6 +34,41 @@ if (isUnreadDeclaration(parse)) {
   // refuse the write, report it. The question is what this answers.
 }
 ```
+
+### Gating on one field: ask the narrowed question
+
+`isUnreadDeclaration` answers the **total** question — was anything in this block lost? If your gate
+only consumes `blocked-by`, that makes it as strict as the most damaged field *anywhere* in the
+block: a body whose `blocked-by` read perfectly is refused because `priority` next door did not. That
+is fail-closed and therefore safe, which is why it goes unnoticed — but it makes per-field gates
+unbuildable, since one unrecognised extension field anywhere refuses every gate you have.
+
+`parse.findings` attributes each loss to the part of the block that lost it, and
+`isUnreadDeclarationFor` asks about just the fields you read:
+
+```ts
+import { isUnreadDeclarationFor, parseFrontmatter } from '@issuegraph/reader';
+
+const parse = parseFrontmatter(issue.body);
+
+// `priority: nonsense` alongside a perfectly readable `blocked-by: ["#7"]`
+isUnreadDeclaration(parse);                          // true  — something was lost
+isUnreadDeclarationFor(parse, ['blocked-by']);       // false — but not from MY field
+isUnreadDeclarationFor(parse, ['priority']);         // true
+```
+
+Two properties hold, and both are pinned by tests so you can rely on them:
+
+- **A block-level loss answers `true` for every field set**, including the empty one. When the block
+  itself could not be read, which fields it contained is unknowable, so a narrowed reader must refuse
+  exactly where the broad one does. This is what makes the narrowing a refinement rather than a hole.
+- **Asking for the full field set reproduces `isUnreadDeclaration` exactly**, so the broad and narrow
+  predicates cannot drift into disagreement.
+
+**Do not string-match `diagnostics` to ask this yourself.** A reworded message silently stops
+matching and fails **open** — restoring the exact defect the predicate exists to catch. `diagnostics`
+is derived from `findings` (one message each, same order), so the two can never disagree about
+whether something was lost; `findings` is the one that also says *where*.
 
 ## Deriving the graph
 

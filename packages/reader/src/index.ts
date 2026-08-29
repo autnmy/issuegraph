@@ -3,7 +3,11 @@
  *
  * Two halves, and the split is the point. {@link parseFrontmatter} reads ONE
  * body and answers what that issue declared — including, through
- * {@link isUnreadDeclaration}, whether anything in the block could not be read.
+ * {@link isUnreadDeclaration}, whether anything in the block could not be read,
+ * and through {@link isUnreadDeclarationFor}, whether anything the CALLER'S OWN
+ * fields depend on could not be read. Ask the narrow one when you gate on one
+ * field: the broad predicate makes every gate as strict as the most damaged
+ * field anywhere in the block.
  * {@link buildModel} takes a SET of parsed issues and derives what the
  * specification says follows from them: the ready set, effective priority,
  * serialize and together components, duplicate resolution and cycles.
@@ -23,8 +27,14 @@
  * @see https://github.com/autnmy/issuegraph/blob/main/SPEC.md
  */
 
-export { FRONTMATTER_KEY_PATTERN, isUnreadDeclaration, parseFrontmatter, parseRef } from './frontmatter.ts';
-export type { BlockDefect, Frontmatter, IssueRef, ParseResult } from './frontmatter.ts';
+export {
+  FRONTMATTER_KEY_PATTERN,
+  isUnreadDeclaration,
+  isUnreadDeclarationFor,
+  parseFrontmatter,
+  parseRef,
+} from './frontmatter.ts';
+export type { BlockDefect, Finding, Frontmatter, IssueRef, ParseResult } from './frontmatter.ts';
 
 /**
  * THE BLOCK'S STRUCTURE, shared with `@issuegraph/writer`.
