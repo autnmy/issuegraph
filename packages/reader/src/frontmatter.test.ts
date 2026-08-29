@@ -3,11 +3,14 @@ import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
+import { FIELDS, type Field } from '@issuegraph/core';
+
 import {
   FENCE_CLOSE,
   FENCE_OPEN,
   FRONTMATTER_KEY_PATTERN,
   isUnreadDeclaration,
+  isUnreadDeclarationFor,
   isSectionHeader,
   locateBlock,
   locateSection,
@@ -1637,5 +1640,178 @@ describe('an unparseable block is selected by KEY POSITION, not by mention', () 
   test('CONTROL: a well-formed flow-root still parses', () => {
     const r = parseFrontmatter(['---', '{ issuegraph: { blocked-by: ["#1"] } }', '---'].join('\n'));
     assert.deepEqual(r.data?.blockedBy, [{ repo: null, id: '1' }]);
+  });
+});
+
+describe('per-field attribution: findings, and the narrowed unread predicate', () => {
+  /**
+   * THE BODIES ARE BUILT SO THE NARROW AND BROAD ANSWERS DISAGREE. A fixture
+   * whose only damaged field is the one under test cannot tell a real narrowing
+   * from `isUnreadDeclaration` wearing a different name, so every body here
+   * pairs a DAMAGED field with a CLEAN one and the assertions read both ways.
+   */
+  const priorityBroken = ['---', 'issuegraph:', '  blocked-by: ["#7"]', '  priority: nonsense', '---'].join('\n');
+  const blockedByBroken = ['---', 'issuegraph:', '  blocked-by: ["#7", "not a ref"]', '  priority: 1', '---'].join('\n');
+
+  test('diagnostics is exactly the findings’ messages, in order', () => {
+    // The derivation itself, asserted rather than described. Two hand-maintained
+    // arrays drift, and a drifted pair reports a loss to one reader and not the
+    // other — so this is the guard that keeps `diagnostics` a projection.
+    for (const body of [priorityBroken, blockedByBroken, '---\nissuegraph: hello\n---', FENCED]) {
+      const r = parseFrontmatter(body);
+      assert.deepEqual(
+        [...r.diagnostics],
+        r.findings.map((finding) => finding.message),
+        `diagnostics drifted from findings for: ${body}`,
+      );
+    }
+  });
+
+  test('asking for the FULL field set reproduces isUnreadDeclaration exactly', () => {
+    // The anti-drift property. It is a test rather than a comment because
+    // nothing else would notice if a future field forgot to be attributed: an
+    // unattributed loss would land in `diagnostics` and in no field's query.
+    const bodies = [
+      FENCED,
+      priorityBroken,
+      blockedByBroken,
+      'An issue body with no block at all.',
+      ['---', 'issuegraph: hello', '---'].join('\n'),
+      ['```', 'issuegraph:', '  blocked-by: ["#1"]', '```'].join('\n'),
+      ['---', 'issuegraph:', '  blocked-by:', '    - #123', '---'].join('\n'),
+      ['---', 'issuegraph:', '  evidence: maybe', '---'].join('\n'),
+      ['---', 'issuegraph:', '  serialize-with: [1, 2]', '---'].join('\n'),
+      ['---', 'issuegraph:', '  blocked-by:', '---'].join('\n'),
+    ];
+    for (const body of bodies) {
+      const r = parseFrontmatter(body);
+      assert.equal(
+        isUnreadDeclarationFor(r, FIELDS),
+        isUnreadDeclaration(r),
+        `broad and narrow disagreed for: ${body}`,
+      );
+    }
+  });
+
+  test('a loss that NULLS data is never attributed to a field', () => {
+    // The correspondence the parser's scoping rests on, and the ONE direction
+    // that fails open: a block-level loss recorded as a field's would let a
+    // narrowed reader clear a block it cannot see inside. The reverse mistake
+    // only over-refuses. Asserted over every fixture rather than the single
+    // body below, because the rule is about the parser and not about one input.
+    const bodies = [
+      FENCED,
+      priorityBroken,
+      blockedByBroken,
+      'An issue body with no block at all.',
+      ['---', 'issuegraph: hello', '---'].join('\n'),
+      ['---', 'issuegraph:', '  - a', '  - b', '---'].join('\n'),
+      ['---', 'issuegraph:', '  blocked-by: [', '---'].join('\n'),
+      ['---', '  issuegraph:', '    blocked-by: ["#1"]', '---'].join('\n'),
+      ['---', 'issuegraph:', '  blocked-by:', '    - #123', '---'].join('\n'),
+    ];
+    for (const body of bodies) {
+      const r = parseFrontmatter(body);
+      if (r.data === null) {
+        assert.ok(
+          r.findings.every((finding) => finding.scope === 'block'),
+          `a null-data parse attributed a loss to a field: ${body} -> ${JSON.stringify(r.findings)}`,
+        );
+      } else {
+        assert.ok(
+          r.findings.every((finding) => finding.scope === 'field'),
+          `a parse that produced data reported a block loss: ${body} -> ${JSON.stringify(r.findings)}`,
+        );
+      }
+    }
+  });
+
+  test('the narrowing NARROWS: a clean field is not refused for a damaged neighbour', () => {
+    // The over-refusal this whole change exists to end. With only the total
+    // predicate, a gate on `blocked-by` had to refuse this body — whose
+    // `blocked-by` read perfectly — because `priority` next door did not.
+    const r = parseFrontmatter(priorityBroken);
+
+    assert.equal(isUnreadDeclaration(r), true, 'the broad predicate should still refuse');
+    assert.equal(isUnreadDeclarationFor(r, ['priority']), true, 'priority WAS dropped');
+    assert.equal(isUnreadDeclarationFor(r, ['blocked-by']), false, 'blocked-by read perfectly');
+    assert.deepEqual(r.data?.blockedBy, [{ repo: null, id: '7' }]);
+  });
+
+  test('a PARTIAL drop is caught, which is the case a consumer could not derive', () => {
+    // Route 2 of the issue: comparing `locateSection().fields` against `data`
+    // works for a field dropped ENTIRELY and not for this — the entry is
+    // present and `blockedBy` is non-empty, so that comparison reports "read"
+    // while one ref was discarded.
+    const r = parseFrontmatter(blockedByBroken);
+
+    assert.deepEqual(r.data?.blockedBy, [{ repo: null, id: '7' }], 'the surviving ref still reads');
+    assert.equal(isUnreadDeclarationFor(r, ['blocked-by']), true, 'a discarded member is a loss');
+    assert.equal(isUnreadDeclarationFor(r, ['priority']), false, 'priority read perfectly');
+  });
+
+  test('a BLOCK-scoped finding answers true to EVERY query, including the empty set', () => {
+    // The arm that fails OPEN if it is dropped. A structural loss discards the
+    // block entire, so which fields it contained is unknowable and a narrowed
+    // reader must refuse exactly where the broad one does. Without it the
+    // narrowing is a hole rather than a refinement.
+    const r = parseFrontmatter(['---', 'issuegraph: hello', '---'].join('\n'));
+
+    assert.equal(r.data, null);
+    assert.equal(isUnreadDeclaration(r), true);
+    assert.ok(
+      r.findings.every((finding) => finding.scope === 'block'),
+      'a block that produced no data cannot attribute a loss to a field',
+    );
+    for (const fields of [[], ['priority'] as const, ['blocked-by'] as const, FIELDS]) {
+      assert.equal(isUnreadDeclarationFor(r, fields), true, `refused to refuse for: ${JSON.stringify(fields)}`);
+    }
+  });
+
+  test('an INERT block is false for every field set, matching the broad predicate', () => {
+    // `blockDefect !== null` is the undelimited/unterminated family, which the
+    // broad predicate deliberately does not refuse — hand-authored blocks are
+    // overwhelmingly written that way. The narrow one must not be stricter.
+    const r = parseFrontmatter(['```', 'issuegraph:', '  blocked-by: ["#1"]', '```'].join('\n'));
+
+    assert.notEqual(r.blockDefect, null);
+    assert.equal(isUnreadDeclaration(r), false);
+    for (const fields of [[], ['blocked-by'] as const, FIELDS]) {
+      assert.equal(isUnreadDeclarationFor(r, fields), false, `refused an inert block for ${JSON.stringify(fields)}`);
+    }
+  });
+
+  test('a clean declaration has no findings and refuses nothing', () => {
+    const r = parseFrontmatter(FENCED);
+
+    assert.deepEqual([...r.findings], []);
+    assert.equal(isUnreadDeclarationFor(r, FIELDS), false);
+  });
+
+  test('every field attributes its OWN losses, and only its own', () => {
+    // One body per recognised field, each damaged alone. This is what would
+    // catch a `fieldLost` call passing the wrong field name — a mis-attribution
+    // that leaves the broad predicate correct and every narrow one wrong.
+    const damaged: ReadonlyArray<readonly [Field, string]> = [
+      ['blocked-by', ['---', 'issuegraph:', '  blocked-by: "not a ref"', '---'].join('\n')],
+      ['decomposed-from', ['---', 'issuegraph:', '  decomposed-from: "not a ref"', '---'].join('\n')],
+      ['duplicate-of', ['---', 'issuegraph:', '  duplicate-of: [1, 2]', '---'].join('\n')],
+      ['serialize-with', ['---', 'issuegraph:', '  serialize-with: [1, 2]', '---'].join('\n')],
+      ['together-with', ['---', 'issuegraph:', '  together-with: "not a ref"', '---'].join('\n')],
+      ['priority', ['---', 'issuegraph:', '  priority: nonsense', '---'].join('\n')],
+      ['evidence', ['---', 'issuegraph:', '  evidence: maybe', '---'].join('\n')],
+    ];
+
+    for (const [field, body] of damaged) {
+      const r = parseFrontmatter(body);
+      assert.equal(isUnreadDeclaration(r), true, `${field}: expected a loss at all`);
+      assert.ok(
+        r.findings.every((finding) => finding.scope === 'field' && finding.field === field),
+        `${field}: findings were ${JSON.stringify(r.findings)}`,
+      );
+      assert.equal(isUnreadDeclarationFor(r, [field]), true, `${field}: its own query missed it`);
+      const others = FIELDS.filter((candidate) => candidate !== field);
+      assert.equal(isUnreadDeclarationFor(r, others), false, `${field}: leaked into another field's query`);
+    }
   });
 });

@@ -70,6 +70,7 @@ import {
   isRefId,
   isRepoQualifier,
   type Evidence,
+  type Field,
   type Priority,
 } from '@issuegraph/core';
 import {
@@ -267,6 +268,53 @@ export interface Frontmatter {
   readonly evidence: Evidence | null;
 }
 
+/**
+ * ONE THING THIS PARSE COULD NOT READ, and WHICH PART OF THE BLOCK lost it.
+ *
+ * THE SCOPE IS THE POINT. `diagnostics` answers the TOTAL question — was
+ * anything in this block lost? — and a consumer gating on one field had no way
+ * to ask the NARROWED one, so every gate was as strict as the most damaged
+ * field anywhere in the block. That over-refusal is fail-closed and therefore
+ * safe, but it makes per-field gates unbuildable: a single unrecognised
+ * extension field anywhere refuses every gate in the system.
+ *
+ * The attribution already existed INSIDE the parser — it knows which field it
+ * dropped at the moment it drops it. Only the reporting stopped at the package
+ * boundary, and this is that boundary opening. Ask the narrowed question
+ * through {@link isUnreadDeclarationFor} rather than reading these by hand.
+ *
+ * WHY A CONSUMER COULD NOT DERIVE IT, recorded because each route looks
+ * available until it is tried:
+ *
+ *   - STRING-MATCHING the diagnostic prose. A reworded message silently stops
+ *     matching and fails OPEN, restoring the very defect the predicate exists
+ *     to catch. This is the route consumers actually took.
+ *   - COMPARING `locateSection().fields` against `data`. Works for a field
+ *     dropped ENTIRELY; not for a PARTIAL drop. `blocked-by: [123, "not a ref"]`
+ *     leaves an entry that is present and a `blockedBy` that is non-empty, so
+ *     the comparison reports "read" while one ref was discarded. `SectionField`
+ *     spans cannot close it — they are degenerate for a flow section by
+ *     documented design, so item-level counting is unavailable exactly where it
+ *     would be needed.
+ *   - RE-PARSING the block's YAML. That is a second opinion about what an entry
+ *     is — the thing {@link locateSection} was introduced to eliminate, after
+ *     three defects were filed against that seam.
+ *
+ * `field` IS `@issuegraph/core`'s `Field`, NOT A FRESH STRING UNION. The
+ * vocabulary has one home; a second spelling of it here is the duplicate the
+ * core package exists to prevent, and it would be free to drift from `FIELDS`
+ * the moment the spec adds one.
+ */
+export type Finding =
+  /**
+   * The BLOCK was lost, so which fields it contained is unknowable. A narrowed
+   * reader must refuse exactly where the broad one does — see
+   * {@link isUnreadDeclarationFor}, which is where that rule is enforced.
+   */
+  | { readonly scope: 'block'; readonly message: string }
+  /** ONE recognised field was dropped; everything else in the block still read. */
+  | { readonly scope: 'field'; readonly field: Field; readonly message: string };
+
 export interface ParseResult {
   readonly data: Frontmatter | null;
   /**
@@ -303,13 +351,28 @@ export interface ParseResult {
    * perfectly, and readers hand-spelling it is how they drift apart — so it is
    * offered once, and each reader still answers it its own way.
    *
-   * TEST ANY DIAGNOSTIC, NOT ONE CONCERNING YOUR FIELD. The only way to ask the
-   * narrower question is to string-match this module's message prose, and a
-   * reworded message would silently stop matching and fail OPEN — restoring the
-   * defect invisibly. Testing for any diagnostic fails CLOSED under every future
-   * wording; its cost is over-refusal when an unrelated field is malformed.
+   * NEVER STRING-MATCH THESE MESSAGES TO ASK ABOUT ONE FIELD. A reworded
+   * message silently stops matching and fails OPEN, restoring the defect
+   * invisibly. The narrowed question has a structural answer now:
+   * {@link findings} carries the attribution and {@link isUnreadDeclarationFor}
+   * asks it. This array is DERIVED from those findings — one message each, in
+   * order — so the two can never disagree about whether something was lost.
    */
   readonly diagnostics: readonly string[];
+  /**
+   * The same losses as {@link diagnostics}, each attributed to the part of the
+   * block that lost it — one finding per message, same order.
+   *
+   * IT IS THE SOURCE AND `diagnostics` IS THE PROJECTION, not two arrays kept
+   * in step. Two hand-maintained lists drift, and a drifted pair reports a loss
+   * to one reader and not the other — which is the failure this whole field
+   * exists to end, reintroduced one level down.
+   *
+   * Read it through {@link isUnreadDeclarationFor} rather than by hand: the
+   * block/field rule is the part that is easy to get wrong, and getting it
+   * wrong fails OPEN.
+   */
+  readonly findings: readonly Finding[];
   /**
    * WHICH BLOCK-LEVEL DEFECT stopped the block being read, or null — either
    * because the block read fine, or because it failed INSIDE a well-delimited
@@ -691,6 +754,47 @@ export function isUnreadDeclaration(parse: ParseResult): boolean {
 }
 
 /**
+ * {@link isUnreadDeclaration}, NARROWED to the fields a caller actually
+ * consumes: TRUE when a delimited block was found and something **those**
+ * fields depend on could not be read.
+ *
+ * WHY THE NARROWING IS NOT A NICETY. A consumer gating admission on
+ * `blocked-by` must refuse a body whose `blocked-by` was damaged. With only the
+ * total predicate it must ALSO refuse a body whose `priority` was damaged and
+ * whose `blocked-by` read perfectly — so every gate is as strict as the most
+ * damaged field anywhere in the block, and one unrecognised extension field
+ * anywhere refuses every gate in the system. That is fail-closed and therefore
+ * safe, which is exactly why it survived: it never announces itself.
+ *
+ * TWO PROPERTIES HOLD, and both are pinned by this module's tests because a
+ * caller may rely on them:
+ *
+ *   - A `block`-SCOPED FINDING ANSWERS TRUE TO EVERY QUERY, including one for
+ *     the empty set. A structural loss discards the block entire, so the fields
+ *     it contained are unknowable and a narrowed reader must refuse exactly
+ *     where the broad one does. Without this the narrowing is a HOLE rather
+ *     than a refinement — and it is the arm that fails OPEN if it is dropped,
+ *     which is why it is stated before the field test below rather than after.
+ *   - ASKING FOR THE FULL FIELD SET REPRODUCES {@link isUnreadDeclaration}
+ *     EXACTLY. That is what keeps the broad and narrow predicates from drifting
+ *     into disagreement, and it is a test rather than a comment because nothing
+ *     else would notice if a future field forgot to be attributed.
+ *
+ * THE POLICY IS STILL NOT SHARED. Like its broad sibling this answers the
+ * question and says nothing about what to do — refuse to clear, drop the
+ * candidate, refuse the write, report a verdict. Each caller still decides.
+ *
+ * `Iterable<Field>` so a `Set` a caller already holds and an inline array are
+ * both ordinary arguments; it is materialised once here rather than rescanned
+ * per finding.
+ */
+export function isUnreadDeclarationFor(parse: ParseResult, fields: Iterable<Field>): boolean {
+  if (parse.blockDefect !== null) return false;
+  const wanted = new Set(fields);
+  return parse.findings.some((finding) => finding.scope === 'block' || wanted.has(finding.field));
+}
+
+/**
  * One recognised or unrecognised entry under `issuegraph:`, located by LINE so
  * a writer can replace exactly its own bytes.
  *
@@ -903,11 +1007,44 @@ export function locateSection(blockLines: readonly string[]): SectionLocation | 
  * Never throws on any input.
  */
 export function parseFrontmatter(body: string): ParseResult {
-  const diagnostics: string[] = [];
+  const findings: Finding[] = [];
+  /**
+   * THE BLOCK WAS LOST. Every one of these also returns `data: null`, and that
+   * correspondence is the rule to check a new site against: a loss that leaves
+   * `data` non-null lost a FIELD, not the block. Mis-scoping the other way —
+   * a field loss recorded as `block` — merely over-refuses, but recording a
+   * block loss as a field would let a narrowed reader clear a block it cannot
+   * see inside, which is the one direction that fails OPEN.
+   */
+  const blockLost = (message: string): void => {
+    findings.push({ scope: 'block', message });
+  };
+  /** ONE recognised field was dropped; the rest of the block still read. */
+  const fieldLost = (field: Field, message: string): void => {
+    findings.push({ scope: 'field', field, message });
+  };
+  /**
+   * `diagnostics` IS A PROJECTION of `findings`, which is what makes the two
+   * incapable of disagreeing about whether something was lost.
+   *
+   * BOTH COME OFF ONE SNAPSHOT, and that is not ceremony. Returning the live
+   * accumulator as `findings` while `diagnostics` is a mapped copy would let
+   * the pair diverge the moment anything pushed after the call — the exact
+   * drift this derivation exists to prevent, reintroduced by the mechanism
+   * meant to prevent it. Every call below is a tail `return`, so nothing
+   * reaches that today; copying makes it unreachable by construction instead
+   * of by call-site discipline, at the cost of one allocation on an array that
+   * is empty in the ordinary case.
+   */
+  const parsed = (data: Frontmatter | null, blockDefect: BlockDefect | null): ParseResult => {
+    const snapshot = [...findings];
+    return { data, diagnostics: snapshot.map((finding) => finding.message), findings: snapshot, blockDefect };
+  };
+
   const located = locateBlock(body);
   if (located.lines === null) {
-    if (located.defect !== null) diagnostics.push(BLOCK_DEFECT_DIAGNOSTIC[located.defect]);
-    return { data: null, diagnostics, blockDefect: located.defect };
+    if (located.defect !== null) blockLost(BLOCK_DEFECT_DIAGNOSTIC[located.defect]);
+    return parsed(null, located.defect);
   }
 
   // THE TEXT THE RANGES INDEX. Every node range below is an offset into exactly
@@ -915,14 +1052,14 @@ export function parseFrontmatter(body: string): ParseResult {
   const blockText = located.lines.join('\n');
   const read = readDocumentOrReason(blockText);
   if (read.doc === null) {
-    diagnostics.push(`issuegraph: the block is not readable YAML (${read.reason ?? 'unreadable'}); block ignored`);
-    return { data: null, diagnostics, blockDefect: null };
+    blockLost(`issuegraph: the block is not readable YAML (${read.reason ?? 'unreadable'}); block ignored`);
+    return parsed(null, null);
   }
   const doc = read.doc;
   const root = doc.contents;
   if (!isMap(root)) {
-    diagnostics.push('issuegraph: the block is not a mapping; block ignored');
-    return { data: null, diagnostics, blockDefect: null };
+    blockLost('issuegraph: the block is not a mapping; block ignored');
+    return parsed(null, null);
   }
 
   let section: Pair<unknown, unknown> | null = null;
@@ -935,15 +1072,15 @@ export function parseFrontmatter(body: string): ParseResult {
     // `locateBlock` proved the key is at a line start, but it never parsed as
     // a top-level mapping key — an indented `issuegraph:` inside somebody
     // else's mapping, or a spelling YAML reads as something other than a key.
-    diagnostics.push('issuegraph: key present but no parseable section');
-    return { data: null, diagnostics, blockDefect: null };
+    blockLost('issuegraph: key present but no parseable section');
+    return parsed(null, null);
   }
   const value = sectionMap(section.value);
   if (value === null) {
     // A scalar or a sequence. Neither is the mapping §4.3 describes, and
     // reading edges out of one would mean inventing them.
-    diagnostics.push('issuegraph: section is not a mapping; block ignored');
-    return { data: null, diagnostics, blockDefect: null };
+    blockLost('issuegraph: section is not a mapping; block ignored');
+    return parsed(null, null);
   }
 
   let blockedBy: readonly IssueRef[] = [];
@@ -954,23 +1091,26 @@ export function parseFrontmatter(body: string): ParseResult {
   let priority: Priority | null = null;
   let evidence: Evidence | null = null;
 
-  const singleRef = (key: string, node: unknown): IssueRef | null => {
+  // `key` IS A `Field`, not a string: the loop below refuses anything `isField`
+  // rejects before it reaches here, and typing it so is what lets every message
+  // attribute itself without the caller restating which field it was reading.
+  const singleRef = (key: Field, node: unknown): IssueRef | null => {
     if (isSeq(node)) {
-      diagnostics.push(`issuegraph: ${key} takes a single ref, not a list; dropped`);
+      fieldLost(key, `issuegraph: ${key} takes a single ref, not a list; dropped`);
       return null;
     }
     if (isMap(node)) {
-      diagnostics.push(`issuegraph: ${key} has nested mapping content; dropped`);
+      fieldLost(key, `issuegraph: ${key} has nested mapping content; dropped`);
       return null;
     }
     const token = scalarIdText(node, blockText);
     if (token === null) {
-      diagnostics.push(`issuegraph: ${key} has an unparseable ref; dropped`);
+      fieldLost(key, `issuegraph: ${key} has an unparseable ref; dropped`);
       return null;
     }
     const ref = parseRef(token);
     if (ref === null) {
-      diagnostics.push(`issuegraph: ${key} has an unparseable ref ("${token}"); dropped`);
+      fieldLost(key, `issuegraph: ${key} has an unparseable ref ("${token}"); dropped`);
     }
     return ref;
   };
@@ -983,7 +1123,7 @@ export function parseFrontmatter(body: string): ParseResult {
       // reference is lexical (§4.2), so YAML's implicit typing of a plain
       // scalar must not reach it. See `scalarIdText`.
       case 'blocked-by':
-        blockedBy = refsFrom(pair.value, blockText, diagnostics);
+        blockedBy = refsFrom(pair.value, blockText, fieldLost);
         break;
       case 'decomposed-from':
         decomposedFrom = singleRef(key, pair.value);
@@ -1005,7 +1145,8 @@ export function parseFrontmatter(body: string): ParseResult {
         const raw: unknown = toJS(pair.value, doc);
         if (isPriority(raw)) priority = raw;
         else
-          diagnostics.push(
+          fieldLost(
+            key,
             `issuegraph: priority must be an integer ${PRIORITY_MIN}-${PRIORITY_MAX} (got "${describe(raw)}"); dropped`,
           );
         break;
@@ -1014,21 +1155,15 @@ export function parseFrontmatter(body: string): ParseResult {
         const raw: unknown = toJS(pair.value, doc);
         if (typeof raw === 'string' && isEvidence(raw)) evidence = raw;
         else
-          diagnostics.push(
-            `issuegraph: evidence must be ${EVIDENCE_VALUES.join('|')} (got "${describe(raw)}"); dropped`,
-          );
+          fieldLost(key, `issuegraph: evidence must be ${EVIDENCE_VALUES.join('|')} (got "${describe(raw)}"); dropped`);
         break;
       }
     }
   }
 
-  return {
-    data: { blockedBy, decomposedFrom, duplicateOf, serializeWith, togetherWith, priority, evidence },
-    diagnostics,
-    // The block was delimited and parsed; any diagnostic here is a FIELD
-    // rejection inside it, never a block-level defect.
-    blockDefect: null,
-  };
+  // The block was delimited and parsed; any finding here is a FIELD rejection
+  // inside it, never a block-level defect.
+  return parsed({ blockedBy, decomposedFrom, duplicateOf, serializeWith, togetherWith, priority, evidence }, null);
 }
 
 /**
@@ -1055,21 +1190,28 @@ export function parseFrontmatter(body: string): ParseResult {
  * other recognised field already diagnoses a blank value, so tolerating it here
  * would be an inconsistency rather than a tolerance.
  */
-function refsFrom(node: unknown, text: string, diagnostics: string[]): readonly IssueRef[] {
+function refsFrom(node: unknown, text: string, fieldLost: (field: Field, message: string) => void): readonly IssueRef[] {
+  // EVERY LOSS HERE IS `blocked-by`'s — this function reads that field and no
+  // other — so it attributes its own rather than letting the caller restate it.
+  // A partial drop is why the attribution has to come from in here: the list
+  // still returns members, so nothing outside can tell one was discarded.
+  const lost = (message: string): void => {
+    fieldLost('blocked-by', message);
+  };
   if (isMap(node)) {
-    diagnostics.push('issuegraph: blocked-by has nested mapping content; dropped');
+    lost('issuegraph: blocked-by has nested mapping content; dropped');
     return [];
   }
   if (!isSeq(node)) {
     // A single scalar is tolerated as a one-item list, as it always has been.
     const token = scalarIdText(node, text);
     if (token === null || token.length === 0) {
-      diagnostics.push('issuegraph: blocked-by has no value (write [] to declare none); dropped');
+      lost('issuegraph: blocked-by has no value (write [] to declare none); dropped');
       return [];
     }
     const ref = parseRef(token);
     if (ref === null) {
-      diagnostics.push(`issuegraph: blocked-by item unparseable ("${token}"); dropped`);
+      lost(`issuegraph: blocked-by item unparseable ("${token}"); dropped`);
       return [];
     }
     return [ref];
@@ -1078,12 +1220,12 @@ function refsFrom(node: unknown, text: string, diagnostics: string[]): readonly 
   for (const item of node.items) {
     const token = scalarIdText(item, text);
     if (token === null) {
-      diagnostics.push('issuegraph: blocked-by item is not a reference; dropped');
+      lost('issuegraph: blocked-by item is not a reference; dropped');
       continue;
     }
     const ref = parseRef(token);
     if (ref === null) {
-      diagnostics.push(`issuegraph: blocked-by item unparseable ("${token}"); dropped`);
+      lost(`issuegraph: blocked-by item unparseable ("${token}"); dropped`);
       continue;
     }
     refs.push(ref);
