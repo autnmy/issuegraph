@@ -275,7 +275,7 @@ describe('mountViewer', () => {
     assert.deepEqual(selected, [null], 'the host was not told the selection was refused');
   });
 
-  it('keeps a connector selection across a redraw, and drops it when one stops drawing it', () => {
+  it('keeps a connector selection across a redraw, and across a projection switch', () => {
     // A decoration identity is absent from `byKey` by construction, so the
     // document-membership drop in `draw()` deselected it on the very next
     // redraw — a selection that could not survive the frame after it was made.
@@ -306,12 +306,225 @@ describe('mountViewer', () => {
     assert.equal(handle.state.selected, edge, 'a redraw that still draws the connector dropped it');
     assert.equal(selected.length, announced, 'an unchanged selection was re-announced');
 
-    // The linear projection draws no canvas, so the connector is gone. The
-    // subject goes with it, and the host is TOLD rather than left holding a key
-    // for a mark that is no longer on screen.
+    // THE LINEAR PROJECTION DRAWS NO CANVAS AND THE SUBJECT SURVIVES ANYWAY,
+    // because the connector is not the only thing that represents this edge: the
+    // row draws a `together-with` badge, and that badge now publishes the same
+    // identity. This assertion used to read the other way and encoded the defect
+    // as the contract — `setProjection` documents that only the representation
+    // changes, and dropping the subject broke exactly that promise.
+    const beforeSwitch = selected.length;
     handle.setProjection('linear');
-    assert.equal(handle.state.selected, null, 'a projection that draws no connector kept the selection');
-    assert.equal(selected.at(-1), null, 'the host was not told the selection ended');
+    assert.equal(handle.state.selected, edge, 'a projection switch dropped the edge selection');
+    assert.equal(selected.length, beforeSwitch, 'the host was told a surviving selection had ended');
+  });
+
+  it('carries an edge selection through a projection change and back, for every edge kind', () => {
+    // THE PROMISE `setProjection` MAKES IS THE SUBJECT SURVIVES — "the subject
+    // is kept; only the representation changes". It did not hold for an edge:
+    // neither the linear nor the tree projection published an edge identity, so
+    // `stillDrawn` answered `false` on the redraw and `mount` cleared the
+    // selection and reported `onSelect(null)`.
+    //
+    // BOTH EDGE KINDS, because they fail through the SAME hole and were fixed
+    // at different times, which is exactly how a population gets half-covered. A
+    // `together-with` connector has carried an identity on the canvas since it
+    // became a click target; the four arc-drawn relationships got one only when
+    // the canvas learned to select them. Neither could survive a switch, so a
+    // fix that covered only the newer four would have left the ORIGINAL case
+    // behind — and the connector is the control that dates the defect to before
+    // the arcs existed.
+    //
+    // BOTH DESTINATIONS AND THE RETURN LEG. `linear` and `tree` draw badges
+    // through different call sites, and returning to `graph` is where a
+    // selection that had already been cleared would show up as still gone —
+    // going out and coming back is one promise, not two.
+    const cases = [
+      { name: 'an arc-drawn relationship', edge: edgeIdentity('blocked-by', '101', '102') },
+      { name: 'a together connector', edge: edgeIdentity('together-with', '103', '104') },
+    ] as const;
+
+    for (const { name, edge } of cases) {
+      for (const away of ['linear', 'tree'] as const) {
+        const doc = new TestDocument();
+        const container = doc.createContainer();
+        const reported: (string | null)[] = [];
+        const handle = mountViewer(container, fixtureDocument, {
+          projection: 'graph',
+          onSelect: (key: string | null) => reported.push(key),
+        });
+
+        handle.select(edge);
+        assert.equal(handle.state.selected, edge, `${name}: the canvas refused the selection`);
+
+        handle.setProjection(away);
+        assert.equal(handle.state.selected, edge, `${name}: switching to ${away} dropped it`);
+
+        handle.setProjection('graph');
+        assert.equal(handle.state.selected, edge, `${name}: returning from ${away} dropped it`);
+
+        // THE HANDLE AND THE HOST HAVE TO AGREE. The state surviving while the
+        // host was told `onSelect(null)` is the same divergence in a quieter
+        // form, and a host that trusted the callback would have dropped the
+        // subject the viewer still holds.
+        assert.deepEqual(
+          reported,
+          [edge],
+          `${name}: the host was told the selection ended while switching to ${away}`,
+        );
+      }
+    }
+  });
+
+  it('carries an edge selection into a graph that REFUSES to draw', () => {
+    // THE PROJECTION STATE THAT DRAWS NEITHER AN ARC NOR A BADGE. Past
+    // `GRAPH_NODE_BUDGET` the canvas is replaced by the refusal, whose capsules
+    // publish no edge identity, and whose rail carries rank, station and title
+    // only. So an edge has no representation anywhere in a refused graph.
+    //
+    // WHICH IS FINE, AND THAT IS THE POINT OF THE TEST. A refusal is a mode that
+    // deliberately declines to render relationship detail at scale, so the fix
+    // for this cannot be to render more: the document answers for the edge, and
+    // the subject survives a projection that draws nothing for it exactly as an
+    // issue selection always has.
+    //
+    // AN EARLIER ATTEMPT DID RENDER MORE — `edgeBadges` in the refusal's rail —
+    // and review measured the cost: on a dense document `blocked-by` is a LIST
+    // field, so ~300 nodes admit ~90,000 directed edges, and badging both
+    // endpoint rows materializes hundreds of thousands of spans in the one mode
+    // whose entire job is to avoid drawing at that size. It was removed.
+    const issues = [];
+    const edges = [];
+    const slots = [];
+    for (let i = 0; i < 62; i += 1) {
+      issues.push({ key: `n${String(i)}`, title: `Title n${String(i)}`, open: true, priority: 2 as const });
+    }
+    for (let i = 0; i < 61; i += 1) {
+      edges.push({ field: 'blocked-by' as const, from: `n${String(i)}`, to: `n${String(i + 1)}` });
+    }
+    for (let i = 0; i < 61; i += 1) {
+      slots.push({ lead: `n${String(i)}`, members: [`n${String(i)}`], rank: i + 1, ready: true, holds: [] });
+    }
+    const crowded = { issues, edges, order: { slots, excluded: [] } };
+
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const reported: (string | null)[] = [];
+    const handle = mountViewer(container, crowded, {
+      projection: 'linear',
+      onSelect: (key: string | null) => reported.push(key),
+    });
+
+    const edge = edgeIdentity('blocked-by', 'n0', 'n1');
+    handle.select(edge);
+    assert.equal(handle.state.selected, edge, 'the linear projection refused the selection');
+
+    handle.setProjection('graph');
+    // THE REFUSAL IS WHAT MUST BE RENDERING, or this test passes against an
+    // ordinary canvas and proves nothing about the case it names.
+    const refusal = container
+      .descendants()
+      .find((element) => element.getAttribute('class') === 'ig-refusal');
+    assert.ok(refusal !== undefined, 'the graph did not refuse, so the refused rail was never exercised');
+
+    assert.equal(handle.state.selected, edge, 'a refused graph dropped the edge selection');
+    assert.deepEqual(reported, [edge], 'the host was told the selection ended');
+  });
+
+  it('keeps an edge NO projection draws a mark for, and still clears one the document lost', () => {
+    // THE CASE NO AMOUNT OF BADGING REACHES. Both endpoints are gutter nodes —
+    // on an edge, so not `isolated`, but in no slot and no exclusion — so
+    // neither gets a rail row in a refused graph and there is no canvas to draw
+    // an arc. `edgeBadges` enumerates a ROW's keys, so a row that does not exist
+    // owes no badge, and the edge had no representation to be pointable through.
+    //
+    // ANSWERED BY ASKING THE DOCUMENT RATHER THAN BY DRAWING MORE. An issue was
+    // never held to the rendered standard — `byKey` answers for one whether or
+    // not the active projection draws its row — so this is the edge reaching the
+    // parity an issue already had, not a new leniency.
+    const issues = [];
+    const edges = [];
+    const slots = [];
+    for (let i = 0; i < 62; i += 1) {
+      issues.push({ key: `n${String(i)}`, title: `Title n${String(i)}`, open: true, priority: 2 as const });
+    }
+    for (let i = 0; i < 61; i += 1) {
+      edges.push({ field: 'blocked-by' as const, from: `n${String(i)}`, to: `n${String(i + 1)}` });
+    }
+    // Slots for n0..n59 ONLY, so n60 and n61 are gutter nodes and the edge
+    // between them is drawn by no row in any projection.
+    for (let i = 0; i < 60; i += 1) {
+      slots.push({ lead: `n${String(i)}`, members: [`n${String(i)}`], rank: i + 1, ready: true, holds: [] });
+    }
+    const crowded = { issues, edges, order: { slots, excluded: [] } };
+    const gutterEdge = edgeIdentity('blocked-by', 'n60', 'n61');
+
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const reported: (string | null)[] = [];
+    const handle = mountViewer(container, crowded, {
+      projection: 'tree',
+      selected: gutterEdge,
+      onSelect: (key: string | null) => reported.push(key),
+    });
+    assert.equal(handle.state.selected, gutterEdge, 'the document did not answer for the edge');
+
+    handle.setProjection('graph');
+    const refusal = container
+      .descendants()
+      .find((element) => element.getAttribute('class') === 'ig-refusal');
+    assert.ok(refusal !== undefined, 'the graph did not refuse, so this is not the case under test');
+    // NEITHER ENDPOINT HAS A ROW, or the badge fix would be what carried this
+    // and the assertion below would prove nothing about the document leg.
+    assert.equal(
+      container.descendants().find((element) => element.getAttribute(GROUP_ATTRIBUTE) === gutterEdge),
+      undefined,
+      'something drew a mark for this edge, so it is not the undrawn case',
+    );
+    assert.equal(handle.state.selected, gutterEdge, 'a projection drawing no mark for the edge dropped it');
+    assert.deepEqual(reported, [], 'the host was told a surviving selection had ended');
+
+    // THE OTHER HALF, and without it the change above is indistinguishable from
+    // "accept any edge-shaped string". The evidence widened; the acceptance did
+    // not. An edge the document does not carry still fails every leg.
+    const doc2 = new TestDocument();
+    const container2 = doc2.createContainer();
+    const refused: (string | null)[] = [];
+    const handle2 = mountViewer(container2, crowded, {
+      projection: 'tree',
+      selected: edgeIdentity('blocked-by', 'n60', 'nowhere'),
+      onSelect: (key: string | null) => refused.push(key),
+    });
+    assert.equal(handle2.state.selected, null, 'an edge this document does not carry was accepted');
+    assert.deepEqual(refused, [null], 'the host was not told the selection was refused');
+  });
+
+  it('names the edge, not the row, when a badge is pointed at', () => {
+    // THE OTHER HALF OF GIVING A BADGE AN IDENTITY, and it is a real behaviour
+    // change rather than a side effect worth hiding: `keyAt` walks
+    // target-upward, so a badge that publishes `data-ig-group` answers a click
+    // before the row's `data-ig-key` is reached. That IS what "an edge is
+    // pointable in every projection" means, and it is what the canvas already
+    // does for an arc — a relationship the reader can see is one they can point
+    // at, in whichever projection is drawing it.
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const reported: (string | null)[] = [];
+    const handle = mountViewer(container, fixtureDocument, {
+      projection: 'linear',
+      onSelect: (key: string | null) => reported.push(key),
+    });
+
+    const edge = edgeIdentity('blocked-by', '101', '102');
+    const badge = container
+      .descendants()
+      .find((element) => element.getAttribute(GROUP_ATTRIBUTE) === edge);
+    assert.ok(badge !== undefined, 'the linear projection drew no identified badge');
+    assert.equal(badge.getAttribute('class'), 'ig-badge');
+
+    container.dispatch('click', { target: badge });
+
+    assert.equal(handle.state.selected, edge);
+    assert.deepEqual(reported, [edge]);
   });
 
   it("resolves a pointer on a unit's partner to the unit's own station", () => {

@@ -14,6 +14,8 @@
  * entry.
  */
 
+import { edgeIdentity } from '@issuegraph/core';
+
 import { type NormalizedDocument, type ViewerDocument, normalizeDocument } from './document.ts';
 import { type SpecDocument, type SpecElement, materialize } from './element.ts';
 import {
@@ -166,6 +168,26 @@ export function mountViewer(
   // mark becomes hoverable but unselectable.
   let pointable = new Set<string>();
   /**
+   * Whether this document carries the edge a key names.
+   *
+   * THE EDGE COUNTERPART OF `byKey`, and that symmetry is the whole point. An
+   * edge identity is in no document MAP, so before this the only evidence an
+   * edge existed was that some projection had drawn a mark for it — which made
+   * a selection's survival a property of the CURRENT REPRESENTATION rather than
+   * of the subject. An ISSUE has never been held to that standard: `byKey`
+   * answers for one whether or not the active projection draws its row, which
+   * is why an issue selection already survives into a projection that renders
+   * nothing for it.
+   *
+   * DERIVED FROM `normalized` ON EVERY CALL rather than cached beside it. There
+   * are two assignment sites (mount and `update`), and a cache would have to be
+   * rebuilt at both — the shape this file has been bitten by repeatedly, where
+   * one site is updated and the other silently answers from a stale copy.
+   * Reading the live value has no second site to forget.
+   */
+  const isDocumentEdge = (key: string): boolean =>
+    normalized.edges.some((edge) => edgeIdentity(edge.field, edge.from, edge.to) === key);
+  /**
    * Whether a key still names something the reader can be looking at.
    *
    * ASKED TWICE PER DRAW, from either side of the rebuild of `pointable`, and
@@ -175,8 +197,23 @@ export function mountViewer(
    * of it would answer differently the first time either was touched — the
    * failure this file has already recorded twice, once for focus keys and once
    * for the hover.
+   *
+   * THE DOCUMENT ANSWERS FIRST, FOR ISSUES AND FOR EDGES ALIKE; `pointable` is
+   * what admits a mark the document cannot speak for. Resting an edge on
+   * `pointable` alone made its survival depend on every projection publishing
+   * an identity, and a projection that renders no mark for an edge therefore
+   * DROPPED THE SUBJECT — the refused graph being the case with no arc and no
+   * badge to fall back on, and an edge between two gutter nodes the case no
+   * amount of rail-row badging can reach, since neither endpoint has a row.
+   * Chasing that per representation is unbounded; asking the document is not.
+   *
+   * IT STILL CLEARS AN EDGE THE DOCUMENT DOES NOT CARRY. This widens the
+   * evidence, not the acceptance: an identity naming an edge no longer in the
+   * document fails every leg, so a host restoring a stale selection is refused
+   * and an `update` that removes an edge still drops it.
    */
-  const stillDrawn = (key: string): boolean => normalized.byKey.has(key) || pointable.has(key);
+  const stillDrawn = (key: string): boolean =>
+    normalized.byKey.has(key) || isDocumentEdge(key) || pointable.has(key);
   let hovered: string | null = null;
   let destroyed = false;
   // Set by the first `draw()` below, which runs before any listener can fire.
