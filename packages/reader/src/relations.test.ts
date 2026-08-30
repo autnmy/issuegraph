@@ -68,6 +68,25 @@ describe('the three questions are individually callable (#83 DW1)', () => {
     assert.deepEqual(resolveTogetherUnit(closed, '1'), ['1']);
   });
 
+  /**
+   * THE TWO EMPTY-LOOKING CASES, asserted TOGETHER because the contract is the
+   * difference between them and a test that checks either one alone cannot see
+   * it. Raised on this PR: the JSDoc had promised `[key]` for both, which would
+   * let a consumer treat an unknown issue as a schedulable unit of one.
+   */
+  test('carried-but-unlinked is a unit of one; not-carried is no unit at all', () => {
+    const nodes = [node(1), node(2)];
+    assert.deepEqual(resolveTogetherUnit(nodes, '1'), ['1'], 'carried, in no unit');
+    assert.deepEqual(resolveTogetherUnit(nodes, '99'), [], 'not carried');
+    // The sibling draws the same line, and the two must not drift apart.
+    assert.deepEqual(resolveSerializeGroup(nodes, '1'), ['1'], 'carried, in no group');
+    assert.deepEqual(resolveSerializeGroup(nodes, '99'), [], 'not carried');
+    // ...and both agree with the model they were extracted from.
+    const model = buildModel(nodes);
+    assert.deepEqual(resolveTogetherUnit(nodes, '99'), model.togetherComponent('99'));
+    assert.deepEqual(resolveSerializeGroup(nodes, '99'), model.serializeComponent('99'));
+  });
+
   test('an unknown key is refused, never admitted', () => {
     assert.deepEqual(evaluateReadiness([node(1)], '99'), {
       ready: false,

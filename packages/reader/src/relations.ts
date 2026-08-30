@@ -841,8 +841,16 @@ export function buildRelations(
  * A unit is one piece of work, claimed atomically. Closed members have left it,
  * so the unit is derived from OPEN endpoints only — which is why the answer
  * depends on the `open` flags the caller supplied rather than on the edges
- * alone. A key in no unit, and a key the node set does not carry, both come
- * back as `[key]`: a lone issue is a unit of one.
+ * alone.
+ *
+ * THE TWO EMPTY-LOOKING CASES ARE DIFFERENT ANSWERS, and conflating them is how
+ * an unknown issue gets treated as a schedulable unit of one:
+ *
+ *   - a key the set CARRIES that is in no unit returns `[key]` — a lone issue is
+ *     a unit of one, and a caller can size the unit without a special case;
+ *   - a key the set does NOT carry returns `[]`, matching
+ *     `Model.togetherComponent` and `resolveSerializeGroup`. There is no issue
+ *     to be a unit of, and answering `[key]` would invent one.
  */
 export function resolveTogetherUnit(
   nodes: readonly NodeInput[],
