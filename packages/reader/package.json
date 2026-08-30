@@ -1,6 +1,6 @@
 {
   "name": "@issuegraph/reader",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Read the Issuegraph frontmatter block out of an issue body and derive the graph it declares \u2014 ready set, effective priority, serialize and together components, duplicate resolution, cycles. Parsing and pure derivation only; no network, no tracker, no writes.",
   "keywords": [
     "issuegraph",
