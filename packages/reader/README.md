@@ -2,7 +2,7 @@
 
 Read the [Issuegraph](https://github.com/autnmy/issuegraph) block out of an issue body, and derive the graph it declares.
 
-Two halves, and the split is the point. `parseFrontmatter` reads **one** body and answers what that issue declared. `buildModel` takes **a set** of parsed issues and answers what follows from them: the ready set, effective priority, serialize and together components, duplicate resolution, and cycles.
+Two halves, and the split is the point. `parseFrontmatter` reads **one** body and answers what that issue declared. `buildModel` takes **a set** of parsed issues and answers what follows from them: the ready set, effective priority, serialize and together components, duplicate resolution, and cycles. When you want one of those answers about one issue rather than all of them about all issues, `evaluateReadiness`, `resolveSerializeGroup` and `resolveTogetherUnit` answer individually.
 
 Neither half fetches anything, authenticates anything, or writes anything. You bring the bodies and the labels from whatever tracker you have.
 
@@ -102,6 +102,26 @@ model.diagnostics;               // unresolvable refs, carrier disagreements, de
 ```
 
 `buildModel` is pure and total: it never throws, and every anomaly becomes a diagnostic instead of an exception.
+
+### Asking ONE question about ONE issue
+
+`buildModel` answers the whole graph. A scheduler usually wants one answer about one candidate, and paying for the whole corpus per candidate is the wrong shape — so the three per-candidate questions are also callable on their own:
+
+```ts
+import { evaluateReadiness, resolveSerializeGroup, resolveTogetherUnit } from '@issuegraph/reader';
+
+evaluateReadiness(nodes, '231');     // { ready: false, reasons: ['blocked-by 230 is open'] }
+resolveSerializeGroup(nodes, '231'); // the component, always including '231' itself
+resolveTogetherUnit(nodes, '231');   // the unit, or ['231'] when it stands alone
+```
+
+They take the same nodes and the same `ModelOptions`, and they are the model's **own code path** rather than a faster approximation of it — `evaluateReadiness(nodes, k)` and `buildModel(nodes).readiness(k)` are one function reached two ways, so the two cannot drift.
+
+**What they skip, and what they cannot.** They skip everything readiness does not consult: declared and effective priority, the transitive promotion worklist, cycle detection, and the eager readiness evaluation of *every* node. Against a 2,000-node set, one question goes from 2,000 priority resolutions and ~164,000 node-declaration reads to zero and ~2,000.
+
+They do **not** skip the edge pass over the nodes you supply, and that is inherent rather than an oversight: a `serialize-with` edge is declared by the node that *holds* it, so any node in the set can pull a peer into your component, and no correct answer about your component is available without reading every declaration.
+
+**So build the model once when you have many questions.** These exist for the one-question case; a loop over every candidate is faster through a single `buildModel`, because it amortises exactly the pass these cannot avoid.
 
 **What the axis does NOT protect, stated plainly.** The refusals cover nodes the model can **name** — the under-read node, its serialize component, and anything whose edge resolved to it. They cannot cover a node it cannot name. When the dropped field is *itself an edge* (`#1` declares `together-with: 2` and the parser rejects that line), the relationship never enters edge collection, so `#2` is an ordinary ready singleton. The peer's identity is what the parse destroyed, and the only sound refusal would be "refuse everything while any declaration is under-read" — a global stall on one malformed body.
 

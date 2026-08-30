@@ -58,6 +58,27 @@ export { FENCE_CLOSE, FENCE_OPEN, isSectionHeader, locateBlock, locateSection } 
 export type { BlockLocation, SectionField, SectionLocation } from './frontmatter.ts';
 
 export { buildModel, declarerOnlyNode, nodeKey, nodeSourceRepo, priorityLabelValue, refKey } from './model.ts';
+
+/**
+ * THE THREE PER-CANDIDATE QUESTIONS, callable one at a time.
+ *
+ * {@link buildModel} answers these too, and answers them as part of building
+ * everything else — declared and effective priority, the promotion worklist,
+ * §6.6 cycle detection, and a readiness evaluation of EVERY node in the set. A
+ * scheduler asking one of them per candidate therefore paid for the whole
+ * corpus once per candidate. These take the layers that answer does not consult
+ * out of the price.
+ *
+ * THEY ARE THE MODEL'S OWN CODE PATH, not a faster approximation of it:
+ * `Model.readiness` and {@link evaluateReadiness} are the same function reached
+ * two ways, so the two cannot drift. Reach for `buildModel` when you want the
+ * whole picture — priority, ordering, cycles, diagnostics — and for these when
+ * you have one issue and one question.
+ *
+ * Closure and claim state are INPUTS on each node (`open`, `assigneeCount`),
+ * per the package boundary: nothing here consults a tracker.
+ */
+export { evaluateReadiness, resolveSerializeGroup, resolveTogetherUnit } from './model.ts';
 export type {
   DeclarationRead,
   DeclaredPriority,
