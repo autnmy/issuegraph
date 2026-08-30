@@ -47,7 +47,7 @@ import { inspectorView } from './inspector.ts';
 import { type RailWindowOptions, railWindow } from './rail.ts';
 import { renderWorkspace } from './render.ts';
 
-interface Corpus {
+interface CorpusCase {
   readonly name: string;
   readonly document: ViewerDocument;
 }
@@ -80,7 +80,7 @@ function withEdges(
  * Each entry names the shape it contributes rather than describing itself, so a
  * failure report says which property of a document broke the agreement.
  */
-const CORPUS: readonly Corpus[] = [
+const CORPUS: readonly CorpusCase[] = [
   { name: 'a flat backlog', document: backlogOf(8) },
   { name: 'a backlog longer than one window', document: backlogOf(64) },
   {
@@ -277,12 +277,13 @@ describe('the inspector names the subject layer 1 draws as current', () => {
   for (const { name, document } of CORPUS) {
     it(`resolves every key in ${name} to layer 1's station`, () => {
       const sound = normalizeDocument(document).document;
+      // ONE SCENE PER DOCUMENT, not one per key. `stationOf` is a function of
+      // the document alone — `stationsOf` reads `slot.lead` and never looks at
+      // `selected` — so rendering per key would build the same map n times to
+      // answer n questions about it.
+      const { stationOf } = renderViewer(document, { projection: 'linear' }).scene;
       for (const issue of sound.issues) {
-        const scene = renderViewer(document, {
-          projection: 'linear',
-          selected: issue.key,
-        }).scene;
-        const station = scene.stationOf.get(issue.key) ?? issue.key;
+        const station = stationOf.get(issue.key) ?? issue.key;
         const subject = inspectorView(document, { kind: 'issue', key: issue.key }).subject;
         assert.equal(subject.kind, 'issue', `selecting ${issue.key} resolved to nothing`);
         if (subject.kind !== 'issue') continue;
@@ -304,12 +305,11 @@ describe('the inspector offers no edge layer 1 dropped', () => {
   // malformed edge is a live case of this.
   for (const { name, document } of CORPUS) {
     it(`lists only edges layer 1 kept for ${name}`, () => {
+      const sound = normalizeDocument(document).document;
       const kept = new Set(
-        normalizeDocument(document).document.edges.map((edge) =>
-          edgeIdentity(edge.field, edge.from, edge.to),
-        ),
+        sound.edges.map((edge) => edgeIdentity(edge.field, edge.from, edge.to)),
       );
-      for (const issue of normalizeDocument(document).document.issues) {
+      for (const issue of sound.issues) {
         for (const relationship of inspectorView(document, { kind: 'issue', key: issue.key })
           .relationships) {
           assert.ok(
@@ -333,8 +333,33 @@ describe('the workspace zones name one subject', () => {
   // scrolled past; that case is the rail's own and is covered above.
   for (const { name, document } of CORPUS) {
     it(`draws and inspects one issue for every selection in ${name}`, () => {
-      const total = normalizeDocument(document).document.order.slots.length;
-      for (const issue of normalizeDocument(document).document.issues) {
+      const sound = normalizeDocument(document).document;
+      const total = sound.order.slots.length;
+      // PIN THE MARKUP READERS BEFORE TRUSTING THEM, because both of them read
+      // the same shape and they would therefore break TOGETHER — and this suite
+      // reads a null from `currentRailKey` as "no row was marked", whose only
+      // other reading is "the helper matched nothing at all". With both silent,
+      // every assertion below would pass on a rail nobody parsed: green, over no
+      // coverage, on the one file whose whole job is to detect a silent class.
+      //
+      // So the rows are established positively, once per document. Layer 1 keys
+      // a slot row by its LEAD and draws an exclusion as a row of its own, both
+      // as `li.ig-slot` — so this is also where a change to that grammar
+      // surfaces, as a failure naming what it expected rather than as silence.
+      const rows = renderWorkspace(document, {
+        words: WORKSPACE_WORDS,
+        rail: { start: 0, count: Math.max(total, 1) },
+      });
+      assert.deepEqual(
+        [...drawnRailKeys(rows.markup)].sort(),
+        [
+          ...sound.order.slots.map((slot) => slot.lead),
+          ...sound.order.excluded.map((exclusion) => exclusion.key),
+        ].sort(),
+        'the rail rows this suite reads are not the rows layer 1 drew',
+      );
+
+      for (const issue of sound.issues) {
         const result = renderWorkspace(document, {
           words: WORKSPACE_WORDS,
           selection: { kind: 'issue', key: issue.key },
