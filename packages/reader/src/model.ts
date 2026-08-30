@@ -170,6 +170,27 @@ export function buildModel(
     componentMembers,
     readiness,
   } = relations;
+  /**
+   * DIAGNOSTIC ORDER IS PRESERVED ACROSS THE EXTRACTION, and it takes three
+   * sinks to do it. `Model.diagnostics` is consumer-visible — `deriveIssueOrder`
+   * copies the array unchanged and the CLI prints it as JSON — so a reader
+   * processing it sequentially, or a snapshot asserting it, must not see this
+   * refactor at all.
+   *
+   * The original single pass emitted in phase order: declared priority, then the
+   * edges, then cycles, then the eager readiness evaluation. Hoisting the
+   * relation layer to the top of this function moved the EDGE phase in front of
+   * the PRIORITY phase, because the edges are now resolved before this function
+   * body runs. So the phases are collected separately and concatenated in the
+   * original order below, rather than appended to one array in call order.
+   *
+   * `relations.diagnostics` is LIVE — the eager readiness pass appends the §5.3
+   * surfaces to it — which is why the edge phase is snapshotted HERE, before
+   * anything else runs, and the readiness phase is taken as the tail it grew.
+   */
+  const edgeDiagnostics = [...diagnostics];
+  const priorityDiagnostics: string[] = [];
+  const cycleDiagnostics: string[] = [];
 
   // ---- declared priority (label-first, §4.3.5) ----
   const declared = new Map<string, DeclaredPriority>();
@@ -179,7 +200,7 @@ export function buildModel(
     const disagreement =
       labelValue !== null && frontmatterValue !== null && labelValue !== frontmatterValue;
     if (disagreement) {
-      diagnostics.push(`${k}: priority label p${labelValue} disagrees with frontmatter ${frontmatterValue}`);
+      priorityDiagnostics.push(`${k}: priority label p${labelValue} disagrees with frontmatter ${frontmatterValue}`);
     }
     declared.set(k, {
       value: labelValue ?? frontmatterValue ?? DEFAULT_PRIORITY,
@@ -371,7 +392,7 @@ export function buildModel(
             // that appears on no issue.
             const sorted = [...new Set(units.flatMap(openMembers))].sort();
             cycles.push(sorted);
-            diagnostics.push(`blocked-by cycle: ${sorted.join(" -> ")}`);
+            cycleDiagnostics.push(`blocked-by cycle: ${sorted.join(" -> ")}`);
           }
         }
       }
@@ -388,7 +409,17 @@ export function buildModel(
   for (const k of byKey.keys()) canonicalMap.set(k, duplicateCanonicalOf(k));
   const readinessMap = new Map<string, ReadinessResult>();
   for (const k of byKey.keys()) readinessMap.set(k, readiness(k));
-  const uniqueDiagnostics = [...new Set(diagnostics)];
+  // The tail `relations.diagnostics` grew while the eager passes above ran —
+  // the §5.3 non-completed-closure surfaces readiness emits.
+  const readinessDiagnostics = diagnostics.slice(edgeDiagnostics.length);
+  const uniqueDiagnostics = [
+    ...new Set([
+      ...priorityDiagnostics,
+      ...edgeDiagnostics,
+      ...cycleDiagnostics,
+      ...readinessDiagnostics,
+    ]),
+  ];
 
   return {
     keys: [...byKey.keys()].filter((k) => (byKey.get(k) as ModelNode).declarerOnly !== true),

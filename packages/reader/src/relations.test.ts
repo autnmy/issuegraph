@@ -203,3 +203,43 @@ describe('a single question does not build the layers it never consults', () => 
     }
   });
 });
+
+/**
+ * `Model.diagnostics` IS CONSUMER-VISIBLE OUTPUT, so the extraction must not
+ * reorder it. `deriveIssueOrder` copies the array unchanged and the CLI prints
+ * it as JSON, so a consumer reading it sequentially — or a snapshot asserting
+ * it — would see a refactor that is supposed to be invisible.
+ *
+ * Every other diagnostic assertion in this repository uses `.some(...)`, which
+ * is order-blind by construction. So nothing caught the reordering this pins;
+ * it was raised in review on this PR, against a corpus carrying both a
+ * priority-carrier disagreement and a relationship anomaly.
+ *
+ * THE EXPECTED ORDER IS MEASURED, NOT REASONED. It was read off `buildModel` at
+ * `bdf1dd6` — the commit before this extraction — using this exact corpus.
+ */
+describe('diagnostics keep their pre-extraction order', () => {
+  const nodes: NodeInput[] = [
+    node(1, { labels: ['P0'], data: { priority: 3 } }),
+    node(2, { data: { blockedBy: [ref(404)] } }),
+    node(3, { open: false, closedStateReason: 'not_planned' }),
+    node(4, { data: { blockedBy: [ref(3)] } }),
+    node(5, { data: { blockedBy: [ref(6)] } }),
+    node(6, { data: { blockedBy: [ref(5)] } }),
+  ];
+
+  test('phase order is priority, then edges, then cycles, then readiness', () => {
+    assert.deepEqual(buildModel(nodes).diagnostics, [
+      '1: priority label p0 disagrees with frontmatter 3',
+      '2: blocked-by 404 is unresolvable in this node set; treated as blocking',
+      'blocked-by cycle: 5 -> 6',
+      '4: unblocked by non-completed closure of 3; re-check its premise',
+    ]);
+  });
+
+  test('the corpus really does exercise all four phases', () => {
+    // Guards the assertion above against becoming vacuous if a future change
+    // stops one phase emitting: three of the four would still pass in order.
+    assert.equal(buildModel(nodes).diagnostics.length, 4);
+  });
+});
