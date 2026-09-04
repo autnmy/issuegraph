@@ -250,7 +250,7 @@ describe('the tree projection', () => {
     const hub = markup.slice(start, next === -1 ? undefined : next);
 
     assert.equal((hub.match(/data-edge="/g) ?? []).length, ROW_BADGE_BUDGET);
-    assert.match(hub, new RegExp(`data-omitted="${String(omitted)}"[^>]*>\\+${String(omitted)} more<`));
+    assert.match(hub, new RegExp(`data-omitted="${String(omitted)}"[^>]*>\\+${String(omitted)} more relationships<`));
   });
 
   it('is deterministic — two renders of one document agree byte for byte', () => {

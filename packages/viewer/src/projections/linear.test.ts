@@ -103,8 +103,10 @@ describe('the linear projection', () => {
     const drawn = hub.match(/data-edge="/g) ?? [];
 
     assert.equal(drawn.length, ROW_BADGE_BUDGET, `drew ${String(drawn.length)} badges`);
-    assert.match(hub, new RegExp(`data-omitted="${String(omitted)}"[^>]*>\\+${String(omitted)} more<`));
-    assert.match(hub, /aria-label="25 more relationships not shown"/);
+    assert.match(hub, new RegExp(`data-omitted="${String(omitted)}"[^>]*>\\+${String(omitted)} more relationships<`));
+    // THE NAME IS THE VISIBLE TEXT. ARIA prohibits naming a generic span, so an
+    // attribute name could be ignored and a reader would hear a bare "+25 more".
+    assert.equal(/data-omitted="25"[^>]*aria-label/.test(hub), false, 'the chip carries an aria-label');
   });
 
   it('spends the budget in field order, so blocked-by survives the cut', () => {
@@ -116,7 +118,7 @@ describe('the linear projection', () => {
 
     assert.equal((hub.match(/data-edge="blocked-by"/g) ?? []).length, ROW_BADGE_BUDGET);
     assert.equal(hub.includes('data-edge="decomposed-from"'), false, 'decomposed-from survived the cut');
-    assert.match(hub, /data-omitted="1"[^>]*aria-label="1 more relationship not shown"/);
+    assert.match(hub, /data-omitted="1"[^>]*>\+1 more relationship</);
   });
 
   it('draws no chip for a row at or under the budget', () => {

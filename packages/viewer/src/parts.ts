@@ -204,11 +204,16 @@ export const ROW_BADGE_BUDGET = 12;
  * `mount`'s drawn-check answers from the document first for an edge id.
  */
 function overflowBadge(omitted: number): ElementSpec {
-  const label = `${String(omitted)} more ${omitted === 1 ? 'relationship' : 'relationships'} not shown`;
+  // THE WHOLE PHRASE IS THE VISIBLE TEXT, and there is no `aria-label`. A
+  // plain span has the generic role, on which ARIA prohibits naming, so an
+  // attribute name here may be ignored and the announcement would be a bare
+  // "+N more" with nothing saying what was left out. Visible text is the one
+  // name every reader gets; `title` stays as a tooltip only.
+  const noun = omitted === 1 ? 'relationship' : 'relationships';
   return element(
     'span',
-    { class: 'ig-badge', 'data-omitted': omitted, title: label, 'aria-label': label },
-    [`+${String(omitted)} more`],
+    { class: 'ig-badge', 'data-omitted': omitted, title: `${String(omitted)} more ${noun} not shown` },
+    [`+${String(omitted)} more ${noun}`],
   );
 }
 
