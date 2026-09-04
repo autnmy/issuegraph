@@ -120,6 +120,7 @@ export const fixtureDocument: ViewerDocument = {
     ],
     excluded: [{ key: '106', canonical: '105', reason: 'duplicate-of' }],
   },
+  cycles: [],
 };
 
 /**
@@ -149,6 +150,7 @@ export const heldTogetherDocument: ViewerDocument = {
     ],
     excluded: [],
   },
+  cycles: [],
 };
 
 /**
@@ -173,6 +175,7 @@ export const sharedGutterDocument: ViewerDocument = {
     ],
     excluded: [],
   },
+  cycles: [],
 };
 
 /**
@@ -198,6 +201,7 @@ export const doublePlacedDocument: ViewerDocument = {
       { key: 'y', canonical: 'z', reason: 'duplicate-of' },
     ],
   },
+  cycles: [],
 };
 
 /** A document whose graph deliberately exceeds a budget, for the refusal path. */
@@ -216,7 +220,7 @@ export function crowdedDocument(nodeCount: number): ViewerDocument {
     from: issue.key,
     to: String(index + 1),
   }));
-  return { issues, edges, order: { slots: [], excluded: [] } };
+  return { issues, edges, order: { slots: [], excluded: [] }, cycles: [] };
 }
 
 /**
@@ -241,7 +245,7 @@ export function denseRowDocument(count: number): ViewerDocument {
     { rank: 1, lead: 'hub', members: ['hub'], ready: true, holds: [] },
     ...others.map((key, index) => ({ rank: index + 2, lead: key, members: [key], ready: true, holds: [] })),
   ];
-  return { issues, edges, order: { slots, excluded: [] } };
+  return { issues, edges, order: { slots, excluded: [] }, cycles: [] };
 }
 
 /**
@@ -266,6 +270,7 @@ export function denseUnitDocument(count: number): ViewerDocument {
       slots: [{ ...(hubSlot as ViewerSlotLike), members: ['hub', 'partner'] }, ...rest],
       excluded: [],
     },
+    cycles: [],
   };
 }
 

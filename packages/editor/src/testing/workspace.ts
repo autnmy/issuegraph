@@ -38,6 +38,8 @@ export interface BacklogOptions {
   readonly edges?: readonly (readonly [EdgeField, string, string])[] | undefined;
   /** Keys folded into the slot led by the key they map to. */
   readonly unitOf?: Readonly<Record<string, string>> | undefined;
+  /** The host's cycle answer, declared beside the edges that close it. */
+  readonly cycles?: readonly (readonly string[])[] | undefined;
 }
 
 const GRAPH_HOLD: ViewerHold = { family: 'graph', reason: 'a blocker is open' };
@@ -75,6 +77,7 @@ export function backlogOf(total: number, options: BacklogOptions = {}): ViewerDo
     issues: keys.map((key) => ({ key, title: `Issue ${key}`, open: true, priority: 2 })),
     edges: (options.edges ?? []).map(([field, from, to]) => ({ field, from, to })),
     order: { slots, excluded: [] },
+    cycles: options.cycles ?? [],
   };
 }
 

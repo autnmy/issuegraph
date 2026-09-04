@@ -752,6 +752,7 @@ function ranked(total: number, edges: readonly (readonly [EdgeKind, string, stri
       })),
       excluded: [],
     },
+    cycles: [],
   };
 }
 

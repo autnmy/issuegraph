@@ -46,7 +46,7 @@ function refusedWithFooterAndExclusion(): ViewerDocument {
     { key: 'exc1', title: 'Excluded one', open: true, priority: 2 as const },
     { key: 'canon', title: 'Canonical', open: true, priority: 2 as const },
   );
-  return { issues, edges, order: { slots, excluded: [{ key: 'exc1', canonical: 'canon', reason: 'duplicate-of' as const }] } };
+  return { issues, edges, order: { slots, excluded: [{ key: 'exc1', canonical: 'canon', reason: 'duplicate-of' as const }] }, cycles: [] };
 }
 
 /**
@@ -82,6 +82,7 @@ const togetherChain: ViewerDocument = {
     slots: [{ rank: 1, lead: '1', members: ['1', '2', '3'], ready: true, holds: [] }],
     excluded: [],
   },
+  cycles: [],
 };
 
 // The SAME unit written as a STAR — 2–1, 3–1. §4.3.7 makes the two equivalent,
@@ -275,6 +276,7 @@ describe('the graph projection', () => {
       ],
       edges: [{ field: 'blocked-by', from: 'a', to: 'b' }],
       order: { slots: [], excluded: [] },
+      cycles: [],
     });
     const markup = renderMarkup(built.root);
 
@@ -396,6 +398,7 @@ describe('the graph projection', () => {
       ],
       edges: [{ field: 'blocked-by', from: 'n1', to: 'n2' }],
       order: { slots: [], excluded: [] },
+      cycles: [],
     });
     const markup = renderMarkup(built.root);
     // SKIP THE `<title>` CHILD to reach the drawn text. It is emitted FIRST, so a
@@ -568,6 +571,7 @@ describe('the graph projection', () => {
         slots: [{ rank: 1, lead: '1', members: ['1', '2'], ready: true, holds: [] }],
         excluded: [],
       },
+      cycles: [],
     }).lateral;
 
     assert.equal(lateral.get('1')?.left, '3');
@@ -873,6 +877,7 @@ describe('the graph projection', () => {
         })),
         excluded: [],
       },
+      cycles: [],
     };
     const markup = render(edgeless);
 
@@ -904,7 +909,7 @@ describe('the graph projection', () => {
         to: String(index + 2),
       } as ViewerDocument['edges'][number]);
     }
-    const markup = render({ issues, edges, order: { slots: [], excluded: [] } });
+    const markup = render({ issues, edges, order: { slots: [], excluded: [] }, cycles: [] });
 
     const listed = [...markup.matchAll(/class="ig-capsule"/g)].length;
     assert.equal(listed, 12, `listed ${String(listed)} capsules, expected the cluster cap of 12`);
@@ -1008,7 +1013,7 @@ describe('the graph projection', () => {
   it('renders the empty spine rather than refusing when there is nothing to draw', () => {
     // An involuntary view change reads as a bug, so zero nodes is an empty
     // canvas and never a switch to another projection.
-    const markup = render({ issues: [], edges: [], order: { slots: [], excluded: [] } });
+    const markup = render({ issues: [], edges: [], order: { slots: [], excluded: [] }, cycles: [] });
     assert.match(markup, /class="ig-empty"/);
     assert.equal(/ig-refusal/.test(markup), false);
   });
@@ -1047,7 +1052,9 @@ describe('the graph projection', () => {
     assert.match(markup, /depth 60/);
   });
 
-  it('flags a cycle in a capsule rather than hanging on it', () => {
+  it('flags the host’s cycle in a capsule rather than deriving one, and does not hang on the loop', () => {
+    // The badge is `cycles` relayed; the edges below close the same loop only
+    // so the depth walk has a back-edge to step over without hanging.
     const cyclic: ViewerDocument = {
       issues: Array.from({ length: GRAPH_NODE_BUDGET + 1 }, (_, index) => ({
         key: String(index + 1),
@@ -1066,9 +1073,15 @@ describe('the graph projection', () => {
         })),
       ],
       order: { slots: [], excluded: [] },
+      cycles: [['1', '2', '3']],
     };
 
     assert.match(render(cyclic), /<span class="ig-badge" data-edge="blocked-by">cycle<\/span>/);
+    assert.doesNotMatch(
+      render({ ...cyclic, cycles: [] }),
+      /<span class="ig-badge" data-edge="blocked-by">cycle<\/span>/,
+      'badged a loop the host did not report',
+    );
   });
 
   it('counts isolated issues instead of drawing them', () => {

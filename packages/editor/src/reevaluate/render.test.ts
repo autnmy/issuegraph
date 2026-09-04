@@ -268,6 +268,7 @@ describe('the surface composes the viewer rather than re-rendering it', () => {
           ],
           excluded: [],
         },
+        cycles: [],
       },
       { words: WORDS },
     );

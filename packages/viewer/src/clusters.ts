@@ -8,8 +8,17 @@
  * competence; a hairball reads as a bug.
  *
  * Components are undirected — every relationship connects, whatever its
- * direction — while the depth and cycle questions are asked of `blocked-by`
- * alone, because that is the only field that orders anything.
+ * direction — while the depth question is asked of `blocked-by` alone, because
+ * that is the only field that orders anything.
+ *
+ * THE CYCLE QUESTION IS NOT ASKED HERE AT ALL. It is answered by the host —
+ * `ViewerDocument.cycles`, the reader's own §6.6 stuck groups — and this module
+ * only reads which components those cycles touch. It used to walk the edges for
+ * the answer itself, and that walk disagreed with the host's on a cycle running
+ * through a together unit: the reader contracts a unit to one vertex and this
+ * document does not even carry every together edge, so the two were bound to
+ * differ, and both were on one screen. One answer, given, is the rule this
+ * package already applies to the order; the cycle badge follows it.
  */
 
 import type { NormalizedDocument } from './document.ts';
@@ -18,6 +27,10 @@ export interface Cluster {
   /** Members in the document's own key order, so the output is deterministic. */
   readonly members: readonly string[];
   readonly blockedByEdges: number;
+  /**
+   * Whether the host's `cycles` name any member of this component. The host's
+   * answer, relayed — never derived from the edges here.
+   */
   readonly hasCycle: boolean;
   /** The longest `blocked-by` chain, in edges. `0` when nothing blocks. */
   readonly chainDepth: number;
@@ -79,22 +92,28 @@ function connectedComponents(
 }
 
 /**
- * The longest `blocked-by` chain inside one component, and whether that
- * component contains a cycle.
+ * The longest `blocked-by` chain inside one component, in edges.
  *
  * A cycle makes "longest chain" undefined, so the walk reports the depth it
- * reached over the acyclic part and says a cycle exists rather than looping or
- * inventing a number. Both facts are useful to a reader; a hang is not.
+ * reached over the acyclic part rather than looping or inventing a number.
+ *
+ * IT MEETS BACK-EDGES AND PUBLISHES NOTHING ABOUT THEM. Skipping the edge that
+ * closes a loop is what makes this walk TERMINATE and its number finite; it is
+ * not a cycle answer, and it must not be read as one — whether a component
+ * contains a cycle is the host's `cycles`, read in `clustersOf` below. A raw
+ * loop this walk steps over (through a closed issue, say) can be one the
+ * reader does not report, and a stuck unit the reader does report can be one
+ * this walk cannot see. Two answers to one question is the defect this module
+ * was rewritten to remove.
  */
-function depthAndCycle(
+function chainDepthOf(
   members: readonly string[],
   blockedBy: ReadonlyMap<string, readonly string[]>,
-): { depth: number; hasCycle: boolean } {
+): number {
   const memo = new Map<string, number>();
   const onPath = new Set<string>();
-  let hasCycle = false;
   // The edges the discovery pass refused to follow, keyed `from\u0000to` so a
-  // cycle through one member does not suppress that member's other edges.
+  // loop through one member does not suppress that member's other edges.
   const backEdges = new Set<string>();
 
   // ITERATIVE, NOT RECURSIVE. This runs on the graph's REFUSAL path, which is
@@ -115,12 +134,11 @@ function depthAndCycle(
         onPath.add(frame.key);
         for (const next of blockedBy.get(frame.key) ?? []) {
           if (onPath.has(next)) {
-            hasCycle = true;
-            // REMEMBER WHICH EDGE CLOSED THE CYCLE, not just that one did. The
-            // collecting pass below walks the same adjacency and has no other
-            // way to tell a back-edge from an ordinary one, so it counted this
-            // edge against a memo that was never written — `?? 0` — and every
-            // cycle came out one edge too long. Measured: a two-node cycle
+            // REMEMBER WHICH EDGE CLOSED THE LOOP. The collecting pass below
+            // walks the same adjacency and has no other way to tell a back-edge
+            // from an ordinary one, so it counted this edge against a memo that
+            // was never written — `?? 0` — and every loop came out one edge too
+            // long. Measured: a two-node cycle
             // published `chainDepth: 2` beside its cycle badge when the longest
             // acyclic chain through it is one edge, and a three-node cycle
             // published 3 for a chain of two.
@@ -148,7 +166,7 @@ function depthAndCycle(
 
   let depth = 0;
   for (const member of members) depth = Math.max(depth, memo.get(member) ?? 0);
-  return { depth, hasCycle };
+  return depth;
 }
 
 /** Every component the document declares, largest first, then by first member. */
@@ -172,6 +190,11 @@ export function clustersOf(
     else existing.push(edge.to);
   }
 
+  // Every issue the host reports as inside a `blocked-by` cycle. Read off the
+  // document, which already narrowed the host's cycles to the keys it carries.
+  const stuck = new Set<string>();
+  for (const cycle of document.cycles) for (const member of cycle) stuck.add(member);
+
   const clusters = connectedComponents(document, drawn).map((members) => {
     // SUMMED OFF THE ADJACENCY ABOVE, NOT RE-FILTERED PER COMPONENT. This used to
     // scan the WHOLE edge array once per component, which is quadratic in exactly
@@ -187,8 +210,11 @@ export function clustersOf(
     // pass is linear in nodes plus edges.
     let blockedByEdges = 0;
     for (const member of members) blockedByEdges += blockedBy.get(member)?.length ?? 0;
-    const { depth, hasCycle } = depthAndCycle(members, blockedBy);
-    return { members, blockedByEdges, hasCycle, chainDepth: depth };
+    // THE HOST'S ANSWER, LOOKED UP — never re-derived. A cycle the reader
+    // found touches this component when any member of it is a member here; the
+    // set is built once above, so the whole pass stays linear.
+    const hasCycle = members.some((member) => stuck.has(member));
+    return { members, blockedByEdges, hasCycle, chainDepth: chainDepthOf(members, blockedBy) };
   });
 
   // CODE UNITS, NOT `localeCompare`. This package promises deterministic

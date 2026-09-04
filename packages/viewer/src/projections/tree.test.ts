@@ -36,7 +36,7 @@ describe('the tree projection', () => {
         { field: 'decomposed-from', from: '2', to: '1' },
         { field: 'decomposed-from', from: '3', to: '2' },
       ],
-      order: emptyOrder,
+      order: emptyOrder, cycles: [],
     });
 
     assert.equal(levelOf(markup, '1'), '1');
@@ -77,7 +77,7 @@ describe('the tree projection', () => {
     const markup = render({
       issues: [issue('1')],
       edges: [{ field: 'decomposed-from', from: '1', to: '900' }],
-      order: emptyOrder,
+      order: emptyOrder, cycles: [],
     });
 
     assert.equal(levelOf(markup, '1'), '1');
@@ -92,7 +92,7 @@ describe('the tree projection', () => {
         { field: 'decomposed-from', from: '2', to: '3' },
         { field: 'decomposed-from', from: '3', to: '1' },
       ],
-      order: emptyOrder,
+      order: emptyOrder, cycles: [],
     });
     const markup = renderMarkup(cyclic.root);
 
@@ -115,7 +115,7 @@ describe('the tree projection', () => {
         { field: 'decomposed-from', from: '2', to: '3' },
         { field: 'decomposed-from', from: '3', to: '2' },
       ],
-      order: emptyOrder,
+      order: emptyOrder, cycles: [],
     });
     const markup = renderMarkup(tailed.root);
 
@@ -141,7 +141,7 @@ describe('the tree projection', () => {
         { field: 'decomposed-from', from: '3', to: '1' },
         { field: 'decomposed-from', from: '3', to: '2' },
       ],
-      order: emptyOrder,
+      order: emptyOrder, cycles: [],
     });
 
     assert.ok(
@@ -161,7 +161,7 @@ describe('the tree projection', () => {
         { field: 'decomposed-from', from: '3', to: '900' },
         { field: 'decomposed-from', from: '3', to: '1' },
       ],
-      order: emptyOrder,
+      order: emptyOrder, cycles: [],
     });
     const markup = renderMarkup(treeScene(missingFirst.document).root);
 
@@ -178,7 +178,7 @@ describe('the tree projection', () => {
         { field: 'decomposed-from', from: '3', to: '1' },
         { field: 'decomposed-from', from: '3', to: '900' },
       ],
-      order: emptyOrder,
+      order: emptyOrder, cycles: [],
     });
 
     assert.equal(presentFirst.document.outOfSetOrigins.get('3'), undefined);
@@ -189,7 +189,7 @@ describe('the tree projection', () => {
     const flat = scene({
       issues: [issue('1'), issue('2')],
       edges: [{ field: 'blocked-by', from: '1', to: '2' }],
-      order: emptyOrder,
+      order: emptyOrder, cycles: [],
     });
 
     assert.deepEqual([...flat.focusOrder], ['1', '2']);
@@ -197,7 +197,7 @@ describe('the tree projection', () => {
   });
 
   it('renders an empty state rather than an empty container', () => {
-    const markup = render({ issues: [], edges: [], order: emptyOrder });
+    const markup = render({ issues: [], edges: [], order: emptyOrder, cycles: [] });
     assert.match(markup, /class="ig-empty"/);
   });
 
@@ -228,7 +228,7 @@ describe('the tree projection', () => {
       from: child.key,
       to: String(index + 1),
     }));
-    const built = scene({ issues, edges, order: emptyOrder });
+    const built = scene({ issues, edges, order: emptyOrder, cycles: [] });
 
     assert.equal(built.focusOrder.length, depth);
     assert.equal(built.focusOrder[0], '1');

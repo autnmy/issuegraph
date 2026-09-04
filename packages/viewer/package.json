@@ -1,6 +1,6 @@
 {
   "name": "@issuegraph/viewer",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "Render an Issuegraph document as a work order — the ordered spine with readiness stations, the five edge treatments, and three projections. Rendering only: no fetching, no mutation, no auth, and every value themeable through CSS custom properties.",
   "keywords": [
     "issuegraph",

@@ -41,6 +41,7 @@ const DOCUMENT: ViewerDocument = {
     ],
     excluded: [],
   },
+  cycles: [],
 };
 
 function projected(...states: readonly EdgeState[]): ProjectedEdge {
@@ -109,6 +110,7 @@ const ODD_DOCUMENT: ViewerDocument = {
     ],
     excluded: [],
   },
+  cycles: [],
 };
 
 function oddSceneOf(): ReturnType<typeof renderViewer>['scene'] {

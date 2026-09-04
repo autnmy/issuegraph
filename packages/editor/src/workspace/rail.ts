@@ -259,6 +259,17 @@ export function railWindow(
     issues: input.issues.filter((issue) => keep.has(issue.key)),
     edges,
     order: { slots: rows, excluded: input.order.excluded },
+    // NARROWED TO THE WINDOW, exactly as the edges are. The viewer drops a cycle
+    // member it does not carry WITH A DIAGNOSTIC, and this document carries only
+    // the window — so relaying the host's cycles whole made every scroll
+    // position past a stuck group publish "malformed document" lines about rows
+    // nobody asked to see. Measured: a four-issue cycle outside a two-row
+    // window produced four diagnostics, and none with no window. Nothing is
+    // lost by narrowing: the rail's projection draws no capsule, so it reads no
+    // cycle at all; the answer stays whole in the document the ladder reads.
+    cycles: input.cycles
+      .map((cycle) => cycle.filter((member) => keep.has(member)))
+      .filter((cycle) => cycle.length > 0),
   };
 
   // BY IDENTITY, so a document carrying the same connector twice reports one

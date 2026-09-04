@@ -449,6 +449,7 @@ describe('the workspace derives from the normalized document, like the zones do'
           { rank: 7, lead: 'i0001', members: ['i0001'], ready: true, holds: [] },
         ],
       },
+      cycles: [],
     };
     // The duplicate is the LAST slot, so a window at the tail is exactly where
     // the earlier copy is out of sight.
@@ -501,6 +502,7 @@ describe('an excluded row is a row, and the audit treats it like one', () => {
       slots: base.order.slots.filter((slot) => slot.lead !== 'i0002'),
       excluded: [{ key: 'i0002', canonical: 'i0001', reason: 'duplicate-of' as const }],
     },
+    cycles: [],
   };
 
   it('marks the excluded row when the audit has a finding for it', () => {
@@ -527,6 +529,7 @@ describe('an excluded row is a row, and the audit treats it like one', () => {
         slots: four.order.slots.filter((slot) => slot.lead !== 'i0004'),
         excluded: [{ key: 'i0004', canonical: 'i0001', reason: 'duplicate-of' as const }],
       },
+      cycles: [],
     };
     const on = renderWorkspace(clean, { ...WORDS, audit, auditFiltered: true });
     assert.equal(on.view.audit?.rowFor('i0004'), undefined, 'the fixture made i0004 dirty');
@@ -717,6 +720,7 @@ describe('a hold in the inspector carries its cause, and its subject is a contro
           slot.lead === 'i0002' ? { ...slot, holds: [{ family: 'graph' as const, ...hold }] } : slot,
         ),
       },
+      cycles: [],
     };
   };
   const select = selectionReducer({ kind: 'none' }, { kind: 'select-issue', key: 'i0002' });
@@ -796,6 +800,7 @@ describe('a hold in the inspector carries its cause, and its subject is a contro
             : slot,
         ),
       },
+      cycles: [],
     };
     const { markup } = renderWorkspace(unit, { words: WORKSPACE_WORDS, selection: select });
     assert.match(markup, /data-code="together-member-unready" data-subject="i0003"/);

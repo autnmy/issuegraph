@@ -3,7 +3,7 @@
  *
  * The innermost layer of the Issuegraph UI, and the whole of its contract:
  *
- *     in   {issues, edges, order} + a projection choice
+ *     in   {issues, edges, order, cycles} + a projection choice
  *     out  onSelect, onHover
  *     never  fetching, mutation, auth, persistence, or a host's vocabulary
  *
@@ -26,7 +26,7 @@
  * README states the rule: what a sibling does not export gets exported
  * deliberately, never reached past. The alternative for each was a second
  * implementation out there: a second HTML escaper over untrusted document text,
- * and a second components/cycle/depth pass whose input space drifts from this
+ * and a second components/depth pass whose input space drifts from this
  * one. `svg`, `materialize` and the mount-side element types stay internal —
  * nothing owes them yet.
  *
@@ -38,6 +38,7 @@ export type {
   NormalizeResult,
   NormalizedDocument,
   RankProvenance,
+  ViewerCycle,
   ViewerDocument,
   ViewerEdge,
   ViewerExclusion,

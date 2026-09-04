@@ -51,7 +51,7 @@ The canvas is a **local** instrument — it answers "what surrounds this issue" 
 | Nodes | Behaviour |
 |---|---|
 | ≤ `GRAPH_NODE_BUDGET` | draw the neighbourhood |
-| up to `CLUSTER_ONLY_BUDGET` | component **capsules** — size, `blocked-by` count, chain depth, cycle flag |
+| up to `CLUSTER_ONLY_BUDGET` | component **capsules** — size, `blocked-by` count, chain depth, cycle flag (the host's `ViewerDocument.cycles`, the same reader answer the audit reads) |
 | beyond it | capsules truncated, and **search leads** |
 
 Both thresholds are the viewer's own exports, read rather than restated, so the ladder and the canvas cannot disagree about what "past budget" means.

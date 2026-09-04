@@ -79,6 +79,7 @@ describe('renderViewer', () => {
         issues: [{ key: '1', title: 'One', open: true, priority: 2 }],
         edges: [{ field: 'blocked-by', from: '1', to: '99' }],
         order: { slots: [], excluded: [] },
+        cycles: [],
       },
       { projection: 'graph' },
     );
@@ -121,7 +122,7 @@ describe('renderViewer', () => {
       ['double-placed', doublePlacedDocument],
       ['refusal-capsules', crowdedDocument(GRAPH_NODE_BUDGET + 1)],
       ['refusal-clusters', crowdedDocument(CLUSTER_ONLY_BUDGET + 1)],
-      ['empty', { issues: [], edges: [], order: { slots: [], excluded: [] } }],
+      ['empty', { issues: [], edges: [], order: { slots: [], excluded: [] }, cycles: [] }],
     ] as const;
 
     for (const [name, input] of shapes) {
@@ -228,6 +229,7 @@ describe('a document whose keys are not encodable', () => {
         slots: [{ rank: 1, lead: '\uD800', members: ['\uD800', '2'], ready: true, holds: [] }],
         excluded: [],
       },
+      cycles: [],
     };
 
     assert.doesNotThrow(() => renderViewer(document, { projection: 'graph' }));
@@ -259,6 +261,7 @@ describe('a hold publishes its cause and subject when the host supplied them', (
           : slot,
       ),
     },
+    cycles: [],
   };
 
   it('as data-code and data-subject beside data-family, sentence unchanged', () => {

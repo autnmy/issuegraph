@@ -195,7 +195,7 @@ describe('the linear projection', () => {
   });
 
   it('renders an empty state rather than an empty container', () => {
-    const markup = render({ issues: [], edges: [], order: { slots: [], excluded: [] } });
+    const markup = render({ issues: [], edges: [], order: { slots: [], excluded: [] }, cycles: [] });
     assert.match(markup, /class="ig-empty"/);
     assert.match(markup, /Nothing is in the order right now/);
   });

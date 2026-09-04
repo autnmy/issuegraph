@@ -149,6 +149,7 @@ const CORPUS: readonly CorpusCase[] = [
       return {
         ...base,
         order: { ...base.order, slots: [...base.order.slots, repeated] },
+        cycles: [],
       };
     })(),
   },
@@ -179,6 +180,7 @@ const CORPUS: readonly CorpusCase[] = [
           slots: base.order.slots.filter((slot) => slot.lead !== dropped.lead),
           excluded: [{ key: dropped.lead, canonical: 'i0001', reason: 'duplicate-of' as const }],
         },
+        cycles: [],
       };
     })(),
   },

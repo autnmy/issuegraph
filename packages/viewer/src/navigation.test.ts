@@ -104,7 +104,7 @@ describe('navigate', () => {
 
   it('does nothing on an empty scene', () => {
     const empty = linearScene(
-      normalizeDocument({ issues: [], edges: [], order: { slots: [], excluded: [] } }).document,
+      normalizeDocument({ issues: [], edges: [], order: { slots: [], excluded: [] }, cycles: [] }).document,
     );
     assert.deepEqual(navigate(empty, initialNavigationState, 'ArrowDown').command, { kind: 'none' });
   });
@@ -193,7 +193,7 @@ describe('reconcile', () => {
 
   it('reports null focus for a scene with nothing in it', () => {
     const empty = linearScene(
-      normalizeDocument({ issues: [], edges: [], order: { slots: [], excluded: [] } }).document,
+      normalizeDocument({ issues: [], edges: [], order: { slots: [], excluded: [] }, cycles: [] }).document,
     );
     assert.deepEqual(reconcile(empty, initialNavigationState), { focused: null, selected: null });
   });

@@ -5,7 +5,7 @@ Render an [Issuegraph](https://github.com/autnmy/issuegraph) document as a **wor
 The innermost UI layer, and the whole of its contract:
 
 ```
-in     { issues, edges, order } + a projection choice
+in     { issues, edges, order, cycles } + a projection choice
 out    onSelect, onHover
 never  fetching, mutation, auth, persistence, or a host's vocabulary
 ```
@@ -49,12 +49,15 @@ const document = {
     slots: [{ rank: 1, lead: '102', members: ['102'], ready: true, holds: [] }],
     excluded: [{ key: '106', canonical: '105', reason: 'duplicate-of' }],
   },
+  cycles: [],
 };
 ```
 
 **The order is an input, never something this computes.** `@issuegraph/derive` owns the derivation; a second implementation here would be a mirror whose input space drifts. Everything the viewer draws was given to it — including titles and deep links, because knowing a tracker's URL shape is exactly the knowledge this layer must not carry.
 
-`normalizeDocument` never throws. A hand-built document is untrusted input, so a dangling edge is dropped with a diagnostic rather than taking the render down.
+**So is the cycle answer.** `cycles` is the `blocked-by` cycles the document contains, as the host's reader found them — a host fed by [`@issuegraph/reader`](../reader) passes `Model.cycles` verbatim, and a hand-built document passes `[]`. The graph refusal's `cycle` badge on a component capsule is that answer relayed, never a walk over the edges here: this document carries only the edges it can draw (a `together-with` the order does not group is dropped), so a local walk is a picture of the graph, not the graph, and it disagreed with the reader's on a cycle running through a together unit while both were on one screen. It is required rather than optional because a badge that is simply absent reads as "no cycle"; `[]` says none, and omission is a type error. A member the document does not carry is dropped from the cycle with a diagnostic.
+
+`normalizeDocument` never throws on a document of the declared shape. A hand-built document is untrusted input, so a dangling edge is dropped with a diagnostic rather than taking the render down. A missing field is not a document: `order` absent has always thrown, and `cycles` absent throws the same way — a plain-JavaScript host migrating from `0.1.x` adds the field.
 
 **A deep link is checked, not just escaped.** `url` is the one field that becomes an executable surface in the DOM, so only `http:`, `https:`, `mailto:` and relative values are linked — a `javascript:` or `data:` value is dropped with a diagnostic. Escaping the attribute would not have stopped it.
 
