@@ -3,11 +3,12 @@ import { describe, it } from 'node:test';
 
 import { buildModel } from '@issuegraph/reader';
 import { edgeIdentity } from '@issuegraph/core';
-import { KEY_ATTRIBUTE } from '@issuegraph/viewer';
+import { KEY_ATTRIBUTE, type ViewerHold } from '@issuegraph/viewer';
 
 import { AUDIT_SEVERITY_ATTRIBUTE } from '../audit/surface.ts';
 import type { AuditGraph } from '../audit/findings.ts';
 import { ZONES, renderWorkspace } from './render.ts';
+import type { ViewerDocument } from '@issuegraph/viewer';
 import { selectionReducer } from './selection.ts';
 import { WORKSPACE_WORDS, backlogOf, drawnKeys, zonesIn } from '../testing/workspace.ts';
 
@@ -702,5 +703,49 @@ describe('the workspace reports what it drew and hides nothing', () => {
     const once = renderWorkspace(document, { ...WORDS, rail: { start: 3, count: 9 } });
     const twice = renderWorkspace(document, { ...WORDS, rail: { start: 3, count: 9 } });
     assert.equal(once.markup, twice.markup);
+  });
+});
+
+describe('a hold in the inspector carries its cause, and its subject is a control', () => {
+  const withHold = (hold: Omit<ViewerHold, 'family'>): ViewerDocument => {
+    const base = backlogOf(3, { held: ['i0002'] });
+    return {
+      ...base,
+      order: {
+        ...base.order,
+        slots: base.order.slots.map((slot) =>
+          slot.lead === 'i0002' ? { ...slot, holds: [{ family: 'graph' as const, ...hold }] } : slot,
+        ),
+      },
+    };
+  };
+  const select = selectionReducer({ kind: 'none' }, { kind: 'select-issue', key: 'i0002' });
+
+  it('publishes data-code and data-subject, and a select-issue control naming the holder', () => {
+    const { markup } = renderWorkspace(
+      withHold({ reason: 'blocked-by i0001 is open', code: 'blocked-by-open', subject: 'i0001' }),
+      { words: WORKSPACE_WORDS, selection: select },
+    );
+    assert.match(
+      markup,
+      /<li class="ig-inspector-hold" data-family="graph" data-code="blocked-by-open" data-subject="i0001">blocked-by i0001 is open<button type="button" class="ig-inspector-hold-subject" data-ig-command="select-issue" data-ig-target="i0001">i0001<\/button><\/li>/,
+    );
+  });
+
+  it('omits both attributes and the control when the host stated no cause', () => {
+    const { markup } = renderWorkspace(withHold({ reason: 'a blocker is open' }), {
+      words: WORKSPACE_WORDS,
+      selection: select,
+    });
+    assert.match(markup, /<li class="ig-inspector-hold" data-family="graph">a blocker is open<\/li>/);
+    assert.doesNotMatch(markup, /ig-inspector-hold-subject/);
+    assert.doesNotMatch(markup, /data-code=/);
+  });
+
+  it('the control reduces to the subject being selected, through the shared reducer', () => {
+    assert.deepEqual(selectionReducer(select, { kind: 'select-issue', key: 'i0001' }), {
+      kind: 'issue',
+      key: 'i0001',
+    });
   });
 });

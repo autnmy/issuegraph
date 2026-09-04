@@ -55,6 +55,7 @@ import {
   type SpecChild,
   type Theme,
   type ViewerDocument,
+  type ViewerHold,
   KEY_ATTRIBUTE,
   element,
   normalizeDocument,
@@ -345,11 +346,7 @@ function inspectorSpec(view: InspectorView, words: WorkspaceWords): ElementSpec 
             : element(
                 'ul',
                 { class: 'ig-inspector-holds' },
-                subject.position.holds.map((hold) =>
-                  element('li', { class: 'ig-inspector-hold', 'data-family': hold.family }, [
-                    hold.reason,
-                  ]),
-                ),
+                subject.position.holds.map((hold) => holdRow(hold)),
               ),
         ])
       : null,
@@ -375,6 +372,50 @@ function inspectorSpec(view: InspectorView, words: WorkspaceWords): ElementSpec 
       ],
     ),
   ]);
+}
+
+/**
+ * One hold in the inspector, with its cause and its subject on the markup.
+ *
+ * THE SUBJECT IS A CONTROL, NOT A SPAN. A held slot's holder is routinely not
+ * among the members drawn — an ordinary blocker never is, a claimed serialize
+ * peer sits in another component, an unresolvable reference is nowhere — so
+ * before this the sentence was the only place the holder was named, and a
+ * reader had to find it by hand. Publishing `select-issue` on it makes the
+ * holder a deep link into the ONE selection every zone shares: the rail and
+ * the canvas move to it, and the inspector re-renders on it. The same
+ * `data-ig-command` protocol the relationship rows use, and the same reducer
+ * (`selectionReducer`) answers it, so a host wires nothing new.
+ *
+ * `data-code` and `data-subject` mirror layer 1's `holdLine` exactly — same
+ * names, same omit-when-absent rule — so a stylesheet or a filter written
+ * against the rail reads the inspector too.
+ */
+function holdRow(hold: ViewerHold): ElementSpec {
+  return element(
+    'li',
+    {
+      class: 'ig-inspector-hold',
+      'data-family': hold.family,
+      'data-code': hold.code,
+      'data-subject': hold.subject,
+    },
+    [
+      hold.reason,
+      hold.subject === undefined
+        ? null
+        : element(
+            'button',
+            {
+              type: 'button',
+              class: 'ig-inspector-hold-subject',
+              'data-ig-command': 'select-issue',
+              'data-ig-target': hold.subject,
+            },
+            [hold.subject],
+          ),
+    ],
+  );
 }
 
 /** Render one document at one reader position, as the whole workspace. */

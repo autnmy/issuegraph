@@ -104,9 +104,23 @@ export function provenanceLine(provenance: RankProvenance | undefined): ElementS
   }
 }
 
-/** One hold, rendered with the family it belongs to visible in the markup. */
+/**
+ * One hold, rendered with the family it belongs to visible in the markup — and
+ * its cause and subject beside it when the host supplied them, so a host reads
+ * WHY off an attribute instead of matching the sentence. Omitted, never empty,
+ * when absent: `data-code=""` would claim a cause the host did not state.
+ */
 export function holdLine(hold: ViewerHold): ElementSpec {
-  return element('p', { class: 'ig-hold', 'data-family': hold.family }, [hold.reason]);
+  return element(
+    'p',
+    {
+      class: 'ig-hold',
+      'data-family': hold.family,
+      'data-code': hold.code,
+      'data-subject': hold.subject,
+    },
+    [hold.reason],
+  );
 }
 
 /**

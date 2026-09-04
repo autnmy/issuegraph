@@ -52,7 +52,7 @@ const ref = (n: string | number, repo: string | null = null) => ({ repo, id: Str
 describe("buildModel readiness (SPEC 6.2)", () => {
   test("an open node with no frontmatter is ready", () => {
     const m = buildModel([node(1, { data: null })]);
-    assert.deepEqual(m.readiness("1"), { ready: true, reasons: [] });
+    assert.deepEqual(m.readiness("1"), { ready: true, reasons: [], holds: [] });
   });
 
   test("open blocked-by blocks; closure of the blocker unblocks", () => {
@@ -135,7 +135,11 @@ describe("buildModel readiness (SPEC 6.2)", () => {
 
   test("an unknown key reports unready with an unknown-node reason", () => {
     const m = buildModel([node(1)]);
-    assert.deepEqual(m.readiness("77"), { ready: false, reasons: ["unknown node"] });
+    assert.deepEqual(m.readiness("77"), {
+      ready: false,
+      reasons: ["unknown node"],
+      holds: [{ code: "unknown-node", text: "unknown node" }],
+    });
   });
 });
 
@@ -498,8 +502,8 @@ describe("model purity", () => {
         node(2, { assigneeCount }),
       ]);
     assert.equal(unit(0).readiness("1").ready, true, "unclaimed");
-    assert.deepEqual(unit(1).readiness("1"), { ready: true, reasons: [] }, "after its own claim");
-    assert.deepEqual(unit(1).readiness("2"), { ready: true, reasons: [] }, "from the other member");
+    assert.deepEqual(unit(1).readiness("1"), { ready: true, reasons: [], holds: [] }, "after its own claim");
+    assert.deepEqual(unit(1).readiness("2"), { ready: true, reasons: [], holds: [] }, "from the other member");
   });
 
   test("CONTROL: an OUTSIDE claim in the same serialize component still refuses the unit", () => {
@@ -521,11 +525,15 @@ describe("model purity", () => {
     // it with #3, and #2's permanent duplicate unreadiness then made #3 — real,
     // canonical, unrelated work — unselectable.
     const m = buildModel([node(1), node(2, { data: { duplicateOf: ref(1), togetherWith: ref(3) } }), node(3)]);
-    assert.deepEqual(m.readiness("3"), { ready: true, reasons: [] });
+    assert.deepEqual(m.readiness("3"), { ready: true, reasons: [], holds: [] });
     assert.deepEqual(m.togetherComponent("3"), ["3"]);
     // The duplicate is still a duplicate: its own duplicate-of is read, which
     // is the one edge the guard must not drop.
-    assert.deepEqual(m.readiness("2"), { ready: false, reasons: ["duplicate-of another issue"] });
+    assert.deepEqual(m.readiness("2"), {
+      ready: false,
+      reasons: ["duplicate-of another issue"],
+      holds: [{ code: "duplicate", text: "duplicate-of another issue" }],
+    });
     assert.equal(m.duplicateCanonical("2"), "1");
   });
 
@@ -533,14 +541,14 @@ describe("model purity", () => {
     // The same rule on the other two edge types, because a guard that only
     // covered together-with would read as fixed while leaving two ways in.
     const blocking = buildModel([node(1), node(2, { data: { duplicateOf: ref(1), blockedBy: [ref(3)] } }), node(3)]);
-    assert.deepEqual(blocking.readiness("3"), { ready: true, reasons: [] });
+    assert.deepEqual(blocking.readiness("3"), { ready: true, reasons: [], holds: [] });
 
     const claimed = buildModel([
       node(1),
       node(2, { assigneeCount: 1, data: { duplicateOf: ref(1), serializeWith: ref(3) } }),
       node(3),
     ]);
-    assert.deepEqual(claimed.readiness("3"), { ready: true, reasons: [] });
+    assert.deepEqual(claimed.readiness("3"), { ready: true, reasons: [], holds: [] });
   });
 
   test("SPEC 6.7 treats the three unresolvable references differently, and so must this", () => {
@@ -562,8 +570,8 @@ describe("model purity", () => {
     // serialize-with: NO LINKAGE, and nobody is refused — not the declarer, not
     // its component. This is the arm that used to refuse both.
     const serial = buildModel([node(1, { data: { serializeWith: ref(40) } }), node(2, { data: { serializeWith: ref(1) } })]);
-    assert.deepEqual(serial.readiness("1"), { ready: true, reasons: [] }, "the declarer");
-    assert.deepEqual(serial.readiness("2"), { ready: true, reasons: [] }, "its component peer");
+    assert.deepEqual(serial.readiness("1"), { ready: true, reasons: [], holds: [] }, "the declarer");
+    assert.deepEqual(serial.readiness("2"), { ready: true, reasons: [], holds: [] }, "its component peer");
     assert.deepEqual(serial.serializeComponent("1"), ["1", "2"], "no linkage to the missing target");
     // "...but are likewise surfaced" — silence here would be the other failure,
     // and a reader with no signal cannot groom what it could not resolve.
@@ -575,7 +583,7 @@ describe("model purity", () => {
 
     // together-with: refuses its DECLARER, and only its declarer.
     const unit = buildModel([node(1, { data: { serializeWith: ref(2) } }), node(2, { data: { togetherWith: ref(40) } })]);
-    assert.deepEqual(unit.readiness("1"), { ready: true, reasons: [] });
+    assert.deepEqual(unit.readiness("1"), { ready: true, reasons: [], holds: [] });
     assertIncludes(unit.readiness("2").reasons.join(" "), "together-with 40 is unresolvable");
   });
 
@@ -585,7 +593,7 @@ describe("model purity", () => {
     // issue naming a duplicate as its target still pulled it in and inherited
     // its permanent unreadiness.
     const m = buildModel([node(1), node(2, { data: { duplicateOf: ref(1) } }), node(3, { data: { togetherWith: ref(2) } })]);
-    assert.deepEqual(m.readiness("3"), { ready: true, reasons: [] });
+    assert.deepEqual(m.readiness("3"), { ready: true, reasons: [], holds: [] });
     assert.deepEqual(m.togetherComponent("3"), ["1", "3"], "resolved to the canonical, not dropped");
 
     // RESOLVED, NOT IGNORED, and blocked-by is why: the work named by a
@@ -601,7 +609,7 @@ describe("model purity", () => {
       node(2, { data: { duplicateOf: ref(1) } }),
       node(3, { data: { blockedBy: [ref(2)] } }),
     ]);
-    assert.deepEqual(done.readiness("3"), { ready: true, reasons: [] });
+    assert.deepEqual(done.readiness("3"), { ready: true, reasons: [], holds: [] });
   });
 
   test("a claimed singleton stays READY — assignment is eligibility, not readiness", () => {
@@ -785,7 +793,7 @@ describe("under-read declarations", () => {
       node(1, { declarationRead: "read" }),
       node(2, { declarationRead: "under-read" }),
     ]);
-    assert.deepEqual(m.readiness("1"), { ready: true, reasons: [] });
+    assert.deepEqual(m.readiness("1"), { ready: true, reasons: [], holds: [] });
     assert.equal(m.readiness("2").ready, false);
     assertIncludes(m.readiness("2").reasons[0], "own issuegraph declaration was not fully read");
   });
@@ -840,7 +848,7 @@ describe("under-read declarations", () => {
       node(2),
     ]);
     assert.deepEqual(m.serializeComponent("1"), ["1", "2"]);
-    assert.deepEqual(m.readiness("1"), { ready: true, reasons: [] });
+    assert.deepEqual(m.readiness("1"), { ready: true, reasons: [], holds: [] });
   });
 
   test("an under-read together member refuses the unit, with no rule of its own", () => {
@@ -925,7 +933,7 @@ describe("under-read declarations", () => {
       node(2, { open: false, closedStateReason: "completed" }),
       node(1, { data: { blockedBy: [ref(2)] } }),
     ]);
-    assert.deepEqual(m.readiness("1"), { ready: true, reasons: [] });
+    assert.deepEqual(m.readiness("1"), { ready: true, reasons: [], holds: [] });
   });
 
   test("an under-read blocker keeps its non-completed-closure re-groom diagnostic", () => {
@@ -968,7 +976,7 @@ describe("under-read declarations", () => {
       node(2, { open: false, closedStateReason: "completed" }),
       node(1, { data: { togetherWith: ref(2) } }),
     ]);
-    assert.deepEqual(m.readiness("1"), { ready: true, reasons: [] });
+    assert.deepEqual(m.readiness("1"), { ready: true, reasons: [], holds: [] });
   });
 
   test("BOUNDS THE CLASS: serialize-with has no closed-target hole", () => {
@@ -996,7 +1004,7 @@ describe("under-read declarations", () => {
       node(2), // the peer, unnameable from here
     ]);
     assert.equal(hidden.readiness("1").ready, false); // the declarer IS refused
-    assert.deepEqual(hidden.readiness("2"), { ready: true, reasons: [] }); // the peer is not
+    assert.deepEqual(hidden.readiness("2"), { ready: true, reasons: [], holds: [] }); // the peer is not
     assert.deepEqual(hidden.togetherComponent("2"), ["2"]);
 
     // SHARP CONTROL — the same node under-read, but with the edge SURVIVING the
@@ -1338,7 +1346,7 @@ describe("decomposed-from provenance the node set cannot resolve", () => {
     // ledger would start refusing declarers over a field that has never gated
     // anything, turning a report into a behaviour change.
     const m = buildModel([node(1, { data: { decomposedFrom: ref(99) } })]);
-    assert.deepEqual(m.readiness("1"), { ready: true, reasons: [] });
+    assert.deepEqual(m.readiness("1"), { ready: true, reasons: [], holds: [] });
   });
 
   test("does not resolve against the declarer-only tier", () => {

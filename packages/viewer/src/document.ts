@@ -70,6 +70,23 @@ export interface ViewerHold {
   readonly family: HoldFamily;
   /** Human-readable, host-authored. The viewer renders it verbatim. */
   readonly reason: string;
+  /**
+   * The machine-readable cause, host-authored like `reason`. A host fed by
+   * `@issuegraph/reader` supplies its `ReadinessHold.code`; the viewer
+   * publishes whatever it is given as `data-code` and interprets none of it,
+   * because the vocabulary is the reader's and this layer restates nothing.
+   * OPTIONAL BY DESIGN: a hold the tracker or runner imposes has no reader
+   * code, and inventing one would be a second vocabulary.
+   */
+  readonly code?: string | undefined;
+  /**
+   * The issue the cause names — the open blocker, the claimed peer, the unready
+   * member — when it names one, as the document's own key for it. Published as
+   * `data-subject` so a host can turn the sentence into a link or a filter
+   * facet; the viewer draws it as text and links nothing (it has no URL shape
+   * to link with — see `ViewerIssue.url`).
+   */
+  readonly subject?: string | undefined;
 }
 
 /** One issue the document knows about. */

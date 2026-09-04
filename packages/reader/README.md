@@ -93,7 +93,7 @@ const model = buildModel(
   { homeRepo: 'acme/backlog' },
 );
 
-model.readiness('231');          // { ready: false, reasons: ['blocked-by 230 is open'] }
+model.readiness('231');          // { ready: false, reasons: ['blocked-by 230 is open'], holds: [{ code: 'blocked-by-open', subject: '230', text: 'blocked-by 230 is open' }] }
 model.effectivePriority('230');  // a P3 blocking a P0 comes back 0
 model.priorityInheritors('230'); // the OPEN nodes that inherit 230's urgency — what to work when 230 is unready
 model.serializeComponent('231'); // the computed group — groups are never written down
@@ -105,6 +105,8 @@ model.diagnostics;               // unresolvable refs, carrier disagreements, de
 
 `buildModel` is pure and total: it never throws, and every anomaly becomes a diagnostic instead of an exception.
 
+**A hold is data, not only a sentence.** `readiness(key).holds` carries each failed condition as `{ code, subject?, text }` — `code` from the closed `READINESS_HOLD_CODES` vocabulary, `subject` the issue the cause names (the open blocker, the claimed peer, the unready unit member, or an unresolvable reference exactly as written) when it names one, and `text` the sentence `reasons` has always carried. `reasons` is the projection `holds.map((h) => h.text)`, so a consumer that renders prose reads exactly what it did before, and one that groups or filters holds by cause matches no prose at all.
+
 ### Asking ONE question about ONE issue
 
 `buildModel` answers the whole graph. A scheduler usually wants one answer about one candidate, and paying for the whole corpus per candidate is the wrong shape — so the three per-candidate questions are also callable on their own:
@@ -112,7 +114,7 @@ model.diagnostics;               // unresolvable refs, carrier disagreements, de
 ```ts
 import { evaluateReadiness, resolveSerializeGroup, resolveTogetherUnit } from '@issuegraph/reader';
 
-evaluateReadiness(nodes, '231');     // { ready: false, reasons: ['blocked-by 230 is open'] }
+evaluateReadiness(nodes, '231');     // { ready: false, reasons: [...], holds: [...] } — the same answer as model.readiness
 resolveSerializeGroup(nodes, '231'); // the component, always including '231' itself
 resolveTogetherUnit(nodes, '231');   // the unit, or ['231'] when it stands alone
 ```
