@@ -19,6 +19,7 @@ import {
   SPLICE_FIELD_OWNERSHIP,
   SPLICE_OWNED_FIELDS,
   spliceGeneratedEdges as spliceResult,
+  unownedFieldMismatch,
   type GeneratedEdges,
 } from './splice.ts';
 
@@ -674,6 +675,132 @@ describe('the splice verifies its own output', () => {
       }),
       'The brief body.',
     );
+  });
+});
+
+describe('a comment-only owned entry keeps the sibling under it (#92)', () => {
+  // `- #9094` is the unquoted-sigil shape a hand author writes. YAML reads it
+  // as an empty item carrying a comment, and the parser's node end for such an
+  // item sits on the NEXT line's first content byte — so the reader's span for
+  // the entry ran one line long, and the splice removed the sibling with it.
+  // The result read perfectly and the owned field was exactly what was asked
+  // for, which is why the owned-field post-condition never saw it.
+  const edges: GeneratedEdges = { blockedBy: { set: [{ repo: null, id: '42' }] } };
+
+  it("the issue's reproduction keeps `evidence: verified` byte-for-byte", () => {
+    const body = '---\nissuegraph:\n  blocked-by:\n    - #9094\n    - #9095\n  evidence: verified\n---\nbody';
+    assert.equal(
+      spliceGeneratedEdges(body, edges),
+      '---\nissuegraph:\n  blocked-by:\n    - "#42"\n  evidence: verified\n---\nbody',
+    );
+  });
+
+  it('keeps BOTH unowned siblings when two follow the list', () => {
+    const body = '---\nissuegraph:\n  blocked-by:\n    - #9094\n  serialize-with: 7\n  evidence: verified\n---\nbody';
+    assert.equal(
+      spliceGeneratedEdges(body, edges),
+      '---\nissuegraph:\n  blocked-by:\n    - "#42"\n  serialize-with: 7\n  evidence: verified\n---\nbody',
+    );
+  });
+
+  it('a mixed list — a value then a comment-only item — is the same defect and the same fix', () => {
+    const body = '---\nissuegraph:\n  blocked-by:\n    - 1\n    - #9094\n  evidence: verified\n---\nbody';
+    assert.equal(
+      spliceGeneratedEdges(body, edges),
+      '---\nissuegraph:\n  blocked-by:\n    - "#42"\n  evidence: verified\n---\nbody',
+    );
+  });
+
+  it('a comment-only SCALAR the call owns mis-spanned the same way', () => {
+    // Replacing `serialize-with: #7` must not take `evidence` with it.
+    const body = '---\nissuegraph:\n  serialize-with: #7\n  evidence: verified\n---\nbody';
+    assert.equal(
+      spliceGeneratedEdges(body, { serializeWith: { set: { repo: null, id: '3' } } }),
+      '---\nissuegraph:\n  serialize-with: "#3"\n  evidence: verified\n---\nbody',
+    );
+  });
+
+  it('a comment-only scalar the call does NOT own is preserved as the bytes it is', () => {
+    const body = '---\nissuegraph:\n  serialize-with: #7\n  evidence: verified\n---\nbody';
+    assert.equal(
+      spliceGeneratedEdges(body, edges),
+      '---\nissuegraph:\n  blocked-by:\n    - "#42"\n  serialize-with: #7\n  evidence: verified\n---\nbody',
+    );
+  });
+
+  it('CONTROL: the same block with a real item was never affected', () => {
+    const body = '---\nissuegraph:\n  blocked-by:\n    - 1\n  evidence: verified\n---\nbody';
+    assert.equal(
+      spliceGeneratedEdges(body, edges),
+      '---\nissuegraph:\n  blocked-by:\n    - "#42"\n  evidence: verified\n---\nbody',
+    );
+  });
+});
+
+describe('the splice refuses a result that disturbed a field it does not own (#58)', () => {
+  // The other half of the post-condition #55 added. It is exercised directly
+  // because, with the reader's span fixed, nothing in this repository reaches
+  // it through `spliceGeneratedEdges` — and a guard whose failing case no test
+  // can construct is one nobody can check. Where it fires for real is the
+  // version-skew case: a consumer pairing this writer with a reader that still
+  // mis-spans. The helper reads only the OWNED set off the snapshot `settle`
+  // holds, so a test names the ownership directly.
+  const parsed = (block: string) => parseFrontmatter(`---\nissuegraph:\n${block}\n---`).data;
+  const owning = new Set(['blocked-by'] as const);
+
+  it('names a recognised unowned field that vanished', () => {
+    const before = parsed('  blocked-by:\n    - 1\n  evidence: verified');
+    const after = parsed('  blocked-by:\n    - "#42"');
+    const detail = unownedFieldMismatch(owning, before, after);
+    assert.notEqual(detail, null);
+    assert.match(detail as string, /^evidence /);
+  });
+
+  it('names a recognised unowned EDGE that vanished', () => {
+    const before = parsed('  blocked-by:\n    - 1\n  serialize-with: 7\n  evidence: verified');
+    const after = parsed('  blocked-by:\n    - "#42"\n  evidence: verified');
+    assert.match(unownedFieldMismatch(owning, before, after) as string, /^serialize-with /);
+  });
+
+  it('names a recognised unowned field that CHANGED, not only one that vanished', () => {
+    const before = parsed('  blocked-by:\n    - 1\n  priority: 1');
+    const after = parsed('  blocked-by:\n    - "#42"\n  priority: 2');
+    assert.match(unownedFieldMismatch(owning, before, after) as string, /^priority /);
+  });
+
+  it('an owned field the call OMITTED counts as unowned, exactly as the ownership rule says', () => {
+    const before = parsed('  blocked-by:\n    - 1\n  duplicate-of: 9');
+    const after = parsed('  blocked-by:\n    - "#42"');
+    assert.match(unownedFieldMismatch(owning, before, after) as string, /^duplicate-of /);
+  });
+
+  it('CONTROL: the field the call owns is NOT reported here — that is the owned check\'s job', () => {
+    const before = parsed('  blocked-by:\n    - 1\n  evidence: verified');
+    const after = parsed('  blocked-by:\n    - "#42"\n  evidence: verified');
+    assert.equal(unownedFieldMismatch(owning, before, after), null);
+  });
+
+  it('CONTROL: an empty declaration before and after compares equal, so whole-block removal still passes', () => {
+    assert.equal(unownedFieldMismatch(owning, null, null), null);
+    assert.equal(unownedFieldMismatch(owning, parsed('  blocked-by:\n    - 1'), null), null);
+  });
+
+  it('a removal that took an unowned field with it is still reported', () => {
+    assert.match(unownedFieldMismatch(owning, parsed('  blocked-by:\n    - 1\n  evidence: verified'), null) as string, /^evidence /);
+  });
+
+  it('END TO END: the spliced result carries every recognised unowned field the input had', () => {
+    // The integration pin: with the reader fixed the arm is not reached, and
+    // this is what says so — the splice reports success AND the unowned
+    // fields are all still there, compared through the same parser.
+    const body =
+      '---\nissuegraph:\n  blocked-by:\n    - #9094\n  decomposed-from: 5\n  duplicate-of: 6\n  serialize-with: 7\n  together-with: 8\n  priority: 1\n  evidence: verified\n---\nbody';
+    const result = spliceResult(body, { blockedBy: { set: [{ repo: null, id: '42' }] } });
+    assert.equal(result.outcome, 'spliced');
+    const before = parseFrontmatter(body).data;
+    const after = parseFrontmatter(result.outcome === 'spliced' ? result.body : '').data;
+    assert.deepEqual({ ...after, blockedBy: [] }, { ...before, blockedBy: [] });
+    assert.deepEqual(after?.blockedBy, [{ repo: null, id: '42' }]);
   });
 });
 
