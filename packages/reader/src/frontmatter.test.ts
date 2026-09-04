@@ -944,6 +944,73 @@ describe('locateSection', () => {
     );
   });
 
+  test('an entry whose items are ALL comment-only ends at its last item, not at the sibling (#92)', () => {
+    // `- #9094` is the unquoted-sigil shape a hand author writes; YAML reads it
+    // as an empty item carrying a comment, and the parser's node end for such
+    // an item sits on the NEXT line's first content byte. A span derived from
+    // that end swallowed `evidence`, and a writer removing the span removed it.
+    const located = locateSection(
+      block('issuegraph:', '  blocked-by:', '    - #9094', '    - #9095', '  evidence: verified'),
+    );
+    assert.deepEqual(
+      located?.fields.map((f) => [f.key, f.startLine, f.endLine]),
+      [
+        ['blocked-by', 1, 3],
+        ['evidence', 4, 4],
+      ],
+    );
+  });
+
+  test('a comment-only SCALAR entry mis-spanned the same way, and ends on its own line', () => {
+    const located = locateSection(block('issuegraph:', '  serialize-with: #7', '  evidence: verified'));
+    assert.deepEqual(
+      located?.fields.map((f) => [f.key, f.startLine, f.endLine]),
+      [
+        ['serialize-with', 1, 1],
+        ['evidence', 2, 2],
+      ],
+    );
+  });
+
+  test('a list mixing a value and a comment-only item ends at the comment-only one', () => {
+    const located = locateSection(
+      block('issuegraph:', '  blocked-by:', '    - 1', '    - #9094', '  serialize-with: 7', '  evidence: verified'),
+    );
+    assert.deepEqual(
+      located?.fields.map((f) => [f.key, f.startLine, f.endLine]),
+      [
+        ['blocked-by', 1, 3],
+        ['serialize-with', 4, 4],
+        ['evidence', 5, 5],
+      ],
+    );
+  });
+
+  test('a blank line between an entry and its sibling still belongs to neither', () => {
+    // The shape the previous step-back was written for; the byte-level rule
+    // must keep covering it, not trade one shape for the other.
+    const located = locateSection(block('issuegraph:', '  blocked-by:', '    - #1', '', '  evidence: verified'));
+    assert.deepEqual(
+      located?.fields.map((f) => [f.key, f.startLine, f.endLine]),
+      [
+        ['blocked-by', 1, 2],
+        ['evidence', 4, 4],
+      ],
+    );
+  });
+
+  test('the section end follows the corrected span, so a comment-only LAST entry does not reach past the block', () => {
+    const located = locateSection(block('issuegraph:', '  evidence: verified', '  blocked-by:', '    - #9094'));
+    assert.deepEqual(
+      located?.fields.map((f) => [f.key, f.startLine, f.endLine]),
+      [
+        ['evidence', 1, 1],
+        ['blocked-by', 2, 3],
+      ],
+    );
+    assert.equal(located?.endLine, 3);
+  });
+
   test('the spans it reports cover the entry and nothing else', () => {
     // The property a byte-for-byte splice rests on: replacing exactly the
     // reported span leaves every other line untouched.

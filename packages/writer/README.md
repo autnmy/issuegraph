@@ -100,7 +100,7 @@ switch (result.outcome) {
 
 **Re-rendering from `data` is lossy for unrecognised fields** — a renderer emits only what the parser models. If you cannot accept that loss, leave the body alone.
 
-**`spliced` is verified on both questions**: the result still reads, *and* every field the call owns is what the call asked for. A body can parse perfectly while containing none of the edit, which is a class this package used to ship one fix at a time.
+**`spliced` is verified on three questions**: the result still reads, every field the call owns is what the call asked for, *and* every recognised field the call does not own reads the same as before. A body can parse perfectly while containing none of the edit, or while missing a sibling the edit was never meant to touch — both are classes this package used to ship one fix at a time. (An *unrecognised* field is not in the parsed value, so its preservation rests on the line-level rule above rather than on this comparison.)
 
 **Ownership is per field and opt-in.** A field you *omit* is left byte-untouched. That distinction is load-bearing — round-tripping parsed values back through a splice would silently launder away unparseable items and exotic spellings the parser tolerates with a diagnostic, so omission is the honest "not mine" signal.
 
@@ -145,7 +145,7 @@ Two alternatives were rejected. A **distinct sentinel** (a `CLEAR` symbol, so `n
 
 </details>
 
-It answers `no-block` rather than guessing whenever the block is one a parser would refuse — an inline value on the key, a child that is not a mapping entry. A body that comes back `spliced` and parses to nothing is the one failure a writer must never produce, which is why `spliced` is verified on both questions: that the result still reads, **and** that every field the call owns is what the call asked for.
+It answers `no-block` rather than guessing whenever the block is one a parser would refuse — an inline value on the key, a child that is not a mapping entry. A body that comes back `spliced` and parses to nothing is the one failure a writer must never produce, which is why `spliced` is verified on three questions: that the result still reads, that every field the call owns is what the call asked for, **and** that every recognised field it does not own is unchanged.
 
 ## Repairing an inert block
 
