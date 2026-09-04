@@ -190,7 +190,7 @@ it, split by what the answer needs to see:
 ## A failed write is marked, never reverted
 
 The user's work stays on the canvas. `retry` re-dispatches it, and on a conflict you get the
-two single-step resolutions below. **Nothing auto-merges, nothing auto-reverts, and nothing
+resolutions below. **Nothing auto-merges, nothing auto-reverts, and nothing
 times out** — `discardMine` is the only call that removes an optimistic edit, and a person has
 to make it.
 

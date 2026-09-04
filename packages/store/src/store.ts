@@ -125,6 +125,11 @@ export interface Store {
    * they are for `retry`. A refresh that fails restores the record as it was
    * and dispatches nothing; `hydrationError` says why. See the README's
    * "Resolving a conflict".
+   *
+   * Accepts any record `retry` accepts — `conflict`, `failed` or `invalid` —
+   * and reaches its verdict only after the read, so an edit refused for a
+   * reason no document can change (a self-edge) costs one read before it is
+   * refused again.
    */
   retryOnLatest(mutationId: MutationId): ProposalHandle;
 

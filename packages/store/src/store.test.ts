@@ -1166,10 +1166,22 @@ async function conflicted(store: ReturnType<typeof createStore>, scripted: Retur
   return handle.mutationId;
 }
 
+/**
+ * Whether a handle settles within a short, bounded wait. A no-op handle is
+ * settled already; a handle that a second `start` overwrote the settler of
+ * would never settle, and only the test timeout would say so.
+ */
+function settledPromptly(handle: { readonly settled: Promise<void> }): Promise<boolean> {
+  return Promise.race([
+    handle.settled.then(() => true),
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 50)),
+  ]);
+}
+
 test('retry-on-latest is reserved synchronously and runs as one queued operation', async () => {
-  // The reservation: the record is `pending` before any await, and the read
-  // and the dispatch are one task — the dispatch is logged after the read that
-  // confirmed the document, with nothing between them.
+  // The reservation: the record is `pending` before any await. The log pins
+  // the CALL order — read, then dispatch, nothing between; that the dispatch
+  // WAITS for the read is pinned by the held-read tests below.
   const { scripted, source, log } = resolvingSource();
   const store = createStore({ source, derive: simpleDeriver });
   await store.hydrate();
@@ -1253,8 +1265,8 @@ test('a second press during the refresh is a settled no-op', async () => {
 
   const again = store.retryOnLatest(id);
   const plain = store.retry(id);
-  await again.settled;
-  await plain.settled;
+  assert.equal(await settledPromptly(again), true, 'a second press is already settled');
+  assert.equal(await settledPromptly(plain), true, 'and so is a plain retry');
   assert.deepEqual(log, ['hydrate', 'dispatch', 'hydrate'], 'the second press queued nothing');
 
   releaseRead();
@@ -1295,12 +1307,14 @@ test('the guard judges a retry-on-latest against the refreshed document', async 
   // queue, both times against the empty document.
   assert.deepEqual(seen, [[], []]);
 
-  state.document = withEdge(threeOpenIssues(), 'duplicate-of', '3', '1');
+  // A document that differs from BOTH `landed` and the conflict's upstream,
+  // so the value the guard saw can only have come from the read.
+  state.document = withEdge(threeOpenIssues(), 'blocked-by', '2', '3');
   const handle = store.retryOnLatest(id);
   await scripted.whenPending(id);
   assert.deepEqual(
     seen,
-    [[], [], [edgeId('duplicate-of', '3', '1')]],
+    [[], [], [edgeId('blocked-by', '2', '3')]],
     'a resolve is judged once, and against what the read confirmed — never against the copy it was asked to look past',
   );
   scripted.settleNext('applied');
@@ -1333,12 +1347,12 @@ test('retry-on-latest on an unknown or pending edit is a settled no-op', async (
   const store = createStore({ source, derive: simpleDeriver });
   await store.hydrate();
 
-  await store.retryOnLatest('nope').settled;
+  assert.equal(await settledPromptly(store.retryOnLatest('nope')), true);
   assert.deepEqual(store.getSnapshot().writes, []);
 
   const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
   await scripted.whenPending(handle.mutationId);
-  await store.retryOnLatest(handle.mutationId).settled;
+  assert.equal(await settledPromptly(store.retryOnLatest(handle.mutationId)), true, 'a pending edit is not reserved twice');
   assert.deepEqual(log, ['hydrate', 'dispatch'], 'a pending edit is not re-read or re-dispatched');
   assert.equal(store.getSnapshot().writes[0]?.state, 'pending');
   scripted.settleNext('applied');
