@@ -101,6 +101,7 @@ const RENDERS = [
             : slot,
         ),
       },
+      cycles: [],
     },
     { words: WORKSPACE_WORDS, selection: { kind: 'issue', key: 'i0005' } },
   ),

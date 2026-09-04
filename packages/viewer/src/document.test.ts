@@ -37,7 +37,7 @@ describe('normalizeDocument', () => {
         // Grouped for every field, not only the one that needs it: a
         // `together-with` the order does not carry is dropped as undrawable
         // before cardinality is ever reached, and the other fields do not care.
-        order: groupedOrder('1', '2', '3'),
+        order: groupedOrder('1', '2', '3'), cycles: [],
       });
 
       assert.equal(document.edges.length, 1, `${field} kept both declarations`);
@@ -61,7 +61,7 @@ describe('normalizeDocument', () => {
         { field: 'together-with', from: '1', to: '2' },
         { field: 'together-with', from: '2', to: '1' },
       ],
-      order: groupedOrder('1', '2'),
+      order: groupedOrder('1', '2'), cycles: [],
     });
 
     assert.equal(both.document.edges.length, 1);
@@ -79,7 +79,7 @@ describe('normalizeDocument', () => {
         { field: 'together-with', from: '2', to: '1' },
         { field: 'together-with', from: '3', to: '1' },
       ],
-      order: groupedOrder('1', '2', '3'),
+      order: groupedOrder('1', '2', '3'), cycles: [],
     });
 
     assert.equal(group.document.edges.length, 2);
@@ -103,7 +103,7 @@ describe('normalizeDocument', () => {
         { field: 'serialize-with', from: '2', to: '1' },
         { field: 'serialize-with', from: '2', to: '3' },
       ],
-      order: emptyOrder,
+      order: emptyOrder, cycles: [],
     });
 
     assert.equal(document.edges.length, 1, 'issue 2 got a second serialize-with edge');
@@ -120,7 +120,7 @@ describe('normalizeDocument', () => {
         { field: 'blocked-by', from: '1', to: '2' },
         { field: 'blocked-by', from: '1', to: '2' },
       ],
-      order: emptyOrder,
+      order: emptyOrder, cycles: [],
     });
     assert.equal(twice.document.edges.length, 1, 'an exact repeat survived as two edges');
 
@@ -133,7 +133,7 @@ describe('normalizeDocument', () => {
         { field: 'blocked-by', from: '1', to: '2' },
         { field: 'blocked-by', from: '2', to: '1' },
       ],
-      order: emptyOrder,
+      order: emptyOrder, cycles: [],
     });
     assert.equal(both.document.edges.length, 2, 'the distinct reverse edge was collapsed away');
   });
@@ -155,6 +155,7 @@ describe('normalizeDocument', () => {
         issues: [issue('1'), issue('2')],
         edges: [{ field: 'together-with', from: '1', to: '2' }],
         order,
+        cycles: [],
       });
 
       assert.equal(document.edges.length, 0, `${label}: an undrawable edge was kept`);
@@ -170,7 +171,7 @@ describe('normalizeDocument', () => {
     const { document, diagnostics } = normalizeDocument({
       issues: [issue('1'), issue('2')],
       edges: [{ field: 'together-with', from: '1', to: '2' }],
-      order: groupedOrder('1', '2'),
+      order: groupedOrder('1', '2'), cycles: [],
     });
 
     assert.equal(document.edges.length, 1);
@@ -191,7 +192,7 @@ describe('normalizeDocument', () => {
         { field: 'serialize-with', from: '1', to: '2' },
         { field: 'serialize-with', from: '2', to: '1' },
       ],
-      order: emptyOrder,
+      order: emptyOrder, cycles: [],
     });
 
     assert.equal(document.edges.length, 1);
@@ -211,7 +212,7 @@ describe('normalizeDocument', () => {
         { field: 'together-with', from: '1', to: '2' },
         { field: 'together-with', from: '1', to: '2' },
       ],
-      order: groupedOrder('1', '2'),
+      order: groupedOrder('1', '2'), cycles: [],
     });
 
     assert.equal(document.edges.length, 1);
@@ -226,7 +227,7 @@ describe('normalizeDocument', () => {
         { field: 'blocked-by', from: '1', to: '2' },
         { field: 'blocked-by', from: '2', to: '1' },
       ],
-      order: emptyOrder,
+      order: emptyOrder, cycles: [],
     });
 
     assert.equal(document.edges.length, 2);
@@ -236,7 +237,7 @@ describe('normalizeDocument', () => {
     const { document, diagnostics } = normalizeDocument({
       issues: [issue('1'), issue('2')],
       edges: [{ field: 'blocked-by', from: '1', to: '2' }],
-      order: emptyOrder,
+      order: emptyOrder, cycles: [],
     });
 
     assert.deepEqual(diagnostics, []);
@@ -249,7 +250,7 @@ describe('normalizeDocument', () => {
     const { document, diagnostics } = normalizeDocument({
       issues: [issue('1')],
       edges: [{ field: 'blocked-by', from: '1', to: '99' }],
-      order: emptyOrder,
+      order: emptyOrder, cycles: [],
     });
 
     assert.equal(document.edges.length, 0);
@@ -261,7 +262,7 @@ describe('normalizeDocument', () => {
     const { document } = normalizeDocument({
       issues: [issue('1')],
       edges: [{ field: 'decomposed-from', from: '1', to: '900' }],
-      order: emptyOrder,
+      order: emptyOrder, cycles: [],
     });
 
     // The edge cannot be drawn, but the FACT that a provenance was declared has
@@ -276,7 +277,7 @@ describe('normalizeDocument', () => {
       // A hand-built document is untrusted input; the field is checked against
       // the format's own vocabulary rather than trusted from the type.
       edges: [{ field: 'relates-to', from: '1', to: '2' } as never],
-      order: emptyOrder,
+      order: emptyOrder, cycles: [],
     });
 
     assert.equal(document.edges.length, 0);
@@ -287,7 +288,7 @@ describe('normalizeDocument', () => {
     const { document, diagnostics } = normalizeDocument({
       issues: [issue('1')],
       edges: [{ field: 'blocked-by', from: '1', to: '1' }],
-      order: emptyOrder,
+      order: emptyOrder, cycles: [],
     });
 
     assert.equal(document.edges.length, 0);
@@ -298,7 +299,7 @@ describe('normalizeDocument', () => {
     const { document, diagnostics } = normalizeDocument({
       issues: [issue('1', { title: 'first' }), issue('1', { title: 'second' })],
       edges: [],
-      order: emptyOrder,
+      order: emptyOrder, cycles: [],
     });
 
     assert.equal(document.issues.length, 1);
@@ -317,6 +318,7 @@ describe('normalizeDocument', () => {
         ],
         excluded: [],
       },
+      cycles: [],
     });
 
     assert.equal(document.order.slots.length, 1);
@@ -332,6 +334,7 @@ describe('normalizeDocument', () => {
         slots: [{ rank: 1, lead: '99', members: ['1', '2'], ready: true, holds: [] }],
         excluded: [],
       },
+      cycles: [],
     });
 
     assert.equal(document.order.slots[0]?.lead, '1');
@@ -352,6 +355,7 @@ describe('normalizeDocument', () => {
         ],
         excluded: [],
       },
+      cycles: [],
     });
 
     assert.deepEqual(
@@ -372,6 +376,7 @@ describe('normalizeDocument', () => {
         ],
         excluded: [],
       },
+      cycles: [],
     });
 
     assert.equal(document.order.slots.length, 1);
@@ -400,6 +405,7 @@ describe('normalizeDocument', () => {
         slots: [{ rank: 1, lead: '1', members: ['1'], ready: true, holds: [] }],
         excluded: [],
       },
+      cycles: [],
     });
 
     assert.deepEqual([...document.isolated], ['3']);
@@ -430,7 +436,7 @@ describe('normalizeDocument', () => {
       const { document, diagnostics } = normalizeDocument({
         issues: [issue('1', { url })],
         edges: [],
-        order: emptyOrder,
+        order: emptyOrder, cycles: [],
       });
 
       assert.equal(document.byKey.get('1')?.url, undefined, url);
@@ -453,7 +459,7 @@ describe('normalizeDocument', () => {
       const { document, diagnostics } = normalizeDocument({
         issues: [issue('1', { url })],
         edges: [],
-        order: emptyOrder,
+        order: emptyOrder, cycles: [],
       });
 
       assert.equal(document.byKey.get('1')?.url, url);
@@ -465,7 +471,7 @@ describe('normalizeDocument', () => {
     const { document, diagnostics } = normalizeDocument({
       issues: [],
       edges: [],
-      order: emptyOrder,
+      order: emptyOrder, cycles: [],
     });
 
     assert.deepEqual(diagnostics, []);
@@ -500,5 +506,88 @@ describe('normalizeDocument', () => {
     assert.deepEqual(diagnostics, []);
     assert.equal(document.order.slots.length, 4);
     assert.equal(document.order.excluded.length, 1);
+  });
+});
+
+describe('normalizeDocument: the host’s cycles', () => {
+  it('relays a cycle whose members it carries, in the host’s order', () => {
+    const { document, diagnostics } = normalizeDocument({
+      issues: [issue('1'), issue('2'), issue('3')],
+      edges: [],
+      order: emptyOrder,
+      cycles: [['3', '1']],
+    });
+    assert.deepEqual(document.cycles, [['3', '1']]);
+    assert.deepEqual(diagnostics, []);
+  });
+
+  it('drops a member this document does not carry, and says so', () => {
+    // The host's reader saw the whole graph; this document may be a slice of
+    // it. The cycle is still the reader's answer for the members that are here.
+    const { document, diagnostics } = normalizeDocument({
+      issues: [issue('1'), issue('2')],
+      edges: [],
+      order: emptyOrder,
+      cycles: [['1', '9']],
+    });
+    assert.deepEqual(document.cycles, [['1']]);
+    assert.ok(diagnostics.some((line) => line.includes('cycle member 9')), diagnostics.join('\n'));
+  });
+
+  it('drops a cycle none of whose members it carries, and says so', () => {
+    const { document, diagnostics } = normalizeDocument({
+      issues: [issue('1')],
+      edges: [],
+      order: emptyOrder,
+      cycles: [['8', '9'], ['1']],
+    });
+    assert.deepEqual(document.cycles, [['1']]);
+    assert.ok(diagnostics.some((line) => line.includes('cycle at index 0')), diagnostics.join('\n'));
+  });
+
+  it('reports an empty cycle as the host’s, not as a slice that lost it', () => {
+    const { document, diagnostics } = normalizeDocument({
+      issues: [issue('1')],
+      edges: [],
+      order: emptyOrder,
+      cycles: [[]],
+    });
+    assert.deepEqual(document.cycles, []);
+    assert.deepEqual(diagnostics, ['cycle at index 0 is empty and was dropped']);
+  });
+
+  it('reports a repeated unknown member once', () => {
+    const { diagnostics } = normalizeDocument({
+      issues: [issue('1')],
+      edges: [],
+      order: emptyOrder,
+      cycles: [['1', '9', '9']],
+    });
+    assert.equal(diagnostics.filter((line) => line.includes('is not an issue')).length, 1);
+  });
+
+  it('names a member once per cycle, and says so', () => {
+    const { document, diagnostics } = normalizeDocument({
+      issues: [issue('1'), issue('2')],
+      edges: [],
+      order: emptyOrder,
+      cycles: [['1', '2', '1']],
+    });
+    assert.deepEqual(document.cycles, [['1', '2']]);
+    assert.deepEqual(diagnostics, ['cycle member 1 is named twice in one cycle; the repeat was dropped']);
+  });
+
+  it('does not check a cycle against the edges it draws', () => {
+    // A cycle the reader found can run through an edge the host chose not to
+    // draw, and the badge must not depend on that choice — it is the reason
+    // the answer is an input at all.
+    const { document, diagnostics } = normalizeDocument({
+      issues: [issue('1'), issue('2')],
+      edges: [{ field: 'blocked-by', from: '1', to: '2' }],
+      order: emptyOrder,
+      cycles: [['1', '2']],
+    });
+    assert.deepEqual(document.cycles, [['1', '2']]);
+    assert.deepEqual(diagnostics, []);
   });
 });

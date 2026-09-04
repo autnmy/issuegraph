@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { normalizeDocument } from '@issuegraph/viewer';
+
 import { RAIL_WINDOW, railWindow } from './rail.ts';
 import { backlogOf, keysOf } from '../testing/workspace.ts';
 
@@ -105,6 +107,7 @@ describe('exclusions are carried whole, and that bound is stated', () => {
       slots: backlogOf(20).order.slots.filter((slot) => slot.lead !== 'i0020'),
       excluded: [{ key: 'i0020', canonical: 'i0001', reason: 'duplicate-of' as const }],
     },
+    cycles: [],
   };
 
   it('keeps every exclusion however narrow the window is', () => {
@@ -128,6 +131,7 @@ describe('exclusions are carried whole, and that bound is stated', () => {
           { rank: 7, lead: 'i0001', members: ['i0001'], ready: true, holds: [] },
         ],
       },
+      cycles: [],
     };
     // A window over the tail, where only the LATER copy would be in the slice.
     const tail = railWindow(doubled, { start: 5, count: 2 });
@@ -153,6 +157,7 @@ describe('exclusions are carried whole, and that bound is stated', () => {
         slots: backlogOf(20).order.slots.filter((slot) => slot.lead !== 'i0020'),
         excluded: [{ key: 'i0020', canonical: 'i0001', reason: 'duplicate-of' as const }],
       },
+      cycles: [],
     };
     // A window nowhere near `i0002`, the slot at the other end of that edge.
     const rail = railWindow(related, { start: 10, count: 3 });
@@ -207,6 +212,24 @@ describe('windowing keeps every issue and drops only what layer 1 could not draw
       rail.document.edges.some((edge) => edge.field === 'blocked-by' && edge.to === 'i0015'),
     );
     assert.ok(rail.document.issues.some((issue) => issue.key === 'i0015'));
+  });
+
+  it('narrows the host’s cycles to the window, so a stuck group off-screen is not a diagnostic', () => {
+    // The viewer reports a cycle member it does not carry as a document defect,
+    // and this document carries only the window — so relaying the host's
+    // cycles whole made the diagnostics list change with the scroll position.
+    const stuck = backlogOf(20, {
+      edges: [
+        ['blocked-by', 'i0011', 'i0012'],
+        ['blocked-by', 'i0012', 'i0011'],
+      ],
+      cycles: [['i0011', 'i0012']],
+    });
+    const away = railWindow(stuck, { start: 0, count: 2 });
+    assert.deepEqual(away.document.cycles, []);
+    assert.deepEqual(normalizeDocument(away.document).diagnostics, []);
+    const onto = railWindow(stuck, { start: 10, count: 2 });
+    assert.deepEqual(onto.document.cycles, [['i0011', 'i0012']]);
   });
 
   it('leaves no issue both unplaced and edgeless, at any window', () => {

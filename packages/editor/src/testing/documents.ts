@@ -40,6 +40,11 @@ export function isolatedKey(index: number): string {
 export function documentOf(shape: DocumentShape): ViewerDocument {
   const issues: ViewerIssue[] = [];
   const edges: ViewerEdge[] = [];
+  // THE HOST'S CYCLE ANSWER, DECLARED BESIDE THE EDGE THAT CLOSES IT. The viewer
+  // derives no cycle of its own, so a fixture that closes a loop and says
+  // nothing here is a document whose host reported no stuck group — which is a
+  // legal document, and not the one a `cycleIn` test means.
+  const cycles: string[][] = [];
   const titles = shape.titles ?? {};
 
   const add = (key: string): void => {
@@ -72,6 +77,9 @@ export function documentOf(shape: DocumentShape): ViewerDocument {
         from: componentKey(component, size),
         to: componentKey(component, 1),
       });
+      cycles.push(
+        Array.from({ length: size }, (_, index) => componentKey(component, index + 1)),
+      );
     }
   });
 
@@ -85,7 +93,7 @@ export function documentOf(shape: DocumentShape): ViewerDocument {
     holds: [],
   }));
 
-  return { issues, edges, order: { slots, excluded: [] } };
+  return { issues, edges, order: { slots, excluded: [] }, cycles };
 }
 
 /** Component sizes summing to `total`, each no larger than `cap`. */

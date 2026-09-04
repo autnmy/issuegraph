@@ -404,7 +404,7 @@ describe('mountViewer', () => {
     for (let i = 0; i < 61; i += 1) {
       slots.push({ lead: `n${String(i)}`, members: [`n${String(i)}`], rank: i + 1, ready: true, holds: [] });
     }
-    const crowded = { issues, edges, order: { slots, excluded: [] } };
+    const crowded = { issues, edges, order: { slots, excluded: [] }, cycles: [] };
 
     const doc = new TestDocument();
     const container = doc.createContainer();
@@ -455,7 +455,7 @@ describe('mountViewer', () => {
     for (let i = 0; i < 60; i += 1) {
       slots.push({ lead: `n${String(i)}`, members: [`n${String(i)}`], rank: i + 1, ready: true, holds: [] });
     }
-    const crowded = { issues, edges, order: { slots, excluded: [] } };
+    const crowded = { issues, edges, order: { slots, excluded: [] }, cycles: [] };
     const gutterEdge = edgeIdentity('blocked-by', 'n60', 'n61');
 
     const doc = new TestDocument();
@@ -818,6 +818,7 @@ describe('mountViewer', () => {
         (edge) => edge.from !== '103' && edge.to !== '103',
       ),
       order: { slots: [], excluded: [] },
+      cycles: [],
     });
 
     assert.deepEqual(hovered, ['103', null], 'the host was never told the hover ended');
@@ -916,6 +917,7 @@ describe('mountViewer', () => {
         ...fixtureDocument.order,
         slots: fixtureDocument.order.slots.filter((slot) => slot.lead !== '101'),
       },
+      cycles: [],
     });
 
     assert.equal(handle.state.selected, null, 'the handle still reports a removed issue');

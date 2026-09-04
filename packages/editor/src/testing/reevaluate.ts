@@ -65,6 +65,7 @@ export function railOf(keys: readonly string[]): ViewerDocument {
       })),
       excluded: [],
     },
+    cycles: [],
   };
 }
 
@@ -91,6 +92,7 @@ export function unitRailOf(): ViewerDocument {
       ],
       excluded: [],
     },
+    cycles: [],
   };
 }
 

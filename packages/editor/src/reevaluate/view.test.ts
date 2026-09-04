@@ -86,6 +86,7 @@ describe('a chip is placed on the row that represents its issue', () => {
         ],
         excluded: [],
       },
+      cycles: [],
     };
     const scene = sceneOf(document);
     assert.equal(scene.stationOf.get('partner'), 'lead', 'the fixture must exercise a partner');
@@ -122,6 +123,7 @@ describe('a chip is placed on the row that represents its issue', () => {
         ],
         excluded: [],
       },
+      cycles: [],
     };
     const change = diffOrder(
       orderOf(['lead', 'partner', 'other']),

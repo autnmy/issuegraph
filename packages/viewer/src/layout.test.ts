@@ -80,6 +80,7 @@ describe('layoutGraph', () => {
         slots: [{ rank: 1, lead: 'a', members: ['a'], ready: true, holds: [] }],
         excluded: [],
       },
+      cycles: [],
     });
     const layout = layoutGraph(document, defaultTheme);
     const box = layout.nodes.get('a');
@@ -106,6 +107,7 @@ describe('layoutGraph', () => {
         slots: [{ rank: 1, lead: 'm', members: ['m', 'n'], ready: true, holds: [] }],
         excluded: [],
       },
+      cycles: [],
     });
     const layout = layoutGraph(document, defaultTheme);
     const bounds = enclosureBounds(layout, ['m', 'n'], defaultTheme);
@@ -239,6 +241,7 @@ describe('edgeGeometry', () => {
       ],
       edges: [{ field: 'blocked-by', from: 'p', to: 'q' }],
       order: { slots: [], excluded: [] },
+      cycles: [],
     });
     const layout = layoutGraph(document, defaultTheme);
     const geometry = edgeGeometry(layout, { field: 'blocked-by', from: 'p', to: 'q' });

@@ -14,7 +14,8 @@ function pairs(count: number): NormalizedDocument {
     );
     edges.push({ field: 'blocked-by' as const, from: `x${i}`, to: `y${i}` });
   }
-  return normalizeDocument({ issues, edges, order: { slots: [], excluded: [] } }).document;
+  return normalizeDocument({ issues, edges, order: { slots: [], excluded: [] }, cycles: [] })
+    .document;
 }
 
 describe('clustersOf', () => {
@@ -47,29 +48,78 @@ describe('clustersOf', () => {
     assert.ok(reads <= 4, `read document.edges ${reads} times for ${clusters.length} components`);
   });
 
-  it('does not count the edge that closes a cycle as chain depth', () => {
+  /** A `blocked-by` ring over `keys`, with the host's cycle answer as given. */
+  function ring(keys: readonly string[], cycles: readonly (readonly string[])[]): NormalizedDocument {
+    const issues = keys.map((key) => ({ key, title: key, open: true, priority: 2 as const }));
+    const edges = keys.map((key, index) => ({
+      field: 'blocked-by' as const,
+      from: key,
+      to: keys[(index + 1) % keys.length] as string,
+    }));
+    return normalizeDocument({ issues, edges, order: { slots: [], excluded: [] }, cycles }).document;
+  }
+
+  it('does not count the edge that closes a loop as chain depth', () => {
     // The discovery pass refuses to follow a back-edge; the collecting pass
     // walked the same adjacency and had no way to tell one, so it counted that
-    // edge against a memo never written and every cycle came out one edge long.
+    // edge against a memo never written and every loop came out one edge long.
     // `chainDepth` is documented as the longest ACYCLIC chain, and it is printed
     // beside the cycle badge — an invented finite depth there is a number a
     // reader takes at face value.
-    const cycle = (keys: readonly string[]): number => {
-      const issues = keys.map((key) => ({ key, title: key, open: true, priority: 2 as const }));
-      const edges = keys.map((key, index) => ({
-        field: 'blocked-by' as const,
-        from: key,
-        to: keys[(index + 1) % keys.length] as string,
-      }));
-      const document = normalizeDocument({ issues, edges, order: { slots: [], excluded: [] } })
-        .document;
-      const cluster = clustersOf(document)[0];
-      assert.equal(cluster?.hasCycle, true, 'the fixture should be cyclic');
+    const depth = (keys: readonly string[]): number => {
+      const cluster = clustersOf(ring(keys, [keys]))[0];
+      assert.equal(cluster?.hasCycle, true, 'the host said the fixture is cyclic');
       return cluster?.chainDepth ?? -1;
     };
 
-    assert.equal(cycle(['a', 'b']), 1, 'a two-node cycle has a one-edge acyclic chain');
-    assert.equal(cycle(['x', 'y', 'z']), 2, 'a three-node cycle has a two-edge acyclic chain');
+    assert.equal(depth(['a', 'b']), 1, 'a two-node loop has a one-edge acyclic chain');
+    assert.equal(depth(['x', 'y', 'z']), 2, 'a three-node loop has a two-edge acyclic chain');
+  });
+
+  it('takes the cycle answer from the host, not from its own edges', () => {
+    // THE WHOLE CHANGE IN ONE ASSERTION PAIR. The same ring of edges is cyclic
+    // to a raw walk, and this module used to say so on its own authority — an
+    // answer that disagreed with the reader's the moment a together unit or a
+    // closed issue was involved, while both were rendered on one screen. The
+    // badge is now the host's answer relayed: the ring with `cycles: []` is not
+    // reported as a cycle, and the ring the host names is.
+    const keys = ['a', 'b', 'c'];
+    const unreported = clustersOf(ring(keys, []))[0];
+    assert.equal(unreported?.hasCycle, false, 'derived a cycle the host did not supply');
+    // The depth walk still steps over the loop rather than hanging or counting
+    // the closing edge — termination is its own business, the answer is not.
+    assert.equal(unreported?.chainDepth, 2);
+
+    const reported = clustersOf(ring(keys, [['b', 'c']]))[0];
+    assert.equal(reported?.hasCycle, true, 'a host-supplied cycle did not reach its component');
+  });
+
+  it('flags every component a host-supplied cycle touches, and no other', () => {
+    // A cycle the reader found through edges this document does not carry can
+    // name members in two drawn components; each is inside a stuck group and
+    // each says so. A third component the cycle never names stays clear.
+    const issues = ['a', 'b', 'c', 'd', 'e', 'f'].map((key) => ({
+      key,
+      title: key,
+      open: true,
+      priority: 2 as const,
+    }));
+    const edges = [
+      { field: 'blocked-by' as const, from: 'a', to: 'b' },
+      { field: 'blocked-by' as const, from: 'c', to: 'd' },
+      { field: 'blocked-by' as const, from: 'e', to: 'f' },
+    ];
+    const document = normalizeDocument({
+      issues,
+      edges,
+      order: { slots: [], excluded: [] },
+      cycles: [['b', 'c']],
+    }).document;
+
+    const flagged = clustersOf(document)
+      .filter((cluster) => cluster.hasCycle)
+      .map((cluster) => cluster.members[0]);
+    assert.deepEqual(flagged, ['a', 'c']);
   });
 
   it('still measures an acyclic chain in full', () => {
@@ -82,6 +132,7 @@ describe('clustersOf', () => {
         { field: 'blocked-by' as const, from: 'q', to: 'r' },
       ],
       order: { slots: [], excluded: [] },
+      cycles: [],
     }).document;
 
     const cluster = clustersOf(document)[0];
@@ -107,8 +158,12 @@ describe('clustersOf', () => {
       from: key,
       to: `${key}~`,
     }));
-    const document = normalizeDocument({ issues, edges, order: { slots: [], excluded: [] } })
-      .document;
+    const document = normalizeDocument({
+      issues,
+      edges,
+      order: { slots: [], excluded: [] },
+      cycles: [],
+    }).document;
 
     const leads = clustersOf(document).map((cluster) => cluster.members[0] as string);
     const expected = [...leads].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));

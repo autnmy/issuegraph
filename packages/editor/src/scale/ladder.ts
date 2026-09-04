@@ -26,6 +26,12 @@
  * input space drifts from the canvas it is describing — the exact failure the
  * package split exists to prevent — and the two would eventually disagree about
  * whether a component contains a cycle while both were rendered on one screen.
+ *
+ * The cycle flag goes one layer further down the same rule: the viewer does
+ * not derive it either. `clustersOf` reads `ViewerDocument.cycles`, which the
+ * host fills from its reader's `Model.cycles` — the same array the audit
+ * overlay on this screen reads — so a capsule's `cycle` badge and an audit's
+ * `cycle` finding are one answer rendered twice, not two answers.
  */
 
 import {
@@ -215,6 +221,13 @@ function narrow(input: ViewerDocument, keep: ReadonlySet<string>): ViewerDocumen
       slots: input.order.slots.filter((slot) => slot.members.every((member) => keep.has(member))),
       excluded: input.order.excluded.filter((exclusion) => keep.has(exclusion.key)),
     },
+    // NARROWED, NOT RE-DERIVED — as `normalizeDocument` narrows a cycle to the
+    // keys it carries. A cycle is the host's answer; a focus keeps the members
+    // it draws and drops the rest, and a partial cycle is still a stuck group
+    // (`ViewerCycle` says so), so `hasCycle` on the drawn component is unchanged.
+    cycles: input.cycles
+      .map((cycle) => cycle.filter((member) => keep.has(member)))
+      .filter((cycle) => cycle.length > 0),
   };
 }
 

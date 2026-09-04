@@ -14,10 +14,12 @@
  * source. The viewer derives no order, resolves no reference, and reads no
  * tracker — everything it draws was given to it.
  *
- * `normalizeDocument` is the one entry point. It never throws: a document
- * assembled by hand is untrusted input, not a contract, and a renderer that
- * dies on a dangling edge is worse than one that draws what it can and says
- * what it dropped.
+ * `normalizeDocument` is the one entry point. It never throws on a document of
+ * the declared shape: a document assembled by hand is untrusted input, not a
+ * contract, and a renderer that dies on a dangling edge is worse than one that
+ * draws what it can and says what it dropped. A MISSING FIELD IS OUTSIDE THAT
+ * PROMISE — `order` absent has always thrown, and `cycles` absent throws the
+ * same way — because a document without one is a type error, not a document.
  */
 
 import {
@@ -162,11 +164,35 @@ export interface ViewerOrder {
   readonly excluded: readonly ViewerExclusion[];
 }
 
+/**
+ * One `blocked-by` cycle, as the host's reader found it: every member key, in
+ * whatever order the host supplied. A cycle of one is a self-loop.
+ *
+ * ONCE NORMALISED IT IS THE MEMBERS THIS DOCUMENT CARRIES, which need not be
+ * a closed ring: a document that is a slice of the graph — a window, a focus
+ * — keeps the members it draws and drops the rest, exactly as it does for the
+ * edges. A cycle is still a stuck group, and a member of one is still stuck.
+ */
+export type ViewerCycle = readonly string[];
+
 /** Everything the viewer draws. */
 export interface ViewerDocument {
   readonly issues: readonly ViewerIssue[];
   readonly edges: readonly ViewerEdge[];
   readonly order: ViewerOrder;
+  /**
+   * The `blocked-by` cycles the document contains, AS THE HOST DERIVED THEM.
+   * A host fed by `@issuegraph/reader` passes `Model.cycles` verbatim — the
+   * spec's §6.6 stuck groups; a hand-assembled document passes `[]`.
+   *
+   * REQUIRED, LIKE `order`, AND FOR THE SAME REASON: the viewer derives no
+   * cycle, as it derives no order — the edges here are the ones it can draw,
+   * not the graph, so a walk over them is a mirror whose input space drifts
+   * (see `clusters.ts`). And a badge that is simply absent reads as "no
+   * cycle", so an answer a host forgot to pass must not render as one: `[]`
+   * says none, and omission is a type error.
+   */
+  readonly cycles: readonly ViewerCycle[];
 }
 
 /**
@@ -178,6 +204,12 @@ export interface NormalizedDocument {
   readonly issues: readonly ViewerIssue[];
   readonly edges: readonly ViewerEdge[];
   readonly order: ViewerOrder;
+  /**
+   * The host's cycles, narrowed to the keys this document carries. Every
+   * member here is present in `byKey`; a cycle none of whose members are is
+   * not here at all.
+   */
+  readonly cycles: readonly ViewerCycle[];
   /** Key -> issue. Every edge and slot member below is present here. */
   readonly byKey: ReadonlyMap<string, ViewerIssue>;
   /** Key -> the edges touching it, in document order. */
@@ -463,10 +495,64 @@ function normalizeSlots(
 }
 
 /**
+ * A cycle survives with the members this document carries; an unknown member
+ * is dropped from it with a diagnostic, and a cycle left with no member is
+ * dropped whole. The host's ORDER of members is kept — it is the reader's own
+ * sorted order, and re-sorting it here would be a second opinion about a
+ * value this layer only relays.
+ *
+ * NOT VALIDATED AGAINST THE EDGES. The host's reader saw the whole graph; this
+ * document may carry a slice of it, so a cycle whose closing edge is absent
+ * here is still a cycle the reader found, and refusing it would make the badge
+ * depend on which edges the host chose to draw — the drift the field exists to
+ * remove.
+ */
+function normalizeCycles(
+  cycles: readonly ViewerCycle[],
+  byKey: ReadonlyMap<string, ViewerIssue>,
+  diagnostics: string[],
+): ViewerCycle[] {
+  const kept: ViewerCycle[] = [];
+  cycles.forEach((cycle, index) => {
+    // AN EMPTY CYCLE IS THE HOST'S MISTAKE, NOT THIS DOCUMENT'S. The reader never
+    // emits one — a stuck group has at least one member — so it is reported as
+    // what it is rather than as a slice that happened to carry none of it.
+    if (cycle.length === 0) {
+      diagnostics.push(`cycle at index ${String(index)} is empty and was dropped`);
+      return;
+    }
+    // A MEMBER IS NAMED ONCE PER CYCLE, and the dedupe runs BEFORE the carry
+    // test so a repeated unknown key is reported once. A hand-built cycle can
+    // repeat a key, and the count `clustersOf` derives from it would then read
+    // one issue as two. First occurrence wins, as everywhere else in this reader.
+    const seen = new Set<string>();
+    const members = cycle.filter((member) => {
+      if (seen.has(member)) {
+        diagnostics.push(`cycle member ${member} is named twice in one cycle; the repeat was dropped`);
+        return false;
+      }
+      seen.add(member);
+      if (byKey.has(member)) return true;
+      diagnostics.push(
+        `cycle member ${member} is not an issue in this document and was dropped from the cycle`,
+      );
+      return false;
+    });
+    if (members.length === 0) {
+      diagnostics.push(`cycle at index ${String(index)} names no issue in this document and was dropped`);
+      return;
+    }
+    kept.push(Object.freeze(members));
+  });
+  return kept;
+}
+
+/**
  * Read a document into the shape every projection consumes.
  *
- * Deterministic and total: the same input always produces the same output, and
- * no input produces a throw. Call it once per render and pass the result down.
+ * Deterministic and total over the declared shape: the same input always
+ * produces the same output, and no document produces a throw. Call it once per
+ * render and pass the result down.
  */
 export function normalizeDocument(input: ViewerDocument): NormalizeResult {
   const diagnostics: string[] = [];
@@ -505,11 +591,14 @@ export function normalizeDocument(input: ViewerDocument): NormalizeResult {
     .filter((issue) => !placed.has(issue.key) && (edgesOf.get(issue.key) ?? []).length === 0)
     .map((issue) => issue.key);
 
+  const cycles = normalizeCycles(input.cycles, byKey, diagnostics);
+
   return Object.freeze({
     document: Object.freeze({
       issues: Object.freeze(issues),
       edges: Object.freeze(edges),
       order: Object.freeze({ slots: Object.freeze(slots), excluded: Object.freeze(excluded) }),
+      cycles: Object.freeze(cycles),
       byKey,
       edgesOf,
       isolated: Object.freeze(isolated),

@@ -16,7 +16,8 @@ import { describe, it } from 'node:test';
 import type { Priority } from '@issuegraph/core';
 import type { GraphDocument, StoredEdge, StoredIssue } from '@issuegraph/store';
 import { makeEdge } from '@issuegraph/store';
-import { normalizeDocument } from '@issuegraph/viewer';
+import { auditDocument } from '@issuegraph/editor';
+import { clustersOf, normalizeDocument } from '@issuegraph/viewer';
 
 import { projectDocument } from './document.ts';
 import { type ExecutorHold, explainDocument } from './order.ts';
@@ -109,6 +110,55 @@ describe('the coverage seed projects onto the viewer without loss', () => {
   });
 });
 
+describe('one cycle answer, across every surface that draws it', () => {
+  it('reports a blocked-by cycle through a together unit the same way in the viewer and the audit', () => {
+    // THE SHAPE THE WORKSPACE WAS WRONG ABOUT ONCE. `#1 blocked-by #2`,
+    // `#3 blocked-by #1` and `#2 together-with #3` is permanently stuck — the
+    // unit {2,3} waits on #1, which waits on the unit — but it closes no cycle
+    // over raw edges, so a walk that does not contract the unit sees none. The
+    // reader's `Model.cycles` contracts it. Every cycle badge on the screen is
+    // now that one array, relayed: the viewer's capsule reads it through
+    // `ViewerDocument.cycles`, the audit through `AuditGraph.cycles`, and the
+    // demo passes the same reference to both.
+    const issues = [issue('1', 1), issue('2', 1), issue('3', 1)];
+    const edges: StoredEdge[] = [
+      makeEdge('blocked-by', '1', '2'),
+      makeEdge('blocked-by', '3', '1'),
+      makeEdge('together-with', '2', '3'),
+    ];
+    const { viewer, audit } = project({ issues, edges }, []);
+
+    const stuck = audit.graph.cycles.find((cycle) => cycle.includes('1'));
+    assert.deepEqual(stuck, ['1', '2', '3'], 'the reader did not report the stuck group');
+    assert.equal(viewer.cycles, audit.graph.cycles, 'the viewer was handed a different array');
+
+    const { document, diagnostics } = normalizeDocument(viewer);
+    assert.deepEqual(diagnostics, [], diagnostics.join('\n'));
+    const capsule = clustersOf(document).find((cluster) => cluster.members.includes('1'));
+    assert.equal(capsule?.hasCycle, true, 'the viewer capsule did not carry the cycle');
+    assert.deepEqual(capsule?.members, ['1', '2', '3']);
+
+    const finding = auditDocument(audit).find((each) => each.kind === 'cycle');
+    assert.ok(finding !== undefined, 'the audit did not raise the cycle finding');
+    assert.deepEqual([...finding.members].sort(), ['1', '2', '3']);
+  });
+
+  it('draws no cycle badge for a raw loop the reader does not report', () => {
+    // A loop through a CLOSED issue is not a stuck group — a closed blocker does
+    // not block today — and the viewer used to badge it anyway off its own
+    // edges. It no longer has an opinion.
+    const issues = [issue('1', 1), issue('2', 1, 'closed')];
+    const edges: StoredEdge[] = [makeEdge('blocked-by', '1', '2'), makeEdge('blocked-by', '2', '1')];
+    const { viewer, audit } = project({ issues, edges }, []);
+
+    assert.deepEqual(audit.graph.cycles, []);
+    const capsule = clustersOf(normalizeDocument(viewer).document).find((cluster) =>
+      cluster.members.includes('1'),
+    );
+    assert.equal(capsule?.hasCycle, false);
+  });
+});
+
 describe('the audit input is the derivation’s own reader answer', () => {
   it('hands across the model’s cycles and duplicate resolution in the store’s spelling', () => {
     const document = coverageSeed();
@@ -133,7 +183,7 @@ describe('edge cases the seed does not carry', () => {
 
   it('projects an empty document to an empty viewer document', () => {
     const { viewer } = project({ issues: [], edges: [] }, []);
-    assert.deepEqual(viewer, { issues: [], edges: [], order: { slots: [], excluded: [] } });
+    assert.deepEqual(viewer, { issues: [], edges: [], order: { slots: [], excluded: [] }, cycles: [] });
   });
 
   it('projects the whole seed, which is what the page draws', () => {

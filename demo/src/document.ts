@@ -168,6 +168,10 @@ export function projectDocument(explained: ExplainedDocument, landed: GraphDocum
       issues: explained.rows.map((row) => issueOf(explained, row)),
       edges: landed.edges.map((edge) => ({ field: edge.kind, from: edge.from, to: edge.to })),
       order: { slots, excluded },
+      // THE SAME ARRAY THE AUDIT READS BELOW. The viewer's cycle badge and the
+      // audit's cycle finding are two renderings of one reader answer, so they
+      // cannot disagree about a component while both are on one screen.
+      cycles: explained.model.cycles,
     },
     audit: {
       document: landed,

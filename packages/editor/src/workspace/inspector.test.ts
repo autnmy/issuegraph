@@ -197,6 +197,7 @@ describe('an unresolvable selection renders as nothing, never as last render\'s 
     const document = {
       ...DOCUMENT,
       order: { slots: [], excluded: [] },
+      cycles: [],
     };
     const view = inspectorView(document, { kind: 'issue', key: 'i0001' });
     if (view.subject.kind !== 'issue') throw new Error('expected an issue subject');
