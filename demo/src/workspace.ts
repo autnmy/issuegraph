@@ -36,13 +36,23 @@ import {
   pickerPlacement,
   pickerStylesheet,
   renderPicker,
+  type RailWindow,
   renderWorkspace,
+  scaleLadder,
   selectedEdgeId,
   selectedKey,
   summaryOf,
 } from '@issuegraph/editor';
 import type { EdgeKind, GraphDocument, Store, StoreSnapshot, WriteRecord } from '@issuegraph/store';
-import { type Theme, defaultTheme, extendTheme, renderViewer } from '@issuegraph/viewer';
+import {
+  type Scene,
+  type Theme,
+  type ViewerDocument,
+  defaultTheme,
+  extendTheme,
+  navigate,
+  renderViewer,
+} from '@issuegraph/viewer';
 
 import { projectDocument } from './document.ts';
 import {
@@ -200,6 +210,11 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
   let unsubscribe = (): void => {};
   let pending = false;
   let destroyed = false;
+  // What the last redraw drew, kept so a key press can ask the viewer's own
+  // navigation reducer about the scene the reader is looking at.
+  let drawn: { readonly viewer: ViewerDocument; readonly rail: RailWindow } | null = null;
+  // A rail row to focus once the window has been re-cut around it.
+  let pendingFocus: { readonly kind: 'after' | 'before' | 'first' | 'last'; readonly key: string | null } | null = null;
   let pressed: { readonly key: string; readonly x: number; readonly y: number; dragging: boolean } | null = null;
 
   const landed = (): GraphDocument => {
@@ -406,6 +421,39 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
     writes.append(list);
   };
 
+  /** Focus the element carrying `key`, inside one zone when named, without scrolling the page. */
+  const focusIn = (zoneName: string | null, key: string): void => {
+    const scope = zoneName === null ? workspace : (zone(zoneName) ?? workspace);
+    const selector = `[data-ig-key="${CSS.escape(key)}"]`;
+    // THE FOCUSABLE ONE. The graph draws an issue twice — its SVG node and the
+    // rail row positioned over it — and only the element carrying `tabindex`
+    // takes focus; the first match by document order is the node, on which
+    // `focus()` is a no-op and the reader's focus falls off the page.
+    const target =
+      scope.querySelector<HTMLElement>(`${selector}[tabindex]`) ?? scope.querySelector<HTMLElement>(selector);
+    target?.focus({ preventScroll: true });
+  };
+
+  /**
+   * The scene a zone is showing, for the viewer's navigation reducer.
+   *
+   * `renderWorkspace` composes its scenes and publishes none of them, so the
+   * scene is rendered again here from the SAME documents the workspace drew —
+   * the rail's window and the ladder's canvas — through the same pure
+   * `renderViewer`. That is a second render, not a second implementation: the
+   * traversal order, the lateral neighbours and the Enter semantics are the
+   * viewer's own, read off its scene rather than guessed from the markup.
+   */
+  const sceneFor = (zoneName: string): Scene | null => {
+    if (drawn === null) return null;
+    const theme = themeFor(state.theme);
+    if (zoneName === 'rail') return renderViewer(drawn.rail.document, { projection: 'linear', theme }).scene;
+    if (zoneName !== 'canvas') return null;
+    if (state.canvas === 'tree') return renderViewer(drawn.viewer, { projection: 'tree', theme }).scene;
+    const ladder = scaleLadder(drawn.viewer, state.scale);
+    return ladder.tier === 'direct' ? renderViewer(ladder.canvas, { projection: 'graph', theme }).scene : null;
+  };
+
   const render = (): void => {
     if (destroyed) return;
     const snapshot = live.store.getSnapshot();
@@ -434,6 +482,12 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
     const active = document.activeElement;
     const activeCommand = active instanceof HTMLInputElement ? active.getAttribute('data-ig-command') : null;
     const focused = focusedKey();
+    // The ZONE too: an issue is commonly drawn in the rail and on the canvas,
+    // and restoring "the first element with this key" would move focus from
+    // a canvas node into the rail on every redraw.
+    const focusedZone =
+      active instanceof Element ? (active.closest('.ig-zone')?.getAttribute('data-zone') ?? null) : null;
+    drawn = { viewer, rail: result.view.rail };
 
     workspace.innerHTML = result.markup;
     document.documentElement.setAttribute('data-theme', state.theme);
@@ -460,9 +514,9 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
     // landed outside the workspace and read as 'elsewhere', and the advertised
     // pointer-free loop could not get past its first key.
     const search = root.querySelector<HTMLInputElement>('input[data-ig-command="target-query"]');
-    const focusRow = (key: string | null): void => {
+    const focusRow = (key: string | null, within: string | null = focusedZone): void => {
       if (key === null) return;
-      workspace.querySelector<HTMLElement>(`[data-ig-key="${CSS.escape(key)}"]`)?.focus({ preventScroll: true });
+      focusIn(within, key);
     };
     if (activeCommand !== null) {
       const again = root.querySelector<HTMLInputElement>(`input[data-ig-command="${activeCommand}"]`);
@@ -476,6 +530,16 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
       }
     } else if (search !== null && state.draft.kind !== null && state.draft.target === null) {
       search.focus();
+    } else if (pendingFocus !== null) {
+      const rows = result.view.rail.rows;
+      const at = rows.findIndex((slot) => pendingFocus?.key !== null && slot.members.includes(pendingFocus?.key ?? ''));
+      const target =
+        pendingFocus.kind === 'first' ? rows[0]
+        : pendingFocus.kind === 'last' ? rows[rows.length - 1]
+        : pendingFocus.kind === 'after' ? rows[at + 1]
+        : at > 0 ? rows[at - 1] : undefined;
+      pendingFocus = null;
+      focusRow(target?.lead ?? focused, 'rail');
     } else {
       focusRow(focused);
     }
@@ -530,7 +594,12 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
     if (key !== null) dispatch({ kind: 'point', key });
   };
 
+  // NOT WHILE AN INPUT METHOD IS COMPOSING. Every keystroke of a composition
+  // fires `input`, and a redraw replaces the element that owns the
+  // composition, which truncates or cancels the text before `compositionend`.
+  // The value is read once the composition settles, from the same listener.
   const onInput = (event: Event): void => {
+    if (event instanceof InputEvent && event.isComposing) return;
     const target = event.target;
     if (!(target instanceof HTMLInputElement)) return;
     const name = target.getAttribute('data-ig-command');
@@ -598,41 +667,92 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
   };
 
   /**
-   * The viewer's movement keys, over the rendered rows.
+   * The viewer's movement keys, through the viewer's own reducer.
    *
-   * `mountViewer` wires these through the viewer's own `navigate`, which walks
-   * a Scene in rank order. The workspace renders through `renderWorkspace`,
-   * which composes the scenes inside and publishes none of them — so the
-   * traversal the rail or the canvas emitted is read back off the markup: the
-   * keyed, focusable elements in document order, which IS the rank order each
-   * projection publishes (the viewer's README: "Rank order, never geometric").
-   * Movement never wraps, and it never crosses zones: the ends of the order
-   * are the ends of the work. Enter and Space select the focused row, as a
-   * click would. Every other key is left to whoever else owns it.
+   * `mountViewer` wires these itself; the workspace has no mount, so the host
+   * asks `navigate` about the zone's scene (see `sceneFor`) and moves focus to
+   * the key it answers with. Movement never wraps and never crosses zones —
+   * the ends of the order are the ends of the work — and Enter or Space
+   * selects, exactly as the viewer's own shell does.
+   *
+   * THE RAIL WINDOW IS THE ONE THING THE VIEWER CANNOT SEE. Its scene is the
+   * drawn window, so at the window's edge `navigate` correctly stays put while
+   * the order goes on behind the spacer. That edge is the host's, because the
+   * window is: the window is re-cut around the row and the neighbour is
+   * focused once the redraw has drawn it (`pendingFocus`).
    */
   const navigateFocus = (event: KeyboardEvent): boolean => {
+    if (event.isComposing) return false;
     const active = document.activeElement;
     if (!(active instanceof HTMLElement)) return false;
     const owner = active.closest<HTMLElement>('.ig-zone');
-    if (owner === null || !workspace.contains(owner)) return false;
-    if (event.key === 'Enter' || event.key === ' ') {
-      const key = active.closest<HTMLElement>('[data-ig-key]')?.getAttribute('data-ig-key');
-      if (key === null || key === undefined) return false;
-      dispatch({ kind: 'point', key });
+    const zoneName = owner?.getAttribute('data-zone') ?? null;
+    const key = active.closest<HTMLElement>('[data-ig-key]')?.getAttribute('data-ig-key') ?? null;
+    if (owner === null || zoneName === null || key === null || !workspace.contains(owner)) return false;
+    if (zoneName === 'rail' && drawn !== null && advanceRail(drawn.rail, key, event.key)) return true;
+    const scene = sceneFor(zoneName);
+    if (scene === null) return false;
+    const result = navigate(scene, { focused: key, selected: selectedKey(state.selection) }, event.key);
+    if (result.command.kind === 'select') {
+      dispatch({ kind: 'point', key: result.command.key });
       return true;
     }
-    const rows = [...owner.querySelectorAll<HTMLElement>('[data-ig-key][tabindex]')];
-    const at = rows.findIndex((row) => row === active || row.contains(active));
-    if (at < 0) return false;
-    const to =
-      event.key === 'ArrowDown' ? Math.min(at + 1, rows.length - 1)
-      : event.key === 'ArrowUp' ? Math.max(at - 1, 0)
-      : event.key === 'Home' ? 0
-      : event.key === 'End' ? rows.length - 1
-      : -1;
-    if (to < 0) return false;
-    rows[to]?.focus();
-    return true;
+    if (result.command.kind === 'focus') {
+      focusIn(zoneName, result.command.key);
+      return true;
+    }
+    return false;
+  };
+
+  /**
+   * The rail's window edge, decided BEFORE the viewer is asked.
+   *
+   * The viewer draws the excluded rows after every window, so its scene's
+   * focus order runs from the last drawn slot into the exclusions rather than
+   * ending there — from the viewer's side the window is the whole document.
+   * The window is the host's, so the host decides first: on the last drawn
+   * slot, ArrowDown and End re-cut the window rather than stepping into the
+   * exclusions; on the first, ArrowUp and Home re-cut it upward. Anything
+   * inside the window, and every other key, is the viewer's to answer.
+   */
+  const advanceRail = (rail: RailWindow, key: string, pressed: string): boolean => {
+    const first = rail.rows[0];
+    const last = rail.rows[rail.rows.length - 1];
+    const onFirst = first !== undefined && first.members.includes(key);
+    const onLast = last !== undefined && last.members.includes(key);
+    const offset = rail.offsetOf(key);
+    const lastStart = Math.max(0, rail.total - RAIL_COUNT);
+    switch (pressed) {
+      case 'ArrowDown':
+        if (!onLast || rail.after === 0 || offset === undefined) return false;
+        pendingFocus = { kind: 'after', key };
+        dispatch({ kind: 'scroll', start: Math.min(lastStart, Math.max(0, offset - RAIL_SLACK)) });
+        return true;
+      case 'ArrowUp':
+        if (!onFirst || rail.before === 0 || offset === undefined) return false;
+        pendingFocus = { kind: 'before', key };
+        dispatch({ kind: 'scroll', start: Math.max(0, offset - (RAIL_COUNT - RAIL_SLACK)) });
+        return true;
+      case 'End':
+        if (rail.after === 0) return false;
+        pendingFocus = { kind: 'last', key: null };
+        dispatch({ kind: 'scroll', start: lastStart });
+        return true;
+      case 'Home':
+        if (rail.before === 0) return false;
+        pendingFocus = { kind: 'first', key: null };
+        dispatch({ kind: 'scroll', start: 0 });
+        return true;
+      default:
+        return false;
+    }
+  };
+
+  const onCompositionEnd = (event: Event): void => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    const name = target.getAttribute('data-ig-command');
+    if (name === 'search' || name === 'target-query') dispatch({ kind: 'control', name, value: target.value });
   };
 
   const onPointerDown = (event: PointerEvent): void => {
@@ -674,6 +794,7 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
 
   root.addEventListener('click', onClick);
   root.addEventListener('input', onInput);
+  root.addEventListener('compositionend', onCompositionEnd);
   root.addEventListener('change', onChange);
   root.addEventListener('scroll', onScroll, true);
   root.addEventListener('keydown', onKeydown);
@@ -709,6 +830,7 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
       unsubscribe();
       root.removeEventListener('click', onClick);
       root.removeEventListener('input', onInput);
+      root.removeEventListener('compositionend', onCompositionEnd);
       root.removeEventListener('change', onChange);
       root.removeEventListener('scroll', onScroll, true);
       root.removeEventListener('keydown', onKeydown);
