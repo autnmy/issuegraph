@@ -495,17 +495,20 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
       dispatch({ kind: 'control', name: 'audit-filter' });
       return;
     }
-    const keyed = target.closest<HTMLElement>('[data-ig-key]');
-    if (keyed !== null && workspace.contains(keyed)) {
-      const key = keyed.getAttribute('data-ig-key');
-      if (key !== null) dispatch({ kind: 'point', key });
+    // THE NEARER IDENTITY WINS. A relationship badge inside a row carries
+    // `data-ig-group` and sits under the row's `data-ig-key`, so resolving the
+    // key first would answer every badge click with the row and no edge could
+    // ever be selected from a row. One `closest` over both attributes answers
+    // with whichever the pointer actually landed on.
+    const named = target.closest<HTMLElement>('[data-ig-group],[data-ig-key]');
+    if (named === null || !workspace.contains(named)) return;
+    const id = named.getAttribute('data-ig-group');
+    if (id !== null) {
+      dispatch({ kind: 'group', id });
       return;
     }
-    const group = target.closest<HTMLElement>('[data-ig-group]');
-    if (group !== null && workspace.contains(group)) {
-      const id = group.getAttribute('data-ig-group');
-      if (id !== null) dispatch({ kind: 'group', id });
-    }
+    const key = named.getAttribute('data-ig-key');
+    if (key !== null) dispatch({ kind: 'point', key });
   };
 
   const onInput = (event: Event): void => {
@@ -528,22 +531,40 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
     dispatch({ kind: 'scroll', start: Math.max(0, row - RAIL_SLACK) });
   };
 
+  /** The row or node that owns keyboard focus, if focus is on one at all. */
+  const focusedKey = (): string | null => {
+    const active = document.activeElement;
+    const keyed = active instanceof Element ? active.closest<HTMLElement>('[data-ig-key]') : null;
+    return keyed !== null && workspace.contains(keyed) ? keyed.getAttribute('data-ig-key') : null;
+  };
+
+  /**
+   * Which of the create flow's interactions the keyboard is in.
+   *
+   * `canvas` ONLY on the navigation surface — a focused row or node — because
+   * that is the one place every binding belongs. A theme toggle, the audit
+   * filter, a picker choice or the delete button is a control with its own
+   * Enter and Space, and a Backspace there must not delete the selected edge;
+   * the editor's own README names `elsewhere` as "everything that is not our
+   * own search box", and a host's buttons are that. The target search keeps
+   * its two bindings, and everything else is someone else's key.
+   */
   const interaction = (): CreateInteraction => {
     const active = document.activeElement;
     if (active instanceof HTMLInputElement && active.getAttribute('data-ig-command') === 'target-query') {
       return 'target-search';
     }
-    if (active instanceof HTMLInputElement || active instanceof HTMLSelectElement || active instanceof HTMLTextAreaElement) {
-      return 'elsewhere';
-    }
-    return root.contains(active) ? 'canvas' : 'elsewhere';
+    return focusedKey() !== null ? 'canvas' : 'elsewhere';
   };
 
   const onKeydown = (event: KeyboardEvent): void => {
     const document_ = landed();
     const match = targetMatches(document_.issues, state.targetQuery, state.draft.source)[0]?.ref ?? null;
     const context: KeyboardContext = {
-      focused: selectedKey(state.selection),
+      // The FOCUSED row, not the selection: on a fresh page a row can own
+      // focus while nothing is selected, and after focus moves on, a stale
+      // selection must not become the source of a keyboard-started draft.
+      focused: focusedKey(),
       match,
       selectedEdge: selectedEdgeId(state.selection),
       interaction: interaction(),
