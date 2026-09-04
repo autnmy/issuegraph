@@ -50,7 +50,7 @@ An input with nothing to say renders `null`, never an empty `issuegraph:` stub.
 
 ## Refreshing only the edges you own
 
-A tracker's issue body is a document a human edits. If you own the scheduling edges but not the rest, `spliceGeneratedEdges` refreshes yours and leaves **every other byte alone** — unknown children, sibling top-level keys, comments, the fence armor.
+A tracker's issue body is a document a human edits. If you own the scheduling edges but not the rest, `spliceGeneratedEdges` refreshes yours and leaves **every other byte alone** — unknown children, sibling top-level keys, comments, the fence armor. That holds for a comment *inside* an entry you own as well: an owner ruling written between `blocked-by:` and its items is kept, since the writer owns the edges and not the commentary — after a refresh it sits directly behind the rendered entry, and after a clear it sits where the entry was, re-indented to the section's child indent so it cannot read as a neighbour's continuation. The one edit that removes a comment is the whole-block removal — when your clear leaves the block with nothing else in it, the block goes, comments and all.
 
 ```ts
 import { renderFrontmatter, spliceGeneratedEdges } from '@issuegraph/writer';

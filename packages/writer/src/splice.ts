@@ -18,6 +18,22 @@
  * ref another writer left — its line simply stays, and a conforming reader
  * already drops it with a diagnostic.
  *
+ * A COMMENT INSIDE AN OWNED ENTRY IS NOT THE ENTRY'S. The span the reader
+ * reports for `blocked-by:` runs from the key line to its last item, and a
+ * comment an author wrote between them — an owner ruling recorded beside the
+ * gate it explains — sits inside that span without being part of the edge.
+ * The writer owns the EDGES, not the commentary, so a comment-only line inside
+ * an owned span is kept at its position among the surviving lines rather than
+ * removed with the entry ([#93](https://github.com/autnmy/issuegraph/issues/93);
+ * the rule the private writer this package replaced already had). After a
+ * refresh that position is directly behind the rendered entry. After a clear
+ * it is behind whatever author's line preceded the entry, and there the
+ * comment is re-indented to the section's child indent so it cannot be read
+ * as that line's continuation (see the assembly loop). Blank lines inside a
+ * span carry no authored text and still go. The one place such a comment does
+ * go is the whole-block removal below: when the edit leaves the block with
+ * nothing else in it, the block goes, comments and all.
+ *
  * IT LOCATES THE BLOCK AND ITS ENTRIES WITH THE READER'S OWN PARSE, not with a
  * second scan of its own: `locateBlock` and `locateSection` come from
  * `@issuegraph/reader`, and the latter computes its line spans from the very
@@ -738,6 +754,26 @@ function fencesAreOnlyThePair(lines: readonly string[]): boolean {
   return fences === 2;
 }
 
+/**
+ * Is this line nothing but a YAML comment?
+ *
+ * Inside a block mapping or block sequence a line whose first non-blank byte is
+ * `#` is a comment: a plain scalar cannot continue onto a line that opens with
+ * `#` after indentation, and a WELL-FORMED owned value — a list of refs, or one
+ * ref — admits no block scalar in which `#` would be content. A malformed one
+ * can (`blocked-by: |`), and its `#`-led content lines then survive as
+ * comments: the value is replaced either way and the result parses, so that is
+ * debris rather than a defect. The test is a shape test with no grammar in it,
+ * which is the only kind this module keeps (see {@link areOneArmorPair}).
+ *
+ * ASKED ONLY OF LINES INSIDE AN OWNED SPAN. A comment child outside every span
+ * was never removed and is classified exactly as before; this exists so a
+ * comment that happens to sit inside a span is not deleted with it (#93).
+ */
+function isCommentOnly(line: string): boolean {
+  return /^\s*#/.test(line.replace(/\r$/, ''));
+}
+
 export function spliceGeneratedEdges(body: string, rawEdges: GeneratedEdges): SpliceResult {
   // READ AND VALIDATE THE CALLER'S EDGES ONCE, BEFORE ANYTHING ELSE. Every site
   // below reads `edges`, never `rawEdges` — see {@link EdgeSnapshot} for what a
@@ -789,13 +825,22 @@ export function spliceGeneratedEdges(body: string, rawEdges: GeneratedEdges): Sp
   const sectionEnd = toBody(section.endLine);
 
   const removed = new Set<number>();
+  // AUTHOR PROSE INSIDE AN OWNED SPAN, KEPT RATHER THAN REMOVED (#93). Excluded
+  // from `removed` so it survives, and remembered so the survivor count below
+  // does not read it as an entry: a comment is not content that keeps an
+  // emptied section alive, or the whole-block removal would stop firing on a
+  // block whose only remaining bytes are a comment.
+  const kept = new Set<number>();
   let firstOwned: number | null = null;
   for (const field of section.fields) {
     if (!owns(edges, field.key)) continue;
     const from = toBody(field.startLine);
     const to = toBody(field.endLine);
     if (firstOwned === null || from < firstOwned) firstOwned = from;
-    for (let i = from; i <= to; i++) removed.add(i);
+    for (let i = from; i <= to; i++) {
+      if (i > from && isCommentOnly(lines[i] ?? '')) kept.add(i);
+      else removed.add(i);
+    }
   }
 
   // Inserted lines: the section's own child indent, the renderer's spelling,
@@ -824,15 +869,36 @@ export function spliceGeneratedEdges(body: string, rawEdges: GeneratedEdges): Sp
   let sectionSurvivors = 0;
   let siblingContent = 0;
   const interior: string[] = [];
+  // WHETHER THE LAST LINE PUSHED IS ONE THIS WRITER PRODUCED — an inserted
+  // rendering or a kept comment. A kept comment is safe to keep byte-for-byte
+  // only behind such a line: behind an author's line it may be read as that
+  // line's continuation. Measured: `notes: |` / `    long text` above a cleared
+  // `blocked-by:` whose comment sat at the item indent — nothing was inserted,
+  // the comment came to follow the scalar's content at the same indent, and
+  // `notes` gained a line. An UNOWNED field changed, and `settle` could not
+  // see it because it compares owned fields only. So a kept comment that would
+  // follow an author's line is re-indented to the section's child indent, which
+  // is less than any block-scalar content under a sibling key and therefore
+  // always ends the scalar; only its leading whitespace changes.
+  let afterWriterLine = false;
   for (let i = blockStart + 1; i < blockEnd; i++) {
-    if (i === insertAt) interior.push(...ins);
+    if (i === insertAt && ins.length > 0) {
+      interior.push(...ins);
+      afterWriterLine = true;
+    }
     if (removed.has(i)) continue;
     const line = lines[i] ?? '';
+    if (kept.has(i)) {
+      interior.push(afterWriterLine ? line : `${pad}${line.trimStart()}`);
+      afterWriterLine = true;
+      continue;
+    }
     if (i !== sectionHeader && line.replace(/\r$/, '').trim().length > 0) {
       if (i > sectionHeader && i <= sectionEnd) sectionSurvivors += 1;
       else siblingContent += 1;
     }
     interior.push(line);
+    afterWriterLine = false;
   }
   if (insertAt >= blockEnd) interior.push(...ins);
 

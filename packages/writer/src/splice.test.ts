@@ -404,6 +404,108 @@ describe('YAML comments inside the block', () => {
   });
 });
 
+describe('a comment INSIDE an owned entry survives the splice (#93)', () => {
+  // The reader reports `blocked-by:` as one span from the key line to its last
+  // item, so a comment an author wrote between them sits inside the removed
+  // range without being part of the edge. The private writer this package
+  // replaced kept it; 0.3.0 deleted it, and a consumer's suite pinned the
+  // deletion as a known difference. The writer owns the edges, not the
+  // commentary.
+  const RULING = '    # OWNER RULING: keep 1, it is the real gate';
+  const REPRO = ['---', 'issuegraph:', '  blocked-by:', RULING, '    - 1', '  evidence: verified', '---'].join('\n');
+  const SET_42: GeneratedEdges = { blockedBy: { set: [{ repo: null, id: '42' }] } };
+
+  it('keeps a comment sitting between the key and its first item, after the rendered items', () => {
+    const next = spliceGeneratedEdges(REPRO, SET_42);
+    assert.notEqual(next, null);
+    const out = next as string;
+    // Byte-for-byte, and at its position among the survivors: the rendering
+    // lands where the entry began, so the comment now follows the items.
+    assert.equal(out, ['---', 'issuegraph:', '  blocked-by:', '    - "#42"', RULING, '  evidence: verified', '---'].join('\n'));
+    const parsed = parseFrontmatter(out);
+    assert.deepEqual(parsed.data?.blockedBy, [{ repo: null, id: '42' }]);
+    assert.equal(parsed.data?.evidence, 'verified', 'the unowned neighbour is untouched');
+    assert.deepEqual(parsed.diagnostics, []);
+  });
+
+  // NOT PINNED HERE: a comment AFTER the last item. Measured, the reader reports
+  // that span as running onto the next sibling's line (`evidence: verified` at
+  // line 4 is inside `blocked-by`'s 1..4), which is the span overrun #92
+  // describes for a comment-only list — the sibling is lost whether or not the
+  // comment is kept. That is the reader's defect and #92's fix; once the span
+  // ends at the last item, a trailing comment is outside it and the existing
+  // rule already preserves it.
+
+  it('still removes a blank line inside the span — no authored text, nothing to keep', () => {
+    const body = ['---', 'issuegraph:', '  blocked-by:', '', '    - 1', '  evidence: verified', '---'].join('\n');
+    const out = spliceGeneratedEdges(body, SET_42) as string;
+    assert.equal(out, ['---', 'issuegraph:', '  blocked-by:', '    - "#42"', '  evidence: verified', '---'].join('\n'));
+  });
+
+  it('keeps the comment and its CR under CRLF', () => {
+    const out = spliceGeneratedEdges(REPRO.replace(/\n/g, '\r\n'), SET_42) as string;
+    assert.notEqual(out, null);
+    assert.ok(out.includes(`${RULING}\r\n`));
+    assert.deepEqual(parseFrontmatter(out).data?.blockedBy, [{ repo: null, id: '42' }]);
+  });
+
+  it('does not let a kept comment hold an emptied section open: the whole block still goes', () => {
+    // Clearing the only entry leaves the block with nothing but the comment.
+    // A comment is not content, so the block is removed exactly as it would be
+    // without one — the one place an inner comment is deleted, and by design.
+    const body = ['---', 'issuegraph:', '  blocked-by:', RULING, '    - 1', '---', '', 'Body.'].join('\n');
+    const out = spliceGeneratedEdges(body, { blockedBy: { clear: true } });
+    assert.equal(out, 'Body.');
+  });
+
+  it('re-indents a kept comment that would otherwise continue an unowned block scalar', () => {
+    // Raised in review. On a clear nothing is inserted, so the comment came to
+    // follow whatever preceded the entry — here a block scalar whose content
+    // sits at the same indent, which read the comment as one more content
+    // line. An UNOWNED field changed and the call reported `spliced`.
+    const body = ['---', 'issuegraph:', '  notes: |', '    long text', '  blocked-by:', RULING, '    - 1', '  priority: 1', '---'].join('\n');
+    const out = spliceGeneratedEdges(body, { blockedBy: { clear: true } }) as string;
+    assert.notEqual(out, null);
+    assert.equal(out, ['---', 'issuegraph:', '  notes: |', '    long text', '  # OWNER RULING: keep 1, it is the real gate', '  priority: 1', '---'].join('\n'));
+    // The unowned scalar is exactly what it was: the control below has no
+    // comment at all and must produce the same `notes`.
+    const control = ['---', 'issuegraph:', '  notes: |', '    long text', '  blocked-by:', '    - 1', '  priority: 1', '---'].join('\n');
+    const ctl = spliceGeneratedEdges(control, { blockedBy: { clear: true } }) as string;
+    assert.equal(parseFrontmatter(out).data?.priority, parseFrontmatter(ctl).data?.priority);
+    assert.ok(!out.includes('    # OWNER'), 'not left at the scalar content indent');
+  });
+
+  it('re-indents when the rendering lands elsewhere and the comment follows an author line', () => {
+    // The insert goes at the FIRST owned entry's position. With `duplicate-of`
+    // ahead of a cleared `blocked-by`, the comment follows the author's
+    // `evidence` line rather than a rendered line, and re-indents.
+    const body = ['---', 'issuegraph:', '  duplicate-of: 3', '  evidence: verified', '  blocked-by:', RULING, '    - 1', '---'].join('\n');
+    const out = spliceGeneratedEdges(body, { duplicateOf: { set: { repo: null, id: '9' } }, blockedBy: { clear: true } }) as string;
+    assert.equal(out, ['---', 'issuegraph:', '  duplicate-of: "#9"', '  evidence: verified', '  # OWNER RULING: keep 1, it is the real gate', '---'].join('\n'));
+    assert.deepEqual(parseFrontmatter(out).diagnostics, []);
+  });
+
+  it('keeps the comment beside a surviving sibling key when the section empties', () => {
+    const body = ['---', 'title: x', 'issuegraph:', '  blocked-by:', RULING, '    - 1', '---', '', 'Body.'].join('\n');
+    const out = spliceGeneratedEdges(body, { blockedBy: { clear: true } }) as string;
+    assert.notEqual(out, null);
+    // It followed the header, an author's line, so it re-indents to the child
+    // indent; the header is then dropped and the comment stays beside `title`.
+    assert.equal(out, ['---', 'title: x', '  # OWNER RULING: keep 1, it is the real gate', '---', '', 'Body.'].join('\n'));
+    assert.ok(!out.includes('issuegraph:'), 'the bare header is dropped');
+  });
+
+  it('a comment child OUTSIDE every owned span is classified as before', () => {
+    // Control for the change: the existing rule for a section-level comment is
+    // untouched, so a section whose only survivor is such a comment still
+    // counts it as content and keeps the block.
+    const body = ['---', 'issuegraph:', '  # why this is blocked', '  blocked-by:', '    - 7', '  priority: 1', '---', '', 'Body.'].join('\n');
+    const out = spliceGeneratedEdges(body, SET_42) as string;
+    assert.ok(out.includes('  # why this is blocked'));
+    assert.equal(parseFrontmatter(out).data?.priority, 1);
+  });
+});
+
 describe('every owned field clears the same way, and OMISSION is what leaves one alone (#18)', () => {
   // WHAT THIS BLOCK REPLACED. It used to pin the opposite: that a present
   // `null` removed `blocked-by` and `serialize-with` but LEFT `decomposed-from`
