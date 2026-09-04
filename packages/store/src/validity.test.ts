@@ -77,6 +77,41 @@ test('flipping a directed edge is allowed, and refused when it would collide', (
   assert.equal(refusalCode(both, { op: 'flip', edgeId: edgeId('blocked-by', '1', '2') }), 'duplicate-edge');
 });
 
+test('a second reference on a single-valued field is refused; a second blocked-by is not', () => {
+  const document = withEdge(threeOpenIssues(), 'decomposed-from', '1', '2');
+  assert.equal(refusalCode(document, { op: 'create', kind: 'decomposed-from', from: '1', to: '3' }), 'cardinality');
+  // The OTHER carrier is free: a second issue may name the same parent.
+  assert.equal(refusalCode(document, { op: 'create', kind: 'decomposed-from', from: '3', to: '2' }), undefined);
+  const list = withEdge(threeOpenIssues(), 'blocked-by', '1', '2');
+  assert.equal(refusalCode(list, { op: 'create', kind: 'blocked-by', from: '1', to: '3' }), undefined);
+});
+
+test('a symmetric single-valued field is counted on its carrier, so a free carrier can join the group', () => {
+  const document = withEdge(threeOpenIssues(), 'serialize-with', '1', '2');
+  assert.equal(refusalCode(document, { op: 'create', kind: 'serialize-with', from: '1', to: '3' }), 'cardinality');
+  assert.equal(refusalCode(document, { op: 'create', kind: 'serialize-with', from: '3', to: '1' }), undefined);
+});
+
+test('a retype into an occupied field is refused, and the edge it replaces does not count against it', () => {
+  const document = withEdge(withEdge(threeOpenIssues(), 'blocked-by', '1', '2'), 'decomposed-from', '1', '3');
+  assert.equal(
+    refusalCode(document, { op: 'retype', edgeId: edgeId('blocked-by', '1', '2'), nextKind: 'decomposed-from' }),
+    'cardinality',
+  );
+  // Retyping the held edge itself vacates the field it leaves.
+  assert.equal(
+    refusalCode(document, { op: 'retype', edgeId: edgeId('decomposed-from', '1', '3'), nextKind: 'duplicate-of' }),
+    undefined,
+  );
+});
+
+test('a flip whose new carrier already holds the field is refused', () => {
+  const occupied = withEdge(withEdge(threeOpenIssues(), 'duplicate-of', '1', '2'), 'duplicate-of', '2', '3');
+  assert.equal(refusalCode(occupied, { op: 'flip', edgeId: edgeId('duplicate-of', '1', '2') }), 'cardinality');
+  const free = withEdge(threeOpenIssues(), 'duplicate-of', '1', '2');
+  assert.equal(refusalCode(free, { op: 'flip', edgeId: edgeId('duplicate-of', '1', '2') }), undefined);
+});
+
 test('flipping a self-edge that reached the document anyway is refused', () => {
   // `create` cannot produce one, but hydration can hand the store whatever the
   // tracker holds — including an encoding mistake somebody wrote by hand.

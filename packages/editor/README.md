@@ -193,7 +193,7 @@ Which bindings reach `target-search` is **data on the binding table**, so no cal
 
 **A `together-with` edge needs no special case.** The viewer gives its connector an *edge* identity precisely because an enclosure has no line to click, so by the time a selection arrives here it is an ordinary edge id and `⌫` and `T` work on it unchanged.
 
-**Validity stays in the store.** These modules emit intent; `structuralRefusal` owns `self-edge`, `duplicate-edge` and `unknown-issue`. A second validity rule out here is exactly what `picker/view.ts` refused, and for the same reason.
+**Validity stays in the store.** These modules emit intent; `structuralRefusal` owns `self-edge`, `duplicate-edge`, `unknown-issue` and `cardinality`. A second validity rule out here is exactly what `picker/view.ts` refused, and for the same reason.
 
 ## The three-zone workspace
 

@@ -59,7 +59,7 @@
  * whether the REQUEST names a batch at all.
  */
 
-import { isSymmetricEdgeField } from '@issuegraph/core';
+import { EDGE_CARDINALITY, isSymmetricEdgeField } from '@issuegraph/core';
 import type { EdgeKind, IssueRef, Proposal } from '@issuegraph/store';
 
 /**
@@ -104,7 +104,14 @@ export type BatchRefusal =
   /** A directed kind arrived without its direction pick. */
   | { readonly reason: 'direction-required'; readonly kind: EdgeKind }
   /** A symmetric kind arrived with a direction, which means something is wrong. */
-  | { readonly reason: 'direction-not-applicable'; readonly kind: EdgeKind };
+  | { readonly reason: 'direction-not-applicable'; readonly kind: EdgeKind }
+  /**
+   * A `from-anchor` star of a single-valued directed kind: the anchor would
+   * carry one reference per member, and the field holds one (§4.3). Decidable
+   * from the request alone — no document is consulted — which is what keeps
+   * it this module's rather than `structuralRefusal`'s.
+   */
+  | { readonly reason: 'anchor-cannot-carry'; readonly kind: EdgeKind };
 
 /**
  * THERE IS NO `unknown-kind` REFUSAL, and its absence is deliberate.
@@ -152,8 +159,12 @@ function edgeFor(
   // A SYMMETRIC KIND STILL LANDS AS AN ORDERED PAIR, which is not a
   // contradiction: `create/draft.ts` records why the store keeps the pair for
   // symmetric kinds too — an editor has to know which issue carries the field.
-  // `from-anchor` is the arm a symmetric request takes, so the anchor holds it,
-  // which is the arrangement an owner who picked the anchor would expect.
+  // `to-anchor` is the arm a symmetric request takes: each MEMBER carries the
+  // field, pointing at the anchor, which is how a writer joins a group (§4.3.4,
+  // §4.3.7 — point at one existing member) and the only star the format can
+  // hold, because `serialize-with` and `together-with` are single-valued. An
+  // earlier revision put every arm on the anchor, and the store's `cardinality`
+  // refusal then admitted exactly one of them.
   return direction === 'from-anchor'
     ? { op: 'create', kind, from: anchor, to: member }
     : { op: 'create', kind, from: member, to: anchor };
@@ -178,11 +189,29 @@ export function planBatch(request: BatchRequest): BatchOutcome {
     return { ok: false, refusal: { reason: 'direction-required', kind } };
   }
 
-  // `direction ?? 'from-anchor'` rather than a non-null assertion: the checks
+  // A DIRECTED SINGLE-VALUED KIND CANNOT FAN OUT FROM THE ANCHOR. `duplicate-of`
+  // and `decomposed-from` hold one reference, so `from-anchor` asks the anchor
+  // to carry N of them — a star the format cannot hold, whatever the document
+  // says, so it is refused here as a request shape rather than left for the
+  // store to refuse one arm at a time after the first lands. `blocked-by` is
+  // the list and fans out either way. Read from the vocabulary, not listed:
+  // a sixth single-valued field is covered the day core learns about it.
+  // ONE DISTINCT MEMBER IS ONE REFERENCE, and that is legal — a batch of one
+  // is a batch the API accepts, so the refusal is keyed on the count the
+  // anchor would carry, not on the direction alone.
+  if (
+    direction === 'from-anchor' &&
+    EDGE_CARDINALITY[kind] === 'single' &&
+    new Set(members).size > 1
+  ) {
+    return { ok: false, refusal: { reason: 'anchor-cannot-carry', kind } };
+  }
+
+  // `direction ?? 'to-anchor'` rather than a non-null assertion: the checks
   // above make the fallback unreachable for a directed kind, and it is the
-  // arm a symmetric kind takes anyway — so the expression is total without a
-  // cast, which the strict-TypeScript rule forbids.
-  const pointing: BatchDirection = direction ?? 'from-anchor';
+  // arm a symmetric kind takes — see `edgeFor` — so the expression is total
+  // without a cast, which the strict-TypeScript rule forbids.
+  const pointing: BatchDirection = direction ?? 'to-anchor';
   const proposals = members.map((member): Proposal => edgeFor(anchor, member, kind, pointing));
   return { ok: true, plan: { proposals, count: proposals.length, kind, anchor } };
 }

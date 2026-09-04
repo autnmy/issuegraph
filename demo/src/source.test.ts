@@ -346,12 +346,14 @@ test('a fabricated upstream never writes a second single-valued edge', async () 
   assert.deepEqual(offenders, [], 'the fabricated upstream carries two values for a single-valued field');
 });
 
-test('the ADAPTER refuses a second value for a single-valued field, on every path', async () => {
+test('the STORE refuses a second value for a single-valued field, on every path', async () => {
   // One enforcement point, reached by every way a write can happen. The page
-  // used to carry this rule, and each new route to a write — a second create
+  // carried this rule first, and each new route to a write — a second create
   // inside the settle window, then `retry` — was a new place it had not been
-  // bolted on. The adapter is the tracker, and a tracker refuses a malformed
-  // write whoever sent it.
+  // bolted on. The adapter carried it next, where a rule of the FORMAT came
+  // back `failed`, "refused upstream", on a write that never left the client
+  // (issue #11). It is the store's structural refusal now — `invalid`, code
+  // `cardinality` — so it reaches every route and the adapter never sees it.
   const { store } = harness();
   await store.hydrate();
   await store.propose({ op: 'create', kind: 'decomposed-from', from: '1', to: '2' }).settled;
@@ -360,14 +362,15 @@ test('the ADAPTER refuses a second value for a single-valued field, on every pat
   const second = store.propose({ op: 'create', kind: 'decomposed-from', from: '1', to: '3' });
   await second.settled;
   const refused = store.getSnapshot().writes.find((write) => write.mutationId === second.mutationId);
-  assert.equal(refused?.state, 'failed', 'the adapter accepted a second single-valued value');
-  assert.ok(refused.state === 'failed' && refused.reason.includes('one reference'));
+  assert.equal(refused?.state, 'invalid', 'a second single-valued value was not refused');
+  assert.ok(refused.state === 'invalid' && refused.reason.code === 'cardinality');
+  assert.ok(refused.state === 'invalid' && refused.reason.message.includes('one reference'));
 
   // (b) RETRYING it is refused too — the path the page-level rule could never
   // reach, because retry does not go through the page.
   await store.retry(second.mutationId).settled;
   const afterRetry = store.getSnapshot().writes.find((write) => write.mutationId === second.mutationId);
-  assert.equal(afterRetry?.state, 'failed', 'a retry slipped past the rule');
+  assert.equal(afterRetry?.state, 'invalid', 'a retry slipped past the rule');
   assert.equal(
     store.getSnapshot().landed.filter((edge) => edge.kind === 'decomposed-from' && edge.from === '1')
       .length,
@@ -401,6 +404,34 @@ test('two creates inside one settle window cannot both land', async () => {
   );
 });
 
+test('a retry after a conflict cannot give a single-valued field a second value', async () => {
+  // The store's refusal reads the document IT holds, and a conflict leaves
+  // that document deliberately unchanged while this source has moved — so a
+  // bare `retry` passes the store's check against a document with no room
+  // left. Issue #12 is the store's side of that window; this pins the
+  // tracker's side: the authority on the current document refuses the write.
+  const { source, store } = harness();
+  await store.hydrate();
+  source.arm('conflict');
+
+  const handle = store.propose({ op: 'create', kind: 'decomposed-from', from: '1', to: '3' });
+  await handle.settled;
+  const conflicted = store.getSnapshot().writes.find((write) => write.mutationId === handle.mutationId);
+  assert.equal(conflicted?.state, 'conflict');
+  const installed = source.current().edges.filter((edge) => edge.kind === 'decomposed-from' && edge.from === '1');
+  assert.equal(installed.length, 1, 'the precondition did not hold: the upstream did not occupy the field');
+  assert.notEqual(installed[0]?.to, '3');
+
+  await store.retry(handle.mutationId).settled;
+  const retried = store.getSnapshot().writes.find((write) => write.mutationId === handle.mutationId);
+  assert.equal(retried?.state, 'failed', 'the tracker accepted a second value it could see and the store could not');
+  assert.equal(
+    source.current().edges.filter((edge) => edge.kind === 'decomposed-from' && edge.from === '1').length,
+    1,
+    'the field ended up holding two values',
+  );
+});
+
 test('a retype into an occupied single-valued field is refused', async () => {
   // Asked of the RESULTING edge rather than of the operation, so a retype is
   // covered without naming it — and the edge a retype replaces is excluded,
@@ -415,7 +446,8 @@ test('a retype into an occupied single-valued field is refused', async () => {
   await retype.settled;
 
   const record = store.getSnapshot().writes.find((write) => write.mutationId === retype.mutationId);
-  assert.equal(record?.state, 'failed', 'a retype filled an occupied single-valued field');
+  assert.equal(record?.state, 'invalid', 'a retype filled an occupied single-valued field');
+  assert.equal(record?.state === 'invalid' ? record.reason.code : undefined, 'cardinality');
 });
 
 test('discarding a conflict adopts the upstream the source is actually holding', async () => {

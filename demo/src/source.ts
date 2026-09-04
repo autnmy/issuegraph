@@ -149,21 +149,22 @@ function upstreamEdit(document: GraphDocument, mutation: Mutation): StoredEdge |
 }
 
 /**
- * Refuse a write that would give a single-valued field a second value (§4.3).
+ * The TRACKER's refusal of a second value on a single-valued field (§4.3).
  *
- * `blocked-by` is the only list; every other field holds ONE reference, because
- * a writer joins a group or names a canonical by pointing at one member. Two
- * values is not a richer document, it is an ambiguous one — a reader resolves
- * it by whichever it saw last, which is a coin toss wearing a rule.
+ * The store refuses this structurally now (`invalid`, code `cardinality`), on
+ * every route to a write, against the document IT holds. This is the check for
+ * the one window that document is known to be wrong in: after a `conflict`,
+ * `landed` stays deliberately unchanged while this source has moved — the
+ * fabricated upstream is INSTALLED, not merely described — so a bare `retry`
+ * of the conflicted edit passes the store's check against a document that no
+ * longer has room for it. That is issue #12's subject, and it is the store's
+ * to close; until it does, the authority on the current document refuses the
+ * write the store could not see. An adapter is a tracker, and a tracker refuses
+ * a malformed write whoever sent it. `rejected` is then the honest answer: the
+ * document really did move upstream, and the write really was refused there.
  *
- * Asked of the RESULTING edge rather than of the operation, so a `retype` into
- * an occupied field is refused exactly like a `create` — and the edge a retype
- * or flip REPLACES is excluded, because it is on its way out.
- *
- * It is the adapter's rule rather than the guard's: `EdgeGuard` answers with a
- * closed set of refusal codes describing the STORE's own structural refusals,
- * and borrowing one to carry a format rule would misreport what happened. A
- * rejection with a sentence says what is true.
+ * Asked of the RESULTING edge, as the store's own check is, and excluding the
+ * edge a retype or flip replaces.
  */
 function cardinalityRefusal(
   document: GraphDocument,
@@ -232,18 +233,13 @@ export function createDemoSource(
     hydrate: () => memory.hydrate(),
 
     dispatch(mutation: Mutation): Promise<DispatchResult> {
-      // THE WRITER RULES ARE ENFORCED HERE, and here only, because this is the
-      // one place EVERY write passes through. They were enforced in the page
-      // first, and that cost three rounds of review: the create button had the
-      // rule, then a second create inside the settle window did not, then
-      // `retry` did not — each new way to reach a write being a new place to
-      // bolt the rule on, and the next unbolted one always findable.
-      //
-      // An adapter is a tracker, and a tracker refuses a malformed write. The
-      // store also runs ONE authoritative operation at a time, so the document
-      // read here is always the current one — which is why this covers the
-      // in-flight case the page could not see without being told about
-      // optimistic overlays.
+      // THE STORE'S REFUSAL COMES FIRST, and this is not a second copy of it.
+      // Every write the store can see is already refused `invalid` before it
+      // gets here (issue #11: this adapter used to be the only enforcement
+      // point, and a rule of the FORMAT came back "refused upstream" on a
+      // write that never left the client). What reaches this line is the write
+      // the store could NOT see — a retry after a conflict moved this source
+      // — and refusing that one here is what a tracker does.
       const refusal = cardinalityRefusal(memory.current(), mutation);
       if (refusal !== undefined) return settle(refusal);
 
