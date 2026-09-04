@@ -772,6 +772,36 @@ describe('a hold in the inspector carries its cause, and its subject is a contro
     assert.doesNotMatch(markup, /ig-inspector-hold-subject/);
   });
 
+  it('publishes the attribute but no control for a partner in the inspected together unit', () => {
+    // `inspectorView` canonicalizes a member to its lead, so a control naming
+    // the partner would change nothing visible, then clear the selection.
+    const base = backlogOf(3, { held: ['i0002'], unitOf: { i0003: 'i0002' } });
+    const unit = {
+      ...base,
+      order: {
+        ...base.order,
+        slots: base.order.slots.map((slot) =>
+          slot.lead === 'i0002'
+            ? {
+                ...slot,
+                holds: [
+                  {
+                    family: 'graph' as const,
+                    reason: 'together member i0003 is not ready (blocked-by i0001 is open)',
+                    code: 'together-member-unready',
+                    subject: 'i0003',
+                  },
+                ],
+              }
+            : slot,
+        ),
+      },
+    };
+    const { markup } = renderWorkspace(unit, { words: WORKSPACE_WORDS, selection: select });
+    assert.match(markup, /data-code="together-member-unready" data-subject="i0003"/);
+    assert.doesNotMatch(markup, /ig-inspector-hold-subject/);
+  });
+
   it('the control reduces to the subject being selected, through the shared reducer', () => {
     assert.deepEqual(selectionReducer(select, { kind: 'select-issue', key: 'i0001' }), {
       kind: 'issue',

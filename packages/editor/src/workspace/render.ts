@@ -322,6 +322,7 @@ function inspectorSpec(
   view: InspectorView,
   words: WorkspaceWords,
   known: ReadonlySet<string>,
+  leadOf: ReadonlyMap<string, string>,
 ): ElementSpec {
   const subject = view.subject;
   return element('div', { class: 'ig-inspector', 'data-subject': subject.kind }, [
@@ -350,7 +351,9 @@ function inspectorSpec(
             : element(
                 'ul',
                 { class: 'ig-inspector-holds' },
-                subject.position.holds.map((hold) => holdRow(hold, known, subject.issue.key)),
+                subject.position.holds.map((hold) =>
+                  holdRow(hold, known, (key) => leadOf.get(key) === leadOf.get(subject.issue.key)),
+                ),
               ),
         ])
       : null,
@@ -398,12 +401,16 @@ function inspectorSpec(
  * show nothing. The attribute is still published — the subject is a fact about
  * the hold either way — and only the control is withheld.
  *
- * AND NEVER FOR THE INSPECTED ISSUE ITSELF. A node blocked by itself is a
- * groomed-graph defect the reader still reports, as a hold whose subject is
- * the issue being inspected — and `selectionReducer` toggles a re-selection of
- * the selected issue to `none`, so a control there would read as a link to the
- * holder and close the inspector instead. Withheld, on the same rule as above:
- * the attribute stays, the control does not.
+ * AND NEVER FOR A SUBJECT IN THE INSPECTED SLOT. Two shapes reach that, and
+ * the test is the SLOT rather than the key because the second one hides
+ * behind a key test. A node blocked by itself is a groomed-graph defect the
+ * reader still reports, as a hold whose subject is the issue being inspected —
+ * and `selectionReducer` toggles a re-selection of the selected issue to
+ * `none`, so a control there would close the inspector. And a
+ * `together-member-unready` hold names a PARTNER in the same unit, which
+ * `inspectorView` canonicalizes back to the lead already on show — the first
+ * click changes nothing visible and the second clears the selection. Withheld,
+ * on the same rule as above: the attribute stays, the control does not.
  *
  * `data-code` and `data-subject` mirror layer 1's `holdLine` exactly — same
  * names, same omit-when-absent rule — so a rule written against
@@ -412,7 +419,11 @@ function inspectorSpec(
  * inspector's ROOT also carries a `data-subject` (`issue` / `edge`, what the
  * selection resolved to), so a bare `[data-subject]` reads both.
  */
-function holdRow(hold: ViewerHold, known: ReadonlySet<string>, self: string): ElementSpec {
+function holdRow(
+  hold: ViewerHold,
+  known: ReadonlySet<string>,
+  inInspectedSlot: (key: string) => boolean,
+): ElementSpec {
   return element(
     'li',
     {
@@ -423,7 +434,7 @@ function holdRow(hold: ViewerHold, known: ReadonlySet<string>, self: string): El
     },
     [
       hold.reason,
-      hold.subject === undefined || hold.subject === self || !known.has(hold.subject)
+      hold.subject === undefined || !known.has(hold.subject) || inInspectedSlot(hold.subject)
         ? null
         : element(
             'button',
@@ -471,6 +482,12 @@ export function renderWorkspace(
   const document = sound.document;
   // The keys a hold's subject control may name — see `holdRow`.
   const known: ReadonlySet<string> = new Set(document.issues.map((issue) => issue.key));
+  // Which slot a key sits in, by lead — so a hold's subject that resolves to the
+  // inspected slot gets no control. The same canonicalization `inspectorView`
+  // applies, read off the same normalized slots.
+  const leadOf: ReadonlyMap<string, string> = new Map(
+    document.order.slots.flatMap((slot) => slot.members.map((member) => [member, slot.lead] as const)),
+  );
 
   // THE FILTER NARROWS THE RAIL, AND ONLY THE RAIL. §17a gives the audit a
   // filter for focus and deliberately no mode; the canvas answers "what
@@ -557,7 +574,7 @@ export function renderWorkspace(
       ].join(''),
     ),
     zone('canvas', canvas.markup),
-    zone('inspector', renderMarkup(inspectorSpec(inspector, options.words, known))),
+    zone('inspector', renderMarkup(inspectorSpec(inspector, options.words, known, leadOf))),
     `</div>`,
   ].join('');
 
