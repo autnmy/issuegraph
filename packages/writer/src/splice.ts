@@ -28,8 +28,10 @@
  * the rule the private writer this package replaced already had). After a
  * refresh that position is directly behind the rendered entry. After a clear
  * it is behind whatever author's line preceded the entry, and there the
- * comment is re-indented to the section's child indent so it cannot be read
- * as that line's continuation (see the assembly loop). Blank lines inside a
+ * comment is re-indented to the indent of the context it now lives in — the
+ * section's child indent, or the block's top level when the bare header goes
+ * with the entry — so it cannot be read as that line's continuation (see the
+ * assembly loop and the header-drop branch). Blank lines inside a
  * span carry no authored text and still go. The one place such a comment does
  * go is the whole-block removal below: when the edit leaves the block with
  * nothing else in it, the block goes, comments and all.
@@ -972,6 +974,9 @@ export function spliceGeneratedEdges(body: string, rawEdges: GeneratedEdges): Sp
   // is less than any block-scalar content under a sibling key and therefore
   // always ends the scalar; only its leading whitespace changes.
   let afterWriterLine = false;
+  // WHERE EACH KEPT COMMENT LANDED IN `interior`, so the header-drop branch
+  // below can find them again after the header is spliced out.
+  const keptAt: number[] = [];
   for (let i = blockStart + 1; i < blockEnd; i++) {
     if (i === insertAt && ins.length > 0) {
       interior.push(...ins);
@@ -980,6 +985,7 @@ export function spliceGeneratedEdges(body: string, rawEdges: GeneratedEdges): Sp
     if (removed.has(i)) continue;
     const line = lines[i] ?? '';
     if (kept.has(i)) {
+      keptAt.push(interior.length);
       interior.push(afterWriterLine ? line : `${pad}${line.trimStart()}`);
       afterWriterLine = true;
       continue;
@@ -1027,6 +1033,19 @@ export function spliceGeneratedEdges(body: string, rawEdges: GeneratedEdges): Sp
     const headerLine = lines[sectionHeader] ?? '';
     const headerAt = interior.indexOf(headerLine);
     if (headerAt !== -1) interior.splice(headerAt, 1);
+    // A KEPT COMMENT NOW LIVES AT THE BLOCK'S TOP LEVEL, and its indent has to
+    // say so. Raised in review: it was re-indented to the section's CHILD
+    // indent above, then the header it followed was dropped here, so it came
+    // to follow the top-level line above the header — and `notes: |` at
+    // column 0 has its content at exactly that child indent, so the comment
+    // became one more line of `notes`. `settle` cannot see that: a sibling
+    // top-level key is not in `Frontmatter`. The header's own column is the
+    // top level's indent, and a comment there ends any block scalar beside it.
+    const headerPad = headerLine.slice(0, headerLine.length - headerLine.trimStart().length);
+    for (const at of keptAt) {
+      const now = headerAt !== -1 && at > headerAt ? at - 1 : at;
+      interior[now] = `${headerPad}${(interior[now] ?? '').trimStart()}`;
+    }
   }
 
   return settle(

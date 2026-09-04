@@ -495,10 +495,24 @@ describe('a comment INSIDE an owned entry survives the splice (#93)', () => {
     const body = ['---', 'title: x', 'issuegraph:', '  blocked-by:', RULING, '    - 1', '---', '', 'Body.'].join('\n');
     const out = spliceGeneratedEdges(body, { blockedBy: { clear: true } }) as string;
     assert.notEqual(out, null);
-    // It followed the header, an author's line, so it re-indents to the child
-    // indent; the header is then dropped and the comment stays beside `title`.
-    assert.equal(out, ['---', 'title: x', '  # OWNER RULING: keep 1, it is the real gate', '---', '', 'Body.'].join('\n'));
+    // The header it followed is dropped, so it now lives at the block's top
+    // level and takes the header's own indent — column zero.
+    assert.equal(out, ['---', 'title: x', '# OWNER RULING: keep 1, it is the real gate', '---', '', 'Body.'].join('\n'));
     assert.ok(!out.includes('issuegraph:'), 'the bare header is dropped');
+  });
+
+  it('takes the top-level indent when the dropped header sat under a top-level block scalar', () => {
+    // Raised in review. Re-indented to the CHILD indent and then left behind
+    // by the dropped header, the comment sat at exactly the content indent of
+    // the top-level `notes: |` above — and became one more line of `notes`, a
+    // sibling key `settle` cannot compare. At the header's column it ends the
+    // scalar instead.
+    const body = ['---', 'notes: |', '  long text', 'issuegraph:', '  blocked-by:', RULING, '    - 1', '---', '', 'Body.'].join('\n');
+    const out = spliceGeneratedEdges(body, { blockedBy: { clear: true } }) as string;
+    assert.equal(out, ['---', 'notes: |', '  long text', '# OWNER RULING: keep 1, it is the real gate', '---', '', 'Body.'].join('\n'));
+    const parsed = parseFrontmatter(out);
+    assert.equal(parsed.data, null, 'no section is left');
+    assert.deepEqual(parsed.diagnostics, []);
   });
 
   it('does not keep block-scalar content that merely looks like a comment', () => {
