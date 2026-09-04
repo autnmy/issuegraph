@@ -143,7 +143,14 @@ function drafted(
 ): HostResult {
   const result = createReducer(state.draft, command);
   if (result.proposal === null) {
-    return settled({ ...state, draft: result.draft });
+    // BEGINNING A DRAFT SELECTS ITS SOURCE. The inspector draws the picker for
+    // a selected edge ahead of any draft, so a draft begun by R from a focused
+    // row while an edge stayed selected would render behind the picker and
+    // could never reach its target search. One selection, and it is the
+    // draft's subject — the same rule the canvas drop already applies.
+    const selection: WorkspaceSelection =
+      command.kind === 'begin' ? { kind: 'issue', key: command.source } : state.selection;
+    return settled({ ...state, draft: result.draft, selection });
   }
   return {
     state: { ...state, draft: IDLE_CREATE_DRAFT, targetQuery: '', drop: null },

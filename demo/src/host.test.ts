@@ -126,6 +126,14 @@ describe('the three create paths reach one proposal', () => {
     assert.equal(chosen.state.drop, null, 'the chooser is dismissed with the proposal');
   });
 
+  it('beginning a draft selects its source, so a selected edge’s picker cannot hide it', () => {
+    const edgeSelected = drive([{ kind: 'group', id: blockedBy.id }]).state;
+    const relate = keyIntent({ key: 'r' }, { focused: '2', match: null, selectedEdge: blockedBy.id, interaction: 'canvas' });
+    const { state } = drive([{ kind: 'intent', intent: relate }], edgeSelected);
+    assert.equal(state.draft.source, '2');
+    assert.deepEqual(state.selection, { kind: 'issue', key: '2' });
+  });
+
   it('a pointer on a row while a target is wanted IS the target', () => {
     const { effects } = drive([
       { kind: 'point', key: '2' },

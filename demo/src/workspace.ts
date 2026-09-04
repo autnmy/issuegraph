@@ -533,14 +533,21 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
     } else if (pendingFocus !== null) {
       const rows = result.view.rail.rows;
       const at = rows.findIndex((slot) => pendingFocus?.key !== null && slot.members.includes(pendingFocus?.key ?? ''));
+      // THE ENDS ARE THE VIEWER'S ENDS. The linear projection appends the
+      // excluded rows after the slots, so the last focusable row of the last
+      // window is an exclusion when the document has any; read the ends off
+      // what the rail actually drew rather than off the slots alone.
+      const drawnKeys = [...(rail?.querySelectorAll<HTMLElement>('[data-ig-key][tabindex]') ?? [])].map((row) =>
+        row.getAttribute('data-ig-key'),
+      );
       const target =
-        pendingFocus.kind === 'first' ? rows[0]
-        : pendingFocus.kind === 'last' ? rows[rows.length - 1]
-        : pendingFocus.kind === 'after' ? rows[at + 1]
-        : at > 0 ? rows[at - 1] : undefined;
+        pendingFocus.kind === 'first' ? (drawnKeys[0] ?? rows[0]?.lead)
+        : pendingFocus.kind === 'last' ? (drawnKeys[drawnKeys.length - 1] ?? rows[rows.length - 1]?.lead)
+        : pendingFocus.kind === 'after' ? rows[at + 1]?.lead
+        : at > 0 ? rows[at - 1]?.lead : undefined;
       const jump = pendingFocus.kind;
       pendingFocus = null;
-      focusRow(target?.lead ?? focused, 'rail');
+      focusRow(target ?? focused, 'rail');
       // THE VIEWPORT FOLLOWS THE JUMP. The window was re-cut around the target
       // but the scroll offset restored above is the one from before the key
       // press, so without this the focused row sits below (or above) the
