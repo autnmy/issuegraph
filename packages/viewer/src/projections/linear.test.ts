@@ -3,7 +3,9 @@ import { describe, it } from 'node:test';
 
 import { normalizeDocument } from '../document.ts';
 import { renderMarkup } from '../element.ts';
-import { fixtureDocument, heldTogetherDocument } from '../testing/fixtures.ts';
+import { ROW_BADGE_BUDGET } from '../parts.ts';
+import { denseRowDocument, denseUnitDocument, fixtureDocument, heldTogetherDocument } from '../testing/fixtures.ts';
+import { EDGE_ORDER } from '../vocabulary.ts';
 import { linearScene } from './linear.ts';
 
 function render(input = fixtureDocument, options = {}): string {
@@ -90,6 +92,73 @@ describe('the linear projection', () => {
     const together = unit.match(/data-edge="together-with"/g) ?? [];
 
     assert.equal(together.length, 1, `together-with rendered ${together.length} times`);
+  });
+
+  it('draws a row past the badge budget as the budget plus one chip naming the rest', () => {
+    // `blocked-by` is a list field, so a dense document badges every incident
+    // edge on both endpoint rows with nothing to stop it — the same explosion
+    // the graph refuses, in two projections that have no refusal to reach.
+    const omitted = 25;
+    const hub = row(render(denseRowDocument(ROW_BADGE_BUDGET + omitted - 1)), 'hub');
+    const drawn = hub.match(/data-edge="/g) ?? [];
+
+    assert.equal(drawn.length, ROW_BADGE_BUDGET, `drew ${String(drawn.length)} badges`);
+    assert.match(hub, new RegExp(`data-omitted="${String(omitted)}"[^>]*>\\+${String(omitted)} more<`));
+    assert.match(hub, /aria-label="25 more relationships not shown"/);
+  });
+
+  it('spends the budget in field order, so blocked-by survives the cut', () => {
+    // The hub's `decomposed-from` is declared FIRST but sits SECOND in the
+    // format's field order, behind `blocked-by`, so a cut in declaration order would keep it and a
+    // cut in field order drops it: the one relationship a reader asking "why
+    // is this held" wants is the one that has to survive.
+    const hub = row(render(denseRowDocument(ROW_BADGE_BUDGET)), 'hub');
+
+    assert.equal((hub.match(/data-edge="blocked-by"/g) ?? []).length, ROW_BADGE_BUDGET);
+    assert.equal(hub.includes('data-edge="decomposed-from"'), false, 'decomposed-from survived the cut');
+    assert.match(hub, /data-omitted="1"[^>]*aria-label="1 more relationship not shown"/);
+  });
+
+  it('draws no chip for a row at or under the budget', () => {
+    // At the budget exactly, the decomposed-from edge is the twelfth badge —
+    // every relationship fits and a chip would claim an omission that never
+    // happened.
+    const hub = row(render(denseRowDocument(ROW_BADGE_BUDGET - 1)), 'hub');
+
+    assert.equal((hub.match(/data-edge="/g) ?? []).length, ROW_BADGE_BUDGET);
+    assert.equal(hub.includes('data-omitted'), false, 'a chip was drawn with nothing omitted');
+  });
+
+  it('gives the overflow chip no edge identity', () => {
+    // The chip names no single edge, so it must not enter the pointer set as
+    // if it did — a click on it would otherwise select "N edges".
+    const hub = row(render(denseRowDocument(ROW_BADGE_BUDGET + 5)), 'hub');
+    const chip = hub.slice(hub.indexOf('data-omitted'), hub.indexOf('</span>', hub.indexOf('data-omitted')));
+
+    assert.equal(chip.includes('data-ig-group'), false);
+  });
+
+  it('bounds the badges a dense document draws by its rows, not its edges', () => {
+    // EXACT, not an upper bound: the hub draws the budget, every other row
+    // draws the one incoming badge it owns (`1` draws two, its blocked-by and
+    // the decomposed-from), and the legend draws one badge per field. An
+    // inequality here was satisfied by the unbudgeted render too.
+    const count = 400;
+    const markup = render(denseRowDocument(count));
+    const badges = (markup.match(/data-edge="/g) ?? []).length;
+
+    assert.equal(badges, ROW_BADGE_BUDGET + count + 1 + EDGE_ORDER.length);
+    assert.match(row(markup, 'hub'), new RegExp(`data-omitted="${String(count + 1 - ROW_BADGE_BUDGET)}"`));
+  });
+
+  it('counts an omitted intra-unit edge once, after the dedupe', () => {
+    // A together unit is one row with two keys, so the unit edge sits in BOTH
+    // members' `edgesOf` entries. Counting before the dedupe would report that
+    // one edge as two omissions; the partner's own blocked-by is a third.
+    const unit = row(render(denseUnitDocument(ROW_BADGE_BUDGET)), 'hub');
+
+    assert.equal((unit.match(/data-edge="blocked-by"/g) ?? []).length, ROW_BADGE_BUDGET);
+    assert.match(unit, /data-omitted="3"/);
   });
 
   it('renders a promotion in the spec notation, naming the dependent', () => {

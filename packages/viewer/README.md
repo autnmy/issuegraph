@@ -72,6 +72,8 @@ const document = {
 
 **The graph refuses rather than degrades.** Past 60 nodes it stops drawing and shows connected components as capsules — size, blocking count, cycle flag, chain depth — and past 300 it shows clusters only. Each refusal names the next move. A refusal with a route forward reads as competence; a hairball reads as a bug.
 
+**A row's badges are budgeted; the order is not.** The linear and tree projections draw every row at any size — that is the promise the refusal routes a reader to — so what they bound is the relationships *per row*: past `ROW_BADGE_BUDGET` (12) a row draws the first twelve in the format's field order, `blocked-by` first, and one `+N more` chip carrying `data-omitted` and an accessible name. Nothing is cut silently, and the chip carries no edge identity because it names no single edge; an omitted edge is still selectable, since the drawn-check answers from the document before it consults the markup.
+
 ## The edge grammar
 
 Every relationship is separable on **four** channels — dash, terminal marker, glyph, and hue — so removing colour entirely leaves all five distinguishable. That is asserted as a property of the table, not claimed about the rendering.

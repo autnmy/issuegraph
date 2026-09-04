@@ -3,7 +3,8 @@ import { describe, it } from 'node:test';
 
 import { type ViewerDocument, normalizeDocument } from '../document.ts';
 import { renderMarkup } from '../element.ts';
-import { fixtureDocument } from '../testing/fixtures.ts';
+import { ROW_BADGE_BUDGET } from '../parts.ts';
+import { denseRowDocument, fixtureDocument } from '../testing/fixtures.ts';
 import { treeScene } from './tree.ts';
 
 const emptyOrder = { slots: [], excluded: [] };
@@ -234,6 +235,22 @@ describe('the tree projection', () => {
     assert.equal(built.focusOrder[depth - 1], String(depth));
     const markup = renderMarkup(built.root);
     assert.match(markup, new RegExp(`data-ig-key="${String(depth)}" data-level="${String(depth)}"`));
+  });
+
+  it('budgets a row\'s badges exactly as the linear projection does', () => {
+    // The tree draws EVERY key its own row, so it badges the most of the
+    // three — and it shares `edgeBadges`, so one rule covers it. The slice
+    // stops at the next keyed item because a row's nested list is its last
+    // child, after the badges.
+    const omitted = 9;
+    const markup = render(denseRowDocument(ROW_BADGE_BUDGET + omitted - 1));
+    const start = markup.indexOf('data-ig-key="hub"');
+    assert.notEqual(start, -1);
+    const next = markup.indexOf('data-ig-key="', start + 1);
+    const hub = markup.slice(start, next === -1 ? undefined : next);
+
+    assert.equal((hub.match(/data-edge="/g) ?? []).length, ROW_BADGE_BUDGET);
+    assert.match(hub, new RegExp(`data-omitted="${String(omitted)}"[^>]*>\\+${String(omitted)} more<`));
   });
 
   it('is deterministic — two renders of one document agree byte for byte', () => {
