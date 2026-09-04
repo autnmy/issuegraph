@@ -12,7 +12,7 @@
  * produce the same refusal, and neither ever reaches `dispatch`.
  */
 
-import { isSymmetricEdgeField } from '@issuegraph/core';
+import { EDGE_CARDINALITY, isSymmetricEdgeField } from '@issuegraph/core';
 
 import {
   type EdgeId,
@@ -105,6 +105,50 @@ function refuse(code: InvalidReason['code'], message: string): InvalidReason {
 }
 
 /**
+ * Why this edit would give a single-valued field a second reference (§4.3).
+ *
+ * `blocked-by` is the only list; every other relationship field holds ONE
+ * reference, because a writer joins a group or names a canonical by pointing
+ * at one member. Two references is not a richer document but an ambiguous one
+ * — a reader resolves it by whichever it saw last.
+ *
+ * Asked of the RESULTING edge rather than of the operation, so a retype into an
+ * occupied field, and a flip whose new carrier is occupied, are refused exactly
+ * like a create — and the edge a retype or flip REPLACES is excluded, because
+ * it is on its way out. The carrier is `from` as written, for the symmetric
+ * kinds too: the field lives on one issue's frontmatter, and joining a group
+ * from a free carrier is how a writer joins one.
+ *
+ * It lives HERE, beside the other structural refusals, and not in a host's
+ * guard or adapter. It needs the edit and the document and no graph walk, which
+ * is this file's criterion, and the vocabulary it reads is the one
+ * `@issuegraph/core` already fixes. A rule enforced at a call site covers one
+ * route to a write and misses `retry` and the queued re-check; one enforced by
+ * an adapter comes back `failed` — "refused upstream" — on a write that never
+ * left the client (issue #11). A structural refusal reaches every route.
+ */
+function cardinalityRefusal(document: GraphDocument, mutation: Mutation): InvalidReason | undefined {
+  const resulting = resultingEdge(document, mutation);
+  if (resulting === undefined || EDGE_CARDINALITY[resulting.kind] !== 'single') return undefined;
+  const replaced = mutation.op === 'create' ? undefined : mutation.edgeId;
+  // `resulting.id` is never held by the time this runs — the duplicate refusal
+  // went first — but excluding it keeps this function true on its own rather
+  // than true because of the order `structuralRefusal` happens to call it in.
+  const held = document.edges.find(
+    (edge) =>
+      edge.kind === resulting.kind &&
+      edge.from === resulting.from &&
+      edge.id !== resulting.id &&
+      edge.id !== replaced,
+  );
+  if (held === undefined) return undefined;
+  return refuse(
+    'cardinality',
+    `${held.from} already carries ${held.kind} ${held.to}, and ${held.kind} holds one reference.`,
+  );
+}
+
+/**
  * Why this edit cannot happen, from the edit and the document alone.
  *
  * Returns `undefined` when nothing structural stands in the way — which is not
@@ -127,7 +171,7 @@ export function structuralRefusal(
     if (findEdge(document, produced.id) !== undefined) {
       return refuse('duplicate-edge', `${mutation.from} is already ${mutation.kind} ${mutation.to}.`);
     }
-    return undefined;
+    return cardinalityRefusal(document, mutation);
   }
 
   const edge = findEdge(document, mutation.edgeId);
@@ -155,5 +199,5 @@ export function structuralRefusal(
   if (produced !== undefined && produced.id !== edge.id && findEdge(document, produced.id) !== undefined) {
     return refuse('duplicate-edge', `${produced.from} is already ${produced.kind} ${produced.to}.`);
   }
-  return undefined;
+  return cardinalityRefusal(document, mutation);
 }

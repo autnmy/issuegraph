@@ -149,45 +149,6 @@ function upstreamEdit(document: GraphDocument, mutation: Mutation): StoredEdge |
 }
 
 /**
- * Refuse a write that would give a single-valued field a second value (§4.3).
- *
- * `blocked-by` is the only list; every other field holds ONE reference, because
- * a writer joins a group or names a canonical by pointing at one member. Two
- * values is not a richer document, it is an ambiguous one — a reader resolves
- * it by whichever it saw last, which is a coin toss wearing a rule.
- *
- * Asked of the RESULTING edge rather than of the operation, so a `retype` into
- * an occupied field is refused exactly like a `create` — and the edge a retype
- * or flip REPLACES is excluded, because it is on its way out.
- *
- * It is the adapter's rule rather than the guard's: `EdgeGuard` answers with a
- * closed set of refusal codes describing the STORE's own structural refusals,
- * and borrowing one to carry a format rule would misreport what happened. A
- * rejection with a sentence says what is true.
- */
-function cardinalityRefusal(
-  document: GraphDocument,
-  mutation: Mutation,
-): DispatchResult | undefined {
-  const resulting = resultingEdge(document, mutation);
-  if (resulting === undefined) return undefined;
-  if (EDGE_CARDINALITY[resulting.kind] !== 'single') return undefined;
-  const replaced = mutation.op === 'retype' || mutation.op === 'flip' ? mutation.edgeId : undefined;
-  const held = document.edges.find(
-    (edge) =>
-      edge.kind === resulting.kind &&
-      edge.from === resulting.from &&
-      edge.id !== resulting.id &&
-      edge.id !== replaced,
-  );
-  if (held === undefined) return undefined;
-  return {
-    outcome: 'rejected',
-    reason: `${held.from} already has ${held.kind} → ${held.to}, and ${held.kind} holds one reference`,
-  };
-}
-
-/**
  * A data source holding one document in memory, with the two unhappy outcomes
  * reachable from the page.
  *
@@ -232,21 +193,14 @@ export function createDemoSource(
     hydrate: () => memory.hydrate(),
 
     dispatch(mutation: Mutation): Promise<DispatchResult> {
-      // THE WRITER RULES ARE ENFORCED HERE, and here only, because this is the
-      // one place EVERY write passes through. They were enforced in the page
-      // first, and that cost three rounds of review: the create button had the
-      // rule, then a second create inside the settle window did not, then
-      // `retry` did not — each new way to reach a write being a new place to
-      // bolt the rule on, and the next unbolted one always findable.
-      //
-      // An adapter is a tracker, and a tracker refuses a malformed write. The
-      // store also runs ONE authoritative operation at a time, so the document
-      // read here is always the current one — which is why this covers the
-      // in-flight case the page could not see without being told about
-      // optimistic overlays.
-      const refusal = cardinalityRefusal(memory.current(), mutation);
-      if (refusal !== undefined) return settle(refusal);
-
+      // NO WRITER RULES HERE. This adapter used to refuse a second reference on
+      // a single-valued field, because it was the one place every write passed
+      // through — the page had tried first and missed the settle window, then
+      // `retry`. That made a rule of the FORMAT come back `failed`, "refused
+      // upstream", on a write that never left the client (issue #11). The store
+      // now refuses it structurally, as `invalid` with code `cardinality`, on
+      // every route to a write, so this adapter is left with what a tracker
+      // actually answers.
       const armed = next;
       // Disarmed BEFORE the answer, so an armed outcome can never fire twice —
       // including on the retry the visitor is about to press, which is the whole
