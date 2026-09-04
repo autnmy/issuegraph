@@ -215,7 +215,9 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
   let drawn: { readonly viewer: ViewerDocument; readonly rail: RailWindow } | null = null;
   // A rail row to focus once the window has been re-cut around it.
   let pendingFocus: { readonly kind: 'after' | 'before' | 'first' | 'last'; readonly key: string | null } | null = null;
-  let pressed: { readonly key: string; readonly x: number; readonly y: number; dragging: boolean } | null = null;
+  let pressed:
+    | { readonly pointerId: number; readonly key: string; readonly x: number; readonly y: number; dragging: boolean }
+    | null = null;
 
   const landed = (): GraphDocument => {
     const snapshot = live.store.getSnapshot();
@@ -780,11 +782,22 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
     if (canvas === null || keyed === null || !canvas.contains(keyed)) return;
     const key = keyed.getAttribute('data-ig-key');
     if (key === null) return;
-    pressed = { key, x: event.clientX, y: event.clientY, dragging: false };
+    pressed = { pointerId: event.pointerId, key, x: event.clientX, y: event.clientY, dragging: false };
+  };
+
+  // A PRESS RELEASED OUTSIDE THE ROOT BEFORE THE DRAG THRESHOLD. Nothing is
+  // captured yet at that point, so the release never reaches the delegated
+  // listeners and the press would stay recorded — and a later move inside the
+  // root, even from another press, could exceed the distance from those stale
+  // coordinates and start a phantom drag for the old node. The window sees
+  // every release, so the pre-drag press is cleared there; a drag underway
+  // holds capture and is delivered to the root as before.
+  const onWindowPointerUp = (event: PointerEvent): void => {
+    if (pressed !== null && !pressed.dragging && pressed.pointerId === event.pointerId) pressed = null;
   };
 
   const onPointerMove = (event: PointerEvent): void => {
-    if (pressed === null || pressed.dragging) return;
+    if (pressed === null || pressed.dragging || pressed.pointerId !== event.pointerId) return;
     if (Math.hypot(event.clientX - pressed.x, event.clientY - pressed.y) < 6) return;
     pressed.dragging = true;
     workspace.setAttribute('data-dragging', 'true');
@@ -847,6 +860,8 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
   root.addEventListener('pointerup', onPointerUp);
   root.addEventListener('pointercancel', onPointerCancel);
   root.addEventListener('lostpointercapture', onPointerCancel);
+  window.addEventListener('pointerup', onWindowPointerUp);
+  window.addEventListener('pointercancel', onWindowPointerUp);
 
   versions.replaceChildren(
     ...STAMPED_PACKAGES.map((name) =>
@@ -884,6 +899,8 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
       root.removeEventListener('pointerup', onPointerUp);
       root.removeEventListener('pointercancel', onPointerCancel);
       root.removeEventListener('lostpointercapture', onPointerCancel);
+      window.removeEventListener('pointerup', onWindowPointerUp);
+      window.removeEventListener('pointercancel', onWindowPointerUp);
       chromeStyles.remove();
     },
   };
