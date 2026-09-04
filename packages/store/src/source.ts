@@ -132,7 +132,18 @@ export type OrderDeriver = (document: GraphDocument) => readonly OrderRow[];
 /** What a guard is shown. Both documents, so it need not recompute either. */
 export interface EdgeGuardContext {
   readonly mutation: Mutation;
-  /** The landed document, before the edit. */
+  /**
+   * The newest authoritative document the source has answered with, before
+   * the edit.
+   *
+   * That is the landed document — except after a `conflict`, whose `upstream`
+   * is newer than anything landed and is what the guard sees until the next
+   * answer that lands replaces it. A verdict reached on the pre-conflict
+   * document would admit an edit that closes a loop on the source's own
+   * document, and a source applies what it is handed. The store's structural
+   * refusals keep reading the landed document: those are questions the source
+   * answers itself, and its answer is adopted.
+   */
   readonly current: GraphDocument;
   /** The document the edit would produce, if it landed. */
   readonly next: GraphDocument;

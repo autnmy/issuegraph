@@ -128,6 +128,16 @@ An optional `EdgeGuard` sits beside it for refusals that need to see the graph �
 type EdgeGuard = (context: { mutation; current; next }) => InvalidReason | undefined;
 ```
 
+`current` is the **newest document the source has answered with**, which is the landed one
+except after a conflict: the conflict's `upstream` is newer than anything landed, so it is
+what the guard is shown until the next answer that lands replaces it. A verdict reached on
+the pre-conflict document would admit an edit that closes a loop on the source's own document
+(the edge the upstream added, with the one queued behind it), and an adapter applies what it
+is handed. Only the guard reads the newer copy: the order and the drawn edges keep reading
+`landed`, and so do the store's own structural refusals — a duplicate or a vanished edge is a
+question the source answers itself, with a document the store adopts, so letting that
+dispatch through is what repairs the store's copy.
+
 ---
 
 ## The order can be trusted, structurally
@@ -188,7 +198,11 @@ to make it.
 
 A conflict's `upstream` is **for display, and is never adopted** — it is the "view diff" half
 of the choice, and a reading of the past: a conflict can sit on screen for as long as a person
-takes to read it.
+takes to read it. The one other thing it is used for is the guard: it is the newest document
+the source has answered with, so an edit proposed or queued after the conflict is shown to
+your `EdgeGuard` against it rather than against the copy the source has said it no longer
+holds (see "The deriver" above). Shown, not adopted — the order does not move for it, and a
+`retry` is still re-dispatched unchanged.
 
 The store ships the two single-step resolutions and **not** the composite:
 
