@@ -410,6 +410,176 @@ test('a conflict resolution never adopts a snapshot older than what has landed',
   );
 });
 
+/**
+ * A guard that refuses a `blocked-by` closing a loop over `next`.
+ *
+ * The walk lives in the test rather than a fixture: it is the one graph
+ * question the store's conflict claims depend on, and the store's own guard
+ * tests keep their guards beside the assertion they serve.
+ */
+const cycleGuard: EdgeGuard = ({ next }) => {
+  const outgoing = new Map<string, string[]>();
+  for (const edge of next.edges) {
+    if (edge.kind !== 'blocked-by') continue;
+    outgoing.set(edge.from, [...(outgoing.get(edge.from) ?? []), edge.to]);
+  }
+  const closesLoop = (start: string): boolean => {
+    const stack = [...(outgoing.get(start) ?? [])];
+    const seen = new Set<string>();
+    for (let at = stack.pop(); at !== undefined; at = stack.pop()) {
+      if (at === start) return true;
+      if (seen.has(at)) continue;
+      seen.add(at);
+      stack.push(...(outgoing.get(at) ?? []));
+    }
+    return false;
+  };
+  return [...outgoing.keys()].some(closesLoop)
+    ? { code: 'would-cycle', message: 'that would close a loop' }
+    : undefined;
+};
+
+test('a queued edit is validated against the upstream a conflict carried, not the pre-conflict document', async () => {
+  // Issue #12's reachable sequence. The first edit conflicts, and the
+  // conflict's upstream carries an edge the source now holds; a second edit
+  // queued behind it is legal on the pre-conflict document and closes a loop
+  // on the upstream. A guard shown `landed` admits it, and it lands against a
+  // source that has moved — a cycle the guard exists to refuse.
+  const source = createScriptedSource(threeOpenIssues(), applyEdit);
+  const store = createStore({ source, derive: simpleDeriver, guard: cycleGuard });
+  await store.hydrate();
+
+  const first = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  const queued = store.propose({ op: 'create', kind: 'blocked-by', from: '3', to: '2' });
+  assert.equal(store.getSnapshot().writes[1]?.state, 'pending', 'legal on the document as it stood');
+
+  await source.whenPending(first.mutationId);
+  source.settleNext({ outcome: 'conflict', upstream: withEdge(threeOpenIssues(), 'blocked-by', '2', '3') });
+  // Raced rather than awaited: a store that admits the edit hands it to the
+  // adapter and waits for an answer this test never gives, and a timeout is a
+  // weaker failure than the wrong branch of a race.
+  const outcome = await Promise.race([
+    queued.settled.then(() => 'settled' as const),
+    source.whenPending(queued.mutationId).then(() => 'dispatched' as const),
+  ]);
+  assert.equal(outcome, 'settled', 'refused before any write: the adapter never saw the queued edit');
+
+  const record = store.getSnapshot().writes.find((each) => each.mutationId === queued.mutationId);
+  assert.equal(record?.state, 'invalid');
+  if (record?.state === 'invalid') assert.equal(record.reason.code, 'would-cycle');
+  assert.deepEqual(source.pending(), []);
+  assert.deepEqual(store.getSnapshot().landed, [], 'the upstream was not adopted');
+  assert.equal(store.getSnapshot().order.status, 'settled');
+});
+
+test('the guard sees the conflict upstream until the source answers again', async () => {
+  const seen: string[][] = [];
+  const source = createScriptedSource(threeOpenIssues(), applyEdit);
+  const store = createStore({
+    source,
+    derive: simpleDeriver,
+    guard: ({ current }) => {
+      seen.push(current.edges.map((edge) => edge.id));
+      return undefined;
+    },
+  });
+  await store.hydrate();
+
+  const conflicted = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  await source.whenPending(conflicted.mutationId);
+  source.settleNext({ outcome: 'conflict', upstream: withEdge(threeOpenIssues(), 'blocked-by', '2', '3') });
+  await conflicted.settled;
+  seen.length = 0;
+
+  // A proposal after the conflict, before any re-read: `current` is the
+  // upstream, at the immediate verdict and again at dispatch.
+  const after = store.propose({ op: 'create', kind: 'duplicate-of', from: '3', to: '1' });
+  await source.whenPending(after.mutationId);
+  assert.deepEqual(seen, [[edgeId('blocked-by', '2', '3')], [edgeId('blocked-by', '2', '3')]]);
+  // A rejection carries no document, so it supersedes nothing: the next
+  // proposal is still shown the upstream.
+  source.settleNext({ outcome: 'rejected', reason: 'refused' });
+  await after.settled;
+  seen.length = 0;
+  const again = store.propose({ op: 'create', kind: 'serialize-with', from: '1', to: '3' });
+  assert.deepEqual(seen, [[edgeId('blocked-by', '2', '3')]], 'a rejection carries no document');
+  await source.whenPending(again.mutationId);
+  source.settleNext({ outcome: 'rejected', reason: 'refused' });
+  await again.settled;
+  seen.length = 0;
+
+  // A re-read supersedes it: the source's own document has no such edge.
+  await store.rehydrate();
+  const later = store.propose({ op: 'create', kind: 'duplicate-of', from: '2', to: '1' });
+  await source.whenPending(later.mutationId);
+  assert.deepEqual(seen, [[], []], 'after a re-read the guard is shown the landed document again');
+  source.settleNext('applied');
+  await later.settled;
+});
+
+test('the structural refusals still read the landed document after a conflict', async () => {
+  // Deliberately NOT the upstream. A duplicate is a question the source answers
+  // for itself — `unchanged`, with a document the store adopts — so the
+  // dispatch is what repairs the store's copy. Refused against the upstream,
+  // the edge would sit `invalid` over a document that does not show it, with
+  // nothing to do but wait for a re-read nothing prompts.
+  const source = createScriptedSource(threeOpenIssues(), applyEdit);
+  const store = createStore({ source, derive: simpleDeriver });
+  await store.hydrate();
+
+  const conflicted = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  await source.whenPending(conflicted.mutationId);
+  source.settleNext({ outcome: 'conflict', upstream: withEdge(threeOpenIssues(), 'blocked-by', '2', '3') });
+  await conflicted.settled;
+
+  const duplicate = store.propose({ op: 'create', kind: 'blocked-by', from: '2', to: '3' });
+  const outcome = await Promise.race([
+    duplicate.settled.then(() => 'refused' as const),
+    source.whenPending(duplicate.mutationId).then(() => 'dispatched' as const),
+  ]);
+  assert.equal(outcome, 'dispatched', 'the source, not the store, answers a duplicate');
+  source.settleNext({ outcome: 'unchanged', document: withEdge(threeOpenIssues(), 'blocked-by', '2', '3') });
+  await duplicate.settled;
+  assert.deepEqual(
+    store.getSnapshot().landed.map((edge) => edge.id),
+    [edgeId('blocked-by', '2', '3')],
+    'the answer is adopted, which is what repairs the copy',
+  );
+});
+
+test('an edit that lands after a conflict supersedes the upstream for validation', async () => {
+  const seen: string[][] = [];
+  const source = createScriptedSource(threeOpenIssues(), applyEdit);
+  const store = createStore({
+    source,
+    derive: simpleDeriver,
+    guard: ({ current }) => {
+      seen.push(current.edges.map((edge) => edge.id));
+      return undefined;
+    },
+  });
+  await store.hydrate();
+
+  const conflicted = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  await source.whenPending(conflicted.mutationId);
+  source.settleNext({ outcome: 'conflict', upstream: withEdge(threeOpenIssues(), 'blocked-by', '2', '3') });
+  await conflicted.settled;
+
+  // `applied` is a full authoritative answer, newer than the conflict's
+  // snapshot, so it is what the next refusal is asked about — the same rule
+  // `landed` already follows for the order.
+  seen.length = 0;
+  const lands = store.propose({ op: 'create', kind: 'duplicate-of', from: '3', to: '1' });
+  assert.deepEqual(seen, [[edgeId('blocked-by', '2', '3')]], 'asked about the upstream until something lands');
+  await source.whenPending(lands.mutationId);
+  source.settleNext('applied');
+  await lands.settled;
+  seen.length = 0;
+
+  store.propose({ op: 'create', kind: 'serialize-with', from: '2', to: '3' });
+  assert.deepEqual(seen, [[edgeId('duplicate-of', '3', '1')]], 'what landed is the newest answer');
+});
+
 test('a same-identity refusal marks the edge instead of erasing it', async () => {
   // A retype to the kind the edge already has, and a flip of a symmetric edge,
   // both "produce" the edge they name. Hiding the original while drawing the
@@ -1026,11 +1196,21 @@ test('a retry-on-latest whose refresh fails restores the record and dispatches n
   const before = store.getSnapshot().writes[0];
   assert.equal(before?.state, 'conflict');
 
+  // Every published transition, so the restore can be shown to ride the same
+  // publish as the failure: a subscriber never sees "refresh failed, edit
+  // still in flight" as a state of its own.
+  const transitions: string[] = [];
+  store.subscribe(() => {
+    const seen = store.getSnapshot();
+    transitions.push(`${seen.hydrationError ?? 'ok'}/${seen.writes[0]?.state ?? 'none'}`);
+  });
+
   state.readFails = true;
   await store.retryOnLatest(id).settled;
 
   const snapshot = store.getSnapshot();
   assert.deepEqual(log, ['hydrate', 'dispatch', 'hydrate'], 'nothing was dispatched against an unconfirmed document');
+  assert.deepEqual(transitions, ['ok/pending', 'the tracker is down/conflict'], 'reserved, then failed-and-restored, in one publish');
   assert.equal(snapshot.hydrationError, 'the tracker is down');
   assert.equal(snapshot.status, 'ready', 'a failed refresh keeps the last good document');
   assert.deepEqual(snapshot.writes, [before], 'the conflict is back exactly as it was, upstream and all');

@@ -232,6 +232,40 @@ export function createStore(config: StoreConfig): Store {
   const { source, derive, guard } = config;
 
   let landed: GraphDocument = EMPTY_DOCUMENT;
+  /**
+   * THE NEWEST AUTHORITATIVE DOCUMENT THE SOURCE HAS ANSWERED WITH, which is
+   * `landed` except after a `conflict`.
+   *
+   * A conflict carries the document as the source holds it, and the store
+   * adopts none of it — the order must not move for an edit that did not land,
+   * and the README's "Resolving a conflict" says why the upstream is for
+   * display. But it is also the one thing the store has been TOLD about the
+   * source's document since it last read one, and it is strictly newer than
+   * `landed`. Validating against `landed` after it arrives means checking an
+   * edit against a document the source has just said it no longer holds: a
+   * queued edit whose legality depends on the upstream's change — the very
+   * edge it added closing a cycle with this one — is admitted by a guard shown
+   * the pre-conflict graph, and lands against a source that has moved
+   * ([#12](https://github.com/autnmy/issuegraph/issues/12)).
+   *
+   * So the GUARD reads THIS document, and nothing else does. The deriver and
+   * the projection keep reading `landed`, which is what keeps "optimistic
+   * re-ordering is not allowed" a property of the structure. The structural
+   * refusals keep reading `landed` too, for a different reason: they ask
+   * questions the source answers for itself — a duplicate comes back
+   * `unchanged`, a vanished edge comes back `rejected` or `unchanged` — and the
+   * answer is adopted, so a dispatch the store lets through is what repairs
+   * its copy. Refusing those against a document the snapshot cannot show would
+   * draw an edge the user can see as `unknown-edge`, with nothing to do but
+   * wait for a re-read nothing prompts. A cycle is the question the source
+   * does NOT answer — an adapter applies what it is handed — which is why the
+   * guard is the one reader that must not be shown the stale copy. Every
+   * `adopt` sets both documents; only the conflict arm moves this one alone.
+   * The queue runs one authoritative operation at a time, so this is monotone
+   * in the order the source answered — no freshness counter, which is the
+   * bookkeeping #7 records as wrong three times over.
+   */
+  let newest: GraphDocument = EMPTY_DOCUMENT;
   let status: HydrationStatus = 'idle';
   let hydrationError: string | undefined;
   let records: readonly WriteRecord[] = [];
@@ -311,6 +345,9 @@ export function createStore(config: StoreConfig): Store {
       edges: sameEdgeSet(landed.edges, next.edges) ? landed.edges : own(next.edges),
     };
     landed = adopted;
+    // An authoritative answer supersedes a conflict's upstream: what landed is
+    // now the newest thing the source has said.
+    newest = adopted;
   }
 
   /**
@@ -447,6 +484,12 @@ export function createStore(config: StoreConfig): Store {
   /**
    * Why this edit cannot happen — structurally, then by the injected guard.
    *
+   * The structural check reads `landed` and the guard reads `newest` — the
+   * document the source most recently answered with, which a conflict can
+   * make newer than anything landed. The split is deliberate and the note on
+   * `newest` says why: the source corrects a structural mistake with an answer
+   * the store adopts, and a cycle it never corrects at all.
+   *
    * A guard that throws reached no verdict, and an unknown verdict is not
    * permission to write: it refuses, fail-closed, with the thrown message as
    * the reason. Letting it escape would strand the whole dispatch queue behind
@@ -457,7 +500,7 @@ export function createStore(config: StoreConfig): Store {
     if (structural !== undefined) return structural;
     if (guard === undefined) return undefined;
     try {
-      return guard({ mutation, current: landed, next: nextDocument(landed, mutation) });
+      return guard({ mutation, current: newest, next: nextDocument(newest, mutation) });
     } catch (thrown) {
       return { code: 'guard-failed', message: messageOf(thrown) };
     }
@@ -512,15 +555,15 @@ export function createStore(config: StoreConfig): Store {
         break;
       }
       case 'conflict': {
-        putRecord({
-          mutationId: mutation.mutationId,
-          mutation,
-          state: 'conflict',
-          // Taken on rather than retained by reference: it is exposed through
-          // `snapshot.writes`, so a consumer must not be able to edit the
-          // adapter's own arrays through it.
-          upstream: ownDocument(result.upstream),
-        });
+        // Taken on rather than retained by reference: it is exposed through
+        // `snapshot.writes`, so a consumer must not be able to edit the
+        // adapter's own arrays through it.
+        const upstream = ownDocument(result.upstream);
+        putRecord({ mutationId: mutation.mutationId, mutation, state: 'conflict', upstream });
+        // NOT adopted — `landed` and the order stay where they are. But it is
+        // the newest document the source has answered with, so it is what the
+        // guard is next shown, until an answer that lands replaces it.
+        newest = upstream;
         break;
       }
     }
@@ -580,12 +623,13 @@ export function createStore(config: StoreConfig): Store {
    * Run the queue, one authoritative operation at a time — dispatches and
    * document reads alike, since both answer with a document.
    *
-   * An edit that WAITED is re-checked before it goes out, because `landed` may
-   * have moved under it — a sibling edit can delete the relationship this one
-   * retypes, and dispatching against a document that no longer admits it would
-   * defeat "refused before any write". An edit that did not wait keeps the
-   * verdict `start` already reached, so the guard is called once per edit in
-   * the ordinary case and twice only when the document genuinely moved.
+   * An edit that WAITED is re-checked before it goes out, because the document
+   * may have moved under it — a sibling edit can delete the relationship this
+   * one retypes, and a sibling's CONFLICT can carry an upstream that closes a
+   * cycle with it — and dispatching against a document that no longer admits
+   * it would defeat "refused before any write". Every edit is re-checked here
+   * whether or not it waited; the comment at the check says why. A resolve is
+   * checked here for the FIRST time, against the document its read confirmed.
    */
   async function drain(): Promise<void> {
     if (draining) return;
@@ -593,21 +637,29 @@ export function createStore(config: StoreConfig): Store {
     try {
       for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
         if (next.kind === 'load') {
-          next.done(await runLoad(next.first));
+          const ok = await runLoad(next.first);
+          publish();
+          next.done(ok);
           continue;
         }
-        if (next.kind === 'resolve' && !(await runLoad(false))) {
-          // THE READ FAILED, SO NOTHING IS CONFIRMED, and the edit does not go
-          // out: the queue's next line is the dispatch, and this `continue` is
-          // what makes the two halves one operation. The record goes back to
-          // exactly what it was when the resolution was reserved — a conflict
-          // keeps its `upstream` for view-diff — and `hydrationError`, set by
-          // the load, says why. Not downgraded to `failed`: that would throw
-          // away the one document the user can still compare against.
-          putRecord(next.prior);
-          settle(next.mutation.mutationId);
+        if (next.kind === 'resolve') {
+          const ok = await runLoad(false);
+          if (!ok) {
+            // THE READ FAILED, SO NOTHING IS CONFIRMED, and the edit does not
+            // go out: the `continue` below is what makes the two halves one
+            // operation. The record goes back to exactly what it was when the
+            // resolution was reserved — a conflict keeps its `upstream` for
+            // view-diff — and `hydrationError`, set by the read, says why. Not
+            // downgraded to `failed`: that would throw away the one document
+            // the user can still compare against.
+            putRecord(next.prior);
+            settle(next.mutation.mutationId);
+          }
+          // ONE TRANSITION, whichever way the read went. The restore rides the
+          // same publish as the read's outcome, so no subscriber can observe
+          // "refresh failed, edit still in flight" as a state of its own.
           publish();
-          continue;
+          if (!ok) continue;
         }
         // ALWAYS re-checked, not only when something is known to have moved.
         // For a resolve this is the FIRST check, and against the document the
@@ -648,8 +700,16 @@ export function createStore(config: StoreConfig): Store {
     return { mutationId, settled: Promise.resolve() };
   }
 
-  /** Read the document. Only ever called from the queue. */
-  /** Read the document. Resolves `true` when the read succeeded. */
+  /**
+   * Read the document. Only ever called from the queue. Resolves `true` when
+   * the read succeeded.
+   *
+   * PUBLISHES NOTHING AT THE END, on purpose: the caller decides what else
+   * belongs in the same transition. A resolve whose read failed restores its
+   * record before publishing, so the outcome of the read and the restored edit
+   * arrive together. (The `hydrating` publish on a first load is a transition
+   * of its own, before the read starts.)
+   */
   async function runLoad(first: boolean): Promise<boolean> {
     if (first) {
       status = 'hydrating';
@@ -667,10 +727,8 @@ export function createStore(config: StoreConfig): Store {
       // A failed refresh keeps the last good document and stays `ready`; only a
       // first load that never produced one reports `failed`.
       if (first) status = 'failed';
-      publish();
       return false;
     }
-    publish();
     return true;
   }
 
