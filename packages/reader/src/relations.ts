@@ -247,7 +247,11 @@ function fromHolds(holds: readonly ReadinessHold[]): ReadinessResult {
 export const UNKNOWN_NODE_READINESS: ReadinessResult = Object.freeze({
   ready: false,
   reasons: Object.freeze(['unknown node']),
-  holds: Object.freeze([hold('unknown-node', 'unknown node')]),
+  // FROZEN AT EVERY LEVEL. A shared value handed to every caller is only safe
+  // if none of them can write through it: `Object.freeze` is shallow, so a
+  // frozen array of a mutable hold still lets a JavaScript consumer assign
+  // `holds[0].text` and corrupt every later answer — and break the projection.
+  holds: Object.freeze([Object.freeze(hold('unknown-node', 'unknown node'))]),
 });
 
 /**

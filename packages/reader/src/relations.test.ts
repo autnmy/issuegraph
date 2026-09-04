@@ -273,6 +273,17 @@ describe('every hold carries its code and its subject, and the sentence is uncha
     });
   }
 
+  test('the shared unknown-node answer is frozen at every level', () => {
+    // One value is handed to every caller, so a write through it would reach
+    // all of them. `Object.freeze` is shallow; each level is pinned separately.
+    const result = model.readiness('99');
+    assert.equal(result, evaluateReadiness(corpus, '99'), 'one shared value');
+    assert.ok(Object.isFrozen(result));
+    assert.ok(Object.isFrozen(result.reasons));
+    assert.ok(Object.isFrozen(result.holds));
+    assert.ok(Object.isFrozen(result.holds[0]));
+  });
+
   test('the codes the reader emits are exactly the exported vocabulary', () => {
     const emitted = new Set(cases.map(([, hold]) => hold.code));
     assert.deepEqual([...emitted].sort(), [...READINESS_HOLD_CODES].sort());
