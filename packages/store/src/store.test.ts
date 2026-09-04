@@ -323,6 +323,53 @@ test('an injected guard refuses, and the adapter is never called', async () => {
   assert.equal(snapshot.order.status, 'settled', 'a refusal was never in flight');
 });
 
+test('a writer rule reaches every route to a write, and the adapter is never called', async () => {
+  // Issue #11. Enforced at a call site, the cardinality rule covered one route
+  // and a second create inside the settle window slipped past it; enforced by
+  // an adapter, it came back `failed` — "refused upstream" — on a write that
+  // never left the client. As a structural refusal it is asked on `propose`,
+  // on `retry`, and on the re-check an edit that waited in the queue gets.
+  const scripted = createScriptedSource(threeOpenIssues(), applyEdit);
+  let dispatches = 0;
+  const store = createStore({
+    source: {
+      hydrate: () => scripted.hydrate(),
+      dispatch: (mutation) => {
+        dispatches += 1;
+        return scripted.dispatch(mutation);
+      },
+    },
+    derive: simpleDeriver,
+  });
+  await store.hydrate();
+
+  // ROUTE 1 — the settle window. The second create passes at proposal time,
+  // because nothing has landed yet, and is refused when its turn comes.
+  const first = store.propose({ op: 'create', kind: 'decomposed-from', from: '1', to: '2' });
+  const second = store.propose({ op: 'create', kind: 'decomposed-from', from: '1', to: '3' });
+  await scripted.whenPending(first.mutationId);
+  scripted.settleNext('applied');
+  await first.settled;
+  await second.settled;
+  const refused = store.getSnapshot().writes.find((write) => write.mutationId === second.mutationId);
+  assert.equal(refused?.state, 'invalid');
+  assert.equal(refused?.state === 'invalid' ? refused.reason.code : undefined, 'cardinality');
+  assert.equal(dispatches, 1, 'the refused edit never reached the adapter');
+
+  // ROUTE 2 — `retry` re-checks against the document as it stands.
+  await store.retry(second.mutationId).settled;
+  assert.equal(dispatches, 1, 'a retry of a refused edit never reached the adapter either');
+  assert.equal(
+    store.getSnapshot().writes.find((write) => write.mutationId === second.mutationId)?.state,
+    'invalid',
+  );
+  assert.equal(
+    store.getSnapshot().writes.some((write) => write.state === 'failed'),
+    false,
+    'a format rule is not reported as an upstream rejection',
+  );
+});
+
 test('the guard is shown both documents', async () => {
   const seen: { current: number; next: number }[] = [];
   const store = createStore({

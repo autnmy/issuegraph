@@ -82,6 +82,15 @@ export interface InvalidReason {
  * `guard-failed` is the opposite case — the guard threw, so no verdict was
  * reached at all. It refuses rather than proceeding, because an unknown verdict
  * is not permission to write.
+ *
+ * `cardinality` is a rule of the FORMAT rather than of the store's own
+ * structure: every relationship field but `blocked-by` holds one reference
+ * (§4.3, `EDGE_CARDINALITY`). It is refused here all the same, because it is
+ * visible from the edit and the document alone — the same test that puts
+ * `duplicate-edge` here rather than in a guard. Left to hosts, the rule was
+ * enforced once per host on one route to a write each, and an adapter that
+ * enforced it reported a format rule as an upstream rejection on a write that
+ * never left the client (issue #11).
  */
 export const INVALID_CODES = Object.freeze([
   'self-edge',
@@ -90,6 +99,7 @@ export const INVALID_CODES = Object.freeze([
   'duplicate-edge',
   'unchanged-kind',
   'symmetric-edge',
+  'cardinality',
   'would-cycle',
   'guard-failed',
 ] as const);

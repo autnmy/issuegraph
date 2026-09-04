@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { EDGE_FIELDS, SYMMETRIC_EDGE_FIELDS, isSymmetricEdgeField } from '@issuegraph/core';
+import { EDGE_CARDINALITY, EDGE_FIELDS, SYMMETRIC_EDGE_FIELDS, isSymmetricEdgeField } from '@issuegraph/core';
 import type { Proposal } from '@issuegraph/store';
 
 import { type BatchPlan, planBatch, resumeBatch } from './batch.ts';
@@ -89,6 +89,45 @@ describe('symmetric applies at once; directed needs one pick', () => {
         kind,
       });
     }
+  });
+
+  it('puts a symmetric star on the MEMBERS, so every field the batch writes holds one reference', () => {
+    // `serialize-with` and `together-with` are single-valued (§4.3). A star
+    // whose arms all sat on the anchor would give it N references, and the
+    // store's `cardinality` refusal would admit exactly one of them — which is
+    // how this orientation was found. Each member pointing at the anchor is
+    // how a writer joins a group, and the component is the same either way.
+    for (const kind of SYMMETRIC_EDGE_FIELDS) {
+      const plan = planOf({ anchor: ANCHOR, members: MEMBERS, kind });
+      assert.deepEqual(
+        plan.proposals,
+        MEMBERS.map((member) => ({ op: 'create', kind, from: member, to: ANCHOR })),
+        kind,
+      );
+    }
+  });
+
+  it('refuses a from-anchor star of a single-valued directed kind as a request shape', () => {
+    // The anchor would carry one reference per member. Decided from the
+    // vocabulary so a sixth single-valued field is covered without an edit.
+    const single = EDGE_FIELDS.filter(
+      (field) => !isSymmetricEdgeField(field) && EDGE_CARDINALITY[field] === 'single',
+    );
+    assert.ok(single.length > 0, 'the format has no single-valued directed field to test');
+    for (const kind of single) {
+      const away = planBatch({ anchor: ANCHOR, members: MEMBERS, kind, direction: 'from-anchor' });
+      assert.deepEqual(away.ok === false ? away.refusal : null, { reason: 'anchor-cannot-carry', kind });
+      // Pointing AT the anchor is one reference per member, and is planned.
+      const toward = planOf({ anchor: ANCHOR, members: MEMBERS, kind, direction: 'to-anchor' });
+      assert.equal(toward.count, 3, kind);
+      // ONE member from the anchor is one reference, which the field holds.
+      const one = planOf({ anchor: ANCHOR, members: ['901'], kind, direction: 'from-anchor' });
+      assert.deepEqual(one.proposals, [{ op: 'create', kind, from: ANCHOR, to: '901' }], kind);
+      // The same member named twice is still one reference.
+      assert.equal(planOf({ anchor: ANCHOR, members: ['901', '901'], kind, direction: 'from-anchor' }).count, 2, kind);
+    }
+    // The list field fans out from the anchor as before.
+    assert.equal(planOf({ anchor: ANCHOR, members: MEMBERS, kind: 'blocked-by', direction: 'from-anchor' }).count, 3);
   });
 
   it('points the whole batch the way the one pick said', () => {

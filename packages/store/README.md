@@ -184,7 +184,9 @@ it, split by what the answer needs to see:
 
 - the store itself, for what is visible in the edit — a self-edge, a reference the document
   does not hold, an exact duplicate, a retype to the kind the edge already has, a flip on a
-  symmetric relationship;
+  symmetric relationship, and a second reference on a single-valued field (`cardinality`:
+  every relationship field but `blocked-by` holds one, §4.3 — the one writer rule of the
+  format that needs no graph walk, so it is refused here rather than once per host);
 - your `EdgeGuard`, for anything needing the graph.
 
 ## A failed write is marked, never reverted
