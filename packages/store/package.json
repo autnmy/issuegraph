@@ -1,6 +1,12 @@
 {
   "name": "@issuegraph/store",
+<<<<<<< HEAD
   "version": "0.2.0",
+||||||| 6701972
+  "version": "0.1.1",
+=======
+  "version": "0.1.2",
+>>>>>>> origin/main
   "description": "A framework-free client store for an Issuegraph document, plus the data-source port a host plugs its tracker into. Renders edits optimistically, dispatches every mutation outward, and never re-evaluates the selection order until the write lands.",
   "keywords": [
     "issuegraph",
