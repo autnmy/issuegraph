@@ -245,12 +245,12 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
         void live.store.propose(effect.proposal);
         return;
       case 'retry': {
-        // A conflict retries against the LATEST document: the store offers no
-        // retry-on-latest of its own, so the host composes it from the two
-        // single steps, exactly as the store's README prescribes.
+        // A conflict retries against the LATEST document. The store owns that
+        // resolution: it reserves the edit, re-reads, then re-dispatches as one
+        // operation, so there is nothing for the host to sequence.
         const record = live.store.getSnapshot().writes.find((each) => each.mutationId === effect.mutationId);
         if (record?.state === 'conflict') {
-          void live.store.rehydrate().then(() => live.store.retry(effect.mutationId));
+          void live.store.retryOnLatest(effect.mutationId);
         } else {
           void live.store.retry(effect.mutationId);
         }
