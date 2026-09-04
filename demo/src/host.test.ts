@@ -162,6 +162,20 @@ describe('the three create paths reach one proposal', () => {
     assert.equal(escaped.state.draft.source, null);
     assert.equal(escaped.effects.length, 0);
   });
+
+  it('Escape clears the drop point and the query along with the draft', () => {
+    const mid = drive([
+      { kind: 'drag-start', key: '2' },
+      { kind: 'drop', key: '3', at: { x: 40, y: 50 } },
+      { kind: 'control', name: 'target-query', value: 'stale' },
+    ]).state;
+    assert.deepEqual(mid.drop, { x: 40, y: 50 });
+    const escape = keyIntent({ key: 'Escape' }, { focused: '2', match: null, selectedEdge: null, interaction: 'canvas' });
+    const { state } = drive([{ kind: 'intent', intent: escape }], mid);
+    assert.equal(state.drop, null);
+    assert.equal(state.targetQuery, '');
+    assert.equal(state.draft.source, null);
+  });
 });
 
 describe('edits on a selected edge come from the picker’s own view', () => {

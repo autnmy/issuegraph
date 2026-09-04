@@ -433,7 +433,19 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
     // `focus()` is a no-op and the reader's focus falls off the page.
     const target =
       scope.querySelector<HTMLElement>(`${selector}[tabindex]`) ?? scope.querySelector<HTMLElement>(selector);
-    target?.focus({ preventScroll: true });
+    if (target === null) return;
+    // THE ROVING TAB STOP MOVES WITH FOCUS, as the viewer's own mount moves it.
+    // The zone renders one element at tabindex 0 and the rest at -1; moving
+    // focus without moving the stop leaves Tab returning to the old row when
+    // the reader leaves the zone and comes back.
+    if (target.hasAttribute('tabindex')) {
+      const owner = target.closest<HTMLElement>('.ig-zone') ?? scope;
+      for (const stop of owner.querySelectorAll<HTMLElement>('[data-ig-key][tabindex="0"]')) {
+        if (stop !== target) stop.setAttribute('tabindex', '-1');
+      }
+      target.setAttribute('tabindex', '0');
+    }
+    target.focus({ preventScroll: true });
   };
 
   /**

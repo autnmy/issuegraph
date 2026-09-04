@@ -150,7 +150,13 @@ function drafted(
     // draft's subject — the same rule the canvas drop already applies.
     const selection: WorkspaceSelection =
       command.kind === 'begin' ? { kind: 'issue', key: command.source } : state.selection;
-    return settled({ ...state, draft: result.draft, selection });
+    // A CANCEL CLEARS THE DRAFT'S CHROME TOO — the drop point a canvas chooser
+    // was placed at and the query typed into the target search — exactly as
+    // the explicit cancel control does. Escape reaches here through the key
+    // map, and a draft begun afterwards must not open at the old drop point
+    // or with the old query already in the box.
+    const chrome = command.kind === 'cancel' ? { targetQuery: '', drop: null } : {};
+    return settled({ ...state, draft: result.draft, selection, ...chrome });
   }
   return {
     state: { ...state, draft: IDLE_CREATE_DRAFT, targetQuery: '', drop: null },
