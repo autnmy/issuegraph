@@ -235,3 +235,44 @@ describe('a document whose keys are not encodable', () => {
     assert.match(rendered.markup, /class="ig-connector"/, 'the connector was dropped rather than drawn');
   });
 });
+
+describe('a hold publishes its cause and subject when the host supplied them', () => {
+  const heldSlot = fixtureDocument.order.slots.find((slot) => slot.lead === '101');
+  assert.ok(heldSlot !== undefined);
+  const coded = {
+    ...fixtureDocument,
+    order: {
+      ...fixtureDocument.order,
+      slots: fixtureDocument.order.slots.map((slot) =>
+        slot.lead === '101'
+          ? {
+              ...slot,
+              holds: [
+                {
+                  family: 'graph' as const,
+                  reason: 'blocked-by 102 is open',
+                  code: 'blocked-by-open',
+                  subject: '102',
+                },
+              ],
+            }
+          : slot,
+      ),
+    },
+  };
+
+  it('as data-code and data-subject beside data-family, sentence unchanged', () => {
+    const { markup } = renderViewer(coded, { projection: 'linear' });
+    assert.match(
+      markup,
+      /<p class="ig-hold" data-family="graph" data-code="blocked-by-open" data-subject="102">blocked-by 102 is open<\/p>/,
+    );
+  });
+
+  it('and omits both when the host stated neither — never an empty attribute', () => {
+    const { markup } = renderViewer(fixtureDocument, { projection: 'linear' });
+    assert.match(markup, /<p class="ig-hold" data-family="graph">blocked by 102, which is open<\/p>/);
+    assert.doesNotMatch(markup, /data-code=/);
+    assert.doesNotMatch(markup, /data-subject=/);
+  });
+});

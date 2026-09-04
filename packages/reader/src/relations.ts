@@ -154,11 +154,106 @@ export function declarerOnlyNode(
 /** Either kind, for the reads that do not care which. */
 export type ModelNode = NodeInput | DeclarerOnlyNode;
 
+/**
+ * Every cause a readiness answer can carry — the §6.2 conditions as this module
+ * checks them, plus the refusal of a key it does not know. A frozen tuple so a
+ * consumer can ENUMERATE it (a filter facet, a legend, an exhaustiveness check)
+ * rather than restate it; `ReadinessHoldCode` is derived from it so the two
+ * cannot drift.
+ *
+ * READ OFF THE EMITTING SITES, NOT INVENTED. Each code is one `push` site, in
+ * the order a result's `holds` can carry them: `baseHolds`' own checks first,
+ * then the unit conjunction `readiness` appends after them. A new refusal must name a member of this tuple to
+ * typecheck, and `relations.test.ts` holds a per-code fixture table whose codes
+ * must equal this tuple — so a code added here without a fixture, or a fixture
+ * without a code, fails a test rather than shipping as prose only.
+ */
+export const READINESS_HOLD_CODES = Object.freeze([
+  'weak-source',
+  'under-read-self',
+  'closed',
+  'duplicate',
+  'blocked-by-open',
+  'blocked-by-under-read',
+  'blocked-by-unresolvable',
+  'relation-unresolvable',
+  'together-under-read',
+  'serialize-under-read',
+  'serialize-claimed',
+  'together-member-unready',
+  'unknown-node',
+] as const);
+
+export type ReadinessHoldCode = (typeof READINESS_HOLD_CODES)[number];
+
+/**
+ * One failed readiness condition, machine-readable.
+ *
+ * `text` is the sentence `ReadinessResult.reasons` has always carried for this
+ * failure — byte-identical, so anything that renders prose is unchanged.
+ * `code` is what a consumer groups and filters on instead of matching that
+ * sentence, and `subject` is the issue the cause names, when it names one: the
+ * open blocker, the claimed serialize peer, the unready unit member, or an
+ * unresolvable reference. ALWAYS THE MODEL'S KEY FOR IT — `keyForRef`'s
+ * spelling, the one `Model.keys` and every `ViewerIssue.key` use — never the
+ * declaration's raw text: an unresolvable ref has no node to canonicalize
+ * THROUGH (no `duplicate-of` to follow), but it is still normalized to the key
+ * it would have had, so a consumer compares subjects to keys and nothing else.
+ * Absent, not empty, for a cause about the node itself (`closed`, `duplicate`,
+ * the two under-read refusals of its own declaration, `weak-source`,
+ * `unknown-node`).
+ *
+ * The subject is the half that turns a hold into a deep link: every held unit
+ * whose holder is not among its drawn members — an ordinary blocker, a
+ * serialize peer in another component, a reference that resolves to nothing —
+ * named that holder only in prose before this field existed.
+ */
+export interface ReadinessHold {
+  readonly code: ReadinessHoldCode;
+  readonly subject?: string;
+  readonly text: string;
+}
+
 export interface ReadinessResult {
   readonly ready: boolean;
-  /** Empty when ready; each entry names one failed §6.2 condition. */
+  /**
+   * Empty when ready; each entry names one failed §6.2 condition.
+   *
+   * A PROJECTION of `holds` — `holds[i].text`, in the same order — kept so a
+   * consumer that reads prose reads exactly what it always did. The same
+   * source-and-projection rule `ParseResult.findings` and `diagnostics` follow:
+   * two hand-maintained lists drift, and a drifted pair reports a hold to one
+   * reader and not the other.
+   */
   readonly reasons: readonly string[];
+  /** Empty when ready; the same failures, each with its code and subject. */
+  readonly holds: readonly ReadinessHold[];
 }
+
+/** One hold. `subject` is OMITTED rather than set to `undefined` when absent. */
+function hold(code: ReadinessHoldCode, text: string, subject?: string): ReadinessHold {
+  return subject === undefined ? { code, text } : { code, subject, text };
+}
+
+/** A result from its holds; `reasons` is derived here and nowhere else. */
+function fromHolds(holds: readonly ReadinessHold[]): ReadinessResult {
+  return { ready: holds.length === 0, reasons: holds.map((h) => h.text), holds };
+}
+
+/**
+ * The answer for a key the caller never supplied. ONE value, shared by
+ * `readiness` here and by `buildModel`'s fallback, so the two entry points
+ * cannot spell the refusal differently.
+ */
+export const UNKNOWN_NODE_READINESS: ReadinessResult = Object.freeze({
+  ready: false,
+  reasons: Object.freeze(['unknown node']),
+  // FROZEN AT EVERY LEVEL. A shared value handed to every caller is only safe
+  // if none of them can write through it: `Object.freeze` is shallow, so a
+  // frozen array of a mutable hold still lets a JavaScript consumer assign
+  // `holds[0].text` and corrupt every later answer — and break the projection.
+  holds: Object.freeze([Object.freeze(hold('unknown-node', 'unknown node'))]),
+});
 
 /**
  * The mapped-label spelling this model understands, built from the
@@ -588,7 +683,9 @@ export function buildRelations(
       const rk = targetKey(data.togetherWith);
       const target = referenceable.has(rk) ? byKey.get(rk) : undefined;
       if (target === undefined) {
-        unresolvedRelations.set(k, [...(unresolvedRelations.get(k) ?? []), `together-with ${rk}`]);
+        // THE BARE REF, not a pre-formatted sentence: the hold's `subject` is the
+        // ref, and the field name is put back at the one site that renders it.
+        unresolvedRelations.set(k, [...(unresolvedRelations.get(k) ?? []), rk]);
         diagnostics.push(`${k}: together-with ${rk} is unresolvable; fail-safe: refusing the declarer`);
       } else if (!target.open && target.declarationRead === 'under-read') {
         // "A CLOSED MEMBER HAS LEFT THE UNIT" IS READ OFF THE TARGET'S OWN
@@ -681,9 +778,9 @@ export function buildRelations(
   // Base readiness checks items 1-4; together-unit conjunction (item 5) is
   // layered on top, with member blocked-by evaluated over BOUNDARY-CROSSING
   // edges only (§4.3.7 — internal edges are advisory, never readiness inputs).
-  const baseReasons = (k: string, togetherMembers: ReadonlySet<string> | null): string[] => {
+  const baseHolds = (k: string, togetherMembers: ReadonlySet<string> | null): ReadinessHold[] => {
     const n = byKey.get(k) as ModelNode;
-    const reasons: string[] = [];
+    const holds: ReadinessHold[] = [];
     // A WEAK NODE IS NEVER READY, whatever its own copy says — and the refusal
     // lives HERE, in the one function every readiness path runs through, rather
     // than at the entry to `readiness`. It was at that entry first, and the
@@ -691,7 +788,9 @@ export function buildRelations(
     // unit contained a weak member read ready while the unit it would claim
     // atomically (§4.3.7) contained a node the model refuses to select. A guard
     // at one of two doors is not a guard.
-    if (n.declarerOnly === true) reasons.push('declared by a weak source; not selectable');
+    if (n.declarerOnly === true) {
+      holds.push(hold('weak-source', 'declared by a weak source; not selectable'));
+    }
     // THE NODE'S OWN DECLARATION WAS UNDER-READ. Every derivation below reads
     // `n.data` as though it were the whole declaration, and for this node it is
     // not — a dropped `blocked-by` item leaves a SHORT blocker list that reports
@@ -707,10 +806,12 @@ export function buildRelations(
     // ready, so an under-read member already refuses the whole unit — the same
     // one-function argument the weak-source line above rests on.
     if (n.declarationRead === 'under-read') {
-      reasons.push('own issuegraph declaration was not fully read (fail-safe: refusing the node)');
+      holds.push(
+        hold('under-read-self', 'own issuegraph declaration was not fully read (fail-safe: refusing the node)'),
+      );
     }
-    if (!n.open) reasons.push('closed');
-    if (duplicateCanonicalOf(k) !== null) reasons.push('duplicate-of another issue');
+    if (!n.open) holds.push(hold('closed', 'closed'));
+    if (duplicateCanonicalOf(k) !== null) holds.push(hold('duplicate', 'duplicate-of another issue'));
     for (const b of blockersOf.get(k) ?? []) {
       // INTERNAL EDGE (§4.3.7) — advisory, not a readiness input. `b !== k` is
       // load-bearing: a node blocked by ITSELF is a groomed-graph defect, not
@@ -720,7 +821,7 @@ export function buildRelations(
       // members, never for a member's edge to itself.
       if (b !== k && togetherMembers?.has(b) === true) continue;
       const bn = byKey.get(b) as ModelNode;
-      if (bn.open) reasons.push(`blocked-by ${b} is open`);
+      if (bn.open) holds.push(hold('blocked-by-open', `blocked-by ${b} is open`, b));
       else {
         // A CLOSED BLOCKER WHOSE OWN DECLARATION WAS UNDER-READ IS NOT EVIDENCE
         // OF BEING UNBLOCKED, and this is the one place the axis has to travel
@@ -769,8 +870,12 @@ export function buildRelations(
         // no member for `readiness` to evaluate. It is corrected here rather
         // than deleted, because the wrong version is the easier one to re-derive.
         if (bn.declarationRead === 'under-read') {
-          reasons.push(
-            `blocked-by ${b} is closed but its own declaration was under-read — a dropped duplicate-of would redirect this edge to a canonical that may still be open (fail-safe: blocking)`,
+          holds.push(
+            hold(
+              'blocked-by-under-read',
+              `blocked-by ${b} is closed but its own declaration was under-read — a dropped duplicate-of would redirect this edge to a canonical that may still be open (fail-safe: blocking)`,
+              b,
+            ),
           );
         }
         if (bn.closedStateReason != null && bn.closedStateReason !== 'completed') {
@@ -784,14 +889,20 @@ export function buildRelations(
       }
     }
     for (const u of unresolvedBlockers.get(k) ?? []) {
-      reasons.push(`blocked-by ${u} is unresolvable (fail-safe: blocking)`);
+      holds.push(hold('blocked-by-unresolvable', `blocked-by ${u} is unresolvable (fail-safe: blocking)`, u));
     }
     for (const u of unresolvedRelations.get(k) ?? []) {
-      reasons.push(`${u} is unresolvable (fail-safe: refusing the declarer)`);
+      holds.push(
+        hold('relation-unresolvable', `together-with ${u} is unresolvable (fail-safe: refusing the declarer)`, u),
+      );
     }
     for (const u of underReadTogether.get(k) ?? []) {
-      reasons.push(
-        `together-with ${u} is closed but its own declaration was under-read — a dropped duplicate-of would redirect this edge to a canonical that may still be an open member (fail-safe: refusing the declarer)`,
+      holds.push(
+        hold(
+          'together-under-read',
+          `together-with ${u} is closed but its own declaration was under-read — a dropped duplicate-of would redirect this edge to a canonical that may still be an open member (fail-safe: refusing the declarer)`,
+          u,
+        ),
       );
     }
     // A SERIALIZE PEER'S DECLARATION WAS UNDER-READ, so the COMPONENT'S TRUE
@@ -822,8 +933,12 @@ export function buildRelations(
       // any input"). The surrounding scans still assert; they are not this
       // change's to rewrite.
       if (byKey.get(m)?.declarationRead === 'under-read') {
-        reasons.push(
-          `serialize group member ${m} had an under-read declaration — the component's true extent is unknown (fail-safe)`,
+        holds.push(
+          hold(
+            'serialize-under-read',
+            `serialize group member ${m} had an under-read declaration — the component's true extent is unknown (fail-safe)`,
+            m,
+          ),
         );
         break;
       }
@@ -849,33 +964,33 @@ export function buildRelations(
         if (m === k || togetherMembers?.has(m) === true) continue;
         const mn = byKey.get(m) as ModelNode;
         if (mn.open && mn.assigneeCount > 0) {
-          reasons.push(`serialize group member ${m} is actively claimed`);
+          holds.push(hold('serialize-claimed', `serialize group member ${m} is actively claimed`, m));
           break;
         }
       }
     }
-    return reasons;
+    return holds;
   };
 
   const readiness = (key: string): ReadinessResult => {
-    if (!byKey.has(key)) return { ready: false, reasons: ['unknown node'] };
+    if (!byKey.has(key)) return UNKNOWN_NODE_READINESS;
     const togetherMembers = componentMembers(together, key);
-    if (togetherMembers.length <= 1) {
-      const reasons = baseReasons(key, null);
-      return { ready: reasons.length === 0, reasons };
-    }
+    if (togetherMembers.length <= 1) return fromHolds(baseHolds(key, null));
     const memberSet = new Set(togetherMembers.filter((m) => (byKey.get(m) as ModelNode).open));
-    const reasons = baseReasons(key, memberSet);
+    const holds = baseHolds(key, memberSet);
     for (const m of togetherMembers) {
       if (m === key) continue;
       const mn = byKey.get(m) as ModelNode;
       if (!mn.open) continue; // closed members leave the unit (§4.3.7)
-      const mReasons = baseReasons(m, memberSet);
-      if (mReasons.length > 0) {
-        reasons.push(`together member ${m} is not ready (${mReasons[0]})`);
+      // THE MEMBER'S FIRST HOLD, as before: the sentence names one cause and
+      // the subject names the member, so a consumer wanting the member's own
+      // causes asks `readiness(m)` rather than parsing them out of this text.
+      const [first] = baseHolds(m, memberSet);
+      if (first !== undefined) {
+        holds.push(hold('together-member-unready', `together member ${m} is not ready (${first.text})`, m));
       }
     }
-    return { ready: reasons.length === 0, reasons };
+    return fromHolds(holds);
   };
 
   return {
@@ -949,7 +1064,7 @@ export function resolveSerializeGroup(
  * open serialize PEER carrying an assignee does.
  *
  * An unknown key is refused rather than admitted, like every other ambiguity
- * here: `{ ready: false, reasons: ['unknown node'] }`.
+ * here: `UNKNOWN_NODE_READINESS`, whose one hold is `unknown-node`.
  */
 export function evaluateReadiness(
   nodes: readonly NodeInput[],

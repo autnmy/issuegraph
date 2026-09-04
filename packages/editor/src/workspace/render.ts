@@ -55,6 +55,7 @@ import {
   type SpecChild,
   type Theme,
   type ViewerDocument,
+  type ViewerHold,
   KEY_ATTRIBUTE,
   element,
   normalizeDocument,
@@ -317,7 +318,12 @@ function relationshipSpec(relationship: InspectorRelationship): ElementSpec {
   );
 }
 
-function inspectorSpec(view: InspectorView, words: WorkspaceWords): ElementSpec {
+function inspectorSpec(
+  view: InspectorView,
+  words: WorkspaceWords,
+  known: ReadonlySet<string>,
+  leadOf: ReadonlyMap<string, string>,
+): ElementSpec {
   const subject = view.subject;
   return element('div', { class: 'ig-inspector', 'data-subject': subject.kind }, [
     subject.kind === 'none'
@@ -346,9 +352,7 @@ function inspectorSpec(view: InspectorView, words: WorkspaceWords): ElementSpec 
                 'ul',
                 { class: 'ig-inspector-holds' },
                 subject.position.holds.map((hold) =>
-                  element('li', { class: 'ig-inspector-hold', 'data-family': hold.family }, [
-                    hold.reason,
-                  ]),
+                  holdRow(hold, known, (key) => leadOf.get(key) === leadOf.get(subject.issue.key)),
                 ),
               ),
         ])
@@ -375,6 +379,75 @@ function inspectorSpec(view: InspectorView, words: WorkspaceWords): ElementSpec 
       ],
     ),
   ]);
+}
+
+/**
+ * One hold in the inspector, with its cause and its subject on the markup.
+ *
+ * THE SUBJECT IS A CONTROL, NOT A SPAN. A held slot's holder is routinely not
+ * among the members drawn — an ordinary blocker never is, a claimed serialize
+ * peer sits in another component, an unresolvable reference is nowhere — so
+ * before this the sentence was the only place the holder was named, and a
+ * reader had to find it by hand. Publishing `select-issue` on it makes the
+ * holder a deep link into the ONE selection every zone shares: the rail and
+ * the canvas move to it, and the inspector re-renders on it. The same
+ * `data-ig-command` protocol the relationship rows use, and the same reducer
+ * (`selectionReducer`) answers it, so a host wires nothing new.
+ *
+ * ONLY FOR A SUBJECT THE DOCUMENT CARRIES. An unresolvable reference names an
+ * issue that is in no document by definition, and a serialize peer can be a
+ * weak node the host never listed; `inspectorView` answers `none` for a key it
+ * cannot find, so a control for one would discard the reader's selection and
+ * show nothing. The attribute is still published — the subject is a fact about
+ * the hold either way — and only the control is withheld.
+ *
+ * AND NEVER FOR A SUBJECT IN THE INSPECTED SLOT. Two shapes reach that, and
+ * the test is the SLOT rather than the key because the second one hides
+ * behind a key test. A node blocked by itself is a groomed-graph defect the
+ * reader still reports, as a hold whose subject is the issue being inspected —
+ * and `selectionReducer` toggles a re-selection of the selected issue to
+ * `none`, so a control there would close the inspector. And a
+ * `together-member-unready` hold names a PARTNER in the same unit, which
+ * `inspectorView` canonicalizes back to the lead already on show — the first
+ * click changes nothing visible and the second clears the selection. Withheld,
+ * on the same rule as above: the attribute stays, the control does not.
+ *
+ * `data-code` and `data-subject` mirror layer 1's `holdLine` exactly — same
+ * names, same omit-when-absent rule — so a rule written against
+ * `.ig-hold[data-subject]` on the rail has an exact twin in
+ * `.ig-inspector-hold[data-subject]` here. Class-qualified on purpose: the
+ * inspector's ROOT also carries a `data-subject` (`issue` / `edge`, what the
+ * selection resolved to), so a bare `[data-subject]` reads both.
+ */
+function holdRow(
+  hold: ViewerHold,
+  known: ReadonlySet<string>,
+  inInspectedSlot: (key: string) => boolean,
+): ElementSpec {
+  return element(
+    'li',
+    {
+      class: 'ig-inspector-hold',
+      'data-family': hold.family,
+      'data-code': hold.code,
+      'data-subject': hold.subject,
+    },
+    [
+      hold.reason,
+      hold.subject === undefined || !known.has(hold.subject) || inInspectedSlot(hold.subject)
+        ? null
+        : element(
+            'button',
+            {
+              type: 'button',
+              class: 'ig-inspector-hold-subject',
+              'data-ig-command': 'select-issue',
+              'data-ig-target': hold.subject,
+            },
+            [hold.subject],
+          ),
+    ],
+  );
 }
 
 /** Render one document at one reader position, as the whole workspace. */
@@ -407,6 +480,14 @@ export function renderWorkspace(
   // left to drop, and this is the one place that reports what was dropped.
   const sound = normalizeDocument(input);
   const document = sound.document;
+  // The keys a hold's subject control may name — see `holdRow`.
+  const known: ReadonlySet<string> = new Set(document.issues.map((issue) => issue.key));
+  // Which slot a key sits in, by lead — so a hold's subject that resolves to the
+  // inspected slot gets no control. The same canonicalization `inspectorView`
+  // applies, read off the same normalized slots.
+  const leadOf: ReadonlyMap<string, string> = new Map(
+    document.order.slots.flatMap((slot) => slot.members.map((member) => [member, slot.lead] as const)),
+  );
 
   // THE FILTER NARROWS THE RAIL, AND ONLY THE RAIL. §17a gives the audit a
   // filter for focus and deliberately no mode; the canvas answers "what
@@ -493,7 +574,7 @@ export function renderWorkspace(
       ].join(''),
     ),
     zone('canvas', canvas.markup),
-    zone('inspector', renderMarkup(inspectorSpec(inspector, options.words))),
+    zone('inspector', renderMarkup(inspectorSpec(inspector, options.words, known, leadOf))),
     `</div>`,
   ].join('');
 

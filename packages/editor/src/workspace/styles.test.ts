@@ -77,6 +77,33 @@ const RENDERS = [
   // window is narrower than the order, so without this render their rule looks
   // orphaned and the "no unstyled class" direction never sees them at all.
   renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, rail: { start: 2, count: 2 } }),
+  // A HOLD THAT NAMES ITS HOLDER. The inspector draws the subject as a control
+  // only when the host supplied one, so without this render its rule looks
+  // orphaned in the "no rule without a class" direction.
+  renderWorkspace(
+    {
+      ...DOCUMENT,
+      order: {
+        ...DOCUMENT.order,
+        slots: DOCUMENT.order.slots.map((slot) =>
+          slot.lead === 'i0005'
+            ? {
+                ...slot,
+                holds: [
+                  {
+                    family: 'graph' as const,
+                    reason: 'blocked-by i0006 is open',
+                    code: 'blocked-by-open',
+                    subject: 'i0006',
+                  },
+                ],
+              }
+            : slot,
+        ),
+      },
+    },
+    { words: WORKSPACE_WORDS, selection: { kind: 'issue', key: 'i0005' } },
+  ),
 ];
 
 /** Every class THIS package's workspace emits, across those states. */

@@ -35,13 +35,15 @@
 import { DEFAULT_PRIORITY } from '@issuegraph/core';
 
 import type { ModelNode, NodeInput, ReadinessResult, RelationsOptions } from './relations.ts';
-import { buildRelations, priorityLabelValue } from './relations.ts';
+import { UNKNOWN_NODE_READINESS, buildRelations, priorityLabelValue } from './relations.ts';
 
 export type {
   DeclarationRead,
   DeclarerOnlyNode,
   ModelNode,
   NodeInput,
+  ReadinessHold,
+  ReadinessHoldCode,
   ReadinessResult,
 } from './relations.ts';
 export {
@@ -556,7 +558,7 @@ export function buildModel(
       },
     effectivePriority: (key) => effective.get(key) ?? DEFAULT_PRIORITY,
     priorityInheritors: (key) => priorityInheritorsOf(key),
-    readiness: (key) => readinessMap.get(key) ?? { ready: false, reasons: ['unknown node'] },
+    readiness: (key) => readinessMap.get(key) ?? UNKNOWN_NODE_READINESS,
     serializeComponent: (key) => (byKey.has(key) ? componentMembers(serialize, key) : []),
     togetherComponent: (key) => (byKey.has(key) ? componentMembers(together, key) : []),
     // Widened from the declarer to its whole serialize component by ROOT: the

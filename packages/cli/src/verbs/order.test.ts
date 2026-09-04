@@ -13,6 +13,7 @@ interface Slot {
   readonly members: readonly string[];
   readonly ready: boolean;
   readonly holdReasons: readonly string[];
+  readonly holds: readonly { readonly code: string; readonly subject?: string; readonly text: string }[];
 }
 
 interface OrderOutput {
@@ -503,6 +504,11 @@ describe('opaque identifiers (SPEC §4.2)', () => {
     // accepting the id but failing to key nodes by it would leave this hold
     // reported as an unresolvable ref instead.
     assert.deepEqual(held.holdReasons, ['blocked-by ABC-124 is open']);
+    // AND THE CAUSE AS DATA, beside the sentence: a consumer of this JSON groups
+    // on `code` and links `subject` without matching the prose above.
+    assert.deepEqual(held.holds, [
+      { code: 'blocked-by-open', subject: 'ABC-124', text: 'blocked-by ABC-124 is open' },
+    ]);
     assert.equal(ready.ready, true);
   });
 

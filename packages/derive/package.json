@@ -1,6 +1,6 @@
 {
   "name": "@issuegraph/derive",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Derive the selection order from an Issuegraph model — ranked slots, held slots with their reasons, together units, excluded duplicates, priority promotions — plus the pre-write cycle refusal. Pure; no network, no tracker, no writes.",
   "keywords": [
     "issuegraph",

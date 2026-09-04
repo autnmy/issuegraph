@@ -87,5 +87,13 @@ export type {
   ModelNode,
   ModelOptions,
   NodeInput,
+  ReadinessHold,
+  ReadinessHoldCode,
   ReadinessResult,
 } from './model.ts';
+/**
+ * The closed vocabulary `ReadinessHold.code` draws from, as a frozen tuple —
+ * exported so a consumer building a filter facet or a legend enumerates the
+ * reader's own list rather than restating it.
+ */
+export { READINESS_HOLD_CODES } from './relations.ts';
