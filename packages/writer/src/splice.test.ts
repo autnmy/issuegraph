@@ -429,13 +429,18 @@ describe('a comment INSIDE an owned entry survives the splice (#93)', () => {
     assert.deepEqual(parsed.diagnostics, []);
   });
 
-  // NOT PINNED HERE: a comment AFTER the last item. Measured, the reader reports
-  // that span as running onto the next sibling's line (`evidence: verified` at
-  // line 4 is inside `blocked-by`'s 1..4), which is the span overrun #92
-  // describes for a comment-only list — the sibling is lost whether or not the
-  // comment is kept. That is the reader's defect and #92's fix; once the span
-  // ends at the last item, a trailing comment is outside it and the existing
-  // rule already preserves it.
+  it('keeps a comment after the last item, and the sibling under it', () => {
+    // Before #92's fix the reader reported this span as running onto the next
+    // sibling's line, so `evidence` was lost whether or not the comment was
+    // kept. The span now ends at the last content byte — the comment — and
+    // the sibling is outside it.
+    const tail = '    # and 2 is out of scope';
+    const body = ['---', 'issuegraph:', '  blocked-by:', '    - 1', tail, '  evidence: verified', '---'].join('\n');
+    const out = spliceGeneratedEdges(body, SET_42) as string;
+    assert.equal(out, ['---', 'issuegraph:', '  blocked-by:', '    - "#42"', tail, '  evidence: verified', '---'].join('\n'));
+    assert.deepEqual(parseFrontmatter(out).data?.blockedBy, [{ repo: null, id: '42' }]);
+    assert.equal(parseFrontmatter(out).data?.evidence, 'verified');
+  });
 
   it('still removes a blank line inside the span — no authored text, nothing to keep', () => {
     const body = ['---', 'issuegraph:', '  blocked-by:', '', '    - 1', '  evidence: verified', '---'].join('\n');
