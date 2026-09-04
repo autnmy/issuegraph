@@ -754,26 +754,6 @@ function fencesAreOnlyThePair(lines: readonly string[]): boolean {
   return fences === 2;
 }
 
-/**
- * Is this line nothing but a YAML comment?
- *
- * Inside a block mapping or block sequence a line whose first non-blank byte is
- * `#` is a comment: a plain scalar cannot continue onto a line that opens with
- * `#` after indentation, and a WELL-FORMED owned value — a list of refs, or one
- * ref — admits no block scalar in which `#` would be content. A malformed one
- * can (`blocked-by: |`), and its `#`-led content lines then survive as
- * comments: the value is replaced either way and the result parses, so that is
- * debris rather than a defect. The test is a shape test with no grammar in it,
- * which is the only kind this module keeps (see {@link areOneArmorPair}).
- *
- * ASKED ONLY OF LINES INSIDE AN OWNED SPAN. A comment child outside every span
- * was never removed and is classified exactly as before; this exists so a
- * comment that happens to sit inside a span is not deleted with it (#93).
- */
-function isCommentOnly(line: string): boolean {
-  return /^\s*#/.test(line.replace(/\r$/, ''));
-}
-
 export function spliceGeneratedEdges(body: string, rawEdges: GeneratedEdges): SpliceResult {
   // READ AND VALIDATE THE CALLER'S EDGES ONCE, BEFORE ANYTHING ELSE. Every site
   // below reads `edges`, never `rawEdges` — see {@link EdgeSnapshot} for what a
@@ -830,6 +810,14 @@ export function spliceGeneratedEdges(body: string, rawEdges: GeneratedEdges): Sp
   // does not read it as an entry: a comment is not content that keeps an
   // emptied section alive, or the whole-block removal would stop firing on a
   // block whose only remaining bytes are a comment.
+  //
+  // WHICH LINES ARE COMMENTS IS THE READER'S ANSWER, from the tokenizer that
+  // produced the document — `SectionField.commentLines` — and not a test on
+  // the line's shape. Raised in review: `#123` under `duplicate-of: |-` is a
+  // block scalar's content and a ref the reader accepts, and a `/^\s*#/` test
+  // kept it as a comment, leaving the OLD value behind as debris beneath the
+  // rendered entry. Same seam, same rule as the spans themselves: one opinion
+  // about the bytes, the parser's.
   const kept = new Set<number>();
   let firstOwned: number | null = null;
   for (const field of section.fields) {
@@ -837,9 +825,11 @@ export function spliceGeneratedEdges(body: string, rawEdges: GeneratedEdges): Sp
     const from = toBody(field.startLine);
     const to = toBody(field.endLine);
     if (firstOwned === null || from < firstOwned) firstOwned = from;
-    for (let i = from; i <= to; i++) {
-      if (i > from && isCommentOnly(lines[i] ?? '')) kept.add(i);
-      else removed.add(i);
+    for (let i = from; i <= to; i++) removed.add(i);
+    for (const interiorLine of field.commentLines) {
+      const i = toBody(interiorLine);
+      removed.delete(i);
+      kept.add(i);
     }
   }
 

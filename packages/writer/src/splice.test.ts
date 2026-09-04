@@ -495,6 +495,23 @@ describe('a comment INSIDE an owned entry survives the splice (#93)', () => {
     assert.ok(!out.includes('issuegraph:'), 'the bare header is dropped');
   });
 
+  it('does not keep block-scalar content that merely looks like a comment', () => {
+    // Raised in review. `#123` under `|-` is the entry's VALUE — the reader
+    // accepts a block scalar as a ref — so it must go with the entry, or the
+    // old ref would survive as a stray "comment" beneath the new one. Which
+    // lines are comments is the tokenizer's answer, not the line's shape.
+    const body = ['---', 'issuegraph:', '  duplicate-of: |-', '    #123', '  priority: 1', '---'].join('\n');
+    const out = spliceGeneratedEdges(body, { duplicateOf: { set: { repo: null, id: '7' } } }) as string;
+    assert.equal(out, ['---', 'issuegraph:', '  duplicate-of: "#7"', '  priority: 1', '---'].join('\n'));
+  });
+
+  it('tells a block-scalar item from a comment inside the same list', () => {
+    const body = ['---', 'issuegraph:', '  blocked-by:', '    - |-', '      #9', RULING, '    - 1', '---', '', 'Body.'].join('\n');
+    const out = spliceGeneratedEdges(body, SET_42) as string;
+    assert.equal(out, ['---', 'issuegraph:', '  blocked-by:', '    - "#42"', RULING, '---', '', 'Body.'].join('\n'));
+    assert.ok(!out.includes('#9'), 'the old block-scalar ref went with the entry');
+  });
+
   it('a comment child OUTSIDE every owned span is classified as before', () => {
     // Control for the change: the existing rule for a section-level comment is
     // untouched, so a section whose only survivor is such a comment still

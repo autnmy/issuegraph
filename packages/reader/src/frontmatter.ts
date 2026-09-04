@@ -79,6 +79,7 @@ import {
   isScalar,
   isSeq,
   parseDocument,
+  Parser,
   visit,
   Scalar,
   type Document,
@@ -809,6 +810,23 @@ export interface SectionField {
   readonly startLine: number;
   /** Last interior line index belonging to the entry, inclusive. */
   readonly endLine: number;
+  /**
+   * Interior line indices inside the span, after the key's line, that are
+   * nothing but a YAML comment — an author's prose sitting inside the entry.
+   *
+   * ANSWERED BY THE TOKENIZER, not by the shape of the line. `#123` under
+   * `duplicate-of: |-` is a block scalar's CONTENT and a valid ref this reader
+   * accepts, while `# ruling` between `blocked-by:` and its items is a
+   * comment; both open with `#` after indentation, and only the tokenizer
+   * that produced the document knows which is which. A writer replacing the
+   * entry keeps the second and removes the first, and it must not be left to
+   * guess between them with a regular expression.
+   *
+   * A trailing comment on a content line is NOT listed: that line is content,
+   * and it goes with the entry. Degenerate (empty) for a flow section, like
+   * the spans themselves.
+   */
+  readonly commentLines: readonly number[];
 }
 
 /**
@@ -939,6 +957,7 @@ export function locateSection(blockLines: readonly string[]): SectionLocation | 
   const headerRange = nodeRange(section.key);
   if (headerRange === null) return null;
   const headerLine = lineAt(headerRange[0]);
+  const comments = commentOnlyLines(text, lineAt);
   const fields: SectionField[] = [];
   let childIndent = -1;
   let sectionEnd = headerLine;
@@ -983,7 +1002,9 @@ export function locateSection(blockLines: readonly string[]): SectionLocation | 
     // only ever REMOVES lines it owns, so an entry it cannot name is preserved
     // by not being listed.
     if (key === null) continue;
-    fields.push({ key, startLine, endLine });
+    const commentLines: number[] = [];
+    for (let l = startLine + 1; l <= endLine; l++) if (comments.has(l)) commentLines.push(l);
+    fields.push({ key, startLine, endLine, commentLines });
   }
   return {
     headerLine,
@@ -1420,4 +1441,47 @@ function lineIndexer(text: string): (offset: number) => number {
 function columnAt(text: string, offset: number): number {
   const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
   return offset - lineStart;
+}
+
+/**
+ * The line indices of every line in `text` that is nothing but a comment.
+ *
+ * READ OFF THE CONCRETE SYNTAX TREE, from the same tokenizer `parseDocument`
+ * runs, so the answer is the tokenizer's rather than a second opinion about
+ * where a comment begins. A `#` after indentation opens a comment in a block
+ * mapping and is CONTENT inside a block scalar (`|-` / `>-`), and this reader
+ * accepts a block scalar as a ref — so a line's shape cannot decide it. The
+ * CST carries a `comment` token only for the first case.
+ *
+ * COMMENT-ONLY, not "carries a comment": a token that starts at the line's
+ * first non-blank column is the whole of that line. A trailing comment on a
+ * content line starts later and is not reported, because the line it sits on
+ * is content and belongs to whatever entry owns it.
+ *
+ * The walk is generic over the CST rather than typed per token kind: comment
+ * tokens sit in an item's `start`, `sep` and `end` arrays across every
+ * collection shape, and enumerating those positions is a list that grows a
+ * row per YAML construct. `type === 'comment'` with an `offset` is the whole
+ * of what is asked, and only a token can carry it.
+ */
+function commentOnlyLines(text: string, lineAt: (offset: number) => number): ReadonlySet<number> {
+  const lines = text.split('\n');
+  const found = new Set<number>();
+  const walk = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item);
+      return;
+    }
+    if (value === null || typeof value !== 'object') return;
+    const token = value as Readonly<Record<string, unknown>>;
+    const offset = token['offset'];
+    if (token['type'] === 'comment' && typeof offset === 'number') {
+      const line = lineAt(offset);
+      const source = lines[line] ?? '';
+      if (columnAt(text, offset) === source.length - source.trimStart().length) found.add(line);
+    }
+    for (const key of Object.keys(token)) walk(token[key]);
+  };
+  for (const doc of new Parser().parse(text)) walk(doc);
+  return found;
 }
