@@ -538,8 +538,18 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
         : pendingFocus.kind === 'last' ? rows[rows.length - 1]
         : pendingFocus.kind === 'after' ? rows[at + 1]
         : at > 0 ? rows[at - 1] : undefined;
+      const jump = pendingFocus.kind;
       pendingFocus = null;
       focusRow(target?.lead ?? focused, 'rail');
+      // THE VIEWPORT FOLLOWS THE JUMP. The window was re-cut around the target
+      // but the scroll offset restored above is the one from before the key
+      // press, so without this the focused row sits below (or above) the
+      // visible rows and the reader sees nothing move.
+      if (rail !== null) {
+        if (jump === 'last') rail.scrollTop = rail.scrollHeight;
+        else if (jump === 'first') rail.scrollTop = 0;
+        else document.activeElement?.scrollIntoView?.({ block: 'nearest' });
+      }
     } else {
       focusRow(focused);
     }
@@ -616,7 +626,8 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
     const row = Math.floor(rail.scrollTop / pitch(themeFor(state.theme)));
     const offset = row - state.railStart;
     if (offset >= 0 && offset <= RAIL_COUNT - RAIL_SLACK * 2) return;
-    dispatch({ kind: 'scroll', start: Math.max(0, row - RAIL_SLACK) });
+    const lastStart = drawn === null ? Number.POSITIVE_INFINITY : Math.max(0, drawn.rail.total - RAIL_COUNT);
+    dispatch({ kind: 'scroll', start: Math.min(lastStart, Math.max(0, row - RAIL_SLACK)) });
   };
 
   /** The row or node that owns keyboard focus, if focus is on one at all. */
@@ -770,12 +781,36 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
     if (Math.hypot(event.clientX - pressed.x, event.clientY - pressed.y) < 6) return;
     pressed.dragging = true;
     workspace.setAttribute('data-dragging', 'true');
+    // CAPTURED ON THE ROOT, ONLY ONCE A DRAG IS UNDERWAY. Without capture a
+    // pointer released outside the root never reports back, and the drag
+    // state stays set until some later interaction happens to clear it. Not
+    // captured on the press itself, because capture also redirects the click
+    // and a plain click on a node must keep reaching the node.
+    try {
+      root.setPointerCapture(event.pointerId);
+    } catch {
+      // A synthetic or already-released pointer cannot be captured; the
+      // release then reaches the root only if it lands inside it.
+    }
     dispatch({ kind: 'drag-start', key: pressed.key });
   };
 
+  const releasePointer = (event: PointerEvent): void => {
+    try {
+      if (root.hasPointerCapture(event.pointerId)) root.releasePointerCapture(event.pointerId);
+    } catch {
+      // Nothing was captured.
+    }
+  };
+
   const onPointerUp = (event: PointerEvent): void => {
+    // THE PRESS IS CONSUMED BEFORE THE CAPTURE IS RELEASED. Releasing fires
+    // `lostpointercapture` synchronously, which is wired to the cancel path;
+    // with `pressed` already null that path stands down instead of cancelling
+    // the drop this very handler is about to deliver.
     const was = pressed;
     pressed = null;
+    releasePointer(event);
     workspace.removeAttribute('data-dragging');
     if (was === null || !was.dragging) return;
     const under = document.elementFromPoint(event.clientX, event.clientY);
@@ -786,8 +821,10 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
     dispatch({ kind: 'drop', key, at: { x: event.clientX - bounds.left, y: event.clientY - bounds.top } });
   };
 
-  const onPointerCancel = (): void => {
+  const onPointerCancel = (event: PointerEvent): void => {
+    if (pressed === null) return;
     pressed = null;
+    releasePointer(event);
     workspace.removeAttribute('data-dragging');
     if (state.drag !== null) dispatch({ kind: 'drop', key: null, at: { x: 0, y: 0 } });
   };
@@ -802,6 +839,7 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
   root.addEventListener('pointermove', onPointerMove);
   root.addEventListener('pointerup', onPointerUp);
   root.addEventListener('pointercancel', onPointerCancel);
+  root.addEventListener('lostpointercapture', onPointerCancel);
 
   versions.replaceChildren(
     ...STAMPED_PACKAGES.map((name) =>
@@ -838,6 +876,7 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
       root.removeEventListener('pointermove', onPointerMove);
       root.removeEventListener('pointerup', onPointerUp);
       root.removeEventListener('pointercancel', onPointerCancel);
+      root.removeEventListener('lostpointercapture', onPointerCancel);
       chromeStyles.remove();
     },
   };
