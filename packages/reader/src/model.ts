@@ -526,6 +526,12 @@ export function buildModel(
   for (const k of byKey.keys()) canonicalMap.set(k, duplicateCanonicalOf(k));
   const readinessMap = new Map<string, ReadinessResult>();
   for (const k of byKey.keys()) readinessMap.set(k, readiness(k));
+  // The serialize components that reach past the horizon, keyed by union-find
+  // root. One `find` per declarer here, one per ask below — a consumer that
+  // composes the horizon policy for every candidate in a large component would
+  // otherwise rescan that component once per member (raised in review).
+  const truncatedSerializeRoots = new Set<string>();
+  for (const k of unresolvedSerializeDeclarers) truncatedSerializeRoots.add(serialize.find(k));
   // The tail `relations.diagnostics` grew while the eager passes above ran —
   // the §5.3 non-completed-closure surfaces readiness emits.
   const readinessDiagnostics = diagnostics.slice(edgeDiagnostics.length);
@@ -553,12 +559,12 @@ export function buildModel(
     readiness: (key) => readinessMap.get(key) ?? { ready: false, reasons: ['unknown node'] },
     serializeComponent: (key) => (byKey.has(key) ? componentMembers(serialize, key) : []),
     togetherComponent: (key) => (byKey.has(key) ? componentMembers(together, key) : []),
-    // Widened from the declarer to its whole serialize component HERE, on ask,
-    // because the fact belongs to the component: every member's answer is the
-    // same. `byKey.has` first, so an unknown key reads false rather than
-    // sizing a component of one for a node that does not exist.
-    serializeHorizonTruncated: (key) =>
-      byKey.has(key) && componentMembers(serialize, key).some((m) => unresolvedSerializeDeclarers.has(m)),
+    // Widened from the declarer to its whole serialize component by ROOT: the
+    // fact belongs to the component, so every member's answer is the same, and
+    // the set of truncated roots above is what makes each ask a single find
+    // rather than a rescan of the component. `byKey.has` first, so an unknown
+    // key reads false rather than being assigned a root it never had.
+    serializeHorizonTruncated: (key) => byKey.has(key) && truncatedSerializeRoots.has(serialize.find(key)),
     duplicateCanonical: (key) => canonicalMap.get(key) ?? null,
     cycles,
     diagnostics: uniqueDiagnostics,
