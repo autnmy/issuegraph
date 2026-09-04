@@ -331,6 +331,15 @@ export interface Relations {
   readonly together: UnionFind;
   readonly componentMembers: (uf: UnionFind, key: string) => string[];
   readonly readiness: (key: string) => ReadinessResult;
+  /**
+   * Declarers whose `serialize-with` this node set could not resolve — the
+   * fact `Model.serializeHorizonTruncated` widens to the whole component.
+   *
+   * NOT a readiness input, and kept apart from `unresolvedRelations` so it
+   * cannot become one: that map is a refusal ledger, and §6.7 forbids refusing
+   * on an unresolvable `serialize-with`.
+   */
+  readonly unresolvedSerializeDeclarers: ReadonlySet<string>;
 }
 
 /**
@@ -456,6 +465,19 @@ export function buildRelations(
    * different diagnosis with a different remedy.
    */
   const underReadTogether = new Map<string, string[]>();
+  /**
+   * Declarers whose `serialize-with` could not be resolved. Tracked SEPARATELY
+   * from `unresolvedRelations`, and never derived from it by reading the label
+   * text. Two reasons, and the second is the one that bit a consumer:
+   *   - `unresolvedRelations` is a REFUSAL ledger, read by `readiness`; §6.7
+   *     forbids refusing on an unresolvable `serialize-with`, so this fact must
+   *     not live there or it re-enters the very rule the arm below rejects.
+   *   - a prefix match on `serialize-with ...` over the diagnostics is the
+   *     obvious implementation and the one this module warns against
+   *     elsewhere: a reworded message stops matching and fails OPEN. Record the
+   *     kind where it is known.
+   */
+  const unresolvedSerializeDeclarers = new Set<string>();
   const dependentsOf = new Map<string, string[]>(); // reverse of blockersOf
   const serialize = new UnionFind();
   const together = new UnionFind();
@@ -553,6 +575,12 @@ export function buildRelations(
         // not have — and, unlike the blocked-by case one branch up, §6.7 spells
         // out the difference between the two rather than leaving it to be
         // inferred.
+        //
+        // THE FACT IS STILL RECORDED, for the consumer that owns that policy:
+        // `Model.serializeHorizonTruncated` reads this set and says so for the
+        // whole component, so a host that knows its own traversal depth can
+        // compose the refusal there rather than the reader inventing it here.
+        unresolvedSerializeDeclarers.add(k);
         diagnostics.push(`${k}: serialize-with ${rk} is unresolvable; contributes no linkage (§6.7)`);
       }
     }
@@ -584,6 +612,36 @@ export function buildRelations(
         // Only OPEN endpoints union: a closed member has left the unit and
         // must not bridge two open members into one active component.
         together.union(k, rk);
+      }
+    }
+    // PROVENANCE POINTING OUTSIDE THE NODE SET. `decomposed-from` is read by
+    // nobody else in this function, so a target the set does not hold was
+    // silently ignored — and nothing misbehaved, which is the same fact stated
+    // structurally: the field feeds none of `blockersOf`, `unresolvedBlockers`,
+    // `unresolvedRelations`, `serialize` or `together`, so it is provenance and
+    // never a scheduling edge. That remains true after this block, which adds a
+    // diagnostic and touches no map.
+    //
+    // A DIAGNOSTIC IS THE WHOLE ADDITION, and the restraint is the point: this
+    // must NOT join `unresolvedRelations`. That map is a READINESS INPUT, so
+    // adding to it would start refusing declarers over a field that has never
+    // gated anything — turning a report into a behaviour change.
+    //
+    // Its reader is a neighbourhood seeder: an unresolvable origin is how it
+    // learns the set it assembled is missing the issue this split came from.
+    // Said as a fact about THIS node set, not about the world — an out-of-page
+    // origin is the ordinary case for a bounded traversal, not a defect.
+    //
+    // KEYED THROUGH `keyForRef`, NOT `targetKey`: this is not an edge, so it is
+    // not canonicalized through the target's `duplicate-of`. The question is
+    // whether the ORIGIN the author named is in the set, and that is answered
+    // by the ref alone.
+    if (data.decomposedFrom !== null) {
+      const rk = keyForRef(data.decomposedFrom, sourceRepo, homeRepo);
+      if (!referenceable.has(rk)) {
+        diagnostics.push(
+          `${k}: decomposed-from ${rk} is unresolvable in this node set; provenance only, so no readiness effect`,
+        );
       }
     }
   }
@@ -831,6 +889,7 @@ export function buildRelations(
     together,
     componentMembers,
     readiness,
+    unresolvedSerializeDeclarers,
   };
 }
 
