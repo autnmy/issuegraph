@@ -18,6 +18,24 @@
  * ref another writer left — its line simply stays, and a conforming reader
  * already drops it with a diagnostic.
  *
+ * A COMMENT INSIDE AN OWNED ENTRY IS NOT THE ENTRY'S. The span the reader
+ * reports for `blocked-by:` runs from the key line to its last item, and a
+ * comment an author wrote between them — an owner ruling recorded beside the
+ * gate it explains — sits inside that span without being part of the edge.
+ * The writer owns the EDGES, not the commentary, so a comment-only line inside
+ * an owned span is kept at its position among the surviving lines rather than
+ * removed with the entry ([#93](https://github.com/autnmy/issuegraph/issues/93);
+ * the rule the private writer this package replaced already had). After a
+ * refresh that position is directly behind the rendered entry. After a clear
+ * it is behind whatever author's line preceded the entry, and there the
+ * comment is re-indented to the indent of the context it now lives in — the
+ * section's child indent, or the block's top level when the bare header goes
+ * with the entry — so it cannot be read as that line's continuation (see the
+ * assembly loop and the header-drop branch). Blank lines inside a
+ * span carry no authored text and still go. The one place such a comment does
+ * go is the whole-block removal below: when the edit leaves the block with
+ * nothing else in it, the block goes, comments and all.
+ *
  * IT LOCATES THE BLOCK AND ITS ENTRIES WITH THE READER'S OWN PARSE, not with a
  * second scan of its own: `locateBlock` and `locateSection` come from
  * `@issuegraph/reader`, and the latter computes its line spans from the very
@@ -890,6 +908,20 @@ export function spliceGeneratedEdges(body: string, rawEdges: GeneratedEdges): Sp
   const sectionEnd = toBody(section.endLine);
 
   const removed = new Set<number>();
+  // AUTHOR PROSE INSIDE AN OWNED SPAN, KEPT RATHER THAN REMOVED (#93). Excluded
+  // from `removed` so it survives, and remembered so the survivor count below
+  // does not read it as an entry: a comment is not content that keeps an
+  // emptied section alive, or the whole-block removal would stop firing on a
+  // block whose only remaining bytes are a comment.
+  //
+  // WHICH LINES ARE COMMENTS IS THE READER'S ANSWER, from the tokenizer that
+  // produced the document — `SectionField.commentLines` — and not a test on
+  // the line's shape. Raised in review: `#123` under `duplicate-of: |-` is a
+  // block scalar's content and a ref the reader accepts, and a `/^\s*#/` test
+  // kept it as a comment, leaving the OLD value behind as debris beneath the
+  // rendered entry. Same seam, same rule as the spans themselves: one opinion
+  // about the bytes, the parser's.
+  const kept = new Set<number>();
   let firstOwned: number | null = null;
   for (const field of section.fields) {
     if (!owns(edges, field.key)) continue;
@@ -897,6 +929,11 @@ export function spliceGeneratedEdges(body: string, rawEdges: GeneratedEdges): Sp
     const to = toBody(field.endLine);
     if (firstOwned === null || from < firstOwned) firstOwned = from;
     for (let i = from; i <= to; i++) removed.add(i);
+    for (const interiorLine of field.commentLines) {
+      const i = toBody(interiorLine);
+      removed.delete(i);
+      kept.add(i);
+    }
   }
 
   // Inserted lines: the section's own child indent, the renderer's spelling,
@@ -925,15 +962,40 @@ export function spliceGeneratedEdges(body: string, rawEdges: GeneratedEdges): Sp
   let sectionSurvivors = 0;
   let siblingContent = 0;
   const interior: string[] = [];
+  // WHETHER THE LAST LINE PUSHED IS ONE THIS WRITER PRODUCED — an inserted
+  // rendering or a kept comment. A kept comment is safe to keep byte-for-byte
+  // only behind such a line: behind an author's line it may be read as that
+  // line's continuation. Measured: `notes: |` / `    long text` above a cleared
+  // `blocked-by:` whose comment sat at the item indent — nothing was inserted,
+  // the comment came to follow the scalar's content at the same indent, and
+  // `notes` gained a line. An UNOWNED field changed, and `settle` could not
+  // see it because it compares owned fields only. So a kept comment that would
+  // follow an author's line is re-indented to the section's child indent, which
+  // is less than any block-scalar content under a sibling key and therefore
+  // always ends the scalar; only its leading whitespace changes.
+  let afterWriterLine = false;
+  // WHERE EACH KEPT COMMENT LANDED IN `interior`, so the header-drop branch
+  // below can find them again after the header is spliced out.
+  const keptAt: number[] = [];
   for (let i = blockStart + 1; i < blockEnd; i++) {
-    if (i === insertAt) interior.push(...ins);
+    if (i === insertAt && ins.length > 0) {
+      interior.push(...ins);
+      afterWriterLine = true;
+    }
     if (removed.has(i)) continue;
     const line = lines[i] ?? '';
+    if (kept.has(i)) {
+      keptAt.push(interior.length);
+      interior.push(afterWriterLine ? line : `${pad}${line.trimStart()}`);
+      afterWriterLine = true;
+      continue;
+    }
     if (i !== sectionHeader && line.replace(/\r$/, '').trim().length > 0) {
       if (i > sectionHeader && i <= sectionEnd) sectionSurvivors += 1;
       else siblingContent += 1;
     }
     interior.push(line);
+    afterWriterLine = false;
   }
   if (insertAt >= blockEnd) interior.push(...ins);
 
@@ -971,6 +1033,19 @@ export function spliceGeneratedEdges(body: string, rawEdges: GeneratedEdges): Sp
     const headerLine = lines[sectionHeader] ?? '';
     const headerAt = interior.indexOf(headerLine);
     if (headerAt !== -1) interior.splice(headerAt, 1);
+    // A KEPT COMMENT NOW LIVES AT THE BLOCK'S TOP LEVEL, and its indent has to
+    // say so. Raised in review: it was re-indented to the section's CHILD
+    // indent above, then the header it followed was dropped here, so it came
+    // to follow the top-level line above the header — and `notes: |` at
+    // column 0 has its content at exactly that child indent, so the comment
+    // became one more line of `notes`. `settle` cannot see that: a sibling
+    // top-level key is not in `Frontmatter`. The header's own column is the
+    // top level's indent, and a comment there ends any block scalar beside it.
+    const headerPad = headerLine.slice(0, headerLine.length - headerLine.trimStart().length);
+    for (const at of keptAt) {
+      const now = headerAt !== -1 && at > headerAt ? at - 1 : at;
+      interior[now] = `${headerPad}${(interior[now] ?? '').trimStart()}`;
+    }
   }
 
   return settle(

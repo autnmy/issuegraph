@@ -907,6 +907,41 @@ describe('locateSection', () => {
     assert.deepEqual(located?.fields.map((f) => f.key), ['blocked-by']);
   });
 
+  test('reports the comment-only lines inside each span, and nothing that is content', () => {
+    // `#123` under `|-` is a block scalar's content and a ref this reader
+    // accepts; `# ruling` is a comment; `# trailing` rides a content line. Only
+    // the second is a comment-only line, and only the tokenizer can say so.
+    const located = locateSection(
+      block(
+        'issuegraph:',
+        '  duplicate-of: |-',
+        '    #123',
+        '  blocked-by:',
+        '    - |-',
+        '      #9',
+        '    # ruling',
+        '    - 1  # trailing',
+        '  priority: 1',
+      ),
+    );
+    assert.deepEqual(
+      located?.fields.map((f) => [f.key, f.startLine, f.endLine, f.commentLines]),
+      [
+        ['duplicate-of', 1, 2, []],
+        ['blocked-by', 3, 7, [6]],
+        ['priority', 8, 8, []],
+      ],
+    );
+    // And the parse agrees that the block-scalar lines were refs, not comments.
+    const parsed = parseFrontmatter(['---', 'issuegraph:', '  duplicate-of: |-', '    #123', '---'].join('\n'));
+    assert.deepEqual(parsed.data?.duplicateOf, { repo: null, id: '123' });
+  });
+
+  test('a comment-only line inside a span is reported at column zero too', () => {
+    const located = locateSection(block('issuegraph:', '  blocked-by:', '# note', '    - 1'));
+    assert.deepEqual(located?.fields.map((f) => [f.key, f.commentLines]), [['blocked-by', [2]]]);
+  });
+
   test('an unrecognized field is reported too — a writer must not overwrite it', () => {
     const located = locateSection(block('issuegraph:', '  extension:', '    a: 1', '  priority: 0'));
     assert.deepEqual(
