@@ -949,55 +949,220 @@ test('a refresh confirming the document supersedes a conflict snapshot taken bef
   );
 });
 
-test('the two calls a host composes retry-on-latest from are each single-step', async () => {
-  // `retry` and `discardMine` read the record and act on it with nothing in
-  // between, so neither can be overtaken. A composite that refreshed first
-  // could not have that property, which is why the store does not ship one.
-  //
-  // The two races that shape belongs to are asserted here, and both are the
-  // HOST's to sequence — which it can, because it holds the await and can look
-  // again before acting.
+/**
+ * A source for the retry-on-latest tests. Reads answer with `document`, can be
+ * held open or made to fail, and every call is logged in order; edits go to a
+ * scripted source so a test can hold one open too.
+ */
+function resolvingSource(): {
+  readonly scripted: ReturnType<typeof createScriptedSource>;
+  readonly source: { hydrate(): Promise<GraphDocument>; dispatch: ReturnType<typeof createScriptedSource>['dispatch'] };
+  readonly log: string[];
+  state: { document: GraphDocument; readFails: boolean; holdRead: boolean };
+  releaseRead(): void;
+} {
   const scripted = createScriptedSource(threeOpenIssues(), applyEdit);
-  let refreshFails = false;
-  let dispatches = 0;
-  const store = createStore({
+  const log: string[] = [];
+  const state = { document: threeOpenIssues(), readFails: false, holdRead: false };
+  let release: (() => void) | undefined;
+  return {
+    scripted,
+    log,
+    state,
+    releaseRead: () => release?.(),
     source: {
-      hydrate: () =>
-        refreshFails ? Promise.reject(new Error('the tracker is down')) : Promise.resolve(threeOpenIssues()),
+      hydrate: () => {
+        log.push('hydrate');
+        if (state.readFails) return Promise.reject(new Error('the tracker is down'));
+        if (!state.holdRead) return Promise.resolve(state.document);
+        return new Promise<GraphDocument>((resolve) => {
+          release = () => resolve(state.document);
+        });
+      },
       dispatch: (mutation) => {
-        dispatches += 1;
+        log.push('dispatch');
         return scripted.dispatch(mutation);
       },
     },
-    derive: simpleDeriver,
-  });
-  await store.hydrate();
+  };
+}
 
+/** Propose an edge and answer it with a conflict, so there is something to resolve. */
+async function conflicted(store: ReturnType<typeof createStore>, scripted: ReturnType<typeof createScriptedSource>) {
   const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
   await scripted.whenPending(handle.mutationId);
   scripted.settleNext({ outcome: 'conflict', upstream: withEdge(threeOpenIssues(), 'duplicate-of', '3', '1') });
   await handle.settled;
-  assert.equal(dispatches, 1);
+  return handle.mutationId;
+}
 
-  // RACE 1 — the refresh fails. The host sees it and does not retry.
-  refreshFails = true;
-  await store.rehydrate();
-  assert.equal(store.getSnapshot().hydrationError, 'the tracker is down');
-  assert.equal(dispatches, 1, 'a host that checks does not dispatch against an unconfirmed document');
-  assert.equal(store.getSnapshot().writes[0]?.state, 'conflict', 'and the conflict is left to try again');
+test('retry-on-latest is reserved synchronously and runs as one queued operation', async () => {
+  // The reservation: the record is `pending` before any await, and the read
+  // and the dispatch are one task — the dispatch is logged after the read that
+  // confirmed the document, with nothing between them.
+  const { scripted, source, log } = resolvingSource();
+  const store = createStore({ source, derive: simpleDeriver });
+  await store.hydrate();
+  const id = await conflicted(store, scripted);
 
-  // RACE 2 — the edit is discarded while the refresh is in flight. The host
-  // looks again afterwards and finds nothing to retry.
-  refreshFails = false;
-  const refresh = store.rehydrate();
-  store.discardMine(handle.mutationId);
-  await refresh;
-  assert.equal(
-    store.getSnapshot().writes.find((record) => record.mutationId === handle.mutationId),
-    undefined,
-    'the discard took effect immediately — it has no await to be overtaken across',
+  const handle = store.retryOnLatest(id);
+  assert.equal(handle.mutationId, id, 'the same edit, unchanged');
+  assert.equal(store.getSnapshot().writes[0]?.state, 'pending', 'reserved before the refresh starts');
+  assert.equal(store.getSnapshot().order.status, 'held', 'and the order is held like any edit in flight');
+
+  await scripted.whenPending(id);
+  scripted.settleNext('applied');
+  await handle.settled;
+  assert.deepEqual(log, ['hydrate', 'dispatch', 'hydrate', 'dispatch']);
+  assert.deepEqual(store.getSnapshot().writes, []);
+  assert.deepEqual(store.getSnapshot().landed.map((edge) => edge.id), [edgeId('blocked-by', '1', '2')]);
+});
+
+test('a retry-on-latest whose refresh fails restores the record and dispatches nothing', async () => {
+  const { scripted, source, log, state } = resolvingSource();
+  const store = createStore({ source, derive: simpleDeriver });
+  await store.hydrate();
+  const id = await conflicted(store, scripted);
+  const before = store.getSnapshot().writes[0];
+  assert.equal(before?.state, 'conflict');
+
+  state.readFails = true;
+  await store.retryOnLatest(id).settled;
+
+  const snapshot = store.getSnapshot();
+  assert.deepEqual(log, ['hydrate', 'dispatch', 'hydrate'], 'nothing was dispatched against an unconfirmed document');
+  assert.equal(snapshot.hydrationError, 'the tracker is down');
+  assert.equal(snapshot.status, 'ready', 'a failed refresh keeps the last good document');
+  assert.deepEqual(snapshot.writes, [before], 'the conflict is back exactly as it was, upstream and all');
+  assert.equal(snapshot.order.status, 'settled', 'and nothing is in flight');
+});
+
+test('a discard during the refresh is a no-op, so the edit goes out once against the refreshed document', async () => {
+  // The issue's third defect, closed by construction: the user cannot discard
+  // an edit the store has reserved, so there is no discarded edit to dispatch.
+  const { scripted, source, log, state, releaseRead } = resolvingSource();
+  const store = createStore({ source, derive: simpleDeriver });
+  await store.hydrate();
+  const id = await conflicted(store, scripted);
+
+  state.holdRead = true;
+  const handle = store.retryOnLatest(id);
+  await Promise.resolve();
+  assert.deepEqual(log, ['hydrate', 'dispatch', 'hydrate'], 'the refresh is in flight');
+
+  store.discardMine(id);
+  assert.equal(store.getSnapshot().writes[0]?.state, 'pending', 'the reservation holds against a discard');
+
+  releaseRead();
+  await scripted.whenPending(id);
+  scripted.settleNext('applied');
+  await handle.settled;
+  assert.deepEqual(log, ['hydrate', 'dispatch', 'hydrate', 'dispatch'], 'one dispatch, after the read');
+  assert.deepEqual(store.getSnapshot().writes, []);
+});
+
+test('a second press during the refresh is a settled no-op', async () => {
+  const { scripted, source, log, state, releaseRead } = resolvingSource();
+  const store = createStore({ source, derive: simpleDeriver });
+  await store.hydrate();
+  const id = await conflicted(store, scripted);
+
+  state.holdRead = true;
+  const handle = store.retryOnLatest(id);
+  await Promise.resolve();
+
+  const again = store.retryOnLatest(id);
+  const plain = store.retry(id);
+  await again.settled;
+  await plain.settled;
+  assert.deepEqual(log, ['hydrate', 'dispatch', 'hydrate'], 'the second press queued nothing');
+
+  releaseRead();
+  await scripted.whenPending(id);
+  scripted.settleNext('applied');
+  await handle.settled;
+  assert.deepEqual(log, ['hydrate', 'dispatch', 'hydrate', 'dispatch'], 'one dispatch for two presses');
+});
+
+test('a refresh that makes the edit invalid refuses it without a dispatch', async () => {
+  // The document the read confirms already carries the edge: the sibling the
+  // conflict reported has done the user's work for them.
+  const { scripted, source, log, state } = resolvingSource();
+  const store = createStore({ source, derive: simpleDeriver });
+  await store.hydrate();
+  const id = await conflicted(store, scripted);
+
+  state.document = withEdge(threeOpenIssues(), 'blocked-by', '1', '2');
+  await store.retryOnLatest(id).settled;
+
+  const snapshot = store.getSnapshot();
+  assert.deepEqual(log, ['hydrate', 'dispatch', 'hydrate'], 'refused before any write, against the refreshed document');
+  assert.equal(snapshot.writes[0]?.state, 'invalid');
+  assert.deepEqual(snapshot.landed.map((edge) => edge.id), [edgeId('blocked-by', '1', '2')]);
+});
+
+test('the guard judges a retry-on-latest against the refreshed document', async () => {
+  const { scripted, source, state } = resolvingSource();
+  const seen: string[][] = [];
+  const guard: EdgeGuard = ({ current }) => {
+    seen.push(current.edges.map((edge) => edge.id));
+    return undefined;
+  };
+  const store = createStore({ source, derive: simpleDeriver, guard });
+  await store.hydrate();
+  const id = await conflicted(store, scripted);
+  // A direct dispatch is judged at `propose` and again at the head of the
+  // queue, both times against the empty document.
+  assert.deepEqual(seen, [[], []]);
+
+  state.document = withEdge(threeOpenIssues(), 'duplicate-of', '3', '1');
+  const handle = store.retryOnLatest(id);
+  await scripted.whenPending(id);
+  assert.deepEqual(
+    seen,
+    [[], [], [edgeId('duplicate-of', '3', '1')]],
+    'a resolve is judged once, and against what the read confirmed — never against the copy it was asked to look past',
   );
-  assert.equal(dispatches, 1, 'and nothing the user discarded was dispatched');
+  scripted.settleNext('applied');
+  await handle.settled;
+});
+
+test('a retry-on-latest queued behind an in-flight write refreshes only once that write settles', async () => {
+  const { scripted, source, log } = resolvingSource();
+  const store = createStore({ source, derive: simpleDeriver });
+  await store.hydrate();
+  const id = await conflicted(store, scripted);
+
+  const other = store.propose({ op: 'create', kind: 'duplicate-of', from: '3', to: '1' });
+  await scripted.whenPending(other.mutationId);
+  const handle = store.retryOnLatest(id);
+  await Promise.resolve();
+  assert.deepEqual(log, ['hydrate', 'dispatch', 'dispatch'], 'the read waits behind the write');
+
+  scripted.settleNext('applied');
+  await other.settled;
+  await scripted.whenPending(id);
+  assert.deepEqual(log, ['hydrate', 'dispatch', 'dispatch', 'hydrate', 'dispatch'], 'then reads, then dispatches');
+  scripted.settleNext('applied');
+  await handle.settled;
+  assert.deepEqual(store.getSnapshot().writes, []);
+});
+
+test('retry-on-latest on an unknown or pending edit is a settled no-op', async () => {
+  const { scripted, source, log } = resolvingSource();
+  const store = createStore({ source, derive: simpleDeriver });
+  await store.hydrate();
+
+  await store.retryOnLatest('nope').settled;
+  assert.deepEqual(store.getSnapshot().writes, []);
+
+  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  await scripted.whenPending(handle.mutationId);
+  await store.retryOnLatest(handle.mutationId).settled;
+  assert.deepEqual(log, ['hydrate', 'dispatch'], 'a pending edit is not re-read or re-dispatched');
+  assert.equal(store.getSnapshot().writes[0]?.state, 'pending');
+  scripted.settleNext('applied');
+  await handle.settled;
 });
 
 

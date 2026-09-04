@@ -116,10 +116,17 @@ export interface Store {
   propose(proposal: Proposal): ProposalHandle;
   /** Re-dispatch an unsettled edit, unchanged, against the document as it stands. */
   retry(mutationId: MutationId): ProposalHandle;
-  // The store offers no retry-on-latest: a host composes it from `rehydrate()`
-  // and `retry()`, both single-step. The README's "Resolving a conflict" is the
-  // one place that explains why, so that a change of mind is one edit and not
-  // five.
+  /**
+   * Re-read the document from the source, then re-dispatch an unsettled edit,
+   * unchanged, against what that read confirmed — as ONE queued operation.
+   *
+   * The edit is reserved synchronously: it is `pending` from this call on, so
+   * `discardMine` and a second press are no-ops until it settles, exactly as
+   * they are for `retry`. A refresh that fails restores the record as it was
+   * and dispatches nothing; `hydrationError` says why. See the README's
+   * "Resolving a conflict".
+   */
+  retryOnLatest(mutationId: MutationId): ProposalHandle;
 
   /**
    * Drop an unsettled edit's overlay. The only call that removes the user's
@@ -260,10 +267,18 @@ export function createStore(config: StoreConfig): Store {
    *
    * A queued edit still renders `pending-write` immediately; only the round
    * trip waits.
+   *
+   * `resolve` is retry-on-latest: a read and a re-dispatch as ONE task, so a
+   * read that fails stops the dispatch behind it, and nothing can be queued
+   * between the two. `prior` is the record as it stood when the resolution was
+   * reserved, restored verbatim when the read fails.
    */
   type Task =
     | { readonly kind: 'dispatch'; readonly mutation: Mutation }
+    | { readonly kind: 'resolve'; readonly mutation: Mutation; readonly prior: WriteRecord }
     | { readonly kind: 'load'; readonly first: boolean; readonly done: (ok: boolean) => void };
+  /** The two tasks an edit can enter the queue as. */
+  type EditTask = Exclude<Task, { kind: 'load' }>;
   const queue: Task[] = [];
   let draining = false;
 
@@ -520,7 +535,8 @@ export function createStore(config: StoreConfig): Store {
    * a fact about the adapter not being called, not just about the colour of the
    * edge, and that is what the tests assert.
    */
-  function start(mutation: Mutation): ProposalHandle {
+  function start(task: EditTask): ProposalHandle {
+    const { mutation } = task;
     // The summary is evidence for ONE edit, and the contract is that it lasts
     // until the next edit or an explicit dismissal. Clearing it here is what
     // makes that true: left standing, a host would show the previous edit's
@@ -528,7 +544,14 @@ export function createStore(config: StoreConfig): Store {
     lastChange = undefined;
     currentProposal = mutation.mutationId;
     const settled = new Promise<void>((resolve) => settlers.set(mutation.mutationId, resolve));
-    const refusal = refusalFor(mutation);
+    // THE VERDICT IS REACHED AGAINST THE DOCUMENT THE EDIT WILL BE DISPATCHED
+    // AGAINST. For a direct dispatch that is `landed` as it stands, so a refused
+    // edit is recorded here and never enters the queue. For a resolve it is the
+    // document the refresh will confirm, which does not exist yet — asking now
+    // would refuse or admit the edit on the very copy the user asked to look
+    // past. Its verdict waits for the queue's re-check, where every edit is
+    // asked again anyway.
+    const refusal = task.kind === 'dispatch' ? refusalFor(mutation) : undefined;
     if (refusal !== undefined) {
       putRecord({ mutationId: mutation.mutationId, mutation, state: 'invalid', reason: refusal });
       settle(mutation.mutationId);
@@ -536,13 +559,18 @@ export function createStore(config: StoreConfig): Store {
       return { mutationId: mutation.mutationId, settled };
     }
 
+    // THIS IS THE RESERVATION, for a resolve as much as for a dispatch. A
+    // `pending` record is one `discardMine` and `retry` decline to touch, so
+    // from here until the edit settles nothing can act on it — including across
+    // the refresh a resolve is about to wait on. That is what lets the store
+    // own a resolution that spans an await: the intent was captured before it.
     putRecord({ mutationId: mutation.mutationId, mutation, state: 'pending' });
     // ENQUEUE BEFORE NOTIFYING. `publish` runs subscribers synchronously, so a
     // subscriber proposing a follow-up re-enters here — and if the queue does
     // not yet hold this edit, the nested one takes its place in line and goes
     // out first. Two edits on the same edge then apply in the reverse of the
     // order the user made them.
-    queue.push({ kind: 'dispatch', mutation });
+    queue.push(task);
     publish();
     void drain();
     return { mutationId: mutation.mutationId, settled };
@@ -568,7 +596,22 @@ export function createStore(config: StoreConfig): Store {
           next.done(await runLoad(next.first));
           continue;
         }
+        if (next.kind === 'resolve' && !(await runLoad(false))) {
+          // THE READ FAILED, SO NOTHING IS CONFIRMED, and the edit does not go
+          // out: the queue's next line is the dispatch, and this `continue` is
+          // what makes the two halves one operation. The record goes back to
+          // exactly what it was when the resolution was reserved — a conflict
+          // keeps its `upstream` for view-diff — and `hydrationError`, set by
+          // the load, says why. Not downgraded to `failed`: that would throw
+          // away the one document the user can still compare against.
+          putRecord(next.prior);
+          settle(next.mutation.mutationId);
+          publish();
+          continue;
+        }
         // ALWAYS re-checked, not only when something is known to have moved.
+        // For a resolve this is the FIRST check, and against the document the
+        // read just confirmed — which is the point of resolving.
         // Knowing that needs bookkeeping about document freshness, and every
         // version of that bookkeeping this store has had was wrong in a way
         // nobody could see. `refusalFor` is pure and cheap; asking it twice
@@ -653,20 +696,27 @@ export function createStore(config: StoreConfig): Store {
       // A per-store counter, not a random identifier: identities only have to
       // be unique within one store, and a deterministic one keeps every test
       // that reads a mutation id reproducible.
-      return start({ ...proposal, mutationId: `m${sequence}` });
+      return start({ kind: 'dispatch', mutation: { ...proposal, mutationId: `m${sequence}` } });
     },
 
     retry(mutationId) {
       const record = recordFor(mutationId);
       if (record === undefined || record.state === 'pending') return noop(mutationId);
-      return start(record.mutation);
+      return start({ kind: 'dispatch', mutation: record.mutation });
+    },
+
+    retryOnLatest(mutationId) {
+      const record = recordFor(mutationId);
+      if (record === undefined || record.state === 'pending') return noop(mutationId);
+      return start({ kind: 'resolve', mutation: record.mutation, prior: record });
     },
 
     /**
      * Single-step on purpose: it reads the record and acts on it with no
-     * `await` in between, so nothing can change underneath it. A resolution
-     * that had to refresh first could not have that property, which is why the
-     * store does not offer one.
+     * `await` in between, so nothing can change underneath it. The resolution
+     * that has to refresh first gets the same property by reserving the edit
+     * BEFORE its refresh — the record is `pending` from that call on, which is
+     * exactly the state this declines to touch.
      */
     discardMine(mutationId) {
       const record = recordFor(mutationId);

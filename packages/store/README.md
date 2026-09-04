@@ -190,30 +190,32 @@ A conflict's `upstream` is **for display, and is never adopted** — it is the "
 of the choice, and a reading of the past: a conflict can sit on screen for as long as a person
 takes to read it.
 
-The store ships the two single-step resolutions and **not** the composite:
+The store ships three resolutions:
 
 ```ts
-store.discardMine(id);   // drop the overlay; adopts nothing
-store.retry(id);         // re-dispatch, unchanged
+store.discardMine(id);     // drop the overlay; adopts nothing
+store.retry(id);           // re-dispatch, unchanged, against the document as it stands
+store.retryOnLatest(id);   // re-read the document, then re-dispatch, unchanged, against what it confirmed
 ```
 
-**"Retry on latest" is yours to compose**, and the two lines are the point:
+`discardMine` and `retry` read the record and act on it with no `await` in between, so neither
+can be overtaken. `retryOnLatest` has a read in the middle, and everything that can happen
+during it — the read failing, the user discarding, the user pressing again — is a decision
+about *user intent*. The store settles all three by **reserving the edit before the read**:
+the record is `pending` from the call on, and a pending edit is one `discardMine` and a second
+press decline to touch, exactly as they do while any write is in flight. The read and the
+re-dispatch then run as **one queued operation**, so nothing can be queued between them:
 
-```ts
-await store.rehydrate();
-if (store.getSnapshot().hydrationError) return;                 // do not retry unconfirmed
-if (store.getSnapshot().writes.some((w) => w.mutationId === id)) store.retry(id);
-```
+- the read **fails** — the record is restored exactly as it was, `upstream` and all, nothing is
+  dispatched, and `hydrationError` says why. The conflict is still there to try again;
+- the read **confirms** a document that no longer admits the edit — it is refused `invalid`
+  against that document and never dispatched;
+- otherwise the edit goes out against the confirmed document, with the guard judging it there.
 
-That is deliberate, and it is the one place this package asks you to write something it could
-have written for you. Both calls above read state and act on it with no `await` in between, so
-neither can be overtaken. The composite has an `await` in the middle, and everything that can
-happen during it — the read failing, the user discarding, the user pressing again — is a
-decision about *user intent* that the caller holding the await can make and the store cannot.
-What a store-owned version would need — a resolution reservation, or cancellation on the
-port — and why it belongs with the editor layer instead, is
-[issue #7](https://github.com/autnmy/issuegraph/issues/7). The adapter is the authority on the current document; the store asks it
-rather than keeping a guess about how stale its own copy has become.
+That reservation is what the store used to lack, and why the composition once had to live in
+the host — [issue #7](https://github.com/autnmy/issuegraph/issues/7) is the record of the three
+defects a hand-rolled version drew. The adapter is the authority on the current document; the
+store asks it rather than keeping a guess about how stale its own copy has become.
 
 `lastChange` belongs to the edit that is **current when it lands**. Two edits proposed before
 the first settles means the first's summary would otherwise be written after the second began,

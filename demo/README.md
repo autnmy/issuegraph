@@ -89,8 +89,8 @@ assigned as markup is only the packages' own rendered output, escaped by
 - **Every edge state.** `pending-write` on any edit; `invalid` from a refusal the
   adapter never sees (a self-edge, a duplicate, a would-be cycle); `failed` and
   `conflict` by arming what the tracker answers next. A conflict offers **retry
-  on latest**, which is the store's `rehydrate` then `retry` — composed by the
-  host, because the store deliberately offers no retry-on-latest of its own.
+  on latest**, which is the store's `retryOnLatest` — one reserved operation
+  that re-reads the document and then re-dispatches the edit against it.
 - **Both hold families**, both drawn where the viewer puts them: a graph-derived
   hold inline at its would-be rank showing `—`, an executor-derived one in the
   footer group with no rank slot.

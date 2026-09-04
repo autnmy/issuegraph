@@ -224,10 +224,9 @@ test('a conflict holds BOTH versions and merges neither', async () => {
   );
 });
 
-test('a host composes retry-on-latest from refresh and retry', async () => {
-  // The store ships no `retryOnLatest`. A host sequences the two single-step
-  // calls it does ship, which is the composition below — and because the host
-  // holds the await, it can check whether the conflict is still there.
+test('retry on latest refreshes, then re-dispatches, as one operation', async () => {
+  // The store owns the composition: the read and the re-dispatch are one
+  // queued task, and the edit is reserved before the read starts.
   const source = createScriptedSource(threeOpenIssues(), applyEdit);
   const store = storeOver(source);
   await store.hydrate();
@@ -243,18 +242,19 @@ test('a host composes retry-on-latest from refresh and retry', async () => {
   source.settleNext({ outcome: 'conflict', upstream: source.current() });
   await handle.settled;
 
-  // The composition, in full.
-  await store.rehydrate();
+  const resolved = store.retryOnLatest(handle.mutationId);
+  assert.equal(
+    store.getSnapshot().writes.find((record) => record.mutationId === handle.mutationId)?.state,
+    'pending',
+    'reserved before the refresh',
+  );
+
+  await source.whenPending(resolved.mutationId);
   assert.deepEqual(
     store.getSnapshot().landed.map((edge) => edge.id),
     [edgeId('duplicate-of', '3', '1')],
     'the refresh landed before anything was re-dispatched',
   );
-  const stillThere = store.getSnapshot().writes.find((record) => record.mutationId === handle.mutationId);
-  assert.equal(stillThere?.state, 'conflict');
-  const resolved = store.retry(handle.mutationId);
-
-  await source.whenPending(resolved.mutationId);
   source.settleNext('applied');
   await resolved.settled;
 
