@@ -180,6 +180,7 @@ describe('the public surface', () => {
       'GRAPH_NODE_BUDGET',
       'KEY_ATTRIBUTE',
       'METRIC_TOKENS',
+      'ROW_BADGE_BUDGET',
       'THEME_TOKENS',
       'TYPE_TOKENS',
       'clustersOf',

@@ -88,6 +88,7 @@ export type { EdgeDash, EdgeTerminal, EdgeTreatment, OrderingEffect } from './vo
 export { EDGE_TREATMENTS, dashArrayFor, treatmentFor } from './vocabulary.ts';
 
 export { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET } from './projections/graph.ts';
+export { ROW_BADGE_BUDGET } from './parts.ts';
 
 export type { Cluster } from './clusters.ts';
 export { clustersOf } from './clusters.ts';

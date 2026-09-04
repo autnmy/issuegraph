@@ -207,6 +207,26 @@ export const workspaceStylesheet = `
   color: var(--ig-text-muted);
 }
 
+/* The holder, as a control: inline with the sentence that names it, drawn as
+   the same kind of button the relationship rows use so a reader learns one
+   affordance for "take me to that issue". */
+.ig-inspector-hold-subject {
+  margin-left: var(--ig-space-tight);
+  background: var(--ig-surface-2);
+  color: inherit;
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  padding: 0 var(--ig-space-tight);
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-small);
+  cursor: pointer;
+}
+
+.ig-inspector-hold-subject:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-tight);
+}
+
 .ig-inspector-relationships {
   display: flex;
   flex-direction: column;

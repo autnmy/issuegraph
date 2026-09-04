@@ -4,11 +4,13 @@ import { describe, test } from 'node:test';
 import type { Frontmatter } from './frontmatter.ts';
 import {
   buildModel,
+  declarerOnlyNode,
   evaluateReadiness,
   resolveSerializeGroup,
   resolveTogetherUnit,
   type NodeInput,
 } from './model.ts';
+import { READINESS_HOLD_CODES, type ReadinessHold } from './relations.ts';
 
 const EMPTY: Frontmatter = {
   blockedBy: [],
@@ -41,7 +43,7 @@ const ref = (n: string | number, repo: string | null = null) => ({ repo, id: Str
 describe('the three questions are individually callable (#83 DW1)', () => {
   test('readiness answers for one candidate without a model', () => {
     const nodes = [node(1), node(2, { data: { blockedBy: [ref(1)] } })];
-    assert.deepEqual(evaluateReadiness(nodes, '1'), { ready: true, reasons: [] });
+    assert.deepEqual(evaluateReadiness(nodes, '1'), { ready: true, reasons: [], holds: [] });
     assert.equal(evaluateReadiness(nodes, '2').ready, false);
   });
 
@@ -91,6 +93,7 @@ describe('the three questions are individually callable (#83 DW1)', () => {
     assert.deepEqual(evaluateReadiness([node(1)], '99'), {
       ready: false,
       reasons: ['unknown node'],
+      holds: [{ code: 'unknown-node', text: 'unknown node' }],
     });
     assert.deepEqual(resolveSerializeGroup([node(1)], '99'), []);
     assert.deepEqual(resolveTogetherUnit([node(1)], '99'), []);
@@ -156,6 +159,154 @@ describe('the standalone answers and the model agree, key by key', () => {
       assert.deepEqual(resolveTogetherUnit(corpus, key, options), model.togetherComponent(key));
     });
   }
+});
+
+/**
+ * THE HOLD VOCABULARY, one fixture per code — and the prose pinned beside it
+ * BYTE FOR BYTE. `reasons` is a projection of `holds`, so a consumer that
+ * renders the sentence must see exactly what it saw before the codes existed;
+ * this table is that guarantee, written out rather than inferred from the
+ * projection test below (which would pass equally on a reworded sentence).
+ *
+ * `subject` is the issue the cause names, or absent — never `undefined` — for
+ * a cause about the node itself, so a host testing `'subject' in hold` gets a
+ * straight answer.
+ */
+describe('every hold carries its code and its subject, and the sentence is unchanged', () => {
+  const corpus: NodeInput[] = [
+    node(1),
+    node(2, { data: { blockedBy: [ref(1)] } }),
+    node(3, { open: false }),
+    node(4, { data: { duplicateOf: ref(1) } }),
+    node(5, { declarationRead: 'under-read' }),
+    node(6, { open: false, declarationRead: 'under-read' }),
+    node(7, { data: { blockedBy: [ref(6)] } }),
+    node(8, { data: { blockedBy: [ref(99)] } }),
+    node(9, { data: { togetherWith: ref(98) } }),
+    node(10, { data: { togetherWith: ref(6) } }),
+    node(11, { data: { togetherWith: ref(2) } }),
+    node(12, { data: { serializeWith: ref(5) } }),
+    node(13, { assigneeCount: 1 }),
+    node(14, { data: { serializeWith: ref(13) } }),
+  ];
+  const weak = declarerOnlyNode(node(40));
+  const model = buildModel(corpus, { declarerOnlyNodes: [weak] });
+
+  const cases: ReadonlyArray<readonly [string, ReadinessHold]> = [
+    ['40', { code: 'weak-source', text: 'declared by a weak source; not selectable' }],
+    [
+      '5',
+      {
+        code: 'under-read-self',
+        text: 'own issuegraph declaration was not fully read (fail-safe: refusing the node)',
+      },
+    ],
+    ['3', { code: 'closed', text: 'closed' }],
+    ['4', { code: 'duplicate', text: 'duplicate-of another issue' }],
+    ['2', { code: 'blocked-by-open', subject: '1', text: 'blocked-by 1 is open' }],
+    [
+      '7',
+      {
+        code: 'blocked-by-under-read',
+        subject: '6',
+        text: 'blocked-by 6 is closed but its own declaration was under-read — a dropped duplicate-of would redirect this edge to a canonical that may still be open (fail-safe: blocking)',
+      },
+    ],
+    [
+      '8',
+      {
+        code: 'blocked-by-unresolvable',
+        subject: '99',
+        text: 'blocked-by 99 is unresolvable (fail-safe: blocking)',
+      },
+    ],
+    [
+      '9',
+      {
+        code: 'relation-unresolvable',
+        subject: '98',
+        text: 'together-with 98 is unresolvable (fail-safe: refusing the declarer)',
+      },
+    ],
+    [
+      '10',
+      {
+        code: 'together-under-read',
+        subject: '6',
+        text: 'together-with 6 is closed but its own declaration was under-read — a dropped duplicate-of would redirect this edge to a canonical that may still be an open member (fail-safe: refusing the declarer)',
+      },
+    ],
+    [
+      '11',
+      {
+        code: 'together-member-unready',
+        subject: '2',
+        text: 'together member 2 is not ready (blocked-by 1 is open)',
+      },
+    ],
+    [
+      '12',
+      {
+        code: 'serialize-under-read',
+        subject: '5',
+        text: "serialize group member 5 had an under-read declaration — the component's true extent is unknown (fail-safe)",
+      },
+    ],
+    [
+      '14',
+      {
+        code: 'serialize-claimed',
+        subject: '13',
+        text: 'serialize group member 13 is actively claimed',
+      },
+    ],
+    ['99', { code: 'unknown-node', text: 'unknown node' }],
+  ];
+
+  for (const [key, expected] of cases) {
+    test(`${expected.code}: ${key}`, () => {
+      const result = model.readiness(key);
+      const found = result.holds.filter((h) => h.code === expected.code);
+      assert.deepEqual(found, [expected], JSON.stringify(result.holds));
+      assert.equal(result.ready, false);
+      assert.equal('subject' in found[0]!, 'subject' in expected, 'absent, not undefined');
+    });
+  }
+
+  test('the shared unknown-node answer is frozen at every level', () => {
+    // One value is handed to every caller, so a write through it would reach
+    // all of them. `Object.freeze` is shallow; each level is pinned separately.
+    const result = model.readiness('99');
+    assert.equal(result, evaluateReadiness(corpus, '99'), 'one shared value');
+    assert.ok(Object.isFrozen(result));
+    assert.ok(Object.isFrozen(result.reasons));
+    assert.ok(Object.isFrozen(result.holds));
+    assert.ok(Object.isFrozen(result.holds[0]));
+  });
+
+  test('the codes the reader emits are exactly the exported vocabulary', () => {
+    const emitted = new Set(cases.map(([, hold]) => hold.code));
+    assert.deepEqual([...emitted].sort(), [...READINESS_HOLD_CODES].sort());
+  });
+
+  test('a weak node holds on its weakness alone; nothing else is read into it', () => {
+    assert.deepEqual(model.readiness('40').holds.map((h) => h.code), ['weak-source']);
+  });
+
+  /**
+   * THE PROJECTION, on every key of this corpus: `reasons` is `holds[i].text`
+   * in order, so a consumer reading either reads the same failures. Pinned
+   * across the corpus rather than on one fixture because the derivation has
+   * ~13 push sites and a drift at any one of them is a hold reported to one
+   * reader and not the other.
+   */
+  test('reasons is the text projection of holds, for every key', () => {
+    for (const key of [...model.keys, '99']) {
+      const result = model.readiness(key);
+      assert.deepEqual(result.reasons, result.holds.map((h) => h.text), key);
+      assert.equal(result.ready, result.holds.length === 0, key);
+    }
+  });
 });
 
 /**

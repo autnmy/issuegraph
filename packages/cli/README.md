@@ -102,6 +102,8 @@ issuegraph ready --input issues.json
 
 The document carries **bodies, never pre-parsed data**. Accepting a caller's own edge objects would let it hand-roll the grammar and feed the result in, which is the defect this package exists to end.
 
+Each slot in the output carries `holdReasons` — the sentences naming why it is held — and `holds`, the same conditions as `{ code, subject?, text }` from the reader's closed vocabulary, so a consumer groups or filters holds by `code` and links `subject` rather than matching prose.
+
 A body that could not be fully read is listed under `underRead` and carried into the derivation as under-read rather than edge-free — so it is **held, not ranked ready**. That does not fail the run: on a real corpus, unreadable bodies are common, and refusing the whole set would make the command unusable.
 
 ### Writing

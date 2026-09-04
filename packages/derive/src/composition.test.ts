@@ -101,6 +101,17 @@ describe('deriveIssueOrder composes the relation layer (#83 DW3)', () => {
       [...new Set(['900', '901'].flatMap((m) => evaluateReadiness(mixed, m).reasons))],
     );
     assert.ok(unit.holdReasons.length > 0, 'a held slot names why');
+    // THE STRUCTURED FORM RIDES BESIDE THE PROSE: the same union, deduplicated
+    // by sentence, and `holdReasons` is its text projection — so a host that
+    // groups on `code` and one that renders `holdReasons` see one set of holds.
+    assert.deepEqual(
+      unit.holds.map((h) => h.text),
+      unit.holdReasons,
+    );
+    assert.ok(
+      unit.holds.some((h) => h.code === 'blocked-by-open' && h.subject !== undefined),
+      JSON.stringify(unit.holds),
+    );
   });
 
   for (const slot of derived.slots) {
@@ -114,6 +125,11 @@ describe('deriveIssueOrder composes the relation layer (#83 DW3)', () => {
         ...new Set(slot.members.flatMap((member) => evaluateReadiness(issues, member).reasons)),
       ];
       assert.deepEqual(slot.holdReasons, holdReasons);
+      assert.deepEqual(
+        slot.holds.map((h) => h.text),
+        holdReasons,
+        'holds is the source holdReasons projects',
+      );
 
       // The unit is the together component narrowed to the slot's own members,
       // so every member must agree the others are in its unit.

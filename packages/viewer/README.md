@@ -66,11 +66,13 @@ const document = {
 | `graph` | what surrounds this issue — the spine with gutters and arcs. Bounded; see below. |
 | `tree` | where this work came from — the `decomposed-from` hierarchy. |
 
-**Held slots keep their position.** A hold the graph itself imposes renders *inline at the rank the work would have taken*, with `—` for the rank and a dashed station, because "why isn't my P1 running" has to be answerable in place. A hold the runner or tracker imposes is not a fact about the work, earns no rank slot, and collapses into a footer group with duplicates.
+**Held slots keep their position.** A hold the graph itself imposes renders *inline at the rank the work would have taken*, with `—` for the rank and a dashed station, because "why isn't my P1 running" has to be answerable in place. A hold the runner or tracker imposes is not a fact about the work, earns no rank slot, and collapses into a footer group with duplicates. A hold's optional `code` and `subject` — the reader's machine-readable cause and the issue it names — are published as `data-code` and `data-subject` beside `data-family`, and omitted rather than emptied when the host stated neither; the viewer interprets neither and renders `reason` verbatim as before.
 
 **The rail sits on the canvas, not above it.** Ranks and readiness stations are HTML — SVG text is not selectable, not reflowable and announces poorly — but they are the labels *for* the spine nodes, so each row is positioned at the coordinates the layout computed for its own node. One stage carries both at the layout's own size, so one SVG unit is one CSS pixel and the two cannot drift; it scrolls rather than shrinking, because shrinking would silently break that alignment.
 
 **The graph refuses rather than degrades.** Past 60 nodes it stops drawing and shows connected components as capsules — size, blocking count, cycle flag, chain depth — and past 300 it shows clusters only. Each refusal names the next move. A refusal with a route forward reads as competence; a hairball reads as a bug.
+
+**A row's badges are budgeted; the order is not.** The linear and tree projections draw every row at any size — that is the promise the refusal routes a reader to — so what they bound is the relationships *per row*: past `ROW_BADGE_BUDGET` (12) a row draws the first twelve in the format's field order, `blocked-by` first, and one `+N more relationships` chip carrying `data-omitted`, its name in its visible text because ARIA prohibits naming a generic span. Nothing is cut silently, and the chip carries no edge identity because it names no single edge; an omitted edge is still selectable, since the drawn-check answers from the document before it consults the markup.
 
 ## The edge grammar
 

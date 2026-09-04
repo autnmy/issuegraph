@@ -218,3 +218,55 @@ export function crowdedDocument(nodeCount: number): ViewerDocument {
   }));
   return { issues, edges, order: { slots: [], excluded: [] } };
 }
+
+/**
+ * One hub blocked by `count` others, every issue ranked, for the badge budget.
+ *
+ * The hub also carries one `decomposed-from`, declared FIRST so that a cut in
+ * declaration order would keep it and a cut in the format's field order —
+ * `blocked-by` before `decomposed-from` — drops it. Declared last it would be
+ * dropped by either rule and the assertion could not tell them apart.
+ */
+export function denseRowDocument(count: number): ViewerDocument {
+  const others = Array.from({ length: count }, (_, index) => String(index + 1));
+  const issues = [
+    { key: 'hub', title: 'The hub', open: true, priority: 1 },
+    ...others.map((key) => ({ key, title: `Issue ${key}`, open: true, priority: 2 })),
+  ];
+  const edges = [
+    { field: 'decomposed-from' as const, from: 'hub', to: '1' },
+    ...others.map((key) => ({ field: 'blocked-by' as const, from: 'hub', to: key })),
+  ];
+  const slots = [
+    { rank: 1, lead: 'hub', members: ['hub'], ready: true, holds: [] },
+    ...others.map((key, index) => ({ rank: index + 2, lead: key, members: [key], ready: true, holds: [] })),
+  ];
+  return { issues, edges, order: { slots, excluded: [] } };
+}
+
+/**
+ * `denseRowDocument`, with the hub made a together unit of two.
+ *
+ * The partner declares the unit edge and one `blocked-by` of its own, so the
+ * row's key set is two keys and the intra-unit edge sits in BOTH members'
+ * `edgesOf` entries. That is the shape where counting before the dedupe would
+ * report the one edge as two omissions.
+ */
+export function denseUnitDocument(count: number): ViewerDocument {
+  const base = denseRowDocument(count);
+  const [hubSlot, ...rest] = base.order.slots;
+  return {
+    issues: [...base.issues, { key: 'partner', title: 'The partner', open: true, priority: 1 }],
+    edges: [
+      ...base.edges,
+      { field: 'together-with' as const, from: 'partner', to: 'hub' },
+      { field: 'blocked-by' as const, from: 'partner', to: '1' },
+    ],
+    order: {
+      slots: [{ ...(hubSlot as ViewerSlotLike), members: ['hub', 'partner'] }, ...rest],
+      excluded: [],
+    },
+  };
+}
+
+type ViewerSlotLike = ViewerDocument['order']['slots'][number];

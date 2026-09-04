@@ -124,8 +124,11 @@ export interface AuditFinding {
   readonly keepAsHistory: boolean;
   /**
    * Every issue the finding is about: a SET, sorted, with no ref twice. A cycle
-   * names its whole component; the other three name one issue, or the two ends
-   * of the edge that produced them.
+   * names its whole component; an encoding refusal names one issue; a stale
+   * blocker names the two ends of the edge that produced it; a dead duplicate
+   * ref names those two AND the closed canonical the chain resolves to, when
+   * that is a third issue — see {@link deadDuplicateFindings} for why the two
+   * edge classes differ here.
    *
    * Both properties are established where a finding is built, not merely
    * expected — the row grammar counts an entry per member, so a repeated ref
@@ -533,6 +536,17 @@ function staleBlockerFindings(
     if (!verdict.declarerEdgesRead) continue;
     const effective = verdict.effective;
     const via = effective === edge.to ? '' : ` (via ${edge.to}, which duplicates it)`;
+    // THE TWO ENDS ONLY — the effective canonical is named in `detail` and
+    // deliberately NOT in `members`, which is the opposite of what
+    // `deadDuplicateFindings` does, and the asymmetry is decided rather than
+    // inherited. This finding's remedy sits on the DECLARER's edge — clear it,
+    // or keep it as history — so the row a reader acts on is `edge.from`, and
+    // `edge.to` is the ref they wrote. The canonical is where `edge.to`'s work
+    // went, not where this edge's bookkeeping is; marking its row would put a
+    // `misleading` bar on a closed issue with nothing to do there. And the
+    // spelling shape that forced the dead-duplicate change cannot reach here:
+    // a target the document does not carry is never resolved on the `'to'`
+    // side, so the finding is withheld as unknown rather than mis-membered.
     findings.push(
       finding(
         'stale-blocker',
@@ -560,6 +574,26 @@ function staleBlockerFindings(
  * The fallback to the immediate target covers a chain the model could not
  * resolve, where `duplicateCanonical` answers `null`. Reporting on what the
  * edge itself names is the fail-safe direction for a `dangerous` class.
+ *
+ * THE MEMBERS NAME THE CANONICAL AS WELL AS THE EDGE'S TWO ENDS. The closed
+ * canonical is the issue whose state this finding asserts — "its work is
+ * tracked nowhere" is a fact about where the chain ENDS — so it is what the
+ * finding is about, and the overlay can only mark a row it is handed. Naming
+ * the two ends alone left the closed target's row bare in the shape that
+ * matters most: the document carries the issue under its BARE ref while the
+ * edge names it QUALIFIED (`a duplicate-of acme/app#2`, carried as `2`). The
+ * host translates that correctly, so the finding fires — but `acme/app#2` is
+ * a spelling the overlay does not carry, it is dropped, and the one row the
+ * finding is centrally about carried no bar. The detector cannot tell a
+ * spelling from a hop, and does not need to: the canonical is a member in
+ * both, the immediate target stays a member because it is the ref the author
+ * wrote and the row they will look at, and a set collapses the ordinary
+ * same-spelling case back to two.
+ *
+ * In a resolved chain (`a -> b -> c`, `c` closed) this names `c` on `a`'s
+ * finding too. That row was already marked by `b`'s own finding, so nothing
+ * newly appears on the rail; what changes is that `a`'s finding now says
+ * on `c` what its `detail` already said. One rule, not a spelling special case.
  */
 function deadDuplicateFindings(
   document: GraphDocument,
@@ -577,10 +611,11 @@ function deadDuplicateFindings(
     if (!verdict.declarerLive || !verdict.knowable || !verdict.effectiveClosed) continue;
     const canonical = verdict.effective;
     const via = canonical === edge.to ? '' : ` (through ${edge.to})`;
+    // `finding` deduplicates, so the same-spelling case stays two members.
     findings.push(
       finding(
         'dead-duplicate-ref',
-        [edge.from, edge.to].sort(),
+        [edge.from, edge.to, canonical].sort(),
         `${edge.from} is duplicate-of ${canonical}${via}, which is closed; its work is excluded from the order and tracked nowhere`,
       ),
     );

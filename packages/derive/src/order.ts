@@ -68,7 +68,7 @@
  * TIE-BREAK SUBSTITUTION, not a second ranking engine.
  */
 
-import type { IssueRef, Model, NodeInput } from '@issuegraph/reader';
+import type { IssueRef, Model, NodeInput, ReadinessHold } from '@issuegraph/reader';
 import { buildModel, nodeKey, nodeSourceRepo, refKey } from '@issuegraph/reader';
 
 import {
@@ -156,8 +156,22 @@ export interface IssueOrderSlot {
   /** Every candidate member, in the model's canonical component order. */
   readonly members: readonly string[];
   readonly ready: boolean;
-  /** Empty when ready; each entry names one failed readiness condition. */
+  /**
+   * Empty when ready; each entry names one failed readiness condition.
+   *
+   * A PROJECTION of `holds` — `holds[i].text`, in the same order — kept so a
+   * consumer that reads prose reads exactly what it always did.
+   */
   readonly holdReasons: readonly string[];
+  /**
+   * Empty when ready; the same failures with the reader's `code` and, where the
+   * cause names an issue, its `subject`. The UNION over the unit's members,
+   * deduplicated by sentence exactly as `holdReasons` is — two members of one
+   * unit routinely share a blocker, and a reader of the slot wants that blocker
+   * once. The type is `@issuegraph/reader`'s: this layer adds nothing to the
+   * vocabulary and restates none of it.
+   */
+  readonly holds: readonly ReadinessHold[];
   /**
    * COMPUTED sizes — no issue writes its group down (SPEC §4.3.4/§4.3.7).
    * Both count CANDIDATES only (open, non-duplicate), so the two read on the
@@ -340,7 +354,17 @@ export function deriveIssueOrder(input: DeriveIssueOrderInput): DerivedIssueOrde
         );
       }
     }
-    const holdReasons = [...new Set(members.flatMap((member) => model.readiness(member).reasons))];
+    // DEDUPLICATED BY SENTENCE, and `holdReasons` is then derived from the
+    // survivors rather than deduplicated separately: one pass, one order, so the
+    // projection cannot disagree with its source about which hold came first.
+    const seen = new Set<string>();
+    const holds: ReadinessHold[] = [];
+    for (const h of members.flatMap((member) => model.readiness(member).holds)) {
+      if (seen.has(h.text)) continue;
+      seen.add(h.text);
+      holds.push(h);
+    }
+    const holdReasons = holds.map((h) => h.text);
     // The unit is ONE piece of work: it advances only when every member can.
     const ready = members.every((member) => model.readiness(member).ready);
     const slotRank = ready ? (rank += 1) : null;
@@ -350,6 +374,7 @@ export function deriveIssueOrder(input: DeriveIssueOrderInput): DerivedIssueOrde
       members,
       ready,
       holdReasons,
+      holds,
       togetherGroupSize: members.length,
       // The union over MEMBERS, not the lead's component — see the field's doc.
       // A Set because two members of one unit routinely share a serialize
