@@ -120,6 +120,11 @@ describe('symmetric applies at once; directed needs one pick', () => {
       // Pointing AT the anchor is one reference per member, and is planned.
       const toward = planOf({ anchor: ANCHOR, members: MEMBERS, kind, direction: 'to-anchor' });
       assert.equal(toward.count, 3, kind);
+      // ONE member from the anchor is one reference, which the field holds.
+      const one = planOf({ anchor: ANCHOR, members: ['901'], kind, direction: 'from-anchor' });
+      assert.deepEqual(one.proposals, [{ op: 'create', kind, from: ANCHOR, to: '901' }], kind);
+      // The same member named twice is still one reference.
+      assert.equal(planOf({ anchor: ANCHOR, members: ['901', '901'], kind, direction: 'from-anchor' }).count, 2, kind);
     }
     // The list field fans out from the anchor as before.
     assert.equal(planOf({ anchor: ANCHOR, members: MEMBERS, kind: 'blocked-by', direction: 'from-anchor' }).count, 3);

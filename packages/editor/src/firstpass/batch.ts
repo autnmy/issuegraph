@@ -196,7 +196,14 @@ export function planBatch(request: BatchRequest): BatchOutcome {
   // store to refuse one arm at a time after the first lands. `blocked-by` is
   // the list and fans out either way. Read from the vocabulary, not listed:
   // a sixth single-valued field is covered the day core learns about it.
-  if (direction === 'from-anchor' && EDGE_CARDINALITY[kind] === 'single') {
+  // ONE DISTINCT MEMBER IS ONE REFERENCE, and that is legal — a batch of one
+  // is a batch the API accepts, so the refusal is keyed on the count the
+  // anchor would carry, not on the direction alone.
+  if (
+    direction === 'from-anchor' &&
+    EDGE_CARDINALITY[kind] === 'single' &&
+    new Set(members).size > 1
+  ) {
     return { ok: false, refusal: { reason: 'anchor-cannot-carry', kind } };
   }
 
