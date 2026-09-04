@@ -495,6 +495,12 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
     const scrollTop = railBefore?.scrollTop ?? 0;
     const active = document.activeElement;
     const activeCommand = active instanceof HTMLInputElement ? active.getAttribute('data-ig-command') : null;
+    // THE CARET AS IT WAS, not the end of the value: a reader editing in the
+    // middle of a query keeps typing there, and every keystroke redraws.
+    const caret =
+      active instanceof HTMLInputElement
+        ? { start: active.selectionStart, end: active.selectionEnd, direction: active.selectionDirection }
+        : null;
     const focused = focusedKey();
     // The ZONE too: an issue is commonly drawn in the rail and on the canvas,
     // and restoring "the first element with this key" would move focus from
@@ -536,7 +542,12 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
       const again = root.querySelector<HTMLInputElement>(`input[data-ig-command="${activeCommand}"]`);
       if (again !== null) {
         again.focus();
-        again.setSelectionRange(again.value.length, again.value.length);
+        const end = again.value.length;
+        again.setSelectionRange(
+          Math.min(caret?.start ?? end, end),
+          Math.min(caret?.end ?? end, end),
+          caret?.direction ?? 'none',
+        );
       } else {
         // The search closed under the caret — the target was committed or the
         // draft cancelled — so focus returns to the row the flow started on.
