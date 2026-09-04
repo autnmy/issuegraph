@@ -433,6 +433,7 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
     const scrollTop = railBefore?.scrollTop ?? 0;
     const active = document.activeElement;
     const activeCommand = active instanceof HTMLInputElement ? active.getAttribute('data-ig-command') : null;
+    const focused = focusedKey();
 
     workspace.innerHTML = result.markup;
     document.documentElement.setAttribute('data-theme', state.theme);
@@ -453,12 +454,30 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
 
     const rail = zone('rail');
     if (rail !== null) rail.scrollTop = scrollTop;
+    // FOCUS SURVIVES THE REDRAW, and it moves to the target search when that
+    // step opens. The keyboard path is R -> kind -> search -> Enter, and every
+    // step redraws: without this, R destroyed the focused row, the next press
+    // landed outside the workspace and read as 'elsewhere', and the advertised
+    // pointer-free loop could not get past its first key.
+    const search = root.querySelector<HTMLInputElement>('input[data-ig-command="target-query"]');
+    const focusRow = (key: string | null): void => {
+      if (key === null) return;
+      workspace.querySelector<HTMLElement>(`[data-ig-key="${CSS.escape(key)}"]`)?.focus({ preventScroll: true });
+    };
     if (activeCommand !== null) {
       const again = root.querySelector<HTMLInputElement>(`input[data-ig-command="${activeCommand}"]`);
       if (again !== null) {
         again.focus();
         again.setSelectionRange(again.value.length, again.value.length);
+      } else {
+        // The search closed under the caret — the target was committed or the
+        // draft cancelled — so focus returns to the row the flow started on.
+        focusRow(selectedKey(state.selection));
       }
+    } else if (search !== null && state.draft.kind !== null && state.draft.target === null) {
+      search.focus();
+    } else {
+      focusRow(focused);
     }
 
     renderWrites(snapshot);
@@ -570,9 +589,50 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
       interaction: interaction(),
     };
     const intent = keyIntent(event, context);
-    if (intent.kind === 'none') return;
-    event.preventDefault();
-    dispatch({ kind: 'intent', intent });
+    if (intent.kind !== 'none') {
+      event.preventDefault();
+      dispatch({ kind: 'intent', intent });
+      return;
+    }
+    if (context.focused !== null && navigateFocus(event)) event.preventDefault();
+  };
+
+  /**
+   * The viewer's movement keys, over the rendered rows.
+   *
+   * `mountViewer` wires these through the viewer's own `navigate`, which walks
+   * a Scene in rank order. The workspace renders through `renderWorkspace`,
+   * which composes the scenes inside and publishes none of them — so the
+   * traversal the rail or the canvas emitted is read back off the markup: the
+   * keyed, focusable elements in document order, which IS the rank order each
+   * projection publishes (the viewer's README: "Rank order, never geometric").
+   * Movement never wraps, and it never crosses zones: the ends of the order
+   * are the ends of the work. Enter and Space select the focused row, as a
+   * click would. Every other key is left to whoever else owns it.
+   */
+  const navigateFocus = (event: KeyboardEvent): boolean => {
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement)) return false;
+    const owner = active.closest<HTMLElement>('.ig-zone');
+    if (owner === null || !workspace.contains(owner)) return false;
+    if (event.key === 'Enter' || event.key === ' ') {
+      const key = active.closest<HTMLElement>('[data-ig-key]')?.getAttribute('data-ig-key');
+      if (key === null || key === undefined) return false;
+      dispatch({ kind: 'point', key });
+      return true;
+    }
+    const rows = [...owner.querySelectorAll<HTMLElement>('[data-ig-key][tabindex]')];
+    const at = rows.findIndex((row) => row === active || row.contains(active));
+    if (at < 0) return false;
+    const to =
+      event.key === 'ArrowDown' ? Math.min(at + 1, rows.length - 1)
+      : event.key === 'ArrowUp' ? Math.max(at - 1, 0)
+      : event.key === 'Home' ? 0
+      : event.key === 'End' ? rows.length - 1
+      : -1;
+    if (to < 0) return false;
+    rows[to]?.focus();
+    return true;
   };
 
   const onPointerDown = (event: PointerEvent): void => {
