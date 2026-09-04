@@ -53,7 +53,7 @@ import {
   introducesCycle,
   slotCount,
 } from './order.ts';
-import { seedDocument, seedHolds } from './seed.ts';
+import { coverageSeed, seedDocument, seedHolds } from './seed.ts';
 
 const PRIORITIES: readonly Priority[] = [0, 1, 2, 3];
 
@@ -443,7 +443,13 @@ test('a serialize footprint includes the unit itself, so a unit alone is not ser
   // badge from, and comparing it against 1 drew the badge on a pair nothing
   // serializes. The property the comparison rests on is asserted here, where a
   // test can reach it.
-  const rows = explainOrder(seedDocument(), seedHolds());
+  //
+  // OVER THE COVERAGE SEED, whose one unit and one serialize pair are the shape
+  // this pins. The dense layer adds a serialize ring nobody has claimed, whose
+  // members are ready with a footprint of five, and that is correct rather
+  // than a counter-example: the control below asks that a serialized row be
+  // held or footered, which is only true where the group has a claim in it.
+  const rows = explainOrder(coverageSeed(), seedHolds());
 
   const unit = rows.filter((row) => row.togetherGroupSize > 1);
   assert.ok(unit.length > 1, 'the seed no longer exercises a together unit');
@@ -471,7 +477,11 @@ test('a together unit is ONE slot, counted once against the cap', () => {
   // one claim. Counting its members would report more work running than the
   // concurrency cap allows, in a header sitting directly above the stations
   // that contradict it.
-  const rows = explainOrder(seedDocument(), seedHolds());
+  //
+  // The coverage seed carries exactly one unit; the dense layer adds two more,
+  // each of which is its own single slot, so the property is asserted per unit
+  // over the whole seed and the count over the coverage seed alone.
+  const rows = explainOrder(coverageSeed(), seedHolds());
   const unit = rows.filter((row) => row.togetherGroupSize > 1);
   assert.ok(unit.length > 1, 'the seed no longer exercises a together unit');
   assert.equal(new Set(unit.map((row) => row.rank)).size, 1, 'the unit took more than one rank');

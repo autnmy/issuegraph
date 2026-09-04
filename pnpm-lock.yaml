@@ -32,12 +32,18 @@ importers:
       '@issuegraph/derive':
         specifier: workspace:^
         version: link:../packages/derive
+      '@issuegraph/editor':
+        specifier: workspace:^
+        version: link:../packages/editor
       '@issuegraph/reader':
         specifier: workspace:^
         version: link:../packages/reader
       '@issuegraph/store':
         specifier: workspace:^
         version: link:../packages/store
+      '@issuegraph/viewer':
+        specifier: workspace:^
+        version: link:../packages/viewer
     devDependencies:
       '@types/node':
         specifier: ^22.18.0

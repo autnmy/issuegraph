@@ -1,0 +1,77 @@
+name: Pages
+
+# The site — the landing page and the demo sandbox at /demo/ — deploys from
+# this workflow, not from the branch. The demo runs the published packages
+# through an import map whose targets are each package's BUILT `dist`, and
+# `dist/` is gitignored, so a branch deploy of `main` serves a demo page with
+# nothing behind it. This builds first and deploys the assembled tree.
+#
+# The repository's Pages source has to be "GitHub Actions" for the deploy step
+# to be accepted; `actions/configure-pages` creates a site that way but does
+# not convert an existing branch-deployed one, so that switch is a one-time
+# repository setting rather than something this file can do.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time, and never cancel one that has started uploading: a
+# cancelled deploy can leave the site pointing at a half-uploaded artifact.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: assemble the site
+    runs-on: ubuntu-latest
+    steps:
+      # Every action is pinned to a commit SHA, as in ci.yml: a tag is mutable.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # The whole workspace, not just the demo: the import map loads each
+      # package's own dist, so the demo is only as built as its dependencies.
+      - name: Build
+        run: pnpm run build
+
+      # Copies the allowlist and refuses if any page reference is unsatisfied.
+      - name: Assemble
+        run: node scripts/assemble-site.mjs _site
+
+      - name: Configure Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - name: Upload
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
+
+  deploy:
+    name: deploy to issuegraph.org
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

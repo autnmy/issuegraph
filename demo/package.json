@@ -7,7 +7,7 @@
   "author": "Autonomy LLC",
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node ../scripts/stamp-demo-versions.ts && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.test.json",
     "test": "node --test \"src/**/*.test.ts\"",
     "serve": "node serve.mjs"
@@ -15,8 +15,10 @@
   "dependencies": {
     "@issuegraph/core": "workspace:^",
     "@issuegraph/derive": "workspace:^",
+    "@issuegraph/editor": "workspace:^",
     "@issuegraph/reader": "workspace:^",
-    "@issuegraph/store": "workspace:^"
+    "@issuegraph/store": "workspace:^",
+    "@issuegraph/viewer": "workspace:^"
   },
   "devDependencies": {
     "@types/node": "^22.18.0",

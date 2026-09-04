@@ -1,8 +1,9 @@
-# The in-memory demo
+# The demo sandbox
 
-A live Issuegraph backlog running on a data source that holds one document in a
-variable. **No tracker, no app installation, no auth, no backend.** Edits are
-client-side and saved nowhere; reload and the seed comes back.
+Live at **<https://issuegraph.org/demo/>**: `@issuegraph/viewer` and
+`@issuegraph/editor` running on a dense in-memory backlog. **No tracker, no app
+installation, no auth, no backend.** Every edit is client-side and saved
+nowhere; reload and the seed comes back.
 
 ```sh
 pnpm install
@@ -18,133 +19,153 @@ would be answering a weaker question than the one being asked.
 
 ## Why this exists
 
-**If the demo needs a tracker, the data-source port is not a port.** A seam only
-ever driven by one real adapter is a seam by assertion. So this page is the
-proof: it drives `@issuegraph/store` — the published package, unmodified, loaded
-in the browser from the `exports` entry its own manifest declares — through an
-adapter that has no tracker behind it at all.
+Two reasons, and the second is the newer one.
 
-Everything on this page that is not the store is **host** work, and that split is
-the demonstration:
+**If the demo needs a tracker, the data-source port is not a port.** A seam only
+ever driven by one real adapter is a seam by assertion. So this page drives
+`@issuegraph/store` — the published package, unmodified, loaded in the browser
+from the `exports` entry its own manifest declares — through an adapter that has
+no tracker behind it at all.
+
+**If a defect only shows up inside a host, nobody can tell whose it is.** The
+viewer and the editor are about to be embedded in a product, next to that
+product's own chrome, on that product's own backlog. A surface that runs both
+packages with no host chrome, on a document dense enough to reach every tier
+and every refusal, is where a defect is reproduced as the package's own — and
+where the theming contract the embed relies on is shown to work rather than
+described.
+
+Everything on this page that is not a package is **host** work, and that split
+is the demonstration:
 
 | the packages supply | the host supplies |
 |---|---|
-| the document, the write loop, the edge states, the change summary (`store`) — the selection order, the readiness verdict, effective priority, the cycle walk (`derive`, over `reader`) | the data source, the executor holds, the concurrency cap, the base ranking, every pixel |
+| the document, the write loop, the edge states, the change summary (`store`) — the selection order, the readiness verdict, effective priority, the cycle walk (`derive`, over `reader`) — the work order, its three projections and the edge grammar (`viewer`) — the rail, the scale ladder, the inspector, the audit, the picker, the create draft and the key map (`editor`) | the data source, the executor holds, the concurrency cap, the base ranking, the words, the theme, and every listener |
 
-## What it is not
+## What the packages leave to a host, and where it is
 
-**It is not the viewer.** The ordered spine, its arcs and its layout maths belong
-to the viewer package, and drawing them here would make this a second
-implementation of the grammar that package exists to have one of. This is a list,
-and a list is enough to reach every state the port has to express.
-
-**It does not derive an order.** The store takes the deriver as a port with *no
-default*, deliberately: a default would be a second implementation of the
-selection order. So a host has to supply one — and this host supplies
-`@issuegraph/derive`. `src/order.ts` is a **projection** in both directions: the
-store's document onto the derivation's node input, and the derivation's slots
-onto the stations this page draws.
-
-It used to be the other thing. Until `@issuegraph/derive` published there was
-nothing to import, so this file carried its own union-find, duplicate-chain walk,
-cycle search, effective-priority fixed point and selection sort, read off SPEC.md
-§6.2, §6.3 and §6.4. Its review measured what that cost: **31 findings across
-fifteen rounds, the largest cluster in exactly those algorithms**, and two of the
-last three rounds were regressions introduced while patching earlier ones. That
-is the argument for the port having no default, stated as evidence rather than as
-a design note.
-
-What is still the host's is still here, because the specification puts it here:
-the **executor holds** (§6.8 — hold semantics must never be encoded as format
-fields, so the format never learns why an executor declines ready work), the
-**concurrency cap** (§6.5 — dispatch policy is out of scope), and the **base
-ranking** (`derive` takes a host's own ordering as an input and never computes
-one). Those are inputs to a derivation, not a derivation.
-
-**One divergence is known and pinned, not patched.** The old hand-rolled deriver
-contracted a `together-with` unit to a single vertex before searching for cycles;
-the published one does not, so a `blocked-by` cycle running *through* a unit is no
-longer refused — and it is a real deadlock that `Model.cycles` reports nowhere.
-Re-adding contraction here would rebuild the second reading this rework removed,
-and would disagree with every other consumer of the package. So the demo adopts
-the package's answer, `order.test.ts` pins the gap with a control, and the finding
-is filed against the package as
-[#43](https://github.com/autnmy/issuegraph/issues/43). When it lands, that test
-fails and this demo is revisited.
-
-## What you can reach from the page
-
-Everything, without editing anything first — which is what the seed is for.
-
-- **All five edge types.** `blocked-by ⊘` · `serialize-with ⇄` ·
-  `together-with ⧉` · `duplicate-of ≡` · `decomposed-from ⑃`. Two of them have
-  never been used in anger anywhere, so this seed is the first place either is
-  exercised at all.
-- **Both hold families, never given one treatment.** *Graph-derived* (blocked,
-  serialized, cycle, unresolvable) sits **inline at its would-be rank** showing
-  `—`, because "why isn't my P1 running" has to be answerable in place.
-  *Executor-derived* (claimed, parked) and duplicates collapse into a **footer
-  group with no rank slot**: they are not facts about the work.
-- **All three readiness stations.** `●` ready inside the concurrency cap · `○`
-  ready but beyond it, naming the rank that frees its slot · `◌` held. The
-  stations read parallelism, not the graph.
-- **All three rank-provenance forms.** A declared priority · the spec's default
-  tier · and an effective-priority promotion, written in the spec's own notation
-  (`P3 → 0`) naming the dependent it inherited from.
-- **All five edge states.** `selected` by clicking an edge · `pending-write` on
-  any edit · and `invalid`, `failed` and `conflict` from the controls: arm what
-  the tracker answers next, then write an edge. An armed outcome fires **once**
-  and disarms itself, so the retry it offers can actually land.
-
-Watch the order while a write is in flight: it says **held** and does not move.
-Optimistic rendering is allowed; optimistic re-ordering is not.
-
-## Layout
+`@issuegraph/editor` renders. Its README says the rest in one sentence:
+*"wiring the published `data-ig-command` controls to real listeners remains a
+mount's job and therefore a host's."* This page is that mount, in three files
+with one seam between them:
 
 | file | what it is |
 |---|---|
-| `src/seed.ts` | the seeded backlog, chosen for coverage rather than realism |
-| `src/order.ts` | the projection onto `@issuegraph/derive`, and the rich rows the page renders |
+| `src/document.ts` | the projection of the explained order onto the viewer's `ViewerDocument`, plus the audit's input — from ONE derivation, so the audit's duplicate resolution and the store's cannot disagree |
+| `src/host.ts` | every decision, as a reducer with no DOM: what a command does to the shared selection, the create draft, the scale state, the rail window, the theme; and which effects the shell performs against the store |
+| `src/workspace.ts` | the shell: one delegated listener per event, `renderWorkspace` into a container, and the chrome the packages do not draw |
+| `src/order.ts` | the projection onto `@issuegraph/derive` — unchanged from the list demo this page replaced |
+| `src/seed.ts` | the coverage seed and the dense layer, below |
 | `src/source.ts` | the in-memory adapter, with the two unhappy outcomes armable |
-| `src/render.ts` | plain DOM; every value a CSS custom property |
-| `src/main.ts` | the wiring, and the cycle guard |
 | `serve.mjs` | a dependency-free static server for the repository root |
 
-`src/*.test.ts` is where the coverage claim above is **executable** rather than
-written down: a seed drifts, and an edit that quietly drops the last
-`together-with` would leave this page running and no longer demonstrating the
-thing it exists to demonstrate.
+**The reducer is the demonstration of the editor's design, not a convenience.**
+The editor ships its state as reducers — `selectionReducer`, `scaleReducer`,
+`createReducer` — and its keyboard as a pure key map, so that a host's own
+decisions can be tested the same way: `host.test.ts` drives all three create
+paths to one proposal and every picker edit to the picker's own proposal, under
+`node --test`, with no DOM anywhere.
 
-`src/order.test.ts` covers the **seam** and deliberately nothing else — the
-projection in, the projection out, and the coverage claim. Testing the ready set
-or the selection sort here would be a second test suite for a derivation this
-demo does not contain. The load-bearing test is the one that pins every hold chip
-against `IssueOrderSlot.ready` in both directions: a row held with no blocking
-chip is a station that says "held" and says why nowhere. That pin is what caught
-the one real defect this swap surfaced — §6.7 names `blocked-by` and
-`serialize-with`, and the demo had generalized it across both group fields, while
-the reader refuses the declarer of an unresolvable `together-with` (§4.3.7: a unit
-cannot be claimed atomically around a member it cannot identify).
+**`innerHTML`, once, on purpose.** The old list wrote every string with
+`textContent`, because a title is data an adapter supplied. That rule stands —
+the host's chrome is built with `createElement` and `textContent` — and what is
+assigned as markup is only the packages' own rendered output, escaped by
+`renderMarkup`: the same bytes a server-rendered host would send.
+
+## What you can reach from the page
+
+- **The three-zone workspace**: the virtualised rail on the left (complete at
+  any size; the window follows the scroll), the scale ladder in the centre, the
+  inspector on the right, the ambient audit count in the header with its filter.
+- **The three projections.** The rail is the linear one; the canvas is the graph
+  — refusing at the top with component capsules, drawing a component when
+  focused, and refusing again on the one component that is past budget on its
+  own; and the **tree** toggle swaps the canvas for the `decomposed-from`
+  hierarchy under its closed origins.
+- **Every edit path.** Create by the inspector (`+ add` → kind → search), by the
+  keyboard (`R` → `1`–`5` → search → `⏎`), and by the canvas (drag a node onto
+  another; the kind chooser opens at the drop point). Retype and flip from the
+  picker on a selected edge, delete from its button or `⌫`, `Esc` to cancel.
+- **Every edge state.** `pending-write` on any edit; `invalid` from a refusal the
+  adapter never sees (a self-edge, a duplicate, a would-be cycle); `failed` and
+  `conflict` by arming what the tracker answers next. A conflict offers **retry
+  on latest**, which is the store's `rehydrate` then `retry` — composed by the
+  host, because the store deliberately offers no retry-on-latest of its own.
+- **Both hold families**, both drawn where the viewer puts them: a graph-derived
+  hold inline at its would-be rank showing `—`, an executor-derived one in the
+  footer group with no rank slot.
+- **The change summary** after a write lands — `diffOrder`'s facets, through the
+  editor's `summaryOf` — and the order reading **held** while a write is in
+  flight. Optimistic rendering is allowed; optimistic re-ordering is not.
+- **Two themes and a version stamp**, below.
+
+## The seed
+
+Two layers, pinned by two tests.
+
+**The coverage seed** (#1–#14) is hand-written so every edge type, both hold
+families, all three readiness stations and all three rank-provenance forms are
+reachable without editing anything. `order.test.ts` and `source.test.ts` pin
+that, enumerating from the vocabulary rather than from a list beside it.
+
+**The dense layer** (#100 onward) is generated deterministically — the same
+document on every load, so a screenshot is a reproduction — and `seed.test.ts`
+pins what it has to contain, against the package constants that decide it: a
+component past `GRAPH_NODE_BUDGET` on its own, a component small enough to
+draw, a capsule flagged as a cycle, a finding for each audit class, more slots
+than a rail window, closed origins for the tree, and an edge-free majority (the
+design's own sample was 248 of 312).
+
+**One divergence is known and pinned, not patched.** A `blocked-by` cycle
+running *through* a `together-with` unit is a real deadlock that `Model.cycles`
+reports nowhere ([#43](https://github.com/autnmy/issuegraph/issues/43)). The
+dense layer carries one so it stays visible on the page, and `order.test.ts`
+pins the gap with a control.
 
 ## Theming
 
-Every colour, dimension, radius, weight and tracking lives in the custom-property
-blocks at the top of `styles.css`. **No rule outside those blocks carries a
-length literal**, so retheming this page means redeclaring them and touching no
-markup, no script and no rule.
+**The workspace is themed by the viewer's own custom properties.** The default
+palette and the paper one — the exact theme the viewer's README documents and
+its acceptance test renders — are installed from `themeCss`, and switching
+between them changes no markup. That is the contract an embedding host relies
+on, shown rather than claimed.
 
-That is enforced rather than promised: `src/theme.test.ts` reads the stylesheet
-and fails the build if a dimension reappears in a rule, and checks the other
-direction too — every property a rule references must be declared, or
-"redeclare the block" reaches nothing. The guard exists because this claim was
-once an overclaim, and the drift was invisible: the token block was there, the
-rules hard-coded their sizes anyway, and the sentence went on being printed.
+**The chrome around it follows the same rule.** Every colour, dimension, radius,
+weight and tracking used in `styles.css` is a custom property in the two token
+blocks at the top of the file, one per theme, and `src/theme.test.ts` fails the
+build if a length literal reappears in a rule or a property is used without
+being declared. The hue is never load-bearing: each kind button carries its
+digit and its phrase, so the page reads identically with colour removed.
 
-The hue is never load-bearing: every edge carries a glyph and its written kind,
-so the page reads identically with colour removed.
+## The version stamp
 
-## It is not published
+The page states which package versions it runs, read off each package's
+manifest **at build time** by `scripts/stamp-demo-versions.ts` into a
+gitignored `src/versions.ts`. Not at run time: the browser cannot import a
+sibling's `package.json` without reaching past the seam the lint config
+refuses, and not by hand, because a hand-kept list is wrong the release after
+it was written.
 
-`private: true`, and it lives outside `packages/` on purpose — that directory is
-what the isolation guard, the consumer smoke test and the lint config all read as
-"this ships". The demo is a **consumer**.
+## How it is deployed
+
+`.github/workflows/pages.yml` builds the workspace on every push to `main`,
+runs `scripts/assemble-site.mjs`, and deploys the result. The assembly copies an
+allowlist — the landing page, this page, its styles and `dist`, each package's
+`dist`, and the reader's `yaml` browser build — **at the same paths the import
+map already uses**, so issuegraph.org and `serve.mjs` serve one page. Its test
+asserts every import-map target and every script and stylesheet the pages
+reference exists in the assembled tree, which is what makes "the sandbox cannot
+silently break" a property of CI rather than a hope.
+
+## What it is not
+
+- **It is not the first-pass review queue.** That surface takes a candidate port
+  the host fills from evidence — two bodies naming one path, a comment linking an
+  issue — and a sandbox with no tracker has no evidence to offer it.
+- **It does not draw write states on the canvas.** `renderWorkspace` takes no
+  projected edges, so a pending, failed or conflicting write shows in the writes
+  panel above the workspace rather than as an overlay on the drawn edge. That is
+  a gap in the package, not a choice here, and it is filed upstream.
+- **It is not published.** `private: true`, and it lives outside `packages/` on
+  purpose — that directory is what the isolation guard, the consumer smoke test
+  and the lint config all read as "this ships". The demo is a **consumer**.

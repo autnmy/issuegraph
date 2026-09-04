@@ -620,12 +620,49 @@ interface Placement {
  * computed beside it, so the rail and the page can never disagree about one
  * document.
  */
+/**
+ * The rows plus the derivation they were explained from.
+ *
+ * The workspace projection needs two things `ExplainedRow` deliberately does
+ * not carry — a duplicate's canonical and the model's cycle list, both of
+ * which the audit reads in the reader's own spelling. Handing back the model
+ * the rows were built from is what keeps that ONE derivation: rebuilding it in
+ * the projection would be a second `buildModel` over the same document, with
+ * the two free to disagree about which node a duplicate resolves to.
+ */
+export interface ExplainedDocument {
+  readonly rows: readonly ExplainedRow[];
+  readonly model: Model;
+  readonly order: DerivedIssueOrder;
+}
+
+export function explainDocument(
+  document: GraphDocument,
+  holds: readonly ExecutorHold[] = [],
+  concurrencyCap = DEFAULT_CONCURRENCY_CAP,
+): ExplainedDocument {
+  const derivation = derive(document, holds);
+  return {
+    rows: explainRows(document, holds, derivation, concurrencyCap),
+    model: derivation.model,
+    order: derivation.order,
+  };
+}
+
 export function explainOrder(
   document: GraphDocument,
   holds: readonly ExecutorHold[] = [],
   concurrencyCap = DEFAULT_CONCURRENCY_CAP,
 ): readonly ExplainedRow[] {
-  const derivation = derive(document, holds);
+  return explainRows(document, holds, derive(document, holds), concurrencyCap);
+}
+
+function explainRows(
+  document: GraphDocument,
+  holds: readonly ExecutorHold[],
+  derivation: Derivation,
+  concurrencyCap: number,
+): readonly ExplainedRow[] {
   const { model, order } = derivation;
   const at = index(document, holds, derivation);
 
