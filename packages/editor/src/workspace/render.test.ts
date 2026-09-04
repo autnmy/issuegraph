@@ -758,6 +758,20 @@ describe('a hold in the inspector carries its cause, and its subject is a contro
     assert.doesNotMatch(markup, /ig-inspector-hold-subject/);
   });
 
+  it('publishes the attribute but no control when the subject is the inspected issue itself', () => {
+    // A self-block is a groomed-graph defect the reader still reports; the
+    // reducer would toggle a re-selection to none, closing the inspector.
+    const { markup } = renderWorkspace(
+      withHold({ reason: 'blocked-by i0002 is open', code: 'blocked-by-open', subject: 'i0002' }),
+      { words: WORKSPACE_WORDS, selection: select },
+    );
+    assert.match(
+      markup,
+      /<li class="ig-inspector-hold" data-family="graph" data-code="blocked-by-open" data-subject="i0002">blocked-by i0002 is open<\/li>/,
+    );
+    assert.doesNotMatch(markup, /ig-inspector-hold-subject/);
+  });
+
   it('the control reduces to the subject being selected, through the shared reducer', () => {
     assert.deepEqual(selectionReducer(select, { kind: 'select-issue', key: 'i0001' }), {
       kind: 'issue',

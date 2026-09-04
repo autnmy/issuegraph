@@ -350,7 +350,7 @@ function inspectorSpec(
             : element(
                 'ul',
                 { class: 'ig-inspector-holds' },
-                subject.position.holds.map((hold) => holdRow(hold, known)),
+                subject.position.holds.map((hold) => holdRow(hold, known, subject.issue.key)),
               ),
         ])
       : null,
@@ -398,6 +398,13 @@ function inspectorSpec(
  * show nothing. The attribute is still published — the subject is a fact about
  * the hold either way — and only the control is withheld.
  *
+ * AND NEVER FOR THE INSPECTED ISSUE ITSELF. A node blocked by itself is a
+ * groomed-graph defect the reader still reports, as a hold whose subject is
+ * the issue being inspected — and `selectionReducer` toggles a re-selection of
+ * the selected issue to `none`, so a control there would read as a link to the
+ * holder and close the inspector instead. Withheld, on the same rule as above:
+ * the attribute stays, the control does not.
+ *
  * `data-code` and `data-subject` mirror layer 1's `holdLine` exactly — same
  * names, same omit-when-absent rule — so a rule written against
  * `.ig-hold[data-subject]` on the rail has an exact twin in
@@ -405,7 +412,7 @@ function inspectorSpec(
  * inspector's ROOT also carries a `data-subject` (`issue` / `edge`, what the
  * selection resolved to), so a bare `[data-subject]` reads both.
  */
-function holdRow(hold: ViewerHold, known: ReadonlySet<string>): ElementSpec {
+function holdRow(hold: ViewerHold, known: ReadonlySet<string>, self: string): ElementSpec {
   return element(
     'li',
     {
@@ -416,7 +423,7 @@ function holdRow(hold: ViewerHold, known: ReadonlySet<string>): ElementSpec {
     },
     [
       hold.reason,
-      hold.subject === undefined || !known.has(hold.subject)
+      hold.subject === undefined || hold.subject === self || !known.has(hold.subject)
         ? null
         : element(
             'button',
