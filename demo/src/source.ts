@@ -149,6 +149,46 @@ function upstreamEdit(document: GraphDocument, mutation: Mutation): StoredEdge |
 }
 
 /**
+ * The TRACKER's refusal of a second value on a single-valued field (§4.3).
+ *
+ * The store refuses this structurally now (`invalid`, code `cardinality`), on
+ * every route to a write, against the document IT holds. This is the check for
+ * the one window that document is known to be wrong in: after a `conflict`,
+ * `landed` stays deliberately unchanged while this source has moved — the
+ * fabricated upstream is INSTALLED, not merely described — so a bare `retry`
+ * of the conflicted edit passes the store's check against a document that no
+ * longer has room for it. That is issue #12's subject, and it is the store's
+ * to close; until it does, the authority on the current document refuses the
+ * write the store could not see. An adapter is a tracker, and a tracker refuses
+ * a malformed write whoever sent it. `rejected` is then the honest answer: the
+ * document really did move upstream, and the write really was refused there.
+ *
+ * Asked of the RESULTING edge, as the store's own check is, and excluding the
+ * edge a retype or flip replaces.
+ */
+function cardinalityRefusal(
+  document: GraphDocument,
+  mutation: Mutation,
+): DispatchResult | undefined {
+  const resulting = resultingEdge(document, mutation);
+  if (resulting === undefined) return undefined;
+  if (EDGE_CARDINALITY[resulting.kind] !== 'single') return undefined;
+  const replaced = mutation.op === 'retype' || mutation.op === 'flip' ? mutation.edgeId : undefined;
+  const held = document.edges.find(
+    (edge) =>
+      edge.kind === resulting.kind &&
+      edge.from === resulting.from &&
+      edge.id !== resulting.id &&
+      edge.id !== replaced,
+  );
+  if (held === undefined) return undefined;
+  return {
+    outcome: 'rejected',
+    reason: `${held.from} already has ${held.kind} → ${held.to}, and ${held.kind} holds one reference`,
+  };
+}
+
+/**
  * A data source holding one document in memory, with the two unhappy outcomes
  * reachable from the page.
  *
@@ -193,14 +233,16 @@ export function createDemoSource(
     hydrate: () => memory.hydrate(),
 
     dispatch(mutation: Mutation): Promise<DispatchResult> {
-      // NO WRITER RULES HERE. This adapter used to refuse a second reference on
-      // a single-valued field, because it was the one place every write passed
-      // through — the page had tried first and missed the settle window, then
-      // `retry`. That made a rule of the FORMAT come back `failed`, "refused
-      // upstream", on a write that never left the client (issue #11). The store
-      // now refuses it structurally, as `invalid` with code `cardinality`, on
-      // every route to a write, so this adapter is left with what a tracker
-      // actually answers.
+      // THE STORE'S REFUSAL COMES FIRST, and this is not a second copy of it.
+      // Every write the store can see is already refused `invalid` before it
+      // gets here (issue #11: this adapter used to be the only enforcement
+      // point, and a rule of the FORMAT came back "refused upstream" on a
+      // write that never left the client). What reaches this line is the write
+      // the store could NOT see — a retry after a conflict moved this source
+      // — and refusing that one here is what a tracker does.
+      const refusal = cardinalityRefusal(memory.current(), mutation);
+      if (refusal !== undefined) return settle(refusal);
+
       const armed = next;
       // Disarmed BEFORE the answer, so an armed outcome can never fire twice —
       // including on the retry the visitor is about to press, which is the whole

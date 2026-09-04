@@ -404,6 +404,34 @@ test('two creates inside one settle window cannot both land', async () => {
   );
 });
 
+test('a retry after a conflict cannot give a single-valued field a second value', async () => {
+  // The store's refusal reads the document IT holds, and a conflict leaves
+  // that document deliberately unchanged while this source has moved — so a
+  // bare `retry` passes the store's check against a document with no room
+  // left. Issue #12 is the store's side of that window; this pins the
+  // tracker's side: the authority on the current document refuses the write.
+  const { source, store } = harness();
+  await store.hydrate();
+  source.arm('conflict');
+
+  const handle = store.propose({ op: 'create', kind: 'decomposed-from', from: '1', to: '3' });
+  await handle.settled;
+  const conflicted = store.getSnapshot().writes.find((write) => write.mutationId === handle.mutationId);
+  assert.equal(conflicted?.state, 'conflict');
+  const installed = source.current().edges.filter((edge) => edge.kind === 'decomposed-from' && edge.from === '1');
+  assert.equal(installed.length, 1, 'the precondition did not hold: the upstream did not occupy the field');
+  assert.notEqual(installed[0]?.to, '3');
+
+  await store.retry(handle.mutationId).settled;
+  const retried = store.getSnapshot().writes.find((write) => write.mutationId === handle.mutationId);
+  assert.equal(retried?.state, 'failed', 'the tracker accepted a second value it could see and the store could not');
+  assert.equal(
+    source.current().edges.filter((edge) => edge.kind === 'decomposed-from' && edge.from === '1').length,
+    1,
+    'the field ended up holding two values',
+  );
+});
+
 test('a retype into an occupied single-valued field is refused', async () => {
   // Asked of the RESULTING edge rather than of the operation, so a retype is
   // covered without naming it — and the edge a retype replaces is excluded,
