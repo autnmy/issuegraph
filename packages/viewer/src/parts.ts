@@ -170,6 +170,54 @@ function edgeBadge(field: EdgeField, edgeId: string, detail: string): ElementSpe
 }
 
 /**
+ * How many relationship badges one row draws before the rest collapse into a
+ * count.
+ *
+ * THE ROW IS THE UNIT, NOT THE DOCUMENT. The graph refuses past a node budget
+ * because a canvas is a local instrument; the linear and tree projections are
+ * not — the refusal's own last sentence promises that the order list is
+ * complete at any size, so a document-level budget here would break the one
+ * promise the refusal routes a reader to. What grows without bound on a dense
+ * document is not the row count, which these projections already draw in
+ * full, but the relationships PER row: `blocked-by` is a list field, so a
+ * valid document of a few hundred nodes admits tens of thousands of edges and
+ * every one of them was badged on both endpoint rows. Capping per row bounds
+ * the total at rows × budget, which is proportionate to what is drawn anyway.
+ *
+ * Twelve is the size the graph's refusal already lists its components at, and
+ * for the same reason: past that many chips a row is a wall, not a summary,
+ * whatever the exact count. It is a separate constant rather than that one
+ * imported, because this file sits beneath the projections and the refusal's
+ * limit is private to `graph.ts`; the two agree by choice, not by reference.
+ * Exported so a host reads it instead of restating it.
+ */
+export const ROW_BADGE_BUDGET = 12;
+
+/**
+ * The chip a row draws in place of the badges past its budget.
+ *
+ * IT SAYS WHAT WAS OMITTED. A silent cut would leave a reader unable to tell
+ * a row with twelve relationships from one with three hundred — the same
+ * under-reporting the refusal declines to do for its component list. It
+ * carries NO edge identity: it names no single edge, so it must not enter the
+ * pointer set as if it did. An omitted edge stays selectable regardless —
+ * `mount`'s drawn-check answers from the document first for an edge id.
+ */
+function overflowBadge(omitted: number): ElementSpec {
+  // THE WHOLE PHRASE IS THE VISIBLE TEXT, and there is no `aria-label`. A
+  // plain span has the generic role, on which ARIA prohibits naming, so an
+  // attribute name here may be ignored and the announcement would be a bare
+  // "+N more" with nothing saying what was left out. Visible text is the one
+  // name every reader gets; `title` stays as a tooltip only.
+  const noun = omitted === 1 ? 'relationship' : 'relationships';
+  return element(
+    'span',
+    { class: 'ig-badge', 'data-omitted': omitted, title: `${String(omitted)} more ${noun} not shown` },
+    [`+${String(omitted)} more ${noun}`],
+  );
+}
+
+/**
  * Every relationship touching a ROW, as badges in the format's own field order
  * — so two rows with the same relationships always read identically.
  *
@@ -185,6 +233,10 @@ function edgeBadge(field: EdgeField, edgeId: string, detail: string): ElementSpe
 export function edgeBadges(document: NormalizedDocument, keys: readonly string[]): ElementSpec | null {
   const mine = new Set(keys);
   const badges: ElementSpec[] = [];
+  // COUNTED PAST THE BUDGET, NOT BUILT. The walk still visits every edge so
+  // the chip can name how many it left out, but it materialises nothing for
+  // them — which is the whole saving on a row with thousands of relationships.
+  let omitted = 0;
   // ONE EDGE, ONE BADGE. Both endpoints of an intra-unit edge are members, so
   // it appears in two `edgesOf` entries and would otherwise render twice on the
   // row that owns both ends.
@@ -206,6 +258,15 @@ export function edgeBadges(document: NormalizedDocument, keys: readonly string[]
         const edgeId = edgeIdentity(edge.field, edge.from, edge.to);
         if (seen.has(edgeId)) continue;
         seen.add(edgeId);
+        // AFTER the dedupe, so the count is of edges and never of a unit's
+        // second `edgesOf` entry for the same edge. BEFORE the field loop
+        // reaches later fields, so the budget is spent in the format's own
+        // order: `blocked-by` first, because that is the relationship a
+        // reader asking "why is this held" is looking for.
+        if (badges.length >= ROW_BADGE_BUDGET) {
+          omitted += 1;
+          continue;
+        }
         const treatment = treatmentFor(field);
         // A symmetric edge states one fact whichever end you read it from, so it
         // is announced as one relationship rather than as two directions.
@@ -217,6 +278,7 @@ export function edgeBadges(document: NormalizedDocument, keys: readonly string[]
     }
   }
   if (badges.length === 0) return null;
+  if (omitted > 0) badges.push(overflowBadge(omitted));
   return element('span', { class: 'ig-badges' }, badges);
 }
 
