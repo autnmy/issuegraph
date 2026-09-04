@@ -955,12 +955,33 @@ export function locateSection(blockLines: readonly string[]): SectionLocation | 
     // caller is told which of the two it is.
     if (startLine <= headerLine) lineEditable = false;
     // `range[2]` is the node END, which includes trailing comments and the
-    // newline that closes the node — so it can land on the line AFTER the
-    // entry's last content. Step back to the last line carrying content.
+    // whitespace that closes the node — so it can land PAST the entry's last
+    // content. How far past depends on what the node is, and the first fix
+    // here modelled only one of the two shapes:
+    //
+    //   - A node with a VALUE ends after its newline, so `rawEnd - 1` is the
+    //     newline itself, or a blank line below it. A step-back over blank
+    //     LINES covered that.
+    //   - A node the parser reads as EMPTY WITH A COMMENT — `- #9094`, the
+    //     unquoted-sigil shape a hand author writes, or `serialize-with: #7` —
+    //     ends at the FIRST CONTENT BYTE OF THE NEXT LINE. `rawEnd - 1` is then
+    //     the next sibling's indentation: a line with content, which no
+    //     blank-line step-back can leave. The entry's span swallowed the
+    //     sibling, and a writer removing that span removed the sibling's
+    //     bytes with it (autnmy/issuegraph#92, `evidence: verified` gone).
+    //
+    // Both are one rule: an entry ends on the line holding the last
+    // NON-WHITESPACE byte its node put in the text. Step back over every
+    // whitespace BYTE, which crosses a newline, an indentation and a blank
+    // line alike, and stops at content the node owns — a value, or its
+    // trailing comment. A keep-chomped block scalar (`|+`) whose value ends
+    // in blank lines therefore spans to its last content line, exactly as the
+    // blank-line step-back already had it; those lines are never removed,
+    // because a splice removes only the lines of an entry it owns and no
+    // owned field is a block scalar.
     const valueRange = nodeRange(pair.value);
     const rawEnd = valueRange === null ? keyRange[2] : valueRange[2];
-    let endLine = lineAt(Math.max(rawEnd - 1, keyRange[0]));
-    while (endLine > startLine && (blockLines[endLine] ?? '').trim().length === 0) endLine -= 1;
+    const endLine = lineAt(lastContentOffset(text, rawEnd, keyRange[0]));
     if (childIndent === -1) childIndent = columnAt(text, keyRange[0]);
     if (endLine > sectionEnd) sectionEnd = endLine;
     // A NON-STRING KEY IS SKIPPED, NEVER A REFUSAL — and the two halves of that
@@ -1414,6 +1435,30 @@ function lineIndexer(text: string): (offset: number) => number {
     }
     return low;
   };
+}
+
+/**
+ * The offset of the last non-whitespace byte before `end`, never below `floor`.
+ *
+ * WHITESPACE MEANS BYTES, NOT LINES. The `yaml` node end for an empty node
+ * carrying a comment sits on the NEXT line's first content byte, so stepping
+ * back a line at a time cannot reach the node's own last byte — the line it
+ * lands on has content, and it is somebody else's. Stepping back a byte at a
+ * time stops on the comment's last character, which is the node's.
+ */
+function lastContentOffset(text: string, end: number, floor: number): number {
+  let at = Math.min(end, text.length) - 1;
+  while (at > floor && isYamlWhitespace(text.charCodeAt(at))) at -= 1;
+  return Math.max(at, floor);
+}
+
+/**
+ * YAML's own whitespace: space, tab, and the two line-break bytes. Narrower
+ * than `\s` on purpose — a non-breaking space is content to the parser, so
+ * stepping over one would land a span short of a byte the node owns.
+ */
+function isYamlWhitespace(code: number): boolean {
+  return code === 0x20 || code === 0x09 || code === 0x0a || code === 0x0d;
 }
 
 /** The column an offset sits at, counted from its line's start. */

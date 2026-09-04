@@ -34,6 +34,7 @@
  * the parser reads fine. None of those is expressible now.
  */
 
+import { FIELDS, type Field } from '@issuegraph/core';
 import {
   locateBlock,
   locateSection,
@@ -130,6 +131,26 @@ function settle(
     return { outcome: 'not-written', data: before.data, detail: mismatch };
   }
 
+  // DID ANYTHING ELSE MOVE? The check above proves the owned fields landed; it
+  // says nothing about the fields the call did NOT own, and those are the ones
+  // whose loss is silent. Measured (autnmy/issuegraph#92): a `blocked-by` list
+  // whose items were all comment-only gave the reader a span one line too
+  // long, the splice removed `evidence: verified` along with the owned entry,
+  // the result read perfectly, `blocked-by` was exactly what was asked for,
+  // and the call reported success. The lines-only preservation argument held
+  // where the span was right and had no way to notice where it was not.
+  //
+  // COMPARED THROUGH THE PARSER, on the recognised fields, because that is the
+  // half of #58's question this check can answer: an unrecognised field is
+  // not in `Frontmatter` at all, and its preservation still rests on the
+  // line-level property. Recognised-but-unowned is comparable, and it is the
+  // population a mis-span deletes first — the sibling directly under the owned
+  // entry is a recognised field far more often than an extension.
+  const disturbed = unownedFieldMismatch(edges.owned, before.data, after.data);
+  if (disturbed !== null) {
+    return { outcome: 'not-written', data: before.data, detail: disturbed };
+  }
+
   return { outcome: 'spliced', body: next };
 }
 
@@ -137,6 +158,11 @@ function settle(
 function sameRef(a: IssueRef | null, b: IssueRef | null): boolean {
   if (a === null || b === null) return a === b;
   return a.repo === b.repo && a.id === b.id;
+}
+
+/** Two ref lists, equal when they carry the same refs in the same order. */
+function sameRefList(a: readonly IssueRef[], b: readonly IssueRef[]): boolean {
+  return a.length === b.length && a.every((ref, i) => sameRef(ref, b[i] ?? null));
 }
 
 /**
@@ -164,9 +190,7 @@ function ownedFieldMismatch(edges: EdgeSnapshot, after: Frontmatter | null): str
       // whole-block removal path legitimately ends with no block, and clearing
       // `blocked-by` is what asked for that.
       const got = after === null ? [] : after.blockedBy;
-      const same =
-        wanted.length === got.length && wanted.every((ref, i) => sameRef(ref, got[i] ?? null));
-      if (!same) {
+      if (!sameRefList(wanted, got)) {
         return `blocked-by did not land: asked for ${wanted.length} ref(s), the result reads ${got.length}`;
       }
       continue;
@@ -179,6 +203,83 @@ function ownedFieldMismatch(edges: EdgeSnapshot, after: Frontmatter | null): str
     const got = after === null ? null : after[property];
     if (!sameRef(wanted, got)) {
       return `${key} did not land: asked for ${wanted === null ? 'none' : renderRef(wanted)}, the result reads ${got === null ? 'none' : renderRef(got)}`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Where every recognised field lives on the parsed value.
+ *
+ * THE ONE SPELLING OF EACH FIELD'S PROPERTY NAME. `SPLICE_FIELD_OWNERSHIP`
+ * below maps the four fields the splice can own onto `GeneratedEdges`, whose
+ * property names coincide with `Frontmatter`'s — so its rows READ this table
+ * rather than restating it, and a rename that reaches one cannot miss the
+ * other. The three fields the splice can never own — `together-with`,
+ * `priority`, `evidence` — exist only here, because only the unowned
+ * comparison ever asks about them.
+ *
+ * `as const` keeps each value a literal, which is what lets an ownership row
+ * hand `FIELD_PROPERTY['blocked-by']` to a slot typed `keyof GeneratedEdges`;
+ * the `satisfies` is the pin: a field the spec adds to `FIELDS` without a row
+ * here does not compile, so the comparison cannot silently stop covering it.
+ */
+const FIELD_PROPERTY = Object.freeze({
+  'blocked-by': 'blockedBy',
+  'decomposed-from': 'decomposedFrom',
+  'duplicate-of': 'duplicateOf',
+  'serialize-with': 'serializeWith',
+  'together-with': 'togetherWith',
+  priority: 'priority',
+  evidence: 'evidence',
+} as const satisfies Readonly<Record<Field, keyof Frontmatter>>);
+
+/**
+ * One field of two parsed values, equal as the parser hands them back.
+ *
+ * Keyed on the PROPERTY rather than on the value's runtime shape, so the type
+ * of each side is known at the comparison and nothing is narrowed by
+ * inspection: the list field compares element-wise through `sameRef`, the two
+ * scalars compare as scalars, and every other property is `IssueRef | null`.
+ */
+function sameFieldValue(property: keyof Frontmatter, was: Frontmatter, now: Frontmatter): boolean {
+  if (property === 'blockedBy') return sameRefList(was.blockedBy, now.blockedBy);
+  if (property === 'priority' || property === 'evidence') return was[property] === now[property];
+  return sameRef(was[property], now[property]);
+}
+
+/**
+ * Which recognised field the call did NOT own reads differently after the
+ * edit than before it, if any. The other half of the post-condition #55
+ * added and #58 asked for; see the call site in `settle` for why.
+ *
+ * `null` on either side is the parser's EMPTY declaration — a body with no
+ * readable block before the edit has nothing this can compare, and the
+ * whole-block removal path legitimately ends with none after it. Both are
+ * compared as the empty form rather than skipped, so a removal that took an
+ * unowned field with it is still reported.
+ *
+ * EXPORTED FOR ITS TESTS. Nothing in this repository can reach the arm through
+ * `spliceGeneratedEdges` any more — the reader's span fix closed the only
+ * measured route — and a guard whose failing case no test can construct is
+ * one nobody can check. The version-skew case is real, though: these packages
+ * publish separately at `0.x`, so a consumer may pair this writer with a
+ * reader that still mis-spans, and this is what refuses the write there.
+ */
+export function unownedFieldMismatch(
+  owned: ReadonlySet<SpliceOwnedField>,
+  before: Frontmatter | null,
+  after: Frontmatter | null,
+): string | null {
+  const was = before ?? EMPTY_FRONTMATTER;
+  const now = after ?? EMPTY_FRONTMATTER;
+  for (const field of FIELDS) {
+    // The same ownership test `owns` applies, over the one input it reads.
+    // Taking the set rather than the whole snapshot is what lets a test hand
+    // it `new Set(['blocked-by'])` instead of rebuilding a snapshot by hand.
+    if (isSpliceOwnedField(field) && owned.has(field)) continue;
+    if (!sameFieldValue(FIELD_PROPERTY[field], was, now)) {
+      return `${field} was not the call's to change, and the result reads it differently: the edit disturbed a field it does not own`;
     }
   }
   return null;
@@ -401,10 +502,10 @@ export interface SpliceFieldOwnership {
  * two-directional is worse than none, because the comment above would be false.
  */
 export const SPLICE_FIELD_OWNERSHIP = Object.freeze({
-  'blocked-by': Object.freeze({ property: 'blockedBy' }),
-  'serialize-with': Object.freeze({ property: 'serializeWith' }),
-  'decomposed-from': Object.freeze({ property: 'decomposedFrom' }),
-  'duplicate-of': Object.freeze({ property: 'duplicateOf' }),
+  'blocked-by': Object.freeze({ property: FIELD_PROPERTY['blocked-by'] }),
+  'serialize-with': Object.freeze({ property: FIELD_PROPERTY['serialize-with'] }),
+  'decomposed-from': Object.freeze({ property: FIELD_PROPERTY['decomposed-from'] }),
+  'duplicate-of': Object.freeze({ property: FIELD_PROPERTY['duplicate-of'] }),
 } satisfies Readonly<Record<SpliceOwnedField, SpliceFieldOwnership>>);
 
 const SPLICE_OWNED_FIELD_SET: ReadonlySet<string> = new Set<string>(SPLICE_OWNED_FIELDS);
