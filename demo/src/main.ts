@@ -6,8 +6,9 @@
  * `@issuegraph/store` holds the document and runs the write loop, its
  * `OrderDeriver` and `EdgeGuard` are filled with `@issuegraph/derive` rather
  * than with a second reading of the ordering rules (see `order.ts`), and
- * `@issuegraph/viewer` and `@issuegraph/editor` draw the result through
- * `workspace.ts`. That is the claim this page exists to make good: if the demo
+ * `@issuegraph/viewer` and `@issuegraph/editor` draw the result through the
+ * editor's own `mountWorkspace`, which `workspace.ts` hands the store and the
+ * projection. That is the claim this page exists to make good: if the demo
  * needs an app installation, an auth flow or a backend, the port is not a port.
  *
  * No credentials of any kind are read, and nothing is persisted. Reloading the
@@ -74,12 +75,10 @@ function requireElement<T extends HTMLElement>(id: string, kind: new () => T): T
 
 function start(): void {
   const root = requireElement('sandbox', HTMLElement);
-  const styles = requireElement('ig-styles', HTMLStyleElement);
   mountSandbox(
     {
       root,
       workspace: requireElement('workspace', HTMLElement),
-      styles,
       writes: requireElement('writes', HTMLElement),
       versions: requireElement('versions', HTMLElement),
       outcome: requireElement('next-outcome', HTMLSelectElement),

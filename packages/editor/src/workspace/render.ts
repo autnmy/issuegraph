@@ -66,6 +66,8 @@ import {
   viewerStylesheet,
 } from '@issuegraph/viewer';
 
+import type { ProjectedEdge } from '@issuegraph/store';
+
 import type { AuditInput, AuditSeverity } from '../audit/findings.ts';
 import { auditStylesheet } from '../audit/styles.ts';
 import { edgeOverlayStylesheet } from '../overlay/styles.ts';
@@ -149,6 +151,12 @@ export interface WorkspaceOptions {
   readonly theme?: Theme | undefined;
   /** The selector the theme's custom properties are written onto. */
   readonly themeSelector?: string | undefined;
+  /**
+   * The store's projection, for the canvas to draw each edge's write states.
+   * See `ScaleLadderOptions.projected`; the workspace forwards it and reads
+   * none of it, because the rail and the inspector draw no line to overlay.
+   */
+  readonly projected?: readonly ProjectedEdge[] | undefined;
 }
 
 export interface WorkspaceView {
@@ -558,6 +566,7 @@ export function renderWorkspace(
     // as ordinary — the same disagreement the line above closed for issues,
     // still open for the other kind.
     selectedEdge: selectedEdgeId(selection),
+    projected: options.projected,
   });
 
   const inspector = inspectorView(document, selection);

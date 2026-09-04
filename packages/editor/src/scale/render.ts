@@ -96,6 +96,24 @@ export interface ScaleLadderOptions {
    * nothing selected rather than as a halo on a line that is not there.
    */
   readonly selectedEdge?: string | null | undefined;
+  /**
+   * The store's projection — every edge to draw, each carrying its write
+   * states — so the canvas shows what is HAPPENING to an edge, not only what
+   * it is: a `pending-write` dash, an `invalid` or `failed` cross, a
+   * `conflict`'s second version.
+   *
+   * ADDITIVE AND OPTIONAL, like the two options above, and for the same reason:
+   * the overlays module already composes the store's projection, and the
+   * ladder is the layer that holds the scene the overlays attach to. Without
+   * this the only state the canvas could draw was the selection, and a host
+   * had no way to show a write in flight on the line it concerns.
+   *
+   * Resolved against `ladder.canvas.edges` exactly as `selectedEdge` is: an
+   * entry naming an edge this tier does not draw contributes nothing. An entry
+   * for the selected edge composes with the halo rather than replacing it,
+   * because `overlayFor` reads a list of states.
+   */
+  readonly projected?: readonly ProjectedEdge[] | undefined;
 }
 
 export interface ScaleLadderResult {
@@ -269,6 +287,28 @@ export function renderScaleLadder(
           states: ['selected'],
           writes: [],
         };
+  // THE WRITE STATES, FROM WHOEVER HOLDS THE WRITES. Narrowed to the edges this
+  // canvas drew, by the same identity test as the selection above, so an entry
+  // for an edge a narrower tier left out attaches to nothing rather than being
+  // reported as unattached. An entry for the selected edge is folded into the
+  // halo's own record — one `ProjectedEdge` per identity, its states the union
+  // — because `attachEdgeOverlays` keys overlays by identity and a second
+  // record for the same edge would replace the first rather than compose.
+  const drawnIdentities = new Set(
+    canvas === null ? [] : ladder.canvas.edges.map((edge) => edgeIdentity(edge.field, edge.from, edge.to)),
+  );
+  const overlays: ProjectedEdge[] = [];
+  for (const edge of options.projected ?? []) {
+    if (!drawnIdentities.has(edge.id) || edge.states.length === 0) continue;
+    if (selectedOverlay !== null && edge.id === selectedOverlay.id) {
+      overlays.push({ ...edge, states: [...edge.states, 'selected'] });
+      continue;
+    }
+    overlays.push(edge);
+  }
+  if (selectedOverlay !== null && !overlays.some((edge) => edge.id === selectedOverlay.id)) {
+    overlays.push(selectedOverlay);
+  }
   // `unattached` IS DELIBERATELY NOT SURFACED HERE, and the reason is a fact
   // about this call site rather than about the value.
   //
@@ -285,9 +325,7 @@ export function renderScaleLadder(
   // test can make appear is a claim about behaviour nobody can check; the
   // reasoning is worth more here than the branch.
   const overlaid =
-    canvas === null || selectedOverlay === null
-      ? null
-      : attachEdgeOverlays(canvas.scene, [selectedOverlay], { theme });
+    canvas === null || overlays.length === 0 ? null : attachEdgeOverlays(canvas.scene, overlays, { theme });
 
   const chrome = element('section', { class: 'ig-ladder', 'data-tier': ladder.tier }, [
     ladder.focus === null

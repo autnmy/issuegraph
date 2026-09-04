@@ -1,6 +1,6 @@
 {
   "name": "@issuegraph/editor",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Everything that mutates an Issuegraph document: edit affordances drawn as overlays on a viewer, dispatching through a store. Composes the viewer and the store through their public surfaces and performs no write itself.",
   "keywords": [
     "issuegraph",
@@ -52,7 +52,9 @@
   },
   "devDependencies": {
     "@issuegraph/reader": "workspace:^",
+    "@types/jsdom": "^30.0.0",
     "@types/node": "^22.18.0",
+    "jsdom": "^30.0.1",
     "typescript": "^6.0.3"
   }
 }

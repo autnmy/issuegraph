@@ -1,55 +1,48 @@
 /**
- * The host's state, as a reducer — every decision the shell makes, with no DOM.
+ * The workspace's host reducer — every decision a mount makes, with no DOM.
  *
- * `@issuegraph/editor` renders and publishes: each control says what it does
- * as `data-ig-command`, and "wiring the published controls to real listeners
- * remains a mount's job and therefore a host's". This file is that job's
- * DECISIONS. The shell in `workspace.ts` reads the DOM and turns what it saw
- * into a {@link HostCommand}; this file turns the command into the next state
- * and a list of {@link HostEffect}s the shell then performs against the store.
+ * `renderWorkspace` renders and publishes: each control says what it does as
+ * `data-ig-command`, and the viewer publishes its two identities, `data-ig-key`
+ * and `data-ig-group`. This file is the DECISIONS a mount takes on reading
+ * them. The shell in `mount.ts` reads the DOM and turns what it saw into a
+ * {@link HostCommand}; this file turns the command into the next state and a
+ * list of {@link HostEffect}s the shell then performs against the store.
  *
  * It composes the package's own reducers — `selectionReducer`, `scaleReducer`,
- * `createReducer`, `pickerView` — and adds only what those leave to a host:
+ * `createReducer`, `pickerView` — and adds only what those leave to a mount:
  * which one selection is shared, when the create draft begins and ends, the
- * rail's scroll offset, the theme, the canvas mode, and the drag that turns a
- * canvas drop into a draft. Nothing here reaches a node, so all of it runs
- * under `node --test` with no DOM, which is the property the packages' own
- * reducers are shaped for and the reason this is not written into listeners.
+ * rail's scroll offset, and the drag that turns a canvas drop into a draft.
+ * Nothing here reaches a node, so all of it runs under `node --test` with no
+ * DOM, which is the property the package's other reducers are shaped for and
+ * the reason this is not written into listeners.
+ *
+ * ## Lifted from the demo, and why
+ *
+ * This was the demo's `host.ts`, written once for that page. A second host
+ * re-implemented it from scratch and re-ran the review rounds that shaped it;
+ * the design kit's layer rule puts the interaction shell in layer 2, not in
+ * the host. What stayed behind in the demo is exactly what was demo-shaped:
+ * the theme switch, the armed dispatch outcome, and the sandbox reset — none
+ * of which a host reducer should know about, and each of which the demo now
+ * handles beside the mount rather than through it.
  */
 
 import { type EdgeField, EDGE_FIELDS, isEdgeField } from '@issuegraph/core';
-import {
-  type CreateDraft,
-  type KeyIntent,
-  type ScaleState,
-  type WorkspaceSelection,
-  IDLE_CREATE_DRAFT,
-  INITIAL_SCALE_STATE,
-  INITIAL_SELECTION,
-  createReducer,
-  pickerView,
-  scaleReducer,
-  selectedEdgeId,
-  selectedKey,
-  selectionReducer,
-} from '@issuegraph/editor';
 import type { GraphDocument, MutationId, Proposal, StoredIssue } from '@issuegraph/store';
 import { findEdge } from '@issuegraph/store';
 
-import type { NextOutcome } from './source.ts';
-
-/** The two themes the page offers: the package default, and the README's paper theme. */
-export const THEMES = Object.freeze(['default', 'paper'] as const);
-export type ThemeName = (typeof THEMES)[number];
-
-/** What the canvas zone draws: the editor's scale ladder, or the viewer's tree projection. */
-export const CANVAS_MODES = Object.freeze(['neighbourhood', 'tree'] as const);
-export type CanvasMode = (typeof CANVAS_MODES)[number];
-
-export interface Point {
-  readonly x: number;
-  readonly y: number;
-}
+import { type CreateDraft, IDLE_CREATE_DRAFT, createReducer } from '../create/draft.ts';
+import type { KeyIntent } from '../create/keys.ts';
+import type { Point } from '../create/placement.ts';
+import { pickerView } from '../picker/view.ts';
+import { INITIAL_SCALE_STATE, type ScaleState, scaleReducer } from '../scale/commands.ts';
+import {
+  INITIAL_SELECTION,
+  type WorkspaceSelection,
+  selectedEdgeId,
+  selectedKey,
+  selectionReducer,
+} from './selection.ts';
 
 export interface HostState {
   readonly selection: WorkspaceSelection;
@@ -60,8 +53,6 @@ export interface HostState {
   readonly draft: CreateDraft;
   /** What the reader has typed into the target search. */
   readonly targetQuery: string;
-  readonly theme: ThemeName;
-  readonly canvas: CanvasMode;
   /** The issue a canvas drag started on, while the pointer is down. */
   readonly drag: string | null;
   /** Where a canvas drop landed, so the kind chooser can be placed there. */
@@ -75,8 +66,6 @@ export const INITIAL_HOST_STATE: HostState = Object.freeze({
   railStart: 0,
   draft: IDLE_CREATE_DRAFT,
   targetQuery: '',
-  theme: 'default',
-  canvas: 'neighbourhood',
   drag: null,
   drop: null,
 });
@@ -85,10 +74,10 @@ export const INITIAL_HOST_STATE: HostState = Object.freeze({
  * What the shell saw.
  *
  * `control` carries a `data-ig-command` — the package's own vocabulary
- * (`select-edge`, `focus`, `search`, `retype`, `flip`, …) and the host's
- * (`add`, `kind`, `target`, `delete`, `retry`, …) share one channel because
- * the shell reads one attribute. `point` and `group` are the viewer's two
- * identities: a focusable issue key, and a mark naming an edge or a slot.
+ * (`select-edge`, `focus`, `search`, `retype`, `flip`, …) and the mount's
+ * chrome (`add`, `kind`, `target`, `delete`, `retry`, …) share one channel
+ * because the shell reads one attribute. `point` and `group` are the viewer's
+ * two identities: a focusable issue key, and a mark naming an edge or a slot.
  */
 export type HostCommand =
   | { readonly kind: 'point'; readonly key: string }
@@ -109,27 +98,11 @@ export type HostEffect =
   | { readonly kind: 'propose'; readonly proposal: Proposal }
   | { readonly kind: 'retry'; readonly mutationId: MutationId }
   | { readonly kind: 'discard'; readonly mutationId: MutationId }
-  | { readonly kind: 'dismiss-change' }
-  | { readonly kind: 'arm'; readonly outcome: NextOutcome }
-  | { readonly kind: 'reset' };
+  | { readonly kind: 'dismiss-change' };
 
 export interface HostResult {
   readonly state: HostState;
   readonly effects: readonly HostEffect[];
-}
-
-const OUTCOMES: ReadonlySet<string> = new Set(['apply', 'reject', 'conflict']);
-
-function isOutcome(value: string | undefined): value is NextOutcome {
-  return value !== undefined && OUTCOMES.has(value);
-}
-
-function isTheme(value: string | undefined): value is ThemeName {
-  return value === 'default' || value === 'paper';
-}
-
-function isCanvasMode(value: string | undefined): value is CanvasMode {
-  return value === 'neighbourhood' || value === 'tree';
 }
 
 function settled(state: HostState): HostResult {
@@ -206,7 +179,7 @@ function controlled(
 ): HostResult {
   const edgeId = selectedEdgeId(state.selection);
   switch (name) {
-    // --- the editor's own commands ---
+    // --- the package's own commands ---
     case 'select-edge':
       return target === undefined ? settled(state) : selectEdge(state, target);
     case 'clear':
@@ -245,7 +218,7 @@ function controlled(
     case 'dismiss-change':
       return { state, effects: [{ kind: 'dismiss-change' }] };
 
-    // --- the host's own chrome ---
+    // --- the mount's chrome ---
     case 'audit-filter':
       return settled({ ...state, auditFiltered: !state.auditFiltered });
     case 'add': {
@@ -272,18 +245,11 @@ function controlled(
       return target === undefined
         ? settled(state)
         : { state, effects: [{ kind: 'discard', mutationId: target }] };
-    case 'theme':
-      return isTheme(value) ? settled({ ...state, theme: value }) : settled(state);
-    case 'canvas':
-      return isCanvasMode(value) ? settled({ ...state, canvas: value }) : settled(state);
-    case 'arm':
-      return isOutcome(value) ? { state, effects: [{ kind: 'arm', outcome: value }] } : settled(state);
-    case 'reset':
-      return {
-        state: { ...INITIAL_HOST_STATE, theme: state.theme, canvas: state.canvas },
-        effects: [{ kind: 'reset' }],
-      };
     default:
+      // A COMMAND THIS REDUCER DOES NOT KNOW CHANGES NOTHING. A host's own
+      // chrome may publish commands on the same attribute — the demo's theme
+      // switch does — and those are the host's to read from its own listener,
+      // never a reason for this reducer to guess.
       return settled(state);
   }
 }
@@ -307,11 +273,17 @@ export function reduceHost(state: HostState, command: HostCommand, document: Gra
   switch (command.kind) {
     case 'point':
       return pointed(state, command.key);
-    case 'group':
+    case 'group': {
       // A mark names either an edge (its store identity) or a slot (its lead).
-      return findEdge(document, command.id) === undefined
-        ? pointed(state, command.id)
-        : selectEdge(state, command.id);
+      // A MARK NAMING NEITHER CHANGES NOTHING. The canvas draws an edge the
+      // store has not landed yet — a pending create carries a mark from the
+      // moment it is proposed — and its identity is in no landed document and
+      // is no issue key. Falling through to `pointed` would select that
+      // identity as an issue, or worse, commit it as a draft's target.
+      if (findEdge(document, command.id) !== undefined) return selectEdge(state, command.id);
+      if (document.issues.some((issue) => issue.ref === command.id)) return pointed(state, command.id);
+      return settled(state);
+    }
     case 'control':
       return controlled(state, command.name, command.target, command.value, document);
     case 'intent':
@@ -385,3 +357,31 @@ export function targetMatches(
 
 /** The edge kinds, in the format's order — the keyboard path's `1`–`5` is this list. */
 export const KINDS: readonly EdgeField[] = EDGE_FIELDS;
+
+/** How far the reader may scroll into the rail window before it is re-cut around them, in rows. */
+export const RAIL_SLACK = 20;
+
+/**
+ * Where the rail window should be re-cut for a scroll position, or `null` when
+ * it should stay where it is.
+ *
+ * `row` is the first visible row (scroll offset over pitch), `start` the
+ * window's current first slot, `count` the window's size and `total` the rows
+ * in the order. Inside the window's slack band nothing moves. Outside it, the
+ * window is re-cut `RAIL_SLACK` rows above the reader, clamped to the order.
+ *
+ * THE CLAMP CAN LAND ON THE CURRENT START, AND THAT CASE MUST ANSWER `null`.
+ * At the end of a long order the window is already pinned to its last start
+ * while the reader is deep inside it, so every scroll position there is
+ * "outside the band" and clamps back to the same start. A shell that
+ * dispatched that as a change redrew, restored the scroll offset — which
+ * fires `scroll` again — and never stopped. The decision is a pure function
+ * here so that cycle is refused where it can be tested without a browser.
+ */
+export function railWindowTarget(row: number, start: number, count: number, total: number): number | null {
+  const offset = row - start;
+  if (offset >= 0 && offset <= count - RAIL_SLACK * 2) return null;
+  const lastStart = Math.max(0, total - count);
+  const next = Math.min(lastStart, Math.max(0, Math.floor(row) - RAIL_SLACK));
+  return next === start ? null : next;
+}

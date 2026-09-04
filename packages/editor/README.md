@@ -231,9 +231,39 @@ Ranking a unit's members is `heaviestRow`'s job, in the audit module, **because 
 
 **Dark only.** The pass-2 brief carries "light + dark" over from pass 1; light was cut after that pass. There is no forked token set and no `prefers-color-scheme` block — the palette is the viewer's, reached through its custom properties.
 
+## The mount
+
+`mountWorkspace` is the shell a host actually consumes — the entry point [`mountViewer`](../viewer) already is for layer 1, in the same shape:
+
+```ts
+import { mountWorkspace } from '@issuegraph/editor';
+
+const handle = mountWorkspace(element, {
+  store,      // @issuegraph/store — built by the host, with its own DataSource and OrderDeriver
+  project,    // (snapshot) => { viewer: ViewerDocument; audit?: AuditInput } — the host's projection
+  words,      // MountWords: WorkspaceWords plus the picker's and the chrome's
+  theme?, themeSelector?,
+  canvas?: 'neighbourhood' | 'tree',
+});
+handle.update({ theme });          // new options, redrawn in place; the selection and the focus survive
+handle.dispatch({ kind: 'point', key: '12' });   // a command from the host's own chrome
+handle.state;                      // the selection, the draft, the scale, the rail window
+handle.destroy();                  // every listener off, the nodes it built removed
+```
+
+**It was the demo's, and it ships because a second host was about to write it again.** `renderWorkspace` publishes every control as `data-ig-command` and the viewer publishes its identities as data, so wiring them to listeners was documented as a mount's job and therefore a host's. The in-repo demo was that mount: a 930-line shell and a 387-line reducer, nine review rounds to get right, and every finding in the shell. The design's layer rule puts the interaction shell in layer 2, not in a host, so it moved here as `workspace/mount.ts` and `workspace/host.ts`, unchanged in what it does.
+
+**The reducer is pure and the shell is thin, and that split is the test strategy.** `host.ts` composes `selectionReducer`, `scaleReducer`, `createReducer` and `pickerView`, and adds only what those leave to a mount — the one shared selection, when a draft begins and ends, the rail's scroll offset, the drag that becomes a draft — so every decision runs under `node --test` with no DOM. `mount.ts` is one delegated listener per event, an `innerHTML` assignment of the package's own escaped markup, and the chrome the panels leave to a mount: the add button, the kind chooser, the target search, the delete button, all built with `createElement` and `textContent`. It is driven through jsdom, because a DOM double written for it would be a second place the shell could be wrong about the first.
+
+**It touches the element it is given and nothing else.** The document comes from `element.ownerDocument`; a pointer release outside the element is heard on that document rather than on a window; an element is recognised by what it can do rather than by `instanceof` against a global. So the module imports on a runtime with no DOM, and `purity.test.ts` still loads it with the browser globals removed. It installs one `<style>` inside the element carrying every sheet the surface needs — the viewer's, the theme's, the ladder's, the overlays', the picker's, the workspace's and its own `mountStylesheet` — so a host installs nothing by hand.
+
+**The canvas draws each edge's write states.** `renderWorkspace` and `renderScaleLadder` take `projected` — the store's own `ProjectedEdge` list — and the ladder attaches an overlay per edge the tier draws: `pending-write`'s dash, an `invalid` or `failed` cross, a `conflict`'s second version, composed with the selection halo on the same line. The mount passes `snapshot.projected` and reconciles the viewer document the host projected with it — the unsettled edges are added, and a landed edge the store hides behind a pending retype or flip is dropped — because the host projects the **order** from the landed document, which must not move for an edit that did not land, while what to **draw** is the store's projection by the store's own contract. The order's status is published on the surface as `data-order="held"` while a write is in flight, in the store's vocabulary, so a host says so without this package inventing the sentence.
+
+**Words are the host's, as everywhere here.** `MountWords` extends `WorkspaceWords` with the picker's vocabulary and the chrome's five strings; `keys` is the one optional entry. A command the reducer does not know changes nothing, so a host's own chrome may publish `data-ig-command` on the same attribute outside the element and read it from its own listener — the demo's theme switch does exactly that, and hands the writes log's `retry` and `discard` to `handle.dispatch`.
+
 ## Status
 
-The first-pass review queue lands as its own change. Wiring the published `data-ig-command` controls to real listeners remains a **mount's** job and therefore a host's: this package renders, and every control says what it does as data so the host can read it, reduce, and render again.
+The first-pass review queue lands as its own change. The mount is this package's from `0.3.0`; what a host still supplies is what the specification puts there — the data source, the order, the executor holds, the words, the theme — and every listener is the mount's.
 
 ## Licence
 
