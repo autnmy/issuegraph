@@ -368,6 +368,17 @@ export const KINDS: readonly EdgeField[] = EDGE_FIELDS;
 export const RAIL_SLACK = 20;
 
 /**
+ * The slack a window of `count` rows actually gets: `RAIL_SLACK`, bounded to a
+ * quarter of the window and never below one row. A slack as wide as the window
+ * re-cut a small window onto its own start — ArrowDown on the last drawn row
+ * computed `offset - slack` at or below the current start, dispatched it
+ * unchanged, and keyboard navigation could not leave the first window.
+ */
+export function railSlackFor(count: number): number {
+  return Math.min(RAIL_SLACK, Math.max(1, Math.floor(count / 4)));
+}
+
+/**
  * Where the rail window should be re-cut for a scroll position, or `null` when
  * it should stay where it is.
  *
@@ -385,9 +396,10 @@ export const RAIL_SLACK = 20;
  * here so that cycle is refused where it can be tested without a browser.
  */
 export function railWindowTarget(row: number, start: number, count: number, total: number): number | null {
+  const slack = railSlackFor(count);
   const offset = row - start;
-  if (offset >= 0 && offset <= count - RAIL_SLACK * 2) return null;
+  if (offset >= 0 && offset <= count - slack * 2) return null;
   const lastStart = Math.max(0, total - count);
-  const next = Math.min(lastStart, Math.max(0, Math.floor(row) - RAIL_SLACK));
+  const next = Math.min(lastStart, Math.max(0, Math.floor(row) - slack));
   return next === start ? null : next;
 }

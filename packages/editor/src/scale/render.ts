@@ -42,9 +42,9 @@ import {
   viewerStylesheet,
 } from '@issuegraph/viewer';
 
-import { edgeIdentity } from '@issuegraph/core';
 import type { ProjectedEdge } from '@issuegraph/store';
 
+import { overlaysFor } from '../overlay/projected.ts';
 import { attachEdgeOverlays } from '../overlay/render.ts';
 import { edgeOverlayStylesheet } from '../overlay/styles.ts';
 import { INITIAL_SCALE_STATE, type ScaleState } from './commands.ts';
@@ -258,57 +258,14 @@ export function renderScaleLadder(
       ? renderViewer(ladder.canvas, { projection: 'graph', theme, selected: options.selected ?? null })
       : null;
 
-  // THE SELECTION HALO, ATTACHED TO THE SCENE THE CANVAS JUST DREW.
-  //
-  // Resolved against `ladder.canvas.edges` — the document this canvas was
-  // rendered from — rather than against the caller's input. An identity that
-  // names an edge this tier does not draw resolves to nothing here, which is
-  // the same promise every other zone makes: a selection is a NAME, and a name
-  // that no longer resolves renders as nothing selected.
-  const selectedEdge =
-    canvas === null || options.selectedEdge === null || options.selectedEdge === undefined
-      ? null
-      : (ladder.canvas.edges.find(
-          (edge) => edgeIdentity(edge.field, edge.from, edge.to) === options.selectedEdge,
-        ) ?? null);
-  // `states: ['selected']` AND NOTHING ELSE, deliberately. The write states are
-  // the store's to report — this synthesises the one state that is not about a
-  // write, which is exactly how `EDGE_STATES` describes `selected`. An edge
-  // that is ALSO mid-write is overlaid by whoever holds those writes; the two
-  // compose, because `overlayFor` reads a list.
-  const selectedOverlay: ProjectedEdge | null =
-    selectedEdge === null
-      ? null
-      : {
-          id: edgeIdentity(selectedEdge.field, selectedEdge.from, selectedEdge.to),
-          kind: selectedEdge.field,
-          from: selectedEdge.from,
-          to: selectedEdge.to,
-          states: ['selected'],
-          writes: [],
-        };
-  // THE WRITE STATES, FROM WHOEVER HOLDS THE WRITES. Narrowed to the edges this
-  // canvas drew, by the same identity test as the selection above, so an entry
-  // for an edge a narrower tier left out attaches to nothing rather than being
-  // reported as unattached. An entry for the selected edge is folded into the
-  // halo's own record — one `ProjectedEdge` per identity, its states the union
-  // — because `attachEdgeOverlays` keys overlays by identity and a second
-  // record for the same edge would replace the first rather than compose.
-  const drawnIdentities = new Set(
-    canvas === null ? [] : ladder.canvas.edges.map((edge) => edgeIdentity(edge.field, edge.from, edge.to)),
-  );
-  const overlays: ProjectedEdge[] = [];
-  for (const edge of options.projected ?? []) {
-    if (!drawnIdentities.has(edge.id) || edge.states.length === 0) continue;
-    if (selectedOverlay !== null && edge.id === selectedOverlay.id) {
-      overlays.push({ ...edge, states: [...edge.states, 'selected'] });
-      continue;
-    }
-    overlays.push(edge);
-  }
-  if (selectedOverlay !== null && !overlays.some((edge) => edge.id === selectedOverlay.id)) {
-    overlays.push(selectedOverlay);
-  }
+  // THE SELECTION HALO AND THE WRITE STATES, attached to the scene the canvas
+  // just drew. Resolved against `ladder.canvas.edges` — the document this canvas
+  // was rendered from — rather than against the caller's input: an identity
+  // naming an edge this tier does not draw resolves to nothing, which is the
+  // promise every zone makes. A selection is a NAME, and a name that no longer
+  // resolves renders as nothing selected. The merge itself is `overlaysFor`,
+  // shared with the workspace's tree canvas so the two cannot drift.
+  const overlays = canvas === null ? [] : overlaysFor(ladder.canvas.edges, options.projected, options.selectedEdge);
   // `unattached` IS DELIBERATELY NOT SURFACED HERE, and the reason is a fact
   // about this call site rather than about the value.
   //

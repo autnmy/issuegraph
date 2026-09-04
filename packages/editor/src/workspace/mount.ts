@@ -60,6 +60,8 @@ import {
 import type { AuditInput } from '../audit/findings.ts';
 import { type CreateInteraction, type KeyboardContext, keyIntent } from '../create/keys.ts';
 import { pickerPlacement } from '../create/placement.ts';
+import { STATE_ATTRIBUTE, overlayFor } from '../overlay/grammar.ts';
+import { overlaysFor } from '../overlay/projected.ts';
 import { renderPicker } from '../picker/render.ts';
 import { pickerStylesheet } from '../picker/styles.ts';
 import type { PickerWords } from '../picker/words.ts';
@@ -71,7 +73,7 @@ import {
   type HostState,
   INITIAL_HOST_STATE,
   KINDS,
-  RAIL_SLACK,
+  railSlackFor,
   railWindowTarget,
   reconcileHost,
   reduceHost,
@@ -489,6 +491,13 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         : { ...projected.viewer, edges: [...kept, ...unsettled] };
     const { audit } = projected;
     const resolved = theme();
+    // THE WRITE STATES ONLY. The workspace holds the one selection, and every
+    // canvas draws its halo from that; a `selected` the host put on the store
+    // through `store.select()` would draw a second halo the inspector does not
+    // reflect, so it is stripped before the projection reaches a canvas.
+    const writeStates = snapshot.projected.map((edge) =>
+      edge.states.includes('selected') ? { ...edge, states: edge.states.filter((state) => state !== 'selected') } : edge,
+    );
 
     const result = renderWorkspace(viewer, {
       words: current.words,
@@ -503,9 +512,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       // ladder draws its halo from that; a `selected` the host put on the store
       // through `store.select()` would draw a second halo the inspector does
       // not reflect, so it is stripped before the projection reaches the canvas.
-      projected: snapshot.projected.map((edge) =>
-        edge.states.includes('selected') ? { ...edge, states: edge.states.filter((state) => state !== 'selected') } : edge,
-      ),
+      projected: writeStates,
     });
     const sheet = [result.styles, pickerStylesheet, mountStylesheet].join('\n');
     if (styles.textContent !== sheet) styles.textContent = sheet;
@@ -542,11 +549,21 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     if (current.canvas === 'tree') {
       const canvas = zone('canvas');
       if (canvas !== null) {
-        canvas.innerHTML = renderViewer(viewer, {
-          projection: 'tree',
-          theme: resolved,
-          selected: selectedKey(state.selection),
-        }).markup;
+        // THE SAME STATES THE LADDER DRAWS, on the tree's badges. The tree
+        // draws a relationship as a badge rather than a line, and the overlays
+        // module decorates lines only — a halo, a ghost, a dash — so there is
+        // nothing for it to attach here. What the badge CAN carry is the state
+        // as data, the same `data-ig-state` the ladder's line carries, so a
+        // pending edge is not drawn as a settled one and a host styles or reads
+        // it the same way in both modes. The merge is the ladder's own.
+        canvas.innerHTML = renderViewer(viewer, { projection: 'tree', theme: resolved, selected: selectedKey(state.selection) }).markup;
+        const states = new Map(
+          overlaysFor(viewer.edges, writeStates, selectedEdgeId(state.selection)).map((edge) => [edge.id, overlayFor(edge).attribute]),
+        );
+        for (const badge of canvas.querySelectorAll<HTMLElement>(`[${GROUP_ATTRIBUTE}]`)) {
+          const attribute = states.get(badge.getAttribute(GROUP_ATTRIBUTE) ?? '');
+          if (attribute !== undefined && attribute !== null) badge.setAttribute(STATE_ATTRIBUTE, attribute);
+        }
       }
     }
     zone('inspector')?.append(inspectorChrome(document_));
@@ -735,17 +752,22 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     const onLast = last !== undefined && last.members.includes(key);
     const offset = rail.offsetOf(key);
     const count = railCount();
+    const slack = railSlackFor(count);
     const lastStart = Math.max(0, rail.total - count);
     switch (pressedKey) {
+      // THE WINDOW ALWAYS MOVES BY AT LEAST ONE ROW. The re-cut lands the
+      // window `slack` rows above the reader; with a small window that could
+      // land on the current start, and a start that does not change draws
+      // no next row to focus.
       case 'ArrowDown':
         if (!onLast || rail.after === 0 || offset === undefined) return false;
         pendingFocus = { kind: 'after', key };
-        dispatch({ kind: 'scroll', start: Math.min(lastStart, Math.max(0, offset - RAIL_SLACK)) });
+        dispatch({ kind: 'scroll', start: Math.min(lastStart, Math.max(state.railStart + 1, offset - slack)) });
         return true;
       case 'ArrowUp':
         if (!onFirst || rail.before === 0 || offset === undefined) return false;
         pendingFocus = { kind: 'before', key };
-        dispatch({ kind: 'scroll', start: Math.max(0, offset - (count - RAIL_SLACK)) });
+        dispatch({ kind: 'scroll', start: Math.max(0, Math.min(state.railStart - 1, offset - (count - slack))) });
         return true;
       case 'End':
         if (rail.after === 0) return false;

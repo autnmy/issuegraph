@@ -370,6 +370,44 @@ describe('mountWorkspace', () => {
     });
   });
 
+  describe('a small rail window still advances from the keyboard', () => {
+    it('ArrowDown on the last row of a 21-row window reaches the next row', async () => {
+      const many: GraphDocument = {
+        issues: Array.from({ length: 60 }, (_, index) => ({ ref: String(index + 1), title: `Issue ${String(index + 1)}`, state: 'open' as const })),
+        edges: [],
+      };
+      page.handle.destroy();
+      page = await mounted(many, { railCount: 21 });
+      const last = page.rows()[page.rows().length - 1];
+      assert.ok(last !== undefined && last.getAttribute('data-ig-key') === '21');
+      last.focus();
+      last.dispatchEvent(new page.win.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+      await flush();
+      assert.ok(page.handle.state.railStart > 0, 'the window did not move');
+      assert.equal(page.win.document.activeElement?.getAttribute('data-ig-key'), '22');
+    });
+  });
+
+  describe('the tree canvas carries the same overlays as the ladder', () => {
+    it('marks a pending edge and the selected edge on their badges', async () => {
+      page.handle.update({ canvas: 'tree' });
+      await flush();
+      const edge = makeEdge('blocked-by', '1', '2');
+      void page.store.propose({ op: 'create', kind: 'blocked-by', from: '2', to: '3' });
+      await page.source.whenPending();
+      await flush();
+      const pending = page.element.querySelector(`[data-zone="canvas"] .ig-tree [data-ig-group="${makeEdge('blocked-by', '2', '3').id}"]`);
+      assert.ok(pending !== null, 'the tree draws no badge for the pending edge');
+      assert.equal(pending.getAttribute('data-ig-state'), 'pending-write');
+
+      page.handle.dispatch({ kind: 'group', id: edge.id });
+      await flush();
+      const selected = page.element.querySelector(`[data-zone="canvas"] .ig-tree [data-ig-group="${edge.id}"]`);
+      assert.ok(selected !== null);
+      assert.equal(selected.getAttribute('data-ig-state'), 'selected');
+    });
+  });
+
   describe('the canvas path: drag a node onto another, then choose the kind at the drop point', () => {
     it('reaches the same proposal as the inspector path', async () => {
       // RE-QUERIED ON EVERY STEP: the drag-start dispatch redraws the canvas, so

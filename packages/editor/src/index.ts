@@ -357,6 +357,7 @@ export {
   INITIAL_HOST_STATE,
   KINDS,
   RAIL_SLACK,
+  railSlackFor,
   railWindowTarget,
   reconcileHost,
   reduceHost,

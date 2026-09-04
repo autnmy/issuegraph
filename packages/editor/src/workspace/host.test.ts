@@ -20,6 +20,7 @@ import {
   type HostState,
   INITIAL_HOST_STATE,
   RAIL_SLACK,
+  railSlackFor,
   railWindowTarget,
   reconcileHost,
   reduceHost,
@@ -340,6 +341,16 @@ describe('railWindowTarget decides the rail window’s re-cut, and refuses a no-
   it('re-cuts the window RAIL_SLACK rows above the reader once they scroll past the band', () => {
     assert.equal(railWindowTarget(41, 0, 80, 300), 21);
     assert.equal(railWindowTarget(5, 40, 80, 300), 0, 'scrolling back up above the window');
+  });
+
+  it('scales the slack to the window, so a small window can still advance', () => {
+    assert.equal(railSlackFor(80), RAIL_SLACK);
+    assert.equal(railSlackFor(21), 5);
+    assert.equal(railSlackFor(3), 1);
+    // A 21-row window whose reader is on its last row re-cuts forward rather
+    // than back onto its own start.
+    const next = railWindowTarget(20, 0, 21, 60);
+    assert.ok(next !== null && next > 0, `expected a forward re-cut, got ${String(next)}`);
   });
 
   it('answers null when the clamp lands on the current start — the pinned last window', () => {
