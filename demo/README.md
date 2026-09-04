@@ -44,33 +44,32 @@ is the demonstration:
 
 ## What the packages leave to a host, and where it is
 
-`@issuegraph/editor` renders. Its README says the rest in one sentence:
-*"wiring the published `data-ig-command` controls to real listeners remains a
-mount's job and therefore a host's."* This page is that mount, in three files
-with one seam between them:
+`@issuegraph/editor` renders, and since `0.3.0` it mounts: `mountWorkspace`
+wires the published `data-ig-command` controls to listeners, restores focus
+across every redraw, routes the keyboard, runs the canvas drag and subscribes
+to the store. That shell used to be this page's — 930 lines, nine review rounds
+— and it moved into the package because a second host was about to write it
+again. What this page supplies is what the specification puts with a host:
 
 | file | what it is |
 |---|---|
 | `src/document.ts` | the projection of the explained order onto the viewer's `ViewerDocument`, plus the audit's input — from ONE derivation, so the audit's duplicate resolution and the store's cannot disagree |
-| `src/host.ts` | every decision, as a reducer with no DOM: what a command does to the shared selection, the create draft, the scale state, the rail window, the theme; and which effects the shell performs against the store |
-| `src/workspace.ts` | the shell: one delegated listener per event, `renderWorkspace` into a container, and the chrome the packages do not draw |
+| `src/workspace.ts` | the sandbox: `mountWorkspace` over the store and that projection, plus the chrome the sandbox owns — the writes log, the versions line, the theme and canvas toggles, the armed outcome and the reset |
 | `src/order.ts` | the projection onto `@issuegraph/derive` — unchanged from the list demo this page replaced |
 | `src/seed.ts` | the coverage seed and the dense layer, below |
 | `src/source.ts` | the in-memory adapter, with the two unhappy outcomes armable |
 | `serve.mjs` | a dependency-free static server for the repository root |
 
-**The reducer is the demonstration of the editor's design, not a convenience.**
-The editor ships its state as reducers — `selectionReducer`, `scaleReducer`,
-`createReducer` — and its keyboard as a pure key map, so that a host's own
-decisions can be tested the same way: `host.test.ts` drives all three create
-paths to one proposal and every picker edit to the picker's own proposal, under
-`node --test`, with no DOM anywhere.
+**The sandbox's chrome shares the command attribute and its own listener.** A
+`data-ig-command` inside the mounted element is the mount's; one outside it —
+the masthead toggles, the writes log's `retry` and `discard` — is read by one
+delegated click on the sandbox root, which hands the mount's own commands to
+`handle.dispatch` and keeps `theme`, `canvas` and `reset` for itself.
 
-**`innerHTML`, once, on purpose.** The old list wrote every string with
-`textContent`, because a title is data an adapter supplied. That rule stands —
-the host's chrome is built with `createElement` and `textContent` — and what is
-assigned as markup is only the packages' own rendered output, escaped by
-`renderMarkup`: the same bytes a server-rendered host would send.
+**`textContent`, everywhere.** Every string this page writes is host chrome
+built with `createElement` and `textContent`, because a title is data an
+adapter supplied. The one `innerHTML` assignment — the packages' own rendered
+output, escaped by `renderMarkup` — is the mount's now, not this page's.
 
 ## What you can reach from the page
 

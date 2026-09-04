@@ -9,10 +9,11 @@
  * quietly narrowing the promise.
  *
  * TWO TOKEN BLOCKS, ONE PER THEME. The workspace itself is themed by the
- * viewer's own custom properties, which `workspace.ts` installs from
- * `themeCss` — the default palette and the paper one — so what this file
- * themes is only the chrome AROUND the workspace: the masthead, the controls,
- * the writes panel and the inspector's host chrome. The `data-theme` attribute
+ * viewer's own custom properties, which the editor's `mountWorkspace` installs
+ * from `themeCss` — the default palette and the paper one — so what this file
+ * themes is only the chrome AROUND the workspace: the masthead, the controls
+ * and the writes panel — the inspector's chrome is the mount's, styled by the
+ * package's own sheet against the viewer's tokens. The `data-theme` attribute
  * the shell sets on the root selects which block applies, and the two are kept
  * in step with the two viewer themes by eye rather than by machinery, because
  * a page chrome is not a published contract.
@@ -77,11 +78,6 @@
   --measure-lede: 70ch;
   --measure-colophon: 90ch;
   --workspace-height: 72vh;
-  --chooser-width: 280px;
-  --input-min: 200px;
-  /* Where a canvas drop landed; the shell sets these inline on the floating chooser. */
-  --chooser-x: 0;
-  --chooser-y: 0;
 }
 
 :root[data-theme="paper"] {
@@ -218,20 +214,13 @@ code {
   color: var(--fg-3);
 }
 
-select,
-.chrome-input {
+select {
   font: inherit;
   color: var(--fg);
   background: var(--canvas-3);
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius);
   padding: var(--pad-button-y) var(--pad-button-x);
-}
-
-.chrome-input {
-  min-width: var(--input-min);
-  width: 100%;
-  box-sizing: border-box;
 }
 
 .chrome-button {
@@ -352,101 +341,6 @@ select,
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
-}
-
-.workspace > .ig-workspace {
-  height: 100%;
-  box-sizing: border-box;
-}
-
-.workspace[data-dragging='true'] {
-  cursor: grabbing;
-  user-select: none;
-}
-
-/* --- the inspector's host chrome --- */
-
-.chrome {
-  padding: var(--pad-panel-y) var(--pad);
-  border-top: var(--border-w) solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-tight);
-  font-size: var(--size-small);
-}
-
-.chrome-sentence {
-  margin: 0;
-  font-family: var(--mono);
-  color: var(--fg);
-}
-
-.chrome-kinds {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-micro);
-}
-
-.chrome-kinds .chrome-button {
-  border-left: var(--bar-w) solid var(--border);
-}
-
-.chrome-kinds [data-edge='blocked-by'] {
-  border-left-color: var(--edge-blocked-by);
-}
-
-.chrome-kinds [data-edge='serialize-with'] {
-  border-left-color: var(--edge-serialize-with);
-}
-
-.chrome-kinds [data-edge='together-with'] {
-  border-left-color: var(--edge-together-with);
-}
-
-.chrome-kinds [data-edge='duplicate-of'] {
-  border-left-color: var(--edge-duplicate-of);
-}
-
-.chrome-kinds [data-edge='decomposed-from'] {
-  border-left-color: var(--edge-decomposed-from);
-}
-
-.chrome-matches {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-micro);
-}
-
-.chrome-match {
-  width: 100%;
-}
-
-.chrome-search,
-.chrome-chooser {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-tight);
-}
-
-.chrome-floating {
-  position: absolute;
-  left: var(--chooser-x);
-  top: var(--chooser-y);
-  width: var(--chooser-width);
-  padding: var(--pad-panel-y) var(--pad);
-  background: var(--canvas-2);
-  border: var(--border-w) solid var(--accent);
-  border-radius: var(--radius);
-  z-index: 2;
-}
-
-.chrome-keys {
-  margin: 0;
-  font-size: var(--size-micro);
-  color: var(--fg-3);
 }
 
 /* --- colophon --- */

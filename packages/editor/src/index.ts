@@ -349,3 +349,32 @@ export {
 
 export { workspaceStylesheet } from './workspace/styles.ts';
 
+export {
+  type HostCommand,
+  type HostEffect,
+  type HostResult,
+  type HostState,
+  INITIAL_HOST_STATE,
+  KINDS,
+  RAIL_SLACK,
+  railSlackFor,
+  railWindowTarget,
+  reconcileHost,
+  reduceHost,
+  targetMatches,
+} from './workspace/host.ts';
+
+export {
+  type CanvasMode,
+  type MountWords,
+  type MountWorkspaceOptions,
+  type WorkspaceHandle,
+  type WorkspaceProjection,
+  type WorkspaceUpdate,
+  CANVAS_MODES,
+  MOUNT_RAIL_COUNT,
+  mountWorkspace,
+} from './workspace/mount.ts';
+
+export { mountStylesheet } from './workspace/chrome.ts';
+

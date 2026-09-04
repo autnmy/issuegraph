@@ -1,5 +1,5 @@
 /**
- * The host reducer: every decision the shell makes, driven with no DOM.
+ * The host reducer: every decision the mount makes, driven with no DOM.
  *
  * The three create paths are the load-bearing tests. §17b says they are
  * EQUIVALENT — canvas, inspector and keyboard gather the same three facts in
@@ -10,15 +10,18 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { keyIntent } from '@issuegraph/editor';
 import type { GraphDocument } from '@issuegraph/store';
 import { makeEdge } from '@issuegraph/store';
 
+import { keyIntent } from '../create/keys.ts';
 import {
   type HostCommand,
   type HostEffect,
   type HostState,
   INITIAL_HOST_STATE,
+  RAIL_SLACK,
+  railSlackFor,
+  railWindowTarget,
   reconcileHost,
   reduceHost,
   targetMatches,
@@ -68,6 +71,34 @@ describe('selection is one value the zones share', () => {
       edgeId: blockedBy.id,
     });
     assert.deepEqual(drive([{ kind: 'group', id: '3' }]).state.selection, { kind: 'issue', key: '3' });
+  });
+
+  it('routes the inspector’s select-issue control — a hold’s holder — through the pointer path', () => {
+    const { state } = drive([{ kind: 'control', name: 'select-issue', target: '3' }]);
+    assert.deepEqual(state.selection, { kind: 'issue', key: '3' });
+    const { effects } = drive([
+      { kind: 'point', key: '2' },
+      { kind: 'control', name: 'add' },
+      { kind: 'control', name: 'kind', value: 'blocked-by' },
+      { kind: 'control', name: 'select-issue', target: '3' },
+    ]);
+    assert.deepEqual(effects, [CREATED], 'while a target is wanted, the holder IS the target');
+    assert.deepEqual(drive([{ kind: 'control', name: 'select-issue' }]).state, INITIAL_HOST_STATE);
+  });
+
+  it('ignores a group mark naming neither a landed edge nor an issue — a pending edge’s mark', () => {
+    // The canvas draws an edge from the moment it is proposed, so its mark
+    // is clickable while the landed document does not carry it yet.
+    const pending = makeEdge('blocked-by', '2', '3').id;
+    assert.deepEqual(drive([{ kind: 'group', id: pending }]).state, INITIAL_HOST_STATE);
+    const choosing = drive([
+      { kind: 'point', key: '2' },
+      { kind: 'control', name: 'add' },
+      { kind: 'control', name: 'kind', value: 'blocked-by' },
+    ]).state;
+    const mid = drive([{ kind: 'group', id: pending }], choosing);
+    assert.equal(mid.effects.length, 0, 'the mark must not become the draft’s target');
+    assert.equal(mid.state.draft.target, null);
   });
 
   it('clears the selection AND the draft on the inspector’s clear', () => {
@@ -224,44 +255,24 @@ describe('the rest of the chrome', () => {
     assert.equal(drive([{ kind: 'control', name: 'clear-focus' }], state).state.scale.focus, null);
   });
 
-  it('toggles the audit filter, the theme and the canvas, refusing unknown values', () => {
-    const { state } = drive([
-      { kind: 'control', name: 'audit-filter' },
-      { kind: 'control', name: 'theme', value: 'paper' },
-      { kind: 'control', name: 'canvas', value: 'tree' },
-      { kind: 'control', name: 'theme', value: 'neon' },
-    ]);
-    assert.equal(state.auditFiltered, true);
-    assert.equal(state.theme, 'paper');
-    assert.equal(state.canvas, 'tree');
+  it('toggles the audit filter', () => {
+    const once = drive([{ kind: 'control', name: 'audit-filter' }]).state;
+    assert.equal(once.auditFiltered, true);
+    assert.equal(drive([{ kind: 'control', name: 'audit-filter' }], once).state.auditFiltered, false);
   });
 
-  it('turns retry, discard, dismiss and arm into effects and changes no state', () => {
+  it('turns retry, discard and dismiss into effects and changes no state', () => {
     const { state, effects } = drive([
       { kind: 'control', name: 'retry', target: 'm1' },
       { kind: 'control', name: 'discard', target: 'm2' },
       { kind: 'control', name: 'dismiss-change' },
-      { kind: 'control', name: 'arm', value: 'conflict' },
-      { kind: 'control', name: 'arm', value: 'explode' },
     ]);
     assert.deepEqual(effects, [
       { kind: 'retry', mutationId: 'm1' },
       { kind: 'discard', mutationId: 'm2' },
       { kind: 'dismiss-change' },
-      { kind: 'arm', outcome: 'conflict' },
     ]);
     assert.deepEqual(state, INITIAL_HOST_STATE);
-  });
-
-  it('reset keeps the theme and the canvas mode and drops everything else', () => {
-    const busy = drive([
-      { kind: 'control', name: 'theme', value: 'paper' },
-      { kind: 'point', key: '2' },
-      { kind: 'scroll', start: 40 },
-    ]).state;
-    const { state, effects } = drive([{ kind: 'control', name: 'reset' }], busy);
-    assert.deepEqual(effects, [{ kind: 'reset' }]);
-    assert.deepEqual(state, { ...INITIAL_HOST_STATE, theme: 'paper' });
   });
 
   it('clamps the rail window to a non-negative row offset', () => {
@@ -269,8 +280,10 @@ describe('the rest of the chrome', () => {
     assert.equal(drive([{ kind: 'scroll', start: 12.9 }]).state.railStart, 12);
   });
 
-  it('ignores a command it does not know', () => {
-    assert.deepEqual(drive([{ kind: 'control', name: 'launch' }]).state, INITIAL_HOST_STATE);
+  it('ignores a command it does not know, so a host’s own chrome can share the attribute', () => {
+    for (const name of ['launch', 'theme', 'canvas', 'reset', 'arm']) {
+      assert.deepEqual(drive([{ kind: 'control', name, value: 'paper' }]).state, INITIAL_HOST_STATE, name);
+    }
   });
 });
 
@@ -316,5 +329,37 @@ describe('reconcileHost agrees with a document that moved', () => {
     assert.equal(reconciled.draft.source, null);
     assert.equal(reconciled.targetQuery, '');
     assert.equal(reconcileHost(drafted, document), drafted, 'nothing moved, nothing changes');
+  });
+});
+
+describe('railWindowTarget decides the rail window’s re-cut, and refuses a no-op', () => {
+  it('stays put inside the window’s slack band', () => {
+    assert.equal(railWindowTarget(0, 0, 80, 300), null);
+    assert.equal(railWindowTarget(80 - RAIL_SLACK * 2, 0, 80, 300), null);
+  });
+
+  it('re-cuts the window RAIL_SLACK rows above the reader once they scroll past the band', () => {
+    assert.equal(railWindowTarget(41, 0, 80, 300), 21);
+    assert.equal(railWindowTarget(5, 40, 80, 300), 0, 'scrolling back up above the window');
+  });
+
+  it('scales the slack to the window, so a small window can still advance', () => {
+    assert.equal(railSlackFor(80), RAIL_SLACK);
+    assert.equal(railSlackFor(21), 5);
+    assert.equal(railSlackFor(3), 1);
+    // A 21-row window whose reader is on its last row re-cuts forward rather
+    // than back onto its own start.
+    const next = railWindowTarget(20, 0, 21, 60);
+    assert.ok(next !== null && next > 0, `expected a forward re-cut, got ${String(next)}`);
+  });
+
+  it('answers null when the clamp lands on the current start — the pinned last window', () => {
+    // At the end of a long order the window is pinned to its last start and
+    // the reader is deep inside it; every scroll there clamps back to the same
+    // start. Dispatching it would redraw, restore the offset, and scroll again.
+    const lastStart = 300 - 80;
+    assert.equal(railWindowTarget(290, lastStart, 80, 300), null);
+    assert.equal(railWindowTarget(299, lastStart, 80, 300), null);
+    assert.equal(railWindowTarget(0, 0, 80, 10), null, 'an order shorter than the window never re-cuts');
   });
 });

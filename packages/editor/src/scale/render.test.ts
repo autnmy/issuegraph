@@ -290,3 +290,55 @@ describe('the canvas draws the selected EDGE', () => {
     assert.equal(/ig-overlay/.test(result.markup), false);
   });
 });
+
+describe('the canvas draws each edge’s WRITE STATES from the store’s projection', () => {
+  // The overlays module already composes `ProjectedEdge`s; the ladder is the
+  // layer holding the scene they attach to. Without this option the only state
+  // the canvas could draw was the selection, and a write in flight was
+  // invisible on the very line it concerned.
+  const document = relatedDocument(10);
+  const first = edgeIdentity('blocked-by', componentKey(0, 1), componentKey(0, 2));
+  const second = edgeIdentity('blocked-by', componentKey(0, 2), componentKey(0, 3));
+  const pending = {
+    id: first,
+    kind: 'blocked-by' as const,
+    from: componentKey(0, 1),
+    to: componentKey(0, 2),
+    states: ['pending-write' as const],
+    writes: [],
+  };
+
+  it('marks a pending edge on the edge itself', () => {
+    const result = renderScaleLadder(document, { projected: [pending] });
+    const marked = [
+      ...result.markup.matchAll(/<path class="ig-edge"[^>]*?data-ig-group="([^"]*)"[^>]*?data-ig-state="([^"]*)"/g),
+    ].map((match) => [match[1], match[2]]);
+    assert.deepEqual(marked, [[first, 'pending-write']]);
+    assert.deepEqual([...result.diagnostics], []);
+  });
+
+  it('composes the selection halo with the write state on one edge', () => {
+    // One record per identity, its states the union: a second record for the
+    // same edge would replace the first rather than compose with it.
+    const result = renderScaleLadder(document, { projected: [pending], selectedEdge: first });
+    assert.match(result.markup, /class="ig-edge"[^>]*data-ig-state="selected pending-write"/);
+    assert.match(result.markup, /class="ig-overlay ig-overlay-halo"/);
+  });
+
+  it('keeps the halo when the selected edge is not among the projected ones', () => {
+    const result = renderScaleLadder(document, { projected: [pending], selectedEdge: second });
+    const states = [
+      ...result.markup.matchAll(/<path class="ig-edge"[^>]*?data-ig-group="([^"]*)"[^>]*?data-ig-state="([^"]*)"/g),
+    ].map((match) => `${match[1] ?? ''}=${match[2] ?? ''}`);
+    assert.deepEqual(states.sort(), [`${first}=pending-write`, `${second}=selected`].sort());
+  });
+
+  it('ignores an entry with no state, and one naming an edge this canvas does not draw', () => {
+    const absent = { ...pending, id: edgeIdentity('blocked-by', 'nowhere-1', 'nowhere-2'), from: 'nowhere-1', to: 'nowhere-2' };
+    const settled = { ...pending, states: [] };
+    const result = renderScaleLadder(document, { projected: [absent, settled] });
+    assert.equal(/ig-overlay/.test(result.markup), false);
+    assert.equal(/data-ig-state=/.test(result.markup), false);
+    assert.deepEqual([...result.diagnostics], []);
+  });
+});
