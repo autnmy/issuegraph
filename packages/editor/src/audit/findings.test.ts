@@ -325,10 +325,12 @@ describe('duplicate chains resolve transitively', () => {
       ],
     );
     const found = only(audit(document), 'dead-duplicate-ref');
+    // `a`'s finding names `c` as well: the canonical is the issue whose closed
+    // state the finding asserts, so it is a member, not only a word in `detail`.
     assert.deepEqual(
       found.map((one) => one.members),
       [
-        ['a', 'b'],
+        ['a', 'b', 'c'],
         ['b', 'c'],
       ],
     );
@@ -347,8 +349,83 @@ describe('duplicate chains resolve transitively', () => {
     );
     const found = only(audit(document), 'stale-blocker');
     assert.equal(found.length, 1);
+    // THE TWO ENDS ONLY, and this line is the pin on a decided asymmetry: the
+    // dead-duplicate class names its canonical as a member, and this class does
+    // not, because its remedy sits on the declarer's edge and a `misleading`
+    // bar on the closed canonical would mark a row with nothing to do there.
     assert.deepEqual(found[0]?.members, ['a', 'b']);
     assert.match(found[0]?.detail ?? '', /blocked-by c \(via b, which duplicates it\)/);
+  });
+});
+
+describe('a dead duplicate ref names the closed canonical it is about', () => {
+  // The document carries the target under its BARE ref while the edge names it
+  // QUALIFIED — SPEC §4.2 allows either spelling for a home-repo issue. The host
+  // builds the model against a home repo, so the reader keys both as `2` and
+  // resolves the chain; the STORE still holds the edge as the author wrote it.
+  const qualified = (): { document: GraphDocument; graph: AuditGraph } => {
+    const document = documentOf(
+      [issue('a'), issue('2', 'closed')],
+      [['duplicate-of', 'a', 'acme/app#2']],
+    );
+    const nodes: readonly NodeInput[] = [
+      {
+        id: 'a',
+        repo: 'acme/app',
+        open: true,
+        labels: [],
+        assigneeCount: 0,
+        data: {
+          blockedBy: [],
+          decomposedFrom: null,
+          duplicateOf: { repo: 'acme/app', id: '2' },
+          serializeWith: null,
+          togetherWith: null,
+          priority: null,
+          evidence: null,
+        },
+        declarationRead: 'read',
+      },
+      {
+        id: '2',
+        repo: 'acme/app',
+        open: false,
+        labels: [],
+        assigneeCount: 0,
+        data: {
+          blockedBy: [],
+          decomposedFrom: null,
+          duplicateOf: null,
+          serializeWith: null,
+          togetherWith: null,
+          priority: null,
+          evidence: null,
+        },
+        declarationRead: 'read',
+      },
+    ];
+    const model = buildModel(nodes, { homeRepo: 'acme/app' });
+    return { document, graph: { cycles: model.cycles, duplicateCanonical: model.duplicateCanonical } };
+  };
+
+  it('names the carried canonical when the edge spells the target differently', () => {
+    const { document, graph } = qualified();
+    // The premise the fixture rests on: the host really does translate.
+    assert.equal(graph.duplicateCanonical('a'), '2');
+    const found = only(auditDocument({ document, graph }), 'dead-duplicate-ref');
+    assert.equal(found.length, 1);
+    // `2` is the closed issue the finding is about; `acme/app#2` stays because
+    // it is the ref the author wrote. Without `2` the only carried member was
+    // `a`, and the closed target's own row went unmarked.
+    assert.deepEqual(found[0]?.members, ['2', 'a', 'acme/app#2']);
+    assert.match(found[0]?.detail ?? '', /a is duplicate-of 2 \(through acme\/app#2\)/);
+  });
+
+  it('leaves the ordinary same-spelling case at two members — the control', () => {
+    const document = documentOf([issue('a'), issue('b', 'closed')], [['duplicate-of', 'a', 'b']]);
+    const found = only(audit(document), 'dead-duplicate-ref');
+    assert.equal(found.length, 1);
+    assert.deepEqual(found[0]?.members, ['a', 'b']);
   });
 });
 

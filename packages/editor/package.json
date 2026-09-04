@@ -1,6 +1,6 @@
 {
   "name": "@issuegraph/editor",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Everything that mutates an Issuegraph document: edit affordances drawn as overlays on a viewer, dispatching through a store. Composes the viewer and the store through their public surfaces and performs no write itself.",
   "keywords": [
     "issuegraph",
