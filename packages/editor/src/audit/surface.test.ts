@@ -145,6 +145,50 @@ describe('the overlay', () => {
     assert.deepEqual(auditRowAttributes(overlay, 'unloaded'), {});
   });
 
+  it('marks the closed canonical a dead duplicate ref resolves to under another spelling', () => {
+    // `a duplicate-of acme/app#2` with the issue carried as `2`: the host keys
+    // both as `2`, the finding fires, and the closed target — the row the
+    // finding is centrally about — must carry a bar. It did not while the
+    // members named only the edge's two ends, because `acme/app#2` is not a
+    // ref the document carries and was dropped here.
+    const document = documentOf(
+      [issue('a'), issue('2', 'closed')],
+      [['duplicate-of', 'a', 'acme/app#2']],
+    );
+    const node = (id: string, open: boolean, duplicateOf: { repo: string; id: string } | null): NodeInput => ({
+      id,
+      repo: 'acme/app',
+      open,
+      labels: [],
+      assigneeCount: 0,
+      data: {
+        blockedBy: [],
+        decomposedFrom: null,
+        duplicateOf,
+        serializeWith: null,
+        togetherWith: null,
+        priority: null,
+        evidence: null,
+      },
+      declarationRead: 'read',
+    });
+    const model = buildModel(
+      [node('a', true, { repo: 'acme/app', id: '2' }), node('2', false, null)],
+      { homeRepo: 'acme/app' },
+    );
+    const overlay = auditOverlay({
+      document,
+      graph: { cycles: model.cycles, duplicateCanonical: model.duplicateCanonical },
+    });
+    assert.equal(overlay.count, 1);
+    assert.equal(auditFilterKeeps(overlay, '2'), true);
+    assert.deepEqual(overlay.rowFor('2')?.kinds, ['dead-duplicate-ref']);
+    assert.deepEqual(
+      overlay.rows.map((row) => row.ref),
+      ['2', 'a'],
+    );
+  });
+
   it('indexes exactly the rows it lists', () => {
     // The lookup and the list are two views of one answer, so a lookup that
     // disagreed with the rail would draw a bar on a row the list calls clean.
