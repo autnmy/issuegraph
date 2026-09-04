@@ -283,7 +283,7 @@ describe('every hold carries its code and its subject, and the sentence is uncha
   });
 
   /**
-   * THE PROJECTION, on every key of both corpora: `reasons` is `holds[i].text`
+   * THE PROJECTION, on every key of this corpus: `reasons` is `holds[i].text`
    * in order, so a consumer reading either reads the same failures. Pinned
    * across the corpus rather than on one fixture because the derivation has
    * ~13 push sites and a drift at any one of them is a hold reported to one

@@ -318,7 +318,11 @@ function relationshipSpec(relationship: InspectorRelationship): ElementSpec {
   );
 }
 
-function inspectorSpec(view: InspectorView, words: WorkspaceWords): ElementSpec {
+function inspectorSpec(
+  view: InspectorView,
+  words: WorkspaceWords,
+  known: ReadonlySet<string>,
+): ElementSpec {
   const subject = view.subject;
   return element('div', { class: 'ig-inspector', 'data-subject': subject.kind }, [
     subject.kind === 'none'
@@ -346,7 +350,7 @@ function inspectorSpec(view: InspectorView, words: WorkspaceWords): ElementSpec 
             : element(
                 'ul',
                 { class: 'ig-inspector-holds' },
-                subject.position.holds.map((hold) => holdRow(hold)),
+                subject.position.holds.map((hold) => holdRow(hold, known)),
               ),
         ])
       : null,
@@ -387,11 +391,21 @@ function inspectorSpec(view: InspectorView, words: WorkspaceWords): ElementSpec 
  * `data-ig-command` protocol the relationship rows use, and the same reducer
  * (`selectionReducer`) answers it, so a host wires nothing new.
  *
+ * ONLY FOR A SUBJECT THE DOCUMENT CARRIES. An unresolvable reference names an
+ * issue that is in no document by definition, and a serialize peer can be a
+ * weak node the host never listed; `inspectorView` answers `none` for a key it
+ * cannot find, so a control for one would discard the reader's selection and
+ * show nothing. The attribute is still published — the subject is a fact about
+ * the hold either way — and only the control is withheld.
+ *
  * `data-code` and `data-subject` mirror layer 1's `holdLine` exactly — same
- * names, same omit-when-absent rule — so a stylesheet or a filter written
- * against the rail reads the inspector too.
+ * names, same omit-when-absent rule — so a rule written against
+ * `.ig-hold[data-subject]` on the rail has an exact twin in
+ * `.ig-inspector-hold[data-subject]` here. Class-qualified on purpose: the
+ * inspector's ROOT also carries a `data-subject` (`issue` / `edge`, what the
+ * selection resolved to), so a bare `[data-subject]` reads both.
  */
-function holdRow(hold: ViewerHold): ElementSpec {
+function holdRow(hold: ViewerHold, known: ReadonlySet<string>): ElementSpec {
   return element(
     'li',
     {
@@ -402,7 +416,7 @@ function holdRow(hold: ViewerHold): ElementSpec {
     },
     [
       hold.reason,
-      hold.subject === undefined
+      hold.subject === undefined || !known.has(hold.subject)
         ? null
         : element(
             'button',
@@ -448,6 +462,8 @@ export function renderWorkspace(
   // left to drop, and this is the one place that reports what was dropped.
   const sound = normalizeDocument(input);
   const document = sound.document;
+  // The keys a hold's subject control may name — see `holdRow`.
+  const known: ReadonlySet<string> = new Set(document.issues.map((issue) => issue.key));
 
   // THE FILTER NARROWS THE RAIL, AND ONLY THE RAIL. §17a gives the audit a
   // filter for focus and deliberately no mode; the canvas answers "what
@@ -534,7 +550,7 @@ export function renderWorkspace(
       ].join(''),
     ),
     zone('canvas', canvas.markup),
-    zone('inspector', renderMarkup(inspectorSpec(inspector, options.words))),
+    zone('inspector', renderMarkup(inspectorSpec(inspector, options.words, known))),
     `</div>`,
   ].join('');
 

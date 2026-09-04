@@ -742,6 +742,22 @@ describe('a hold in the inspector carries its cause, and its subject is a contro
     assert.doesNotMatch(markup, /data-code=/);
   });
 
+  it('publishes the attribute but no control for a subject the document does not carry', () => {
+    const { markup } = renderWorkspace(
+      withHold({
+        reason: 'blocked-by 99 is unresolvable (fail-safe: blocking)',
+        code: 'blocked-by-unresolvable',
+        subject: '99',
+      }),
+      { words: WORKSPACE_WORDS, selection: select },
+    );
+    assert.match(
+      markup,
+      /<li class="ig-inspector-hold" data-family="graph" data-code="blocked-by-unresolvable" data-subject="99">blocked-by 99 is unresolvable \(fail-safe: blocking\)<\/li>/,
+    );
+    assert.doesNotMatch(markup, /ig-inspector-hold-subject/);
+  });
+
   it('the control reduces to the subject being selected, through the shared reducer', () => {
     assert.deepEqual(selectionReducer(select, { kind: 'select-issue', key: 'i0001' }), {
       kind: 'issue',

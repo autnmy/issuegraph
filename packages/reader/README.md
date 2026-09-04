@@ -105,7 +105,7 @@ model.diagnostics;               // unresolvable refs, carrier disagreements, de
 
 `buildModel` is pure and total: it never throws, and every anomaly becomes a diagnostic instead of an exception.
 
-**A hold is data, not only a sentence.** `readiness(key).holds` carries each failed condition as `{ code, subject?, text }` — `code` from the closed `READINESS_HOLD_CODES` vocabulary, `subject` the issue the cause names (the open blocker, the claimed peer, the unready unit member, or an unresolvable reference exactly as written) when it names one, and `text` the sentence `reasons` has always carried. `reasons` is the projection `holds.map((h) => h.text)`, so a consumer that renders prose reads exactly what it did before, and one that groups or filters holds by cause matches no prose at all.
+**A hold is data, not only a sentence.** `readiness(key).holds` carries each failed condition as `{ code, subject?, text }` — `code` from the closed `READINESS_HOLD_CODES` vocabulary, `subject` the model's key for the issue the cause names (the open blocker, the claimed peer, the unready unit member, or an unresolvable reference — normalized to the key it would have had, never the declaration's raw text) when it names one, and `text` the sentence `reasons` has always carried. `reasons` is the projection `holds.map((h) => h.text)`, so a consumer that renders prose reads exactly what it did before, and one that groups or filters holds by cause matches no prose at all.
 
 ### Asking ONE question about ONE issue
 

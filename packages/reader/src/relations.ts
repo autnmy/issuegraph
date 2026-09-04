@@ -162,9 +162,10 @@ export type ModelNode = NodeInput | DeclarerOnlyNode;
  * cannot drift.
  *
  * READ OFF `baseHolds`, NOT INVENTED. Each code is one `push` site there, in
- * the order the checks run, and `relations.test.ts` asserts the set this module
- * emits equals this tuple — so a new refusal without a code here fails a test
- * rather than shipping as prose only.
+ * the order the checks run. A new refusal must name a member of this tuple to
+ * typecheck, and `relations.test.ts` holds a per-code fixture table whose codes
+ * must equal this tuple — so a code added here without a fixture, or a fixture
+ * without a code, fails a test rather than shipping as prose only.
  */
 export const READINESS_HOLD_CODES = Object.freeze([
   'weak-source',
@@ -192,10 +193,14 @@ export type ReadinessHoldCode = (typeof READINESS_HOLD_CODES)[number];
  * `code` is what a consumer groups and filters on instead of matching that
  * sentence, and `subject` is the issue the cause names, when it names one: the
  * open blocker, the claimed serialize peer, the unready unit member, or an
- * unresolvable reference EXACTLY AS THE DECLARATION SPELLED IT (there is no
- * node to canonicalize it to — that is what unresolvable means). Absent, not
- * empty, for a cause about the node itself (`closed`, `duplicate`, the two
- * under-read refusals of its own declaration, `weak-source`, `unknown-node`).
+ * unresolvable reference. ALWAYS THE MODEL'S KEY FOR IT — `keyForRef`'s
+ * spelling, the one `Model.keys` and every `ViewerIssue.key` use — never the
+ * declaration's raw text: an unresolvable ref has no node to canonicalize
+ * THROUGH (no `duplicate-of` to follow), but it is still normalized to the key
+ * it would have had, so a consumer compares subjects to keys and nothing else.
+ * Absent, not empty, for a cause about the node itself (`closed`, `duplicate`,
+ * the two under-read refusals of its own declaration, `weak-source`,
+ * `unknown-node`).
  *
  * The subject is the half that turns a hold into a deep link: every held unit
  * whose holder is not among its drawn members — an ordinary blocker, a
@@ -1054,7 +1059,7 @@ export function resolveSerializeGroup(
  * open serialize PEER carrying an assignee does.
  *
  * An unknown key is refused rather than admitted, like every other ambiguity
- * here: `{ ready: false, reasons: ['unknown node'] }`.
+ * here: `UNKNOWN_NODE_READINESS`, whose one hold is `unknown-node`.
  */
 export function evaluateReadiness(
   nodes: readonly NodeInput[],
