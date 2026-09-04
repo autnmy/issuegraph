@@ -161,8 +161,9 @@ export type ModelNode = NodeInput | DeclarerOnlyNode;
  * rather than restate it; `ReadinessHoldCode` is derived from it so the two
  * cannot drift.
  *
- * READ OFF `baseHolds`, NOT INVENTED. Each code is one `push` site there, in
- * the order the checks run. A new refusal must name a member of this tuple to
+ * READ OFF THE EMITTING SITES, NOT INVENTED. Each code is one `push` site, in
+ * the order a result's `holds` can carry them: `baseHolds`' own checks first,
+ * then the unit conjunction `readiness` appends after them. A new refusal must name a member of this tuple to
  * typecheck, and `relations.test.ts` holds a per-code fixture table whose codes
  * must equal this tuple — so a code added here without a fixture, or a fixture
  * without a code, fails a test rather than shipping as prose only.
@@ -177,9 +178,9 @@ export const READINESS_HOLD_CODES = Object.freeze([
   'blocked-by-unresolvable',
   'relation-unresolvable',
   'together-under-read',
-  'together-member-unready',
   'serialize-under-read',
   'serialize-claimed',
+  'together-member-unready',
   'unknown-node',
 ] as const);
 
