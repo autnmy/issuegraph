@@ -95,11 +95,56 @@ export interface Model {
    * Closed nodes report their declared priority unchanged.
    */
   readonly effectivePriority: (key: string) => number;
+  /**
+   * The OPEN nodes that inherit `key`'s priority under §6.3, as sorted
+   * canonical keys, excluding the key itself: the transitive closure over the
+   * SAME relation `effectivePriority` relaxes — open `blocked-by` targets and
+   * the other members of the together unit — so the two cannot disagree about
+   * which nodes carry a key's urgency.
+   *
+   * It answers "this candidate is unready — what should the tier work
+   * instead?", and it is a CLOSURE rather than a one-hop neighbourhood on
+   * purpose: a one-hop answer offers the tier a blocker that is itself
+   * unready and stops there, so the tier advances past the work that actually
+   * inherits the urgency. Two prose derivations of this set were each short in
+   * a different place.
+   *
+   * DECLARER-ONLY NODES ARE TRAVERSED THROUGH BUT NEVER RETURNED, and
+   * DUPLICATES ARE NEVER RETURNED, on `keys`' and `readiness`' own tests: this
+   * set names work a scheduler may pick up, and neither kind is that. Serialize
+   * edges are NOT walked — §6.7 makes them a sequencing constraint, not a
+   * relaxation.
+   *
+   * Empty for a key the model does not hold, and equally for one that nothing
+   * inherits from — including any CLOSED key, which propagates no urgency.
+   * Conflating unknown with empty is safe HERE, unlike in `readiness`, because
+   * both genuinely mean "this model has no alternative work to offer".
+   */
+  readonly priorityInheritors: (key: string) => readonly string[];
   readonly readiness: (key: string) => ReadinessResult;
   /** Serialize component (§4.3.4) containing the key, as sorted keys. */
   readonly serializeComponent: (key: string) => readonly string[];
   /** Together component (§4.3.7) containing the key, as sorted keys. */
   readonly togetherComponent: (key: string) => readonly string[];
+  /**
+   * Whether this key's serialize component reaches PAST THE CALLER'S HORIZON —
+   * some member declared a `serialize-with` this node set could not resolve,
+   * so the component's true extent is unknown.
+   *
+   * NOT FOLDED INTO {@link readiness}, and that separation is the point. §6.7
+   * is explicit that "unresolvable `serialize-with` references contribute no
+   * linkage but are likewise surfaced" — unlike `blocked-by`, which blocks —
+   * so a reader that refused on this would be inventing a rule the spec does
+   * not have. The refusal is still real; it belongs to a CONSUMER that fetches
+   * a partial neighbourhood and knows its own traversal depth, and can compose
+   * it with readiness the way §6.8 composes eligibility. This model cannot,
+   * because it cannot tell "not fetched yet" from "does not exist".
+   *
+   * Reports a MEMBER's truncation, not only the key's own declaration: the
+   * unknown extent belongs to the component, so every known member is
+   * affected. False for a key the model does not hold.
+   */
+  readonly serializeHorizonTruncated: (key: string) => boolean;
   /** Transitive duplicate-of canonical, or null when the node is canonical. */
   readonly duplicateCanonical: (key: string) => string | null;
   /** blocked-by cycles among open nodes (§6.6), each as sorted keys. */
@@ -169,6 +214,7 @@ export function buildModel(
     together,
     componentMembers,
     readiness,
+    unresolvedSerializeDeclarers,
   } = relations;
   /**
    * DIAGNOSTIC ORDER IS PRESERVED ACROSS THE EXTRACTION, and it takes three
@@ -223,12 +269,53 @@ export function buildModel(
   // stall.
   const effective = new Map<string, number>();
   for (const [k] of byKey) effective.set(k, (declared.get(k) as DeclaredPriority).value);
+
+  // THE §6.3 RELAXATION RELATION, DEFINED ONCE. The open nodes that inherit
+  // `k`'s priority in one step: its open `blocked-by` targets, and the other
+  // members of its together component.
+  //
+  // Its whole job is to have exactly ONE definition. Both the fold below and
+  // `priorityInheritorsOf` further down are §6.3 walks over the same edges, and
+  // if each stated the relation itself the second could silently keep
+  // returning the old closure after a change to the first — the very drift the
+  // accessor exists to remove, reintroduced one level down. Adding, removing
+  // or re-guarding an edge is a change here, and both walks follow.
+  //
+  // The `open` filter on the blocked-by arm is the fold's own: a closed blocker
+  // keeps its declared value. There is NO CLOSED-MEMBER GUARD on the together
+  // arm, and its absence is the point rather than an omission: the union
+  // admits a together edge only when BOTH endpoints are open, so a closed node
+  // is never in another node's component and an open node's component is open
+  // throughout. A guard here would be a second statement of that rule which no
+  // input can reach — a mutation probe that deleted it broke nothing — and a
+  // defence nothing can falsify reads as evidence that its population exists.
+  // The rule lives at the union. The relation is only ever asked about an OPEN
+  // key (both callers test that first), which is what keeps "yields only open
+  // nodes" true without a guard.
+  const relaxationSuccessors = (k: string): string[] => {
+    const out: string[] = [];
+    for (const blocker of blockersOf.get(k) ?? []) {
+      const blockerNode = byKey.get(blocker) as ModelNode;
+      if (!blockerNode.open) continue;
+      out.push(blocker);
+    }
+    // A together unit is ONE unit of work, so its members share the highest
+    // priority among them. Symmetric, unlike the blocked-by arm: no member is
+    // upstream of another, so the relaxation runs in both directions and the
+    // worklist settles the component on its minimum.
+    for (const member of componentMembers(together, k)) {
+      if (member !== k) out.push(member);
+    }
+    return out;
+  };
+
   // Two relaxations, run in ONE worklist rather than in sequence, because each
   // feeds the other: §6.3 says both that importance flows backward along
   // blocking edges and that "a together group's effective priority is the
   // highest over its members". A P0 together with a P3 raises the P3 member,
   // and that member's own blockers must then inherit the unit's urgency —
-  // which a blocked-by pass that had already finished would never see.
+  // which a blocked-by pass that had already finished would never see. The
+  // relation above yields both kinds of successor, so one loop covers both.
   //
   // Values only ever decrease and are bounded below by 0, so this terminates on
   // any graph, cycles included, whichever edge did the lowering.
@@ -238,34 +325,64 @@ export function buildModel(
     const node = byKey.get(k) as ModelNode;
     if (!node.open) continue; // closed dependents do not propagate urgency
     const ep = effective.get(k) as number;
-    for (const blocker of blockersOf.get(k) ?? []) {
-      const blockerNode = byKey.get(blocker) as ModelNode;
-      if (!blockerNode.open) continue; // closed blockers keep their declared value
-      if ((effective.get(blocker) as number) > ep) {
-        effective.set(blocker, ep);
-        work.push(blocker);
-      }
-    }
-    // A together unit is ONE unit of work, so its members share the highest
-    // priority among them. Symmetric, unlike the blocked-by arm: no member is
-    // upstream of another, so the relaxation runs in both directions and the
-    // worklist settles the component on its minimum.
-    //
-    // NO CLOSED-MEMBER GUARD HERE, and its absence is the point rather than an
-    // omission: the union above admits a together edge only when BOTH endpoints
-    // are open, so a closed node is never in another node's component and an
-    // open node's component is open throughout. A guard here would be a second
-    // statement of that rule which no input can reach — a mutation probe that
-    // deleted it broke nothing — and a defence nothing can falsify reads as
-    // evidence that its population exists. The rule lives at the union.
-    for (const member of componentMembers(together, k)) {
-      if (member === k) continue;
-      if ((effective.get(member) as number) > ep) {
-        effective.set(member, ep);
-        work.push(member);
+    for (const next of relaxationSuccessors(k)) {
+      if ((effective.get(next) as number) > ep) {
+        effective.set(next, ep);
+        work.push(next);
       }
     }
   }
+
+  // ---- priority inheritors (§6.3), the SAME relation the fold above relaxes ----
+  // It consumes `relaxationSuccessors`, the one definition the fold consumes
+  // too, so a change to what §6.3 relaxes over reaches both walks or neither.
+  //
+  // TRANSITIVE, via a worklist, for the same reason the fold is: relaxation
+  // re-enqueues, so urgency reaches down a chain of any length. A one-hop
+  // answer offers the tier a node that is itself unready and stops there.
+  //
+  // Terminates on any graph including §6.6 cycles: `seen` admits each key once,
+  // so the work list is bounded by the node count. A cycle's members surface as
+  // one another's inheritors, which is what the fold does too — they settle on
+  // a shared minimum, and every one of them is real work the tier may take.
+  const priorityInheritorsOf = (key: string): string[] => {
+    const start = byKey.get(key);
+    // A closed node propagates nothing (the fold's `if (!node.open) continue`),
+    // and an unheld key has no edges to walk. Both answer empty.
+    if (start === undefined || !start.open) return [];
+    const seen = new Set<string>([key]);
+    const pending: string[] = [key];
+    const inheritors: string[] = [];
+    // ADMISSION IS NOT DECIDED HERE — `relaxationSuccessors` owns it. What is
+    // left is the EMISSION rule, which is this walk's alone: the fold relaxes
+    // through node kinds a scheduler may not be handed, so traversal and
+    // emission genuinely differ and only the second belongs here.
+    //
+    // THE DUPLICATE TEST IS `readiness`' OWN, not a second opinion about what a
+    // duplicate is: it refuses a node on `duplicateCanonicalOf(k) !== null`, so
+    // reusing that predicate makes this set agree with readiness by
+    // construction. `targetKey` normalizes an ordinary ref to its canonical
+    // before the edge is ever recorded, so on a resolvable chain no duplicate
+    // reaches here at all — but a chain that CYCLES or leaves the node set has
+    // no canonical, and `duplicateCanonicalOf` then answers with another
+    // still-duplicate key. `10 blocked-by 1`, `1 duplicate-of 2`,
+    // `2 duplicate-of 1` would return `["2"]` without this: one alternative,
+    // permanently unready, and the only thing the tier was offered. Emitting it
+    // is worse than emitting nothing, because it reads as work that exists.
+    while (pending.length > 0) {
+      const k = pending.pop() as string;
+      for (const next of relaxationSuccessors(k)) {
+        if (seen.has(next)) continue;
+        seen.add(next);
+        pending.push(next);
+        const node = byKey.get(next);
+        if (node !== undefined && node.declarerOnly !== true && duplicateCanonicalOf(next) === null) {
+          inheritors.push(next);
+        }
+      }
+    }
+    return inheritors.sort();
+  };
 
 
   // ---- cycles among open nodes (§6.6), over SCHEDULABLE UNITS ----
@@ -409,6 +526,12 @@ export function buildModel(
   for (const k of byKey.keys()) canonicalMap.set(k, duplicateCanonicalOf(k));
   const readinessMap = new Map<string, ReadinessResult>();
   for (const k of byKey.keys()) readinessMap.set(k, readiness(k));
+  // The serialize components that reach past the horizon, keyed by union-find
+  // root. One `find` per declarer here, one per ask below — a consumer that
+  // composes the horizon policy for every candidate in a large component would
+  // otherwise rescan that component once per member (raised in review).
+  const truncatedSerializeRoots = new Set<string>();
+  for (const k of unresolvedSerializeDeclarers) truncatedSerializeRoots.add(serialize.find(k));
   // The tail `relations.diagnostics` grew while the eager passes above ran —
   // the §5.3 non-completed-closure surfaces readiness emits.
   const readinessDiagnostics = diagnostics.slice(edgeDiagnostics.length);
@@ -432,9 +555,16 @@ export function buildModel(
         disagreement: false,
       },
     effectivePriority: (key) => effective.get(key) ?? DEFAULT_PRIORITY,
+    priorityInheritors: (key) => priorityInheritorsOf(key),
     readiness: (key) => readinessMap.get(key) ?? { ready: false, reasons: ['unknown node'] },
     serializeComponent: (key) => (byKey.has(key) ? componentMembers(serialize, key) : []),
     togetherComponent: (key) => (byKey.has(key) ? componentMembers(together, key) : []),
+    // Widened from the declarer to its whole serialize component by ROOT: the
+    // fact belongs to the component, so every member's answer is the same, and
+    // the set of truncated roots above is what makes each ask a single find
+    // rather than a rescan of the component. `byKey.has` first, so an unknown
+    // key reads false rather than being assigned a root it never had.
+    serializeHorizonTruncated: (key) => byKey.has(key) && truncatedSerializeRoots.has(serialize.find(key)),
     duplicateCanonical: (key) => canonicalMap.get(key) ?? null,
     cycles,
     diagnostics: uniqueDiagnostics,

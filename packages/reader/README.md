@@ -95,7 +95,9 @@ const model = buildModel(
 
 model.readiness('231');          // { ready: false, reasons: ['blocked-by 230 is open'] }
 model.effectivePriority('230');  // a P3 blocking a P0 comes back 0
+model.priorityInheritors('230'); // the OPEN nodes that inherit 230's urgency — what to work when 230 is unready
 model.serializeComponent('231'); // the computed group — groups are never written down
+model.serializeHorizonTruncated('231'); // a member's serialize-with left the node set, so the group's extent is unknown
 model.duplicateCanonical('240'); // where a duplicate-of chain lands
 model.cycles;                    // blocked-by cycles among open nodes
 model.diagnostics;               // unresolvable refs, carrier disagreements, dead chains

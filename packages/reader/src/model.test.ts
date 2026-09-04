@@ -1052,3 +1052,318 @@ describe("under-read declarations", () => {
     assert.equal(m.effectivePriority("1"), 0);
   });
 });
+
+describe("priorityInheritors (SPEC 6.3) — the closure, not a neighbourhood", () => {
+  // The set every consumer of effective priority used to re-derive by hand, and
+  // got wrong twice in two different ways. Each test below names the shape that
+  // a short answer misses, so a probe narrowing the walk fails by name rather
+  // than by an aggregate count.
+
+  test("reaches a blocker across a together edge", () => {
+    // A together-with B, B blocked-by C. A's OWN blocked-by list is empty, so a
+    // derivation reading only that reports "A is unready and there is nothing
+    // to work instead" — and the tier advances past C, which is the priority
+    // inversion the set exists to prevent.
+    const m = buildModel([
+      node(1, { labels: ["p0"], data: { togetherWith: ref(2) } }),
+      node(2, { data: { blockedBy: [ref(3)] } }),
+      node(3, { labels: ["p3"] }),
+    ]);
+    assert.deepEqual(m.priorityInheritors("1"), ["2", "3"]);
+    assert.equal(m.effectivePriority("3"), 0); // the fold agrees: 3 really does inherit
+  });
+
+  test("reaches every hop of a blocked-by chain, not just the first", () => {
+    // A blocked-by B blocked-by C. A one-hop walk returns only B — which is
+    // itself unready — so the tier is handed nothing selectable and can still
+    // advance past C.
+    const m = buildModel([
+      node(1, { labels: ["p0"], data: { blockedBy: [ref(2)] } }),
+      node(2, { data: { blockedBy: [ref(3)] } }),
+      node(3, { labels: ["p3"] }),
+    ]);
+    assert.deepEqual(m.priorityInheritors("1"), ["2", "3"]);
+    assert.equal(m.effectivePriority("3"), 0);
+  });
+
+  test("composes the two: a chain hanging off a together partner", () => {
+    const m = buildModel([
+      node(1, { labels: ["p0"], data: { togetherWith: ref(2) } }),
+      node(2, { data: { blockedBy: [ref(3)] } }),
+      node(3, { data: { blockedBy: [ref(4)] } }),
+      node(4, { labels: ["p3"] }),
+    ]);
+    assert.deepEqual(m.priorityInheritors("1"), ["2", "3", "4"]);
+    assert.equal(m.effectivePriority("4"), 0);
+  });
+
+  test("stops at a closed node instead of propagating through it", () => {
+    // The fold refuses to relax through a closed node, so the inheritor set
+    // must refuse the same edge: #3 sits behind a finished #2 and does not
+    // inherit. A walk that ignored `open` would offer the tier work that is
+    // not on the critical path at all.
+    const m = buildModel([
+      node(1, { labels: ["p0"], data: { blockedBy: [ref(2)] } }),
+      node(2, { open: false, closedStateReason: "completed", data: { blockedBy: [ref(3)] } }),
+      node(3, { labels: ["p3"] }),
+    ]);
+    assert.deepEqual(m.priorityInheritors("1"), []);
+    assert.equal(m.effectivePriority("3"), 3);
+  });
+
+  test("a closed key inherits nothing to anyone", () => {
+    const m = buildModel([
+      node(1, { labels: ["p0"], open: false, closedStateReason: "completed", data: { blockedBy: [ref(2)] } }),
+      node(2, { labels: ["p3"] }),
+    ]);
+    assert.deepEqual(m.priorityInheritors("1"), []);
+  });
+
+  test("terminates on a blocked-by cycle and reports its members", () => {
+    const m = buildModel([
+      node(1, { labels: ["p1"], data: { blockedBy: [ref(2)] } }),
+      node(2, { data: { blockedBy: [ref(1)] } }),
+    ]);
+    assert.deepEqual(m.priorityInheritors("1"), ["2"]);
+    assert.deepEqual(m.priorityInheritors("2"), ["1"]);
+  });
+
+  test("traverses THROUGH a declarer-only node but never returns one", () => {
+    // Both halves in one fixture, because they fail in opposite directions and
+    // a test asserting only one passes while the other is broken. #2 is weak:
+    // it must be absent from the result (a weak node may never arrive by
+    // enumeration), and #3 behind it must still be present (the fold walks
+    // through #2, so stopping there would hide real work).
+    //
+    // THE EDGE RUNS THROUGH `together`, AND IT HAS TO. A weak node is never
+    // `referenceable`, so nothing can name it as a blocked-by target — a
+    // fixture pointing #1's `blocked-by` at #2 exercises the UNRESOLVABLE-ref
+    // path instead and passes for the wrong reason. What a weak node CAN do is
+    // declare its own `together-with` at a strong node, which unions it into
+    // that node's component: the declarer needs no referenceability, only the
+    // target does. That is the one way a weak node lands on a strong node's
+    // relaxation path, and it is therefore the only shape that tests this rule.
+    const m = buildModel([node(1, { labels: ["p0"] }), node(3, { labels: ["p3"] })], {
+      declarerOnlyNodes: [declarerOnlyNode(node(2, { data: { togetherWith: ref(1), blockedBy: [ref(3)] } }))],
+    });
+    assert.deepEqual(m.priorityInheritors("1"), ["3"]);
+    // Two controls, so neither half can pass vacuously: #2 really is unioned
+    // into #1's component (it was filtered, not unreached), and the fold really
+    // does carry #1's urgency through it to #3.
+    assert.deepEqual(m.togetherComponent("1"), ["1", "2"]);
+    assert.equal(m.effectivePriority("3"), 0);
+  });
+
+  test("does not widen to serialize edges (SPEC 6.7)", () => {
+    // The fold does not relax over serialize, so neither does this. A sibling
+    // in the same serialize component is a sequencing constraint, not work that
+    // inherits the key's urgency.
+    const m = buildModel([
+      node(1, { labels: ["p0"], data: { serializeWith: ref(2) } }),
+      node(2, { labels: ["p3"] }),
+    ]);
+    assert.deepEqual(m.priorityInheritors("1"), []);
+    assert.deepEqual(m.serializeComponent("1"), ["1", "2"]);
+  });
+
+  test("offers a duplicate's CANONICAL, never the duplicate itself (SPEC 4.3.3)", () => {
+    // The set names work a tier may take, and a duplicate is the one thing
+    // nobody may work. Refs normalize through the duplicate closure before they
+    // reach `blockersOf`, so this is inherited rather than re-decided here —
+    // which is exactly why it is worth pinning: a future walk that read raw
+    // refs instead would start handing out unworkable issues silently.
+    const m = buildModel([
+      node(1, { labels: ["p0"], data: { blockedBy: [ref(2)] } }),
+      node(2, { data: { duplicateOf: ref(3) } }),
+      node(3, { labels: ["p3"] }),
+    ]);
+    assert.deepEqual(m.priorityInheritors("1"), ["3"]);
+    assert.equal(m.duplicateCanonical("2"), "3");
+  });
+
+  test("emits nothing for a duplicate-of CYCLE, which has no canonical to offer", () => {
+    // The case the normalization above does NOT cover, and the reason the walk
+    // needs its own duplicate test rather than trusting the edge loop. A cycle
+    // has no canonical, so the closure answers with another still-duplicate
+    // key and the ref normalizes to a node that permanently fails readiness.
+    // Without the guard this returns ["2"] — one alternative, and the only one
+    // the tier was offered, which reads as work that exists.
+    const m = buildModel([
+      node(10, { labels: ["p0"], data: { blockedBy: [ref(1)] } }),
+      node(1, { data: { duplicateOf: ref(2) } }),
+      node(2, { data: { duplicateOf: ref(1) } }),
+    ]);
+    assert.deepEqual(m.priorityInheritors("10"), []);
+    // The controls: the edge really did resolve to a duplicate, and that node
+    // really is unworkable — so the empty answer is a refusal, not a miss.
+    assert.equal(m.duplicateCanonical("2"), "1");
+    assert.equal(m.readiness("2").ready, false);
+  });
+
+  test("emits nothing for a SELF duplicate-of", () => {
+    const m = buildModel([
+      node(10, { labels: ["p0"], data: { blockedBy: [ref(1)] } }),
+      node(1, { data: { duplicateOf: ref(1) } }),
+    ]);
+    assert.deepEqual(m.priorityInheritors("10"), []);
+    assert.equal(m.readiness("1").ready, false);
+  });
+
+  test("emits nothing for a duplicate-of chain that LEAVES the node set", () => {
+    // PINNED FOR THE OUTCOME, NOT FOR THE GUARD — and saying so is the point,
+    // because this passes with the duplicate guard removed. #1 normalizes to
+    // #999, which is not in the node set, so the edge is dropped as an
+    // unresolvable blocked-by long before the walk runs. Different mechanism,
+    // same requirement: the tier is never handed a target nobody can work.
+    const m = buildModel([
+      node(10, { labels: ["p0"], data: { blockedBy: [ref(1)] } }),
+      node(1, { data: { duplicateOf: ref(999) } }),
+    ]);
+    assert.deepEqual(m.priorityInheritors("10"), []);
+    assert.equal(m.readiness("1").ready, false);
+  });
+
+  test("answers empty for a key the model does not hold", () => {
+    const m = buildModel([node(1, { labels: ["p0"] })]);
+    assert.deepEqual(m.priorityInheritors("999"), []);
+    assert.deepEqual(m.priorityInheritors("1"), []);
+  });
+
+  test("never includes the key itself, even inside a together component", () => {
+    const m = buildModel([
+      node(1, { labels: ["p0"], data: { togetherWith: ref(2) } }),
+      node(2, { labels: ["p3"] }),
+    ]);
+    assert.deepEqual(m.priorityInheritors("1"), ["2"]);
+    assert.deepEqual(m.priorityInheritors("2"), ["1"]);
+  });
+
+  test("the fold and the walk agree on cross-repo keys", () => {
+    // The relation is defined once, so a qualified blocker inherits under the
+    // same key the fold relaxed it under.
+    const m = buildModel(
+      [
+        node(1, { labels: ["p0"], data: { blockedBy: [ref(7, "other/repo")] } }),
+        node(7, { repo: "other/repo", labels: ["p3"] }),
+      ],
+      { homeRepo: "home/repo" },
+    );
+    assert.deepEqual(m.priorityInheritors("1"), ["other/repo#7"]);
+    assert.equal(m.effectivePriority("other/repo#7"), 0);
+  });
+});
+
+describe("serializeHorizonTruncated — an unresolvable serialize-with is EXPOSED, not refused (SPEC 6.7)", () => {
+  test("reports the truncation for every KNOWN member of the component", () => {
+    // The reader states the fact; a consumer that owns its horizon composes the
+    // refusal (§6.8 shape). Every known member reports it, because the unknown
+    // extent belongs to the component.
+    const m = buildModel([
+      node(1, { data: { serializeWith: ref(40) } }),
+      node(2, { data: { serializeWith: ref(1) } }),
+    ]);
+    assert.equal(m.serializeHorizonTruncated("1"), true);
+    assert.equal(m.serializeHorizonTruncated("2"), true);
+    // ...and readiness stays clean, which is the whole §6.7 point.
+    assert.equal(m.readiness("1").ready, true);
+    assert.equal(m.readiness("2").ready, true);
+  });
+
+  test("is still SURFACED as a diagnostic — no linkage is not no diagnostic", () => {
+    const m = buildModel([node(1, { data: { serializeWith: ref(40) } })]);
+    assert.ok(m.diagnostics.some((d) => d.includes("serialize-with 40 is unresolvable")));
+  });
+
+  test("does not report a truncation that is not there — the over-shoot probe", () => {
+    // A fully resolvable component, and an UNRELATED unresolvable link, must
+    // both read false: a predicate that is true everywhere would restore the
+    // old blanket refusal at the consumer instead of at the reader.
+    const resolvable = buildModel([node(1, { data: { serializeWith: ref(2) } }), node(2)]);
+    assert.equal(resolvable.serializeHorizonTruncated("1"), false);
+    assert.equal(resolvable.serializeHorizonTruncated("2"), false);
+
+    // An unresolvable TOGETHER link is not a serialize-horizon fact.
+    const togetherOnly = buildModel([
+      node(1, { data: { togetherWith: ref(40), serializeWith: ref(2) } }),
+      node(2),
+    ]);
+    assert.equal(togetherOnly.serializeHorizonTruncated("2"), false);
+
+    // And an unresolvable BLOCKED-BY is not one either — it already blocks.
+    const blocked = buildModel([node(1, { data: { blockedBy: [ref(40)], serializeWith: ref(2) } }), node(2)]);
+    assert.equal(blocked.serializeHorizonTruncated("2"), false);
+  });
+
+  test("a declarer-only target does not resolve the edge, so the declarer is truncated", () => {
+    // The weakest tier declares, it never answers — an edge at a weak node is
+    // as unresolved as one at nothing, and the horizon report has to say so.
+    const m = buildModel([node(1, { data: { serializeWith: ref(40) } })], {
+      declarerOnlyNodes: [declarerOnlyNode(node(40))],
+    });
+    assert.equal(m.serializeHorizonTruncated("1"), true);
+  });
+
+  test("a duplicate declarer's unresolvable serialize-with contributes nothing", () => {
+    // A duplicate declares no relationship edges (§4.3.3), so its dangling
+    // `serialize-with` is not a truncation of anyone's component either.
+    const m = buildModel([
+      node(1, { data: { duplicateOf: ref(2), serializeWith: ref(40) } }),
+      node(2, { data: { serializeWith: ref(3) } }),
+      node(3),
+    ]);
+    assert.equal(m.serializeHorizonTruncated("2"), false);
+    assert.equal(m.serializeHorizonTruncated("3"), false);
+  });
+
+  test("answers false for a key the model does not hold", () => {
+    const m = buildModel([node(1, { data: { serializeWith: ref(40) } })]);
+    assert.equal(m.serializeHorizonTruncated("999"), false);
+  });
+});
+
+describe("decomposed-from provenance the node set cannot resolve", () => {
+  test("diagnoses an origin the set does not hold", () => {
+    const m = buildModel([node(1, { data: { decomposedFrom: ref(99) } })]);
+    assert.ok(m.diagnostics.some((d) => d.includes("decomposed-from 99 is unresolvable")));
+    assert.ok(m.diagnostics.some((d) => d.includes("provenance only, so no readiness effect")));
+  });
+
+  test("says nothing when the origin IS in the set", () => {
+    const m = buildModel([node(1, { data: { decomposedFrom: ref(2) } }), node(2)]);
+    assert.equal(m.diagnostics.some((d) => d.includes("decomposed-from")), false);
+  });
+
+  test("has NO readiness effect — provenance is not a scheduling edge", () => {
+    // The whole reason this stays a diagnostic. Routing it through the refusal
+    // ledger would start refusing declarers over a field that has never gated
+    // anything, turning a report into a behaviour change.
+    const m = buildModel([node(1, { data: { decomposedFrom: ref(99) } })]);
+    assert.deepEqual(m.readiness("1"), { ready: true, reasons: [] });
+  });
+
+  test("does not resolve against the declarer-only tier", () => {
+    // Same rule the other four ref sites follow: the weakest tier declares, it
+    // never answers.
+    const m = buildModel([node(1, { data: { decomposedFrom: ref(40) } })], {
+      declarerOnlyNodes: [declarerOnlyNode(node(40))],
+    });
+    assert.ok(m.diagnostics.some((d) => d.includes("decomposed-from 40 is unresolvable")));
+  });
+
+  test("resolves a bare ref against the declarer's own repo", () => {
+    // A cross-repo node's bare `decomposed-from: 5` names ITS repo's #5, not
+    // the home repo's — the same source-repo rule every other ref follows.
+    const m = buildModel(
+      [node(1, { repo: "other/repo", data: { decomposedFrom: ref(5) } }), node(5)],
+      { homeRepo: "home/repo" },
+    );
+    assert.ok(m.diagnostics.some((d) => d.includes("decomposed-from other/repo#5 is unresolvable")));
+  });
+
+  test("a duplicate declarer emits no provenance diagnostic", () => {
+    // A duplicate's declaration is ignored in favour of its canonical
+    // (§4.3.3), provenance included.
+    const m = buildModel([node(1, { data: { duplicateOf: ref(2), decomposedFrom: ref(99) } }), node(2)]);
+    assert.equal(m.diagnostics.some((d) => d.includes("decomposed-from")), false);
+  });
+});
