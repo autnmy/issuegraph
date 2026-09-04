@@ -448,6 +448,25 @@ describe('mountWorkspace', () => {
     });
   });
 
+  describe('the one selection is the workspace’s, not the store’s', () => {
+    it('draws no halo for an edge the host selected on the store, and one halo for the workspace’s own', async () => {
+      const edge = makeEdge('blocked-by', '1', '2');
+      page.store.select([edge.id]);
+      await flush();
+      assert.equal(page.element.querySelector('[data-zone="canvas"] [data-ig-state]'), null, 'a store selection drew a halo');
+      assert.deepEqual(page.handle.state.selection, { kind: 'none' });
+
+      const mark = page.element.querySelector<HTMLElement>(`[data-ig-group="${edge.id}"]`);
+      assert.ok(mark !== null);
+      page.click(mark);
+      await flush();
+      const halos = [...page.element.querySelectorAll('[data-zone="canvas"] path.ig-edge[data-ig-state]')].map((path) =>
+        path.getAttribute('data-ig-state'),
+      );
+      assert.deepEqual(halos, ['selected']);
+    });
+  });
+
   describe('the handle', () => {
     it('dispatch hands the reducer a command from the host’s own chrome', async () => {
       page.handle.dispatch({ kind: 'point', key: '4' });

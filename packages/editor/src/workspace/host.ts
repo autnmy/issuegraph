@@ -182,6 +182,12 @@ function controlled(
     // --- the package's own commands ---
     case 'select-edge':
       return target === undefined ? settled(state) : selectEdge(state, target);
+    case 'select-issue':
+      // THE HOLDER DEEP LINK. The inspector publishes a hold's subject — the
+      // open blocker, the claimed peer — as this control, so a reader can reach
+      // the issue holding the one they are looking at. It is a pointer on that
+      // issue, with a pointer's rules: a selection, or the target of a draft.
+      return target === undefined ? settled(state) : pointed(state, target);
     case 'clear':
       return settled({
         ...state,

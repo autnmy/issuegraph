@@ -72,6 +72,19 @@ describe('selection is one value the zones share', () => {
     assert.deepEqual(drive([{ kind: 'group', id: '3' }]).state.selection, { kind: 'issue', key: '3' });
   });
 
+  it('routes the inspector’s select-issue control — a hold’s holder — through the pointer path', () => {
+    const { state } = drive([{ kind: 'control', name: 'select-issue', target: '3' }]);
+    assert.deepEqual(state.selection, { kind: 'issue', key: '3' });
+    const { effects } = drive([
+      { kind: 'point', key: '2' },
+      { kind: 'control', name: 'add' },
+      { kind: 'control', name: 'kind', value: 'blocked-by' },
+      { kind: 'control', name: 'select-issue', target: '3' },
+    ]);
+    assert.deepEqual(effects, [CREATED], 'while a target is wanted, the holder IS the target');
+    assert.deepEqual(drive([{ kind: 'control', name: 'select-issue' }]).state, INITIAL_HOST_STATE);
+  });
+
   it('ignores a group mark naming neither a landed edge nor an issue — a pending edge’s mark', () => {
     // The canvas draws an edge from the moment it is proposed, so its mark
     // is clickable while the landed document does not carry it yet.

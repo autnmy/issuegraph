@@ -499,7 +499,13 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       auditFiltered: state.auditFiltered,
       theme: resolved,
       themeSelector: current.themeSelector,
-      projected: snapshot.projected,
+      // THE WRITE STATES ONLY. The workspace holds the one selection, and the
+      // ladder draws its halo from that; a `selected` the host put on the store
+      // through `store.select()` would draw a second halo the inspector does
+      // not reflect, so it is stripped before the projection reaches the canvas.
+      projected: snapshot.projected.map((edge) =>
+        edge.states.includes('selected') ? { ...edge, states: edge.states.filter((state) => state !== 'selected') } : edge,
+      ),
     });
     const sheet = [result.styles, pickerStylesheet, mountStylesheet].join('\n');
     if (styles.textContent !== sheet) styles.textContent = sheet;
