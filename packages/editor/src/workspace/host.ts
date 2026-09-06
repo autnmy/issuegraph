@@ -217,7 +217,18 @@ function isAnswer(value: string): value is Answer {
  */
 function firstPassed(state: HostState, command: FirstPassCommand): HostResult {
   const outcome = firstPassReducer(state.firstPass, command);
-  const next: HostState = { ...state, firstPass: outcome.state };
+  // OPENING CANCELS A LIVE DRAFT, and it is cancelled HERE — at the one place an
+  // open is applied — rather than in the control arm that parses the attribute.
+  // `handle.dispatch` is public and carries a typed first-pass command straight
+  // past that arm, so a cleanup written there covered the pointer and the
+  // keyboard and not the API. The surface covers the target search and the kind
+  // chooser, and a draft left standing behind it is re-entered on close with the
+  // reader's context gone.
+  const cleared =
+    command.kind === 'open'
+      ? { draft: IDLE_CREATE_DRAFT, targetQuery: '', drop: null }
+      : {};
+  const next: HostState = { ...state, ...cleared, firstPass: outcome.state };
   const effects: HostEffect[] = [];
   if (outcome.scanning !== null) effects.push({ kind: 'find-candidates', scan: outcome.scanning });
   const result: QueueResult | null = outcome.result;
@@ -358,14 +369,7 @@ function controlled(
 
     // --- the first pass ---
     case 'first-pass':
-      // OPENING CANCELS A LIVE DRAFT. The surface covers the target search and
-      // the kind chooser, so a draft left standing behind it would be re-entered
-      // on close with the reader's context gone — and its chrome would be drawn
-      // under an opaque panel in the meantime.
-      return firstPassed(
-        { ...state, draft: IDLE_CREATE_DRAFT, targetQuery: '', drop: null },
-        { kind: 'open' },
-      );
+      return firstPassed(state, { kind: 'open' });
     case 'first-pass-close':
       return firstPassed(state, { kind: 'close' });
     case 'first-pass-answer':
