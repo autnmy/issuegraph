@@ -441,7 +441,14 @@ export function mountViewer(
     // documents: selection "fires onSelect exactly as a click does", and a
     // click moves focus. `:focus-visible` is what keeps the ring off a pointer
     // user, so this costs a mouse reader nothing.
-    if (state.focused !== null) keyed.get(state.focused)?.focus?.();
+    // ONLY WHEN THE SELECTION NAMED A FOCUSABLE SUBJECT. `state.focused` is a
+    // logical tab stop and is never null after the first draw — `reconcile`
+    // seeds it with the first navigable row before anything has DOM focus. So
+    // moving DOM focus to it on a decoration or NOW-row click, where the
+    // selection itself could take no focus, sent focus to an unrelated first
+    // row on the reader's very first click. A pointer on a mark that cannot
+    // take focus moves the selection and nothing else.
+    if (focusable !== null && state.focused !== null) keyed.get(state.focused)?.focus?.();
     // WHAT THE STATE ACTUALLY HOLDS, not what was asked for. `draw()` reconciles
     // the selection against the scene, which canonicalizes a together unit's
     // partner to the station that represents it — so reporting `resolved` here

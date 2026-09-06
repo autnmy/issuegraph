@@ -141,16 +141,33 @@ describe('the host-facts port', () => {
     assert.ok(third !== undefined);
     container.dispatch('click', { target: third });
     assert.equal(handle.state.focused, '103');
-    const focusedBefore = container.find(KEY_ATTRIBUTE, '103')?.focusCount ?? 0;
 
     const now = container.find(GROUP_ATTRIBUTE, '110');
     assert.ok(now !== undefined);
     container.dispatch('click', { target: now });
     assert.equal(handle.state.selected, '110');
     assert.equal(handle.state.focused, '103', 'selecting the NOW row moved the tab stop');
-    // The redraw re-focuses the row the reader was on, never the first row.
+    // AND NO DOM FOCUS MOVES AT ALL: the redraw rebuilt every row, and neither
+    // the first row nor the row the reader was on is focused by a click on a
+    // mark that could take no focus itself.
     assert.equal(container.find(KEY_ATTRIBUTE, '102')?.focusCount ?? 0, 0, 'focus landed on the first row');
-    assert.ok((container.find(KEY_ATTRIBUTE, '103')?.focusCount ?? 0) >= focusedBefore);
+    assert.equal(container.find(KEY_ATTRIBUTE, '103')?.focusCount ?? 0, 0, 'focus was moved by a NOW-row click');
+  });
+
+  it('does not focus the default row when the very first click is a NOW-only issue', () => {
+    // `reconcile` seeds the logical tab stop with the first row before any
+    // element has DOM focus; a first click on the NOW row must not turn that
+    // seed into a real focus move.
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const handle = mountViewer(container, hostedFixtureDocument, {});
+    const now = container.find(GROUP_ATTRIBUTE, '110');
+    assert.ok(now !== undefined);
+    container.dispatch('click', { target: now });
+    assert.equal(handle.state.selected, '110');
+    for (const row of container.descendants()) {
+      assert.equal(row.focusCount, 0, `${row.getAttribute(KEY_ATTRIBUTE) ?? row.tag} took focus`);
+    }
   });
 
   it('serialises the hosted scene the same way from the pure and the mounted paths', () => {
