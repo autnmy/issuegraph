@@ -94,6 +94,19 @@ describe('the host-facts port', () => {
     const graph = renderViewer(hostedFixtureDocument, { projection: 'graph' }).markup;
     assert.match(graph, /data-ig-key="103"[^>]*aria-label="[^"]*preview-only: query 5/);
     assert.match(graph, /data-ig-key="103"[^>]*title="preview-only: query 5/);
+    // AND A NODE THE RAIL DOES NOT LABEL carries it too: a footer (tracker-held)
+    // issue has no rail row, so its canvas node is the only mark the graph draws
+    // for it — the caveat rides that node's name beside the hold reason.
+    const footerCaveat = {
+      ...hostedFixtureDocument,
+      issues: hostedFixtureDocument.issues.map((issue) =>
+        issue.key === '105' ? { ...issue, previewOnly: { note: 'query 2 fell back' } } : issue,
+      ),
+    };
+    const canvas = renderViewer(footerCaveat, { projection: 'graph' }).markup;
+    const node = canvas.match(/<g class="ig-node-group" data-ig-key="105"[^>]*>/)?.[0] ?? '';
+    assert.match(node, /aria-label="[^"]*claimed by another run · preview-only: query 2 fell back/);
+    assert.equal(canvas.includes('data-ig-key="105"') && canvas.indexOf('data-ig-key="105"') === canvas.lastIndexOf('data-ig-key="105"'), true, 'the footer issue was railed after all');
   });
 
   it('labels a tracker hold with the runner word and names the words in the footer title', () => {

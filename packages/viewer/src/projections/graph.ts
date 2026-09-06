@@ -218,12 +218,19 @@ function nodeShape(
   // ONLY FOR A NODE THE RAIL DOES NOT LABEL — a railed slot already carries its
   // reason on its row, and repeating it here would announce the same sentence
   // twice for one slot.
+  // AND THE HOST'S CAVEATS, on the same terms: a gutter or footer node is the
+  // only mark this projection draws for its issue, so a preview-only note or a
+  // disagreement that the linear and tree rows print would otherwise be absent
+  // from the graph entirely for exactly the issues that have no rail row.
+  const caveats = navigable.railed.has(key) ? '' : caveatText(issue);
   const heldBecause = navigable.railed.has(key)
     ? ''
-    : document.order.slots
-        .filter((slot) => slot.lead === key || slot.members.includes(key))
-        .flatMap((slot) => slot.holds.map((hold) => hold.reason))
-        .join(' · ');
+    : [
+        ...document.order.slots
+          .filter((slot) => slot.lead === key || slot.members.includes(key))
+          .flatMap((slot) => slot.holds.map((hold) => hold.reason)),
+        ...(caveats === '' ? [] : [caveats]),
+      ].join(' · ');
 
   // THE POINTER MUST NOT NAME AN IDENTITY THE KEYBOARD CANNOT REACH. A together
   // unit is ONE station with one focus key, so its non-lead members are absent
