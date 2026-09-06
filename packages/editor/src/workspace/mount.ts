@@ -461,11 +461,27 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         if (proposal.op === 'create') {
           const id = edgeIdentity(proposal.kind, proposal.from, proposal.to);
           const snapshot = store.getSnapshot();
-          const there = snapshot.landed.some((edge) => edge.id === id);
-          const coming = snapshot.projected.some(
-            (edge) => edge.id === id && edge.states.includes('pending-write'),
+          // ASKED OF THE OPERATIONS, not of the edge's marks. A pending DELETE
+          // marks its edge `pending-write` too (`store/src/write.ts` leaves a
+          // pending delete visible and marked), so reading that mark as "a
+          // create is on its way" suppressed a consent while the relationship
+          // was on its way OUT — and if the delete then landed, the reader's
+          // answer had written nothing, shown nothing, and was already decided.
+          const pending = snapshot.writes.filter((write) => write.state === 'pending');
+          const creating = pending.some(
+            (write) =>
+              write.mutation.op === 'create' &&
+              edgeIdentity(write.mutation.kind, write.mutation.from, write.mutation.to) === id,
           );
-          if (there || coming) return;
+          const deleting = pending.some(
+            (write) => write.mutation.op === 'delete' && write.mutation.edgeId === id,
+          );
+          // THERE, AND NOT ON ITS WAY OUT. A landed edge under a pending delete
+          // is a relationship the reader may be about to lose, so their consent
+          // goes to the store and is adjudicated there — visible either way,
+          // which is the whole difference this guard has to preserve.
+          const there = snapshot.landed.some((edge) => edge.id === id) && !deleting;
+          if (there || creating) return;
         }
         const handle = store.propose(effect.proposal);
         appliedWrites.set(effect.candidateId, handle.mutationId);

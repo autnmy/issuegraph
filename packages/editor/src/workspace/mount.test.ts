@@ -1607,6 +1607,44 @@ describe('the first pass, composed behind §17a’s entry', () => {
     }
   });
 
+  it('does not treat a relationship on its way out as one already there', async () => {
+    // A pending DELETE leaves its edge in `landed` and marks it `pending-write`.
+    // Read as "already there, or a create on its way", that suppressed the
+    // reader's consent — and if the delete then landed, their answer had
+    // written nothing, shown nothing, and was already decided.
+    const twins: readonly Candidate[] = [
+      { id: 'left', kind: 'blocked-by', from: '1', to: '2', evidence: [] },
+      { id: 'right', kind: 'blocked-by', from: '1', to: '2', evidence: [] },
+    ];
+    const page = await firstPassPage(twins);
+    try {
+      await open(page);
+      press(page, 'y');
+      await flush();
+      await page.source.whenPending();
+      page.source.settleNext('applied');
+      await flush();
+      const landed = page.store.getSnapshot().landed[0];
+      assert.ok(landed !== undefined);
+
+      // A delete of it, left in flight.
+      void page.store.propose({ op: 'delete', edgeId: landed.id });
+      await page.source.whenPending();
+      await flush();
+      assert.equal(page.store.getSnapshot().writes.filter((w) => w.state === 'pending').length, 1);
+
+      press(page, 'y');
+      await flush();
+      const creates = page.store
+        .getSnapshot()
+        .writes.filter((write) => write.mutation.op === 'create');
+      assert.equal(creates.length, 1, 'the consent was suppressed while the edge was being removed');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
   it('keeps Tab inside the takeover, at both ends', async () => {
     // `inert` covers the workspace's own zones and nothing else, so a mount
     // beside other page chrome let Tab walk out of a dialog asserting
