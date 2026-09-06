@@ -425,6 +425,28 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         // relationship that now exists. One consent, one write: the handle is
         // kept and nothing new is proposed.
         if (liveWriteFor(effect.candidateId) !== undefined) return;
+        // AND THE RELATIONSHIP ITSELF MAY ALREADY BE THERE. The check above is
+        // per candidate, and a candidate is not a relationship: two findings
+        // with different ids may propose the same pair (`candidates.ts` keeps
+        // them apart on purpose), and a close-and-reopen starts a fresh queue
+        // over a document the earlier answer has since written to. Either way
+        // the store refuses the second create as a duplicate — correctly — and
+        // the reader is left an `invalid` record about a relationship that
+        // exists.
+        // LANDED OR ON ITS WAY, AND NOTHING ELSE. `projected` also carries an
+        // edge whose only write FAILED — and that relationship is precisely NOT
+        // there, so a second consent must be free to try again. A landed edge
+        // carries no unsettled write; one being created right now carries
+        // `pending-write`. Both are the store's own vocabulary rather than a
+        // second opinion about what exists.
+        const { proposal } = effect;
+        if (proposal.op === 'create') {
+          const id = edgeIdentity(proposal.kind, proposal.from, proposal.to);
+          const drawn = store.getSnapshot().projected.find((edge) => edge.id === id);
+          const already =
+            drawn !== undefined && (drawn.writes.length === 0 || drawn.states.includes('pending-write'));
+          if (already) return;
+        }
         const handle = store.propose(effect.proposal);
         appliedWrites.set(effect.candidateId, handle.mutationId);
         return;
@@ -1201,6 +1223,27 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // a pointer, on the one surface that advertises a pointer-free loop.
     if (event.key === 'Escape') {
       dispatch({ kind: 'first-pass', command: { kind: 'close' } });
+      return true;
+    }
+    // TAB STAYS INSIDE. `inert` covers the workspace's own zones and nothing
+    // else, so a mount sitting beside other page chrome let Tab — and Shift-Tab
+    // from the wrapper focus lands on — walk straight out of a dialog that
+    // asserts `aria-modal`. The keydown listener is on the mount's element, so
+    // once focus is outside, `Y`/`N`/`S` and Escape all stop working while the
+    // overlay is still up: a keyboard reader stranded with no way back.
+    if (event.key === 'Tab') {
+      const overlay = surface.querySelector<HTMLElement>('.ig-firstpass-overlay');
+      if (overlay === null) return false;
+      const stops = [...overlay.querySelectorAll<HTMLElement>('button, [tabindex]:not([tabindex="-1"])')];
+      const first = stops[0];
+      const last = stops[stops.length - 1];
+      if (first === undefined || last === undefined) return false;
+      const active = doc.activeElement;
+      const at = isElement(active) ? stops.indexOf(active as HTMLElement) : -1;
+      // WRAPPING AT BOTH ENDS, and treating "focus is on the wrapper" as before
+      // the first stop — which is where it sits on open and after every answer.
+      const next = event.shiftKey ? (at <= 0 ? last : stops[at - 1]) : at === stops.length - 1 ? first : stops[at + 1];
+      (next ?? first).focus({ preventScroll: true });
       return true;
     }
     if (phase.kind !== 'open') return false;

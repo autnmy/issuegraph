@@ -1290,6 +1290,83 @@ describe('the first pass, composed behind §17a’s entry', () => {
     }
   });
 
+  it('proposes nothing for a relationship the document already carries', async () => {
+    // Two findings with different ids may propose the same pair — `candidates.ts`
+    // keeps them apart on purpose — and a close-and-reopen starts a fresh queue
+    // over a document the earlier answer has since written to. Either way the
+    // store would refuse the second create, correctly, and leave the reader an
+    // `invalid` record about a relationship that exists.
+    const twins: readonly Candidate[] = [
+      { id: 'left', kind: 'blocked-by', from: '1', to: '2', evidence: [] },
+      { id: 'right', kind: 'blocked-by', from: '1', to: '2', evidence: [] },
+    ];
+    const page = await firstPassPage(twins);
+    try {
+      await open(page);
+      press(page, 'y');
+      await flush();
+      await page.source.whenPending();
+      page.source.settleNext('applied');
+      await flush();
+      assert.equal(page.store.getSnapshot().landed.length, 1);
+
+      // The second finding proposes the same pair. It must not be sent.
+      press(page, 'y');
+      await flush();
+      assert.deepEqual(
+        page.store.getSnapshot().writes,
+        [],
+        'a duplicate create was proposed for a landed relationship',
+      );
+      // The queue still advanced: the reader answered, and the answer stands.
+      assert.equal(
+        page.element.querySelector('.ig-firstpass')?.getAttribute('data-ig-answered'),
+        '2',
+      );
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('keeps Tab inside the takeover, at both ends', async () => {
+    // `inert` covers the workspace's own zones and nothing else, so a mount
+    // beside other page chrome let Tab walk out of a dialog asserting
+    // `aria-modal` — and the keydown listener is on the mount's element, so
+    // outside it every key stops working while the overlay is still up.
+    const page = await firstPassPage();
+    try {
+      await open(page);
+      const overlay = overlayOf(page);
+      assert.ok(overlay !== null);
+      const stops = [...overlay.querySelectorAll<HTMLElement>('button')];
+      assert.ok(stops.length >= 4, 'the overlay drew too few controls to trap');
+
+      // From the wrapper, Tab lands on the first control.
+      press(page, 'Tab');
+      assert.equal(page.win.document.activeElement, stops[0]);
+
+      // From the last control, Tab wraps to the first rather than leaving.
+      stops[stops.length - 1]?.focus();
+      press(page, 'Tab');
+      assert.equal(page.win.document.activeElement, stops[0], 'Tab left the dialog');
+
+      // And Shift-Tab from the first wraps to the last.
+      stops[0]?.focus();
+      page.element.dispatchEvent(
+        new page.win.KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true }),
+      );
+      assert.equal(
+        page.win.document.activeElement,
+        stops[stops.length - 1],
+        'Shift-Tab left the dialog',
+      );
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
   it('treats a scanner that throws before it returns as a failed scan', async () => {
     // A host reading its own state or building a request can throw
     // SYNCHRONOUSLY; called directly that escapes the `.catch` and unwinds
