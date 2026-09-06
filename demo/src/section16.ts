@@ -18,7 +18,7 @@ import { type Scene, initialNavigationState, navigate, renderViewer } from '@iss
 import { projectDocument } from './document.ts';
 import { type DemoStateName, hostFacts, runningSince, showsOrder } from './host.ts';
 import { explainDocument } from './order.ts';
-import { SCENARIOS, type ScenarioName } from './seed.ts';
+import { SCENARIOS, type ScenarioName, adoptionFor } from './seed.ts';
 
 /**
  * The moment the page draws itself at.
@@ -57,7 +57,8 @@ function projectionFor(panel: PanelState, id: string): ReturnType<typeof project
     now: NOW,
     running: !shown || scenario.running === undefined ? undefined : runningSince(scenario.running, NOW),
     state: panel.state,
-    adoption: scenario.adoption,
+    // Measured from the document this panel draws — see `adoptionFor`.
+    adoption: adoptionFor(scenario, landed, false),
   });
   // NO REFRESH CONTROL ON A FIXED-CLOCK SURFACE. The viewer draws one only when
   // the host supplies a word for it, and this page has nothing to re-read: its

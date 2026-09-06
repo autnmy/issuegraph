@@ -889,6 +889,17 @@ function normalizeCondition(
     return Object.freeze(rest);
   }
   const href = safeHref(condition.action.href, 'condition action', diagnostics);
+  // A REFUSED LINK IS NOT A COMMAND. An action carrying an `href` is a host
+  // that means to ROUTE; keeping it with the URL stripped hands it to the
+  // notice as a plain action, which publishes `review-pick-order` — a command
+  // that host never wired, and one another listener may act on instead. That is
+  // the "control nobody wired" failure arriving through the validation meant to
+  // prevent an unsafe one. So the whole action goes, and the state keeps its
+  // sentences: an action a reader cannot safely be given is better absent.
+  if (condition.action.href !== undefined && condition.action.href !== '' && href === undefined) {
+    const { action: _refused, ...rest } = condition;
+    return Object.freeze(rest);
+  }
   return Object.freeze({
     ...condition,
     action: Object.freeze({

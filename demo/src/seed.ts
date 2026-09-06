@@ -449,21 +449,47 @@ const adoptionNote = Object.freeze({
 });
 
 /**
- * How many of a document's issues declare a relationship, over its whole size.
+ * How many of a document's issues DECLARE a relationship, over its whole size.
  *
- * MEASURED FROM THE DOCUMENT, not written down beside it. A count typed by hand
- * is a second statement of something the seed already knows, free to drift from
- * it the first time an issue gains an edge — and a header chip reading
- * `12 of 48` above a sixteen-issue backlog is exactly the ambiguity §16h's
- * count exists to remove, arriving from the other direction.
+ * MEASURED FROM THE DOCUMENT BEING DRAWN, never written down beside it. A count
+ * typed by hand is a second statement of something the document already knows,
+ * free to drift from it the moment an issue gains an edge — and a header chip
+ * disagreeing with the rows beneath it is exactly the ambiguity §16h's count
+ * exists to remove, arriving from the other direction.
+ *
+ * CARRIERS ONLY — `edge.from`. `StoredEdge` keeps its pair directed even for
+ * the symmetric kinds precisely so the issue that CARRIES the frontmatter field
+ * stays known (`model.ts`: "a symmetric edge is still *written* on one issue
+ * pointing at another"). A target declares nothing; counting both ends roughly
+ * doubles the figure and credits adoption to issues with no block at all.
  */
 function adoptionCountsOf(document: GraphDocument): { declaring: number; total: number } {
   const declaring = new Set<IssueRef>();
-  for (const edge of document.edges) {
-    declaring.add(edge.from);
-    declaring.add(edge.to);
-  }
+  for (const edge of document.edges) declaring.add(edge.from);
   return { declaring: declaring.size, total: document.issues.length };
+}
+
+/**
+ * What a scenario says about adoption, resolved against the document on screen.
+ *
+ * The SENTENCE is recorded — it names this host's own configuration and nothing
+ * can derive it. The COUNT is derived, here, from the document being drawn,
+ * because it is a property of that document and the store lets a visitor change
+ * it. A count captured when the module loaded described a backlog that no
+ * longer exists the moment the first relationship is added or deleted.
+ */
+export function adoptionFor(
+  scenario: Scenario,
+  document: GraphDocument,
+  noteDismissed: boolean,
+): Adoption | undefined {
+  const counts = scenario.adoption?.counted === true ? adoptionCountsOf(document) : undefined;
+  const note = noteDismissed ? undefined : scenario.adoption?.note;
+  if (counts === undefined && note === undefined) return undefined;
+  return {
+    ...(counts === undefined ? {} : { counts }),
+    ...(note === undefined ? {} : { note }),
+  };
 }
 
 /**
@@ -516,15 +542,22 @@ export interface Scenario {
   /** What the host's engine knows about its own rows: a fallback ranking, two signals disagreeing. */
   readonly caveats: ReadonlyMap<IssueRef, IssueCaveats>;
   /**
-   * How much of this host's backlog declares relationships, and what to say.
+   * What this scenario says about adoption.
    *
-   * WHICH HALF TO SUPPLY IS THE HOST'S CALL, which is why the two are separate
-   * fields on the port. The zero-adoption document supplies the footer line,
-   * because there the cause is worth stating; the comp supplies the count,
+   * WHICH HALF TO SUPPLY IS THE HOST'S CALL, which is why the port keeps the
+   * two separate. The zero-adoption document supplies the footer line, because
+   * there the cause is worth stating; the big backlog asks for the count,
    * because there the only question is how many — the one ambiguity §16h says
    * is worth removing.
+   *
+   * `counted` IS A REQUEST, NOT A NUMBER. The figure is measured from the
+   * document at render time (`adoptionFor`); writing one down here would be a
+   * second statement of something the document already answers.
    */
-  readonly adoption?: Adoption;
+  readonly adoption?: {
+    readonly counted?: boolean;
+    readonly note?: Adoption['note'];
+  };
 }
 
 /**
@@ -596,7 +629,7 @@ export const SCENARIOS: Readonly<Record<ScenarioName, Scenario>> = Object.freeze
     // backlog already declares relationships on some of its issues and not
     // others, which is exactly the case. The header states the count once so a
     // reader can tell "no edges shown" from "no edges declared".
-    adoption: { counts: adoptionCountsOf(backlogSeed()) },
+    adoption: { counted: true },
   },
   adoption: {
     label: 'day one — no adoption',

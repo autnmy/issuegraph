@@ -696,9 +696,37 @@ describe('normalizeDocument: the host facts', () => {
     ]);
   });
 
-  it('drops a condition action href that is not linkable and keeps its label', () => {
-    // The SAME allowlist a deep link goes through. A note that loses its link
-    // still says what it says, so the label survives the refusal.
+  it('keeps a command action and a linkable routing action alike', () => {
+    const of = (action: { label: string; href?: string }) =>
+      normalizeDocument({
+        ...two,
+        host: {
+          condition: {
+            kind: 'empty',
+            headline: 'Nothing is eligible right now',
+            reason: 'No open issue matches your pick order.',
+            assurance: 'The pipeline stays armed.',
+            action,
+          },
+        },
+      });
+    const command = of({ label: 'Review pick order' });
+    assert.deepEqual(command.document.host.condition?.kind === 'empty' ? command.document.host.condition.action : null, {
+      label: 'Review pick order',
+    });
+    const routed = of({ label: 'Review pick order', href: 'https://example.test/settings' });
+    assert.deepEqual(routed.document.host.condition?.kind === 'empty' ? routed.document.host.condition.action : null, {
+      label: 'Review pick order',
+      href: 'https://example.test/settings',
+    });
+    assert.deepEqual([...command.diagnostics, ...routed.diagnostics], []);
+  });
+
+  it('drops a routing action whose href was refused, rather than recasting it as a command', () => {
+    // A REFUSED LINK IS NOT A COMMAND. An action carrying an href is a host that
+    // means to route; keeping it with the URL stripped would hand the notice a
+    // plain action, which publishes `review-pick-order` — a command that host
+    // never wired, and one another listener may act on instead.
     const { document, diagnostics } = normalizeDocument({
       ...two,
       host: {
@@ -711,9 +739,12 @@ describe('normalizeDocument: the host facts', () => {
         },
       },
     });
-    assert.deepEqual(document.host.condition?.kind === 'empty' ? document.host.condition.action : null, {
-      label: 'Review pick order',
-    });
+    assert.equal(document.host.condition?.kind === 'empty' ? document.host.condition.action : 'wrong-arm', undefined);
+    // The state keeps its sentences: what is lost is the affordance, not the state.
+    assert.equal(
+      document.host.condition?.kind === 'empty' ? document.host.condition.headline : null,
+      'Nothing is eligible right now',
+    );
     assert.deepEqual(diagnostics, [
       'condition action href javascript:alert(1) is not a linkable scheme and was dropped',
     ]);

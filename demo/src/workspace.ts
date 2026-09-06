@@ -39,7 +39,7 @@ import {
   summaryOf,
 } from '@issuegraph/editor';
 import type { EdgeKind, Store, StoreSnapshot, WriteRecord } from '@issuegraph/store';
-import { type Adoption, type Theme, defaultTheme, extendTheme } from '@issuegraph/viewer';
+import { type Theme, defaultTheme, extendTheme } from '@issuegraph/viewer';
 
 import { projectDocument } from './document.ts';
 import {
@@ -51,7 +51,14 @@ import {
   showsOrder,
 } from './host.ts';
 import { explainDocument } from './order.ts';
-import { DEFAULT_SCENARIO, SCENARIOS, SCENARIO_NAMES, type Scenario, type ScenarioName } from './seed.ts';
+import {
+  DEFAULT_SCENARIO,
+  SCENARIOS,
+  SCENARIO_NAMES,
+  type Scenario,
+  type ScenarioName,
+  adoptionFor,
+} from './seed.ts';
 import type { DemoSource, NextOutcome } from './source.ts';
 import { STAMPED_PACKAGES, VERSIONS } from './versions.ts';
 
@@ -234,8 +241,8 @@ export interface HostMoments {
    * control would move nothing until the document changed.
    */
   readonly state: () => DemoStateName;
-  /** The adoption fact as it stands, which a dismiss can take away. */
-  readonly adoption: () => Adoption | undefined;
+  /** Whether the visitor has dismissed this document's adoption line. */
+  readonly dismissed: () => boolean;
 }
 
 function projectFor(scenario: Scenario, moments: HostMoments): (snapshot: StoreSnapshot) => WorkspaceProjection {
@@ -256,7 +263,10 @@ function projectFor(scenario: Scenario, moments: HostMoments): (snapshot: StoreS
       running:
         !shown || scenario.running === undefined ? undefined : runningSince(scenario.running, moments.mountedAt),
       state: moments.state(),
-      adoption: moments.adoption(),
+      // AGAINST THE DOCUMENT ON SCREEN, not the one the module loaded with: the
+      // store lets a visitor add and delete relationships, and a count captured
+      // at boot describes a backlog that no longer exists after the first edit.
+      adoption: adoptionFor(scenario, landed, moments.dismissed()),
     });
     return projectDocument(explained, landed, host, scenario.caveats);
   };
@@ -329,7 +339,7 @@ export function mountSandbox(
     now: clock,
     mountedAt,
     state: () => panelState,
-    adoption: () => (adoptionDismissed ? undefined : SCENARIOS[scenario].adoption),
+    dismissed: () => adoptionDismissed,
   };
 
   let theme: ThemeName = 'default';
