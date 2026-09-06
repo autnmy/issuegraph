@@ -240,7 +240,12 @@ describe('the row left-bar', () => {
     // `auditRowAttributes` and the stylesheet one mechanism rather than two
     // that happen to agree today.
     assert.match(auditStylesheet, new RegExp(`\\[${AUDIT_SEVERITY_ATTRIBUTE}\\]`));
-    assert.match(auditStylesheet, /box-shadow:\s*inset var\(--ig-stroke\)/);
+    // `--ig-stroke-audit`, not `--ig-stroke`: §17d fixes the bar at 2px where
+    // an edge stroke is 1.5, because the bar has to be findable while the
+    // reader is scrolling past it doing something else. Both sheets that draw
+    // this bar read the same token, so the rail's copy and this one cannot
+    // come to disagree about its weight.
+    assert.match(auditStylesheet, /box-shadow:\s*inset var\(--ig-stroke-audit\)/);
     assert.match(auditStylesheet, /var\(--ig-edge-serialize-with\)/);
   });
 

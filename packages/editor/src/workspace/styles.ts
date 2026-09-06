@@ -108,14 +108,30 @@ export const workspaceStylesheet = `
 
    An inset box-shadow rather than a border: a border changes the row's box and
    would shift every marked row against its neighbours, which is a layout jump
-   the eye reads as movement. The width is the theme's spine, so the bar scales
-   with the rest of the rail. */
-.ig-zone[data-zone='rail'] [data-ig-audit] {
-  box-shadow: inset var(--ig-spine-width) 0 0 0 var(--ig-accent);
-}
+   the eye reads as movement.
 
-.ig-zone[data-zone='rail'] [data-ig-audit='misleading'] {
-  box-shadow: inset var(--ig-spine-width) 0 0 0 var(--ig-state-invalid);
+   IT DREW A 330px CYAN BLOCK UNTIL #122, and the comment above it — unchanged
+   here because it was right — is how the defect survived. --ig-spine-width is
+   §16b's SPINE CARD WIDTH (330), not a stroke; the sentence "the width is the
+   theme's spine, so the bar scales with the rest of the rail" reads as a
+   scaling argument and is a token mix-up. --ig-accent is the cyan the panel
+   spends once on the number an operator acts on, and it is not the attention
+   colour. This rule is more specific than audit/styles.ts's correct one, so
+   it silently won.
+
+   AND ITS TEST PASSED THROUGHOUT. styles.test.ts matched the rule and
+   asserted it EXISTED; it never asserted what the declaration resolves to, so
+   it was green about a string rather than about a property. The test below it
+   now reads the values.
+
+   ONE TREATMENT FOR ALL FOUR SEVERITIES, which is also a correction. §17d
+   names exactly one ambient mark — "a 2px gold left-bar on the affected rail
+   row" — and puts the severity distinction in the findings list, which is
+   host-side. The misleading variant this replaces gave the LEAST urgent
+   severity ("clearing is bookkeeping, not urgency") the alarm colour while
+   every other finding got cyan, inverting the design it came from. */
+.ig-zone[data-zone='rail'] [data-ig-audit] {
+  box-shadow: inset var(--ig-stroke-audit) 0 0 0 var(--ig-edge-serialize-with);
 }
 
 /* THE ROWS OUTSIDE THE WINDOW, AS HEIGHT. The rail scrolls, so without a spacer

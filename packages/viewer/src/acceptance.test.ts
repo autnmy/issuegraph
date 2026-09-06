@@ -192,10 +192,16 @@ describe('the public surface', () => {
       'defaultTheme',
       'element',
       'extendTheme',
+      // `identity` and `provenanceClause` joined for the same reason and on the
+      // same terms: §17a's inspector states the qualified reference and the
+      // provenance sentence, and layer 2 spelling either one itself would give
+      // a single fact two wordings, free to drift from the rail's.
+      'identity',
       'initialNavigationState',
       'mountViewer',
       'navigate',
       'normalizeDocument',
+      'provenanceClause',
       'reconcile',
       'renderMarkup',
       'renderViewer',

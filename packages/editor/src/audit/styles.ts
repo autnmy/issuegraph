@@ -68,6 +68,6 @@ export const auditStylesheet = `
 }
 
 [${AUDIT_SEVERITY_ATTRIBUTE}] {
-  box-shadow: inset var(--ig-stroke) 0 0 0 var(--ig-edge-serialize-with);
+  box-shadow: inset var(--ig-stroke-audit) 0 0 0 var(--ig-edge-serialize-with);
 }
 `;

@@ -310,6 +310,14 @@ const EXPANSION: readonly string[] = Object.freeze([
   '--ig-rank-column',
   '--ig-station-box',
   '--ig-card-line',
+  // §17d's ambient audit bar, added by the §17 fidelity pass. It is its own
+  // token rather than `--ig-stroke` because the design fixes it at 2px against
+  // a 1.5px edge stroke — the bar has to be findable while a reader scrolls
+  // past it doing something else. It lives in THIS theme rather than the
+  // audit's own, because `editor/src/audit/styles.ts` records shipping a local
+  // `--ig-audit-bar` and reversing it: a host installing only this theme got a
+  // `var()` resolving to nothing and the bar silently stopped drawing.
+  '--ig-stroke-audit',
 ]);
 
 /**
@@ -335,6 +343,20 @@ const STILL_UNREAD: readonly string[] = Object.freeze([
   '--ig-elevation-raised',
   '--ig-elevation-overlay',
   '--ig-card-line',
+  // READ BY THE EDITOR, NOT BY THIS STYLESHEET — a different reason from the
+  // four above, which are owed a use by anything at all.
+  //
+  // §17d's audit bar is layer 2's mark: the audit is the editor's, and both
+  // sheets that draw the bar (`editor/src/audit/styles.ts` and
+  // `editor/src/workspace/styles.ts`) read this token. It is defined HERE
+  // because a theme is one document a host installs once, and the editor
+  // declaring a token of its own is the exact failure `audit/styles.ts`
+  // records reversing: a host that installed this theme and not a second one
+  // got a `var()` resolving to nothing, and the bar silently stopped drawing.
+  //
+  // So the guard's property still holds — the value is read before it can
+  // matter — and what this entry records is WHERE, one layer out.
+  '--ig-stroke-audit',
 ]);
 
 describe('the vocabulary the §16 design needs', () => {

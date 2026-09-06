@@ -106,7 +106,17 @@ export { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET } from './projections/graph.ts';
 // `COMMAND_ATTRIBUTE` is on the surface because a host that reads the DOM rather
 // than the callback needs the attribute name, and knowing it by inspection is
 // how a consumer ends up with a literal that drifts.
-export { COMMAND_ATTRIBUTE, ROW_BADGE_BUDGET } from './parts.ts';
+// `identity` and `provenanceClause` are on the surface for the EDITOR, which
+// composes both into §17a's inspector. Reaching them by relative path instead
+// is a package escape `check:isolation` fails, and re-spelling either in layer
+// 2 would give one fact two wordings — the identity chip's link rule and the
+// provenance sentence would then be free to drift from the rail's.
+export {
+  COMMAND_ATTRIBUTE,
+  ROW_BADGE_BUDGET,
+  identity,
+  provenanceClause,
+} from './parts.ts';
 
 export type { Cluster } from './clusters.ts';
 export { clustersOf } from './clusters.ts';
