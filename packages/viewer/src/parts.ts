@@ -107,10 +107,16 @@ export function provenanceLine(provenance: RankProvenance | undefined): ElementS
         ]),
       ]);
     case 'declared-tier':
+      // NEUTRAL, AND THAT IS THE POINT. This arm means only that no ordering
+      // query matched and the issue stayed in its tier — it does NOT mean the
+      // priority was absent. §16a's own row happens to be one where it was, and
+      // borrowing that row's sentence made the panel tell every reader that an
+      // explicitly-declared P0 had no declared priority. A panel whose job is
+      // explaining the order cannot invent the reason.
       return element('p', { class: 'ig-provenance' }, [
         turn(),
         element('span', {}, [
-          'no declared priority — spec default ',
+          'no ordered query matched — ranked in tier ',
           element('span', { class: 'ig-id' }, [`P${String(provenance.priority)}`]),
         ]),
       ]);
@@ -164,8 +170,10 @@ export function priorityBadge(provenance: RankProvenance | undefined): ElementSp
     case 'matched-query':
       return element('span', { class: 'ig-badge', 'data-priority': 'query' }, [provenance.label]);
     case 'declared-tier':
+      // `· tier`, NOT `· default`. The chip says which tier ranked the row; it
+      // cannot say the tier was a default, because this arm does not know that.
       return element('span', { class: 'ig-badge', 'data-priority': 'tier' }, [
-        `P${String(provenance.priority)} · default`,
+        `P${String(provenance.priority)} · tier`,
       ]);
     case 'promotion':
       return element('span', { class: 'ig-badge', 'data-priority': 'promoted' }, [
@@ -808,6 +816,134 @@ function textOf(spec: ElementSpec): string {
     text += typeof child === 'string' ? child : textOf(child);
   }
   return text;
+}
+
+/**
+ * One block of a canvas card, described rather than drawn.
+ *
+ * THIS EXISTS BECAUSE THE SAME DEFECT ARRIVED FOUR TIMES. A card's height is
+ * COUNTED by the layout before anything renders — the projection is pure and
+ * positions every card absolutely — while the card's contents are BUILT by the
+ * projection. Two functions, one shape, and nothing tying them together: every
+ * block added to the card had to be remembered in the height rule, and four
+ * times running it was not. The badge row wrapped and was charged one line; a
+ * unit in the gutter was sized as a single issue; the unit branch returned
+ * before the notes; the NOW banner was added with no allowance at all. Each
+ * time the card overran its box, the next card was drawn over the overflow, and
+ * the arcs stayed anchored to geometry nobody drew.
+ *
+ * So the CARD IS DESCRIBED ONCE, here, and both readers consume the
+ * description: {@link cardText} counts it, and the graph projection renders it.
+ * A block added to this list reaches the height rule by construction. That is
+ * the property, and it is why this is a shape and not a second helper.
+ */
+export type CardBlock =
+  /** §16b's NOW banner, or a unit's own pill: one line of chips. */
+  | { readonly kind: 'banner'; readonly mark: string; readonly note: string }
+  /** A title over its identity — the two-line pair every row draws. */
+  | { readonly kind: 'head'; readonly key: string }
+  /** A unit's enclosure: one title-and-identity pair per member. */
+  | { readonly kind: 'unit'; readonly members: readonly string[] }
+  /** The wrapping row of chips. */
+  | { readonly kind: 'badges'; readonly texts: readonly string[] }
+  /** A sentence the card prints because nothing else draws it. */
+  | { readonly kind: 'note'; readonly text: string };
+
+/**
+ * Everything one canvas card draws, in the order it draws it.
+ *
+ * `onSpine` decides the notes and nothing else: a spine card keeps its hold on
+ * a chip and a tooltip, because the list beside it prints the sentence, while a
+ * gutter card is the only mark the projection makes for its issue and §16b
+ * prints "open · not eligible" on it in as many words.
+ */
+export function cardBlocks(
+  document: NormalizedDocument,
+  key: string,
+  members: readonly string[],
+  onSpine: boolean,
+  now: boolean,
+): readonly CardBlock[] {
+  const slot = document.order.slots.find((candidate) => candidate.lead === key);
+  const issue = document.byKey.get(key);
+  const blocks: CardBlock[] = [];
+
+  if (now) {
+    const job = document.host.running.find((candidate) => members.includes(candidate.key));
+    blocks.push({
+      kind: 'banner',
+      mark: 'now',
+      note: job === undefined ? '' : `${job.phase} · ${job.elapsed}`,
+    });
+  }
+
+  if (members.length > 1 && slot !== undefined) {
+    blocks.push({
+      kind: 'banner',
+      mark: `⧉ one unit · ${String(members.length)} issues`,
+      note: 'worked together',
+    });
+    blocks.push({ kind: 'unit', members });
+  } else {
+    blocks.push({ kind: 'head', key });
+  }
+
+  const texts = badgeTexts(document, slot, issue, members);
+  if (texts.length > 0) blocks.push({ kind: 'badges', texts });
+
+  if (!onSpine) {
+    for (const text of noteText(document, key)) blocks.push({ kind: 'note', text });
+  }
+  return blocks;
+}
+
+/**
+ * The sentences a card off the spine prints: why it is held, and what it
+ * duplicates.
+ *
+ * Lives here rather than in the layout for the reason {@link cardBlocks} gives:
+ * one description, two readers.
+ */
+export function noteText(document: NormalizedDocument, key: string): readonly string[] {
+  const lines: string[] = [];
+  for (const slot of document.order.slots) {
+    if (slot.lead !== key) continue;
+    for (const hold of slot.holds) lines.push(hold.reason);
+  }
+  for (const exclusion of document.order.excluded) {
+    // THE BADGE ALREADY NAMES THE CANONICAL, so the sentence says only what the
+    // badge cannot: that this issue is never worked at all.
+    if (exclusion.key === key) lines.push('never worked — the canonical is worked instead');
+  }
+  return lines;
+}
+
+/**
+ * The text runs one block puts on the card, each of which the layout wraps and
+ * counts as one or more lines.
+ *
+ * A `head` is a title AND an identity, and a `unit` is that pair per member —
+ * so the count is per RUN rather than per block, which is what lets the layout
+ * charge a wrapped title what it costs.
+ */
+export function cardText(document: NormalizedDocument, block: CardBlock): readonly string[] {
+  switch (block.kind) {
+    case 'banner':
+      return [`${block.mark} ${block.note}`];
+    case 'head': {
+      const issue = document.byKey.get(block.key);
+      return [issue?.title ?? block.key, block.key];
+    }
+    case 'unit':
+      return block.members.flatMap((member) => [
+        document.byKey.get(member)?.title ?? member,
+        member,
+      ]);
+    case 'badges':
+      return block.texts;
+    case 'note':
+      return [block.text];
+  }
 }
 
 /**

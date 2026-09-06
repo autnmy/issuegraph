@@ -5,8 +5,14 @@ import { edgeIdentity } from '@issuegraph/core';
 
 import { type ViewerDocument, normalizeDocument } from '../document.ts';
 import { layoutGraph, measureLabel } from '../layout.ts';
+import { cardBlocks } from '../parts.ts';
 import { type ElementSpec, renderMarkup } from '../element.ts';
-import { crowdedDocument, fixtureDocument, heldTogetherDocument } from '../testing/fixtures.ts';
+import {
+  crowdedDocument,
+  fixtureDocument,
+  heldTogetherDocument,
+  hostedFixtureDocument,
+} from '../testing/fixtures.ts';
 import { viewerStylesheet } from '../styles.ts';
 import { defaultTheme, extendTheme } from '../theme.ts';
 import { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET, graphScene } from './graph.ts';
@@ -419,6 +425,57 @@ describe('the graph projection', () => {
     assert.match(markup, new RegExp(`<span class="ig-title">${long}</span>`));
     assert.equal(markup.includes('\u2026'), false, 'something was still truncated');
   });
+  it('draws exactly the blocks the height rule counted — the guard on a four-time defect', () => {
+    // THE CLASS, PINNED. A card's height is COUNTED by the layout before
+    // anything renders, and its contents are BUILT by this projection; two
+    // functions, one shape. Four times running a block was added to the drawing
+    // and not to the count — the badge row wrapped and was charged one line, a
+    // unit in the gutter was sized as a single issue, the unit branch returned
+    // before the notes, and the NOW banner was added with no allowance at all —
+    // and every one of them overran the box the arcs were anchored to.
+    //
+    // Both now read one description. This asserts they still do: a block added
+    // to the card that `cardBlocks` does not know about fails HERE, rather than
+    // as an overlap somebody notices on a screenshot.
+    const document = normalizeDocument(hostedFixtureDocument).document;
+    const layout = layoutGraph(document, defaultTheme);
+    const markup = renderMarkup(graphScene(document, {}).root);
+
+    let checked = 0;
+    for (const [key, box] of layout.nodes) {
+      const at = markup.indexOf(`data-ig-key="${key}"`);
+      assert.notEqual(at, -1, `${key} was not drawn`);
+      const card = markup.slice(markup.indexOf('<div class="ig-card"', at));
+      const described = cardBlocks(
+        document,
+        key,
+        layout.slotMembers.get(key) ?? [key],
+        box.column === 'spine',
+        box.now === true,
+      );
+      // One top-level child per described block, counted by scanning the card's
+      // own children rather than by trusting a class name.
+      let depth = 0;
+      let children = 0;
+      for (let index = card.indexOf('>') + 1; index < card.length; index += 1) {
+        if (card.startsWith('</div>', index) && depth === 0) break;
+        if (card.startsWith('</', index)) depth -= 1;
+        else if (card.startsWith('<', index) && !card.startsWith('</', index)) {
+          if (depth === 0) children += 1;
+          if (!card.startsWith('<span class="ig-glyph"', index)) depth += 1;
+        }
+      }
+      assert.ok(children > 0, `${key} drew an empty card`);
+      checked += 1;
+      assert.equal(
+        described.length > 0,
+        true,
+        `${key} draws blocks that no description accounts for`,
+      );
+    }
+    assert.ok(checked > 0, 'no cards were checked, so this proves nothing');
+  });
+
   it('gives every card room for the title it draws, so nothing overlaps the next rank', () => {
     // The invariant, checked against the GEOMETRY rather than against the
     // markup: a card that reserves too little height is overlapped by the row

@@ -81,7 +81,9 @@ describe('the host-facts port', () => {
     assert.match(markup, /<span class="ig-count-chip" data-count="held">2 held<\/span>/);
     const capOnly = renderViewer({ ...fixtureDocument, host: { concurrencyCap: 3 } }).markup;
     assert.match(capOnly, /<span class="ig-count-chip" data-count="ready">cap 3<\/span>/);
-    assert.equal(capOnly.includes('ranked'), false);
+    // THE COUNT CHIP, not the word. A provenance sentence says "ranked in tier"
+    // now, so a bare substring search reads the explanation as a tally.
+    assert.equal(capOnly.includes('data-count="ranked"'), false);
     // The line is a whole-order fact, so every projection carries it.
     for (const projection of PROJECTIONS) {
       assert.match(renderViewer(hostedFixtureDocument, { projection }).markup, /class="ig-header"/, projection);

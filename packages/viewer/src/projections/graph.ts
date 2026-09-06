@@ -30,10 +30,11 @@ import {
   type GraphLayout,
   edgeGeometry,
   layoutGraph,
-  notes,
 } from '../layout.ts';
 import {
+  type CardBlock,
   atStations,
+  cardBlocks,
   caveatBadges,
   footerLabels,
   nowRows,
@@ -50,7 +51,6 @@ import {
   stationFill,
   stationsOf,
   unitBlock,
-  unitMark,
 } from '../parts.ts';
 import { type LateralNeighbours, type Scene, resolveFocusKey } from '../scene.ts';
 import { type Theme, resolveTheme } from '../theme.ts';
@@ -234,27 +234,14 @@ function nodeCard(
       : [`${treatmentFor('duplicate-of').label} ${exclusion.canonical} — never worked`]),
   ].join(' · ');
 
-  const head =
-    members.length > 1 && slot !== undefined
-      ? [unitMark(slot), unitBlock(document, slot)]
-      : [
-          element('div', { class: 'ig-row-head' }, [
-            element('span', { class: 'ig-title' }, [issue?.title ?? key]),
-            issue === undefined ? null : identity(issue),
-          ]),
-        ];
-
-  // THE BADGE ROW IS THE SAME ONE THE LIST DRAWS, which is what makes the two
-  // projections one grammar rather than two spellings. A gutter card carries it
-  // too: it is the only mark this projection draws for its issue, so a relation
-  // left off it is a relation the graph reader never sees.
-  const badges = [
-    priorityBadge(issue?.provenance),
-    evidenceBadge(issue),
-    slot === undefined ? null : notReadyBadge(slot),
-    ...caveatBadges(issue),
-    ...edgeBadgeList(document, members),
-  ].filter((badge): badge is ElementSpec => badge !== null);
+  // RENDERED FROM THE CARD'S OWN DESCRIPTION, which is also what the layout
+  // counted this card's height from — see `CardBlock`. Built from a second
+  // reading of what the card should hold, four blocks in a row were added to
+  // the drawing and not to the count, and every one of them overran the box the
+  // arcs were anchored to.
+  const drawn = cardBlocks(document, key, members, box.column === 'spine', box.now === true).map(
+    (block) => cardMark(document, block, key, members, slot),
+  );
 
   const label = [
     slot === undefined ? (issue?.title ?? key) : slotLabel(document, slot),
@@ -287,46 +274,71 @@ function nodeCard(
           'data-unit': members.length > 1 ? 'true' : 'false',
           'data-exclusion': exclusion === undefined ? null : 'true',
         },
-        [
-          box.now === true
-            ? element('div', { class: 'ig-unit-mark' }, [
-                element('span', { class: 'ig-now-mark' }, ['now']),
-                ...nowPhase(document, members),
-              ])
-            : null,
-          ...head,
-          badges.length === 0 ? null : element('div', { class: 'ig-badges' }, badges),
-          // A SPINE CARD KEEPS ITS SENTENCES ON THE TOOLTIP, because the list
-          // projection prints them and §16b's spine card draws a chip. A gutter
-          // card is the only mark this projection makes for its issue, so its
-          // sentence has nowhere else to be — and §16b prints it there.
-          ...(box.column === 'spine'
-            ? []
-            : notes(document, key).map((note) =>
-                element('p', { class: 'ig-hold', 'data-family': 'tracker' }, [
-                  element('span', {}, [note]),
-                ]),
-              )),
-        ],
+        drawn,
       ),
     ],
   );
 }
 
-/**
- * The running job's phase and elapsed time — the host's words, on its card.
- *
- * MATCHED ON THE CARD'S WHOLE KEY SET. A together unit is one card, so the job
- * may be running its PARTNER; reading the lead alone left the unit marked NOW
- * with no phase and no elapsed time beside it.
- */
-function nowPhase(
+/** One described block, drawn. The other half of `cardBlocks`. */
+function cardMark(
   document: NormalizedDocument,
+  block: CardBlock,
+  key: string,
   members: readonly string[],
-): readonly ElementSpec[] {
-  const job = document.host.running.find((candidate) => members.includes(candidate.key));
-  if (job === undefined) return [];
-  return [element('span', { class: 'ig-unit-note' }, [`${job.phase} · ${job.elapsed}`])];
+  slot: ViewerSlot | undefined,
+): ElementSpec {
+  switch (block.kind) {
+    case 'banner':
+      return element('div', { class: 'ig-unit-mark' }, [
+        element(
+          'span',
+          { class: block.mark === 'now' ? 'ig-now-mark' : 'ig-unit-pill' },
+          [block.mark],
+        ),
+        block.note === '' ? null : element('span', { class: 'ig-unit-note' }, [block.note]),
+      ]);
+    case 'head': {
+      const issue = document.byKey.get(block.key);
+      return element('div', { class: 'ig-row-head' }, [
+        element('span', { class: 'ig-title' }, [issue?.title ?? block.key]),
+        issue === undefined ? null : identity(issue),
+      ]);
+    }
+    case 'unit':
+      // Through `unitBlock`, so the enclosure and its deep links are the ones
+      // the list draws rather than a second spelling of them.
+      return slot === undefined
+        ? element('div', { class: 'ig-row-head' }, [])
+        : (unitBlock(document, slot) ?? element('div', { class: 'ig-row-head' }, []));
+    case 'badges':
+      // THE BADGE ROW IS THE SAME ONE THE LIST DRAWS, which is what makes the
+      // two projections one grammar rather than two spellings. A gutter card
+      // carries it too: it is the only mark this projection draws for its
+      // issue, so a relation left off it is one the graph reader never sees.
+      return element(
+        'div',
+        { class: 'ig-badges' },
+        // FROM THE SAME BUILDERS `badgeTexts` READS, so what the layout packed
+        // and what the card draws are one list of chips rather than two that
+        // can differ by one.
+        [
+          priorityBadge(document.byKey.get(key)?.provenance),
+          evidenceBadge(document.byKey.get(key)),
+          slot === undefined ? null : notReadyBadge(slot),
+          ...caveatBadges(document.byKey.get(key)),
+          ...edgeBadgeList(document, members),
+        ].filter((badge): badge is ElementSpec => badge !== null),
+      );
+    case 'note':
+      // A SPINE CARD KEEPS ITS SENTENCES ON THE TOOLTIP, because the list
+      // projection prints them and §16b's spine card draws a chip. A gutter card
+      // is the only mark this projection makes for its issue, so its sentence
+      // has nowhere else to be — and §16b prints it there.
+      return element('p', { class: 'ig-hold', 'data-family': 'tracker' }, [
+        element('span', {}, [block.text]),
+      ]);
+  }
 }
 
 /**

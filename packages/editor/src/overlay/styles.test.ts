@@ -92,4 +92,21 @@ describe('the overlay stylesheet carries structure, never a value', () => {
     // clickable exactly when it is selected.
     assert.match(css, /\.ig-overlay\s*\{[^}]*pointer-events:\s*none/);
   });
+
+  it('gives a badge-only relationship a state a reader can SEE', () => {
+    // `together-with` is drawn as no line at all — it shares a rank rather than
+    // ordering anything, and layer 1 draws the unit as one card with its members
+    // listed inside — so the chip that names it is its entire representation.
+    // The marks this module clones from a stroke cannot be cloned from a span,
+    // and the stroke rules paint a property a span does not have: an in-flight
+    // or refused together-edge read exactly like a settled one, with the state
+    // visible only to a screen reader.
+    for (const state of ['invalid', 'failed', 'conflict', 'pending-write', 'selected']) {
+      assert.match(
+        edgeOverlayStylesheet,
+        new RegExp(`\\.ig-badge\\[data-ig-state~='${state}'\\]`),
+        `a badge says nothing visible about ${state}`,
+      );
+    }
+  });
 });

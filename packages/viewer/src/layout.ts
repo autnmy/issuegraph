@@ -24,7 +24,7 @@
  */
 
 import type { NormalizedDocument, ViewerEdge } from './document.ts';
-import { badgeTexts } from './parts.ts';
+import { cardBlocks, cardText } from './parts.ts';
 import { type MetricToken, type Theme, defaultTheme } from './theme.ts';
 
 /**
@@ -372,16 +372,20 @@ function assignColumns(
 /**
  * How tall a card is, counted rather than measured.
  *
- * A card's contents are known — a title that may wrap, an identity line, a
- * badge row, and for a unit one pair of lines per member — so its height is a
- * count of lines times `--ig-card-line`. Counted, not measured, because this
- * module is pure and deterministic: the same document must produce the same
- * coordinates on a server with no fonts as in a browser with them.
+ * COUNTED FROM THE CARD'S OWN DESCRIPTION — see `CardBlock`. It used to be
+ * counted from a second reading of what the projection draws, and four times
+ * running a block was added to the drawing and not to the count: the badge row
+ * wrapped and was charged one line, a unit in the gutter was sized as a single
+ * issue, the unit branch returned before the notes, and the NOW banner was
+ * added with no allowance at all. Each time the card overran its box, the next
+ * card was drawn over the overflow, and the arcs stayed anchored to geometry
+ * nobody drew. A block added to `cardBlocks` now reaches this by construction.
  *
- * IT ROUNDS UP, for the reason {@link measureLabel} gives about its own metric.
- * A card that reserves slightly too much leaves a gap; one that reserves too
- * little is overlapped by the row beneath it, and the row beneath it is the
- * next rank.
+ * Counted rather than MEASURED because this module is pure and deterministic:
+ * the same document must produce the same coordinates on a server with no fonts
+ * as in a browser with them. It rounds up, for the reason {@link measureLabel}
+ * gives about its own metric — a card that reserves slightly too much leaves a
+ * gap, and one that reserves too little is overlapped by the next rank.
  */
 function cardHeight(
   theme: Theme,
@@ -390,95 +394,56 @@ function cardHeight(
   width: number,
   members: readonly string[],
   onSpine: boolean,
+  now: boolean,
 ): number {
   const pad = metric(theme, '--ig-space') * 2;
   const line = metric(theme, '--ig-card-line');
   const gap = metric(theme, '--ig-space-tight');
+  const memberPad = metric(theme, '--ig-space-snug') * 2;
   const inner = Math.max(1, width - metric(theme, '--ig-space') * 2);
-  const lines = (text: string): number =>
+  const wraps = (text: string): number =>
     Math.max(1, Math.ceil(measureLabel(theme, text) / inner));
 
-  const slot = document.order.slots.find((candidate) => candidate.lead === key);
-  const issue = document.byKey.get(key);
-  // THE BADGE ROW WRAPS, AND IT IS WHAT OVERFLOWED. A row of chips was counted
-  // as one line however many chips it held, so a card with four relationships
-  // reserved the height of a card with one and the two beneath it were drawn
-  // over. Packed here rather than assumed: each chip is its own text plus its
-  // padding, laid into the card's inner width.
-  const chips = badgeTexts(document, slot, issue, members);
-  const chipPadding = metric(theme, '--ig-space-tight') * 2 + metric(theme, '--ig-stroke') * 2;
-  let used = 0;
-  let badgeRows = chips.length === 0 ? 0 : 1;
-  for (const chip of chips) {
-    const chipWidth = measureLabel(theme, chip) + chipPadding;
-    if (used > 0 && used + gap + chipWidth > inner) {
-      badgeRows += 1;
-      used = chipWidth;
-    } else {
-      used += (used > 0 ? gap : 0) + chipWidth;
+  const blocks = cardBlocks(document, key, members, onSpine, now);
+  let height = pad;
+  blocks.forEach((block, index) => {
+    if (index > 0) height += gap;
+    if (block.kind === 'badges') {
+      height += packedRows(theme, block.texts, inner) * line;
+      return;
     }
-  }
-  const badgeBlock = badgeRows === 0 ? 0 : gap + badgeRows * line;
-
-  // THE SENTENCES A GUTTER CARD PRINTS. A spine card carries its hold on a chip
-  // and a tooltip, because the list beside it prints the sentence — but a
-  // gutter card is the ONLY mark this projection draws for its issue, and §16b
-  // prints "open · not eligible" on it in as many words. Counted here or the
-  // sentence is drawn over the card beneath.
-  //
-  // MEASURED, NOT COUNTED, and the difference is not academic: a hold reason is
-  // an arbitrary host string and `.ig-hold` wraps it inside a fixed-width
-  // gutter, so charging one line each under-reserved every note that runs to
-  // two or three. The same width-based count the title takes.
-  //
-  // COMPUTED BEFORE THE UNIT BRANCH, because `nodeCard` prints these after the
-  // enclosure whether the card holds one issue or five — and the unit branch
-  // used to return without them, so a tracker-held unit in the gutter overran
-  // its box by exactly its own hold reason while its arcs stayed anchored to
-  // the shorter geometry. A height rule with an early return is a height rule
-  // with a case it forgets.
-  const sentences = onSpine
-    ? 0
-    : notes(document, key).reduce((total, note) => total + lines(note), 0);
-  const noteBlock = sentences === 0 ? 0 : gap + sentences * line;
-
-  // A UNIT'S CARD IS ITS PILL, ITS ENCLOSURE AND ITS MEMBERS. Sizing it as an
-  // ordinary card is what let two issues be drawn in the space of one title.
-  if (members.length > 1) {
-    const memberPad = metric(theme, '--ig-space-snug') * 2;
-    const enclosure = members.reduce(
-      (total, member) =>
-        total +
-        memberPad +
-        (lines(document.byKey.get(member)?.title ?? member) + 1) * line,
-      0,
-    );
-    return pad + line + gap + enclosure + badgeBlock + noteBlock;
-  }
-
-  const title = document.byKey.get(key)?.title ?? key;
-  return pad + lines(title) * line + line + badgeBlock + noteBlock;
+    height += cardText(document, block).reduce((total, text) => total + wraps(text) * line, 0);
+    // A unit's enclosure pads each member's pair on both sides.
+    if (block.kind === 'unit') height += block.members.length * memberPad;
+  });
+  return height;
 }
 
 /**
- * The sentences a card off the spine prints: why it is held, and what it
- * duplicates.
+ * How many rows a wrapping row of chips takes.
  *
- * ONE RULE, TWO READERS — the layout counts them and the projection draws them,
- * so a card cannot reserve room for one sentence and print two.
+ * THE BADGE ROW WRAPS, AND IT IS WHAT OVERFLOWED FIRST. A row of chips was
+ * counted as one line however many chips it held, so a card with four
+ * relationships reserved the height of a card with one and the two beneath it
+ * were drawn over. Packed here rather than assumed: each chip is its own text
+ * plus its padding, laid into the card's inner width.
  */
-export function notes(document: NormalizedDocument, key: string): readonly string[] {
-  const lines: string[] = [];
-  for (const slot of document.order.slots) {
-    if (slot.lead !== key) continue;
-    for (const hold of slot.holds) lines.push(hold.reason);
+function packedRows(theme: Theme, texts: readonly string[], inner: number): number {
+  if (texts.length === 0) return 0;
+  const gap = metric(theme, '--ig-space-tight');
+  const chipPadding = gap * 2 + metric(theme, '--ig-stroke') * 2;
+  let used = 0;
+  let rows = 1;
+  for (const text of texts) {
+    const chip = measureLabel(theme, text) + chipPadding;
+    if (used > 0 && used + gap + chip > inner) {
+      rows += 1;
+      used = chip;
+    } else {
+      used += (used > 0 ? gap : 0) + chip;
+    }
   }
-  for (const exclusion of document.order.excluded) {
-    // THE BADGE ALREADY NAMES THE CANONICAL, so the sentence says only what the
-    // badge cannot: that this issue is never worked at all.
-    if (exclusion.key === key) lines.push('never worked — the canonical is worked instead');
-  }
-  return lines;
+  return rows;
 }
 
 /**
@@ -569,7 +534,7 @@ export function layoutGraph(
   const stacked = [...nowKeys, ...spine];
   for (const key of stacked) {
     const members = slotMembers.get(key) ?? [key];
-    const height = cardHeight(theme, document, key, spineWidth, members, true);
+    const height = cardHeight(theme, document, key, spineWidth, members, true, nowKeys.includes(key));
     nodes.set(key, {
       key,
       column: 'spine',
@@ -625,7 +590,7 @@ export function layoutGraph(
       // `slotMembers` there too — so sizing it as a single issue reserved a
       // fraction of the markup it draws, and the next gutter card was placed on
       // top of the difference.
-      const height = cardHeight(theme, document, key, gutterWidth, slotMembers.get(key) ?? [key], false);
+      const height = cardHeight(theme, document, key, gutterWidth, slotMembers.get(key) ?? [key], false, false);
       // Never above the previous card in the same gutter: an alignment that
       // would overlap gives way to the stack, because a hidden card explains
       // nothing at all.

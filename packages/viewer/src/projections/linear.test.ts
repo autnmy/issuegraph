@@ -242,10 +242,12 @@ describe('the linear projection', () => {
   it('renders the other two provenance forms', () => {
     const markup = render();
     assert.match(row(markup, '101'), /matched ordered query 1 · <span class="ig-id">label:P1<\/span>/);
-    // §16a's own words for a row with no declared priority, rather than a
-    // restatement of the tier the chip already carries.
-    assert.match(row(markup, '103'), /no declared priority — spec default <span class="ig-id">P2<\/span>/);
-    assert.match(row(markup, '103'), /<span class="ig-badge" data-priority="tier">P2 · default<\/span>/);
+    // NEUTRAL. This arm means only that no ordering query matched and the issue
+    // stayed in its tier; it does NOT mean the priority was absent, and §16a's
+    // own row — which happens to be one where it was — is not a licence to say
+    // so about every row that reaches this arm.
+    assert.match(row(markup, '103'), /no ordered query matched — ranked in tier <span class="ig-id">P2<\/span>/);
+    assert.match(row(markup, '103'), /<span class="ig-badge" data-priority="tier">P2 · tier<\/span>/);
   });
 
   it('links an issue only when the host supplied a URL', () => {
