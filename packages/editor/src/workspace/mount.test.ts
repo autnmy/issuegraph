@@ -128,19 +128,36 @@ const blockingDeriver: OrderDeriver = (document) => {
   }));
 };
 
+/** The harness projection plus every host fact, so the workspace has a header to draw once. */
+function hostedProject(snapshot: StoreSnapshot): WorkspaceProjection {
+  const base = project(snapshot);
+  return {
+    ...base,
+    viewer: {
+      ...base.viewer,
+      host: {
+        concurrencyCap: 2,
+        counts: { ranked: 4, readyNow: 4, held: 0 },
+        running: [{ key: '2', phase: 'Review', elapsed: '12m' }],
+        freshness: { asOf: '14:32', age: '2m ago', refresh: 'refresh' },
+      },
+    },
+  };
+}
+
 async function mounted(
   seed: GraphDocument = SEED,
-  options: { railCount?: number; derive?: OrderDeriver } = {},
+  options: { railCount?: number; derive?: OrderDeriver; project?: (snapshot: StoreSnapshot) => WorkspaceProjection } = {},
 ) {
   const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>');
   const win = dom.window;
   const element = win.document.getElementById('host');
   assert.ok(element !== null);
   const source = createScriptedSource(seed, applyAny);
-  const { derive = flatDeriver, ...mountOptions } = options;
+  const { derive = flatDeriver, project: projection = project, ...mountOptions } = options;
   const store = createStore({ source, derive });
   await store.hydrate();
-  const handle = mountWorkspace(element, { store, project, words: WORDS, ...mountOptions });
+  const handle = mountWorkspace(element, { store, project: projection, words: WORDS, ...mountOptions });
   const click = (node: Element): void => {
     node.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
   };
@@ -675,6 +692,33 @@ describe('a pending write cannot change a rank', () => {
       // not when the edge was drawn.
       assert.deepEqual(drawn(), [['3', '1'], ['4', '2'], ['1', '3'], ['2', '4']]);
       assert.equal(page.element.querySelector('.ig-mount')?.getAttribute('data-order'), 'settled');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+});
+
+describe('the host facts are drawn once per workspace', () => {
+  it('draws the header, the NOW list and the refresh control in the rail only, in both canvas modes', async () => {
+    // Every host fact is whole-order and the rail is the order surface. The
+    // graph canvas already drops `host` through the ladder's focus; the tree
+    // canvas rendered the whole hosted document and drew a second header and
+    // a second refresh control beside the rail's.
+    const page = await mounted(SEED, { project: hostedProject });
+    try {
+      const count = (selector: string): number => page.element.querySelectorAll(selector).length;
+      assert.equal(count('.ig-header'), 1);
+      assert.equal(count('[data-ig-command="refresh"]'), 1);
+      assert.equal(count('.ig-now'), 1);
+      assert.ok(page.zone('rail')?.querySelector('.ig-header') !== null, 'the header is not in the rail');
+
+      page.handle.update({ canvas: 'tree' });
+      await flush();
+      assert.equal(count('.ig-header'), 1, 'the tree canvas drew a second header');
+      assert.equal(count('[data-ig-command="refresh"]'), 1, 'the tree canvas drew a second refresh control');
+      assert.equal(count('.ig-now'), 1);
+      assert.equal(page.zone('canvas')?.querySelector('.ig-header'), null);
     } finally {
       page.handle.destroy();
       page.dom.window.close();

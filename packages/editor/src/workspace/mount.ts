@@ -210,6 +210,21 @@ function withKey(scope: Element, key: string): HTMLElement[] {
 }
 
 /**
+ * The document the CANVAS draws: the host's document without its host facts.
+ *
+ * The rail draws the header, the NOW list and the freshness stamp — every
+ * host fact is whole-order, and the rail is the workspace's order surface. The
+ * scale ladder's focus already drops `host` for the graph canvas; the tree
+ * canvas renders the whole document and so drew a second header and a second
+ * refresh control in the same workspace. One place strips it for both.
+ */
+function withoutHost(document: ViewerDocument): ViewerDocument {
+  if (document.host === undefined) return document;
+  const { host: _host, ...rest } = document;
+  return rest;
+}
+
+/**
  * Mount the workspace into an element.
  *
  * Returns a handle rather than nothing, for the viewer's reason: a host that
@@ -447,7 +462,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     if (drawn === null) return null;
     if (zoneName === 'rail') return renderViewer(drawn.rail.document, { projection: 'linear', theme: theme() }).scene;
     if (zoneName !== 'canvas') return null;
-    if (current.canvas === 'tree') return renderViewer(drawn.viewer, { projection: 'tree', theme: theme() }).scene;
+    if (current.canvas === 'tree') return renderViewer(withoutHost(drawn.viewer), { projection: 'tree', theme: theme() }).scene;
     const ladder = scaleLadder(drawn.viewer, state.scale);
     return ladder.tier === 'direct' ? renderViewer(ladder.canvas, { projection: 'graph', theme: theme() }).scene : null;
   };
@@ -557,7 +572,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         // as data, the same `data-ig-state` the ladder's line carries, so a
         // pending edge is not drawn as a settled one and a host styles or reads
         // it the same way in both modes. The merge is the ladder's own.
-        canvas.innerHTML = renderViewer(viewer, { projection: 'tree', theme: resolved, selected: selectedKey(state.selection) }).markup;
+        canvas.innerHTML = renderViewer(withoutHost(viewer), { projection: 'tree', theme: resolved, selected: selectedKey(state.selection) }).markup;
         const states = new Map(
           overlaysFor(viewer.edges, writeStates, selectedEdgeId(state.selection)).map((edge) => [edge.id, overlayFor(edge).attribute]),
         );

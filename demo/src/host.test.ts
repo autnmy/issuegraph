@@ -207,7 +207,8 @@ describe('the refresh control reaches the host', () => {
           outcome: byId('outcome', win.HTMLSelectElement),
         },
         boot,
-        { clock: () => current },
+        // A fast tick, so the clock-only redraw is observable within the test.
+        { clock: () => current, tickMs: 5 },
       );
       const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
       await settle();
@@ -274,7 +275,21 @@ describe('the refresh control reaches the host', () => {
       await settle();
       await settle();
       assert.equal(stamp(), fresh, 'a completion from the replaced store re-stamped the page');
+
+      // THE CLOCK ALONE REDRAWS. Nothing happens to the store; the tick reads
+      // `now` again, and the age and the elapsed time move — and past the
+      // threshold the stamp goes stale without anyone touching the page.
+      current = new Date(current.getTime() + STALE_AFTER_MS + 60_000);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await settle();
+      assert.equal(win.document.querySelector('#workspace .ig-freshness')?.getAttribute('data-stale'), 'true', 'the stamp never went stale on its own');
+      assert.equal(stamp(), fresh, 'a clock tick re-stamped the read');
       handle.destroy();
+      // TORN DOWN, NO TIMER: a later tick draws nothing.
+      const after = win.document.querySelector('#workspace .ig-freshness')?.textContent;
+      current = new Date(current.getTime() + 60_000);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      assert.equal(win.document.querySelector('#workspace .ig-freshness')?.textContent, after);
     } finally {
       Object.assign(globalThis, previous);
       win.close();

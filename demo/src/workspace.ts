@@ -254,7 +254,20 @@ function describe(record: WriteRecord): string {
 export interface SandboxOptions {
   /** The clock the host facts read. The page passes the real one; a test passes a fixed one. */
   readonly clock?: () => Date;
+  /** How often the clock-derived facts are redrawn. Defaults to {@link CLOCK_TICK_MS}. */
+  readonly tickMs?: number;
 }
+
+/**
+ * How often the page redraws for the clock alone.
+ *
+ * The elapsed time on the NOW row, the stamp's age and the `stale` threshold
+ * are all functions of `now`, and `now` is read only when a projection runs —
+ * so a page left open with nothing happening froze at its first values and
+ * never went stale. Once a minute is the coarsest tick that keeps a
+ * minute-resolution stamp honest.
+ */
+export const CLOCK_TICK_MS = 60_000;
 
 export function mountSandbox(
   elements: SandboxElements,
@@ -263,6 +276,7 @@ export function mountSandbox(
 ): SandboxHandle {
   const { root, workspace, writes, versions, outcome } = elements;
   const clock = options.clock ?? ((): Date => new Date());
+  const tickMs = options.tickMs ?? CLOCK_TICK_MS;
   // WHEN THE MIRROR WAS LAST READ — the `as of` stamp. Set when the store
   // hydrates and again on every refresh, which is the only two times this
   // trackerless demo has anything that reads as a mirror read.
@@ -446,6 +460,12 @@ export function mountSandbox(
 
   root.addEventListener('click', onClick);
   root.addEventListener('change', onChange);
+  // THE CLOCK MOVES WHEN NOTHING ELSE DOES. `update()` re-runs the projection,
+  // which reads `now`; cleared in `destroy()`, so a torn-down sandbox draws
+  // nothing and holds no timer.
+  const ticking = setInterval(() => {
+    if (!destroyed) handle?.update();
+  }, tickMs);
 
   versions.replaceChildren(
     ...STAMPED_PACKAGES.map((name) =>
@@ -481,6 +501,7 @@ export function mountSandbox(
     },
     destroy: () => {
       destroyed = true;
+      clearInterval(ticking);
       unsubscribe();
       handle?.destroy();
       root.removeEventListener('click', onClick);
