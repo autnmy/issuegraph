@@ -831,7 +831,7 @@ describe('the workspace draws the host facts in the rail', () => {
     const canvasAt = result.markup.indexOf('data-zone="canvas"');
     assert.ok(railAt !== -1 && canvasAt > railAt, 'the rail zone does not precede the canvas');
     const rail = result.markup.slice(railAt, canvasAt);
-    assert.match(rail, /<p class="ig-summary">8 ranked · 8 ready now · cap 2 · 0 held<\/p>/);
+    assert.match(rail, /<span class="ig-count-chip" data-count="ready">8 ready now · cap 2<\/span>/);
     assert.match(rail, /<li class="ig-now-row" data-ig-group="i0003"/);
     assert.match(rail, /data-ig-command="refresh"/);
     // Once in the workspace: the canvas draws no header of its own.

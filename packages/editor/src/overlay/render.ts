@@ -113,15 +113,21 @@ const EDGE_CLASS = 'ig-edge';
 const TERMINAL_CLASS = 'ig-terminal';
 
 /**
- * The class the viewer puts on a `together-with` connector.
+ * The class the viewer puts on a relationship BADGE.
  *
- * A `together-with` relationship is NOT drawn as an edge path — `graph.ts:657`
- * skips it outright, because it shares a rank rather than ordering anything —
- * so it is drawn as an enclosure plus this connector. Without matching it, one
- * of the five relationships could never be overlaid at all: every state on a
- * `together-with` came back `unattached`.
+ * A `together-with` relationship is NOT drawn as an edge path — it shares a
+ * rank rather than ordering anything, and layer 1's §16 pass draws the unit as
+ * ONE card with its members listed inside, so there is no line between two
+ * boxes left to overlay. What still carries the relationship, in every
+ * projection, is the badge that names it: it publishes the same
+ * `edgeIdentity(...)` on `data-ig-group` that the connector did.
+ *
+ * WITHOUT MATCHING IT, one of the five relationships could never be overlaid at
+ * all — every state on a `together-with` came back `unattached`, which is the
+ * exact defect the connector match was added to fix, returning by a different
+ * route when the connector went away.
  */
-const CONNECTOR_CLASS = 'ig-connector';
+const BADGE_CLASS = 'ig-badge';
 
 /** The attribute the connector publishes its edge identity on. */
 const GROUP_ATTRIBUTE = 'data-ig-group';
@@ -153,8 +159,27 @@ function classesOf(attrs: Readonly<Record<string, AttrValue>> | undefined): read
 }
 
 function isEdgePath(spec: ElementSpec): boolean {
-  const names = classesOf(spec.attrs);
-  return names.includes(EDGE_CLASS) || names.includes(CONNECTOR_CLASS);
+  return classesOf(spec.attrs).includes(EDGE_CLASS);
+}
+
+/**
+ * Whether this element is a relationship BADGE — the chip naming an edge.
+ *
+ * IT TAKES THE STATE ATTRIBUTES AND NONE OF THE DRAWN MARKS, and that split is
+ * the whole point of it being a separate test. Every mark this module draws is
+ * CLONED from the element it matched — a halo is a fatter copy of the stroke, a
+ * ghost is a dashed copy of it — and a copy of an HTML span is not a mark, it is
+ * a second chip. So a badge is an attachment point for what a state SAYS and
+ * never for what a state DRAWS.
+ *
+ * IT IS ALSO WHAT KEEPS `together-with` OVERLAYABLE. That relationship is drawn
+ * as no line at all — it shares a rank rather than ordering anything, and layer
+ * 1 draws the unit as one card with its members listed inside — so the badge is
+ * the only mark left that carries its identity. Without this, every state on one
+ * of the five relationships came back `unattached`.
+ */
+function isEdgeBadge(spec: ElementSpec): boolean {
+  return classesOf(spec.attrs).includes(BADGE_CLASS);
 }
 
 /**
@@ -344,7 +369,7 @@ function overlayTree(
       continue;
     }
 
-    if (!isEdgePath(child)) {
+    if (!isEdgePath(child) && !isEdgeBadge(child)) {
       next.push(overlayTree(child, context));
       continue;
     }
@@ -395,7 +420,10 @@ function overlayTree(
     // The marks that are genuinely per-edge — the chips, the ✕, the reason —
     // are not built here at all. They need a position this layer does not have,
     // so they travel as declared marks and are placed once by the composer.
-    const { behind, front } = overlayMarks(child, match.overlay, edge, context.theme);
+    // A BADGE TAKES THE WORDS AND NOT THE MARKS — see `isEdgeBadge`.
+    const { behind, front } = isEdgePath(child)
+      ? overlayMarks(child, match.overlay, edge, context.theme)
+      : { behind: [], front: [] };
 
     next.push(
       ...behind,

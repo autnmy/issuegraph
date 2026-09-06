@@ -24,6 +24,7 @@ import {
   navigate,
   reconcile,
 } from './navigation.ts';
+import { COMMAND_ATTRIBUTE } from './parts.ts';
 import { type RenderOptions, sceneFor } from './render.ts';
 import { GROUP_ATTRIBUTE, KEY_ATTRIBUTE, type Projection, type Scene } from './scene.ts';
 import { type Theme, resolveTheme } from './theme.ts';
@@ -54,6 +55,19 @@ export interface MountOptions extends RenderOptions {
   readonly onSelect?: ((key: string | null) => void) | undefined;
   /** Called with the hovered key, and with `null` when nothing is hovered. */
   readonly onHover?: ((key: string | null) => void) | undefined;
+  /**
+   * Called with a command the viewer PUBLISHES and cannot complete: `refresh`,
+   * `projection:linear`, `projection:graph`, `expand`, `collapse`.
+   *
+   * THE VIEWER IS A PURE RENDERER, so none of these is its to perform — it
+   * cannot fetch a mirror, switch its own projection or widen its own column.
+   * They already travel on `data-ig-command` for a host that listens to the
+   * DOM; this is the same set on the callback channel, because §16e puts one of
+   * them on a KEY (`g` toggles the view) and a key press has no element for a
+   * host to have been listening to. One name set, two channels, so a host
+   * cannot wire the button and silently lose the shortcut.
+   */
+  readonly onCommand?: ((command: string) => void) | undefined;
 }
 
 export interface ViewerHandle {
@@ -113,6 +127,22 @@ function ownsItsOwnActivation(
  * Reading both attributes here separates "what may take focus" from "what may
  * be pointed at" rather than making one attribute answer both.
  */
+/**
+ * The published command an activation landed on, walking target-upward.
+ *
+ * THE SAME WALK `keyAt` MAKES, on a different attribute, and it is a separate
+ * function rather than a third attribute in that one because the two answer
+ * different questions: `keyAt` asks which SUBJECT was pointed at, and a command
+ * control has no subject. Folding them together would let a click on the
+ * refresh button select whatever row happened to contain it.
+ */
+function commandAt(
+  target: MountElement | null | undefined,
+  container: MountElement,
+): string | null {
+  return keyAt(target, container, [COMMAND_ATTRIBUTE]);
+}
+
 function keyAt(
   target: MountElement | null | undefined,
   container: MountElement,
@@ -468,6 +498,16 @@ export function mountViewer(
     // UNCONDITIONAL HERE, CONDITIONAL THERE, and the asymmetry is the point: a
     // click IS an activation, whereas a keydown may be a MOVEMENT key, which
     // stays the viewer's even while focus rests on a link.
+    // A PUBLISHED COMMAND IS REPORTED BEFORE THE ACTIVATION RULE DROPS IT. A
+    // command control is a real button, so it owns its own activation and the
+    // rule below correctly leaves it alone — which also meant a host using the
+    // callback channel never heard the click at all, while a host reading the
+    // DOM did. The two channels carry the same set or neither is trustworthy.
+    const command = commandAt(event.target, container);
+    if (command !== null) {
+      currentOptions.onCommand?.(command);
+      return;
+    }
     if (ownsItsOwnActivation(event.target, container)) return;
     const key = keyAt(event.target, container);
     if (key === null) return;
@@ -519,6 +559,14 @@ export function mountViewer(
       emitSelect(result.command.key);
       return;
     }
+    // A COMMAND IS THE HOST'S TO COMPLETE, exactly like the header's own
+    // buttons: this package cannot switch its own projection or resize its own
+    // column. It travels on the same channel a click on those buttons does, so
+    // a host wires one listener and gets both.
+    if (result.command.kind === 'command') {
+      currentOptions.onCommand?.(result.command.command);
+      return;
+    }
     state = result.state;
     draw();
     keyed.get(result.command.key)?.focus?.();
@@ -541,8 +589,19 @@ export function mountViewer(
     },
     setProjection(next: Projection): void {
       if (destroyed) return;
+      if (next === projection) return;
       projection = next;
       draw();
+      // §16f: A SWITCH CHANGES REPRESENTATION, NEVER SUBJECT. The selection
+      // already survives — `reconcile` carries it whole — but surviving off
+      // screen is indistinguishable from being lost, and the two views place
+      // the same subject at completely different coordinates. So the other view
+      // brings it into view. Focus is NOT moved: a switch is not an act of
+      // navigation, and stealing focus from wherever the reader put it would
+      // make the toggle a worse citizen than the click that made the selection.
+      if (state.selected !== null) {
+        keyed.get(state.selected)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+      }
     },
     select(key: string | null): void {
       if (destroyed) return;

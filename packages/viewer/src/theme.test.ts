@@ -26,7 +26,8 @@ import {
   type Theme,
   type TypeToken,
 } from './theme.ts';
-import { fitLabel } from './layout.ts';
+import { normalizeDocument } from './document.ts';
+import { layoutGraph, measureLabel } from './layout.ts';
 import { renderViewer } from './render.ts';
 import { viewerStylesheet } from './styles.ts';
 import { fixtureDocument } from './testing/fixtures.ts';
@@ -226,14 +227,20 @@ describe('a theme built against an earlier version', () => {
 
   it('does not turn a missing metric into NaN geometry', () => {
     // A missing metric does not fail loudly: it reads `undefined`, arithmetic
-    // yields `NaN`, and every comparison against `NaN` is false — so a fitting
-    // check silently passes everything. Measured before the fallback: a
-    // 60-character title came back WHOLE with an ellipsis appended, which is
-    // worse overflow than the defect `--ig-label-char-width` was added to fix.
-    const drawn = fitLabel(withoutNewestMetric(), 'W'.repeat(60), 211.2);
+    // yields `NaN`, and every comparison against `NaN` is false — so every
+    // geometry check silently passes and the drawing comes out wrong rather
+    // than absent. Measured before the fallback: `themeCss` emitted a literal
+    // `undefinedpx` and the label model returned `NaN` for every width.
+    assert.ok(Number.isFinite(measureLabel(withoutNewestMetric(), 'W'.repeat(60))));
 
-    assert.ok([...drawn].length < 30, `a stale theme kept ${String([...drawn].length)} of 60 characters`);
-    assert.ok(drawn.endsWith('\u2026'));
+    // And the same for the layout the widths feed: a card's height is counted
+    // from them, so one NaN puts every station on top of the last.
+    const layout = layoutGraph(normalizeDocument(fixtureDocument).document, withoutNewestMetric());
+    for (const box of layout.nodes.values()) {
+      assert.ok(Number.isFinite(box.height), `${box.key} has a NaN height`);
+      assert.ok(Number.isFinite(box.y), `${box.key} has a NaN y`);
+    }
+    assert.ok(Number.isFinite(layout.height));
   });
 
   it('never emits an undefined custom property', () => {
@@ -293,6 +300,41 @@ const EXPANSION: readonly string[] = Object.freeze([
   '--ig-tint-unit',
   '--ig-elevation-raised',
   '--ig-elevation-overlay',
+  // The four type steps §16 spends between `micro` and the body size, the rank
+  // TRACK's width, the spine station's own box, and the line a card's height is
+  // counted in — added by the §16 fidelity pass, which is what reads them.
+  '--ig-font-size-meta',
+  '--ig-font-size-compact',
+  '--ig-font-size-row',
+  '--ig-font-size-rank',
+  '--ig-rank-column',
+  '--ig-station-box',
+  '--ig-card-line',
+]);
+
+/**
+ * The expansion tokens NOTHING READS YET, and why each one is still here.
+ *
+ * The list this replaces was the byte-identity pin for a host on the render
+ * BEFORE §16 was composed against these tokens — it asserted the stylesheet
+ * read none of them, and it was written to fail first when this pass started.
+ * It has done its job, so it narrows rather than disappearing: a token nothing
+ * reads is still a token a host has to supply, and one arriving unread by
+ * accident is still worth catching.
+ *
+ * `--ig-weight-medium` is §16's emphasis weight and §16a and §16b spend it on
+ * nothing this projection draws. The two ELEVATIONS were never read from a §16
+ * frame at all — §16 separates its panels with a hairline and draws no drop
+ * shadow — so reaching for one to lift a §16 panel remains a decision needing a
+ * rationale rather than a default. `--ig-card-line` is read by the LAYOUT, not
+ * by the stylesheet: it is how a card's height is counted before anything is
+ * rendered, and it reaches the markup as a computed coordinate.
+ */
+const STILL_UNREAD: readonly string[] = Object.freeze([
+  '--ig-weight-medium',
+  '--ig-elevation-raised',
+  '--ig-elevation-overlay',
+  '--ig-card-line',
 ]);
 
 describe('the vocabulary the §16 design needs', () => {
@@ -417,14 +459,22 @@ describe('a host that sets none of the new tokens renders as it did before', () 
     '--ig-stroke-connector': 1.6,
     '--ig-terminal-length': 9,
     '--ig-terminal-width': 8,
-    '--ig-gutter-width': 208,
-    '--ig-spine-width': 360,
+    // MOVED BY THE §16 FIDELITY PASS, and they are the two entries in this
+    // list that are DELIBERATELY not what shipped. Everything else here is a
+    // value a host may have built a second theme around; these two are the
+    // canvas's own column widths, and they were 208/360 against a frame that
+    // draws 250-270/330. Widening the gutters and narrowing the spine is the
+    // fidelity fix — a card that fills its column at 330 is what lets a title
+    // wrap instead of being fitted and cut. Left pinned rather than removed,
+    // so the next change to either is still a decision somebody makes.
+    '--ig-gutter-width': 260,
+    '--ig-spine-width': 330,
     '--ig-char-width': 7.8,
     '--ig-label-char-width': 6,
     '--ig-focus-ring': 2,
   });
 
-  it('keeps every token that shipped before, at the value it shipped with', () => {
+  it('keeps every token at the value this file pins for it', () => {
     for (const [token, value] of Object.entries(SHIPPED)) {
       const actual =
         typeof value === 'number'
@@ -443,24 +493,35 @@ describe('a host that sets none of the new tokens renders as it did before', () 
     assert.deepEqual(unaccounted, []);
   });
 
-  it('leaves the stylesheet reading none of the new tokens', () => {
-    // WHY THIS IS THE BYTE-IDENTITY PROOF and not a snapshot. A custom
-    // property changes nothing until something reads it, so a default host's
-    // rendering can only move if the stylesheet or the markup names a new
-    // token. Recomposing §16 against these tokens is the NEXT issue, and this
-    // assertion is what will fail first when it starts — deliberately.
-    const referenced = [...viewerStylesheet.matchAll(/var\((--[a-z0-9-]+)/g)].map(
-      (match) => match[1] as string,
+  it('leaves the stylesheet reading only the tokens still owed a use', () => {
+    // NARROWED, NOT DELETED — see STILL_UNREAD for why each survivor is there.
+    // The property this holds is unchanged in kind: a custom property changes
+    // nothing until something reads it, so what a host's render depends on is
+    // exactly the set the stylesheet names.
+    const referenced = new Set(
+      [...viewerStylesheet.matchAll(/var\((--[a-z0-9-]+)/g)].map((match) => match[1] as string),
     );
-    assert.deepEqual(referenced.filter((token) => EXPANSION.includes(token)), []);
+    assert.deepEqual(
+      STILL_UNREAD.filter((token) => referenced.has(token)),
+      [],
+      'a token documented as unread is now read; move it out of STILL_UNREAD',
+    );
+    // And the other direction: every expansion token NOT on that list is read,
+    // so the list cannot quietly grow to cover a token the pass forgot.
+    const unread = EXPANSION.filter(
+      (token) => !referenced.has(token) && !STILL_UNREAD.includes(token),
+    );
+    assert.deepEqual(unread, [], 'these tokens are supplied and drawn with by nothing');
   });
 
-  it('leaves the rendered markup naming none of them either', () => {
+  it('leaves the rendered markup naming none of the unread ones either', () => {
     // The stylesheet is one of the two places a token can be read; the layout
-    // writes properties inline onto elements, which is the other.
+    // writes properties inline onto elements, which is the other. `--ig-card-line`
+    // is read THERE rather than here, so it is exempt: it reaches the markup as
+    // a coordinate the layout computed from it, never by name.
     for (const projection of ['linear', 'graph', 'tree'] as const) {
       const { markup } = renderViewer(fixtureDocument, { projection });
-      for (const token of EXPANSION) {
+      for (const token of STILL_UNREAD) {
         assert.equal(markup.includes(token), false, `${token} reached the ${projection} markup`);
       }
     }

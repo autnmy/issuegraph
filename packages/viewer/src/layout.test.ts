@@ -2,12 +2,28 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { normalizeDocument } from './document.ts';
-import { edgeGeometry, enclosureBounds, layoutGraph } from './layout.ts';
+import { edgeGeometry, layoutGraph } from './layout.ts';
 import { fixtureDocument } from './testing/fixtures.ts';
 import { defaultTheme, extendTheme } from './theme.ts';
 
 const laidOut = (): ReturnType<typeof layoutGraph> =>
   layoutGraph(normalizeDocument(fixtureDocument).document, defaultTheme);
+
+/** The key whose card stands for this one — its own, or its unit's lead. */
+function stationOf(
+  document: ReturnType<typeof normalizeDocument>['document'],
+  key: string,
+): string {
+  return document.order.slots.find((slot) => slot.members.includes(key))?.lead ?? key;
+}
+
+/** Whether both ends of an edge are drawn on ONE card, so it needs no arc. */
+function sameStation(
+  document: ReturnType<typeof normalizeDocument>['document'],
+  edge: { readonly from: string; readonly to: string },
+): boolean {
+  return stationOf(document, edge.from) === stationOf(document, edge.to);
+}
 
 /** Whether a point lies on one of a box's vertical bounds. */
 function onVerticalBound(box: { x: number; width: number }, x: number): boolean {
@@ -24,23 +40,111 @@ describe('layoutGraph', () => {
     assert.equal(first.height, second.height);
   });
 
-  it('puts every slot member on the spine, in rank order', () => {
+  it('puts one station on the spine per SLOT, in rank order, never one per member', () => {
+    // §16b draws a together unit as ONE card with its members listed inside it.
+    // A box per member gave the unit two rows of a column whose vertical
+    // position IS the rank, so two boxes claimed two ranks for one — and `104`,
+    // the fixture's partner, is exactly that case.
     const layout = laidOut();
-    assert.deepEqual([...layout.spineOrder], ['102', '101', '103', '104', '105']);
+    // `105` is tracker-held in the fixture, so it earns no rank and is not on
+    // the spine at all — see the gutter rule below.
+    assert.deepEqual([...layout.spineOrder], ['102', '101', '103']);
     for (const key of layout.spineOrder) {
       assert.equal(layout.nodes.get(key)?.column, 'spine');
     }
+    assert.equal(layout.nodes.has('104'), false, 'the unit partner took a box of its own');
+    assert.deepEqual([...(layout.slotMembers.get('103') ?? [])], ['103', '104']);
   });
 
-  it('gives every key touched by a kept edge a box', () => {
-    // Totality: an endpoint with no bounds has undefined geometry, and this is
-    // the invariant that makes `edgeGeometry` unable to return null in practice.
+  it('gives every key touched by a kept edge a box, or the station that stands for it', () => {
+    // Totality, restated for one-box-per-slot: an endpoint with no bounds has
+    // undefined geometry, and an edge whose ends are BOTH inside one unit is
+    // drawn on the card rather than as an arc, so it needs none.
     const { document } = normalizeDocument(fixtureDocument);
     const layout = layoutGraph(document, defaultTheme);
+    const stationOf = (key: string): string =>
+      document.order.slots.find((slot) => slot.members.includes(key))?.lead ?? key;
 
     for (const edge of document.edges) {
-      assert.ok(layout.nodes.has(edge.from), `${edge.from} has no box`);
-      assert.ok(layout.nodes.has(edge.to), `${edge.to} has no box`);
+      assert.ok(layout.nodes.has(stationOf(edge.from)), `${edge.from} has no box`);
+      assert.ok(layout.nodes.has(stationOf(edge.to)), `${edge.to} has no box`);
+    }
+  });
+
+  it('sets the spine line where the stations are centred, spanning them and no further', () => {
+    // §16c's whole argument turns on sequence having a channel of its own — one
+    // vertical line to read down. A line running the full height of the canvas
+    // would imply order where the gutters sit; one absent entirely leaves the
+    // picture a column of rectangles, which is what the alternatives were
+    // rejected for.
+    const layout = laidOut();
+    const first = layout.nodes.get(layout.spineOrder[0] as string);
+    const last = layout.nodes.get(layout.spineOrder[layout.spineOrder.length - 1] as string);
+    assert.ok(first !== undefined && last !== undefined);
+
+    assert.ok(layout.spineLineX < first.x, 'the spine runs through the cards, not beside them');
+    assert.ok(
+      layout.spineLineX > first.x - defaultTheme.metrics['--ig-station-box'] - defaultTheme.metrics['--ig-space'],
+      'the spine is further from the cards than a station is wide',
+    );
+    assert.equal(layout.spineTop, first.y);
+    assert.equal(layout.spineBottom, last.y + last.height);
+  });
+
+  it('gives a card the height its own contents need, never a fixed row height', () => {
+    // The truncation this pass exists to remove came from the other choice: a
+    // fixed-height box, a title fitted to it, and an ellipsis. A unit card lists
+    // two issues and cannot be the height of a card that lists one.
+    const layout = laidOut();
+    const unit = layout.nodes.get('103');
+    const plain = layout.nodes.get('101');
+    assert.ok(unit !== undefined && plain !== undefined);
+    assert.ok(unit.height > plain.height, 'a two-member unit is no taller than a single row');
+  });
+
+  it('aligns a gutter card with the spine row it explains', () => {
+    // Stacking the gutters from the top independently drew a blocker beside an
+    // unrelated rank and its arc across every card in between — and the arcs
+    // then crossed the spine, which is the one thing this layout exists to
+    // prevent.
+    const layout = laidOut();
+    // `105` is serialize-with `103`, and `103` is the fixture's rank 2.
+    assert.equal(layout.nodes.get('105')?.column, 'left');
+    assert.equal(layout.nodes.get('105')?.y, layout.nodes.get('103')?.y);
+    // `107` is the closed origin `103` was split from, so it sits beside it.
+    assert.equal(layout.nodes.get('107')?.column, 'right');
+    assert.equal(layout.nodes.get('107')?.y, layout.nodes.get('103')?.y);
+  });
+
+  it('sends a runner-held slot to the gutter when it explains a rank, and to the footer otherwise', () => {
+    // §16b's left column heading is the test: "Explains the order". A parked
+    // issue that blocks a ranked one answers "why isn't my P1 running", so it is
+    // drawn beside the spine; one that blocks nothing on the spine explains
+    // nothing about it and belongs in the footer group with the duplicates.
+    // Drawing either ON the spine gave it a position in a sequence it is not
+    // part of, with a dash where its number should be.
+    const layout = laidOut();
+    assert.equal(layout.spineOrder.includes('105'), false);
+    assert.equal(layout.nodes.get('105')?.column, 'left');
+    assert.deepEqual([...layout.footer], []);
+  });
+
+  it('drops the gutters and the arcs in the column, keeping the spine identical', () => {
+    // §16b: at a settings column's width the arcs and both gutters cannot be
+    // drawn legibly, so in-column is a spine-only preview with an expand
+    // affordance — NOT the same picture squeezed.
+    const { document } = normalizeDocument(fixtureDocument);
+    const wide = layoutGraph(document, defaultTheme);
+    const column = layoutGraph(document, defaultTheme, true);
+
+    assert.equal(column.compact, true);
+    assert.ok(column.width < wide.width);
+    for (const box of column.nodes.values()) assert.equal(box.column, 'spine');
+    assert.deepEqual([...column.spineOrder], [...wide.spineOrder]);
+    // Nothing is hidden: what the gutters would have held joins the footer
+    // group, which the projection renders beneath the stage.
+    for (const key of ['105', 'other/repo#7', '106', '107']) {
+      assert.ok(column.footer.includes(key), `${key} vanished in the column`);
     }
   });
 
@@ -93,39 +197,10 @@ describe('layoutGraph', () => {
     );
   });
 
-  it('reserves the padding a together enclosure needs, at both ends', () => {
-    // The enclosure pads clear of its members' bounds, so a unit on the first or
-    // last row drew at a negative coordinate or past the bottom edge — outside
-    // the viewBox, and outside the stage, which hides its overflow.
-    const { document } = normalizeDocument({
-      issues: [
-        { key: 'm', title: 'Member one', open: true, priority: 2 },
-        { key: 'n', title: 'Member two', open: true, priority: 2 },
-      ],
-      edges: [{ field: 'together-with', from: 'm', to: 'n' }],
-      order: {
-        slots: [{ rank: 1, lead: 'm', members: ['m', 'n'], ready: true, holds: [] }],
-        excluded: [],
-      },
-      cycles: [],
-    });
-    const layout = layoutGraph(document, defaultTheme);
-    const bounds = enclosureBounds(layout, ['m', 'n'], defaultTheme);
-
-    assert.ok(bounds !== null);
-    assert.ok(bounds.x >= 0, `enclosure starts at x=${String(bounds.x)}, outside the canvas`);
-    assert.ok(bounds.y >= 0, `enclosure starts at y=${String(bounds.y)}, outside the canvas`);
-    assert.ok(
-      bounds.y + bounds.height <= layout.height,
-      'the enclosure extends past the bottom of the canvas',
-    );
-    assert.ok(bounds.x + bounds.width <= layout.width);
-  });
-
   it('moves every coordinate when the theme changes its geometry', () => {
     // The single-sourcing claim: geometry is theme data, so retheming moves the
     // drawing and the stylesheet together rather than only one of them.
-    const taller = extendTheme(defaultTheme, { metrics: { '--ig-row-height': 88 } });
+    const taller = extendTheme(defaultTheme, { metrics: { '--ig-card-line': 36 } });
     const base = laidOut();
     const other = layoutGraph(normalizeDocument(fixtureDocument).document, taller);
 
@@ -140,10 +215,14 @@ describe('edgeGeometry', () => {
     const layout = layoutGraph(document, defaultTheme);
 
     for (const edge of document.edges) {
+      // AN EDGE INSIDE ONE UNIT HAS NO ARC. Both ends are on the same card, so
+      // the card lists them and the badge row names the relationship — the same
+      // treatment the list projection gives it.
+      if (sameStation(document, edge)) continue;
       const geometry = edgeGeometry(layout, edge);
       assert.ok(geometry !== null, `${edge.from} -> ${edge.to} has no geometry`);
-      const from = layout.nodes.get(edge.from);
-      const to = layout.nodes.get(edge.to);
+      const from = layout.nodes.get(stationOf(document, edge.from));
+      const to = layout.nodes.get(stationOf(document, edge.to));
       assert.ok(from !== undefined && to !== undefined);
       assert.ok(onVerticalBound(from, geometry.start.x), `${edge.from} start is not on a bound`);
       assert.ok(onVerticalBound(to, geometry.end.x), `${edge.to} end is not on a bound`);
@@ -155,10 +234,11 @@ describe('edgeGeometry', () => {
     const layout = layoutGraph(document, defaultTheme);
 
     for (const edge of document.edges) {
+      if (sameStation(document, edge)) continue;
       const geometry = edgeGeometry(layout, edge);
       assert.ok(geometry !== null);
-      const from = layout.nodes.get(edge.from);
-      const to = layout.nodes.get(edge.to);
+      const from = layout.nodes.get(stationOf(document, edge.from));
+      const to = layout.nodes.get(stationOf(document, edge.to));
       assert.ok(from !== undefined && to !== undefined);
       assert.notEqual(geometry.start.y, from.y + from.height / 2);
       assert.notEqual(geometry.end.y, to.y + to.height / 2);
@@ -174,9 +254,10 @@ describe('edgeGeometry', () => {
     const layout = layoutGraph(document, defaultTheme);
 
     for (const edge of document.edges) {
+      if (sameStation(document, edge)) continue;
       const geometry = edgeGeometry(layout, edge);
-      const from = layout.nodes.get(edge.from);
-      const to = layout.nodes.get(edge.to);
+      const from = layout.nodes.get(stationOf(document, edge.from));
+      const to = layout.nodes.get(stationOf(document, edge.to));
       assert.ok(geometry !== null && from !== undefined && to !== undefined);
       if (from.x === to.x) continue; // same column: the design bows left, tested below
 
@@ -267,26 +348,5 @@ describe('edgeGeometry', () => {
   it('refuses rather than guesses when a node has no box', () => {
     const layout = laidOut();
     assert.equal(edgeGeometry(layout, { field: 'blocked-by', from: '101', to: 'nope' }), null);
-  });
-});
-
-describe('enclosureBounds', () => {
-  it('surrounds every member, padded clear of their bounds', () => {
-    const layout = laidOut();
-    const bounds = enclosureBounds(layout, ['103', '104'], defaultTheme);
-
-    assert.ok(bounds !== null);
-    for (const key of ['103', '104']) {
-      const box = layout.nodes.get(key);
-      assert.ok(box !== undefined);
-      assert.ok(bounds.x < box.x);
-      assert.ok(bounds.y < box.y);
-      assert.ok(bounds.x + bounds.width > box.x + box.width);
-      assert.ok(bounds.y + bounds.height > box.y + box.height);
-    }
-  });
-
-  it('draws nothing around a slot of one — there is no unit to enclose', () => {
-    assert.equal(enclosureBounds(laidOut(), ['101'], defaultTheme), null);
   });
 });

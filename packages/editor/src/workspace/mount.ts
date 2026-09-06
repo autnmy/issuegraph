@@ -462,9 +462,12 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     if (drawn === null) return null;
     if (zoneName === 'rail') return renderViewer(drawn.rail.document, { projection: 'linear', theme: theme() }).scene;
     if (zoneName !== 'canvas') return null;
-    if (current.canvas === 'tree') return renderViewer(withoutHost(drawn.viewer), { projection: 'tree', theme: theme() }).scene;
+    if (current.canvas === 'tree')
+      return renderViewer(withoutHost(drawn.viewer), { projection: 'tree', theme: theme(), chrome: false }).scene;
     const ladder = scaleLadder(drawn.viewer, state.scale);
-    return ladder.tier === 'direct' ? renderViewer(ladder.canvas, { projection: 'graph', theme: theme() }).scene : null;
+    return ladder.tier === 'direct'
+      ? renderViewer(ladder.canvas, { projection: 'graph', theme: theme(), chrome: false }).scene
+      : null;
   };
 
   /** The row or node that owns keyboard focus, if focus is on one at all. */
@@ -572,7 +575,13 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         // as data, the same `data-ig-state` the ladder's line carries, so a
         // pending edge is not drawn as a settled one and a host styles or reads
         // it the same way in both modes. The merge is the ladder's own.
-        canvas.innerHTML = renderViewer(withoutHost(viewer), { projection: 'tree', theme: resolved, selected: selectedKey(state.selection) }).markup;
+        canvas.innerHTML = renderViewer(withoutHost(viewer), {
+          projection: 'tree',
+          theme: resolved,
+          selected: selectedKey(state.selection),
+          // The rail beside this canvas draws the panel's one header.
+          chrome: false,
+        }).markup;
         const states = new Map(
           overlaysFor(viewer.edges, writeStates, selectedEdgeId(state.selection)).map((edge) => [edge.id, overlayFor(edge).attribute]),
         );

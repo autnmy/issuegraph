@@ -24,6 +24,7 @@
  */
 
 import type { NormalizedDocument, ViewerEdge } from './document.ts';
+import { badgeTexts } from './parts.ts';
 import { type MetricToken, type Theme, defaultTheme } from './theme.ts';
 
 /**
@@ -42,6 +43,14 @@ export const LAYOUT_PROPERTIES: readonly string[] = Object.freeze([
   '--ig-row-y',
   '--ig-row-w',
   '--ig-row-h',
+  // §16b's station column: a disc ON the spine line, to the LEFT of the card it
+  // numbers. It was drawn inside the card, which is what made the picture a
+  // column of rectangles rather than a spine — the sequence has to be readable
+  // off one vertical line, and a number inside a box is not on a line.
+  '--ig-station-x',
+  '--ig-station-y',
+  // Where each of the three column headings sits.
+  '--ig-col-x',
 ]);
 
 /** Which column a node sits in. */
@@ -57,6 +66,15 @@ export interface NodeBox {
   /** The slot this node belongs to, when it is on the spine. */
   readonly rank: number | null;
   readonly held: boolean;
+  /**
+   * The runner is working this one NOW.
+   *
+   * §16b gives it the top station on the spine, above rank 1, because "what is
+   * running" and "what is next" are the same question asked one step apart —
+   * and a NOW row rendered above the canvas, which is what shipped, is off the
+   * one line the whole sequence is supposed to read down.
+   */
+  readonly now?: boolean;
 }
 
 export interface Point {
@@ -75,6 +93,25 @@ export interface GraphLayout {
   /** The free vertical channels arcs route through. */
   readonly leftChannel: number;
   readonly rightChannel: number;
+  /**
+   * The x of the spine LINE — the one vertical the whole sequence reads off.
+   * Stations are centred on it and the cards sit to its right.
+   */
+  readonly spineLineX: number;
+  /** Where the spine line starts and ends, so it spans the stations and no more. */
+  readonly spineTop: number;
+  readonly spineBottom: number;
+  /** The x each of the three column headings is set at. */
+  readonly columnX: Readonly<Record<Column, number>>;
+  /**
+   * The slot leads the canvas draws NOWHERE — runner-held, and blocking nothing
+   * on the spine, so they explain nothing about the order. They are the graph's
+   * half of §16a's footer group, and the projection renders them beneath the
+   * stage as that group rather than on a column.
+   */
+  readonly footer: readonly string[];
+  /** Whether this layout is the in-column preview or the full-width picture. */
+  readonly compact: boolean;
 }
 
 function metric(theme: Theme, token: MetricToken): number {
@@ -92,10 +129,12 @@ function metric(theme: Theme, token: MetricToken): number {
   return theme.metrics[token] ?? defaultTheme.metrics[token];
 }
 
-/**
- * A node's width follows its own contents rather than the column, so an edge
- * terminating on its bound lands where the reader sees the box end. Clamped to
- * the column so the channels stay free.
+/*
+ * A CARD FILLS ITS COLUMN. It used to be sized to its own label and clamped to
+ * the column, which made every card a different width and every edge terminate
+ * at a different x — and the label was then fitted to that width and truncated.
+ * §16b draws one width per column and lets the card grow DOWNWARDS instead, so
+ * the arcs arrive on one vertical and nothing is cut.
  */
 /**
  * The label as it fits the box the layout gave it.
@@ -195,53 +234,25 @@ function labelWidth(glyphs: readonly string[], average: number): number {
 }
 
 /**
- * How wide a drawn label runs, under the same model {@link fitLabel} truncates
- * with.
+ * How wide a drawn label runs.
  *
- * EXPORTED SO A TEST CAN CHECK THE GEOMETRY WITHOUT RESTATING THE MODEL. The
- * overflow invariant used to be asserted with `text.length * --ig-char-width`,
- * which is the mono advance at the wrong size and the very assumption #44
- * named — so the guard shared the defect it was guarding against. Measuring
- * with this checks that the right box got the right label; the wide-glyph
- * bound is what checks the model itself, against a number stated outside it.
+ * NOTHING TRUNCATES ANY MORE, and this is what replaced the function that did.
+ * A node is an HTML card whose title wraps, so the question stopped being "how
+ * much of this fits on one line" and became "how many lines does this need" —
+ * which is what {@link layoutGraph} asks it, to give a card a height before
+ * anything is rendered. `fitLabel` went with the truncation it existed to
+ * perform: §16b's acceptance is that nothing truncates that the design draws in
+ * full, and a helper that shortens a title had no caller left.
+ *
+ * IT IS A CEILING, per character class rather than a flat average — see
+ * `labelWidth`. A card that reserves slightly too much leaves a gap; one that
+ * reserves too little is overlapped by the next rank.
  */
 export function measureLabel(theme: Theme, label: string): number {
   return labelWidth([...label], metric(theme, '--ig-label-char-width'));
 }
 
-export function fitLabel(theme: Theme, label: string, width: number): string {
-  const room = width - metric(theme, '--ig-space') * 2;
-  const average = metric(theme, '--ig-label-char-width');
-  // BY CODE POINT, NOT BY UTF-16 CODE UNIT. `slice` counts units, so a cut
-  // landing between an astral character's surrogate halves drew a lone
-  // surrogate — a replacement glyph immediately before the ellipsis. Measured:
-  // a title of `𝗔` came back containing one. Emoji and mathematical alphanumerics
-  // are the ordinary way a title reaches this.
-  const glyphs = [...label];
-  if (labelWidth(glyphs, average) <= room) return label;
-  // MEASURED, NOT COUNTED, so the ellipsis is included in what has to fit and
-  // the kept text is as long as the box actually allows.
-  const ellipsis = labelWidth(['\u2026'], average);
-  let used = ellipsis;
-  let kept = 0;
-  for (const glyph of glyphs) {
-    const next = used + labelWidth([glyph], average);
-    if (next > room) break;
-    used = next;
-    kept += 1;
-  }
-  // Below one glyph there is no room for anything AND the ellipsis, and an
-  // ellipsis alone names nothing — so the box has become too small to label at
-  // all, and drawing nothing is honester than drawing a lone dot.
-  if (kept < 1) return '';
-  return `${glyphs.slice(0, kept).join('')}\u2026`;
-}
 
-function boxWidth(theme: Theme, label: string, columnWidth: number): number {
-  const padding = metric(theme, '--ig-space') * 2;
-  const measured = label.length * metric(theme, '--ig-char-width') + padding;
-  return Math.min(columnWidth, Math.max(columnWidth / 2, measured));
-}
 
 /**
  * Assign every key that needs a box to a column.
@@ -257,18 +268,30 @@ function assignColumns(document: NormalizedDocument): {
   spine: string[];
   left: string[];
   right: string[];
+  footer: string[];
   slotMembers: Map<string, readonly string[]>;
 } {
+  // ONE BOX PER SLOT, NOT PER MEMBER. §16b draws a together unit as ONE card
+  // with the members listed inside it, and the frame's own vocabulary table
+  // calls the enclosure "distinct issues forming one unit of work". Giving each
+  // member its own box and drawing a dashed rectangle round the pair says
+  // something weaker and costs the spine a station: the unit occupied two rows
+  // of a column whose vertical position IS the rank, so two boxes claimed two
+  // ranks for one. `slotMembers` is how the card knows what to list.
+  //
+  // AND ONLY THE SLOTS THAT ARE IN THE ORDER. A slot the RUNNER holds — claimed,
+  // parked — is not a fact about the work and earns no rank, which §16a says by
+  // collecting it in a footer group. Drawing it on the spine gave it a position
+  // in a column whose vertical position IS the sequence, so a parked issue was
+  // drawn as a step in the work order with a dash where its number should be.
   const spine: string[] = [];
+  const footerLeads: string[] = [];
   const slotMembers = new Map<string, readonly string[]>();
   const placed = new Set<string>();
   for (const slot of document.order.slots) {
     slotMembers.set(slot.lead, slot.members);
-    for (const member of slot.members) {
-      if (placed.has(member)) continue;
-      placed.add(member);
-      spine.push(member);
-    }
+    for (const member of slot.members) placed.add(member);
+    (slot.holds.some((hold) => hold.family === 'tracker') ? footerLeads : spine).push(slot.lead);
   }
 
   const neverWorked = new Set(document.order.excluded.map((exclusion) => exclusion.key));
@@ -278,9 +301,33 @@ function assignColumns(document: NormalizedDocument): {
     if (origin !== undefined && !origin.open && !placed.has(edge.to)) neverWorked.add(edge.to);
   }
 
+  // Which keys stand on the spine, for the "does this explain a hold" test
+  // below. A member is represented by its slot's lead.
+  const onSpine = new Set<string>();
+  for (const lead of spine) for (const member of slotMembers.get(lead) ?? [lead]) onSpine.add(member);
+
+  const touchesSpine = (key: string): boolean =>
+    (document.edgesOf.get(key) ?? []).some((edge) =>
+      onSpine.has(edge.from === key ? edge.to : edge.from),
+    );
+
   const left: string[] = [];
   const right: string[] = [];
-  const seen = new Set(placed);
+  const footer: string[] = [];
+
+  // A HELD SLOT THE ORDER DOES NOT RANK IS EITHER AN EXPLANATION OR A FOOTNOTE,
+  // and §16b's left column heading — "Explains the order" — is the test. A
+  // parked issue that BLOCKS a ranked one is the answer to "why isn't my P1
+  // running", so it is drawn beside the spine; one that blocks nothing on the
+  // spine explains nothing about it, and belongs in the footer group with the
+  // duplicates. That is the documented reading of §16b's "open issues outside
+  // the order that explain a hold" — outside the order is the runner's hold,
+  // and explaining is the edge.
+  for (const lead of footerLeads) {
+    (touchesSpine(lead) ? left : footer).push(lead);
+  }
+
+  const seen = new Set([...placed, ...left, ...footer]);
   for (const edge of document.edges) {
     for (const end of [edge.from, edge.to]) {
       if (seen.has(end)) continue;
@@ -294,40 +341,157 @@ function assignColumns(document: NormalizedDocument): {
     right.push(key);
   }
 
-  return { spine, left, right, slotMembers };
+  return { spine, left, right, footer, slotMembers };
 }
 
-/** Lay a document out. Pure: coordinates depend only on the document and the theme. */
-export function layoutGraph(document: NormalizedDocument, theme: Theme): GraphLayout {
-  const rowHeight = metric(theme, '--ig-row-height');
-  const gap = metric(theme, '--ig-space');
-  const gutterWidth = metric(theme, '--ig-gutter-width');
+/**
+ * How tall a card is, counted rather than measured.
+ *
+ * A card's contents are known — a title that may wrap, an identity line, a
+ * badge row, and for a unit one pair of lines per member — so its height is a
+ * count of lines times `--ig-card-line`. Counted, not measured, because this
+ * module is pure and deterministic: the same document must produce the same
+ * coordinates on a server with no fonts as in a browser with them.
+ *
+ * IT ROUNDS UP, for the reason {@link fitLabel} gives about its own metric. A
+ * card that reserves slightly too much leaves a gap; one that reserves too
+ * little is overlapped by the row beneath it, and the row beneath it is the
+ * next rank.
+ */
+function cardHeight(
+  theme: Theme,
+  document: NormalizedDocument,
+  key: string,
+  width: number,
+  members: readonly string[],
+  onSpine: boolean,
+): number {
+  const pad = metric(theme, '--ig-space') * 2;
+  const line = metric(theme, '--ig-card-line');
+  const gap = metric(theme, '--ig-space-tight');
+  const inner = Math.max(1, width - metric(theme, '--ig-space') * 2);
+  const lines = (text: string): number =>
+    Math.max(1, Math.ceil(measureLabel(theme, text) / inner));
+
+  const slot = document.order.slots.find((candidate) => candidate.lead === key);
+  const issue = document.byKey.get(key);
+  // THE BADGE ROW WRAPS, AND IT IS WHAT OVERFLOWED. A row of chips was counted
+  // as one line however many chips it held, so a card with four relationships
+  // reserved the height of a card with one and the two beneath it were drawn
+  // over. Packed here rather than assumed: each chip is its own text plus its
+  // padding, laid into the card's inner width.
+  const chips = badgeTexts(document, slot, issue, members);
+  const chipPadding = metric(theme, '--ig-space-tight') * 2 + metric(theme, '--ig-stroke') * 2;
+  let used = 0;
+  let badgeRows = chips.length === 0 ? 0 : 1;
+  for (const chip of chips) {
+    const chipWidth = measureLabel(theme, chip) + chipPadding;
+    if (used > 0 && used + gap + chipWidth > inner) {
+      badgeRows += 1;
+      used = chipWidth;
+    } else {
+      used += (used > 0 ? gap : 0) + chipWidth;
+    }
+  }
+  const badgeBlock = badgeRows === 0 ? 0 : gap + badgeRows * line;
+
+  // A UNIT'S CARD IS ITS PILL, ITS ENCLOSURE AND ITS MEMBERS. Sizing it as an
+  // ordinary card is what let two issues be drawn in the space of one title.
+  if (members.length > 1) {
+    const memberPad = metric(theme, '--ig-space-snug') * 2;
+    const enclosure = members.reduce(
+      (total, member) =>
+        total +
+        memberPad +
+        (lines(document.byKey.get(member)?.title ?? member) + 1) * line,
+      0,
+    );
+    return pad + line + gap + enclosure + badgeBlock;
+  }
+
+  const title = document.byKey.get(key)?.title ?? key;
+  // THE SENTENCES A GUTTER CARD PRINTS. A spine card carries its hold on a chip
+  // and a tooltip, because the list beside it prints the sentence — but a
+  // gutter card is the ONLY mark this projection draws for its issue, and §16b
+  // prints "open · not eligible" on it in as many words. Counted here or the
+  // sentence is drawn over the card beneath.
+  const sentences = onSpine ? 0 : notes(document, key).length;
+  return pad + lines(title) * line + line + badgeBlock + (sentences === 0 ? 0 : gap + sentences * line);
+}
+
+/**
+ * The sentences a card off the spine prints: why it is held, and what it
+ * duplicates.
+ *
+ * ONE RULE, TWO READERS — the layout counts them and the projection draws them,
+ * so a card cannot reserve room for one sentence and print two.
+ */
+export function notes(document: NormalizedDocument, key: string): readonly string[] {
+  const lines: string[] = [];
+  for (const slot of document.order.slots) {
+    if (slot.lead !== key) continue;
+    for (const hold of slot.holds) lines.push(hold.reason);
+  }
+  for (const exclusion of document.order.excluded) {
+    // THE BADGE ALREADY NAMES THE CANONICAL, so the sentence says only what the
+    // badge cannot: that this issue is never worked at all.
+    if (exclusion.key === key) lines.push('never worked — the canonical is worked instead');
+  }
+  return lines;
+}
+
+/**
+ * Lay a document out. Pure: coordinates depend only on the document, the theme
+ * and the size.
+ *
+ * COMPACT IS A SIZE, NOT A DEGRADED MODE. §16b is explicit that at a settings
+ * column's width the arcs and both gutters cannot be drawn legibly, so the
+ * in-column case is a spine-only preview with an expand affordance rather than
+ * the same picture squeezed. Expressed as a zero-width gutter, so exactly one
+ * layout computes both and the spine's own geometry cannot differ between them.
+ */
+export function layoutGraph(
+  document: NormalizedDocument,
+  theme: Theme,
+  compact = false,
+): GraphLayout {
+  const gap = metric(theme, '--ig-space-loose');
+  const gutterWidth = compact ? 0 : metric(theme, '--ig-gutter-width');
   const spineWidth = metric(theme, '--ig-spine-width');
-  const channelWidth = metric(theme, '--ig-gutter-width') / 2;
+  const channelWidth = compact ? metric(theme, '--ig-space') : metric(theme, '--ig-gutter-width') / 2;
+  const stationBox = metric(theme, '--ig-station-box');
+  // Room above the first card for the three column headings, which say what
+  // each column is FOR. Without them the gutters read as two more piles of
+  // issues rather than as the two answers the spine deliberately keeps off it.
+  const headroom = metric(theme, '--ig-space-wide') + metric(theme, '--ig-space-loose');
   // THE CANVAS RESERVES WHAT THE ENCLOSURE NEEDS, AND WHAT THE FOCUS RING DOES.
-  // A `together-with` enclosure pads clear of its members' bounds, so a unit on
-  // the first or last row drew at a negative coordinate or past the bottom edge
-  // — outside the viewBox, and outside the stage, which hides its overflow.
-  // The focus ring reaches FURTHER than the enclosure and was clipped by the
-  // same edge: `:focus-visible` sits `--ig-space-tight` clear of the element and
-  // is `--ig-focus-ring` thick, so it extends their SUM outward, while a margin
-  // of `--ig-space-tight` alone left the top segment outside the stage — and on
-  // a one-row graph the bottom segment with it. A partial ring is exactly the
-  // indicator a keyboard reader depends on, so the margin covers the larger of
-  // the two demands rather than the one that happens to be named here.
+  // The focus ring sits `--ig-space-tight` clear of an element and is
+  // `--ig-focus-ring` thick, so it extends their SUM outward and was clipped by
+  // the stage, which hides its overflow. A partial ring is exactly the indicator
+  // a keyboard reader depends on.
   // SUMMED FROM THE TOKENS, never written as 8: geometry is theme data in this
   // package, so a retheme that changes either token moves the reservation with
   // it instead of silently reintroducing the clip.
-  // The ENCLOSURE's own inset stays `--ig-space-tight` — this is the canvas
-  // margin, which must merely be big enough for both, not the same quantity.
   const pad = metric(theme, '--ig-space-tight') + metric(theme, '--ig-focus-ring');
 
-  const { spine, left, right, slotMembers } = assignColumns(document);
+  const { spine, left, right, footer, slotMembers } = assignColumns(document);
+
+  // THE RUNNING JOBS LEAD THE SPINE. `normalizeHost` has already dropped any
+  // job this document does not carry, and a job that also holds a slot keeps
+  // its slot — the station it already has is the one the sequence reads.
+  const nowKeys = document.host.running
+    .map((job) => job.key)
+    .filter((key) => !spine.includes(key));
 
   const leftX = pad;
-  const spineX = pad + gutterWidth + channelWidth;
+  // THE STATION COLUMN SITS BETWEEN THE CHANNEL AND THE CARDS, and the spine
+  // line runs down its centre. §16b puts the line at x=392, the 26px station at
+  // 379 (so the line bisects it) and the card at 418 — the card starts where
+  // the station ends. Expressed from the tokens so a retheme moves all three.
+  const spineLineX = pad + gutterWidth + channelWidth + stationBox / 2;
+  const spineX = spineLineX + stationBox / 2 + metric(theme, '--ig-space');
   const rightX = spineX + spineWidth + channelWidth;
-  const width = rightX + gutterWidth + pad;
+  const width = compact ? spineX + spineWidth + pad : rightX + gutterWidth + pad;
 
   // The channels sit between the columns, so no arc routed through one can
   // cross an occupied x-range.
@@ -344,37 +508,112 @@ export function layoutGraph(document: NormalizedDocument, theme: Theme): GraphLa
   }
 
   const nodes = new Map<string, NodeBox>();
-  const place = (keys: readonly string[], column: Column, x: number, columnWidth: number): void => {
-    keys.forEach((key, index) => {
-      const label = document.byKey.get(key)?.title ?? key;
+
+  // THE SPINE IS STACKED FIRST, because it is the sequence and everything else
+  // is positioned against it. Each card takes the height its own contents need,
+  // so the gaps between stations vary — which is what §16b draws, and what a
+  // fixed row height cannot express once a unit card lists two issues.
+  let y = pad + headroom;
+  const stacked = [...nowKeys, ...spine];
+  for (const key of stacked) {
+    const members = slotMembers.get(key) ?? [key];
+    const height = cardHeight(theme, document, key, spineWidth, members, true);
+    nodes.set(key, {
+      key,
+      column: 'spine',
+      x: spineX,
+      y,
+      width: spineWidth,
+      height,
+      rank: rankOf.get(key) ?? null,
+      held: heldOf.get(key) ?? false,
+      now: nowKeys.includes(key),
+    });
+    y += height + gap;
+  }
+  const spineBottom = stacked.length === 0 ? pad + headroom : y - gap;
+
+  // A GUTTER CARD SITS BESIDE THE SPINE ROW IT EXPLAINS. Stacking the gutters
+  // from the top independently, which is what shipped, drew #470 beside rank 3
+  // and its arc across four cards to reach rank 1 — the arcs then crossed the
+  // spine, which is the one thing §16b's whole layout exists to prevent. The
+  // partner is whichever spine node an edge joins it to; a gutter node with no
+  // spine partner falls in behind the ones that have one.
+  const partnerY = (key: string): number | undefined => {
+    for (const edge of document.edges) {
+      const other = edge.from === key ? edge.to : edge.to === key ? edge.from : undefined;
+      if (other === undefined) continue;
+      const station = document.order.slots.find((slot) => slot.members.includes(other))?.lead;
+      const box = station === undefined ? undefined : nodes.get(station);
+      // A SPINE PARTNER, NEVER A GUTTER ONE. The right gutter is placed after
+      // the left, so by then a left card has a box too — and aligning a right
+      // card to a left one would chain two alignments and drift both away from
+      // the row they are supposed to explain.
+      if (box !== undefined && box.column === 'spine') return box.y;
+    }
+    return undefined;
+  };
+
+  const placeGutter = (keys: readonly string[], column: Column, x: number): void => {
+    let fallback = pad + headroom;
+    // SORTED BY THE ROW THEY EXPLAIN, so two gutter cards never swap places
+    // relative to the spine and then need arcs that cross each other.
+    const ordered = [...keys].sort(
+      (a, b) => (partnerY(a) ?? Number.POSITIVE_INFINITY) - (partnerY(b) ?? Number.POSITIVE_INFINITY),
+    );
+    let lowest = pad + headroom;
+    for (const key of ordered) {
+      const height = cardHeight(theme, document, key, gutterWidth, [key], false);
+      // Never above the previous card in the same gutter: an alignment that
+      // would overlap gives way to the stack, because a hidden card explains
+      // nothing at all.
+      const wanted = partnerY(key) ?? fallback;
+      const top = Math.max(wanted, lowest);
       nodes.set(key, {
         key,
         column,
         x,
-        y: pad + index * (rowHeight + gap),
-        width: boxWidth(theme, label, columnWidth),
-        height: rowHeight,
-        rank: rankOf.get(key) ?? null,
+        y: top,
+        width: gutterWidth,
+        height,
+        rank: null,
         held: heldOf.get(key) ?? false,
       });
-    });
+      lowest = top + height + gap;
+      fallback = lowest;
+    }
   };
 
-  place(spine, 'spine', spineX, spineWidth);
-  place(left, 'left', leftX, gutterWidth);
-  place(right, 'right', rightX, gutterWidth);
+  // NOTHING SITS IN A GUTTER THAT HAS NO WIDTH. In compact mode the gutter
+  // cards and every arc are dropped rather than drawn at a width that cannot
+  // carry them — the expand affordance is how a reader gets to them, which is
+  // what §16b says in as many words.
+  if (!compact) {
+    placeGutter(left, 'left', leftX);
+    placeGutter(right, 'right', rightX);
+  }
 
-  const rows = Math.max(spine.length, left.length, right.length);
-  const height = rows === 0 ? 0 : rows * (rowHeight + gap) - gap + pad * 2;
+  let bottom = spineBottom;
+  for (const box of nodes.values()) bottom = Math.max(bottom, box.y + box.height);
+  const height = nodes.size === 0 ? 0 : bottom + pad;
 
   return {
     width,
     height,
     nodes,
-    spineOrder: spine,
+    spineOrder: stacked,
     slotMembers,
     leftChannel,
     rightChannel,
+    spineLineX,
+    spineTop: pad + headroom,
+    spineBottom,
+    columnX: Object.freeze({ left: leftX, spine: spineX, right: rightX }),
+    // In compact mode the gutters are not drawn, so the issues that would have
+    // sat in them join the footer group — absent from the picture, present in
+    // the panel, which is the difference between a smaller view and a lying one.
+    footer: compact ? [...footer, ...left, ...right] : footer,
+    compact,
   };
 }
 
@@ -436,13 +675,29 @@ function anchor(box: NodeBox, fraction: number, side: 'left' | 'right'): Point {
  * built a layout from a different document than the edge came from. Refusing is
  * better than drawing at coordinates nobody computed.
  */
+/** The box a key is drawn on: its own, or the card of the unit it belongs to. */
+function stationFor(layout: GraphLayout, key: string): string {
+  if (layout.nodes.has(key)) return key;
+  for (const [lead, members] of layout.slotMembers) {
+    if (members.includes(key)) return lead;
+  }
+  return key;
+}
+
 export function edgeGeometry(
   layout: GraphLayout,
   edge: ViewerEdge,
 ): EdgeGeometry | null {
-  const from = layout.nodes.get(edge.from);
-  const to = layout.nodes.get(edge.to);
-  if (from === undefined || to === undefined) return null;
+  // AN ENDPOINT IS RESOLVED TO THE BOX THAT REPRESENTS IT. With one card per
+  // slot, a together unit's partner has no box of its own — so an edge naming
+  // the partner looked up `undefined` and was silently dropped, and the
+  // fixture's `104 decomposed-from 107` disappeared from the canvas entirely.
+  // The card is what stands for the member, so the card is what the arc lands
+  // on. An edge whose two ends resolve to the SAME card is drawn inside it, and
+  // answers `null` here rather than as a zero-length arc.
+  const from = layout.nodes.get(stationFor(layout, edge.from));
+  const to = layout.nodes.get(stationFor(layout, edge.to));
+  if (from === undefined || to === undefined || from.key === to.key) return null;
 
   // The channel is chosen FIRST, because on a same-column tie it is what
   // decides which bound each endpoint uses. A pair of spine nodes bows LEFT, as
@@ -464,89 +719,4 @@ export function edgeGeometry(
     end,
     endAngle: Math.atan2(end.y - controlY, end.x - controlX),
   };
-}
-
-/**
- * The path joining two members of one together unit, clear of every member box.
- *
- * ONE CONNECTOR PER DECLARED EDGE, which is why this takes two keys rather than
- * a position in the member list. A group is joined by pointing at any existing
- * member (§4.3.7), so `2 together-with 1` plus `3 together-with 1` is an
- * ordinary STAR whose members lay out as three consecutive rows — and a
- * connector drawn between adjacent rows would claim a `2`–`3` relationship the
- * document never declares while leaving the real `1`–`3` edge undrawable.
- *
- * TWO ROUTES, and the branch is the whole of it. Members of a slot are placed
- * consecutively in one column, so an edge between NEIGHBOURING rows crosses
- * only the gap between them and is drawn straight. An edge that spans a row —
- * which only a star can produce — would run through the node between them, so
- * it is routed out to a lane in the enclosure's own padding. The lane sits left
- * of `x`, and every member box in a column starts at exactly `x`, so the
- * vertical run is provably outside every occupied x-range rather than merely
- * looking clear.
- *
- * Endpoints come from measured bounds on both routes, per the kit's
- * implementation note: a hit target derived from an eyeballed offset drifts the
- * first time the type scale moves.
- */
-export function connectorPath(
-  layout: GraphLayout,
-  members: readonly string[],
-  from: string,
-  to: string,
-  theme: Theme,
-): string | null {
-  const a = layout.nodes.get(from);
-  const b = layout.nodes.get(to);
-  if (a === undefined || b === undefined) return null;
-
-  const [upper, lower] = a.y <= b.y ? [a, b] : [b, a];
-  const round = (value: number): string => (Math.round(value * 100) / 100).toFixed(2);
-
-  // Anything belonging to this unit that sits strictly between the two rows.
-  const between = members.some((member) => {
-    if (member === from || member === to) return false;
-    const box = layout.nodes.get(member);
-    return box !== undefined && box.y > upper.y && box.y < lower.y;
-  });
-
-  if (!between) {
-    const x1 = upper.x + upper.width / 2;
-    const x2 = lower.x + lower.width / 2;
-    return `M ${round(x1)} ${round(upper.y + upper.height)} L ${round(x2)} ${round(lower.y)}`;
-  }
-
-  const pad = metric(theme, '--ig-space-tight');
-  const boxes = members
-    .map((member) => layout.nodes.get(member))
-    .filter((box): box is NodeBox => box !== undefined);
-  // HALF A PAD INSIDE THE ENCLOSURE, so the run clears every box without
-  // landing on the enclosure's own stroke and reading as part of it.
-  const laneX = Math.min(...boxes.map((box) => box.x)) - pad / 2;
-  const upperY = upper.y + upper.height / 2;
-  const lowerY = lower.y + lower.height / 2;
-  return [
-    `M ${round(upper.x)} ${round(upperY)}`,
-    `L ${round(laneX)} ${round(upperY)}`,
-    `L ${round(laneX)} ${round(lowerY)}`,
-    `L ${round(lower.x)} ${round(lowerY)}`,
-  ].join(' ');
-}
-
-/** The box enclosing a together unit's members, padded clear of their bounds. */
-export function enclosureBounds(
-  layout: GraphLayout,
-  members: readonly string[],
-  theme: Theme,
-): { x: number; y: number; width: number; height: number } | null {
-  const boxes = members
-    .map((member) => layout.nodes.get(member))
-    .filter((box): box is NodeBox => box !== undefined);
-  if (boxes.length < 2) return null;
-  const pad = metric(theme, '--ig-space-tight');
-  const x = Math.min(...boxes.map((box) => box.x)) - pad;
-  const y = Math.min(...boxes.map((box) => box.y)) - pad;
-  const right = Math.max(...boxes.map((box) => box.x + box.width)) + pad;
-  const bottom = Math.max(...boxes.map((box) => box.y + box.height)) + pad;
-  return { x, y, width: right - x, height: bottom - y };
 }

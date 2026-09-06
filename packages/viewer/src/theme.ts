@@ -101,6 +101,19 @@ export const TYPE_TOKENS = Object.freeze([
   '--ig-tracking-group',
   '--ig-tracking-pill',
   '--ig-tracking-badge',
+  // THE FOUR STEPS BETWEEN `--ig-font-size-micro` AND `--ig-font-size`, for the
+  // same reason the two below `small` were added: the frames draw them and this
+  // file named none of them, so every one had to be approximated by 11px or
+  // 13px. §16a alone spends 10.5 (a footer row's id), 12.5 (a footer row's
+  // title and §16b's node title), 13.5 (a rank row's title) and 14 (the rank
+  // number itself) — four values in one frame, none of them derivable from the
+  // two that shipped. Approximating them is what made a rank row read as one
+  // undifferentiated block of body copy: with title, id and provenance all at
+  // 11-13px, the row had no type hierarchy to see.
+  '--ig-font-size-meta',
+  '--ig-font-size-compact',
+  '--ig-font-size-row',
+  '--ig-font-size-rank',
 ] as const);
 
 export type TypeToken = (typeof TYPE_TOKENS)[number];
@@ -151,6 +164,17 @@ export const METRIC_TOKENS = Object.freeze([
   // WORKING NOW band, `inset 3px 0 0`). It pairs with `--ig-tint-wash`: the
   // wash is the band's fill and this is its edge.
   '--ig-band-rail',
+  // §16a's rank TRACK, `grid-template-columns: 34px 1fr`. It is a column width
+  // rather than a derived one because the frame fixes it: the rank figure and
+  // the readiness dot stack inside it and the title column starts at the same
+  // x on every row, held or not. Deriving it from the station size and a gap
+  // would make the alignment grid move whenever either did, which is the one
+  // thing this column exists to prevent.
+  '--ig-rank-column',
+  // §16b's spine furniture: the station disc that sits ON the spine line, and
+  // the line height a card's own height is counted in.
+  '--ig-station-box',
+  '--ig-card-line',
 ] as const);
 
 export type MetricToken = (typeof METRIC_TOKENS)[number];
@@ -297,6 +321,16 @@ export const defaultTheme: Theme = Object.freeze({
     // derived from the size, because these two share one.
     '--ig-tracking-pill': '0.08em',
     '--ig-tracking-badge': '0.06em',
+    // Read values, in the same sense as `micro` and `pill`: §16a's footer row
+    // prints its id at 10.5 and its title at 12.5, its rank rows print titles
+    // at 13.5, and the rank figure itself is 14. §16b reuses `compact` for a
+    // node title and `meta` for a node id, which is why they are named for
+    // their ROLE rather than for a position in a scale — there is no scale
+    // here to be a position in.
+    '--ig-font-size-meta': '10.5px',
+    '--ig-font-size-compact': '12.5px',
+    '--ig-font-size-row': '13.5px',
+    '--ig-font-size-rank': '14px',
   }),
   metrics: Object.freeze({
     '--ig-space': 12,
@@ -316,8 +350,14 @@ export const defaultTheme: Theme = Object.freeze({
     // a host scaling the type up needs the arrowheads to follow.
     '--ig-terminal-length': 9,
     '--ig-terminal-width': 8,
-    '--ig-gutter-width': 208,
-    '--ig-spine-width': 360,
+    // §16b's own column widths: a 250px left gutter, a 330px spine card and a
+    // 270px right gutter, inside an 1180px panel. One gutter token serves both
+    // sides — the frame's 20px difference between them carries no stated
+    // meaning, and two tokens would ask a host to reproduce an asymmetry it
+    // cannot read a reason for. The sum lands the canvas at 1164, which is the
+    // frame's panel less its own border and scroll allowance.
+    '--ig-gutter-width': 260,
+    '--ig-spine-width': 330,
     // The advance width of one character at `--ig-font-size` in the mono face.
     // Layout measures text with it, so a host changing the type scale changes
     // this too and the boxes stay around their contents.
@@ -357,6 +397,18 @@ export const defaultTheme: Theme = Object.freeze({
     '--ig-row-padding-block': 13,
     // §16a's WORKING NOW band, `box-shadow: inset 3px 0 0 var(--cyan)`.
     '--ig-band-rail': 3,
+    // §16a's rank track, read straight off `grid-template-columns: 34px 1fr`.
+    '--ig-rank-column': 34,
+    // §16b's station disc, 26px across on the spine.
+    '--ig-station-box': 26,
+    // One line of text inside a §16b node card, which is what lets the layout
+    // give a card a height WITHOUT measuring one. A card's contents are known
+    // — a title that may wrap, an identity, a badge row — so its height is a
+    // count of lines times this. Chosen as a CEILING on the compact size times
+    // the line height (12.5 x 1.45 = 18.1), for the reason `fitLabel` gives
+    // about its own metric: a card that reserves slightly too much leaves a
+    // gap, and one that reserves too little overlaps the row beneath it.
+    '--ig-card-line': 18,
   }),
   effects: Object.freeze({
     // ONE PAIR FOR ALL FIVE RELATIONSHIP CHIPS, at the value §16a draws most

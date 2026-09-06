@@ -135,15 +135,15 @@ function oddEdge(
 }
 
 describe('the two relationships the viewer draws differently', () => {
-  it('overlays a together-with, which is drawn as a connector and NOT as an edge', () => {
-    // `graph.ts:657` skips `together-with` when it builds edge paths — it
-    // shares a rank rather than ordering anything, so it is an enclosure plus a
-    // connector. Matching only `.ig-edge` by accessible name left every state
-    // on one of the five relationships permanently `unattached`.
-    //
-    // The connector publishes `edgeIdentity` on `data-ig-group`, and that
-    // string IS `ProjectedEdge.id`, so this matches on identity rather than on
-    // a reconstructed sentence.
+  it('overlays a together-with, which is drawn as a BADGE and NOT as an edge', () => {
+    // The graph skips `together-with` when it builds edge paths — it shares a
+    // rank rather than ordering anything — and layer 1's §16 pass draws the unit
+    // as ONE card with its members listed, so there is no connector between two
+    // boxes left to overlay either. What carries the relationship in every
+    // projection is the badge that names it, and the badge publishes the same
+    // `edgeIdentity` on `data-ig-group` the connector did — which IS
+    // `ProjectedEdge.id`, so this still matches on identity rather than on a
+    // reconstructed sentence.
     const edge = oddEdge('together-with', ['pending-write']);
     const { scene, unattached } = attachEdgeOverlays(oddSceneOf(), [edge]);
     assert.deepEqual(unattached, [], 'a together-with overlay matched nothing');
@@ -151,7 +151,7 @@ describe('the two relationships the viewer draws differently', () => {
       (spec) => spec.attrs?.[STATE_ATTRIBUTE] === 'pending-write',
     );
     assert.equal(overlaid.length, 1);
-    assert.equal(classesOf(overlaid[0] ?? { tag: 'x' }).includes('ig-connector'), true);
+    assert.equal(classesOf(overlaid[0] ?? { tag: 'x' }).includes('ig-badge'), true);
   });
 
   it('overlays a double line on BOTH its strokes, so the kind keeps its shape', () => {
@@ -168,10 +168,15 @@ describe('the two relationships the viewer draws differently', () => {
     const { scene, unattached } = attachEdgeOverlays(oddSceneOf(), [edge]);
     assert.deepEqual(unattached, []);
 
-    const overlaid = walk(scene.root).filter(
-      (spec) => spec.attrs?.[STATE_ATTRIBUTE] === 'selected conflict',
+    // COUNTED OVER THE STROKES. The badges naming the same relationship carry
+    // the state too — they are what a reader sees in the list, and a chip that
+    // does not say a write is pending is a chip that lies — but they are not
+    // strokes, and the rule this test holds is about the drawn line.
+    const strokes = walk(scene.root).filter(
+      (spec) =>
+        classesOf(spec).includes('ig-edge') && spec.attrs?.[STATE_ATTRIBUTE] === 'selected conflict',
     );
-    assert.equal(overlaid.length, 2, 'a double line was only half overlaid');
+    assert.equal(strokes.length, 2, 'a double line was only half overlaid');
 
     const halos = walk(scene.root).filter((spec) => classesOf(spec).includes('ig-overlay-halo'));
     assert.equal(halos.length, 2, 'the halo skipped one stroke of a double line');
@@ -223,13 +228,24 @@ describe('an overlay attaches to the edge the viewer actually drew', () => {
     );
   });
 
-  it('writes the states onto the edge it matched', () => {
+  it('writes the states onto every mark that names the edge', () => {
+    // THE STROKE AND THE CHIPS. A relationship is drawn as a line on the canvas
+    // and named by a badge on each row it touches, and all of them publish the
+    // same identity — so a pending write shows wherever the relationship is
+    // shown. Attaching to the stroke alone left the list projection, which
+    // draws no strokes at all, with no edit state on any edge.
     const { scene } = attachEdgeOverlays(sceneOf(), [projected('selected', 'pending-write')]);
     const overlaid = walk(scene.root).filter(
       (spec) => spec.attrs?.[STATE_ATTRIBUTE] !== undefined && spec.attrs[STATE_ATTRIBUTE] !== null,
     );
-    assert.equal(overlaid.length, 1);
-    assert.equal(overlaid[0]?.attrs?.[STATE_ATTRIBUTE], 'selected pending-write');
+    assert.ok(overlaid.length > 0, 'nothing was overlaid');
+    for (const spec of overlaid) {
+      assert.equal(spec.attrs?.[STATE_ATTRIBUTE], 'selected pending-write');
+    }
+    assert.ok(
+      overlaid.some((spec) => classesOf(spec).includes('ig-edge')),
+      'the drawn stroke was not overlaid',
+    );
   });
 
   it('reports an overlay whose edge the scene does not draw, rather than dropping it', () => {

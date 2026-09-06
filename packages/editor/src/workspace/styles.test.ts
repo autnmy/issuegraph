@@ -222,29 +222,33 @@ describe('the workspace stylesheet carries structure, never a value', () => {
     }
   });
 
-  it('sizes the spacer by the whole row PITCH, not the row height', () => {
-    // A .ig-slot is min-height plus margin-bottom, so row-to-row is the sum.
-    // Sized on the height alone the spacer undercut every omitted row by the
-    // gap — 44 of a 50px pitch on the default theme — and a host dividing its
+  it('sizes the spacer by the row PITCH layer 1 actually draws', () => {
+    // The pitch has to be the sum of everything between one row's top and the
+    // next's, and layer 1 decides what that is. It used to be a min-height plus
+    // a margin, and sizing the spacer on the height alone undercut every
+    // omitted row by the gap — 44 of a 50px pitch — so a host dividing its
     // scroll position by the measured pitch could not reach the tail of the
-    // order at all. Systematic and exactly correctable, unlike the variable
-    // row-height approximation that remains.
+    // order at all.
+    //
+    // §16 SEPARATES ITS ROWS WITH THE PANEL'S OWN HAIRLINES, so there is no
+    // margin left to add: the pitch is the floor. Kept as an assertion with a
+    // POSITIVE CONTROL on layer 1 below, so a row that grows a gap again fails
+    // here rather than silently reintroducing the undercount.
     const rule = css.match(/\.ig-rail-spacer\s*\{([^}]*)\}/)?.[1];
     assert.ok(rule !== undefined, 'nothing sizes the spacer');
-    for (const token of ['--ig-row-height', '--ig-space-tight']) {
-      assert.ok(rule.includes(token), `the pitch omits ${token}`);
-    }
+    assert.ok(rule.includes('--ig-row-min-height'), 'the pitch omits the row floor');
     // The count is a factor, or the spacer is one row tall whatever it omits.
     assert.match(rule, /\*\s*var\(--ig-rail-rows/);
 
-    // POSITIVE CONTROL on layer 1, so this only claims what is still true of
-    // it: if the slot ever stops carrying that margin, this fails loudly
-    // rather than leaving the rule above looking over-built.
     const viewerCss = withoutComments(viewerStylesheet);
     const slot = viewerCss.match(/\.ig-slot\s*\{([^}]*)\}/)?.[1];
     assert.ok(slot !== undefined, 'layer 1 no longer styles .ig-slot');
-    assert.match(slot, /margin-bottom:\s*var\(--ig-space-tight\)/);
-    assert.match(slot, /min-height:\s*var\(--ig-row-height\)/);
+    assert.match(slot, /min-height:\s*var\(--ig-row-min-height\)/);
+    assert.equal(
+      /margin-bottom/.test(slot),
+      false,
+      'a row carries a margin again, so the spacer pitch is short by it',
+    );
   });
 
   it('gives each zone a fixed area rather than letting content negotiate it', () => {

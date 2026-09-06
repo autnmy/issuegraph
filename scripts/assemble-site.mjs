@@ -33,7 +33,15 @@ export const SITE_PACKAGES = Object.freeze(['core', 'derive', 'editor', 'reader'
 export const ROOT_FILES = Object.freeze(['index.html', 'CNAME', '.nojekyll']);
 
 /** The demo's own files. Its `dist` is the build output; the rest is checked in. */
-export const DEMO_FILES = Object.freeze(['demo/index.html', 'demo/styles.css', 'demo/dist']);
+export const DEMO_FILES = Object.freeze([
+  'demo/index.html',
+  // The §16 comparison surface — the viewer with no editor attached, at the
+  // widths the design fixes. Deployed beside the sandbox because a fidelity
+  // claim a reader cannot open is a claim they have to take on trust.
+  'demo/section16.html',
+  'demo/styles.css',
+  'demo/dist',
+]);
 
 /** The reader's `yaml` dependency, at the path the import map resolves it. */
 export const YAML_PATH = 'packages/reader/node_modules/yaml';

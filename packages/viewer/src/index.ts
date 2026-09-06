@@ -100,7 +100,10 @@ export type { EdgeDash, EdgeTerminal, EdgeTreatment, OrderingEffect } from './vo
 export { EDGE_TREATMENTS, dashArrayFor, treatmentFor } from './vocabulary.ts';
 
 export { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET } from './projections/graph.ts';
-export { ROW_BADGE_BUDGET } from './parts.ts';
+// `COMMAND_ATTRIBUTE` is on the surface because a host that reads the DOM rather
+// than the callback needs the attribute name, and knowing it by inspection is
+// how a consumer ends up with a literal that drifts.
+export { COMMAND_ATTRIBUTE, ROW_BADGE_BUDGET } from './parts.ts';
 
 export type { Cluster } from './clusters.ts';
 export { clustersOf } from './clusters.ts';

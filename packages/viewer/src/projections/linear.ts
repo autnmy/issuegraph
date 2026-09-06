@@ -13,24 +13,30 @@
  * the work, earns no rank slot, and collapses into the footer with duplicates.
  */
 
-import type { NormalizedDocument, ViewerSlot } from '../document.ts';
+import type { NormalizedDocument, ViewerHold, ViewerSlot } from '../document.ts';
 import { type ElementSpec, element } from '../element.ts';
 import {
+  caveatBadges,
   caveatLines,
-  edgeBadges,
+  edgeBadgeList,
   emptyState,
+  evidenceBadge,
   footerLabels,
   holdLine,
   hostHeader,
   identity,
   legend,
+  notReadyBadge,
   nowRows,
+  priorityBadge,
   provenanceLine,
   slotLabel,
   slotTitle,
   station,
   stationFill,
   stationsOf,
+  unitBlock,
+  unitMark,
   atStations,
 } from '../parts.ts';
 import { type LateralNeighbours, type Scene, resolveFocusKey } from '../scene.ts';
@@ -41,6 +47,17 @@ export interface SceneOptions {
   readonly selected?: string | null | undefined;
   /** The key holding the roving tab stop. Defaults to the first in order. */
   readonly focused?: string | null | undefined;
+  /**
+   * Draw the panel's own header bar — its name, the projection toggle, the
+   * host's counts, the freshness stamp. Defaults to `true`.
+   *
+   * FOR A HOST THAT MOUNTS THE VIEWER TWICE. §16's panel has ONE header, and a
+   * host composing a list beside a graph — which is exactly what the grooming
+   * workspace does — would otherwise draw two, with two projection toggles that
+   * disagree about which projection is current. The host suppresses the second
+   * rather than this package guessing which of its instances is the panel.
+   */
+  readonly chrome?: boolean | undefined;
 }
 
 /**
@@ -55,7 +72,18 @@ export function isFooterSlot(slot: ViewerSlot): boolean {
   return slot.holds.some((hold) => hold.family === 'tracker');
 }
 
-function slotRow(
+/**
+ * One ranked row: the rank track, then everything else in one body column.
+ *
+ * TWO CHILDREN, WHICH IS THE FRAME'S GRID EXACTLY. The row that shipped was a
+ * four-column grid with more than four children, so the extras auto-placed into
+ * column one — the rank track — and a single relationship badge set that
+ * column's width for the whole list, pushing every title across to pay for it.
+ * A rank cell and a body cell cannot do that: there is no third column for a
+ * child to fall into, and the alignment grid the rows hang off is therefore a
+ * property of the markup rather than of remembering to place each new child.
+ */
+export function slotRow(
   document: NormalizedDocument,
   slot: ViewerSlot,
   options: SceneOptions,
@@ -65,30 +93,55 @@ function slotRow(
   const lead = document.byKey.get(slot.lead);
   const selected = options.selected === slot.lead;
   const focused = options.focused === slot.lead;
+  const unit = slot.members.length > 1;
 
-  const rank = showRank
-    ? element(
-        'span',
-        { class: 'ig-rank', 'data-held': held ? 'true' : 'false', 'aria-hidden': 'true' },
-        // A held slot never prints a number: it has no position in the
-        // sequence, and printing one would claim work is queued that nothing
-        // can start.
-        [slot.rank === null ? '—' : String(slot.rank)],
-      )
-    : null;
-
-  const children = [
-    rank,
+  const rankCell = element('div', { class: 'ig-rank-cell', 'aria-hidden': 'true' }, [
+    showRank
+      ? element(
+          'span',
+          { class: 'ig-rank', 'data-held': held ? 'true' : 'false' },
+          // A held slot never prints a number: it has no position in the
+          // sequence, and printing one would claim work is queued that nothing
+          // can start.
+          [slot.rank === null ? '—' : String(slot.rank)],
+        )
+      : null,
     station(stationFill(slot)),
-    element('span', { class: 'ig-title' }, [slotTitle(document, slot)]),
-    lead === undefined ? null : identity(lead),
-    edgeBadges(document, slot.members),
+  ]);
+
+  // A UNIT'S HEAD IS ITS ENCLOSURE, not a joined title. Every other row keeps
+  // the frame's two-line pair: the title, and the identity 2px beneath it.
+  const head = unit
+    ? [unitMark(slot), unitBlock(document, slot)]
+    : [
+        element('div', { class: 'ig-row-head' }, [
+          element('span', { class: 'ig-title' }, [slotTitle(document, slot)]),
+          lead === undefined ? null : identity(lead),
+        ]),
+      ];
+
+  const badges = [
+    priorityBadge(lead?.provenance),
+    evidenceBadge(lead),
+    notReadyBadge(slot),
+    ...caveatBadges(lead),
+  ].filter((badge): badge is ElementSpec => badge !== null);
+
+  // ONE BADGE ROW, FED BY FOUR SOURCES. §16a draws the tier, the evidence, the
+  // readiness and the relationships as one wrapping row of chips, in that
+  // order — the facts a reader scans for before they read a word of the
+  // sentence beneath.
+  const badgeRow = [...badges, ...edgeBadgeList(document, slot.members)];
+
+  const body = element('div', { class: 'ig-row-body' }, [
+    ...head,
+    badgeRow.length === 0 ? null : element('div', { class: 'ig-badges' }, badgeRow),
     provenanceLine(lead?.provenance),
     // THE LEAD'S CAVEATS, like the lead's provenance: a together unit is one
     // row and one rank, and the host facts about that rank ride on its lead.
     ...caveatLines(lead),
     ...slot.holds.map(holdLine),
-  ];
+  ]);
 
   return element(
     'li',
@@ -96,11 +149,61 @@ function slotRow(
       class: 'ig-slot',
       'data-ig-key': slot.lead,
       'data-held': held ? 'true' : 'false',
+      'data-unit': unit ? 'true' : 'false',
       'aria-current': selected ? 'true' : 'false',
       'aria-label': slotLabel(document, slot),
       tabindex: focused ? 0 : -1,
     },
-    children,
+    [rankCell, body],
+  );
+}
+
+/**
+ * One footer entry: a label chip, a title and an identity, on one line.
+ *
+ * THESE ARE NOT FACTS ABOUT THE WORK, which is the whole reason they are down
+ * here rather than in the order — so they get no rank, no station and no
+ * explanation block. Drawing them as full rows, which is what shipped, claimed
+ * the opposite: a reader saw a claimed issue laid out exactly like a queued
+ * one and had only the heading to tell them apart.
+ */
+export function footerRow(
+  document: NormalizedDocument,
+  slot: ViewerSlot,
+  options: SceneOptions,
+): ElementSpec {
+  const lead = document.byKey.get(slot.lead);
+  // THE REASON RIDES THE NAME. A footer entry is one line — a chip, a title and
+  // an identity — because it is not a fact about the work; but the host still
+  // said WHY, and dropping the sentence entirely would lose it from the panel.
+  // The same channel the graph's cards use for the same reason: sighted readers
+  // hover, screen readers hear it, and the one-line row is untouched.
+  const because = slot.holds.map((hold) => hold.reason).join(' · ');
+  // NARROWED THROUGH THE FAMILY, because the union is what carries the label:
+  // a graph hold has none to read, and reaching for one on the union is a
+  // compile error rather than a silent undefined.
+  const labelled = slot.holds.find(
+    (hold): hold is Extract<ViewerHold, { family: 'tracker' }> =>
+      hold.family === 'tracker' && hold.label !== undefined && hold.label !== '',
+  );
+  return element(
+    'li',
+    {
+      class: 'ig-footer-row',
+      'data-ig-key': slot.lead,
+      'aria-current': options.selected === slot.lead ? 'true' : 'false',
+      'aria-label':
+        because === '' ? slotLabel(document, slot) : `${slotLabel(document, slot)} — ${because}`,
+      title: because === '' ? null : because,
+      tabindex: options.focused === slot.lead ? 0 : -1,
+    },
+    [
+      labelled === undefined
+        ? null
+        : element('span', { class: 'ig-badge', 'data-hold': labelled.label }, [labelled.label]),
+      element('span', { class: 'ig-title' }, [slotTitle(document, slot)]),
+      lead === undefined ? null : identity(lead),
+    ],
   );
 }
 
@@ -115,12 +218,15 @@ export function excludedRow(
   options: SceneOptions,
 ): ElementSpec {
   const issue = document.byKey.get(key);
+  // THE SAME ONE-LINE SHAPE THE OTHER FOOTER ENTRIES TAKE. A duplicate is the
+  // clearest case of "not a fact about the work": it is never worked at all, so
+  // giving it a station, a badge row and a hold paragraph drew it as heavier
+  // than the ranked rows it is excluded from.
   return element(
     'li',
     {
-      class: 'ig-slot',
+      class: 'ig-footer-row',
       'data-ig-key': key,
-      'data-held': 'true',
       'aria-current': options.selected === key ? 'true' : 'false',
       'aria-label': `${issue?.title ?? key} — ${treatmentFor('duplicate-of').label} ${canonical}, never worked`,
       // A HARDCODED -1 HERE MEANT THE VIEWER LOST ITS TAB STOP ENTIRELY. An
@@ -130,13 +236,10 @@ export function excludedRow(
       tabindex: options.focused === key ? 0 : -1,
     },
     [
-      station('dashed'),
+      element('span', { class: 'ig-badge', 'data-edge': 'duplicate-of' }, ['duplicate']),
       element('span', { class: 'ig-title' }, [issue?.title ?? key]),
       issue === undefined ? null : identity(issue),
-      edgeBadges(document, [key]),
-      element('p', { class: 'ig-hold', 'data-family': 'tracker' }, [
-        `${treatmentFor('duplicate-of').label} ${canonical} — never worked`,
-      ]),
+      element('span', { class: 'ig-id' }, [`→ ${canonical}`]),
     ],
   );
 }
@@ -192,21 +295,26 @@ export function linearScene(
         );
 
   const footerEntries = [
-    ...footerSlots.map((slot) => slotRow(document, slot, withFocus, false)),
+    ...footerSlots.map((slot) => footerRow(document, slot, withFocus)),
     ...document.order.excluded.map((exclusion) =>
       excludedRow(document, exclusion.key, exclusion.canonical, withFocus),
     ),
   ];
 
-  // The runner's own words, when the host supplied them, after the title the
-  // footer has always had — so a document with unlabelled holds reads as before.
+  // The runner's own words, when the host supplied them, to the RIGHT of the
+  // count — which is where §16a puts them, and it is the difference between a
+  // heading that says what this group is and one that also has to list the
+  // reasons inside it.
   const labels = footerLabels(footerSlots);
   const footer =
     footerEntries.length === 0
       ? null
       : element('section', { class: 'ig-footer' }, [
-          element('p', { class: 'ig-footer-title' }, [
-            `Held outside the order — claimed, parked, or never worked${labels === '' ? '' : ` · ${labels}`}`,
+          element('div', { class: 'ig-footer-head' }, [
+            element('p', { class: 'ig-footer-title' }, [
+              `${String(footerEntries.length)} held by the runner, not the graph`,
+            ]),
+            labels === '' ? null : element('span', { class: 'ig-footer-labels' }, [labels]),
           ]),
           element(
             'ol',
@@ -221,7 +329,18 @@ export function linearScene(
     // The host facts first: what the runner is doing and how fresh the mirror
     // is frame the order beneath them. Both are `null` for a host that stated
     // nothing, and the section then begins at the legend exactly as before.
-    [hostHeader(document), legend(), nowRows(document), body, footer, isolatedChip(document.isolated.length)],
+    // THE LEGEND IS A FOOTER BAR, WHERE §16b PUTS IT, and it comes last. Above
+    // the rows it was the first thing a reader met — a table of five symbols
+    // before a single row of the thing they came for — and §16a draws no
+    // legend at that position at all.
+    [
+      options.chrome === false ? null : hostHeader(document, { projection: 'linear' }),
+      nowRows(document),
+      body,
+      footer,
+      isolatedChip(document.isolated.length),
+      legend(),
+    ],
   );
 
   // The linear projection has one column, so nothing sits left or right of

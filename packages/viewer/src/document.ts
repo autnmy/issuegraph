@@ -169,6 +169,16 @@ export interface ViewerIssue {
   readonly previewOnly?: PreviewOnly | undefined;
   /** Set when two host signals disagreed about this row. Absent means they agreed, or there was one. */
   readonly disagreement?: Disagreement | undefined;
+  /**
+   * The block's `evidence` field, when the host read one.
+   *
+   * ABSENT READS `asserted`, which §16d states in those words — so the type is
+   * optional rather than defaulted, and the row draws a chip only for
+   * `verified`. A panel that printed "asserted" on every row would spend a chip
+   * slot saying nothing, and defaulting the value here would make an absent
+   * field indistinguishable from a stated one.
+   */
+  readonly evidence?: 'asserted' | 'verified' | undefined;
 }
 
 /** One relationship, exactly as the format declares it. */

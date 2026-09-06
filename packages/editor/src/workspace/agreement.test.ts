@@ -208,7 +208,7 @@ const WINDOWS: readonly RailWindowOptions[] = [
 
 /** The key layer 1 draws as current in a rail's markup, if any. */
 function currentRailKey(markup: string): string | null {
-  for (const match of markup.matchAll(/<li class="ig-slot"[^>]*>/g)) {
+  for (const match of markup.matchAll(/<li class="ig-(?:slot|footer-row)"[^>]*>/g)) {
     const tag = match[0];
     if (!tag.includes('aria-current="true"')) continue;
     return /data-ig-key="([^"]+)"/.exec(tag)?.[1] ?? null;
@@ -218,9 +218,14 @@ function currentRailKey(markup: string): string | null {
 
 /** Every key layer 1 drew a rail row for, in document order. */
 function drawnRailKeys(markup: string): readonly string[] {
-  return [...markup.matchAll(/<li class="ig-slot"[^>]*data-ig-key="([^"]+)"/g)].map(
-    (match) => match[1] ?? '',
-  );
+  // BOTH ROW SHAPES. Layer 1's §16 pass gives a runner-held slot and an
+  // exclusion the footer's ONE-LINE row — they are not facts about the work, so
+  // they earn no rank and no explanation block — while a ranked slot keeps
+  // `li.ig-slot`. Reading only the first class made half the rail invisible to
+  // this suite, which is exactly the silence it exists to prevent.
+  return [
+    ...markup.matchAll(/<li class="ig-(?:slot|footer-row)"[^>]*data-ig-key="([^"]+)"/g),
+  ].map((match) => match[1] ?? '');
 }
 
 describe('the rail hands layer 1 a document it can draw whole', () => {

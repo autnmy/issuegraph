@@ -27,7 +27,18 @@ export interface NavigationState {
 export type NavigationCommand =
   | { readonly kind: 'none' }
   | { readonly kind: 'focus'; readonly key: string }
-  | { readonly kind: 'select'; readonly key: string };
+  | { readonly kind: 'select'; readonly key: string }
+  /**
+   * A command the SHELL cannot complete on its own.
+   *
+   * §16e gives the list a view toggle on `g`, and this package cannot switch its
+   * own projection: it is a pure renderer, and the host re-renders it with a
+   * different option. So the key produces the same kind of published command
+   * the header's toggle button does, on the same names — a host already
+   * listening for one hears the other. `mountViewer` reports it through
+   * `onCommand`; a host that ignores it loses only the shortcut.
+   */
+  | { readonly kind: 'command'; readonly command: string };
 
 export interface NavigationResult {
   readonly state: NavigationState;
@@ -129,6 +140,20 @@ export function navigate(scene: Scene, state: NavigationState, key: string): Nav
       return state.focused === first ? stay(state) : moveTo(state, first);
     case 'End':
       return state.focused === last ? stay(state) : moveTo(state, last);
+    // §16e: g TOGGLES THE VIEW. Lower case only — an upper-case G is a
+    // different key press, and claiming both would take a shortcut a host may
+    // have bound to it. The projection this asks for is NOT computed here:
+    // `navigate` sees a scene, so it knows which projection it is in, and the
+    // command names the other one rather than a "toggle" the host has to
+    // resolve against state it may not hold.
+    case 'g':
+      return {
+        state,
+        command: {
+          kind: 'command',
+          command: scene.projection === 'graph' ? 'projection:linear' : 'projection:graph',
+        },
+      };
     case 'Enter':
     case ' ': {
       const target = state.focused ?? first;

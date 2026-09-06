@@ -37,6 +37,20 @@ export interface EdgeTreatment {
   readonly hueToken: string;
   /** Announced to a screen reader, and used as the badge's accessible name. */
   readonly label: string;
+  /**
+   * The same relationship read from the OTHER end.
+   *
+   * A directed edge states one fact, and which end you stand at decides the
+   * verb: #488 is what #512 is blocked by, and #512 is what #488 BLOCKS. The
+   * badge that shipped said "blocked by #512 (incoming)" on #488's row —
+   * technically true, and it asks a reader to invert a sentence in their head
+   * on the row where the plain reading was available. §16a draws the plain
+   * reading, so the vocabulary carries it.
+   *
+   * A symmetric edge reads the same both ways and carries none: `undefined`
+   * here is what says so, rather than a duplicate of {@link label}.
+   */
+  readonly reverseLabel?: string;
   readonly ordering: OrderingEffect;
   /**
    * Whether the edge reads the same both ways. A symmetric edge is drawn once
@@ -58,6 +72,7 @@ export const EDGE_TREATMENTS = Object.freeze({
     glyph: '⊘',
     hueToken: '--ig-edge-blocked-by',
     label: 'blocked by',
+    reverseLabel: 'blocks',
     ordering: 'strict-directed',
     symmetric: false,
   },
@@ -85,6 +100,7 @@ export const EDGE_TREATMENTS = Object.freeze({
     glyph: '≡',
     hueToken: '--ig-edge-duplicate-of',
     label: 'duplicate of',
+    reverseLabel: 'duplicated by',
     ordering: 'never-worked',
     symmetric: false,
   },
@@ -94,6 +110,7 @@ export const EDGE_TREATMENTS = Object.freeze({
     glyph: '⑃',
     hueToken: '--ig-edge-decomposed-from',
     label: 'decomposed from',
+    reverseLabel: 'decomposed into',
     ordering: 'provenance-only',
     symmetric: false,
   },
