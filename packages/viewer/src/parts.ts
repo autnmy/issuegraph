@@ -16,9 +16,9 @@ import type {
   ViewerIssue,
   ViewerSlot,
 } from './document.ts';
-import { type ElementSpec, element } from './element.ts';
+import { type ElementSpec, element, svg } from './element.ts';
 import { GROUP_ATTRIBUTE } from './scene.ts';
-import { EDGE_ORDER, treatmentFor } from './vocabulary.ts';
+import { EDGE_ORDER, type EdgeTerminal, dashArrayFor, treatmentFor } from './vocabulary.ts';
 
 /**
  * The attribute a control the viewer publishes but does not wire carries. The
@@ -100,24 +100,102 @@ export function provenanceLine(provenance: RankProvenance | undefined): ElementS
   switch (provenance.kind) {
     case 'matched-query':
       return element('p', { class: 'ig-provenance' }, [
-        `matched ordered query ${String(provenance.index)} · `,
-        element('span', { class: 'ig-id' }, [provenance.label]),
+        turn(),
+        element('span', {}, [
+          `matched ordered query ${String(provenance.index)} · `,
+          element('span', { class: 'ig-id' }, [provenance.label]),
+        ]),
       ]);
     case 'declared-tier':
+      // NEUTRAL, AND THAT IS THE POINT. This arm means only that no ordering
+      // query matched and the issue stayed in its tier — it does NOT mean the
+      // priority was absent. §16a's own row happens to be one where it was, and
+      // borrowing that row's sentence made the panel tell every reader that an
+      // explicitly-declared P0 had no declared priority. A panel whose job is
+      // explaining the order cannot invent the reason.
       return element('p', { class: 'ig-provenance' }, [
-        `priority tier P${String(provenance.priority)}`,
+        turn(),
+        element('span', {}, [
+          'no ordered query matched — ranked in tier ',
+          element('span', { class: 'ig-id' }, [`P${String(provenance.priority)}`]),
+        ]),
       ]);
     case 'promotion': {
       const via =
         provenance.promotedBy.length === 0
-          ? ''
-          : ` · inherited from ${provenance.promotedBy.join(', ')}`;
+          ? null
+          : element('span', {}, [
+              ' — inherited from ',
+              element('span', { class: 'ig-id' }, [provenance.promotedBy.join(', ')]),
+              ', which it blocks',
+            ]);
       return element('p', { class: 'ig-provenance' }, [
-        element('span', { class: 'ig-id' }, [provenance.notation]),
-        `${via}`,
+        turn(),
+        element('span', {}, [
+          'effective priority ',
+          element('span', { class: 'ig-id' }, [provenance.notation]),
+          via,
+        ]),
       ]);
     }
   }
+}
+
+/**
+ * The turnstile every explanation line hangs off.
+ *
+ * §16a puts one in front of the provenance sentence, the hold sentence and the
+ * caveat note alike, and it is what makes those lines read as subordinate to
+ * the row above WITHOUT dimming them. The line that shipped was muted instead,
+ * which files the panel's own reason for existing — why is this here — under
+ * decoration.
+ */
+function turn(): ElementSpec {
+  return element('span', { class: 'ig-turn', 'aria-hidden': 'true' }, ['↳']);
+}
+
+/**
+ * The priority chip a row wears on its badge row, derived from the same
+ * provenance the sentence beneath it explains.
+ *
+ * ONE FACT, TWO READS, and the frame draws both on purpose: the chip is what a
+ * reader scanning a column of rows sees, and the sentence is what they read
+ * when the chip surprises them. A promotion is the one chip the design accents,
+ * because a low tier pulled to the top because it blocks a high one is the most
+ * interesting thing the panel can say.
+ */
+export function priorityBadge(provenance: RankProvenance | undefined): ElementSpec | null {
+  if (provenance === undefined) return null;
+  switch (provenance.kind) {
+    case 'matched-query':
+      return element('span', { class: 'ig-badge', 'data-priority': 'query' }, [provenance.label]);
+    case 'declared-tier':
+      // `· tier`, NOT `· default`. The chip says which tier ranked the row; it
+      // cannot say the tier was a default, because this arm does not know that.
+      return element('span', { class: 'ig-badge', 'data-priority': 'tier' }, [
+        `P${String(provenance.priority)} · tier`,
+      ]);
+    case 'promotion':
+      return element('span', { class: 'ig-badge', 'data-priority': 'promoted' }, [
+        provenance.notation,
+      ]);
+  }
+}
+
+/**
+ * The evidence chip: `✓ verified`, or nothing.
+ *
+ * ABSENT READS `asserted`, which §16d states in those words, so an absent field
+ * draws no chip rather than a muted one — a panel that prints "asserted" on
+ * every row has spent a chip slot on the default.
+ */
+export function evidenceBadge(issue: ViewerIssue | undefined): ElementSpec | null {
+  if (issue?.evidence !== 'verified') return null;
+  return element(
+    'span',
+    { class: 'ig-badge', 'data-evidence': 'verified', title: 'evidence: verified' },
+    glyphAndLabel('✓', 'verified'),
+  );
 }
 
 /**
@@ -143,7 +221,7 @@ export function holdLine(hold: ViewerHold): ElementSpec {
       'data-code': hold.code,
       'data-subject': hold.subject,
     },
-    [label, label === null ? hold.reason : ` ${hold.reason}`],
+    [turn(), label, element('span', {}, [hold.reason])],
   );
 }
 
@@ -173,22 +251,132 @@ export function footerLabels(slots: readonly ViewerSlot[]): string {
  * count over a window), and the stamp is text the host formatted. `null` when
  * the host stated neither, so a document with no host facts draws no header.
  */
-export function hostHeader(document: NormalizedDocument): ElementSpec | null {
+export interface HeaderControls {
+  /** Which projection is drawn now, so the toggle can mark it. */
+  readonly projection: 'linear' | 'graph' | 'tree';
+  /**
+   * Whether the host wired the view commands — `projection:*`, `expand` and
+   * `collapse`. See `SceneOptions.switchable`.
+   */
+  readonly switchable: boolean;
+  /**
+   * Whether the graph is drawn in a column or at full width. Absent for the
+   * projections where the question does not arise.
+   */
+  readonly compact?: boolean | undefined;
+}
+
+/**
+ * The projection toggle and the size affordance — controls the viewer PUBLISHES
+ * and does not wire, exactly like the refresh button beside them.
+ *
+ * THE VIEWER CANNOT SWITCH ITS OWN PROJECTION. It is a pure renderer: the host
+ * re-renders it with a different option, which is the same shape `refresh`
+ * already has. So the toggle is drawn here — §16a and §16b both draw it, and a
+ * panel whose two views are its whole point cannot leave the way between them
+ * to the host's imagination — and the command travels on the attribute the host
+ * is already listening to.
+ */
+function headerControls(controls: HeaderControls | undefined): ElementSpec | null {
+  // A CONTROL NOBODY WIRED IS WORSE THAN NO CONTROL. This package cannot switch
+  // its own projection, so the host says whether it will — and until it does,
+  // the button is not drawn rather than drawn dead.
+  if (controls === undefined || !controls.switchable) return null;
+  const toggle = (
+    projection: 'linear' | 'graph',
+    glyph: string,
+    label: string,
+  ): ElementSpec =>
+    element(
+      'button',
+      {
+        class: 'ig-toggle-option',
+        type: 'button',
+        'aria-pressed': controls.projection === projection ? 'true' : 'false',
+        [COMMAND_ATTRIBUTE]: `projection:${projection}`,
+      },
+      [element('span', { class: 'ig-glyph', 'aria-hidden': 'true' }, [glyph]), label],
+    );
+  return element('span', { class: 'ig-toggle', role: 'group', 'aria-label': 'projection' }, [
+    toggle('linear', '☰', 'List'),
+    toggle('graph', '⛓', 'Graph'),
+  ]);
+}
+
+/**
+ * The expand / collapse affordance the graph's two sizes need.
+ *
+ * GATED THE SAME WAY THE TOGGLE IS, and for the same reason: `expand` and
+ * `collapse` are published commands this package cannot perform on itself, so a
+ * host that has not wired them would be given a button that does nothing.
+ */
+function sizeControl(controls: HeaderControls | undefined): ElementSpec | null {
+  if (controls === undefined || !controls.switchable || controls.compact === undefined) return null;
+  // ITS OWN CLASS, NOT THE REFRESH BUTTON'S. They look alike and they are not
+  // the same thing: refresh is drawn only when a host supplied a word for it,
+  // and this is drawn whenever the graph is, so sharing a class made a document
+  // with no host facts render `ig-refresh` and broke the pure-graph promise.
+  return element(
+    'button',
+    {
+      class: 'ig-size',
+      type: 'button',
+      [COMMAND_ATTRIBUTE]: controls.compact ? 'expand' : 'collapse',
+    },
+    [controls.compact ? '⤢ Expand' : '⤡ Collapse'],
+  );
+}
+
+export function hostHeader(
+  document: NormalizedDocument,
+  controls?: HeaderControls,
+): ElementSpec | null {
   const { concurrencyCap, counts, freshness } = document.host;
-  const pieces: string[] = [];
-  if (counts !== undefined) pieces.push(`${String(counts.ranked)} ranked`, `${String(counts.readyNow)} ready now`);
-  if (concurrencyCap !== undefined) pieces.push(`cap ${String(concurrencyCap)}`);
-  if (counts !== undefined) pieces.push(`${String(counts.held)} held`);
-  const summary = pieces.length === 0 ? null : element('p', { class: 'ig-summary' }, [pieces.join(' · ')]);
+
+  // THREE CHIPS, NOT ONE SENTENCE, and the middle one carries the accent. §16a
+  // outlines each tally separately and tints only "how many could run right
+  // now, against the cap" — the number an operator acts on — so the panel
+  // spends its accent once instead of on a line of muted prose in which every
+  // figure looks equally worth reading. The cap rides on that chip because the
+  // comparison is the point: four ready against a cap of two says something
+  // neither number says alone.
+  const chips: ElementSpec[] = [];
+  if (counts !== undefined) {
+    chips.push(
+      element('span', { class: 'ig-count-chip', 'data-count': 'ranked' }, [
+        `${String(counts.ranked)} ranked`,
+      ]),
+      element('span', { class: 'ig-count-chip', 'data-count': 'ready' }, [
+        concurrencyCap === undefined
+          ? `${String(counts.readyNow)} ready now`
+          : `${String(counts.readyNow)} ready now · cap ${String(concurrencyCap)}`,
+      ]),
+      element('span', { class: 'ig-count-chip', 'data-count': 'held' }, [
+        `${String(counts.held)} held`,
+      ]),
+    );
+  } else if (concurrencyCap !== undefined) {
+    chips.push(
+      element('span', { class: 'ig-count-chip', 'data-count': 'ready' }, [
+        `cap ${String(concurrencyCap)}`,
+      ]),
+    );
+  }
+  const summary =
+    chips.length === 0
+      ? null
+      : element('p', { class: 'ig-counts', 'aria-label': 'order summary' }, chips);
 
   const stamp =
     freshness === undefined
       ? null
       : element('p', { class: 'ig-freshness', 'data-stale': freshness.stale === true ? 'true' : 'false' }, [
-          'as of ',
-          element('span', { class: 'ig-id' }, [freshness.asOf]),
-          freshness.age === undefined || freshness.age === '' ? null : ` · ${freshness.age}`,
-          freshness.stale === true ? ' · stale' : null,
+          element('span', {}, [
+            'as of ',
+            element('span', { class: 'ig-id' }, [freshness.asOf]),
+            freshness.age === undefined || freshness.age === '' ? null : ` · ${freshness.age}`,
+            freshness.stale === true ? ' · stale' : null,
+          ]),
           // A CONTROL THE VIEWER PUBLISHES AND DOES NOT WIRE. Refreshing a mirror
           // is fetching, which this layer never does; the host that can listens
           // for the command. A real button rather than a styled span, so the
@@ -203,8 +391,22 @@ export function hostHeader(document: NormalizedDocument): ElementSpec | null {
               ),
         ]);
 
-  if (summary === null && stamp === null) return null;
-  return element('header', { class: 'ig-header' }, [summary, stamp]);
+  const toggle = headerControls(controls);
+  const size = sizeControl(controls);
+  if (summary === null && stamp === null && toggle === null) return null;
+  // THE PANEL'S OWN NAME IS PART OF THE HEADER BAR. §16a leads with it, and it
+  // is what tells a reader that the rows beneath are a PREVIEW of an order
+  // rather than the tracker's own list.
+  return element('header', { class: 'ig-header' }, [
+    element('div', { class: 'ig-header-top' }, [
+      element('span', { class: 'ig-header-lead' }, [
+        element('span', { class: 'ig-header-label' }, ['Order preview']),
+        toggle,
+      ]),
+      element('span', { class: 'ig-header-lead' }, [stamp, size]),
+    ]),
+    summary,
+  ]);
 }
 
 /**
@@ -238,13 +440,72 @@ export function nowRows(document: NormalizedDocument): ElementSpec | null {
         },
         [
           element('span', { class: 'ig-now-mark', 'aria-hidden': 'true' }, ['now']),
-          element('span', { class: 'ig-title' }, [issue?.title ?? job.key]),
-          issue === undefined ? null : identity(issue),
-          element('span', { class: 'ig-now-phase' }, [`· ${job.phase} · ${job.elapsed}`]),
+          // THE SAME TWO-LINE HEAD EVERY ROW HAS. The band that shipped put the
+          // title, the identity and the phase on one line at three different
+          // ends of it, so the row being worked read as less structured than
+          // the queued rows beneath it — the opposite of what the frame does.
+          element('div', { class: 'ig-row-head' }, [
+            element('span', { class: 'ig-title' }, [issue?.title ?? job.key]),
+            element('span', { class: 'ig-id' }, [
+              issue === undefined ? job.key : identity(issue),
+              ` · ${job.phase} · ${job.elapsed}`,
+            ]),
+          ]),
+          element('span', { class: 'ig-now-phase' }, [
+            element('span', { class: 'ig-now-pulse', 'aria-hidden': 'true' }),
+            'working',
+          ]),
         ],
       );
     }),
   );
+}
+
+/**
+ * A together unit's members, one line each.
+ *
+ * THE UNIT IS THE ONE PLACE THE DESIGN DRAWS AN ENCLOSURE, and it draws it to
+ * say that two distinct issues are one unit of work. Joining their titles with
+ * a separator — which is what shipped — says the opposite: a reader sees one
+ * issue with an unusually long name, and the second issue's own identity and
+ * tier vanish. Returns `null` for a single-member slot, so an ordinary row is
+ * unchanged by construction.
+ */
+export function unitBlock(document: NormalizedDocument, slot: ViewerSlot): ElementSpec | null {
+  if (slot.members.length < 2) return null;
+  return element(
+    'ul',
+    { class: 'ig-unit', 'aria-label': `one unit of ${String(slot.members.length)} issues` },
+    slot.members.map((member) => {
+      const issue = document.byKey.get(member);
+      // THROUGH `identity`, WHICH IS WHERE THE DEEP LINK LIVES. Printing the key
+      // as plain text took the chip away from the lead — which had one before
+      // this row shape existed — and gave the partners none either, so a unit
+      // was the one row in the panel from which no issue could be opened at
+      // all. §16e calls that chip "the only external link", so losing it on a
+      // unit loses the only way out of it.
+      return element('li', { class: 'ig-unit-member' }, [
+        element('span', { class: 'ig-title' }, [issue?.title ?? member]),
+        issue === undefined
+          ? element('span', { class: 'ig-id' }, [member])
+          : element('span', { class: 'ig-id' }, [
+              identity(issue),
+              ` · P${String(issue.priority)}`,
+            ]),
+      ]);
+    }),
+  );
+}
+
+/** The unit's own pill, above the enclosure: what it is, and how many. */
+export function unitMark(slot: ViewerSlot): ElementSpec | null {
+  if (slot.members.length < 2) return null;
+  return element('div', { class: 'ig-unit-mark' }, [
+    element('span', { class: 'ig-unit-pill' }, [
+      `⧉ one unit · ${String(slot.members.length)} issues`,
+    ]),
+    element('span', { class: 'ig-unit-note' }, ['worked together']),
+  ]);
 }
 
 /**
@@ -263,8 +524,8 @@ export function caveatLines(issue: ViewerIssue | undefined): ElementSpec[] {
   if (issue.previewOnly !== undefined) {
     lines.push(
       element('p', { class: 'ig-caveat', 'data-caveat': 'preview-only' }, [
-        element('span', { class: 'ig-badge', 'data-caveat': 'preview-only' }, glyphAndLabel('◐', 'preview-only')),
-        ` ${issue.previewOnly.note}`,
+        turn(),
+        element('span', {}, [issue.previewOnly.note]),
       ]),
     );
   }
@@ -272,13 +533,56 @@ export function caveatLines(issue: ViewerIssue | undefined): ElementSpec[] {
     const { used, ignored } = issue.disagreement;
     lines.push(
       element('p', { class: 'ig-caveat', 'data-caveat': 'disagree' }, [
-        element('span', { class: 'ig-badge', 'data-caveat': 'disagree' }, glyphAndLabel('◆', 'signals disagree')),
-        ` ranked by ${used} · ${ignored.carrier} declares `,
-        element('s', { class: 'ig-strike' }, [ignored.value]),
+        turn(),
+        element('span', {}, [
+          `ranked by ${used} · ${ignored.carrier} declares `,
+          element('s', { class: 'ig-strike' }, [ignored.value]),
+        ]),
       ]),
     );
   }
   return lines;
+}
+
+/**
+ * The caveat CHIPS, which sit on the badge row rather than in front of the note.
+ *
+ * §16a treats a caveat exactly like a relationship: a chip a scanner sees, and
+ * a sentence a reader reads. Leaving the chip inline in the sentence made the
+ * badge row incomplete and the sentence lumpy — the chip is a fact ABOUT the
+ * row, not the first two words of an explanation.
+ */
+export function caveatBadges(issue: ViewerIssue | undefined): readonly ElementSpec[] {
+  if (issue === undefined) return [];
+  const chips: ElementSpec[] = [];
+  if (issue.previewOnly !== undefined) {
+    chips.push(
+      element('span', { class: 'ig-badge', 'data-caveat': 'preview-only' }, glyphAndLabel('◐', 'preview-only')),
+    );
+  }
+  if (issue.disagreement !== undefined) {
+    chips.push(
+      element('span', { class: 'ig-badge', 'data-caveat': 'disagree' }, glyphAndLabel('◆', 'signals disagree')),
+    );
+  }
+  return chips;
+}
+
+/**
+ * The `⊘ not ready` chip a graph-held row wears.
+ *
+ * The frame puts it on the badge row beside the tier, so "held" is legible in
+ * the same scan as "P1" rather than only from the hatched ground or the
+ * sentence underneath.
+ */
+export function notReadyBadge(slot: ViewerSlot): ElementSpec | null {
+  if (slot.ready) return null;
+  if (!slot.holds.some((hold) => hold.family === 'graph')) return null;
+  return element(
+    'span',
+    { class: 'ig-badge', 'data-not-ready': 'true' },
+    glyphAndLabel('⊘', 'not ready'),
+  );
 }
 
 /**
@@ -325,7 +629,7 @@ export function caveatText(issue: ViewerIssue | undefined): string {
  * `keyAt` walks target-upward. That is the intended half of "an edge is pointable
  * in every projection", and it is what the canvas already does for an arc.
  */
-function edgeBadge(field: EdgeField, edgeId: string, detail: string): ElementSpec {
+function edgeBadge(field: EdgeField, edgeId: string, label: string, other: string): ElementSpec {
   const treatment = treatmentFor(field);
   return element(
     'span',
@@ -333,10 +637,16 @@ function edgeBadge(field: EdgeField, edgeId: string, detail: string): ElementSpe
       class: 'ig-badge',
       'data-edge': field,
       [GROUP_ATTRIBUTE]: edgeId,
-      title: `${treatment.label} ${detail}`,
-      'aria-label': `${treatment.label} ${detail}`,
+      title: `${label} ${other}`,
+      'aria-label': `${label} ${other}`,
     },
-    glyphAndLabel(treatment.glyph, detail),
+    // WORDED, NOT GLYPH-AND-NUMBER. `⊘ 512` asks a reader to hold a five-glyph
+    // legend in their head while scanning a column of rows; `⊘ blocked by #512`
+    // does not, and §16a and §16b both draw the word. The glyph stays — it is
+    // one of the four channels the colour-blind-safety claim rests on — and the
+    // label it now shows is the same string the accessible name already used,
+    // so what is announced and what is drawn cannot drift.
+    glyphAndLabel(treatment.glyph, `${label} ${other}`),
   );
 }
 
@@ -402,6 +712,22 @@ function overflowBadge(omitted: number): ElementSpec {
  * key — a single-key row is unchanged by construction.
  */
 export function edgeBadges(document: NormalizedDocument, keys: readonly string[]): ElementSpec | null {
+  const badges = edgeBadgeList(document, keys);
+  return badges.length === 0 ? null : element('span', { class: 'ig-badges' }, badges);
+}
+
+/**
+ * The same badges, unwrapped, for a row that builds ONE badge row out of
+ * several sources — a priority chip, an evidence chip, a caveat chip and the
+ * relationships — which is what §16a draws. Returning the wrapper to such a
+ * caller left it either nesting one flex row inside another or reaching into
+ * the spec's children, and the second is how markup and its published
+ * behaviour drift.
+ */
+export function edgeBadgeList(
+  document: NormalizedDocument,
+  keys: readonly string[],
+): readonly ElementSpec[] {
   const mine = new Set(keys);
   const badges: ElementSpec[] = [];
   // COUNTED PAST THE BUDGET, NOT BUILT. The walk still visits every edge so
@@ -443,25 +769,327 @@ export function edgeBadges(document: NormalizedDocument, keys: readonly string[]
         // is announced as one relationship rather than as two directions.
         const outgoing = mine.has(edge.from);
         const other = outgoing ? edge.to : edge.from;
-        const detail = treatment.symmetric || outgoing ? other : `${other} (incoming)`;
-        badges.push(edgeBadge(field, edgeId, detail));
+        // THE VERB CHANGES, NOT THE NOUN. Read from the far end an asymmetric
+        // edge has its own plain wording, and the vocabulary carries it, so a
+        // row never has to say "(incoming)" and leave the reader to invert it.
+        const label =
+          outgoing || treatment.symmetric ? treatment.label : (treatment.reverseLabel ?? treatment.label);
+        badges.push(edgeBadge(field, edgeId, label, other));
       }
     }
   }
-  if (badges.length === 0) return null;
   if (omitted > 0) badges.push(overflowBadge(omitted));
-  return element('span', { class: 'ig-badges' }, badges);
+  return badges;
 }
 
-/** The legend. Rendered once per scene so the grammar is readable cold. */
+/**
+ * The VISIBLE TEXT of every chip a row's badge row draws, in order.
+ *
+ * EXPORTED FOR THE LAYOUT, which has to know how tall a card is before anything
+ * is rendered and cannot measure the DOM — this package is pure and its
+ * coordinates have to be the same on a server with no fonts as in a browser
+ * with them. Deriving the strings here rather than re-deriving them there is
+ * what keeps the reserved height and the drawn height about the same thing: a
+ * badge whose wording changes moves the geometry with it.
+ */
+export function badgeTexts(
+  document: NormalizedDocument,
+  slot: ViewerSlot | undefined,
+  issue: ViewerIssue | undefined,
+  keys: readonly string[],
+): readonly string[] {
+  // THROUGH `textOf` FOR EVERY CHIP, so the GLYPH is measured with the label it
+  // sits beside. Two of these were written out by hand and lost their glyph —
+  // `✓ verified` measured as `verified`, `⊘ not ready` as `not ready` — which
+  // under-measured exactly the chips a held row carries, and near a row
+  // boundary the browser wrapped one this packer had kept on the previous row.
+  // The builders are the one source; nothing here restates what they draw.
+  const chips = [
+    priorityBadge(issue?.provenance),
+    evidenceBadge(issue),
+    slot === undefined ? null : notReadyBadge(slot),
+    ...caveatBadges(issue),
+    ...edgeBadgeList(document, keys),
+  ];
+  return chips.filter((chip): chip is ElementSpec => chip !== null).map(textOf);
+}
+
+/** Every string inside one spec, concatenated — what a reader sees on it. */
+function textOf(spec: ElementSpec): string {
+  let text = '';
+  for (const child of spec.children ?? []) {
+    if (child === null || child === undefined) continue;
+    text += typeof child === 'string' ? child : textOf(child);
+  }
+  return text;
+}
+
+/**
+ * One block of a canvas card, described rather than drawn.
+ *
+ * THIS EXISTS BECAUSE THE SAME DEFECT ARRIVED FOUR TIMES. A card's height is
+ * COUNTED by the layout before anything renders — the projection is pure and
+ * positions every card absolutely — while the card's contents are BUILT by the
+ * projection. Two functions, one shape, and nothing tying them together: every
+ * block added to the card had to be remembered in the height rule, and four
+ * times running it was not. The badge row wrapped and was charged one line; a
+ * unit in the gutter was sized as a single issue; the unit branch returned
+ * before the notes; the NOW banner was added with no allowance at all. Each
+ * time the card overran its box, the next card was drawn over the overflow, and
+ * the arcs stayed anchored to geometry nobody drew.
+ *
+ * So the CARD IS DESCRIBED ONCE, here, and both readers consume the
+ * description: {@link cardText} counts it, and the graph projection renders it.
+ * A block added to this list reaches the height rule by construction. That is
+ * the property, and it is why this is a shape and not a second helper.
+ */
+export type CardBlock =
+  /** §16b's NOW banner, or a unit's own pill: one line of chips. */
+  | { readonly kind: 'banner'; readonly mark: string; readonly note: string }
+  /** A title over its identity — the two-line pair every row draws. */
+  | { readonly kind: 'head'; readonly key: string }
+  /** A unit's enclosure: one title-and-identity pair per member. */
+  | { readonly kind: 'unit'; readonly members: readonly string[] }
+  /** The wrapping row of chips. */
+  | { readonly kind: 'badges'; readonly texts: readonly string[] }
+  /** A sentence the card prints because nothing else draws it. */
+  | { readonly kind: 'note'; readonly text: string };
+
+/**
+ * Everything one canvas card draws, in the order it draws it.
+ *
+ * `onSpine` decides the notes and nothing else: a spine card keeps its hold on
+ * a chip and a tooltip, because the list beside it prints the sentence, while a
+ * gutter card is the only mark the projection makes for its issue and §16b
+ * prints "open · not eligible" on it in as many words.
+ */
+export function cardBlocks(
+  document: NormalizedDocument,
+  key: string,
+  members: readonly string[],
+  onSpine: boolean,
+  now: boolean,
+): readonly CardBlock[] {
+  const slot = document.order.slots.find((candidate) => candidate.lead === key);
+  const issue = document.byKey.get(key);
+  const blocks: CardBlock[] = [];
+
+  if (now) {
+    const job = document.host.running.find((candidate) => members.includes(candidate.key));
+    blocks.push({
+      kind: 'banner',
+      mark: 'now',
+      note: job === undefined ? '' : `${job.phase} · ${job.elapsed}`,
+    });
+  }
+
+  if (members.length > 1 && slot !== undefined) {
+    blocks.push({
+      kind: 'banner',
+      mark: `⧉ one unit · ${String(members.length)} issues`,
+      note: 'worked together',
+    });
+    blocks.push({ kind: 'unit', members });
+  } else {
+    blocks.push({ kind: 'head', key });
+  }
+
+  const texts = badgeTexts(document, slot, issue, members);
+  if (texts.length > 0) blocks.push({ kind: 'badges', texts });
+
+  if (!onSpine) {
+    for (const text of noteText(document, key)) blocks.push({ kind: 'note', text });
+  }
+  return blocks;
+}
+
+/**
+ * The sentences a card off the spine prints: why it is held, and what it
+ * duplicates.
+ *
+ * Lives here rather than in the layout for the reason {@link cardBlocks} gives:
+ * one description, two readers.
+ */
+export function noteText(document: NormalizedDocument, key: string): readonly string[] {
+  const lines: string[] = [];
+  for (const slot of document.order.slots) {
+    if (slot.lead !== key) continue;
+    for (const hold of slot.holds) lines.push(hold.reason);
+  }
+  for (const exclusion of document.order.excluded) {
+    // THE BADGE ALREADY NAMES THE CANONICAL, so the sentence says only what the
+    // badge cannot: that this issue is never worked at all.
+    if (exclusion.key === key) lines.push('never worked — the canonical is worked instead');
+  }
+  return lines;
+}
+
+/**
+ * The text runs one block puts on the card, each of which the layout wraps and
+ * counts as one or more lines.
+ *
+ * A `head` is a title AND an identity, and a `unit` is that pair per member —
+ * so the count is per RUN rather than per block, which is what lets the layout
+ * charge a wrapped title what it costs.
+ */
+export function cardText(document: NormalizedDocument, block: CardBlock): readonly string[] {
+  switch (block.kind) {
+    case 'banner':
+      return [`${block.mark} ${block.note}`];
+    case 'head': {
+      const issue = document.byKey.get(block.key);
+      return [issue?.title ?? block.key, block.key];
+    }
+    case 'unit':
+      return block.members.flatMap((member) => [
+        document.byKey.get(member)?.title ?? member,
+        member,
+      ]);
+    case 'badges':
+      return block.texts;
+    case 'note':
+      return [block.text];
+  }
+}
+
+/**
+ * The legend: a footer bar under the drawing it explains.
+ *
+ * IT DRAWS THE LINE, NOT A CHIP OF IT. The claim this package makes about
+ * colour-blind safety is that each relationship is separable by dash pattern,
+ * terminal marker and glyph as well as hue — and a legend of five outlined
+ * chips shows none of the first two, so a reader meeting a dotted arc has
+ * nothing to match it against. Each sample is the same stroke and the same
+ * dash array the canvas uses, taken from `vocabulary.ts` rather than restated,
+ * and the terminal is the marker that edge actually ends in.
+ *
+ * THE READINESS KEY RIDES ALONG. The station fill is the parallelism channel —
+ * filled, hollow, dashed — and it is the one part of the grammar the edge table
+ * cannot explain, so §16b keys it at the far end of the same bar.
+ */
 export function legend(): ElementSpec {
   return element('fieldset', { class: 'ig-legend' }, [
     element('legend', { class: 'ig-legend-caption' }, ['relationships']),
     ...EDGE_ORDER.map((field) => {
       const treatment = treatmentFor(field);
-      return element('span', { class: 'ig-badge', 'data-edge': field }, glyphAndLabel(treatment.glyph, treatment.label));
+      return element('span', { class: 'ig-legend-item' }, [
+        legendSample(field),
+        element('span', { class: 'ig-glyph', 'aria-hidden': 'true' }, [treatment.glyph]),
+        element('span', {}, [treatment.label]),
+      ]);
     }),
+    element('span', { class: 'ig-legend-keys' }, [
+      ...STATION_KEYS.map(([fill, label]) =>
+        element('span', { class: 'ig-legend-item' }, [station(fill), element('span', {}, [label])]),
+      ),
+    ]),
   ]);
+}
+
+const STATION_KEYS: readonly (readonly [StationFill, string])[] = Object.freeze([
+  ['filled', 'ready now'],
+  ['hollow', 'ready after'],
+  ['dashed', 'held'],
+] as const);
+
+/** The width and height of one drawn legend sample, in CSS pixels. */
+const SAMPLE_WIDTH = 34;
+const SAMPLE_HEIGHT = 10;
+
+/**
+ * One relationship, drawn the way the canvas draws it.
+ *
+ * `together-with` is an enclosure rather than a line, so its sample is the
+ * rounded outline the canvas puts around a unit — drawing it as a line would
+ * be the legend teaching a shape the picture never uses.
+ */
+function legendSample(field: EdgeField): ElementSpec {
+  const treatment = treatmentFor(field);
+  const dash = dashArrayFor(treatment.dash);
+  const box = { width: String(SAMPLE_WIDTH), height: String(SAMPLE_HEIGHT), 'aria-hidden': 'true' };
+  const mid = SAMPLE_HEIGHT / 2;
+  // BUILT IN THE SVG NAMESPACE, and `element` does not put it there. That works
+  // by accident through `renderViewer`, whose output a host parses as HTML —
+  // but `mountViewer` materializes the same spec with `createElement`, which
+  // builds an HTML `<svg>` and HTML `<line>` children that draw nothing at all.
+  // So a mounted viewer showed five blank boxes where the legend's samples are,
+  // which is the whole of what the samples were added for.
+  if (treatment.dash === 'enclosure') {
+    return svg('svg', box, [
+      svg('rect', {
+        class: 'ig-enclosure',
+        'data-edge': field,
+        x: '1',
+        y: '1',
+        width: String(SAMPLE_WIDTH - 2),
+        height: String(SAMPLE_HEIGHT - 2),
+        rx: '3',
+      }),
+    ]);
+  }
+  const lines: ElementSpec[] =
+    treatment.dash === 'double'
+      ? [
+          lineSample(field, 1, SAMPLE_WIDTH, mid - 2, dash),
+          lineSample(field, 1, SAMPLE_WIDTH, mid + 2, dash),
+        ]
+      : [lineSample(field, 1, SAMPLE_WIDTH - 7, mid, dash)];
+  return svg('svg', box, [...lines, terminalSample(field, treatment.terminal, mid)]);
+}
+
+function lineSample(
+  field: EdgeField,
+  x1: number,
+  x2: number,
+  y: number,
+  dash: string | null,
+): ElementSpec {
+  return svg('line', {
+    class: 'ig-edge',
+    'data-edge': field,
+    x1: String(x1),
+    y1: String(y),
+    x2: String(x2),
+    y2: String(y),
+    ...(dash === null ? {} : { 'stroke-dasharray': dash }),
+  });
+}
+
+/** The sample's pointed end, in the shape the vocabulary names for that edge. */
+function terminalSample(field: EdgeField, terminal: EdgeTerminal, y: number): ElementSpec | null {
+  const tip = SAMPLE_WIDTH;
+  switch (terminal) {
+    case 'arrow':
+      return svg('path', {
+        class: 'ig-terminal',
+        'data-edge': field,
+        fill: 'currentColor',
+        d: `M${String(tip - 7)},${String(y - 3)} L${String(tip)},${String(y)} L${String(tip - 7)},${String(y + 3)} z`,
+      });
+    case 'hollow-circle':
+      return svg('circle', {
+        class: 'ig-terminal',
+        'data-edge': field,
+        fill: 'none',
+        stroke: 'currentColor',
+        cx: String(tip - 3),
+        cy: String(y),
+        r: '3',
+      });
+    case 'tee':
+      return svg('line', {
+        class: 'ig-terminal',
+        'data-edge': field,
+        stroke: 'currentColor',
+        x1: String(tip - 2),
+        y1: String(y - 4),
+        x2: String(tip - 2),
+        y2: String(y + 4),
+      });
+    case 'none':
+    case 'enclosure':
+      return null;
+  }
 }
 
 /**

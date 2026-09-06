@@ -66,7 +66,7 @@ describe('renderViewer', () => {
   it('moves the drawing when a theme changes its geometry', () => {
     // The other half of the theming contract: geometry is theme data too, so a
     // metric override has to reach the SVG coordinates and not only the CSS.
-    const taller = extendTheme(defaultTheme, { metrics: { '--ig-row-height': 88 } });
+    const taller = extendTheme(defaultTheme, { metrics: { '--ig-card-line': 36 } });
     const base = renderViewer(fixtureDocument, { projection: 'graph' });
     const rethemed = renderViewer(fixtureDocument, { projection: 'graph', theme: taller });
 
@@ -233,8 +233,11 @@ describe('a document whose keys are not encodable', () => {
     };
 
     assert.doesNotThrow(() => renderViewer(document, { projection: 'graph' }));
-    const rendered = renderViewer(document, { projection: 'graph' });
-    assert.match(rendered.markup, /class="ig-connector"/, 'the connector was dropped rather than drawn');
+    // AND THE UNIT IS STILL DRAWN. `doesNotThrow` alone would pass on a render
+    // that silently dropped the mark it could not identify, which is the same
+    // under-reporting the refusal declines to do.
+    const { markup } = renderViewer(document, { projection: 'graph' });
+    assert.match(markup, /data-unit="true"/, 'the unit was dropped rather than drawn');
   });
 });
 
@@ -268,13 +271,13 @@ describe('a hold publishes its cause and subject when the host supplied them', (
     const { markup } = renderViewer(coded, { projection: 'linear' });
     assert.match(
       markup,
-      /<p class="ig-hold" data-family="graph" data-code="blocked-by-open" data-subject="102">blocked-by 102 is open<\/p>/,
+      /<p class="ig-hold" data-family="graph" data-code="blocked-by-open" data-subject="102"><span class="ig-turn" aria-hidden="true">↳<\/span><span>blocked-by 102 is open<\/span><\/p>/,
     );
   });
 
   it('and omits both when the host stated neither — never an empty attribute', () => {
     const { markup } = renderViewer(fixtureDocument, { projection: 'linear' });
-    assert.match(markup, /<p class="ig-hold" data-family="graph">blocked by 102, which is open<\/p>/);
+    assert.match(markup, /<p class="ig-hold" data-family="graph"><span class="ig-turn" aria-hidden="true">↳<\/span><span>blocked by 102, which is open<\/span><\/p>/);
     assert.doesNotMatch(markup, /data-code=/);
     assert.doesNotMatch(markup, /data-subject=/);
   });

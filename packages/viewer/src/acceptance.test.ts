@@ -176,6 +176,9 @@ describe('the public surface', () => {
     assert.deepEqual(Object.keys(surface).sort(), [
       'CLUSTER_ONLY_BUDGET',
       'COLOR_TOKENS',
+      // The attribute a host reads to hear a control the viewer publishes and
+      // does not wire — refresh, the projection toggle, expand and collapse.
+      'COMMAND_ATTRIBUTE',
       'EDGE_TREATMENTS',
       'EFFECT_TOKENS',
       'GRAPH_NODE_BUDGET',

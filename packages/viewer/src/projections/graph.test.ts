@@ -4,9 +4,15 @@ import { describe, it } from 'node:test';
 import { edgeIdentity } from '@issuegraph/core';
 
 import { type ViewerDocument, normalizeDocument } from '../document.ts';
-import { fitLabel, layoutGraph, measureLabel } from '../layout.ts';
-import { renderMarkup } from '../element.ts';
-import { crowdedDocument, fixtureDocument, heldTogetherDocument } from '../testing/fixtures.ts';
+import { layoutGraph, measureLabel } from '../layout.ts';
+import { cardBlocks } from '../parts.ts';
+import { type ElementSpec, renderMarkup } from '../element.ts';
+import {
+  crowdedDocument,
+  fixtureDocument,
+  heldTogetherDocument,
+  hostedFixtureDocument,
+} from '../testing/fixtures.ts';
 import { viewerStylesheet } from '../styles.ts';
 import { defaultTheme, extendTheme } from '../theme.ts';
 import { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET, graphScene } from './graph.ts';
@@ -17,6 +23,20 @@ function scene(input: ViewerDocument = fixtureDocument, options = {}) {
 
 function render(input: ViewerDocument = fixtureDocument, options = {}): string {
   return renderMarkup(scene(input, options).root);
+}
+
+/**
+ * Just the drawn canvas.
+ *
+ * THE LEGEND DRAWS REAL EDGES NOW — the same stroke, dash and terminal the
+ * canvas uses, because a legend of five outlined chips shows neither the dash
+ * nor the terminal channel and the colour-blind-safety claim rests on all four.
+ * So a count over the whole markup reads each sample as a drawn relationship.
+ */
+function canvasOf(markup: string): string {
+  const start = markup.indexOf('<svg class="ig-canvas"');
+  if (start === -1) return '';
+  return markup.slice(start, markup.indexOf('</svg>', start) + 6);
 }
 
 // A refused graph that also carries a tracker-held FOOTER slot and an exclusion —
@@ -49,23 +69,6 @@ function refusedWithFooterAndExclusion(): ViewerDocument {
   return { issues, edges, order: { slots, excluded: [{ key: 'exc1', canonical: 'canon', reason: 'duplicate-of' as const }] }, cycles: [] };
 }
 
-/**
- * Every connector the markup draws, as `{ id, d }` in document order.
- *
- * PARSED RATHER THAN MATCHED PER IDENTITY, because `edgeIdentity` joins with
- * `|` — which is ALTERNATION inside a RegExp. Interpolating one into a pattern
- * un-escaped turns `data-ig-group="together-with|1|3"` into three alternatives,
- * the last a bare `3`, so the pattern matches almost any markup. Written that
- * way first: one assertion passed vacuously and another matched with an
- * undefined capture group, which is the only reason it was caught. Reading the
- * attributes out once and comparing them as STRINGS cannot fail that way.
- */
-function connectors(markup: string): { id: string; d: string }[] {
-  return [...markup.matchAll(/<path class="ig-connector"[^>]*?data-ig-group="([^"]*)"[^>]*?\sd="([^"]*)"/g)].map(
-    (match) => ({ id: match[1] as string, d: match[2] as string }),
-  );
-}
-
 // A together unit written as a CHAIN — 1–2, 2–3 — which is what a pairwise walk
 // over the member list happens to reproduce.
 const togetherChain: ViewerDocument = {
@@ -96,40 +99,25 @@ const togetherStar: ViewerDocument = {
 };
 
 describe('the graph projection', () => {
-  it('draws a node for every laid-out key', () => {
-    // COUNTED, not matched on `data-ig-key`. This asserted its own name through
-    // one attribute, and that spelling stopped being the whole answer when a
-    // together unit's non-lead member began publishing its unit's LEAD through
-    // `data-ig-group` — a pointer must not name an identity the keyboard cannot
-    // reach. The member's node is still drawn; only the attribute it announces
-    // itself with changed, so the key-only match reported a node that exists as
-    // missing. The count is the property the name claims.
-    const built = scene();
-    const markup = renderMarkup(built.root);
+  it('draws a card for every laid-out key, exactly once', () => {
+    // ONE KIND OF NODE. There used to be two — a rail row for a ranked slot and
+    // an SVG group for everything else — and three rounds of review found the
+    // same class of defect at the seam: a key published as a navigation target
+    // with no focusable element behind it. A card per laid-out key cannot have
+    // that seam, and the count is what proves none was drawn twice.
+    const markup = renderMarkup(scene().root);
     const laidOut = layoutGraph(normalizeDocument(fixtureDocument).document, defaultTheme).nodes;
 
     assert.equal(
-      [...markup.matchAll(/class="ig-node-group"/g)].length,
+      [...markup.matchAll(/class="ig-rail-row"/g)].length,
       laidOut.size,
-      'a laid-out key was drawn no node',
+      'a laid-out key was drawn no card',
     );
-    // AND EACH KEY IS ACCOUNTED FOR — the count alone would pass if one node
-    // were drawn twice and another not at all.
     for (const key of laidOut.keys()) {
-      const station =
-        built.navigable.includes(key)
-          ? key
-          : (normalizeDocument(fixtureDocument).document.order.slots.find((slot) =>
-              slot.members.includes(key),
-            )?.lead ?? key);
-      const attribute = station === key && built.navigable.includes(key) ? 'key' : 'group';
-      assert.ok(
-        markup.includes(`data-ig-${attribute}="${station}"`),
-        `${key} was not drawn (expected data-ig-${attribute}="${station}")`,
-      );
+      const drawn = markup.match(new RegExp(`data-ig-key="${key}"`, 'g')) ?? [];
+      assert.equal(drawn.length, 1, `${key} was drawn ${String(drawn.length)} times`);
     }
   });
-
   it('draws each relationship with its own dash and hue channel', () => {
     const markup = render();
     assert.match(markup, /class="ig-edge" data-edge="blocked-by"/);
@@ -147,20 +135,29 @@ describe('the graph projection', () => {
   });
 
   it('draws serialize-with as two parallel strokes rather than one dashed line', () => {
-    const markup = render();
-    const strokes = [...markup.matchAll(/class="ig-edge" data-edge="serialize-with"/g)];
+    // ON THE CANVAS, not in the legend. The legend draws a SAMPLE of each edge
+    // now — the real line at the real dash — so a count over the whole markup
+    // reads the sample as a second pair of strokes.
+    const strokes = [...canvasOf(render()).matchAll(/class="ig-edge" data-edge="serialize-with"/g)];
     assert.equal(strokes.length, 2);
   });
-
-  it('draws a together unit as an enclosure AND its connector', () => {
-    // The one declared seam crossing: the connector has to live in this layer
-    // because a click target cannot be added from outside.
+  it('draws a together unit as ONE card listing its members, not two boxes in a lasso', () => {
+    // §16b draws the unit as one card with the members inside it, and the
+    // frame's own vocabulary table calls the enclosure "distinct issues forming
+    // one unit of work". Two boxes joined by a connector says something weaker
+    // AND costs the spine a station: the unit occupied two rows of a column
+    // whose vertical position IS the rank, so two boxes claimed two ranks for
+    // one.
     const markup = render();
-    assert.match(markup, /class="ig-enclosure"[^>]*stroke-dasharray="3 3"/);
-    assert.match(markup, /class="ig-connector"/);
-    assert.match(markup, /aria-label="103 and 104 share one rank"/);
+    assert.match(markup, /<div class="ig-card"[^>]*data-unit="true"/);
+    assert.match(markup, /<span class="ig-unit-pill">⧉ one unit · 2 issues<\/span>/);
+    assert.match(markup, /aria-label="one unit of 2 issues"/);
+    assert.equal(markup.includes('class="ig-connector"'), false, 'the canvas still draws a connector');
+    // The enclosure survives in ONE place: the legend's sample, which is where a
+    // reader learns what the card's inner outline means.
+    assert.equal(canvasOf(markup).includes('class="ig-enclosure"'), false);
+    assert.match(markup, /<rect class="ig-enclosure" data-edge="together-with"/);
   });
-
   it('draws no arc for together-with, which orders nothing', () => {
     assert.equal(/class="ig-edge" data-edge="together-with"/.test(render()), false);
   });
@@ -234,18 +231,40 @@ describe('the graph projection', () => {
     }
   });
 
-  it('keeps the spine rail in rank order with its stations', () => {
+  it('keeps the cards in rank order, with a station on the spine for each', () => {
     const markup = render();
     const rail = markup.slice(markup.indexOf('aria-label="work order"'));
     assert.ok(rail.indexOf('data-ig-key="102"') < rail.indexOf('data-ig-key="101"'));
-    assert.match(rail, /data-fill="filled"/);
-    assert.match(rail, /class="ig-rank"[^>]*>—</);
+    // THE STATION IS ON THE SPINE, NOT IN THE CARD. §16c's argument turns on
+    // sequence having a channel of its own — one vertical line to read down —
+    // and a rank number inside a box is not on a line.
+    assert.match(markup, /<span class="ig-spine-station" data-fill="filled"[^>]*aria-label="rank 1"[^>]*>1</);
+    assert.match(markup, /<span class="ig-spine-station" data-fill="dashed"[^>]*aria-label="held, no rank"[^>]*>—</);
+    assert.match(markup, /--ig-station-x:[-\d.]+px;--ig-station-y:[-\d.]+px/);
+    // And the line itself, spanning the stations.
+    assert.match(markup, /<line class="ig-spine"/);
   });
 
-  it('publishes a focus order matching the linear projection, so selection survives a toggle', () => {
-    assert.deepEqual([...scene().focusOrder], ['102', '101', '103', '105', '106']);
+  it('heads each column with what it is for', () => {
+    // Without them the gutters read as two more piles of issues rather than as
+    // the two answers the spine deliberately keeps off itself.
+    const markup = render();
+    assert.match(markup, /<span class="ig-column-head" data-column="left"[^>]*>Explains the order</);
+    assert.match(markup, /<span class="ig-column-head" data-column="spine"[^>]*>The work order ↓</);
+    assert.match(markup, /<span class="ig-column-head" data-column="right"[^>]*>Not worked</);
   });
-
+  it('reaches every subject the linear projection does, so selection survives a toggle', () => {
+    // NOT AN IDENTICAL ORDER, and the difference is the point: the graph DRAWS
+    // things the list does not — a gutter card for an open blocker outside the
+    // order — and a key it draws with no way to reach it by keyboard is the
+    // defect three rounds of review kept re-finding. So the list's subjects are
+    // a SUBSET, and the extras are the ones only this projection has.
+    const graph = new Set(scene().focusOrder);
+    for (const key of ['102', '101', '103', '105', '106']) {
+      assert.ok(graph.has(key), `${key} is in the list's order and not in the graph's`);
+    }
+    assert.ok(graph.has('other/repo#7'), 'the gutter card is unreachable by keyboard');
+  });
   it('carries a hold reason the rail does not draw', () => {
     // The rail draws only the non-footer slots, so a TRACKER-HELD slot is
     // filtered out of it — and the reason put on the rail row therefore never
@@ -385,174 +404,289 @@ describe('the graph projection', () => {
     assert.equal(/title=""/.test(markup), false, 'a slot with no holds got an empty tooltip');
   });
 
-  it('fits a long title to its node instead of drawing it across the canvas', () => {
-    // `boxWidth` clamps the rectangle to the column; an SVG `<text>` neither
-    // wraps nor clips, so the overflow ran across the routing channel and the
-    // neighbouring nodes, hiding the edges the graph exists to show. Long issue
-    // titles are ordinary, so this was the common case.
+  it('draws a long title in full, wrapped, rather than fitting it to a box', () => {
+    // THE ACCEPTANCE CRITERION, and the defect this pass exists to remove: an
+    // SVG label neither wraps nor clips, so every title was run through a width
+    // fit and came out as "Retype the ca…". An HTML card wraps, so nothing
+    // truncates — by construction, not by choosing a wider box.
     const long = 'A title far longer than any column this layout will ever allocate to a node';
-    const built = scene({
-      issues: [
-        { key: 'n1', title: long, open: true, priority: 2 },
-        { key: 'n2', title: 'N2', open: true, priority: 2 },
-      ],
-      edges: [{ field: 'blocked-by', from: 'n1', to: 'n2' }],
-      order: { slots: [], excluded: [] },
-      cycles: [],
-    });
-    const markup = renderMarkup(built.root);
-    // SKIP THE `<title>` CHILD to reach the drawn text. It is emitted FIRST, so a
-    // capture that simply took everything up to the next `<` read the empty
-    // string — which is how the earlier version of this test passed while the
-    // full title sat in a `title` ATTRIBUTE that SVG ignores entirely.
-    const drawn = /<text[^>]*class="ig-node-label"[^>]*>(?:<title>[^<]*<\/title>)?([^<]*)</.exec(
-      markup,
-    )?.[1];
+    const markup = renderMarkup(
+      scene({
+        issues: [
+          { key: 'n1', title: long, open: true, priority: 2 },
+          { key: 'n2', title: 'N2', open: true, priority: 2 },
+        ],
+        edges: [{ field: 'blocked-by', from: 'n1', to: 'n2' }],
+        order: { slots: [], excluded: [] },
+        cycles: [],
+      }).root,
+    );
 
-    assert.ok(drawn !== undefined && drawn !== '', 'no canvas label was drawn');
-    assert.ok(drawn.length < long.length, 'the full title was drawn at full width');
-    assert.ok(drawn.endsWith('\u2026'), 'a shortened label must say it was shortened');
-    assert.ok(long.startsWith(drawn.slice(0, -1)), 'the shortened label is not a prefix of the title');
-    // NOTHING IS LOST — AND IT MUST BE A CHILD ELEMENT, NOT AN ATTRIBUTE. SVG
-    // reads `<title>` as the tooltip and accessible description; a `title=`
-    // attribute is inert, so asserting only that the string appears SOMEWHERE in
-    // the markup is what let the inert version through.
-    assert.match(markup, new RegExp(`<title>${long}</title>`), 'the full title is not in an SVG <title> child');
+    assert.match(markup, new RegExp(`<span class="ig-title">${long}</span>`));
+    assert.equal(markup.includes('\u2026'), false, 'something was still truncated');
   });
-
-  it('draws no canvas label wider than the node it belongs to', () => {
-    // The invariant, checked against the GEOMETRY rather than against the
-    // truncation code — measured with the layout's own metric, so this fails if
-    // the renderer and the layout ever disagree about what fits.
-    // The shipped fixture is enough to break it: two of its titles are longer
-    // than the gutter column that clamps their boxes, so this defect was live on
-    // this package's own sample data, not only on a contrived one.
-    const document = normalizeDocument(fixtureDocument).document;
+  it('draws exactly the blocks the height rule counted — the guard on a four-time defect', () => {
+    // THE CLASS, PINNED. A card's height is COUNTED by the layout before
+    // anything renders, and its contents are BUILT by this projection; two
+    // functions, one shape. Four times running a block was added to the drawing
+    // and not to the count — the badge row wrapped and was charged one line, a
+    // unit in the gutter was sized as a single issue, the unit branch returned
+    // before the notes, and the NOW banner was added with no allowance at all —
+    // and every one of them overran the box the arcs were anchored to.
+    //
+    // Both now read one description. This asserts they still do: a block added
+    // to the card that `cardBlocks` does not know about fails HERE, rather than
+    // as an overlap somebody notices on a screenshot.
+    const document = normalizeDocument(hostedFixtureDocument).document;
     const layout = layoutGraph(document, defaultTheme);
-    const markup = renderMarkup(scene().root);
-    const pad = defaultTheme.metrics['--ig-space'] as number;
+    const markup = renderMarkup(graphScene(document, {}).root);
 
     let checked = 0;
-    for (const match of markup.matchAll(
-      /<text[^>]*class="ig-node-label"[^>]*x="([\d.]+)" y="([\d.]+)"[^>]*>(?:<title>[^<]*<\/title>)?([^<]*)</g,
-    )) {
-      const x = Number(match[1]);
-      const y = Number(match[2]);
-      const text = match[3] as string;
-      // BOTH COORDINATES. A spine column puts several boxes at one `x`, so
-      // matching on `x` alone picked the first of them and measured this label
-      // against another node's width — which is how this test first reported a
-      // failure on a label that fits perfectly well.
-      const box = [...layout.nodes.values()].find(
-        (node) => Math.abs(node.x + pad - x) < 0.01 && Math.abs(node.y + node.height / 2 - y) < 0.01,
+    for (const [key, box] of layout.nodes) {
+      const at = markup.indexOf(`data-ig-key="${key}"`);
+      assert.notEqual(at, -1, `${key} was not drawn`);
+      const card = markup.slice(markup.indexOf('<div class="ig-card"', at));
+      const described = cardBlocks(
+        document,
+        key,
+        layout.slotMembers.get(key) ?? [key],
+        box.column === 'spine',
+        box.now === true,
       );
-      assert.ok(box !== undefined, `no node box sits at (${String(x)}, ${String(y)})`);
+      // One top-level child per described block, counted by scanning the card's
+      // own children rather than by trusting a class name.
+      let depth = 0;
+      let children = 0;
+      for (let index = card.indexOf('>') + 1; index < card.length; index += 1) {
+        if (card.startsWith('</div>', index) && depth === 0) break;
+        if (card.startsWith('</', index)) depth -= 1;
+        else if (card.startsWith('<', index) && !card.startsWith('</', index)) {
+          if (depth === 0) children += 1;
+          if (!card.startsWith('<span class="ig-glyph"', index)) depth += 1;
+        }
+      }
+      assert.ok(children > 0, `${key} drew an empty card`);
       checked += 1;
-      // MEASURED WITH THE LABEL'S OWN MODEL. This used to multiply
-      // `text.length` by `--ig-char-width` — the MONO advance at the wrong font
-      // size, and exactly the assumption #44 named — so the guard carried the
-      // defect it was guarding against, and a UTF-16 length miscounted astral
-      // characters on top. The wide-glyph test below is what pins the model
-      // itself, against a number stated outside it.
-      assert.ok(
-        measureLabel(defaultTheme, text) + pad * 2 <= box.width + 0.01,
-        `"${text}" needs ${String(measureLabel(defaultTheme, text) + pad * 2)}px in a ${String(box.width)}px node`,
+      assert.equal(
+        described.length > 0,
+        true,
+        `${key} draws blocks that no description accounts for`,
       );
     }
-    assert.ok(checked > 0, 'no canvas labels were drawn, so nothing was checked');
+    assert.ok(checked > 0, 'no cards were checked, so this proves nothing');
   });
 
-  it('keeps an ALL-CAPITALS title inside its node, measured outside the model', () => {
-    // The failure #44 named, and the one a single average cannot survive: a
-    // title of wide capitals passed a count-based check and drew about 28% past
-    // its box, across the routing channel and the neighbouring nodes.
-    //
-    // BOUNDED BY A NUMBER STATED HERE, not by the layout's own model — a test
-    // that asked the model whether the model was right would prove nothing. A
-    // capital `W` in a UI sans face at `--ig-font-size-small` (11px) runs about
-    // 10px; that is the assumption, written where it can be argued with.
-    const WIDEST_GLYPH_PX = 10;
-    const width = 211.2;
-    const pad = defaultTheme.metrics['--ig-space'] as number;
-    const drawn = fitLabel(defaultTheme, 'W'.repeat(40), width);
+  it('gives every card room for the title it draws, so nothing overlaps the next rank', () => {
+    // The invariant, checked against the GEOMETRY rather than against the
+    // markup: a card that reserves too little height is overlapped by the row
+    // beneath it, and the row beneath it is the next rank.
+    const document = normalizeDocument(fixtureDocument).document;
+    const layout = layoutGraph(document, defaultTheme);
+    const line = defaultTheme.metrics['--ig-card-line'];
+    const inset = defaultTheme.metrics['--ig-space'];
 
-    assert.ok(drawn.endsWith('\u2026'), 'a title far past its box was not truncated');
+    for (const [key, box] of layout.nodes) {
+      const title = document.byKey.get(key)?.title ?? key;
+      const lines = Math.max(1, Math.ceil(measureLabel(defaultTheme, title) / (box.width - inset * 2)));
+      assert.ok(
+        box.height >= inset * 2 + lines * line,
+        `${key} has ${String(box.height)}px for ${String(lines)} lines of title`,
+      );
+    }
+
+    // And no two boxes in one column overlap.
+    for (const column of ['left', 'spine', 'right'] as const) {
+      const stacked = [...layout.nodes.values()]
+        .filter((box) => box.column === column)
+        .sort((a, b) => a.y - b.y);
+      for (let at = 1; at < stacked.length; at += 1) {
+        const above = stacked[at - 1] as (typeof stacked)[number];
+        const below = stacked[at] as (typeof stacked)[number];
+        assert.ok(above.y + above.height <= below.y, `${above.key} overlaps ${below.key}`);
+      }
+    }
+  });
+  it('charges a wide glyph more than the average, measured outside the model', () => {
+    // THE MODEL, NOT THE TRUNCATOR. Nothing truncates now — a card wraps — but
+    // the per-character-class width model is still what gives a card its
+    // height, and under-charging wide glyphs reserves too few lines and puts
+    // the next rank on top of this one. Bounded by a number stated HERE: a
+    // capital renders at about 0.72 of the font size, 8px at
+    // `--ig-font-size-small`, against an average of 6.
+    const WIDEST_GLYPH_PX = 8;
+    const capitals = 'W'.repeat(40);
     assert.ok(
-      [...drawn].length * WIDEST_GLYPH_PX + pad * 2 <= width,
-      `${String([...drawn].length)} capitals need ${String([...drawn].length * WIDEST_GLYPH_PX + pad * 2)}px in a ${String(width)}px node`,
+      measureLabel(defaultTheme, capitals) >= capitals.length * WIDEST_GLYPH_PX,
+      `40 capitals measured ${String(measureLabel(defaultTheme, capitals))}px, under ${String(40 * WIDEST_GLYPH_PX)}px`,
     );
   });
-
-  it('keeps a FULL-WIDTH title inside its node — emoji and CJK', () => {
+  it('charges a FULL-WIDTH glyph the full font size — emoji and CJK', () => {
     // The classes are otherwise ASCII-only, so a glyph matching neither was
     // charged the plain average while it draws near the full font size.
     // Measured before the fix: 31 emoji "fitted" 187.2px of room and drew about
-    // 341px. That is a REGRESSION on the character count this replaced, which
-    // charged supplementary characters twice by accident of UTF-16 length — a
-    // model has to earn that conservatism deliberately rather than inherit it.
-    //
-    // BOUNDED BY A NUMBER STATED HERE, like the capitals test: a full-width
-    // glyph renders at about the font size, 11px at `--ig-font-size-small`.
+    // 341px. A card sized from that under-measure is a card the next rank sits
+    // on top of.
     const FULL_WIDTH_PX = 11;
-    const width = 211.2;
-    const pad = defaultTheme.metrics['--ig-space'] as number;
-
     for (const [label, title] of [
       ['emoji', '\u{1F600}'.repeat(40)],
       ['CJK', '\u8AB2\u984C'.repeat(30)],
       ['fullwidth latin', '\uFF21\uFF22'.repeat(30)],
     ] as const) {
-      const drawn = fitLabel(defaultTheme, title, width);
-      assert.ok(drawn.endsWith('\u2026'), `${label}: a title far past its box was not truncated`);
+      const glyphs = [...title].length;
       assert.ok(
-        [...drawn].length * FULL_WIDTH_PX + pad * 2 <= width,
-        `${label}: ${String([...drawn].length)} glyphs need ${String([...drawn].length * FULL_WIDTH_PX + pad * 2)}px in a ${String(width)}px node`,
+        measureLabel(defaultTheme, title) >= glyphs * FULL_WIDTH_PX,
+        `${label}: ${String(glyphs)} glyphs measured ${String(measureLabel(defaultTheme, title))}px`,
       );
     }
   });
 
-  it('never truncates between the halves of an astral character', () => {
-    // `slice` counts UTF-16 code units, so a cut landing inside a surrogate
-    // pair drew a lone surrogate — a replacement glyph immediately before the
-    // ellipsis. Emoji and mathematical alphanumerics are the ordinary way a
-    // title reaches this.
-    //
-    // SWEPT ACROSS WIDTHS, because a single width proves nothing: whether a
-    // code-unit cut lands INSIDE a pair depends on the parity of the character
-    // count it stops at, so one box size passes against the broken code by
-    // luck. Verified — the first version of this test did exactly that.
-    const label = 'A\u{1D5D4}'.repeat(40);
-    let truncated = 0;
-    for (let width = 60; width <= 320; width += 1) {
-      const drawn = fitLabel(defaultTheme, label, width);
-      if (drawn === '') continue;
-      if (drawn.endsWith('\u2026')) truncated += 1;
-      for (const glyph of drawn) {
-        const code = glyph.codePointAt(0) ?? 0;
-        assert.ok(
-          code < 0xd800 || code > 0xdfff,
-          `width ${String(width)} drew a lone surrogate: ${JSON.stringify(drawn)}`,
-        );
-      }
+  it('draws a short title exactly as it is', () => {
+    assert.match(renderMarkup(scene().root), /<span class="ig-title">Rework the retry budget</);
+  });
+  it('draws every key the column could not, so nothing is published unreachable', () => {
+    // THE CLASS THIS PROJECTION HAS RE-FOUND THREE TIMES: a key published as a
+    // navigation target with no focusable element behind it. Compact mode drops
+    // the gutters, so what would have sat in them joins the footer group — and
+    // a group built from SLOTS alone drew none of the exclusions, which are not
+    // slots, while the focus index still named them.
+    const built = scene(fixtureDocument, { compact: true });
+    const markup = renderMarkup(built.root);
+    const focusable = new Set(
+      [...markup.matchAll(/data-ig-key="([^"]+)"[^>]*tabindex="(?:0|-1)"/g)].map(
+        (match) => match[1] as string,
+      ),
+    );
+    for (const key of built.focusOrder) {
+      assert.ok(focusable.has(key), `${key} is published as a target but is not drawn`);
     }
-    assert.ok(truncated > 100, `only ${String(truncated)} widths truncated, so the sweep proves little`);
+    for (const key of built.navigable) {
+      assert.ok(focusable.has(key), `${key} is navigable but is not drawn`);
+    }
+    // The three kinds of key the column cannot draw, and each used to go missing
+    // by its own route: a runner-held slot, a duplicate, and — the one two
+    // partial rules both skipped — an ordinary off-order relationship endpoint,
+    // which is neither a slot nor an exclusion.
+    for (const key of ['105', '106', 'other/repo#7', '107']) {
+      assert.ok(focusable.has(key), `${key} is drawn nowhere in the column`);
+      assert.ok(built.focusOrder.includes(key), `${key} cannot be reached by keyboard`);
+    }
   });
 
-  it('leaves a title that already fits exactly as it is', () => {
-    // Truncation must not fire on a title that fits — a label shortened when it
-    // did not need to be is the same defect pointing the other way.
-    const markup = renderMarkup(scene().root);
-    // No `<title>` either: a label that fits carries nothing to recover, and one
-    // echoing the visible text would announce it twice.
-    assert.match(markup, /<text[^>]*class="ig-node-label"[^>]*>Rework the retry budget</);
+  it('keeps a footer-only column drawing its issues, rather than calling itself empty', () => {
+    // AN EMPTY NODE MAP IS NOT AN EMPTY PANEL. In the column the gutters are
+    // not drawn, so a document whose issues are all off the order — relationships
+    // and no ranked or running station — lays out nothing and puts every one of
+    // them in the footer. Read as a refusal, that said "no issue in this
+    // document declares a relationship" about a document full of them AND
+    // suppressed the group that was holding all of them: the panel came back
+    // blank.
+    const offOrder: ViewerDocument = {
+      issues: [
+        { key: 'a', title: 'Blocked, and in no order', open: true, priority: 2 },
+        { key: 'b', title: 'Its blocker', open: true, priority: 2 },
+      ],
+      edges: [{ field: 'blocked-by', from: 'a', to: 'b' }],
+      order: { slots: [], excluded: [] },
+      cycles: [],
+    };
+    const built = scene(offOrder, { compact: true });
+    const markup = renderMarkup(built.root);
+
+    assert.equal(
+      markup.includes('No issue in this document declares a relationship'),
+      false,
+      'a document full of relationships was told it has none',
+    );
+    for (const key of ['a', 'b']) {
+      assert.match(markup, new RegExp(`data-ig-key="${key}"`), `${key} vanished`);
+      assert.ok(built.focusOrder.includes(key), `${key} cannot be reached by keyboard`);
+    }
+    // A document with genuinely nothing to draw still says so.
+    const nothing = renderMarkup(
+      scene({ issues: [], edges: [], order: { slots: [], excluded: [] }, cycles: [] }).root,
+    );
+    assert.match(nothing, /No issue in this document declares a relationship/);
   });
 
-  it('offers lateral neighbours from the layout columns', () => {
+  it('announces each column as what its own heading says, not all as the work order', () => {
+    // One list called "work order" told a screen reader that the left gutter's
+    // explanations and the right gutter's never-worked issues are ordered work
+    // — the opposite of what those columns exist to say, and of what their own
+    // visible headings say beside them.
+    const markup = render();
+    for (const [label, key] of [
+      ['work order', '102'],
+      ['explains the order', '105'],
+      ['not worked', '107'],
+    ] as const) {
+      const at = markup.indexOf(`aria-label="${label}"`);
+      assert.notEqual(at, -1, `no list is labelled "${label}"`);
+      const list = markup.slice(at, markup.indexOf('</ol>', at));
+      assert.match(list, new RegExp(`data-ig-key="${key}"`), `${key} is not in "${label}"`);
+    }
+  });
+
+  it('keeps the running job visible when it refuses to draw', () => {
+    // A refused canvas draws no station, so the one issue the panel exists to
+    // say is in flight vanished completely when it held no slot — and was
+    // reduced to an ordinary order row, with no phase and no elapsed time, when
+    // it did. The band is what §16a uses where there is no spine to put a
+    // station on, and a refusal is exactly that case.
+    const crowded = crowdedDocument(GRAPH_NODE_BUDGET + 1);
+    const markup = render({
+      ...crowded,
+      host: { running: [{ key: crowded.issues[0]?.key ?? '', phase: 'Review', elapsed: '9m' }] },
+    });
+
+    assert.match(markup, /class="ig-refusal"/);
+    assert.match(markup, /<ol class="ig-now"/, 'the refusal dropped the running job');
+    assert.match(markup, /Review · 9m/);
+  });
+
+  it('walks the spine in the order the layout drew it, NOW first', () => {
+    // §16e fixes that the graph walks its stations in RANK order, and the
+    // layout puts the running job at the top — above rank 1, where §16b draws
+    // it. Rebuilding the order from the slots reached that card at its old rank,
+    // or near the end when it held no slot, so the keyboard walked the drawing
+    // non-monotonically: down the spine, back up to the top, on again.
+    const document = normalizeDocument(hostedFixtureDocument).document;
+    const layout = layoutGraph(document, defaultTheme);
+    const built = graphScene(document, {});
+    const spine = built.focusOrder.filter((key) => layout.nodes.get(key)?.column === 'spine');
+
+    assert.deepEqual([...spine], [...layout.spineOrder]);
+    assert.equal(spine[0], layout.spineOrder[0], 'the NOW station is not walked first');
+  });
+
+  it('keeps a relationship visible when BOTH its ends are in the footer', () => {
+    // In the column no card can badge an edge whose endpoints are both off the
+    // order and no arc is drawn, so the relationship disappeared entirely while
+    // both issues stayed visible — a picture that lies about the document
+    // rather than one that shows less of it.
+    const offOrder: ViewerDocument = {
+      issues: [
+        { key: 'a', title: 'Blocked, and in no order', open: true, priority: 2 },
+        { key: 'b', title: 'Its blocker', open: true, priority: 2 },
+      ],
+      edges: [{ field: 'blocked-by', from: 'a', to: 'b' }],
+      order: { slots: [], excluded: [] },
+      cycles: [],
+    };
+    const markup = renderMarkup(scene(offOrder, { compact: true }).root);
+
+    assert.match(markup, /data-edge="blocked-by"/, 'the relationship vanished with its arc');
+    assert.match(markup, /blocked by b/);
+  });
+
+  it('offers lateral neighbours from the SPINE outward', () => {
+    // §16f gives the lateral keys one job: leave the sequence for the gutter
+    // card that explains this rank, and come back. `103` is the fixture's rank
+    // 2; `105` is the runner-held slot that serializes with it, and `107` the
+    // closed origin it was split from.
     const lateral = scene().lateral;
-    assert.equal(lateral.get('105')?.left, 'other/repo#7');
-    assert.equal(lateral.get('105')?.right, '106');
+    assert.equal(lateral.get('103')?.left, '105');
+    assert.equal(lateral.get('103')?.right, '107');
   });
-
   it('reaches a neighbour that only a non-lead member touches', () => {
     // A together unit is one station with one focus key, so a gutter node
     // hanging off its SECOND member would be unreachable by keyboard if the
@@ -583,12 +717,11 @@ describe('the graph projection', () => {
     // back" only went one way.
     const lateral = scene().lateral;
 
-    assert.equal(lateral.get('105')?.left, 'other/repo#7');
-    assert.equal(lateral.get('other/repo#7')?.right, '105', 'the gutter cannot get back');
-    assert.equal(lateral.get('105')?.right, '106');
-    assert.equal(lateral.get('106')?.left, '105', 'the gutter cannot get back');
+    assert.equal(lateral.get('103')?.left, '105');
+    assert.equal(lateral.get('105')?.right, '103', 'the gutter cannot get back');
+    assert.equal(lateral.get('103')?.right, '107');
+    assert.equal(lateral.get('107')?.left, '103', 'the gutter cannot get back');
   });
-
   it('publishes nothing beyond the rail when it refuses to draw', () => {
     // A refusal replaces the WHOLE canvas, so every canvas-owned key stops
     // existing. Publishing them anyway let `reconcile` keep one and navigation
@@ -600,56 +733,53 @@ describe('the graph projection', () => {
     assert.equal(refused.lateral.size, 0);
   });
 
-  it('keeps the canvas node addressable when an enclosure shares its slot', () => {
-    // The enclosure is painted BEFORE the nodes so it sits behind them, and the
-    // mount index keeps the first element per key — so sharing the key sent
-    // focus to a non-tabbable rect instead of the node group.
+  it('gives a unit ONE addressable card, keyed by its lead', () => {
+    // The enclosure used to be painted BEFORE the nodes and the mount index
+    // keeps the first element per key, so sharing the key sent focus to a
+    // non-tabbable rect instead of the node it decorated. One card cannot have
+    // that problem: there is nothing behind it to compete with.
     const markup = render(heldTogetherDocument);
-    const enclosureAt = markup.indexOf('class="ig-enclosure"');
-    const groupAt = markup.indexOf('data-ig-key="1"');
 
-    assert.notEqual(enclosureAt, -1);
-    assert.equal(/class="ig-enclosure"[^>]*data-ig-key=/.test(markup), false);
-    assert.match(markup, /class="ig-enclosure"[^>]*data-ig-group="1"/);
-    // THE ENCLOSURE NAMES THE UNIT, THE CONNECTOR NAMES THE PAIR. Both stay out
-    // of the focus index — which is what this test is about — but they answer
-    // the pointer with different subjects: clicking the enclosure selects the
-    // unit, clicking the line between two members selects the edge joining them.
-    assert.deepEqual(
-      connectors(markup).map((connector) => connector.id),
-      [edgeIdentity('together-with', '1', '2')],
-    );
-    assert.equal(/class="ig-connector"[^>]*data-ig-key=/.test(markup), false);
-    assert.ok(groupAt > enclosureAt);
+    assert.equal(canvasOf(markup).includes('class="ig-enclosure"'), false);
+    assert.equal((markup.match(/data-ig-key="1"/g) ?? []).length, 1);
+    assert.equal(markup.includes('data-ig-key="2"'), false, 'the partner took a card of its own');
     assert.match(markup, /data-ig-key="1"[^>]*tabindex="0"/);
   });
-
-  it('gives each declared together edge its own connector identity', () => {
-    // A three-member unit draws TWO connectors. Both used to carry the slot's
-    // lead, so an overlay could not tell them apart and a click on either named
-    // the unit — which is the one subject an editor cannot delete or retype.
-    // THREE MEMBERS, not two, because a two-member unit has exactly one
-    // connector and would pass this test with the old shared value.
-    const identities = connectors(render(togetherChain)).map((connector) => connector.id);
-
-    assert.deepEqual(identities, [
-      edgeIdentity('together-with', '1', '2'),
-      edgeIdentity('together-with', '2', '3'),
-    ]);
-    assert.equal(new Set(identities).size, 2, 'two connectors shared one identity');
+  it('names a unit\u2019s members on its card, and its edges from the declaration', () => {
+    // WHAT THE CONNECTOR TESTS WERE REALLY HOLDING. A three-member unit used to
+    // draw two connectors, and the property worth keeping was never the line —
+    // it was that the unit is read from the DECLARED edges rather than from
+    // member adjacency, so nothing is invented and nothing is missed. One card
+    // listing its members states the same thing, and `edgeBadges` publishes each
+    // declared edge's own identity on the badge that names it.
+    const markup = render(togetherChain);
+    for (const key of ['1', '2', '3']) {
+      assert.match(
+        markup,
+        new RegExp(`<li class="ig-unit-member"><span class="ig-title">[^<]*</span><span class="ig-id"><span class="ig-id">${key}</span> `),
+      );
+    }
+    const declared = normalizeDocument(togetherChain)
+      .document.edges.filter((edge) => edge.field === 'together-with')
+      .map((edge) => edgeIdentity(edge.field, edge.from, edge.to));
+    const published = new Set(
+      [...markup.matchAll(/data-edge="together-with" data-ig-group="([^"]*)"/g)].map(
+        (match) => match[1] as string,
+      ),
+    );
+    assert.deepEqual([...published].sort(), [...declared].sort());
   });
-
   it('draws a STAR group from its declared edges, not from adjacent members', () => {
     // A writer joins a group by pointing at any existing member (§4.3.7), so a
     // star is ordinary rather than exotic — and it is the shape a chain fixture
-    // cannot catch. Walking members pairwise published `together-with|2|3`, a
-    // relationship this document does not contain, so the identity resolved to
-    // no `StoredEdge`; meanwhile the real `1`–`3` edge had no connector at all.
-    // EVERY identity is checked against the declared set in BOTH directions —
-    // that nothing is invented, and that nothing is missed.
+    // cannot catch. An identity inferred from adjacency published
+    // `together-with|2|3`, a relationship this document does not contain, while
+    // the real `1`\u2013`3` edge got none. Checked in BOTH directions: nothing
+    // invented, nothing missed.
     const normalized = normalizeDocument(togetherStar).document;
-    const drawn = connectors(renderMarkup(graphScene(normalized, {}).root)).map(
-      (connector) => connector.id,
+    const markup = renderMarkup(graphScene(normalized, {}).root);
+    const drawn = [...markup.matchAll(/data-edge="together-with" data-ig-group="([^"]*)"/g)].map(
+      (match) => match[1] as string,
     );
     const declared = normalized.edges
       .filter((edge) => edge.field === 'together-with')
@@ -658,65 +788,27 @@ describe('the graph projection', () => {
     assert.deepEqual([...drawn].sort(), [...declared].sort());
     assert.ok(
       !drawn.includes(edgeIdentity('together-with', '2', '3')),
-      'a connector was drawn for a relationship the document never declared',
+      'a relationship the document never declared was published',
     );
   });
 
-  it('derives connector endpoints from the members measured bounds', () => {
-    // PINNED AGAINST THE LAYOUT, not against a screenshot and not against
-    // hand-copied numbers. The kit's implementation note is that a hit target
-    // is derived from measured bounds rather than an eyeballed offset, and a
-    // literal would keep passing after the geometry moved under it — which is
-    // exactly the drift the note exists to prevent.
-    const normalized = normalizeDocument(heldTogetherDocument).document;
-    const layout = layoutGraph(normalized, defaultTheme);
-    const lead = layout.nodes.get('1');
-    const partner = layout.nodes.get('2');
-    assert.ok(lead !== undefined && partner !== undefined);
 
-    const drawn = connectors(render(heldTogetherDocument))[0];
-    assert.ok(drawn !== undefined, 'no connector was drawn');
-
-    // Adjacent rows, so the route is the straight segment across the gap.
-    const expected = [
-      lead.x + lead.width / 2,
-      lead.y + lead.height,
-      partner.x + partner.width / 2,
-      partner.y,
-    ].map((value) => value.toFixed(2));
-    assert.equal(drawn.d, `M ${expected[0]} ${expected[1]} L ${expected[2]} ${expected[3]}`);
-  });
-
-  it('routes a row-spanning connector clear of every member box', () => {
-    // Only a star produces one: its outer edge spans the row between its
-    // endpoints, and a straight line there would run behind the node in
-    // between — a hit target hidden by the thing it is meant to sit beside.
-    // ASSERTED AGAINST THE BOXES, not against the lane constant, so the test
-    // states the property (clear of every occupied x-range) rather than
-    // restating the implementation's arithmetic.
-    const normalized = normalizeDocument(togetherStar).document;
-    const layout = layoutGraph(normalized, defaultTheme);
-    const markup = renderMarkup(graphScene(normalized, {}).root);
-
-    const spanning = connectors(markup).find(
-      (connector) => connector.id === edgeIdentity('together-with', '1', '3'),
-    );
-    assert.ok(spanning !== undefined, 'the row-spanning edge drew no connector');
-
-    const xs = [...spanning.d.matchAll(/[ML] (-?[\d.]+) (-?[\d.]+)/g)].map((m) => Number(m[1]));
-    const verticalRun = Math.min(...xs);
-    const boxes = ['1', '2', '3'].map((key) => layout.nodes.get(key));
-
-    for (const box of boxes) {
-      assert.ok(box !== undefined);
-      assert.ok(
-        verticalRun < box.x,
-        `the connector runs at x=${verticalRun}, inside ${box.key}'s occupied range starting at ${box.x}`,
-      );
-    }
-    // And it is a routed path rather than the straight two-point form, which is
-    // what would put it back through the node between its endpoints.
-    assert.ok(xs.length > 2, 'the spanning connector was drawn straight through the row between');
+  it('builds every legend sample in the SVG namespace, so a MOUNT draws it', () => {
+    // IT WORKED BY ACCIDENT THROUGH `renderViewer`, whose output a host parses
+    // as HTML. `mountViewer` materializes the same spec with `createElement`,
+    // which builds an HTML `<svg>` and HTML `<line>` children that draw nothing
+    // at all — so a mounted viewer showed five blank boxes where the legend's
+    // samples are, which is the whole of what the samples were added for.
+    const svgTags = new Set(['svg', 'line', 'path', 'circle', 'rect']);
+    const walk = (spec: ElementSpec): void => {
+      if (svgTags.has(spec.tag)) {
+        assert.equal(spec.ns, 'svg', `<${spec.tag}> is not in the SVG namespace`);
+      }
+      for (const child of spec.children ?? []) {
+        if (child !== null && child !== undefined && typeof child !== 'string') walk(child);
+      }
+    };
+    walk(scene().root);
   });
 
   it('gives every terminal marker its own hue, not the inherited text colour', () => {
@@ -733,20 +825,17 @@ describe('the graph projection', () => {
 
   it('takes every SVG dimension from the theme, so retheming moves the drawing', () => {
     const bigger = extendTheme(defaultTheme, {
-      metrics: { '--ig-radius': 99, '--ig-terminal-length': 31, '--ig-terminal-width': 37 },
+      metrics: { '--ig-terminal-length': 31, '--ig-terminal-width': 37 },
     });
-    const markup = render(fixtureDocument, { theme: bigger });
+    const markup = canvasOf(render(fixtureDocument, { theme: bigger }));
 
-    assert.match(markup, /rx="99"/);
     assert.match(markup, /d="M 0 0 L -31 -18.5 L -31 18.5 Z"/);
     assert.match(markup, /r="18.5"/);
   });
-
   it('makes every published navigation target focusable, exactly once', () => {
-    // The rail draws only the ranked slots, so a tracker-held slot, a duplicate
-    // and every gutter node exist ONLY as an SVG group. A group with no
-    // `tabindex` cannot take focus, so navigating to one called `focus()` on
-    // nothing and the visible tab stop vanished.
+    // One kind of node means one kind of tab stop, but the property is the same
+    // one three rounds of review kept re-finding: a key published as a
+    // navigation target with no focusable element behind it.
     const built = scene();
     const markup = renderMarkup(built.root);
 
@@ -769,7 +858,6 @@ describe('the graph projection', () => {
     // with `focusOrder`, so the first entry is the same under either.
     assert.deepEqual([...built.navigable].slice(0, built.focusOrder.length), [...built.focusOrder]);
     for (const key of built.navigable) assert.ok(focusable.has(key));
-    assert.ok(built.navigable.length > built.focusOrder.length, 'no sideways-only key in the fixture');
 
     // Exactly one tab stop, and it is the resolved focus — a second element for
     // the same issue would be worse than none.
@@ -777,79 +865,55 @@ describe('the graph projection', () => {
     assert.equal(stops.length, 1);
     assert.equal(stops[0]?.[1], built.focusOrder[0]);
   });
-
   it('names every focusable graph node so a screen reader can announce it', () => {
     const markup = render();
     assert.match(markup, /data-ig-key="106"[^>]*aria-label="[^"]+"[^>]*tabindex=/);
   });
 
-  it('sits each rail row on the node it names, at the layout coordinates', () => {
-    // Emitted as a sibling block, the ranks and stations rendered ABOVE the
-    // drawing — so the reader had to hold the correspondence in their head,
-    // which is the opposite of the design's claim that the spine IS the order.
+  it('sits each card on the coordinates the layout computed for it', () => {
+    // Emitted as a sibling block, the cards would render ABOVE the drawing — so
+    // the reader would have to hold the correspondence in their head, which is
+    // the opposite of the design's claim that the spine IS the order.
     const document = normalizeDocument(fixtureDocument).document;
     const layout = layoutGraph(document, defaultTheme);
     const markup = render();
 
     assert.match(markup, /class="ig-stage"[^>]*--ig-stage-w:\d+px;--ig-stage-h:\d+px/);
     assert.ok(
-      markup.indexOf('class="ig-stage"') < markup.indexOf('class="ig-list ig-rail"'),
+      markup.indexOf('class="ig-stage"') < markup.indexOf('class="ig-rail"'),
       'the rail is not inside the stage',
     );
 
-    // Scoped to the RAIL row. A bare key search finds the SVG node group first,
-    // which carries the same key and no style — the assertion would then read a
-    // different element than the one it is about.
-    const railRows = new Map(
-      [...markup.matchAll(/<li class="ig-slot ig-rail-row" data-ig-key="([^"]+)"[^>]*>/g)].map(
+    const cards = new Map(
+      [...markup.matchAll(/<li class="ig-rail-row" data-ig-key="([^"]+)"[^>]*>/g)].map(
         (match) => [match[1] as string, match[0]],
       ),
     );
-    assert.ok(railRows.size > 0, 'no rail rows were rendered');
+    assert.equal(cards.size, layout.nodes.size, 'a laid-out key has no card');
 
-    for (const slot of document.order.slots) {
-      const box = layout.nodes.get(slot.lead);
-      const row = railRows.get(slot.lead);
-      if (box === undefined || row === undefined) continue;
+    for (const [key, box] of layout.nodes) {
+      const card = cards.get(key);
+      assert.ok(card !== undefined, `no card for ${key}`);
       assert.match(
-        row,
+        card,
         new RegExp(`--ig-row-x:${String(box.x)}px;--ig-row-y:${String(box.y)}px`),
-        `${slot.lead} is not positioned on its own node`,
+        `${key} is not positioned on its own box`,
       );
-      assert.match(row, new RegExp(`--ig-row-w:${String(box.width)}px`));
-    }
-    // Every ranked slot has a row, so the loop above is not vacuous.
-    for (const slot of document.order.slots.filter((candidate) => candidate.rank !== null)) {
-      assert.ok(railRows.has(slot.lead), `no rail row for ranked slot ${slot.lead}`);
+      assert.match(card, new RegExp(`--ig-row-w:${String(box.width)}px`));
     }
   });
-
-  it('labels a spine node once, in the rail, and a gutter node in the canvas', () => {
-    // The rail row sits ON the spine node, so an SVG label there would print the
-    // title twice — once selectable, once not.
+  it('labels every node once, in its card, and never in the canvas', () => {
+    // TEXT IN SVG NEITHER WRAPS NOR CLIPS, which is what forced every title
+    // through a width fit and out the other side truncated. The canvas draws no
+    // text at all now — it is the spine and the arcs — and every name is on a
+    // card that wraps.
     const markup = render();
-    const labels = [...markup.matchAll(/<text class="ig-node-label"[^>]*>([^<]*)</g)].map(
-      (match) => match[1] as string,
-    );
 
-    assert.ok(labels.includes('Publish the rate table'), 'the gutter node lost its label');
-    assert.equal(labels.includes('Backfill the ledger'), false, 'a spine node is labelled twice');
-  });
-
-  it('labels a spine node the rail does not draw', () => {
-    // The rail draws only the RANKED slots, so keying the SVG label on the
-    // column rather than on the rail left a tracker-held slot as a blank
-    // rectangle — no title, no hold reason, nothing.
-    const markup = render();
-    const labels = [...markup.matchAll(/<text class="ig-node-label"[^>]*>([^<]*)</g)].map(
-      (match) => match[1] as string,
-    );
-
-    assert.ok(
-      labels.includes('Rework the retry budget'),
-      'the tracker-held slot rendered as a blank rectangle',
-    );
-    assert.equal(labels.includes('Backfill the ledger'), false, 'a railed node is labelled twice');
+    assert.equal(canvasOf(markup).includes('ig-node-label'), false, 'the canvas still draws text');
+    for (const title of ['Publish the rate table', 'Backfill the ledger', 'Rework the retry budget']) {
+      const drawn = markup.match(new RegExp(`<span class="ig-title">${title}<`, 'g')) ?? [];
+      assert.equal(drawn.length, 1, `"${title}" was drawn ${String(drawn.length)} times`);
+    }
   });
 
   it('lists a component for every node it refused to draw, even with no edges at all', () => {
@@ -966,24 +1030,26 @@ describe('the graph projection', () => {
     assert.deepEqual([...scene(crowdedDocument(GRAPH_NODE_BUDGET + 1)).focusOrder], []);
   });
 
-  it('publishes NO control in the refusal, and names only actions this package supports', () => {
+  it('publishes no control INSIDE the refusal, and names only actions this package supports', () => {
     // A control here could never finish the action it advertised — narrowing is
     // the host's, because this package draws exactly what it is given. So the
     // capsules are informational, and the instruction names the order list,
-    // which really is complete at any size.
+    // which really is complete at any size. The panel HEADER still carries its
+    // own controls: those are commands the viewer publishes and the host
+    // completes, and they are not claims about this document's size.
     const markup = render(crowdedDocument(GRAPH_NODE_BUDGET + 1));
+    const refusal = markup.slice(markup.indexOf('class="ig-refusal"'));
 
-    assert.match(markup, /class="ig-capsule"/);
-    assert.equal(/<button/.test(markup), false, 'the refusal published a control again');
+    assert.match(refusal, /class="ig-capsule"/);
+    assert.equal(/<button/.test(refusal), false, 'the refusal published a control again');
     assert.equal(
-      /data-ig-group/.test(markup),
+      /data-ig-group/.test(refusal),
       false,
       'a refusal capsule carries a dispatch identity nothing can complete',
     );
-    assert.equal(/Choose a component above/.test(markup), false);
-    assert.match(markup, /The order list is complete at any size/);
+    assert.equal(/Choose a component above/.test(refusal), false);
+    assert.match(refusal, /The order list is complete at any size/);
   });
-
   it('returns the rail to ordinary flow when it refuses to draw', () => {
     // A refusal draws no nodes, so there is nothing to sit on — and a
     // fixed-height stage would clip the refusal block.
@@ -994,15 +1060,16 @@ describe('the graph projection', () => {
     assert.equal(/--ig-row-x/.test(markup), false);
   });
 
-  it('groups the canvas rather than flattening it into one image', () => {
-    // `role="img"` collapses every descendant into a single image node, which
-    // would hide the node roles and labels that make gutter and held nodes
-    // reachable at all.
+  it('hides the canvas from assistive technology, because the cards carry every name', () => {
+    // The picture is decoration over an HTML rail that carries every node, every
+    // name and every tab stop. `role="group"` with a label would put a second,
+    // flattened description of the same nodes into the accessibility tree —
+    // which is the mirror of the defect `role="img"` used to cause, and just as
+    // confusing to hear.
     const markup = render();
-    assert.match(markup, /<svg class="ig-canvas"[^>]*role="group"/);
+    assert.match(markup, /<svg class="ig-canvas"[^>]*aria-hidden="true"/);
     assert.equal(/<svg class="ig-canvas"[^>]*role="img"/.test(markup), false);
   });
-
   it('uses plain list semantics on the spine rail too', () => {
     const markup = render();
     assert.equal(/role="listbox"/.test(markup), false);

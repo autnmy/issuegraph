@@ -27,7 +27,18 @@ export interface NavigationState {
 export type NavigationCommand =
   | { readonly kind: 'none' }
   | { readonly kind: 'focus'; readonly key: string }
-  | { readonly kind: 'select'; readonly key: string };
+  | { readonly kind: 'select'; readonly key: string }
+  /**
+   * A command the SHELL cannot complete on its own.
+   *
+   * §16e gives the list a view toggle on `g`, and this package cannot switch its
+   * own projection: it is a pure renderer, and the host re-renders it with a
+   * different option. So the key produces the same kind of published command
+   * the header's toggle button does, on the same names — a host already
+   * listening for one hears the other. `mountViewer` reports it through
+   * `onCommand`; a host that ignores it loses only the shortcut.
+   */
+  | { readonly kind: 'command'; readonly command: string };
 
 export interface NavigationResult {
   readonly state: NavigationState;
@@ -101,6 +112,28 @@ export function reconcile(scene: Scene, state: NavigationState): NavigationState
  */
 export function navigate(scene: Scene, state: NavigationState, key: string): NavigationResult {
   const order = scene.focusOrder;
+
+  // §16e's VIEW TOGGLE IS NOT A MOVEMENT, so it comes before the guard that
+  // asks whether there is anywhere to move. A viewer with an empty order still
+  // draws a panel a reader can focus a header control in — an empty document,
+  // a NOW-only list — and pressing `g` there published nothing at all, which is
+  // the one shortcut that has no business depending on there being rows.
+  //
+  // Lower case only — an upper-case G is a different key press, and claiming
+  // both would take a shortcut a host may have bound to it. The projection is
+  // NOT computed by the host: `navigate` sees the scene, so the command names
+  // the OTHER projection rather than a "toggle" the host must resolve against
+  // state it may not hold.
+  if (key === 'g') {
+    return {
+      state,
+      command: {
+        kind: 'command',
+        command: scene.projection === 'graph' ? 'projection:linear' : 'projection:graph',
+      },
+    };
+  }
+
   if (order.length === 0) return stay(state);
 
   const current = indexOfFocus(scene, state);

@@ -94,6 +94,46 @@ export const edgeOverlayStylesheet = `
   stroke: var(--ig-state-conflict);
 }
 
+/* A BADGE IS NOT A STROKE, AND SOME RELATIONSHIPS ARE ONLY A BADGE.
+   together-with is drawn as no line at all — it shares a rank rather than
+   ordering anything, and layer 1 draws the unit as one card with its members
+   listed inside — so the chip that names it is its entire representation. The
+   marks this module clones from a stroke cannot be cloned from a span, and the
+   stroke rules above paint a property a span does not have: an in-flight or
+   refused together-edge therefore read exactly like a settled one, with the
+   state visible only to a screen reader.
+
+   So a chip states the state with what a chip HAS: its border and its ink.
+   Every state the drawn edge distinguishes, distinguished here too — including
+   the two that have no hue of their own, where a stroke uses a ghost or a halo
+   and a chip uses a dash and the focus ring. */
+.ig-badge[data-ig-state~='invalid'] {
+  border-color: var(--ig-state-invalid);
+  color: var(--ig-state-invalid);
+}
+
+.ig-badge[data-ig-state~='failed'] {
+  border-color: var(--ig-state-failed);
+  color: var(--ig-state-failed);
+}
+
+.ig-badge[data-ig-state~='conflict'] {
+  border-color: var(--ig-state-conflict);
+  color: var(--ig-state-conflict);
+}
+
+/* Pending is the state with no hue: the drawn edge says it with a dashed ghost,
+   and a chip says it with a dashed border of its own. */
+.ig-badge[data-ig-state~='pending-write'] {
+  border-style: dashed;
+}
+
+/* Selected is the focus ring's meaning, and the theme says so where it declares
+   the token — selected is deliberately not an edit-state hue. */
+.ig-badge[data-ig-state~='selected'] {
+  box-shadow: 0 0 0 var(--ig-stroke) var(--ig-focus);
+}
+
 .ig-overlay-chip {
   background: var(--ig-surface-2);
   color: var(--ig-text-muted);

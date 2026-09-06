@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en" data-theme="default">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Issuegraph — §16 beside its frames</title>
+<meta name="description" content="The viewer with no editor attached, at the three widths the design fixes: the compact list a settings rail carries, the 760px in-column list, and the full-width ordered spine. The surface §16 is the acceptance test for.">
+<meta name="theme-color" content="#0B0D0F">
+<!--
+  THE VIEWER WITH NO EDITOR ATTACHED, which is the thing §16 is a test of —
+  autnmy/descant#9097's done-when said so in as many words. `index.html` mounts
+  the grooming WORKSPACE, three zones with the viewer inside two of them; this
+  page mounts the viewer alone, at the widths the frames are drawn at, so a
+  screenshot of it can be put beside a frame and compared element by element.
+
+  Same import map, same published packages, same comp document.
+-->
+<script type="importmap">
+{
+  "imports": {
+    "@issuegraph/core": "/packages/core/dist/index.js",
+    "@issuegraph/derive": "/packages/derive/dist/index.js",
+    "@issuegraph/editor": "/packages/editor/dist/index.js",
+    "@issuegraph/reader": "/packages/reader/dist/index.js",
+    "@issuegraph/store": "/packages/store/dist/index.js",
+    "@issuegraph/viewer": "/packages/viewer/dist/index.js",
+    "yaml": "/packages/reader/node_modules/yaml/browser/index.js"
+  }
+}
+</script>
+<style>
+  html, body { margin: 0; background: #07090A; }
+  body {
+    color: #AEB9C0;
+    display: flex;
+    flex-direction: column;
+    font-family: Geist, ui-sans-serif, system-ui, sans-serif;
+    gap: 48px;
+    padding: 32px;
+  }
+  h1 { color: #E8EDF0; font-size: 20px; font-weight: 500; margin: 0; }
+  p { line-height: 1.6; margin: 0; max-width: 80ch; }
+  .frame { display: flex; flex-direction: column; gap: 10px; }
+  .label {
+    color: #75848E;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  #s16a-rail { width: 330px; }
+  #s16a-column { width: 760px; }
+  #s16b-column { width: 760px; }
+  #s16b-expanded { width: 1180px; }
+</style>
+</head>
+<body>
+<h1>§16, at the widths the design fixes</h1>
+<p>
+  The viewer alone, on the same comp document the sandbox lands on. Four cases, because
+  the design draws four: the list in a settings rail, the list in a column, the graph
+  <em>in</em> that column — a spine-only preview, because §16b says the arcs and both
+  gutters cannot be drawn legibly there — and the graph expanded to full width.
+</p>
+
+<section class="frame">
+  <span class="label">§16a · list · rail (330)</span>
+  <div id="s16a-rail"></div>
+</section>
+
+<section class="frame">
+  <span class="label">§16a · list · in-column (760)</span>
+  <div id="s16a-column"></div>
+</section>
+
+<section class="frame">
+  <span class="label">§16b · graph · in-column, compact (760)</span>
+  <div id="s16b-column"></div>
+</section>
+
+<section class="frame">
+  <span class="label">§16b · graph · expanded (1180)</span>
+  <div id="s16b-expanded"></div>
+</section>
+
+<script type="module" src="./dist/section16.js"></script>
+</body>
+</html>

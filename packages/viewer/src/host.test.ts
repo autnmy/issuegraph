@@ -12,7 +12,16 @@ import { TestDocument } from './testing/document.ts';
 import { fixtureDocument, hostedFixtureDocument } from './testing/fixtures.ts';
 
 const PROJECTIONS: readonly Projection[] = ['linear', 'graph', 'tree'];
-const HOST_CLASSES = ['ig-header', 'ig-summary', 'ig-freshness', 'ig-now', 'ig-caveat', 'ig-refresh'];
+// THE HOST'S FACTS, NOT THE PANEL'S CHROME. `ig-header` left this list when the
+// §16 fidelity pass gave the header bar the panel's own name and its projection
+// toggle: neither is a fact a host states, and the toggle is how a reader moves
+// between two projections this package owns. What the pure-graph promise is
+// actually about is the FACTS — a host with no runner must not see a count, a
+// stamp, a NOW row or a caveat it never supplied — and that is what this list is.
+const HOST_CLASSES = ['ig-counts', 'ig-freshness', 'ig-now', 'ig-caveat', 'ig-refresh'];
+
+/** The header's own controls, which a host opts into rather than inherits. */
+const CONTROL_CLASSES = ['ig-toggle', 'ig-size'];
 
 describe('the host-facts port', () => {
   it('renders exactly what shipped before the port when the host states nothing', () => {
@@ -29,12 +38,52 @@ describe('the host-facts port', () => {
     }
   });
 
-  it('prints the summary line from the host numbers, in the design order', () => {
+  it('draws the projection toggle only for a host that says it will switch', () => {
+    // A CONTROL NOBODY WIRED IS WORSE THAN NO CONTROL, which is the rule the
+    // graph's refusal already states about its own capsules. This package
+    // cannot switch its own projection — `g` and the toggle both publish
+    // `projection:*` and the HOST re-renders — so drawn by default, every host
+    // that had not wired the command displayed two buttons that do nothing.
+    for (const projection of PROJECTIONS) {
+      const off = renderViewer(hostedFixtureDocument, { projection }).markup;
+      for (const cls of CONTROL_CLASSES) {
+        assert.equal(off.includes(cls), false, `${projection} drew ${cls} unasked`);
+      }
+      const on = renderViewer(hostedFixtureDocument, { projection, switchable: true }).markup;
+      assert.match(on, /data-ig-command="projection:linear"/, projection);
+      assert.match(on, /data-ig-command="projection:graph"/, projection);
+      // The current projection is the pressed one, so the pair is a state and
+      // not two equal buttons.
+      const pressed = [...on.matchAll(/data-ig-command="projection:(\w+)"/g)].filter((match) =>
+        on.slice(Math.max(0, match.index - 120), match.index).includes('aria-pressed="true"'),
+      );
+      assert.equal(pressed.length <= 1, true);
+    }
+    // The size affordance belongs to the graph, which is the only projection
+    // that HAS two sizes.
+    const graph = renderViewer(hostedFixtureDocument, { projection: 'graph', switchable: true, compact: true }).markup;
+    assert.match(graph, /data-ig-command="expand"/);
+    assert.equal(
+      renderViewer(hostedFixtureDocument, { projection: 'linear', switchable: true }).markup.includes('ig-size'),
+      false,
+      'the list drew a size control it has no second size for',
+    );
+  });
+
+  it('prints the host numbers as the three chips the design draws, cap on the ready one', () => {
+    // §16a outlines each tally separately and tints only "how many could run
+    // right now, against the cap" — the number an operator acts on. As one
+    // muted sentence, which is what shipped, every figure looked equally worth
+    // reading and the accent was spent nowhere.
     const markup = renderViewer(hostedFixtureDocument).markup;
-    assert.match(markup, /<p class="ig-summary">2 ranked · 2 ready now · cap 2 · 2 held<\/p>/);
+    assert.match(markup, /<span class="ig-count-chip" data-count="ranked">2 ranked<\/span>/);
+    assert.match(markup, /<span class="ig-count-chip" data-count="ready">2 ready now · cap 2<\/span>/);
+    assert.match(markup, /<span class="ig-count-chip" data-count="held">2 held<\/span>/);
     const capOnly = renderViewer({ ...fixtureDocument, host: { concurrencyCap: 3 } }).markup;
-    assert.match(capOnly, /<p class="ig-summary">cap 3<\/p>/);
-    assert.equal(capOnly.includes('ranked'), false);
+    assert.match(capOnly, /<span class="ig-count-chip" data-count="ready">cap 3<\/span>/);
+    // THE COUNT CHIP, not the word. A provenance sentence says "ranked in tier"
+    // now, so a bare substring search reads the explanation as a tally.
+    assert.equal(capOnly.includes('data-count="ranked"'), false);
     // The line is a whole-order fact, so every projection carries it.
     for (const projection of PROJECTIONS) {
       assert.match(renderViewer(hostedFixtureDocument, { projection }).markup, /class="ig-header"/, projection);
@@ -43,12 +92,12 @@ describe('the host-facts port', () => {
 
   it('prints the freshness stamp verbatim and marks it stale only when the host says so', () => {
     const fresh = renderViewer(hostedFixtureDocument).markup;
-    assert.match(fresh, /<p class="ig-freshness" data-stale="false">as of <span class="ig-id">14:32<\/span> · 2m ago<button class="ig-refresh" type="button" data-ig-command="refresh">refresh<\/button><\/p>/);
+    assert.match(fresh, /<p class="ig-freshness" data-stale="false"><span>as of <span class="ig-id">14:32<\/span> · 2m ago<\/span><button class="ig-refresh" type="button" data-ig-command="refresh">refresh<\/button><\/p>/);
     const stale = renderViewer({
       ...fixtureDocument,
       host: { freshness: { asOf: '09:04', age: '5h ago', stale: true } },
     }).markup;
-    assert.match(stale, /<p class="ig-freshness" data-stale="true">as of <span class="ig-id">09:04<\/span> · 5h ago · stale<\/p>/);
+    assert.match(stale, /<p class="ig-freshness" data-stale="true"><span>as of <span class="ig-id">09:04<\/span> · 5h ago · stale<\/span><\/p>/);
     assert.equal(stale.includes('ig-refresh'), false, 'a refresh control was drawn with no label to draw it from');
   });
 
@@ -59,16 +108,25 @@ describe('the host-facts port', () => {
     assert.notEqual(now, -1);
     assert.ok(now < order, 'the NOW list is not above the order');
     assert.match(markup, /<li class="ig-now-row" data-ig-group="110" aria-label="Tidy the changelog — Review · 12m">/);
-    assert.match(markup, /<span class="ig-now-mark" aria-hidden="true">now<\/span><span class="ig-title">Tidy the changelog<\/span>/);
-    assert.match(markup, /<span class="ig-now-phase">· Review · 12m<\/span>/);
+    // §16a's band is a two-line head like every other row: the title, and the
+    // identity and phase 2px beneath it. On one line at three different ends of
+    // the band — which is what shipped — the row being worked read as LESS
+    // structured than the queued rows under it.
+    assert.match(markup, /<span class="ig-now-mark" aria-hidden="true">now<\/span><div class="ig-row-head"><span class="ig-title">Tidy the changelog<\/span>/);
+    assert.match(markup, /· Review · 12m<\/span><\/div>/);
+    assert.match(markup, /<span class="ig-now-phase"><span class="ig-now-pulse" aria-hidden="true"><\/span>working<\/span>/);
     // ONE ELEMENT PER KEY CARRIES THE FOCUS ATTRIBUTE. 110 also holds no slot
     // here, but a running issue that did would otherwise be indexed twice.
     const focusRows = markup.match(/data-ig-key="110"/g) ?? [];
     assert.equal(focusRows.length, 0, 'the NOW row entered the focus index');
-    // The graph draws it above the stage, never inside the positioned rail.
+    // ON THE GRAPH IT IS A STATION, NOT A BAND. §16b gives the running job the
+    // top station on the spine, above rank 1, because "what is running" and
+    // "what is next" are one question asked a step apart — and a band above the
+    // canvas is off the single line the sequence is supposed to read down.
     const graph = renderViewer(hostedFixtureDocument, { projection: 'graph' }).markup;
-    assert.ok(graph.indexOf('<ol class="ig-now"') < graph.indexOf('class="ig-stage"'), 'the NOW list is not above the stage');
-    assert.equal(/ig-rail[^>]*>(?:(?!<\/ol>).)*ig-now-row/s.test(graph), false, 'a NOW row landed inside the rail');
+    assert.equal(graph.includes('<ol class="ig-now"'), false, 'the graph still draws the NOW band');
+    assert.match(graph, /<div class="ig-card" data-column="spine" data-held="false" data-now="true"/);
+    assert.match(graph, /<span class="ig-spine-station" data-fill="filled"[^>]*aria-label="working now"/);
   });
 
   it('keeps the NOW row out of the focus order and the navigable set', () => {
@@ -77,20 +135,31 @@ describe('the host-facts port', () => {
     assert.equal(scene.navigable.includes('110'), false);
   });
 
-  it('draws each caveat as one row child, striking only the losing value', () => {
+  it('draws each caveat as a chip on the badge row and a sentence beneath, striking only the losing value', () => {
+    // §16a treats a caveat exactly like a relationship: a chip a scanner sees,
+    // and a sentence a reader reads. Inline in the sentence — which is what
+    // shipped — the badge row was incomplete and the sentence lumpy, because a
+    // chip is a fact ABOUT the row rather than the first two words of one.
     const markup = renderViewer(hostedFixtureDocument).markup;
     assert.match(
       markup,
-      /<p class="ig-caveat" data-caveat="preview-only"><span class="ig-badge" data-caveat="preview-only"><span class="ig-glyph" aria-hidden="true">◐<\/span><span>preview-only<\/span><\/span> query 5 \(involves:@me\) can(?:&#39;|')t be evaluated locally yet — ranked by the unlabeled tail instead<\/p>/,
+      /<span class="ig-badge" data-caveat="preview-only"><span class="ig-glyph" aria-hidden="true">◐<\/span><span>preview-only<\/span><\/span>/,
+    );
+    assert.match(
+      markup,
+      /<p class="ig-caveat" data-caveat="preview-only"><span class="ig-turn" aria-hidden="true">↳<\/span><span>query 5 \(involves:@me\) can(?:&#39;|')t be evaluated locally yet — ranked by the unlabeled tail instead<\/span><\/p>/,
     );
     // The disagreement sits on 110, which the fixture places in no slot, so it
     // is the tree — every issue its own item — that draws it.
     const tree = renderViewer(hostedFixtureDocument, { projection: 'tree' }).markup;
     assert.match(
       tree,
-      /<p class="ig-caveat" data-caveat="disagree"><span class="ig-badge" data-caveat="disagree"><span class="ig-glyph" aria-hidden="true">◆<\/span><span>signals disagree<\/span><\/span> ranked by label:P3 \(your mapping\) · frontmatter declares <s class="ig-strike">priority: 1<\/s><\/p>/,
+      /<p class="ig-caveat" data-caveat="disagree"><span class="ig-turn" aria-hidden="true">↳<\/span><span>ranked by label:P3 \(your mapping\) · frontmatter declares <s class="ig-strike">priority: 1<\/s><\/span><\/p>/,
     );
-    // The graph rail has no room for a block, so the caveat rides the label.
+    // A GRAPH CARD DRAWS THE CHIP AND CARRIES THE SENTENCE ON ITS NAME. The
+    // card grows with its contents now, so the chip fits; the sentence stays on
+    // the label and the tooltip, because the list projection prints it and
+    // §16b's spine card draws a chip.
     const graph = renderViewer(hostedFixtureDocument, { projection: 'graph' }).markup;
     assert.match(graph, /data-ig-key="103"[^>]*aria-label="[^"]*preview-only: query 5/);
     assert.match(graph, /data-ig-key="103"[^>]*title="preview-only: query 5/);
@@ -104,16 +173,36 @@ describe('the host-facts port', () => {
       ),
     };
     const canvas = renderViewer(footerCaveat, { projection: 'graph' }).markup;
-    const node = canvas.match(/<g class="ig-node-group" data-ig-key="105"[^>]*>/)?.[0] ?? '';
+    const node = canvas.match(/<li class="ig-rail-row" data-ig-key="105"[^>]*>/)?.[0] ?? '';
     assert.match(node, /aria-label="[^"]*claimed by another run · preview-only: query 2 fell back/);
-    assert.equal(canvas.includes('data-ig-key="105"') && canvas.indexOf('data-ig-key="105"') === canvas.lastIndexOf('data-ig-key="105"'), true, 'the footer issue was railed after all');
+    assert.equal(canvas.indexOf('data-ig-key="105"') === canvas.lastIndexOf('data-ig-key="105"'), true, 'the footer issue was drawn twice');
   });
 
-  it('labels a tracker hold with the runner word and names the words in the footer title', () => {
+  it('labels a footer entry with the runner word and names the words beside the count', () => {
+    // §16a's footer entries are ONE LINE EACH — a label chip, a title and an
+    // identity — because they are not facts about the work and so earn neither
+    // a rank nor an explanation block. The heading counts them and the runner's
+    // own words sit to its right, rather than the heading having to list the
+    // reasons inside it.
     const markup = renderViewer(hostedFixtureDocument).markup;
-    assert.match(markup, /<p class="ig-hold" data-family="tracker"><span class="ig-badge" data-hold="claimed">claimed<\/span> claimed by another run<\/p>/);
-    assert.match(markup, /Held outside the order — claimed, parked, or never worked · claimed</);
-    assert.match(renderViewer(fixtureDocument).markup, /Held outside the order — claimed, parked, or never worked</);
+    assert.match(markup, /<span class="ig-badge" data-hold="claimed">claimed<\/span>/);
+    // THE HEADING COVERS BOTH FAMILIES. §16a's own group lists a duplicate
+    // under "held by the runner", but §16d's table is explicit that a duplicate
+    // is a different fact — canonical elsewhere, never worked — so that wording
+    // said something untrue about half the rows beneath it.
+    assert.match(
+      markup,
+      /<p class="ig-footer-title">2 outside the order — held by the runner, or never worked<\/p>/,
+    );
+    assert.match(markup, /<span class="ig-footer-labels">claimed<\/span>/);
+    // With no host words the labels are simply absent, and the heading is what
+    // it always was.
+    const bare = renderViewer(fixtureDocument).markup;
+    assert.match(
+      bare,
+      /<p class="ig-footer-title">2 outside the order — held by the runner, or never worked<\/p>/,
+    );
+    assert.equal(bare.includes('ig-footer-labels'), false);
   });
 
   it('selects the running issue on a NOW row click and leaves the refresh control alone', () => {

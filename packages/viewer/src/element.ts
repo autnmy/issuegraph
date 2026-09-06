@@ -165,6 +165,14 @@ export interface SpecElement extends SpecNode {
    * to say so by omitting it rather than by throwing.
    */
   focus?(): void;
+  /**
+   * Optional for the same reason `focus` is: building a tree never needs it,
+   * and only the shell's projection switch does. §16f requires
+   * the other view to bring the surviving selection into view, and where an
+   * implementation cannot scroll — a server render, a test double — omitting it
+   * degrades to "the selection survives", which is the half that matters.
+   */
+  scrollIntoView?(options?: { block?: string; inline?: string }): void;
 }
 
 export interface MaterializeOptions {

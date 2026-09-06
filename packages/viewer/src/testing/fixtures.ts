@@ -188,7 +188,12 @@ export const heldTogetherDocument: ViewerDocument = {
         lead: '1',
         members: ['1', '2'],
         ready: false,
-        holds: [{ family: 'tracker', reason: 'claimed by another run' }],
+        // A GRAPH HOLD, because what holds this unit is its PARTNER's
+        // `blocked-by` and that is the whole point of the fixture. As a tracker
+        // hold the unit earned no rank at all, so it left the spine and the
+        // footer drew it as one line — and the assertions about a unit's badges
+        // and its enclosure had nothing to stand on.
+        holds: [{ family: 'graph', reason: 'blocked by 3, which is open' }],
       },
     ],
     excluded: [],

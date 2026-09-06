@@ -51,7 +51,11 @@ describe('the tree projection', () => {
     const markup = render();
     assert.equal(/role="tree"/.test(markup), false);
     assert.equal(/role="treeitem"/.test(markup), false);
-    assert.equal(/role="group"/.test(markup), false);
+    // ON THE TREE'S OWN ELEMENTS. The panel header carries a real `role="group"`
+    // — the projection toggle, two buttons that are one control — and forbidding
+    // the role anywhere in the markup would be forbidding a correct use of it
+    // somewhere else on the page.
+    assert.equal(/<(?:ul|li)[^>]*role="group"/.test(markup), false);
     assert.match(markup, /<ul class="ig-list"><li class="ig-tree-item"/);
     assert.match(markup, /<a class="ig-link"/);
   });
@@ -193,7 +197,7 @@ describe('the tree projection', () => {
     });
 
     assert.deepEqual([...flat.focusOrder], ['1', '2']);
-    assert.equal(/role="group"/.test(renderMarkup(flat.root)), false);
+    assert.equal(/<(?:ul|li)[^>]*role="group"/.test(renderMarkup(flat.root)), false);
   });
 
   it('renders an empty state rather than an empty container', () => {

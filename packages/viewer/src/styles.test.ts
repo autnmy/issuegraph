@@ -154,7 +154,7 @@ describe('the structural stylesheet', () => {
     }
   });
 
-  it('draws the together connector at the contrast-checked hue and the hairline width', () => {
+  it('draws the together mark at the contrast-checked hue and the hairline width', () => {
     // WHAT MAKES THE CONTRAST CLAIM ABOUT THE DRAWN CONNECTOR. `theme.test.ts`
     // already holds `--ig-edge-together-with` to the 3:1 non-text bar on all
     // three plain surfaces — but a token nothing uses proves nothing about a
@@ -163,15 +163,20 @@ describe('the structural stylesheet', () => {
     // this. A literal hex here would pass the theme test and still ship an
     // unmeasured colour.
     const css = withoutComments(viewerStylesheet);
-    const rule = /\.ig-connector\s*\{([^}]*)\}/.exec(css);
-    assert.ok(rule !== null, 'the stylesheet draws no connector');
+    // THE MARK MOVED, THE LINK DID NOT. A together unit is now ONE card with an
+    // inner enclosure round its members, rather than two boxes joined by a
+    // connector across the canvas — so the element carrying the hue is
+    // `.ig-unit`. It is still drawn at `--ig-stroke-connector`, which is what
+    // that token has always meant: the hairline the together mark takes, finer
+    // than an ordinary edge.
+    const rule = /\.ig-unit\s*\{([^}]*)\}/.exec(css);
+    assert.ok(rule !== null, 'the stylesheet draws no together mark');
 
     const body = rule[1] ?? '';
-    assert.match(body, /stroke:\s*var\(--ig-edge-together-with\)/);
-    assert.match(body, /stroke-width:\s*var\(--ig-stroke-connector\)/);
+    assert.match(body, /border:[^;]*var\(--ig-stroke-connector\)[^;]*var\(--ig-edge-together-with\)/);
     assert.ok(
       !/#[0-9a-fA-F]{3,8}|\brgba?\(/.test(body),
-      'the connector names a literal colour, which no contrast test measures',
+      'the together mark names a literal colour, which no contrast test measures',
     );
   });
 
@@ -184,7 +189,7 @@ describe('the structural stylesheet', () => {
       const body = match[2] ?? '';
       if (!/stroke-dasharray/.test(body)) continue;
       assert.ok(
-        !/\.ig-edge|\.ig-enclosure|\.ig-connector/.test(selector),
+        !/\.ig-edge|\.ig-enclosure/.test(selector),
         `${selector} sets stroke-dasharray, which the edge vocabulary owns`,
       );
     }
@@ -221,10 +226,19 @@ describe('the stylesheet keeps text on text-grade colours', () => {
     );
   });
 
-  it('still carries the hue on the badge border, so no channel was lost', () => {
+  it('still carries the hue on the badge border and its fill, so no channel was lost', () => {
     // The fix moves the hue rather than dropping it. Losing it here would be a
     // quieter regression than the one it repairs.
+    // THE HUE IS NOW MIXED RATHER THAN SET FLAT, because §16a's chip is a tinted
+    // fill inside a heavier border of the same hue and a bare outline carries a
+    // third of the weight the design gives it. What the rule holds is unchanged
+    // — the badge names the relationship's own hue — so the assertion names the
+    // token and not the exact function it is spent through.
     const css = withoutComments(viewerStylesheet);
-    assert.match(css, /border-color: var\(--ig-edge-duplicate-of\)/);
+    const rule = /\.ig-badge\[data-edge='duplicate-of'\]\s*\{([^}]*)\}/.exec(css);
+    assert.ok(rule !== null, 'the stylesheet gives duplicate-of no badge treatment');
+    const body = rule[1] ?? '';
+    assert.match(body, /border-color:[^;]*var\(--ig-edge-duplicate-of\)/);
+    assert.match(body, /background:[^;]*var\(--ig-edge-duplicate-of\)/);
   });
 });

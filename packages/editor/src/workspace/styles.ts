@@ -143,9 +143,16 @@ export const workspaceStylesheet = `
    --ig-rail-rows is the count, set inline by the renderer. What remains
    approximate is only VARIABLE row height — a row carrying holds is taller than
    a bare one — so the scrollbar stays proportional rather than exact. Measuring
-   that needs a mount, which this package does not have. */
+   that needs a mount, which this package does not have.
+
+   THE PITCH IS THE FLOOR ALONE NOW. Layer 1's section 16 pass separates its rows
+   with the panel's own hairlines instead of a margin — a row is
+   --ig-row-min-height of content and a hairline, with no gap to add — so the sum
+   this used to take double-counted a gap that is no longer there. The row is
+   content-sized above that floor, which is the same approximation the note above
+   already describes, at a slightly larger typical size. */
 .ig-rail-spacer {
-  height: calc((var(--ig-row-height) + var(--ig-space-tight)) * var(--ig-rail-rows, 0));
+  height: calc(var(--ig-row-min-height) * var(--ig-rail-rows, 0));
 }
 
 .ig-inspector {

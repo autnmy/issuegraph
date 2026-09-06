@@ -99,19 +99,29 @@ describe('mountViewer', () => {
       onSelect: (key: string | null) => selected.push(key),
     });
 
-    const enclosure = container
+    // THE UNIT IS ONE CARD NOW, so the two marks are the card and the
+    // `together-with` BADGE on it. They decorate different subjects for the same
+    // reason the enclosure and the connector did: the card is the unit, so it
+    // names the slot's lead; the badge is the relationship joining two members,
+    // so it names the EDGE — the same identity `@issuegraph/store` derives
+    // `StoredEdge.id` with, so a host resolves it with `findEdge` rather than
+    // being taught a second format.
+    const member = container
       .descendants()
-      .find((element) => element.getAttribute('class') === 'ig-enclosure');
-    const connector = container
+      .find((element) => element.getAttribute('class') === 'ig-unit-member');
+    const badge = container
       .descendants()
-      .find((element) => element.getAttribute('class') === 'ig-connector');
+      .find((element) => element.getAttribute(GROUP_ATTRIBUTE) === edgeIdentity('together-with', '1', '2'));
 
-    assert.ok(enclosure !== undefined, 'no enclosure was drawn');
-    assert.ok(connector !== undefined, 'no connector was drawn');
-    assert.equal(enclosure.getAttribute(KEY_ATTRIBUTE), null, 'decoration is in the focus index');
+    assert.ok(member !== undefined, 'no unit member was drawn');
+    assert.ok(badge !== undefined, 'no together badge was drawn');
+    assert.equal(badge.getAttribute(KEY_ATTRIBUTE), null, 'decoration is in the focus index');
 
-    container.dispatch('click', { target: enclosure });
-    container.dispatch('click', { target: connector });
+    // A CLICK ON A MEMBER RESOLVES TO THE UNIT. The member carries no identity
+    // of its own, so `keyAt` walks up to the card — which is exactly what "one
+    // station, one focus key" has to mean for a pointer.
+    container.dispatch('click', { target: member });
+    container.dispatch('click', { target: badge });
     assert.deepEqual(selected, ['1', edgeIdentity('together-with', '1', '2')]);
   });
 
@@ -227,15 +237,53 @@ describe('mountViewer', () => {
     const away = handle.state.focused;
     assert.notEqual(away, null, 'focus did not move, so the guard is untested');
 
-    const connector = container
+    const badge = container
       .descendants()
-      .find((element) => element.getAttribute('class') === 'ig-connector');
-    assert.ok(connector !== undefined, 'no connector was drawn');
+      .find((element) => element.getAttribute(GROUP_ATTRIBUTE) === edgeIdentity('together-with', '1', '2'));
+    assert.ok(badge !== undefined, 'no together badge was drawn');
 
-    container.dispatch('click', { target: connector });
+    container.dispatch('click', { target: badge });
 
     assert.equal(handle.state.selected, edgeIdentity('together-with', '1', '2'));
     assert.equal(handle.state.focused, away, 'selecting an edge moved the keyboard tab stop');
+  });
+
+  it('brings a surviving selection into view on a projection switch, edge or issue', () => {
+    // §16f: A SWITCH CHANGES REPRESENTATION, NEVER SUBJECT. The selection
+    // already survived, and surviving OFF SCREEN is indistinguishable from being
+    // lost — the two views place the same subject at completely different
+    // coordinates. The lookup used the FOCUS index, which holds `data-ig-key`
+    // only, so an edge selection and a NOW row — both carrying a pointer
+    // identity and no focus key — missed it every time and the promised scroll
+    // never happened for the subjects that need it most.
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const edge = edgeIdentity('together-with', '1', '2');
+    const handle = mountViewer(container, heldTogetherDocument, { projection: 'graph' });
+
+    const badge = container
+      .descendants()
+      .find((element) => element.getAttribute(GROUP_ATTRIBUTE) === edge);
+    assert.ok(badge !== undefined, 'no together badge was drawn');
+    container.dispatch('click', { target: badge });
+    assert.equal(handle.state.selected, edge);
+
+    handle.setProjection('linear');
+    const scrolled = container
+      .descendants()
+      .filter((element) => element.scrollCount > 0);
+    assert.equal(scrolled.length, 1, 'the edge selection was not brought into view');
+    assert.equal(scrolled[0]?.getAttribute(GROUP_ATTRIBUTE), edge);
+
+    // An ordinary issue selection takes the same path.
+    const row = container.descendants().find((element) => element.getAttribute(KEY_ATTRIBUTE) === '1');
+    assert.ok(row !== undefined);
+    container.dispatch('click', { target: row });
+    handle.setProjection('graph');
+    assert.ok(
+      container.descendants().some((element) => element.scrollCount > 0),
+      'an issue selection was not brought into view',
+    );
   });
 
   it('restores a connector selection passed in at mount', () => {
@@ -290,20 +338,20 @@ describe('mountViewer', () => {
       onSelect: (key: string | null) => selected.push(key),
     });
 
-    const connector = container
-      .descendants()
-      .find((element) => element.getAttribute('class') === 'ig-connector');
-    assert.ok(connector !== undefined, 'no connector was drawn');
-    container.dispatch('click', { target: connector });
-
     const edge = edgeIdentity('together-with', '1', '2');
+    const badge = container
+      .descendants()
+      .find((element) => element.getAttribute(GROUP_ATTRIBUTE) === edge);
+    assert.ok(badge !== undefined, 'no together badge was drawn');
+    container.dispatch('click', { target: badge });
+
     assert.equal(handle.state.selected, edge);
 
     // An unrelated redraw: the same document again. The mark is still drawn, so
     // the subject survives and the host is told nothing new.
     const announced = selected.length;
     handle.update(heldTogetherDocument);
-    assert.equal(handle.state.selected, edge, 'a redraw that still draws the connector dropped it');
+    assert.equal(handle.state.selected, edge, 'a redraw that still draws the badge dropped it');
     assert.equal(selected.length, announced, 'an unchanged selection was re-announced');
 
     // THE LINEAR PROJECTION DRAWS NO CANVAS AND THE SUBJECT SURVIVES ANYWAY,
@@ -541,15 +589,15 @@ describe('mountViewer', () => {
       onSelect: (key: string | null) => selected.push(key),
     });
 
+    // THE PARTNER HAS NO NODE OF ITS OWN. §16b draws the unit as ONE card with
+    // the members listed inside it, so the partner is a line in that card and
+    // carries no identity — `keyAt` walks up to the card and finds the lead,
+    // which is what "one station, one focus key" has to mean for a pointer.
     const partner = container
       .descendants()
-      .find(
-        (element) =>
-          element.getAttribute('class') === 'ig-node-group' &&
-          element.getAttribute(GROUP_ATTRIBUTE) === '103',
-      );
+      .find((element) => element.getAttribute('class') === 'ig-unit-member');
 
-    assert.ok(partner !== undefined, "the unit's partner drew no node");
+    assert.ok(partner !== undefined, "the unit's members were not listed");
     assert.equal(partner.getAttribute(KEY_ATTRIBUTE), null, 'the partner is in the focus index');
 
     container.dispatch('click', { target: partner });
@@ -1065,9 +1113,12 @@ describe('mountViewer', () => {
     let prevented = 0;
     const event = { key: 'ArrowDown', preventDefault: () => (prevented += 1) };
     container.dispatch('keydown', event);
+    // `g` IS THE VIEW TOGGLE NOW (§16e), so it is handled and prevented too. A
+    // key this package genuinely does not claim is what proves the rule.
     container.dispatch('keydown', { key: 'g', preventDefault: () => (prevented += 1) });
+    container.dispatch('keydown', { key: 'q', preventDefault: () => (prevented += 1) });
 
-    assert.equal(prevented, 1);
+    assert.equal(prevented, 2);
   });
 
   it('selects programmatically exactly as a click does', () => {

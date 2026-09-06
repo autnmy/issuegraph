@@ -128,13 +128,15 @@ forms are reachable in it without editing anything, which `order.test.ts` and
 beside it.
 
 **Where the comp and the frame read differently**, on purpose, so the next
-reader does not have to infer it:
+reader does not have to infer it. The §16 fidelity pass (#120) closed most of
+this list; what is left is host data rather than drawing.
 
-- The frame prints rank `2` on the blocked unit with a hollow station, "ready
-  once #488 closes". The viewer prints `—`: a held slot never carries a
-  number, and the spec's `ready` (§6.2) holds a unit whose `blocked-by` is
-  open. So the frame's ranks 3–6 read 2–5 on screen. That is a question for
-  the §16 fidelity pass, and this comp is what makes it visible.
+- The frame prints rank `2` on the blocked #512/#514 unit with a hollow station,
+  "ready once #488 closes". The viewer prints `—` and a dashed station, and #120
+  ruled that the viewer is right: §16d's own vocabulary table says a
+  graph-derived hold is drawn "inline at would-be rank · dashed station · rank
+  shows —", so §16a's rank 2 contradicts the table it sits beside. The frame's
+  ranks 3–6 therefore read 2–5 on screen.
 - The frame draws one hollow station, on `#503`, and attributes it to the
   serialize group ("waits for #501"), with "4 ready now · cap 2" in the
   header. This host's concurrency cap (`DEFAULT_CONCURRENCY_CAP`, 2) is what
@@ -143,18 +145,20 @@ reader does not have to infer it:
   group holds nobody, because nobody in it is claimed.
 - `#602` carries a `P2 → 1` promotion chip in the footer: it blocks the P1
   `#530`, and §6.3 promotes it. The frame's left gutter prints no priority.
-- The frame prints a priority only on the spine rows. The `now` row, the
-  footer group, the duplicate and the closed origin are undeclared here for
-  that reason, and read as the default tier where a tier is printed at all.
-  `#505`, which the frame does not draw, is declared P3 so it ranks last.
-- `#602` is "open · not eligible" in the frame — outside the order because no
-  pick-order query reaches it. This host has no ordered queries, so it is the
-  host's own hold (`not eligible`) and sits in the footer group rather than
-  the graph's left gutter.
-- `#499` is the frame's `now` row, "Review · 12m". It is an active claim in
-  the hold table (so the graph excludes it) and the scenario's `running` job, so
-  the viewer draws it in the NOW row above the order and the footer omits it.
+- The frame prints a priority only on the spine rows. This host prints the tier
+  chip on every row it has one for, because §16a's badge row is where a reader
+  scanning a column meets it and withholding it on some rows would be a
+  treatment the frame does not have either.
 - `#488`'s `✓ verified` chip is not drawn: the store carries no evidence field.
+  `ViewerIssue` takes one now, so a host that reads §4.3.6 supplies it; this one
+  cannot.
+- Every key is a bare number here (`488`), where the frames print a qualified
+  `autnmy/descant-web#488`. The viewer prints the key it is given and invents no
+  tracker syntax; this document has no repository.
+- On the GRAPH, `#602` is in the left gutter — it blocks the ranked `#530`, so
+  it explains the order — while `#533` and `#541` are in the footer group,
+  because they block nothing on the spine. §16b draws `#602` in the left gutter
+  and does not draw the other two at all.
 - The frame's "group of 3" on `#501` names only `#501` and `#503`. The third
   member, `#505`, is ranked below the drawn rows — the frame says "19 more
   ranked · scroll" — because groups are computed, never written down, and a
@@ -164,6 +168,14 @@ reader does not have to infer it:
   cannot run the pick order the frames were drawn against.
 - The comp ships no unresolvable reference — the frames draw none — so the
   `unresolvable` chip (§6.7) lives in the dense layer, on one generated issue.
+
+**`section16.html` is where the comparison is made.** `index.html` mounts the
+grooming workspace, three zones with the viewer inside two of them; the §16
+page mounts the viewer ALONE, at the four widths the design fixes — the list in
+a settings rail (330), the list in a column (760), the graph in that column as
+the compact spine-only preview §16b calls for, and the graph expanded (1180) —
+against a fixed clock, so a screenshot of it is a reproduction rather than a
+moment.
 
 **The dense layer** (#100 onward) loads from the **Document** control — "the
 big backlog" — and is generated deterministically: the same document on every

@@ -130,19 +130,32 @@ describe('the demo supplies every host fact the port carries', () => {
     assert.deepEqual(disagreeing?.disagreement, comp.caveats.get('501')?.disagreement);
 
     const markup = renderViewer(viewer).markup;
+    // THREE CHIPS, which is how §16a draws the tally: each figure outlined on
+    // its own and only the one an operator acts on — how many could run now,
+    // against the cap — carrying the accent.
     assert.match(
       markup,
-      new RegExp(`<p class="ig-summary">${String(host.counts?.ranked)} ranked · ${String(host.counts?.readyNow)} ready now · cap 2 · ${String(host.counts?.held)} held</p>`),
+      new RegExp(`<span class="ig-count-chip" data-count="ranked">${String(host.counts?.ranked)} ranked</span>`),
     );
-    assert.match(markup, /<p class="ig-freshness" data-stale="false">as of <span class="ig-id">14:32<\/span> · 2m ago<button class="ig-refresh" type="button" data-ig-command="refresh">refresh<\/button><\/p>/);
+    assert.match(
+      markup,
+      new RegExp(`<span class="ig-count-chip" data-count="ready">${String(host.counts?.readyNow)} ready now · cap 2</span>`),
+    );
+    assert.match(
+      markup,
+      new RegExp(`<span class="ig-count-chip" data-count="held">${String(host.counts?.held)} held</span>`),
+    );
+    assert.match(markup, /<p class="ig-freshness" data-stale="false"><span>as of <span class="ig-id">14:32<\/span> · 2m ago<\/span><button class="ig-refresh" type="button" data-ig-command="refresh">refresh<\/button><\/p>/);
     assert.match(markup, /<li class="ig-now-row" data-ig-group="499" aria-label="Fix flaky auth integration test — Review · 14m">/);
     assert.equal((markup.match(/data-ig-key="499"/g) ?? []).length, 0, 'the running issue also holds a slot');
     assert.match(markup, /<span class="ig-badge" data-hold="claimed">claimed<\/span>/);
     assert.match(markup, /<span class="ig-badge" data-hold="parked">parked<\/span>/);
     assert.match(markup, /data-ig-key="487"[^]*?data-caveat="preview-only"/);
     assert.match(markup, /data-ig-key="501"[^]*?data-caveat="disagree"[^]*?ranked by label:P1 \(your mapping\) · frontmatter declares <s class="ig-strike">priority: 3<\/s>/);
-    // In footer order — the first-stated word first — which is how the rows beneath read.
-    assert.match(markup, /never worked · not eligible · claimed · parked</);
+    // In footer order — the first-stated word first — which is how the rows
+    // beneath read. §16a puts them beside the count rather than inside the
+    // heading, so the heading says what the group IS and the words say why.
+    assert.match(markup, /<span class="ig-footer-labels">not eligible · claimed · parked<\/span>/);
   });
 
   it('draws the pure-graph view when no host is handed across', () => {
@@ -151,7 +164,13 @@ describe('the demo supplies every host fact the port carries', () => {
     const { viewer } = projectDocument(explained, document);
     assert.equal(viewer.host, undefined);
     const markup = renderViewer(viewer).markup;
-    for (const cls of ['ig-header', 'ig-now', 'ig-freshness', 'ig-caveat']) assert.equal(markup.includes(cls), false, cls);
+    // THE HOST'S FACTS, NOT THE PANEL'S CHROME. The header bar carries the
+    // panel's own name and its projection toggle — neither is a fact a host
+    // states — so what the pure-graph promise is about is the counts, the
+    // stamp, the NOW row and the caveats.
+    for (const cls of ['ig-counts', 'ig-now', 'ig-freshness', 'ig-caveat']) {
+      assert.equal(markup.includes(cls), false, cls);
+    }
     // Without a running job the runner's claim on #499 is a footer row again.
     assert.ok(viewer.order.slots.some((slot) => slot.members.includes('499')));
   });
@@ -216,13 +235,17 @@ describe('the refresh control reaches the host', () => {
       assert.equal(hydrations, 1, 'the sandbox did not hydrate once on start');
       const stamp = (): string | null | undefined =>
         win.document.querySelector('#workspace .ig-freshness .ig-id')?.textContent;
+      // THE ELAPSED TIME MOVED WITH §16a's BAND. It used to sit at the far end
+      // of the NOW row, where the frame puts a "working" indicator; it is now on
+      // the row's own metadata line, beside the identity, which is where §16a
+      // draws it.
       const elapsed = (): string | null | undefined =>
-        win.document.querySelector('#workspace .ig-now-phase')?.textContent;
+        win.document.querySelector('#workspace .ig-now-row .ig-row-head .ig-id')?.textContent;
       // THE STAMP THE WORKSPACE DRAWS IS THE READ'S, not the mount's: the store
       // notifies its subscribers before `hydrate()` resolves, so without the
       // mount's own redraw the drawn stamp was one read behind.
       assert.equal(stamp(), stampOf(OBSERVED));
-      assert.equal(elapsed(), '· Review · 12m');
+      assert.equal(elapsed(), '499 · Review · 12m');
 
       // RE-QUERIED PER CLICK: every redraw rebuilds the control, so a reference
       // taken once would dispatch into a detached node after the first read.
@@ -238,7 +261,7 @@ describe('the refresh control reaches the host', () => {
       assert.equal(hydrations, 2, 'the click did not re-read the mirror');
       assert.equal(stamp(), stampOf(current), 'the drawn stamp is not the newest read');
       // The job started once, at mount; a refresh does not wind it back.
-      assert.equal(elapsed(), '· Review · 22m');
+      assert.equal(elapsed(), '499 · Review · 22m');
       const landed = current;
 
       // A READ THAT FAILED IS NOT A READ. The store keeps the last good document

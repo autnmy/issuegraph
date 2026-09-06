@@ -55,16 +55,25 @@ describe('navigate', () => {
     // The design's rule, made falsifiable: the layout places 104 immediately
     // after 103, and rank order skips it because a together unit is ONE station.
     const scene = graph();
-    assert.deepEqual([...scene.focusOrder], ['102', '101', '103', '105', '106']);
+    // The five subjects the order holds, in rank order, then the gutter card the
+    // graph draws and the list does not.
+    assert.deepEqual([...scene.focusOrder], ['102', '101', '103', '105', '106', 'other/repo#7']);
     assert.equal(navigate(scene, at('103'), 'ArrowDown').state.focused, '105');
     assert.equal(scene.focusOrder.includes('104'), false);
   });
 
   it('traverses to a gutter neighbour and reports none when there is not one', () => {
+    // §16f gives the lateral keys one job: leave the SEQUENCE for the gutter
+    // card that explains this rank, and come back. `103` is the fixture's rank
+    // 2 and `105` the runner-held slot that serializes with it.
     const scene = graph();
-    assert.deepEqual(navigate(scene, at('105'), 'ArrowLeft').command, {
+    assert.deepEqual(navigate(scene, at('103'), 'ArrowLeft').command, {
       kind: 'focus',
-      key: 'other/repo#7',
+      key: '105',
+    });
+    assert.deepEqual(navigate(scene, at('105'), 'ArrowRight').command, {
+      kind: 'focus',
+      key: '103',
     });
     assert.deepEqual(navigate(scene, at('102'), 'ArrowLeft').command, { kind: 'none' });
   });
@@ -93,10 +102,47 @@ describe('navigate', () => {
     assert.deepEqual(navigate(scene, at('102'), 'Home').command, { kind: 'none' });
   });
 
+  it('toggles the view on g, as a command the host completes', () => {
+    // §16e puts the view toggle on `g`, and this package cannot switch its own
+    // projection: it is a pure renderer and the host re-renders it with a
+    // different option. So the key produces the same published command the
+    // header's toggle button does, and names the OTHER projection rather than a
+    // "toggle" the host has to resolve against state it may not hold.
+    assert.deepEqual(navigate(linear(), at('101'), 'g').command, {
+      kind: 'command',
+      command: 'projection:graph',
+    });
+    assert.deepEqual(navigate(graph(), at('101'), 'g').command, {
+      kind: 'command',
+      command: 'projection:linear',
+    });
+    // It moves nothing: a view change is not an act of navigation.
+    assert.deepEqual(navigate(linear(), at('101'), 'g').state, at('101'));
+
+    // AND IT DOES NOT DEPEND ON THERE BEING ROWS. A viewer with an empty order
+    // still draws a panel a reader can focus a header control in, and the guard
+    // that asks whether there is anywhere to MOVE ran first — so `g` published
+    // nothing at all in exactly the view where switching is most of what is
+    // left to do.
+    const empty = linearScene(
+      normalizeDocument({
+        issues: [],
+        edges: [],
+        order: { slots: [], excluded: [] },
+        cycles: [],
+      }).document,
+    );
+    assert.deepEqual(empty.focusOrder, []);
+    assert.deepEqual(navigate(empty, at(null), 'g').command, {
+      kind: 'command',
+      command: 'projection:graph',
+    });
+  });
+
   it('returns the state untouched for a key it does not claim', () => {
     // A host keeps every shortcut this package does not handle.
     const state = at('101');
-    const result = navigate(linear(), state, 'g');
+    const result = navigate(linear(), state, 'q');
 
     assert.deepEqual(result.command, { kind: 'none' });
     assert.equal(result.state, state);

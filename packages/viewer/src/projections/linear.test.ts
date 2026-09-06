@@ -5,19 +5,38 @@ import { normalizeDocument } from '../document.ts';
 import { renderMarkup } from '../element.ts';
 import { ROW_BADGE_BUDGET } from '../parts.ts';
 import { denseRowDocument, denseUnitDocument, fixtureDocument, heldTogetherDocument } from '../testing/fixtures.ts';
-import { EDGE_ORDER } from '../vocabulary.ts';
 import { linearScene } from './linear.ts';
 
 function render(input = fixtureDocument, options = {}): string {
   return renderMarkup(linearScene(normalizeDocument(input).document, options).root);
 }
 
-/** The `<li>` markup for one key, so an assertion cannot match a neighbour's. */
+/**
+ * The `<li>` markup for one key, so an assertion cannot match a neighbour's.
+ *
+ * IT BALANCES THE TAGS NOW. A together unit's row contains a nested list — one
+ * `<li>` per member, which is how §16a draws it — so slicing to the FIRST
+ * closing tag cut the row off in the middle of its own contents and every
+ * assertion about what follows it silently passed on a truncated string.
+ */
 function row(markup: string, key: string): string {
   const start = markup.indexOf(`data-ig-key="${key}"`);
   assert.notEqual(start, -1, `no row for ${key}`);
   const open = markup.lastIndexOf('<li', start);
-  return markup.slice(open, markup.indexOf('</li>', start) + 5);
+  let depth = 0;
+  for (let at = open; at < markup.length; at += 1) {
+    if (markup.startsWith('<li', at)) depth += 1;
+    else if (markup.startsWith('</li>', at)) {
+      depth -= 1;
+      if (depth === 0) return markup.slice(open, at + 5);
+    }
+  }
+  return markup.slice(open);
+}
+
+/** Only the relationship BADGES on a row — never a legend sample's own line. */
+function edgeBadgesIn(markup: string): readonly string[] {
+  return markup.match(/class="ig-badge" data-edge="/g) ?? [];
 }
 
 describe('the linear projection', () => {
@@ -56,21 +75,59 @@ describe('the linear projection', () => {
     assert.notEqual(footerAt, -1);
     assert.ok(trackerHeld > footerAt, 'a tracker-held slot stayed in the ranked list');
     assert.equal(/class="ig-rank"/.test(row(markup, '105')), false);
-    assert.match(row(markup, '105'), /claimed by another run/);
+    // §16a's footer entries are ONE LINE — a chip, a title, an identity — so the
+    // reason rides the name rather than taking a paragraph in a group whose
+    // whole point is that these are not facts about the work.
+    assert.match(row(markup, '105'), /aria-label="[^"]*claimed by another run"/);
+    assert.match(row(markup, '105'), /title="claimed by another run"/);
   });
 
   it('renders a duplicate in the footer naming its canonical', () => {
     const markup = render();
     assert.ok(markup.indexOf('data-ig-key="106"') > markup.indexOf('ig-footer'));
-    assert.match(row(markup, '106'), /duplicate of 105 — never worked/);
+    assert.match(row(markup, '106'), /<span class="ig-badge" data-edge="duplicate-of">duplicate<\/span>/);
+    assert.match(row(markup, '106'), /<span class="ig-id">→ 105<\/span>/);
+    assert.match(row(markup, '106'), /aria-label="[^"]*duplicate of 105, never worked"/);
   });
 
   it('renders a together unit as one row naming both members', () => {
     const markup = render();
     const unit = row(markup, '103');
 
-    assert.match(unit, /Split the invoice writer · Split the invoice reader/);
+    // ONE LINE EACH, INSIDE AN ENCLOSURE. Joining the titles with a separator —
+    // which is what shipped — made a two-issue unit read as one issue with a
+    // long title, and the unit is the one place the design draws an enclosure
+    // to say the opposite.
+    assert.match(unit, /<span class="ig-unit-pill">⧉ one unit · 2 issues<\/span>/);
+    // THE IDENTITY GOES THROUGH `identity`, so a member with a URL keeps the
+    // deep-link chip §16e calls "the only external link". The fixture's unit
+    // has none, so both draw as plain keys — the linked case is asserted below.
+    assert.match(unit, /<li class="ig-unit-member"><span class="ig-title">Split the invoice writer<\/span><span class="ig-id"><span class="ig-id">103<\/span> · P2<\/span><\/li>/);
+    assert.match(unit, /<li class="ig-unit-member"><span class="ig-title">Split the invoice reader<\/span><span class="ig-id"><span class="ig-id">104<\/span> · P2<\/span><\/li>/);
     assert.equal(markup.includes('data-ig-key="104"'), false, '104 rendered as its own row');
+  });
+
+  it('keeps the deep-link chip on EVERY member of a unit', () => {
+    // The lead had one before this row shape existed, and printing the key as
+    // plain text took it away from the lead and gave the partners none either —
+    // so a unit was the one row in the panel from which no issue could be
+    // opened at all. §16e calls that chip the only external link there is.
+    const linked = {
+      ...fixtureDocument,
+      issues: fixtureDocument.issues.map((issue) =>
+        issue.key === '103' || issue.key === '104'
+          ? { ...issue, url: `https://example.test/issues/${issue.key}` }
+          : issue,
+      ),
+    };
+    const unit = row(render(linked), '103');
+    for (const key of ['103', '104']) {
+      assert.match(
+        unit,
+        new RegExp(`<a class="ig-link" href="https://example.test/issues/${key}"`),
+        `${key} lost its deep link`,
+      );
+    }
   });
 
   it("carries a partner's relationships onto the unit's one row", () => {
@@ -100,7 +157,7 @@ describe('the linear projection', () => {
     // the graph refuses, in two projections that have no refusal to reach.
     const omitted = 25;
     const hub = row(render(denseRowDocument(ROW_BADGE_BUDGET + omitted - 1)), 'hub');
-    const drawn = hub.match(/data-edge="/g) ?? [];
+    const drawn = edgeBadgesIn(hub);
 
     assert.equal(drawn.length, ROW_BADGE_BUDGET, `drew ${String(drawn.length)} badges`);
     assert.match(hub, new RegExp(`data-omitted="${String(omitted)}"[^>]*>\\+${String(omitted)} more relationships<`));
@@ -147,9 +204,15 @@ describe('the linear projection', () => {
     // inequality here was satisfied by the unbudgeted render too.
     const count = 400;
     const markup = render(denseRowDocument(count));
-    const badges = (markup.match(/data-edge="/g) ?? []).length;
+    // COUNTED ON THE BADGE CLASS. The legend draws a SAMPLE of each edge now —
+    // the real line, at the real dash and terminal, because the claim this
+    // package makes is that hue is one of four channels and five outlined chips
+    // showed neither of the other two. Those samples carry `data-edge` on the
+    // path and the marker, so a bare attribute count reads the legend as
+    // badges.
+    const badges = edgeBadgesIn(markup).length;
 
-    assert.equal(badges, ROW_BADGE_BUDGET + count + 1 + EDGE_ORDER.length);
+    assert.equal(badges, ROW_BADGE_BUDGET + count + 1);
     assert.match(row(markup, 'hub'), new RegExp(`data-omitted="${String(count + 1 - ROW_BADGE_BUDGET)}"`));
   });
 
@@ -159,18 +222,32 @@ describe('the linear projection', () => {
     // one edge as two omissions; the partner's own blocked-by is a third.
     const unit = row(render(denseUnitDocument(ROW_BADGE_BUDGET)), 'hub');
 
-    assert.equal((unit.match(/data-edge="blocked-by"/g) ?? []).length, ROW_BADGE_BUDGET);
+    assert.equal((unit.match(/class="ig-badge" data-edge="blocked-by"/g) ?? []).length, ROW_BADGE_BUDGET);
     assert.match(unit, /data-omitted="3"/);
   });
 
   it('renders a promotion in the spec notation, naming the dependent', () => {
-    assert.match(row(render(), '102'), /P3 -&gt; 0.*inherited from 101/s);
+    // The named parts are lifted to the brightest ink, which is what §16a does
+    // and what makes the sentence scannable — so they are spans now, not bare
+    // text.
+    assert.match(
+      row(render(), '102'),
+      /effective priority <span class="ig-id">P3 -&gt; 0<\/span><span> — inherited from <span class="ig-id">101<\/span>, which it blocks/,
+    );
+    // And the same fact as a chip on the badge row, which is where a reader
+    // scanning a column of rows meets it.
+    assert.match(row(render(), '102'), /<span class="ig-badge" data-priority="promoted">P3 -&gt; 0<\/span>/);
   });
 
   it('renders the other two provenance forms', () => {
     const markup = render();
-    assert.match(row(markup, '101'), /matched ordered query 1/);
-    assert.match(row(markup, '103'), /priority tier P2/);
+    assert.match(row(markup, '101'), /matched ordered query 1 · <span class="ig-id">label:P1<\/span>/);
+    // NEUTRAL. This arm means only that no ordering query matched and the issue
+    // stayed in its tier; it does NOT mean the priority was absent, and §16a's
+    // own row — which happens to be one where it was — is not a licence to say
+    // so about every row that reaches this arm.
+    assert.match(row(markup, '103'), /no ordered query matched — ranked in tier <span class="ig-id">P2<\/span>/);
+    assert.match(row(markup, '103'), /<span class="ig-badge" data-priority="tier">P2 · tier<\/span>/);
   });
 
   it('links an issue only when the host supplied a URL', () => {
@@ -227,7 +304,7 @@ describe('the linear projection', () => {
   });
 
   it('names a duplicate with the vocabulary label rather than a second spelling', () => {
-    assert.match(row(render(), '106'), /duplicate of 105 — never worked/);
+    assert.match(row(render(), '106'), /aria-label="[^"]*duplicate of 105, never worked"/);
   });
 
   it('marks the selected row and gives the focused row the tab stop', () => {
@@ -235,5 +312,51 @@ describe('the linear projection', () => {
     assert.match(row(markup, '101'), /aria-current="true"/);
     assert.match(row(markup, '103'), /tabindex="0"/);
     assert.match(row(markup, '102'), /tabindex="-1"/);
+  });
+
+  it('carries relationships on EVERY footer row shape, whichever holds the edge', () => {
+    // A footer row is the only mark either projection makes for its issue — the
+    // list draws no arc at all, and the graph draws no node for anything down
+    // here — so an edge whose ends are both in this group had nothing left to
+    // represent it and disappeared entirely while both issues stayed visible.
+    // It arrived once per row shape: the aside row, then the tracker-held one.
+    // One rule now, asserted over all three.
+    const bothHeld = {
+      issues: [
+        { key: 'h1', title: 'Claimed, and blocked', open: true, priority: 2 as const },
+        { key: 'h2', title: 'Claimed, and blocking', open: true, priority: 2 as const },
+        { key: 'dup', title: 'A duplicate that also blocks', open: true, priority: 2 as const },
+        { key: 'canon', title: 'The canonical', open: true, priority: 2 as const },
+      ],
+      edges: [
+        { field: 'blocked-by' as const, from: 'h1', to: 'h2' },
+        { field: 'blocked-by' as const, from: 'dup', to: 'h2' },
+      ],
+      order: {
+        slots: [
+          {
+            rank: null,
+            lead: 'h1',
+            members: ['h1'],
+            ready: false,
+            holds: [{ family: 'tracker' as const, reason: 'claimed', label: 'claimed' }],
+          },
+          {
+            rank: null,
+            lead: 'h2',
+            members: ['h2'],
+            ready: false,
+            holds: [{ family: 'tracker' as const, reason: 'claimed', label: 'claimed' }],
+          },
+        ],
+        excluded: [{ key: 'dup', canonical: 'canon', reason: 'duplicate-of' as const }],
+      },
+      cycles: [],
+    };
+    const markup = render(bothHeld);
+
+    assert.match(row(markup, 'h1'), /data-edge="blocked-by"/, 'a held row lost its relationship');
+    assert.match(row(markup, 'h2'), /data-edge="blocked-by"/, 'a held row lost its relationship');
+    assert.match(row(markup, 'dup'), /data-edge="blocked-by"/, 'an exclusion lost its relationship');
   });
 });

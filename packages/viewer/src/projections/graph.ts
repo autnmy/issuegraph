@@ -25,31 +25,45 @@ import type {
 } from '../document.ts';
 import { type ElementSpec, element, svg } from '../element.ts';
 import {
+  type Column,
   type EdgeGeometry,
   type GraphLayout,
   edgeGeometry,
-  connectorPath,
-  enclosureBounds,
-  fitLabel,
   layoutGraph,
 } from '../layout.ts';
 import {
+  type CardBlock,
+  atStations,
+  cardBlocks,
+  caveatBadges,
+  footerLabels,
+  nowRows,
+  caveatText,
+  edgeBadgeList,
   emptyState,
+  evidenceBadge,
+  hostHeader,
+  identity,
   legend,
+  notReadyBadge,
+  priorityBadge,
   slotLabel,
-  slotTitle,
-  station,
   stationFill,
   stationsOf,
-  atStations,
-  caveatText,
-  hostHeader,
-  nowRows,
+  unitBlock,
 } from '../parts.ts';
 import { type LateralNeighbours, type Scene, resolveFocusKey } from '../scene.ts';
 import { type Theme, resolveTheme } from '../theme.ts';
 import { type EdgeTerminal, dashArrayFor, treatmentFor } from '../vocabulary.ts';
-import { type SceneOptions, excludedRow, isFooterSlot } from './linear.ts';
+import {
+  type SceneOptions,
+  asideRow,
+  excludedRow,
+  footerHeading,
+  footerRow,
+  isFooterSlot,
+  slotRow,
+} from './linear.ts';
 
 /**
  * The node budget, from the design's scale table. Above the first threshold the
@@ -59,6 +73,16 @@ export const GRAPH_NODE_BUDGET = 60;
 export const CLUSTER_ONLY_BUDGET = 300;
 
 export interface GraphOptions extends SceneOptions {
+  /**
+   * Draw the in-column preview rather than the full-width picture.
+   *
+   * §16b fixes the rule and the reason: at a settings column's width the
+   * relationship arcs and both gutters cannot be drawn legibly, so in a column
+   * the graph is a spine-only preview carrying an expand affordance. The host
+   * decides which — it is the only party that knows how much room it gave the
+   * viewer.
+   */
+  readonly compact?: boolean | undefined;
   readonly theme?: Theme | undefined;
 }
 
@@ -171,288 +195,268 @@ function edgePaths(edge: ViewerEdge, geometry: EdgeGeometry, theme: Theme): Elem
 }
 
 /**
- * One node on the canvas.
+ * One node, drawn as an HTML card positioned on the coordinates the layout gave
+ * it.
  *
- * A NODE THE SCENE PUBLISHES AS A NAVIGATION TARGET HAS TO BE FOCUSABLE. The
- * rail draws only the ranked spine slots, so a tracker-held slot, a duplicate
- * and every gutter node exist ONLY as this group — and an SVG group with no
- * `tabindex` cannot take focus, so navigating to one called `focus()` on
- * nothing and the visible tab stop vanished.
+ * A CARD, NOT A LABELLED RECTANGLE, and that is the change this pass exists to
+ * make. Drawing a node's text in SVG means the text neither wraps nor clips, so
+ * every title had to be run through a width fit and came out truncated — the
+ * "Retype the ca…" the issue names. §16b's node is three lines deep: a title
+ * that wraps, an identity, and a badge row, and none of that is expressible as
+ * one centred `<text>`.
  *
- * `railed` names the keys the rail already draws, so exactly one element per
- * key is tabbable; a second tab stop for the same issue would be worse than
- * none. A focusable element also needs a name, hence `role`/`aria-label`.
+ * IT ALSO SETTLES WHERE FOCUS LIVES. There used to be two kinds of node — a
+ * rail row for a ranked slot and an SVG group for everything else — and three
+ * rounds of review found the same class of defect at the seam between them: a
+ * key published as a navigation target with no focusable element behind it. One
+ * kind of node cannot have that seam.
  */
-function nodeShape(
+function nodeCard(
   document: NormalizedDocument,
   layout: GraphLayout,
   key: string,
   options: SceneOptions,
-  theme: Theme,
-  navigable: {
-    readonly keys: readonly string[];
-    readonly focused: string | null;
-    readonly railed: ReadonlySet<string>;
-  },
+  focused: string | null,
 ): ElementSpec | null {
   const box = layout.nodes.get(key);
   if (box === undefined) return null;
   const issue = document.byKey.get(key);
-  const selected = options.selected === key;
-  const ownsTabStop = navigable.keys.includes(key) && !navigable.railed.has(key);
+  const slot = document.order.slots.find((candidate) => candidate.lead === key);
+  const members = layout.slotMembers.get(key) ?? [key];
+  const exclusion = document.order.excluded.find((candidate) => candidate.key === key);
 
-  const full = issue?.title ?? key;
-  const drawn = fitLabel(theme, full, box.width);
+  const caveats = caveatText(issue);
+  const heldBecause = [
+    ...(slot?.holds ?? []).map((hold) => hold.reason),
+    ...(caveats === '' ? [] : [caveats]),
+    ...(exclusion === undefined
+      ? []
+      : [`${treatmentFor('duplicate-of').label} ${exclusion.canonical} — never worked`]),
+  ].join(' · ');
 
-  // A HOLD THE RAIL DOES NOT CARRY HAS TO BE CARRIED HERE. The rail draws only
-  // the non-footer slots, so a tracker-held slot is filtered out of it — and the
-  // reason last round put on the rail row therefore never reached the graph at
-  // all for exactly those slots, while `ViewerHold` says the viewer renders the
-  // reason verbatim. Measured on the fixture: `claimed by another run` appeared
-  // nowhere in graph markup.
-  // I DEFERRED THIS ONCE ON A REASON THAT WAS WRONG, and it is worth recording:
-  // I said `nodeShape` "takes a key and an issue and knows nothing about slots",
-  // so carrying the reason would be a signature change touching every node. It
-  // takes the whole `document`, and the slots are on it. There was no signature
-  // change to make. See issue #41.
-  // ONLY FOR A NODE THE RAIL DOES NOT LABEL — a railed slot already carries its
-  // reason on its row, and repeating it here would announce the same sentence
-  // twice for one slot.
-  // AND THE HOST'S CAVEATS, on the same terms: a gutter or footer node is the
-  // only mark this projection draws for its issue, so a preview-only note or a
-  // disagreement that the linear and tree rows print would otherwise be absent
-  // from the graph entirely for exactly the issues that have no rail row.
-  const caveats = navigable.railed.has(key) ? '' : caveatText(issue);
-  const heldBecause = navigable.railed.has(key)
-    ? ''
-    : [
-        ...document.order.slots
-          .filter((slot) => slot.lead === key || slot.members.includes(key))
-          .flatMap((slot) => slot.holds.map((hold) => hold.reason)),
-        ...(caveats === '' ? [] : [caveats]),
-      ].join(' · ');
+  // RENDERED FROM THE CARD'S OWN DESCRIPTION, which is also what the layout
+  // counted this card's height from — see `CardBlock`. Built from a second
+  // reading of what the card should hold, four blocks in a row were added to
+  // the drawing and not to the count, and every one of them overran the box the
+  // arcs were anchored to.
+  const drawn = cardBlocks(document, key, members, box.column === 'spine', box.now === true).map(
+    (block) => cardMark(document, block, key, members, slot),
+  );
 
-  // THE POINTER MUST NOT NAME AN IDENTITY THE KEYBOARD CANNOT REACH. A together
-  // unit is ONE station with one focus key, so its non-lead members are absent
-  // from `navigable` deliberately — and this published each of them as its own
-  // `data-ig-key` anyway. Measured on the fixture: clicking `104` emitted `104`,
-  // selected `104`, and threw focus to `102` — not even the unit that was
-  // clicked, because `resolveFocusKey` found neither the selection nor the
-  // requested key in the order and fell back to its first entry. No keyboard can
-  // produce that state.
-  // ROUTED TO THE STATION, NOT MADE A STATION. Giving the partner its own focus
-  // key is the other repair codex offered and it is the one round ten already
-  // rejected: it splits the unit into two stations, which `navigation.test.ts`
-  // forbids in as many words. So the member keeps its node and loses only its
-  // FOCUS identity, which it never legitimately had.
-  // `GROUP_ATTRIBUTE` IS EXACTLY THIS CHANNEL — the enclosure and the connector
-  // already answer a pointer with their unit's lead through it, and a member's
-  // node is the same question about the same unit. `keyAt` reads it as the
-  // fallback the focus index never sees.
-  // A KEY NO SLOT REPRESENTS FALLS BACK TO ITSELF, which is no worse than what
-  // it published before; the orphan pass above is what makes such a key
-  // navigable, and the invariant test is what proves it did.
-  const published = navigable.keys.includes(key);
-  const station = document.order.slots.find((slot) => slot.members.includes(key))?.lead ?? key;
+  const label = [
+    slot === undefined ? (issue?.title ?? key) : slotLabel(document, slot),
+    heldBecause === '' ? null : heldBecause,
+  ]
+    .filter((part): part is string => part !== null)
+    .join(' — ');
 
-  return svg(
-    'g',
+  return element(
+    'li',
     {
-      class: 'ig-node-group',
-      'data-ig-key': published ? key : null,
-      'data-ig-group': published ? null : station,
-      'data-column': box.column,
-      'aria-current': selected ? 'true' : 'false',
-      role: ownsTabStop ? 'img' : null,
-      // THE REASON RIDES THE NAME WHEN THERE IS ONE, on the same channels the
-      // rail row uses, so one hold reads the same whichever surface drew it.
-      'aria-label': ownsTabStop
-        ? heldBecause === ''
-          ? `${full} — ${key}`
-          : `${full} — ${key} — ${heldBecause}`
-        : null,
-      tabindex: ownsTabStop ? (navigable.focused === key ? 0 : -1) : null,
+      class: 'ig-rail-row',
+      'data-ig-key': key,
+      'aria-current': options.selected === key ? 'true' : 'false',
+      'aria-label': label,
+      title: heldBecause === '' ? null : heldBecause,
+      tabindex: focused === key ? 0 : -1,
+      // Positioned from the layout, not from the flow, so a card sits where its
+      // edges terminate however the theme scales the geometry.
+      style: `--ig-row-x:${String(box.x)}px;--ig-row-y:${String(box.y)}px;--ig-row-w:${String(box.width)}px;--ig-row-h:${String(box.height)}px`,
     },
     [
-      // AND ON THE POINTER CHANNEL, which is also the only one left for a node
-      // that owns no tab stop and therefore carries no `aria-label` at all.
-      // First child, because that is where SVG looks for `<title>`.
-      heldBecause === '' ? null : svg('title', {}, [`${full} — ${heldBecause}`]),
-      svg('rect', {
-        class: 'ig-node',
-        'data-held': box.held ? 'true' : 'false',
-        x: box.x,
-        y: box.y,
-        width: box.width,
-        height: box.height,
-        rx: theme.metrics['--ig-radius'],
-      }),
-      // A node is labelled by its RAIL ROW when it has one, so labelling it
-      // here too would print the title twice — once selectable, once not. But
-      // the rail draws only the ranked slots, and keying this on the COLUMN
-      // rather than on the rail left a tracker-held slot as a blank rectangle:
-      // no title, no hold reason, nothing. The question is whether this key is
-      // railed, not which column it sits in.
-      navigable.railed.has(key)
-        ? null
-        : svg(
-            'text',
-            {
-              class: 'ig-node-label',
-              x: box.x + theme.metrics['--ig-space'],
-              // `dominant-baseline` centres the glyphs on the line rather than
-              // a remembered offset, so the label stays centred at any scale.
-              y: box.y + box.height / 2,
-              'dominant-baseline': 'middle',
-            },
-            [
-              // THE FULL TITLE IS NOT LOST WHEN IT DOES NOT FIT — and it has to
-              // be a CHILD ELEMENT to do that job. This was written as a `title`
-              // ATTRIBUTE, which SVG ignores entirely: no tooltip, no accessible
-              // description, nothing. The markup contained the string, so a test
-              // asserting the full title was "somewhere in the markup" passed
-              // while a reader hovering the shortened label recovered nothing.
-              // FIRST CHILD, because that is where SVG looks for it, and only on
-              // truncation — an untruncated label already reads in full, and a
-              // `<title>` echoing it would announce it twice.
-              // A railed node never reaches here at all: the rail row is its
-              // label, and its own CSS ellipsis handles the same overflow.
-              drawn === full ? null : svg('title', {}, [full]),
-              drawn,
-            ],
-          ),
+      element(
+        'div',
+        {
+          class: 'ig-card',
+          'data-column': box.column,
+          'data-held': box.held ? 'true' : 'false',
+          'data-now': box.now === true ? 'true' : 'false',
+          'data-unit': members.length > 1 ? 'true' : 'false',
+          'data-exclusion': exclusion === undefined ? null : 'true',
+        },
+        drawn,
+      ),
     ],
   );
 }
 
-/**
- * The spine's ranks and readiness stations, drawn as HTML ON the canvas.
- *
- * Text in SVG is not selectable, not reflowable and announces poorly, so the
- * spine's rows stay HTML — but they are the labels FOR the spine nodes, and
- * emitting them as a sibling block put them above the drawing instead of on it.
- * Ranks and stations then described a picture the reader had to hold in their
- * head, which is the opposite of the design's claim that the spine IS the
- * order.
- *
- * So each row is positioned at the coordinates the LAYOUT computed for its own
- * node — same source of truth as every edge endpoint. Hand-authoring these
- * against remembered positions is the failure mode the design's implementation
- * note names; the numbers ride custom properties so the theme still owns them.
- */
-/**
- * What the rail draws — ONE rule, because two callers read it.
- *
- * `spineRail` renders these rows and the focus index has to publish exactly the
- * same set, or the projection draws a keyed row nothing can reach. That is not
- * hypothetical: widening the rail for the refusal without widening the index
- * left the footer slot and the exclusion drawn with `data-ig-key` and absent
- * from `navigable` — the identical defect the canvas had two rounds ago,
- * reintroduced by fixing its sibling. Deriving both from here is what makes the
- * two provably agree rather than agree by inspection.
- *
- * `positioned` is the refusal signal inverted: with a canvas, a footer slot is
- * drawn as a canvas node and an exclusion sits off the spine entirely, so the
- * rail carries neither. Without one, the rail IS the order.
- */
-function railContents(
+/** One described block, drawn. The other half of `cardBlocks`. */
+function cardMark(
   document: NormalizedDocument,
-  positioned: boolean,
-): { slots: readonly ViewerSlot[]; excluded: readonly ViewerExclusion[] } {
-  return positioned
-    ? { slots: document.order.slots.filter((slot) => !isFooterSlot(slot)), excluded: [] }
-    : { slots: document.order.slots, excluded: document.order.excluded };
+  block: CardBlock,
+  key: string,
+  members: readonly string[],
+  slot: ViewerSlot | undefined,
+): ElementSpec {
+  switch (block.kind) {
+    case 'banner':
+      return element('div', { class: 'ig-unit-mark' }, [
+        element(
+          'span',
+          { class: block.mark === 'now' ? 'ig-now-mark' : 'ig-unit-pill' },
+          [block.mark],
+        ),
+        block.note === '' ? null : element('span', { class: 'ig-unit-note' }, [block.note]),
+      ]);
+    case 'head': {
+      const issue = document.byKey.get(block.key);
+      return element('div', { class: 'ig-row-head' }, [
+        element('span', { class: 'ig-title' }, [issue?.title ?? block.key]),
+        issue === undefined ? null : identity(issue),
+      ]);
+    }
+    case 'unit':
+      // Through `unitBlock`, so the enclosure and its deep links are the ones
+      // the list draws rather than a second spelling of them.
+      return slot === undefined
+        ? element('div', { class: 'ig-row-head' }, [])
+        : (unitBlock(document, slot) ?? element('div', { class: 'ig-row-head' }, []));
+    case 'badges':
+      // THE BADGE ROW IS THE SAME ONE THE LIST DRAWS, which is what makes the
+      // two projections one grammar rather than two spellings. A gutter card
+      // carries it too: it is the only mark this projection draws for its
+      // issue, so a relation left off it is one the graph reader never sees.
+      return element(
+        'div',
+        { class: 'ig-badges' },
+        // FROM THE SAME BUILDERS `badgeTexts` READS, so what the layout packed
+        // and what the card draws are one list of chips rather than two that
+        // can differ by one.
+        [
+          priorityBadge(document.byKey.get(key)?.provenance),
+          evidenceBadge(document.byKey.get(key)),
+          slot === undefined ? null : notReadyBadge(slot),
+          ...caveatBadges(document.byKey.get(key)),
+          ...edgeBadgeList(document, members),
+        ].filter((badge): badge is ElementSpec => badge !== null),
+      );
+    case 'note':
+      // A SPINE CARD KEEPS ITS SENTENCES ON THE TOOLTIP, because the list
+      // projection prints them and §16b's spine card draws a chip. A gutter card
+      // is the only mark this projection makes for its issue, so its sentence
+      // has nowhere else to be — and §16b prints it there.
+      return element('p', { class: 'ig-hold', 'data-family': 'tracker' }, [
+        element('span', {}, [block.text]),
+      ]);
+  }
 }
 
-function spineRail(
+/**
+ * The spine: one line, and one station per card on it.
+ *
+ * THE LINE IS THE POINT. §16c's whole argument for this layout is that sequence
+ * gets a channel of its own — vertical position on a single line — so that
+ * nothing has to encode sequence and dependency at once. Without the line drawn
+ * there is no single line to read down, and the picture degrades into the
+ * column of rectangles the alternatives were rejected for.
+ */
+function spineStations(
   document: NormalizedDocument,
   layout: GraphLayout,
+  theme: Theme,
+): readonly ElementSpec[] {
+  const size = theme.metrics['--ig-station-box'];
+  const stations: ElementSpec[] = [];
+  for (const key of layout.spineOrder) {
+    const box = layout.nodes.get(key);
+    if (box === undefined) continue;
+    const slot = document.order.slots.find((candidate) => candidate.lead === key);
+    const fill = slot === undefined ? 'filled' : stationFill(slot);
+    // A serialize hold waits on a PEER rather than on a rank above it, and the
+    // frame colours that station differently for exactly that reason.
+    const waiting = slot?.holds.some((hold) => hold.code === 'serialized') === true;
+    stations.push(
+      element(
+        'span',
+        {
+          class: 'ig-spine-station',
+          'data-fill': box.now === true ? 'filled' : fill,
+          'data-wait': waiting ? 'serialize' : null,
+          role: 'img',
+          'aria-label':
+            box.now === true
+              ? 'working now'
+              : slot === undefined || slot.rank === null
+                ? 'held, no rank'
+                : `rank ${String(slot.rank)}`,
+          style: `--ig-station-x:${String(box.x - theme.metrics['--ig-space'] - size)}px;--ig-station-y:${String(box.y + theme.metrics['--ig-space'])}px`,
+        },
+        [box.now === true ? '▸' : slot?.rank === null || slot === undefined ? '—' : String(slot.rank)],
+      ),
+    );
+  }
+  return stations;
+}
+
+/** The three column headings, set at the x of the column each names. */
+function columnHeads(layout: GraphLayout): readonly ElementSpec[] {
+  const heads: readonly (readonly [Column, string])[] = [
+    ['left', 'Explains the order'],
+    ['spine', 'The work order ↓'],
+    ['right', 'Not worked'],
+  ];
+  const drawn = new Set<Column>();
+  for (const box of layout.nodes.values()) drawn.add(box.column);
+  return heads
+    .filter(([column]) => drawn.has(column))
+    .map(([column, text]) =>
+      element(
+        'span',
+        {
+          class: 'ig-column-head',
+          'data-column': column,
+          style: `--ig-col-x:${String(layout.columnX[column])}px`,
+        },
+        [text],
+      ),
+    );
+}
+
+/**
+ * What the ORDER UI draws when the canvas will not.
+ *
+ * A refusal's list is the whole order UI — the refusal's own last sentence
+ * promises "the order list is complete at any size" — so it carries the footer
+ * slots and the exclusions the canvas would otherwise have drawn. With a
+ * canvas, every one of those is a card, so the list carries nothing and this
+ * answers empty.
+ *
+ * ONE RULE, TWO READERS. This decides what renders AND what the focus index
+ * publishes; declaring them separately is how a keyed row with nothing to focus
+ * kept coming back.
+ */
+function refusalContents(
+  document: NormalizedDocument,
+  refused: boolean,
+): { slots: readonly ViewerSlot[]; excluded: readonly ViewerExclusion[] } {
+  return refused
+    ? { slots: document.order.slots, excluded: document.order.excluded }
+    : { slots: [], excluded: [] };
+}
+
+/**
+ * The order as a list, for a document the canvas refuses.
+ *
+ * IT IS THE LINEAR PROJECTION'S OWN ROW, not a second spelling of it. The rail
+ * that shipped had its own three-child row — rank, station, title — which drew
+ * neither the badges nor the provenance the list draws, so a refused document
+ * silently lost the explanation the unrefused one carried.
+ */
+function refusalOrder(
+  document: NormalizedDocument,
   options: SceneOptions,
   focused: string | null,
-  positioned: boolean,
 ): ElementSpec {
-  // A REFUSAL'S RAIL IS THE WHOLE ORDER UI, so it must carry what the canvas
-  // would otherwise have drawn. `positioned` is exactly the refusal signal — the
-  // only `false` call site is the refusal arm — and when the canvas is absent, a
-  // footer slot has nothing to draw it and an exclusion has no row at all.
-  // Measured on a refused document: the tracker-held slot's title, its hold
-  // reason, and the excluded key were all absent from the markup, while the
-  // refusal's own text said "The order list is complete at any size". That claim
-  // was written into this file and it was false.
-  // FILTERED ONLY WHEN THE CANVAS DRAWS THEM. In ordinary graph mode a footer
-  // slot IS drawn, as a canvas node, so keeping it out of the rail is what stops
-  // one slot appearing twice — the filter is right there and wrong here.
-  const { slots, excluded } = railContents(document, positioned);
+  const { slots, excluded } = refusalContents(document, true);
+  const withFocus: SceneOptions = { ...options, focused };
   return element(
     'ol',
-    // A plain list for the reason `linear.ts` gives: an interactive descendant
-    // may not live inside `role="option"`.
-    // WHEN THERE IS NO CANVAS THERE IS NOTHING TO SIT ON. A refusal draws no
-    // spine nodes, so the rail returns to ordinary flow rather than positioning
-    // itself against coordinates nothing rendered.
-    { class: positioned ? 'ig-list ig-rail' : 'ig-list', 'aria-label': 'work order' },
+    { class: 'ig-list', 'aria-label': 'work order' },
     [
-    ...slots.map((slot) => {
-      const box = layout.nodes.get(slot.lead);
-      // THE REASON A SLOT IS HELD IS PART OF WHAT THIS ROW MEANS. `ViewerHold`
-      // says the viewer renders the reason verbatim, and the linear projection
-      // does — this one rendered rank, station and title, so a graph reader was
-      // told THAT a slot is held and never WHY. `data-held` styles the row, so
-      // the holding was visible and the host's sentence was not, on either the
-      // visible or the accessible channel.
-      // ON THE LABEL AND THE TOOLTIP, NOT AS A BLOCK IN THE ROW. This row is
-      // positioned onto its node's box — `--ig-row-h` IS the node height — so a
-      // paragraph per hold would overflow geometry the layout computed for a
-      // node, which is a worse defect than the one being fixed. `title` plus
-      // `aria-label` is how this package already carries text that cannot take
-      // space (see the edge badges): sighted readers hover, screen readers hear
-      // it, and the layout is untouched.
-      // ONLY HERE, not in `slotLabel`. That helper is shared with the linear
-      // projection, which renders the same holds as visible paragraphs — adding
-      // them there would announce every linear hold twice.
-      // THE HOST'S CAVEATS RIDE THE SAME CHANNEL as the holds, for the same
-      // reason: this row has the geometry of a node and no room for a block.
-      const caveats = caveatText(document.byKey.get(slot.lead));
-      const heldBecause = [...slot.holds.map((hold) => hold.reason), ...(caveats === '' ? [] : [caveats])].join(' · ');
-      return element(
-        'li',
-        {
-          class: positioned ? 'ig-slot ig-rail-row' : 'ig-slot',
-          'data-ig-key': slot.lead,
-          'data-held': slot.ready ? 'false' : 'true',
-          'aria-current': options.selected === slot.lead ? 'true' : 'false',
-          'aria-label':
-            heldBecause === ''
-              ? slotLabel(document, slot)
-              : `${slotLabel(document, slot)} — ${heldBecause}`,
-          title: heldBecause === '' ? null : heldBecause,
-          tabindex: focused === slot.lead ? 0 : -1,
-          // Positioned from the layout, not from the flow, so a row sits on the
-          // node it names however the theme scales the geometry.
-          style:
-            positioned && box !== undefined
-              ? `--ig-row-x:${String(box.x)}px;--ig-row-y:${String(box.y)}px;--ig-row-w:${String(box.width)}px;--ig-row-h:${String(box.height)}px`
-              : null,
-        },
-        [
-          element(
-            'span',
-            { class: 'ig-rank', 'data-held': slot.ready ? 'false' : 'true', 'aria-hidden': 'true' },
-            [slot.rank === null ? '—' : String(slot.rank)],
-          ),
-          station(stationFill(slot)),
-          element('span', { class: 'ig-title' }, [slotTitle(document, slot)]),
-        ],
-      );
-    }),
-    // AND THE EXCLUSIONS, on the same terms: they have no canvas node in any
-    // mode, so ordinary graph mode simply never showed them — which is correct
-    // there, because the spine rail sits ON the canvas and an exclusion is not
-    // on it. In a refusal there is no canvas, the rail is the entire order, and
-    // an exclusion left out is a row of the order that is missing.
-    ...excluded.map((exclusion) =>
-      excludedRow(document, exclusion.key, exclusion.canonical, { ...options, focused }),
-    ),
+      ...slots.map((slot) => slotRow(document, slot, withFocus, true)),
+      ...excluded.map((exclusion) =>
+        excludedRow(document, exclusion.key, exclusion.canonical, withFocus),
+      ),
     ],
   );
 }
@@ -539,12 +543,82 @@ function refusal(
   ]);
 }
 
+/**
+ * The runner-held slots the canvas draws nowhere, as §16a's footer group.
+ *
+ * THE GRAPH AND THE LIST MUST SHOW THE SAME ISSUES. A projection change is a
+ * change of representation, never of subject — so an issue the list carries in
+ * its footer cannot simply be absent from the graph, whatever the canvas has
+ * room for.
+ */
+function footerGroup(
+  document: NormalizedDocument,
+  layout: GraphLayout,
+  options: SceneOptions,
+  focused: string | null,
+): ElementSpec | null {
+  const entries = footerKeys(document, layout, { ...options, focused });
+  if (entries.length === 0) return null;
+  const slots = document.order.slots.filter((slot) => layout.footer.includes(slot.lead));
+  const excluded = document.order.excluded.filter((exclusion) =>
+    layout.footer.includes(exclusion.key),
+  );
+  // WHAT THIS GROUP ACTUALLY HOLDS. In the column it also holds every gutter
+  // endpoint the compact picture does not draw — an ordinary open blocker, say,
+  // which no runner holds and which is worked like anything else — so a heading
+  // that named only the runner and the never-worked said something untrue about
+  // them.
+  const undrawn = entries.length > slots.length + excluded.length;
+  const labels = footerLabels(slots);
+  return element('section', { class: 'ig-footer' }, [
+    element('div', { class: 'ig-footer-head' }, [
+      element('p', { class: 'ig-footer-title' }, [
+        footerHeading(entries.length, {
+          runner: slots.length > 0,
+          neverWorked: excluded.length > 0,
+          undrawn,
+        }),
+      ]),
+      labels === '' ? null : element('span', { class: 'ig-footer-labels' }, [labels]),
+    ]),
+    element('ol', { class: 'ig-list', 'aria-label': 'outside the order' }, entries),
+  ]);
+}
+
+/**
+ * A row for EVERY key the canvas drew nowhere, in the layout's own order.
+ *
+ * DERIVED FROM `layout.footer` AND NOTHING ELSE, which is the whole correction.
+ * A group built from `order.slots` covered the runner-held ones; adding
+ * `order.excluded` covered the duplicates; and an ordinary off-order
+ * relationship endpoint — an open blocker, a closed split origin — is neither,
+ * so in compact mode, where the gutters are not drawn, it was in
+ * `layout.footer` and rendered by nothing at all. Two partial rules chasing one
+ * set is how the key that belongs to neither goes missing, so there is one
+ * rule: the layout says what it did not draw, and every one of those gets a row.
+ */
+function footerKeys(
+  document: NormalizedDocument,
+  layout: GraphLayout,
+  options: SceneOptions,
+): readonly ElementSpec[] {
+  return layout.footer.map((key) => {
+    const slot = document.order.slots.find((candidate) => candidate.lead === key);
+    if (slot !== undefined) return footerRow(document, slot, options);
+    const exclusion = document.order.excluded.find((candidate) => candidate.key === key);
+    if (exclusion !== undefined) {
+      return excludedRow(document, key, exclusion.canonical, options);
+    }
+    return asideRow(document, key, options);
+  });
+}
+
 export function graphScene(document: NormalizedDocument, rawOptions: GraphOptions = {}): Scene {
   // See `linearScene` — the same rule, applied before the canvas is laid out.
   const stations = stationsOf(document);
   const options = atStations(rawOptions, stations);
   const theme = resolveTheme(options.theme);
-  const layout = layoutGraph(document, theme);
+  const layout = layoutGraph(document, theme, options.compact === true);
   const nodeCount = layout.nodes.size;
 
   const inline = document.order.slots.filter((slot) => !isFooterSlot(slot));
@@ -564,25 +638,45 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
   // and draws NOTHING keyed when it refuses or is empty. Everything downstream
   // is a subset of that, so "every published target is focusable" holds by
   // construction rather than by remembering.
-  const refused = nodeCount === 0 || nodeCount > GRAPH_NODE_BUDGET;
-  // FROM THE SAME RULE THE RAIL RENDERS FROM — see `railContents`. Hard-coding
-  // `inline` here was correct only while the rail rendered exactly `inline`, and
-  // it silently stopped being correct the moment the refusal's rail widened.
-  const shown = railContents(document, !refused);
+  // AN EMPTY NODE MAP IS NOT AN EMPTY PANEL. In the column the gutters are not
+  // drawn, so a document whose issues are all off the order — relationships and
+  // no ranked or running station — lays out NOTHING and puts every one of them
+  // in `layout.footer`. Read as a refusal, that said "no issue in this document
+  // declares a relationship" about a document full of them AND suppressed the
+  // footer group that was holding all of them, so the panel came back blank.
+  // The question is whether this scene draws anything, and the footer draws.
+  const drawsNothing = nodeCount === 0 && layout.footer.length === 0;
+  const refused = drawsNothing || nodeCount > GRAPH_NODE_BUDGET;
+  // FROM THE SAME RULE THE LIST RENDERS FROM — see `refusalContents`. With a
+  // canvas every node is a card and the card owns the tab stop; without one,
+  // the list is the whole order UI and its rows do.
+  const shown = refusalContents(document, refused);
   const railed: ReadonlySet<string> = new Set([
     ...shown.slots.map((slot) => slot.lead),
     ...shown.excluded.map((exclusion) => exclusion.key),
   ]);
+  // THE FOOTER GROUP IS FOCUSABLE TOO, and it is off the canvas: its rows are
+  // drawn beneath the stage, so a set derived from the laid-out nodes alone
+  // published nothing for them and a keyboard could not reach half the issues
+  // the projection draws.
   const focusable: ReadonlySet<string> = new Set([
     ...railed,
-    ...(refused ? [] : layout.nodes.keys()),
+    ...(refused ? [] : [...layout.nodes.keys(), ...layout.footer]),
   ]);
 
+  // THE SPINE AS THE LAYOUT ORDERED IT, FIRST. §16e fixes that the graph walks
+  // its stations in RANK order, and the layout puts the running job at the top
+  // — above rank 1, which is where §16b draws it. Rebuilding the order from the
+  // slots instead reached that card at its old rank, or near the end when it
+  // held no slot, so the keyboard walked the drawing non-monotonically: down
+  // the spine, back up to the top, on again.
+  const spineFirst = refused ? [] : [...layout.spineOrder];
   const focusOrder = [
+    ...spineFirst,
     ...inline.map((slot) => slot.lead),
     ...footerSlots.map((slot) => slot.lead),
     ...document.order.excluded.map((exclusion) => exclusion.key),
-  ].filter((key) => focusable.has(key));
+  ].filter((key, index, all) => focusable.has(key) && all.indexOf(key) === index);
 
   // ── the lateral axis: ONLY PAIRS WHOSE REVERSE HOLDS ──────────────────────
   //
@@ -609,6 +703,13 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
 
   for (const slot of document.order.slots) {
     if (!focusable.has(slot.lead)) continue;
+    // FROM THE SPINE OUTWARD, and only from there. §16f gives the lateral keys
+    // one job: leave the sequence for the gutter card that explains this rank,
+    // and come back. A gutter card linked to ANOTHER gutter card is a step that
+    // never touches the order at all — and it consumed the one neighbour-per-
+    // side each node has, so the reverse link back to the spine could not be
+    // written and the traversal stopped being reversible.
+    if (layout.nodes.get(slot.lead)?.column !== 'spine') continue;
     // Every MEMBER's edges, not just the lead's: a together unit is one station
     // with one focus key, so a gutter neighbour reachable only through its
     // second member would otherwise be unreachable by keyboard entirely.
@@ -654,7 +755,11 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
   const represented = new Set<string>();
   for (const slot of document.order.slots) for (const member of slot.members) represented.add(member);
   if (!refused) {
-    for (const key of layout.nodes.keys()) {
+    // THE FOOTER GROUP'S KEYS TOO. Its rows are drawn beneath the stage rather
+    // than on a column, so a set derived from the laid-out nodes alone reached
+    // none of them — and in compact mode, where the gutters are not drawn, that
+    // is every off-order endpoint the panel still lists.
+    for (const key of [...layout.nodes.keys(), ...layout.footer]) {
       if (!focusOrder.includes(key) && !lateral.has(key) && !represented.has(key)) focusOrder.push(key);
     }
   }
@@ -682,8 +787,12 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
   const diagnostics: string[] = [];
   let canvas: ElementSpec;
 
-  if (nodeCount === 0) {
+  if (drawsNothing) {
     canvas = emptyState('No issue in this document declares a relationship, so the canvas is empty.');
+  } else if (nodeCount === 0) {
+    // Nothing to draw ON the canvas, and a footer group beneath it that is the
+    // whole panel. No stage, no refusal: the group renders in ordinary flow.
+    canvas = emptyState('Nothing in this document is in the order, so the spine is empty.');
   } else if (nodeCount > CLUSTER_ONLY_BUDGET) {
     diagnostics.push(`graph refused: ${String(nodeCount)} nodes is past the cluster-only budget of ${String(CLUSTER_ONLY_BUDGET)}`);
     canvas = refusal(document, layout, nodeCount, 'clusters');
@@ -692,11 +801,27 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
     canvas = refusal(document, layout, nodeCount, 'capsules');
   } else {
     const edgeLayers: ElementSpec[] = [];
+    // ONE STATION PER SLOT MEANS ONE BOX PER SLOT, so an edge inside a unit has
+    // both ends on the same card and no arc to draw. It is not lost: the card
+    // lists its members, and the badge row names the relationship, which is the
+    // same treatment the list projection gives it. `edgeGeometry` answers null
+    // for exactly that case, and it resolves a member to its unit's card for
+    // every other — so this loop asks the geometry rather than deciding twice.
     for (const edge of document.edges) {
-      // `together-with` is drawn as an enclosure plus its connector, not as an
-      // arc: it shares a rank rather than ordering anything.
-      if (edge.field === 'together-with') continue;
-      const geometry = edgeGeometry(layout, edge);
+      // No arcs in the column: §16b says they cannot be drawn legibly there,
+      // and an arc drawn illegibly is worse than an arc a reader knows to
+      // expand for. The badge row on every card still names the relationship.
+      if (layout.compact) break;
+      // THE ARROW POINTS AT WHAT IS HELD UP, not at what holds it. §16b draws
+      // every blocking arc arriving on the blocked card, and it is the reading
+      // that answers the question the panel exists for: a reader following an
+      // arrowhead is asking "what is waiting on this", and an arrow into the
+      // blocker answers the question nobody asked. The DECLARATION is untouched
+      // — the identity below is still the field's own orientation, so what a
+      // click reports is the edge as written.
+      const drawn: ViewerEdge =
+        edge.field === 'blocked-by' ? { field: edge.field, from: edge.to, to: edge.from } : edge;
+      const geometry = edgeGeometry(layout, drawn);
       if (geometry === null) continue;
       edgeLayers.push(...edgePaths(edge, geometry, theme));
       const marker = terminalMarker(
@@ -709,111 +834,80 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
       if (marker !== null) edgeLayers.push(marker);
     }
 
-    // The one declared seam crossing: the connector lives in this layer,
-    // because a click target cannot be added from outside without the viewer
-    // knowing where members are.
-    const enclosures: ElementSpec[] = [];
-    for (const [lead, members] of layout.slotMembers) {
-      const bounds = enclosureBounds(layout, members, theme);
-      if (bounds === null) continue;
-      enclosures.push(
-        // `data-ig-GROUP`, not `data-ig-key`. The enclosure is painted BEFORE
-        // the nodes so it sits behind them, and `mountViewer` indexes the first
-        // element it sees for a key — so sharing the key made keyboard movement
-        // to a canvas-owned lead call `focus()` on this non-tabbable rect
-        // instead of its `<g tabindex="0">`. Decoration does not compete with
-        // the thing it decorates for an identity.
-        svg('rect', {
-          class: 'ig-enclosure',
-          'data-ig-group': lead,
-          'stroke-dasharray': dashArrayFor('enclosure'),
-          x: bounds.x,
-          y: bounds.y,
-          width: bounds.width,
-          height: bounds.height,
-          rx: theme.metrics['--ig-radius'],
-          role: 'img',
-          'aria-label': `${members.join(' and ')} share one rank`,
-        }),
-      );
-      const inUnit = new Set(members);
-      for (const edge of document.edges) {
-        // ONE CONNECTOR PER DECLARED EDGE, NOT ONE PER ADJACENT PAIR. Walking
-        // the member list pairwise assumed a group is written as a chain — but
-        // a writer joins one by pointing at ANY existing member (§4.3.7), so
-        // `2 together-with 1` and `3 together-with 1` is an ordinary star. That
-        // walk drew a `2`–`3` connector for a relationship the document does
-        // not contain, so the identity it published resolved to no
-        // `StoredEdge`, while the real `1`–`3` edge got no connector at all.
-        // Reading the edges themselves cannot invent one and cannot miss one.
-        if (edge.field !== 'together-with') continue;
-        if (!inUnit.has(edge.from) || !inUnit.has(edge.to)) continue;
-        const d = connectorPath(layout, members, edge.from, edge.to, theme);
-        if (d === null) continue;
-        enclosures.push(
-          svg('path', {
-            class: 'ig-connector',
-            fill: 'none',
-            // THE PAIR'S OWN IDENTITY, NOT THE SLOT'S. Every connector in a
-            // unit used to carry the lead, so a three-member unit drew two
-            // marks a pointer could not tell apart and a click on either named
-            // the unit — the one thing an editor cannot delete, retype or
-            // report a write against. `edgeIdentity` is the SAME function the
-            // store derives `StoredEdge.id` with, so what `onSelect` hands the
-            // host is a key `findEdge` resolves rather than a shape it has to
-            // be taught.
-            //
-            // STILL `data-ig-group`, and that is not an oversight about the
-            // "addressable via the key scheme" wording. Decoration announces
-            // itself on this attribute precisely so it stays OUT of the focus
-            // index — one element per key, or `focus()` lands on a
-            // non-tabbable mark instead of the node it decorates. `keyAt`
-            // reads both attributes for POINTER identity, which is the
-            // question a click asks, so the connector is addressable without
-            // re-opening that.
-            'data-ig-group': edgeIdentity(edge.field, edge.from, edge.to),
-            d,
-          }),
-        );
-      }
-    }
-
-    const nodeShapes = [...layout.nodes.keys()]
-      .map((key) => nodeShape(document, layout, key, options, theme, navigable))
-      .filter((node): node is ElementSpec => node !== null);
+    // THE SPINE ITSELF, painted first so every arc bows off a line that is
+    // already there. It spans the stations and no further: a line running the
+    // full height of the canvas would imply order where the gutters sit.
+    const spine =
+      layout.spineOrder.length === 0
+        ? null
+        : svg('line', {
+            class: 'ig-spine',
+            x1: layout.spineLineX,
+            y1: layout.spineTop,
+            x2: layout.spineLineX,
+            y2: layout.spineBottom,
+          });
 
     canvas = svg(
       'svg',
       {
         class: 'ig-canvas',
         viewBox: `0 0 ${String(Math.round(layout.width))} ${String(Math.round(layout.height))}`,
-        // `role="img"` FLATTENS every descendant into a single image, which
-        // would hide the very node roles and labels that make gutter and
-        // held nodes reachable. A container holding separately focusable
-        // semantic children is a group, not a picture.
-        role: 'group',
-        'aria-label': `${String(nodeCount)} issues and ${String(document.edges.length)} relationships`,
+        // The picture is decoration over an HTML rail that carries every node,
+        // every name and every tab stop, so it announces nothing of its own.
+        // `role="img"` with a label would put a second, flattened description of
+        // the same nodes into the accessibility tree.
+        'aria-hidden': 'true',
       },
-      [...enclosures, ...edgeLayers, ...nodeShapes],
+      [spine, ...edgeLayers],
     );
   }
+
+  // ONE LIST PER COLUMN, LABELLED THE WAY ITS HEADING IS. Every card in one
+  // list called "work order" told a screen reader that the left gutter's
+  // explanations and the right gutter's never-worked issues are ordered work —
+  // which is the opposite of what those two columns exist to say, and what
+  // their own visible headings say instead.
+  const columns: readonly (readonly [Column, string])[] = [
+    ['spine', 'work order'],
+    ['left', 'explains the order'],
+    ['right', 'not worked'],
+  ];
+  const cardLists = refused
+    ? []
+    : columns
+        .map(([column, label]) => {
+          const cards = [...layout.nodes.keys()]
+            .filter((key) => layout.nodes.get(key)?.column === column)
+            .map((key) => nodeCard(document, layout, key, options, navigable.focused))
+            .filter((card): card is ElementSpec => card !== null);
+          return cards.length === 0
+            ? null
+            : element('ol', { class: 'ig-list', 'aria-label': label }, cards);
+        })
+        .filter((list): list is ElementSpec => list !== null);
 
   const root = element(
     'section',
     { class: 'ig-viewer ig-graph', 'data-projection': 'graph', 'aria-label': 'issue order and relationships' },
     [
-      hostHeader(document),
-      legend(),
-      // ABOVE THE STAGE, NEVER IN THE RAIL. The rail's rows are positioned onto
-      // the layout's node boxes, so an unpositioned row among them would sit on
-      // nothing; the NOW list is ordinary flow, framing the canvas beneath it.
-      nowRows(document),
+      options.chrome === false
+        ? null
+        : hostHeader(document, {
+            projection: 'graph',
+            compact: layout.compact,
+            switchable: options.switchable === true,
+          }),
       // ONE STAGE, sized in the layout's own units, so an absolutely-positioned
-      // rail row and an SVG coordinate mean the same thing. A percentage-width
-      // canvas would rescale under the rail and the two would drift apart.
-      // A refusal draws no nodes, so it needs no stage and the rail stays in
+      // card and an SVG coordinate mean the same thing. A percentage-width
+      // canvas would rescale under the cards and the two would drift apart.
+      // A refusal draws no nodes, so it needs no stage and the list stays in
       // ordinary flow — a fixed-height stage would clip it.
-      refused
+      // NO STAGE WITHOUT A NODE TO SIT ON. A stage is sized in the layout's own
+      // units, and a layout with no boxes has none — so a document whose issues
+      // are all in the footer renders its message and its group in ordinary
+      // flow, exactly as a refusal does, without BEING a refusal.
+      refused || nodeCount === 0
         ? canvas
         : element(
             'div',
@@ -821,14 +915,36 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
               class: 'ig-stage',
               style: `--ig-stage-w:${String(Math.round(layout.width))}px;--ig-stage-h:${String(Math.round(layout.height))}px`,
             },
-            [canvas, spineRail(document, layout, options, navigable.focused, true)],
+            [
+              canvas,
+              element('div', { class: 'ig-rail' }, [
+                ...columnHeads(layout),
+                ...cardLists,
+                ...spineStations(document, layout, theme),
+              ]),
+            ],
           ),
-      refused ? spineRail(document, layout, options, navigable.focused, false) : null,
+      // THE RUNNING JOB SURVIVES A REFUSAL. A refused canvas draws no station,
+      // so the one issue the panel exists to say is in flight vanished
+      // completely when it held no slot, and was reduced to an ordinary order
+      // row — no phase, no elapsed time — when it did. The band is what §16a
+      // uses where there is no spine to put a station on, and a refusal is
+      // exactly that case.
+      refused ? nowRows(document) : null,
+      refused ? refusalOrder(document, options, navigable.focused) : null,
+      // §16a'S FOOTER GROUP, ON THE GRAPH. A runner-held slot that blocks
+      // nothing on the spine has no column to sit in — it is neither the order
+      // nor an explanation of it — and drawing it on the spine gave it a
+      // position in a sequence it is not part of. So it lands here, in the same
+      // one-line-each group the list draws, which is also what keeps the two
+      // projections showing the same set of issues.
+      refused ? null : footerGroup(document, layout, options, navigable.focused),
       document.isolated.length === 0
         ? null
         : element('p', { class: 'ig-count' }, [
             `${String(document.isolated.length)} isolated ${document.isolated.length === 1 ? 'issue' : 'issues'} not drawn`,
           ]),
+      legend(),
     ],
   );
 

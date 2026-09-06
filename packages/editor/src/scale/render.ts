@@ -255,7 +255,15 @@ export function renderScaleLadder(
 
   const canvas =
     ladder.tier === 'direct'
-      ? renderViewer(ladder.canvas, { projection: 'graph', theme, selected: options.selected ?? null })
+      ? renderViewer(ladder.canvas, {
+          projection: 'graph',
+          theme,
+          selected: options.selected ?? null,
+          // THE PANEL HAS ONE HEADER, and the rail beside this canvas is
+          // drawing it. Two would mean two projection toggles disagreeing
+          // about which projection is current.
+          chrome: false,
+        })
       : null;
 
   // THE SELECTION HALO AND THE WRITE STATES, attached to the scene the canvas
