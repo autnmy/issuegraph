@@ -15,15 +15,23 @@ import { EDGE_CARDINALITY } from '@issuegraph/core';
 import { EDGE_STATES, type EdgeState, createStore, makeEdge } from '@issuegraph/store';
 
 import { createDeriver, introducesCycle } from './order.ts';
-import { seedDocument, seedHolds } from './seed.ts';
+import { SCENARIOS, compSeed } from './seed.ts';
 import { createDemoSource } from './source.ts';
+
+/**
+ * The landing state, which is where a visitor's edits happen first. The edits
+ * below are all made on the comp's own rows: #520 waiting on #501 is the
+ * ordinary one, and where a test needs a field to be occupied or a pair to be
+ * exhausted, it lands that first and says so.
+ */
+const landing = SCENARIOS.comp;
 
 function harness(settleDelayMs = 0) {
   // Zero by default so the suite stays fast. The DEFAULT is deliberately not
   // zero — see `DemoSourceOptions.settleDelayMs`, and the last test here, which
   // pins why.
-  const source = createDemoSource(seedDocument(), { settleDelayMs });
-  const store = createStore({ source, derive: createDeriver(seedHolds()) });
+  const source = createDemoSource(landing.document(), { settleDelayMs });
+  const store = createStore({ source, derive: createDeriver(landing.holds, landing.ranking) });
   return { source, store };
 }
 
@@ -37,7 +45,7 @@ test('an edit renders before it lands, and the order refuses to move until it ha
   await store.hydrate();
   const before = store.getSnapshot().order.rows;
 
-  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '4', to: '3' });
+  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '520', to: '501' });
   const midflight = store.getSnapshot();
   assert.ok(statesOn(store).has('pending-write'), 'the edge is not drawn optimistically');
   assert.equal(midflight.order.status, 'held', 'the order re-evaluated before the write landed');
@@ -54,14 +62,14 @@ test('an armed rejection marks the edge failed and leaves the work on the canvas
   await store.hydrate();
   source.arm('reject');
 
-  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '4', to: '3' });
+  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '520', to: '501' });
   await handle.settled;
 
   const snapshot = store.getSnapshot();
   assert.ok(statesOn(store).has('failed'), 'a rejected write did not mark its edge');
   // Marked, never reverted: the edge the visitor drew is still there.
   assert.ok(
-    snapshot.projected.some((edge) => edge.from === '4' && edge.to === '3'),
+    snapshot.projected.some((edge) => edge.from === '520' && edge.to === '501'),
     'a rejected write silently reverted the visitor’s edit',
   );
   const record = snapshot.writes.find((write) => write.mutationId === handle.mutationId);
@@ -72,7 +80,7 @@ test('a retry after a rejection lands, because the arming fires once', async () 
   const { source, store } = harness();
   await store.hydrate();
   source.arm('reject');
-  await store.propose({ op: 'create', kind: 'blocked-by', from: '4', to: '3' }).settled;
+  await store.propose({ op: 'create', kind: 'blocked-by', from: '520', to: '501' }).settled;
   assert.equal(source.armed(), 'apply', 'the arming did not disarm itself');
 
   const failed = store.getSnapshot().writes[0];
@@ -81,7 +89,7 @@ test('a retry after a rejection lands, because the arming fires once', async () 
 
   assert.equal(store.getSnapshot().writes.length, 0, 'the retry did not clear the failed record');
   assert.ok(
-    store.getSnapshot().landed.some((edge) => edge.from === '4' && edge.to === '3'),
+    store.getSnapshot().landed.some((edge) => edge.from === '520' && edge.to === '501'),
     'the retried edit never landed',
   );
 });
@@ -92,7 +100,7 @@ test('an armed conflict holds both versions and adopts neither', async () => {
   const landedBefore = store.getSnapshot().landed;
   source.arm('conflict');
 
-  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '4', to: '3' });
+  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '520', to: '501' });
   await handle.settled;
 
   const snapshot = store.getSnapshot();
@@ -109,7 +117,7 @@ test('discarding mine is the only thing that removes an optimistic edit', async 
   const { source, store } = harness();
   await store.hydrate();
   source.arm('conflict');
-  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '4', to: '3' });
+  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '520', to: '501' });
   await handle.settled;
   assert.ok(statesOn(store).has('conflict'));
 
@@ -117,7 +125,7 @@ test('discarding mine is the only thing that removes an optimistic edit', async 
 
   assert.equal(store.getSnapshot().writes.length, 0);
   assert.ok(
-    !store.getSnapshot().projected.some((edge) => edge.from === '4' && edge.to === '3'),
+    !store.getSnapshot().projected.some((edge) => edge.from === '520' && edge.to === '501'),
     'discardMine left the overlay behind',
   );
 });
@@ -127,7 +135,7 @@ test('a refusal never reaches the adapter at all', async () => {
   await store.hydrate();
   // A self-edge is refused by the store before any write: the demo source is
   // never asked, which is what `invalid` means as distinct from `failed`.
-  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '4', to: '4' });
+  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '520', to: '520' });
   await handle.settled;
 
   assert.ok(statesOn(store).has('invalid'), 'a structural refusal was not marked');
@@ -140,15 +148,15 @@ test('every mutation state is reachable from the demo, together', async () => {
   await store.hydrate();
 
   source.arm('reject');
-  const failed = store.propose({ op: 'create', kind: 'blocked-by', from: '4', to: '3' });
+  const failed = store.propose({ op: 'create', kind: 'blocked-by', from: '520', to: '501' });
   await failed.settled;
 
   source.arm('conflict');
-  const conflicted = store.propose({ op: 'create', kind: 'serialize-with', from: '4', to: '2' });
+  const conflicted = store.propose({ op: 'create', kind: 'serialize-with', from: '520', to: '487' });
   await conflicted.settled;
 
-  store.propose({ op: 'create', kind: 'blocked-by', from: '2', to: '2' });
-  const pending = store.propose({ op: 'create', kind: 'together-with', from: '3', to: '2' });
+  store.propose({ op: 'create', kind: 'blocked-by', from: '487', to: '487' });
+  const pending = store.propose({ op: 'create', kind: 'together-with', from: '501', to: '487' });
   store.select([store.getSnapshot().projected[0]?.id ?? '']);
 
   const reached = statesOn(store);
@@ -168,11 +176,11 @@ test('an armed conflict always has something to show, even after that edge exist
   return (async () => {
     const { source, store } = harness();
     await store.hydrate();
-    await store.propose({ op: 'create', kind: 'serialize-with', from: '1', to: '2' }).settled;
+    await store.propose({ op: 'create', kind: 'serialize-with', from: '512', to: '501' }).settled;
 
     const landed = store.getSnapshot().landed;
     source.arm('conflict');
-    const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '4', to: '3' });
+    const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '520', to: '501' });
     await handle.settled;
 
     const record = store.getSnapshot().writes.find((write) => write.mutationId === handle.mutationId);
@@ -188,17 +196,18 @@ test('an armed conflict always has something to show, even after that edge exist
 test('an armed conflict never fabricates the visitor\'s own edit as the upstream one', async () => {
   // If the search lands on the very edge being dispatched, upstream and local
   // express the SAME intended change — which is `unchanged`, not two competing
-  // versions. On the seed this is the first absent edge for the first pair.
+  // versions. On the comp this is the first absent edge for the first pair:
+  // #499 and #488 lead the document, and `blocked-by` leads the vocabulary.
   const { source, store } = harness();
   await store.hydrate();
   source.arm('conflict');
-  const handle = store.propose({ op: 'create', kind: 'decomposed-from', from: '1', to: '2' });
+  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '499', to: '488' });
   await handle.settled;
 
   const record = store.getSnapshot().writes.find((write) => write.mutationId === handle.mutationId);
   assert.equal(record?.state, 'conflict');
   assert.ok(record.state === 'conflict');
-  const mine = makeEdge('decomposed-from', '1', '2');
+  const mine = makeEdge('blocked-by', '499', '488');
   const landed = store.getSnapshot().landed;
   const fabricated = record.upstream.edges.filter(
     (edge) => !landed.some((existing) => existing.id === edge.id),
@@ -219,7 +228,7 @@ test('the pending state survives a turn of the event loop, so it can paint', asy
   const { store } = harness(30);
   await store.hydrate();
 
-  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '4', to: '3' });
+  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '520', to: '501' });
 
   // A MACROTASK boundary — the one the browser paints on. Draining the
   // microtask queue instead (`await Promise.resolve()`) is exactly what does
@@ -247,7 +256,7 @@ test('retrying after a conflict keeps the upstream change as well as mine', asyn
   const { source, store } = harness();
   await store.hydrate();
   source.arm('conflict');
-  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '4', to: '3' });
+  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '520', to: '501' });
   await handle.settled;
 
   const record = store.getSnapshot().writes.find((write) => write.mutationId === handle.mutationId);
@@ -267,7 +276,7 @@ test('retrying after a conflict keeps the upstream change as well as mine', asyn
     'the retry discarded the upstream change the conflict had just shown',
   );
   assert.ok(
-    landed.some((edge) => edge.from === '4' && edge.to === '3'),
+    landed.some((edge) => edge.from === '520' && edge.to === '501'),
     'the retry did not land the visitor edit',
   );
 });
@@ -278,17 +287,17 @@ test('the source announces its disarm, because a redraw happens too early', asyn
   // on redraw therefore keeps displaying an outcome the adapter has already
   // spent, for the whole of the settle window.
   const announced: string[] = [];
-  const source = createDemoSource(seedDocument(), {
+  const source = createDemoSource(landing.document(), {
     settleDelayMs: 0,
     onArmedChange: (armed) => announced.push(armed),
   });
-  const store = createStore({ source, derive: createDeriver(seedHolds()) });
+  const store = createStore({ source, derive: createDeriver(landing.holds, landing.ranking) });
   await store.hydrate();
 
   source.arm('reject');
   assert.deepEqual(announced, ['reject'], 'arming was not announced');
 
-  await store.propose({ op: 'create', kind: 'blocked-by', from: '4', to: '3' }).settled;
+  await store.propose({ op: 'create', kind: 'blocked-by', from: '520', to: '501' }).settled;
 
   assert.deepEqual(announced, ['reject', 'apply'], 'the disarm was not announced');
   assert.equal(source.armed(), 'apply');
@@ -296,7 +305,7 @@ test('the source announces its disarm, because a redraw happens too early', asyn
 
 test('announcing is idempotent: arming the same outcome twice says nothing new', async () => {
   const announced: string[] = [];
-  const source = createDemoSource(seedDocument(), {
+  const source = createDemoSource(landing.document(), {
     settleDelayMs: 0,
     onArmedChange: (armed) => announced.push(armed),
   });
@@ -313,21 +322,24 @@ test('a fabricated upstream never writes a second single-valued edge', async () 
   // contradicting itself, in the direction nothing fails on.
   //
   // THE PRECONDITION IS THE TEST. The search walks issues in document order and
-  // fields in vocabulary order, so on the bare seed it lands on
-  // `decomposed-from #1 → #2` — a field #1 does not yet carry, which exercises
-  // nothing. #1 has to ALREADY carry that field for the conflict to be
-  // reachable, which is why this lands one first. (Checked: without this setup
-  // the assertions below pass against the unfixed source.)
+  // fields in vocabulary order, so on the bare comp it lands on
+  // `blocked-by #499 → #488` — a list field, which the cardinality rule never
+  // touches. For the rule to be exercised the first pair's `blocked-by` has to
+  // be held already AND #499 has to ALREADY carry the next single-valued
+  // field, so the search is forced to skip an occupied one. Both are landed
+  // first. (Checked: without this setup the assertions below pass against the
+  // unfixed source.)
   const { source, store } = harness();
   await store.hydrate();
-  await store.propose({ op: 'create', kind: 'decomposed-from', from: '1', to: '3' }).settled;
+  await store.propose({ op: 'create', kind: 'blocked-by', from: '499', to: '488' }).settled;
+  await store.propose({ op: 'create', kind: 'decomposed-from', from: '499', to: '501' }).settled;
   assert.ok(
-    store.getSnapshot().landed.some((edge) => edge.kind === 'decomposed-from' && edge.from === '1'),
+    store.getSnapshot().landed.some((edge) => edge.kind === 'decomposed-from' && edge.from === '499'),
     'the precondition did not land, so this test would prove nothing',
   );
 
   source.arm('conflict');
-  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '4', to: '3' });
+  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '520', to: '501' });
   await handle.settled;
 
   const record = store.getSnapshot().writes.find((write) => write.mutationId === handle.mutationId);
@@ -356,10 +368,10 @@ test('the STORE refuses a second value for a single-valued field, on every path'
   // `cardinality` — so it reaches every route and the adapter never sees it.
   const { store } = harness();
   await store.hydrate();
-  await store.propose({ op: 'create', kind: 'decomposed-from', from: '1', to: '2' }).settled;
+  await store.propose({ op: 'create', kind: 'decomposed-from', from: '512', to: '501' }).settled;
 
   // (a) a plain second create
-  const second = store.propose({ op: 'create', kind: 'decomposed-from', from: '1', to: '3' });
+  const second = store.propose({ op: 'create', kind: 'decomposed-from', from: '512', to: '503' });
   await second.settled;
   const refused = store.getSnapshot().writes.find((write) => write.mutationId === second.mutationId);
   assert.equal(refused?.state, 'invalid', 'a second single-valued value was not refused');
@@ -372,15 +384,15 @@ test('the STORE refuses a second value for a single-valued field, on every path'
   const afterRetry = store.getSnapshot().writes.find((write) => write.mutationId === second.mutationId);
   assert.equal(afterRetry?.state, 'invalid', 'a retry slipped past the rule');
   assert.equal(
-    store.getSnapshot().landed.filter((edge) => edge.kind === 'decomposed-from' && edge.from === '1')
+    store.getSnapshot().landed.filter((edge) => edge.kind === 'decomposed-from' && edge.from === '512')
       .length,
     1,
     'the field ended up holding two values',
   );
 
-  // (c) a list field is untouched — #1 already has two `blocked-by` and may
-  // have a third.
-  const list = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '14' });
+  // (c) a list field is untouched — #512 already has a `blocked-by` and may
+  // have another.
+  const list = store.propose({ op: 'create', kind: 'blocked-by', from: '512', to: '530' });
   await list.settled;
   assert.equal(store.getSnapshot().writes.length, 1, 'a list field was refused');
 });
@@ -392,12 +404,12 @@ test('two creates inside one settle window cannot both land', async () => {
   // taught about optimistic overlays to see it at all.
   const { store } = harness(20);
   await store.hydrate();
-  const first = store.propose({ op: 'create', kind: 'decomposed-from', from: '1', to: '2' });
-  const second = store.propose({ op: 'create', kind: 'decomposed-from', from: '1', to: '3' });
+  const first = store.propose({ op: 'create', kind: 'decomposed-from', from: '512', to: '501' });
+  const second = store.propose({ op: 'create', kind: 'decomposed-from', from: '512', to: '503' });
   await Promise.all([first.settled, second.settled]);
 
   assert.equal(
-    store.getSnapshot().landed.filter((edge) => edge.kind === 'decomposed-from' && edge.from === '1')
+    store.getSnapshot().landed.filter((edge) => edge.kind === 'decomposed-from' && edge.from === '512')
       .length,
     1,
     'both writes landed inside one settle window',
@@ -412,21 +424,26 @@ test('a retry after a conflict cannot give a single-valued field a second value'
   // tracker's side: the authority on the current document refuses the write.
   const { source, store } = harness();
   await store.hydrate();
+  // The fabricated upstream is the first absent edge for the first pair, and
+  // on the bare comp that is `blocked-by #499 → #488`. Landing it first moves
+  // the search on to `decomposed-from #499 → #488` — the field the visitor's
+  // edit below is about to occupy.
+  await store.propose({ op: 'create', kind: 'blocked-by', from: '499', to: '488' }).settled;
   source.arm('conflict');
 
-  const handle = store.propose({ op: 'create', kind: 'decomposed-from', from: '1', to: '3' });
+  const handle = store.propose({ op: 'create', kind: 'decomposed-from', from: '499', to: '501' });
   await handle.settled;
   const conflicted = store.getSnapshot().writes.find((write) => write.mutationId === handle.mutationId);
   assert.equal(conflicted?.state, 'conflict');
-  const installed = source.current().edges.filter((edge) => edge.kind === 'decomposed-from' && edge.from === '1');
+  const installed = source.current().edges.filter((edge) => edge.kind === 'decomposed-from' && edge.from === '499');
   assert.equal(installed.length, 1, 'the precondition did not hold: the upstream did not occupy the field');
-  assert.notEqual(installed[0]?.to, '3');
+  assert.notEqual(installed[0]?.to, '501');
 
   await store.retry(handle.mutationId).settled;
   const retried = store.getSnapshot().writes.find((write) => write.mutationId === handle.mutationId);
   assert.equal(retried?.state, 'failed', 'the tracker accepted a second value it could see and the store could not');
   assert.equal(
-    source.current().edges.filter((edge) => edge.kind === 'decomposed-from' && edge.from === '1').length,
+    source.current().edges.filter((edge) => edge.kind === 'decomposed-from' && edge.from === '499').length,
     1,
     'the field ended up holding two values',
   );
@@ -438,10 +455,10 @@ test('a retype into an occupied single-valued field is refused', async () => {
   // because it is on its way out.
   const { store } = harness();
   await store.hydrate();
-  await store.propose({ op: 'create', kind: 'decomposed-from', from: '1', to: '3' }).settled;
+  await store.propose({ op: 'create', kind: 'decomposed-from', from: '512', to: '501' }).settled;
 
-  const blocked = store.getSnapshot().landed.find((edge) => edge.kind === 'blocked-by' && edge.from === '1');
-  assert.ok(blocked, 'the seed should give #1 a blocked-by to retype');
+  const blocked = store.getSnapshot().landed.find((edge) => edge.kind === 'blocked-by' && edge.from === '512');
+  assert.ok(blocked, 'the seed should give #512 a blocked-by to retype');
   const retype = store.propose({ op: 'retype', edgeId: blocked.id, nextKind: 'decomposed-from' });
   await retype.settled;
 
@@ -459,7 +476,7 @@ test('discarding a conflict adopts the upstream the source is actually holding',
   await store.hydrate();
   const landedBefore = store.getSnapshot().landed.length;
   source.arm('conflict');
-  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '4', to: '3' });
+  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '520', to: '501' });
   await handle.settled;
 
   store.discardMine(handle.mutationId);
@@ -483,28 +500,31 @@ test('a fabricated upstream is screened for cycles like any other write', async 
   // resolving a conflict can persist exactly the graph the create flow refuses.
   //
   // The reviewer's scenario, built deliberately so the search is FORCED onto a
-  // cycle-closing candidate rather than happening to avoid one: #1's four
-  // single-valued fields are filled so they are skipped, `#1 duplicate-of #2`
-  // makes #1 resolve to #2, and `#4 blocked-by #2` is already landed — so the
-  // next candidate the search reaches, `#1 blocked-by #4`, resolves to
-  // `#2 blocked-by #4` and closes #2 → #4 → #2.
+  // cycle-closing candidate rather than happening to avoid one. The search
+  // starts at the first pair, #499 → #488, so: `#488 blocked-by #530` lands a
+  // path back from #488, `#499 duplicate-of #530` makes #499 resolve to #530,
+  // and #499's other three single-valued fields are filled so they are
+  // skipped — which leaves the pair's first candidate, `#499 blocked-by #488`,
+  // resolving to `#530 blocked-by #488` and closing #530 → #488 → #530. The
+  // next two pairs close it too: #499 → #512 directly (`#512 blocked-by
+  // #488`), #499 → #514 through the unit. Only #499 → #501 is safe.
   const { source, store } = harness();
   await store.hydrate();
   for (const edit of [
-    { kind: 'blocked-by', from: '4', to: '2' },
-    { kind: 'duplicate-of', from: '1', to: '2' },
-    { kind: 'decomposed-from', from: '1', to: '3' },
-    { kind: 'serialize-with', from: '1', to: '5' },
-    { kind: 'together-with', from: '1', to: '7' },
+    { kind: 'blocked-by', from: '488', to: '530' },
+    { kind: 'duplicate-of', from: '499', to: '530' },
+    { kind: 'decomposed-from', from: '499', to: '501' },
+    { kind: 'serialize-with', from: '499', to: '503' },
+    { kind: 'together-with', from: '499', to: '520' },
   ] as const) {
     await store.propose({ op: 'create', ...edit }).settled;
   }
 
   const landed = { issues: store.getSnapshot().issues, edges: store.getSnapshot().landed };
-  assert.ok(landed.edges.length > seedDocument().edges.length, 'the setup did not land');
+  assert.equal(landed.edges.length, compSeed().edges.length + 5, 'the setup did not land in full');
 
   source.arm('conflict');
-  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '14', to: '9' });
+  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '487', to: '505' });
   await handle.settled;
 
   const record = store.getSnapshot().writes.find((write) => write.mutationId === handle.mutationId);
@@ -519,7 +539,7 @@ test('a fabricated upstream is screened for cycles like any other write', async 
   // assertion above passes against a build that detects nothing.
   const wouldCycle = {
     issues: landed.issues,
-    edges: [...landed.edges, makeEdge('blocked-by', '1', '4')],
+    edges: [...landed.edges, makeEdge('blocked-by', '499', '512')],
   };
   assert.equal(
     introducesCycle(landed, wouldCycle),

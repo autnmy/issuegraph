@@ -20,7 +20,7 @@ import type { Store } from '@issuegraph/store';
 import { createStore } from '@issuegraph/store';
 
 import { createDeriver, introducesCycle } from './order.ts';
-import { seedDocument, seedHolds } from './seed.ts';
+import type { Scenario } from './seed.ts';
 import { type DemoSource, createDemoSource } from './source.ts';
 import { type Live, mountSandbox } from './workspace.ts';
 
@@ -46,8 +46,8 @@ import { type Live, mountSandbox } from './workspace.ts';
  * `introducesCycle` compares which EDGES lie on one, so only what this edit adds
  * is refused, and the seed can ship a cycle to be looked at.
  */
-function boot(onChange: () => void): Live {
-  const source: DemoSource = createDemoSource(seedDocument(), {
+function boot(scenario: Scenario, onChange: () => void): Live {
+  const source: DemoSource = createDemoSource(scenario.document(), {
     // The adapter disarms itself inside `dispatch`, which happens AFTER the
     // store has already notified the page about the pending write — so the
     // control cannot be kept honest by redrawing, only by being told.
@@ -55,7 +55,7 @@ function boot(onChange: () => void): Live {
   });
   const store: Store = createStore({
     source,
-    derive: createDeriver(seedHolds()),
+    derive: createDeriver(scenario.holds, scenario.ranking),
     guard: ({ current, next }) => {
       if (!introducesCycle(current, next)) return undefined;
       return {

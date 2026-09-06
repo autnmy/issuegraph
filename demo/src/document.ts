@@ -19,6 +19,7 @@
 import { DEFAULT_PRIORITY } from '@issuegraph/core';
 import type { AuditInput } from '@issuegraph/editor';
 import type { GraphDocument } from '@issuegraph/store';
+import type { IssueRef } from '@issuegraph/store';
 import type {
   HostFacts,
   RankProvenance,
@@ -29,7 +30,7 @@ import type {
   ViewerSlot,
 } from '@issuegraph/viewer';
 
-import { CAVEATS } from './host.ts';
+import type { IssueCaveats } from './host.ts';
 import type { ExplainedDocument, ExplainedRow, Hold } from './order.ts';
 
 /** The viewer's input plus the audit's, from one explained document. */
@@ -66,15 +67,19 @@ function provenanceOf(explained: ExplainedDocument, row: ExplainedRow): RankProv
   return { kind: 'declared-tier', priority: declared };
 }
 
-function issueOf(explained: ExplainedDocument, row: ExplainedRow): ViewerIssue {
+function issueOf(
+  explained: ExplainedDocument,
+  row: ExplainedRow,
+  caveats: ReadonlyMap<IssueRef, IssueCaveats>,
+): ViewerIssue {
   return {
     key: row.issue.ref,
     title: row.issue.title,
     open: row.issue.state === 'open',
     priority: row.issue.priority ?? DEFAULT_PRIORITY,
     provenance: provenanceOf(explained, row),
-    // The host's caveats about its own engine, from the host's table.
-    ...(CAVEATS.get(row.issue.ref) ?? {}),
+    // The host's caveats about its own engine, from the scenario's table.
+    ...(caveats.get(row.issue.ref) ?? {}),
   };
 }
 
@@ -97,7 +102,10 @@ function isDuplicate(row: ExplainedRow): boolean {
  * nothing can start". `readyAfterRank` names one of those ready ranks, so the
  * placement rank it was expressed in is translated through the same table.
  */
-function slotsOf(explained: ExplainedDocument): {
+function slotsOf(
+  explained: ExplainedDocument,
+  running: ReadonlySet<IssueRef>,
+): {
   readonly slots: readonly ViewerSlot[];
   readonly excluded: readonly ViewerExclusion[];
 } {
@@ -105,6 +113,12 @@ function slotsOf(explained: ExplainedDocument): {
   const excluded: ViewerExclusion[] = [];
   for (const row of explained.rows) {
     if (row.issue.state !== 'open') continue;
+    // THE RUNNING ISSUE IS DRAWN ONCE, in the NOW row. The derivation holds it
+    // as an active claim — correctly, so its serialize group is excluded — and
+    // that hold would put a footer row under it too. The design draws the job
+    // above the order and the footer without it, and this host agrees: a row
+    // that says "working" beneath a row that says "now" is one fact twice.
+    if (running.has(row.issue.ref)) continue;
     if (isDuplicate(row)) {
       excluded.push({
         key: row.issue.ref,
@@ -176,13 +190,20 @@ function dedupe(holds: readonly ViewerHold[]): readonly ViewerHold[] {
 /**
  * Project one explained document, and the landed document it explains, for the
  * viewer and the audit. `host` is what the runner knows and the graph does not
- * (`host.ts`); absent, the viewer draws the pure-graph view.
+ * (`host.ts`), and `caveats` what the host's engine knows about its own rows;
+ * absent, the viewer draws the pure-graph view.
  */
-export function projectDocument(explained: ExplainedDocument, landed: GraphDocument, host?: HostFacts): Projection {
-  const { slots, excluded } = slotsOf(explained);
+export function projectDocument(
+  explained: ExplainedDocument,
+  landed: GraphDocument,
+  host?: HostFacts,
+  caveats: ReadonlyMap<IssueRef, IssueCaveats> = new Map(),
+): Projection {
+  const running = new Set((host?.running ?? []).map((job) => job.key));
+  const { slots, excluded } = slotsOf(explained, running);
   return {
     viewer: {
-      issues: explained.rows.map((row) => issueOf(explained, row)),
+      issues: explained.rows.map((row) => issueOf(explained, row, caveats)),
       edges: landed.edges.map((edge) => ({ field: edge.kind, from: edge.from, to: edge.to })),
       order: { slots, excluded },
       ...(host === undefined ? {} : { host }),

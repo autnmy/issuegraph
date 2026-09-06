@@ -6,7 +6,8 @@
  * subscription all live there now, in the viewer's `mountViewer` shape. This
  * file used to be that shell, written once for this page; what remains is the
  * chrome that is genuinely the sandbox's — the writes log, the versions line,
- * the theme and canvas toggles, the armed dispatch outcome and the reset — and
+ * the theme, canvas and document toggles, the armed dispatch outcome and the
+ * reset — and
  * the two ports the mount takes from a host: the store, and the projection of
  * a snapshot onto the viewer's document and the audit's input.
  *
@@ -17,7 +18,8 @@
  * same attribute, so one delegated `click` on the sandbox root reads them:
  * the commands the mount's reducer knows (`retry`, `discard`, `dismiss-change`
  * — the writes log's) are handed to it through `handle.dispatch`, and the ones
- * it does not (`theme`, `canvas`, `reset`) are the sandbox's own.
+ * it does not (`theme`, `canvas`, `scenario`, `reset`, and the viewer's own
+ * `refresh`) are the sandbox's own.
  *
  * ## `textContent`, everywhere
  *
@@ -40,9 +42,9 @@ import type { EdgeKind, Store, StoreSnapshot, WriteRecord } from '@issuegraph/st
 import { type Theme, defaultTheme, extendTheme } from '@issuegraph/viewer';
 
 import { projectDocument } from './document.ts';
-import { type RunningWork, hostFacts } from './host.ts';
+import { hostFacts, runningSince } from './host.ts';
 import { explainDocument } from './order.ts';
-import { seedHolds } from './seed.ts';
+import { DEFAULT_SCENARIO, SCENARIOS, SCENARIO_NAMES, type Scenario, type ScenarioName } from './seed.ts';
 import type { DemoSource, NextOutcome } from './source.ts';
 import { STAMPED_PACKAGES, VERSIONS } from './versions.ts';
 
@@ -136,18 +138,6 @@ const FORWARDED: ReadonlySet<string> = new Set(['retry', 'discard', 'dismiss-cha
  */
 export const HOST_COMMANDS_FROM_WORKSPACE: ReadonlySet<string> = new Set(['refresh']);
 
-/** How long the demo's runner has been on its job when the page loads. A fixture, like the seed. */
-const RUNNING_FOR_MS = 12 * 60_000;
-
-/**
- * The demo runner's job. Its start is fixed relative to the moment the page
- * mounts, so the row reads `12m` on load and counts up from there — captured
- * ONCE, not per mirror read, or a refresh would wind the elapsed time back.
- */
-export function runningWork(mountedAt: Date): RunningWork {
-  return { phase: 'Review', startedAt: new Date(mountedAt.getTime() - RUNNING_FOR_MS) };
-}
-
 const OUTCOMES: ReadonlySet<string> = new Set(['apply', 'reject', 'conflict']);
 
 function isOutcome(value: string): value is NextOutcome {
@@ -162,14 +152,13 @@ function isCanvasMode(value: string | null): value is CanvasMode {
   return value === 'neighbourhood' || value === 'tree';
 }
 
+function isScenario(value: string | null): value is ScenarioName {
+  return SCENARIO_NAMES.some((name) => name === value);
+}
+
 export interface Live {
   readonly store: Store;
   readonly source: DemoSource;
-}
-
-export interface SandboxOptions {
-  /** The clock the host facts read. The page passes the real one; a test passes a fixed one. */
-  readonly clock?: () => Date;
 }
 
 export interface SandboxElements {
@@ -185,6 +174,8 @@ export interface SandboxElements {
 export interface SandboxState {
   readonly theme: ThemeName;
   readonly canvas: CanvasMode;
+  /** Which document is loaded: the §16 comp the page lands on, or the big backlog behind the control. */
+  readonly scenario: ScenarioName;
   /** The mount's own state — the selection, the draft, the scale, the rail window. */
   readonly workspace: WorkspaceHandle['state'];
 }
@@ -195,23 +186,38 @@ export interface SandboxHandle {
 }
 
 /**
- * The host's projection, from ONE derivation.
+ * The host's projection, from ONE derivation, for one scenario.
  *
  * `explainDocument` is the same `@issuegraph/derive` call the store's deriver
- * runs, so the viewer's rows, the audit's cycles and the store's order cannot
- * disagree. The landed document is `{ issues, edges: landed }` — never the
- * projection with its unsettled edits, because the order must not move for an
- * edit that did not land. The mount adds the unsettled edges to the canvas
+ * runs — over the same holds and the same base ranking, which are the
+ * scenario's — so the viewer's rows, the audit's cycles and the store's order
+ * cannot disagree. The landed document is `{ issues, edges: landed }` — never
+ * the projection with its unsettled edits, because the order must not move for
+ * an edit that did not land. The mount adds the unsettled edges to the canvas
  * itself, from the store's own projection.
  */
-function project(snapshot: StoreSnapshot, observedAt: Date, now: Date, job: RunningWork): WorkspaceProjection {
-  const landed = { issues: snapshot.issues, edges: snapshot.landed };
-  const holds = seedHolds();
-  const explained = explainDocument(landed, holds);
-  // THE HOST FACTS, from the same explained order the slots come from, so the
-  // header's tally and the rows beneath it are one derivation.
-  const host = hostFacts({ rows: explained.rows, holds, observedAt, now, job });
-  return projectDocument(explained, landed, host);
+/** The moments the host facts are read against: the last mirror read, the clock, and the page's mount. */
+export interface HostMoments {
+  readonly observedAt: () => Date;
+  readonly now: () => Date;
+  readonly mountedAt: Date;
+}
+
+function projectFor(scenario: Scenario, moments: HostMoments): (snapshot: StoreSnapshot) => WorkspaceProjection {
+  return (snapshot) => {
+    const landed = { issues: snapshot.issues, edges: snapshot.landed };
+    const explained = explainDocument(landed, scenario.holds, scenario.ranking);
+    // THE HOST FACTS, from the same explained order the slots come from, so the
+    // header's tally and the rows beneath it are one derivation. The running
+    // job is the scenario's; its start is anchored to the mount, once.
+    const host = hostFacts({
+      rows: explained.rows,
+      observedAt: moments.observedAt(),
+      now: moments.now(),
+      running: scenario.running === undefined ? undefined : runningSince(scenario.running, moments.mountedAt),
+    });
+    return projectDocument(explained, landed, host, scenario.caveats);
+  };
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -244,22 +250,29 @@ function describe(record: WriteRecord): string {
   }
 }
 
-/** Mount the sandbox. `boot` builds a fresh store and source, and is called again on reset. */
+/** Mount the sandbox. `boot` builds a fresh store and source over a scenario, and is called again on reset and on a scenario change. */
+export interface SandboxOptions {
+  /** The clock the host facts read. The page passes the real one; a test passes a fixed one. */
+  readonly clock?: () => Date;
+}
+
 export function mountSandbox(
   elements: SandboxElements,
-  boot: (onChange: () => void) => Live,
+  boot: (scenario: Scenario, onChange: () => void) => Live,
   options: SandboxOptions = {},
 ): SandboxHandle {
   const { root, workspace, writes, versions, outcome } = elements;
   const clock = options.clock ?? ((): Date => new Date());
-
-  let theme: ThemeName = 'default';
   // WHEN THE MIRROR WAS LAST READ — the `as of` stamp. Set when the store
   // hydrates and again on every refresh, which is the only two times this
   // trackerless demo has anything that reads as a mirror read.
   let observedAt: Date = clock();
-  const job: RunningWork = runningWork(observedAt);
+  const mountedAt: Date = observedAt;
+  const moments: HostMoments = { observedAt: () => observedAt, now: clock, mountedAt };
+
+  let theme: ThemeName = 'default';
   let canvas: CanvasMode = 'neighbourhood';
+  let scenario: ScenarioName = DEFAULT_SCENARIO;
   let live: Live;
   let handle: WorkspaceHandle | null = null;
   let unsubscribe = (): void => {};
@@ -324,24 +337,26 @@ export function mountSandbox(
     for (const toggle of root.querySelectorAll<HTMLElement>('[data-chrome="canvas"] [data-ig-value]')) {
       toggle.setAttribute('aria-pressed', String(toggle.getAttribute('data-ig-value') === canvas));
     }
+    for (const toggle of root.querySelectorAll<HTMLElement>('[data-chrome="scenario"] [data-ig-value]')) {
+      toggle.setAttribute('aria-pressed', String(toggle.getAttribute('data-ig-value') === scenario));
+    }
   };
 
-  /** Build a fresh store and mount the workspace over it. Called at start and on reset. */
+  /** Build a fresh store over the current scenario and mount the workspace over it. Called at start, on reset, and when the scenario changes. */
   const start = (): void => {
     unsubscribe();
     handle?.destroy();
-    live = boot(schedule);
+    const loaded = SCENARIOS[scenario];
+    live = boot(loaded, schedule);
     unsubscribe = live.store.subscribe(schedule);
     handle = mountWorkspace(workspace, {
       store: live.store,
-      project: (snapshot) => project(snapshot, observedAt, clock(), job),
+      project: projectFor(loaded, moments),
       words: WORKSPACE_WORDS,
       theme: themeFor(theme),
       canvas,
     });
-    // ONE RENDER, once the store has answered: `hydrate` schedules it. A second
-    // `schedule()` here painted the chrome against pre-hydrate state and threw
-    // the frame away a microtask later.
+    // ONE RENDER, once the store has answered: `hydrate` schedules it.
     void hydrate();
   };
 
@@ -392,6 +407,14 @@ export function mountSandbox(
         handle.update({ canvas });
         schedule();
         return;
+      case 'scenario':
+        // A scenario is a different DOCUMENT, so it is a fresh store rather
+        // than an update — the mount reads one store for its lifetime, and a
+        // visitor's unsettled edits belong to the document they were made on.
+        if (!isScenario(value) || value === scenario) return;
+        scenario = value;
+        start();
+        return;
       case 'reset':
         start();
         return;
@@ -428,13 +451,20 @@ export function mountSandbox(
       ...CANVAS_MODES.map((name) => button(name, 'canvas', { 'data-ig-value': name, class: 'chrome-button chrome-toggle' })),
     );
   }
+  for (const control of root.querySelectorAll<HTMLElement>('[data-chrome="scenario"]')) {
+    control.replaceChildren(
+      ...SCENARIO_NAMES.map((name) =>
+        button(SCENARIOS[name].label, 'scenario', { 'data-ig-value': name, class: 'chrome-button chrome-toggle' }),
+      ),
+    );
+  }
 
   start();
 
   return {
     state: () => {
       if (handle === null) throw new Error('the sandbox is not mounted');
-      return { theme, canvas, workspace: handle.state };
+      return { theme, canvas, scenario, workspace: handle.state };
     },
     destroy: () => {
       destroyed = true;

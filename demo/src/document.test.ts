@@ -20,29 +20,29 @@ import { auditDocument } from '@issuegraph/editor';
 import { clustersOf, normalizeDocument } from '@issuegraph/viewer';
 
 import { projectDocument } from './document.ts';
-import { type ExecutorHold, explainDocument } from './order.ts';
-import { coverageSeed, seedDocument, seedHolds } from './seed.ts';
+import { type BaseRanking, type ExecutorHold, explainDocument } from './order.ts';
+import { SCENARIOS, UNRESOLVABLE_REF, backlogSeed, compHolds, compSeed } from './seed.ts';
 
-function project(document: GraphDocument, holds: readonly ExecutorHold[] = seedHolds()) {
-  return projectDocument(explainDocument(document, holds), document);
+function project(
+  document: GraphDocument,
+  holds: readonly ExecutorHold[] = compHolds(),
+  ranking: BaseRanking = SCENARIOS.comp.ranking,
+) {
+  return projectDocument(explainDocument(document, holds, ranking), document);
 }
 
 function issue(ref: string, priority?: Priority, state: StoredIssue['state'] = 'open'): StoredIssue {
   return priority === undefined ? { ref, title: `Issue ${ref}`, state } : { ref, title: `Issue ${ref}`, state, priority };
 }
 
-describe('the coverage seed projects onto the viewer without loss', () => {
-  const document = coverageSeed();
+describe('the comp projects onto the viewer without loss', () => {
+  const document = compSeed();
   const { viewer } = project(document);
-  const rows = explainDocument(document, seedHolds()).rows;
+  const rows = explainDocument(document, compHolds(), SCENARIOS.comp.ranking).rows;
 
-  it('normalises with no diagnostics beyond the deliberately unresolvable reference', () => {
+  it('normalises with no diagnostics', () => {
     const { diagnostics } = normalizeDocument(viewer);
-    assert.deepEqual(
-      diagnostics.filter((line) => !line.includes('404')),
-      [],
-      diagnostics.join('\n'),
-    );
+    assert.deepEqual(diagnostics, [], diagnostics.join('\n'));
   });
 
   it('carries every issue, open and closed, and every landed edge', () => {
@@ -50,7 +50,7 @@ describe('the coverage seed projects onto the viewer without loss', () => {
       viewer.issues.map((each) => each.key).sort(),
       document.issues.map((each) => each.ref).sort(),
     );
-    assert.equal(viewer.issues.find((each) => each.key === '8')?.open, false);
+    assert.equal(viewer.issues.find((each) => each.key === '470')?.open, false);
     assert.equal(viewer.edges.length, document.edges.length);
   });
 
@@ -78,25 +78,25 @@ describe('the coverage seed projects onto the viewer without loss', () => {
   });
 
   it('maps the two hold families onto the viewer’s two, and never one onto the other', () => {
-    const five = viewer.order.slots.find((slot) => slot.lead === '5');
-    const six = viewer.order.slots.find((slot) => slot.lead === '6');
-    assert.deepEqual(five?.holds.map((hold) => hold.family), ['graph']);
-    assert.deepEqual(six?.holds.map((hold) => hold.family), ['tracker']);
+    const blocked = viewer.order.slots.find((slot) => slot.lead === '530');
+    const claimed = viewer.order.slots.find((slot) => slot.lead === '533');
+    assert.deepEqual(blocked?.holds.map((hold) => hold.family), ['graph']);
+    assert.deepEqual(claimed?.holds.map((hold) => hold.family), ['tracker']);
   });
 
   it('keeps a together unit as ONE slot with both members', () => {
-    const unit = viewer.order.slots.find((slot) => slot.members.includes('7'));
-    assert.deepEqual([...(unit?.members ?? [])].sort(), ['7', '9']);
-    assert.equal(viewer.order.slots.filter((slot) => slot.members.includes('9')).length, 1);
+    const unit = viewer.order.slots.find((slot) => slot.members.includes('512'));
+    assert.deepEqual([...(unit?.members ?? [])].sort(), ['512', '514']);
+    assert.equal(viewer.order.slots.filter((slot) => slot.members.includes('514')).length, 1);
   });
 
   it('excludes a duplicate rather than slotting it, naming its canonical', () => {
-    assert.deepEqual(viewer.order.excluded, [{ key: '10', canonical: '4', reason: 'duplicate-of' }]);
-    assert.ok(!viewer.order.slots.some((slot) => slot.members.includes('10')));
+    assert.deepEqual(viewer.order.excluded, [{ key: '455', canonical: '512', reason: 'duplicate-of' }]);
+    assert.ok(!viewer.order.slots.some((slot) => slot.members.includes('455')));
   });
 
   it('gives a closed issue no slot', () => {
-    assert.ok(!viewer.order.slots.some((slot) => slot.members.includes('8')));
+    assert.ok(!viewer.order.slots.some((slot) => slot.members.includes('470')));
   });
 
   it('writes provenance in the viewer’s three-form vocabulary', () => {
@@ -161,12 +161,14 @@ describe('one cycle answer, across every surface that draws it', () => {
 
 describe('the audit input is the derivation’s own reader answer', () => {
   it('hands across the model’s cycles and duplicate resolution in the store’s spelling', () => {
-    const document = coverageSeed();
+    // The backlog, because the cycles live in the dense layer; the duplicate
+    // is the comp's own.
+    const document = backlogSeed();
     const { audit } = project(document);
     assert.equal(audit.document, document);
-    assert.ok(audit.graph.cycles.some((cycle) => cycle.includes('12') && cycle.includes('13')));
-    assert.equal(audit.graph.duplicateCanonical('10'), '4');
-    assert.equal(audit.graph.duplicateCanonical('4'), null);
+    assert.ok(audit.graph.cycles.length > 0, 'the dense layer no longer ships a cycle');
+    assert.equal(audit.graph.duplicateCanonical('455'), '512');
+    assert.equal(audit.graph.duplicateCanonical('512'), null);
   });
 });
 
@@ -186,9 +188,13 @@ describe('edge cases the seed does not carry', () => {
     assert.deepEqual(viewer, { issues: [], edges: [], order: { slots: [], excluded: [] }, cycles: [] });
   });
 
-  it('projects the whole seed, which is what the page draws', () => {
-    const document = seedDocument();
+  it('projects the whole backlog, which is what the page draws behind the control', () => {
+    const document = backlogSeed();
     const { viewer } = project(document);
+    // The one diagnostic the backlog carries is its deliberately unresolvable
+    // reference: the viewer drops the edge and says so.
+    const { diagnostics } = normalizeDocument(viewer);
+    assert.deepEqual(diagnostics.filter((line) => !line.includes(UNRESOLVABLE_REF)), [], diagnostics.join('\n'));
     assert.equal(viewer.issues.length, document.issues.length);
     const open = document.issues.filter((each) => each.state === 'open').length;
     const slotted = viewer.order.slots.reduce((sum, slot) => sum + slot.members.length, 0);

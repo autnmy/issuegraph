@@ -118,8 +118,8 @@ export const DEFAULT_SETTLE_DELAY_MS = 450;
  * very edge being dispatched, upstream and local would be expressing the same
  * intended change — which is an `unchanged` outcome, not two competing
  * versions, and drawing it as a conflict teaches the opposite of what a
- * conflict is. Reachable on the seed by arming a conflict and creating
- * `decomposed-from` from #1 to #2.
+ * conflict is. Reachable on the comp by arming a conflict and creating
+ * `blocked-by` from #499 to #488 — the first absent edge for the first pair.
  *
  * Deliberately returns the FIRST absent edge rather than a random one: a demo
  * that shows a different conflict each time is harder to talk about, and

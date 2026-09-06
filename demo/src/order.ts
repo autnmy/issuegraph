@@ -322,9 +322,10 @@ function nodesWith(
  * skipped the expansion. That exclusion answers a different question: it stops a
  * unit reading its own partner's assignment as a rival. It says nothing about a
  * THIRD issue serialized against a member that was never marked assigned.
- * Measured: with `#6 together-with #7` and `#7 serialize-with #4` over the
- * seed's active claim on `#6`, the unit `{6,7,9}` is claimed and `#4` came back
- * `ready` with no holds at all.
+ * Measured, on the demo's earlier coverage seed: with `#6 together-with #7`
+ * and `#7 serialize-with #4` over that seed's active claim on `#6`, the unit
+ * `{6,7,9}` was claimed and `#4` came back `ready` with no holds at all.
+ * `order.test.ts` pins the same shape on the comp's rows now.
  *
  * TWO PASSES, AND THE FIRST ONE IS NOT CIRCULAR. Component membership is a
  * function of the `together-with` edges alone (`model.ts` unions an edge when
@@ -353,22 +354,54 @@ function claimedRefs(
 }
 
 /**
- * The demo's base ranking: newest first.
+ * The host's own ordering, as `@issuegraph/derive` takes it.
  *
- * `@issuegraph/derive` takes the host's own ordering as an INPUT and never
- * computes one — the array index is the position, which is what a tracker's own
- * `ORDER BY` already produced. This host has no ordered query, so it ranks the
- * whole document by reference, newest first: §6.4's default tiebreak, and the
- * reason the seed numbers its issues the way a tracker numbers them.
+ * The derivation takes a base ranking as an INPUT and never computes one — the
+ * array index is the position, which is what a tracker's own `ORDER BY` already
+ * produced. The relationship layer MODIFIES that ranking (effective priority
+ * first, then this position) and never replaces it, so which ranking a host
+ * supplies decides what the spine reads between two issues of one tier.
  *
  * `matchedOrderIndex` is rank PROVENANCE — which ordered-query entry matched —
- * and there is exactly one "query" here, so every row carries `0`. The
+ * and there is exactly one "query" in this host, so every row carries `0`. The
  * derivation does not read it.
  */
-function baseRanking(document: GraphDocument): readonly ConfigRankedIssue[] {
-  return [...document.issues]
+export type BaseRanking = (document: GraphDocument) => readonly ConfigRankedIssue[];
+
+/**
+ * Newest first, over the whole document: §6.4's default tiebreak, and the
+ * reason the dense seed numbers its issues the way a tracker numbers them.
+ * The ranking a host with no ordered query of its own falls back to, and the
+ * default below wherever a caller supplies none.
+ */
+const newestFirstRanking: BaseRanking = (document) =>
+  [...document.issues]
     .sort((a, b) => newestFirst(a.ref, b.ref))
     .map((issue) => ({ key: issue.ref, matchedOrderIndex: 0 }));
+
+/**
+ * A ranking a host wrote down: the listed references in the order given, then
+ * everything else newest first.
+ *
+ * This is the shape of a pick order that has already run — a product's ordered
+ * queries produce a complete ranking on their own, and the design's §16 frames
+ * were drawn against one. The comp scenario supplies its own order this way so
+ * the spine reads as the frames do; the derivation still owns the promotions,
+ * the units and the holds, which a base ranking cannot express.
+ */
+export function rankedFirst(listed: readonly IssueRef[]): BaseRanking {
+  const position = new Map(listed.map((ref, index) => [ref, index]));
+  return (document) =>
+    [...document.issues]
+      .sort((a, b) => {
+        const left = position.get(a.ref);
+        const right = position.get(b.ref);
+        if (left !== undefined && right !== undefined) return left - right;
+        if (left !== undefined) return -1;
+        if (right !== undefined) return 1;
+        return newestFirst(a.ref, b.ref);
+      })
+      .map((issue) => ({ key: issue.ref, matchedOrderIndex: 0 }));
 }
 
 /**
@@ -409,14 +442,18 @@ interface Derivation {
  * it rather than reading either off a diagnostic sentence, because prose that is
  * matched fails OPEN the day it is reworded.
  */
-function derive(document: GraphDocument, holds: readonly ExecutorHold[]): Derivation {
+function derive(
+  document: GraphDocument,
+  holds: readonly ExecutorHold[],
+  ranking: BaseRanking,
+): Derivation {
   const claimed = claimedRefs(document, holds);
   const nodes = nodesWith(document, claimed);
   return {
     model: buildModel(nodes),
     order: deriveIssueOrder({
       issues: nodes,
-      config: { baseRanking: { source: 'config', order: baseRanking(document) } },
+      config: { baseRanking: { source: 'config', order: ranking(document) } },
     }),
     claimed,
   };
@@ -639,9 +676,10 @@ export interface ExplainedDocument {
 export function explainDocument(
   document: GraphDocument,
   holds: readonly ExecutorHold[] = [],
+  ranking: BaseRanking = newestFirstRanking,
   concurrencyCap = DEFAULT_CONCURRENCY_CAP,
 ): ExplainedDocument {
-  const derivation = derive(document, holds);
+  const derivation = derive(document, holds, ranking);
   return {
     rows: explainRows(document, holds, derivation, concurrencyCap),
     model: derivation.model,
@@ -652,9 +690,10 @@ export function explainDocument(
 export function explainOrder(
   document: GraphDocument,
   holds: readonly ExecutorHold[] = [],
+  ranking: BaseRanking = newestFirstRanking,
   concurrencyCap = DEFAULT_CONCURRENCY_CAP,
 ): readonly ExplainedRow[] {
-  return explainRows(document, holds, derive(document, holds), concurrencyCap);
+  return explainRows(document, holds, derive(document, holds, ranking), concurrencyCap);
 }
 
 function explainRows(
@@ -810,9 +849,12 @@ export function slotCount(rows: readonly ExplainedRow[]): number {
  * for §6.8's reason: the format never learns why an executor declines ready
  * work, so they cannot travel with it.
  */
-export function createDeriver(holds: readonly ExecutorHold[] = []): OrderDeriver {
+export function createDeriver(
+  holds: readonly ExecutorHold[] = [],
+  ranking: BaseRanking = newestFirstRanking,
+): OrderDeriver {
   return (document: GraphDocument): readonly OrderRow[] =>
-    explainOrder(document, holds)
+    explainOrder(document, holds, ranking)
       // FOOTER ROWS ARE NOT IN THE ORDER — that is what the footer means, and
       // the store computes `entered` and `left` by comparing one order against
       // the next. Handing it rows that were never candidates made an issue
@@ -864,7 +906,8 @@ export function createDeriver(holds: readonly ExecutorHold[] = []): OrderDeriver
  * a write is REFUSED for agrees with the package's refusal.
  */
 function cyclicEdges(document: GraphDocument): ReadonlySet<string> {
-  const { order } = derive(document, []);
+  // The ranking cannot move an edge on or off a cycle, so the fallback serves.
+  const { order } = derive(document, [], newestFirstRanking);
   const found = new Set<string>();
   for (const edge of document.edges) {
     if (edge.kind !== 'blocked-by') continue;

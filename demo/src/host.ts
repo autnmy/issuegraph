@@ -22,23 +22,44 @@
 import type { IssueRef } from '@issuegraph/store';
 import type { Disagreement, HostFacts, OrderCounts, PreviewOnly, RunningJob } from '@issuegraph/viewer';
 
-import { DEFAULT_CONCURRENCY_CAP, type ExecutorHold, type ExplainedRow, slotCount } from './order.ts';
+import { DEFAULT_CONCURRENCY_CAP, type ExplainedRow, slotCount } from './order.ts';
 
-/** The runner's job, as the demo's runner would know it. */
+/**
+ * The job the scenario's runner is on — a scenario fact, like its holds.
+ *
+ * NAMED, NOT DERIVED FROM THE HOLDS. The comp marks two issues actively
+ * claimed (§6.2 rule 4 needs the claim), and only one of them is the frame's
+ * `now` row; a rule that read every active claim as running would draw two.
+ * The hold table says what the graph must exclude; this says what the runner
+ * is doing, which is a different fact even when it names the same issue.
+ */
 export interface RunningWork {
+  readonly ref: IssueRef;
   /** The runner's phase word: `Review`. */
+  readonly phase: string;
+  /** How long the job had been running when the page mounted. The clock counts on from there. */
+  readonly runningForMs: number;
+}
+
+/** The running job at one moment: the scenario's fact anchored to a start time. */
+export interface RunningSince {
+  readonly key: IssueRef;
   readonly phase: string;
   readonly startedAt: Date;
 }
 
+/** The job's start, fixed when the page mounts so a mirror read never winds the elapsed time back. */
+export function runningSince(work: RunningWork, mountedAt: Date): RunningSince {
+  return { key: work.ref, phase: work.phase, startedAt: new Date(mountedAt.getTime() - work.runningForMs) };
+}
+
 export interface HostFactsInput {
   readonly rows: readonly ExplainedRow[];
-  readonly holds: readonly ExecutorHold[];
   /** When the mirror was last read — the `as of` stamp. */
   readonly observedAt: Date;
   /** The clock, for the age and the elapsed time. */
   readonly now: Date;
-  readonly job: RunningWork;
+  readonly running?: RunningSince | undefined;
   readonly concurrencyCap?: number;
 }
 
@@ -74,37 +95,41 @@ export function ageBetween(from: Date, to: Date): string {
  *
  * Counted in SLOTS, not rows: a together unit is one rank (§4.3.7), so two
  * members are one ranked thing — `slotCount` already makes that rule for the
- * demo. `held` spans both families, because the design's header counts what
- * is not running whatever the cause; the footer is where the families part.
+ * demo. Every spine slot is ranked, held or not: a graph-held row keeps its
+ * position and prints `—` where the number would go, which is a rank the
+ * design counts (`6 ranked · 4 ready now`). `held` spans both families,
+ * because the design's header counts what is not running whatever the cause;
+ * the footer is where the families part. The RUNNING issue is neither: it is
+ * drawn in the NOW row, not the footer, so it is not a held slot.
  */
-export function orderCounts(rows: readonly ExplainedRow[]): OrderCounts {
+export function orderCounts(rows: readonly ExplainedRow[], running: ReadonlySet<IssueRef> = new Set()): OrderCounts {
   const spine = rows.filter((row) => row.placement === 'spine');
   const footerHeld = rows.filter(
-    (row) => row.placement === 'footer' && row.holds.some((hold) => hold.family === 'executor' && hold.blocking !== false),
+    (row) =>
+      row.placement === 'footer' &&
+      !running.has(row.issue.ref) &&
+      row.holds.some((hold) => hold.family === 'executor' && hold.blocking !== false),
   );
   return {
-    // EVERY SPINE SLOT IS RANKED, held or not: a graph-held row keeps its
-    // position and prints `—` where the number would go, which is a rank the
-    // design counts (`6 ranked · 4 ready now`). Only the footer earns none.
     ranked: slotCount(spine),
     readyNow: slotCount(spine.filter((row) => row.ready)),
     held: slotCount(spine.filter((row) => !row.ready)) + slotCount(footerHeld),
   };
 }
 
-/** The one job the demo's runner is working: the executor hold marked active. */
-export function runningJobs(holds: readonly ExecutorHold[], job: RunningWork, now: Date): readonly RunningJob[] {
-  return holds
-    .filter((hold) => hold.active === true)
-    .map((hold) => ({ key: hold.ref, phase: job.phase, elapsed: elapsedBetween(job.startedAt, now) }));
+/** The NOW row's job, with the elapsed time the runner would print. */
+export function runningJobs(running: RunningSince | undefined, now: Date): readonly RunningJob[] {
+  if (running === undefined) return [];
+  return [{ key: running.key, phase: running.phase, elapsed: elapsedBetween(running.startedAt, now) }];
 }
 
 export function hostFacts(input: HostFactsInput): HostFacts {
   const age = input.now.getTime() - input.observedAt.getTime();
+  const running = runningJobs(input.running, input.now);
   return {
     concurrencyCap: input.concurrencyCap ?? DEFAULT_CONCURRENCY_CAP,
-    counts: orderCounts(input.rows),
-    running: runningJobs(input.holds, input.job, input.now),
+    counts: orderCounts(input.rows, new Set(running.map((job) => job.key))),
+    running,
     freshness: {
       asOf: stampOf(input.observedAt),
       age: ageBetween(input.observedAt, input.now),
@@ -119,29 +144,3 @@ export interface IssueCaveats {
   readonly previewOnly?: PreviewOnly;
   readonly disagreement?: Disagreement;
 }
-
-/**
- * The demo's caveats, keyed by reference — a host's table, not a field on the
- * stored issue, because the store's schema is the format's and these facts
- * are the engine's. #4 declares no priority, which is the row the design gives
- * its preview-only fallback to; #14 is the row two signals disagree about.
- */
-export const CAVEATS: ReadonlyMap<IssueRef, IssueCaveats> = new Map<IssueRef, IssueCaveats>([
-  [
-    '4',
-    {
-      previewOnly: {
-        note: "query 3 (involves:@me) can't be evaluated in this sandbox — ranked by the unlabeled tail instead",
-      },
-    },
-  ],
-  [
-    '14',
-    {
-      disagreement: {
-        used: 'P2 (declared)',
-        ignored: { carrier: 'frontmatter', value: 'priority: 3' },
-      },
-    },
-  ],
-]);
