@@ -46,6 +46,8 @@ import type { GraphDocument, StoredEdge, StoredIssue } from '@issuegraph/store';
 import { makeEdge } from '@issuegraph/store';
 
 import {
+  type BaseRanking,
+  type ExecutorHold,
   type ExplainedRow,
   type Hold,
   createDeriver,
@@ -53,7 +55,15 @@ import {
   introducesCycle,
   slotCount,
 } from './order.ts';
-import { coverageSeed, seedDocument, seedHolds } from './seed.ts';
+import { SCENARIOS, backlogSeed, compHolds, compSeed } from './seed.ts';
+
+/** The landing state's own inputs, so a pin here is a pin on what the page draws first. */
+const landing = SCENARIOS.comp;
+
+/** The landing state, explained the way the page explains it — its holds AND its ranking. */
+function explainLanding(): readonly ExplainedRow[] {
+  return explainOrder(landing.document(), landing.holds, landing.ranking);
+}
 
 const PRIORITIES: readonly Priority[] = [0, 1, 2, 3];
 
@@ -87,7 +97,7 @@ test('the two key spaces are identical, so no translation layer can drift', () =
   // model answer in `order.ts` is looked up by `IssueRef` on the strength of
   // this; if it stopped holding, every lookup would silently miss and the page
   // would render an order for a graph nobody declared.
-  for (const issue of seedDocument().issues) {
+  for (const issue of backlogSeed().issues) {
     assert.equal(nodeKey({ id: issue.ref, repo: null }), issue.ref);
   }
 });
@@ -179,8 +189,13 @@ test('blocked-by is the only list field, and every entry of it blocks', () => {
  * dashed station and no readable reason, and a ready row carrying one hands the
  * store a `ready` `OrderRow` with `holdReasons`, which its own contract forbids.
  */
-function assertChipsAgree(doc: GraphDocument, holds = seedHolds(), label = ''): void {
-  for (const row of explainOrder(doc, holds)) {
+function assertChipsAgree(
+  doc: GraphDocument,
+  holds: readonly ExecutorHold[] = compHolds(),
+  label = '',
+  ranking: BaseRanking = landing.ranking,
+): void {
+  for (const row of explainOrder(doc, holds, ranking)) {
     if (row.placement !== 'spine') continue;
     const blocking = row.holds.filter(blocks);
     if (row.ready) {
@@ -198,8 +213,10 @@ function assertChipsAgree(doc: GraphDocument, holds = seedHolds(), label = ''): 
   }
 }
 
-test('the chips agree with the derivation on the seed', () => {
-  assertChipsAgree(seedDocument());
+test('the chips agree with the derivation on both scenarios', () => {
+  for (const [name, scenario] of Object.entries(SCENARIOS)) {
+    assertChipsAgree(scenario.document(), scenario.holds, `${name}: `, scenario.ranking);
+  }
 });
 
 test('the chips agree with the derivation on every single-edge document', () => {
@@ -229,28 +246,29 @@ test('an atomic claim on a together unit excludes a serialize rival of ANY membe
   // cannot infer it, and its own claim scan excludes a node's OWN unit, which
   // answers a different question entirely.
   //
-  // The scenario, over the seed's active claim on #6: #6 together-with #7 makes
-  // {6,7,9} one unit, and #7 serialize-with #4 puts #4 in a serialize group with
-  // a member of it. Before the expansion #4 came back ready with no holds.
-  const seed = seedDocument();
+  // The scenario, over the comp's active claim on #533: #533 together-with
+  // #520 makes {533,520} one unit, and #520 serialize-with #487 puts #487 in a
+  // serialize group with a member of it. Before the expansion #487 came back
+  // ready with no holds.
+  const seed = compSeed();
   const doc = document(seed.issues, [
     ...seed.edges,
-    makeEdge('together-with', '6', '7'),
-    makeEdge('serialize-with', '7', '4'),
+    makeEdge('together-with', '533', '520'),
+    makeEdge('serialize-with', '520', '487'),
   ]);
-  const rows = explainOrder(doc, seedHolds());
+  const rows = explainOrder(doc, compHolds(), landing.ranking);
 
-  const rival = rowFor(rows, '4');
-  assert.equal(rival.ready, false, '#4 is ready beside an atomically-claimed unit');
+  const rival = rowFor(rows, '487');
+  assert.equal(rival.ready, false, '#487 is ready beside an atomically-claimed unit');
   assert.ok(
     rival.holds.some((hold) => hold.label === 'serialized' && blocks(hold)),
-    `#4 is held but says nothing about why: ${JSON.stringify(rival.holds)}`,
+    `#487 is held but says nothing about why: ${JSON.stringify(rival.holds)}`,
   );
 
   // The unit itself is still placed as ONE thing, and the expansion must not
   // make its members exclude each other — the reader's own-unit exemption is
   // what prevents that, and this is the control that it still applies.
-  for (const ref of ['6', '7', '9']) {
+  for (const ref of ['533', '520']) {
     const member = rowFor(rows, ref);
     assert.equal(member.placement, 'footer', `#${ref} left the footer`);
     assert.ok(
@@ -259,7 +277,7 @@ test('an atomic claim on a together unit excludes a serialize rival of ANY membe
     );
   }
 
-  assertChipsAgree(doc, seedHolds(), 'claimed unit: ');
+  assertChipsAgree(doc, compHolds(), 'claimed unit: ');
 });
 
 test('a PARKED hold is not a claim, so it expands across nothing', () => {
@@ -267,14 +285,14 @@ test('a PARKED hold is not a claim, so it expands across nothing', () => {
   // member. Parked work is not running, so it excludes nobody — and expanding a
   // park across a unit would hold a serialize rival for a group nothing is
   // working, which is the opposite of what a width-1 semaphore is for.
-  const seed = seedDocument();
+  const seed = compSeed();
   const edges = [
     ...seed.edges,
-    makeEdge('together-with', '11', '7'),
-    makeEdge('serialize-with', '7', '4'),
+    makeEdge('together-with', '541', '520'),
+    makeEdge('serialize-with', '520', '487'),
   ];
-  // #11 is the seed's PARKED hold. Same shape as the test above, inactive hold.
-  const parked = rowFor(explainOrder(document(seed.issues, edges), seedHolds()), '4');
+  // #541 is the comp's PARKED hold. Same shape as the test above, inactive hold.
+  const parked = rowFor(explainOrder(document(seed.issues, edges), compHolds(), landing.ranking), '487');
   assert.equal(parked.ready, true, 'a park excluded a serialize rival');
 });
 
@@ -325,8 +343,8 @@ test('the store never sees a footer row, and never a ready row with reasons', ()
   // in the order — the store computes `entered` and `left` by comparing one
   // order against the next, so a row that was never a candidate reads as a move
   // — and `holdReasons` is documented as empty when ready.
-  const rows = createDeriver(seedHolds())(seedDocument());
-  const footer = explainOrder(seedDocument(), seedHolds())
+  const rows = createDeriver(landing.holds, landing.ranking)(landing.document());
+  const footer = explainLanding()
     .filter((row) => row.placement === 'footer')
     .map((row) => row.issue.ref);
   assert.ok(footer.length > 0, 'the seed no longer exercises the footer');
@@ -341,7 +359,7 @@ test('the ranks the store is handed never go backwards', () => {
   // A together unit shares one rank, so the array is non-decreasing rather than
   // strictly increasing — which is the property to assert, since a strict one
   // would fail on a correct unit.
-  const ranks = createDeriver(seedHolds())(seedDocument()).map((row) => row.rank);
+  const ranks = createDeriver(landing.holds, landing.ranking)(landing.document()).map((row) => row.rank);
   for (let i = 1; i < ranks.length; i += 1) {
     assert.ok((ranks[i] ?? 0) >= (ranks[i - 1] ?? 0), `rank went backwards at ${String(i)}`);
   }
@@ -350,18 +368,23 @@ test('the ranks the store is handed never go backwards', () => {
 // ---------------------------------------------------------------------------
 // 3. The coverage claim — the milestone's own done-when
 // ---------------------------------------------------------------------------
+//
+// OVER THE LANDING STATE ALONE. The comp is what the page draws first, and a
+// state that is only reachable after loading the big backlog is a state most
+// visitors never see. So every claim below is made of `compSeed()`, never of
+// the backlog behind the control.
 
 test('every edge type is reachable in the seed without editing anything', () => {
   // Enumerated from the vocabulary, not from a list beside it: a sixth edge
   // field fails here rather than going undemonstrated.
-  const kinds = new Set(seedDocument().edges.map((edge) => edge.kind));
+  const kinds = new Set(compSeed().edges.map((edge) => edge.kind));
   for (const field of EDGE_FIELDS) {
     assert.ok(kinds.has(field), `the seed no longer exercises ${field}`);
   }
 });
 
 test('both hold families are reachable, and they are drawn in different places', () => {
-  const rows = explainOrder(seedDocument(), seedHolds());
+  const rows = explainLanding();
   const families = new Set(rows.flatMap((row) => row.holds.map((hold) => hold.family)));
   assert.deepEqual([...families].sort(), ['executor', 'graph']);
 
@@ -395,7 +418,7 @@ test('both hold families are reachable, and they are drawn in different places',
 });
 
 test('all three readiness stations are reachable in the seed', () => {
-  const rows = explainOrder(seedDocument(), seedHolds());
+  const rows = explainLanding();
   const stations = new Set(rows.map((row) => row.station));
   assert.deepEqual([...stations].sort(), ['dashed', 'filled', 'hollow']);
 
@@ -409,19 +432,20 @@ test('all three readiness stations are reachable in the seed', () => {
 });
 
 test('all three rank-provenance forms are reachable in the seed', () => {
-  const forms = new Set(
-    explainOrder(seedDocument(), seedHolds()).map((row) => row.provenance.form),
-  );
+  const forms = new Set(explainLanding().map((row) => row.provenance.form));
   assert.deepEqual([...forms].sort(), ['declared', 'default-tier', 'promoted']);
 });
 
 test('a promotion names the dependent it inherited from, in the spec notation', () => {
-  // §6.3: urgency flows backward along blocked-by. The seed's #2 and #3 are
-  // declared P3 and block a P0, so both are promoted — and the derivation is
-  // what says so, including WHO it arrived through.
-  const rows = explainOrder(seedDocument(), seedHolds());
+  // §6.3: urgency flows backward along blocked-by. The comp's #488 is declared
+  // P3 and blocks a P0 unit, so it is promoted — the frame's `P3 → 0` — and the
+  // derivation is what says so, including WHO it arrived through.
+  const rows = explainLanding();
   const promoted = rows.filter((row) => row.provenance.form === 'promoted');
-  assert.ok(promoted.length >= 2, 'the seed no longer exercises promotion');
+  // Two, and exactly these: #488 by the unit, and #602 — the footer's
+  // ineligible blocker — by the P1 it holds. Pinned as a set so a promotion
+  // arriving or leaving is noticed rather than absorbed by a floor.
+  assert.deepEqual(promoted.map((row) => row.issue.ref).sort(), ['488', '602']);
   for (const row of promoted) {
     const { provenance } = row;
     // Bound to a local so the discriminant narrows: reading `row.provenance`
@@ -444,12 +468,12 @@ test('a serialize footprint includes the unit itself, so a unit alone is not ser
   // serializes. The property the comparison rests on is asserted here, where a
   // test can reach it.
   //
-  // OVER THE COVERAGE SEED, whose one unit and one serialize pair are the shape
-  // this pins. The dense layer adds a serialize ring nobody has claimed, whose
-  // members are ready with a footprint of five, and that is correct rather
-  // than a counter-example: the control below asks that a serialized row be
-  // held or footered, which is only true where the group has a claim in it.
-  const rows = explainOrder(coverageSeed(), seedHolds());
+  // OVER THE COMP, whose one unit and one serialize group are the shape this
+  // pins. Nobody in the group is claimed, so its members are READY with a
+  // footprint of three — the frame's "group of 3" — and that is correct
+  // rather than a counter-example: a serialize group is a width-1 semaphore,
+  // and an unclaimed one excludes nobody.
+  const rows = explainLanding();
 
   const unit = rows.filter((row) => row.togetherGroupSize > 1);
   assert.ok(unit.length > 1, 'the seed no longer exercises a together unit');
@@ -466,10 +490,12 @@ test('a serialize footprint includes the unit itself, so a unit alone is not ser
   const serialized = rows.filter(
     (row) => row.serializeGroupSize > Math.max(row.togetherGroupSize, 1),
   );
-  assert.ok(serialized.length > 0, 'the seed no longer exercises a serialize group');
-  for (const row of serialized) {
-    assert.ok(row.holds.some((hold) => hold.label === 'serialized') || row.placement === 'footer');
-  }
+  assert.deepEqual(
+    serialized.map((row) => row.issue.ref).sort(),
+    ['501', '503', '505'],
+    'the seed no longer exercises the serialize group of three',
+  );
+  for (const row of serialized) assert.equal(row.serializeGroupSize, 3, `#${row.issue.ref}`);
 });
 
 test('a together unit is ONE slot, counted once against the cap', () => {
@@ -478,10 +504,8 @@ test('a together unit is ONE slot, counted once against the cap', () => {
   // concurrency cap allows, in a header sitting directly above the stations
   // that contradict it.
   //
-  // The coverage seed carries exactly one unit; the dense layer adds two more,
-  // each of which is its own single slot, so the property is asserted per unit
-  // over the whole seed and the count over the coverage seed alone.
-  const rows = explainOrder(coverageSeed(), seedHolds());
+  // The comp carries exactly one unit, so the count is over the comp alone.
+  const rows = explainLanding();
   const unit = rows.filter((row) => row.togetherGroupSize > 1);
   assert.ok(unit.length > 1, 'the seed no longer exercises a together unit');
   assert.equal(new Set(unit.map((row) => row.rank)).size, 1, 'the unit took more than one rank');
@@ -508,15 +532,16 @@ test('a new blocked-by cycle is refused, and an ordinary edge is not', () => {
 test('a cycle that already exists is surfaced, never re-refused', () => {
   // §6.6: a cycle is detected on read and surfaced for grooming, because
   // write-time rejection pushes writers into describing the dependency in
-  // prose. The seed ships one for exactly that reason, so an unrelated edit on
-  // top of it must still be allowed.
-  const seed = seedDocument();
-  const cyclic = explainOrder(seed, seedHolds()).filter((row) =>
+  // prose. The dense layer ships one for exactly that reason, so an unrelated
+  // edit on top of it — here, on two of the comp's own rows — must still be
+  // allowed.
+  const seed = backlogSeed();
+  const cyclic = explainOrder(seed, compHolds()).filter((row) =>
     row.holds.some((hold) => hold.label === 'cycle'),
   );
   assert.ok(cyclic.length > 1, 'the seed no longer ships a cycle');
   assert.equal(
-    introducesCycle(seed, document(seed.issues, [...seed.edges, makeEdge('blocked-by', '4', '2')])),
+    introducesCycle(seed, document(seed.issues, [...seed.edges, makeEdge('blocked-by', '520', '501')])),
     false,
   );
 });
