@@ -13,6 +13,7 @@ import {
 } from './testing/contrast.ts';
 import {
   COLOR_TOKENS,
+  EFFECT_TOKENS,
   METRIC_TOKENS,
   THEME_TOKENS,
   TYPE_TOKENS,
@@ -21,9 +22,14 @@ import {
   themeCss,
   resolveTheme,
   type ColorToken,
+  type MetricToken,
   type Theme,
+  type TypeToken,
 } from './theme.ts';
 import { fitLabel } from './layout.ts';
+import { renderViewer } from './render.ts';
+import { viewerStylesheet } from './styles.ts';
+import { fixtureDocument } from './testing/fixtures.ts';
 import { paperTheme } from './acceptance.test.ts';
 
 
@@ -33,13 +39,14 @@ describe('the theme contract', () => {
       ...Object.keys(defaultTheme.colors),
       ...Object.keys(defaultTheme.type),
       ...Object.keys(defaultTheme.metrics),
+      ...Object.keys(defaultTheme.effects),
     ].sort();
 
     assert.deepEqual(supplied, [...THEME_TOKENS].sort());
   });
 
-  it('composes THEME_TOKENS from its three groups with no overlap', () => {
-    const groups = [...COLOR_TOKENS, ...TYPE_TOKENS, ...METRIC_TOKENS];
+  it('composes THEME_TOKENS from its four groups with no overlap', () => {
+    const groups = [...COLOR_TOKENS, ...TYPE_TOKENS, ...METRIC_TOKENS, ...EFFECT_TOKENS];
     assert.equal(new Set(groups).size, groups.length);
     assert.deepEqual([...THEME_TOKENS].sort(), [...groups].sort());
   });
@@ -246,5 +253,216 @@ describe('a theme built against an earlier version', () => {
     const filled = resolveTheme({ ...defaultTheme, colors } as unknown as Theme);
 
     assert.equal(filled.colors['--ig-accent'], defaultTheme.colors['--ig-accent']);
+  });
+});
+
+/**
+ * The tokens added so the theme can express §16 of the design canvas.
+ *
+ * Held as one list because every assertion below is about the CLASS — what a
+ * newly added token must do, and what it must not disturb — rather than about
+ * any one of them. A token added later and left out of this list fails
+ * `accounts for every type and metric token as either shipped or expansion`
+ * below, which is the guard that keeps the list from quietly falling behind
+ * the groups it is derived from — the tests that iterate `EXPANSION` itself
+ * cannot see a token that is missing from it.
+ */
+const EXPANSION: readonly string[] = Object.freeze([
+  '--ig-font-size-micro',
+  '--ig-font-size-pill',
+  '--ig-weight-regular',
+  '--ig-weight-medium',
+  '--ig-weight-strong',
+  '--ig-weight-heavy',
+  '--ig-tracking-label',
+  '--ig-tracking-group',
+  '--ig-tracking-pill',
+  '--ig-tracking-badge',
+  '--ig-space-micro',
+  '--ig-space-snug',
+  '--ig-space-loose',
+  '--ig-space-wide',
+  '--ig-radius-small',
+  '--ig-radius-large',
+  '--ig-row-min-height',
+  '--ig-row-padding-block',
+  '--ig-band-rail',
+  '--ig-tint-fill',
+  '--ig-tint-border',
+  '--ig-tint-wash',
+  '--ig-tint-unit',
+  '--ig-elevation-raised',
+  '--ig-elevation-overlay',
+]);
+
+describe('the vocabulary the §16 design needs', () => {
+  it('carries a weight, a tracking, a spacing scale, an elevation and a growable row', () => {
+    // THE SHOPPING LIST FROM THE ISSUE, asserted as capability rather than as
+    // names — the design cannot be drawn at all without each of these, and
+    // "the theme has more tokens now" is not the property that matters.
+    const has = (token: string): boolean => THEME_TOKENS.includes(token);
+
+    assert.ok(TYPE_TOKENS.some((token) => token.startsWith('--ig-weight-')), 'no weight token');
+    assert.ok(TYPE_TOKENS.some((token) => token.startsWith('--ig-tracking-')), 'no tracking token');
+    assert.ok(
+      METRIC_TOKENS.filter((token) => token.startsWith('--ig-space')).length >= 6,
+      'the spacing scale is still under six steps',
+    );
+    assert.ok(
+      new Set(TYPE_TOKENS.filter((token) => token.startsWith('--ig-weight-'))).size >= 4,
+      '§16b draws its station rank numbers at a weight §16a does not use',
+    );
+    assert.ok(EFFECT_TOKENS.some((token) => token.startsWith('--ig-elevation-')), 'no elevation');
+    assert.ok(EFFECT_TOKENS.some((token) => token.startsWith('--ig-tint-')), 'no tint');
+    assert.ok(has('--ig-row-min-height') && has('--ig-row-padding-block'), 'the row cannot grow');
+  });
+
+  it('supplies a default for every one of them', () => {
+    for (const token of EXPANSION) {
+      assert.ok(THEME_TOKENS.includes(token), `${token} is not in any group`);
+    }
+  });
+
+  it('emits each one, and lets a host override each one', () => {
+    // Done-when 3, and it is one test rather than three because a token is
+    // only genuinely themeable when all three hold at once: it reaches the
+    // CSS, `extendTheme` composes it, and the override is what lands.
+    const marked = extendTheme(defaultTheme, {
+      type: Object.fromEntries(
+        TYPE_TOKENS.map((token) => [token, 'TYPE-OVERRIDE']),
+      ) as Record<TypeToken, string>,
+      metrics: Object.fromEntries(
+        METRIC_TOKENS.map((token) => [token, 999]),
+      ) as Record<MetricToken, number>,
+      effects: Object.fromEntries(
+        EFFECT_TOKENS.map((token) => [token, 'EFFECT-OVERRIDE']),
+      ) as Record<(typeof EFFECT_TOKENS)[number], string>,
+    });
+    const css = themeCss(marked);
+
+    for (const token of TYPE_TOKENS) assert.match(css, new RegExp(`${token}: TYPE-OVERRIDE;`));
+    for (const token of METRIC_TOKENS) assert.match(css, new RegExp(`${token}: 999px;`));
+    for (const token of EFFECT_TOKENS) assert.match(css, new RegExp(`${token}: EFFECT-OVERRIDE;`));
+    // And the base is untouched, so an override is not a mutation.
+    assert.equal(defaultTheme.metrics['--ig-space-wide'], 20);
+  });
+
+  it('gives an effect no px unit, because none of them is a length', () => {
+    // `themeCss` appends `px` to every METRIC, and a proportion or a whole
+    // box-shadow with `px` glued to its end is a declaration the browser
+    // discards silently. This is the assertion that keeps a future tint or
+    // elevation out of the metric group.
+    const css = themeCss(defaultTheme);
+    for (const token of EFFECT_TOKENS) {
+      const declaration = new RegExp(`${token}: ([^;]+);`).exec(css);
+      assert.ok(declaration !== null, `${token} is not emitted`);
+      assert.equal(
+        /px$/.test(declaration[1] as string),
+        false,
+        `${token} was emitted as "${String(declaration[1])}", which ends in a unit it has no use for`,
+      );
+    }
+  });
+
+  it('lets only the two elevations name a colour, and every other effect none', () => {
+    // The issue's constraint, executable: a tint is applied by the consumer
+    // against a colour token that already exists, so a literal colour in one
+    // would be a palette entry hiding in a group nothing measures for
+    // contrast. ASSERTED OVER THE WHOLE GROUP rather than over the tokens
+    // named `--ig-tint-*`: a filtered assertion is silent about exactly the
+    // token a future author adds under a new name, which is the one case worth
+    // catching. The elevations are the declared exception — see the group's
+    // own comment — and naming them here is what makes a THIRD colour-bearing
+    // effect fail rather than pass by resemblance.
+    const mayCarryColour = ['--ig-elevation-raised', '--ig-elevation-overlay'];
+    const colour = /#[0-9A-Fa-f]{3,8}|\brgba?\(|\bhsla?\(/;
+
+    for (const token of EFFECT_TOKENS) {
+      const value = defaultTheme.effects[token];
+      if (mayCarryColour.includes(token)) {
+        assert.match(value, colour, `${token} is declared as an elevation but names no colour`);
+        continue;
+      }
+      assert.equal(colour.test(value), false, `${token} names a colour: "${value}"`);
+      assert.match(value, /^\d+(?:\.\d+)?%$/, `${token} is not a proportion`);
+    }
+  });
+});
+
+describe('a host that sets none of the new tokens renders as it did before', () => {
+  /**
+   * Every type and metric token that shipped BEFORE the expansion, with the
+   * value it shipped with.
+   *
+   * A NAME LIST WOULD NOT BE THE PIN. Byte-identical rendering survives a
+   * rename being caught and a value being changed being missed, and the second
+   * is the likelier accident when a scale is added around existing steps —
+   * `--ig-space` is exactly the kind of token a six-step scale invites someone
+   * to "regularise". Colours are absent because the contrast suite already
+   * measures each of them against a bar.
+   */
+  const SHIPPED: Readonly<Record<string, string | number>> = Object.freeze({
+    '--ig-font-ui': 'Geist, ui-sans-serif, system-ui, sans-serif',
+    '--ig-font-mono': "'JetBrains Mono', ui-monospace, SFMono-Regular, monospace",
+    '--ig-font-size': '13px',
+    '--ig-font-size-small': '11px',
+    '--ig-line-height': '1.45',
+    '--ig-space': 12,
+    '--ig-space-tight': 6,
+    '--ig-radius': 6,
+    '--ig-row-height': 44,
+    '--ig-station-size': 12,
+    '--ig-station-halo': 4,
+    '--ig-stroke': 1.5,
+    '--ig-stroke-connector': 1.6,
+    '--ig-terminal-length': 9,
+    '--ig-terminal-width': 8,
+    '--ig-gutter-width': 208,
+    '--ig-spine-width': 360,
+    '--ig-char-width': 7.8,
+    '--ig-label-char-width': 6,
+    '--ig-focus-ring': 2,
+  });
+
+  it('keeps every token that shipped before, at the value it shipped with', () => {
+    for (const [token, value] of Object.entries(SHIPPED)) {
+      const actual =
+        typeof value === 'number'
+          ? defaultTheme.metrics[token as MetricToken]
+          : defaultTheme.type[token as TypeToken];
+      assert.equal(actual, value, `${token} changed`);
+    }
+  });
+
+  it('accounts for every type and metric token as either shipped or expansion', () => {
+    // The other direction: a token that is in neither list is one nobody
+    // decided about, and this test is how it gets noticed.
+    const unaccounted = [...TYPE_TOKENS, ...METRIC_TOKENS, ...EFFECT_TOKENS].filter(
+      (token) => !(token in SHIPPED) && !EXPANSION.includes(token),
+    );
+    assert.deepEqual(unaccounted, []);
+  });
+
+  it('leaves the stylesheet reading none of the new tokens', () => {
+    // WHY THIS IS THE BYTE-IDENTITY PROOF and not a snapshot. A custom
+    // property changes nothing until something reads it, so a default host's
+    // rendering can only move if the stylesheet or the markup names a new
+    // token. Recomposing §16 against these tokens is the NEXT issue, and this
+    // assertion is what will fail first when it starts — deliberately.
+    const referenced = [...viewerStylesheet.matchAll(/var\((--[a-z0-9-]+)/g)].map(
+      (match) => match[1] as string,
+    );
+    assert.deepEqual(referenced.filter((token) => EXPANSION.includes(token)), []);
+  });
+
+  it('leaves the rendered markup naming none of them either', () => {
+    // The stylesheet is one of the two places a token can be read; the layout
+    // writes properties inline onto elements, which is the other.
+    for (const projection of ['linear', 'graph', 'tree'] as const) {
+      const { markup } = renderViewer(fixtureDocument, { projection });
+      for (const token of EXPANSION) {
+        assert.equal(markup.includes(token), false, `${token} reached the ${projection} markup`);
+      }
+    }
   });
 });

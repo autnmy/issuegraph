@@ -68,6 +68,7 @@ export { initialNavigationState, navigate, reconcile } from './navigation.ts';
 
 export type {
   ColorToken,
+  EffectToken,
   MetricToken,
   Theme,
   ThemeOverride,
@@ -75,6 +76,7 @@ export type {
 } from './theme.ts';
 export { resolveTheme,
   COLOR_TOKENS,
+  EFFECT_TOKENS,
   METRIC_TOKENS,
   THEME_TOKENS,
   TYPE_TOKENS,

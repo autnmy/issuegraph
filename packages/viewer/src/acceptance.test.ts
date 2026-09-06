@@ -177,6 +177,7 @@ describe('the public surface', () => {
       'CLUSTER_ONLY_BUDGET',
       'COLOR_TOKENS',
       'EDGE_TREATMENTS',
+      'EFFECT_TOKENS',
       'GRAPH_NODE_BUDGET',
       'KEY_ATTRIBUTE',
       'METRIC_TOKENS',
