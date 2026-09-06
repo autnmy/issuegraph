@@ -19,7 +19,9 @@
 import { DEFAULT_PRIORITY } from '@issuegraph/core';
 import type { AuditInput } from '@issuegraph/editor';
 import type { GraphDocument } from '@issuegraph/store';
+import type { IssueRef } from '@issuegraph/store';
 import type {
+  HostFacts,
   RankProvenance,
   ViewerDocument,
   ViewerExclusion,
@@ -28,6 +30,7 @@ import type {
   ViewerSlot,
 } from '@issuegraph/viewer';
 
+import type { IssueCaveats } from './host.ts';
 import type { ExplainedDocument, ExplainedRow, Hold } from './order.ts';
 
 /** The viewer's input plus the audit's, from one explained document. */
@@ -36,9 +39,18 @@ export interface Projection {
   readonly audit: AuditInput;
 }
 
-/** The demo's hold families, in the viewer's vocabulary. */
-function familyOf(hold: Hold): ViewerHold['family'] {
-  return hold.family === 'executor' ? 'tracker' : 'graph';
+/**
+ * The demo's hold, in the viewer's vocabulary.
+ *
+ * The executor's word — `claimed`, `parked`, `duplicate` — rides the tracker
+ * arm's `label`, which is the one place the union lets a label live: the
+ * design's footer names each runner hold by that word beside its sentence,
+ * and a graph hold has no word of its own to carry.
+ */
+function holdOf(hold: Hold): ViewerHold {
+  return hold.family === 'executor'
+    ? { family: 'tracker', reason: hold.detail, label: hold.label }
+    : { family: 'graph', reason: hold.detail };
 }
 
 /** A note that does not hold (`blocking: false`) is not a readiness failure. */
@@ -55,13 +67,19 @@ function provenanceOf(explained: ExplainedDocument, row: ExplainedRow): RankProv
   return { kind: 'declared-tier', priority: declared };
 }
 
-function issueOf(explained: ExplainedDocument, row: ExplainedRow): ViewerIssue {
+function issueOf(
+  explained: ExplainedDocument,
+  row: ExplainedRow,
+  caveats: ReadonlyMap<IssueRef, IssueCaveats>,
+): ViewerIssue {
   return {
     key: row.issue.ref,
     title: row.issue.title,
     open: row.issue.state === 'open',
     priority: row.issue.priority ?? DEFAULT_PRIORITY,
     provenance: provenanceOf(explained, row),
+    // The host's caveats about its own engine, from the scenario's table.
+    ...(caveats.get(row.issue.ref) ?? {}),
   };
 }
 
@@ -84,7 +102,10 @@ function isDuplicate(row: ExplainedRow): boolean {
  * nothing can start". `readyAfterRank` names one of those ready ranks, so the
  * placement rank it was expressed in is translated through the same table.
  */
-function slotsOf(explained: ExplainedDocument): {
+function slotsOf(
+  explained: ExplainedDocument,
+  running: ReadonlySet<IssueRef>,
+): {
   readonly slots: readonly ViewerSlot[];
   readonly excluded: readonly ViewerExclusion[];
 } {
@@ -92,6 +113,12 @@ function slotsOf(explained: ExplainedDocument): {
   const excluded: ViewerExclusion[] = [];
   for (const row of explained.rows) {
     if (row.issue.state !== 'open') continue;
+    // THE RUNNING ISSUE IS DRAWN ONCE, in the NOW row. The derivation holds it
+    // as an active claim — correctly, so its serialize group is excluded — and
+    // that hold would put a footer row under it too. The design draws the job
+    // above the order and the footer without it, and this host agrees: a row
+    // that says "working" beneath a row that says "now" is one fact twice.
+    if (running.has(row.issue.ref)) continue;
     if (isDuplicate(row)) {
       excluded.push({
         key: row.issue.ref,
@@ -127,7 +154,7 @@ function slotsOf(explained: ExplainedDocument): {
       : rows
           .flatMap((row) => row.holds)
           .filter(blocks)
-          .map((hold) => ({ family: familyOf(hold), reason: hold.detail }));
+          .map(holdOf);
     const readyAfter =
       lead.readyAfterRank === undefined ? null : (viewerRank.get(lead.readyAfterRank) ?? null);
     return [
@@ -160,14 +187,26 @@ function dedupe(holds: readonly ViewerHold[]): readonly ViewerHold[] {
   });
 }
 
-/** Project one explained document, and the landed document it explains, for the viewer and the audit. */
-export function projectDocument(explained: ExplainedDocument, landed: GraphDocument): Projection {
-  const { slots, excluded } = slotsOf(explained);
+/**
+ * Project one explained document, and the landed document it explains, for the
+ * viewer and the audit. `host` is what the runner knows and the graph does not
+ * (`host.ts`), and `caveats` what the host's engine knows about its own rows;
+ * absent, the viewer draws the pure-graph view.
+ */
+export function projectDocument(
+  explained: ExplainedDocument,
+  landed: GraphDocument,
+  host?: HostFacts,
+  caveats: ReadonlyMap<IssueRef, IssueCaveats> = new Map(),
+): Projection {
+  const running = new Set((host?.running ?? []).map((job) => job.key));
+  const { slots, excluded } = slotsOf(explained, running);
   return {
     viewer: {
-      issues: explained.rows.map((row) => issueOf(explained, row)),
+      issues: explained.rows.map((row) => issueOf(explained, row, caveats)),
       edges: landed.edges.map((edge) => ({ field: edge.kind, from: edge.from, to: edge.to })),
       order: { slots, excluded },
+      ...(host === undefined ? {} : { host }),
       // THE SAME ARRAY THE AUDIT READS BELOW. The viewer's cycle badge and the
       // audit's cycle finding are two renderings of one reader answer, so they
       // cannot disagree about a component while both are on one screen.

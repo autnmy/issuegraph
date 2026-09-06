@@ -151,8 +151,9 @@ reader does not have to infer it:
   pick-order query reaches it. This host has no ordered queries, so it is the
   host's own hold (`not eligible`) and sits in the footer group rather than
   the graph's left gutter.
-- `#499` is the frame's `now` row, "Review · 12m". The viewer has no `now`
-  station, so it is an active claim (`working`) in the footer beside `#533`.
+- `#499` is the frame's `now` row, "Review · 12m". It is an active claim in
+  the hold table (so the graph excludes it) and the scenario's `running` job, so
+  the viewer draws it in the NOW row above the order and the footer omits it.
 - `#488`'s `✓ verified` chip is not drawn: the store carries no evidence field.
 - The frame's "group of 3" on `#501` names only `#501` and `#503`. The third
   member, `#505`, is ranked below the drawn rows — the frame says "19 more

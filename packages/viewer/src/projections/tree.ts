@@ -13,7 +13,7 @@
 
 import type { NormalizedDocument } from '../document.ts';
 import { type ElementSpec, type SpecChild, element } from '../element.ts';
-import { edgeBadges, emptyState, identity, legend, provenanceLine } from '../parts.ts';
+import { caveatLines, edgeBadges, emptyState, hostHeader, identity, legend, provenanceLine } from '../parts.ts';
 import { type LateralNeighbours, type Scene, resolveFocusKey } from '../scene.ts';
 import type { SceneOptions } from './linear.ts';
 
@@ -163,6 +163,9 @@ function treeRow(
       issue === undefined ? null : identity(issue),
       edgeBadges(document, [key]),
       provenanceLine(issue?.provenance),
+      // EVERY ISSUE IS ITS OWN ITEM HERE, so each carries its own caveats — the
+      // one projection where a together partner's caveat has a row to sit on.
+      ...caveatLines(issue),
       outOfSet === undefined
         ? null
         : element('p', { class: 'ig-provenance' }, [
@@ -238,7 +241,7 @@ export function treeScene(document: NormalizedDocument, options: SceneOptions = 
   const root = element(
     'section',
     { class: 'ig-viewer ig-tree-view', 'data-projection': 'tree', 'aria-label': 'issue decomposition' },
-    [legend(), body],
+    [hostHeader(document), legend(), body],
   );
 
   // A tree's lateral axis is its nesting, which the vertical keys already walk,

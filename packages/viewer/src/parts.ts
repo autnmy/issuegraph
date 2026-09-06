@@ -20,6 +20,22 @@ import { type ElementSpec, element } from './element.ts';
 import { GROUP_ATTRIBUTE } from './scene.ts';
 import { EDGE_ORDER, treatmentFor } from './vocabulary.ts';
 
+/**
+ * The attribute a control the viewer publishes but does not wire carries. The
+ * same one `@issuegraph/editor` reads for its own controls, so a host that
+ * already listens for the editor's commands hears this one through the same
+ * listener.
+ */
+export const COMMAND_ATTRIBUTE = 'data-ig-command';
+
+/** A badge's inner pair — the glyph a reader can see and the word a reader can hear. */
+function glyphAndLabel(glyph: string, label: string): readonly ElementSpec[] {
+  return [
+    element('span', { class: 'ig-glyph', 'aria-hidden': 'true' }, [glyph]),
+    element('span', {}, [label]),
+  ];
+}
+
 /** How a readiness station is filled — the parallelism channel. */
 export type StationFill = 'filled' | 'hollow' | 'dashed';
 
@@ -111,6 +127,14 @@ export function provenanceLine(provenance: RankProvenance | undefined): ElementS
  * when absent: `data-code=""` would claim a cause the host did not state.
  */
 export function holdLine(hold: ViewerHold): ElementSpec {
+  // THE LABEL IS THE TRACKER ARM'S ALONE, and the union is what lets this read
+  // it without asking: a graph hold has no `label` to read. Drawn INSIDE the
+  // paragraph, so a labelled hold is still one row child and the slot grid's
+  // column rule holds without a second placement.
+  const label =
+    hold.family === 'tracker' && hold.label !== undefined && hold.label !== ''
+      ? element('span', { class: 'ig-badge', 'data-hold': hold.label }, [hold.label])
+      : null;
   return element(
     'p',
     {
@@ -119,8 +143,158 @@ export function holdLine(hold: ViewerHold): ElementSpec {
       'data-code': hold.code,
       'data-subject': hold.subject,
     },
-    [hold.reason],
+    [label, label === null ? hold.reason : ` ${hold.reason}`],
   );
+}
+
+/**
+ * The runner's own words for the holds a footer collects — `claimed · parked` —
+ * so the footer title can name them the way the design does. Empty when no
+ * hold carries a label, which keeps the title exactly as it was before labels
+ * existed.
+ */
+export function footerLabels(slots: readonly ViewerSlot[]): string {
+  const labels: string[] = [];
+  for (const slot of slots) {
+    for (const hold of slot.holds) {
+      if (hold.family !== 'tracker' || hold.label === undefined || hold.label === '') continue;
+      if (!labels.includes(hold.label)) labels.push(hold.label);
+    }
+  }
+  return labels.join(' · ');
+}
+
+/**
+ * The summary line and the freshness stamp — the host's numbers and the host's
+ * clock, printed verbatim.
+ *
+ * NOTHING HERE IS COUNTED. `counts` is the host's tally over the whole order
+ * (see `OrderCounts` for why a count over this document's slots would be a
+ * count over a window), and the stamp is text the host formatted. `null` when
+ * the host stated neither, so a document with no host facts draws no header.
+ */
+export function hostHeader(document: NormalizedDocument): ElementSpec | null {
+  const { concurrencyCap, counts, freshness } = document.host;
+  const pieces: string[] = [];
+  if (counts !== undefined) pieces.push(`${String(counts.ranked)} ranked`, `${String(counts.readyNow)} ready now`);
+  if (concurrencyCap !== undefined) pieces.push(`cap ${String(concurrencyCap)}`);
+  if (counts !== undefined) pieces.push(`${String(counts.held)} held`);
+  const summary = pieces.length === 0 ? null : element('p', { class: 'ig-summary' }, [pieces.join(' · ')]);
+
+  const stamp =
+    freshness === undefined
+      ? null
+      : element('p', { class: 'ig-freshness', 'data-stale': freshness.stale === true ? 'true' : 'false' }, [
+          'as of ',
+          element('span', { class: 'ig-id' }, [freshness.asOf]),
+          freshness.age === undefined || freshness.age === '' ? null : ` · ${freshness.age}`,
+          freshness.stale === true ? ' · stale' : null,
+          // A CONTROL THE VIEWER PUBLISHES AND DOES NOT WIRE. Refreshing a mirror
+          // is fetching, which this layer never does; the host that can listens
+          // for the command. A real button rather than a styled span, so the
+          // mount's own click and Enter handling leave it alone the way they
+          // leave a deep link alone.
+          freshness.refresh === undefined || freshness.refresh === ''
+            ? null
+            : element(
+                'button',
+                { class: 'ig-refresh', type: 'button', [COMMAND_ATTRIBUTE]: 'refresh' },
+                [freshness.refresh],
+              ),
+        ]);
+
+  if (summary === null && stamp === null) return null;
+  return element('header', { class: 'ig-header' }, [summary, stamp]);
+}
+
+/**
+ * The NOW rows: what the runner is working this moment, drawn above the order.
+ *
+ * A POINTER IDENTITY, NEVER A FOCUS ONE. The running issue may also hold a slot
+ * — a claimed row in the footer, say — and exactly one element per key carries
+ * `data-ig-key` or `focus()` lands on whichever the renderer emitted first. So
+ * the row announces itself through {@link GROUP_ATTRIBUTE}, the way an
+ * enclosure does: clickable and hoverable, resolving to the issue through the
+ * document, and absent from the focus index. The title and identity are the
+ * ISSUE'S, looked up here; only the phase and the elapsed time are the host's
+ * words, because only the host has the clock.
+ */
+export function nowRows(document: NormalizedDocument): ElementSpec | null {
+  if (document.host.running.length === 0) return null;
+  return element(
+    'ol',
+    { class: 'ig-now', 'aria-label': 'working now' },
+    document.host.running.map((job) => {
+      // Present by construction: `normalizeHost` dropped any job the document
+      // does not carry. The fallback keeps this total rather than trusting it.
+      const issue = document.byKey.get(job.key);
+      return element(
+        'li',
+        {
+          class: 'ig-now-row',
+          [GROUP_ATTRIBUTE]: job.key,
+          // The list already announces "working now"; the row says what and how long.
+          'aria-label': `${issue?.title ?? job.key} — ${job.phase} · ${job.elapsed}`,
+        },
+        [
+          element('span', { class: 'ig-now-mark', 'aria-hidden': 'true' }, ['now']),
+          element('span', { class: 'ig-title' }, [issue?.title ?? job.key]),
+          issue === undefined ? null : identity(issue),
+          element('span', { class: 'ig-now-phase' }, [`· ${job.phase} · ${job.elapsed}`]),
+        ],
+      );
+    }),
+  );
+}
+
+/**
+ * The two caveats a host can put on a row, each ONE row child so the slot grid
+ * places it like provenance.
+ *
+ * `preview-only`: the host's engine could not evaluate a pick-order query, and
+ * the note says what it fell back to. `signals disagree`: two ordering signals
+ * named different priorities, the host chose one, and the design's rule is
+ * that the loser stays visible — struck through, never hidden — because a panel
+ * whose job is explaining the order cannot silently pick a winner.
+ */
+export function caveatLines(issue: ViewerIssue | undefined): ElementSpec[] {
+  if (issue === undefined) return [];
+  const lines: ElementSpec[] = [];
+  if (issue.previewOnly !== undefined) {
+    lines.push(
+      element('p', { class: 'ig-caveat', 'data-caveat': 'preview-only' }, [
+        element('span', { class: 'ig-badge', 'data-caveat': 'preview-only' }, glyphAndLabel('◐', 'preview-only')),
+        ` ${issue.previewOnly.note}`,
+      ]),
+    );
+  }
+  if (issue.disagreement !== undefined) {
+    const { used, ignored } = issue.disagreement;
+    lines.push(
+      element('p', { class: 'ig-caveat', 'data-caveat': 'disagree' }, [
+        element('span', { class: 'ig-badge', 'data-caveat': 'disagree' }, glyphAndLabel('◆', 'signals disagree')),
+        ` ranked by ${used} · ${ignored.carrier} declares `,
+        element('s', { class: 'ig-strike' }, [ignored.value]),
+      ]),
+    );
+  }
+  return lines;
+}
+
+/**
+ * The caveats as one sentence, for a row that has no room for a block — the
+ * graph rail positions its rows onto layout boxes, so it carries text on the
+ * label and the tooltip instead (the same choice it makes for holds).
+ */
+export function caveatText(issue: ViewerIssue | undefined): string {
+  if (issue === undefined) return '';
+  const parts: string[] = [];
+  if (issue.previewOnly !== undefined) parts.push(`preview-only: ${issue.previewOnly.note}`);
+  if (issue.disagreement !== undefined) {
+    const { used, ignored } = issue.disagreement;
+    parts.push(`signals disagree: ranked by ${used}, ${ignored.carrier} declares ${ignored.value}`);
+  }
+  return parts.join(' · ');
 }
 
 /**
@@ -162,10 +336,7 @@ function edgeBadge(field: EdgeField, edgeId: string, detail: string): ElementSpe
       title: `${treatment.label} ${detail}`,
       'aria-label': `${treatment.label} ${detail}`,
     },
-    [
-      element('span', { class: 'ig-glyph', 'aria-hidden': 'true' }, [treatment.glyph]),
-      element('span', {}, [detail]),
-    ],
+    glyphAndLabel(treatment.glyph, detail),
   );
 }
 
@@ -288,10 +459,7 @@ export function legend(): ElementSpec {
     element('legend', { class: 'ig-legend-caption' }, ['relationships']),
     ...EDGE_ORDER.map((field) => {
       const treatment = treatmentFor(field);
-      return element('span', { class: 'ig-badge', 'data-edge': field }, [
-        element('span', { class: 'ig-glyph', 'aria-hidden': 'true' }, [treatment.glyph]),
-        element('span', {}, [treatment.label]),
-      ]);
+      return element('span', { class: 'ig-badge', 'data-edge': field }, glyphAndLabel(treatment.glyph, treatment.label));
     }),
   ]);
 }

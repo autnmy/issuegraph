@@ -41,6 +41,7 @@
 import type { Priority } from '@issuegraph/core';
 import type { EdgeKind, GraphDocument, IssueRef, StoredEdge, StoredIssue } from '@issuegraph/store';
 import { makeEdge } from '@issuegraph/store';
+import type { IssueCaveats, RunningWork } from './host.ts';
 import { type BaseRanking, type ExecutorHold, rankedFirst } from './order.ts';
 
 /**
@@ -52,9 +53,10 @@ import { type BaseRanking, type ExecutorHold, rankedFirst } from './order.ts';
  * gap is named in `demo/README.md` rather than papered over here.
  */
 const compIssues: readonly StoredIssue[] = [
-  // The frame's `now` row: a worker has it, "Review · 12m". The viewer has no
-  // "now" station, so it is an ACTIVE claim and lands in the footer group. No
-  // priority, because the frame draws none on it — nor on any footer row.
+  // The frame's `now` row: a worker has it, "Review · 12m". An ACTIVE claim in
+  // the hold table (so the graph excludes it) AND the scenario's running job
+  // (so the viewer draws it above the order, not in the footer). No priority,
+  // because the frame draws none on it — nor on any footer row.
   { ref: '499', title: 'Fix flaky auth integration test', state: 'open' },
   // Rank 1, `P3 → 0`: declared P3, promoted by the P0 it blocks. `✓ verified`
   // in the frame; the store carries no evidence field, so that chip is not
@@ -411,6 +413,10 @@ export interface Scenario {
   readonly document: () => GraphDocument;
   readonly holds: readonly ExecutorHold[];
   readonly ranking: BaseRanking;
+  /** The frame's `now` row — the runner's job, a host fact the graph cannot derive. */
+  readonly running?: RunningWork;
+  /** What the host's engine knows about its own rows: a fallback ranking, two signals disagreeing. */
+  readonly caveats: ReadonlyMap<IssueRef, IssueCaveats>;
 }
 
 /**
@@ -426,17 +432,53 @@ const compRanking: BaseRanking = rankedFirst(COMP_ORDER);
 /** What the page lands on. The comp, by decision: the frames are the fidelity reference, so they are the front door. */
 export const DEFAULT_SCENARIO: ScenarioName = 'comp';
 
+/** The frame's `now` row: #499, "Review · 12m". */
+const compRunning: RunningWork = { ref: '499', phase: 'Review', runningForMs: 12 * 60_000 };
+
+/**
+ * The frame's two engine caveats, in the frame's own words.
+ *
+ * #487 is the row the frame ranks by the unlabeled tail because its ordered
+ * query cannot be evaluated locally (`◐ preview-only`). #501 is the §16h
+ * reconciliation case: a mapped `label:P1` and a frontmatter `priority: 3`
+ * that disagree, the label winning and the loser struck — the store carries
+ * one priority, so the disagreement is stated here as the engine would.
+ */
+const compCaveats: ReadonlyMap<IssueRef, IssueCaveats> = new Map<IssueRef, IssueCaveats>([
+  [
+    '487',
+    {
+      previewOnly: {
+        note: "query 5 (involves:@me) can't be evaluated locally yet — ranked by the unlabeled tail instead",
+      },
+    },
+  ],
+  [
+    '501',
+    {
+      disagreement: {
+        used: 'label:P1 (your mapping)',
+        ignored: { carrier: 'frontmatter', value: 'priority: 3' },
+      },
+    },
+  ],
+]);
+
 export const SCENARIOS: Readonly<Record<ScenarioName, Scenario>> = Object.freeze({
   comp: {
     label: 'the §16 comp',
     document: compSeed,
     holds: compHolds(),
     ranking: compRanking,
+    running: compRunning,
+    caveats: compCaveats,
   },
   backlog: {
     label: 'the big backlog',
     document: backlogSeed,
     holds: compHolds(),
     ranking: compRanking,
+    running: compRunning,
+    caveats: compCaveats,
   },
 });

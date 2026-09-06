@@ -401,7 +401,24 @@ export function mountViewer(
     // narrows its own adoption to `KEY_ATTRIBUTE`. Selecting a connector must
     // leave the tab stop where the reader left it, so the focus arm asks the
     // document rather than reusing `resolved`.
-    const focusable = resolved !== null && normalized.byKey.has(resolved) ? resolved : null;
+    // AND A NAVIGABLE ONE. A NOW row names an issue the document carries, so
+    // `byKey` admits it — but a running issue that holds no slot has no row in
+    // `navigable`, and adopting it as the tab stop sent `reconcile` to the
+    // FIRST navigable key: a click on the NOW row selected the running issue
+    // and moved keyboard focus to an unrelated row at the top of the order.
+    // The tab stop stays where the reader left it, as it does for a connector.
+    // ASKED OF THE STATION THAT REPRESENTS THE KEY, because a together partner
+    // is a legitimate subject the projection draws under its lead's row: the
+    // partner is in no order, the lead is, and `reconcile` will canonicalize
+    // the focus to the lead — so it is the lead's membership that decides.
+    const station = resolved === null ? null : (currentScene?.stationOf.get(resolved) ?? resolved);
+    const focusable =
+      resolved !== null &&
+      station !== null &&
+      normalized.byKey.has(resolved) &&
+      (currentScene?.navigable.includes(station) ?? false)
+        ? resolved
+        : null;
     state = { ...state, selected: resolved, focused: focusable ?? state.focused };
     // SILENCED, because this function reports the result itself once the draw
     // has settled it. Letting the draw announce too would fire `onSelect` twice
@@ -424,7 +441,14 @@ export function mountViewer(
     // documents: selection "fires onSelect exactly as a click does", and a
     // click moves focus. `:focus-visible` is what keeps the ring off a pointer
     // user, so this costs a mouse reader nothing.
-    if (state.focused !== null) keyed.get(state.focused)?.focus?.();
+    // ONLY WHEN THE SELECTION NAMED A FOCUSABLE SUBJECT. `state.focused` is a
+    // logical tab stop and is never null after the first draw — `reconcile`
+    // seeds it with the first navigable row before anything has DOM focus. So
+    // moving DOM focus to it on a decoration or NOW-row click, where the
+    // selection itself could take no focus, sent focus to an unrelated first
+    // row on the reader's very first click. A pointer on a mark that cannot
+    // take focus moves the selection and nothing else.
+    if (focusable !== null && state.focused !== null) keyed.get(state.focused)?.focus?.();
     // WHAT THE STATE ACTUALLY HOLDS, not what was asked for. `draw()` reconciles
     // the selection against the scene, which canonicalizes a together unit's
     // partner to the station that represents it — so reporting `resolved` here

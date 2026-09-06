@@ -18,7 +18,8 @@
  * same attribute, so one delegated `click` on the sandbox root reads them:
  * the commands the mount's reducer knows (`retry`, `discard`, `dismiss-change`
  * — the writes log's) are handed to it through `handle.dispatch`, and the ones
- * it does not (`theme`, `canvas`, `scenario`, `reset`) are the sandbox's own.
+ * it does not (`theme`, `canvas`, `scenario`, `reset`, and the viewer's own
+ * `refresh`) are the sandbox's own.
  *
  * ## `textContent`, everywhere
  *
@@ -41,6 +42,7 @@ import type { EdgeKind, Store, StoreSnapshot, WriteRecord } from '@issuegraph/st
 import { type Theme, defaultTheme, extendTheme } from '@issuegraph/viewer';
 
 import { projectDocument } from './document.ts';
+import { hostFacts, runningSince } from './host.ts';
 import { explainDocument } from './order.ts';
 import { DEFAULT_SCENARIO, SCENARIOS, SCENARIO_NAMES, type Scenario, type ScenarioName } from './seed.ts';
 import type { DemoSource, NextOutcome } from './source.ts';
@@ -126,6 +128,16 @@ const STATE_LABEL: Readonly<Record<WriteRecord['state'], string>> = {
 /** The commands the mount's reducer owns that the writes log publishes outside the mount. */
 const FORWARDED: ReadonlySet<string> = new Set(['retry', 'discard', 'dismiss-change']);
 
+/**
+ * Commands published INSIDE the mounted workspace that are the host's to act
+ * on. The viewer draws the freshness stamp's refresh control and wires nothing
+ * to it — refreshing a mirror is fetching, which the packages never do — and
+ * the mount's reducer answers a command it does not know by changing nothing.
+ * So the click reaches this listener, and this set is what admits it past the
+ * "inside the mount, the mount owns it" rule below.
+ */
+export const HOST_COMMANDS_FROM_WORKSPACE: ReadonlySet<string> = new Set(['refresh']);
+
 const OUTCOMES: ReadonlySet<string> = new Set(['apply', 'reject', 'conflict']);
 
 function isOutcome(value: string): value is NextOutcome {
@@ -184,10 +196,27 @@ export interface SandboxHandle {
  * an edit that did not land. The mount adds the unsettled edges to the canvas
  * itself, from the store's own projection.
  */
-function projectFor(scenario: Scenario): (snapshot: StoreSnapshot) => WorkspaceProjection {
+/** The moments the host facts are read against: the last mirror read, the clock, and the page's mount. */
+export interface HostMoments {
+  readonly observedAt: () => Date;
+  readonly now: () => Date;
+  readonly mountedAt: Date;
+}
+
+function projectFor(scenario: Scenario, moments: HostMoments): (snapshot: StoreSnapshot) => WorkspaceProjection {
   return (snapshot) => {
     const landed = { issues: snapshot.issues, edges: snapshot.landed };
-    return projectDocument(explainDocument(landed, scenario.holds, scenario.ranking), landed);
+    const explained = explainDocument(landed, scenario.holds, scenario.ranking);
+    // THE HOST FACTS, from the same explained order the slots come from, so the
+    // header's tally and the rows beneath it are one derivation. The running
+    // job is the scenario's; its start is anchored to the mount, once.
+    const host = hostFacts({
+      rows: explained.rows,
+      observedAt: moments.observedAt(),
+      now: moments.now(),
+      running: scenario.running === undefined ? undefined : runningSince(scenario.running, moments.mountedAt),
+    });
+    return projectDocument(explained, landed, host, scenario.caveats);
   };
 }
 
@@ -222,11 +251,38 @@ function describe(record: WriteRecord): string {
 }
 
 /** Mount the sandbox. `boot` builds a fresh store and source over a scenario, and is called again on reset and on a scenario change. */
+export interface SandboxOptions {
+  /** The clock the host facts read. The page passes the real one; a test passes a fixed one. */
+  readonly clock?: () => Date;
+  /** How often the clock-derived facts are redrawn. Defaults to {@link CLOCK_TICK_MS}. */
+  readonly tickMs?: number;
+}
+
+/**
+ * How often the page redraws for the clock alone.
+ *
+ * The elapsed time on the NOW row, the stamp's age and the `stale` threshold
+ * are all functions of `now`, and `now` is read only when a projection runs —
+ * so a page left open with nothing happening froze at its first values and
+ * never went stale. Once a minute is the coarsest tick that keeps a
+ * minute-resolution stamp honest.
+ */
+export const CLOCK_TICK_MS = 60_000;
+
 export function mountSandbox(
   elements: SandboxElements,
   boot: (scenario: Scenario, onChange: () => void) => Live,
+  options: SandboxOptions = {},
 ): SandboxHandle {
   const { root, workspace, writes, versions, outcome } = elements;
+  const clock = options.clock ?? ((): Date => new Date());
+  const tickMs = options.tickMs ?? CLOCK_TICK_MS;
+  // WHEN THE MIRROR WAS LAST READ — the `as of` stamp. Set when the store
+  // hydrates and again on every refresh, which is the only two times this
+  // trackerless demo has anything that reads as a mirror read.
+  let observedAt: Date = clock();
+  const mountedAt: Date = observedAt;
+  const moments: HostMoments = { observedAt: () => observedAt, now: clock, mountedAt };
 
   let theme: ThemeName = 'default';
   let canvas: CanvasMode = 'neighbourhood';
@@ -309,12 +365,42 @@ export function mountSandbox(
     unsubscribe = live.store.subscribe(schedule);
     handle = mountWorkspace(workspace, {
       store: live.store,
-      project: projectFor(loaded),
+      project: projectFor(loaded, moments),
       words: WORKSPACE_WORDS,
       theme: themeFor(theme),
       canvas,
     });
-    void live.store.hydrate().then(schedule);
+    // ONE RENDER, once the store has answered: `read` schedules it.
+    void read(true);
+  };
+
+  /**
+   * Read the mirror: load the store and stamp the read.
+   *
+   * THE STAMP HAS TO REACH THE WORKSPACE, and the store's own notification
+   * does not carry it: the store publishes to its subscribers synchronously,
+   * INSIDE the load, so the mount has already projected — with the OLD
+   * `observedAt` — by the time the await returns. Re-stamping and redrawing
+   * only the chrome left the drawn `as of` one read behind, every time. The
+   * mount's `update()` re-runs the projection with the new stamp.
+   *
+   * THREE THINGS A STAMP MUST NOT CLAIM. A read that FAILED is not a read: the
+   * store resolves either way and says why in `hydrationError`, so the stamp
+   * moves only when it is undefined. A completion from a store the sandbox has
+   * since replaced (reset, scenario change) is about a document no longer on
+   * screen, so it stamps nothing. And the FIRST load is `hydrate()` while every
+   * later one is `rehydrate()`, which keeps the last good document and the
+   * store ready when the source refuses — `hydrate()` again would fail it.
+   */
+  const read = async (initial: boolean): Promise<void> => {
+    const store = live.store;
+    const owner = handle;
+    await (initial ? store.hydrate() : store.rehydrate());
+    if (store !== live.store || owner !== handle) return;
+    if (store.getSnapshot().hydrationError === undefined) {
+      observedAt = clock();
+      handle?.update();
+    }
     schedule();
   };
 
@@ -323,10 +409,12 @@ export function mountSandbox(
   const onClick = (event: MouseEvent): void => {
     const target = event.target instanceof Element ? event.target : null;
     const control = target?.closest<HTMLElement>('[data-ig-command]') ?? null;
-    // Inside the mounted element the mount owns every command; this listener
-    // reads only the chrome around it.
-    if (control === null || !root.contains(control) || workspace.contains(control)) return;
+    if (control === null || !root.contains(control)) return;
     const name = control.getAttribute('data-ig-command') ?? '';
+    // Inside the mounted element the mount owns every command; this listener
+    // reads only the chrome around it — and the few commands the packages
+    // publish for the HOST to act on (`HOST_COMMANDS_FROM_WORKSPACE`).
+    if (workspace.contains(control) && !HOST_COMMANDS_FROM_WORKSPACE.has(name)) return;
     const value = control.getAttribute('data-ig-value');
     if (handle === null) return;
     if (FORWARDED.has(name)) {
@@ -357,6 +445,9 @@ export function mountSandbox(
       case 'reset':
         start();
         return;
+      case 'refresh':
+        void read(false);
+        return;
       default:
         return;
     }
@@ -369,6 +460,12 @@ export function mountSandbox(
 
   root.addEventListener('click', onClick);
   root.addEventListener('change', onChange);
+  // THE CLOCK MOVES WHEN NOTHING ELSE DOES. `update()` re-runs the projection,
+  // which reads `now`; cleared in `destroy()`, so a torn-down sandbox draws
+  // nothing and holds no timer.
+  const ticking = setInterval(() => {
+    if (!destroyed) handle?.update();
+  }, tickMs);
 
   versions.replaceChildren(
     ...STAMPED_PACKAGES.map((name) =>
@@ -404,6 +501,7 @@ export function mountSandbox(
     },
     destroy: () => {
       destroyed = true;
+      clearInterval(ticking);
       unsubscribe();
       handle?.destroy();
       root.removeEventListener('click', onClick);

@@ -5,7 +5,7 @@ Render an [Issuegraph](https://github.com/autnmy/issuegraph) document as a **wor
 The innermost UI layer, and the whole of its contract:
 
 ```
-in     { issues, edges, order, cycles } + a projection choice
+in     { issues, edges, order, cycles, host? } + a projection choice
 out    onSelect, onHover
 never  fetching, mutation, auth, persistence, or a host's vocabulary
 ```
@@ -60,6 +60,32 @@ const document = {
 `normalizeDocument` never throws on a document of the declared shape. A hand-built document is untrusted input, so a dangling edge is dropped with a diagnostic rather than taking the render down. A missing field is not a document: `order` absent has always thrown, and `cycles` absent throws the same way — a plain-JavaScript host migrating from `0.1.x` adds the field.
 
 **A deep link is checked, not just escaped.** `url` is the one field that becomes an executable surface in the DOM, so only `http:`, `https:`, `mailto:` and relative values are linked — a `javascript:` or `data:` value is dropped with a diagnostic. Escaping the attribute would not have stopped it.
+
+## The host-facts port
+
+Roughly half of what the design draws is not derivable from the graph. The format excludes run state on purpose (SPEC §2, §6.8), so who is working what, how many may run at once, and how fresh the mirror is are facts only the **host** holds. `ViewerDocument.host` is the typed way in, and every field of it is optional: **a host that supplies nothing renders exactly the pure-graph view** — pinned by a test that compares the markup byte for byte.
+
+| what the design shows | where it enters | what the viewer does |
+|---|---|---|
+| `6 ranked · 4 ready now · cap 2 · 4 held` | `host.counts` and `host.concurrencyCap` | prints the host's numbers in a summary line; renders nothing when both are absent |
+| `now · <title> · Review · 12m` | `host.running[]` — `{ key, phase, elapsed }` | one NOW row per job above the order (linear) and above the stage (graph), from the issue's own title and identity |
+| `as of 14:32 · 2m ago` · `stale` · refresh | `host.freshness` — `{ asOf, age?, stale?, refresh? }` | the stamp verbatim, `data-stale`, and a `button[data-ig-command="refresh"]` only when a label is supplied |
+| `claimed` · `parked` in the footer | `TrackerHold.label` on a slot's hold | a chip before the hold's sentence, and the words in the footer title |
+| `matched ordered query 1 · label:P0` | `ViewerIssue.provenance` (`matched-query`) | already shipped |
+| `◐ preview-only` | `ViewerIssue.previewOnly` — `{ note }` | a badge and the host's note, one line under provenance |
+| `◆ signals disagree` | `ViewerIssue.disagreement` — `{ used, ignored: { carrier, value } }` | a badge and `ranked by … · … declares ~~value~~`, only the losing value struck |
+| `owner/repo#N ↗` | `ViewerIssue.url` | already shipped |
+| write pending / failed / conflict | `@issuegraph/editor`'s `EdgeOverlay` | the editor's, drawn as overlays; the viewer needs no edit awareness |
+
+**The counts are the host's numbers, and the viewer counts nothing.** The document this layer holds may be a window (the editor's rail slices the slots) or a slice (a host showing the next twenty-five), and a count over its slots would state the reader's scroll position as a fact about the order. The host has the whole order; it counts. For the same reason nothing here is a viewer constant — no cap, no clock, no repository name — and every string the host supplies is printed as the host wrote it.
+
+**The two hold families are distinct types.** `ViewerHold` is `GraphHold | TrackerHold`, discriminated on `family`. A graph hold — an open `blocked-by`, a serialize peer being worked — renders inline at its would-be rank; a tracker hold — claimed, parked — renders in the footer. Only the tracker arm carries `label`, so a document cannot label a graph hold: the family is the whole of what it is. A `{ family: 'tracker', reason }` written before the label existed still type-checks.
+
+**The NOW row is a pointer identity, never a focus one.** The running issue may also hold a slot, and exactly one element per key carries `data-ig-key`. So the row announces itself through `data-ig-group`, like the `together-with` enclosure does: a click selects the issue and `onSelect` fires with its key, a hover reports it, and the keyboard order is untouched. A running job whose key the document does not carry is dropped with a diagnostic, and a running issue is never counted as isolated.
+
+**The refresh control is published, not wired.** Refreshing a mirror is fetching, which this layer never does. The button carries `data-ig-command="refresh"` — the same attribute `@issuegraph/editor` reads for its own controls, whose reducer answers a command it does not know by changing nothing — so a host that already listens for the editor's commands hears this one through the same listener. The demo does exactly that.
+
+`normalizeDocument` validates the port the way it validates everything else: a cap or a count that is not a non-negative integer is dropped (the counts whole), a running key the document does not carry or names twice is dropped, and a freshness with an empty `asOf` is dropped whole — each with one diagnostic.
 
 ## The three projections
 

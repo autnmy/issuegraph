@@ -16,7 +16,7 @@ import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 
 import type { GraphDocument, Mutation, StoreSnapshot } from '@issuegraph/store';
-import { createScriptedSource, createStore, makeEdge } from '@issuegraph/store';
+import { type OrderDeriver, createScriptedSource, createStore, makeEdge } from '@issuegraph/store';
 import { THEME_TOKENS } from '@issuegraph/viewer';
 import { JSDOM } from 'jsdom';
 
@@ -105,19 +105,59 @@ function applyAny(document: GraphDocument, mutation: Mutation): GraphDocument {
 }
 
 /** One page, one store, one mount — rebuilt per test so nothing leaks between them. */
-async function mounted(seed: GraphDocument = SEED, options: { railCount?: number } = {}) {
+/** The harness deriver: document order, everything ready. */
+const flatDeriver: OrderDeriver = (document) =>
+  document.issues.map((issue, rank) => ({ ref: issue.ref, rank, ready: true, holdReasons: [] }));
+
+/**
+ * A deriver whose order MOVES with the edges: an issue with an open blocker
+ * sorts after every unblocked one and is held. The rank pin needs an order a
+ * landed edge changes, or it could not tell a pending edge apart from one that
+ * landed.
+ */
+const blockingDeriver: OrderDeriver = (document) => {
+  const blocked = new Set(document.edges.filter((edge) => edge.kind === 'blocked-by').map((edge) => edge.from));
+  const byRef = (a: { ref: string }, b: { ref: string }): number => a.ref.localeCompare(b.ref);
+  const free = document.issues.filter((issue) => !blocked.has(issue.ref)).sort(byRef);
+  const held = document.issues.filter((issue) => blocked.has(issue.ref)).sort(byRef);
+  return [...free, ...held].map((issue, rank) => ({
+    ref: issue.ref,
+    rank,
+    ready: !blocked.has(issue.ref),
+    holdReasons: blocked.has(issue.ref) ? ['blocked'] : [],
+  }));
+};
+
+/** The harness projection plus every host fact, so the workspace has a header to draw once. */
+function hostedProject(snapshot: StoreSnapshot): WorkspaceProjection {
+  const base = project(snapshot);
+  return {
+    ...base,
+    viewer: {
+      ...base.viewer,
+      host: {
+        concurrencyCap: 2,
+        counts: { ranked: 4, readyNow: 4, held: 0 },
+        running: [{ key: '2', phase: 'Review', elapsed: '12m' }],
+        freshness: { asOf: '14:32', age: '2m ago', refresh: 'refresh' },
+      },
+    },
+  };
+}
+
+async function mounted(
+  seed: GraphDocument = SEED,
+  options: { railCount?: number; derive?: OrderDeriver; project?: (snapshot: StoreSnapshot) => WorkspaceProjection } = {},
+) {
   const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>');
   const win = dom.window;
   const element = win.document.getElementById('host');
   assert.ok(element !== null);
   const source = createScriptedSource(seed, applyAny);
-  const store = createStore({
-    source,
-    derive: (document) =>
-      document.issues.map((issue, rank) => ({ ref: issue.ref, rank, ready: true, holdReasons: [] })),
-  });
+  const { derive = flatDeriver, project: projection = project, ...mountOptions } = options;
+  const store = createStore({ source, derive });
   await store.hydrate();
-  const handle = mountWorkspace(element, { store, project, words: WORDS, ...options });
+  const handle = mountWorkspace(element, { store, project: projection, words: WORDS, ...mountOptions });
   const click = (node: Element): void => {
     node.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
   };
@@ -617,5 +657,71 @@ describe('the mount stylesheet carries structure, never a value', () => {
 
   it('declares no animation and no transition', () => {
     assert.equal(/\banimation\b|\btransition\b|@keyframes/.test(css), false);
+  });
+});
+
+describe('a pending write cannot change a rank', () => {
+  it('draws the same ranks before, during and after a write the source has not answered', async () => {
+    // OPTIMISTIC RENDERING, NEVER OPTIMISTIC RE-ORDERING. The store already
+    // pins that `order.status` is `held` while an edit is in flight
+    // (`packages/store/src/acceptance.test.ts`); this pins the half a reader
+    // sees — the rail's rank column — because the mount adds an unsettled edge
+    // to the drawn document's EDGES and never to its ORDER, and a fact about
+    // the drawn document is proven on the drawn document.
+    // A DERIVER THE EDGE MOVES, or the pin could not fail: with the harness's
+    // flat deriver every write lands on the same order, and a mount that folded
+    // pending edges into the drawn order would have passed.
+    const page = await mounted(SEED, { derive: blockingDeriver });
+    try {
+      const drawn = (): (string | null)[][] =>
+        page.rows().map((row) => [row.getAttribute('data-ig-key'), row.querySelector('.ig-rank')?.textContent ?? null]);
+      // #1 is blocked by #2 in the seed, so it sorts last and is held.
+      const before = drawn();
+      assert.deepEqual(before, [['2', '1'], ['3', '2'], ['4', '3'], ['1', '4']]);
+
+      void page.store.propose({ op: 'create', kind: 'blocked-by', from: '2', to: '3' });
+      await page.source.whenPending();
+      await flush();
+      assert.equal(page.element.querySelector('.ig-mount')?.getAttribute('data-order'), 'held');
+      assert.deepEqual(drawn(), before, 'a pending write moved a rank');
+
+      page.source.settleNext('applied');
+      await flush();
+      // LANDED, THE ORDER MOVES — #2 is now blocked too and sorts after #3 and
+      // #4. The move happens here and only here: when the store re-derived,
+      // not when the edge was drawn.
+      assert.deepEqual(drawn(), [['3', '1'], ['4', '2'], ['1', '3'], ['2', '4']]);
+      assert.equal(page.element.querySelector('.ig-mount')?.getAttribute('data-order'), 'settled');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+});
+
+describe('the host facts are drawn once per workspace', () => {
+  it('draws the header, the NOW list and the refresh control in the rail only, in both canvas modes', async () => {
+    // Every host fact is whole-order and the rail is the order surface. The
+    // graph canvas already drops `host` through the ladder's focus; the tree
+    // canvas rendered the whole hosted document and drew a second header and
+    // a second refresh control beside the rail's.
+    const page = await mounted(SEED, { project: hostedProject });
+    try {
+      const count = (selector: string): number => page.element.querySelectorAll(selector).length;
+      assert.equal(count('.ig-header'), 1);
+      assert.equal(count('[data-ig-command="refresh"]'), 1);
+      assert.equal(count('.ig-now'), 1);
+      assert.ok(page.zone('rail')?.querySelector('.ig-header') !== null, 'the header is not in the rail');
+
+      page.handle.update({ canvas: 'tree' });
+      await flush();
+      assert.equal(count('.ig-header'), 1, 'the tree canvas drew a second header');
+      assert.equal(count('[data-ig-command="refresh"]'), 1, 'the tree canvas drew a second refresh control');
+      assert.equal(count('.ig-now'), 1);
+      assert.equal(page.zone('canvas')?.querySelector('.ig-header'), null);
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
   });
 });
