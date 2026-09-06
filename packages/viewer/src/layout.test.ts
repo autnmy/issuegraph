@@ -129,6 +129,37 @@ describe('layoutGraph', () => {
     assert.deepEqual([...layout.footer], []);
   });
 
+  it('leaves a running job that already holds a slot where its slot puts it', () => {
+    // A SPINE-ONLY TEST WAS NOT ENOUGH, and the case it missed is the ordinary
+    // one: a job is running BECAUSE a runner claimed it, so its slot is
+    // tracker-held and therefore off the spine by construction. It then took a
+    // NOW card of its own AND kept its footer row, and the document carried two
+    // elements for one key — the one-element-per-key rule `mount` indexes on.
+    const { document } = normalizeDocument({
+      issues: [{ key: 'a', title: 'Claimed and running', open: true, priority: 2 }],
+      edges: [],
+      order: {
+        slots: [
+          {
+            rank: null,
+            lead: 'a',
+            members: ['a'],
+            ready: false,
+            holds: [{ family: 'tracker', reason: 'claimed by this run', label: 'claimed' }],
+          },
+        ],
+        excluded: [],
+      },
+      cycles: [],
+      host: { running: [{ key: 'a', phase: 'Review', elapsed: '3m' }] },
+    });
+    const layout = layoutGraph(document, defaultTheme);
+
+    assert.deepEqual([...layout.spineOrder], [], 'the claimed job took a station of its own');
+    assert.equal(layout.nodes.has('a'), false);
+    assert.deepEqual([...layout.footer], ['a']);
+  });
+
   it('drops the gutters and the arcs in the column, keeping the spine identical', () => {
     // §16b: at a settings column's width the arcs and both gutters cannot be
     // drawn legibly, so in-column is a spine-only preview with an expand

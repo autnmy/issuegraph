@@ -123,9 +123,9 @@ function metric(theme: Theme, token: MetricToken): number {
   // A MISSING METRIC DOES NOT FAIL LOUDLY, which is what makes it worth a line:
   // it reads `undefined`, arithmetic on it yields `NaN`, and every comparison
   // against `NaN` is false — so a fitting check silently passes everything.
-  // Measured when `--ig-label-char-width` was added: a 0.1.0 theme made
-  // `fitLabel` return a 60-character title with an ellipsis APPENDED, which is
-  // worse overflow than the defect that token was added to fix.
+  // Measured when `--ig-label-char-width` was added: a 0.1.0 theme made every
+  // measured width `NaN`, so a card's height came out `NaN` and every station
+  // in the spine stacked at the same y.
   return theme.metrics[token] ?? defaultTheme.metrics[token];
 }
 
@@ -353,8 +353,8 @@ function assignColumns(document: NormalizedDocument): {
  * module is pure and deterministic: the same document must produce the same
  * coordinates on a server with no fonts as in a browser with them.
  *
- * IT ROUNDS UP, for the reason {@link fitLabel} gives about its own metric. A
- * card that reserves slightly too much leaves a gap; one that reserves too
+ * IT ROUNDS UP, for the reason {@link measureLabel} gives about its own metric.
+ * A card that reserves slightly too much leaves a gap; one that reserves too
  * little is overlapped by the row beneath it, and the row beneath it is the
  * next rank.
  */
@@ -477,11 +477,20 @@ export function layoutGraph(
   const { spine, left, right, footer, slotMembers } = assignColumns(document);
 
   // THE RUNNING JOBS LEAD THE SPINE. `normalizeHost` has already dropped any
-  // job this document does not carry, and a job that also holds a slot keeps
-  // its slot — the station it already has is the one the sequence reads.
-  const nowKeys = document.host.running
-    .map((job) => job.key)
-    .filter((key) => !spine.includes(key));
+  // job this document does not carry, and a job that already holds a SLOT keeps
+  // it — the station it has is the one the sequence reads.
+  //
+  // TESTED AGAINST EVERY SLOT, NOT AGAINST THE SPINE. A runner-held slot is off
+  // the spine by construction, so a running job that was ALSO claimed — which
+  // is the ordinary way a job comes to be running — passed a spine-only test,
+  // took a card of its own AND kept its footer row, and the document then
+  // carried two elements for one key. That is precisely the one-element-per-key
+  // rule `mount` indexes on: `focus()` would land on whichever was emitted
+  // first, and a click on the other would select a key the keyboard could not
+  // reach.
+  const inASlot = new Set<string>();
+  for (const slot of document.order.slots) for (const member of slot.members) inASlot.add(member);
+  const nowKeys = document.host.running.map((job) => job.key).filter((key) => !inASlot.has(key));
 
   const leftX = pad;
   // THE STATION COLUMN SITS BETWEEN THE CHANNEL AND THE CARDS, and the spine

@@ -486,6 +486,29 @@ describe('the graph projection', () => {
   it('draws a short title exactly as it is', () => {
     assert.match(renderMarkup(scene().root), /<span class="ig-title">Rework the retry budget</);
   });
+  it('draws every key the column could not, so nothing is published unreachable', () => {
+    // THE CLASS THIS PROJECTION HAS RE-FOUND THREE TIMES: a key published as a
+    // navigation target with no focusable element behind it. Compact mode drops
+    // the gutters, so what would have sat in them joins the footer group — and
+    // a group built from SLOTS alone drew none of the exclusions, which are not
+    // slots, while the focus index still named them.
+    const built = scene(fixtureDocument, { compact: true });
+    const markup = renderMarkup(built.root);
+    const focusable = new Set(
+      [...markup.matchAll(/data-ig-key="([^"]+)"[^>]*tabindex="(?:0|-1)"/g)].map(
+        (match) => match[1] as string,
+      ),
+    );
+    for (const key of built.focusOrder) {
+      assert.ok(focusable.has(key), `${key} is published as a target but is not drawn`);
+    }
+    for (const key of built.navigable) {
+      assert.ok(focusable.has(key), `${key} is navigable but is not drawn`);
+    }
+    // The fixture's duplicate is exactly the key that used to vanish.
+    assert.ok(focusable.has('106'), 'the duplicate was published and not drawn');
+  });
+
   it('offers lateral neighbours from the SPINE outward', () => {
     // §16f gives the lateral keys one job: leave the sequence for the gutter
     // card that explains this rank, and come back. `103` is the fixture's rank

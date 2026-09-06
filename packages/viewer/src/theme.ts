@@ -369,7 +369,7 @@ export const defaultTheme: Theme = Object.freeze({
     // title overflow its node: 24 all-capital characters "fitted" 187.2px of
     // room and drew about 240px, straight across the routing channel.
     //
-    // AN AVERAGE, because `fitLabel` scales it per character class rather than
+    // AN AVERAGE, because `labelWidth` scales it per character class rather than
     // assuming every glyph is the same width — see `labelWidth` there. A flat
     // CEILING was tried and is wrong in the other direction: at the widest
     // glyph's advance, ordinary titles truncate at roughly half their length,
@@ -405,7 +405,7 @@ export const defaultTheme: Theme = Object.freeze({
     // give a card a height WITHOUT measuring one. A card's contents are known
     // — a title that may wrap, an identity, a badge row — so its height is a
     // count of lines times this. Chosen as a CEILING on the compact size times
-    // the line height (12.5 x 1.45 = 18.1), for the reason `fitLabel` gives
+    // the line height (12.5 x 1.45 = 18.1), for the reason `measureLabel` gives
     // about its own metric: a card that reserves slightly too much leaves a
     // gap, and one that reserves too little overlaps the row beneath it.
     '--ig-card-line': 18,
@@ -474,10 +474,9 @@ export function extendTheme(base: Theme, override: ThemeOverride): Theme {
  * package and stored. Adding a token then puts a hole in it, and the hole does
  * not fail loudly: a missing metric reads `undefined`, arithmetic on it yields
  * `NaN`, and every comparison against `NaN` is false. Measured when
- * `--ig-label-char-width` was added — a 0.1.0 theme made `fitLabel` return a
- * 60-character title with an ellipsis APPENDED, which is worse overflow than
- * the defect that token was added to fix, and `themeCss` emitted
- * `undefinedpx`.
+ * `--ig-label-char-width` was added — a 0.1.0 theme made every measured width
+ * `NaN`, so a card's height came out `NaN` and every station stacked at the
+ * same y, and `themeCss` emitted `undefinedpx`.
  *
  * A TypeScript caller is told about a new token by the compiler; a JavaScript
  * one is not, and neither is a theme deserialized from storage. This is the

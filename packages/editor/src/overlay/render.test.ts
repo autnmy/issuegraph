@@ -154,6 +154,19 @@ describe('the two relationships the viewer draws differently', () => {
     assert.equal(classesOf(overlaid[0] ?? { tag: 'x' }).includes('ig-badge'), true);
   });
 
+  it('never writes an SVG presentation attribute onto a badge', () => {
+    // `opacity` is an SVG presentation attribute. On a badge — an HTML span —
+    // it renders as an attribute no browser reads, so the state's dimming would
+    // silently not apply while the markup claimed it did. The chip is dimmed by
+    // the stylesheet's own state rule or not at all.
+    const edge = oddEdge('together-with', ['pending-write']);
+    const { scene } = attachEdgeOverlays(oddSceneOf(), [edge]);
+    for (const spec of walk(scene.root)) {
+      if (!classesOf(spec).includes('ig-badge')) continue;
+      assert.equal(spec.attrs?.['opacity'], undefined, 'a badge carries an SVG opacity');
+    }
+  });
+
   it('overlays a double line on BOTH its strokes, so the kind keeps its shape', () => {
     // `serialize-with` is drawn as two `.ig-edge` paths carrying the SAME
     // accessible name, so both match — and every mark built from a stroke
@@ -486,12 +499,16 @@ describe('the dash the table declares is the dash that renders', () => {
       const declared = treatmentForState(state).opacity;
       if (declared === null) continue;
       const { scene } = attachEdgeOverlays(sceneOf(), [projected(state)]);
-      // The EDGE always carries it. A clone is only produced by a state that
-      // adds a stroke of its own — `failed` is a ghost with no dash and no
-      // companion, so it has none, and demanding one asserts a shape the
-      // treatment never claimed.
+      // THE DRAWN STROKES. Every mark that carries the state is checked, and a
+      // BADGE carries the state without carrying this: `opacity` is an SVG
+      // presentation attribute, so on an HTML chip it would be an attribute no
+      // browser reads, claiming a fade that never happens.
+      // A clone is only produced by a state that adds a stroke of its own —
+      // `failed` is a ghost with no dash and no companion, so it has none, and
+      // demanding one asserts a shape the treatment never claimed.
       const edges = walk(scene.root).filter(
-        (spec) => spec.attrs?.[STATE_ATTRIBUTE] !== undefined,
+        (spec) =>
+          spec.attrs?.[STATE_ATTRIBUTE] !== undefined && !classesOf(spec).includes('ig-badge'),
       );
       assert.ok(edges.length > 0, `${state} overlaid nothing`);
       for (const overlaid of edges) {

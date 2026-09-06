@@ -528,20 +528,32 @@ function footerGroup(
   focused: string | null,
 ): ElementSpec | null {
   const slots = document.order.slots.filter((slot) => layout.footer.includes(slot.lead));
-  if (slots.length === 0) return null;
+  // AND THE EXCLUSIONS THE COLUMN CANNOT DRAW. In compact mode the gutters are
+  // dropped, so what would have sat in them joins `layout.footer` — and an
+  // exclusion is not a slot, so a group built from slots alone published every
+  // duplicate as a navigation target and drew none of them. That is exactly the
+  // class this projection has re-found three times: a key in the focus index
+  // with no element behind it. The membership test is `layout.footer`, once,
+  // for both kinds.
+  const excluded = document.order.excluded.filter((exclusion) =>
+    layout.footer.includes(exclusion.key),
+  );
+  if (slots.length === 0 && excluded.length === 0) return null;
   const labels = footerLabels(slots);
+  const withFocus: SceneOptions = { ...options, focused };
   return element('section', { class: 'ig-footer' }, [
     element('div', { class: 'ig-footer-head' }, [
       element('p', { class: 'ig-footer-title' }, [
-        `${String(slots.length)} held by the runner, not the graph`,
+        `${String(slots.length + excluded.length)} held by the runner, not the graph`,
       ]),
       labels === '' ? null : element('span', { class: 'ig-footer-labels' }, [labels]),
     ]),
-    element(
-      'ol',
-      { class: 'ig-list', 'aria-label': 'held outside the order' },
-      slots.map((slot) => footerRow(document, slot, { ...options, focused })),
-    ),
+    element('ol', { class: 'ig-list', 'aria-label': 'held outside the order' }, [
+      ...slots.map((slot) => footerRow(document, slot, withFocus)),
+      ...excluded.map((exclusion) =>
+        excludedRow(document, exclusion.key, exclusion.canonical, withFocus),
+      ),
+    ]),
   ]);
 }
 
