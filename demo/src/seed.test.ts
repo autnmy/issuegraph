@@ -323,6 +323,35 @@ describe('the dense layer reaches the surfaces the sandbox exists for', () => {
     }
   });
 
+  it('audits the repository whole, even when the panel is drawing nothing', () => {
+    // A state saying nothing is ELIGIBLE has changed no RELATIONSHIP, so the
+    // audit must be untouched by it. Both halves of `AuditInput` are checked
+    // together on purpose: the document was corrected once while its probes
+    // stayed derived from the blanked projection, so the cycle finding vanished
+    // and every canonical-dependent finding was computed against a graph that
+    // was not the one being audited. A green suite on the document half alone
+    // is exactly what let that through.
+    const document = backlogSeed();
+    const held = { issues: document.issues, edges: document.edges };
+    const explained = explainDocument(held, SCENARIOS.backlog.holds, SCENARIOS.backlog.ranking);
+    const blank = { issues: [], edges: [] };
+    const drawing = explainDocument(blank, SCENARIOS.backlog.holds, SCENARIOS.backlog.ranking);
+
+    const whole = projectDocument(explained, held).audit;
+    const drawingNothing = projectDocument(drawing, blank, undefined, new Map(), {
+      document: held,
+      explained,
+    }).audit;
+
+    assert.equal(drawingNothing.document.issues.length, whole.document.issues.length);
+    assert.deepEqual(drawingNothing.graph.cycles, whole.graph.cycles);
+    assert.ok(whole.graph.cycles.length > 0, 'the backlog has no cycle to lose');
+    assert.deepEqual(
+      new Set(auditDocument(drawingNothing).map((finding) => finding.kind)),
+      new Set(auditDocument(whole).map((finding) => finding.kind)),
+    );
+  });
+
   it('holds one issue on an unresolvable reference, as blocking (§6.7)', () => {
     const { explained } = load('backlog');
     const held = explained.rows.filter((row) => row.holds.some((hold) => hold.label === 'unresolvable'));

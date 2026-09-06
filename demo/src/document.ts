@@ -220,20 +220,38 @@ function dedupe(holds: readonly ViewerHold[]): readonly ViewerHold[] {
  * absent, the viewer draws the pure-graph view.
  */
 /**
+ * The document an audit reads, and the reading of it — ONE PAIR, never two
+ * halves.
+ *
+ * `AuditInput` carries a document and the graph probes over it, and those are
+ * two views of one thing: the cycles and the duplicate resolution are answers
+ * ABOUT that document. Supplying them from different sources is the defect this
+ * type exists to make unrepresentable — the audited document was corrected once
+ * while its probes stayed derived from the blanked projection, so the backlog's
+ * cycle finding vanished and every canonical-dependent finding was computed
+ * against a graph that was not the one being audited.
+ */
+export interface Audited {
+  readonly document: GraphDocument;
+  readonly explained: ExplainedDocument;
+}
+
+/**
  * @param landed   what this panel DRAWS. The empty state deliberately blanks it.
- * @param audited  what the repository HOLDS. Defaults to `landed`, and differs
- *   only where the two genuinely differ: an audit is a reading of the backlog's
- *   relationships, and a panel saying nothing is eligible has not changed one of
- *   them. Passing the blanked document here made the workspace's audit report
- *   zero findings and its filter drop every affected row the moment eligibility
- *   changed — a fact about the ORDER erasing facts about the GRAPH.
+ * @param audited  what the repository HOLDS, and the reading of it. Defaults to
+ *   the drawn pair and differs only where the two genuinely differ: an audit is
+ *   a reading of the backlog's relationships, and a panel saying nothing is
+ *   eligible has not changed one of them. Passing the blanked document made the
+ *   workspace's audit report zero findings and its filter drop every affected
+ *   row the moment eligibility changed — a fact about the ORDER erasing facts
+ *   about the GRAPH.
  */
 export function projectDocument(
   explained: ExplainedDocument,
   landed: GraphDocument,
   host?: HostFacts,
   caveats: ReadonlyMap<IssueRef, IssueCaveats> = new Map(),
-  audited: GraphDocument = landed,
+  audited: Audited = { document: landed, explained },
 ): Projection {
   const running = new Set((host?.running ?? []).map((job) => job.key));
   const { slots, excluded } = slotsOf(explained, running);
@@ -248,11 +266,14 @@ export function projectDocument(
       // cannot disagree about a component while both are on one screen.
       cycles: explained.model.cycles,
     },
+    // EVERY HALF FROM ONE SOURCE. The probes are answers ABOUT the audited
+    // document, so they come from its own reading — taking them from the drawn
+    // projection audited one graph with another graph's answers.
     audit: {
-      document: audited,
+      document: audited.document,
       graph: {
-        cycles: explained.model.cycles,
-        duplicateCanonical: explained.model.duplicateCanonical,
+        cycles: audited.explained.model.cycles,
+        duplicateCanonical: audited.explained.model.duplicateCanonical,
       },
     },
   };

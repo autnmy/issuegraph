@@ -261,6 +261,11 @@ function projectFor(scenario: Scenario, moments: HostMoments): (snapshot: StoreS
     const held = { issues: snapshot.issues, edges: snapshot.landed };
     const landed = shown ? held : { issues: [], edges: [] };
     const explained = explainDocument(landed, scenario.holds, scenario.ranking);
+    // THE AUDIT READS THE REPOSITORY, and reads it whole: its own document AND
+    // its own probes over that document. Where the panel draws what it holds
+    // these are the same reading and cost nothing; where it does not, auditing
+    // one graph with another graph's answers is the failure to avoid.
+    const audited = shown ? { document: held, explained } : { document: held, explained: explainDocument(held, scenario.holds, scenario.ranking) };
     // THE HOST FACTS, from the same explained order the slots come from, so the
     // header's tally and the rows beneath it are one derivation. The running
     // job is the scenario's; its start is anchored to the mount, once.
@@ -276,10 +281,7 @@ function projectFor(scenario: Scenario, moments: HostMoments): (snapshot: StoreS
       // at boot describes a backlog that no longer exists after the first edit.
       adoption: adoptionFor(scenario, held, moments.dismissed()),
     });
-    // `landed` is what this panel DRAWS; `held` is what the repository HOLDS.
-    // The audit reads relationships, and a state saying nothing is eligible has
-    // changed none of them.
-    return projectDocument(explained, landed, host, scenario.caveats, held);
+    return projectDocument(explained, landed, host, scenario.caveats, audited);
   };
 }
 

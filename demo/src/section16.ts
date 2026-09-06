@@ -64,7 +64,10 @@ function projectionFor(panel: PanelState, id: string): ReturnType<typeof project
     // Measured from the document this panel draws — see `adoptionFor`.
     adoption: adoptionFor(scenario, held, false),
   });
-  return projectDocument(explained, landed, asReproduction(host, id), scenario.caveats, held);
+  const audited = shown
+    ? { document: held, explained }
+    : { document: held, explained: explainDocument(held, scenario.holds, scenario.ranking) };
+  return projectDocument(explained, landed, asReproduction(host, id), scenario.caveats, audited);
 }
 
 /**
