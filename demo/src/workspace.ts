@@ -6,7 +6,8 @@
  * subscription all live there now, in the viewer's `mountViewer` shape. This
  * file used to be that shell, written once for this page; what remains is the
  * chrome that is genuinely the sandbox's — the writes log, the versions line,
- * the theme and canvas toggles, the armed dispatch outcome and the reset — and
+ * the theme, canvas and document toggles, the armed dispatch outcome and the
+ * reset — and
  * the two ports the mount takes from a host: the store, and the projection of
  * a snapshot onto the viewer's document and the audit's input.
  *
@@ -17,7 +18,7 @@
  * same attribute, so one delegated `click` on the sandbox root reads them:
  * the commands the mount's reducer knows (`retry`, `discard`, `dismiss-change`
  * — the writes log's) are handed to it through `handle.dispatch`, and the ones
- * it does not (`theme`, `canvas`, `reset`) are the sandbox's own.
+ * it does not (`theme`, `canvas`, `scenario`, `reset`) are the sandbox's own.
  *
  * ## `textContent`, everywhere
  *
@@ -41,7 +42,7 @@ import { type Theme, defaultTheme, extendTheme } from '@issuegraph/viewer';
 
 import { projectDocument } from './document.ts';
 import { explainDocument } from './order.ts';
-import { seedHolds } from './seed.ts';
+import { DEFAULT_SCENARIO, SCENARIOS, SCENARIO_NAMES, type Scenario, type ScenarioName } from './seed.ts';
 import type { DemoSource, NextOutcome } from './source.ts';
 import { STAMPED_PACKAGES, VERSIONS } from './versions.ts';
 
@@ -139,6 +140,10 @@ function isCanvasMode(value: string | null): value is CanvasMode {
   return value === 'neighbourhood' || value === 'tree';
 }
 
+function isScenario(value: string | null): value is ScenarioName {
+  return SCENARIO_NAMES.some((name) => name === value);
+}
+
 export interface Live {
   readonly store: Store;
   readonly source: DemoSource;
@@ -157,6 +162,8 @@ export interface SandboxElements {
 export interface SandboxState {
   readonly theme: ThemeName;
   readonly canvas: CanvasMode;
+  /** Which document is loaded: the §16 comp the page lands on, or the big backlog behind the control. */
+  readonly scenario: ScenarioName;
   /** The mount's own state — the selection, the draft, the scale, the rail window. */
   readonly workspace: WorkspaceHandle['state'];
 }
@@ -167,18 +174,21 @@ export interface SandboxHandle {
 }
 
 /**
- * The host's projection, from ONE derivation.
+ * The host's projection, from ONE derivation, for one scenario.
  *
  * `explainDocument` is the same `@issuegraph/derive` call the store's deriver
- * runs, so the viewer's rows, the audit's cycles and the store's order cannot
- * disagree. The landed document is `{ issues, edges: landed }` — never the
- * projection with its unsettled edits, because the order must not move for an
- * edit that did not land. The mount adds the unsettled edges to the canvas
+ * runs — over the same holds and the same base ranking, which are the
+ * scenario's — so the viewer's rows, the audit's cycles and the store's order
+ * cannot disagree. The landed document is `{ issues, edges: landed }` — never
+ * the projection with its unsettled edits, because the order must not move for
+ * an edit that did not land. The mount adds the unsettled edges to the canvas
  * itself, from the store's own projection.
  */
-function project(snapshot: StoreSnapshot): WorkspaceProjection {
-  const landed = { issues: snapshot.issues, edges: snapshot.landed };
-  return projectDocument(explainDocument(landed, seedHolds()), landed);
+function projectFor(scenario: Scenario): (snapshot: StoreSnapshot) => WorkspaceProjection {
+  return (snapshot) => {
+    const landed = { issues: snapshot.issues, edges: snapshot.landed };
+    return projectDocument(explainDocument(landed, scenario.holds, scenario.ranking), landed);
+  };
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -211,12 +221,16 @@ function describe(record: WriteRecord): string {
   }
 }
 
-/** Mount the sandbox. `boot` builds a fresh store and source, and is called again on reset. */
-export function mountSandbox(elements: SandboxElements, boot: (onChange: () => void) => Live): SandboxHandle {
+/** Mount the sandbox. `boot` builds a fresh store and source over a scenario, and is called again on reset and on a scenario change. */
+export function mountSandbox(
+  elements: SandboxElements,
+  boot: (scenario: Scenario, onChange: () => void) => Live,
+): SandboxHandle {
   const { root, workspace, writes, versions, outcome } = elements;
 
   let theme: ThemeName = 'default';
   let canvas: CanvasMode = 'neighbourhood';
+  let scenario: ScenarioName = DEFAULT_SCENARIO;
   let live: Live;
   let handle: WorkspaceHandle | null = null;
   let unsubscribe = (): void => {};
@@ -281,17 +295,21 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
     for (const toggle of root.querySelectorAll<HTMLElement>('[data-chrome="canvas"] [data-ig-value]')) {
       toggle.setAttribute('aria-pressed', String(toggle.getAttribute('data-ig-value') === canvas));
     }
+    for (const toggle of root.querySelectorAll<HTMLElement>('[data-chrome="scenario"] [data-ig-value]')) {
+      toggle.setAttribute('aria-pressed', String(toggle.getAttribute('data-ig-value') === scenario));
+    }
   };
 
-  /** Build a fresh store and mount the workspace over it. Called at start and on reset. */
+  /** Build a fresh store over the current scenario and mount the workspace over it. Called at start, on reset, and when the scenario changes. */
   const start = (): void => {
     unsubscribe();
     handle?.destroy();
-    live = boot(schedule);
+    const loaded = SCENARIOS[scenario];
+    live = boot(loaded, schedule);
     unsubscribe = live.store.subscribe(schedule);
     handle = mountWorkspace(workspace, {
       store: live.store,
-      project,
+      project: projectFor(loaded),
       words: WORKSPACE_WORDS,
       theme: themeFor(theme),
       canvas,
@@ -328,6 +346,14 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
         handle.update({ canvas });
         schedule();
         return;
+      case 'scenario':
+        // A scenario is a different DOCUMENT, so it is a fresh store rather
+        // than an update — the mount reads one store for its lifetime, and a
+        // visitor's unsettled edits belong to the document they were made on.
+        if (!isScenario(value) || value === scenario) return;
+        scenario = value;
+        start();
+        return;
       case 'reset':
         start();
         return;
@@ -361,13 +387,20 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
       ...CANVAS_MODES.map((name) => button(name, 'canvas', { 'data-ig-value': name, class: 'chrome-button chrome-toggle' })),
     );
   }
+  for (const control of root.querySelectorAll<HTMLElement>('[data-chrome="scenario"]')) {
+    control.replaceChildren(
+      ...SCENARIO_NAMES.map((name) =>
+        button(SCENARIOS[name].label, 'scenario', { 'data-ig-value': name, class: 'chrome-button chrome-toggle' }),
+      ),
+    );
+  }
 
   start();
 
   return {
     state: () => {
       if (handle === null) throw new Error('the sandbox is not mounted');
-      return { theme, canvas, workspace: handle.state };
+      return { theme, canvas, scenario, workspace: handle.state };
     },
     destroy: () => {
       destroyed = true;

@@ -1,9 +1,13 @@
 # The demo sandbox
 
 Live at **<https://issuegraph.org/demo/>**: `@issuegraph/viewer` and
-`@issuegraph/editor` running on a dense in-memory backlog. **No tracker, no app
+`@issuegraph/editor` running on an in-memory backlog. **No tracker, no app
 installation, no auth, no backend.** Every edit is client-side and saved
 nowhere; reload and the seed comes back.
+
+**The page lands on the design's own scenario** — the §16a frame of
+`Descant Dashboard.dc.html` in the design kit — and loads the dense backlog
+only when asked. See [The seed](#the-seed) for what that means and why.
 
 ```sh
 pnpm install
@@ -54,9 +58,9 @@ again. What this page supplies is what the specification puts with a host:
 | file | what it is |
 |---|---|
 | `src/document.ts` | the projection of the explained order onto the viewer's `ViewerDocument`, plus the audit's input — from ONE derivation, so the audit's duplicate resolution and the store's cannot disagree |
-| `src/workspace.ts` | the sandbox: `mountWorkspace` over the store and that projection, plus the chrome the sandbox owns — the writes log, the versions line, the theme and canvas toggles, the armed outcome and the reset |
-| `src/order.ts` | the projection onto `@issuegraph/derive` — unchanged from the list demo this page replaced |
-| `src/seed.ts` | the coverage seed and the dense layer, below |
+| `src/workspace.ts` | the sandbox: `mountWorkspace` over the store and that projection, plus the chrome the sandbox owns — the writes log, the versions line, the theme, canvas and document toggles, the armed outcome and the reset |
+| `src/order.ts` | the projection onto `@issuegraph/derive`, and the host's base ranking as an explicit input to it |
+| `src/seed.ts` | the comp, the dense layer and the scenario table, below |
 | `src/source.ts` | the in-memory adapter, with the two unhappy outcomes armable |
 | `serve.mjs` | a dependency-free static server for the repository root |
 
@@ -64,7 +68,7 @@ again. What this page supplies is what the specification puts with a host:
 `data-ig-command` inside the mounted element is the mount's; one outside it —
 the masthead toggles, the writes log's `retry` and `discard` — is read by one
 delegated click on the sandbox root, which hands the mount's own commands to
-`handle.dispatch` and keeps `theme`, `canvas` and `reset` for itself.
+`handle.dispatch` and keeps `theme`, `canvas`, `scenario` and `reset` for itself.
 
 **`textContent`, everywhere.** Every string this page writes is host chrome
 built with `createElement` and `textContent`, because a title is data an
@@ -100,20 +104,79 @@ output, escaped by `renderMarkup` — is the mount's now, not this page's.
 
 ## The seed
 
-Two layers, pinned by two tests.
+Two layers behind one control, pinned by three tests.
 
-**The coverage seed** (#1–#14) is hand-written so every edge type, both hold
-families, all three readiness stations and all three rank-provenance forms are
-reachable without editing anything. `order.test.ts` and `source.test.ts` pin
-that, enumerating from the vocabulary rather than from a list beside it.
+**The landing state is the comp.** Load the page and, before any interaction,
+the workspace shows the scenario the design's **§16a** frame (the list view) and
+**§16b** frame (the graph view) were drawn against — `Descant Dashboard.dc.html`
+in the `design_handoff_issue_relationships` kit — with the same issues, numbers,
+priorities, relationships and holds: the auth thread around `#488` (`Extract
+session store adapter`, `P3 → 0`), the `#512` / `#514` unit at one rank, the
+`#501` / `#503` serialize group, `#530` held inline by `#602`, `#520` on the
+spec default tier, `#487` behind it, and the runner-held footer (`#533`
+claimed, `#541` parked). The frame is the specification; `seed.ts` reads its
+rows off it and `seed.test.ts` pins that the derivation lands on them.
 
-**The dense layer** (#100 onward) is generated deterministically — the same
-document on every load, so a screenshot is a reproduction — and `seed.test.ts`
-pins what it has to contain, against the package constants that decide it: a
-component past `GRAPH_NODE_BUDGET` on its own, a component small enough to
-draw, a capsule flagged as a cycle, a finding for each audit class, more slots
-than a rail window, closed origins for the tree, and an edge-free majority (the
-design's own sample was 248 of 312).
+It is the comp because fidelity cannot be judged against a backlog the design
+never drew. This page is the only place the packages are seen at full size, so
+it is the only place a fidelity claim can be made — and beside a generic
+backlog every difference is arguable, while beside the comp "does this match
+the frame" is a glance. It is also the coverage seed: every edge type, both
+hold families, all three readiness stations and all three rank-provenance
+forms are reachable in it without editing anything, which `order.test.ts` and
+`source.test.ts` pin, enumerating from the vocabulary rather than from a list
+beside it.
+
+**Where the comp and the frame read differently**, on purpose, so the next
+reader does not have to infer it:
+
+- The frame prints rank `2` on the blocked unit with a hollow station, "ready
+  once #488 closes". The viewer prints `—`: a held slot never carries a
+  number, and the spec's `ready` (§6.2) holds a unit whose `blocked-by` is
+  open. So the frame's ranks 3–6 read 2–5 on screen. That is a question for
+  the §16 fidelity pass, and this comp is what makes it visible.
+- The frame draws one hollow station, on `#503`, and attributes it to the
+  serialize group ("waits for #501"), with "4 ready now · cap 2" in the
+  header. This host's concurrency cap (`DEFAULT_CONCURRENCY_CAP`, 2) is what
+  decides hollow, so `#503`, `#520`, `#487` and `#505` are all hollow — ready,
+  after an earlier rank frees a slot — and six rows are ready. The serialize
+  group holds nobody, because nobody in it is claimed.
+- `#602` carries a `P2 → 1` promotion chip in the footer: it blocks the P1
+  `#530`, and §6.3 promotes it. The frame's left gutter prints no priority.
+- The frame prints a priority only on the spine rows. The `now` row, the
+  footer group, the duplicate and the closed origin are undeclared here for
+  that reason, and read as the default tier where a tier is printed at all.
+  `#505`, which the frame does not draw, is declared P3 so it ranks last.
+- `#602` is "open · not eligible" in the frame — outside the order because no
+  pick-order query reaches it. This host has no ordered queries, so it is the
+  host's own hold (`not eligible`) and sits in the footer group rather than
+  the graph's left gutter.
+- `#499` is the frame's `now` row, "Review · 12m". The viewer has no `now`
+  station, so it is an active claim (`working`) in the footer beside `#533`.
+- `#488`'s `✓ verified` chip is not drawn: the store carries no evidence field.
+- The frame's "group of 3" on `#501` names only `#501` and `#503`. The third
+  member, `#505`, is ranked below the drawn rows — the frame says "19 more
+  ranked · scroll" — because groups are computed, never written down, and a
+  count of three needs a third issue to exist.
+- The base ranking is the frames' own order, written down (`COMP_ORDER`),
+  because the derivation takes a host's ordering as an input and this host
+  cannot run the pick order the frames were drawn against.
+- The comp ships no unresolvable reference — the frames draw none — so the
+  `unresolvable` chip (§6.7) lives in the dense layer, on one generated issue.
+
+**The dense layer** (#100 onward) loads from the **Document** control — "the
+big backlog" — and is generated deterministically: the same document on every
+load, so a screenshot is a reproduction. `seed.test.ts` pins what it has to
+contain, against the package constants that decide it: a component past
+`GRAPH_NODE_BUDGET` on its own, a component small enough to draw, a capsule
+flagged as a cycle, a finding for each audit class, more slots than a rail
+window, closed origins for the tree, and an edge-free majority (the design's
+own sample was 248 of 312). It stays reachable in one click because a defect
+that only shows at three hundred is exactly the kind an embedding host would
+otherwise be the first to meet; it is no longer the front door because the
+first paint was the stress test — the canvas refusing at the node budget —
+rather than the product. Loading it keeps the comp's rows at the head of their
+tiers and lets the generated issues fall in behind them.
 
 **One divergence is known and pinned, not patched.** A `blocked-by` cycle
 running *through* a `together-with` unit is a real deadlock that `Model.cycles`
