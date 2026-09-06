@@ -1546,6 +1546,33 @@ describe('the first pass, composed behind §17a’s entry', () => {
     }
   });
 
+  it('opens for a host that updates the source and dispatches in one task', async () => {
+    // Renders are coalesced on a microtask. Deciding the swap in the render that
+    // OBSERVES it meant a host calling `update()` and then dispatching an open
+    // in the same task had its brand-new lifecycle reset by a render still
+    // holding the previous scanner — and the new scan's answer then arrived on a
+    // closed phase and was dropped, so the queue never opened at all.
+    const page = await firstPassPage();
+    try {
+      const replacement = heldSource(pairsOver(2));
+      page.handle.update({ firstPass: { source: replacement.scanner, ...FIRST_PASS_OPTION } });
+      page.handle.dispatch({ kind: 'first-pass', command: { kind: 'open' } });
+      await flush();
+      await replacement.answer();
+
+      assert.equal(page.handle.state.firstPass.phase.kind, 'open', 'the open was reset by a stale render');
+      assert.ok(page.element.querySelector('.ig-firstpass') !== null, 'no queue was drawn');
+      assert.equal(
+        page.element.querySelector('.ig-firstpass')?.getAttribute('data-ig-found'),
+        '2',
+        'the queue was not the new scanner’s',
+      );
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
   it('keeps Tab inside the takeover, at both ends', async () => {
     // `inert` covers the workspace's own zones and nothing else, so a mount
     // beside other page chrome let Tab walk out of a dialog asserting

@@ -880,30 +880,6 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // theme to the root still resolves the chooser's tokens there.
     const floating = floatingChooser();
     if (floating !== null) (surface.firstElementChild ?? surface).append(floating);
-    // A SOURCE THAT CHANGES MID-FLIGHT ENDS THE LIFECYCLE IT WAS SCANNING FOR.
-    // Two failures, one rule. Removing the bundle through `update()` stops the
-    // overlay being drawn while the phase stays open — and the phase is what
-    // hands every key to a queue that is no longer on screen, with no control
-    // left to close it. REPLACING the source is worse than it looks: the old
-    // scan's promise still resolves under the current generation, so the queue
-    // would be drawn in the new bundle's words and populated by the superseded
-    // scanner, and a `Y` there writes a relationship the configured source never
-    // proposed. Keyed on the SOURCE rather than the bundle, because a host that
-    // rebuilds an equivalent options object on every render has changed nothing.
-    const source = current.firstPass?.source ?? null;
-    if (source !== firstPassSource) {
-      // RESET, NOT CLOSE, and the difference is the decided set: a `CandidateId`
-      // is the HOST's, opaque, and promised stable only for a queue's life, so
-      // one scanner's ids say nothing about another's. Carried across, a
-      // collision would silently drop the new detector's question — and a
-      // question nobody was asked is indistinguishable from one already
-      // answered. Fired on a swap and on a removal alike.
-      if (state.firstPass.phase.kind !== 'closed' || state.firstPass.decided.length > 0) {
-        dispatch({ kind: 'first-pass', command: { kind: 'reset' } });
-      }
-      appliedWrites.clear();
-    }
-    firstPassSource = source;
     const overlay = firstPassOverlay();
     if (overlay !== null) {
       (surface.firstElementChild ?? surface).append(overlay);
@@ -1030,6 +1006,43 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     }
     firstPassWas = state.firstPass.phase.kind;
     searchWasOpen = search !== null;
+  };
+
+  /**
+   * Take the option's scanner, and end the lifecycle the old one was scanning for.
+   *
+   * Two failures, one rule. Removing the bundle stops the overlay being drawn
+   * while the phase stays open — and the phase is what hands every key to a
+   * queue that is no longer on screen, with no control left to close it.
+   * REPLACING the source is worse than it looks: the old scan's promise still
+   * resolves under the current generation, so the queue would be drawn in the
+   * new bundle's words and populated by the superseded scanner, and a `Y` there
+   * writes a relationship the configured source never proposed.
+   *
+   * RESET RATHER THAN CLOSE, and the difference is the decided set: a
+   * `CandidateId` is the HOST's and opaque, so one scanner's ids say nothing
+   * about another's — carried across, a collision silently drops the new
+   * detector's question, and a question nobody was asked is indistinguishable
+   * from one already answered.
+   *
+   * CALLED FROM `update()`, AT THE MOMENT THE OPTION CHANGES, not from the
+   * render that observes it later. Renders are coalesced on a microtask, so a
+   * host that calls `update()` and then dispatches an `open` in the same task
+   * had its brand-new lifecycle reset by a render still holding the previous
+   * scanner — and the new scan's answer then arrived on a closed phase and was
+   * dropped, so that supported sequence never opened a queue at all.
+   *
+   * Keyed on the SOURCE rather than the bundle, because a host that rebuilds an
+   * equivalent options object every render has changed nothing.
+   */
+  const adoptSource = (): void => {
+    const source = current.firstPass?.source ?? null;
+    if (source === firstPassSource) return;
+    firstPassSource = source;
+    if (state.firstPass.phase.kind !== 'closed' || state.firstPass.decided.length > 0) {
+      dispatch({ kind: 'first-pass', command: { kind: 'reset' } });
+    }
+    appliedWrites.clear();
   };
 
   // --- listeners ---
@@ -1478,7 +1491,10 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   return {
     update(next?: WorkspaceUpdate): void {
       if (destroyed) return;
-      if (next !== undefined) current = { ...current, ...next, store };
+      if (next !== undefined) {
+        current = { ...current, ...next, store };
+        adoptSource();
+      }
       schedule();
     },
     dispatch,
