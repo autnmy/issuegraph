@@ -345,7 +345,11 @@ describe('selection crosses the zones from one value', () => {
     // attribute name alone passes on any rail at all.
     assert.match(result.markup, /data-ig-key="i0002"[^>]*aria-current="true"/);
     assert.match(result.markup, /data-subject="issue"/);
-    assert.match(result.markup, /<span class="ig-inspector-key">i0002<\/span>/);
+    // LAYER 1's IDENTITY CHIP, not a span of this package's own: `identity`
+    // decides whether the qualified reference links, and that rule — knowing a
+    // tracker's URL shape — is precisely what layer 1 exists not to duplicate.
+    // This fixture supplies no `url`, so the chip is the plain form.
+    assert.match(result.markup, /<span class="ig-id">i0002<\/span>/);
   });
 
   it('filters the inspector on an edge selection and marks no row current', () => {

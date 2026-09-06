@@ -734,6 +734,9 @@ const WORKSPACE_WORDS: surface.WorkspaceWords = {
   nothingSelected: 'pick a row to inspect it',
   clearSelection: 'clear the selection',
   relationships: 'relationships',
+  whyRank: 'why rank',
+  whyHeld: 'why held',
+  workedAsOneUnit: 'worked as one unit with',
 };
 
 /** A backlog of `total` issues, ranked in key order. */

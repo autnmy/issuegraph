@@ -58,8 +58,10 @@ import {
   type ViewerHold,
   KEY_ATTRIBUTE,
   element,
+  identity,
   normalizeDocument,
   renderMarkup,
+  provenanceClause,
   renderViewer,
   resolveTheme,
   themeCss,
@@ -83,7 +85,12 @@ import { type ScaleState, INITIAL_SCALE_STATE } from '../scale/commands.ts';
 import { renderScaleLadder } from '../scale/render.ts';
 import { scaleLadderStylesheet } from '../scale/styles.ts';
 
-import { type InspectorRelationship, type InspectorView, inspectorView } from './inspector.ts';
+import {
+  type InspectorRelationship,
+  type InspectorView,
+  type InspectorWhyRank,
+  inspectorView,
+} from './inspector.ts';
 import { type RailWindow, type RailWindowOptions, railWindow } from './rail.ts';
 import {
   type WorkspaceSelection,
@@ -113,6 +120,30 @@ export interface WorkspaceWords {
   readonly clearSelection: string;
   /** Names the relationships list. */
   readonly relationships: string;
+  /**
+   * §17a's `WHY RANK n` heading, without the number.
+   *
+   * THE NUMBER IS APPENDED, NOT INTERPOLATED INTO A HOST TEMPLATE. A rank is
+   * the one part of this heading the package knows and the host does not, and
+   * a `{n}` placeholder would make every host reimplement the substitution —
+   * which is how a package that refuses to invent English ends up shipping a
+   * tiny template language instead.
+   */
+  readonly whyRank: string;
+  /**
+   * The same heading for a HELD slot, which has no rank to name.
+   *
+   * A held slot's rank is `null` by construction (`@issuegraph/derive` assigns
+   * `ready ? (rank += 1) : null`), so "why rank —" would be a heading about a
+   * position that does not exist. The design's own §16d ruling is the same one:
+   * a held unit prints the em dash rather than a number.
+   */
+  readonly whyHeld: string;
+  /**
+   * Joins the rest of a together unit: §17a ends *"then worked with #514 as one
+   * unit"*, and this is that phrase minus the members, which the package names.
+   */
+  readonly workedAsOneUnit: string;
 }
 
 export interface WorkspaceOptions {
@@ -326,6 +357,65 @@ function relationshipSpec(relationship: InspectorRelationship): ElementSpec {
   );
 }
 
+/**
+ * §17a's "why rank" block: the heading, and one sentence explaining the
+ * position.
+ *
+ * THE SYMPTOM THIS PACKAGE WAS FILED FOR. `#122` names it exactly: the frame
+ * gives the inspector a `WHY RANK 2` heading and a sentence, "the shipped
+ * inspector shows raw tokens and no sentence, even though the package already
+ * carries the function that composes provenance". It did, and this composes it.
+ *
+ * THE PROVENANCE CLAUSE IS LAYER 1's, AND THAT IS THE POINT. `provenanceClause`
+ * is the same function the §16 rail row's provenance line is built from, so the
+ * row and the panel state one fact one way. Switching on `RankProvenance` here
+ * would be a second wording, free to drift from the row's the moment either is
+ * edited — which is what the issue means by "composed from the existing
+ * provenance model rather than a second implementation of it".
+ *
+ * A HOLD'S REASON IS RENDERED VERBATIM, exactly as layer 1's `holdLine` renders
+ * it: `ViewerHold.reason` is host-authored, and rewording it here would put
+ * this package in the business of explaining a hold whose vocabulary belongs to
+ * the reader that produced it.
+ *
+ * WHAT DOES NOT APPEAR: a rank on a held slot. `@issuegraph/derive` assigns
+ * `ready ? (rank += 1) : null`, so the two are exclusive and the heading says
+ * which one it is. Frame 17a draws `#512` at rank 2 *and* "Held until #488
+ * closes"; that state is unrepresentable, and PR #126 already ruled for §16
+ * that the model wins and the em dash stands.
+ */
+function whyRankSpec(
+  why: InspectorWhyRank,
+  words: WorkspaceWords,
+  holds: readonly ElementSpec[],
+): ElementSpec {
+  const held = why.rank === null;
+  return element('div', { class: 'ig-why-rank', 'data-held': held ? 'true' : 'false' }, [
+    element('h3', { class: 'ig-why-rank-heading' }, [
+      held ? words.whyHeld : `${words.whyRank} ${String(why.rank)}`,
+    ]),
+    element('p', { class: 'ig-why-rank-sentence' }, [
+      provenanceClause(why.provenance),
+      why.unitPartners.length === 0
+        ? null
+        : element('span', { class: 'ig-why-rank-unit' }, [
+            `${words.workedAsOneUnit} `,
+            element('span', { class: 'ig-id' }, [why.unitPartners.join(', ')]),
+          ]),
+    ]),
+    // THE HOLDS BELONG TO THE EXPLANATION, so they live inside this block
+    // rather than beside it. They were briefly stated twice — once worded into
+    // this sentence and once in the list below it — which is the panel telling
+    // a reader the same cause in two voices.
+    //
+    // The LIST is what survived, because it is the half that carries the
+    // holder as a control: `holdRow` publishes `select-issue` on the blocker,
+    // under rules about when that control is withheld which a sentence could
+    // not express. A reason inline would have discarded them.
+    holds.length === 0 ? null : element('ul', { class: 'ig-inspector-holds' }, holds),
+  ]);
+}
+
 function inspectorSpec(
   view: InspectorView,
   words: WorkspaceWords,
@@ -340,26 +430,21 @@ function inspectorSpec(
     subject.kind === 'issue'
       ? element('div', { class: 'ig-inspector-issue' }, [
           element('h2', { class: 'ig-inspector-title' }, [subject.issue.title]),
-          element('span', { class: 'ig-inspector-key' }, [subject.issue.key]),
-          subject.position === null
+          // LAYER 1's CHIP, not a second spelling of it. `identity` links the
+          // qualified reference when the host gave a URL and prints it plain
+          // when it did not — the rule for which is exactly the knowledge this
+          // package must not carry a second copy of.
+          identity(subject.issue),
+          // THE RANK IS THE HEADING'S NOW, so there is no separate position
+          // line: it printed the number, or the em dash for a held slot, which
+          // is exactly what `WHY RANK n` and `WHY HELD` already say. Two
+          // elements for one fact is how they come to disagree.
+          subject.whyRank === null
             ? null
-            : element(
-                'p',
-                {
-                  class: 'ig-inspector-position',
-                  'data-ready': subject.position.ready ? 'true' : 'false',
-                },
-                // A HELD SLOT PRINTS THE VIEWER'S EM DASH, not a number. It has
-                // no position in the sequence, and printing one would claim work
-                // is queued that nothing can start.
-                [subject.position.rank === null ? '—' : String(subject.position.rank)],
-              ),
-          subject.position === null || subject.position.holds.length === 0
-            ? null
-            : element(
-                'ul',
-                { class: 'ig-inspector-holds' },
-                subject.position.holds.map((hold) =>
+            : whyRankSpec(
+                subject.whyRank,
+                words,
+                subject.whyRank.holds.map((hold) =>
                   holdRow(hold, known, (key) => leadOf.get(key) === leadOf.get(subject.issue.key)),
                 ),
               ),

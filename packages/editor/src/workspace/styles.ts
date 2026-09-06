@@ -196,21 +196,6 @@ export const workspaceStylesheet = `
   color: var(--ig-text);
 }
 
-.ig-inspector-key {
-  font-family: var(--ig-font-mono);
-  color: var(--ig-text-muted);
-}
-
-.ig-inspector-position {
-  margin: 0;
-  font-family: var(--ig-font-mono);
-  color: var(--ig-text-muted);
-}
-
-.ig-inspector-position[data-ready='true'] {
-  color: var(--ig-station-ready);
-}
-
 .ig-inspector-holds {
   list-style: none;
   margin: 0;
@@ -256,11 +241,40 @@ export const workspaceStylesheet = `
   gap: var(--ig-space-tight);
 }
 
-.ig-inspector-heading {
+/* SECTION 17a DRAWS EVERY INSPECTOR HEADING IN CAPS -- WHY RANK 2,
+   RELATIONSHIPS, ADD RELATIONSHIP -- so the treatment is shared rather than
+   spelled per heading. Tracking widens with the caps because letterforms at a
+   small size need it; that is what --ig-tracking-label is for. */
+.ig-inspector-heading,
+.ig-why-rank-heading {
   margin: 0;
   font-size: var(--ig-font-size-small);
   color: var(--ig-text-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--ig-tracking-label);
 }
+
+/* THE EXPLANATION, SECTION 17a's WHOLE POINT FOR THIS ZONE. The clauses are
+   inline spans so the block reads as one sentence rather than a list of
+   findings: the reader asked one question. */
+.ig-why-rank {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+}
+
+.ig-why-rank-sentence {
+  margin: 0;
+  color: var(--ig-text-body);
+}
+
+/* Each clause keeps a space after it so the sentence does not run together.
+   A margin rather than a literal space in the markup: the text is host-authored
+   and the package does not add characters to it. */
+.ig-why-rank-sentence > * + * {
+  margin-left: var(--ig-space-micro);
+}
+
 
 .ig-inspector-clear {
   align-self: flex-start;
