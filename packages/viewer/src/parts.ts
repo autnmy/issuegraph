@@ -798,14 +798,20 @@ export function badgeTexts(
   issue: ViewerIssue | undefined,
   keys: readonly string[],
 ): readonly string[] {
-  const texts: string[] = [];
-  const priority = priorityBadge(issue?.provenance);
-  if (priority !== null) texts.push(textOf(priority));
-  if (evidenceBadge(issue) !== null) texts.push('verified');
-  if (slot !== undefined && notReadyBadge(slot) !== null) texts.push('not ready');
-  for (const chip of caveatBadges(issue)) texts.push(textOf(chip));
-  for (const chip of edgeBadgeList(document, keys)) texts.push(textOf(chip));
-  return texts;
+  // THROUGH `textOf` FOR EVERY CHIP, so the GLYPH is measured with the label it
+  // sits beside. Two of these were written out by hand and lost their glyph —
+  // `✓ verified` measured as `verified`, `⊘ not ready` as `not ready` — which
+  // under-measured exactly the chips a held row carries, and near a row
+  // boundary the browser wrapped one this packer had kept on the previous row.
+  // The builders are the one source; nothing here restates what they draw.
+  const chips = [
+    priorityBadge(issue?.provenance),
+    evidenceBadge(issue),
+    slot === undefined ? null : notReadyBadge(slot),
+    ...caveatBadges(issue),
+    ...edgeBadgeList(document, keys),
+  ];
+  return chips.filter((chip): chip is ElementSpec => chip !== null).map(textOf);
 }
 
 /** Every string inside one spec, concatenated — what a reader sees on it. */

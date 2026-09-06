@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import { type ViewerDocument, normalizeDocument } from './document.ts';
 import { edgeGeometry, layoutGraph, measureLabel } from './layout.ts';
+import { badgeTexts } from './parts.ts';
 import { fixtureDocument } from './testing/fixtures.ts';
 import { defaultTheme, extendTheme } from './theme.ts';
 
@@ -204,6 +205,70 @@ describe('layoutGraph', () => {
     assert.equal(layout.nodes.get('a')?.now, true, 'the running job carries no NOW state');
     assert.equal(layout.nodes.get('a')?.column, 'spine');
     assert.deepEqual([...layout.footer], [], 'it kept a footer row as well as its station');
+  });
+
+  it('aligns a gutter UNIT through the member that touches the spine', () => {
+    // Three passes ask the same question about a unit — does it touch the
+    // spine, where does it sit, what is beside it — and this one asked it of
+    // the LEAD alone. A tracker-held unit reaches the gutter precisely because
+    // a NON-LEAD member blocks a ranked row, so the lookup found nothing,
+    // dropped the card at the fallback top row, and drew the long cross-row arc
+    // this placement pass exists to prevent.
+    const { document } = normalizeDocument({
+      issues: [
+        { key: 'r1', title: 'First rank', open: true, priority: 2 },
+        { key: 'r2', title: 'Second rank, blocked through the partner', open: true, priority: 2 },
+        { key: 'u', title: 'Unit lead', open: true, priority: 2 },
+        { key: 'p', title: 'Unit partner', open: true, priority: 2 },
+      ],
+      edges: [
+        { field: 'together-with', from: 'u', to: 'p' },
+        { field: 'blocked-by', from: 'r2', to: 'p' },
+      ],
+      order: {
+        slots: [
+          { rank: 1, lead: 'r1', members: ['r1'], ready: true, holds: [] },
+          { rank: 2, lead: 'r2', members: ['r2'], ready: true, holds: [] },
+          {
+            rank: null,
+            lead: 'u',
+            members: ['u', 'p'],
+            ready: false,
+            holds: [{ family: 'tracker', reason: 'claimed by another run', label: 'claimed' }],
+          },
+        ],
+        excluded: [],
+      },
+      cycles: [],
+    });
+    const layout = layoutGraph(document, defaultTheme);
+
+    assert.equal(layout.nodes.get('u')?.column, 'left');
+    assert.equal(
+      layout.nodes.get('u')?.y,
+      layout.nodes.get('r2')?.y,
+      'the unit lined up with the first rank instead of the one it explains',
+    );
+  });
+
+  it('measures a chip WITH its glyph and its inner gap', () => {
+    // A relationship or status chip is a glyph and a label — two children with
+    // a gap between them — and two of them were written out by hand and lost
+    // their glyph entirely. Both under-measure, and near a row boundary the
+    // browser then wraps a chip the packer kept on the previous row: the height
+    // omits that whole row and the cards beneath are drawn over it.
+    const { document } = normalizeDocument(fixtureDocument);
+    // `101` is held, so it carries the two chips that used to lose their glyph.
+    const held = document.order.slots.find((slot) => slot.lead === '101');
+    assert.ok(held !== undefined);
+    const texts = badgeTexts(document, held, document.byKey.get('101'), ['101']);
+    assert.ok(
+      texts.some((text) => text.startsWith('⊘')),
+      'the not-ready chip is measured without its glyph',
+    );
+    for (const text of texts) {
+      assert.ok(text.length > 0, 'a chip measures as nothing at all');
+    }
   });
 
   it('aligns a gutter card with an unslotted NOW station, not just with a slot', () => {

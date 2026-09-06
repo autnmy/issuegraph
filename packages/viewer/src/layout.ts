@@ -431,7 +431,13 @@ function cardHeight(
 function packedRows(theme: Theme, texts: readonly string[], inner: number): number {
   if (texts.length === 0) return 0;
   const gap = metric(theme, '--ig-space-tight');
-  const chipPadding = gap * 2 + metric(theme, '--ig-stroke') * 2;
+  // THE CHIP'S OWN INNER GAP, TOO. A relationship or status chip is a glyph and
+  // a label — two children with `gap: var(--ig-space-tight)` between them — and
+  // measuring the concatenated text plus the outer padding alone under-measured
+  // every one of them. Near a row boundary the browser then wrapped a chip this
+  // packer had kept on the previous row, the height omitted that whole row, and
+  // the cards beneath were drawn over it.
+  const chipPadding = gap * 3 + metric(theme, '--ig-stroke') * 2;
   let used = 0;
   let rows = 1;
   for (const text of texts) {
@@ -557,9 +563,17 @@ export function layoutGraph(
   // partner is whichever spine node an edge joins it to; a gutter node with no
   // spine partner falls in behind the ones that have one.
   const partnerY = (key: string): number | undefined => {
+    // EVERY MEMBER'S EDGES, as the classification and the lateral axis already
+    // do. A tracker-held unit reaches the gutter because a NON-LEAD member
+    // blocks a ranked row — that is the whole case — and looking the partner up
+    // through the lead alone then found nothing, dropped the card at the
+    // fallback top row, and drew exactly the long cross-row arc this pass
+    // exists to prevent. Three passes asking the same question about a unit
+    // have to ask it the same way.
+    const mine = new Set(slotMembers.get(key) ?? [key]);
     for (const edge of document.edges) {
-      const other = edge.from === key ? edge.to : edge.to === key ? edge.from : undefined;
-      if (other === undefined) continue;
+      const other = mine.has(edge.from) ? edge.to : mine.has(edge.to) ? edge.from : undefined;
+      if (other === undefined || mine.has(other)) continue;
       // THE SLOT'S LEAD, OR THE KEY ITSELF. An unslotted running job has a
       // spine box of its own — it is the NOW station — and searching `slots`
       // alone could not resolve it, so a gutter card explaining the SECOND of
