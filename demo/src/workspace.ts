@@ -356,24 +356,37 @@ export function mountSandbox(
       theme: themeFor(theme),
       canvas,
     });
-    // ONE RENDER, once the store has answered: `hydrate` schedules it.
-    void hydrate();
+    // ONE RENDER, once the store has answered: `read` schedules it.
+    void read(true);
   };
 
   /**
-   * Read the mirror: hydrate the store and stamp the read.
+   * Read the mirror: load the store and stamp the read.
    *
    * THE STAMP HAS TO REACH THE WORKSPACE, and the store's own notification
    * does not carry it: the store publishes to its subscribers synchronously,
-   * INSIDE `hydrate()`, so the mount has already projected — with the OLD
+   * INSIDE the load, so the mount has already projected — with the OLD
    * `observedAt` — by the time the await returns. Re-stamping and redrawing
    * only the chrome left the drawn `as of` one read behind, every time. The
    * mount's `update()` re-runs the projection with the new stamp.
+   *
+   * THREE THINGS A STAMP MUST NOT CLAIM. A read that FAILED is not a read: the
+   * store resolves either way and says why in `hydrationError`, so the stamp
+   * moves only when it is undefined. A completion from a store the sandbox has
+   * since replaced (reset, scenario change) is about a document no longer on
+   * screen, so it stamps nothing. And the FIRST load is `hydrate()` while every
+   * later one is `rehydrate()`, which keeps the last good document and the
+   * store ready when the source refuses — `hydrate()` again would fail it.
    */
-  const hydrate = async (): Promise<void> => {
-    await live.store.hydrate();
-    observedAt = clock();
-    handle?.update();
+  const read = async (initial: boolean): Promise<void> => {
+    const store = live.store;
+    const owner = handle;
+    await (initial ? store.hydrate() : store.rehydrate());
+    if (store !== live.store || owner !== handle) return;
+    if (store.getSnapshot().hydrationError === undefined) {
+      observedAt = clock();
+      handle?.update();
+    }
     schedule();
   };
 
@@ -419,7 +432,7 @@ export function mountSandbox(
         start();
         return;
       case 'refresh':
-        void hydrate();
+        void read(false);
         return;
       default:
         return;

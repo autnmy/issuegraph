@@ -161,7 +161,7 @@ describe('the refresh control reaches the host', () => {
   it('re-reads the mirror on a click inside the mounted workspace', async () => {
     assert.ok(HOST_COMMANDS_FROM_WORKSPACE.has('refresh'));
     const dom = new JSDOM(
-      '<!doctype html><html><body><main id="sandbox"><section id="workspace"></section><div id="writes"></div><p id="versions"></p><select id="outcome"><option value="apply">apply</option><option value="reject">reject</option><option value="conflict">conflict</option></select></main></body></html>',
+      '<!doctype html><html><body><main id="sandbox"><section id="workspace"></section><div id="writes"></div><p id="versions"></p><select id="outcome"><option value="apply">apply</option><option value="reject">reject</option><option value="conflict">conflict</option></select><button type="button" data-ig-command="reset">reset</button></main></body></html>',
     );
     const win = dom.window;
     // The sandbox reads the page globals a browser has — `document` for its
@@ -175,12 +175,19 @@ describe('the refresh control reaches the host', () => {
         return found;
       };
       let hydrations = 0;
+      // The source can be told to REFUSE the next read, and to HOLD a read until
+      // the test releases it — the two shapes a stamp must not be fooled by.
+      let refuse = false;
+      const held: Array<() => void> = [];
+      let hold = false;
       const boot = (scenario: Scenario, onChange: () => void): Live => {
         const source = createDemoSource(scenario.document(), { onArmedChange: onChange });
         const counted = {
           ...source,
           hydrate: async () => {
             hydrations += 1;
+            if (hold) await new Promise<void>((resolve) => held.push(resolve));
+            if (refuse) throw new Error('the tracker is unreachable');
             return source.hydrate();
           },
         };
@@ -216,16 +223,57 @@ describe('the refresh control reaches the host', () => {
       assert.equal(stamp(), stampOf(OBSERVED));
       assert.equal(elapsed(), '· Review · 12m');
 
-      const refresh = win.document.querySelector<HTMLButtonElement>('#workspace button[data-ig-command="refresh"]');
-      assert.ok(refresh !== null, 'the workspace drew no refresh control');
+      // RE-QUERIED PER CLICK: every redraw rebuilds the control, so a reference
+      // taken once would dispatch into a detached node after the first read.
+      const clickRefresh = (): void => {
+        const refresh = win.document.querySelector<HTMLButtonElement>('#workspace button[data-ig-command="refresh"]');
+        assert.ok(refresh !== null, 'the workspace drew no refresh control');
+        refresh.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+      };
       current = new Date(OBSERVED.getTime() + 10 * 60_000);
-      refresh.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+      clickRefresh();
       await settle();
       await settle();
       assert.equal(hydrations, 2, 'the click did not re-read the mirror');
       assert.equal(stamp(), stampOf(current), 'the drawn stamp is not the newest read');
       // The job started once, at mount; a refresh does not wind it back.
       assert.equal(elapsed(), '· Review · 22m');
+      const landed = current;
+
+      // A READ THAT FAILED IS NOT A READ. The store keeps the last good document
+      // and stays ready (`rehydrate`, not a second `hydrate`), and the stamp
+      // stays at the read that landed rather than claiming "just now".
+      refuse = true;
+      current = new Date(OBSERVED.getTime() + 20 * 60_000);
+      clickRefresh();
+      await settle();
+      await settle();
+      assert.equal(hydrations, 3);
+      assert.equal(stamp(), stampOf(landed), 'a failed read moved the stamp');
+      refuse = false;
+
+      // A COMPLETION FROM A SUPERSEDED STORE STAMPS NOTHING. Hold the next
+      // read, reset the sandbox underneath it (a fresh store, read at once),
+      // then release the held read with the clock moved on: the stamp is the
+      // replacement's, not the stale completion's.
+      hold = true;
+      clickRefresh();
+      await settle();
+      assert.equal(held.length, 1, 'the read was not held');
+      hold = false;
+      current = new Date(OBSERVED.getTime() + 30 * 60_000);
+      const reset = win.document.querySelector<HTMLButtonElement>('#sandbox button[data-ig-command="reset"]');
+      assert.ok(reset !== null, 'no reset control');
+      reset.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+      await settle();
+      await settle();
+      const fresh = stamp();
+      assert.equal(fresh, stampOf(current), 'the reset did not stamp its own read');
+      current = new Date(OBSERVED.getTime() + 40 * 60_000);
+      for (const release of held.splice(0)) release();
+      await settle();
+      await settle();
+      assert.equal(stamp(), fresh, 'a completion from the replaced store re-stamped the page');
       handle.destroy();
     } finally {
       Object.assign(globalThis, previous);
