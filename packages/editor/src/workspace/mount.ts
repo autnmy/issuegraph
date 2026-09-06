@@ -397,8 +397,13 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
           return;
         }
         const { scan } = effect;
-        void option.source
-          .findCandidates()
+        // STARTED FROM A CALLBACK, so a host whose `findCandidates` throws
+        // BEFORE returning its promise — reading its own state, building a
+        // request — reaches the same failed scan as one whose promise rejects.
+        // Called directly, that throw escapes the `.catch` entirely and unwinds
+        // through the click handler, leaving the phase `scanning` for good.
+        void Promise.resolve()
+          .then(() => option.source.findCandidates())
           .then((candidates) => {
             dispatch({ kind: 'first-pass', command: { kind: 'candidates', scan, candidates } });
           })
@@ -412,6 +417,14 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         return;
       }
       case 'first-pass-apply': {
+        // THIS CANDIDATE'S WRITE MAY ALREADY BE OUT THERE. `⌫` on an answer whose
+        // create is still `pending` steps the queue back but takes nothing away,
+        // because `discardMine` declines a pending record — so answering `Y`
+        // again would propose the SAME create a second time, and when the first
+        // lands the second turns `invalid` and shows the reader an error about a
+        // relationship that now exists. One consent, one write: the handle is
+        // kept and nothing new is proposed.
+        if (liveWriteFor(effect.candidateId) !== undefined) return;
         const handle = store.propose(effect.proposal);
         appliedWrites.set(effect.candidateId, handle.mutationId);
         return;
@@ -436,8 +449,13 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         // candidate proposing the same pair, or from an older failed one.
         const mutationId = appliedWrites.get(effect.candidateId);
         if (mutationId === undefined) return;
-        appliedWrites.delete(effect.candidateId);
         store.discardMine(mutationId);
+        // THE HANDLE OUTLIVES A REFUSED DISCARD. `discardMine` leaves a `pending`
+        // record exactly where it was, so forgetting the id here would lose the
+        // only thing that can find that write again — see the apply arm.
+        if (liveWriteFor(effect.candidateId) === undefined) {
+          appliedWrites.delete(effect.candidateId);
+        }
         return;
       }
     }
@@ -583,6 +601,11 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       class: 'ig-firstpass-overlay',
       role: 'dialog',
       'aria-modal': 'true',
+      // THE DIALOG IS NAMED, not just its child. `renderFirstPass` puts the
+      // host's label on the `<section>` it draws, which names that landmark and
+      // says nothing about its dialog ancestor — so assistive technology met an
+      // unnamed modal. The same word, on the element that is the modal.
+      'aria-label': option.words.label,
       'aria-live': 'polite',
       'data-ig-firstpass': phase.kind,
       tabindex: '-1',
@@ -606,6 +629,15 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       button(option.exit, 'first-pass-close', { class: 'ig-chrome-button ig-chrome-quiet' }),
     );
     return wrapper;
+  };
+
+  /** The record this candidate's write still has at the store, if it has one. */
+  const liveWriteFor = (candidateId: string): MutationId | undefined => {
+    const mutationId = appliedWrites.get(candidateId);
+    if (mutationId === undefined) return undefined;
+    return store.getSnapshot().writes.some((write) => write.mutationId === mutationId)
+      ? mutationId
+      : undefined;
   };
 
   /**

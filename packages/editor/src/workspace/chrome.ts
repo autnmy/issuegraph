@@ -186,7 +186,13 @@ export const mountStylesheet = `
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  /* START-SAFE, NOT CENTRED. Evidence is host prose of no fixed length, and a
+     short workspace makes any panel too tall — centring overflow puts the
+     question above the container's own origin, where no scroll can reach it.
+     Laid out from the top and centred by the panel's own auto margins, which
+     collapse the moment there is not enough room. */
+  justify-content: flex-start;
+  overflow: auto;
   gap: var(--ig-space);
   padding: var(--ig-space-loose);
   box-sizing: border-box;
@@ -208,6 +214,8 @@ export const mountStylesheet = `
 .ig-firstpass-panel {
   width: 100%;
   max-width: calc(var(--ig-char-width) * 72);
+  /* Centres while it fits, and starts at the top the moment it does not. */
+  margin-block: auto;
 }
 
 /* The scanning and failed sentences. Both are the host's words. */

@@ -667,6 +667,16 @@ describe('the mount stylesheet carries structure, never a value', () => {
     assert.equal(/\b\d+(\.\d+)?(px|rem|em|pt)\b/.test(css), false, 'a fixed length');
   });
 
+  it('lets the first-pass takeover scroll rather than centring content out of reach', () => {
+    // Evidence is host prose of no fixed length. Centring overflow in a
+    // fixed-height absolute box puts the question above the container's own
+    // origin, where no scroll can reach it.
+    const overlay = css.slice(css.indexOf('.ig-firstpass-overlay'));
+    const block = overlay.slice(0, overlay.indexOf('}'));
+    assert.match(block, /overflow:\s*auto/);
+    assert.equal(/justify-content:\s*center/.test(block), false, 'the takeover centres its overflow');
+  });
+
   it('declares no animation and no transition', () => {
     assert.equal(/\banimation\b|\btransition\b|@keyframes/.test(css), false);
   });
@@ -1253,6 +1263,63 @@ describe('the first pass, composed behind §17a’s entry', () => {
     }
   });
 
+  it('does not propose the same create twice when a pending undo is re-answered', async () => {
+    // `discardMine` declines a pending record, so `⌫` steps the queue back and
+    // leaves the write standing. Answering `Y` again must not send it a second
+    // time — when the first lands, the second turns `invalid` and shows the
+    // reader an error about a relationship that now exists.
+    const page = await firstPassPage();
+    try {
+      await open(page);
+      press(page, 'y');
+      await flush();
+      await page.source.whenPending();
+      await flush();
+      assert.equal(page.store.getSnapshot().writes.length, 1);
+
+      press(page, 'Backspace');
+      await flush();
+      assert.equal(page.store.getSnapshot().writes.length, 1, 'the pending write went away');
+
+      press(page, 'y');
+      await flush();
+      assert.equal(page.store.getSnapshot().writes.length, 1, 'the create was proposed twice');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('treats a scanner that throws before it returns as a failed scan', async () => {
+    // A host reading its own state or building a request can throw
+    // SYNCHRONOUSLY; called directly that escapes the `.catch` and unwinds
+    // through the click handler, leaving the phase `scanning` for good.
+    const page = await mounted(backlog(8), {
+      project: entryProject,
+      firstPass: {
+        source: {
+          findCandidates: (): Promise<readonly Candidate[]> => {
+            throw new Error('the host blew up before it returned');
+          },
+        },
+        ...FIRST_PASS_OPTION,
+      },
+    });
+    try {
+      const entry = page.control('first-pass');
+      assert.ok(entry !== null);
+      page.click(entry);
+      await flush();
+      await flush();
+      const overlay = page.element.querySelector('.ig-firstpass-overlay');
+      assert.equal(overlay?.getAttribute('data-ig-firstpass'), 'failed', 'the scan stuck');
+      assert.ok(overlay?.textContent?.includes(FIRST_PASS_OPTION.scanFailed));
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
   it('is a modal over the workspace, and says so', async () => {
     const page = await firstPassPage();
     try {
@@ -1260,6 +1327,10 @@ describe('the first pass, composed behind §17a’s entry', () => {
       const overlay = overlayOf(page);
       assert.equal(overlay?.getAttribute('role'), 'dialog');
       assert.equal(overlay?.getAttribute('aria-modal'), 'true');
+      // NAMED ON THE DIALOG ITSELF. The label the package puts on its own
+      // `<section>` names that landmark and says nothing about its ancestor, so
+      // without this assistive technology meets an unnamed modal.
+      assert.equal(overlay?.getAttribute('aria-label'), FIRST_PASS_WORDS.label);
       // Focus does not move onto a control, so the swapped question needs a live
       // region or a screen reader hears nothing after the first answer.
       assert.equal(overlay?.getAttribute('aria-live'), 'polite');
