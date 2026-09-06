@@ -313,4 +313,50 @@ describe('the linear projection', () => {
     assert.match(row(markup, '103'), /tabindex="0"/);
     assert.match(row(markup, '102'), /tabindex="-1"/);
   });
+
+  it('carries relationships on EVERY footer row shape, whichever holds the edge', () => {
+    // A footer row is the only mark either projection makes for its issue — the
+    // list draws no arc at all, and the graph draws no node for anything down
+    // here — so an edge whose ends are both in this group had nothing left to
+    // represent it and disappeared entirely while both issues stayed visible.
+    // It arrived once per row shape: the aside row, then the tracker-held one.
+    // One rule now, asserted over all three.
+    const bothHeld = {
+      issues: [
+        { key: 'h1', title: 'Claimed, and blocked', open: true, priority: 2 as const },
+        { key: 'h2', title: 'Claimed, and blocking', open: true, priority: 2 as const },
+        { key: 'dup', title: 'A duplicate that also blocks', open: true, priority: 2 as const },
+        { key: 'canon', title: 'The canonical', open: true, priority: 2 as const },
+      ],
+      edges: [
+        { field: 'blocked-by' as const, from: 'h1', to: 'h2' },
+        { field: 'blocked-by' as const, from: 'dup', to: 'h2' },
+      ],
+      order: {
+        slots: [
+          {
+            rank: null,
+            lead: 'h1',
+            members: ['h1'],
+            ready: false,
+            holds: [{ family: 'tracker' as const, reason: 'claimed', label: 'claimed' }],
+          },
+          {
+            rank: null,
+            lead: 'h2',
+            members: ['h2'],
+            ready: false,
+            holds: [{ family: 'tracker' as const, reason: 'claimed', label: 'claimed' }],
+          },
+        ],
+        excluded: [{ key: 'dup', canonical: 'canon', reason: 'duplicate-of' as const }],
+      },
+      cycles: [],
+    };
+    const markup = render(bothHeld);
+
+    assert.match(row(markup, 'h1'), /data-edge="blocked-by"/, 'a held row lost its relationship');
+    assert.match(row(markup, 'h2'), /data-edge="blocked-by"/, 'a held row lost its relationship');
+    assert.match(row(markup, 'dup'), /data-edge="blocked-by"/, 'an exclusion lost its relationship');
+  });
 });

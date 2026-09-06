@@ -262,8 +262,28 @@ export function footerRow(
         : element('span', { class: 'ig-badge', 'data-hold': labelled.label }, [labelled.label]),
       element('span', { class: 'ig-title' }, [slotTitle(document, slot)]),
       lead === undefined ? null : identity(lead),
+      footerRelationships(document, slot.members),
     ],
   );
+}
+
+/**
+ * The relationships of the keys a footer row stands for.
+ *
+ * EVERY FOOTER SHAPE CARRIES THEM, and that is the rule rather than three
+ * places to remember. A footer row is the ONLY mark either projection makes for
+ * its issue — the list draws no arc at all, and the graph draws no node for
+ * anything down here — so an edge whose ends are both in this group had nothing
+ * left to represent it and disappeared entirely while both issues stayed
+ * visible. That is a picture that lies about the document rather than one that
+ * shows less of it, and it arrived once per row shape: the aside row, then this
+ * one. One helper, called by all three.
+ */
+function footerRelationships(
+  document: NormalizedDocument,
+  keys: readonly string[],
+): ElementSpec | null {
+  return edgeBadges(document, keys);
 }
 
 // EXPORTED FOR THE GRAPH'S REFUSAL, which is the only other place an exclusion
@@ -299,6 +319,7 @@ export function excludedRow(
       element('span', { class: 'ig-title' }, [issue?.title ?? key]),
       issue === undefined ? null : identity(issue),
       element('span', { class: 'ig-id' }, [`→ ${canonical}`]),
+      footerRelationships(document, [key]),
     ],
   );
 }
@@ -333,12 +354,7 @@ export function asideRow(
       element('span', { class: 'ig-badge' }, ['outside the order']),
       element('span', { class: 'ig-title' }, [issue?.title ?? key]),
       issue === undefined ? null : identity(issue),
-      // ITS RELATIONSHIPS TOO. This row is the only mark the compact graph makes
-      // for its issue, and an edge whose BOTH endpoints are down here has no
-      // card to badge it and no arc to draw — so the relationship disappeared
-      // entirely while both issues stayed visible, which is a picture that lies
-      // about the document rather than one that shows less of it.
-      edgeBadges(document, [key]),
+      footerRelationships(document, [key]),
     ],
   );
 }
