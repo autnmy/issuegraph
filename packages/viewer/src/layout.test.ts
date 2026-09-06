@@ -206,6 +206,76 @@ describe('layoutGraph', () => {
     assert.deepEqual([...layout.footer], [], 'it kept a footer row as well as its station');
   });
 
+  it('keeps an unslotted NOW node off the gutters, however many edges touch it', () => {
+    // A running job with no slot is placed as the NOW station and is therefore
+    // absent from the slot membership the gutter pass skips — so an edge
+    // touching it sent it to a gutter as well. In the expanded graph the gutter
+    // box then OVERWROTE the spine one and the NOW marker vanished; in compact
+    // mode, where the gutters are not drawn, it appeared as a card AND as a
+    // footer row. Both are the same fault: one key, two boxes.
+    const running: ViewerDocument = {
+      issues: [
+        { key: 'n', title: 'Running, in no slot', open: true, priority: 2 },
+        { key: 'r', title: 'Ranked', open: true, priority: 2 },
+      ],
+      edges: [{ field: 'blocked-by', from: 'r', to: 'n' }],
+      order: {
+        slots: [{ rank: 1, lead: 'r', members: ['r'], ready: true, holds: [] }],
+        excluded: [],
+      },
+      cycles: [],
+      host: { running: [{ key: 'n', phase: 'Review', elapsed: '4m' }] },
+    };
+    const { document } = normalizeDocument(running);
+
+    const wide = layoutGraph(document, defaultTheme);
+    assert.equal(wide.nodes.get('n')?.column, 'spine', 'the NOW node was moved into a gutter');
+    assert.equal(wide.nodes.get('n')?.now, true, 'the gutter pass overwrote the NOW marker');
+
+    const column = layoutGraph(document, defaultTheme, true);
+    assert.equal(column.nodes.get('n')?.now, true);
+    assert.equal(column.footer.includes('n'), false, 'the NOW node is a card AND a footer row');
+  });
+
+  it('counts a gutter UNIT\u2019s notes as well as its members', () => {
+    // The unit branch of the height rule returned before the note lines were
+    // added, so a tracker-held unit in the gutter overran its box by exactly its
+    // own hold reason while its arcs stayed anchored to the shorter geometry. A
+    // height rule with an early return is a height rule with a case it forgets.
+    const long =
+      'claimed by another run, which is still working the second member of this unit and has not reported back';
+    const withNote = (reason: string): ViewerDocument => ({
+      issues: [
+        { key: 'r', title: 'Ranked', open: true, priority: 2 },
+        { key: 'u', title: 'Unit lead', open: true, priority: 2 },
+        { key: 'p', title: 'Unit partner', open: true, priority: 2 },
+      ],
+      edges: [
+        { field: 'together-with', from: 'u', to: 'p' },
+        { field: 'blocked-by', from: 'r', to: 'p' },
+      ],
+      order: {
+        slots: [
+          { rank: 1, lead: 'r', members: ['r'], ready: true, holds: [] },
+          {
+            rank: null,
+            lead: 'u',
+            members: ['u', 'p'],
+            ready: false,
+            holds: [{ family: 'tracker', reason, label: 'claimed' }],
+          },
+        ],
+        excluded: [],
+      },
+      cycles: [],
+    });
+    const tall = layoutGraph(normalizeDocument(withNote(long)).document, defaultTheme).nodes.get('u');
+    const short = layoutGraph(normalizeDocument(withNote('claimed')).document, defaultTheme).nodes.get('u');
+
+    assert.ok(tall !== undefined && short !== undefined, 'the unit is not in the gutter');
+    assert.ok(tall.height > short.height, 'a unit card reserved nothing for its own hold reason');
+  });
+
   it('marks the UNIT when the running job is a partner, and sizes a gutter unit whole', () => {
     // Two rules that both read a slot through its lead alone. A together unit
     // is ONE card, so a running partner marks that card rather than taking a

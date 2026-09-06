@@ -44,6 +44,16 @@ export class TestElement implements MountElement {
   focusCount = 0;
   /** Calls a browser would have ignored — see `focus()`. */
   refusedFocusCount = 0;
+  /**
+   * How many times the shell asked to bring this element into view.
+   *
+   * NO PRECONDITION, UNLIKE `focus`. Every element can be scrolled to; the
+   * question §16f asks is only whether the shell found the right one, and the
+   * answer used to be "no" for exactly the subjects that need it — an edge and
+   * a NOW row carry a pointer identity and no focus key, so a lookup in the
+   * focus index always missed and the promised scroll silently did nothing.
+   */
+  scrollCount = 0;
   readonly tag: string;
   readonly ownerDocument: SpecDocument;
   readonly namespace: string | null;
@@ -131,6 +141,10 @@ export class TestElement implements MountElement {
       return;
     }
     this.focusCount += 1;
+  }
+
+  scrollIntoView(): void {
+    this.scrollCount += 1;
   }
 
   /** Call the listeners registered on THIS node. No bubbling: see the header. */

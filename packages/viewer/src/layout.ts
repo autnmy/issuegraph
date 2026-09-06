@@ -346,7 +346,13 @@ function assignColumns(
     (touchesSpine(lead) ? left : footer).push(lead);
   }
 
-  const seen = new Set([...placed, ...left, ...footer]);
+  // THE RUNNING KEYS TOO. A job with no slot is placed by `layoutGraph` as the
+  // NOW station and is therefore absent from `placed` — so an edge touching it
+  // sent it to a gutter as well. In the expanded graph the gutter box then
+  // overwrote the spine one and the NOW marker vanished; in compact mode, where
+  // the gutters are not drawn, the key appeared as a card AND as a footer row.
+  // Both are the same fault: one key, two boxes.
+  const seen = new Set([...placed, ...running, ...left, ...footer]);
   for (const edge of document.edges) {
     for (const end of [edge.from, edge.to]) {
       if (seen.has(end)) continue;
@@ -414,6 +420,28 @@ function cardHeight(
   }
   const badgeBlock = badgeRows === 0 ? 0 : gap + badgeRows * line;
 
+  // THE SENTENCES A GUTTER CARD PRINTS. A spine card carries its hold on a chip
+  // and a tooltip, because the list beside it prints the sentence — but a
+  // gutter card is the ONLY mark this projection draws for its issue, and §16b
+  // prints "open · not eligible" on it in as many words. Counted here or the
+  // sentence is drawn over the card beneath.
+  //
+  // MEASURED, NOT COUNTED, and the difference is not academic: a hold reason is
+  // an arbitrary host string and `.ig-hold` wraps it inside a fixed-width
+  // gutter, so charging one line each under-reserved every note that runs to
+  // two or three. The same width-based count the title takes.
+  //
+  // COMPUTED BEFORE THE UNIT BRANCH, because `nodeCard` prints these after the
+  // enclosure whether the card holds one issue or five — and the unit branch
+  // used to return without them, so a tracker-held unit in the gutter overran
+  // its box by exactly its own hold reason while its arcs stayed anchored to
+  // the shorter geometry. A height rule with an early return is a height rule
+  // with a case it forgets.
+  const sentences = onSpine
+    ? 0
+    : notes(document, key).reduce((total, note) => total + lines(note), 0);
+  const noteBlock = sentences === 0 ? 0 : gap + sentences * line;
+
   // A UNIT'S CARD IS ITS PILL, ITS ENCLOSURE AND ITS MEMBERS. Sizing it as an
   // ordinary card is what let two issues be drawn in the space of one title.
   if (members.length > 1) {
@@ -425,26 +453,11 @@ function cardHeight(
         (lines(document.byKey.get(member)?.title ?? member) + 1) * line,
       0,
     );
-    return pad + line + gap + enclosure + badgeBlock;
+    return pad + line + gap + enclosure + badgeBlock + noteBlock;
   }
 
   const title = document.byKey.get(key)?.title ?? key;
-  // THE SENTENCES A GUTTER CARD PRINTS. A spine card carries its hold on a chip
-  // and a tooltip, because the list beside it prints the sentence — but a
-  // gutter card is the ONLY mark this projection draws for its issue, and §16b
-  // prints "open · not eligible" on it in as many words. Counted here or the
-  // sentence is drawn over the card beneath.
-  //
-  // MEASURED, NOT COUNTED, and the difference is not academic: a hold reason is
-  // an arbitrary host string and `.ig-hold` wraps it inside a fixed-width
-  // gutter, so charging one line each under-reserved every note that runs to
-  // two or three — and the card beneath was then drawn over the overflow while
-  // the arcs stayed attached to the box the layout thought it had. The same
-  // width-based count the title takes.
-  const sentences = onSpine
-    ? 0
-    : notes(document, key).reduce((total, note) => total + lines(note), 0);
-  return pad + lines(title) * line + line + badgeBlock + (sentences === 0 ? 0 : gap + sentences * line);
+  return pad + lines(title) * line + line + badgeBlock + noteBlock;
 }
 
 /**

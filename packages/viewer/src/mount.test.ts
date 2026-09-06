@@ -248,6 +248,44 @@ describe('mountViewer', () => {
     assert.equal(handle.state.focused, away, 'selecting an edge moved the keyboard tab stop');
   });
 
+  it('brings a surviving selection into view on a projection switch, edge or issue', () => {
+    // §16f: A SWITCH CHANGES REPRESENTATION, NEVER SUBJECT. The selection
+    // already survived, and surviving OFF SCREEN is indistinguishable from being
+    // lost — the two views place the same subject at completely different
+    // coordinates. The lookup used the FOCUS index, which holds `data-ig-key`
+    // only, so an edge selection and a NOW row — both carrying a pointer
+    // identity and no focus key — missed it every time and the promised scroll
+    // never happened for the subjects that need it most.
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const edge = edgeIdentity('together-with', '1', '2');
+    const handle = mountViewer(container, heldTogetherDocument, { projection: 'graph' });
+
+    const badge = container
+      .descendants()
+      .find((element) => element.getAttribute(GROUP_ATTRIBUTE) === edge);
+    assert.ok(badge !== undefined, 'no together badge was drawn');
+    container.dispatch('click', { target: badge });
+    assert.equal(handle.state.selected, edge);
+
+    handle.setProjection('linear');
+    const scrolled = container
+      .descendants()
+      .filter((element) => element.scrollCount > 0);
+    assert.equal(scrolled.length, 1, 'the edge selection was not brought into view');
+    assert.equal(scrolled[0]?.getAttribute(GROUP_ATTRIBUTE), edge);
+
+    // An ordinary issue selection takes the same path.
+    const row = container.descendants().find((element) => element.getAttribute(KEY_ATTRIBUTE) === '1');
+    assert.ok(row !== undefined);
+    container.dispatch('click', { target: row });
+    handle.setProjection('graph');
+    assert.ok(
+      container.descendants().some((element) => element.scrollCount > 0),
+      'an issue selection was not brought into view',
+    );
+  });
+
   it('restores a connector selection passed in at mount', () => {
     // THE FIRST DRAW HAS NO PRIOR SCENE, so `pointable` is empty and the
     // pre-scene check had no evidence about a decoration identity — it cleared

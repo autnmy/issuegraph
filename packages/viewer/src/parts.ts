@@ -16,7 +16,7 @@ import type {
   ViewerIssue,
   ViewerSlot,
 } from './document.ts';
-import { type ElementSpec, element } from './element.ts';
+import { type ElementSpec, element, svg } from './element.ts';
 import { GROUP_ATTRIBUTE } from './scene.ts';
 import { EDGE_ORDER, type EdgeTerminal, dashArrayFor, treatmentFor } from './vocabulary.ts';
 
@@ -857,9 +857,15 @@ function legendSample(field: EdgeField): ElementSpec {
   const dash = dashArrayFor(treatment.dash);
   const box = { width: String(SAMPLE_WIDTH), height: String(SAMPLE_HEIGHT), 'aria-hidden': 'true' };
   const mid = SAMPLE_HEIGHT / 2;
+  // BUILT IN THE SVG NAMESPACE, and `element` does not put it there. That works
+  // by accident through `renderViewer`, whose output a host parses as HTML —
+  // but `mountViewer` materializes the same spec with `createElement`, which
+  // builds an HTML `<svg>` and HTML `<line>` children that draw nothing at all.
+  // So a mounted viewer showed five blank boxes where the legend's samples are,
+  // which is the whole of what the samples were added for.
   if (treatment.dash === 'enclosure') {
-    return element('svg', box, [
-      element('rect', {
+    return svg('svg', box, [
+      svg('rect', {
         class: 'ig-enclosure',
         'data-edge': field,
         x: '1',
@@ -877,7 +883,7 @@ function legendSample(field: EdgeField): ElementSpec {
           lineSample(field, 1, SAMPLE_WIDTH, mid + 2, dash),
         ]
       : [lineSample(field, 1, SAMPLE_WIDTH - 7, mid, dash)];
-  return element('svg', box, [...lines, terminalSample(field, treatment.terminal, mid)]);
+  return svg('svg', box, [...lines, terminalSample(field, treatment.terminal, mid)]);
 }
 
 function lineSample(
@@ -887,7 +893,7 @@ function lineSample(
   y: number,
   dash: string | null,
 ): ElementSpec {
-  return element('line', {
+  return svg('line', {
     class: 'ig-edge',
     'data-edge': field,
     x1: String(x1),
@@ -903,14 +909,14 @@ function terminalSample(field: EdgeField, terminal: EdgeTerminal, y: number): El
   const tip = SAMPLE_WIDTH;
   switch (terminal) {
     case 'arrow':
-      return element('path', {
+      return svg('path', {
         class: 'ig-terminal',
         'data-edge': field,
         fill: 'currentColor',
         d: `M${String(tip - 7)},${String(y - 3)} L${String(tip)},${String(y)} L${String(tip - 7)},${String(y + 3)} z`,
       });
     case 'hollow-circle':
-      return element('circle', {
+      return svg('circle', {
         class: 'ig-terminal',
         'data-edge': field,
         fill: 'none',
@@ -920,7 +926,7 @@ function terminalSample(field: EdgeField, terminal: EdgeTerminal, y: number): El
         r: '3',
       });
     case 'tee':
-      return element('line', {
+      return svg('line', {
         class: 'ig-terminal',
         'data-edge': field,
         stroke: 'currentColor',

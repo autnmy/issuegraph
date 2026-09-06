@@ -5,7 +5,7 @@ import { edgeIdentity } from '@issuegraph/core';
 
 import { type ViewerDocument, normalizeDocument } from '../document.ts';
 import { layoutGraph, measureLabel } from '../layout.ts';
-import { renderMarkup } from '../element.ts';
+import { type ElementSpec, renderMarkup } from '../element.ts';
 import { crowdedDocument, fixtureDocument, heldTogetherDocument } from '../testing/fixtures.ts';
 import { viewerStylesheet } from '../styles.ts';
 import { defaultTheme, extendTheme } from '../theme.ts';
@@ -626,6 +626,24 @@ describe('the graph projection', () => {
     );
   });
 
+
+  it('builds every legend sample in the SVG namespace, so a MOUNT draws it', () => {
+    // IT WORKED BY ACCIDENT THROUGH `renderViewer`, whose output a host parses
+    // as HTML. `mountViewer` materializes the same spec with `createElement`,
+    // which builds an HTML `<svg>` and HTML `<line>` children that draw nothing
+    // at all — so a mounted viewer showed five blank boxes where the legend's
+    // samples are, which is the whole of what the samples were added for.
+    const svgTags = new Set(['svg', 'line', 'path', 'circle', 'rect']);
+    const walk = (spec: ElementSpec): void => {
+      if (svgTags.has(spec.tag)) {
+        assert.equal(spec.ns, 'svg', `<${spec.tag}> is not in the SVG namespace`);
+      }
+      for (const child of spec.children ?? []) {
+        if (child !== null && child !== undefined && typeof child !== 'string') walk(child);
+      }
+    };
+    walk(scene().root);
+  });
 
   it('gives every terminal marker its own hue, not the inherited text colour', () => {
     // `currentColor` on a marker resolves to the inherited COLOR, and the edge

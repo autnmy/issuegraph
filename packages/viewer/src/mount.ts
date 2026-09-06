@@ -198,6 +198,20 @@ export function mountViewer(
   // mark becomes hoverable but unselectable.
   let pointable = new Set<string>();
   /**
+   * The first ELEMENT drawn for a pointer identity — a `data-ig-key` or a
+   * `data-ig-group`.
+   *
+   * SEPARATE FROM `keyed`, WHICH IS A FOCUS INDEX. `keyed` holds only
+   * `data-ig-key` and prefers whichever element can take focus, because its
+   * readers call `focus()`. §16f's promise is different and does not need
+   * focus: a projection switch brings the surviving SELECTION into view, and a
+   * selection may be an edge or a NOW row, neither of which carries a focus
+   * key. Looking those up in `keyed` always missed, so the scroll the switch
+   * advertises simply never happened for exactly the subjects that need it
+   * most — the ones the two views place furthest apart.
+   */
+  let drawn = new Map<string, SpecElement>();
+  /**
    * Whether this document carries the edge a key names.
    *
    * THE EDGE COUNTERPART OF `byKey`, and that symmetry is the whole point. An
@@ -325,6 +339,7 @@ export function mountViewer(
     // selection both need both, and need them from the SCENE rather than from
     // `byKey` — a decoration identity is in no document.
     pointable = new Set<string>();
+    drawn = new Map<string, SpecElement>();
     // WHICH KEYS ARE INDEXED BY SOMETHING THAT CAN ACTUALLY TAKE FOCUS. `keyed`
     // is a FOCUS index — its only readers call `focus()` on what it holds — so
     // holding an element a browser ignores makes it silently useless.
@@ -355,9 +370,13 @@ export function mountViewer(
             if (canFocus) focusableKeys.add(key);
           }
           pointable.add(key);
+          if (!drawn.has(key)) drawn.set(key, node);
         }
         const group = spec.attrs?.[GROUP_ATTRIBUTE];
-        if (typeof group === 'string' && group !== '') pointable.add(group);
+        if (typeof group === 'string' && group !== '') {
+          pointable.add(group);
+          if (!drawn.has(group)) drawn.set(group, node);
+        }
       },
     });
     container.appendChild(root);
@@ -599,8 +618,12 @@ export function mountViewer(
       // brings it into view. Focus is NOT moved: a switch is not an act of
       // navigation, and stealing focus from wherever the reader put it would
       // make the toggle a worse citizen than the click that made the selection.
+      // FROM THE POINTER INDEX, not the focus one. A selection can be an edge
+      // or a NOW row, and neither carries a focus key — so `keyed` missed them
+      // and the scroll this promises never happened for the subjects the two
+      // views place furthest apart.
       if (state.selected !== null) {
-        keyed.get(state.selected)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+        drawn.get(state.selected)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
       }
     },
     select(key: string | null): void {
@@ -625,6 +648,7 @@ export function mountViewer(
       if (root !== null) container.removeChild(root);
       root = null;
       keyed = new Map<string, SpecElement>();
+      drawn = new Map<string, SpecElement>();
     },
   };
 }
