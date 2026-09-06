@@ -68,7 +68,8 @@ describe('the §16 comparison page', () => {
     const markup = markupOf('s16g-empty');
     assert.ok(markup.includes('Nothing is eligible right now'));
     assert.ok(markup.includes('The pipeline stays armed'));
-    assert.ok(markup.includes('data-ig-command="review-pick-order"'));
+    // The SENTENCES survive; only the affordance this page cannot perform goes.
+    assert.ok(!markup.includes('data-ig-command="review-pick-order"'));
     // THE FRAME DRAWS AN EMPTY CARD. `empty` is the one state that contradicts a
     // populated order rather than qualifying it, so the host shows what it says
     // it has — no rows, no NOW band, no tally claiming otherwise.
@@ -78,11 +79,11 @@ describe('the §16 comparison page', () => {
     assert.ok(!markup.includes('ig-empty'), 'the empty panel drew the package’s own sentence too');
   });
 
-  it('prints the error frame’s assurance and offers Retry', () => {
+  it('prints the error frame’s assurance, without a Retry this page cannot perform', () => {
     const markup = markupOf('s16g-error');
     assert.ok(markup.includes('The index could not be read'));
     assert.ok(markup.includes('continues on its last known order'));
-    assert.ok(markup.includes('data-ig-command="retry:index"'));
+    assert.ok(!markup.includes('data-ig-command="retry:index"'));
   });
 
   it('dates the states that are NOT current from their own last successful read', () => {
@@ -107,11 +108,21 @@ describe('the §16 comparison page', () => {
     assert.ok(stale.includes('data-ig-command="refresh"'), 'the stale panel lost the refresh its frame draws');
   });
 
-  it('keeps every other panel free of a refresh nothing can perform', () => {
+  it('draws no control this page cannot perform — every word, not just refresh', () => {
+    // The rule was applied to `refresh` alone, so the states arrived with three
+    // more controls beside it and every one of them was drawn dead: Retry,
+    // Review pick order and Dismiss were enabled and wired to nothing.
     for (const id of PANELS.keys()) {
+      const markup = markupOf(id);
+      for (const command of ['retry:index', 'review-pick-order', 'dismiss:adoption']) {
+        assert.ok(!markup.includes(command), `${id} draws a ${command} nothing can perform`);
+      }
       if (id === 's16g-stale') continue;
-      assert.ok(!markupOf(id).includes('data-ig-command="refresh"'), `${id} offers a refresh on a fixed clock`);
+      assert.ok(!markup.includes('data-ig-command="refresh"'), `${id} offers a refresh on a fixed clock`);
     }
+    // The one exception, and it is the frame's: §16g draws the stale stamp WITH
+    // its inline refresh, so the panel that reproduces it keeps the control.
+    assert.ok(markupOf('s16g-stale').includes('data-ig-command="refresh"'));
   });
 
   it('draws §16h complete and calm: the day-one panel explains itself', () => {
@@ -133,7 +144,7 @@ describe('the §16 comparison page', () => {
     // A SHORT LINK BESIDE THE SENTENCE, not the sentence wearing an underline.
     assert.ok(markup.includes('<a class="ig-adoption-link" href="https://issuegraph.org/" rel="noreferrer">'));
     assert.ok(!markup.includes('<a class="ig-adoption-link" href="https://issuegraph.org/" rel="noreferrer">No issue'));
-    assert.ok(markup.includes('data-ig-command="dismiss:adoption"'), '§16h drew a line nobody can dismiss');
+    assert.ok(!markup.includes('data-ig-command="dismiss:adoption"'), '§16h drew a dismiss this page cannot perform');
     // At the design's own scale, and under the graph's node budget.
     assert.equal(panelDocument('s16h-adoption').order.slots.length, ADOPTION_SIZE);
   });

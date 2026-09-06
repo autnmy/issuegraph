@@ -13,7 +13,7 @@
  * screenshot is a reproduction rather than a moment.
  */
 
-import { type Scene, initialNavigationState, navigate, renderViewer } from '@issuegraph/viewer';
+import { type HostFacts, type Scene, initialNavigationState, navigate, renderViewer } from '@issuegraph/viewer';
 
 import { projectDocument } from './document.ts';
 import { type DemoStateName, hostFacts, runningSince, showsOrder } from './host.ts';
@@ -49,8 +49,9 @@ function projectionFor(panel: PanelState, id: string): ReturnType<typeof project
   // said "nothing is eligible" over eleven ranked rows would be reproducing
   // nothing at all — which is what this page exists to make visible.
   const shown = showsOrder(panel.state);
-  // See `workspace.ts`: adoption is measured over the whole document, the order
-  // over what this panel draws. Blanking the order must not blank the backlog.
+  // See `workspace.ts`: adoption and the audit are read over the whole document,
+  // the order over what this panel draws. Blanking the order must not blank the
+  // backlog.
   const held = { issues: document.issues, edges: document.edges };
   const landed = shown ? held : { issues: [], edges: [] };
   const explained = explainDocument(landed, scenario.holds, scenario.ranking);
@@ -63,21 +64,50 @@ function projectionFor(panel: PanelState, id: string): ReturnType<typeof project
     // Measured from the document this panel draws — see `adoptionFor`.
     adoption: adoptionFor(scenario, held, false),
   });
-  // NO REFRESH CONTROL ON A FIXED-CLOCK SURFACE. The viewer draws one only when
-  // the host supplies a word for it, and this page has nothing to re-read: its
-  // clock is a constant so that a screenshot is a reproduction. An enabled
-  // control that cannot do anything is worse than its absence — the same rule
-  // the graph's refusal states about its own capsules.
-  //
-  // OMIT `refresh`, NEVER REBUILD FROM A LIST OF KEEPERS. Naming the two fields
-  // to keep silently dropped `stale` the moment a third field mattered — so the
-  // stale panel would have drawn a current-looking stamp, with no gold and no
-  // word, and the build would have stayed green.
-  if (host.freshness === undefined || id === KEEPS_REFRESH) {
-    return projectDocument(explained, landed, host, scenario.caveats);
-  }
-  const { refresh: _dropped, ...freshness } = host.freshness;
-  return projectDocument(explained, landed, { ...host, freshness }, scenario.caveats);
+  return projectDocument(explained, landed, asReproduction(host, id), scenario.caveats, held);
+}
+
+/**
+ * The host facts a fixed-clock surface can honestly state.
+ *
+ * NO CONTROL THIS PAGE CANNOT PERFORM. The viewer draws one only where a host
+ * supplied a word for it, and this page has nothing to re-read, nowhere to
+ * route and nothing to remember: its clock is a constant so that a screenshot
+ * is a reproduction. An enabled control that does nothing is worse than its
+ * absence — the same rule the graph's refusal states about its own capsules,
+ * and the rule this page already applied to `refresh` alone until the states
+ * arrived with three more controls beside it.
+ *
+ * STATED ONCE, OVER EVERY WORD. Dropping them one at a time is how `refresh`
+ * came to be handled and Retry, Review and Dismiss came to be drawn dead.
+ *
+ * OMITTED, NEVER REBUILT FROM A LIST OF KEEPERS. Naming the fields to keep
+ * silently dropped `stale` the moment a third one mattered, so the stale panel
+ * drew a current-looking stamp with no gold and no word, and the build stayed
+ * green.
+ */
+function asReproduction(host: HostFacts, id: string): HostFacts {
+  const condition =
+    host.condition === undefined
+      ? undefined
+      : host.condition.kind === 'empty'
+        ? (({ action: _routed, ...rest }) => rest)(host.condition)
+        : host.condition.kind === 'error'
+          ? (({ retry: _reread, ...rest }) => rest)(host.condition)
+          : host.condition;
+  const freshness =
+    host.freshness === undefined || id === KEEPS_REFRESH
+      ? host.freshness
+      : (({ refresh: _reread, ...rest }) => rest)(host.freshness);
+  const note = host.adoption?.note === undefined
+    ? host.adoption?.note
+    : (({ dismiss: _hidden, ...rest }) => rest)(host.adoption.note);
+  return {
+    ...host,
+    ...(condition === undefined ? {} : { condition }),
+    ...(freshness === undefined ? {} : { freshness }),
+    ...(host.adoption === undefined ? {} : { adoption: { ...host.adoption, ...(note === undefined ? {} : { note }) } }),
+  };
 }
 
 /** What each panel is showing right now — the state a control moves. */

@@ -276,7 +276,10 @@ function projectFor(scenario: Scenario, moments: HostMoments): (snapshot: StoreS
       // at boot describes a backlog that no longer exists after the first edit.
       adoption: adoptionFor(scenario, held, moments.dismissed()),
     });
-    return projectDocument(explained, landed, host, scenario.caveats);
+    // `landed` is what this panel DRAWS; `held` is what the repository HOLDS.
+    // The audit reads relationships, and a state saying nothing is eligible has
+    // changed none of them.
+    return projectDocument(explained, landed, host, scenario.caveats, held);
   };
 }
 

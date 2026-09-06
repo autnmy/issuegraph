@@ -228,9 +228,16 @@ function narrow(input: ViewerDocument, keep: ReadonlySet<string>): ViewerDocumen
     cycles: input.cycles
       .map((cycle) => cycle.filter((member) => keep.has(member)))
       .filter((cycle) => cycle.length > 0),
-    // NO `host`, ON PURPOSE. The canvas answers "what surrounds this issue";
-    // the header, the NOW row and the freshness stamp are the rail's to draw,
-    // and carrying the facts here would draw them twice in one workspace.
+    // NO HOST CHROME, ON PURPOSE. The canvas answers "what surrounds this
+    // issue"; the header, the NOW row and the freshness stamp are the rail's to
+    // draw, and carrying those here would draw them twice in one workspace.
+    //
+    // THE CONDITION SURVIVES, and it is the one fact that must. It draws nothing
+    // itself under `chrome: false`; what it does is stop this canvas explaining
+    // an emptiness the host has already accounted for — otherwise a focus with
+    // nothing to draw says "no issue in this document declares a relationship"
+    // beside a rail saying the index could not be read.
+    ...(input.host?.condition === undefined ? {} : { host: { condition: input.host.condition } }),
   };
 }
 

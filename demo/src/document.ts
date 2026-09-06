@@ -219,11 +219,21 @@ function dedupe(holds: readonly ViewerHold[]): readonly ViewerHold[] {
  * (`host.ts`), and `caveats` what the host's engine knows about its own rows;
  * absent, the viewer draws the pure-graph view.
  */
+/**
+ * @param landed   what this panel DRAWS. The empty state deliberately blanks it.
+ * @param audited  what the repository HOLDS. Defaults to `landed`, and differs
+ *   only where the two genuinely differ: an audit is a reading of the backlog's
+ *   relationships, and a panel saying nothing is eligible has not changed one of
+ *   them. Passing the blanked document here made the workspace's audit report
+ *   zero findings and its filter drop every affected row the moment eligibility
+ *   changed — a fact about the ORDER erasing facts about the GRAPH.
+ */
 export function projectDocument(
   explained: ExplainedDocument,
   landed: GraphDocument,
   host?: HostFacts,
   caveats: ReadonlyMap<IssueRef, IssueCaveats> = new Map(),
+  audited: GraphDocument = landed,
 ): Projection {
   const running = new Set((host?.running ?? []).map((job) => job.key));
   const { slots, excluded } = slotsOf(explained, running);
@@ -239,7 +249,7 @@ export function projectDocument(
       cycles: explained.model.cycles,
     },
     audit: {
-      document: landed,
+      document: audited,
       graph: {
         cycles: explained.model.cycles,
         duplicateCanonical: explained.model.duplicateCanonical,

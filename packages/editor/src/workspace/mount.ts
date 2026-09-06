@@ -218,10 +218,25 @@ function withKey(scope: Element, key: string): HTMLElement[] {
  * canvas renders the whole document and so drew a second header and a second
  * refresh control in the same workspace. One place strips it for both.
  */
-function withoutHost(document: ViewerDocument): ViewerDocument {
+/**
+ * The host facts a SECONDARY view keeps: what is true, never what is drawn.
+ *
+ * The rail owns this workspace's one header, NOW row and freshness stamp, and
+ * carrying them onto a second view would draw them twice — that is why the
+ * facts are stripped here at all, and it stays true.
+ *
+ * THE CONDITION IS NOT ONE OF THEM. It is the host's account of WHY the panel
+ * is short, and the viewer uses it to refuse to invent a different account:
+ * without it, a canvas beside an explained rail falls back to "no issue in this
+ * document declares a relationship", which under a stated `error` is a claim
+ * about something else and contradicts the rail. It draws nothing on its own
+ * under `chrome: false`, so keeping it costs no chrome — it only stops a second
+ * view explaining the same emptiness a different, false way.
+ */
+function withoutChrome(document: ViewerDocument): ViewerDocument {
   if (document.host === undefined) return document;
-  const { host: _host, ...rest } = document;
-  return rest;
+  const { host, ...rest } = document;
+  return host.condition === undefined ? rest : { ...rest, host: { condition: host.condition } };
 }
 
 /**
@@ -463,7 +478,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     if (zoneName === 'rail') return renderViewer(drawn.rail.document, { projection: 'linear', theme: theme() }).scene;
     if (zoneName !== 'canvas') return null;
     if (current.canvas === 'tree')
-      return renderViewer(withoutHost(drawn.viewer), { projection: 'tree', theme: theme(), chrome: false }).scene;
+      return renderViewer(withoutChrome(drawn.viewer), { projection: 'tree', theme: theme(), chrome: false }).scene;
     const ladder = scaleLadder(drawn.viewer, state.scale);
     return ladder.tier === 'direct'
       ? renderViewer(ladder.canvas, { projection: 'graph', theme: theme(), chrome: false }).scene
@@ -575,7 +590,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         // as data, the same `data-ig-state` the ladder's line carries, so a
         // pending edge is not drawn as a settled one and a host styles or reads
         // it the same way in both modes. The merge is the ladder's own.
-        canvas.innerHTML = renderViewer(withoutHost(viewer), {
+        canvas.innerHTML = renderViewer(withoutChrome(viewer), {
           projection: 'tree',
           theme: resolved,
           selected: selectedKey(state.selection),
