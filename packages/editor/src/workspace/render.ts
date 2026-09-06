@@ -52,6 +52,7 @@
 import {
   type AttrValue,
   type ElementSpec,
+  type HostFacts,
   type SpecChild,
   type Theme,
   type ViewerDocument,
@@ -416,6 +417,66 @@ function whyRankSpec(
   ]);
 }
 
+/**
+ * §17a's workspace header: what backlog this is, how much of it is encoded,
+ * what is wrong with it, how fresh the read is, and the way into a first pass.
+ *
+ * IT IS UNCONDITIONAL NOW, AND THAT IS THE FIX. The zone used to be emitted
+ * only when an audit overlay existed — `overlay === null ? '' : zone('header',
+ * …)` — so the header WAS the audit header, and a workspace with no audit
+ * input had no header at all. §17a's header carries five facts and the audit
+ * count is one of them.
+ *
+ * WHAT IT DRAWS IS WHAT THE RAIL DOES NOT. §17a hoists the identity, the
+ * counts and the freshness stamp into a header spanning all three zones, and
+ * the rail below still draws the last two as layer 1's panel header — so this
+ * carries the three facts that appear NOWHERE else today: what backlog this
+ * is, what the audit found, and the way into a first pass.
+ *
+ * MOVING THE OTHER TWO IS ITS OWN CHANGE, not an omission here. Layer 1's panel
+ * header is one element carrying the stamp, the refresh control, the count
+ * chips AND the running-job NOW row; `SceneOptions.chrome` takes all of them or
+ * none. §17a's header replaces some and its rail does not obviously replace the
+ * NOW row, so which of them survives is a design ruling, and a half-made one
+ * would either state a fact twice or drop a control on the way past.
+ *
+ * EVERY FACT COMES FROM THE PORT THAT ALREADY CARRIES IT. `ViewerDocument.host`
+ * is commented "THE HOST-FACTS PORT", and #127 rejected deriving its numbers in
+ * terms: "Reporting is not deriving — the host's number is still what gets
+ * drawn." Counting the document here would give the header a second answer,
+ * free to disagree with the rail beside it.
+ *
+ * OMITTED WHEN ABSENT, NEVER DEFAULTED, for the reason the audit count already
+ * gives: a zero the reader can trust and a zero nobody computed are different
+ * facts, and a header that invents either is worse than one that says less.
+ */
+function headerMarkup(host: HostFacts | undefined, auditHeader: string): string {
+
+  // A STRING, not a spec, because one member of this zone already is one: the
+  // audit header comes from its own leaf rendered, and it owns the filter
+  // toggle's `aria-pressed` and the count's own omitted-when-absent rule. The
+  // file's standing idiom applies — everything carrying a dynamic value goes
+  // through `renderMarkup`, and only already-rendered markup is concatenated.
+  const parts: string[] = [
+    host?.identity === undefined || host.identity === ''
+      ? ''
+      : renderMarkup(element('span', { class: 'ig-workspace-identity' }, [host.identity])),
+
+    auditHeader,
+    host?.firstPass === undefined || host.firstPass === ''
+      ? ''
+      : renderMarkup(
+          element(
+            'button',
+            { type: 'button', class: 'ig-workspace-firstpass', 'data-ig-command': 'first-pass' },
+            [host.firstPass],
+          ),
+        ),
+  ];
+
+  return `<div class="ig-workspace-header">${parts.join('')}</div>`;
+}
+
 function inspectorSpec(
   view: InspectorView,
   words: WorkspaceWords,
@@ -663,7 +724,10 @@ export function renderWorkspace(
 
   const markup = [
     `<div class="ig-workspace">`,
-    overlay === null ? '' : zone('header', renderAuditHeader(overlay, { filtered })),
+    zone(
+      'header',
+      headerMarkup(document.host, overlay === null ? '' : renderAuditHeader(overlay, { filtered })),
+    ),
     zone(
       'rail',
       [

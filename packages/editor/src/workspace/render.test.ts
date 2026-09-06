@@ -42,17 +42,24 @@ function graphFor(
 const WORDS = { words: WORKSPACE_WORDS } as const;
 
 describe('the three zones render at their fixed positions', () => {
-  it('draws rail, canvas and inspector, in that order, inside one root', () => {
+  it('draws header, rail, canvas and inspector, in that order, inside one root', () => {
     const result = renderWorkspace(backlogOf(8), WORDS);
-    assert.deepEqual(zonesIn(result.markup), ['rail', 'canvas', 'inspector']);
+    // THE HEADER IS UNCONDITIONAL SINCE #122. It was emitted only when an audit
+    // overlay existed, which made the header BE the audit header; §17a's header
+    // carries five facts and the audit count is one of them.
+    assert.deepEqual(zonesIn(result.markup), [...ZONES]);
     assert.match(result.markup, /^<div class="ig-workspace">/);
     assert.match(result.markup, /<\/div>$/);
   });
 
-  it('draws the header only when an audit was actually run', () => {
+  it('draws the audit COUNT only when an audit was actually run', () => {
     // ABSENT MEANS "NOT RUN", NOT "CLEAN". A zero nobody computed and a zero the
     // reader can trust are different facts, and drawing the count for the first
     // would assert the second.
+    //
+    // The ZONE is unconditional since #122 and the count is not: the header is
+    // where §17a puts five facts, and each is omitted on its own terms. This is
+    // the count's terms.
     const document = backlogOf(4);
     const withAudit = renderWorkspace(document, {
       ...WORDS,
@@ -60,7 +67,12 @@ describe('the three zones render at their fixed positions', () => {
     });
     assert.deepEqual(zonesIn(withAudit.markup), [...ZONES]);
     assert.notEqual(withAudit.view.audit, null);
-    assert.equal(renderWorkspace(document, WORDS).view.audit, null);
+    assert.match(withAudit.markup, /class="ig-audit"/);
+
+    const without = renderWorkspace(document, WORDS);
+    assert.equal(without.view.audit, null);
+    assert.deepEqual(zonesIn(without.markup), [...ZONES], 'the zone is not conditional');
+    assert.equal(/class="ig-audit"/.test(without.markup), false, 'a count nobody computed');
   });
 
   it('names every zone from the closed union, so no caller value reaches an attribute', () => {
@@ -816,6 +828,47 @@ describe('a hold in the inspector carries its cause, and its subject is a contro
       kind: 'issue',
       key: 'i0001',
     });
+  });
+});
+
+describe('§17a\'s header names the backlog, whatever else it knows', () => {
+  it('renders the zone with no host facts and no audit at all', () => {
+    // THE DEFECT THIS CLOSES. The zone used to be `overlay === null ? "" :
+    // zone("header", …)`, so the header WAS the audit header and a workspace
+    // with no audit input had none — while §17a's header carries five facts of
+    // which the audit count is one.
+    const result = renderWorkspace(backlogOf(4), WORDS);
+    assert.match(result.markup, /data-zone="header"/);
+    assert.match(result.markup, /class="ig-workspace-header"/);
+  });
+
+  it('omits each fact the host did not state, rather than inventing one', () => {
+    const result = renderWorkspace(backlogOf(4), WORDS);
+    assert.equal(/ig-workspace-identity/.test(result.markup), false);
+    assert.equal(/ig-workspace-firstpass/.test(result.markup), false);
+    assert.equal(/class="ig-audit"/.test(result.markup), false);
+  });
+
+  it('names the backlog and offers the first pass when the host states them', () => {
+    const document: ViewerDocument = {
+      ...backlogOf(4),
+      host: { identity: 'acme/widgets', firstPass: 'First pass' },
+    };
+    const result = renderWorkspace(document, WORDS);
+    assert.match(result.markup, /<span class="ig-workspace-identity">acme\/widgets<\/span>/);
+    // PUBLISHED AND NOT WIRED, like `refresh` beside it: whether a backlog has a
+    // first pass to run is the host's answer, and running it is the host's job.
+    assert.match(result.markup, /data-ig-command="first-pass"/);
+  });
+
+  it('drops an empty string as absent, so no chip is drawn with nothing in it', () => {
+    const document: ViewerDocument = {
+      ...backlogOf(4),
+      host: { identity: '', firstPass: '' },
+    };
+    const result = renderWorkspace(document, WORDS);
+    assert.equal(/ig-workspace-identity/.test(result.markup), false);
+    assert.equal(/ig-workspace-firstpass/.test(result.markup), false);
   });
 });
 

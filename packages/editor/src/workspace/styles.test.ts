@@ -83,6 +83,19 @@ const RENDERS = [
   // window is narrower than the order, so without this render their rule looks
   // orphaned and the "no unstyled class" direction never sees them at all.
   renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, rail: { start: 2, count: 2 } }),
+  // A HEADER WITH EVERY FACT THE HOST CAN STATE. Each member of §17a's header
+  // is omitted when its fact is absent, so a render with no host facts leaves
+  // all of them looking orphaned in the "no rule without a class" direction.
+  renderWorkspace(
+    {
+      ...DOCUMENT,
+      host: {
+        identity: 'acme/widgets',
+        firstPass: 'First pass',
+      },
+    },
+    { words: WORKSPACE_WORDS },
+  ),
   // A HOLD THAT NAMES ITS HOLDER. The inspector draws the subject as a control
   // only when the host supplied one, so without this render its rule looks
   // orphaned in the "no rule without a class" direction.

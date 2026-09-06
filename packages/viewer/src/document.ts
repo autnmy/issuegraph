@@ -421,6 +421,27 @@ export interface Adoption {
  * viewer constant: no cap, no clock, no repository name.
  */
 export interface HostFacts {
+  /**
+   * What backlog this is — the qualified repository, beside the surface name.
+   *
+   * ADDED FOR §17, and on this port rather than a second one for the reason
+   * every other fact here is on it: a workspace that took its identity from
+   * one place and its freshness from another could name one repository while
+   * stamping another's read. The viewer draws no link for it — that would mean
+   * knowing a tracker's URL shape, which is the knowledge this layer exists
+   * not to have.
+   */
+  readonly identity?: string | undefined;
+  /**
+   * The label of §17a's `First pass →` entry.
+   *
+   * PRESENT MEANS THE HOST OFFERS ONE, absent means it does not — the same
+   * shape as `Freshness.refresh`, and for the same reason: the control is
+   * drawn with `data-ig-command` and wired to nothing, because whether a
+   * backlog has a first pass to run is the host's answer and running it is the
+   * host's job.
+   */
+  readonly firstPass?: string | undefined;
   /** How many ready slots may run at once. A non-negative integer. */
   readonly concurrencyCap?: number | undefined;
   readonly counts?: OrderCounts | undefined;
@@ -458,6 +479,8 @@ export interface ViewerDocument {
 
 /** The host facts after normalisation: `running` always a list, the rest present only when the host stated them. */
 export interface NormalizedHostFacts {
+  readonly identity?: string | undefined;
+  readonly firstPass?: string | undefined;
   readonly concurrencyCap?: number | undefined;
   readonly counts?: OrderCounts | undefined;
   readonly running: readonly RunningJob[];
@@ -1065,7 +1088,18 @@ function normalizeHost(
   const adoption =
     host?.adoption === undefined ? undefined : normalizeAdoption(host.adoption, bounds, diagnostics);
 
+  // EMPTY IS ABSENT for both, exactly as `Freshness.asOf` treats an empty
+  // stamp: a header member drawn from an empty string is a chip with nothing in
+  // it, which reads as a fact the host failed to state rather than one it chose
+  // not to.
+  const identity =
+    host?.identity === undefined || host.identity === '' ? undefined : host.identity;
+  const firstPass =
+    host?.firstPass === undefined || host.firstPass === '' ? undefined : host.firstPass;
+
   return Object.freeze({
+    ...(identity === undefined ? {} : { identity }),
+    ...(firstPass === undefined ? {} : { firstPass }),
     ...(concurrencyCap === undefined ? {} : { concurrencyCap }),
     ...(counts === undefined ? {} : { counts }),
     running: Object.freeze(running),

@@ -762,9 +762,14 @@ function ranked(total: number, edges: readonly (readonly [EdgeKind, string, stri
 describe('done when: the three zones render at their fixed positions, dark-only', () => {
   it('draws rail, canvas and inspector, themed through the viewer\'s own properties', () => {
     const result = renderWorkspace(ranked(8), { words: WORKSPACE_WORDS });
+    // THE HEADER IS UNCONDITIONAL SINCE #122. It used to be emitted only when
+    // an audit overlay existed, so a workspace with no audit input had no
+    // header at all — and §17a's header carries five facts of which the audit
+    // count is one. This render supplies no host facts, so the zone is present
+    // and every fact inside it is omitted.
     assert.deepEqual(
       [...result.markup.matchAll(/data-zone="([^"]+)"/g)].map((match) => match[1]),
-      ['rail', 'canvas', 'inspector'],
+      ['header', 'rail', 'canvas', 'inspector'],
     );
     // NO FORKED TOKEN SET. Light was cut after pass 1, so there is one palette
     // and it is layer 1's — reached through custom properties the host resolves.

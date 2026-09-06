@@ -84,6 +84,43 @@ export const workspaceStylesheet = `
   grid-area: header;
 }
 
+/* SECTION 17a's HEADER: what backlog this is, how much of it is encoded, what
+   is wrong with it, how fresh the read is, and the way into a first pass. One
+   row, baseline-aligned, with the first-pass entry pushed to the far end --
+   the frame's only primary action on this surface.
+
+   NOTHING HERE MOVES, for the reason the whole sheet holds: the audit count
+   lives in this row, and section 17d asks for a count that never does. The
+   guard on that is a literal scan over these bytes, comments included, so the
+   words it looks for must not appear even in prose explaining their absence. */
+.ig-workspace-header {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--ig-space);
+  padding: var(--ig-space-tight) var(--ig-space);
+  border-bottom: var(--ig-stroke) solid var(--ig-line);
+}
+
+.ig-workspace-identity {
+  color: var(--ig-text);
+  font-family: var(--ig-font-mono);
+}
+
+/* The one place the accent is spent on this surface, on the only action that
+   starts something. The frame draws it as the header's primary control. */
+.ig-workspace-firstpass {
+  margin-left: auto;
+  background: var(--ig-accent);
+  color: var(--ig-bg);
+  border: none;
+  border-radius: var(--ig-radius);
+  padding: var(--ig-space-tight) var(--ig-space);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+  cursor: pointer;
+}
+
 .ig-zone[data-zone='rail'] {
   grid-area: rail;
   /* The rail scrolls; the window slides underneath. */
