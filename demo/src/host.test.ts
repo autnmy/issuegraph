@@ -342,10 +342,20 @@ describe('the §16g states are reachable from the sandbox, with their affordance
         if (!(found instanceof kind)) throw new Error(`missing #${id}`);
         return found;
       };
+      // A SOURCE THAT CAN REFUSE THE NEXT READ, so the failed-refresh path is
+      // exercised rather than reasoned about.
+      let refuse = false;
       const boot = (scenario: Scenario, onChange: () => void): Live => {
         const source = createDemoSource(scenario.document(), { onArmedChange: onChange });
-        const store: Store = createStore({ source, derive: createDeriver(scenario.holds, scenario.ranking) });
-        return { store, source };
+        const counted = {
+          ...source,
+          hydrate: async () => {
+            if (refuse) throw new Error('the tracker is unreachable');
+            return source.hydrate();
+          },
+        };
+        const store: Store = createStore({ source: counted, derive: createDeriver(scenario.holds, scenario.ranking) });
+        return { store, source: counted };
       };
       handle = mountSandbox(
         {
@@ -426,6 +436,23 @@ describe('the §16g states are reachable from the sandbox, with their affordance
         'false',
         'a landed refresh left the panel stale',
       );
+
+      // AND A REFRESH THAT FAILS LEAVES IT STALE. The state lifts with the
+      // stamp, in the one place that knows a read landed — lifting it at the
+      // click moved it before the evidence, so a failed re-read left the stamp
+      // untouched (correctly) while the panel re-rendered live, which is a
+      // failure wearing the look of a success.
+      await chooseState('stale');
+      refuse = true;
+      click('#workspace [data-ig-command="refresh"]', 'the stale state drew no refresh');
+      await settle();
+      await settle();
+      assert.equal(
+        win.document.querySelector('#workspace .ig-freshness')?.getAttribute('data-stale'),
+        'true',
+        'a refresh that failed still read as fresh',
+      );
+      refuse = false;
 
       // §16h's line is dismissible, which is the design's own word for it.
       click('[data-chrome="scenario"] [data-ig-value="adoption"]', 'no control for the day-one document');

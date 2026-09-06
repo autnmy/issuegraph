@@ -472,6 +472,12 @@ export function mountSandbox(
     if (store !== live.store || owner !== handle) return;
     if (store.getSnapshot().hydrationError === undefined) {
       observedAt = clock();
+      // THE FORCED STALE STATE LIFTS WITH THE STAMP IT CONTRADICTS, in the one
+      // place that already knows a read landed. Lifting it at the click instead
+      // moved the state before the evidence for it existed, so a refresh that
+      // FAILED left `observedAt` untouched — correctly — while the panel
+      // re-rendered live, making the failure look like a success.
+      if (panelState === 'stale') panelState = 'live';
       handle?.update();
     }
     schedule();
@@ -555,8 +561,9 @@ export function mountSandbox(
         // `stale` is drawn by dating the read further back on every render, so
         // a successful re-read landed and the panel still said "stale · 17m
         // ago" — the one affordance §16g gives that state, doing nothing a
-        // reader could see. A read that lands is what leaving the state means.
-        if (panelState === 'stale') panelState = 'live';
+        // reader could see. `read` lifts the state when the read LANDS, beside
+        // the stamp, because that is the event; doing it here would move the
+        // state before the evidence and make a failed refresh look successful.
         void read(false);
         return;
       default:
