@@ -395,7 +395,13 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         // listener — but written as a guard rather than an assertion, because
         // `update()` can take the bundle away between the click and this call.
         if (option === undefined) {
-          dispatch({ kind: 'first-pass', command: { kind: 'scan-failed', scan: effect.scan } });
+          // CLOSED, NOT FAILED. `failed` is a state this surface DRAWS, in the
+          // host's own words — and with no bundle there are no words and no
+          // overlay, so a failed phase here is an invisible one that blocks the
+          // workspace's keyboard with no control to close it. The DOM guard
+          // withholds this command, but `handle.dispatch` is public and reaches
+          // the reducer directly, so the shell answers for that route too.
+          dispatch({ kind: 'first-pass', command: { kind: 'close' } });
           return;
         }
         const { scan } = effect;
@@ -873,8 +879,17 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // proposed. Keyed on the SOURCE rather than the bundle, because a host that
     // rebuilds an equivalent options object on every render has changed nothing.
     const source = current.firstPass?.source ?? null;
-    if (source !== firstPassSource && state.firstPass.phase.kind !== 'closed') {
-      dispatch({ kind: 'first-pass', command: { kind: 'close' } });
+    if (source !== firstPassSource) {
+      // RESET, NOT CLOSE, and the difference is the decided set: a `CandidateId`
+      // is the HOST's, opaque, and promised stable only for a queue's life, so
+      // one scanner's ids say nothing about another's. Carried across, a
+      // collision would silently drop the new detector's question — and a
+      // question nobody was asked is indistinguishable from one already
+      // answered. Fired on a swap and on a removal alike.
+      if (state.firstPass.phase.kind !== 'closed' || state.firstPass.decided.length > 0) {
+        dispatch({ kind: 'first-pass', command: { kind: 'reset' } });
+      }
+      appliedWrites.clear();
     }
     firstPassSource = source;
     const overlay = firstPassOverlay();

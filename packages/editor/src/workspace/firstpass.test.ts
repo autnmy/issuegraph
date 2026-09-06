@@ -188,6 +188,17 @@ describe('a close drops the queue and keeps the decisions', () => {
     assert.deepEqual(openQueueOf(again)?.candidates.map((candidate) => candidate.id), ['c0']);
   });
 
+  it('forgets the decisions on a reset, which a close does not', () => {
+    // A different scanner is a different first pass: `CandidateId` is the host's
+    // and promised stable only for a queue's life, so one detector's ids say
+    // nothing about another's.
+    let state = opened(INITIAL_FIRST_PASS, 2);
+    state = answer(state, 'reject');
+    assert.deepEqual([...firstPassReducer(state, { kind: 'close' }).state.decided], ['c0']);
+    assert.deepEqual([...firstPassReducer(state, { kind: 'reset' }).state.decided], []);
+    assert.equal(firstPassReducer(state, { kind: 'reset' }).state.phase.kind, 'closed');
+  });
+
   it('takes a decision back when its answer is undone', () => {
     let state = opened(INITIAL_FIRST_PASS, 2);
     state = answer(state, 'reject');

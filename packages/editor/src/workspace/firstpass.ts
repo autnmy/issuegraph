@@ -120,7 +120,19 @@ export type FirstPassCommand =
     }
   | { readonly kind: 'scan-failed'; readonly scan: number }
   | { readonly kind: 'queue'; readonly command: QueueCommand }
-  | { readonly kind: 'close' };
+  | { readonly kind: 'close' }
+  /**
+   * Close, and forget the decisions too.
+   *
+   * A DIFFERENT SCANNER IS A DIFFERENT FIRST PASS. {@link CandidateId} is
+   * opaque and host-minted, and `candidates.ts` promises only that it is stable
+   * for a queue's life — so two independently written detectors may reuse the
+   * same id for entirely different findings. Carrying one scanner's decisions
+   * into another's scan would silently drop the next detector's question on an
+   * id collision, which is the one failure a first pass cannot afford: a
+   * question nobody was asked looks exactly like a question already answered.
+   */
+  | { readonly kind: 'reset' };
 
 export interface FirstPassOutcome {
   readonly state: FirstPassState;
@@ -228,8 +240,10 @@ export function firstPassReducer(
     case 'close':
       // THE QUEUE GOES, `decided` STAYS. See the module header: dropping the
       // queue is what keeps a re-open fresh, and keeping the decisions is what
-      // keeps it from re-asking.
+      // keeps it from re-asking. That holds for the SAME scanner; see `reset`.
       return still({ ...state, phase: { kind: 'closed' } });
+    case 'reset':
+      return still({ ...state, phase: { kind: 'closed' }, decided: [] });
   }
 }
 

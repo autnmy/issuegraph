@@ -1396,6 +1396,57 @@ describe('the first pass, composed behind §17a’s entry', () => {
     }
   });
 
+  it('refuses a dispatched open when the host supplied no scanner', async () => {
+    // `handle.dispatch` is public and reaches the reducer directly, so the DOM
+    // guard does not cover it. What must not happen is a non-closed phase with
+    // no overlay: invisible, and it blocks the workspace's keyboard with no
+    // control to close it.
+    const page = await mounted(backlog(8), { project: entryProject });
+    try {
+      page.handle.dispatch({ kind: 'first-pass', command: { kind: 'open' } });
+      await flush();
+      await flush();
+      assert.equal(page.element.querySelector('.ig-firstpass-overlay'), null);
+      assert.equal(page.handle.state.firstPass.phase.kind, 'closed', 'an invisible phase was left up');
+      // And the workspace still takes keys.
+      page.rows()[0]?.focus();
+      page.element.dispatchEvent(
+        new page.win.KeyboardEvent('keydown', { key: 'r', bubbles: true, cancelable: true }),
+      );
+      await flush();
+      assert.equal(page.handle.state.draft.source, '1', 'the workspace was left keyboard-dead');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('forgets one scanner’s decisions when the host swaps in another', async () => {
+    // Two independently written detectors may reuse a CandidateId for entirely
+    // different findings, and a question nobody was asked is indistinguishable
+    // from one already answered.
+    const page = await firstPassPage();
+    try {
+      await open(page);
+      press(page, 'n');
+      await flush();
+      assert.deepEqual([...page.handle.state.firstPass.decided], ['c0']);
+
+      const replacement = heldSource(pairsOver(1));
+      page.handle.update({ firstPass: { source: replacement.scanner, ...FIRST_PASS_OPTION } });
+      await flush();
+      await flush();
+      assert.deepEqual(
+        [...page.handle.state.firstPass.decided],
+        [],
+        'the old scanner’s decisions would filter the new one’s questions',
+      );
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
   it('keeps Tab inside the takeover, at both ends', async () => {
     // `inert` covers the workspace's own zones and nothing else, so a mount
     // beside other page chrome let Tab walk out of a dialog asserting
