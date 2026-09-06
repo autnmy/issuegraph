@@ -1506,6 +1506,46 @@ describe('the first pass, composed behind §17a’s entry', () => {
     }
   });
 
+  it('sees a landed relationship that also carries a settled write overlay', async () => {
+    // A landed edge is not "an edge with no unsettled write": a failed DELETE
+    // leaves the relationship there AND leaves a record on it. Inferring one
+    // from the other proposed a create for a relationship that still existed.
+    const twins: readonly Candidate[] = [
+      { id: 'left', kind: 'blocked-by', from: '1', to: '2', evidence: [] },
+      { id: 'right', kind: 'blocked-by', from: '1', to: '2', evidence: [] },
+    ];
+    const page = await firstPassPage(twins);
+    try {
+      await open(page);
+      press(page, 'y');
+      await flush();
+      await page.source.whenPending();
+      page.source.settleNext('applied');
+      await flush();
+      const landed = page.store.getSnapshot().landed[0];
+      assert.ok(landed !== undefined, 'the create did not land');
+
+      // A delete of that edge, refused — the edge stays, and now carries a record.
+      void page.store.propose({ op: 'delete', edgeId: landed.id });
+      await page.source.whenPending();
+      page.source.settleNext({ outcome: 'rejected', reason: 'the issue body is locked' });
+      await flush();
+      assert.equal(page.store.getSnapshot().landed.length, 1, 'the edge went away');
+      assert.equal(page.store.getSnapshot().writes.length, 1, 'no overlay was left on it');
+
+      press(page, 'y');
+      await flush();
+      assert.equal(
+        page.store.getSnapshot().writes.length,
+        1,
+        'a create was proposed for a relationship that is still there',
+      );
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
   it('keeps Tab inside the takeover, at both ends', async () => {
     // `inert` covers the workspace's own zones and nothing else, so a mount
     // beside other page chrome let Tab walk out of a dialog asserting

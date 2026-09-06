@@ -447,19 +447,25 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         // the store refuses the second create as a duplicate — correctly — and
         // the reader is left an `invalid` record about a relationship that
         // exists.
-        // LANDED OR ON ITS WAY, AND NOTHING ELSE. `projected` also carries an
-        // edge whose only write FAILED — and that relationship is precisely NOT
-        // there, so a second consent must be free to try again. A landed edge
-        // carries no unsettled write; one being created right now carries
-        // `pending-write`. Both are the store's own vocabulary rather than a
-        // second opinion about what exists.
+        // LANDED OR ON ITS WAY, AND NOTHING ELSE. Asked of the two records that
+        // answer it directly: `landed` says the relationship is there, and a
+        // `pending-write` state says one is being created right now. An edge
+        // whose only write FAILED is precisely NOT there, so a second consent is
+        // free to try again.
+        // ASKED OF `landed`, NOT INFERRED FROM "no unsettled write". An earlier
+        // revision read a landed edge as one with an empty `writes` — which a
+        // landed edge carrying any settled overlay, a failed DELETE among them,
+        // is not. It then proposed a create for a relationship that was still
+        // there, and the store recorded the invalid duplicate.
         const { proposal } = effect;
         if (proposal.op === 'create') {
           const id = edgeIdentity(proposal.kind, proposal.from, proposal.to);
-          const drawn = store.getSnapshot().projected.find((edge) => edge.id === id);
-          const already =
-            drawn !== undefined && (drawn.writes.length === 0 || drawn.states.includes('pending-write'));
-          if (already) return;
+          const snapshot = store.getSnapshot();
+          const there = snapshot.landed.some((edge) => edge.id === id);
+          const coming = snapshot.projected.some(
+            (edge) => edge.id === id && edge.states.includes('pending-write'),
+          );
+          if (there || coming) return;
         }
         const handle = store.propose(effect.proposal);
         appliedWrites.set(effect.candidateId, handle.mutationId);
