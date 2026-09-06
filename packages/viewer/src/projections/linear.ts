@@ -37,6 +37,7 @@ import {
   slotLabel,
   slotTitle,
   station,
+  statesItsOwnCause,
   stationFill,
   stationsOf,
   unitBlock,
@@ -407,9 +408,9 @@ export function linearScene(
         // two things about one state and the derived one can be flatly wrong
         // ("nothing is in the order" beside "your import is still running").
         // The recorded fact wins and the derivation is not drawn.
-        conditionKind(document, options.chrome) === null
-        ? emptyState('Nothing is in the order right now.')
-        : null
+        statesItsOwnCause(document)
+        ? null
+        : emptyState('Nothing is in the order right now.')
       : element(
           'ol',
           // A PLAIN LIST, not a listbox. Every row carries a deep-link chip, and

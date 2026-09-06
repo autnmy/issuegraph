@@ -440,6 +440,24 @@ export function conditionKind(document: NormalizedDocument, chrome: boolean | un
   return document.host.condition?.kind ?? null;
 }
 
+/**
+ * Whether the host has said why this panel is short, so no projection may say
+ * why itself.
+ *
+ * NOT CHROME, AND THIS IS THE DISTINCTION THE TWO HELPERS EXIST TO KEEP. What
+ * to DRAW is a rendering question, and a host composing two views of one
+ * document wants the notice and its outline once — that is `conditionKind`.
+ * What is TRUE is not: a chrome-less canvas beside an explained rail is still a
+ * view of a document whose emptiness the host has accounted for, and its own
+ * derived sentence is not a fallback explanation but a false one. The graph's
+ * reads "no issue in this document declares a relationship", which under a
+ * stated `error` is a claim about something else entirely, contradicting the
+ * panel beside it. Drawing nothing there is right; explaining it wrongly is not.
+ */
+export function statesItsOwnCause(document: NormalizedDocument): boolean {
+  return document.host.condition !== undefined;
+}
+
 /** What the notice draws, resolved from the arm. Every string is the host's. */
 interface NoticeParts {
   readonly headline: string;

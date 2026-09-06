@@ -346,6 +346,30 @@ describe('the §16 states', () => {
     }
   });
 
+  it('still refuses to derive a cause under chrome:false — what is DRAWN is chrome, what is TRUE is not', () => {
+    // The two questions were briefly one helper, and gating both on chrome made
+    // a chrome-less view restore its own derived sentence: an explained rail
+    // beside a canvas claiming "no issue in this document declares a
+    // relationship", which under a stated `error` is a claim about something
+    // else and contradicts the panel next to it. Drawing nothing there is
+    // right; explaining it wrongly is not.
+    for (const projection of PROJECTIONS) {
+      const document =
+        projection === 'tree'
+          ? { issues: [], edges: [], order: { slots: [], excluded: [] }, cycles: [] }
+          : nothingRanked;
+      const markup = renderViewer(
+        { ...document, host: { freshness: FRESHNESS, condition: ERROR } },
+        { projection, chrome: false },
+      ).markup;
+      assert.ok(!markup.includes('ig-notice'), `${projection} drew a notice under chrome:false`);
+      assert.ok(
+        !markup.includes('ig-empty'),
+        `${projection} derived its own cause beside a host that had already given one`,
+      );
+    }
+  });
+
   it('adds no navigable key and moves no row, whatever the condition says', () => {
     // The notice inserts native tab stops — that is what a button in the flow
     // is — but it must not enter the scene's own published sets, which is the

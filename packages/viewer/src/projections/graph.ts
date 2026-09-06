@@ -46,6 +46,7 @@ import {
   emptyState,
   evidenceBadge,
   hostHeader,
+  statesItsOwnCause,
   identity,
   legend,
   notReadyBadge,
@@ -790,7 +791,7 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
   const diagnostics: string[] = [];
   let canvas: ElementSpec | null;
 
-  if (conditionKind(document, options.chrome) !== null && (drawsNothing || nodeCount === 0)) {
+  if (statesItsOwnCause(document) && (drawsNothing || nodeCount === 0)) {
     // THE HOST'S NOTICE IS THE PANEL'S ONE CAUSE STATEMENT — see `linear.ts`.
     // This arm's sentence is the worse of the two to leave standing: it names
     // RELATIONSHIPS, so an unreadable index or a running import would be

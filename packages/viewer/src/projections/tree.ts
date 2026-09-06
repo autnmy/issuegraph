@@ -24,6 +24,7 @@ import {
   identity,
   legend,
   provenanceLine,
+  statesItsOwnCause,
 } from '../parts.ts';
 import { type LateralNeighbours, type Scene, resolveFocusKey } from '../scene.ts';
 import type { SceneOptions } from './linear.ts';
@@ -243,9 +244,9 @@ export function treeScene(document: NormalizedDocument, options: SceneOptions = 
   const body =
     forest.roots.length === 0
       ? // THE HOST'S NOTICE IS THE PANEL'S ONE CAUSE STATEMENT — see `linear.ts`.
-        conditionKind(document, options.chrome) === null
-        ? emptyState('This document declares no issues, so there is nothing to trace.')
-        : null
+        statesItsOwnCause(document)
+        ? null
+        : emptyState('This document declares no issues, so there is nothing to trace.')
       : element(
           'ul',
           { class: 'ig-tree ig-list', 'aria-label': 'decomposition' },
