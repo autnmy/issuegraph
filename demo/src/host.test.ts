@@ -319,3 +319,201 @@ describe('the refresh control reaches the host', () => {
     }
   });
 });
+
+describe('the §16g states are reachable from the sandbox, with their affordances', () => {
+  it('switches state, performs Retry, and dismisses the adoption line — all on a click', async () => {
+    // R10's ACTUAL CLAIM: reachable without editing a file. A package test can
+    // only prove the viewer draws a control for a host that named one; that the
+    // control is drawn HERE, and that a click on it reaches this host through
+    // the mount's own listener, is a claim about a click.
+    for (const name of ['retry:index', 'review-pick-order', 'dismiss:adoption']) {
+      assert.ok(HOST_COMMANDS_FROM_WORKSPACE.has(name), `${name} would be dropped before the switch`);
+    }
+    const dom = new JSDOM(
+      '<!doctype html><html><body><main id="sandbox"><div class="control-row" data-chrome="state"></div><div class="control-row" data-chrome="scenario"></div><section id="workspace"></section><div id="writes"></div><p id="versions"></p><select id="outcome"><option value="apply">apply</option></select></main></body></html>',
+    );
+    const win = dom.window;
+    const previous = { document: globalThis.document, window: globalThis.window, Element: globalThis.Element };
+    Object.assign(globalThis, { document: win.document, window: win, Element: win.Element });
+    let handle: ReturnType<typeof mountSandbox> | null = null;
+    try {
+      const byId = <T extends HTMLElement>(id: string, kind: new () => T): T => {
+        const found = win.document.getElementById(id);
+        if (!(found instanceof kind)) throw new Error(`missing #${id}`);
+        return found;
+      };
+      // A SOURCE THAT CAN REFUSE THE NEXT READ, so the failed-refresh path is
+      // exercised rather than reasoned about.
+      let refuse = false;
+      const boot = (scenario: Scenario, onChange: () => void): Live => {
+        const source = createDemoSource(scenario.document(), { onArmedChange: onChange });
+        const counted = {
+          ...source,
+          hydrate: async () => {
+            if (refuse) throw new Error('the tracker is unreachable');
+            return source.hydrate();
+          },
+        };
+        const store: Store = createStore({ source: counted, derive: createDeriver(scenario.holds, scenario.ranking) });
+        return { store, source: counted };
+      };
+      handle = mountSandbox(
+        {
+          root: byId('sandbox', win.HTMLElement),
+          workspace: byId('workspace', win.HTMLElement),
+          writes: byId('writes', win.HTMLElement),
+          versions: byId('versions', win.HTMLElement),
+          outcome: byId('outcome', win.HTMLSelectElement),
+        },
+        boot,
+        { clock: () => new Date('2026-09-06T14:32:00Z'), tickMs: 10_000 },
+      );
+      const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+      await settle();
+      await settle();
+
+      // QUERIED, NEVER SUBSTRING-MATCHED. The mount installs the viewer's own
+      // stylesheet inside this element, and that stylesheet names every
+      // attribute the panel can carry — so `innerHTML.includes(...)` reads the
+      // CSS as markup and answers yes to every question asked of it.
+      const conditionNow = (): string | null =>
+        win.document.querySelector('#workspace .ig-viewer')?.getAttribute('data-ig-condition') ?? null;
+      const noticeText = (): string => win.document.querySelector('#workspace .ig-notice')?.textContent ?? '';
+      const has = (selector: string): boolean => win.document.querySelector(`#workspace ${selector}`) !== null;
+      const click = (selector: string, why: string): void => {
+        const control = win.document.querySelector<HTMLElement>(selector);
+        assert.ok(control !== null, why);
+        control.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+      };
+      const chooseState = async (name: string): Promise<void> => {
+        click(`[data-chrome="state"] [data-ig-value="${name}"]`, `no control for the ${name} state`);
+        await settle();
+        await settle();
+      };
+
+      // EVERY STATE IS ONE CLICK AWAY, over whatever document is loaded.
+      assert.equal(conditionNow(), null, 'the sandbox did not land on the live state');
+      await chooseState('importing');
+      assert.equal(conditionNow(), 'importing', 'the importing state is unreachable');
+      assert.ok(noticeText().includes('Building the local index'), 'the importing notice lost its headline');
+      await chooseState('empty');
+      assert.equal(conditionNow(), 'empty', 'the empty state is unreachable');
+      assert.ok(noticeText().includes('Nothing is eligible right now'), 'the empty notice lost its headline');
+      assert.ok(has('[data-ig-command="review-pick-order"]'), 'the empty state drew no action');
+      await chooseState('stale');
+      assert.equal(
+        win.document.querySelector('#workspace .ig-freshness')?.getAttribute('data-stale'),
+        'true',
+        'the stale state is unreachable',
+      );
+      await chooseState('error');
+      assert.equal(conditionNow(), 'error', 'the error state is unreachable');
+      assert.ok(noticeText().includes('The index could not be read'), 'the error notice lost its headline');
+
+      // AND THE AFFORDANCE PERFORMS. A Retry the host never hears is the "control
+      // nobody wired" failure wearing a different coat, and it would pass every
+      // package assertion — the viewer's half is drawing it, and it does.
+      click('#workspace [data-ig-command="retry:index"]', 'the error state drew no Retry');
+      await settle();
+      await settle();
+      assert.equal(conditionNow(), null, 'Retry reached nobody');
+
+      // A REFRESH THAT CANNOT MAKE THE STAMP FRESH IS A CONTROL THAT LIES. The
+      // stale state is drawn by dating the read further back on every render,
+      // so without clearing the state a landed re-read left the panel saying
+      // "stale" forever — the one affordance §16g gives that state, doing
+      // nothing a reader could see.
+      await chooseState('stale');
+      assert.equal(
+        win.document.querySelector('#workspace .ig-freshness')?.getAttribute('data-stale'),
+        'true',
+      );
+      click('#workspace [data-ig-command="refresh"]', 'the stale state drew no refresh');
+      await settle();
+      await settle();
+      assert.equal(
+        win.document.querySelector('#workspace .ig-freshness')?.getAttribute('data-stale'),
+        'false',
+        'a landed refresh left the panel stale',
+      );
+
+      // AND A REFRESH THAT FAILS LEAVES IT STALE. The state lifts with the
+      // stamp, in the one place that knows a read landed — lifting it at the
+      // click moved it before the evidence, so a failed re-read left the stamp
+      // untouched (correctly) while the panel re-rendered live, which is a
+      // failure wearing the look of a success.
+      await chooseState('stale');
+      refuse = true;
+      click('#workspace [data-ig-command="refresh"]', 'the stale state drew no refresh');
+      await settle();
+      await settle();
+      assert.equal(
+        win.document.querySelector('#workspace .ig-freshness')?.getAttribute('data-stale'),
+        'true',
+        'a refresh that failed still read as fresh',
+      );
+      refuse = false;
+
+      // EVERY STATE A READ REFUTES, not whichever one was last reported. The
+      // lift used to be spelled per state, so `stale` was fixed and `error` was
+      // still holding a five-hour-old stamp over a read that had just landed.
+      for (const backdated of ['importing', 'error', 'stale'] as const) {
+        await chooseState(backdated);
+        click('#workspace [data-ig-command="refresh"]', `the ${backdated} state drew no refresh`);
+        await settle();
+        await settle();
+        assert.equal(conditionNow(), null, `a landed read left the ${backdated} state standing`);
+        assert.equal(
+          win.document.querySelector('#workspace .ig-freshness')?.getAttribute('data-stale'),
+          'false',
+          `a landed read left the ${backdated} stamp backdated`,
+        );
+      }
+
+      // AND A RETRY IS A READ. It used to clear the state at the click, which is
+      // the same optimism that made a failed refresh look successful.
+      await chooseState('error');
+      refuse = true;
+      click('#workspace [data-ig-command="retry:index"]', 'the error state drew no Retry');
+      await settle();
+      await settle();
+      assert.equal(conditionNow(), 'error', 'a retry that could not read still cleared the error');
+      refuse = false;
+      click('#workspace [data-ig-command="retry:index"]', 'the error state drew no Retry');
+      await settle();
+      await settle();
+      assert.equal(conditionNow(), null, 'a retry that landed left the error standing');
+
+      // §16h's line is dismissible, which is the design's own word for it.
+      click('[data-chrome="scenario"] [data-ig-value="adoption"]', 'no control for the day-one document');
+      await settle();
+      await settle();
+      assert.ok(has('.ig-adoption'), 'the day-one document drew no adoption line');
+      click('#workspace [data-ig-command="dismiss:adoption"]', 'the adoption line drew no dismiss');
+      await settle();
+      await settle();
+      assert.ok(!has('.ig-adoption'), 'dismiss reached nobody');
+
+      // ADOPTION IS A REPOSITORY FACT, so blanking the ORDER must not blank it.
+      // The empty state deliberately shows no rows; the backlog it is drawn
+      // over still declares whatever it declares.
+      click('[data-chrome="scenario"] [data-ig-value="backlog"]', 'no control for the big backlog');
+      await settle();
+      await settle();
+      const chip = (): string =>
+        win.document.querySelector('#workspace [data-count="adoption"]')?.textContent ?? '';
+      const populated = chip();
+      assert.ok(/^\d+ of \d+ declare relationships$/.test(populated), `no adoption chip: ${populated}`);
+      assert.ok(!populated.startsWith('0 of 0'), 'the backlog counted nothing');
+      await chooseState('empty');
+      assert.equal(chip(), populated, 'the empty state emptied the repository as well as the order');
+    } finally {
+      // TORN DOWN EVEN ON A FAILED ASSERTION. The sandbox holds a clock
+      // interval, so a throw before this left the timer alive and the whole
+      // test run hung instead of reporting the failure.
+      handle?.destroy();
+      Object.assign(globalThis, previous);
+      win.close();
+    }
+  });
+});

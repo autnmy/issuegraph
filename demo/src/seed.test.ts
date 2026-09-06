@@ -21,6 +21,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { EDGE_FIELDS } from '@issuegraph/core';
+import { type GraphDocument, makeEdge } from '@issuegraph/store';
 import { auditDocument, scaleLadder, INITIAL_SCALE_STATE, RAIL_WINDOW } from '@issuegraph/editor';
 import { GRAPH_NODE_BUDGET } from '@issuegraph/viewer';
 
@@ -30,6 +31,8 @@ import {
   COMP_ORDER,
   DEFAULT_SCENARIO,
   DENSE_FIRST_REF,
+  adoptionFor,
+  adoptionSeed,
   DENSE_ISOLATED_COUNT,
   DENSE_LARGEST_COMPONENT,
   SCENARIOS,
@@ -320,6 +323,35 @@ describe('the dense layer reaches the surfaces the sandbox exists for', () => {
     }
   });
 
+  it('audits the repository whole, even when the panel is drawing nothing', () => {
+    // A state saying nothing is ELIGIBLE has changed no RELATIONSHIP, so the
+    // audit must be untouched by it. Both halves of `AuditInput` are checked
+    // together on purpose: the document was corrected once while its probes
+    // stayed derived from the blanked projection, so the cycle finding vanished
+    // and every canonical-dependent finding was computed against a graph that
+    // was not the one being audited. A green suite on the document half alone
+    // is exactly what let that through.
+    const document = backlogSeed();
+    const held = { issues: document.issues, edges: document.edges };
+    const explained = explainDocument(held, SCENARIOS.backlog.holds, SCENARIOS.backlog.ranking);
+    const blank = { issues: [], edges: [] };
+    const drawing = explainDocument(blank, SCENARIOS.backlog.holds, SCENARIOS.backlog.ranking);
+
+    const whole = projectDocument(explained, held).audit;
+    const drawingNothing = projectDocument(drawing, blank, undefined, new Map(), {
+      document: held,
+      explained,
+    }).audit;
+
+    assert.equal(drawingNothing.document.issues.length, whole.document.issues.length);
+    assert.deepEqual(drawingNothing.graph.cycles, whole.graph.cycles);
+    assert.ok(whole.graph.cycles.length > 0, 'the backlog has no cycle to lose');
+    assert.deepEqual(
+      new Set(auditDocument(drawingNothing).map((finding) => finding.kind)),
+      new Set(auditDocument(whole).map((finding) => finding.kind)),
+    );
+  });
+
   it('holds one issue on an unresolvable reference, as blocking (§6.7)', () => {
     const { explained } = load('backlog');
     const held = explained.rows.filter((row) => row.holds.some((hold) => hold.label === 'unresolvable'));
@@ -339,5 +371,64 @@ describe('the dense layer reaches the surfaces the sandbox exists for', () => {
       'no decomposed-from edge points at a closed origin',
     );
     assert.ok(viewer.issues.some((issue) => issue.provenance?.kind === 'promotion'));
+  });
+});
+
+describe('the adoption count is measured, never remembered', () => {
+  it('counts only the issues that CARRY a declaration, not the ones pointed at', () => {
+    // `StoredEdge` keeps its pair directed even for the symmetric kinds so the
+    // issue carrying the frontmatter field stays known. A target declares
+    // nothing — counting both ends roughly doubles the figure and credits
+    // adoption to issues with no block at all.
+    const document: GraphDocument = {
+      issues: [
+        { ref: '1', title: 'A', state: 'open' },
+        { ref: '2', title: 'B', state: 'open' },
+        { ref: '3', title: 'C', state: 'open' },
+        { ref: '4', title: 'D', state: 'open' },
+      ],
+      edges: [makeEdge('blocked-by', '1', '2'), makeEdge('serialize-with', '1', '3')],
+    };
+    const adoption = adoptionFor({ ...SCENARIOS.backlog, adoption: { counted: true } }, document, false);
+    assert.deepEqual(adoption?.counts, { declaring: 1, total: 4 });
+  });
+
+  it('answers the document it is given, so an edit moves the count', () => {
+    // The chip's whole job is telling "no edges shown" from "no edges declared".
+    // A figure captured when the module loaded describes a backlog that no
+    // longer exists the moment a visitor adds or deletes a relationship.
+    const scenario = { ...SCENARIOS.backlog, adoption: { counted: true } };
+    const issues = [
+      { ref: '1', title: 'A', state: 'open' as const },
+      { ref: '2', title: 'B', state: 'open' as const },
+    ];
+    assert.deepEqual(adoptionFor(scenario, { issues, edges: [] }, false)?.counts, { declaring: 0, total: 2 });
+    assert.deepEqual(
+      adoptionFor(scenario, { issues, edges: [makeEdge('blocked-by', '1', '2')] }, false)?.counts,
+      { declaring: 1, total: 2 },
+    );
+  });
+
+  it('gives the day-one document its sentence and no count, and takes the sentence back on a dismiss', () => {
+    const document = adoptionSeed();
+    const stated = adoptionFor(SCENARIOS.adoption, document, false);
+    assert.equal(stated?.counts, undefined, 'the day-one panel double-stated its adoption');
+    assert.ok(stated?.note?.text.includes('pick order'));
+    assert.equal(adoptionFor(SCENARIOS.adoption, document, true), undefined);
+  });
+
+  it('withdraws the day-one sentence the moment a relationship lands', () => {
+    // The line is the host's WORDING and the document's CLAIM. The sandbox is
+    // editable, so a visitor can falsify the claim — and a sentence saying no
+    // issue declares relationships, printed under a relationship, is worse than
+    // no sentence at all.
+    const document = adoptionSeed();
+    const [first, second] = document.issues;
+    assert.ok(first !== undefined && second !== undefined);
+    const declared: GraphDocument = {
+      issues: document.issues,
+      edges: [makeEdge('blocked-by', first.ref, second.ref)],
+    };
+    assert.equal(adoptionFor(SCENARIOS.adoption, declared, false), undefined);
   });
 });

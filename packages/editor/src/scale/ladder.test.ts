@@ -248,3 +248,40 @@ describe('narrowing', () => {
     assert.ok(scaleLadder(withDangling).diagnostics.some((line) => line.includes('nope')));
   });
 });
+
+describe('a narrowed canvas keeps what is TRUE and drops what is DRAWN', () => {
+  const CONDITION = {
+    kind: 'error',
+    headline: 'The index could not be read',
+    assurance: 'The pipeline continues on its last known order.',
+  } as const;
+
+  it('carries the host’s condition onto the canvas and nothing else', () => {
+    // The canvas answers "what surrounds this issue", so the header, the NOW row
+    // and the freshness stamp stay the rail's — carrying those would draw them
+    // twice. The CONDITION is not one of them: it draws nothing itself, and
+    // without it a canvas with nothing to show explains that emptiness its own
+    // way ("no issue in this document declares a relationship") beside a rail
+    // saying the index could not be read.
+    const input = {
+      ...relatedDocument(10),
+      host: {
+        concurrencyCap: 2,
+        counts: { ranked: 3, readyNow: 1, held: 0 },
+        freshness: { asOf: '14:32', refresh: 'refresh' },
+        condition: CONDITION,
+      },
+    };
+    const ladder = scaleLadder(input);
+    assert.deepEqual(ladder.canvas.host, { condition: CONDITION });
+  });
+
+  it('carries no host at all when the host stated no condition', () => {
+    const input = {
+      ...relatedDocument(10),
+      host: { concurrencyCap: 2, freshness: { asOf: '14:32' } },
+    };
+    assert.equal(scaleLadder(input).canvas.host, undefined);
+  });
+});
+

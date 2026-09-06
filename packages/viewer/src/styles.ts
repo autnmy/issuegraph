@@ -186,6 +186,141 @@ export const viewerStylesheet = `
   color: var(--ig-accent);
 }
 
+/* ── the panel-level notice ────────────────────────────────────────────── */
+
+/* WHAT THE HOST SAYS IS TRUE OF THE WHOLE PANEL, drawn between the NOW row and
+   the order it qualifies. Its own surface, so it reads as a statement about the
+   panel rather than as a row that lost its rank. */
+.ig-notice {
+  align-items: flex-start;
+  background: var(--ig-surface-2);
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  display: flex;
+  gap: var(--ig-space-snug);
+  justify-content: space-between;
+  padding: var(--ig-space-snug) var(--ig-space-loose);
+}
+
+.ig-notice-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-micro);
+}
+
+.ig-notice-head {
+  align-items: center;
+  color: var(--ig-text);
+  display: flex;
+  gap: var(--ig-space-tight);
+  margin: 0;
+}
+
+.ig-notice-body {
+  color: var(--ig-text-body);
+  margin: 0;
+}
+
+/* A COUNT, SO IT SITS ON THE FIGURE FACE. A progress figure is read as a number,
+   and the proportional face makes its digits wander the way a rank column's do. */
+.ig-notice-progress {
+  color: var(--ig-text-muted);
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-small);
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+}
+
+/* THE SAME CONTROL RESET THE REFRESH BUTTON TAKES, and for the same reason: it
+   is published and not wired, so it must look like the inline control the frame
+   draws rather than like a UA button. The anchor arm gets it too — a host that
+   routes instead of acting should not get a different-looking affordance. */
+.ig-notice-action {
+  background: none;
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  color: var(--ig-text);
+  cursor: pointer;
+  font: inherit;
+  padding: var(--ig-space-micro) var(--ig-space-snug);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.ig-notice-action:hover {
+  border-color: var(--ig-accent);
+  color: var(--ig-accent);
+}
+
+/* GOLD ON FIRST IMPORT, and gold is the conflict state's hue — the same reuse
+   the stale stamp already makes, for the same reason: the token list is the
+   contract every host theme has to fill, so a token added for one state is a
+   theme every host has to revisit.
+
+   AND NOTHING FOR THE ERROR ARM. The design makes exactly one panel-level outline
+   claim, and it is this one; an error is drawn calm on purpose, because its own
+   sentence is that settings are safe and the pipeline is still running. A
+   failure-hued outline around the whole panel would say the opposite. */
+.ig-viewer[data-ig-condition='importing'] {
+  outline: var(--ig-stroke) solid var(--ig-state-conflict);
+  outline-offset: var(--ig-space-micro);
+}
+
+.ig-notice[data-ig-condition='importing'] .ig-notice-head {
+  color: var(--ig-state-conflict);
+}
+
+.ig-notice[data-ig-condition='error'] .ig-notice-head {
+  color: var(--ig-state-failed);
+}
+
+/* ── the adoption line ─────────────────────────────────────────────────── */
+
+/* ONE QUIET LINE, which is the whole of what the design asks for here: the
+   day-one panel has to read complete and calm, and a block explaining what the
+   reader is missing is the opposite of calm. */
+.ig-adoption {
+  align-items: center;
+  color: var(--ig-text-muted);
+  display: flex;
+  font-size: var(--ig-font-size-small);
+  gap: var(--ig-space-tight);
+  margin: 0;
+}
+
+/* THE SENTENCE IS NOT THE LINK. Underlining the whole line made the quietest
+   element on the panel its loudest; the link is a short label beside it. */
+.ig-adoption-text {
+  color: var(--ig-text-muted);
+}
+
+.ig-adoption-link {
+  color: var(--ig-text-muted);
+  margin-left: auto;
+  text-decoration: underline;
+  white-space: nowrap;
+}
+
+.ig-adoption-link:hover {
+  color: var(--ig-accent);
+}
+
+/* PUBLISHED, NOT PERFORMED. The viewer never removes its own line; the host
+   re-renders without the note. */
+.ig-adoption-dismiss {
+  background: none;
+  border: 0;
+  color: var(--ig-text-muted);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.ig-adoption-dismiss:hover {
+  color: var(--ig-accent);
+}
+
 /* ── working now ───────────────────────────────────────────────────────── */
 
 .ig-now {

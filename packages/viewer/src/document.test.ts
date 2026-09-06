@@ -661,6 +661,205 @@ describe('normalizeDocument: the host facts', () => {
     assert.deepEqual(running.document.isolated, ['2']);
   });
 
+  it('keeps a whole condition and drops one missing a string it cannot be drawn without', () => {
+    const importing = normalizeDocument({
+      ...two,
+      host: {
+        condition: {
+          kind: 'importing',
+          headline: 'Building the local index',
+          caution: 'Ranks will change as the rest arrive.',
+          progress: '412 of ~1,200 issues',
+        },
+      },
+    });
+    assert.deepEqual(importing.document.host.condition, {
+      kind: 'importing',
+      headline: 'Building the local index',
+      caution: 'Ranks will change as the rest arrive.',
+      progress: '412 of ~1,200 issues',
+    });
+    assert.deepEqual(importing.diagnostics, []);
+
+    // WHOLE, not field by field. A first-import notice missing its progress
+    // line is not a smaller notice — it is a panel claiming an import is
+    // running while refusing to say how far along it is.
+    const partial = normalizeDocument({
+      ...two,
+      host: {
+        condition: { kind: 'importing', headline: 'Building the local index', caution: 'Ranks will change.', progress: '  ' },
+      },
+    });
+    assert.equal(partial.document.host.condition, undefined);
+    assert.deepEqual(partial.diagnostics, [
+      'importing condition has an empty required string and was dropped whole',
+    ]);
+  });
+
+  it('keeps a command action and a linkable routing action alike', () => {
+    const of = (action: { label: string; href?: string }) =>
+      normalizeDocument({
+        ...two,
+        host: {
+          condition: {
+            kind: 'empty',
+            headline: 'Nothing is eligible right now',
+            reason: 'No open issue matches your pick order.',
+            assurance: 'The pipeline stays armed.',
+            action,
+          },
+        },
+      });
+    const command = of({ label: 'Review pick order' });
+    assert.deepEqual(command.document.host.condition?.kind === 'empty' ? command.document.host.condition.action : null, {
+      label: 'Review pick order',
+    });
+    const routed = of({ label: 'Review pick order', href: 'https://example.test/settings' });
+    assert.deepEqual(routed.document.host.condition?.kind === 'empty' ? routed.document.host.condition.action : null, {
+      label: 'Review pick order',
+      href: 'https://example.test/settings',
+    });
+    assert.deepEqual([...command.diagnostics, ...routed.diagnostics], []);
+  });
+
+  it('drops a routing action whose href was refused, rather than recasting it as a command', () => {
+    // A REFUSED LINK IS NOT A COMMAND. An action carrying an href is a host that
+    // means to route; keeping it with the URL stripped would hand the notice a
+    // plain action, which publishes `review-pick-order` — a command that host
+    // never wired, and one another listener may act on instead.
+    const { document, diagnostics } = normalizeDocument({
+      ...two,
+      host: {
+        condition: {
+          kind: 'empty',
+          headline: 'Nothing is eligible right now',
+          reason: 'No open issue matches your pick order.',
+          assurance: 'The pipeline stays armed.',
+          action: { label: 'Review pick order', href: 'javascript:alert(1)' },
+        },
+      },
+    });
+    assert.equal(document.host.condition?.kind === 'empty' ? document.host.condition.action : 'wrong-arm', undefined);
+    // The state keeps its sentences: what is lost is the affordance, not the state.
+    assert.equal(
+      document.host.condition?.kind === 'empty' ? document.host.condition.headline : null,
+      'Nothing is eligible right now',
+    );
+    assert.deepEqual(diagnostics, [
+      'condition action href javascript:alert(1) is not a linkable scheme and was dropped',
+    ]);
+  });
+
+  it('reports an empty condition stated over an order that carries slots', () => {
+    // REPORTED, NEVER CORRECTED. The sentence is the host's and stays drawn;
+    // the contradiction is a fact about the data, which is what a diagnostic is.
+    const empty = {
+      kind: 'empty',
+      headline: 'Nothing is eligible right now',
+      reason: 'No open issue matches your pick order.',
+      assurance: 'The pipeline stays armed.',
+    } as const;
+    const over = normalizeDocument({
+      ...two,
+      order: { slots: [{ rank: 1, lead: '1', members: ['1'], ready: true, holds: [] }], excluded: [] },
+      host: { condition: empty },
+    });
+    assert.equal(over.document.host.condition?.kind, 'empty');
+    assert.deepEqual(over.diagnostics, ['an empty condition was stated over an order carrying 1 slots']);
+    assert.deepEqual(normalizeDocument({ ...two, host: { condition: empty } }).diagnostics, []);
+  });
+
+  it('keeps whole adoption counts, drops a bad member whole, and reports a contradiction it can see', () => {
+    const good = normalizeDocument({ ...two, host: { adoption: { counts: { declaring: 12, total: 48 } } } });
+    assert.deepEqual(good.document.host.adoption, { counts: { declaring: 12, total: 48 } });
+    assert.deepEqual(good.diagnostics, []);
+
+    const bad = normalizeDocument({ ...two, host: { adoption: { counts: { declaring: -1, total: 48 } } } });
+    assert.equal(bad.document.host.adoption, undefined);
+    assert.deepEqual(bad.diagnostics, [
+      'adoption counts are not two non-negative integers with declaring no greater than total, and were dropped whole',
+    ]);
+
+    // Unlike the order counts, this one is a property of the very edges that
+    // were passed here — so the viewer holds the evidence and says so.
+    //
+    // A LOWER BOUND, WHICH IS WHAT MAKES IT SOUND ON A SLICE: `declaring` may
+    // legitimately exceed what is drawn, and can never be less than the
+    // carriers already on screen. Zero was only the loudest case of that.
+    const over = (declaring: number, edges: readonly { from: string; to: string }[]) =>
+      normalizeDocument({
+        issues: [issue('1'), issue('2'), issue('3')],
+        edges: edges.map((edge) => ({ field: 'blocked-by' as const, ...edge })),
+        order: emptyOrder,
+        cycles: [],
+        host: { adoption: { counts: { declaring, total: 48 } } },
+      });
+    const twoCarriers = over(1, [
+      { from: '1', to: '2' },
+      { from: '3', to: '2' },
+    ]);
+    assert.deepEqual(twoCarriers.document.host.adoption, { counts: { declaring: 1, total: 48 } });
+    assert.deepEqual(twoCarriers.diagnostics, [
+      'adoption states 1 of 48 declare relationships, but this document already carries 2',
+    ]);
+    // CARRIERS, NOT EDGES. Two edges written by one issue are one declaring
+    // issue, so a host stating `1` over them is stating the truth.
+    assert.deepEqual(
+      over(1, [
+        { from: '1', to: '2' },
+        { from: '1', to: '3' },
+      ]).diagnostics,
+      [],
+    );
+    // And a slice may legitimately show fewer carriers than the host counts.
+    assert.deepEqual(over(30, [{ from: '1', to: '2' }]).diagnostics, []);
+
+    // BOTH MEMBERS HAVE A FLOOR, and the point of stating them together is that
+    // neither can be forgotten. `0 of 0` over three visible issues is as
+    // impossible as `1 of 48` over two visible carriers, and used to pass.
+    const noTotal = normalizeDocument({
+      issues: [issue('1'), issue('2'), issue('3')],
+      edges: [],
+      order: emptyOrder,
+      cycles: [],
+      host: { adoption: { counts: { declaring: 0, total: 0 } } },
+    });
+    assert.deepEqual(noTotal.document.host.adoption, { counts: { declaring: 0, total: 0 } });
+    assert.deepEqual(noTotal.diagnostics, [
+      'adoption states 0 of 0 declare relationships, but this document already holds 3',
+    ]);
+  });
+
+  it('keeps an adoption note with its link and dismiss word, and drops an unlinkable href', () => {
+    const link = { text: 'what relationships add', href: 'https://issuegraph.org/' };
+    const kept = normalizeDocument({
+      ...two,
+      host: { adoption: { note: { text: 'No issue here declares relationships.', link, dismiss: '✕' } } },
+    });
+    assert.deepEqual(kept.document.host.adoption, {
+      note: { text: 'No issue here declares relationships.', link, dismiss: '✕' },
+    });
+
+    // THE SENTENCE SURVIVES A REFUSED LINK. A line that loses its link still
+    // says what it says, and the design asks this one to be quiet, not absent.
+    const refused = normalizeDocument({
+      ...two,
+      host: {
+        adoption: {
+          note: { text: 'No issue here declares relationships.', link: { text: 'read more', href: 'data:text/html,x' } },
+        },
+      },
+    });
+    assert.deepEqual(refused.document.host.adoption, { note: { text: 'No issue here declares relationships.' } });
+    assert.deepEqual(refused.diagnostics, [
+      'adoption note href data:text/html,x is not a linkable scheme and was dropped',
+    ]);
+
+    const blank = normalizeDocument({ ...two, host: { adoption: { note: { text: '   ' } } } });
+    assert.equal(blank.document.host.adoption, undefined);
+    assert.deepEqual(blank.diagnostics, ['adoption note has empty text and was dropped whole']);
+  });
+
   it('tells the two hold families apart in the type system, not by convention', () => {
     // The shape an existing host already supplies keeps compiling: a label is optional.
     const tracker: ViewerHold = { family: 'tracker', reason: 'claimed by another run' };

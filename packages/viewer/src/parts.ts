@@ -12,6 +12,7 @@ import { type EdgeField, edgeIdentity } from '@issuegraph/core';
 import type {
   NormalizedDocument,
   RankProvenance,
+  ViewerCondition,
   ViewerHold,
   ViewerIssue,
   ViewerSlot,
@@ -331,7 +332,7 @@ export function hostHeader(
   document: NormalizedDocument,
   controls?: HeaderControls,
 ): ElementSpec | null {
-  const { concurrencyCap, counts, freshness } = document.host;
+  const { concurrencyCap, counts, freshness, adoption } = document.host;
 
   // THREE CHIPS, NOT ONE SENTENCE, and the middle one carries the accent. §16a
   // outlines each tally separately and tints only "how many could run right
@@ -359,6 +360,18 @@ export function hostHeader(
     chips.push(
       element('span', { class: 'ig-count-chip', 'data-count': 'ready' }, [
         `cap ${String(concurrencyCap)}`,
+      ]),
+    );
+  }
+  // §16h'S ONE AMBIGUITY WORTH REMOVING, stated once and here. "No edges shown"
+  // and "no edges declared" look identical on a panel, and only the host can
+  // tell them apart — it holds the whole backlog, while this document may be a
+  // window onto it. So the number is supplied like every other count, and the
+  // header prints it beside them rather than inventing a second place for it.
+  if (adoption?.counts !== undefined) {
+    chips.push(
+      element('span', { class: 'ig-count-chip', 'data-count': 'adoption' }, [
+        `${String(adoption.counts.declaring)} of ${String(adoption.counts.total)} declare relationships`,
       ]),
     );
   }
@@ -406,6 +419,190 @@ export function hostHeader(
       element('span', { class: 'ig-header-lead' }, [stamp, size]),
     ]),
     summary,
+  ]);
+}
+
+/**
+ * The kind of condition the host stated, or nothing.
+ *
+ * Exported so each projection root can put it on the panel element as
+ * `data-ig-condition` and let the STYLESHEET decide what a condition looks
+ * like. `renderAttrs` omits a `null` attribute, so a host that stated none
+ * emits exactly the markup it emitted before this existed — which is what keeps
+ * the pure-graph promise a promise rather than an aspiration.
+ */
+export function conditionKind(document: NormalizedDocument, chrome: boolean | undefined): string | null {
+  // GATED LIKE THE NOTICE, because it is the same fact wearing a different
+  // channel: the stylesheet reads this attribute to outline the panel, so a
+  // chrome-less render kept the gold outline with nothing anywhere in it saying
+  // what the gold meant. An unexplained treatment is worse than none.
+  if (chrome === false) return null;
+  return document.host.condition?.kind ?? null;
+}
+
+/**
+ * Whether the host has said why this panel is short, so no projection may say
+ * why itself.
+ *
+ * NOT CHROME, AND THIS IS THE DISTINCTION THE TWO HELPERS EXIST TO KEEP. What
+ * to DRAW is a rendering question, and a host composing two views of one
+ * document wants the notice and its outline once — that is `conditionKind`.
+ * What is TRUE is not: a chrome-less canvas beside an explained rail is still a
+ * view of a document whose emptiness the host has accounted for, and its own
+ * derived sentence is not a fallback explanation but a false one. The graph's
+ * reads "no issue in this document declares a relationship", which under a
+ * stated `error` is a claim about something else entirely, contradicting the
+ * panel beside it. Drawing nothing there is right; explaining it wrongly is not.
+ */
+export function statesItsOwnCause(document: NormalizedDocument): boolean {
+  return document.host.condition !== undefined;
+}
+
+/** What the notice draws, resolved from the arm. Every string is the host's. */
+interface NoticeParts {
+  readonly headline: string;
+  /** The sentences under the headline, in the frame's order. */
+  readonly body: readonly string[];
+  /** The mono line a progress figure sits on. Absent for the kinds that have none. */
+  readonly progress?: string | undefined;
+  /** A control this package publishes and does not wire. Absent when the host named none. */
+  readonly control?: { readonly label: string; readonly command: string; readonly href?: string | undefined } | undefined;
+}
+
+/**
+ * One interpreter for the three arms.
+ *
+ * AN EXHAUSTIVE SWITCH, which is the whole of the branching this feature adds.
+ * The arms carry different field names, so a lookup table would have to reach
+ * them through an index the union does not offer — and the compiler proving a
+ * new arm was not forgotten is worth more here than the table's shape.
+ *
+ * THE COMMANDS ARE NAMESPACED. `data-ig-command` is one namespace shared with
+ * `@issuegraph/editor` and with whatever a host publishes beside it, and the
+ * bare word `retry` already means "retry that write" to the editor's own
+ * reducer. A control that looks wired and does something else is worse than
+ * the control this package refuses to draw at all.
+ */
+function noticeParts(condition: ViewerCondition): NoticeParts {
+  switch (condition.kind) {
+    case 'importing':
+      return { headline: condition.headline, body: [condition.caution], progress: condition.progress };
+    case 'empty':
+      return {
+        headline: condition.headline,
+        body: [condition.reason, condition.assurance],
+        ...(condition.action === undefined
+          ? {}
+          : {
+              control: {
+                label: condition.action.label,
+                command: 'review-pick-order',
+                ...(condition.action.href === undefined ? {} : { href: condition.action.href }),
+              },
+            }),
+      };
+    case 'error':
+      return {
+        headline: condition.headline,
+        body: [condition.assurance],
+        ...(condition.retry === undefined || condition.retry.trim() === ''
+          ? {}
+          : { control: { label: condition.retry, command: 'retry:index' } }),
+      };
+  }
+}
+
+/**
+ * The panel-level notice: what the host says is true of the whole panel.
+ *
+ * CHROME, like the header beside it, and it takes the flag rather than leaving
+ * each projection to apply it: the rule is that a host composing two views of
+ * one document owns ONE notice for the same reason it owns one header, and a
+ * rule restated at three call sites is three places to forget it. The same
+ * argument that gave `hostHeader` its gate gives this one its parameter.
+ *
+ * `role="status"` SITS ON THE TEXT, NOT THE CONTAINER. A polite live region
+ * holding an interactive control re-announces the button every time the host
+ * re-renders, which turns a reassurance into a nag.
+ *
+ * A CONTROL IS DRAWN ONLY FOR A HOST THAT NAMED ONE, exactly as the refresh
+ * button beside the stamp is. An `href` makes it a link instead of a command —
+ * some hosts route rather than act — and the scheme was already refused or
+ * kept by `normalizeDocument`, so nothing is checked a second time here.
+ */
+export function conditionNotice(document: NormalizedDocument, chrome: boolean | undefined): ElementSpec | null {
+  const condition = document.host.condition;
+  if (chrome === false || condition === undefined) return null;
+  const parts = noticeParts(condition);
+  const control =
+    parts.control === undefined
+      ? null
+      : parts.control.href === undefined
+        ? element(
+            'button',
+            { class: 'ig-notice-action', type: 'button', [COMMAND_ATTRIBUTE]: parts.control.command },
+            [parts.control.label],
+          )
+        : element(
+            'a',
+            // `rel="noreferrer"`, THE SAME ANSWER `identity` GIVES. This is the
+            // package's other rendering of a host-supplied URL, and two answers
+            // to one question is the drift the shared scheme check exists to
+            // avoid — applied to the attribute set as well as to the check.
+            { class: 'ig-notice-action', href: parts.control.href, rel: 'noreferrer' },
+            [parts.control.label],
+          );
+  return element('aside', { class: 'ig-notice', 'data-ig-condition': condition.kind }, [
+    element('div', { class: 'ig-notice-text', role: 'status' }, [
+      element(
+        'p',
+        { class: 'ig-notice-head' },
+        condition.glyph === undefined || condition.glyph === ''
+          ? [condition.headline]
+          : glyphAndLabel(condition.glyph, condition.headline),
+      ),
+      ...parts.body.map((line) => element('p', { class: 'ig-notice-body' }, [line])),
+      parts.progress === undefined ? null : element('p', { class: 'ig-notice-progress' }, [parts.progress]),
+    ]),
+    control,
+  ]);
+}
+
+/**
+ * §16h's one quiet line: why this panel shows no relationships at all.
+ *
+ * THE SENTENCE IS THE HOST'S, and it has to be: the cause names a host's own
+ * configuration, and a package that has never heard of a pick order cannot
+ * write it. The line, the link and the dismiss control are this package's.
+ *
+ * THE VIEWER NEVER HIDES ITS OWN LINE. Dismiss is published like every other
+ * command; the host re-renders without the note. A package that removed the
+ * element itself would be holding state, which is the one thing this layer
+ * promises it does not do.
+ */
+export function adoptionNote(document: NormalizedDocument, chrome: boolean | undefined): ElementSpec | null {
+  const note = document.host.adoption?.note;
+  if (chrome === false || note === undefined) return null;
+  return element('p', { class: 'ig-adoption' }, [
+    // THE SENTENCE STAYS PLAIN. Its link is a short label beside it, not the
+    // whole line wearing an underline — this is the one piece of commentary on
+    // a panel the design asks to read complete and calm.
+    element('span', { class: 'ig-adoption-text' }, [note.text]),
+    note.link === undefined
+      ? null
+      : element('a', { class: 'ig-adoption-link', href: note.link.href, rel: 'noreferrer' }, [note.link.text]),
+    note.dismiss === undefined || note.dismiss.trim() === ''
+      ? null
+      : element(
+          'button',
+          {
+            class: 'ig-adoption-dismiss',
+            type: 'button',
+            'aria-label': note.dismiss,
+            [COMMAND_ATTRIBUTE]: 'dismiss:adoption',
+          },
+          [note.dismiss],
+        ),
   ]);
 }
 

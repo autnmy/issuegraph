@@ -33,9 +33,12 @@ import {
 } from '../layout.ts';
 import {
   type CardBlock,
+  adoptionNote,
   atStations,
   cardBlocks,
   caveatBadges,
+  conditionKind,
+  conditionNotice,
   footerLabels,
   nowRows,
   caveatText,
@@ -43,6 +46,7 @@ import {
   emptyState,
   evidenceBadge,
   hostHeader,
+  statesItsOwnCause,
   identity,
   legend,
   notReadyBadge,
@@ -785,9 +789,16 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
   };
 
   const diagnostics: string[] = [];
-  let canvas: ElementSpec;
+  let canvas: ElementSpec | null;
 
-  if (drawsNothing) {
+  if (statesItsOwnCause(document) && (drawsNothing || nodeCount === 0)) {
+    // THE HOST'S NOTICE IS THE PANEL'S ONE CAUSE STATEMENT — see `linear.ts`.
+    // This arm's sentence is the worse of the two to leave standing: it names
+    // RELATIONSHIPS, so an unreadable index or a running import would be
+    // explained to the reader as a document that declares no edges, which is a
+    // claim about something else entirely and may simply be untrue.
+    canvas = null;
+  } else if (drawsNothing) {
     canvas = emptyState('No issue in this document declares a relationship, so the canvas is empty.');
   } else if (nodeCount === 0) {
     // Nothing to draw ON the canvas, and a footer group beneath it that is the
@@ -889,7 +900,12 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
 
   const root = element(
     'section',
-    { class: 'ig-viewer ig-graph', 'data-projection': 'graph', 'aria-label': 'issue order and relationships' },
+    {
+      class: 'ig-viewer ig-graph',
+      'data-projection': 'graph',
+      'data-ig-condition': conditionKind(document, options.chrome),
+      'aria-label': 'issue order and relationships',
+    },
     [
       options.chrome === false
         ? null
@@ -898,6 +914,14 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
             compact: layout.compact,
             switchable: options.switchable === true,
           }),
+      // ABOVE THE STAGE, which is where this projection's order is drawn — the
+      // same position relative to the order that the list gives it. It is NOT
+      // the list's arrangement: the graph draws its NOW row only when the canvas
+      // refuses (otherwise the running job is a station on the spine), so there
+      // is usually no NOW row here for the notice to sit under, and in the
+      // refused case the band stands in for the spine the notice qualifies.
+      // Gated as chrome, for the reason `conditionNotice` states.
+      conditionNotice(document, options.chrome),
       // ONE STAGE, sized in the layout's own units, so an absolutely-positioned
       // card and an SVG coordinate mean the same thing. A percentage-width
       // canvas would rescale under the cards and the two would drift apart.
@@ -945,6 +969,9 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
             `${String(document.isolated.length)} isolated ${document.isolated.length === 1 ? 'issue' : 'issues'} not drawn`,
           ]),
       legend(),
+      // LAST, because §16h calls it the panel FOOTER and the legend is a footer
+      // bar. Above it, the line was not the last thing on the panel.
+      adoptionNote(document, options.chrome),
     ],
   );
 

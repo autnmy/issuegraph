@@ -58,13 +58,37 @@ function blocks(hold: Hold): boolean {
   return hold.blocking !== false;
 }
 
-function provenanceOf(explained: ExplainedDocument, row: ExplainedRow): RankProvenance {
+/**
+ * Where this row's rank came from, in the viewer's own three forms.
+ *
+ * THE ORDER OF THE ARMS IS THE DESIGN'S RECONCILIATION RULE, not a preference.
+ * The config layer produces a complete ranking on its own and the relationship
+ * layer MODIFIES it — so a promotion, which is the relationship layer speaking,
+ * is what a row says when it has one. Below that sits whichever ordered query
+ * the host's engine matched, and below that the tier the issue declares.
+ */
+function provenanceOf(
+  explained: ExplainedDocument,
+  row: ExplainedRow,
+  caveats: ReadonlyMap<IssueRef, IssueCaveats>,
+): RankProvenance {
   const view = explained.order.priority.get(row.issue.ref);
   if (view !== undefined && view.promoted && view.promotedBy.length > 0) {
     return { kind: 'promotion', notation: view.notation, promotedBy: view.promotedBy };
   }
+  const matched = caveats.get(row.issue.ref)?.matchedQuery;
+  if (matched !== undefined) return { kind: 'matched-query', index: matched.index, label: matched.label };
   const declared = row.provenance.form === 'promoted' ? row.provenance.declared : row.provenance.priority;
   return { kind: 'declared-tier', priority: declared };
+}
+
+/** The two caveats the viewer's issue actually carries, and nothing else from the table. */
+function previewAndDisagreement(caveats: IssueCaveats | undefined): Partial<ViewerIssue> {
+  if (caveats === undefined) return {};
+  return {
+    ...(caveats.previewOnly === undefined ? {} : { previewOnly: caveats.previewOnly }),
+    ...(caveats.disagreement === undefined ? {} : { disagreement: caveats.disagreement }),
+  };
 }
 
 function issueOf(
@@ -77,9 +101,11 @@ function issueOf(
     title: row.issue.title,
     open: row.issue.state === 'open',
     priority: row.issue.priority ?? DEFAULT_PRIORITY,
-    provenance: provenanceOf(explained, row),
+    provenance: provenanceOf(explained, row, caveats),
     // The host's caveats about its own engine, from the scenario's table.
-    ...(caveats.get(row.issue.ref) ?? {}),
+    // `matchedQuery` is deliberately NOT spread onto the issue: it is an input
+    // to the provenance above, not a field the viewer's document carries.
+    ...previewAndDisagreement(caveats.get(row.issue.ref)),
   };
 }
 
@@ -193,11 +219,39 @@ function dedupe(holds: readonly ViewerHold[]): readonly ViewerHold[] {
  * (`host.ts`), and `caveats` what the host's engine knows about its own rows;
  * absent, the viewer draws the pure-graph view.
  */
+/**
+ * The document an audit reads, and the reading of it — ONE PAIR, never two
+ * halves.
+ *
+ * `AuditInput` carries a document and the graph probes over it, and those are
+ * two views of one thing: the cycles and the duplicate resolution are answers
+ * ABOUT that document. Supplying them from different sources is the defect this
+ * type exists to make unrepresentable — the audited document was corrected once
+ * while its probes stayed derived from the blanked projection, so the backlog's
+ * cycle finding vanished and every canonical-dependent finding was computed
+ * against a graph that was not the one being audited.
+ */
+export interface Audited {
+  readonly document: GraphDocument;
+  readonly explained: ExplainedDocument;
+}
+
+/**
+ * @param landed   what this panel DRAWS. The empty state deliberately blanks it.
+ * @param audited  what the repository HOLDS, and the reading of it. Defaults to
+ *   the drawn pair and differs only where the two genuinely differ: an audit is
+ *   a reading of the backlog's relationships, and a panel saying nothing is
+ *   eligible has not changed one of them. Passing the blanked document made the
+ *   workspace's audit report zero findings and its filter drop every affected
+ *   row the moment eligibility changed — a fact about the ORDER erasing facts
+ *   about the GRAPH.
+ */
 export function projectDocument(
   explained: ExplainedDocument,
   landed: GraphDocument,
   host?: HostFacts,
   caveats: ReadonlyMap<IssueRef, IssueCaveats> = new Map(),
+  audited: Audited = { document: landed, explained },
 ): Projection {
   const running = new Set((host?.running ?? []).map((job) => job.key));
   const { slots, excluded } = slotsOf(explained, running);
@@ -212,11 +266,14 @@ export function projectDocument(
       // cannot disagree about a component while both are on one screen.
       cycles: explained.model.cycles,
     },
+    // EVERY HALF FROM ONE SOURCE. The probes are answers ABOUT the audited
+    // document, so they come from its own reading — taking them from the drawn
+    // projection audited one graph with another graph's answers.
     audit: {
-      document: landed,
+      document: audited.document,
       graph: {
-        cycles: explained.model.cycles,
-        duplicateCanonical: explained.model.duplicateCanonical,
+        cycles: audited.explained.model.cycles,
+        duplicateCanonical: audited.explained.model.duplicateCanonical,
       },
     },
   };

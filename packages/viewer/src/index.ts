@@ -34,6 +34,8 @@
  */
 
 export type {
+  Adoption,
+  ConditionAction,
   Disagreement,
   Freshness,
   GraphHold,
@@ -47,6 +49,7 @@ export type {
   RankProvenance,
   RunningJob,
   TrackerHold,
+  ViewerCondition,
   ViewerCycle,
   ViewerDocument,
   ViewerEdge,

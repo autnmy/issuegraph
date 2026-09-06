@@ -42,9 +42,24 @@ import type { EdgeKind, Store, StoreSnapshot, WriteRecord } from '@issuegraph/st
 import { type Theme, defaultTheme, extendTheme } from '@issuegraph/viewer';
 
 import { projectDocument } from './document.ts';
-import { hostFacts, runningSince } from './host.ts';
+import {
+  DEMO_STATE_LABELS,
+  DEMO_STATE_NAMES,
+  type DemoStateName,
+  hostFacts,
+  liftedByARead,
+  runningSince,
+  showsOrder,
+} from './host.ts';
 import { explainDocument } from './order.ts';
-import { DEFAULT_SCENARIO, SCENARIOS, SCENARIO_NAMES, type Scenario, type ScenarioName } from './seed.ts';
+import {
+  DEFAULT_SCENARIO,
+  SCENARIOS,
+  SCENARIO_NAMES,
+  type Scenario,
+  type ScenarioName,
+  adoptionFor,
+} from './seed.ts';
 import type { DemoSource, NextOutcome } from './source.ts';
 import { STAMPED_PACKAGES, VERSIONS } from './versions.ts';
 
@@ -136,12 +151,29 @@ const FORWARDED: ReadonlySet<string> = new Set(['retry', 'discard', 'dismiss-cha
  * So the click reaches this listener, and this set is what admits it past the
  * "inside the mount, the mount owns it" rule below.
  */
-export const HOST_COMMANDS_FROM_WORKSPACE: ReadonlySet<string> = new Set(['refresh']);
+export const HOST_COMMANDS_FROM_WORKSPACE: ReadonlySet<string> = new Set([
+  'refresh',
+  // THE CONDITION'S AND THE ADOPTION LINE'S CONTROLS, admitted the same way and
+  // for the same reason. Without membership here the click is dropped by the
+  // rule above BEFORE it reaches the switch, which is a control that looks
+  // wired and silently is not — the exact failure the viewer refuses to draw.
+  //
+  // `retry:index`, NOT `retry`. The bare word is already the mount reducer's,
+  // for retrying a WRITE, and it is in `FORWARDED` two lines up: admitting it
+  // here would hand the viewer's index retry to the writes log.
+  'retry:index',
+  'review-pick-order',
+  'dismiss:adoption',
+]);
 
 const OUTCOMES: ReadonlySet<string> = new Set(['apply', 'reject', 'conflict']);
 
 function isOutcome(value: string): value is NextOutcome {
   return OUTCOMES.has(value);
+}
+
+function isDemoState(value: string | null): value is DemoStateName {
+  return DEMO_STATE_NAMES.some((name) => name === value);
 }
 
 function isTheme(value: string | null): value is ThemeName {
@@ -201,12 +233,39 @@ export interface HostMoments {
   readonly observedAt: () => Date;
   readonly now: () => Date;
   readonly mountedAt: Date;
+  /**
+   * Which state the panel is being drawn in, READ AT PROJECTION TIME.
+   *
+   * A getter, like the clock beside it, because `projectFor` is bound once per
+   * mount and the state changes between renders: a value captured here would
+   * pin the panel to whatever was selected when the store was built, and the
+   * control would move nothing until the document changed.
+   */
+  readonly state: () => DemoStateName;
+  /** Whether the visitor has dismissed this document's adoption line. */
+  readonly dismissed: () => boolean;
 }
 
 function projectFor(scenario: Scenario, moments: HostMoments): (snapshot: StoreSnapshot) => WorkspaceProjection {
   return (snapshot) => {
-    const landed = { issues: snapshot.issues, edges: snapshot.landed };
+    // A HOST THAT SAYS NOTHING IS ELIGIBLE SHOWS NOTHING. See `showsOrder`: it
+    // is the one state that contradicts a populated order rather than
+    // qualifying it, so the host projects what it claims to have.
+    const shown = showsOrder(moments.state());
+    // TWO DOCUMENTS, BECAUSE THEY ANSWER TWO QUESTIONS. `held` is the whole
+    // repository the store carries; `landed` is what this panel DRAWS, which
+    // the empty state deliberately blanks. Adoption is a fact about the
+    // repository — how much of the backlog declares relationships — so blanking
+    // the order must not blank it: a panel saying "nothing is eligible" over a
+    // full backlog would then also claim that backlog declares nothing.
+    const held = { issues: snapshot.issues, edges: snapshot.landed };
+    const landed = shown ? held : { issues: [], edges: [] };
     const explained = explainDocument(landed, scenario.holds, scenario.ranking);
+    // THE AUDIT READS THE REPOSITORY, and reads it whole: its own document AND
+    // its own probes over that document. Where the panel draws what it holds
+    // these are the same reading and cost nothing; where it does not, auditing
+    // one graph with another graph's answers is the failure to avoid.
+    const audited = shown ? { document: held, explained } : { document: held, explained: explainDocument(held, scenario.holds, scenario.ranking) };
     // THE HOST FACTS, from the same explained order the slots come from, so the
     // header's tally and the rows beneath it are one derivation. The running
     // job is the scenario's; its start is anchored to the mount, once.
@@ -214,9 +273,15 @@ function projectFor(scenario: Scenario, moments: HostMoments): (snapshot: StoreS
       rows: explained.rows,
       observedAt: moments.observedAt(),
       now: moments.now(),
-      running: scenario.running === undefined ? undefined : runningSince(scenario.running, moments.mountedAt),
+      running:
+        !shown || scenario.running === undefined ? undefined : runningSince(scenario.running, moments.mountedAt),
+      state: moments.state(),
+      // AGAINST THE DOCUMENT ON SCREEN, not the one the module loaded with: the
+      // store lets a visitor add and delete relationships, and a count captured
+      // at boot describes a backlog that no longer exists after the first edit.
+      adoption: adoptionFor(scenario, held, moments.dismissed()),
     });
-    return projectDocument(explained, landed, host, scenario.caveats);
+    return projectDocument(explained, landed, host, scenario.caveats, audited);
   };
 }
 
@@ -282,11 +347,22 @@ export function mountSandbox(
   // trackerless demo has anything that reads as a mirror read.
   let observedAt: Date = clock();
   const mountedAt: Date = observedAt;
-  const moments: HostMoments = { observedAt: () => observedAt, now: clock, mountedAt };
+  const moments: HostMoments = {
+    observedAt: () => observedAt,
+    now: clock,
+    mountedAt,
+    state: () => panelState,
+    dismissed: () => adoptionDismissed,
+  };
 
   let theme: ThemeName = 'default';
   let canvas: CanvasMode = 'neighbourhood';
   let scenario: ScenarioName = DEFAULT_SCENARIO;
+  let panelState: DemoStateName = 'live';
+  // THE HOST HIDES ITS OWN LINE, NOT THE VIEWER. Dismiss is published like every
+  // other command and the package never removes an element it drew; the host
+  // re-projects without the note, which is the only place that state can live.
+  let adoptionDismissed = false;
   let live: Live;
   let handle: WorkspaceHandle | null = null;
   let unsubscribe = (): void => {};
@@ -354,6 +430,9 @@ export function mountSandbox(
     for (const toggle of root.querySelectorAll<HTMLElement>('[data-chrome="scenario"] [data-ig-value]')) {
       toggle.setAttribute('aria-pressed', String(toggle.getAttribute('data-ig-value') === scenario));
     }
+    for (const toggle of root.querySelectorAll<HTMLElement>('[data-chrome="state"] [data-ig-value]')) {
+      toggle.setAttribute('aria-pressed', String(toggle.getAttribute('data-ig-value') === panelState));
+    }
   };
 
   /** Build a fresh store over the current scenario and mount the workspace over it. Called at start, on reset, and when the scenario changes. */
@@ -399,6 +478,13 @@ export function mountSandbox(
     if (store !== live.store || owner !== handle) return;
     if (store.getSnapshot().hydrationError === undefined) {
       observedAt = clock();
+      // A FORCED STATE LIFTS WITH THE STAMP IT CONTRADICTS, in the one place
+      // that already knows a read landed. Two things this gets right that
+      // clearing at the click did not: a refresh that FAILED leaves
+      // `observedAt` untouched and must leave the state with it, and EVERY
+      // state a read refutes is lifted rather than whichever one was last
+      // reported — see `liftedByARead`.
+      if (liftedByARead(panelState)) panelState = 'live';
       handle?.update();
     }
     schedule();
@@ -440,12 +526,52 @@ export function mountSandbox(
         // visitor's unsettled edits belong to the document they were made on.
         if (!isScenario(value) || value === scenario) return;
         scenario = value;
+        // A NEW DOCUMENT GETS ITS LINE BACK. The dismissal was of THIS
+        // document's note, and carrying it across would hide a sentence the
+        // visitor has not seen yet.
+        adoptionDismissed = false;
         start();
+        return;
+      case 'state':
+        // A state is the same document seen differently, so it is a re-project
+        // rather than a fresh store: the visitor's edits survive the switch.
+        if (!isDemoState(value) || value === panelState) return;
+        panelState = value;
+        handle.update({});
+        schedule();
+        return;
+      case 'retry:index':
+        // A RETRY IS A READ, so it performs one and lets the read speak. It used
+        // to clear the state at the click, which is the same optimism that made
+        // a failed refresh look successful: a retry that cannot reach the
+        // tracker must leave the panel saying the index could not be read.
+        void read(false);
+        return;
+      case 'review-pick-order':
+        // NOT A READ, so no read lifts it. This sandbox has no pick-order chrome
+        // to route to, and the page says so; leaving the state is the one thing
+        // the control can honestly do here.
+        panelState = 'live';
+        handle.update({});
+        schedule();
+        return;
+      case 'dismiss:adoption':
+        adoptionDismissed = true;
+        handle.update({});
+        schedule();
         return;
       case 'reset':
         start();
         return;
       case 'refresh':
+        // A REFRESH THAT CANNOT MAKE THE STAMP FRESH IS A CONTROL THAT LIES.
+        // `stale` is drawn by dating the read further back on every render, so
+        // a successful re-read landed and the panel still said "stale · 17m
+        // ago" — the one affordance §16g gives that state, doing nothing a
+        // reader could see. `read` lifts every such state when the read LANDS,
+        // beside the stamp, because that is the event; doing it here would move
+        // the state before the evidence and make a failed refresh look
+        // successful.
         void read(false);
         return;
       default:
@@ -488,6 +614,16 @@ export function mountSandbox(
     control.replaceChildren(
       ...SCENARIO_NAMES.map((name) =>
         button(SCENARIOS[name].label, 'scenario', { 'data-ig-value': name, class: 'chrome-button chrome-toggle' }),
+      ),
+    );
+  }
+  // ORTHOGONAL TO THE DOCUMENT, so it is its own row rather than more entries in
+  // the one above: a repository can be importing or unreadable whatever backlog
+  // it holds, and folding the two would make the control a matrix.
+  for (const control of root.querySelectorAll<HTMLElement>('[data-chrome="state"]')) {
+    control.replaceChildren(
+      ...DEMO_STATE_NAMES.map((name) =>
+        button(DEMO_STATE_LABELS[name], 'state', { 'data-ig-value': name, class: 'chrome-button chrome-toggle' }),
       ),
     );
   }

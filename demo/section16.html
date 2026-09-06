@@ -52,6 +52,16 @@
   #s16a-column { width: 760px; }
   #s16b-column { width: 760px; }
   #s16b-expanded { width: 1180px; }
+  /* §16g draws its states in a column, at the width §16a's in-column list uses —
+     a state is a reading of the same panel, so it is compared at the same size.
+     The freshness pair sits side by side because the frame draws them that way. */
+  #s16g-importing { width: 760px; }
+  #s16g-empty { width: 760px; }
+  #s16g-error { width: 760px; }
+  #s16g-fresh { width: 370px; }
+  #s16g-stale { width: 370px; }
+  #s16h-adoption { width: 760px; }
+  .pair { display: flex; gap: 20px; }
 </style>
 </head>
 <body>
@@ -61,6 +71,12 @@
   the design draws four: the list in a settings rail, the list in a column, the graph
   <em>in</em> that column — a spine-only preview, because §16b says the arcs and both
   gutters cannot be drawn legibly there — and the graph expanded to full width.
+</p>
+<p>
+  Below them, §16g's panel states and §16h's day-one repository. The clock is fixed here, so
+  every panel is a reproduction rather than a moment — which is why none of them offers a
+  refresh, with one exception: §16g draws the stale stamp <em>with</em> its inline refresh, and
+  a stale panel missing the affordance the frame draws cannot be judged against it.
 </p>
 
 <section class="frame">
@@ -81,6 +97,34 @@
 <section class="frame">
   <span class="label">§16b · graph · expanded (1180)</span>
   <div id="s16b-expanded"></div>
+</section>
+
+<section class="frame">
+  <span class="label">§16g · first import (760)</span>
+  <div id="s16g-importing"></div>
+</section>
+
+<section class="frame">
+  <span class="label">§16g · nothing eligible (760)</span>
+  <div id="s16g-empty"></div>
+</section>
+
+<section class="frame">
+  <span class="label">§16g · index unreadable (760)</span>
+  <div id="s16g-error"></div>
+</section>
+
+<section class="frame">
+  <span class="label">§16g · freshness · current beside stale (370 each)</span>
+  <div class="pair">
+    <div id="s16g-fresh"></div>
+    <div id="s16g-stale"></div>
+  </div>
+</section>
+
+<section class="frame">
+  <span class="label">§16h · day one, no adoption (760)</span>
+  <div id="s16h-adoption"></div>
 </section>
 
 <script type="module" src="./dist/section16.js"></script>
