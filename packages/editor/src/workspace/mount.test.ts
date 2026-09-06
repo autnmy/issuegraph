@@ -1573,6 +1573,40 @@ describe('the first pass, composed behind §17a’s entry', () => {
     }
   });
 
+  it('lets a second consent through after the first attempt failed', async () => {
+    // apply → undo while pending → that request fails → apply again. Reading
+    // "a record exists" as "a write is on its way" suppressed the second
+    // proposal, and the queue still marked the candidate decided — so a
+    // relationship the reader believed they recorded was silently absent and
+    // never asked about again.
+    const page = await firstPassPage();
+    try {
+      await open(page);
+      press(page, 'y');
+      await flush();
+      await page.source.whenPending();
+      await flush();
+
+      press(page, 'Backspace');
+      await flush();
+      assert.equal(page.store.getSnapshot().writes.length, 1, 'the pending write went away');
+
+      page.source.settleNext({ outcome: 'rejected', reason: 'the issue body is locked' });
+      await flush();
+      assert.equal(page.store.getSnapshot().writes[0]?.state, 'failed');
+
+      press(page, 'y');
+      await flush();
+      const pending = page.store
+        .getSnapshot()
+        .writes.filter((write) => write.state === 'pending');
+      assert.equal(pending.length, 1, 'the second consent proposed nothing');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
   it('keeps Tab inside the takeover, at both ends', async () => {
     // `inert` covers the workspace's own zones and nothing else, so a mount
     // beside other page chrome let Tab walk out of a dialog asserting

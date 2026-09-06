@@ -438,7 +438,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         // lands the second turns `invalid` and shows the reader an error about a
         // relationship that now exists. One consent, one write: the handle is
         // kept and nothing new is proposed.
-        if (liveWriteFor(effect.candidateId) !== undefined) return;
+        if (pendingWriteFor(effect.candidateId) !== undefined) return;
         // AND THE RELATIONSHIP ITSELF MAY ALREADY BE THERE. The check above is
         // per candidate, and a candidate is not a relationship: two findings
         // with different ids may propose the same pair (`candidates.ts` keeps
@@ -495,7 +495,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         // THE HANDLE OUTLIVES A REFUSED DISCARD. `discardMine` leaves a `pending`
         // record exactly where it was, so forgetting the id here would lose the
         // only thing that can find that write again — see the apply arm.
-        if (liveWriteFor(effect.candidateId) === undefined) {
+        if (!recordedWriteFor(effect.candidateId)) {
           appliedWrites.delete(effect.candidateId);
         }
         return;
@@ -673,13 +673,34 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     return wrapper;
   };
 
-  /** The record this candidate's write still has at the store, if it has one. */
-  const liveWriteFor = (candidateId: string): MutationId | undefined => {
+  /**
+   * This candidate's write, if one is still IN FLIGHT.
+   *
+   * `pending` and nothing else, because the question it answers is "is this
+   * create already on its way?" — and a record that has FAILED is not on its way
+   * and never landed, so the relationship it stood for does not exist. Reading
+   * "a record exists" as "a write is out there" suppressed the reader's second
+   * consent after a failure: nothing was proposed, and the queue nevertheless
+   * marked the candidate decided, so a relationship they believed they had
+   * recorded was silently absent and never asked about again.
+   */
+  const pendingWriteFor = (candidateId: string): MutationId | undefined => {
     const mutationId = appliedWrites.get(candidateId);
     if (mutationId === undefined) return undefined;
-    return store.getSnapshot().writes.some((write) => write.mutationId === mutationId)
+    return store
+      .getSnapshot()
+      .writes.some((write) => write.mutationId === mutationId && write.state === 'pending')
       ? mutationId
       : undefined;
+  };
+
+  /** Whether the store still holds a record for this candidate's write, in any state. */
+  const recordedWriteFor = (candidateId: string): boolean => {
+    const mutationId = appliedWrites.get(candidateId);
+    return (
+      mutationId !== undefined &&
+      store.getSnapshot().writes.some((write) => write.mutationId === mutationId)
+    );
   };
 
   /**
