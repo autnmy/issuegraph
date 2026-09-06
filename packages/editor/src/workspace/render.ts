@@ -441,7 +441,12 @@ function holdRow(
       'data-subject': hold.subject,
     },
     [
-      hold.reason,
+      // THE RUNNER'S WORD, as the rail draws it: the same hold must not read
+      // `claimed …` in one zone and bare in the other.
+      hold.family === 'tracker' && hold.label !== undefined && hold.label !== ''
+        ? element('span', { class: 'ig-badge', 'data-hold': hold.label }, [hold.label])
+        : null,
+      hold.family === 'tracker' && hold.label !== undefined && hold.label !== '' ? ` ${hold.reason}` : hold.reason,
       hold.subject === undefined || !known.has(hold.subject) || inInspectedSlot(hold.subject)
         ? null
         : element(

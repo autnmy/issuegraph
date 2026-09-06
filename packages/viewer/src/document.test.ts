@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { type ViewerDocument, normalizeDocument } from './document.ts';
+import { type ViewerDocument, type ViewerHold, normalizeDocument } from './document.ts';
 import { doublePlacedDocument, fixtureDocument } from './testing/fixtures.ts';
 
 const emptyOrder = { slots: [], excluded: [] };
@@ -589,5 +589,86 @@ describe('normalizeDocument: the host’s cycles', () => {
     });
     assert.deepEqual(document.cycles, [['1', '2']]);
     assert.deepEqual(diagnostics, []);
+  });
+});
+
+describe('normalizeDocument: the host facts', () => {
+  const two = { issues: [issue('1'), issue('2')], edges: [], order: emptyOrder, cycles: [] };
+
+  it('answers an absent host with an empty running list and nothing else', () => {
+    const { document, diagnostics } = normalizeDocument(two);
+    assert.deepEqual(document.host, { running: [] });
+    assert.deepEqual(diagnostics, []);
+  });
+
+  it('keeps a whole cap and drops one that is not a non-negative integer, saying so', () => {
+    assert.equal(normalizeDocument({ ...two, host: { concurrencyCap: 2 } }).document.host.concurrencyCap, 2);
+    assert.equal(normalizeDocument({ ...two, host: { concurrencyCap: 0 } }).document.host.concurrencyCap, 0);
+    for (const bad of [-1, 1.5, Number.NaN]) {
+      const { document, diagnostics } = normalizeDocument({ ...two, host: { concurrencyCap: bad } });
+      assert.equal(document.host.concurrencyCap, undefined);
+      assert.equal(diagnostics.length, 1);
+      assert.match(diagnostics[0] as string, /concurrency cap .* not a non-negative integer/);
+    }
+  });
+
+  it('drops the counts whole when one member is bad', () => {
+    // A tally with one number missing would print a sentence that adds up to
+    // nothing, so the three go together or not at all.
+    const good = normalizeDocument({ ...two, host: { counts: { ranked: 6, readyNow: 4, held: 4 } } });
+    assert.deepEqual(good.document.host.counts, { ranked: 6, readyNow: 4, held: 4 });
+    const bad = normalizeDocument({ ...two, host: { counts: { ranked: 6, readyNow: -4, held: 4 } } });
+    assert.equal(bad.document.host.counts, undefined);
+    assert.deepEqual(bad.diagnostics, ['order counts carry a value that is not a non-negative integer and were dropped whole']);
+  });
+
+  it('keeps a running job only for an issue this document carries, once', () => {
+    const { document, diagnostics } = normalizeDocument({
+      ...two,
+      host: {
+        running: [
+          { key: '1', phase: 'Review', elapsed: '12m' },
+          { key: 'nope', phase: 'Plan', elapsed: '1m' },
+          { key: '1', phase: 'Review', elapsed: '13m' },
+        ],
+      },
+    });
+    assert.deepEqual(document.host.running, [{ key: '1', phase: 'Review', elapsed: '12m' }]);
+    assert.deepEqual(diagnostics, [
+      'running job names nope, which this document does not carry, and was dropped',
+      'running job names 1 twice; the repeat was dropped',
+    ]);
+  });
+
+  it('drops a freshness with an empty stamp whole', () => {
+    // `as of ` followed by nothing is not a stamp, and a freshness reduced to
+    // its age alone would print exactly that.
+    const kept = normalizeDocument({ ...two, host: { freshness: { asOf: '14:32', age: '2m ago', stale: false } } });
+    assert.deepEqual(kept.document.host.freshness, { asOf: '14:32', age: '2m ago', stale: false });
+    for (const asOf of ['', '  ']) {
+      const dropped = normalizeDocument({ ...two, host: { freshness: { asOf, age: '2m ago' } } });
+      assert.equal(dropped.document.host.freshness, undefined);
+      assert.deepEqual(dropped.diagnostics, ['freshness has an empty asOf stamp and was dropped whole']);
+    }
+  });
+
+  it('does not count a running issue as isolated', () => {
+    // The NOW row draws it, so "in no slot and declares no relationships" is
+    // false of it even when the host placed it in no slot.
+    const bare = normalizeDocument(two);
+    assert.deepEqual(bare.document.isolated, ['1', '2']);
+    const running = normalizeDocument({ ...two, host: { running: [{ key: '1', phase: 'Review', elapsed: '1m' }] } });
+    assert.deepEqual(running.document.isolated, ['2']);
+  });
+
+  it('tells the two hold families apart in the type system, not by convention', () => {
+    // The shape an existing host already supplies keeps compiling: a label is optional.
+    const tracker: ViewerHold = { family: 'tracker', reason: 'claimed by another run' };
+    const labelled: ViewerHold = { family: 'tracker', reason: 'claimed by another run', label: 'claimed' };
+    // @ts-expect-error — a graph hold has no label: the family IS the whole of what it is.
+    const graph: ViewerHold = { family: 'graph', reason: 'blocked by 2', label: 'blocked' };
+    assert.equal(tracker.family, 'tracker');
+    assert.equal(labelled.family, 'tracker');
+    assert.equal(graph.family, 'graph');
   });
 });

@@ -814,3 +814,27 @@ describe('a hold in the inspector carries its cause, and its subject is a contro
     });
   });
 });
+
+describe('the workspace draws the host facts in the rail', () => {
+  it('renders the summary line and the NOW row from the projection the host supplied', () => {
+    const document: ViewerDocument = {
+      ...backlogOf(8),
+      host: {
+        concurrencyCap: 2,
+        counts: { ranked: 8, readyNow: 8, held: 0 },
+        running: [{ key: 'i0003', phase: 'Review', elapsed: '12m' }],
+        freshness: { asOf: '14:32', age: '2m ago', refresh: 'refresh' },
+      },
+    };
+    const result = renderWorkspace(document, WORDS);
+    const railAt = result.markup.indexOf('data-zone="rail"');
+    const canvasAt = result.markup.indexOf('data-zone="canvas"');
+    assert.ok(railAt !== -1 && canvasAt > railAt, 'the rail zone does not precede the canvas');
+    const rail = result.markup.slice(railAt, canvasAt);
+    assert.match(rail, /<p class="ig-summary">8 ranked · 8 ready now · cap 2 · 0 held<\/p>/);
+    assert.match(rail, /<li class="ig-now-row" data-ig-group="i0003"/);
+    assert.match(rail, /data-ig-command="refresh"/);
+    // Once in the workspace: the canvas draws no header of its own.
+    assert.equal((result.markup.match(/class="ig-header"/g) ?? []).length, 1);
+  });
+});

@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import { type ElementSpec, type SpecChild } from './element.ts';
 import { LAYOUT_PROPERTIES } from './layout.ts';
 import { renderViewer } from './render.ts';
-import { fixtureDocument } from './testing/fixtures.ts';
+import { fixtureDocument, hostedFixtureDocument } from './testing/fixtures.ts';
 import { viewerStylesheet } from './styles.ts';
 import { THEME_TOKENS } from './theme.ts';
 
@@ -56,7 +56,11 @@ describe('the structural stylesheet', () => {
       if (node.tag === 'li' && node.attrs?.['class'] === 'ig-slot') rows.push(node);
       for (const child of node.children ?? []) walk(child);
     };
+    // BOTH FIXTURES, because the host facts add row children — a caveat line,
+    // a labelled hold — that the bare fixture never renders, and the rule has
+    // to see every child a row can have.
     walk(renderViewer(fixtureDocument, {}).scene.root);
+    walk(renderViewer(hostedFixtureDocument, {}).scene.root);
     assert.ok(rows.length > 0, 'no slot rows rendered, so this proves nothing');
 
     for (const row of rows) {

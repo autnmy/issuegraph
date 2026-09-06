@@ -16,11 +16,15 @@
 import type { NormalizedDocument, ViewerSlot } from '../document.ts';
 import { type ElementSpec, element } from '../element.ts';
 import {
+  caveatLines,
   edgeBadges,
   emptyState,
+  footerLabels,
   holdLine,
+  hostHeader,
   identity,
   legend,
+  nowRows,
   provenanceLine,
   slotLabel,
   slotTitle,
@@ -80,6 +84,9 @@ function slotRow(
     lead === undefined ? null : identity(lead),
     edgeBadges(document, slot.members),
     provenanceLine(lead?.provenance),
+    // THE LEAD'S CAVEATS, like the lead's provenance: a together unit is one
+    // row and one rank, and the host facts about that rank ride on its lead.
+    ...caveatLines(lead),
     ...slot.holds.map(holdLine),
   ];
 
@@ -191,12 +198,15 @@ export function linearScene(
     ),
   ];
 
+  // The runner's own words, when the host supplied them, after the title the
+  // footer has always had — so a document with unlabelled holds reads as before.
+  const labels = footerLabels(footerSlots);
   const footer =
     footerEntries.length === 0
       ? null
       : element('section', { class: 'ig-footer' }, [
           element('p', { class: 'ig-footer-title' }, [
-            'Held outside the order — claimed, parked, or never worked',
+            `Held outside the order — claimed, parked, or never worked${labels === '' ? '' : ` · ${labels}`}`,
           ]),
           element(
             'ol',
@@ -208,7 +218,10 @@ export function linearScene(
   const root = element(
     'section',
     { class: 'ig-viewer ig-linear', 'data-projection': 'linear', 'aria-label': 'issue order' },
-    [legend(), body, footer, isolatedChip(document.isolated.length)],
+    // The host facts first: what the runner is doing and how fresh the mirror
+    // is frame the order beneath them. Both are `null` for a host that stated
+    // nothing, and the section then begins at the legend exactly as before.
+    [hostHeader(document), legend(), nowRows(document), body, footer, isolatedChip(document.isolated.length)],
   );
 
   // The linear projection has one column, so nothing sits left or right of

@@ -124,6 +124,49 @@ export const fixtureDocument: ViewerDocument = {
 };
 
 /**
+ * The fixture WITH every host fact the port carries.
+ *
+ * A second document rather than fields on the first, because the first is the
+ * pin that a host supplying nothing renders exactly what shipped before the
+ * port existed — and a fixture carrying a caveat could not prove an absence.
+ * Everything the host-facts markup has to draw is reachable from here: the
+ * summary line with a cap, a fresh stamp with its refresh control, one running
+ * job, a labelled tracker hold, a preview-only row and a disagreement row.
+ */
+export const hostedFixtureDocument: ViewerDocument = {
+  ...fixtureDocument,
+  issues: fixtureDocument.issues.map((issue) => {
+    if (issue.key === '103') {
+      return {
+        ...issue,
+        previewOnly: { note: "query 5 (involves:@me) can't be evaluated locally yet — ranked by the unlabeled tail instead" },
+      };
+    }
+    if (issue.key === '110') {
+      return {
+        ...issue,
+        disagreement: { used: 'label:P3 (your mapping)', ignored: { carrier: 'frontmatter', value: 'priority: 1' } },
+      };
+    }
+    return issue;
+  }),
+  order: {
+    ...fixtureDocument.order,
+    slots: fixtureDocument.order.slots.map((slot) =>
+      slot.lead === '105'
+        ? { ...slot, holds: [{ family: 'tracker' as const, reason: 'claimed by another run', label: 'claimed' }] }
+        : slot,
+    ),
+  },
+  host: {
+    concurrencyCap: 2,
+    counts: { ranked: 2, readyNow: 2, held: 2 },
+    running: [{ key: '110', phase: 'Review', elapsed: '12m' }],
+    freshness: { asOf: '14:32', age: '2m ago', stale: false, refresh: 'refresh' },
+  },
+};
+
+/**
  * A together unit that the tracker holds — so its lead gets no rail row and the
  * canvas owns its tab stop, which is the one shape where the enclosure and the
  * node group compete for the same key.

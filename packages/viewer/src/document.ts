@@ -67,9 +67,8 @@ export type HoldFamily =
    */
   | 'tracker';
 
-/** One reason a slot is held, and which family it belongs to. */
-export interface ViewerHold {
-  readonly family: HoldFamily;
+/** What every hold carries, whichever family imposed it. */
+interface HoldBase {
   /** Human-readable, host-authored. The viewer renders it verbatim. */
   readonly reason: string;
   /**
@@ -91,6 +90,63 @@ export interface ViewerHold {
   readonly subject?: string | undefined;
 }
 
+/** A hold the graph itself imposes. Drawn inline at the rank the work would have taken. */
+export interface GraphHold extends HoldBase {
+  readonly family: 'graph';
+}
+
+/**
+ * A hold the runner or the tracker imposes. Drawn in the footer, with no rank.
+ *
+ * THE ONE ARM THAT CARRIES A LABEL, and the reason the hold is a union rather
+ * than one interface with a family string: the design's footer names each
+ * runner hold by ONE WORD — `claimed`, `parked` — beside the sentence, and a
+ * graph hold has no such word (its family is the whole of what it is). Putting
+ * `label` on both arms would let a document label a graph hold, which nothing
+ * draws; narrowing it here makes that a type error rather than a silent drop.
+ * OPTIONAL, because a host that supplied `{ family: 'tracker', reason }` before
+ * this field existed still does, and still type-checks.
+ */
+export interface TrackerHold extends HoldBase {
+  readonly family: 'tracker';
+  /** The runner's own word for the hold — `claimed`, `parked`. Rendered as a chip before `reason`. */
+  readonly label?: string | undefined;
+}
+
+/**
+ * One reason a slot is held, and which family it belongs to. A discriminated
+ * union on `family`, so the two families are told apart by the type system
+ * and not by a string a call site happens to compare.
+ */
+export type ViewerHold = GraphHold | TrackerHold;
+
+/**
+ * A pick-order query the host's engine could not evaluate locally, so the row
+ * was ranked some other way. The host says how; the viewer prints the note
+ * under a `◐ preview-only` badge and interprets nothing.
+ */
+export interface PreviewOnly {
+  readonly note: string;
+}
+
+/**
+ * Two ordering signals that disagree about this issue — a mapped label and a
+ * frontmatter `priority`, say. WHICH ONE WINS IS THE HOST'S DECISION (the
+ * design is explicit that precedence is an owner call, not a default), so the
+ * host names the signal it ranked by and the one it set aside; the viewer
+ * prints both and strikes only the losing value, so the loser stays legible.
+ */
+export interface Disagreement {
+  /** The signal the rank came from, as the host spells it: `label:P1 (your mapping)`. */
+  readonly used: string;
+  readonly ignored: {
+    /** Who declared the losing value: `frontmatter`. */
+    readonly carrier: string;
+    /** The losing value itself, struck through: `priority: 3`. */
+    readonly value: string;
+  };
+}
+
 /** One issue the document knows about. */
 export interface ViewerIssue {
   /** The model's node key: `"12"`, or `"owner/repo#12"` when qualified. */
@@ -109,6 +165,10 @@ export interface ViewerIssue {
   readonly priority: number;
   /** Absent when the host has no provenance to state. */
   readonly provenance?: RankProvenance | undefined;
+  /** Set when the host's engine ranked this row by a fallback. Absent means the query evaluated. */
+  readonly previewOnly?: PreviewOnly | undefined;
+  /** Set when two host signals disagreed about this row. Absent means they agreed, or there was one. */
+  readonly disagreement?: Disagreement | undefined;
 }
 
 /** One relationship, exactly as the format declares it. */
@@ -175,6 +235,70 @@ export interface ViewerOrder {
  */
 export type ViewerCycle = readonly string[];
 
+/**
+ * The host's tally over the WHOLE order — every number a non-negative integer.
+ *
+ * SUPPLIED, NEVER COUNTED HERE, and the reason is the same one that keeps the
+ * order itself an input: the document this layer holds may be a window (the
+ * editor's rail slices the slots) or a slice (a host showing the next
+ * twenty-five). A count over those slots would state the reader's scroll
+ * position as a fact about the order. The host has the whole order; it counts.
+ */
+export interface OrderCounts {
+  /** Slots that hold a rank. */
+  readonly ranked: number;
+  /** Slots that may start now — the number the design compares to the cap. */
+  readonly readyNow: number;
+  /** Slots held, by either family. */
+  readonly held: number;
+}
+
+/** The job the host's runner is working right now. Every string is the host's. */
+export interface RunningJob {
+  /** The document's key for the issue being worked. Must be an issue this document carries. */
+  readonly key: string;
+  /** The runner's phase word: `Review`. */
+  readonly phase: string;
+  /** How long it has run, as the host formats it: `12m`. */
+  readonly elapsed: string;
+}
+
+/**
+ * How fresh the host's mirror is. The viewer has no clock, so every value here
+ * is the host's text, formatted by the host.
+ */
+export interface Freshness {
+  /** The stamp: `14:32`. Empty drops the whole freshness fact with a diagnostic. */
+  readonly asOf: string;
+  /** Relative age, when the host states it: `2m ago`. */
+  readonly age?: string | undefined;
+  /** Past the host's threshold. Renders the word `stale` and `data-stale="true"`. */
+  readonly stale?: boolean | undefined;
+  /**
+   * The label of a refresh control. WHEN PRESENT, AND ONLY THEN, the viewer
+   * renders a button carrying `data-ig-command="refresh"` and wires nothing to
+   * it — refreshing is the host's, so the host listens for the command.
+   */
+  readonly refresh?: string | undefined;
+}
+
+/**
+ * THE HOST-FACTS PORT: the half of the design the graph cannot derive.
+ *
+ * The format excludes run state on purpose (SPEC §2, §6.8), so who is working
+ * what, how many may run at once, and how fresh the mirror is are facts only
+ * the host holds. Every field is optional, and a host that supplies none of
+ * them renders exactly the pure-graph view — pinned by test. Nothing here is a
+ * viewer constant: no cap, no clock, no repository name.
+ */
+export interface HostFacts {
+  /** How many ready slots may run at once. A non-negative integer. */
+  readonly concurrencyCap?: number | undefined;
+  readonly counts?: OrderCounts | undefined;
+  readonly running?: readonly RunningJob[] | undefined;
+  readonly freshness?: Freshness | undefined;
+}
+
 /** Everything the viewer draws. */
 export interface ViewerDocument {
   readonly issues: readonly ViewerIssue[];
@@ -193,6 +317,20 @@ export interface ViewerDocument {
    * says none, and omission is a type error.
    */
   readonly cycles: readonly ViewerCycle[];
+  /**
+   * What the host knows and the graph does not. OPTIONAL, unlike `order` and
+   * `cycles`, because absence here is a complete answer: a host with no runner
+   * has no run state to state, and the pure-graph view is what it means.
+   */
+  readonly host?: HostFacts | undefined;
+}
+
+/** The host facts after normalisation: `running` always a list, the rest present only when the host stated them. */
+export interface NormalizedHostFacts {
+  readonly concurrencyCap?: number | undefined;
+  readonly counts?: OrderCounts | undefined;
+  readonly running: readonly RunningJob[];
+  readonly freshness?: Freshness | undefined;
 }
 
 /**
@@ -228,6 +366,8 @@ export interface NormalizedDocument {
    * provenance when in fact its provenance was not supplied.
    */
   readonly outOfSetOrigins: ReadonlyMap<string, string>;
+  /** The host facts, validated. Always present; every field but `running` is present only when stated. */
+  readonly host: NormalizedHostFacts;
 }
 
 export interface NormalizeResult {
@@ -547,6 +687,67 @@ function normalizeCycles(
   return kept;
 }
 
+function isCount(value: number): boolean {
+  return Number.isInteger(value) && value >= 0;
+}
+
+/**
+ * The host facts, validated the way every other input is: a value the viewer
+ * cannot draw is dropped and said so, never thrown on and never rendered as a
+ * value it is not.
+ *
+ * A RUNNING KEY MUST BE AN ISSUE THIS DOCUMENT CARRIES, because the NOW row is
+ * built from that issue's title and identity — a key with no issue has no row
+ * to draw. `counts` drops WHOLE when one member is bad: a tally with one of its
+ * numbers missing would print a sentence that adds up to nothing.
+ */
+function normalizeHost(
+  host: HostFacts | undefined,
+  byKey: ReadonlyMap<string, ViewerIssue>,
+  diagnostics: string[],
+): NormalizedHostFacts {
+  const running: RunningJob[] = [];
+  const seen = new Set<string>();
+  for (const job of host?.running ?? []) {
+    if (!byKey.has(job.key)) {
+      diagnostics.push(`running job names ${job.key}, which this document does not carry, and was dropped`);
+      continue;
+    }
+    if (seen.has(job.key)) {
+      diagnostics.push(`running job names ${job.key} twice; the repeat was dropped`);
+      continue;
+    }
+    seen.add(job.key);
+    running.push(Object.freeze({ ...job }));
+  }
+
+  let concurrencyCap: number | undefined;
+  if (host?.concurrencyCap !== undefined) {
+    if (isCount(host.concurrencyCap)) concurrencyCap = host.concurrencyCap;
+    else diagnostics.push(`concurrency cap ${String(host.concurrencyCap)} is not a non-negative integer and was dropped`);
+  }
+
+  let counts: OrderCounts | undefined;
+  if (host?.counts !== undefined) {
+    const { ranked, readyNow, held } = host.counts;
+    if (isCount(ranked) && isCount(readyNow) && isCount(held)) counts = Object.freeze({ ranked, readyNow, held });
+    else diagnostics.push('order counts carry a value that is not a non-negative integer and were dropped whole');
+  }
+
+  let freshness: Freshness | undefined;
+  if (host?.freshness !== undefined) {
+    if (host.freshness.asOf.trim() === '') diagnostics.push('freshness has an empty asOf stamp and was dropped whole');
+    else freshness = Object.freeze({ ...host.freshness });
+  }
+
+  return Object.freeze({
+    ...(concurrencyCap === undefined ? {} : { concurrencyCap }),
+    ...(counts === undefined ? {} : { counts }),
+    running: Object.freeze(running),
+    ...(freshness === undefined ? {} : { freshness }),
+  });
+}
+
 /**
  * Read a document into the shape every projection consumes.
  *
@@ -587,8 +788,17 @@ export function normalizeDocument(input: ViewerDocument): NormalizeResult {
     return true;
   });
 
+  const host = normalizeHost(input.host, byKey, diagnostics);
+  // A RUNNING ISSUE IS DRAWN — as the NOW row — so it is not "in no slot", even
+  // when the host put it in none. Counting it would make the isolated chip
+  // state a falsehood about a row the reader can see above the order.
+  const running = new Set(host.running.map((job) => job.key));
+
   const isolated = issues
-    .filter((issue) => !placed.has(issue.key) && (edgesOf.get(issue.key) ?? []).length === 0)
+    .filter(
+      (issue) =>
+        !placed.has(issue.key) && !running.has(issue.key) && (edgesOf.get(issue.key) ?? []).length === 0,
+    )
     .map((issue) => issue.key);
 
   const cycles = normalizeCycles(input.cycles, byKey, diagnostics);
@@ -603,6 +813,7 @@ export function normalizeDocument(input: ViewerDocument): NormalizeResult {
       edgesOf,
       isolated: Object.freeze(isolated),
       outOfSetOrigins,
+      host,
     }),
     diagnostics: Object.freeze(diagnostics),
   });

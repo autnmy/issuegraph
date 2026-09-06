@@ -42,6 +42,9 @@ import {
   stationFill,
   stationsOf,
   atStations,
+  caveatText,
+  hostHeader,
+  nowRows,
 } from '../parts.ts';
 import { type LateralNeighbours, type Scene, resolveFocusKey } from '../scene.ts';
 import { type Theme, resolveTheme } from '../theme.ts';
@@ -400,7 +403,10 @@ function spineRail(
       // ONLY HERE, not in `slotLabel`. That helper is shared with the linear
       // projection, which renders the same holds as visible paragraphs — adding
       // them there would announce every linear hold twice.
-      const heldBecause = slot.holds.map((hold) => hold.reason).join(' · ');
+      // THE HOST'S CAVEATS RIDE THE SAME CHANNEL as the holds, for the same
+      // reason: this row has the geometry of a node and no room for a block.
+      const caveats = caveatText(document.byKey.get(slot.lead));
+      const heldBecause = [...slot.holds.map((hold) => hold.reason), ...(caveats === '' ? [] : [caveats])].join(' · ');
       return element(
         'li',
         {
@@ -789,7 +795,12 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
     'section',
     { class: 'ig-viewer ig-graph', 'data-projection': 'graph', 'aria-label': 'issue order and relationships' },
     [
+      hostHeader(document),
       legend(),
+      // ABOVE THE STAGE, NEVER IN THE RAIL. The rail's rows are positioned onto
+      // the layout's node boxes, so an unpositioned row among them would sit on
+      // nothing; the NOW list is ordinary flow, framing the canvas beneath it.
+      nowRows(document),
       // ONE STAGE, sized in the layout's own units, so an absolutely-positioned
       // rail row and an SVG coordinate mean the same thing. A percentage-width
       // canvas would rescale under the rail and the two would drift apart.

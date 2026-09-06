@@ -40,6 +40,7 @@ import type { EdgeKind, Store, StoreSnapshot, WriteRecord } from '@issuegraph/st
 import { type Theme, defaultTheme, extendTheme } from '@issuegraph/viewer';
 
 import { projectDocument } from './document.ts';
+import { type RunningWork, hostFacts } from './host.ts';
 import { explainDocument } from './order.ts';
 import { seedHolds } from './seed.ts';
 import type { DemoSource, NextOutcome } from './source.ts';
@@ -125,6 +126,28 @@ const STATE_LABEL: Readonly<Record<WriteRecord['state'], string>> = {
 /** The commands the mount's reducer owns that the writes log publishes outside the mount. */
 const FORWARDED: ReadonlySet<string> = new Set(['retry', 'discard', 'dismiss-change']);
 
+/**
+ * Commands published INSIDE the mounted workspace that are the host's to act
+ * on. The viewer draws the freshness stamp's refresh control and wires nothing
+ * to it — refreshing a mirror is fetching, which the packages never do — and
+ * the mount's reducer answers a command it does not know by changing nothing.
+ * So the click reaches this listener, and this set is what admits it past the
+ * "inside the mount, the mount owns it" rule below.
+ */
+export const HOST_COMMANDS_FROM_WORKSPACE: ReadonlySet<string> = new Set(['refresh']);
+
+/** How long the demo's runner has been on its job when the page loads. A fixture, like the seed. */
+const RUNNING_FOR_MS = 12 * 60_000;
+
+/**
+ * The demo runner's job. Its start is fixed relative to the moment the page
+ * mounts, so the row reads `12m` on load and counts up from there — captured
+ * ONCE, not per mirror read, or a refresh would wind the elapsed time back.
+ */
+export function runningWork(mountedAt: Date): RunningWork {
+  return { phase: 'Review', startedAt: new Date(mountedAt.getTime() - RUNNING_FOR_MS) };
+}
+
 const OUTCOMES: ReadonlySet<string> = new Set(['apply', 'reject', 'conflict']);
 
 function isOutcome(value: string): value is NextOutcome {
@@ -142,6 +165,11 @@ function isCanvasMode(value: string | null): value is CanvasMode {
 export interface Live {
   readonly store: Store;
   readonly source: DemoSource;
+}
+
+export interface SandboxOptions {
+  /** The clock the host facts read. The page passes the real one; a test passes a fixed one. */
+  readonly clock?: () => Date;
 }
 
 export interface SandboxElements {
@@ -176,9 +204,14 @@ export interface SandboxHandle {
  * edit that did not land. The mount adds the unsettled edges to the canvas
  * itself, from the store's own projection.
  */
-function project(snapshot: StoreSnapshot): WorkspaceProjection {
+function project(snapshot: StoreSnapshot, observedAt: Date, now: Date, job: RunningWork): WorkspaceProjection {
   const landed = { issues: snapshot.issues, edges: snapshot.landed };
-  return projectDocument(explainDocument(landed, seedHolds()), landed);
+  const holds = seedHolds();
+  const explained = explainDocument(landed, holds);
+  // THE HOST FACTS, from the same explained order the slots come from, so the
+  // header's tally and the rows beneath it are one derivation.
+  const host = hostFacts({ rows: explained.rows, holds, observedAt, now, job });
+  return projectDocument(explained, landed, host);
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -212,10 +245,20 @@ function describe(record: WriteRecord): string {
 }
 
 /** Mount the sandbox. `boot` builds a fresh store and source, and is called again on reset. */
-export function mountSandbox(elements: SandboxElements, boot: (onChange: () => void) => Live): SandboxHandle {
+export function mountSandbox(
+  elements: SandboxElements,
+  boot: (onChange: () => void) => Live,
+  options: SandboxOptions = {},
+): SandboxHandle {
   const { root, workspace, writes, versions, outcome } = elements;
+  const clock = options.clock ?? ((): Date => new Date());
 
   let theme: ThemeName = 'default';
+  // WHEN THE MIRROR WAS LAST READ — the `as of` stamp. Set when the store
+  // hydrates and again on every refresh, which is the only two times this
+  // trackerless demo has anything that reads as a mirror read.
+  let observedAt: Date = clock();
+  const job: RunningWork = runningWork(observedAt);
   let canvas: CanvasMode = 'neighbourhood';
   let live: Live;
   let handle: WorkspaceHandle | null = null;
@@ -291,12 +334,31 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
     unsubscribe = live.store.subscribe(schedule);
     handle = mountWorkspace(workspace, {
       store: live.store,
-      project,
+      project: (snapshot) => project(snapshot, observedAt, clock(), job),
       words: WORKSPACE_WORDS,
       theme: themeFor(theme),
       canvas,
     });
-    void live.store.hydrate().then(schedule);
+    // ONE RENDER, once the store has answered: `hydrate` schedules it. A second
+    // `schedule()` here painted the chrome against pre-hydrate state and threw
+    // the frame away a microtask later.
+    void hydrate();
+  };
+
+  /**
+   * Read the mirror: hydrate the store and stamp the read.
+   *
+   * THE STAMP HAS TO REACH THE WORKSPACE, and the store's own notification
+   * does not carry it: the store publishes to its subscribers synchronously,
+   * INSIDE `hydrate()`, so the mount has already projected — with the OLD
+   * `observedAt` — by the time the await returns. Re-stamping and redrawing
+   * only the chrome left the drawn `as of` one read behind, every time. The
+   * mount's `update()` re-runs the projection with the new stamp.
+   */
+  const hydrate = async (): Promise<void> => {
+    await live.store.hydrate();
+    observedAt = clock();
+    handle?.update();
     schedule();
   };
 
@@ -305,10 +367,12 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
   const onClick = (event: MouseEvent): void => {
     const target = event.target instanceof Element ? event.target : null;
     const control = target?.closest<HTMLElement>('[data-ig-command]') ?? null;
-    // Inside the mounted element the mount owns every command; this listener
-    // reads only the chrome around it.
-    if (control === null || !root.contains(control) || workspace.contains(control)) return;
+    if (control === null || !root.contains(control)) return;
     const name = control.getAttribute('data-ig-command') ?? '';
+    // Inside the mounted element the mount owns every command; this listener
+    // reads only the chrome around it — and the few commands the packages
+    // publish for the HOST to act on (`HOST_COMMANDS_FROM_WORKSPACE`).
+    if (workspace.contains(control) && !HOST_COMMANDS_FROM_WORKSPACE.has(name)) return;
     const value = control.getAttribute('data-ig-value');
     if (handle === null) return;
     if (FORWARDED.has(name)) {
@@ -330,6 +394,9 @@ export function mountSandbox(elements: SandboxElements, boot: (onChange: () => v
         return;
       case 'reset':
         start();
+        return;
+      case 'refresh':
+        void hydrate();
         return;
       default:
         return;

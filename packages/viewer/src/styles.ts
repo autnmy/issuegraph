@@ -141,7 +141,8 @@ export const viewerStylesheet = `
 }
 
 .ig-provenance,
-.ig-hold {
+.ig-hold,
+.ig-caveat {
   color: var(--ig-text-muted);
   font-size: var(--ig-font-size-small);
   grid-column: 3 / -1;
@@ -217,6 +218,91 @@ export const viewerStylesheet = `
   color: var(--ig-text-muted);
   font-size: var(--ig-font-size-small);
   margin: 0 0 var(--ig-space-tight);
+}
+
+/* ── the host facts: what the graph cannot say ─────────────────────────── */
+
+/* Present only when the host stated a fact; a document with none draws no
+   header at all, which is what keeps the pure-graph markup unchanged. */
+.ig-header {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ig-space);
+  margin: 0 0 var(--ig-space);
+}
+
+.ig-summary,
+.ig-freshness {
+  color: var(--ig-text-muted);
+  font-size: var(--ig-font-size-small);
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+}
+
+/* STALE GOES GOLD, as the design draws it. The gold this palette already holds
+   is the conflict state's — "the document moved upstream" — and a stale mirror
+   is that fact about the whole document, so the state hue is reused rather
+   than a token added for one word. No new token: the theme's token list is
+   the contract every host theme has to fill. */
+.ig-freshness[data-stale='true'] {
+  color: var(--ig-state-conflict);
+}
+
+/* A control the viewer publishes and does not wire: the UA button reset, so it
+   reads as the inline link it sits beside. */
+.ig-refresh {
+  background: none;
+  border: 0;
+  color: var(--ig-accent);
+  cursor: pointer;
+  font: inherit;
+  margin-left: var(--ig-space-tight);
+  padding: 0;
+}
+
+.ig-refresh:hover {
+  text-decoration: underline;
+}
+
+.ig-now {
+  list-style: none;
+  margin: 0 0 var(--ig-space);
+  padding: 0;
+}
+
+/* The same row grammar as a slot, minus the rank track: the marker takes its
+   place, so the title column lines up with the order beneath it. */
+.ig-now-row {
+  align-items: center;
+  background: var(--ig-surface);
+  border: var(--ig-stroke) solid var(--ig-accent);
+  border-radius: var(--ig-radius);
+  column-gap: var(--ig-space);
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  min-height: var(--ig-row-height);
+  padding: var(--ig-space-tight) var(--ig-space);
+}
+
+.ig-now-mark {
+  color: var(--ig-accent);
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-small);
+  text-transform: uppercase;
+}
+
+.ig-now-phase {
+  color: var(--ig-text-muted);
+  font-size: var(--ig-font-size-small);
+  white-space: nowrap;
+}
+
+/* A caveat or hold-label chip carries no relationship hue: it is a word, not
+   an edge, so it keeps the line colour the plain badge has. */
+.ig-badge[data-caveat],
+.ig-badge[data-hold] {
+  color: var(--ig-text-muted);
 }
 
 /* ── the graph canvas ──────────────────────────────────────────────────── */

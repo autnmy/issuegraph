@@ -3,7 +3,7 @@
  *
  * The innermost layer of the Issuegraph UI, and the whole of its contract:
  *
- *     in   {issues, edges, order, cycles} + a projection choice
+ *     in   {issues, edges, order, cycles, host?} + a projection choice
  *     out  onSelect, onHover
  *     never  fetching, mutation, auth, persistence, or a host's vocabulary
  *
@@ -34,10 +34,19 @@
  */
 
 export type {
+  Disagreement,
+  Freshness,
+  GraphHold,
   HoldFamily,
+  HostFacts,
   NormalizeResult,
   NormalizedDocument,
+  NormalizedHostFacts,
+  OrderCounts,
+  PreviewOnly,
   RankProvenance,
+  RunningJob,
+  TrackerHold,
   ViewerCycle,
   ViewerDocument,
   ViewerEdge,

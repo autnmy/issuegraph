@@ -710,6 +710,13 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // clamps back to the current start must not dispatch, because every
     // dispatch redraws and every redraw restores the scroll offset — which
     // fires this listener again. See `railWindowTarget`.
+    // THE PITCH IS A ROW'S, and the rail zone holds more than rows: the legend,
+    // and now the host header and the NOW list when the host supplies them.
+    // Their height reads here as a few extra rows — about two per running job
+    // at the default pitch — and is absorbed by the slack `railSlackFor` keeps
+    // before a redraw fires (see `railWindowTarget`). A host running dozens
+    // of jobs at once would outgrow that slack; today the overshoot lands in
+    // the dead band, so the window it asks for is still the one on screen.
     const row = Math.floor(rail.scrollTop / pitch());
     const start = railWindowTarget(row, state.railStart, railCount(), drawn.rail.total);
     if (start !== null) dispatch({ kind: 'scroll', start });

@@ -228,6 +228,9 @@ function narrow(input: ViewerDocument, keep: ReadonlySet<string>): ViewerDocumen
     cycles: input.cycles
       .map((cycle) => cycle.filter((member) => keep.has(member)))
       .filter((cycle) => cycle.length > 0),
+    // NO `host`, ON PURPOSE. The canvas answers "what surrounds this issue";
+    // the header, the NOW row and the freshness stamp are the rail's to draw,
+    // and carrying the facts here would draw them twice in one workspace.
   };
 }
 

@@ -45,9 +45,15 @@ importers:
         specifier: workspace:^
         version: link:../packages/viewer
     devDependencies:
+      '@types/jsdom':
+        specifier: ^30.0.0
+        version: 30.0.0
       '@types/node':
         specifier: ^22.18.0
         version: 22.20.1
+      jsdom:
+        specifier: ^30.0.1
+        version: 30.0.1
       typescript:
         specifier: ^6.0.3
         version: 6.0.3

@@ -247,6 +247,11 @@ export function railWindow(
     ...drawnMember,
     ...input.order.excluded.map((exclusion) => exclusion.key),
     ...edges.flatMap((edge) => [edge.from, edge.to]),
+    // AND THE RUNNING ISSUE, whichever window the reader is on. The NOW row is
+    // a whole-order fact drawn above the rows, and the viewer drops a running
+    // job whose issue the document does not carry — so a window that sliced
+    // the running issue out would make the row vanish as the reader scrolled.
+    ...input.host.running.map((job) => job.key),
   ]);
 
   // EXCLUSIONS ARE CARRIED WHOLE, and that is a stated bound rather than an
@@ -270,6 +275,13 @@ export function railWindow(
     cycles: input.cycles
       .map((cycle) => cycle.filter((member) => keep.has(member)))
       .filter((cycle) => cycle.length > 0),
+    // CARRIED WHOLE. Every host fact is a fact about the whole order — the
+    // host's own counts, its cap, its clock, its running job — none of which
+    // the window changes. That is why the viewer prints `counts` rather than
+    // counting slots: this document's slots are the window's, and a count
+    // over them would be exactly the scroll-position-as-fact defect the
+    // isolated chip had.
+    host: input.host,
   };
 
   // BY IDENTITY, so a document carrying the same connector twice reports one

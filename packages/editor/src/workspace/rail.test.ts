@@ -304,3 +304,45 @@ describe('the lookups cannot be reached and mutated', () => {
     assert.deepEqual(once.document, twice.document);
   });
 });
+
+describe('the rail window carries the host facts whole', () => {
+  it('keeps every host fact and the running issue, whichever window is drawn', () => {
+    // Every host fact is a whole-order fact — the host's counts, its cap, its
+    // clock, its running job — so the window carries them unchanged. And the
+    // NOW row is built from the running issue, which the viewer drops when the
+    // document does not carry it: a window that sliced it out would make the
+    // row vanish as the reader scrolled.
+    const keys = keysOf(312);
+    const running = keys[299] as string;
+    const document = {
+      ...backlogOf(312),
+      host: {
+        concurrencyCap: 2,
+        counts: { ranked: 312, readyNow: 312, held: 0 },
+        running: [{ key: running, phase: 'Review', elapsed: '12m' }],
+        freshness: { asOf: '14:32', age: '2m ago' },
+      },
+    };
+    const rail = railWindow(document, { start: 0, count: 5 });
+    assert.deepEqual(rail.document.host, {
+      concurrencyCap: 2,
+      counts: { ranked: 312, readyNow: 312, held: 0 },
+      running: [{ key: running, phase: 'Review', elapsed: '12m' }],
+      freshness: { asOf: '14:32', age: '2m ago' },
+    });
+    assert.ok(rail.document.issues.some((issue) => issue.key === running), 'the running issue was windowed out');
+    assert.equal(rail.rows.length, 5);
+    // And it survives the viewer's own normalisation of the window: no drop,
+    // no diagnostic about the running job.
+    const { document: drawn, diagnostics } = normalizeDocument(rail.document);
+    assert.deepEqual(drawn.host.running.map((job) => job.key), [running]);
+    assert.deepEqual(diagnostics.filter((line) => line.includes('running')), []);
+    // A running issue kept for the row is not an isolated one.
+    assert.equal(drawn.isolated.includes(running), false);
+  });
+
+  it('carries an empty host as the viewer normalises it, so a window is no change to the markup', () => {
+    const rail = railWindow(backlogOf(12), { start: 0, count: 5 });
+    assert.deepEqual(rail.document.host, { running: [] });
+  });
+});
