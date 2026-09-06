@@ -130,6 +130,29 @@ describe('the host-facts port', () => {
     assert.equal(handle.state.selected, '110');
   });
 
+  it('leaves the keyboard tab stop where it was when a NOW-only issue is selected', () => {
+    // 110 runs but holds no slot, so the NOW row is its only mark and it is in
+    // no navigable order. Adopting it as the tab stop made `reconcile` fall to
+    // the FIRST navigable key: focus jumped to an unrelated row at the top.
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const handle = mountViewer(container, hostedFixtureDocument, {});
+    const third = container.find(KEY_ATTRIBUTE, '103');
+    assert.ok(third !== undefined);
+    container.dispatch('click', { target: third });
+    assert.equal(handle.state.focused, '103');
+    const focusedBefore = container.find(KEY_ATTRIBUTE, '103')?.focusCount ?? 0;
+
+    const now = container.find(GROUP_ATTRIBUTE, '110');
+    assert.ok(now !== undefined);
+    container.dispatch('click', { target: now });
+    assert.equal(handle.state.selected, '110');
+    assert.equal(handle.state.focused, '103', 'selecting the NOW row moved the tab stop');
+    // The redraw re-focuses the row the reader was on, never the first row.
+    assert.equal(container.find(KEY_ATTRIBUTE, '102')?.focusCount ?? 0, 0, 'focus landed on the first row');
+    assert.ok((container.find(KEY_ATTRIBUTE, '103')?.focusCount ?? 0) >= focusedBefore);
+  });
+
   it('serialises the hosted scene the same way from the pure and the mounted paths', () => {
     // The mount builds from the same specs `renderViewer` serialises, so the
     // new parts cannot draw one way in tests and another in a browser.

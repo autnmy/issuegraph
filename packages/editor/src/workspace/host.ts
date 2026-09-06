@@ -379,6 +379,21 @@ export function railSlackFor(count: number): number {
 }
 
 /**
+ * Which order row a rail scroll offset points at.
+ *
+ * THE ROWS DO NOT START AT THE TOP OF THE RAIL. The legend sits above them, and
+ * so do the host header and the NOW list when the host supplies them — and the
+ * NOW list is one row per running job, unbounded. Dividing the raw offset by
+ * the row pitch read that chrome as rows: with enough jobs the window advanced
+ * past ranks the reader had not reached, and the rows chased the scroll
+ * position. The chrome's height is measured and subtracted first, so the
+ * offset that reaches the division is the offset INTO the rows.
+ */
+export function railRowAt(scrollTop: number, chromeHeight: number, pitch: number): number {
+  return Math.floor(Math.max(0, scrollTop - chromeHeight) / pitch);
+}
+
+/**
  * Where the rail window should be re-cut for a scroll position, or `null` when
  * it should stay where it is.
  *

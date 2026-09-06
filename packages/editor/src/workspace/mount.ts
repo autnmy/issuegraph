@@ -73,6 +73,7 @@ import {
   type HostState,
   INITIAL_HOST_STATE,
   KINDS,
+  railRowAt,
   railSlackFor,
   railWindowTarget,
   reconcileHost,
@@ -711,13 +712,19 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // dispatch redraws and every redraw restores the scroll offset — which
     // fires this listener again. See `railWindowTarget`.
     // THE PITCH IS A ROW'S, and the rail zone holds more than rows: the legend,
-    // and now the host header and the NOW list when the host supplies them.
-    // Their height reads here as a few extra rows — about two per running job
-    // at the default pitch — and is absorbed by the slack `railSlackFor` keeps
-    // before a redraw fires (see `railWindowTarget`). A host running dozens
-    // of jobs at once would outgrow that slack; today the overshoot lands in
-    // the dead band, so the window it asks for is still the one on screen.
-    const row = Math.floor(rail.scrollTop / pitch());
+    // and the host header and the NOW list when the host supplies them — one
+    // row per running job, unbounded. Their height is measured off the drawn
+    // tree and subtracted before the offset becomes a row (`railRowAt`), so a
+    // host running dozens of jobs does not scroll the window past ranks the
+    // reader has not reached. Measured, not derived from the theme: the header
+    // wraps, and a wrapped header is taller than any constant would say.
+    const rows = rail.querySelector('.ig-viewer .ig-list');
+    const viewer = rail.querySelector('.ig-viewer');
+    const chrome =
+      rows === null || viewer === null
+        ? 0
+        : rows.getBoundingClientRect().top - viewer.getBoundingClientRect().top;
+    const row = railRowAt(rail.scrollTop, chrome, pitch());
     const start = railWindowTarget(row, state.railStart, railCount(), drawn.rail.total);
     if (start !== null) dispatch({ kind: 'scroll', start });
   };

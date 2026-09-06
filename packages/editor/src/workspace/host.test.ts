@@ -20,6 +20,7 @@ import {
   type HostState,
   INITIAL_HOST_STATE,
   RAIL_SLACK,
+  railRowAt,
   railSlackFor,
   railWindowTarget,
   reconcileHost,
@@ -361,5 +362,20 @@ describe('railWindowTarget decides the rail window’s re-cut, and refuses a no-
     assert.equal(railWindowTarget(290, lastStart, 80, 300), null);
     assert.equal(railWindowTarget(299, lastStart, 80, 300), null);
     assert.equal(railWindowTarget(0, 0, 80, 10), null, 'an order shorter than the window never re-cuts');
+  });
+});
+
+describe('railRowAt', () => {
+  it('subtracts the chrome above the rows before dividing by the pitch', () => {
+    // 50px pitch; 130px of legend, header and NOW list above the rows. An
+    // offset still inside the chrome is row 0; the first row's own pitch
+    // begins where the chrome ends.
+    assert.equal(railRowAt(0, 130, 50), 0);
+    assert.equal(railRowAt(129, 130, 50), 0);
+    assert.equal(railRowAt(130, 130, 50), 0);
+    assert.equal(railRowAt(180, 130, 50), 1);
+    assert.equal(railRowAt(1130, 130, 50), 20);
+    // With no chrome it is the plain division it always was.
+    assert.equal(railRowAt(250, 0, 50), 5);
   });
 });
