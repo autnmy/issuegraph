@@ -60,6 +60,11 @@ import {
 import type { AuditInput } from '../audit/findings.ts';
 import { type CreateInteraction, type KeyboardContext, keyIntent } from '../create/keys.ts';
 import { pickerPlacement } from '../create/placement.ts';
+import type { CandidateSource } from '../firstpass/candidates.ts';
+import { type FirstPassContext, firstPassIntent } from '../firstpass/keys.ts';
+import { ANSWER_ATTRIBUTE, renderFirstPass } from '../firstpass/render.ts';
+import { firstPassStylesheet } from '../firstpass/styles.ts';
+import type { FirstPassWords } from '../firstpass/words.ts';
 import { STATE_ATTRIBUTE, overlayFor } from '../overlay/grammar.ts';
 import { overlaysFor } from '../overlay/projected.ts';
 import { renderPicker } from '../picker/render.ts';
@@ -67,6 +72,7 @@ import { pickerStylesheet } from '../picker/styles.ts';
 import type { PickerWords } from '../picker/words.ts';
 import { scaleLadder } from '../scale/ladder.ts';
 import { mountStylesheet } from './chrome.ts';
+import type { FirstPassPhase } from './firstpass.ts';
 import {
   type HostCommand,
   type HostEffect,
@@ -145,6 +151,36 @@ export interface MountWorkspaceOptions {
   readonly canvas?: CanvasMode | undefined;
   /** How many rail rows are drawn per window. Wider than the package default so a scroll rarely lands past the drawn rows. */
   readonly railCount?: number | undefined;
+  /**
+   * The first pass, or nothing.
+   *
+   * ONE BUNDLE, ALL OF IT OR NONE, rather than a source and some words that can
+   * be supplied independently: a scan with no words cannot be drawn and words
+   * with no scan have nothing to draw, so the type refuses the halves rather
+   * than leaving the renderer to.
+   *
+   * **Absent, the mount never sends the command at all.** `renderWorkspace`
+   * draws §17a's `First pass →` entry INSIDE the surface this mount owns
+   * (`workspace/render.ts`), so — unlike a control a host draws outside the
+   * element and reads from its own listener — a host cannot intercept it. With
+   * no source to call, a mount that let the command through would move to
+   * `scanning` and stay there for its lifetime. So the shell withholds it, and
+   * the entry is inert until a host supplies this.
+   */
+  readonly firstPass?: FirstPassOption | undefined;
+}
+
+/** What a host supplies to make §17a's first-pass entry work. */
+export interface FirstPassOption {
+  /** The host's scanner. This package ships none — see `firstpass/candidates.ts`. */
+  readonly source: CandidateSource;
+  readonly words: FirstPassWords;
+  /** The control that leaves the queue. §17e: "exit anytime". */
+  readonly exit: string;
+  /** Shown while the scan is out. */
+  readonly scanning: string;
+  /** Shown when the host's scan rejects. Distinct from "nothing to encode". */
+  readonly scanFailed: string;
 }
 
 /** What `update` may change. The store is not among them — see {@link MountWorkspaceOptions.store}. */
@@ -269,6 +305,15 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   // Whether the last render drew the target search, so focus moves into it on
   // the render that OPENS it and not on every render while it stays open.
   let searchWasOpen = false;
+  // The phase the last render drew, so the overlay is entered once rather than
+  // on every redraw, and left exactly once.
+  let firstPassWas: FirstPassPhase['kind'] = 'closed';
+  // Where focus was when the overlay went up, so it can be given back when the
+  // overlay comes down. `mount.ts` already learned this lesson on the create
+  // flow: a surface removed with focus inside it leaves `activeElement` on the
+  // body, and the keydown listener is on the element — so the whole workspace
+  // goes keyboard-dead until the reader clicks something.
+  let focusBeforeFirstPass: string | null = null;
 
   const railCount = (): number => current.railCount ?? MOUNT_RAIL_COUNT;
   const theme = (): Theme => resolveTheme(current.theme);
@@ -330,6 +375,61 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       case 'dismiss-change':
         store.dismissChange();
         return;
+      case 'find-candidates': {
+        const option = current.firstPass;
+        // UNREACHABLE WITHOUT A BUNDLE, because the command is withheld at the
+        // listener — but written as a guard rather than an assertion, because
+        // `update()` can take the bundle away between the click and this call.
+        if (option === undefined) {
+          dispatch({ kind: 'first-pass', command: { kind: 'scan-failed', scan: effect.scan } });
+          return;
+        }
+        const { scan } = effect;
+        void option.source
+          .findCandidates()
+          .then((candidates) => {
+            dispatch({ kind: 'first-pass', command: { kind: 'candidates', scan, candidates } });
+          })
+          .catch(() => {
+            // THE REASON IS THE HOST'S AND IS NOT READ. A failed scan is a phase
+            // this surface draws in the host's own words; adopting the rejection
+            // value would be this package writing a sentence about someone
+            // else's tracker.
+            dispatch({ kind: 'first-pass', command: { kind: 'scan-failed', scan } });
+          });
+        return;
+      }
+      case 'first-pass-withdraw': {
+        // THE STORE'S OWN UNDO, AND NOTHING ELSE. `discardMine` is the whole of
+        // what a host may take back: it declines a `pending` record itself, and
+        // a create that LANDED has no record left at all — so in practice the
+        // withdrawable set is `invalid`, `failed` and `conflict`, and the
+        // reader's `⌫` on anything else steps the queue back and leaves the
+        // write alone.
+        // THAT REFUSAL IS NOT RESTATED HERE. An earlier revision guarded on
+        // `state !== 'pending'` before calling, which is a second copy of a rule
+        // the store already enforces — and a mutation test proved it: removing
+        // the guard changed no observable behaviour, because `discardMine` was
+        // refusing anyway. What is NOT done here is the thing that would be
+        // wrong: proposing a compensating `delete`, which is the second
+        // retraction path `firstpass/queue.ts` refuses in terms — "free to
+        // disagree with [the store] about what undoing a create means."
+        // MATCHED ON THE RECORD'S OWN MUTATION rather than on a mutation id this
+        // shell remembered: a remembered map is a second copy of the store's
+        // bookkeeping, free to drift, and `WriteRecord` carries the mutation.
+        const { candidate } = effect;
+        const record = store.getSnapshot().writes.find((each) => {
+          const { mutation } = each;
+          return (
+            mutation.op === 'create' &&
+            mutation.kind === candidate.kind &&
+            mutation.from === candidate.from &&
+            mutation.to === candidate.to
+          );
+        });
+        if (record !== undefined) store.discardMine(record.mutationId);
+        return;
+      }
     }
   };
 
@@ -437,6 +537,86 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     chooser.style.left = `${String(placed.x)}px`;
     chooser.style.top = `${String(placed.y)}px`;
     return chooser;
+  };
+
+  /**
+   * The first-pass surface, when one is up.
+   *
+   * A TAKEOVER RATHER THAN A FOURTH ZONE: `ZONES` is a closed union the
+   * workspace's grid is laid out from, and §17e's queue occupies the surface
+   * rather than a column. It is built and appended the way the floating chooser
+   * is — after `surface.innerHTML`, inside the workspace root, which is the box
+   * `chrome.ts` positions against and the element a host's theme is scoped to.
+   *
+   * ## It is a modal, and says so
+   *
+   * The rail and the canvas are still in the DOM underneath, still focusable and
+   * still in the accessibility tree. Without `aria-modal` and `inert` on the
+   * zones, one Tab lands the reader on a row they cannot see, where every key is
+   * inert because the queue owns the keyboard — and a screen reader reads the
+   * whole covered workspace as though nothing were over it.
+   *
+   * ## `aria-live`, because focus deliberately does not move
+   *
+   * Answering swaps the question in place while focus stays on this wrapper, so
+   * without a live region a reader answering sixty questions at speed hears
+   * nothing after the first. Focus stays here rather than moving onto a control
+   * because the first control is `apply` — the one irreversible answer — and a
+   * `Space` on a focus move nobody made is precisely the un-consented apply
+   * §17e forbids.
+   */
+  const firstPassOverlay = (): HTMLElement | null => {
+    const option = current.firstPass;
+    const { phase } = state.firstPass;
+    if (option === undefined || phase.kind === 'closed') return null;
+    const wrapper = el('div', {
+      class: 'ig-firstpass-overlay',
+      role: 'dialog',
+      'aria-modal': 'true',
+      'aria-live': 'polite',
+      'data-ig-firstpass': phase.kind,
+      tabindex: '-1',
+    });
+    if (phase.kind === 'open') {
+      const panel = el('div', { class: 'ig-firstpass-panel' });
+      // Package-rendered markup, escaped by the package — the file's standing
+      // idiom, the same one the inspector's picker uses.
+      panel.innerHTML = renderFirstPass(phase.queue, { words: option.words, theme: theme() }).markup;
+      wrapper.append(panel);
+    } else {
+      // THE HOST'S SENTENCE, PLACED. A scan that is out and a scan that failed
+      // are different facts and get different words; neither is worded here.
+      wrapper.append(
+        el('p', { class: 'ig-firstpass-note' }, [
+          phase.kind === 'scanning' ? option.scanning : option.scanFailed,
+        ]),
+      );
+    }
+    wrapper.append(
+      button(option.exit, 'first-pass-close', { class: 'ig-chrome-button ig-chrome-quiet' }),
+    );
+    return wrapper;
+  };
+
+  /**
+   * Which control inside the overlay owns focus, as a SELECTOR a redraw can find
+   * again — or `''` for the wrapper itself, or `null` when focus is elsewhere.
+   *
+   * A selector rather than the node, because the node does not survive the
+   * redraw: `surface.innerHTML` is reassigned and the overlay is rebuilt, so
+   * what has to be carried across is a way to name the control, not a reference
+   * to the one that was destroyed.
+   */
+  const overlayFocusToken = (): string | null => {
+    const active = doc.activeElement;
+    if (!isElement(active)) return null;
+    const overlay = active.closest('.ig-firstpass-overlay');
+    if (overlay === null || !surface.contains(overlay)) return null;
+    const answer = active.getAttribute(ANSWER_ATTRIBUTE);
+    if (answer !== null) return `[${ANSWER_ATTRIBUTE}="${answer}"]`;
+    const command = active.getAttribute(COMMAND_ATTRIBUTE);
+    if (command !== null) return `[${COMMAND_ATTRIBUTE}="${command}"]`;
+    return '';
   };
 
   /** Focus the element carrying `key`, inside one zone when named, without scrolling the page. */
@@ -548,7 +728,10 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       // not reflect, so it is stripped before the projection reaches the canvas.
       projected: writeStates,
     });
-    const sheet = [result.styles, pickerStylesheet, mountStylesheet].join('\n');
+    // THE FIRST PASS'S OWN SHEET, IMPORTED — not `renderFirstPass(...).styles`,
+    // which carries a second copy of the theme block written just above it. The
+    // picker is installed the same way and for the same reason.
+    const sheet = [result.styles, pickerStylesheet, firstPassStylesheet, mountStylesheet].join('\n');
     if (styles.textContent !== sheet) styles.textContent = sheet;
 
     // What the reader was doing survives the redraw: the rail's scroll offset,
@@ -565,6 +748,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         ? { start: activeInput.selectionStart, end: activeInput.selectionEnd, direction: activeInput.selectionDirection }
         : null;
     const focused = focusedKey();
+    const overlayToken = overlayFocusToken();
     // The ZONE too: an issue is commonly drawn in the rail and on the canvas,
     // and restoring "the first element with this key" would move focus from
     // a canvas node into the rail on every redraw.
@@ -612,6 +796,14 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // theme to the root still resolves the chooser's tokens there.
     const floating = floatingChooser();
     if (floating !== null) (surface.firstElementChild ?? surface).append(floating);
+    const overlay = firstPassOverlay();
+    if (overlay !== null) {
+      (surface.firstElementChild ?? surface).append(overlay);
+      // THE ZONES GO INERT UNDER IT. Set here rather than in the stylesheet
+      // because it is a behaviour — focus and hit-testing — not a look, and the
+      // markup is rebuilt every render so it cannot be left behind on close.
+      for (const covered of surface.querySelectorAll('.ig-zone')) covered.setAttribute('inert', '');
+    }
 
     const rail = zone('rail');
     if (rail !== null) rail.scrollTop = scrollTop;
@@ -625,7 +817,23 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       if (key === null) return;
       focusIn(within, key);
     };
-    if (activeCommand !== null) {
+    if (overlay !== null) {
+      // FOCUS IS TAKEN BACK ON EVERY RENDER WHILE THE OVERLAY IS UP, not only on
+      // the one that opens it. Every answer dispatches, every dispatch redraws,
+      // and the redraw destroys the element focus was on — so a once-only rule
+      // gave the reader exactly one keystroke before `activeElement` fell to the
+      // body, `interaction` read `elsewhere` and every later key returned
+      // `none`. This is the same arm the target search already earns below.
+      if (firstPassWas === 'closed') focusBeforeFirstPass = focused;
+      const again =
+        overlayToken === null || overlayToken === ''
+          ? null
+          : overlay.querySelector<HTMLElement>(overlayToken);
+      // THE WRAPPER IS THE FALLBACK, INCLUDING ON THE RENDER THAT OPENS IT. The
+      // first control is `apply`, and landing focus there would put the one
+      // irreversible answer under the reader's next Space.
+      (again ?? overlay).focus({ preventScroll: true });
+    } else if (activeCommand !== null) {
       const again = surface.querySelector<HTMLInputElement>(`input[${COMMAND_ATTRIBUTE}="${activeCommand}"]`);
       if (again !== null) {
         again.focus();
@@ -680,6 +888,16 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     } else {
       focusRow(focused);
     }
+    // THE KEYBOARD IS GIVEN BACK. The overlay is removed with focus inside it,
+    // so without this `activeElement` is the body — and the keydown listener is
+    // on the mount's element, so no press reaches it and the whole workspace is
+    // dead until the reader clicks. Restores what held focus when it opened.
+    if (overlay === null && firstPassWas !== 'closed') {
+      const back = focusBeforeFirstPass;
+      focusBeforeFirstPass = null;
+      if (back !== null) focusIn(null, back);
+    }
+    firstPassWas = state.firstPass.phase.kind;
     searchWasOpen = search !== null;
   };
 
@@ -692,6 +910,12 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     if (control !== null && surface.contains(control)) {
       const name = control.getAttribute(COMMAND_ATTRIBUTE) ?? '';
       if (isInput(control)) return; // the `input` listener owns these
+      // THE ENTRY IS INERT WITHOUT A BUNDLE, and it is withheld HERE rather
+      // than in the reducer. `renderWorkspace` draws §17a's `First pass →`
+      // inside this surface, so a host cannot intercept it from outside; and
+      // the reducer's `first-pass` arm would move to `scanning` with no source
+      // to call and no way back. See `MountWorkspaceOptions.firstPass`.
+      if (name === 'first-pass' && current.firstPass === undefined) return;
       dispatch({
         kind: 'control',
         name,
@@ -699,6 +923,19 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         // The picker publishes its kind as `data-ig-kind`; the mount's chrome
         // publishes `data-ig-value`. One command channel, two spellings.
         value: control.getAttribute('data-ig-value') ?? control.getAttribute('data-ig-kind') ?? undefined,
+      });
+      return;
+    }
+    // AN ANSWER IS ITS OWN ATTRIBUTE, so it falls through the command branch
+    // above and is read here — before the identity branch below, which would
+    // otherwise answer a click inside the overlay with whatever key or group is
+    // underneath it.
+    const answered = target.closest<HTMLElement>(`[${ANSWER_ATTRIBUTE}]`);
+    if (answered !== null && surface.contains(answered)) {
+      dispatch({
+        kind: 'control',
+        name: 'first-pass-answer',
+        value: answered.getAttribute(ANSWER_ATTRIBUTE) ?? undefined,
       });
       return;
     }
@@ -876,7 +1113,58 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     return false;
   };
 
+  /**
+   * The queue's keys, while the queue is up.
+   *
+   * Returns whether the press was consumed. The queue OWNS the keyboard while it
+   * is drawn — the create map and the viewer's navigation are not consulted,
+   * because every one of their targets is behind an inert overlay — but a press
+   * it does not recognise is handed back rather than swallowed, which is the
+   * contract `firstpass/keys.ts` states in terms: `none` exists "so the host does
+   * not `preventDefault()` a key it did not consume".
+   */
+  const firstPassKeydown = (event: KeyboardEvent): boolean => {
+    const { phase } = state.firstPass;
+    if (phase.kind === 'closed') return false;
+    // ESCAPE IS THE MOUNT'S OWN, and it has to be: `firstpass/keys.ts` binds
+    // `y`/`n`/`s` and both spellings of the delete key and nothing else, and its
+    // own tests pin `Escape` to `none`. The exit CONTROL is the mount's, so the
+    // exit KEY is too — without it §17e's "exit anytime" is reachable only with
+    // a pointer, on the one surface that advertises a pointer-free loop.
+    if (event.key === 'Escape') {
+      dispatch({ kind: 'first-pass', command: { kind: 'close' } });
+      return true;
+    }
+    if (phase.kind !== 'open') return false;
+    const progress = phase.queue;
+    const context: FirstPassContext = {
+      // `queue` WHENEVER THE OVERLAY HOLDS FOCUS. The surface has no text input
+      // of its own, so the only question is whether the reader is inside it.
+      interaction:
+        isElement(doc.activeElement) &&
+        doc.activeElement.closest('.ig-firstpass-overlay') !== null &&
+        !isInput(doc.activeElement)
+          ? 'queue'
+          : 'elsewhere',
+      hasCandidate: progress.cursor < progress.candidates.length,
+      canUndo: progress.answers.length > 0,
+    };
+    const intent = firstPassIntent(event, context);
+    if (intent.kind === 'none') return false;
+    dispatch({ kind: 'first-pass', command: { kind: 'queue', command: intent.command } });
+    return true;
+  };
+
   const onKeydown = (event: KeyboardEvent): void => {
+    if (firstPassKeydown(event)) {
+      event.preventDefault();
+      return;
+    }
+    // THE QUEUE STILL OWNS THE SURFACE even for a key it did not consume: every
+    // target the create map and the viewer's navigation could reach is behind
+    // the overlay and inert, so consulting them would act on something the
+    // reader cannot see.
+    if (state.firstPass.phase.kind !== 'closed') return;
     const document_ = landed();
     const match = targetMatches(document_.issues, state.targetQuery, state.draft.source)[0]?.ref ?? null;
     const context: KeyboardContext = {

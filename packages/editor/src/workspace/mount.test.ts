@@ -20,10 +20,17 @@ import { type OrderDeriver, createScriptedSource, createStore, makeEdge } from '
 import { THEME_TOKENS } from '@issuegraph/viewer';
 import { JSDOM } from 'jsdom';
 
+import type { Candidate } from '../firstpass/candidates.ts';
+import { FIRST_PASS_WORDS } from '../testing/firstpass.ts';
 import { PICKER_WORDS } from '../testing/picker.ts';
 import { WORKSPACE_WORDS } from '../testing/workspace.ts';
 import { mountStylesheet } from './chrome.ts';
-import { type MountWords, type WorkspaceProjection, mountWorkspace } from './mount.ts';
+import {
+  type FirstPassOption,
+  type MountWords,
+  type WorkspaceProjection,
+  mountWorkspace,
+} from './mount.ts';
 
 const WORDS: MountWords = {
   ...WORKSPACE_WORDS,
@@ -147,7 +154,12 @@ function hostedProject(snapshot: StoreSnapshot): WorkspaceProjection {
 
 async function mounted(
   seed: GraphDocument = SEED,
-  options: { railCount?: number; derive?: OrderDeriver; project?: (snapshot: StoreSnapshot) => WorkspaceProjection } = {},
+  options: {
+    railCount?: number;
+    derive?: OrderDeriver;
+    project?: (snapshot: StoreSnapshot) => WorkspaceProjection;
+    firstPass?: FirstPassOption;
+  } = {},
 ) {
   const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>');
   const win = dom.window;
@@ -719,6 +731,458 @@ describe('the host facts are drawn once per workspace', () => {
       assert.equal(count('[data-ig-command="refresh"]'), 1, 'the tree canvas drew a second refresh control');
       assert.equal(count('.ig-now'), 1);
       assert.equal(page.zone('canvas')?.querySelector('.ig-header'), null);
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+});
+
+/**
+ * The first pass, composed.
+ *
+ * §17e's two rules are the load-bearing tests here, and both are pinned at the
+ * MOUNT rather than restated from `firstpass/render.test.ts`: what that file
+ * already owns is what the renderer draws from a queue, and what this file owns
+ * is everything only the shell can get wrong — whether a drawn candidate
+ * reaches the store, and whether anything about the backlog reaches the queue.
+ */
+describe('the first pass, composed behind §17a’s entry', () => {
+  const FIRST_PASS_OPTION = {
+    words: FIRST_PASS_WORDS,
+    exit: 'leave the first pass',
+    scanning: 'looking for candidates',
+    scanFailed: 'the scan did not answer',
+  };
+
+  /**
+   * `count` candidates over the harness backlog's own issues.
+   *
+   * NOT `testing/firstpass.ts`'s fixture, whose references are `100`/`101` and
+   * so on: that file exists to make a POSITION error visible in the reducer
+   * tests, and it does that well — but an edge naming an issue the document does
+   * not carry is refused by the store as structurally invalid, so a write here
+   * would never be dispatched and every settlement assertion would be about a
+   * record that never left. Two fresh issues per candidate, so a wrong candidate
+   * is still a wrong pair.
+   */
+  function pairsOver(count: number): readonly Candidate[] {
+    return Array.from({ length: count }, (_unused, index) => ({
+      id: `c${String(index)}`,
+      kind: 'blocked-by' as const,
+      from: String(index * 2 + 1),
+      to: String(index * 2 + 2),
+      evidence: [{ token: 'shared-path', text: `both bodies reference file ${String(index)}` }],
+    }));
+  }
+
+  /** A backlog of `count` issues, with §17a's first-pass entry published. */
+  function backlog(count: number): GraphDocument {
+    return {
+      issues: Array.from({ length: count }, (_unused, index) => ({
+        ref: String(index + 1),
+        title: `Issue number ${String(index + 1)}`,
+        state: 'open' as const,
+        priority: 2,
+      })),
+      edges: [],
+    };
+  }
+
+  function entryProject(snapshot: StoreSnapshot): WorkspaceProjection {
+    const base = project(snapshot);
+    return {
+      ...base,
+      viewer: { ...base.viewer, host: { identity: 'acme/widgets', firstPass: 'First pass' } },
+    };
+  }
+
+  /** A source whose answer is held until the test releases it. */
+  function heldSource(found: readonly Candidate[]) {
+    let release: (() => void) | null = null;
+    let refuse: (() => void) | null = null;
+    const source = {
+      findCandidates: (): Promise<readonly Candidate[]> =>
+        new Promise((resolve, reject) => {
+          release = (): void => {
+            resolve(found);
+          };
+          refuse = (): void => {
+            reject(new Error('the tracker said no'));
+          };
+        }),
+    };
+    return {
+      // NAMED `scanner`, not `source`: the page harness already carries the
+      // store's `ScriptedSource` under that name, and one shadowing the other
+      // would silently give a test the wrong one.
+      scanner: source,
+      answer: async (): Promise<void> => {
+        release?.();
+        await flush();
+        await flush();
+      },
+      fail: async (): Promise<void> => {
+        refuse?.();
+        await flush();
+        await flush();
+      },
+    };
+  }
+
+  async function firstPassPage(
+    found: readonly Candidate[] = pairsOver(3),
+    issues = 8,
+    options: { derive?: OrderDeriver } = {},
+  ) {
+    const held = heldSource(found);
+    const page = await mounted(backlog(issues), {
+      project: entryProject,
+      ...options,
+      firstPass: { source: held.scanner, ...FIRST_PASS_OPTION },
+    });
+    return { ...page, ...held };
+  }
+
+  const overlayOf = (page: Mounted): HTMLElement | null =>
+    page.element.querySelector<HTMLElement>('.ig-firstpass-overlay');
+
+  /** Open the surface and let the scan answer. */
+  async function open(page: Awaited<ReturnType<typeof firstPassPage>>): Promise<void> {
+    const entry = page.control('first-pass');
+    assert.ok(entry !== null, 'no first-pass entry was drawn');
+    page.click(entry);
+    await flush();
+    await page.answer();
+  }
+
+  const press = (page: Mounted, key: string): void => {
+    page.element.dispatchEvent(
+      new page.win.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }),
+    );
+  };
+
+  it('draws the entry inert when the host supplies no source', async () => {
+    // The button is drawn INSIDE the surface this mount owns, so a host cannot
+    // intercept it — the command is withheld here instead.
+    const page = await mounted(backlog(4), { project: entryProject });
+    try {
+      const entry = page.control('first-pass');
+      assert.ok(entry !== null, 'the header entry is the host facts’ to draw');
+      page.click(entry);
+      await flush();
+      assert.equal(overlayOf(page), null, 'a mount with no source opened a surface');
+      assert.equal(page.handle.state.firstPass.phase.kind, 'closed');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('draws the scan, then the queue, and leaves on the exit control', async () => {
+    const page = await firstPassPage();
+    try {
+      const entry = page.control('first-pass');
+      assert.ok(entry !== null);
+      page.click(entry);
+      await flush();
+      assert.equal(overlayOf(page)?.getAttribute('data-ig-firstpass'), 'scanning');
+      assert.ok(overlayOf(page)?.textContent?.includes(FIRST_PASS_OPTION.scanning));
+
+      await page.answer();
+      assert.equal(overlayOf(page)?.getAttribute('data-ig-firstpass'), 'open');
+      assert.ok(page.element.querySelector('.ig-firstpass') !== null, 'no queue was drawn');
+
+      const exit = page.control('first-pass-close');
+      assert.ok(exit !== null);
+      page.click(exit);
+      await flush();
+      assert.equal(overlayOf(page), null, 'the exit control left the surface up');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('says a failed scan failed, rather than saying the backlog is empty', async () => {
+    const page = await firstPassPage();
+    try {
+      const entry = page.control('first-pass');
+      assert.ok(entry !== null);
+      page.click(entry);
+      await flush();
+      await page.fail();
+      assert.equal(overlayOf(page)?.getAttribute('data-ig-firstpass'), 'failed');
+      assert.ok(overlayOf(page)?.textContent?.includes(FIRST_PASS_OPTION.scanFailed));
+      // "the host found nothing to encode" is a different claim, and a scan that
+      // never answered does not license it.
+      assert.ok(!(overlayOf(page)?.textContent ?? '').includes(FIRST_PASS_WORDS.noCandidates));
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  describe('§17e: candidates are never auto-applied', () => {
+    it('writes nothing for a queue that is only drawn, or only refused', async () => {
+      const page = await firstPassPage();
+      try {
+        await open(page);
+        assert.deepEqual(page.store.getSnapshot().writes, [], 'drawing a candidate wrote something');
+
+        // The whole queue, answered without a single consent.
+        for (const key of ['n', 's', 'n']) {
+          press(page, key);
+          await flush();
+        }
+        assert.deepEqual(page.store.getSnapshot().writes, [], 'refusing wrote something');
+        assert.equal(
+          page.element.querySelector('.ig-firstpass')?.getAttribute('data-ig-state'),
+          'finished',
+        );
+      } finally {
+        page.handle.destroy();
+        page.dom.window.close();
+      }
+    });
+
+    it('writes exactly one edge for one consent, and it is the candidate on screen', async () => {
+      const page = await firstPassPage();
+      try {
+        await open(page);
+        press(page, 'y');
+        await flush();
+        const { writes } = page.store.getSnapshot();
+        assert.equal(writes.length, 1, 'one keystroke was not one write');
+        // The fixture keys each candidate's pair on its index, so answering the
+        // wrong one is a visible digit rather than a plausible one.
+        assert.deepEqual(writes[0]?.mutation, {
+          op: 'create',
+          kind: 'blocked-by',
+          from: '1',
+          to: '2',
+          mutationId: writes[0]?.mutationId,
+        });
+        assert.notEqual(writes[0]?.state, 'invalid', 'the write never left the store');
+      } finally {
+        page.handle.destroy();
+        page.dom.window.close();
+      }
+    });
+  });
+
+  describe('§17e: 100% encoded is never the goal', () => {
+    it('shows the reader the candidate count, and never the backlog’s', async () => {
+      // What only the MOUNT can break: it holds the whole backlog and hands the
+      // renderer a QueueState. `firstpass/render.test.ts` owns what the renderer
+      // then does with it.
+      // Twelve issues, three candidates over the first six of them — so the
+      // backlog's size appears nowhere the surface could have drawn it from.
+      const page = await firstPassPage(pairsOver(3), 12);
+      try {
+        await open(page);
+        const queue = page.element.querySelector('.ig-firstpass');
+        assert.equal(queue?.getAttribute('data-ig-found'), '3');
+        const shown = overlayOf(page)?.textContent ?? '';
+        assert.ok(!shown.includes('12'), `the backlog size reached the surface: ${shown}`);
+        assert.ok(!shown.includes('%'), 'the surface drew a percentage');
+        // And the chrome the mount adds around it states no quantity of its own.
+        for (const node of overlayOf(page)?.querySelectorAll('[style]') ?? []) {
+          assert.fail(`the mount styled ${node.className} inline`);
+        }
+      } finally {
+        page.handle.destroy();
+        page.dom.window.close();
+      }
+    });
+  });
+
+  describe('the keyboard loop survives its own redraws', () => {
+    it('answers more than once — every answer redraws the surface it is on', async () => {
+      const page = await firstPassPage();
+      try {
+        await open(page);
+        press(page, 'y');
+        await flush();
+        press(page, 'n');
+        await flush();
+        const queue = page.element.querySelector('.ig-firstpass');
+        assert.equal(queue?.getAttribute('data-ig-answered'), '2', 'the loop stopped after one key');
+      } finally {
+        page.handle.destroy();
+        page.dom.window.close();
+      }
+    });
+
+    it('undoes on either spelling of the delete key', async () => {
+      for (const key of ['Backspace', 'Delete']) {
+        const page = await firstPassPage();
+        try {
+          await open(page);
+          press(page, 'n');
+          await flush();
+          press(page, key);
+          await flush();
+          assert.equal(
+            page.element.querySelector('.ig-firstpass')?.getAttribute('data-ig-answered'),
+            '0',
+            `${key} did not undo`,
+          );
+        } finally {
+          page.handle.destroy();
+          page.dom.window.close();
+        }
+      }
+    });
+
+    it('leaves on Escape, which §17e’s "exit anytime" has no other key for', async () => {
+      const page = await firstPassPage();
+      try {
+        await open(page);
+        press(page, 'Escape');
+        await flush();
+        assert.equal(overlayOf(page), null, 'Escape did not leave the queue');
+      } finally {
+        page.handle.destroy();
+        page.dom.window.close();
+      }
+    });
+
+    it('owns the keyboard while it is up, and gives it back on close', async () => {
+      const page = await firstPassPage();
+      try {
+        // FOCUSED FOR REAL, not merely selected: a synthetic click moves no
+        // focus in jsdom, and what the queue has to give back is focus.
+        page.rows()[0]?.focus();
+        await open(page);
+        press(page, 'r');
+        await flush();
+        assert.equal(page.handle.state.draft.source, null, 'a create draft began under the queue');
+
+        press(page, 'Escape');
+        await flush();
+        // Focus is back on a real row, so the create map reaches it again.
+        assert.ok(
+          [...page.element.querySelectorAll('.ig-zone')].some((zone_) =>
+            zone_.contains(page.win.document.activeElement),
+          ),
+          'focus was left outside the workspace',
+        );
+        press(page, 'r');
+        await flush();
+        assert.equal(page.handle.state.draft.source, '1', 'the keyboard was not given back');
+      } finally {
+        page.handle.destroy();
+        page.dom.window.close();
+      }
+    });
+  });
+
+  describe('an undo takes back only what the store can take back', () => {
+    it('leaves an in-flight create alone — the store declines a pending discard', async () => {
+      const page = await firstPassPage();
+      try {
+        await open(page);
+        press(page, 'y');
+        await flush();
+        await page.source.whenPending();
+        await flush();
+        assert.equal(page.store.getSnapshot().writes.length, 1);
+
+        press(page, 'Backspace');
+        await flush();
+        assert.equal(
+          page.store.getSnapshot().writes.length,
+          1,
+          'a pending write was reported as discarded',
+        );
+        assert.equal(
+          page.element.querySelector('.ig-firstpass')?.getAttribute('data-ig-answered'),
+          '0',
+          'the queue did not step back',
+        );
+      } finally {
+        page.handle.destroy();
+        page.dom.window.close();
+      }
+    });
+
+    it('leaves a landed create standing — the store has no undo for one', async () => {
+      // The decision this pins, and the one §17e does not make: once the write
+      // has landed there is no record to discard, and proposing a compensating
+      // `delete` would be this package inventing a retraction the store does not
+      // have. `⌫` is the queue's position, and says so by leaving the edge.
+      const page = await firstPassPage();
+      try {
+        await open(page);
+        press(page, 'y');
+        await flush();
+        await page.source.whenPending();
+        page.source.settleNext('applied');
+        await flush();
+        const landed = page.store.getSnapshot().landed.length;
+        assert.equal(landed, 1, 'the create did not land');
+        assert.deepEqual(page.store.getSnapshot().writes, []);
+
+        press(page, 'Backspace');
+        await flush();
+        assert.equal(page.store.getSnapshot().landed.length, landed, 'the landed edge was retracted');
+        assert.deepEqual(page.store.getSnapshot().writes, [], 'the undo proposed a second write');
+        assert.equal(
+          page.element.querySelector('.ig-firstpass')?.getAttribute('data-ig-answered'),
+          '0',
+          'the queue did not step back',
+        );
+      } finally {
+        page.handle.destroy();
+        page.dom.window.close();
+      }
+    });
+
+    it('discards a create the source refused', async () => {
+      const page = await firstPassPage();
+      try {
+        await open(page);
+        press(page, 'y');
+        await flush();
+        await page.source.whenPending();
+        page.source.settleNext({ outcome: 'rejected', reason: 'the issue body is locked' });
+        await flush();
+        assert.equal(page.store.getSnapshot().writes[0]?.state, 'failed');
+
+        press(page, 'Backspace');
+        await flush();
+        assert.deepEqual(page.store.getSnapshot().writes, [], 'the failed record survived the undo');
+      } finally {
+        page.handle.destroy();
+        page.dom.window.close();
+      }
+    });
+  });
+
+  it('is a modal over the workspace, and says so', async () => {
+    const page = await firstPassPage();
+    try {
+      await open(page);
+      const overlay = overlayOf(page);
+      assert.equal(overlay?.getAttribute('role'), 'dialog');
+      assert.equal(overlay?.getAttribute('aria-modal'), 'true');
+      // Focus does not move onto a control, so the swapped question needs a live
+      // region or a screen reader hears nothing after the first answer.
+      assert.equal(overlay?.getAttribute('aria-live'), 'polite');
+      const zones = [...page.element.querySelectorAll('.ig-zone')];
+      assert.ok(zones.length > 0);
+      assert.ok(
+        zones.every((covered) => covered.hasAttribute('inert')),
+        'a zone stayed reachable under the overlay',
+      );
+
+      press(page, 'Escape');
+      await flush();
+      assert.ok(
+        [...page.element.querySelectorAll('.ig-zone')].every((covered) => !covered.hasAttribute('inert')),
+        'a zone stayed inert after the overlay came down',
+      );
     } finally {
       page.handle.destroy();
       page.dom.window.close();

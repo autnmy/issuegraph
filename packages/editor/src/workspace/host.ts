@@ -34,8 +34,16 @@ import { findEdge } from '@issuegraph/store';
 import { type CreateDraft, IDLE_CREATE_DRAFT, createReducer } from '../create/draft.ts';
 import type { KeyIntent } from '../create/keys.ts';
 import type { Point } from '../create/placement.ts';
+import type { Candidate } from '../firstpass/candidates.ts';
+import { type Answer, type QueueResult } from '../firstpass/queue.ts';
 import { pickerView } from '../picker/view.ts';
 import { INITIAL_SCALE_STATE, type ScaleState, scaleReducer } from '../scale/commands.ts';
+import {
+  type FirstPassCommand,
+  type FirstPassState,
+  INITIAL_FIRST_PASS,
+  firstPassReducer,
+} from './firstpass.ts';
 import {
   INITIAL_SELECTION,
   type WorkspaceSelection,
@@ -57,6 +65,8 @@ export interface HostState {
   readonly drag: string | null;
   /** Where a canvas drop landed, so the kind chooser can be placed there. */
   readonly drop: Point | null;
+  /** The first-pass surface: shut, scanning, failed, or holding a queue. */
+  readonly firstPass: FirstPassState;
 }
 
 export const INITIAL_HOST_STATE: HostState = Object.freeze({
@@ -68,6 +78,7 @@ export const INITIAL_HOST_STATE: HostState = Object.freeze({
   targetQuery: '',
   drag: null,
   drop: null,
+  firstPass: INITIAL_FIRST_PASS,
 });
 
 /**
@@ -91,14 +102,41 @@ export type HostCommand =
   | { readonly kind: 'intent'; readonly intent: KeyIntent }
   | { readonly kind: 'scroll'; readonly start: number }
   | { readonly kind: 'drag-start'; readonly key: string }
-  | { readonly kind: 'drop'; readonly key: string | null; readonly at: Point };
+  | { readonly kind: 'drop'; readonly key: string | null; readonly at: Point }
+  /**
+   * A first-pass act that did not arrive as a `data-ig-command` string.
+   *
+   * The keyboard's intent is already a typed {@link FirstPassCommand}-shaped
+   * value and a scan's answer is a list of candidates, so both reach this
+   * reducer as VALUES rather than being flattened into an attribute and parsed
+   * back out. The controls that DO arrive as attributes still come through
+   * `control`, and both routes end in the same arm below.
+   */
+  | { readonly kind: 'first-pass'; readonly command: FirstPassCommand };
 
 /** What the shell performs against the store after reducing. */
 export type HostEffect =
   | { readonly kind: 'propose'; readonly proposal: Proposal }
   | { readonly kind: 'retry'; readonly mutationId: MutationId }
   | { readonly kind: 'discard'; readonly mutationId: MutationId }
-  | { readonly kind: 'dismiss-change' };
+  | { readonly kind: 'dismiss-change' }
+  /**
+   * Run the host's candidate scan under this generation.
+   *
+   * The port is asynchronous by declaration, so the scan is an EFFECT and its
+   * answer comes back as a command. The generation rides along because a close
+   * and a re-open can leave two scans in flight — see `firstpass.ts`.
+   */
+  | { readonly kind: 'find-candidates'; readonly scan: number }
+  /**
+   * An `undo` took back an `apply`, and the shell decides what the store can do
+   * about it.
+   *
+   * The CANDIDATE rather than a proposal: this reducer does not build a
+   * `Proposal` for a write it is not making, and the shell matches the create
+   * against the store's own records by the candidate's own fields.
+   */
+  | { readonly kind: 'first-pass-withdraw'; readonly candidate: Candidate };
 
 export interface HostResult {
   readonly state: HostState;
@@ -135,6 +173,47 @@ function drafted(
     state: { ...state, draft: IDLE_CREATE_DRAFT, targetQuery: '', drop: null },
     effects: [{ kind: 'propose', proposal: result.proposal }],
   };
+}
+
+/**
+ * Whether a string names an {@link Answer}.
+ *
+ * Its own guard rather than a cast: the value arrives off a DOM attribute, and
+ * `AGENTS.md`'s strict-TypeScript rule forbids asserting it into the union. The
+ * three names are `queue.ts`'s, read from a frozen tuple so an answer added
+ * there fails a build here rather than being silently unreachable.
+ */
+const ANSWERS = Object.freeze(['apply', 'reject', 'skip'] as const);
+
+function isAnswer(value: string): value is Answer {
+  return ANSWERS.some((answer): boolean => answer === value);
+}
+
+/**
+ * Apply one first-pass command, and turn what it produced into effects.
+ *
+ * The two emissions are exactly the two things `QueueResult` reports and the
+ * queue itself cannot perform: the proposal an `apply` stands for, and the
+ * answer an `undo` took back. Nothing else here reaches the store, which is what
+ * keeps §17e's consent rule a property of the shape — drawing a candidate,
+ * opening the surface, closing it and skipping all emit nothing because there is
+ * no arm on which they could.
+ */
+function firstPassed(state: HostState, command: FirstPassCommand): HostResult {
+  const outcome = firstPassReducer(state.firstPass, command);
+  const next: HostState = { ...state, firstPass: outcome.state };
+  const effects: HostEffect[] = [];
+  if (outcome.scanning !== null) effects.push({ kind: 'find-candidates', scan: outcome.scanning });
+  const result: QueueResult | null = outcome.result;
+  if (result !== null) {
+    if (result.proposal !== null) effects.push({ kind: 'propose', proposal: result.proposal });
+    // ONLY A WITHDRAWN `apply` REACHES THE STORE. A withdrawn `reject` or `skip`
+    // dispatched nothing, so there is nothing out there to take back.
+    if (result.withdrawn !== null && result.withdrawn.answer === 'apply') {
+      effects.push({ kind: 'first-pass-withdraw', candidate: result.withdrawn.candidate });
+    }
+  }
+  return { state: next, effects };
 }
 
 /** A pointer on an issue: a target while one is being chosen, a selection otherwise. */
@@ -251,6 +330,28 @@ function controlled(
       return target === undefined
         ? settled(state)
         : { state, effects: [{ kind: 'discard', mutationId: target }] };
+
+    // --- the first pass ---
+    case 'first-pass':
+      // OPENING CANCELS A LIVE DRAFT. The surface covers the target search and
+      // the kind chooser, so a draft left standing behind it would be re-entered
+      // on close with the reader's context gone — and its chrome would be drawn
+      // under an opaque panel in the meantime.
+      return firstPassed(
+        { ...state, draft: IDLE_CREATE_DRAFT, targetQuery: '', drop: null },
+        { kind: 'open' },
+      );
+    case 'first-pass-close':
+      return firstPassed(state, { kind: 'close' });
+    case 'first-pass-answer':
+      return value === undefined || !isAnswer(value)
+        ? settled(state)
+        : firstPassed(state, { kind: 'queue', command: { kind: 'answer', answer: value } });
+    case 'undo':
+      // GUARDED BY THE PHASE, not by the control's existence: `undo` is a name a
+      // host's own chrome could publish too, and `firstPassReducer` answers a
+      // queue command with no queue by changing nothing.
+      return firstPassed(state, { kind: 'queue', command: { kind: 'undo' } });
     default:
       // A COMMAND THIS REDUCER DOES NOT KNOW CHANGES NOTHING. A host's own
       // chrome may publish commands on the same attribute — the demo's theme
@@ -292,6 +393,8 @@ export function reduceHost(state: HostState, command: HostCommand, document: Gra
     }
     case 'control':
       return controlled(state, command.name, command.target, command.value, document);
+    case 'first-pass':
+      return firstPassed(state, command.command);
     case 'intent':
       return intended(state, command.intent);
     case 'scroll':

@@ -31,6 +31,7 @@
 import {
   CANVAS_MODES,
   type CanvasMode,
+  type FirstPassWords,
   type MountWords,
   type PickerWords,
   type WorkspaceHandle,
@@ -42,6 +43,7 @@ import type { EdgeKind, Store, StoreSnapshot, WriteRecord } from '@issuegraph/st
 import { type Theme, defaultTheme, extendTheme } from '@issuegraph/viewer';
 
 import { projectDocument } from './document.ts';
+import { candidateSource, candidatesIn } from './firstpass.ts';
 import {
   DEMO_STATE_LABELS,
   DEMO_STATE_NAMES,
@@ -81,6 +83,39 @@ export const PICKER_WORDS: PickerWords = {
   heading: 'Relationship kind',
   flip: 'flip the direction',
   current: 'current',
+};
+
+/**
+ * What backlog this is, for §17a's header.
+ *
+ * A CONSTANT rather than a per-scenario field: every scenario is a different
+ * document of the SAME sandbox, and giving each one a repository name would
+ * dress a comparison surface up as four repositories.
+ */
+const SANDBOX_IDENTITY = 'issuegraph/sandbox';
+
+/**
+ * The first pass's vocabulary.
+ *
+ * Its own constant rather than an addition to `WORKSPACE_WORDS`: those are the
+ * mount's, and these are the queue's — `FirstPassWords` is a separate type for
+ * the same reason, and a host translating one surface should not have to read
+ * past the other.
+ *
+ * The progress sentence is the one that matters. §17e insists "100% encoded is
+ * never the goal", and `firstpass/words.ts` records why the wording is handed
+ * over rather than defaulted: "12 of 64 complete" reads as a target where
+ * "12 of 64 answered" reads as an activity. This host chooses the activity.
+ */
+const FIRST_PASS_WORDS: FirstPassWords = {
+  label: 'First pass',
+  answers: { apply: 'Yes — record it', reject: 'No', skip: 'Skip for now' },
+  answersLabel: 'Your answer',
+  undo: '⌫ undo last',
+  evidence: 'Why we’re asking',
+  progress: (answered, found) => `${String(answered)} of ${String(found)} answered`,
+  finished: 'That’s every candidate. Nothing else is waiting.',
+  noCandidates: 'Nothing to encode — no candidate relationships were found.',
 };
 
 /** The words the packages refuse to invent. */
@@ -286,6 +321,12 @@ function projectFor(scenario: Scenario, moments: HostMoments): (snapshot: StoreS
       // store lets a visitor add and delete relationships, and a count captured
       // at boot describes a backlog that no longer exists after the first edit.
       adoption: adoptionFor(scenario, held, moments.dismissed()),
+      identity: SANDBOX_IDENTITY,
+      // THE ENTRY IS DRAWN ONLY WHEN THE SCAN HAS SOMETHING. §17e's queue is
+      // "the make-or-break adoption moment", and a way in that opens on
+      // "nothing to encode" is the opposite of that promise. The detector is
+      // asked here rather than guessed at, over the document on screen.
+      firstPass: candidatesIn(held).length === 0 ? undefined : 'First pass →',
     });
     return projectDocument(explained, landed, host, scenario.caveats, audited);
   };
@@ -454,6 +495,19 @@ export function mountSandbox(
       words: WORKSPACE_WORDS,
       theme: themeFor(theme),
       canvas,
+      // THE HOST'S HALF OF THE FIRST PASS: a detector the package refuses to
+      // ship, and the five words it refuses to invent. Read against the store's
+      // CURRENT document, not the one this closure was built with.
+      firstPass: {
+        source: candidateSource(() => {
+          const snapshot = live.store.getSnapshot();
+          return { issues: snapshot.issues, edges: snapshot.landed };
+        }),
+        words: FIRST_PASS_WORDS,
+        exit: 'exit anytime',
+        scanning: 'Looking for candidates…',
+        scanFailed: 'The scan did not answer. Leave and try again.',
+      },
     });
     // ONE RENDER, once the store has answered: `read` schedules it.
     void read(true);
