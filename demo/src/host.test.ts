@@ -408,6 +408,25 @@ describe('the §16g states are reachable from the sandbox, with their affordance
       await settle();
       assert.equal(conditionNow(), null, 'Retry reached nobody');
 
+      // A REFRESH THAT CANNOT MAKE THE STAMP FRESH IS A CONTROL THAT LIES. The
+      // stale state is drawn by dating the read further back on every render,
+      // so without clearing the state a landed re-read left the panel saying
+      // "stale" forever — the one affordance §16g gives that state, doing
+      // nothing a reader could see.
+      await chooseState('stale');
+      assert.equal(
+        win.document.querySelector('#workspace .ig-freshness')?.getAttribute('data-stale'),
+        'true',
+      );
+      click('#workspace [data-ig-command="refresh"]', 'the stale state drew no refresh');
+      await settle();
+      await settle();
+      assert.equal(
+        win.document.querySelector('#workspace .ig-freshness')?.getAttribute('data-stale'),
+        'false',
+        'a landed refresh left the panel stale',
+      );
+
       // §16h's line is dismissible, which is the design's own word for it.
       click('[data-chrome="scenario"] [data-ig-value="adoption"]', 'no control for the day-one document');
       await settle();
@@ -417,6 +436,20 @@ describe('the §16g states are reachable from the sandbox, with their affordance
       await settle();
       await settle();
       assert.ok(!has('.ig-adoption'), 'dismiss reached nobody');
+
+      // ADOPTION IS A REPOSITORY FACT, so blanking the ORDER must not blank it.
+      // The empty state deliberately shows no rows; the backlog it is drawn
+      // over still declares whatever it declares.
+      click('[data-chrome="scenario"] [data-ig-value="backlog"]', 'no control for the big backlog');
+      await settle();
+      await settle();
+      const chip = (): string =>
+        win.document.querySelector('#workspace [data-count="adoption"]')?.textContent ?? '';
+      const populated = chip();
+      assert.ok(/^\d+ of \d+ declare relationships$/.test(populated), `no adoption chip: ${populated}`);
+      assert.ok(!populated.startsWith('0 of 0'), 'the backlog counted nothing');
+      await chooseState('empty');
+      assert.equal(chip(), populated, 'the empty state emptied the repository as well as the order');
     } finally {
       // TORN DOWN EVEN ON A FAILED ASSERTION. The sandbox holds a clock
       // interval, so a throw before this left the timer alive and the whole

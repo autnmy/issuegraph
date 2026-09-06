@@ -49,7 +49,10 @@ function projectionFor(panel: PanelState, id: string): ReturnType<typeof project
   // said "nothing is eligible" over eleven ranked rows would be reproducing
   // nothing at all — which is what this page exists to make visible.
   const shown = showsOrder(panel.state);
-  const landed = shown ? { issues: document.issues, edges: document.edges } : { issues: [], edges: [] };
+  // See `workspace.ts`: adoption is measured over the whole document, the order
+  // over what this panel draws. Blanking the order must not blank the backlog.
+  const held = { issues: document.issues, edges: document.edges };
+  const landed = shown ? held : { issues: [], edges: [] };
   const explained = explainDocument(landed, scenario.holds, scenario.ranking);
   const host = hostFacts({
     rows: explained.rows,
@@ -58,7 +61,7 @@ function projectionFor(panel: PanelState, id: string): ReturnType<typeof project
     running: !shown || scenario.running === undefined ? undefined : runningSince(scenario.running, NOW),
     state: panel.state,
     // Measured from the document this panel draws — see `adoptionFor`.
-    adoption: adoptionFor(scenario, landed, false),
+    adoption: adoptionFor(scenario, held, false),
   });
   // NO REFRESH CONTROL ON A FIXED-CLOCK SURFACE. The viewer draws one only when
   // the host supplies a word for it, and this page has nothing to re-read: its

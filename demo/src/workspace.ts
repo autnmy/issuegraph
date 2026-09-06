@@ -251,7 +251,14 @@ function projectFor(scenario: Scenario, moments: HostMoments): (snapshot: StoreS
     // is the one state that contradicts a populated order rather than
     // qualifying it, so the host projects what it claims to have.
     const shown = showsOrder(moments.state());
-    const landed = shown ? { issues: snapshot.issues, edges: snapshot.landed } : { issues: [], edges: [] };
+    // TWO DOCUMENTS, BECAUSE THEY ANSWER TWO QUESTIONS. `held` is the whole
+    // repository the store carries; `landed` is what this panel DRAWS, which
+    // the empty state deliberately blanks. Adoption is a fact about the
+    // repository — how much of the backlog declares relationships — so blanking
+    // the order must not blank it: a panel saying "nothing is eligible" over a
+    // full backlog would then also claim that backlog declares nothing.
+    const held = { issues: snapshot.issues, edges: snapshot.landed };
+    const landed = shown ? held : { issues: [], edges: [] };
     const explained = explainDocument(landed, scenario.holds, scenario.ranking);
     // THE HOST FACTS, from the same explained order the slots come from, so the
     // header's tally and the rows beneath it are one derivation. The running
@@ -266,7 +273,7 @@ function projectFor(scenario: Scenario, moments: HostMoments): (snapshot: StoreS
       // AGAINST THE DOCUMENT ON SCREEN, not the one the module loaded with: the
       // store lets a visitor add and delete relationships, and a count captured
       // at boot describes a backlog that no longer exists after the first edit.
-      adoption: adoptionFor(scenario, landed, moments.dismissed()),
+      adoption: adoptionFor(scenario, held, moments.dismissed()),
     });
     return projectDocument(explained, landed, host, scenario.caveats);
   };
@@ -544,6 +551,12 @@ export function mountSandbox(
         start();
         return;
       case 'refresh':
+        // A REFRESH THAT CANNOT MAKE THE STAMP FRESH IS A CONTROL THAT LIES.
+        // `stale` is drawn by dating the read further back on every render, so
+        // a successful re-read landed and the panel still said "stale · 17m
+        // ago" — the one affordance §16g gives that state, doing nothing a
+        // reader could see. A read that lands is what leaving the state means.
+        if (panelState === 'stale') panelState = 'live';
         void read(false);
         return;
       default:

@@ -782,17 +782,37 @@ describe('normalizeDocument: the host facts', () => {
 
     // Unlike the order counts, this one is a property of the very edges that
     // were passed here — so the viewer holds the evidence and says so.
-    const contradicted = normalizeDocument({
-      issues: [issue('1'), issue('2')],
-      edges: [{ field: 'blocked-by', from: '1', to: '2' }],
-      order: emptyOrder,
-      cycles: [],
-      host: { adoption: { counts: { declaring: 0, total: 48 } } },
-    });
-    assert.deepEqual(contradicted.document.host.adoption, { counts: { declaring: 0, total: 48 } });
-    assert.deepEqual(contradicted.diagnostics, [
-      'adoption states 0 of 48 declare relationships, but this document carries 1',
+    //
+    // A LOWER BOUND, WHICH IS WHAT MAKES IT SOUND ON A SLICE: `declaring` may
+    // legitimately exceed what is drawn, and can never be less than the
+    // carriers already on screen. Zero was only the loudest case of that.
+    const over = (declaring: number, edges: readonly { from: string; to: string }[]) =>
+      normalizeDocument({
+        issues: [issue('1'), issue('2'), issue('3')],
+        edges: edges.map((edge) => ({ field: 'blocked-by' as const, ...edge })),
+        order: emptyOrder,
+        cycles: [],
+        host: { adoption: { counts: { declaring, total: 48 } } },
+      });
+    const twoCarriers = over(1, [
+      { from: '1', to: '2' },
+      { from: '3', to: '2' },
     ]);
+    assert.deepEqual(twoCarriers.document.host.adoption, { counts: { declaring: 1, total: 48 } });
+    assert.deepEqual(twoCarriers.diagnostics, [
+      'adoption states 1 of 48 declare relationships, but this document already carries 2',
+    ]);
+    // CARRIERS, NOT EDGES. Two edges written by one issue are one declaring
+    // issue, so a host stating `1` over them is stating the truth.
+    assert.deepEqual(
+      over(1, [
+        { from: '1', to: '2' },
+        { from: '1', to: '3' },
+      ]).diagnostics,
+      [],
+    );
+    // And a slice may legitimately show fewer carriers than the host counts.
+    assert.deepEqual(over(30, [{ from: '1', to: '2' }]).diagnostics, []);
   });
 
   it('keeps an adoption note with its link and dismiss word, and drops an unlinkable href', () => {

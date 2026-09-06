@@ -924,7 +924,7 @@ function normalizeCondition(
  */
 function normalizeAdoption(
   adoption: Adoption,
-  edgeCount: number,
+  carriers: number,
   diagnostics: string[],
 ): Adoption | undefined {
   let counts: Adoption['counts'];
@@ -937,9 +937,15 @@ function normalizeAdoption(
     if (isCount(declaring) && isCount(total) && declaring <= total) counts = Object.freeze({ declaring, total });
     else diagnostics.push('adoption counts are not two non-negative integers with declaring no greater than total, and were dropped whole');
   }
-  if (counts !== undefined && counts.declaring === 0 && edgeCount > 0) {
+  // A LOWER BOUND, WHICH IS WHAT MAKES THIS SOUND ON A SLICE. The document may
+  // be a window onto a bigger backlog, so `declaring` can legitimately exceed
+  // what is drawn here — but it can never be LESS than the carriers already on
+  // screen, whatever the rest of the repository holds. Checking only for zero
+  // was a special case of that, and let `1 of 48` pass over a document showing
+  // two carriers.
+  if (counts !== undefined && counts.declaring < carriers) {
     diagnostics.push(
-      `adoption states 0 of ${String(counts.total)} declare relationships, but this document carries ${String(edgeCount)}`,
+      `adoption states ${String(counts.declaring)} of ${String(counts.total)} declare relationships, but this document already carries ${String(carriers)}`,
     );
   }
 
@@ -979,7 +985,7 @@ function normalizeAdoption(
 function normalizeHost(
   host: HostFacts | undefined,
   byKey: ReadonlyMap<string, ViewerIssue>,
-  shape: { readonly edges: number; readonly slots: number },
+  shape: { readonly carriers: number; readonly slots: number },
   diagnostics: string[],
 ): NormalizedHostFacts {
   const running: RunningJob[] = [];
@@ -1030,7 +1036,7 @@ function normalizeHost(
   }
 
   const adoption =
-    host?.adoption === undefined ? undefined : normalizeAdoption(host.adoption, shape.edges, diagnostics);
+    host?.adoption === undefined ? undefined : normalizeAdoption(host.adoption, shape.carriers, diagnostics);
 
   return Object.freeze({
     ...(concurrencyCap === undefined ? {} : { concurrencyCap }),
@@ -1085,7 +1091,13 @@ export function normalizeDocument(input: ViewerDocument): NormalizeResult {
   // THE SHAPE THE HOST'S CLAIMS ARE READ AGAINST — the KEPT edges and slots, so a
   // contradiction is reported against what will actually be drawn rather than
   // against what was passed in and then dropped.
-  const host = normalizeHost(input.host, byKey, { edges: edges.length, slots: slots.length }, diagnostics);
+  //
+  // CARRIERS, NOT EDGES. An edge is DECLARED by one of its ends — the format
+  // writes the field on one issue pointing at another — so two edges written by
+  // one issue are one declaring issue, and counting edges would report a
+  // contradiction where there is none.
+  const carriers = new Set(edges.map((edge) => edge.from));
+  const host = normalizeHost(input.host, byKey, { carriers: carriers.size, slots: slots.length }, diagnostics);
   // A RUNNING ISSUE IS DRAWN — as the NOW row — so it is not "in no slot", even
   // when the host put it in none. Counting it would make the isolated chip
   // state a falsehood about a row the reader can see above the order.
