@@ -112,6 +112,28 @@ export function reconcile(scene: Scene, state: NavigationState): NavigationState
  */
 export function navigate(scene: Scene, state: NavigationState, key: string): NavigationResult {
   const order = scene.focusOrder;
+
+  // §16e's VIEW TOGGLE IS NOT A MOVEMENT, so it comes before the guard that
+  // asks whether there is anywhere to move. A viewer with an empty order still
+  // draws a panel a reader can focus a header control in — an empty document,
+  // a NOW-only list — and pressing `g` there published nothing at all, which is
+  // the one shortcut that has no business depending on there being rows.
+  //
+  // Lower case only — an upper-case G is a different key press, and claiming
+  // both would take a shortcut a host may have bound to it. The projection is
+  // NOT computed by the host: `navigate` sees the scene, so the command names
+  // the OTHER projection rather than a "toggle" the host must resolve against
+  // state it may not hold.
+  if (key === 'g') {
+    return {
+      state,
+      command: {
+        kind: 'command',
+        command: scene.projection === 'graph' ? 'projection:linear' : 'projection:graph',
+      },
+    };
+  }
+
   if (order.length === 0) return stay(state);
 
   const current = indexOfFocus(scene, state);
@@ -140,20 +162,6 @@ export function navigate(scene: Scene, state: NavigationState, key: string): Nav
       return state.focused === first ? stay(state) : moveTo(state, first);
     case 'End':
       return state.focused === last ? stay(state) : moveTo(state, last);
-    // §16e: g TOGGLES THE VIEW. Lower case only — an upper-case G is a
-    // different key press, and claiming both would take a shortcut a host may
-    // have bound to it. The projection this asks for is NOT computed here:
-    // `navigate` sees a scene, so it knows which projection it is in, and the
-    // command names the other one rather than a "toggle" the host has to
-    // resolve against state it may not hold.
-    case 'g':
-      return {
-        state,
-        command: {
-          kind: 'command',
-          command: scene.projection === 'graph' ? 'projection:linear' : 'projection:graph',
-        },
-      };
     case 'Enter':
     case ' ': {
       const target = state.focused ?? first;

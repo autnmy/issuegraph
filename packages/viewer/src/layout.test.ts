@@ -206,6 +206,39 @@ describe('layoutGraph', () => {
     assert.deepEqual([...layout.footer], [], 'it kept a footer row as well as its station');
   });
 
+  it('aligns a gutter card with an unslotted NOW station, not just with a slot', () => {
+    // `partnerY` searched `order.slots` alone, and an unslotted running job has
+    // a spine box of its own — it IS the NOW station. So a gutter card
+    // explaining the SECOND of two running jobs could not resolve it, fell back
+    // beside the first row, and drew exactly the cross-row arc this placement
+    // pass exists to prevent.
+    const { document } = normalizeDocument({
+      issues: [
+        { key: 'n1', title: 'Running first', open: true, priority: 2 },
+        { key: 'n2', title: 'Running second', open: true, priority: 2 },
+        { key: 'g', title: 'Explains the second one', open: true, priority: 2 },
+      ],
+      edges: [{ field: 'blocked-by', from: 'n2', to: 'g' }],
+      order: { slots: [], excluded: [] },
+      cycles: [],
+      host: {
+        running: [
+          { key: 'n1', phase: 'Plan', elapsed: '1m' },
+          { key: 'n2', phase: 'Review', elapsed: '2m' },
+        ],
+      },
+    });
+    const layout = layoutGraph(document, defaultTheme);
+
+    assert.deepEqual([...layout.spineOrder], ['n1', 'n2']);
+    assert.equal(layout.nodes.get('g')?.column, 'left');
+    assert.equal(
+      layout.nodes.get('g')?.y,
+      layout.nodes.get('n2')?.y,
+      'the gutter card lined up with the wrong running job',
+    );
+  });
+
   it('keeps an unslotted NOW node off the gutters, however many edges touch it', () => {
     // A running job with no slot is placed as the NOW station and is therefore
     // absent from the slot membership the gutter pass skips — so an edge

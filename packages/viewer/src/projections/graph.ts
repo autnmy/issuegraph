@@ -610,7 +610,15 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
   // and draws NOTHING keyed when it refuses or is empty. Everything downstream
   // is a subset of that, so "every published target is focusable" holds by
   // construction rather than by remembering.
-  const refused = nodeCount === 0 || nodeCount > GRAPH_NODE_BUDGET;
+  // AN EMPTY NODE MAP IS NOT AN EMPTY PANEL. In the column the gutters are not
+  // drawn, so a document whose issues are all off the order — relationships and
+  // no ranked or running station — lays out NOTHING and puts every one of them
+  // in `layout.footer`. Read as a refusal, that said "no issue in this document
+  // declares a relationship" about a document full of them AND suppressed the
+  // footer group that was holding all of them, so the panel came back blank.
+  // The question is whether this scene draws anything, and the footer draws.
+  const drawsNothing = nodeCount === 0 && layout.footer.length === 0;
+  const refused = drawsNothing || nodeCount > GRAPH_NODE_BUDGET;
   // FROM THE SAME RULE THE LIST RENDERS FROM — see `refusalContents`. With a
   // canvas every node is a card and the card owns the tab stop; without one,
   // the list is the whole order UI and its rows do.
@@ -743,8 +751,12 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
   const diagnostics: string[] = [];
   let canvas: ElementSpec;
 
-  if (nodeCount === 0) {
+  if (drawsNothing) {
     canvas = emptyState('No issue in this document declares a relationship, so the canvas is empty.');
+  } else if (nodeCount === 0) {
+    // Nothing to draw ON the canvas, and a footer group beneath it that is the
+    // whole panel. No stage, no refusal: the group renders in ordinary flow.
+    canvas = emptyState('Nothing in this document is in the order, so the spine is empty.');
   } else if (nodeCount > CLUSTER_ONLY_BUDGET) {
     diagnostics.push(`graph refused: ${String(nodeCount)} nodes is past the cluster-only budget of ${String(CLUSTER_ONLY_BUDGET)}`);
     canvas = refusal(document, layout, nodeCount, 'clusters');
@@ -837,7 +849,11 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
       // canvas would rescale under the cards and the two would drift apart.
       // A refusal draws no nodes, so it needs no stage and the list stays in
       // ordinary flow — a fixed-height stage would clip it.
-      refused
+      // NO STAGE WITHOUT A NODE TO SIT ON. A stage is sized in the layout's own
+      // units, and a layout with no boxes has none — so a document whose issues
+      // are all in the footer renders its message and its group in ordinary
+      // flow, exactly as a refusal does, without BEING a refusal.
+      refused || nodeCount === 0
         ? canvas
         : element(
             'div',

@@ -118,6 +118,25 @@ describe('navigate', () => {
     });
     // It moves nothing: a view change is not an act of navigation.
     assert.deepEqual(navigate(linear(), at('101'), 'g').state, at('101'));
+
+    // AND IT DOES NOT DEPEND ON THERE BEING ROWS. A viewer with an empty order
+    // still draws a panel a reader can focus a header control in, and the guard
+    // that asks whether there is anywhere to MOVE ran first — so `g` published
+    // nothing at all in exactly the view where switching is most of what is
+    // left to do.
+    const empty = linearScene(
+      normalizeDocument({
+        issues: [],
+        edges: [],
+        order: { slots: [], excluded: [] },
+        cycles: [],
+      }).document,
+    );
+    assert.deepEqual(empty.focusOrder, []);
+    assert.deepEqual(navigate(empty, at(null), 'g').command, {
+      kind: 'command',
+      command: 'projection:graph',
+    });
   });
 
   it('returns the state untouched for a key it does not claim', () => {

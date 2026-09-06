@@ -515,6 +515,42 @@ describe('the graph projection', () => {
     }
   });
 
+  it('keeps a footer-only column drawing its issues, rather than calling itself empty', () => {
+    // AN EMPTY NODE MAP IS NOT AN EMPTY PANEL. In the column the gutters are
+    // not drawn, so a document whose issues are all off the order — relationships
+    // and no ranked or running station — lays out nothing and puts every one of
+    // them in the footer. Read as a refusal, that said "no issue in this
+    // document declares a relationship" about a document full of them AND
+    // suppressed the group that was holding all of them: the panel came back
+    // blank.
+    const offOrder: ViewerDocument = {
+      issues: [
+        { key: 'a', title: 'Blocked, and in no order', open: true, priority: 2 },
+        { key: 'b', title: 'Its blocker', open: true, priority: 2 },
+      ],
+      edges: [{ field: 'blocked-by', from: 'a', to: 'b' }],
+      order: { slots: [], excluded: [] },
+      cycles: [],
+    };
+    const built = scene(offOrder, { compact: true });
+    const markup = renderMarkup(built.root);
+
+    assert.equal(
+      markup.includes('No issue in this document declares a relationship'),
+      false,
+      'a document full of relationships was told it has none',
+    );
+    for (const key of ['a', 'b']) {
+      assert.match(markup, new RegExp(`data-ig-key="${key}"`), `${key} vanished`);
+      assert.ok(built.focusOrder.includes(key), `${key} cannot be reached by keyboard`);
+    }
+    // A document with genuinely nothing to draw still says so.
+    const nothing = renderMarkup(
+      scene({ issues: [], edges: [], order: { slots: [], excluded: [] }, cycles: [] }).root,
+    );
+    assert.match(nothing, /No issue in this document declares a relationship/);
+  });
+
   it('offers lateral neighbours from the SPINE outward', () => {
     // §16f gives the lateral keys one job: leave the sequence for the gutter
     // card that explains this rank, and come back. `103` is the fixture's rank

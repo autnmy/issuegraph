@@ -595,8 +595,13 @@ export function layoutGraph(
     for (const edge of document.edges) {
       const other = edge.from === key ? edge.to : edge.to === key ? edge.from : undefined;
       if (other === undefined) continue;
-      const station = document.order.slots.find((slot) => slot.members.includes(other))?.lead;
-      const box = station === undefined ? undefined : nodes.get(station);
+      // THE SLOT'S LEAD, OR THE KEY ITSELF. An unslotted running job has a
+      // spine box of its own — it is the NOW station — and searching `slots`
+      // alone could not resolve it, so a gutter card explaining the SECOND of
+      // two running jobs fell back beside the first row and drew exactly the
+      // cross-row arc this pass exists to prevent.
+      const station = document.order.slots.find((slot) => slot.members.includes(other))?.lead ?? other;
+      const box = nodes.get(station);
       // A SPINE PARTNER, NEVER A GUTTER ONE. The right gutter is placed after
       // the left, so by then a left card has a box too — and aligning a right
       // card to a left one would chain two alignments and drift both away from
