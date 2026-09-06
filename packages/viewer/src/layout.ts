@@ -401,8 +401,14 @@ function cardHeight(
   const gap = metric(theme, '--ig-space-tight');
   const memberPad = metric(theme, '--ig-space-snug') * 2;
   const inner = Math.max(1, width - metric(theme, '--ig-space') * 2);
-  const wraps = (text: string): number =>
-    Math.max(1, Math.ceil(measureLabel(theme, text) / inner));
+  // A UNIT'S TITLES SIT INSIDE ANOTHER BOX. `.ig-unit` has its own border and
+  // `.ig-unit-member` its own inline padding, so measuring a member's title at
+  // the CARD's inner width let a title near the boundary take a line the
+  // reservation did not have.
+  const unitInner = Math.max(
+    1,
+    inner - memberPad - metric(theme, '--ig-stroke-connector') * 2,
+  );
 
   const blocks = cardBlocks(document, key, members, onSpine, now);
   let height = pad;
@@ -420,11 +426,28 @@ function cardHeight(
       height += rows * chipHeight + Math.max(0, rows - 1) * gap;
       return;
     }
-    height += cardText(document, block).reduce((total, text) => total + wraps(text) * line, 0);
-    // A unit's enclosure pads each member's pair on both sides.
-    if (block.kind === 'unit') height += block.members.length * memberPad;
+    const width = block.kind === 'unit' ? unitInner : inner;
+    height += cardText(document, block).reduce(
+      (total, text) => total + Math.max(1, Math.ceil(measureLabel(theme, text) / width)) * line,
+      0,
+    );
+    if (block.kind === 'unit') {
+      // The enclosure pads each member's pair on both sides, puts a gap between
+      // the title and the identity, and rules between members.
+      height +=
+        block.members.length * (memberPad + metric(theme, '--ig-space-micro')) +
+        Math.max(0, block.members.length - 1) * metric(theme, '--ig-stroke');
+    }
   });
-  return height;
+  // A DELIBERATE OVER-RESERVATION, and it is the structural half of this rule.
+  // A pure layout cannot MEASURE text, so every height here is an estimate, and
+  // an estimate can always be wrong by some box-model detail the counter does
+  // not mirror — six review rounds found six of them. What matters is which way
+  // it is wrong: a card positioned absolutely that reserves too little is
+  // OVERLAPPED by the next rank, which is a legibility failure, while one that
+  // reserves too much leaves a gap nobody minds. One line of slack per card
+  // turns the next such miss into the harmless kind.
+  return height + line;
 }
 
 /**

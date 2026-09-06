@@ -664,11 +664,19 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
     ...(refused ? [] : [...layout.nodes.keys(), ...layout.footer]),
   ]);
 
+  // THE SPINE AS THE LAYOUT ORDERED IT, FIRST. §16e fixes that the graph walks
+  // its stations in RANK order, and the layout puts the running job at the top
+  // — above rank 1, which is where §16b draws it. Rebuilding the order from the
+  // slots instead reached that card at its old rank, or near the end when it
+  // held no slot, so the keyboard walked the drawing non-monotonically: down
+  // the spine, back up to the top, on again.
+  const spineFirst = refused ? [] : [...layout.spineOrder];
   const focusOrder = [
+    ...spineFirst,
     ...inline.map((slot) => slot.lead),
     ...footerSlots.map((slot) => slot.lead),
     ...document.order.excluded.map((exclusion) => exclusion.key),
-  ].filter((key) => focusable.has(key));
+  ].filter((key, index, all) => focusable.has(key) && all.indexOf(key) === index);
 
   // ── the lateral axis: ONLY PAIRS WHOSE REVERSE HOLDS ──────────────────────
   //

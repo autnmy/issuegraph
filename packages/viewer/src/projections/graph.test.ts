@@ -643,6 +643,41 @@ describe('the graph projection', () => {
     assert.match(markup, /Review · 9m/);
   });
 
+  it('walks the spine in the order the layout drew it, NOW first', () => {
+    // §16e fixes that the graph walks its stations in RANK order, and the
+    // layout puts the running job at the top — above rank 1, where §16b draws
+    // it. Rebuilding the order from the slots reached that card at its old rank,
+    // or near the end when it held no slot, so the keyboard walked the drawing
+    // non-monotonically: down the spine, back up to the top, on again.
+    const document = normalizeDocument(hostedFixtureDocument).document;
+    const layout = layoutGraph(document, defaultTheme);
+    const built = graphScene(document, {});
+    const spine = built.focusOrder.filter((key) => layout.nodes.get(key)?.column === 'spine');
+
+    assert.deepEqual([...spine], [...layout.spineOrder]);
+    assert.equal(spine[0], layout.spineOrder[0], 'the NOW station is not walked first');
+  });
+
+  it('keeps a relationship visible when BOTH its ends are in the footer', () => {
+    // In the column no card can badge an edge whose endpoints are both off the
+    // order and no arc is drawn, so the relationship disappeared entirely while
+    // both issues stayed visible — a picture that lies about the document
+    // rather than one that shows less of it.
+    const offOrder: ViewerDocument = {
+      issues: [
+        { key: 'a', title: 'Blocked, and in no order', open: true, priority: 2 },
+        { key: 'b', title: 'Its blocker', open: true, priority: 2 },
+      ],
+      edges: [{ field: 'blocked-by', from: 'a', to: 'b' }],
+      order: { slots: [], excluded: [] },
+      cycles: [],
+    };
+    const markup = renderMarkup(scene(offOrder, { compact: true }).root);
+
+    assert.match(markup, /data-edge="blocked-by"/, 'the relationship vanished with its arc');
+    assert.match(markup, /blocked by b/);
+  });
+
   it('offers lateral neighbours from the SPINE outward', () => {
     // §16f gives the lateral keys one job: leave the sequence for the gutter
     // card that explains this rank, and come back. `103` is the fixture's rank

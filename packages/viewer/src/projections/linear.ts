@@ -19,6 +19,7 @@ import {
   caveatBadges,
   caveatLines,
   edgeBadgeList,
+  edgeBadges,
   emptyState,
   evidenceBadge,
   footerLabels,
@@ -332,6 +333,12 @@ export function asideRow(
       element('span', { class: 'ig-badge' }, ['outside the order']),
       element('span', { class: 'ig-title' }, [issue?.title ?? key]),
       issue === undefined ? null : identity(issue),
+      // ITS RELATIONSHIPS TOO. This row is the only mark the compact graph makes
+      // for its issue, and an edge whose BOTH endpoints are down here has no
+      // card to badge it and no arc to draw — so the relationship disappeared
+      // entirely while both issues stayed visible, which is a picture that lies
+      // about the document rather than one that shows less of it.
+      edgeBadges(document, [key]),
     ],
   );
 }
