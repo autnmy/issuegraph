@@ -1329,6 +1329,73 @@ describe('the first pass, composed behind §17a’s entry', () => {
     }
   });
 
+  it('lands focus in the order when the entry itself has gone', async () => {
+    // Whether a backlog has a first pass to run is the host's answer and the
+    // host may change it — the sandbox draws the entry only while its detector
+    // finds candidates, so a completed queue whose writes land removes the very
+    // control the close would return to. Focus on the body reaches no listener.
+    let entryDrawn = true;
+    const withEntry = (snapshot: StoreSnapshot): WorkspaceProjection => {
+      const base = project(snapshot);
+      return {
+        ...base,
+        viewer: {
+          ...base.viewer,
+          host: entryDrawn ? { identity: 'acme/widgets', firstPass: 'First pass' } : { identity: 'acme/widgets' },
+        },
+      };
+    };
+    const held = heldSource(pairsOver(2));
+    const page = await mounted(backlog(8), {
+      project: withEntry,
+      firstPass: { source: held.scanner, ...FIRST_PASS_OPTION },
+    });
+    try {
+      const entry = page.control('first-pass');
+      assert.ok(entry !== null);
+      entry.focus();
+      page.click(entry);
+      await flush();
+      await held.answer();
+      assert.ok(page.element.querySelector('.ig-firstpass-overlay') !== null);
+
+      // The host stops offering a first pass while the queue is up.
+      entryDrawn = false;
+      page.element.dispatchEvent(
+        new page.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+      );
+      await flush();
+      assert.equal(page.control('first-pass'), null, 'the entry survived');
+      const active = page.win.document.activeElement;
+      assert.notEqual(active, page.win.document.body, 'focus was left on the body');
+      assert.ok(page.element.contains(active), 'focus was left outside the mount');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('ends the lifecycle when the host swaps the scanner under it', async () => {
+    // The old scan's promise still resolves under the current generation, so
+    // without this the queue is drawn in the NEW bundle's words and populated by
+    // the superseded scanner — and a `Y` there writes a relationship the
+    // configured source never proposed.
+    const page = await firstPassPage();
+    try {
+      await open(page);
+      assert.equal(page.handle.state.firstPass.phase.kind, 'open');
+      const replacement = heldSource(pairsOver(1));
+      page.handle.update({ firstPass: { source: replacement.scanner, ...FIRST_PASS_OPTION } });
+      await flush();
+      await flush();
+      assert.equal(page.handle.state.firstPass.phase.kind, 'closed', 'the old queue survived');
+      assert.equal(overlayOf(page), null);
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
   it('keeps Tab inside the takeover, at both ends', async () => {
     // `inert` covers the workspace's own zones and nothing else, so a mount
     // beside other page chrome let Tab walk out of a dialog asserting

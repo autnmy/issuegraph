@@ -314,6 +314,8 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   // body, and the keydown listener is on the element — so the whole workspace
   // goes keyboard-dead until the reader clicks something.
   let focusBeforeFirstPass: string | null = null;
+  /** The scanner the live lifecycle belongs to, so a swap can end it. */
+  let firstPassSource: CandidateSource | null = options.firstPass?.source ?? null;
   /**
    * Which write each applied candidate created.
    *
@@ -860,15 +862,21 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // theme to the root still resolves the chooser's tokens there.
     const floating = floatingChooser();
     if (floating !== null) (surface.firstElementChild ?? surface).append(floating);
-    // A BUNDLE TAKEN AWAY MID-FLIGHT CLOSES THE SURFACE. `update()` may remove
-    // `firstPass` while a scan is out or a queue is up; the overlay would then
-    // stop being drawn while the phase stayed open — and the phase is what makes
-    // the keydown handler hand every key to a queue that is no longer on screen,
-    // with no control left to close it. One dispatch, and the guard below makes
-    // it fire once.
-    if (current.firstPass === undefined && state.firstPass.phase.kind !== 'closed') {
+    // A SOURCE THAT CHANGES MID-FLIGHT ENDS THE LIFECYCLE IT WAS SCANNING FOR.
+    // Two failures, one rule. Removing the bundle through `update()` stops the
+    // overlay being drawn while the phase stays open — and the phase is what
+    // hands every key to a queue that is no longer on screen, with no control
+    // left to close it. REPLACING the source is worse than it looks: the old
+    // scan's promise still resolves under the current generation, so the queue
+    // would be drawn in the new bundle's words and populated by the superseded
+    // scanner, and a `Y` there writes a relationship the configured source never
+    // proposed. Keyed on the SOURCE rather than the bundle, because a host that
+    // rebuilds an equivalent options object on every render has changed nothing.
+    const source = current.firstPass?.source ?? null;
+    if (source !== firstPassSource && state.firstPass.phase.kind !== 'closed') {
       dispatch({ kind: 'first-pass', command: { kind: 'close' } });
     }
+    firstPassSource = source;
     const overlay = firstPassOverlay();
     if (overlay !== null) {
       (surface.firstElementChild ?? surface).append(overlay);
@@ -978,13 +986,19 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         // the document body reaches no listener at all, because the keydown
         // listener is on the mount's element. The entry is the control they
         // came in through, so it is where they come back to.
-        // ONE FALLBACK, NOT TWO: an earlier revision also recorded WHICH control
-        // held focus, which a mutation test showed could never differ — the
-        // queue opens from this one control and no other, so the recorded answer
-        // was always the fallback's answer.
-        surface
-          .querySelector<HTMLElement>(`[${COMMAND_ATTRIBUTE}="first-pass"]`)
-          ?.focus({ preventScroll: true });
+        // ONE RECORDED ANSWER, NOT TWO: an earlier revision also recorded WHICH
+        // control held focus, which a mutation test showed could never differ —
+        // the queue opens from this one control and no other.
+        // THE ENTRY CAN BE GONE BY NOW, THOUGH. Whether a backlog has a first
+        // pass to run is the host's answer and the host may change it: the
+        // sandbox draws the entry only while its detector finds candidates, so
+        // a completed queue whose writes land removes the very control this
+        // would return to. So the order of resort ends inside the ORDER, which
+        // is the one part of the workspace that is always there.
+        const back_ =
+          surface.querySelector<HTMLElement>(`[${COMMAND_ATTRIBUTE}="first-pass"]`) ??
+          surface.querySelector<HTMLElement>(`[${KEY_ATTRIBUTE}][tabindex]`);
+        back_?.focus({ preventScroll: true });
       }
     }
     firstPassWas = state.firstPass.phase.kind;
