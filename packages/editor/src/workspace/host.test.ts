@@ -408,7 +408,16 @@ describe('the first pass reaches the store only through consent', () => {
     const { state } = queued();
     assert.deepEqual(
       drive([{ kind: 'control', name: 'first-pass-answer', value: 'apply' }], state).effects,
-      [{ kind: 'propose', proposal: { op: 'create', kind: 'blocked-by', from: '100', to: '101' } }],
+      [
+        {
+          kind: 'first-pass-apply',
+          // THE CANDIDATE'S ID RIDES WITH THE WRITE. The create's own fields do
+          // not identify it: two detectors may propose the same pair, and
+          // `candidates.ts` keeps those two questions apart on purpose.
+          candidateId: 'c0',
+          proposal: { op: 'create', kind: 'blocked-by', from: '100', to: '101' },
+        },
+      ],
     );
     for (const value of ['reject', 'skip']) {
       assert.deepEqual(
@@ -430,13 +439,37 @@ describe('the first pass reaches the store only through consent', () => {
     const { state } = queued();
     const applied = drive([{ kind: 'control', name: 'first-pass-answer', value: 'apply' }], state);
     const undone = drive([{ kind: 'control', name: 'undo' }], applied.state);
-    assert.deepEqual(undone.effects, [
-      { kind: 'first-pass-withdraw', candidate: candidates(1)[0] },
-    ]);
+    assert.deepEqual(undone.effects, [{ kind: 'first-pass-withdraw', candidateId: 'c0' }]);
 
     const rejected = drive([{ kind: 'control', name: 'first-pass-answer', value: 'reject' }], state);
     // A rejection dispatched nothing, so there is nothing out there to take back.
     assert.deepEqual(drive([{ kind: 'control', name: 'undo' }], rejected.state).effects, []);
+  });
+
+  it('names the answering candidate, even when two propose the same pair', () => {
+    // The case a structural match on the create's fields could not tell apart.
+    const twins = [
+      { id: 'left', kind: 'blocked-by' as const, from: '1', to: '2', evidence: [] },
+      { id: 'right', kind: 'blocked-by' as const, from: '1', to: '2', evidence: [] },
+    ];
+    const opened = drive([{ kind: 'control', name: 'first-pass' }]);
+    const asked = opened.effects.find((effect) => effect.kind === 'find-candidates');
+    assert.ok(asked !== undefined && asked.kind === 'find-candidates');
+    const queue = drive(
+      [{ kind: 'first-pass', command: { kind: 'candidates', scan: asked.scan, candidates: twins } }],
+      opened.state,
+    );
+    const first = drive([{ kind: 'control', name: 'first-pass-answer', value: 'apply' }], queue.state);
+    const second = drive([{ kind: 'control', name: 'first-pass-answer', value: 'apply' }], first.state);
+    assert.deepEqual(
+      [...first.effects, ...second.effects].map((effect) =>
+        effect.kind === 'first-pass-apply' ? effect.candidateId : effect.kind,
+      ),
+      ['left', 'right'],
+    );
+    // And an undo names the one it took back, not the one that looks like it.
+    const undone = drive([{ kind: 'control', name: 'undo' }], second.state);
+    assert.deepEqual(undone.effects, [{ kind: 'first-pass-withdraw', candidateId: 'right' }]);
   });
 
   it('changes nothing when a first-pass control arrives with the surface shut', () => {

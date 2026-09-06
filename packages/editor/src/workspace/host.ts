@@ -34,7 +34,7 @@ import { findEdge } from '@issuegraph/store';
 import { type CreateDraft, IDLE_CREATE_DRAFT, createReducer } from '../create/draft.ts';
 import type { KeyIntent } from '../create/keys.ts';
 import type { Point } from '../create/placement.ts';
-import type { Candidate } from '../firstpass/candidates.ts';
+import type { CandidateId } from '../firstpass/candidates.ts';
 import { type Answer, type QueueResult } from '../firstpass/queue.ts';
 import { pickerView } from '../picker/view.ts';
 import { INITIAL_SCALE_STATE, type ScaleState, scaleReducer } from '../scale/commands.ts';
@@ -129,6 +129,22 @@ export type HostEffect =
    */
   | { readonly kind: 'find-candidates'; readonly scan: number }
   /**
+   * An `apply`: propose this create, and REMEMBER which candidate it was.
+   *
+   * Its own arm rather than a plain `propose`, because the shell has to be able
+   * to find this exact write again if the reader takes the answer back — and it
+   * cannot do that from the create's fields. `candidates.ts` mints a distinct
+   * {@link CandidateId} per finding precisely so two detectors proposing the
+   * same pair stay two findings, so `kind`/`from`/`to` does not identify a
+   * write; only the `MutationId` the store returns does, and only the shell
+   * ever sees it.
+   */
+  | {
+      readonly kind: 'first-pass-apply';
+      readonly candidateId: CandidateId;
+      readonly proposal: Proposal;
+    }
+  /**
    * An `undo` took back an `apply`, and the shell decides what the store can do
    * about it.
    *
@@ -136,7 +152,7 @@ export type HostEffect =
    * `Proposal` for a write it is not making, and the shell matches the create
    * against the store's own records by the candidate's own fields.
    */
-  | { readonly kind: 'first-pass-withdraw'; readonly candidate: Candidate };
+  | { readonly kind: 'first-pass-withdraw'; readonly candidateId: CandidateId };
 
 export interface HostResult {
   readonly state: HostState;
@@ -206,11 +222,20 @@ function firstPassed(state: HostState, command: FirstPassCommand): HostResult {
   if (outcome.scanning !== null) effects.push({ kind: 'find-candidates', scan: outcome.scanning });
   const result: QueueResult | null = outcome.result;
   if (result !== null) {
-    if (result.proposal !== null) effects.push({ kind: 'propose', proposal: result.proposal });
+    // THE ANSWER'S OWN CANDIDATE, read off the queue's record of it rather than
+    // off the screen: by the time this runs the cursor has already advanced.
+    const given = result.state.answers[result.state.answers.length - 1];
+    if (result.proposal !== null && given !== undefined) {
+      effects.push({
+        kind: 'first-pass-apply',
+        candidateId: given.candidate.id,
+        proposal: result.proposal,
+      });
+    }
     // ONLY A WITHDRAWN `apply` REACHES THE STORE. A withdrawn `reject` or `skip`
     // dispatched nothing, so there is nothing out there to take back.
     if (result.withdrawn !== null && result.withdrawn.answer === 'apply') {
-      effects.push({ kind: 'first-pass-withdraw', candidate: result.withdrawn.candidate });
+      effects.push({ kind: 'first-pass-withdraw', candidateId: result.withdrawn.candidate.id });
     }
   }
   return { state: next, effects };

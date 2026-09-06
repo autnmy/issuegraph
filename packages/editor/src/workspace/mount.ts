@@ -47,7 +47,7 @@
  */
 
 import { edgeIdentity } from '@issuegraph/core';
-import type { EdgeKind, GraphDocument, Store, StoreSnapshot } from '@issuegraph/store';
+import type { EdgeKind, GraphDocument, MutationId, Store, StoreSnapshot } from '@issuegraph/store';
 import {
   type Scene,
   type Theme,
@@ -314,6 +314,18 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   // body, and the keydown listener is on the element — so the whole workspace
   // goes keyboard-dead until the reader clicks something.
   let focusBeforeFirstPass: string | null = null;
+  /**
+   * Which write each applied candidate created.
+   *
+   * THE ONLY HANDLE THAT IDENTIFIES A WRITE, and it exists nowhere else: the
+   * `MutationId` is minted by `store.propose` and seen only here, while the
+   * create's own `kind`/`from`/`to` does NOT identify it — `candidates.ts` mints
+   * a distinct id per finding precisely so two detectors proposing the same pair
+   * stay two questions, and an older failed write can carry the same triple. An
+   * earlier revision matched structurally and could have discarded the wrong
+   * record. Cleared when the queue closes.
+   */
+  const appliedWrites = new Map<string, MutationId>();
 
   const railCount = (): number => current.railCount ?? MOUNT_RAIL_COUNT;
   const theme = (): Theme => resolveTheme(current.theme);
@@ -399,6 +411,11 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
           });
         return;
       }
+      case 'first-pass-apply': {
+        const handle = store.propose(effect.proposal);
+        appliedWrites.set(effect.candidateId, handle.mutationId);
+        return;
+      }
       case 'first-pass-withdraw': {
         // THE STORE'S OWN UNDO, AND NOTHING ELSE. `discardMine` is the whole of
         // what a host may take back: it declines a `pending` record itself, and
@@ -414,20 +431,13 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         // wrong: proposing a compensating `delete`, which is the second
         // retraction path `firstpass/queue.ts` refuses in terms — "free to
         // disagree with [the store] about what undoing a create means."
-        // MATCHED ON THE RECORD'S OWN MUTATION rather than on a mutation id this
-        // shell remembered: a remembered map is a second copy of the store's
-        // bookkeeping, free to drift, and `WriteRecord` carries the mutation.
-        const { candidate } = effect;
-        const record = store.getSnapshot().writes.find((each) => {
-          const { mutation } = each;
-          return (
-            mutation.op === 'create' &&
-            mutation.kind === candidate.kind &&
-            mutation.from === candidate.from &&
-            mutation.to === candidate.to
-          );
-        });
-        if (record !== undefined) store.discardMine(record.mutationId);
+        // BY THE WRITE'S OWN IDENTITY. See `appliedWrites`: a structural match on
+        // the create's fields cannot tell this answer's write from another
+        // candidate proposing the same pair, or from an older failed one.
+        const mutationId = appliedWrites.get(effect.candidateId);
+        if (mutationId === undefined) return;
+        appliedWrites.delete(effect.candidateId);
+        store.discardMine(mutationId);
         return;
       }
     }
@@ -796,6 +806,15 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // theme to the root still resolves the chooser's tokens there.
     const floating = floatingChooser();
     if (floating !== null) (surface.firstElementChild ?? surface).append(floating);
+    // A BUNDLE TAKEN AWAY MID-FLIGHT CLOSES THE SURFACE. `update()` may remove
+    // `firstPass` while a scan is out or a queue is up; the overlay would then
+    // stop being drawn while the phase stayed open — and the phase is what makes
+    // the keydown handler hand every key to a queue that is no longer on screen,
+    // with no control left to close it. One dispatch, and the guard below makes
+    // it fire once.
+    if (current.firstPass === undefined && state.firstPass.phase.kind !== 'closed') {
+      dispatch({ kind: 'first-pass', command: { kind: 'close' } });
+    }
     const overlay = firstPassOverlay();
     if (overlay !== null) {
       (surface.firstElementChild ?? surface).append(overlay);
@@ -895,7 +914,24 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     if (overlay === null && firstPassWas !== 'closed') {
       const back = focusBeforeFirstPass;
       focusBeforeFirstPass = null;
-      if (back !== null) focusIn(null, back);
+      appliedWrites.clear();
+      if (back !== null) {
+        focusIn(null, back);
+      } else {
+        // NOTHING KEYED HELD FOCUS, WHICH IS THE ORDINARY CASE. §17a's entry is
+        // a button and carries no `data-ig-key`, so a reader who tabbed to it
+        // and pressed it leaves nothing for `focusIn` to find — and focus on
+        // the document body reaches no listener at all, because the keydown
+        // listener is on the mount's element. The entry is the control they
+        // came in through, so it is where they come back to.
+        // ONE FALLBACK, NOT TWO: an earlier revision also recorded WHICH control
+        // held focus, which a mutation test showed could never differ — the
+        // queue opens from this one control and no other, so the recorded answer
+        // was always the fallback's answer.
+        surface
+          .querySelector<HTMLElement>(`[${COMMAND_ATTRIBUTE}="first-pass"]`)
+          ?.focus({ preventScroll: true });
+      }
     }
     firstPassWas = state.firstPass.phase.kind;
     searchWasOpen = search !== null;

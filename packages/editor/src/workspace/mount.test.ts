@@ -1160,6 +1160,99 @@ describe('the first pass, composed behind §17a’s entry', () => {
     });
   });
 
+  it('hands focus back to the control the reader came in through', async () => {
+    // §17a's entry carries no `data-ig-key`, so a keyboard user who tabbed to it
+    // left `focusedKey()` null — and the queue then had nothing to hand focus
+    // back to. Focus on the body reaches no listener, because the keydown
+    // listener is on the mount's element, so the surface would take no key at
+    // all until the reader clicked it.
+    const page = await firstPassPage();
+    try {
+      const entry = page.control('first-pass');
+      assert.ok(entry !== null);
+      entry.focus();
+      assert.equal(page.win.document.activeElement, entry);
+      page.click(entry);
+      await flush();
+      await page.answer();
+
+      press(page, 'Escape');
+      await flush();
+      const active = page.win.document.activeElement;
+      assert.notEqual(active, page.win.document.body, 'focus was left on the body');
+      assert.ok(page.element.contains(active), 'focus was left outside the mount');
+      assert.equal(
+        active?.getAttribute('data-ig-command'),
+        'first-pass',
+        'focus did not return to the entry',
+      );
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('closes itself when the host takes the option away mid-queue', async () => {
+    // `update()` may remove the bundle while a queue is up. The overlay stops
+    // being drawn either way; what must not survive is the PHASE, which is what
+    // hands every key to a queue that is no longer on screen — with no control
+    // left to close it.
+    const page = await firstPassPage();
+    try {
+      await open(page);
+      assert.equal(page.handle.state.firstPass.phase.kind, 'open');
+      page.handle.update({ firstPass: undefined });
+      await flush();
+      await flush();
+      assert.equal(overlayOf(page), null);
+      assert.equal(page.handle.state.firstPass.phase.kind, 'closed', 'the phase stayed open');
+      // And the workspace takes keys again.
+      page.rows()[0]?.focus();
+      press(page, 'r');
+      await flush();
+      assert.equal(page.handle.state.draft.source, '1', 'the workspace stayed keyboard-dead');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('withdraws the write this answer made, not another with the same pair', async () => {
+    // Two detectors proposing the same pair is explicitly supported, so the
+    // create's own fields do not identify a write. Here an older FAILED record
+    // carries the same triple as the live one.
+    const twins: readonly Candidate[] = [
+      { id: 'left', kind: 'blocked-by', from: '1', to: '2', evidence: [] },
+      { id: 'right', kind: 'blocked-by', from: '1', to: '2', evidence: [] },
+    ];
+    const page = await firstPassPage(twins);
+    try {
+      await open(page);
+      press(page, 'y');
+      await flush();
+      await page.source.whenPending();
+      page.source.settleNext({ outcome: 'rejected', reason: 'the issue body is locked' });
+      await flush();
+      const older = page.store.getSnapshot().writes[0]?.mutationId;
+      assert.ok(older !== undefined, 'the first answer left no record');
+
+      press(page, 'y');
+      await flush();
+      await page.source.whenPending();
+      await flush();
+      assert.equal(page.store.getSnapshot().writes.length, 2);
+
+      // Undo the SECOND answer. The first record must survive it.
+      press(page, 'Backspace');
+      await flush();
+      const left = page.store.getSnapshot().writes.map((write) => write.mutationId);
+      assert.ok(left.includes(older), 'the undo discarded the older record instead');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
   it('is a modal over the workspace, and says so', async () => {
     const page = await firstPassPage();
     try {
