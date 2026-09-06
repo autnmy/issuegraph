@@ -505,8 +505,14 @@ describe('the graph projection', () => {
     for (const key of built.navigable) {
       assert.ok(focusable.has(key), `${key} is navigable but is not drawn`);
     }
-    // The fixture's duplicate is exactly the key that used to vanish.
-    assert.ok(focusable.has('106'), 'the duplicate was published and not drawn');
+    // The three kinds of key the column cannot draw, and each used to go missing
+    // by its own route: a runner-held slot, a duplicate, and — the one two
+    // partial rules both skipped — an ordinary off-order relationship endpoint,
+    // which is neither a slot nor an exclusion.
+    for (const key of ['105', '106', 'other/repo#7', '107']) {
+      assert.ok(focusable.has(key), `${key} is drawn nowhere in the column`);
+      assert.ok(built.focusOrder.includes(key), `${key} cannot be reached by keyboard`);
+    }
   });
 
   it('offers lateral neighbours from the SPINE outward', () => {

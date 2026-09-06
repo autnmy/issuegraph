@@ -149,12 +149,22 @@ describe('the host-facts port', () => {
     // reasons inside it.
     const markup = renderViewer(hostedFixtureDocument).markup;
     assert.match(markup, /<span class="ig-badge" data-hold="claimed">claimed<\/span>/);
-    assert.match(markup, /<p class="ig-footer-title">2 held by the runner, not the graph<\/p>/);
+    // THE HEADING COVERS BOTH FAMILIES. §16a's own group lists a duplicate
+    // under "held by the runner", but §16d's table is explicit that a duplicate
+    // is a different fact — canonical elsewhere, never worked — so that wording
+    // said something untrue about half the rows beneath it.
+    assert.match(
+      markup,
+      /<p class="ig-footer-title">2 outside the order — held by the runner, or never worked<\/p>/,
+    );
     assert.match(markup, /<span class="ig-footer-labels">claimed<\/span>/);
     // With no host words the labels are simply absent, and the heading is what
     // it always was.
     const bare = renderViewer(fixtureDocument).markup;
-    assert.match(bare, /<p class="ig-footer-title">2 held by the runner, not the graph<\/p>/);
+    assert.match(
+      bare,
+      /<p class="ig-footer-title">2 outside the order — held by the runner, or never worked<\/p>/,
+    );
     assert.equal(bare.includes('ig-footer-labels'), false);
   });
 

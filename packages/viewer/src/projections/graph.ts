@@ -54,7 +54,15 @@ import {
 import { type LateralNeighbours, type Scene, resolveFocusKey } from '../scene.ts';
 import { type Theme, resolveTheme } from '../theme.ts';
 import { type EdgeTerminal, dashArrayFor, treatmentFor } from '../vocabulary.ts';
-import { type SceneOptions, excludedRow, footerRow, isFooterSlot, slotRow } from './linear.ts';
+import {
+  type SceneOptions,
+  asideRow,
+  excludedRow,
+  footerHeading,
+  footerRow,
+  isFooterSlot,
+  slotRow,
+} from './linear.ts';
 
 /**
  * The node budget, from the design's scale table. Above the first threshold the
@@ -527,34 +535,45 @@ function footerGroup(
   options: SceneOptions,
   focused: string | null,
 ): ElementSpec | null {
+  const entries = footerKeys(document, layout, { ...options, focused });
+  if (entries.length === 0) return null;
   const slots = document.order.slots.filter((slot) => layout.footer.includes(slot.lead));
-  // AND THE EXCLUSIONS THE COLUMN CANNOT DRAW. In compact mode the gutters are
-  // dropped, so what would have sat in them joins `layout.footer` — and an
-  // exclusion is not a slot, so a group built from slots alone published every
-  // duplicate as a navigation target and drew none of them. That is exactly the
-  // class this projection has re-found three times: a key in the focus index
-  // with no element behind it. The membership test is `layout.footer`, once,
-  // for both kinds.
-  const excluded = document.order.excluded.filter((exclusion) =>
-    layout.footer.includes(exclusion.key),
-  );
-  if (slots.length === 0 && excluded.length === 0) return null;
   const labels = footerLabels(slots);
-  const withFocus: SceneOptions = { ...options, focused };
   return element('section', { class: 'ig-footer' }, [
     element('div', { class: 'ig-footer-head' }, [
-      element('p', { class: 'ig-footer-title' }, [
-        `${String(slots.length + excluded.length)} held by the runner, not the graph`,
-      ]),
+      element('p', { class: 'ig-footer-title' }, [footerHeading(entries.length)]),
       labels === '' ? null : element('span', { class: 'ig-footer-labels' }, [labels]),
     ]),
-    element('ol', { class: 'ig-list', 'aria-label': 'held outside the order' }, [
-      ...slots.map((slot) => footerRow(document, slot, withFocus)),
-      ...excluded.map((exclusion) =>
-        excludedRow(document, exclusion.key, exclusion.canonical, withFocus),
-      ),
-    ]),
+    element('ol', { class: 'ig-list', 'aria-label': 'held outside the order' }, entries),
   ]);
+}
+
+/**
+ * A row for EVERY key the canvas drew nowhere, in the layout's own order.
+ *
+ * DERIVED FROM `layout.footer` AND NOTHING ELSE, which is the whole correction.
+ * A group built from `order.slots` covered the runner-held ones; adding
+ * `order.excluded` covered the duplicates; and an ordinary off-order
+ * relationship endpoint — an open blocker, a closed split origin — is neither,
+ * so in compact mode, where the gutters are not drawn, it was in
+ * `layout.footer` and rendered by nothing at all. Two partial rules chasing one
+ * set is how the key that belongs to neither goes missing, so there is one
+ * rule: the layout says what it did not draw, and every one of those gets a row.
+ */
+function footerKeys(
+  document: NormalizedDocument,
+  layout: GraphLayout,
+  options: SceneOptions,
+): readonly ElementSpec[] {
+  return layout.footer.map((key) => {
+    const slot = document.order.slots.find((candidate) => candidate.lead === key);
+    if (slot !== undefined) return footerRow(document, slot, options);
+    const exclusion = document.order.excluded.find((candidate) => candidate.key === key);
+    if (exclusion !== undefined) {
+      return excludedRow(document, key, exclusion.canonical, options);
+    }
+    return asideRow(document, key, options);
+  });
 }
 
 export function graphScene(document: NormalizedDocument, rawOptions: GraphOptions = {}): Scene {
@@ -683,7 +702,11 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
   const represented = new Set<string>();
   for (const slot of document.order.slots) for (const member of slot.members) represented.add(member);
   if (!refused) {
-    for (const key of layout.nodes.keys()) {
+    // THE FOOTER GROUP'S KEYS TOO. Its rows are drawn beneath the stage rather
+    // than on a column, so a set derived from the laid-out nodes alone reached
+    // none of them — and in compact mode, where the gutters are not drawn, that
+    // is every off-order endpoint the panel still lists.
+    for (const key of [...layout.nodes.keys(), ...layout.footer]) {
       if (!focusOrder.includes(key) && !lateral.has(key) && !represented.has(key)) focusOrder.push(key);
     }
   }

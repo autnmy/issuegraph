@@ -415,7 +415,16 @@ function cardHeight(
   // gutter card is the ONLY mark this projection draws for its issue, and §16b
   // prints "open · not eligible" on it in as many words. Counted here or the
   // sentence is drawn over the card beneath.
-  const sentences = onSpine ? 0 : notes(document, key).length;
+  //
+  // MEASURED, NOT COUNTED, and the difference is not academic: a hold reason is
+  // an arbitrary host string and `.ig-hold` wraps it inside a fixed-width
+  // gutter, so charging one line each under-reserved every note that runs to
+  // two or three — and the card beneath was then drawn over the overflow while
+  // the arcs stayed attached to the box the layout thought it had. The same
+  // width-based count the title takes.
+  const sentences = onSpine
+    ? 0
+    : notes(document, key).reduce((total, note) => total + lines(note), 0);
   return pad + lines(title) * line + line + badgeBlock + (sentences === 0 ? 0 : gap + sentences * line);
 }
 

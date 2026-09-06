@@ -68,6 +68,20 @@ export interface SceneOptions {
  * the graph in any sense a rank could express, so giving it a position would
  * claim work is queued that nothing can start.
  */
+/**
+ * What the footer group calls itself.
+ *
+ * IT COVERS TWO FAMILIES, AND SAYING "held by the runner" COVERED ONE. §16a's
+ * own group lists a duplicate under that heading, but §16d's table is explicit
+ * that a duplicate is a different fact — "canonical elsewhere, never worked" —
+ * from a claim or a park. A document with one duplicate and no tracker hold
+ * therefore read "1 held by the runner" about an issue no runner has touched.
+ * Shared by both projections, so the two cannot word one group two ways.
+ */
+export function footerHeading(count: number): string {
+  return `${String(count)} outside the order — held by the runner, or never worked`;
+}
+
 export function isFooterSlot(slot: ViewerSlot): boolean {
   return slot.holds.some((hold) => hold.family === 'tracker');
 }
@@ -244,6 +258,40 @@ export function excludedRow(
   );
 }
 
+/**
+ * A footer entry that is neither a slot nor an exclusion: an ordinary issue the
+ * canvas had no column for.
+ *
+ * ONLY THE COMPACT GRAPH PRODUCES ONE. It draws no gutters, so an off-order
+ * relationship endpoint — an open blocker, a closed split origin — has nowhere
+ * on the picture to be, and vanishing is not an option: a smaller view must not
+ * be a lying one. It takes the same one-line shape as every other footer entry,
+ * because the reason it is down here is the same one — it is not a fact about
+ * the order.
+ */
+export function asideRow(
+  document: NormalizedDocument,
+  key: string,
+  options: SceneOptions,
+): ElementSpec {
+  const issue = document.byKey.get(key);
+  return element(
+    'li',
+    {
+      class: 'ig-footer-row',
+      'data-ig-key': key,
+      'aria-current': options.selected === key ? 'true' : 'false',
+      'aria-label': `${issue?.title ?? key} — ${key} — outside the order`,
+      tabindex: options.focused === key ? 0 : -1,
+    },
+    [
+      element('span', { class: 'ig-badge' }, ['outside the order']),
+      element('span', { class: 'ig-title' }, [issue?.title ?? key]),
+      issue === undefined ? null : identity(issue),
+    ],
+  );
+}
+
 /** The one count chip isolated issues collapse into (they carry no information as rows). */
 function isolatedChip(count: number): ElementSpec | null {
   if (count === 0) return null;
@@ -311,9 +359,7 @@ export function linearScene(
       ? null
       : element('section', { class: 'ig-footer' }, [
           element('div', { class: 'ig-footer-head' }, [
-            element('p', { class: 'ig-footer-title' }, [
-              `${String(footerEntries.length)} held by the runner, not the graph`,
-            ]),
+            element('p', { class: 'ig-footer-title' }, [footerHeading(footerEntries.length)]),
             labels === '' ? null : element('span', { class: 'ig-footer-labels' }, [labels]),
           ]),
           element(

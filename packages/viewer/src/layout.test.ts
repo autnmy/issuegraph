@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { normalizeDocument } from './document.ts';
-import { edgeGeometry, layoutGraph } from './layout.ts';
+import { edgeGeometry, layoutGraph, measureLabel } from './layout.ts';
 import { fixtureDocument } from './testing/fixtures.ts';
 import { defaultTheme, extendTheme } from './theme.ts';
 
@@ -127,6 +127,49 @@ describe('layoutGraph', () => {
     assert.equal(layout.spineOrder.includes('105'), false);
     assert.equal(layout.nodes.get('105')?.column, 'left');
     assert.deepEqual([...layout.footer], []);
+  });
+
+  it('reserves the room a WRAPPED gutter note needs, not one line per note', () => {
+    // A hold reason is an arbitrary host string and `.ig-hold` wraps it inside a
+    // fixed-width gutter, so charging one line each under-reserved every note
+    // that runs to two or three — and the card beneath was drawn over the
+    // overflow while the arcs stayed attached to the box the layout thought it
+    // had.
+    const long =
+      'matches none of the ordered queries the repository configures, so the pick order never reaches it at all and it stays outside the order indefinitely';
+    const { document } = normalizeDocument({
+      issues: [
+        { key: 'a', title: 'Ranked', open: true, priority: 2 },
+        { key: 'b', title: 'Blocker with a long reason', open: true, priority: 2 },
+      ],
+      edges: [{ field: 'blocked-by', from: 'a', to: 'b' }],
+      order: {
+        slots: [
+          { rank: 1, lead: 'a', members: ['a'], ready: true, holds: [] },
+          {
+            rank: null,
+            lead: 'b',
+            members: ['b'],
+            ready: false,
+            holds: [{ family: 'tracker', reason: long, label: 'not eligible' }],
+          },
+        ],
+        excluded: [],
+      },
+      cycles: [],
+    });
+    const layout = layoutGraph(document, defaultTheme);
+    const box = layout.nodes.get('b');
+    assert.ok(box !== undefined, 'the blocker is not in the gutter');
+
+    const line = defaultTheme.metrics['--ig-card-line'];
+    const inset = defaultTheme.metrics['--ig-space'];
+    const wrapped = Math.ceil(measureLabel(defaultTheme, long) / (box.width - inset * 2));
+    assert.ok(wrapped > 1, 'the reason fits on one line, so this proves nothing');
+    assert.ok(
+      box.height >= inset * 2 + wrapped * line,
+      `${String(box.height)}px reserved for a note needing ${String(wrapped)} lines`,
+    );
   });
 
   it('leaves a running job that already holds a slot where its slot puts it', () => {
