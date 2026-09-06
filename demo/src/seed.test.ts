@@ -1,13 +1,20 @@
 /**
- * The dense layer's coverage claim, executable.
+ * The seed's two claims, executable.
  *
- * `seed.ts` says the generated layer exists so the packages are exercised at
- * the size they are built for: a canvas that refuses, capsules to focus, a
+ * THE LANDING STATE IS THE §16a COMP. `seed.ts` says the page lands on the
+ * scenario the design's frames were drawn against — the same issues, numbers,
+ * ranks, priorities, readiness states and relationships. Each of those is a
+ * property of the seed AND of the derivation over it, and a careless edit to
+ * either quietly turns the comp back into an argument. So the frame's rows are
+ * pinned here, row for row, against what the derivation produces from the seed
+ * rather than against what the seed declares.
+ *
+ * THE DENSE LAYER STILL REACHES EVERYTHING IT EXISTED FOR. It moved behind a
+ * control, and `seed.ts` says it exists so the packages are exercised at the
+ * size they are built for: a canvas that refuses, capsules to focus, a
  * component too large even when focused, an audit with something to find, a
- * rail longer than its window. Each of those is a property of the seed that a
- * careless edit can quietly remove, so each is pinned here against the
- * package constants that decide it rather than against numbers copied from
- * them.
+ * rail longer than its window. Each is pinned against the package constants
+ * that decide it rather than against numbers copied from them.
  */
 
 import assert from 'node:assert/strict';
@@ -18,32 +25,214 @@ import { auditDocument, scaleLadder, INITIAL_SCALE_STATE, RAIL_WINDOW } from '@i
 import { GRAPH_NODE_BUDGET } from '@issuegraph/viewer';
 
 import { projectDocument } from './document.ts';
-import { explainDocument } from './order.ts';
+import { type ExplainedRow, explainDocument } from './order.ts';
 import {
+  COMP_ORDER,
+  DEFAULT_SCENARIO,
   DENSE_FIRST_REF,
   DENSE_ISOLATED_COUNT,
   DENSE_LARGEST_COMPONENT,
-  coverageSeed,
+  SCENARIOS,
+  type ScenarioName,
+  UNRESOLVABLE_REF,
+  backlogSeed,
+  compSeed,
   denseSeed,
-  seedDocument,
-  seedHolds,
 } from './seed.ts';
 
-const seeded = seedDocument();
-const explained = explainDocument(seeded, seedHolds());
-const { viewer, audit } = projectDocument(explained, seeded);
+/** One scenario, derived and projected the way the page does it. */
+function load(name: ScenarioName) {
+  const scenario = SCENARIOS[name];
+  const document = scenario.document();
+  const explained = explainDocument(document, scenario.holds, scenario.ranking);
+  return { document, explained, ...projectDocument(explained, document) };
+}
 
-describe('the seed is deterministic and layered', () => {
-  it('produces the same document on every call', () => {
-    assert.deepEqual(seedDocument(), seeded);
+function rowFor(rows: readonly ExplainedRow[], ref: string): ExplainedRow {
+  const found = rows.find((row) => row.issue.ref === ref);
+  assert.ok(found !== undefined, `no row for #${ref}`);
+  return found;
+}
+
+describe('the landing state is the §16a comp', () => {
+  const comp = load('comp');
+
+  it('lands on the comp, and the backlog is the comp with the dense layer beneath it', () => {
+    assert.equal(DEFAULT_SCENARIO, 'comp');
+    assert.deepEqual(SCENARIOS.comp.document(), compSeed());
+    const backlog = SCENARIOS.backlog.document();
+    assert.deepEqual(backlog.issues.slice(0, comp.document.issues.length), comp.document.issues);
+    assert.deepEqual(backlog, backlogSeed());
   });
 
-  it('keeps the coverage seed below the dense layer, with no reference shared', () => {
-    const coverage = coverageSeed();
+  it('lists every comp issue in the frames’ order exactly once', () => {
+    // The base ranking is the host's own `ORDER BY`, and a reference it does
+    // not list sorts last within its tier with a diagnostic — a row that would
+    // then be placed by an accident of numbering rather than by the frame.
+    assert.deepEqual([...COMP_ORDER].sort(), comp.document.issues.map((issue) => issue.ref).sort());
+    assert.equal(new Set(COMP_ORDER).size, COMP_ORDER.length);
+  });
+
+  it('runs the spine top to bottom as §16a draws it', () => {
+    // The frame, top to bottom: #488 · the unit · #501 · #503 · #530 · #520 ·
+    // #487 — then the serialize group's third member, which the frame says
+    // exists ("group of 3") and places below the drawn rows ("19 more ranked").
+    const spine = comp.explained.rows.filter((row) => row.placement === 'spine');
+    assert.deepEqual(
+      spine.map((row) => row.issue.ref),
+      ['488', '512', '514', '501', '503', '530', '520', '487', '505'],
+    );
+    // The viewer numbers READY slots only, so where the frame prints `2` on
+    // the blocked unit the viewer prints `—` and the numbering closes up. That
+    // is the viewer's own rule — "printing one would claim work is queued that
+    // nothing can start" — and the spec's `ready` (§6.2) agrees with it; the
+    // frame's hollow station on a blocked unit is the one place the two read
+    // differently, and the comp is what makes that a glance rather than an
+    // argument. Pinned as the viewer draws it.
+    assert.deepEqual(
+      comp.viewer.order.slots.map((slot) => [slot.rank, slot.members.join('+')]),
+      [
+        [1, '488'],
+        [null, '512+514'],
+        [2, '501'],
+        [3, '503'],
+        [null, '530'],
+        [4, '520'],
+        [5, '487'],
+        [6, '505'],
+        // The footer, in the derivation's order: #602 first, promoted to P1
+        // by the #530 it blocks; the rest on the default tier.
+        [null, '602'],
+        [null, '499'],
+        [null, '533'],
+        [null, '541'],
+      ],
+    );
+  });
+
+  it('promotes #488 from P3 to the unit’s P0, in the spec notation, naming the dependent', () => {
+    const row = rowFor(comp.explained.rows, '488');
+    assert.equal(row.issue.priority, 3);
+    assert.equal(row.effectivePriority, 0);
+    assert.deepEqual(row.provenance, { form: 'promoted', declared: 3, effective: 0, from: '512' });
+    const drawn = comp.viewer.issues.find((issue) => issue.key === '488')?.provenance;
+    assert.ok(drawn?.kind === 'promotion');
+    assert.match(drawn.notation, /P3.*0/);
+    assert.deepEqual(drawn.promotedBy, ['512']);
+    assert.equal(row.station, 'filled', 'rank 1 is ready now');
+  });
+
+  it('holds the unit at ONE slot behind #488, with the duplicate excluded beside it', () => {
+    const unit = comp.viewer.order.slots.find((slot) => slot.members.includes('512'));
+    assert.ok(unit !== undefined);
+    assert.deepEqual([...unit.members].sort(), ['512', '514']);
+    assert.equal(unit.ready, false);
+    // One cause, stated once per member: #512's own blocker, and the same one
+    // relayed to #514 as its groupmate's — a unit is ready as a whole or not.
+    assert.ok(unit.holds.length > 0);
+    for (const hold of unit.holds) {
+      assert.equal(hold.family, 'graph');
+      assert.match(hold.reason, /blocked by 488/);
+    }
+    for (const ref of ['512', '514']) {
+      assert.equal(rowFor(comp.explained.rows, ref).togetherGroupSize, 2);
+      assert.equal(rowFor(comp.explained.rows, ref).station, 'dashed');
+    }
+    assert.deepEqual(comp.viewer.order.excluded, [{ key: '455', canonical: '512', reason: 'duplicate-of' }]);
+  });
+
+  it('computes the serialize group of three without any issue writing it down', () => {
+    // Groups are never written down (§6.1): the document holds two edges, and
+    // the frame's "group of 3" is the reader's answer over them.
+    const written = comp.document.edges.filter((edge) => edge.kind === 'serialize-with');
+    assert.equal(written.length, 2);
+    for (const ref of ['501', '503', '505']) {
+      assert.equal(rowFor(comp.explained.rows, ref).serializeGroupSize, 3, `#${ref}`);
+      assert.equal(rowFor(comp.explained.rows, ref).ready, true, `#${ref} — nobody in the group is claimed`);
+    }
+    // #501 goes first and #503 waits for it: rank 3 is hollow, after rank 1's slot.
+    assert.equal(rowFor(comp.explained.rows, '501').station, 'filled');
+    assert.equal(rowFor(comp.explained.rows, '503').station, 'hollow');
+  });
+
+  it('holds #530 inline at its would-be rank, behind a blocker the order never reaches', () => {
+    const held = rowFor(comp.explained.rows, '530');
+    assert.equal(held.placement, 'spine');
+    assert.equal(held.showRank, false);
+    assert.deepEqual(held.holds.map((hold) => [hold.family, hold.label]), [['graph', 'blocked']]);
+    // The blocker is open and outside the order: the frame's "open · not
+    // eligible". A pick order this host cannot run is stood in for by the
+    // host's own hold table, so it lands in the footer, not on the spine.
+    const blocker = rowFor(comp.explained.rows, '602');
+    assert.equal(blocker.issue.state, 'open');
+    assert.equal(blocker.placement, 'footer');
+    assert.ok(blocker.holds.some((hold) => hold.family === 'executor' && hold.label === 'not eligible'));
+  });
+
+  it('declares a priority only where the frame draws one', () => {
+    // The frame prints a tier on the spine rows and none on the `now` row, the
+    // footer group, the duplicate or the closed origin. The one row the frame
+    // does not draw, #505, is declared P3 so it ranks below everything drawn.
+    const declared = comp.document.issues.filter((issue) => issue.priority !== undefined).map((issue) => issue.ref);
+    assert.deepEqual(declared.sort(), ['488', '501', '503', '505', '512', '514', '530']);
+  });
+
+  it('reads the two undeclared spine rows as the spec default tier, #520 ahead of #487', () => {
+    for (const ref of ['520', '487']) {
+      const row = rowFor(comp.explained.rows, ref);
+      assert.equal(row.issue.priority, undefined);
+      assert.deepEqual(row.provenance, { form: 'default-tier', priority: 2 });
+    }
+    assert.ok(rowFor(comp.explained.rows, '520').rank < rowFor(comp.explained.rows, '487').rank);
+  });
+
+  it('collapses the runner-held rows into the footer with no rank slot', () => {
+    // The frame's `now` row and its footer group, "held by the runner, not
+    // the graph". The viewer has no `now` station, so #499 is an active claim
+    // like #533 and sits with it.
+    const footer = comp.explained.rows.filter(
+      (row) => row.placement === 'footer' && row.issue.state === 'open' && !row.holds.some((hold) => hold.label === 'duplicate'),
+    );
+    assert.deepEqual(
+      footer.map((row) => [row.issue.ref, row.holds.find((hold) => hold.family === 'executor')?.label]).sort(),
+      [
+        ['499', 'working'],
+        ['533', 'claimed'],
+        ['541', 'parked'],
+        ['602', 'not eligible'],
+      ],
+    );
+    for (const row of footer) assert.equal(row.showRank, false, `#${row.issue.ref}`);
+  });
+
+  it('keeps the closed split origin out of the order and reachable by provenance', () => {
+    const origin = comp.document.issues.find((issue) => issue.ref === '470');
+    assert.equal(origin?.state, 'closed');
+    assert.ok(!comp.viewer.order.slots.some((slot) => slot.members.includes('470')));
+    assert.ok(comp.document.edges.some((edge) => edge.kind === 'decomposed-from' && edge.from === '488' && edge.to === '470'));
+  });
+
+  it('carries every edge type in the comp alone', () => {
+    const kinds = new Set(comp.document.edges.map((edge) => edge.kind));
+    assert.deepEqual([...kinds].sort(), [...EDGE_FIELDS].sort());
+  });
+});
+
+describe('the seed is deterministic and layered', () => {
+  const seeded = backlogSeed();
+
+  it('produces the same document on every call', () => {
+    assert.deepEqual(backlogSeed(), seeded);
+    assert.deepEqual(compSeed(), compSeed());
+  });
+
+  it('keeps the comp’s numbers above the dense layer’s range, with no reference shared', () => {
+    const comp = compSeed();
     const dense = denseSeed();
-    for (const issue of coverage.issues) assert.ok(Number(issue.ref) < DENSE_FIRST_REF, issue.ref);
+    const denseLast = Math.max(...dense.issues.map((issue) => Number(issue.ref)));
     for (const issue of dense.issues) assert.ok(Number(issue.ref) >= DENSE_FIRST_REF, issue.ref);
-    assert.equal(seeded.issues.length, coverage.issues.length + dense.issues.length);
+    for (const issue of comp.issues) assert.ok(Number(issue.ref) > denseLast, issue.ref);
+    assert.equal(seeded.issues.length, comp.issues.length + dense.issues.length);
   });
 
   it('issues no reference twice and points every dense edge at a seeded issue', () => {
@@ -51,12 +240,37 @@ describe('the seed is deterministic and layered', () => {
     assert.equal(refs.size, seeded.issues.length);
     for (const edge of denseSeed().edges) {
       assert.ok(refs.has(edge.from), `${edge.id} from`);
+      if (edge.to === UNRESOLVABLE_REF) continue;
       assert.ok(refs.has(edge.to), `${edge.id} to`);
     }
+    assert.ok(!refs.has(UNRESOLVABLE_REF), 'the unresolvable reference resolves');
+  });
+
+  it('keeps the comp’s rows at the head of their tiers when the backlog loads', () => {
+    // The backlog is the comp with the dense layer BENEATH it: within a tier
+    // the frames' rows come first, and the generated issues fall in behind
+    // them. A dense row ahead of a comp row of the same effective priority
+    // would mean the ranking had stopped listing the comp first.
+    const { explained } = load('backlog');
+    const spine = explained.rows.filter((row) => row.placement === 'spine');
+    const comp = new Set(compSeed().issues.map((issue) => issue.ref));
+    assert.deepEqual(spine.slice(0, 3).map((row) => row.issue.ref), ['488', '512', '514']);
+    spine.forEach((row, index) => {
+      if (!comp.has(row.issue.ref)) return;
+      for (const earlier of spine.slice(0, index)) {
+        if (comp.has(earlier.issue.ref)) continue;
+        assert.ok(
+          earlier.effectivePriority < row.effectivePriority,
+          `dense #${earlier.issue.ref} sits ahead of comp #${row.issue.ref} in one tier`,
+        );
+      }
+    });
   });
 });
 
 describe('the dense layer reaches the surfaces the sandbox exists for', () => {
+  const { document: seeded, viewer, audit } = load('backlog');
+
   it('is a few hundred issues, most of them edge-free', () => {
     assert.ok(seeded.issues.length >= 250, String(seeded.issues.length));
     const onAnEdge = new Set(seeded.edges.flatMap((edge) => [edge.from, edge.to]));
@@ -80,6 +294,13 @@ describe('the dense layer reaches the surfaces the sandbox exists for', () => {
     assert.notEqual(focused.tier, 'direct', 'the largest component draws when it should refuse');
   });
 
+  it('draws the comp directly, so the landing state is never a refusal', () => {
+    const comp = load('comp');
+    const top = scaleLadder(comp.viewer, INITIAL_SCALE_STATE);
+    assert.equal(top.tier, 'direct', `the comp landed on tier ${top.tier}`);
+    assert.ok(top.nodeCount <= GRAPH_NODE_BUDGET);
+  });
+
   it('offers a component small enough to draw when focused', () => {
     const top = scaleLadder(viewer, INITIAL_SCALE_STATE);
     const small = top.capsules.find((capsule) => capsule.size <= GRAPH_NODE_BUDGET);
@@ -97,6 +318,14 @@ describe('the dense layer reaches the surfaces the sandbox exists for', () => {
     for (const kind of ['cycle', 'dead-duplicate-ref', 'stale-blocker'] as const) {
       assert.ok(kinds.has(kind), `no ${kind} finding`);
     }
+  });
+
+  it('holds one issue on an unresolvable reference, as blocking (§6.7)', () => {
+    const { explained } = load('backlog');
+    const held = explained.rows.filter((row) => row.holds.some((hold) => hold.label === 'unresolvable'));
+    assert.equal(held.length, 1, 'the dense layer no longer ships an unresolvable reference');
+    assert.equal(held[0]?.ready, false);
+    assert.equal(held[0]?.placement, 'spine');
   });
 
   it('is longer than one rail window', () => {

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Issuegraph — the demo sandbox</title>
-<meta name="description" content="The Issuegraph viewer and editor running on a dense in-memory backlog: no tracker, no credentials, no backend. Every edit path works client-side, and a reload restores the seed.">
+<meta name="description" content="The Issuegraph viewer and editor running on an in-memory backlog: the design's own §16 scenario first, a few hundred generated issues on demand. No tracker, no credentials, no backend. Every edit path works client-side, and a reload restores the seed.">
 <meta name="theme-color" content="#0B0D0F">
 <link rel="stylesheet" href="./styles.css">
 <!--
@@ -52,7 +52,7 @@
       <a href="https://github.com/autnmy/issuegraph/tree/main/packages/viewer"><code>@issuegraph/viewer</code></a>
       and
       <a href="https://github.com/autnmy/issuegraph/tree/main/packages/editor"><code>@issuegraph/editor</code></a>
-      on a dense in-memory backlog.
+      on an in-memory backlog.
       <strong>No tracker, no credentials, no backend.</strong>
       Every edit is client-side and saved nowhere; reload to get the seed back.
     </p>
@@ -69,6 +69,14 @@
   <div class="control">
     <span class="control-label" id="canvas-label">Canvas</span>
     <div class="control-row" data-chrome="canvas" role="group" aria-labelledby="canvas-label"></div>
+  </div>
+  <div class="control">
+    <span class="control-label" id="scenario-label">Document</span>
+    <div class="control-row" data-chrome="scenario" role="group" aria-labelledby="scenario-label"></div>
+    <p class="hint">
+      The page lands on the design's §16 scenario. The big backlog is a few hundred generated issues:
+      the canvas refuses, the rail windows, and the audit has findings.
+    </p>
   </div>
   <div class="control">
     <label for="next-outcome">What the tracker answers next</label>
