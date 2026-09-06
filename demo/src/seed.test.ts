@@ -387,4 +387,19 @@ describe('the adoption count is measured, never remembered', () => {
     assert.ok(stated?.note?.text.includes('pick order'));
     assert.equal(adoptionFor(SCENARIOS.adoption, document, true), undefined);
   });
+
+  it('withdraws the day-one sentence the moment a relationship lands', () => {
+    // The line is the host's WORDING and the document's CLAIM. The sandbox is
+    // editable, so a visitor can falsify the claim — and a sentence saying no
+    // issue declares relationships, printed under a relationship, is worse than
+    // no sentence at all.
+    const document = adoptionSeed();
+    const [first, second] = document.issues;
+    assert.ok(first !== undefined && second !== undefined);
+    const declared: GraphDocument = {
+      issues: document.issues,
+      edges: [makeEdge('blocked-by', first.ref, second.ref)],
+    };
+    assert.equal(adoptionFor(SCENARIOS.adoption, declared, false), undefined);
+  });
 });

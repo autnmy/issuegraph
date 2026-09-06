@@ -472,19 +472,26 @@ function adoptionCountsOf(document: GraphDocument): { declaring: number; total: 
 /**
  * What a scenario says about adoption, resolved against the document on screen.
  *
- * The SENTENCE is recorded — it names this host's own configuration and nothing
- * can derive it. The COUNT is derived, here, from the document being drawn,
- * because it is a property of that document and the store lets a visitor change
- * it. A count captured when the module loaded described a backlog that no
- * longer exists the moment the first relationship is added or deleted.
+ * THE SENTENCE IS RECORDED; WHETHER IT IS STILL TRUE IS MEASURED. Its wording
+ * names this host's own configuration and nothing can derive it — but it also
+ * makes a claim about the document ("no issue here declares relationships"),
+ * and the store lets a visitor falsify that claim by adding one. So the note is
+ * carried only while its own predicate holds, from the same measurement the
+ * count comes from: a line asserting what the rows beneath it disprove is worse
+ * than no line at all.
+ *
+ * The same rule the count already follows, and the last member of the class
+ * this file kept meeting one at a time — a fact written down beside a document
+ * it describes, never re-read against it.
  */
 export function adoptionFor(
   scenario: Scenario,
   document: GraphDocument,
   noteDismissed: boolean,
 ): Adoption | undefined {
-  const counts = scenario.adoption?.counted === true ? adoptionCountsOf(document) : undefined;
-  const note = noteDismissed ? undefined : scenario.adoption?.note;
+  const measured = adoptionCountsOf(document);
+  const counts = scenario.adoption?.counted === true ? measured : undefined;
+  const note = noteDismissed || measured.declaring > 0 ? undefined : scenario.adoption?.note;
   if (counts === undefined && note === undefined) return undefined;
   return {
     ...(counts === undefined ? {} : { counts }),
