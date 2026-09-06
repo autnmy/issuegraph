@@ -454,6 +454,36 @@ describe('the §16g states are reachable from the sandbox, with their affordance
       );
       refuse = false;
 
+      // EVERY STATE A READ REFUTES, not whichever one was last reported. The
+      // lift used to be spelled per state, so `stale` was fixed and `error` was
+      // still holding a five-hour-old stamp over a read that had just landed.
+      for (const backdated of ['importing', 'error', 'stale'] as const) {
+        await chooseState(backdated);
+        click('#workspace [data-ig-command="refresh"]', `the ${backdated} state drew no refresh`);
+        await settle();
+        await settle();
+        assert.equal(conditionNow(), null, `a landed read left the ${backdated} state standing`);
+        assert.equal(
+          win.document.querySelector('#workspace .ig-freshness')?.getAttribute('data-stale'),
+          'false',
+          `a landed read left the ${backdated} stamp backdated`,
+        );
+      }
+
+      // AND A RETRY IS A READ. It used to clear the state at the click, which is
+      // the same optimism that made a failed refresh look successful.
+      await chooseState('error');
+      refuse = true;
+      click('#workspace [data-ig-command="retry:index"]', 'the error state drew no Retry');
+      await settle();
+      await settle();
+      assert.equal(conditionNow(), 'error', 'a retry that could not read still cleared the error');
+      refuse = false;
+      click('#workspace [data-ig-command="retry:index"]', 'the error state drew no Retry');
+      await settle();
+      await settle();
+      assert.equal(conditionNow(), null, 'a retry that landed left the error standing');
+
       // §16h's line is dismissible, which is the design's own word for it.
       click('[data-chrome="scenario"] [data-ig-value="adoption"]', 'no control for the day-one document');
       await settle();

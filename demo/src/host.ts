@@ -228,6 +228,24 @@ export function showsOrder(state: DemoStateName | undefined): boolean {
   return state !== 'empty';
 }
 
+/**
+ * Whether a landed read refutes what this state claims.
+ *
+ * ONE RULE OVER THE TABLE ABOVE, rather than a lift per state. `importing`,
+ * `error` and `stale` all say something about READING — the index is still
+ * being read, could not be read, was last read a while ago — and each backdates
+ * the stamp to say it. So the states a successful read contradicts are exactly
+ * the states that backdate it, which the table already knows; `live` and
+ * `empty` claim nothing about a read and are not lifted by one.
+ *
+ * Written as a rule because the alternative was arriving one state at a time:
+ * `stale` was lifted, then `error` was found still holding a five-hour-old
+ * stamp over a read that had just succeeded, and `importing` was next.
+ */
+export function liftedByARead(state: DemoStateName): boolean {
+  return OBSERVED_SHIFT_MS[state] > 0;
+}
+
 /** The moment this state's mirror was last read, from the page's own clock. */
 export function observedFor(state: DemoStateName | undefined, observedAt: Date): Date {
   return state === undefined || OBSERVED_SHIFT_MS[state] === 0

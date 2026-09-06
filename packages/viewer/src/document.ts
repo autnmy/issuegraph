@@ -922,9 +922,36 @@ function normalizeCondition(
  * host owns the number — and says so in a diagnostic, exactly as it does for a
  * dangling edge.
  */
+/**
+ * The floors this document puts under an adoption count.
+ *
+ * ONE PLACE, OVER BOTH MEMBERS. Every issue the document carries is an issue
+ * the repository has, and every distinct carrier is an issue that declares —
+ * so each member has a floor, and neither can be below it however small a slice
+ * this document is of the backlog. Stating them together is what stopped this
+ * arriving a comparison at a time: `declaring === 0` was checked, then
+ * `declaring < carriers`, and `total` was next.
+ */
+const ADOPTION_FLOORS: readonly {
+  readonly member: 'declaring' | 'total';
+  readonly floor: (bounds: DocumentBounds) => number;
+  readonly says: string;
+}[] = Object.freeze([
+  { member: 'declaring', floor: (bounds) => bounds.carriers, says: 'already carries' },
+  { member: 'total', floor: (bounds) => bounds.issues, says: 'already holds' },
+]);
+
+/** What the kept document puts a floor under. */
+interface DocumentBounds {
+  /** Distinct issues carrying a relationship — an edge is declared by one end. */
+  readonly carriers: number;
+  readonly issues: number;
+  readonly slots: number;
+}
+
 function normalizeAdoption(
   adoption: Adoption,
-  carriers: number,
+  bounds: DocumentBounds,
   diagnostics: string[],
 ): Adoption | undefined {
   let counts: Adoption['counts'];
@@ -933,20 +960,20 @@ function normalizeAdoption(
     // `declaring <= total` NEEDS NO DOCUMENT TO REFUTE IT. `50 of 48` is
     // unsatisfiable on its face, and a header that prints it is stating
     // something no repository could ever be — so it is refused with the
-    // out-of-range members rather than reported beside them.
+    // out-of-range members rather than reported beside them. The floors below
+    // are the other kind: possible numbers this document happens to disprove,
+    // so they are reported and still drawn.
     if (isCount(declaring) && isCount(total) && declaring <= total) counts = Object.freeze({ declaring, total });
     else diagnostics.push('adoption counts are not two non-negative integers with declaring no greater than total, and were dropped whole');
   }
-  // A LOWER BOUND, WHICH IS WHAT MAKES THIS SOUND ON A SLICE. The document may
-  // be a window onto a bigger backlog, so `declaring` can legitimately exceed
-  // what is drawn here — but it can never be LESS than the carriers already on
-  // screen, whatever the rest of the repository holds. Checking only for zero
-  // was a special case of that, and let `1 of 48` pass over a document showing
-  // two carriers.
-  if (counts !== undefined && counts.declaring < carriers) {
-    diagnostics.push(
-      `adoption states ${String(counts.declaring)} of ${String(counts.total)} declare relationships, but this document already carries ${String(carriers)}`,
-    );
+  if (counts !== undefined) {
+    for (const rule of ADOPTION_FLOORS) {
+      const floor = rule.floor(bounds);
+      if (counts[rule.member] >= floor) continue;
+      diagnostics.push(
+        `adoption states ${String(counts.declaring)} of ${String(counts.total)} declare relationships, but this document ${rule.says} ${String(floor)}`,
+      );
+    }
   }
 
   let note: Adoption['note'];
@@ -985,7 +1012,7 @@ function normalizeAdoption(
 function normalizeHost(
   host: HostFacts | undefined,
   byKey: ReadonlyMap<string, ViewerIssue>,
-  shape: { readonly carriers: number; readonly slots: number },
+  bounds: DocumentBounds,
   diagnostics: string[],
 ): NormalizedHostFacts {
   const running: RunningJob[] = [];
@@ -1029,14 +1056,14 @@ function normalizeHost(
   // panel would then carry a notice contradicting the rows beneath it. The
   // number and the sentence are still the host's; the disagreement is a fact
   // about the DATA, which is what a diagnostic is for.
-  if (condition?.kind === 'empty' && shape.slots > 0) {
+  if (condition?.kind === 'empty' && bounds.slots > 0) {
     diagnostics.push(
-      `an empty condition was stated over an order carrying ${String(shape.slots)} slots`,
+      `an empty condition was stated over an order carrying ${String(bounds.slots)} slots`,
     );
   }
 
   const adoption =
-    host?.adoption === undefined ? undefined : normalizeAdoption(host.adoption, shape.carriers, diagnostics);
+    host?.adoption === undefined ? undefined : normalizeAdoption(host.adoption, bounds, diagnostics);
 
   return Object.freeze({
     ...(concurrencyCap === undefined ? {} : { concurrencyCap }),
@@ -1097,7 +1124,12 @@ export function normalizeDocument(input: ViewerDocument): NormalizeResult {
   // one issue are one declaring issue, and counting edges would report a
   // contradiction where there is none.
   const carriers = new Set(edges.map((edge) => edge.from));
-  const host = normalizeHost(input.host, byKey, { carriers: carriers.size, slots: slots.length }, diagnostics);
+  const host = normalizeHost(
+    input.host,
+    byKey,
+    { carriers: carriers.size, issues: issues.length, slots: slots.length },
+    diagnostics,
+  );
   // A RUNNING ISSUE IS DRAWN — as the NOW row — so it is not "in no slot", even
   // when the host put it in none. Counting it would make the isolated chip
   // state a falsehood about a row the reader can see above the order.

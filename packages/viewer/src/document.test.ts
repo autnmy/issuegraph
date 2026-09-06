@@ -813,6 +813,21 @@ describe('normalizeDocument: the host facts', () => {
     );
     // And a slice may legitimately show fewer carriers than the host counts.
     assert.deepEqual(over(30, [{ from: '1', to: '2' }]).diagnostics, []);
+
+    // BOTH MEMBERS HAVE A FLOOR, and the point of stating them together is that
+    // neither can be forgotten. `0 of 0` over three visible issues is as
+    // impossible as `1 of 48` over two visible carriers, and used to pass.
+    const noTotal = normalizeDocument({
+      issues: [issue('1'), issue('2'), issue('3')],
+      edges: [],
+      order: emptyOrder,
+      cycles: [],
+      host: { adoption: { counts: { declaring: 0, total: 0 } } },
+    });
+    assert.deepEqual(noTotal.document.host.adoption, { counts: { declaring: 0, total: 0 } });
+    assert.deepEqual(noTotal.diagnostics, [
+      'adoption states 0 of 0 declare relationships, but this document already holds 3',
+    ]);
   });
 
   it('keeps an adoption note with its link and dismiss word, and drops an unlinkable href', () => {

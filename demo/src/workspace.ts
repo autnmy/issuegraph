@@ -47,6 +47,7 @@ import {
   DEMO_STATE_NAMES,
   type DemoStateName,
   hostFacts,
+  liftedByARead,
   runningSince,
   showsOrder,
 } from './host.ts';
@@ -472,12 +473,13 @@ export function mountSandbox(
     if (store !== live.store || owner !== handle) return;
     if (store.getSnapshot().hydrationError === undefined) {
       observedAt = clock();
-      // THE FORCED STALE STATE LIFTS WITH THE STAMP IT CONTRADICTS, in the one
-      // place that already knows a read landed. Lifting it at the click instead
-      // moved the state before the evidence for it existed, so a refresh that
-      // FAILED left `observedAt` untouched — correctly — while the panel
-      // re-rendered live, making the failure look like a success.
-      if (panelState === 'stale') panelState = 'live';
+      // A FORCED STATE LIFTS WITH THE STAMP IT CONTRADICTS, in the one place
+      // that already knows a read landed. Two things this gets right that
+      // clearing at the click did not: a refresh that FAILED leaves
+      // `observedAt` untouched and must leave the state with it, and EVERY
+      // state a read refutes is lifted rather than whichever one was last
+      // reported — see `liftedByARead`.
+      if (liftedByARead(panelState)) panelState = 'live';
       handle?.update();
     }
     schedule();
@@ -534,16 +536,16 @@ export function mountSandbox(
         schedule();
         return;
       case 'retry:index':
-        // The host's to perform, and here there is nothing behind the index to
-        // re-read — so the honest answer is to leave the error state, which is
-        // what a successful retry would look like.
-        panelState = 'live';
-        handle.update({});
-        schedule();
+        // A RETRY IS A READ, so it performs one and lets the read speak. It used
+        // to clear the state at the click, which is the same optimism that made
+        // a failed refresh look successful: a retry that cannot reach the
+        // tracker must leave the panel saying the index could not be read.
+        void read(false);
         return;
       case 'review-pick-order':
-        // This sandbox has no pick-order chrome to route to, so the control
-        // does the one thing it can honestly do here and says so on the page.
+        // NOT A READ, so no read lifts it. This sandbox has no pick-order chrome
+        // to route to, and the page says so; leaving the state is the one thing
+        // the control can honestly do here.
         panelState = 'live';
         handle.update({});
         schedule();
@@ -561,9 +563,10 @@ export function mountSandbox(
         // `stale` is drawn by dating the read further back on every render, so
         // a successful re-read landed and the panel still said "stale · 17m
         // ago" — the one affordance §16g gives that state, doing nothing a
-        // reader could see. `read` lifts the state when the read LANDS, beside
-        // the stamp, because that is the event; doing it here would move the
-        // state before the evidence and make a failed refresh look successful.
+        // reader could see. `read` lifts every such state when the read LANDS,
+        // beside the stamp, because that is the event; doing it here would move
+        // the state before the evidence and make a failed refresh look
+        // successful.
         void read(false);
         return;
       default:
