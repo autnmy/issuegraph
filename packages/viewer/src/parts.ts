@@ -470,11 +470,20 @@ export function unitBlock(document: NormalizedDocument, slot: ViewerSlot): Eleme
     { class: 'ig-unit', 'aria-label': `one unit of ${String(slot.members.length)} issues` },
     slot.members.map((member) => {
       const issue = document.byKey.get(member);
+      // THROUGH `identity`, WHICH IS WHERE THE DEEP LINK LIVES. Printing the key
+      // as plain text took the chip away from the lead — which had one before
+      // this row shape existed — and gave the partners none either, so a unit
+      // was the one row in the panel from which no issue could be opened at
+      // all. §16e calls that chip "the only external link", so losing it on a
+      // unit loses the only way out of it.
       return element('li', { class: 'ig-unit-member' }, [
         element('span', { class: 'ig-title' }, [issue?.title ?? member]),
-        element('span', { class: 'ig-id' }, [
-          issue === undefined ? member : `${member} · P${String(issue.priority)}`,
-        ]),
+        issue === undefined
+          ? element('span', { class: 'ig-id' }, [member])
+          : element('span', { class: 'ig-id' }, [
+              identity(issue),
+              ` · P${String(issue.priority)}`,
+            ]),
       ]);
     }),
   );

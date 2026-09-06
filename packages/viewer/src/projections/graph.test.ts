@@ -551,6 +551,41 @@ describe('the graph projection', () => {
     assert.match(nothing, /No issue in this document declares a relationship/);
   });
 
+  it('announces each column as what its own heading says, not all as the work order', () => {
+    // One list called "work order" told a screen reader that the left gutter's
+    // explanations and the right gutter's never-worked issues are ordered work
+    // — the opposite of what those columns exist to say, and of what their own
+    // visible headings say beside them.
+    const markup = render();
+    for (const [label, key] of [
+      ['work order', '102'],
+      ['explains the order', '105'],
+      ['not worked', '107'],
+    ] as const) {
+      const at = markup.indexOf(`aria-label="${label}"`);
+      assert.notEqual(at, -1, `no list is labelled "${label}"`);
+      const list = markup.slice(at, markup.indexOf('</ol>', at));
+      assert.match(list, new RegExp(`data-ig-key="${key}"`), `${key} is not in "${label}"`);
+    }
+  });
+
+  it('keeps the running job visible when it refuses to draw', () => {
+    // A refused canvas draws no station, so the one issue the panel exists to
+    // say is in flight vanished completely when it held no slot — and was
+    // reduced to an ordinary order row, with no phase and no elapsed time, when
+    // it did. The band is what §16a uses where there is no spine to put a
+    // station on, and a refusal is exactly that case.
+    const crowded = crowdedDocument(GRAPH_NODE_BUDGET + 1);
+    const markup = render({
+      ...crowded,
+      host: { running: [{ key: crowded.issues[0]?.key ?? '', phase: 'Review', elapsed: '9m' }] },
+    });
+
+    assert.match(markup, /class="ig-refusal"/);
+    assert.match(markup, /<ol class="ig-now"/, 'the refusal dropped the running job');
+    assert.match(markup, /Review · 9m/);
+  });
+
   it('offers lateral neighbours from the SPINE outward', () => {
     // §16f gives the lateral keys one job: leave the sequence for the gutter
     // card that explains this rank, and come back. `103` is the fixture's rank
@@ -627,7 +662,10 @@ describe('the graph projection', () => {
     // declared edge's own identity on the badge that names it.
     const markup = render(togetherChain);
     for (const key of ['1', '2', '3']) {
-      assert.match(markup, new RegExp(`<li class="ig-unit-member"><span class="ig-title">[^<]*</span><span class="ig-id">${key} `));
+      assert.match(
+        markup,
+        new RegExp(`<li class="ig-unit-member"><span class="ig-title">[^<]*</span><span class="ig-id"><span class="ig-id">${key}</span> `),
+      );
     }
     const declared = normalizeDocument(togetherChain)
       .document.edges.filter((edge) => edge.field === 'together-with')

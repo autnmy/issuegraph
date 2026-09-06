@@ -36,6 +36,7 @@ import {
   atStations,
   caveatBadges,
   footerLabels,
+  nowRows,
   caveatText,
   edgeBadgeList,
   emptyState,
@@ -827,11 +828,29 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
     );
   }
 
-  const cards = refused
+  // ONE LIST PER COLUMN, LABELLED THE WAY ITS HEADING IS. Every card in one
+  // list called "work order" told a screen reader that the left gutter's
+  // explanations and the right gutter's never-worked issues are ordered work —
+  // which is the opposite of what those two columns exist to say, and what
+  // their own visible headings say instead.
+  const columns: readonly (readonly [Column, string])[] = [
+    ['spine', 'work order'],
+    ['left', 'explains the order'],
+    ['right', 'not worked'],
+  ];
+  const cardLists = refused
     ? []
-    : [...layout.nodes.keys()]
-        .map((key) => nodeCard(document, layout, key, options, navigable.focused))
-        .filter((card): card is ElementSpec => card !== null);
+    : columns
+        .map(([column, label]) => {
+          const cards = [...layout.nodes.keys()]
+            .filter((key) => layout.nodes.get(key)?.column === column)
+            .map((key) => nodeCard(document, layout, key, options, navigable.focused))
+            .filter((card): card is ElementSpec => card !== null);
+          return cards.length === 0
+            ? null
+            : element('ol', { class: 'ig-list', 'aria-label': label }, cards);
+        })
+        .filter((list): list is ElementSpec => list !== null);
 
   const root = element(
     'section',
@@ -865,11 +884,18 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
               canvas,
               element('div', { class: 'ig-rail' }, [
                 ...columnHeads(layout),
-                element('ol', { class: 'ig-list', 'aria-label': 'work order' }, cards),
+                ...cardLists,
                 ...spineStations(document, layout, theme),
               ]),
             ],
           ),
+      // THE RUNNING JOB SURVIVES A REFUSAL. A refused canvas draws no station,
+      // so the one issue the panel exists to say is in flight vanished
+      // completely when it held no slot, and was reduced to an ordinary order
+      // row — no phase, no elapsed time — when it did. The band is what §16a
+      // uses where there is no spine to put a station on, and a refusal is
+      // exactly that case.
+      refused ? nowRows(document) : null,
       refused ? refusalOrder(document, options, navigable.focused) : null,
       // §16a'S FOOTER GROUP, ON THE GRAPH. A runner-held slot that blocks
       // nothing on the spine has no column to sit in — it is neither the order

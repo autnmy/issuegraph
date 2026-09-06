@@ -99,9 +99,35 @@ describe('the linear projection', () => {
     // long title, and the unit is the one place the design draws an enclosure
     // to say the opposite.
     assert.match(unit, /<span class="ig-unit-pill">⧉ one unit · 2 issues<\/span>/);
-    assert.match(unit, /<li class="ig-unit-member"><span class="ig-title">Split the invoice writer<\/span><span class="ig-id">103 · P2<\/span><\/li>/);
-    assert.match(unit, /<li class="ig-unit-member"><span class="ig-title">Split the invoice reader<\/span><span class="ig-id">104 · P2<\/span><\/li>/);
+    // THE IDENTITY GOES THROUGH `identity`, so a member with a URL keeps the
+    // deep-link chip §16e calls "the only external link". The fixture's unit
+    // has none, so both draw as plain keys — the linked case is asserted below.
+    assert.match(unit, /<li class="ig-unit-member"><span class="ig-title">Split the invoice writer<\/span><span class="ig-id"><span class="ig-id">103<\/span> · P2<\/span><\/li>/);
+    assert.match(unit, /<li class="ig-unit-member"><span class="ig-title">Split the invoice reader<\/span><span class="ig-id"><span class="ig-id">104<\/span> · P2<\/span><\/li>/);
     assert.equal(markup.includes('data-ig-key="104"'), false, '104 rendered as its own row');
+  });
+
+  it('keeps the deep-link chip on EVERY member of a unit', () => {
+    // The lead had one before this row shape existed, and printing the key as
+    // plain text took it away from the lead and gave the partners none either —
+    // so a unit was the one row in the panel from which no issue could be
+    // opened at all. §16e calls that chip the only external link there is.
+    const linked = {
+      ...fixtureDocument,
+      issues: fixtureDocument.issues.map((issue) =>
+        issue.key === '103' || issue.key === '104'
+          ? { ...issue, url: `https://example.test/issues/${issue.key}` }
+          : issue,
+      ),
+    };
+    const unit = row(render(linked), '103');
+    for (const key of ['103', '104']) {
+      assert.match(
+        unit,
+        new RegExp(`<a class="ig-link" href="https://example.test/issues/${key}"`),
+        `${key} lost its deep link`,
+      );
+    }
   });
 
   it("carries a partner's relationships onto the unit's one row", () => {
