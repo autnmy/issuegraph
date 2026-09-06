@@ -84,6 +84,43 @@ export const workspaceStylesheet = `
   grid-area: header;
 }
 
+/* SECTION 17a's HEADER: what backlog this is, how much of it is encoded, what
+   is wrong with it, how fresh the read is, and the way into a first pass. One
+   row, baseline-aligned, with the first-pass entry pushed to the far end --
+   the frame's only primary action on this surface.
+
+   NOTHING HERE MOVES, for the reason the whole sheet holds: the audit count
+   lives in this row, and section 17d asks for a count that never does. The
+   guard on that is a literal scan over these bytes, comments included, so the
+   words it looks for must not appear even in prose explaining their absence. */
+.ig-workspace-header {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--ig-space);
+  padding: var(--ig-space-tight) var(--ig-space);
+  border-bottom: var(--ig-stroke) solid var(--ig-line);
+}
+
+.ig-workspace-identity {
+  color: var(--ig-text);
+  font-family: var(--ig-font-mono);
+}
+
+/* The one place the accent is spent on this surface, on the only action that
+   starts something. The frame draws it as the header's primary control. */
+.ig-workspace-firstpass {
+  margin-left: auto;
+  background: var(--ig-accent);
+  color: var(--ig-bg);
+  border: none;
+  border-radius: var(--ig-radius);
+  padding: var(--ig-space-tight) var(--ig-space);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+  cursor: pointer;
+}
+
 .ig-zone[data-zone='rail'] {
   grid-area: rail;
   /* The rail scrolls; the window slides underneath. */
@@ -108,14 +145,30 @@ export const workspaceStylesheet = `
 
    An inset box-shadow rather than a border: a border changes the row's box and
    would shift every marked row against its neighbours, which is a layout jump
-   the eye reads as movement. The width is the theme's spine, so the bar scales
-   with the rest of the rail. */
-.ig-zone[data-zone='rail'] [data-ig-audit] {
-  box-shadow: inset var(--ig-spine-width) 0 0 0 var(--ig-accent);
-}
+   the eye reads as movement.
 
-.ig-zone[data-zone='rail'] [data-ig-audit='misleading'] {
-  box-shadow: inset var(--ig-spine-width) 0 0 0 var(--ig-state-invalid);
+   IT DREW A 330px CYAN BLOCK UNTIL #122, and the comment above it — unchanged
+   here because it was right — is how the defect survived. --ig-spine-width is
+   §16b's SPINE CARD WIDTH (330), not a stroke; the sentence "the width is the
+   theme's spine, so the bar scales with the rest of the rail" reads as a
+   scaling argument and is a token mix-up. --ig-accent is the cyan the panel
+   spends once on the number an operator acts on, and it is not the attention
+   colour. This rule is more specific than audit/styles.ts's correct one, so
+   it silently won.
+
+   AND ITS TEST PASSED THROUGHOUT. styles.test.ts matched the rule and
+   asserted it EXISTED; it never asserted what the declaration resolves to, so
+   it was green about a string rather than about a property. The test below it
+   now reads the values.
+
+   ONE TREATMENT FOR ALL FOUR SEVERITIES, which is also a correction. §17d
+   names exactly one ambient mark — "a 2px gold left-bar on the affected rail
+   row" — and puts the severity distinction in the findings list, which is
+   host-side. The misleading variant this replaces gave the LEAST urgent
+   severity ("clearing is bookkeeping, not urgency") the alarm colour while
+   every other finding got cyan, inverting the design it came from. */
+.ig-zone[data-zone='rail'] [data-ig-audit] {
+  box-shadow: inset var(--ig-stroke-audit) 0 0 0 var(--ig-edge-serialize-with);
 }
 
 /* THE ROWS OUTSIDE THE WINDOW, AS HEIGHT. The rail scrolls, so without a spacer
@@ -180,21 +233,6 @@ export const workspaceStylesheet = `
   color: var(--ig-text);
 }
 
-.ig-inspector-key {
-  font-family: var(--ig-font-mono);
-  color: var(--ig-text-muted);
-}
-
-.ig-inspector-position {
-  margin: 0;
-  font-family: var(--ig-font-mono);
-  color: var(--ig-text-muted);
-}
-
-.ig-inspector-position[data-ready='true'] {
-  color: var(--ig-station-ready);
-}
-
 .ig-inspector-holds {
   list-style: none;
   margin: 0;
@@ -240,11 +278,40 @@ export const workspaceStylesheet = `
   gap: var(--ig-space-tight);
 }
 
-.ig-inspector-heading {
+/* SECTION 17a DRAWS EVERY INSPECTOR HEADING IN CAPS -- WHY RANK 2,
+   RELATIONSHIPS, ADD RELATIONSHIP -- so the treatment is shared rather than
+   spelled per heading. Tracking widens with the caps because letterforms at a
+   small size need it; that is what --ig-tracking-label is for. */
+.ig-inspector-heading,
+.ig-why-rank-heading {
   margin: 0;
   font-size: var(--ig-font-size-small);
   color: var(--ig-text-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--ig-tracking-label);
 }
+
+/* THE EXPLANATION, SECTION 17a's WHOLE POINT FOR THIS ZONE. The clauses are
+   inline spans so the block reads as one sentence rather than a list of
+   findings: the reader asked one question. */
+.ig-why-rank {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+}
+
+.ig-why-rank-sentence {
+  margin: 0;
+  color: var(--ig-text-body);
+}
+
+/* Each clause keeps a space after it so the sentence does not run together.
+   A margin rather than a literal space in the markup: the text is host-authored
+   and the package does not add characters to it. */
+.ig-why-rank-sentence > * + * {
+  margin-left: var(--ig-space-micro);
+}
+
 
 .ig-inspector-clear {
   align-self: flex-start;

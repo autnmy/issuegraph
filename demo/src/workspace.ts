@@ -88,6 +88,12 @@ export const WORKSPACE_WORDS: MountWords = {
   nothingSelected: 'Pick a row, a node or an edge to inspect it.',
   clearSelection: 'clear the selection',
   relationships: 'Relationships',
+  // §17a's inspector explains the position before it lists the relationships.
+  // The frame draws the heading in caps; the caps are the stylesheet's, so the
+  // words here read as words.
+  whyRank: 'Why rank',
+  whyHeld: 'Why held',
+  workedAsOneUnit: 'worked as one unit with',
   picker: PICKER_WORDS,
   addRelationship: '+ add a relationship',
   deleteRelationship: 'delete this relationship',

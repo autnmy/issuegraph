@@ -128,6 +128,7 @@ export const METRIC_TOKENS = Object.freeze([
   '--ig-station-halo',
   '--ig-stroke',
   '--ig-stroke-connector',
+  '--ig-stroke-audit',
   '--ig-terminal-length',
   '--ig-terminal-width',
   '--ig-gutter-width',
@@ -345,6 +346,19 @@ export const defaultTheme: Theme = Object.freeze({
     // The `together-with` hairline connector, which is deliberately finer than
     // an ordinary edge so the enclosure stays the primary read.
     '--ig-stroke-connector': 1.6,
+    // §17d's ambient audit bar, which the design fixes at 2px in those words —
+    // heavier than an edge stroke because it has to be findable while the
+    // reader is scrolling past it doing something else, and no heavier because
+    // §17d's whole argument is attention without nagging.
+    //
+    // IT LIVES IN THIS THEME, NOT THE AUDIT'S. `editor/src/audit/styles.ts`
+    // records shipping an `--ig-audit-bar` of its own behind a second theme
+    // function and reversing it: a host that installed the viewer's theme and
+    // forgot the second got a `var()` resolving to nothing, and the bar
+    // silently stopped drawing. A token here has no such state — every host
+    // installs this theme — so the value stays retunable without the failure
+    // that reversal was paid for.
+    '--ig-stroke-audit': 2,
     // The terminal marker's own box. It is theme data rather than a constant
     // in the drawing code because it is a SIZE, and R5 admits no exceptions:
     // a host scaling the type up needs the arrowheads to follow.

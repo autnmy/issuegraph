@@ -25,6 +25,9 @@ export const WORKSPACE_WORDS: WorkspaceWords = {
   nothingSelected: 'pick a row to inspect it',
   clearSelection: 'clear the selection',
   relationships: 'relationships',
+  whyRank: 'why rank',
+  whyHeld: 'why held',
+  workedAsOneUnit: 'worked as one unit with',
 };
 
 /** `count` keys, zero-padded so lexical and numeric order agree. */

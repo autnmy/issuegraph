@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { METRIC_TOKENS, THEME_TOKENS, renderViewer, viewerStylesheet } from '@issuegraph/viewer';
+import {
+  METRIC_TOKENS,
+  THEME_TOKENS,
+  defaultTheme,
+  renderViewer,
+  viewerStylesheet,
+} from '@issuegraph/viewer';
 
 import { AUDIT_SEVERITY_ATTRIBUTE } from '../audit/surface.ts';
 import { ZONES, renderWorkspace } from './render.ts';
@@ -77,6 +83,19 @@ const RENDERS = [
   // window is narrower than the order, so without this render their rule looks
   // orphaned and the "no unstyled class" direction never sees them at all.
   renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, rail: { start: 2, count: 2 } }),
+  // A HEADER WITH EVERY FACT THE HOST CAN STATE. Each member of §17a's header
+  // is omitted when its fact is absent, so a render with no host facts leaves
+  // all of them looking orphaned in the "no rule without a class" direction.
+  renderWorkspace(
+    {
+      ...DOCUMENT,
+      host: {
+        identity: 'acme/widgets',
+        firstPass: 'First pass',
+      },
+    },
+    { words: WORKSPACE_WORDS },
+  ),
   // A HOLD THAT NAMES ITS HOLDER. The inspector draws the subject as a control
   // only when the host supplied one, so without this render its rule looks
   // orphaned in the "no rule without a class" direction.
@@ -271,6 +290,73 @@ describe('the workspace stylesheet carries structure, never a value', () => {
     // reads as movement, on the surface that may least afford one.
     assert.match(bar, /box-shadow:\s*inset/);
     assert.equal(/(^|;)\s*border(-\w+)?:/.test(bar), false, 'a border that would shift the row');
+  });
+
+  /**
+   * THE ASSERTION THE ONE ABOVE WAS MISSING, and the reason #122 found a 330px
+   * cyan block behind a green test.
+   *
+   * Matching the rule proves a declaration is present; it says nothing about
+   * what the declaration RESOLVES to. This rule spent its whole life reading
+   * `--ig-spine-width` (330, §16b's spine card width) and `--ig-accent` (the
+   * cyan the panel spends on operator numbers), and the test above passed on
+   * every run. A pin that is green about a string is not green about the
+   * property the design fixes.
+   *
+   * So this one reads the tokens out of the theme and checks the VALUES §17d
+   * names: 2px, and the palette's own gold.
+   */
+  it('resolves the bar to §17d’s 2px gold, not merely to a declaration', () => {
+    const bar = css.match(
+      new RegExp(`\\[data-zone='rail'\\] \\[${AUDIT_SEVERITY_ATTRIBUTE}\\]\\s*\\{([^}]*)\\}`),
+    )?.[1];
+    assert.ok(bar !== undefined);
+
+    const shadow = /box-shadow:\s*inset\s+var\((--[a-z0-9-]+)\)[^;]*?var\((--[a-z0-9-]+)\)/.exec(bar);
+    assert.ok(shadow !== null, 'the bar no longer reads its width and hue from theme tokens');
+    const [, widthToken = '', hueToken = ''] = shadow;
+
+    // The theme is grouped (colors / type / metrics / effects), so a token is
+    // looked up across the groups rather than off the root.
+    const valueOf = (token: string): string | number | undefined => {
+      for (const group of Object.values(defaultTheme)) {
+        const found: unknown = (group as Record<string, unknown>)[token];
+        if (typeof found === 'string' || typeof found === 'number') return found;
+      }
+      return undefined;
+    };
+
+    assert.equal(
+      valueOf(widthToken),
+      2,
+      `§17d fixes the bar at 2px; ${widthToken} is ${String(valueOf(widthToken))}`,
+    );
+    assert.equal(
+      valueOf(hueToken),
+      valueOf('--ig-edge-serialize-with'),
+      `§17d's bar is the palette's gold; ${hueToken} is ${String(valueOf(hueToken))}`,
+    );
+
+    // The cyan accent is spent once, on the number an operator acts on. An
+    // ambient mark wearing it competes with that and stops being ambient.
+    assert.notEqual(hueToken, '--ig-accent');
+  });
+
+  /**
+   * ONE MARK FOR ALL FOUR SEVERITIES. §17d names a single ambient treatment and
+   * puts the severity distinction in the findings list, which is host-side.
+   *
+   * The variant this replaces keyed on `misleading` — the LEAST urgent of the
+   * four, whose own doc comment says "clearing is bookkeeping, not urgency" —
+   * and gave it the invalid-state colour while every other finding, the cycle
+   * that stops work included, drew in cyan. Exactly inverted.
+   */
+  it('draws one ambient mark, with no per-severity override', () => {
+    assert.equal(
+      new RegExp(`\\[${AUDIT_SEVERITY_ATTRIBUTE}='[a-z-]+'\\]`).test(css),
+      false,
+      'a per-severity bar override is back; §17d states one ambient treatment',
+    );
   });
 });
 

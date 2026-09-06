@@ -43,7 +43,13 @@
 
 import { edgeIdentity, isSymmetricEdgeField } from '@issuegraph/core';
 import type { EdgeField } from '@issuegraph/core';
-import type { ViewerDocument, ViewerHold, ViewerIssue, ViewerSlot } from '@issuegraph/viewer';
+import type {
+  RankProvenance,
+  ViewerDocument,
+  ViewerHold,
+  ViewerIssue,
+  ViewerSlot,
+} from '@issuegraph/viewer';
 import { normalizeDocument } from '@issuegraph/viewer';
 
 import type { WorkspaceSelection } from './selection.ts';
@@ -85,6 +91,45 @@ export interface InspectorPosition {
   readonly holds: readonly ViewerHold[];
 }
 
+/**
+ * §17a's "why rank" — the facts the explanation is composed FROM, never the
+ * explanation itself.
+ *
+ * THE FRAME'S SENTENCE IS THREE FACTS JOINED, and they come from three
+ * different places, which is why this is a shape rather than a string:
+ * *"Matched query 1 (`label:P0`). Held until #488 closes, then worked with
+ * #514 as one unit."* — the provenance, the slot's holds, and the rest of the
+ * together unit.
+ *
+ * NONE OF THE THREE IS WORDED HERE. The provenance is worded by layer 1's
+ * `provenanceClause`, which is the same function the §16 rail row uses, so the
+ * panel and the row cannot come to disagree. A hold's `reason` is host-authored
+ * and rendered verbatim, exactly as `holdLine` already renders it. Only the
+ * connectives are this package's, and they arrive through `WorkspaceWords` like
+ * every other word here.
+ *
+ * A RANK AND A HOLD ARE EXCLUSIVE, and the type says so only by convention —
+ * `@issuegraph/derive` assigns `ready ? (rank += 1) : null`, so a held slot has
+ * no rank to explain and the heading states the hold instead. Frame 17a draws
+ * `#512` at rank 2 while saying "Held until #488 closes"; the model cannot
+ * represent that, and PR #126 already ruled for §16 that the em dash wins.
+ */
+export interface InspectorWhyRank {
+  /** 1-based, or `null` when the slot is held. */
+  readonly rank: number | null;
+  /** Absent when the host stated no provenance. */
+  readonly provenance?: RankProvenance | undefined;
+  readonly holds: readonly ViewerHold[];
+  /**
+   * The OTHER members of the subject's together unit.
+   *
+   * Empty for an ordinary slot. A together unit is one slot with several
+   * members and one rank, so "who else does this rank cover" is a question only
+   * the slot can answer — and it is the clause the frame ends on.
+   */
+  readonly unitPartners: readonly string[];
+}
+
 export interface InspectorView {
   /**
    * What the selection resolved to.
@@ -97,7 +142,17 @@ export interface InspectorView {
    */
   readonly subject:
     | { readonly kind: 'none' }
-    | { readonly kind: 'issue'; readonly issue: ViewerIssue; readonly position: InspectorPosition | null }
+    | {
+        readonly kind: 'issue';
+        readonly issue: ViewerIssue;
+        readonly position: InspectorPosition | null;
+        /**
+         * Null when the order places the issue nowhere — an excluded
+         * duplicate has no position, and inventing an explanation for one
+         * would explain a rank it does not hold.
+         */
+        readonly whyRank: InspectorWhyRank | null;
+      }
     | { readonly kind: 'edge'; readonly relationship: InspectorRelationship };
   /**
    * The relationships on show: every one touching the selected issue, the one
@@ -186,6 +241,18 @@ export function inspectorView(
       subject: {
         kind: 'issue',
         issue,
+        whyRank:
+          slot === undefined
+            ? null
+            : {
+                rank: slot.rank,
+                provenance: issue.provenance,
+                holds: slot.holds,
+                // THE OTHER MEMBERS, not every member: the subject is already
+                // the panel's heading, and a unit clause that named it back
+                // would read as it being worked with itself.
+                unitPartners: slot.members.filter((member) => member !== subject),
+              },
         // NULL RATHER THAN A FABRICATED POSITION. An issue the order excludes —
         // a duplicate — genuinely has no position, and inventing `rank: null,
         // ready: false` for it would read as a hold, which is a different fact

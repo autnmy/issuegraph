@@ -92,20 +92,30 @@ export function identity(issue: ViewerIssue): ElementSpec {
 }
 
 /**
- * The provenance line, in the three forms the design fixes: a matched ordering
- * query, the declared tier, and an effective-priority promotion that names the
- * dependent the urgency arrived through.
+ * The provenance SENTENCE, without the line it normally sits on.
+ *
+ * ONE WORDING, TWO PLACEMENTS. §16 hangs this sentence off a turnstile as a
+ * subordinate rail line; §17a's inspector needs the same sentence inside its
+ * own "why rank" paragraph, where a `↳` would be rail furniture imported into
+ * a panel. So the wording lives here and the furniture lives in
+ * {@link provenanceLine}, which is the only difference between the two.
+ *
+ * IT IS ON THE PUBLIC SURFACE FOR THE EDITOR, and that is the whole reason it
+ * exists separately. Layer 2 composing this is layer 2 reading layer 1's
+ * wording; layer 2 switching on `RankProvenance` itself would be a second
+ * wording of one fact, free to drift from the rail's. The seam permits adding
+ * to this layer's surface — what it forbids is reaching past it.
+ *
+ * NO TURNSTILE HERE, DELIBERATELY. `provenanceLine` adds it. A caller that
+ * wants the §16 line calls that; a caller that wants the sentence calls this.
  */
-export function provenanceLine(provenance: RankProvenance | undefined): ElementSpec | null {
+export function provenanceClause(provenance: RankProvenance | undefined): ElementSpec | null {
   if (provenance === undefined) return null;
   switch (provenance.kind) {
     case 'matched-query':
-      return element('p', { class: 'ig-provenance' }, [
-        turn(),
-        element('span', {}, [
-          `matched ordered query ${String(provenance.index)} · `,
-          element('span', { class: 'ig-id' }, [provenance.label]),
-        ]),
+      return element('span', {}, [
+        `matched ordered query ${String(provenance.index)} · `,
+        element('span', { class: 'ig-id' }, [provenance.label]),
       ]);
     case 'declared-tier':
       // NEUTRAL, AND THAT IS THE POINT. This arm means only that no ordering
@@ -114,12 +124,9 @@ export function provenanceLine(provenance: RankProvenance | undefined): ElementS
       // borrowing that row's sentence made the panel tell every reader that an
       // explicitly-declared P0 had no declared priority. A panel whose job is
       // explaining the order cannot invent the reason.
-      return element('p', { class: 'ig-provenance' }, [
-        turn(),
-        element('span', {}, [
-          'no ordered query matched — ranked in tier ',
-          element('span', { class: 'ig-id' }, [`P${String(provenance.priority)}`]),
-        ]),
+      return element('span', {}, [
+        'no ordered query matched — ranked in tier ',
+        element('span', { class: 'ig-id' }, [`P${String(provenance.priority)}`]),
       ]);
     case 'promotion': {
       const via =
@@ -130,16 +137,28 @@ export function provenanceLine(provenance: RankProvenance | undefined): ElementS
               element('span', { class: 'ig-id' }, [provenance.promotedBy.join(', ')]),
               ', which it blocks',
             ]);
-      return element('p', { class: 'ig-provenance' }, [
-        turn(),
-        element('span', {}, [
-          'effective priority ',
-          element('span', { class: 'ig-id' }, [provenance.notation]),
-          via,
-        ]),
+      return element('span', {}, [
+        'effective priority ',
+        element('span', { class: 'ig-id' }, [provenance.notation]),
+        via,
       ]);
     }
   }
+}
+
+/**
+ * The provenance line, in the three forms the design fixes: a matched ordering
+ * query, the declared tier, and an effective-priority promotion that names the
+ * dependent the urgency arrived through.
+ *
+ * The wording is {@link provenanceClause}'s; this adds only §16's turnstile and
+ * the paragraph it hangs on, so the rail and the inspector cannot come to
+ * disagree about how one fact reads.
+ */
+export function provenanceLine(provenance: RankProvenance | undefined): ElementSpec | null {
+  const clause = provenanceClause(provenance);
+  if (clause === null) return null;
+  return element('p', { class: 'ig-provenance' }, [turn(), clause]);
 }
 
 /**
