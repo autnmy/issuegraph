@@ -404,6 +404,12 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
           dispatch({ kind: 'first-pass', command: { kind: 'close' } });
           return;
         }
+        // THE OPEN IS REAL, SO THE DRAFT GOES NOW. Only the shell knows a scan
+        // will actually run — the reducer cannot tell this open from one about
+        // to be refused for want of a source, and clearing on both destroyed a
+        // draft for a queue that never appeared. Both routes into the queue, the
+        // attribute and `handle.dispatch`, arrive here.
+        dispatch({ kind: 'control', name: 'cancel' });
         const { scan } = effect;
         // STARTED FROM A CALLBACK, so a host whose `findCandidates` throws
         // BEFORE returning its promise — reading its own state, building a

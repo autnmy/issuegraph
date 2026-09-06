@@ -480,10 +480,11 @@ describe('the first pass reaches the store only through consent', () => {
     }
   });
 
-  it('cancels a live draft on the typed open too, not only the control', () => {
-    // `handle.dispatch` carries a typed first-pass command straight past the
-    // arm that parses the attribute, so a cleanup written there covered the
-    // pointer and the keyboard and not the API.
+  it('leaves a live draft alone — cancelling an open is the shell’s call', () => {
+    // This reducer cannot tell an open that will SCAN from one the shell is
+    // about to refuse for want of a source, so it clears nothing; `mount.ts`
+    // dispatches the cancel at the point it knows. Driven through the mount in
+    // `mount.test.ts`, both routes and the refusal.
     const drafting = drive([
       { kind: 'point', key: '2' },
       { kind: 'control', name: 'add' },
@@ -492,26 +493,7 @@ describe('the first pass reaches the store only through consent', () => {
     ]);
     assert.equal(drafting.state.draft.source, '2');
     const opened = drive([{ kind: 'first-pass', command: { kind: 'open' } }], drafting.state);
-    assert.equal(opened.state.draft.source, null);
-    assert.equal(opened.state.targetQuery, '');
-    assert.equal(opened.state.drop, null);
-  });
-
-  it('cancels a live create draft when the surface opens over it', () => {
-    // The overlay covers the target search and the kind chooser, so a draft left
-    // standing would be re-entered on close with the reader's context gone.
-    const drafting = drive([
-      { kind: 'point', key: '2' },
-      { kind: 'control', name: 'add' },
-      { kind: 'control', name: 'kind', value: 'blocked-by' },
-      { kind: 'control', name: 'target-query', value: 'chang' },
-    ]);
-    assert.equal(drafting.state.draft.source, '2');
-    assert.equal(drafting.state.targetQuery, 'chang');
-
-    const opened = drive([{ kind: 'control', name: 'first-pass' }], drafting.state);
-    assert.equal(opened.state.draft.source, null);
-    assert.equal(opened.state.targetQuery, '');
-    assert.equal(opened.state.drop, null);
+    assert.equal(opened.state.draft.source, '2');
+    assert.equal(opened.state.targetQuery, 'chang');
   });
 });

@@ -217,18 +217,15 @@ function isAnswer(value: string): value is Answer {
  */
 function firstPassed(state: HostState, command: FirstPassCommand): HostResult {
   const outcome = firstPassReducer(state.firstPass, command);
-  // OPENING CANCELS A LIVE DRAFT, and it is cancelled HERE — at the one place an
-  // open is applied — rather than in the control arm that parses the attribute.
-  // `handle.dispatch` is public and carries a typed first-pass command straight
-  // past that arm, so a cleanup written there covered the pointer and the
-  // keyboard and not the API. The surface covers the target search and the kind
-  // chooser, and a draft left standing behind it is re-entered on close with the
-  // reader's context gone.
-  const cleared =
-    command.kind === 'open'
-      ? { draft: IDLE_CREATE_DRAFT, targetQuery: '', drop: null }
-      : {};
-  const next: HostState = { ...state, ...cleared, firstPass: outcome.state };
+  // THE DRAFT IS NOT TOUCHED HERE, and an earlier revision's attempt to is worth
+  // recording: opening the surface does have to cancel a live draft — the queue
+  // covers the target search and the kind chooser, and a draft left standing
+  // behind it is re-entered on close with the reader's context gone — but this
+  // reducer cannot tell an open that will SCAN from one the shell is about to
+  // refuse for want of a source. Clearing on every open destroyed the reader's
+  // draft for a queue that then never appeared. So the cancel belongs to the
+  // shell, which knows, and it is dispatched there — see `mount.ts`.
+  const next: HostState = { ...state, firstPass: outcome.state };
   const effects: HostEffect[] = [];
   if (outcome.scanning !== null) effects.push({ kind: 'find-candidates', scan: outcome.scanning });
   const result: QueueResult | null = outcome.result;

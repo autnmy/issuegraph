@@ -1396,6 +1396,65 @@ describe('the first pass, composed behind §17a’s entry', () => {
     }
   });
 
+  it('cancels a live draft when the queue really opens, by either route', async () => {
+    for (const openIt of [
+      (page: Awaited<ReturnType<typeof firstPassPage>>): void => {
+        const entry = page.control('first-pass');
+        assert.ok(entry !== null);
+        page.click(entry);
+      },
+      (page: Awaited<ReturnType<typeof firstPassPage>>): void => {
+        page.handle.dispatch({ kind: 'first-pass', command: { kind: 'open' } });
+      },
+    ]) {
+      const page = await firstPassPage();
+      try {
+        page.click(page.rows()[0] ?? page.element);
+        await flush();
+        page.handle.dispatch({ kind: 'control', name: 'add' });
+        page.handle.dispatch({ kind: 'control', name: 'kind', value: 'blocked-by' });
+        page.handle.dispatch({ kind: 'control', name: 'target-query', value: 'issue' });
+        await flush();
+        assert.equal(page.handle.state.draft.source, '1');
+
+        openIt(page);
+        await flush();
+        await page.answer();
+        // The queue covers the target search and the chooser; a draft left
+        // standing is re-entered on close with the reader's context gone.
+        assert.equal(page.handle.state.draft.source, null, 'the draft survived the open');
+        assert.equal(page.handle.state.targetQuery, '');
+      } finally {
+        page.handle.destroy();
+        page.dom.window.close();
+      }
+    }
+  });
+
+  it('keeps the draft when the open is refused for want of a scanner', async () => {
+    // No queue ever appears, so nothing covered the draft and nothing should
+    // have taken it — the reader's source, kind, query and drop point are work.
+    const page = await mounted(backlog(8), { project: entryProject });
+    try {
+      page.handle.dispatch({ kind: 'point', key: '1' });
+      page.handle.dispatch({ kind: 'control', name: 'add' });
+      page.handle.dispatch({ kind: 'control', name: 'kind', value: 'blocked-by' });
+      page.handle.dispatch({ kind: 'control', name: 'target-query', value: 'issue' });
+      await flush();
+      assert.equal(page.handle.state.draft.source, '1');
+
+      page.handle.dispatch({ kind: 'first-pass', command: { kind: 'open' } });
+      await flush();
+      await flush();
+      assert.equal(page.handle.state.firstPass.phase.kind, 'closed');
+      assert.equal(page.handle.state.draft.source, '1', 'a refused open took the draft');
+      assert.equal(page.handle.state.targetQuery, 'issue');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
   it('refuses a dispatched open when the host supplied no scanner', async () => {
     // `handle.dispatch` is public and reaches the reducer directly, so the DOM
     // guard does not cover it. What must not happen is a non-closed phase with
