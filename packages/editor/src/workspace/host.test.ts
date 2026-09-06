@@ -14,6 +14,7 @@ import type { GraphDocument } from '@issuegraph/store';
 import { makeEdge } from '@issuegraph/store';
 
 import { keyIntent } from '../create/keys.ts';
+import { candidates } from '../testing/firstpass.ts';
 import {
   type HostCommand,
   type HostEffect,
@@ -377,5 +378,122 @@ describe('railRowAt', () => {
     assert.equal(railRowAt(1130, 130, 50), 20);
     // With no chrome it is the plain division it always was.
     assert.equal(railRowAt(250, 0, 50), 5);
+  });
+});
+
+describe('the first pass reaches the store only through consent', () => {
+  /** Open the surface and land a scan of `count` candidates. */
+  function queued(count = 3): { state: HostState; effects: HostEffect[] } {
+    const opened = drive([{ kind: 'control', name: 'first-pass' }]);
+    const asked = opened.effects.find((effect) => effect.kind === 'find-candidates');
+    assert.ok(asked !== undefined && asked.kind === 'find-candidates', 'no scan was asked for');
+    return drive(
+      [{ kind: 'first-pass', command: { kind: 'candidates', scan: asked.scan, candidates: candidates(count) } }],
+      opened.state,
+    );
+  }
+
+  it('asks the shell for a scan, and proposes nothing on the way', () => {
+    const opened = drive([{ kind: 'control', name: 'first-pass' }]);
+    assert.deepEqual(opened.effects, [{ kind: 'find-candidates', scan: 1 }]);
+  });
+
+  it('proposes nothing for a queue that is merely drawn', () => {
+    // §17e's consent rule, at the reducer: a candidate on screen is a question,
+    // not an answer.
+    assert.deepEqual(queued().effects, []);
+  });
+
+  it('proposes the candidate’s own pair on `apply`, and nothing on the others', () => {
+    const { state } = queued();
+    assert.deepEqual(
+      drive([{ kind: 'control', name: 'first-pass-answer', value: 'apply' }], state).effects,
+      [
+        {
+          kind: 'first-pass-apply',
+          // THE CANDIDATE'S ID RIDES WITH THE WRITE. The create's own fields do
+          // not identify it: two detectors may propose the same pair, and
+          // `candidates.ts` keeps those two questions apart on purpose.
+          candidateId: 'c0',
+          proposal: { op: 'create', kind: 'blocked-by', from: '100', to: '101' },
+        },
+      ],
+    );
+    for (const value of ['reject', 'skip']) {
+      assert.deepEqual(
+        drive([{ kind: 'control', name: 'first-pass-answer', value }], state).effects,
+        [],
+        `${value} emitted something`,
+      );
+    }
+  });
+
+  it('ignores an answer that is not one of the three', () => {
+    const { state } = queued();
+    const after = drive([{ kind: 'control', name: 'first-pass-answer', value: 'maybe' }], state);
+    assert.deepEqual(after.effects, []);
+    assert.deepEqual(after.state.firstPass, state.firstPass);
+  });
+
+  it('reports a withdrawal to the shell only when an `apply` was taken back', () => {
+    const { state } = queued();
+    const applied = drive([{ kind: 'control', name: 'first-pass-answer', value: 'apply' }], state);
+    const undone = drive([{ kind: 'control', name: 'undo' }], applied.state);
+    assert.deepEqual(undone.effects, [{ kind: 'first-pass-withdraw', candidateId: 'c0' }]);
+
+    const rejected = drive([{ kind: 'control', name: 'first-pass-answer', value: 'reject' }], state);
+    // A rejection dispatched nothing, so there is nothing out there to take back.
+    assert.deepEqual(drive([{ kind: 'control', name: 'undo' }], rejected.state).effects, []);
+  });
+
+  it('names the answering candidate, even when two propose the same pair', () => {
+    // The case a structural match on the create's fields could not tell apart.
+    const twins = [
+      { id: 'left', kind: 'blocked-by' as const, from: '1', to: '2', evidence: [] },
+      { id: 'right', kind: 'blocked-by' as const, from: '1', to: '2', evidence: [] },
+    ];
+    const opened = drive([{ kind: 'control', name: 'first-pass' }]);
+    const asked = opened.effects.find((effect) => effect.kind === 'find-candidates');
+    assert.ok(asked !== undefined && asked.kind === 'find-candidates');
+    const queue = drive(
+      [{ kind: 'first-pass', command: { kind: 'candidates', scan: asked.scan, candidates: twins } }],
+      opened.state,
+    );
+    const first = drive([{ kind: 'control', name: 'first-pass-answer', value: 'apply' }], queue.state);
+    const second = drive([{ kind: 'control', name: 'first-pass-answer', value: 'apply' }], first.state);
+    assert.deepEqual(
+      [...first.effects, ...second.effects].map((effect) =>
+        effect.kind === 'first-pass-apply' ? effect.candidateId : effect.kind,
+      ),
+      ['left', 'right'],
+    );
+    // And an undo names the one it took back, not the one that looks like it.
+    const undone = drive([{ kind: 'control', name: 'undo' }], second.state);
+    assert.deepEqual(undone.effects, [{ kind: 'first-pass-withdraw', candidateId: 'right' }]);
+  });
+
+  it('changes nothing when a first-pass control arrives with the surface shut', () => {
+    for (const name of ['first-pass-answer', 'undo', 'first-pass-close']) {
+      const after = drive([{ kind: 'control', name, value: 'apply' }]);
+      assert.deepEqual(after.effects, [], `${name} emitted something`);
+      assert.deepEqual(after.state.firstPass, INITIAL_HOST_STATE.firstPass, name);
+    }
+  });
+
+  it('leaves a live draft alone — cancelling an open is the shell’s call', () => {
+    // This reducer cannot tell an open that will SCAN from one the shell is
+    // about to refuse for want of a source, so it clears nothing; `mount.ts`
+    // dispatches the cancel at the point it knows. Driven through the mount in
+    // `mount.test.ts`, both routes and the refusal.
+    const drafting = drive([
+      { kind: 'point', key: '2' },
+      { kind: 'control', name: 'add' },
+      { kind: 'control', name: 'kind', value: 'blocked-by' },
+      { kind: 'control', name: 'target-query', value: 'chang' },
+    ]);
+    assert.equal(drafting.state.draft.source, '2');
+    const opened = drive([{ kind: 'first-pass', command: { kind: 'open' } }], drafting.state);
+    assert.equal(opened.state.draft.source, '2');
+    assert.equal(opened.state.targetQuery, 'chang');
   });
 });

@@ -324,6 +324,16 @@ export {
 } from './workspace/selection.ts';
 
 export {
+  type FirstPassCommand,
+  type FirstPassOutcome,
+  type FirstPassPhase,
+  type FirstPassState,
+  INITIAL_FIRST_PASS,
+  firstPassReducer,
+  openQueueOf,
+} from './workspace/firstpass.ts';
+
+export {
   type RailWindow,
   type RailWindowOptions,
   RAIL_WINDOW,
@@ -366,6 +376,7 @@ export {
 
 export {
   type CanvasMode,
+  type FirstPassOption,
   type MountWords,
   type MountWorkspaceOptions,
   type WorkspaceHandle,

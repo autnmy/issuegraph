@@ -39,7 +39,23 @@
 import type { EdgeKind, IssueRef } from '@issuegraph/store';
 
 /**
- * A candidate's identity, stable across a queue's life.
+ * A candidate's identity, stable across a queue's life — and across the SCANS of
+ * one host, which is a stronger requirement and a deliberate one.
+ *
+ * ## Why one queue's life is not enough
+ *
+ * A first pass is left and returned to. A shell that composes this surface has
+ * to know which questions the reader already decided, or a re-open re-asks every
+ * rejection — and the only thing it can compare across two scans is this id. So
+ * a host that reuses an id for a DIFFERENT finding on a later scan makes that
+ * question indistinguishable from one already answered, and it is silently
+ * dropped.
+ *
+ * The requirement is stated here rather than worked around downstream because
+ * the alternative deletes the feature: decisions scoped to a single scan mean
+ * every re-open starts from nothing. A host with no stable identity of its own
+ * should derive one from what it detected — the pair, the kind and the detector
+ * — rather than counting.
  *
  * OPAQUE TO THIS PACKAGE, and deliberately not derived from the relationship it
  * proposes. Two candidates can legitimately propose the same pair with the same

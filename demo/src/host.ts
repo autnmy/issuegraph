@@ -73,6 +73,17 @@ export interface HostFactsInput {
   readonly state?: DemoStateName | undefined;
   /** How much of this host's backlog declares relationships, and what to say about it. */
   readonly adoption?: Adoption | undefined;
+  /** What backlog this is. §17a's header prints it; the viewer never invents one. */
+  readonly identity?: string | undefined;
+  /**
+   * The word on §17a's way into the first pass, or nothing.
+   *
+   * OMITTED WHEN THERE IS NOTHING TO RUN, which is a host decision and not a
+   * rendering one: whether a backlog has a first pass worth opening is something
+   * only the host's own detector can answer, so an entry is drawn only when this
+   * host has candidates to offer.
+   */
+  readonly firstPass?: string | undefined;
 }
 
 /** Past this the demo's stamp reads `stale`. A host threshold, not the package's. */
@@ -273,6 +284,8 @@ export function hostFacts(input: HostFactsInput): HostFacts {
     },
     ...(condition === undefined ? {} : { condition }),
     ...(input.adoption === undefined ? {} : { adoption: input.adoption }),
+    ...(input.identity === undefined ? {} : { identity: input.identity }),
+    ...(input.firstPass === undefined ? {} : { firstPass: input.firstPass }),
   };
 }
 

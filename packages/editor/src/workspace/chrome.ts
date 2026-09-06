@@ -175,4 +175,52 @@ export const mountStylesheet = `
   font-size: var(--ig-font-size-small);
   color: var(--ig-text-muted);
 }
+
+/* THE FIRST PASS COVERS THE WORKSPACE. §17e is a review queue rather than a
+   fourth column, so it is drawn over the three zones instead of beside them.
+   Placed against the workspace root, which is this sheet's positioning box. */
+.ig-firstpass-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* START-SAFE, NOT CENTRED. Evidence is host prose of no fixed length, and a
+     short workspace makes any panel too tall — centring overflow puts the
+     question above the container's own origin, where no scroll can reach it.
+     Laid out from the top and centred by the panel's own auto margins, which
+     collapse the moment there is not enough room. */
+  justify-content: flex-start;
+  overflow: auto;
+  gap: var(--ig-space);
+  padding: var(--ig-space-loose);
+  box-sizing: border-box;
+  background: var(--ig-bg);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size);
+  line-height: var(--ig-line-height);
+  color: var(--ig-text-body);
+}
+
+/* A CONTAINER THAT TAKES FOCUS NEEDS A RING. The wrapper is focused on open and
+   after every answer, so without one a sighted keyboard user cannot see where
+   they are on the surface built for them. */
+.ig-firstpass-overlay:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: calc(var(--ig-stroke) * -1);
+}
+
+.ig-firstpass-panel {
+  width: 100%;
+  max-width: calc(var(--ig-char-width) * 72);
+  /* Centres while it fits, and starts at the top the moment it does not. */
+  margin-block: auto;
+}
+
+/* The scanning and failed sentences. Both are the host's words. */
+.ig-firstpass-note {
+  margin: 0;
+  color: var(--ig-text-muted);
+}
 `;
