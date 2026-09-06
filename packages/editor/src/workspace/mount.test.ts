@@ -1645,6 +1645,43 @@ describe('the first pass, composed behind §17a’s entry', () => {
     }
   });
 
+  it('sees a pending retype as removing the relationship it replaces', async () => {
+    // A retype (and a flip) removes the edge the reader is being asked about
+    // just as surely as a delete does — it is simply not a delete. Enumerating
+    // the operations here got this wrong; the store's own `nextDocument` does
+    // not, and covers whatever operation it grows next.
+    const twins: readonly Candidate[] = [
+      { id: 'left', kind: 'blocked-by', from: '1', to: '2', evidence: [] },
+      { id: 'right', kind: 'blocked-by', from: '1', to: '2', evidence: [] },
+    ];
+    const page = await firstPassPage(twins);
+    try {
+      await open(page);
+      press(page, 'y');
+      await flush();
+      await page.source.whenPending();
+      page.source.settleNext('applied');
+      await flush();
+      const landed = page.store.getSnapshot().landed[0];
+      assert.ok(landed !== undefined);
+
+      // Retyped to a different kind, left in flight: the blocked-by is going.
+      void page.store.propose({ op: 'retype', edgeId: landed.id, nextKind: 'serialize-with' });
+      await page.source.whenPending();
+      await flush();
+
+      press(page, 'y');
+      await flush();
+      const creates = page.store
+        .getSnapshot()
+        .writes.filter((write) => write.mutation.op === 'create');
+      assert.equal(creates.length, 1, 'the consent was suppressed by an edge being retyped away');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
   it('keeps Tab inside the takeover, at both ends', async () => {
     // `inert` covers the workspace's own zones and nothing else, so a mount
     // beside other page chrome let Tab walk out of a dialog asserting

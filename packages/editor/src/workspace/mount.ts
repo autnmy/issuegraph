@@ -48,6 +48,7 @@
 
 import { edgeIdentity } from '@issuegraph/core';
 import type { EdgeKind, GraphDocument, MutationId, Store, StoreSnapshot } from '@issuegraph/store';
+import { nextDocument } from '@issuegraph/store';
 import {
   type Scene,
   type Theme,
@@ -461,27 +462,38 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         if (proposal.op === 'create') {
           const id = edgeIdentity(proposal.kind, proposal.from, proposal.to);
           const snapshot = store.getSnapshot();
-          // ASKED OF THE OPERATIONS, not of the edge's marks. A pending DELETE
-          // marks its edge `pending-write` too (`store/src/write.ts` leaves a
-          // pending delete visible and marked), so reading that mark as "a
-          // create is on its way" suppressed a consent while the relationship
-          // was on its way OUT — and if the delete then landed, the reader's
-          // answer had written nothing, shown nothing, and was already decided.
-          const pending = snapshot.writes.filter((write) => write.state === 'pending');
-          const creating = pending.some(
-            (write) =>
-              write.mutation.op === 'create' &&
-              edgeIdentity(write.mutation.kind, write.mutation.from, write.mutation.to) === id,
-          );
-          const deleting = pending.some(
-            (write) => write.mutation.op === 'delete' && write.mutation.edgeId === id,
-          );
-          // THERE, AND NOT ON ITS WAY OUT. A landed edge under a pending delete
-          // is a relationship the reader may be about to lose, so their consent
-          // goes to the store and is adjudicated there — visible either way,
-          // which is the whole difference this guard has to preserve.
-          const there = snapshot.landed.some((edge) => edge.id === id) && !deleting;
-          if (there || creating) return;
+          // ASKED OF THE STORE'S OWN RULE, not enumerated here. `nextDocument`
+          // is the store's answer to "what would this edit produce if it landed
+          // exactly as proposed", and it answers for every operation the store
+          // has: a create adds the edge, a delete removes it, and a retype or a
+          // flip replaces it with a different identity — which removes the one
+          // the reader is being asked about just as surely as a delete does.
+          // FOUR EARLIER VERSIONS RECONSTRUCTED THAT ANSWER and each was wrong
+          // in a way only the store's internals reveal — a failed write still
+          // projects, a landed edge can carry a settled overlay, a pending
+          // delete is marked `pending-write` too, and a retype removes an edge
+          // without being a delete. Every one of them suppressed a consent that
+          // then wrote nothing, showed nothing, and was already decided. So the
+          // enumeration is the store's, and a fifth operation is covered the day
+          // the store learns about one. See autnmy/issuegraph#142.
+          const landedNow = { issues: snapshot.issues, edges: snapshot.landed };
+          const isThere = (document___: GraphDocument): boolean =>
+            document___.edges.some((edge) => edge.id === id);
+          const already = isThere(landedNow);
+          let coming = false;
+          let going = false;
+          for (const write of snapshot.writes) {
+            if (write.state !== 'pending') continue;
+            const after = isThere(nextDocument(landedNow, write.mutation));
+            if (after && !already) coming = true;
+            if (!after && already) going = true;
+          }
+          // THERE, AND NOT ON ITS WAY OUT. A landed edge under a pending edit
+          // that would remove it is a relationship the reader may be about to
+          // lose, so their consent goes to the store and is adjudicated there —
+          // visible either way, which is the difference this guard exists to
+          // preserve.
+          if ((already && !going) || coming) return;
         }
         const handle = store.propose(effect.proposal);
         appliedWrites.set(effect.candidateId, handle.mutationId);
