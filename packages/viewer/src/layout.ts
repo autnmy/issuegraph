@@ -264,7 +264,18 @@ export function measureLabel(theme: Theme, label: string): number {
  * when the order deliberately never works it, the left one when it is an open
  * issue standing in the way.
  */
-function assignColumns(document: NormalizedDocument): {
+function assignColumns(
+  document: NormalizedDocument,
+  /**
+   * The slot leads the runner is working right now.
+   *
+   * They are placed by {@link layoutGraph} at the top of the spine as §16b's
+   * NOW station, so this pass must not ALSO place them — a key with two boxes
+   * is the one-element-per-key rule broken, whichever column the second one
+   * lands in.
+   */
+  running: ReadonlySet<string>,
+): {
   spine: string[];
   left: string[];
   right: string[];
@@ -291,6 +302,7 @@ function assignColumns(document: NormalizedDocument): {
   for (const slot of document.order.slots) {
     slotMembers.set(slot.lead, slot.members);
     for (const member of slot.members) placed.add(member);
+    if (running.has(slot.lead)) continue;
     (slot.holds.some((hold) => hold.family === 'tracker') ? footerLeads : spine).push(slot.lead);
   }
 
@@ -306,9 +318,16 @@ function assignColumns(document: NormalizedDocument): {
   const onSpine = new Set<string>();
   for (const lead of spine) for (const member of slotMembers.get(lead) ?? [lead]) onSpine.add(member);
 
-  const touchesSpine = (key: string): boolean =>
-    (document.edgesOf.get(key) ?? []).some((edge) =>
-      onSpine.has(edge.from === key ? edge.to : edge.from),
+  // EVERY MEMBER'S EDGES, NOT JUST THE LEAD'S. A together unit is one card and
+  // its partners get no card of their own, so a unit that blocks a ranked issue
+  // THROUGH its partner read as touching nothing and was sent to the footer —
+  // the graph then lost both the gutter card and the arc that explains the
+  // hold. The same rule the lateral axis already applies for the same reason.
+  const touchesSpine = (lead: string): boolean =>
+    (slotMembers.get(lead) ?? [lead]).some((member) =>
+      (document.edgesOf.get(member) ?? []).some((edge) =>
+        onSpine.has(edge.from === member ? edge.to : edge.from),
+      ),
     );
 
   const left: string[] = [];
@@ -483,23 +502,25 @@ export function layoutGraph(
   // it instead of silently reintroducing the clip.
   const pad = metric(theme, '--ig-space-tight') + metric(theme, '--ig-focus-ring');
 
-  const { spine, left, right, footer, slotMembers } = assignColumns(document);
-
-  // THE RUNNING JOBS LEAD THE SPINE. `normalizeHost` has already dropped any
-  // job this document does not carry, and a job that already holds a SLOT keeps
-  // it — the station it has is the one the sequence reads.
+  // THE RUNNING JOBS LEAD THE SPINE — §16b's NOW station, above rank 1, because
+  // "what is running" and "what is next" are one question asked a step apart.
   //
-  // TESTED AGAINST EVERY SLOT, NOT AGAINST THE SPINE. A runner-held slot is off
-  // the spine by construction, so a running job that was ALSO claimed — which
-  // is the ordinary way a job comes to be running — passed a spine-only test,
-  // took a card of its own AND kept its footer row, and the document then
-  // carried two elements for one key. That is precisely the one-element-per-key
-  // rule `mount` indexes on: `focus()` would land on whichever was emitted
-  // first, and a click on the other would select a key the keyboard could not
-  // reach.
-  const inASlot = new Set<string>();
-  for (const slot of document.order.slots) for (const member of slot.members) inASlot.add(member);
-  const nowKeys = document.host.running.map((job) => job.key).filter((key) => !inASlot.has(key));
+  // WHATEVER SLOT THEY HOLD. A job is usually running BECAUSE a runner claimed
+  // it, so its slot is tracker-held and off the spine by construction. Skipping
+  // a job that held any slot kept it out of two boxes and left it in NO NOW
+  // state at all: the graph drew a generic footer row for the one issue the
+  // panel exists to say is in flight. Placing it here and skipping it in
+  // `assignColumns` is what gives it exactly one box, which is the rule `mount`
+  // indexes on.
+  //
+  // BY THE SLOT'S LEAD. A together unit is one card, so a running PARTNER marks
+  // the unit rather than taking a card the projection has no station for.
+  const nowKeys: string[] = [];
+  for (const job of document.host.running) {
+    const lead = document.order.slots.find((slot) => slot.members.includes(job.key))?.lead ?? job.key;
+    if (!nowKeys.includes(lead)) nowKeys.push(lead);
+  }
+  const { spine, left, right, footer, slotMembers } = assignColumns(document, new Set(nowKeys));
 
   const leftX = pad;
   // THE STATION COLUMN SITS BETWEEN THE CHANNEL AND THE CARDS, and the spine
@@ -581,7 +602,12 @@ export function layoutGraph(
     );
     let lowest = pad + headroom;
     for (const key of ordered) {
-      const height = cardHeight(theme, document, key, gutterWidth, [key], false);
+      // THE SLOT'S MEMBERS, as the spine placement already does. A tracker-held
+      // together unit can land in the gutter, and `nodeCard` reads
+      // `slotMembers` there too — so sizing it as a single issue reserved a
+      // fraction of the markup it draws, and the next gutter card was placed on
+      // top of the difference.
+      const height = cardHeight(theme, document, key, gutterWidth, slotMembers.get(key) ?? [key], false);
       // Never above the previous card in the same gutter: an alignment that
       // would overlap gives way to the stack, because a hidden card explains
       // nothing at all.

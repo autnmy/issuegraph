@@ -44,30 +44,70 @@ function projection(): ReturnType<typeof projectDocument> {
   return projectDocument(explained, landed, host, scenario.caveats);
 }
 
+/** What each panel is showing right now — the state a toggle moves. */
+interface PanelState {
+  projection: 'linear' | 'graph';
+  compact: boolean;
+}
+
+const PANELS: ReadonlyMap<string, PanelState> = new Map([
+  ['s16a-rail', { projection: 'linear', compact: false }],
+  ['s16a-column', { projection: 'linear', compact: false }],
+  ['s16b-column', { projection: 'graph', compact: true }],
+  ['s16b-expanded', { projection: 'graph', compact: false }],
+]);
+
+let styled = false;
+
+function drawPanel(id: string, viewer: ReturnType<typeof projection>['viewer']): void {
+  const host = document.getElementById(id);
+  const state = PANELS.get(id);
+  if (host === null || state === undefined) return;
+  // `switchable`, because THIS PAGE WIRES THE COMMAND — see the listener below.
+  // The viewer draws the toggle only for a host that says it will complete what
+  // the button publishes, so a page that ignored it would draw no toggle at all
+  // rather than a dead one.
+  const result = renderViewer(viewer, {
+    projection: state.projection,
+    compact: state.compact,
+    switchable: true,
+  });
+  // ONE STYLESHEET FOR THE PAGE. The viewer emits the same bytes every time, so
+  // installing it per panel would be four identical copies of one rule set.
+  if (!styled) {
+    const style = document.createElement('style');
+    style.textContent = result.styles;
+    document.head.append(style);
+    styled = true;
+  }
+  host.innerHTML = result.markup;
+}
+
 function draw(): void {
   const { viewer } = projection();
-  const cases = [
-    ['s16a-rail', 'linear', false],
-    ['s16a-column', 'linear', false],
-    ['s16b-column', 'graph', true],
-    ['s16b-expanded', 'graph', false],
-  ] as const;
+  for (const id of PANELS.keys()) drawPanel(id, viewer);
 
-  let styled = false;
-  for (const [id, projectionName, compact] of cases) {
-    const host = document.getElementById(id);
-    if (host === null) continue;
-    const result = renderViewer(viewer, { projection: projectionName, compact });
-    // ONE STYLESHEET FOR THE PAGE. The viewer emits the same bytes every time,
-    // so installing it per case would be four identical copies of one rule set.
-    if (!styled) {
-      const style = document.createElement('style');
-      style.textContent = result.styles;
-      document.head.append(style);
-      styled = true;
-    }
-    host.innerHTML = result.markup;
-  }
+  // THE HOST COMPLETES WHAT THE VIEWER PUBLISHES. `projection:*`, `expand` and
+  // `collapse` are commands this package cannot perform on itself — it is a
+  // pure renderer — so the page listens for them and re-renders the panel the
+  // click came from with a different option. That is the whole contract, and
+  // wiring it here is what makes the toggle on these panels a real control.
+  document.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const control = target.closest('[data-ig-command]');
+    const panel = target.closest('[id]');
+    if (control === null || panel === null) return;
+    const state = PANELS.get(panel.id);
+    if (state === undefined) return;
+    const command = control.getAttribute('data-ig-command');
+    if (command === 'projection:linear') state.projection = 'linear';
+    else if (command === 'projection:graph') state.projection = 'graph';
+    else if (command === 'expand') state.compact = false;
+    else if (command === 'collapse') state.compact = true;
+    else return;
+    drawPanel(panel.id, viewer);
+  });
 }
 
 draw();

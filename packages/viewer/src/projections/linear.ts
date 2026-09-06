@@ -58,6 +58,24 @@ export interface SceneOptions {
    * rather than this package guessing which of its instances is the panel.
    */
   readonly chrome?: boolean | undefined;
+  /**
+   * Draw the header's own view controls — the List/Graph toggle, and the
+   * graph's expand/collapse affordance. Defaults to `false`.
+   *
+   * OPT-IN, BECAUSE THIS PACKAGE CANNOT COMPLETE THE COMMANDS. It is a pure
+   * renderer: `g`, the toggle and the size affordance all publish a command —
+   * `projection:linear|graph`, `expand`, `collapse` — and the HOST re-renders
+   * with a different option. Drawn by default, every host that had not wired
+   * them displayed buttons that do nothing, which is what the editor's composed
+   * workspace did: the canvas mode is the editor's own control, and a second,
+   * inert one sat beside the counts.
+   *
+   * §16a draws the toggle, so the surface that reproduces §16a passes `true`
+   * and wires it. Advertising an action nobody can perform is worse than a
+   * plain absence — the same rule the graph's refusal already states about its
+   * own capsules.
+   */
+  readonly switchable?: boolean | undefined;
 }
 
 /**
@@ -380,7 +398,9 @@ export function linearScene(
     // before a single row of the thing they came for — and §16a draws no
     // legend at that position at all.
     [
-      options.chrome === false ? null : hostHeader(document, { projection: 'linear' }),
+      options.chrome === false
+        ? null
+        : hostHeader(document, { projection: 'linear', switchable: options.switchable === true }),
       nowRows(document),
       body,
       footer,

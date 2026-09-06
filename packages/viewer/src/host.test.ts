@@ -20,6 +20,9 @@ const PROJECTIONS: readonly Projection[] = ['linear', 'graph', 'tree'];
 // stamp, a NOW row or a caveat it never supplied — and that is what this list is.
 const HOST_CLASSES = ['ig-counts', 'ig-freshness', 'ig-now', 'ig-caveat', 'ig-refresh'];
 
+/** The header's own controls, which a host opts into rather than inherits. */
+const CONTROL_CLASSES = ['ig-toggle', 'ig-size'];
+
 describe('the host-facts port', () => {
   it('renders exactly what shipped before the port when the host states nothing', () => {
     // Done-when 2, pinned: a document with no `host` and no per-issue fact is
@@ -33,6 +36,38 @@ describe('the host-facts port', () => {
         assert.equal(bare.includes(cls), false, `${projection} draws ${cls} with no host facts`);
       }
     }
+  });
+
+  it('draws the projection toggle only for a host that says it will switch', () => {
+    // A CONTROL NOBODY WIRED IS WORSE THAN NO CONTROL, which is the rule the
+    // graph's refusal already states about its own capsules. This package
+    // cannot switch its own projection — `g` and the toggle both publish
+    // `projection:*` and the HOST re-renders — so drawn by default, every host
+    // that had not wired the command displayed two buttons that do nothing.
+    for (const projection of PROJECTIONS) {
+      const off = renderViewer(hostedFixtureDocument, { projection }).markup;
+      for (const cls of CONTROL_CLASSES) {
+        assert.equal(off.includes(cls), false, `${projection} drew ${cls} unasked`);
+      }
+      const on = renderViewer(hostedFixtureDocument, { projection, switchable: true }).markup;
+      assert.match(on, /data-ig-command="projection:linear"/, projection);
+      assert.match(on, /data-ig-command="projection:graph"/, projection);
+      // The current projection is the pressed one, so the pair is a state and
+      // not two equal buttons.
+      const pressed = [...on.matchAll(/data-ig-command="projection:(\w+)"/g)].filter((match) =>
+        on.slice(Math.max(0, match.index - 120), match.index).includes('aria-pressed="true"'),
+      );
+      assert.equal(pressed.length <= 1, true);
+    }
+    // The size affordance belongs to the graph, which is the only projection
+    // that HAS two sizes.
+    const graph = renderViewer(hostedFixtureDocument, { projection: 'graph', switchable: true, compact: true }).markup;
+    assert.match(graph, /data-ig-command="expand"/);
+    assert.equal(
+      renderViewer(hostedFixtureDocument, { projection: 'linear', switchable: true }).markup.includes('ig-size'),
+      false,
+      'the list drew a size control it has no second size for',
+    );
   });
 
   it('prints the host numbers as the three chips the design draws, cap on the ready one', () => {

@@ -243,7 +243,9 @@ export function treeScene(document: NormalizedDocument, options: SceneOptions = 
     { class: 'ig-viewer ig-tree-view', 'data-projection': 'tree', 'aria-label': 'issue decomposition' },
     // The legend last, as a footer bar, the way §16b draws it — one placement
     // for all three projections, so a reader meets the grammar in one place.
-    [options.chrome === false ? null : hostHeader(document, { projection: 'tree' }), body, legend()],
+    [options.chrome === false
+      ? null
+      : hostHeader(document, { projection: 'tree', switchable: options.switchable === true }), body, legend()],
   );
 
   // A tree's lateral axis is its nesting, which the vertical keys already walk,

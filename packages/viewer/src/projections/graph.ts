@@ -290,7 +290,7 @@ function nodeCard(
           box.now === true
             ? element('div', { class: 'ig-unit-mark' }, [
                 element('span', { class: 'ig-now-mark' }, ['now']),
-                ...nowPhase(document, key),
+                ...nowPhase(document, members),
               ])
             : null,
           ...head,
@@ -312,9 +312,18 @@ function nodeCard(
   );
 }
 
-/** The running job's phase and elapsed time — the host's words, on its card. */
-function nowPhase(document: NormalizedDocument, key: string): readonly ElementSpec[] {
-  const job = document.host.running.find((candidate) => candidate.key === key);
+/**
+ * The running job's phase and elapsed time — the host's words, on its card.
+ *
+ * MATCHED ON THE CARD'S WHOLE KEY SET. A together unit is one card, so the job
+ * may be running its PARTNER; reading the lead alone left the unit marked NOW
+ * with no phase and no elapsed time beside it.
+ */
+function nowPhase(
+  document: NormalizedDocument,
+  members: readonly string[],
+): readonly ElementSpec[] {
+  const job = document.host.running.find((candidate) => members.includes(candidate.key));
   if (job === undefined) return [];
   return [element('span', { class: 'ig-unit-note' }, [`${job.phase} · ${job.elapsed}`])];
 }
@@ -818,7 +827,11 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
     [
       options.chrome === false
         ? null
-        : hostHeader(document, { projection: 'graph', compact: layout.compact }),
+        : hostHeader(document, {
+            projection: 'graph',
+            compact: layout.compact,
+            switchable: options.switchable === true,
+          }),
       // ONE STAGE, sized in the layout's own units, so an absolutely-positioned
       // card and an SVG coordinate mean the same thing. A percentage-width
       // canvas would rescale under the cards and the two would drift apart.

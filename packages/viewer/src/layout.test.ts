@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { normalizeDocument } from './document.ts';
+import { type ViewerDocument, normalizeDocument } from './document.ts';
 import { edgeGeometry, layoutGraph, measureLabel } from './layout.ts';
 import { fixtureDocument } from './testing/fixtures.ts';
 import { defaultTheme, extendTheme } from './theme.ts';
@@ -172,12 +172,14 @@ describe('layoutGraph', () => {
     );
   });
 
-  it('leaves a running job that already holds a slot where its slot puts it', () => {
-    // A SPINE-ONLY TEST WAS NOT ENOUGH, and the case it missed is the ordinary
-    // one: a job is running BECAUSE a runner claimed it, so its slot is
-    // tracker-held and therefore off the spine by construction. It then took a
-    // NOW card of its own AND kept its footer row, and the document carried two
-    // elements for one key — the one-element-per-key rule `mount` indexes on.
+  it('gives a claimed-and-running job ONE box, and it is the NOW station', () => {
+    // THE ORDINARY CASE, and it went wrong twice in opposite directions. A job
+    // is usually running BECAUSE a runner claimed it, so its slot is
+    // tracker-held and off the spine by construction: a spine-only test let it
+    // take a NOW card AND keep its footer row — two elements for one key, which
+    // is the rule `mount` indexes on — and skipping every job that held a slot
+    // then left the one issue the panel exists to say is in flight drawn as a
+    // generic footer row with no NOW state at all.
     const { document } = normalizeDocument({
       issues: [{ key: 'a', title: 'Claimed and running', open: true, priority: 2 }],
       edges: [],
@@ -198,9 +200,66 @@ describe('layoutGraph', () => {
     });
     const layout = layoutGraph(document, defaultTheme);
 
-    assert.deepEqual([...layout.spineOrder], [], 'the claimed job took a station of its own');
-    assert.equal(layout.nodes.has('a'), false);
-    assert.deepEqual([...layout.footer], ['a']);
+    assert.deepEqual([...layout.spineOrder], ['a']);
+    assert.equal(layout.nodes.get('a')?.now, true, 'the running job carries no NOW state');
+    assert.equal(layout.nodes.get('a')?.column, 'spine');
+    assert.deepEqual([...layout.footer], [], 'it kept a footer row as well as its station');
+  });
+
+  it('marks the UNIT when the running job is a partner, and sizes a gutter unit whole', () => {
+    // Two rules that both read a slot through its lead alone. A together unit
+    // is ONE card, so a running partner marks that card rather than taking a
+    // station the projection has no room for; and a tracker-held unit that
+    // lands in the gutter is drawn with its pill, its enclosure and every
+    // member, so sizing it as a single issue put the next gutter card on top of
+    // the difference.
+    const held = (members: readonly string[]): ViewerDocument => ({
+      issues: [
+        { key: 'r', title: 'Ranked', open: true, priority: 2 },
+        { key: 'u', title: 'Unit lead', open: true, priority: 2 },
+        { key: 'p', title: 'Unit partner, which blocks the ranked row', open: true, priority: 2 },
+      ],
+      edges: [
+        { field: 'together-with', from: 'u', to: 'p' },
+        { field: 'blocked-by', from: 'r', to: 'p' },
+      ],
+      order: {
+        slots: [
+          { rank: 1, lead: 'r', members: ['r'], ready: true, holds: [] },
+          {
+            rank: null,
+            lead: 'u',
+            members,
+            ready: false,
+            holds: [{ family: 'tracker', reason: 'claimed by another run', label: 'claimed' }],
+          },
+        ],
+        excluded: [],
+      },
+      cycles: [],
+    });
+    const unit = layoutGraph(normalizeDocument(held(['u', 'p'])).document, defaultTheme).nodes.get('u');
+
+    // It EXPLAINS the order — through its partner — so it is a gutter card
+    // rather than a footer row.
+    assert.equal(unit?.column, 'left', 'a unit that blocks through its partner went to the footer');
+    // AND IT IS SIZED FOR WHAT `nodeCard` DRAWS THERE: the unit pill, and an
+    // enclosure holding a title and an identity for each member. Passing the
+    // lead alone reserved a single issue's height for all of that, and the next
+    // gutter card was placed on top of the difference. Asserted as the floor the
+    // markup needs rather than against a sibling, because the only sibling with
+    // the same width would be another unit.
+    assert.ok(unit !== undefined);
+    const line = defaultTheme.metrics['--ig-card-line'];
+    const floor =
+      defaultTheme.metrics['--ig-space'] * 2 +
+      line +
+      defaultTheme.metrics['--ig-space-tight'] +
+      2 * (defaultTheme.metrics['--ig-space-snug'] * 2 + 2 * line);
+    assert.ok(
+      unit.height >= floor,
+      `${String(unit.height)}px reserved for a two-member unit needing ${String(floor)}px`,
+    );
   });
 
   it('drops the gutters and the arcs in the column, keeping the spine identical', () => {

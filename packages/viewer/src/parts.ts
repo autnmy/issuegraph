@@ -247,6 +247,11 @@ export interface HeaderControls {
   /** Which projection is drawn now, so the toggle can mark it. */
   readonly projection: 'linear' | 'graph' | 'tree';
   /**
+   * Whether the host wired the view commands — `projection:*`, `expand` and
+   * `collapse`. See `SceneOptions.switchable`.
+   */
+  readonly switchable: boolean;
+  /**
    * Whether the graph is drawn in a column or at full width. Absent for the
    * projections where the question does not arise.
    */
@@ -265,7 +270,10 @@ export interface HeaderControls {
  * is already listening to.
  */
 function headerControls(controls: HeaderControls | undefined): ElementSpec | null {
-  if (controls === undefined) return null;
+  // A CONTROL NOBODY WIRED IS WORSE THAN NO CONTROL. This package cannot switch
+  // its own projection, so the host says whether it will — and until it does,
+  // the button is not drawn rather than drawn dead.
+  if (controls === undefined || !controls.switchable) return null;
   const toggle = (
     projection: 'linear' | 'graph',
     glyph: string,
@@ -287,9 +295,15 @@ function headerControls(controls: HeaderControls | undefined): ElementSpec | nul
   ]);
 }
 
-/** The expand / collapse affordance the graph's two sizes need. */
+/**
+ * The expand / collapse affordance the graph's two sizes need.
+ *
+ * GATED THE SAME WAY THE TOGGLE IS, and for the same reason: `expand` and
+ * `collapse` are published commands this package cannot perform on itself, so a
+ * host that has not wired them would be given a button that does nothing.
+ */
 function sizeControl(controls: HeaderControls | undefined): ElementSpec | null {
-  if (controls === undefined || controls.compact === undefined) return null;
+  if (controls === undefined || !controls.switchable || controls.compact === undefined) return null;
   // ITS OWN CLASS, NOT THE REFRESH BUTTON'S. They look alike and they are not
   // the same thing: refresh is drawn only when a host supplied a word for it,
   // and this is drawn whenever the graph is, so sharing a class made a document
