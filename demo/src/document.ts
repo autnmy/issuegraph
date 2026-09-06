@@ -58,13 +58,37 @@ function blocks(hold: Hold): boolean {
   return hold.blocking !== false;
 }
 
-function provenanceOf(explained: ExplainedDocument, row: ExplainedRow): RankProvenance {
+/**
+ * Where this row's rank came from, in the viewer's own three forms.
+ *
+ * THE ORDER OF THE ARMS IS THE DESIGN'S RECONCILIATION RULE, not a preference.
+ * The config layer produces a complete ranking on its own and the relationship
+ * layer MODIFIES it — so a promotion, which is the relationship layer speaking,
+ * is what a row says when it has one. Below that sits whichever ordered query
+ * the host's engine matched, and below that the tier the issue declares.
+ */
+function provenanceOf(
+  explained: ExplainedDocument,
+  row: ExplainedRow,
+  caveats: ReadonlyMap<IssueRef, IssueCaveats>,
+): RankProvenance {
   const view = explained.order.priority.get(row.issue.ref);
   if (view !== undefined && view.promoted && view.promotedBy.length > 0) {
     return { kind: 'promotion', notation: view.notation, promotedBy: view.promotedBy };
   }
+  const matched = caveats.get(row.issue.ref)?.matchedQuery;
+  if (matched !== undefined) return { kind: 'matched-query', index: matched.index, label: matched.label };
   const declared = row.provenance.form === 'promoted' ? row.provenance.declared : row.provenance.priority;
   return { kind: 'declared-tier', priority: declared };
+}
+
+/** The two caveats the viewer's issue actually carries, and nothing else from the table. */
+function previewAndDisagreement(caveats: IssueCaveats | undefined): Partial<ViewerIssue> {
+  if (caveats === undefined) return {};
+  return {
+    ...(caveats.previewOnly === undefined ? {} : { previewOnly: caveats.previewOnly }),
+    ...(caveats.disagreement === undefined ? {} : { disagreement: caveats.disagreement }),
+  };
 }
 
 function issueOf(
@@ -77,9 +101,11 @@ function issueOf(
     title: row.issue.title,
     open: row.issue.state === 'open',
     priority: row.issue.priority ?? DEFAULT_PRIORITY,
-    provenance: provenanceOf(explained, row),
+    provenance: provenanceOf(explained, row, caveats),
     // The host's caveats about its own engine, from the scenario's table.
-    ...(caveats.get(row.issue.ref) ?? {}),
+    // `matchedQuery` is deliberately NOT spread onto the issue: it is an input
+    // to the provenance above, not a field the viewer's document carries.
+    ...previewAndDisagreement(caveats.get(row.issue.ref)),
   };
 }
 

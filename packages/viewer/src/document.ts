@@ -293,6 +293,125 @@ export interface Freshness {
 }
 
 /**
+ * A control the host will perform, offered beside a condition.
+ *
+ * The same rule the refresh button already follows: the viewer draws it only
+ * because a host supplied a word for it, publishes the command, and wires
+ * nothing. `href` turns it into a link instead — some hosts route rather than
+ * act — and is validated against the same scheme allowlist a deep link is,
+ * because it becomes the same executable surface when it reaches the DOM.
+ */
+export interface ConditionAction {
+  readonly label: string;
+  readonly href?: string | undefined;
+}
+
+/**
+ * What the host says is true of the panel as a whole, in the three shapes the
+ * design names beyond a populated order.
+ *
+ * A HOST FACT, LIKE EVERY OTHER FIELD HERE. Whether an import is in flight,
+ * whether the index could be read, and why nothing is eligible are answers only
+ * the host holds — the viewer holds a document, and a document cannot say why
+ * it is short. Deriving `empty` from an order with no slots would be the same
+ * mistake `OrderCounts` exists to avoid: a fact about the reader's slice stated
+ * as a fact about the world.
+ *
+ * EVERY STRING IS THE HOST'S WORDS, none of them the package's. The sentences
+ * this state needs are claims about a host's own runner — that it stays armed,
+ * that it continues on its last known order — and a rendering package has no
+ * standing to make them.
+ *
+ * ONE KIND AT A TIME, AND THAT IS A NARROWING RATHER THAN A CLAIM ABOUT THE
+ * WORLD. A repository can be importing AND have nothing eligible; a host in
+ * that position states `importing`, and because a stated condition replaces the
+ * projection's own empty sentence, the reader is told one thing rather than
+ * two. A union is used over a list because this type is published: widening a
+ * union later is additive, and narrowing a list is not.
+ */
+export type ViewerCondition =
+  /** The first import is still running. The order below is real and incomplete. */
+  | {
+      readonly kind: 'importing';
+      readonly headline: string;
+      /** That ranks will change as the rest arrive. */
+      readonly caution: string;
+      /** Honest progress, as the host counts it: `412 of ~1,200 issues`. */
+      readonly progress: string;
+      readonly glyph?: string | undefined;
+    }
+  /** Nothing is eligible. The host says why, and that its pipeline stays armed. */
+  | {
+      readonly kind: 'empty';
+      readonly headline: string;
+      readonly reason: string;
+      readonly assurance: string;
+      readonly action?: ConditionAction | undefined;
+      readonly glyph?: string | undefined;
+    }
+  /** The index could not be read. The order shown is the last one that could. */
+  | {
+      readonly kind: 'error';
+      readonly headline: string;
+      readonly assurance: string;
+      /**
+       * The label of a retry control. WHEN PRESENT, AND ONLY THEN, the viewer
+       * publishes `retry:index` and wires nothing — re-reading an index is
+       * fetching, which this layer never does.
+       *
+       * NAMESPACED, AND NOT THE BARE WORD. `data-ig-command` is one namespace
+       * shared with `@issuegraph/editor` and with whatever the host publishes
+       * beside it, and a bare `retry` already means "retry that write" to the
+       * editor's own reducer. Two meanings on one name is a control that looks
+       * wired and does the wrong thing, or nothing.
+       */
+      readonly retry?: string | undefined;
+      readonly glyph?: string | undefined;
+    };
+
+/**
+ * How much of the host's backlog declares Issuegraph relationships at all.
+ *
+ * THE DAY-ONE FACT, and it is the host's for the same reason `OrderCounts` is:
+ * the document here may be a window or a slice, so a count taken over it would
+ * state the reader's scroll position as a fact about the repository. The host
+ * has the whole backlog; the host counts.
+ *
+ * TWO INDEPENDENT FIELDS, and which of them to supply is the host's call. The
+ * design draws a header count where adoption is partial and a footer line where
+ * it is absent; a viewer that picked between them from `declaring === 0` would
+ * be deriving a state from a number, which is the thing this port exists to
+ * stop. So both are optional and neither implies the other.
+ */
+export interface Adoption {
+  /** `12 of 48 declare relationships`. Both non-negative integers. */
+  readonly counts?:
+    | {
+        readonly declaring: number;
+        readonly total: number;
+      }
+    | undefined;
+  /** One quiet line for the panel footer. The host's sentence, link and dismiss word. */
+  readonly note?:
+    | {
+        readonly text: string;
+        /**
+         * A SHORT LINK BESIDE THE SENTENCE, never the sentence itself.
+         *
+         * The design asks this line to read quiet — it is the day-one panel's
+         * only commentary, on a state that has to feel complete rather than
+         * lacking. Hanging the href on `text` made the whole sentence one
+         * underlined anchor, which is the loudest element on the panel and the
+         * opposite of what was asked for. So the label is its own field.
+         */
+        readonly link?: { readonly text: string; readonly href: string } | undefined;
+        /** The label of a dismiss control. Absent draws none; the viewer never hides its own line. */
+        readonly dismiss?: string | undefined;
+      }
+    | undefined;
+}
+
+/**
  * THE HOST-FACTS PORT: the half of the design the graph cannot derive.
  *
  * The format excludes run state on purpose (SPEC §2, §6.8), so who is working
@@ -307,6 +426,8 @@ export interface HostFacts {
   readonly counts?: OrderCounts | undefined;
   readonly running?: readonly RunningJob[] | undefined;
   readonly freshness?: Freshness | undefined;
+  readonly condition?: ViewerCondition | undefined;
+  readonly adoption?: Adoption | undefined;
 }
 
 /** Everything the viewer draws. */
@@ -341,6 +462,8 @@ export interface NormalizedHostFacts {
   readonly counts?: OrderCounts | undefined;
   readonly running: readonly RunningJob[];
   readonly freshness?: Freshness | undefined;
+  readonly condition?: ViewerCondition | undefined;
+  readonly adoption?: Adoption | undefined;
 }
 
 /**
@@ -702,6 +825,137 @@ function isCount(value: number): boolean {
 }
 
 /**
+ * The strings a condition CANNOT be drawn without, per kind.
+ *
+ * An exhaustive switch rather than a lookup table, because the arms carry
+ * different field names and a table would have to reach them through an index
+ * the union does not offer. It is the same shape `sceneFor` uses for the
+ * projections: one interpreter, one line per arm, and the compiler is what
+ * proves a new arm was not forgotten.
+ */
+function requiredTextOf(condition: ViewerCondition): readonly string[] {
+  switch (condition.kind) {
+    case 'importing':
+      return [condition.headline, condition.caution, condition.progress];
+    case 'empty':
+      return [condition.headline, condition.reason, condition.assurance];
+    case 'error':
+      return [condition.headline, condition.assurance];
+  }
+}
+
+/**
+ * A host-supplied href, through the SAME allowlist a deep link goes through.
+ *
+ * Validated here rather than where it is drawn, for the reason the allowlist's
+ * own comment gives: a second scheme check somewhere else is a second answer
+ * free to drift from this one, and the miss it publishes is the bug the check
+ * exists to stop. The label survives a refused href — a line that loses its
+ * link still says what it says.
+ */
+function safeHref(href: string | undefined, where: string, diagnostics: string[]): string | undefined {
+  if (href === undefined || href === '') return undefined;
+  if (isLinkable(href)) return href;
+  diagnostics.push(`${where} href ${href} is not a linkable scheme and was dropped`);
+  return undefined;
+}
+
+/**
+ * A label a host actually said, or nothing.
+ *
+ * TRIMMED, LIKE EVERY REQUIRED STRING BESIDE IT. A control is drawn only for a
+ * host that named one, and `'   '` is not a name — it renders a button with a
+ * published command and no accessible name, which is the "control nobody
+ * wired" failure arriving through the one predicate that compared for exact
+ * emptiness instead of asking whether anything was said.
+ */
+function spoken(label: string | undefined): string | undefined {
+  return label === undefined || label.trim() === '' ? undefined : label;
+}
+
+/** A condition the viewer can draw, or nothing plus a diagnostic naming what was missing. */
+function normalizeCondition(
+  condition: ViewerCondition,
+  diagnostics: string[],
+): ViewerCondition | undefined {
+  if (requiredTextOf(condition).some((text) => text.trim() === '')) {
+    diagnostics.push(`${condition.kind} condition has an empty required string and was dropped whole`);
+    return undefined;
+  }
+  if (condition.kind !== 'empty' || condition.action === undefined) return Object.freeze({ ...condition });
+  if (spoken(condition.action.label) === undefined) {
+    diagnostics.push('condition action has no label and was dropped');
+    const { action: _unnamed, ...rest } = condition;
+    return Object.freeze(rest);
+  }
+  const href = safeHref(condition.action.href, 'condition action', diagnostics);
+  return Object.freeze({
+    ...condition,
+    action: Object.freeze({
+      label: condition.action.label,
+      ...(href === undefined ? {} : { href }),
+    }),
+  });
+}
+
+/**
+ * The adoption fact, validated — and REPORTED ON when it contradicts the
+ * document in hand.
+ *
+ * Reporting is not deriving, and the difference is what the viewer can see.
+ * `OrderCounts` counts a runner's world this layer has no view of, so it is
+ * taken on trust. How many issues declare a relationship is a property of the
+ * very edges that were passed here, so a header reading `0 of 48 declare
+ * relationships` above rows carrying `blocked-by` badges is a contradiction
+ * this layer holds the evidence for. It still draws what it was given — the
+ * host owns the number — and says so in a diagnostic, exactly as it does for a
+ * dangling edge.
+ */
+function normalizeAdoption(
+  adoption: Adoption,
+  edgeCount: number,
+  diagnostics: string[],
+): Adoption | undefined {
+  let counts: Adoption['counts'];
+  if (adoption.counts !== undefined) {
+    const { declaring, total } = adoption.counts;
+    // `declaring <= total` NEEDS NO DOCUMENT TO REFUTE IT. `50 of 48` is
+    // unsatisfiable on its face, and a header that prints it is stating
+    // something no repository could ever be — so it is refused with the
+    // out-of-range members rather than reported beside them.
+    if (isCount(declaring) && isCount(total) && declaring <= total) counts = Object.freeze({ declaring, total });
+    else diagnostics.push('adoption counts are not two non-negative integers with declaring no greater than total, and were dropped whole');
+  }
+  if (counts !== undefined && counts.declaring === 0 && edgeCount > 0) {
+    diagnostics.push(
+      `adoption states 0 of ${String(counts.total)} declare relationships, but this document carries ${String(edgeCount)}`,
+    );
+  }
+
+  let note: Adoption['note'];
+  if (adoption.note !== undefined) {
+    if (adoption.note.text.trim() === '') diagnostics.push('adoption note has empty text and was dropped whole');
+    else {
+      const link = adoption.note.link;
+      const href = link === undefined ? undefined : safeHref(link.href, 'adoption note', diagnostics);
+      note = Object.freeze({
+        text: adoption.note.text,
+        ...(link === undefined || href === undefined || link.text.trim() === ''
+          ? {}
+          : { link: Object.freeze({ text: link.text, href }) }),
+        ...(spoken(adoption.note.dismiss) === undefined ? {} : { dismiss: adoption.note.dismiss }),
+      });
+    }
+  }
+
+  if (counts === undefined && note === undefined) return undefined;
+  return Object.freeze({
+    ...(counts === undefined ? {} : { counts }),
+    ...(note === undefined ? {} : { note }),
+  });
+}
+
+/**
  * The host facts, validated the way every other input is: a value the viewer
  * cannot draw is dropped and said so, never thrown on and never rendered as a
  * value it is not.
@@ -714,6 +968,7 @@ function isCount(value: number): boolean {
 function normalizeHost(
   host: HostFacts | undefined,
   byKey: ReadonlyMap<string, ViewerIssue>,
+  shape: { readonly edges: number; readonly slots: number },
   diagnostics: string[],
 ): NormalizedHostFacts {
   const running: RunningJob[] = [];
@@ -750,11 +1005,29 @@ function normalizeHost(
     else freshness = Object.freeze({ ...host.freshness });
   }
 
+  const condition =
+    host?.condition === undefined ? undefined : normalizeCondition(host.condition, diagnostics);
+  // REPORTED, NOT CORRECTED. A host that says nothing is eligible over an order
+  // full of slots is stating something this layer can see is not so, and the
+  // panel would then carry a notice contradicting the rows beneath it. The
+  // number and the sentence are still the host's; the disagreement is a fact
+  // about the DATA, which is what a diagnostic is for.
+  if (condition?.kind === 'empty' && shape.slots > 0) {
+    diagnostics.push(
+      `an empty condition was stated over an order carrying ${String(shape.slots)} slots`,
+    );
+  }
+
+  const adoption =
+    host?.adoption === undefined ? undefined : normalizeAdoption(host.adoption, shape.edges, diagnostics);
+
   return Object.freeze({
     ...(concurrencyCap === undefined ? {} : { concurrencyCap }),
     ...(counts === undefined ? {} : { counts }),
     running: Object.freeze(running),
     ...(freshness === undefined ? {} : { freshness }),
+    ...(condition === undefined ? {} : { condition }),
+    ...(adoption === undefined ? {} : { adoption }),
   });
 }
 
@@ -798,7 +1071,10 @@ export function normalizeDocument(input: ViewerDocument): NormalizeResult {
     return true;
   });
 
-  const host = normalizeHost(input.host, byKey, diagnostics);
+  // THE SHAPE THE HOST'S CLAIMS ARE READ AGAINST — the KEPT edges and slots, so a
+  // contradiction is reported against what will actually be drawn rather than
+  // against what was passed in and then dropped.
+  const host = normalizeHost(input.host, byKey, { edges: edges.length, slots: slots.length }, diagnostics);
   // A RUNNING ISSUE IS DRAWN — as the NOW row — so it is not "in no slot", even
   // when the host put it in none. Counting it would make the isolated chip
   // state a falsehood about a row the reader can see above the order.

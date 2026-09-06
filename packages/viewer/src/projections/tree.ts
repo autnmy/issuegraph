@@ -13,7 +13,18 @@
 
 import type { NormalizedDocument } from '../document.ts';
 import { type ElementSpec, type SpecChild, element } from '../element.ts';
-import { caveatLines, edgeBadges, emptyState, hostHeader, identity, legend, provenanceLine } from '../parts.ts';
+import {
+  adoptionNote,
+  caveatLines,
+  conditionKind,
+  conditionNotice,
+  edgeBadges,
+  emptyState,
+  hostHeader,
+  identity,
+  legend,
+  provenanceLine,
+} from '../parts.ts';
 import { type LateralNeighbours, type Scene, resolveFocusKey } from '../scene.ts';
 import type { SceneOptions } from './linear.ts';
 
@@ -231,7 +242,10 @@ export function treeScene(document: NormalizedDocument, options: SceneOptions = 
 
   const body =
     forest.roots.length === 0
-      ? emptyState('This document declares no issues, so there is nothing to trace.')
+      ? // THE HOST'S NOTICE IS THE PANEL'S ONE CAUSE STATEMENT — see `linear.ts`.
+        conditionKind(document, options.chrome) === null
+        ? emptyState('This document declares no issues, so there is nothing to trace.')
+        : null
       : element(
           'ul',
           { class: 'ig-tree ig-list', 'aria-label': 'decomposition' },
@@ -240,12 +254,27 @@ export function treeScene(document: NormalizedDocument, options: SceneOptions = 
 
   const root = element(
     'section',
-    { class: 'ig-viewer ig-tree-view', 'data-projection': 'tree', 'aria-label': 'issue decomposition' },
+    {
+      class: 'ig-viewer ig-tree-view',
+      'data-projection': 'tree',
+      'data-ig-condition': conditionKind(document, options.chrome),
+      'aria-label': 'issue decomposition',
+    },
     // The legend last, as a footer bar, the way §16b draws it — one placement
     // for all three projections, so a reader meets the grammar in one place.
-    [options.chrome === false
-      ? null
-      : hostHeader(document, { projection: 'tree', switchable: options.switchable === true }), body, legend()],
+    [
+      options.chrome === false
+        ? null
+        : hostHeader(document, { projection: 'tree', switchable: options.switchable === true }),
+      // This projection draws no NOW row, so the notice follows the header
+      // directly — the same position relative to the order it qualifies.
+      conditionNotice(document, options.chrome),
+      body,
+      legend(),
+      // LAST, because §16h calls it the panel FOOTER and the legend is a footer
+      // bar. Above it, the line was not the last thing on the panel.
+      adoptionNote(document, options.chrome),
+    ],
   );
 
   // A tree's lateral axis is its nesting, which the vertical keys already walk,

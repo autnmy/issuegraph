@@ -16,8 +16,11 @@
 import type { NormalizedDocument, ViewerHold, ViewerSlot } from '../document.ts';
 import { type ElementSpec, element } from '../element.ts';
 import {
+  adoptionNote,
   caveatBadges,
   caveatLines,
+  conditionKind,
+  conditionNotice,
   edgeBadgeList,
   edgeBadges,
   emptyState,
@@ -398,7 +401,15 @@ export function linearScene(
 
   const body =
     inline.length === 0
-      ? emptyState('Nothing is in the order right now.')
+      ? // A CONDITION IS THE PANEL'S ONE CAUSE STATEMENT. This sentence is
+        // DERIVED — it is what an empty slot list looks like from in here — and
+        // the host's notice is RECORDED, so when both are drawn the panel says
+        // two things about one state and the derived one can be flatly wrong
+        // ("nothing is in the order" beside "your import is still running").
+        // The recorded fact wins and the derivation is not drawn.
+        conditionKind(document, options.chrome) === null
+        ? emptyState('Nothing is in the order right now.')
+        : null
       : element(
           'ol',
           // A PLAIN LIST, not a listbox. Every row carries a deep-link chip, and
@@ -445,7 +456,12 @@ export function linearScene(
 
   const root = element(
     'section',
-    { class: 'ig-viewer ig-linear', 'data-projection': 'linear', 'aria-label': 'issue order' },
+    {
+      class: 'ig-viewer ig-linear',
+      'data-projection': 'linear',
+      'data-ig-condition': conditionKind(document, options.chrome),
+      'aria-label': 'issue order',
+    },
     // The host facts first: what the runner is doing and how fresh the mirror
     // is frame the order beneath them. Both are `null` for a host that stated
     // nothing, and the section then begins at the legend exactly as before.
@@ -458,10 +474,22 @@ export function linearScene(
         ? null
         : hostHeader(document, { projection: 'linear', switchable: options.switchable === true }),
       nowRows(document),
+      // BELOW THE NOW ROW, ABOVE THE ORDER. §16a puts what the runner is doing
+      // directly under the header as the first thing a reader meets, and under
+      // an `error` or `importing` notice the running job is exactly the
+      // reassurance the notice points at — demoting it would contradict the
+      // sentence beside it. Here the notice sits over the order it qualifies.
+      //
+      // CHROME, so it carries the same flag the header does — the rule lives in
+      // `conditionNotice` rather than being restated at each of the three roots.
+      conditionNotice(document, options.chrome),
       body,
       footer,
       isolatedChip(document.isolated.length),
       legend(),
+      // LAST, because §16h calls it the panel FOOTER and the legend is a footer
+      // bar. Above it, the line was not the last thing on the panel.
+      adoptionNote(document, options.chrome),
     ],
   );
 

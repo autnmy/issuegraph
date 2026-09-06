@@ -661,6 +661,139 @@ describe('normalizeDocument: the host facts', () => {
     assert.deepEqual(running.document.isolated, ['2']);
   });
 
+  it('keeps a whole condition and drops one missing a string it cannot be drawn without', () => {
+    const importing = normalizeDocument({
+      ...two,
+      host: {
+        condition: {
+          kind: 'importing',
+          headline: 'Building the local index',
+          caution: 'Ranks will change as the rest arrive.',
+          progress: '412 of ~1,200 issues',
+        },
+      },
+    });
+    assert.deepEqual(importing.document.host.condition, {
+      kind: 'importing',
+      headline: 'Building the local index',
+      caution: 'Ranks will change as the rest arrive.',
+      progress: '412 of ~1,200 issues',
+    });
+    assert.deepEqual(importing.diagnostics, []);
+
+    // WHOLE, not field by field. A first-import notice missing its progress
+    // line is not a smaller notice — it is a panel claiming an import is
+    // running while refusing to say how far along it is.
+    const partial = normalizeDocument({
+      ...two,
+      host: {
+        condition: { kind: 'importing', headline: 'Building the local index', caution: 'Ranks will change.', progress: '  ' },
+      },
+    });
+    assert.equal(partial.document.host.condition, undefined);
+    assert.deepEqual(partial.diagnostics, [
+      'importing condition has an empty required string and was dropped whole',
+    ]);
+  });
+
+  it('drops a condition action href that is not linkable and keeps its label', () => {
+    // The SAME allowlist a deep link goes through. A note that loses its link
+    // still says what it says, so the label survives the refusal.
+    const { document, diagnostics } = normalizeDocument({
+      ...two,
+      host: {
+        condition: {
+          kind: 'empty',
+          headline: 'Nothing is eligible right now',
+          reason: 'No open issue matches your pick order.',
+          assurance: 'The pipeline stays armed.',
+          action: { label: 'Review pick order', href: 'javascript:alert(1)' },
+        },
+      },
+    });
+    assert.deepEqual(document.host.condition?.kind === 'empty' ? document.host.condition.action : null, {
+      label: 'Review pick order',
+    });
+    assert.deepEqual(diagnostics, [
+      'condition action href javascript:alert(1) is not a linkable scheme and was dropped',
+    ]);
+  });
+
+  it('reports an empty condition stated over an order that carries slots', () => {
+    // REPORTED, NEVER CORRECTED. The sentence is the host's and stays drawn;
+    // the contradiction is a fact about the data, which is what a diagnostic is.
+    const empty = {
+      kind: 'empty',
+      headline: 'Nothing is eligible right now',
+      reason: 'No open issue matches your pick order.',
+      assurance: 'The pipeline stays armed.',
+    } as const;
+    const over = normalizeDocument({
+      ...two,
+      order: { slots: [{ rank: 1, lead: '1', members: ['1'], ready: true, holds: [] }], excluded: [] },
+      host: { condition: empty },
+    });
+    assert.equal(over.document.host.condition?.kind, 'empty');
+    assert.deepEqual(over.diagnostics, ['an empty condition was stated over an order carrying 1 slots']);
+    assert.deepEqual(normalizeDocument({ ...two, host: { condition: empty } }).diagnostics, []);
+  });
+
+  it('keeps whole adoption counts, drops a bad member whole, and reports a contradiction it can see', () => {
+    const good = normalizeDocument({ ...two, host: { adoption: { counts: { declaring: 12, total: 48 } } } });
+    assert.deepEqual(good.document.host.adoption, { counts: { declaring: 12, total: 48 } });
+    assert.deepEqual(good.diagnostics, []);
+
+    const bad = normalizeDocument({ ...two, host: { adoption: { counts: { declaring: -1, total: 48 } } } });
+    assert.equal(bad.document.host.adoption, undefined);
+    assert.deepEqual(bad.diagnostics, [
+      'adoption counts are not two non-negative integers with declaring no greater than total, and were dropped whole',
+    ]);
+
+    // Unlike the order counts, this one is a property of the very edges that
+    // were passed here — so the viewer holds the evidence and says so.
+    const contradicted = normalizeDocument({
+      issues: [issue('1'), issue('2')],
+      edges: [{ field: 'blocked-by', from: '1', to: '2' }],
+      order: emptyOrder,
+      cycles: [],
+      host: { adoption: { counts: { declaring: 0, total: 48 } } },
+    });
+    assert.deepEqual(contradicted.document.host.adoption, { counts: { declaring: 0, total: 48 } });
+    assert.deepEqual(contradicted.diagnostics, [
+      'adoption states 0 of 48 declare relationships, but this document carries 1',
+    ]);
+  });
+
+  it('keeps an adoption note with its link and dismiss word, and drops an unlinkable href', () => {
+    const link = { text: 'what relationships add', href: 'https://issuegraph.org/' };
+    const kept = normalizeDocument({
+      ...two,
+      host: { adoption: { note: { text: 'No issue here declares relationships.', link, dismiss: '✕' } } },
+    });
+    assert.deepEqual(kept.document.host.adoption, {
+      note: { text: 'No issue here declares relationships.', link, dismiss: '✕' },
+    });
+
+    // THE SENTENCE SURVIVES A REFUSED LINK. A line that loses its link still
+    // says what it says, and the design asks this one to be quiet, not absent.
+    const refused = normalizeDocument({
+      ...two,
+      host: {
+        adoption: {
+          note: { text: 'No issue here declares relationships.', link: { text: 'read more', href: 'data:text/html,x' } },
+        },
+      },
+    });
+    assert.deepEqual(refused.document.host.adoption, { note: { text: 'No issue here declares relationships.' } });
+    assert.deepEqual(refused.diagnostics, [
+      'adoption note href data:text/html,x is not a linkable scheme and was dropped',
+    ]);
+
+    const blank = normalizeDocument({ ...two, host: { adoption: { note: { text: '   ' } } } });
+    assert.equal(blank.document.host.adoption, undefined);
+    assert.deepEqual(blank.diagnostics, ['adoption note has empty text and was dropped whole']);
+  });
+
   it('tells the two hold families apart in the type system, not by convention', () => {
     // The shape an existing host already supplies keeps compiling: a label is optional.
     const tracker: ViewerHold = { family: 'tracker', reason: 'claimed by another run' };

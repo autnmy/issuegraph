@@ -41,6 +41,8 @@
 import type { Priority } from '@issuegraph/core';
 import type { EdgeKind, GraphDocument, IssueRef, StoredEdge, StoredIssue } from '@issuegraph/store';
 import { makeEdge } from '@issuegraph/store';
+import type { Adoption } from '@issuegraph/viewer';
+
 import type { IssueCaveats, RunningWork } from './host.ts';
 import { type BaseRanking, type ExecutorHold, rankedFirst } from './order.ts';
 
@@ -369,6 +371,102 @@ export function backlogSeed(): GraphDocument {
 }
 
 /**
+ * §16h's day-one repository: forty-eight issues, real label variety, and not a
+ * single `issuegraph:` block between them.
+ *
+ * FORTY-EIGHT IS THE DESIGN'S OWN NUMBER (`12 of 48 declare relationships`),
+ * and it is also under `GRAPH_NODE_BUDGET`, so the graph draws the plain
+ * sequence the tile promises rather than the capsule refusal it would draw for
+ * a bigger one. A seed of three would have satisfied every assertion here and
+ * proved nothing about the state a real repository lands in.
+ *
+ * NO EDGES AT ALL, which is the whole point: the order below is produced
+ * ENTIRELY by the host's own configuration, and it still reads as a complete
+ * order rather than as a rich view with its relationships missing.
+ */
+export const ADOPTION_SIZE = 48;
+
+/** The mapped labels the rows rank by, and the ordered-query position of each. */
+const ADOPTION_QUERIES: readonly { readonly label: string; readonly priority: Priority }[] = Object.freeze([
+  { label: 'label:P0', priority: 0 },
+  { label: 'label:P1', priority: 1 },
+  { label: 'label:P2', priority: 2 },
+  { label: 'label:P3', priority: 3 },
+]);
+
+/** The first reference in the zero-adoption layer. Numbered as a tracker numbers them. */
+const ADOPTION_FIRST_REF = 700;
+
+function adoptionRefs(): readonly IssueRef[] {
+  return Array.from({ length: ADOPTION_SIZE }, (_, at) => String(ADOPTION_FIRST_REF + at));
+}
+
+export function adoptionSeed(): GraphDocument {
+  const issues: StoredIssue[] = adoptionRefs().map((ref, at) => {
+    const query = ADOPTION_QUERIES[at % ADOPTION_QUERIES.length] as { label: string; priority: Priority };
+    return {
+      ref,
+      title: `${query.label.slice('label:'.length)} work item ${String(at + 1)}`,
+      state: 'open',
+      // THE MAPPED LABEL, NOT A FRONTMATTER DEFAULT. The spec's "absent means 2"
+      // applies to the block's own `priority` field and never overrides a host's
+      // label mapping — so a panel that flattened these to P2 would be reading a
+      // default where no default applies, which is the trap §16h names.
+      priority: query.priority,
+    };
+  });
+  return { issues, edges: [] };
+}
+
+/**
+ * Which ordered query matched each zero-adoption row.
+ *
+ * The engine's own answer, stated the way this host states everything else it
+ * knows about its rows — see `IssueCaveats.matchedQuery` for why it is recorded
+ * rather than derived from a ranking that does not carry it.
+ */
+function adoptionCaveats(): ReadonlyMap<IssueRef, IssueCaveats> {
+  return new Map(
+    adoptionRefs().map((ref, at) => {
+      const index = (at % ADOPTION_QUERIES.length) + 1;
+      const query = ADOPTION_QUERIES[at % ADOPTION_QUERIES.length] as { label: string };
+      return [ref, { matchedQuery: { index, label: query.label } }];
+    }),
+  );
+}
+
+/**
+ * §16h's one quiet line, and the header count for the partial case.
+ *
+ * THE SENTENCE IS THIS HOST'S. It names a pick order, which is this host's own
+ * configuration and a word `@issuegraph/viewer` has never heard — and the
+ * design asks for one line rather than a block, so one line is what it is.
+ */
+const adoptionNote = Object.freeze({
+  text: 'No issue in this repository declares Issuegraph relationships, so ordering is entirely your pick order.',
+  link: Object.freeze({ text: 'what relationships add ↗', href: 'https://issuegraph.org/' }),
+  dismiss: '✕',
+});
+
+/**
+ * How many of a document's issues declare a relationship, over its whole size.
+ *
+ * MEASURED FROM THE DOCUMENT, not written down beside it. A count typed by hand
+ * is a second statement of something the seed already knows, free to drift from
+ * it the first time an issue gains an edge — and a header chip reading
+ * `12 of 48` above a sixteen-issue backlog is exactly the ambiguity §16h's
+ * count exists to remove, arriving from the other direction.
+ */
+function adoptionCountsOf(document: GraphDocument): { declaring: number; total: number } {
+  const declaring = new Set<IssueRef>();
+  for (const edge of document.edges) {
+    declaring.add(edge.from);
+    declaring.add(edge.to);
+  }
+  return { declaring: declaring.size, total: document.issues.length };
+}
+
+/**
  * The executor's own holds (§6.8) — the second hold family — as the frames
  * draw them: the `now` row, and the footer group "held by the runner, not the
  * graph".
@@ -395,8 +493,8 @@ export function compHolds(): readonly ExecutorHold[] {
   ];
 }
 
-/** The two documents the page can hold, by name. */
-export const SCENARIO_NAMES = Object.freeze(['comp', 'backlog'] as const);
+/** The documents the page can hold, by name. */
+export const SCENARIO_NAMES = Object.freeze(['comp', 'backlog', 'adoption'] as const);
 export type ScenarioName = (typeof SCENARIO_NAMES)[number];
 
 /**
@@ -417,6 +515,16 @@ export interface Scenario {
   readonly running?: RunningWork;
   /** What the host's engine knows about its own rows: a fallback ranking, two signals disagreeing. */
   readonly caveats: ReadonlyMap<IssueRef, IssueCaveats>;
+  /**
+   * How much of this host's backlog declares relationships, and what to say.
+   *
+   * WHICH HALF TO SUPPLY IS THE HOST'S CALL, which is why the two are separate
+   * fields on the port. The zero-adoption document supplies the footer line,
+   * because there the cause is worth stating; the comp supplies the count,
+   * because there the only question is how many — the one ambiguity §16h says
+   * is worth removing.
+   */
+  readonly adoption?: Adoption;
 }
 
 /**
@@ -472,6 +580,10 @@ export const SCENARIOS: Readonly<Record<ScenarioName, Scenario>> = Object.freeze
     ranking: compRanking,
     running: compRunning,
     caveats: compCaveats,
+    // NO ADOPTION FACT ON THE COMP, deliberately. This is the scenario the §16a
+    // and §16b fidelity panels are drawn from, and neither frame draws an
+    // adoption chip — a fourth chip in that header would make the comparison
+    // surface disagree with the thing it exists to be compared against.
   },
   backlog: {
     label: 'the big backlog',
@@ -480,5 +592,21 @@ export const SCENARIOS: Readonly<Record<ScenarioName, Scenario>> = Object.freeze
     ranking: compRanking,
     running: compRunning,
     caveats: compCaveats,
+    // PARTIAL ADOPTION NEEDS NO SPECIAL MODE and no document of its own — this
+    // backlog already declares relationships on some of its issues and not
+    // others, which is exactly the case. The header states the count once so a
+    // reader can tell "no edges shown" from "no edges declared".
+    adoption: { counts: adoptionCountsOf(backlogSeed()) },
+  },
+  adoption: {
+    label: 'day one — no adoption',
+    document: adoptionSeed,
+    // NO HOLDS AND NO RUNNING JOB. The state must read complete and calm, and
+    // every affordance it draws has to be a real one — a footer group with
+    // nothing in it is the "empty slot" §16h forbids.
+    holds: [],
+    ranking: rankedFirst(adoptionRefs()),
+    caveats: adoptionCaveats(),
+    adoption: { note: adoptionNote },
   },
 });

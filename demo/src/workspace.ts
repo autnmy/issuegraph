@@ -39,10 +39,17 @@ import {
   summaryOf,
 } from '@issuegraph/editor';
 import type { EdgeKind, Store, StoreSnapshot, WriteRecord } from '@issuegraph/store';
-import { type Theme, defaultTheme, extendTheme } from '@issuegraph/viewer';
+import { type Adoption, type Theme, defaultTheme, extendTheme } from '@issuegraph/viewer';
 
 import { projectDocument } from './document.ts';
-import { hostFacts, runningSince } from './host.ts';
+import {
+  DEMO_STATE_LABELS,
+  DEMO_STATE_NAMES,
+  type DemoStateName,
+  hostFacts,
+  runningSince,
+  showsOrder,
+} from './host.ts';
 import { explainDocument } from './order.ts';
 import { DEFAULT_SCENARIO, SCENARIOS, SCENARIO_NAMES, type Scenario, type ScenarioName } from './seed.ts';
 import type { DemoSource, NextOutcome } from './source.ts';
@@ -136,12 +143,29 @@ const FORWARDED: ReadonlySet<string> = new Set(['retry', 'discard', 'dismiss-cha
  * So the click reaches this listener, and this set is what admits it past the
  * "inside the mount, the mount owns it" rule below.
  */
-export const HOST_COMMANDS_FROM_WORKSPACE: ReadonlySet<string> = new Set(['refresh']);
+export const HOST_COMMANDS_FROM_WORKSPACE: ReadonlySet<string> = new Set([
+  'refresh',
+  // THE CONDITION'S AND THE ADOPTION LINE'S CONTROLS, admitted the same way and
+  // for the same reason. Without membership here the click is dropped by the
+  // rule above BEFORE it reaches the switch, which is a control that looks
+  // wired and silently is not — the exact failure the viewer refuses to draw.
+  //
+  // `retry:index`, NOT `retry`. The bare word is already the mount reducer's,
+  // for retrying a WRITE, and it is in `FORWARDED` two lines up: admitting it
+  // here would hand the viewer's index retry to the writes log.
+  'retry:index',
+  'review-pick-order',
+  'dismiss:adoption',
+]);
 
 const OUTCOMES: ReadonlySet<string> = new Set(['apply', 'reject', 'conflict']);
 
 function isOutcome(value: string): value is NextOutcome {
   return OUTCOMES.has(value);
+}
+
+function isDemoState(value: string | null): value is DemoStateName {
+  return DEMO_STATE_NAMES.some((name) => name === value);
 }
 
 function isTheme(value: string | null): value is ThemeName {
@@ -201,11 +225,26 @@ export interface HostMoments {
   readonly observedAt: () => Date;
   readonly now: () => Date;
   readonly mountedAt: Date;
+  /**
+   * Which state the panel is being drawn in, READ AT PROJECTION TIME.
+   *
+   * A getter, like the clock beside it, because `projectFor` is bound once per
+   * mount and the state changes between renders: a value captured here would
+   * pin the panel to whatever was selected when the store was built, and the
+   * control would move nothing until the document changed.
+   */
+  readonly state: () => DemoStateName;
+  /** The adoption fact as it stands, which a dismiss can take away. */
+  readonly adoption: () => Adoption | undefined;
 }
 
 function projectFor(scenario: Scenario, moments: HostMoments): (snapshot: StoreSnapshot) => WorkspaceProjection {
   return (snapshot) => {
-    const landed = { issues: snapshot.issues, edges: snapshot.landed };
+    // A HOST THAT SAYS NOTHING IS ELIGIBLE SHOWS NOTHING. See `showsOrder`: it
+    // is the one state that contradicts a populated order rather than
+    // qualifying it, so the host projects what it claims to have.
+    const shown = showsOrder(moments.state());
+    const landed = shown ? { issues: snapshot.issues, edges: snapshot.landed } : { issues: [], edges: [] };
     const explained = explainDocument(landed, scenario.holds, scenario.ranking);
     // THE HOST FACTS, from the same explained order the slots come from, so the
     // header's tally and the rows beneath it are one derivation. The running
@@ -214,7 +253,10 @@ function projectFor(scenario: Scenario, moments: HostMoments): (snapshot: StoreS
       rows: explained.rows,
       observedAt: moments.observedAt(),
       now: moments.now(),
-      running: scenario.running === undefined ? undefined : runningSince(scenario.running, moments.mountedAt),
+      running:
+        !shown || scenario.running === undefined ? undefined : runningSince(scenario.running, moments.mountedAt),
+      state: moments.state(),
+      adoption: moments.adoption(),
     });
     return projectDocument(explained, landed, host, scenario.caveats);
   };
@@ -282,11 +324,22 @@ export function mountSandbox(
   // trackerless demo has anything that reads as a mirror read.
   let observedAt: Date = clock();
   const mountedAt: Date = observedAt;
-  const moments: HostMoments = { observedAt: () => observedAt, now: clock, mountedAt };
+  const moments: HostMoments = {
+    observedAt: () => observedAt,
+    now: clock,
+    mountedAt,
+    state: () => panelState,
+    adoption: () => (adoptionDismissed ? undefined : SCENARIOS[scenario].adoption),
+  };
 
   let theme: ThemeName = 'default';
   let canvas: CanvasMode = 'neighbourhood';
   let scenario: ScenarioName = DEFAULT_SCENARIO;
+  let panelState: DemoStateName = 'live';
+  // THE HOST HIDES ITS OWN LINE, NOT THE VIEWER. Dismiss is published like every
+  // other command and the package never removes an element it drew; the host
+  // re-projects without the note, which is the only place that state can live.
+  let adoptionDismissed = false;
   let live: Live;
   let handle: WorkspaceHandle | null = null;
   let unsubscribe = (): void => {};
@@ -353,6 +406,9 @@ export function mountSandbox(
     }
     for (const toggle of root.querySelectorAll<HTMLElement>('[data-chrome="scenario"] [data-ig-value]')) {
       toggle.setAttribute('aria-pressed', String(toggle.getAttribute('data-ig-value') === scenario));
+    }
+    for (const toggle of root.querySelectorAll<HTMLElement>('[data-chrome="state"] [data-ig-value]')) {
+      toggle.setAttribute('aria-pressed', String(toggle.getAttribute('data-ig-value') === panelState));
     }
   };
 
@@ -440,7 +496,39 @@ export function mountSandbox(
         // visitor's unsettled edits belong to the document they were made on.
         if (!isScenario(value) || value === scenario) return;
         scenario = value;
+        // A NEW DOCUMENT GETS ITS LINE BACK. The dismissal was of THIS
+        // document's note, and carrying it across would hide a sentence the
+        // visitor has not seen yet.
+        adoptionDismissed = false;
         start();
+        return;
+      case 'state':
+        // A state is the same document seen differently, so it is a re-project
+        // rather than a fresh store: the visitor's edits survive the switch.
+        if (!isDemoState(value) || value === panelState) return;
+        panelState = value;
+        handle.update({});
+        schedule();
+        return;
+      case 'retry:index':
+        // The host's to perform, and here there is nothing behind the index to
+        // re-read — so the honest answer is to leave the error state, which is
+        // what a successful retry would look like.
+        panelState = 'live';
+        handle.update({});
+        schedule();
+        return;
+      case 'review-pick-order':
+        // This sandbox has no pick-order chrome to route to, so the control
+        // does the one thing it can honestly do here and says so on the page.
+        panelState = 'live';
+        handle.update({});
+        schedule();
+        return;
+      case 'dismiss:adoption':
+        adoptionDismissed = true;
+        handle.update({});
+        schedule();
         return;
       case 'reset':
         start();
@@ -488,6 +576,16 @@ export function mountSandbox(
     control.replaceChildren(
       ...SCENARIO_NAMES.map((name) =>
         button(SCENARIOS[name].label, 'scenario', { 'data-ig-value': name, class: 'chrome-button chrome-toggle' }),
+      ),
+    );
+  }
+  // ORTHOGONAL TO THE DOCUMENT, so it is its own row rather than more entries in
+  // the one above: a repository can be importing or unreadable whatever backlog
+  // it holds, and folding the two would make the control a matrix.
+  for (const control of root.querySelectorAll<HTMLElement>('[data-chrome="state"]')) {
+    control.replaceChildren(
+      ...DEMO_STATE_NAMES.map((name) =>
+        button(DEMO_STATE_LABELS[name], 'state', { 'data-ig-value': name, class: 'chrome-button chrome-toggle' }),
       ),
     );
   }
