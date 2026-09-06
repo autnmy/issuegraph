@@ -560,13 +560,28 @@ function footerGroup(
   const entries = footerKeys(document, layout, { ...options, focused });
   if (entries.length === 0) return null;
   const slots = document.order.slots.filter((slot) => layout.footer.includes(slot.lead));
+  const excluded = document.order.excluded.filter((exclusion) =>
+    layout.footer.includes(exclusion.key),
+  );
+  // WHAT THIS GROUP ACTUALLY HOLDS. In the column it also holds every gutter
+  // endpoint the compact picture does not draw — an ordinary open blocker, say,
+  // which no runner holds and which is worked like anything else — so a heading
+  // that named only the runner and the never-worked said something untrue about
+  // them.
+  const undrawn = entries.length > slots.length + excluded.length;
   const labels = footerLabels(slots);
   return element('section', { class: 'ig-footer' }, [
     element('div', { class: 'ig-footer-head' }, [
-      element('p', { class: 'ig-footer-title' }, [footerHeading(entries.length)]),
+      element('p', { class: 'ig-footer-title' }, [
+        footerHeading(entries.length, {
+          runner: slots.length > 0,
+          neverWorked: excluded.length > 0,
+          undrawn,
+        }),
+      ]),
       labels === '' ? null : element('span', { class: 'ig-footer-labels' }, [labels]),
     ]),
-    element('ol', { class: 'ig-list', 'aria-label': 'held outside the order' }, entries),
+    element('ol', { class: 'ig-list', 'aria-label': 'outside the order' }, entries),
   ]);
 }
 

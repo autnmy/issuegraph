@@ -96,8 +96,34 @@ export interface SceneOptions {
  * therefore read "1 held by the runner" about an issue no runner has touched.
  * Shared by both projections, so the two cannot word one group two ways.
  */
-export function footerHeading(count: number): string {
-  return `${String(count)} outside the order — held by the runner, or never worked`;
+export function footerHeading(count: number, kinds: FooterKinds): string {
+  const reasons = [
+    kinds.runner ? 'held by the runner' : null,
+    kinds.neverWorked ? 'never worked' : null,
+    kinds.undrawn ? 'not drawn at this width' : null,
+  ].filter((reason): reason is string => reason !== null);
+  const tail =
+    reasons.length === 0
+      ? ''
+      : ` — ${reasons.slice(0, -1).join(', ')}${reasons.length > 1 ? ', or ' : ''}${reasons[reasons.length - 1] ?? ''}`;
+  return `${String(count)} outside the order${tail}`;
+}
+
+/**
+ * Which families of entry a footer group actually holds.
+ *
+ * SAID RATHER THAN ASSUMED, because the group holds a different set in each
+ * projection and the heading is a claim about every row beneath it. The list's
+ * group holds runner-held slots and duplicates; the COLUMN's holds those plus
+ * every gutter endpoint the compact graph does not draw — ordinary open
+ * blockers, which no runner holds and which are worked like anything else. One
+ * heading for all three read as a statement about them that is simply untrue.
+ */
+export interface FooterKinds {
+  readonly runner: boolean;
+  readonly neverWorked: boolean;
+  /** Present only in the column, where the gutters are not drawn. */
+  readonly undrawn: boolean;
 }
 
 export function isFooterSlot(slot: ViewerSlot): boolean {
@@ -377,7 +403,14 @@ export function linearScene(
       ? null
       : element('section', { class: 'ig-footer' }, [
           element('div', { class: 'ig-footer-head' }, [
-            element('p', { class: 'ig-footer-title' }, [footerHeading(footerEntries.length)]),
+            element('p', { class: 'ig-footer-title' }, [
+              footerHeading(footerEntries.length, {
+                runner: footerSlots.length > 0,
+                neverWorked: document.order.excluded.length > 0,
+                // The list draws every column it has, so it never withholds one.
+                undrawn: false,
+              }),
+            ]),
             labels === '' ? null : element('span', { class: 'ig-footer-labels' }, [labels]),
           ]),
           element(

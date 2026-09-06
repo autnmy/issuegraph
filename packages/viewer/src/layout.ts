@@ -409,7 +409,15 @@ function cardHeight(
   blocks.forEach((block, index) => {
     if (index > 0) height += gap;
     if (block.kind === 'badges') {
-      height += packedRows(theme, block.texts, inner) * line;
+      // A CHIP IS TALLER THAN ITS TEXT, and the rows are spaced. `.ig-badge`
+      // adds its own vertical padding and border, and `.ig-badges` puts a gap
+      // between wrapped rows — so `rows * line` under-reserved a wrapping badge
+      // row by more than the gap between cards, and the card beneath was drawn
+      // over it.
+      const rows = packedRows(theme, block.texts, inner);
+      const chipHeight =
+        line + metric(theme, '--ig-space-micro') * 2 + metric(theme, '--ig-stroke') * 2;
+      height += rows * chipHeight + Math.max(0, rows - 1) * gap;
       return;
     }
     height += cardText(document, block).reduce((total, text) => total + wraps(text) * line, 0);
