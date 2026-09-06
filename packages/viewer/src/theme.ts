@@ -57,13 +57,50 @@ export const COLOR_TOKENS = Object.freeze([
 
 export type ColorToken = (typeof COLOR_TOKENS)[number];
 
-/** Type tokens. `lineHeight` is unitless; the rest carry their own units. */
+/**
+ * Type tokens. `lineHeight` is unitless; the rest carry their own units.
+ *
+ * WEIGHT AND TRACKING ARE TYPE, NOT GEOMETRY, even though a reader might file
+ * them under either. They are emitted VERBATIM, which is the property that
+ * settles it: a weight is a unitless number and a tracking value is an `em`,
+ * and {@link METRIC_TOKENS} would give both a `px` unit and silently void the
+ * declaration.
+ */
 export const TYPE_TOKENS = Object.freeze([
   '--ig-font-ui',
   '--ig-font-mono',
   '--ig-font-size',
   '--ig-font-size-small',
   '--ig-line-height',
+  // ADDED IN SOURCE ORDER, AFTER THE ONES THAT SHIPPED, in this group and in
+  // {@link METRIC_TOKENS} both. `themeCss` emits in list order, so appending
+  // rather than interleaving keeps every declaration a host already had in the
+  // position it already had — the emitted rule stays a strict superset instead
+  // of a reshuffle a snapshotting consumer has to re-approve. Reading order
+  // loses a little; the diff a host sees loses nothing.
+  //
+  // TWO SIZE STEPS BELOW `--ig-font-size-small`, because the design draws two
+  // and this file named neither. A relationship badge is 10px and an uppercase
+  // status pill is 9.5px (§16a); with 11px as the smallest token, both had to
+  // be drawn a size too large, which is why the badge row reads as body copy.
+  '--ig-font-size-micro',
+  '--ig-font-size-pill',
+  // THE FOUR WEIGHTS THE DESIGN USES, and the reason a rail row read as one
+  // undifferentiated object: with no weight token every string rendered at
+  // 400, so a row's title and its metadata carried the same emphasis.
+  '--ig-weight-regular',
+  '--ig-weight-medium',
+  '--ig-weight-strong',
+  '--ig-weight-heavy',
+  // Uppercase labels are TRACKED in this design, and tracking is NOT derivable
+  // from the size — §16a sets `.06em` and `.08em` on two pills of the same
+  // 9.5px sitting in the same list. One token reused for all of them is the
+  // approximation that makes uppercase type look mechanically stretched, so
+  // there is one per value the frames draw.
+  '--ig-tracking-label',
+  '--ig-tracking-group',
+  '--ig-tracking-pill',
+  '--ig-tracking-badge',
 ] as const);
 
 export type TypeToken = (typeof TYPE_TOKENS)[number];
@@ -85,15 +122,90 @@ export const METRIC_TOKENS = Object.freeze([
   '--ig-char-width',
   '--ig-label-char-width',
   '--ig-focus-ring',
+  // Appended, for the reason {@link TYPE_TOKENS} gives.
+  //
+  // SIX SPACING STEPS, WHICH IS A CHOICE AND SAYS SO. §16a and §16b do not run
+  // a scale — they spend a near-continuum from 2px to 20px, with 7px and 9px
+  // as common as any tokenised step — so a token set has to pick, and the
+  // honest statement is which values it rounds. These six span the range the
+  // frames spend and keep the two that shipped exactly where they were: a
+  // chip's `2px 7px` padding draws its inline half at `--ig-space-tight`, and
+  // a 9px or 10px gap at `--ig-space-snug` or `--ig-space`. What two steps
+  // could not do is span it at all — a 2px gap between a title and its
+  // metadata and a 20px panel inset both resolved to 6px or 12px, and the rail
+  // lost its grouping.
+  '--ig-space-micro',
+  '--ig-space-snug',
+  '--ig-space-loose',
+  '--ig-space-wide',
+  '--ig-radius-small',
+  '--ig-radius-large',
+  // A ROW WHOSE HEIGHT CAN FOLLOW ITS CONTENT. `--ig-row-height` stays what it
+  // has always been — the FIXED height of a rail row — because a host has that
+  // number and its meaning must not move under them. These two are the
+  // vocabulary a content-sized row needs instead: a floor, and the padding its
+  // content grows against.
+  '--ig-row-min-height',
+  '--ig-row-padding-block',
+  // The accent rail a banded row carries down its leading edge (§16a's
+  // WORKING NOW band, `inset 3px 0 0`). It pairs with `--ig-tint-wash`: the
+  // wash is the band's fill and this is its edge.
+  '--ig-band-rail',
 ] as const);
 
 export type MetricToken = (typeof METRIC_TOKENS)[number];
+
+/**
+ * Surface-treatment tokens: values that are none of a colour, a type value or
+ * a pixel length, and so belong to none of the three groups above.
+ *
+ * A FOURTH GROUP RATHER THAN A HOME OF CONVENIENCE IN AN EXISTING ONE. A tint
+ * strength is a proportion and an elevation is a whole `box-shadow`; put
+ * either in {@link METRIC_TOKENS} and `themeCss` appends `px` to it, which is
+ * not a value any browser reads. Put them in {@link TYPE_TOKENS} and the group
+ * that documents itself as "type" starts carrying shadows — the same
+ * one-token-two-meanings problem the edit-state hues are kept apart from.
+ *
+ * NO TINT CARRIES A COLOUR. A tint is a PROPORTION, applied by the consumer
+ * against a colour token that already exists — `color-mix(in srgb,
+ * var(--ig-edge-blocked-by) var(--ig-tint-fill), transparent)` — so the
+ * palette stays fixed and a host retheming a relationship retints it too. The
+ * two ELEVATIONS are the exception and the only values here that name a
+ * colour; `theme.test.ts` pins that split rather than checking the tints
+ * alone, so a colour cannot arrive in this group unannounced.
+ */
+export const EFFECT_TOKENS = Object.freeze([
+  // Read from §16a's badge row, where a relationship chip is a fill of its own
+  // hue inside a heavier border of the same hue. That is what "badges with
+  // tinted fills rather than bare borders" costs in tokens, and with no way to
+  // express it every badge shipped as a bare outline.
+  '--ig-tint-fill',
+  '--ig-tint-border',
+  // Two washes, and they are not interchangeable: the band marking the row
+  // being worked NOW sits at 5% of the accent, and the together-unit row at
+  // 3%. Collapsing them to one value either loses the band or draws every
+  // compound station as loud as the one in flight.
+  '--ig-tint-wash',
+  '--ig-tint-unit',
+  // Elevation, and it is the one pair here NOT read from a §16 frame — §16
+  // draws no drop shadow at all, separating its panels with `1px solid
+  // var(--ig-line)`. The values are the kit's own two, from the surfaces that
+  // do float: the device frame the comps sit in, and a floating toast. They
+  // are here because the token set is the whole visual vocabulary and an
+  // overlay has nowhere else to come from; a §16 panel keeps its border, and
+  // reaching for one of these to lift a panel is a decision, not a default.
+  '--ig-elevation-raised',
+  '--ig-elevation-overlay',
+] as const);
+
+export type EffectToken = (typeof EFFECT_TOKENS)[number];
 
 /** Every custom property the stylesheet may reference. */
 export const THEME_TOKENS: readonly string[] = Object.freeze([
   ...COLOR_TOKENS,
   ...TYPE_TOKENS,
   ...METRIC_TOKENS,
+  ...EFFECT_TOKENS,
 ]);
 
 export interface Theme {
@@ -101,6 +213,8 @@ export interface Theme {
   readonly type: Readonly<Record<TypeToken, string>>;
   /** Numbers, in CSS pixels. Layout reads these; `themeCss` renders them. */
   readonly metrics: Readonly<Record<MetricToken, number>>;
+  /** Strings, emitted verbatim — proportions and whole shadow values. */
+  readonly effects: Readonly<Record<EffectToken, string>>;
 }
 
 /**
@@ -157,6 +271,32 @@ export const defaultTheme: Theme = Object.freeze({
     '--ig-font-size': '13px',
     '--ig-font-size-small': '11px',
     '--ig-line-height': '1.45',
+    // §16a draws a relationship badge at 10px and an uppercase status pill
+    // ("now", "⧉ one unit · 2 issues") at 9.5px. Both are read values, not a
+    // ratio continued downward — the design does not run a scale here.
+    '--ig-font-size-micro': '10px',
+    '--ig-font-size-pill': '9.5px',
+    // Regular is the ground the file already rendered everything at; medium is
+    // §16's emphasis weight; strong is §16a's list rank number, its active
+    // toggle and its pills, and is the most-used weight in the frames. Heavy
+    // is §16b's STATION rank numbers, which are 700 where §16a's list numbers
+    // are 600 — the same figure at two weights in two projections, so three
+    // weights could not draw both.
+    '--ig-weight-regular': '400',
+    '--ig-weight-medium': '500',
+    '--ig-weight-strong': '600',
+    '--ig-weight-heavy': '700',
+    // "Order preview", the panel's own label, at 11px uppercase.
+    '--ig-tracking-label': '0.14em',
+    // §16b's column headers — "The work order ↓", "Explains the order", "Not
+    // worked" — which name a group WITHIN a frame rather than the frame.
+    '--ig-tracking-group': '0.1em',
+    // §16a's status pill ("now") and its unit badge ("⧉ one unit · 2 issues"),
+    // both 9.5px uppercase and sitting in the same list at DIFFERENT tracking.
+    // That pair is the reason tracking is its own axis here: it cannot be
+    // derived from the size, because these two share one.
+    '--ig-tracking-pill': '0.08em',
+    '--ig-tracking-badge': '0.06em',
   }),
   metrics: Object.freeze({
     '--ig-space': 12,
@@ -196,6 +336,57 @@ export const defaultTheme: Theme = Object.freeze({
     // which this package's own fixtures caught immediately.
     '--ig-label-char-width': 6,
     '--ig-focus-ring': 2,
+    // Read off §16a: 2px between a row title and its metadata, 8px between the
+    // row's blocks, 16px and 20px for the panel's own inset
+    // (`padding: 16px 20px`). 6px and 12px are the two that already shipped
+    // and did not move.
+    '--ig-space-micro': 2,
+    '--ig-space-snug': 8,
+    '--ig-space-loose': 16,
+    '--ig-space-wide': 20,
+    // §16a's micro badge is 4px and its outer panel 14px. The existing 6px
+    // sits between them and is the chip's, so neither end could be drawn.
+    '--ig-radius-small': 4,
+    '--ig-radius-large': 14,
+    // The FLOOR, matching today's fixed height so a row that grows starts from
+    // exactly where a rail row sits now; the same number carries a different
+    // meaning, which is why it is a different token rather than a reuse.
+    '--ig-row-min-height': 44,
+    // §16a's rank row is `padding: 13px 20px`. The block half is what a
+    // content-sized row grows against; the inline half is `--ig-space-wide`.
+    '--ig-row-padding-block': 13,
+    // §16a's WORKING NOW band, `box-shadow: inset 3px 0 0 var(--cyan)`.
+    '--ig-band-rail': 3,
+  }),
+  effects: Object.freeze({
+    // ONE PAIR FOR ALL FIVE RELATIONSHIP CHIPS, at the value §16a draws most
+    // often: the fills across its chips are `.08 .08 .08 .09 .09 .10` and the
+    // borders `.28 .28 .30 .30 .30 .30 .30 .35 .35 .35`, so the mode is 8% and
+    // 30%. Five hues at five alphas would be a palette rather than a
+    // treatment, and the chips that draw hotter are the ACCENT ones — a host
+    // wanting that emphasis raises the pair rather than being given it by
+    // default on a blocked-by.
+    '--ig-tint-fill': '8%',
+    '--ig-tint-border': '30%',
+    // §16a's WORKING NOW band, `background: rgba(23,188,238,.05)`.
+    '--ig-tint-wash': '5%',
+    // §16a's rank-2 row, `background: rgba(23,188,238,.03)` — the ONE row that
+    // carries a fill, and it carries it because it is the `together-with`
+    // compound station. The other four rank rows have no background: this is
+    // not a zebra stripe and drawing it as one would invent a treatment §16
+    // does not have.
+    '--ig-tint-unit': '3%',
+    // The kit's own two drop shadows, verbatim: the floating toast, and the
+    // device frame the comps are mounted in. See EFFECT_TOKENS on why they are
+    // here rather than read from a §16 frame.
+    //
+    // DELIBERATELY LITERAL rather than mixed against `--ig-bg`. A shadow is
+    // dark on a light ground as well as a dark one, so expressing it against
+    // the background would turn it white on the documented paper theme and
+    // delete it. These two are the only values in this group that carry a
+    // colour, and a host retheming to a light palette owns them.
+    '--ig-elevation-raised': '0 16px 40px -16px rgba(0, 0, 0, 0.9)',
+    '--ig-elevation-overlay': '0 30px 80px -40px rgba(0, 0, 0, 0.8)',
   }),
 });
 
@@ -204,6 +395,7 @@ export interface ThemeOverride {
   readonly colors?: Partial<Record<ColorToken, string>> | undefined;
   readonly type?: Partial<Record<TypeToken, string>> | undefined;
   readonly metrics?: Partial<Record<MetricToken, number>> | undefined;
+  readonly effects?: Partial<Record<EffectToken, string>> | undefined;
 }
 
 /**
@@ -218,6 +410,7 @@ export function extendTheme(base: Theme, override: ThemeOverride): Theme {
     colors: Object.freeze({ ...base.colors, ...override.colors }),
     type: Object.freeze({ ...base.type, ...override.type }),
     metrics: Object.freeze({ ...base.metrics, ...override.metrics }),
+    effects: Object.freeze({ ...base.effects, ...override.effects }),
   });
 }
 
@@ -248,9 +441,9 @@ export function resolveTheme(theme?: Theme | undefined): Theme {
 /**
  * Render a theme as one CSS rule of custom properties.
  *
- * Values are emitted verbatim for colours and type — a theme's author owns
- * their spelling — and metrics gain a `px` unit here, which is the single place
- * the numbers become CSS.
+ * Values are emitted verbatim for colours, type and effects — a theme's author
+ * owns their spelling — and metrics gain a `px` unit here, which is the single
+ * place the numbers become CSS.
  */
 export function themeCss(theme: Theme, selector = ':root'): string {
   // RESOLVED HERE TOO: this is an exported entry point taking a caller's theme
@@ -261,5 +454,6 @@ export function themeCss(theme: Theme, selector = ':root'): string {
   for (const token of COLOR_TOKENS) lines.push(`  ${token}: ${filled.colors[token]};`);
   for (const token of TYPE_TOKENS) lines.push(`  ${token}: ${filled.type[token]};`);
   for (const token of METRIC_TOKENS) lines.push(`  ${token}: ${String(filled.metrics[token])}px;`);
+  for (const token of EFFECT_TOKENS) lines.push(`  ${token}: ${filled.effects[token]};`);
   return `${selector} {\n${lines.join('\n')}\n}\n`;
 }

@@ -99,7 +99,16 @@ So `onSelect` reports **either** an issue key or an edge identity. Distinguish t
 
 ## Theming
 
-**Every colour, type and spacing value is a CSS custom property.** The shipped palette is the *default theme*, not the styling — a host retheming it forks nothing.
+**Every colour, type, spacing and surface-treatment value is a CSS custom property.** The shipped palette is the *default theme*, not the styling — a host retheming it forks nothing.
+
+The tokens come in **four groups**, and the group decides how the value reaches CSS: `colors` and `type` are emitted verbatim, `metrics` are numbers that gain a `px` unit, and `effects` are emitted verbatim because none of them is a length — a tint is a proportion and an elevation is a whole `box-shadow`. **No tint carries a colour**: it is applied against a colour token that already exists, so retheming a relationship retints its badge. The two elevations are the exception and are deliberately literal — a shadow is dark on a light ground too, so a light theme owns them.
+
+```css
+.ig-badge {
+  background: color-mix(in srgb, var(--ig-edge-blocked-by) var(--ig-tint-fill), transparent);
+  border-color: color-mix(in srgb, var(--ig-edge-blocked-by) var(--ig-tint-border), transparent);
+}
+```
 
 ```ts
 import { defaultTheme, extendTheme, renderViewer, viewerStylesheet } from '@issuegraph/viewer';
@@ -132,6 +141,8 @@ const { markup, styles } = renderViewer(document, { theme: paper });
 That exact theme is the one `acceptance.test.ts` uses, so the example cannot drift from what is tested.
 
 **Geometry is theme data too.** `metrics` are numbers, in CSS pixels, and they are what the layout maths reads — so retheming the row height moves the drawing and the stylesheet together rather than only one of them.
+
+**Adding a token never moves an existing one.** `--ig-row-height` is the *fixed* height of a rail row and keeps that meaning; `--ig-row-min-height` and `--ig-row-padding-block` are the separate vocabulary a content-sized row needs. The same rule holds for the spacing scale and the radius steps, which were added around the values that shipped rather than replacing them.
 
 **The proof that theming is real**: rendering the same document under two themes produces **byte-identical markup** and different styles. If any colour reached the markup, that equality would fail.
 
