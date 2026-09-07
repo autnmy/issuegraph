@@ -196,10 +196,35 @@ export type HostEffect =
 export interface HostResult {
   readonly state: HostState;
   readonly effects: readonly HostEffect[];
+  /**
+   * Whether this reducer HAS AN ARM for the command, rather than whether the
+   * command changed anything.
+   *
+   * The two are different and only one of them is answerable here. Plenty of
+   * arms settle without changing state — a `retype` with no edge selected, a
+   * `focus` that was already focused — and those are still this reducer's acts.
+   * What `false` means is narrower and is the `default` arm's own words: a
+   * command published on the same attribute that belongs to the HOST's chrome,
+   * which this reducer must not guess at.
+   *
+   * IT EXISTS FOR THE KEYBOARD. A shell activating a control from a key press
+   * has to cancel the press, or the browser's own activation behaviour fires a
+   * second click and the act happens twice — but cancelling a press whose
+   * command this reducer never owned suppresses the native click the host's own
+   * listener was waiting for, and the host's control silently stops answering
+   * the keyboard. The shell cannot tell those apart from the outside; this
+   * reducer already knows, so it says.
+   */
+  readonly claimed: boolean;
 }
 
 function settled(state: HostState): HostResult {
-  return { state, effects: [] };
+  return { state, effects: [], claimed: true };
+}
+
+/** The `default` arm's result: not this reducer's command. See {@link HostResult.claimed}. */
+function unclaimed(state: HostState): HostResult {
+  return { state, effects: [], claimed: false };
 }
 
 /**
@@ -413,6 +438,7 @@ function emitting(
             selection: selectionReducer(INITIAL_SELECTION, { kind: 'select-issue', key: carrier }),
           },
     effects: [effectFor(route, proposal, carrier)],
+    claimed: true,
   };
 }
 
@@ -520,7 +546,7 @@ function firstPassed(state: HostState, command: FirstPassCommand, document: Grap
       effects.push({ kind: 'first-pass-withdraw', candidateId: result.withdrawn.candidate.id });
     }
   }
-  return { state: next, effects };
+  return { state: next, effects, claimed: true };
 }
 
 /** A pointer on an issue: a target while one is being chosen, a selection otherwise. */
@@ -608,7 +634,7 @@ function controlled(
       return proposal === null ? settled(state) : emitting(state, proposal, document, TO_THE_STORE);
     }
     case 'dismiss-change':
-      return { state, effects: [{ kind: 'dismiss-change' }] };
+      return { state, effects: [{ kind: 'dismiss-change' }], claimed: true };
     case 'add': {
       // THE CONTROL'S OWN SUBJECT FIRST, AND THE SELECTION AS THE FALLBACK —
       // the same one rule the `delete` arm below states, for the same reason.
@@ -672,11 +698,13 @@ function controlled(
     case 'target':
       return target === undefined ? settled(state) : drafted(state, { kind: 'target', ref: target }, document);
     case 'retry':
-      return target === undefined ? settled(state) : { state, effects: [{ kind: 'retry', mutationId: target }] };
+      return target === undefined
+        ? settled(state)
+        : { state, effects: [{ kind: 'retry', mutationId: target }], claimed: true };
     case 'discard':
       return target === undefined
         ? settled(state)
-        : { state, effects: [{ kind: 'discard', mutationId: target }] };
+        : { state, effects: [{ kind: 'discard', mutationId: target }], claimed: true };
     // A TOGGLE, AND NOTHING LEAVES THE CLIENT. Showing a held document is a
     // reading act: it dispatches nothing, adopts nothing, and cannot be the
     // step that resolves a conflict. So it emits NO effect — which is also the
@@ -710,7 +738,11 @@ function controlled(
       // chrome may publish commands on the same attribute — the demo's theme
       // switch does — and those are the host's to read from its own listener,
       // never a reason for this reducer to guess.
-      return settled(state);
+      //
+      // AND IT SAYS SO, rather than being indistinguishable from an arm that
+      // settled. See {@link HostResult.claimed}: a keyboard shell that cancels
+      // this press takes the host's control away from the keyboard entirely.
+      return unclaimed(state);
   }
 }
 

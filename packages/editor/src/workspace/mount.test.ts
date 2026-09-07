@@ -2962,12 +2962,19 @@ describe('a failed or conflicted write cannot change a rank either', () => {
  *
  * ## `.click()` rather than a constructed event, and why that is the keyboard path
  *
- * `onKeydown` binds no Enter or Space: activation runs through `onClick`, which
- * a browser fires as a button's own NATIVE activation behaviour when Enter is
- * pressed on it. jsdom does not synthesize that, so a test dispatching
- * `keydown{key:'Enter'}` would assert against a path the product does not have —
- * and teaching the mount to handle Enter itself would fire twice in a real
- * browser, once from the handler and once from the native click.
+ * `onKeydown` DOES bind Enter and Space now (`#158`), and this paragraph used to
+ * say the opposite — that binding them would fire twice in a real browser, once
+ * from the mount's handler and once from the button's own NATIVE activation.
+ * That objection was right about the mechanism and wrong about the conclusion:
+ * a `<button>`'s activation behaviour is the keydown's DEFAULT ACTION, so the
+ * arm's `preventDefault()` cancels it and only one dispatch survives. Kept as
+ * history rather than deleted, because the double fire is exactly what returns
+ * if a future arm ever resolves a control without reaching that call.
+ *
+ * This suite still activates with `.click()`, and that is still right HERE:
+ * these tests are about focus surviving a redraw, so they want the shortest
+ * route to an activation rather than a second copy of `#158`'s own keyboard
+ * coverage — which lives further down and drives the loop with keys alone.
  *
  * `HTMLElement.click()` is the activation behaviour Enter reaches, so the
  * INTERACTION under test constructs no event of its own and no pointer gesture
@@ -3413,6 +3420,655 @@ describe('a command control keeps focus across the redraw it causes', () => {
       active.dispatchEvent(new page.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       assert.equal(reached, 1, 'the press did not reach the mount — the keyboard loop is dead');
     } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+});
+
+/**
+ * `#158` — activating a control with the keyboard, and the loop that proves it.
+ *
+ * ## Why this needed its own coverage at all
+ *
+ * §17b fixes the create loop as `R → 1–5 → search → ⏎` and says what it is for
+ * in four words: "full loop, no pointer". Every one of those key steps was
+ * already implemented and already tested. What was not implemented was the step
+ * BETWEEN them — pressing a control. It worked anyway, because a browser
+ * activates a focused `<button>` natively and `onClick` sees the click, so the
+ * package advertised a keyboard loop while implementing none of its activation
+ * and leaving the guarantee to whatever elements a host chose to render.
+ *
+ * That gap was invisible from both sides. jsdom synthesizes no native
+ * activation, so nothing here could drive the step; and the harness `click`
+ * helper CONSTRUCTS a `MouseEvent`, so "no pointer event was used" asserted over
+ * it would have passed while proving nothing.
+ *
+ * ## So the last test removes the ability rather than asserting about it
+ *
+ * `win.MouseEvent`, `win.PointerEvent` and `HTMLElement.prototype.click` are all
+ * replaced with stand-ins that throw, and the assertion is that the scenario
+ * FINISHES. A count of pointer events is a number someone has to remember to
+ * update; a constructor that throws needs no maintenance and cannot be passed by
+ * a test that quietly stops exercising the path.
+ *
+ * Be exact about the bound, as the block above this one is: poisoning those
+ * three closes every activation route this suite can take — the harness helper,
+ * a hand-rolled `new win.MouseEvent`, and `node.click()`. It does not reach
+ * events jsdom builds internally by other routes, and it is not a proof that no
+ * `MouseEvent` exists anywhere in the process. The claim is "no pointer
+ * activation route this suite can take", which is the claim that was wanted.
+ */
+describe('a control activates from the keyboard', () => {
+  /**
+   * One press at the focused element.
+   *
+   * `cancelable: true` IS LOAD-BEARING and is why this helper exists rather than
+   * copying the nearest neighbour: `defaultPrevented` is unconditionally `false`
+   * on a non-cancelable event, and several dispatches elsewhere in this file
+   * omit the flag — so a test copied from one of those would assert `false`
+   * whatever the mount did.
+   *
+   * `.focus()` FIRST, for the same class of reason. The arm reads
+   * `document.activeElement`, as `interaction()` and `navigateFocus` already do,
+   * so a press dispatched at an unfocused node exercises a different ordering
+   * than the one the design reasons about.
+   */
+  const press = (
+    page: Mounted,
+    node: HTMLElement,
+    key: string,
+    press_: {
+      readonly ctrlKey?: boolean;
+      readonly metaKey?: boolean;
+      readonly altKey?: boolean;
+      readonly isComposing?: boolean;
+      readonly repeat?: boolean;
+    } = {},
+  ): KeyboardEvent => {
+    node.focus();
+    const event = new page.win.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...press_ });
+    node.dispatchEvent(event);
+    return event;
+  };
+
+  /**
+   * Whatever holds focus, narrowed without a cast.
+   *
+   * `instanceof` against THIS page's own `HTMLElement`, which is safe here for
+   * the reason `mount.ts` avoids it in the product: a test has exactly one
+   * window and knows which, while the mount may be handed a node from another.
+   */
+  const focused = (page: Mounted): HTMLElement => {
+    const active = page.win.document.activeElement;
+    if (!(active instanceof page.win.HTMLElement)) throw new Error('nothing focusable holds focus');
+    return active;
+  };
+
+  /** Select an issue with the keyboard alone — the rail's roving tab stop, then `⏎`. */
+  const selectFirstIssue = async (page: Mounted): Promise<void> => {
+    const row = page.rows().find((each) => each.getAttribute('data-ig-key') === '1');
+    assert.ok(row !== undefined, 'no rail row for 1');
+    press(page, row, 'Enter');
+    await flush();
+  };
+
+  /** The host facts that draw §17a's `First pass →`, with no bundle to run it. */
+  const withEntry = (snapshot: StoreSnapshot): WorkspaceProjection => {
+    const base = project(snapshot);
+    return { ...base, viewer: { ...base.viewer, host: { identity: 'acme/widgets', firstPass: 'First pass' } } };
+  };
+
+  it('opens the kind chooser on Enter, and cancels the press', async () => {
+    const page = await mounted();
+    try {
+      await selectFirstIssue(page);
+      const add = page.control('add');
+      assert.ok(add !== null, 'no add control to activate');
+
+      const event = press(page, add, 'Enter');
+      await flush();
+
+      assert.ok(
+        page.element.querySelector('[data-ig-command="kind"]') !== null,
+        'Enter on the add control opened no kind chooser',
+      );
+      // CANCELLING IS THE HALF THAT MAKES THIS SAFE IN A BROWSER, not a detail.
+      // A `<button>`'s activation behaviour is this keydown's default action, so
+      // an arm that dispatched without cancelling would fire once here and once
+      // more from the native click the browser then synthesizes.
+      assert.equal(event.defaultPrevented, true, 'the activation left the native click to fire as well');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('opens the kind chooser on Space, and cancels the press', async () => {
+    const page = await mounted();
+    try {
+      await selectFirstIssue(page);
+      const add = page.control('add');
+      assert.ok(add !== null, 'no add control to activate');
+
+      const event = press(page, add, ' ');
+      await flush();
+
+      assert.ok(
+        page.element.querySelector('[data-ig-command="kind"]') !== null,
+        'Space on the add control opened no kind chooser',
+      );
+      // AND THE PAGE DOES NOT ALSO SCROLL. Space's other default action.
+      assert.equal(event.defaultPrevented, true, 'Space activated the control and scrolled the page too');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('hands a press inside a command-bearing input straight back', async () => {
+    // THE REGRESSION THIS ARM WOULD OTHERWISE SHIP. Both search boxes are
+    // `<input>` elements carrying `data-ig-command`, and `onClick` declines them
+    // because the `input` listener owns them. Treat that refusal as "the package
+    // answered" and the arm cancels the press — so a space typed into the target
+    // query never reaches the box, and step three of `R → digit → search → ⏎`
+    // cannot be typed. The refusal has to travel with its REASON for the arm to
+    // tell this case from the inert one below.
+    const page = await mounted();
+    try {
+      await selectFirstIssue(page);
+      const add = page.control('add');
+      assert.ok(add !== null, 'no add control');
+      press(page, add, 'Enter');
+      await flush();
+
+      const chosen = KIND_KEYS[0];
+      assert.ok(chosen !== undefined, 'the vocabulary has no first kind');
+      const landed = page.win.document.activeElement;
+      assert.ok(landed !== null);
+      landed.dispatchEvent(new page.win.KeyboardEvent('keydown', { key: chosen.key, bubbles: true }));
+      await flush();
+
+      const search = page.element.querySelector<HTMLInputElement>('input[data-ig-command="target-query"]');
+      assert.ok(search !== null, 'the draft never reached its target step');
+
+      const space = press(page, search, ' ');
+      assert.equal(space.defaultPrevented, false, 'the arm swallowed a space typed into the target query');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('holds the press on a control that refuses because it is inert', async () => {
+    // THE OTHER REFUSAL, AND THE OPPOSITE ANSWER. `First pass →` is drawn whether
+    // or not a host supplied the bundle it needs, and the mount withholds it
+    // rather than moving the reducer to a state with no way back. That press is
+    // kept — `Space` would otherwise scroll the page under a reader who has just
+    // pressed something, and this package has answered — which is why one
+    // boolean cannot serve both refusals.
+    const page = await mounted(SEED, { project: withEntry });
+    try {
+      const entry = page.control('first-pass');
+      assert.ok(entry !== null, 'no first-pass entry drawn');
+
+      const event = press(page, entry, 'Enter');
+      await flush();
+
+      assert.equal(event.defaultPrevented, true, 'the inert entry handed its press to the platform');
+      assert.equal(
+        page.element.querySelector('.ig-firstpass-overlay'),
+        null,
+        'the inert entry opened the queue anyway',
+      );
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('leaves a rail row to the viewer’s own navigation', async () => {
+    // WHAT THIS PINS, said exactly: a rail row is NOT a control, so the arm
+    // answers `null` for it and the viewer's own `Enter` still selects. It is
+    // NOT an ordering test — moving the arm earlier would pass this too, because
+    // the arm has nothing to say about a keyed row either way. The ordering is
+    // load-bearing only if a control is ever drawn INSIDE a keyed element, which
+    // nothing does today and nothing here can pin.
+    const page = await mounted();
+    try {
+      const row = page.rows().find((each) => each.getAttribute('data-ig-key') === '2');
+      assert.ok(row !== undefined, 'no rail row for 2');
+
+      press(page, row, 'Enter');
+      await flush();
+
+      const inspector = page.zone('inspector');
+      assert.ok(inspector !== null);
+      assert.ok(inspector.textContent?.includes('Write the release notes') === true, 'Enter selected no issue');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  // EACH MODIFIER ITS OWN ROW. One `ctrlKey` case leaves `metaKey ||` and
+  // `altKey ||` free to be dropped with nothing failing, and on macOS those are
+  // the realistic chords — `⌘Enter` and `⌥Space` — so the untested two are the
+  // ones a reader would actually press.
+  for (const modifier of ['ctrlKey', 'metaKey', 'altKey'] as const) {
+    it(`leaves a ${modifier} press to the platform`, async () => {
+      const page = await mounted();
+      try {
+        await selectFirstIssue(page);
+        const add = page.control('add');
+        assert.ok(add !== null, 'no add control');
+
+        const event = press(page, add, 'Enter', { [modifier]: true });
+        await flush();
+
+        assert.equal(
+          page.element.querySelector('[data-ig-command="kind"]'),
+          null,
+          `${modifier}+Enter began a draft — the platform’s chord was claimed`,
+        );
+        assert.equal(event.defaultPrevented, false, `${modifier}+Enter was cancelled`);
+      } finally {
+        page.handle.destroy();
+        page.dom.window.close();
+      }
+    });
+  }
+
+  it('leaves an input method its own Enter', async () => {
+    // `Enter` MID-COMPOSITION CONFIRMS A CANDIDATE, and belongs to the input
+    // method. Anyone entering CJK text hits this on the ordinary path, which is
+    // why `create/keys.ts` refuses it for its own bindings and why the arm does
+    // too — untested, it was a line anyone could delete as redundant.
+    const page = await mounted();
+    try {
+      await selectFirstIssue(page);
+      const add = page.control('add');
+      assert.ok(add !== null, 'no add control');
+
+      const event = press(page, add, 'Enter', { isComposing: true });
+      await flush();
+
+      assert.equal(page.element.querySelector('[data-ig-command="kind"]'), null, 'a composing Enter was claimed');
+      assert.equal(event.defaultPrevented, false, 'a composing Enter was cancelled');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('makes a held key one act, and cancels the repeat rather than handing it back', async () => {
+    // THE TOGGLE IS THE FIXTURE, because it is the one control that survives its
+    // own activation as the SAME element with the other command — so a repeat
+    // can be aimed at it, and a second dispatch is VISIBLE as the chip closing
+    // again. An earlier draft of this test aimed the repeat at "whatever holds
+    // focus after pressing add", which turned out to be a rail row; the press
+    // was then `navigateFocus`'s and the test passed with the repeat rule
+    // inverted. A document with no edges, because the chip is drawn only when
+    // something is isolated.
+    const page = await mounted({ issues: SEED.issues, edges: [] });
+    try {
+      const chip = page.control('open-isolated');
+      assert.ok(chip !== null, 'no isolated chip was drawn — the test would prove nothing');
+
+      press(page, chip, ' ');
+      await flush();
+      const opened = page.control('close-isolated');
+      assert.ok(opened !== null, 'the first press did not open the isolated list');
+
+      const held = press(page, opened, ' ', { repeat: true });
+      await flush();
+
+      // ONE ACT. A repeat that dispatched would flip the toggle straight back,
+      // so the reader holding the key would watch the list they just opened
+      // close under them.
+      assert.ok(page.control('close-isolated') !== null, 'the repeat dispatched a second act and closed the list');
+      // AND CANCELLED, which is the half jsdom cannot show the consequence of.
+      // `Space` activates a `<button>` on KEYUP, so a repeat handed back lets the
+      // platform mark the button active and the keyup then synthesizes a click —
+      // performing the act a second time through `onClick` instead. There is no
+      // native activation here to observe, so `defaultPrevented` stands in for
+      // it, which is why it is asserted rather than assumed.
+      assert.equal(held.defaultPrevented, true, 'the repeat was handed back — a native keyup would act again');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('keeps a held key with the control it activated, even after focus moves', async () => {
+    // REVIEW FINDING ON THIS CHANGE, and the half the in-arm repeat guard cannot
+    // reach. ACTIVATING A CONTROL OFTEN MOVES FOCUS — pressing a kind option
+    // redraws and focuses `target-query` — so the repeats of that same held
+    // press arrive at the INPUT. There the arm asks "is what holds focus a
+    // control?", answers "an input, hand it back", and the platform types a
+    // space into a query the reader never started. Held long enough, the target
+    // search fills with spaces from a press that was aimed at a button.
+    const page = await mounted();
+    try {
+      await selectFirstIssue(page);
+      const add = page.control('add');
+      assert.ok(add !== null, 'no add control');
+      press(page, add, 'Enter');
+      await flush();
+
+      const chosen = KIND_KEYS[0];
+      assert.ok(chosen !== undefined, 'the vocabulary has no first kind');
+      const option = page.element.querySelector<HTMLElement>(`[data-ig-command="kind"][data-ig-value="${chosen.edgeKind}"]`);
+      assert.ok(option !== null, 'the chooser drew no option to press');
+
+      press(page, option, ' ');
+      await flush();
+
+      // FOCUS HAS MOVED, and the test says so rather than assuming it — the
+      // whole finding rests on this step happening.
+      const now = focused(page);
+      assert.equal(now.getAttribute('data-ig-command'), 'target-query', 'activating the kind did not move focus');
+
+      const held = new page.win.KeyboardEvent('keydown', { key: ' ', repeat: true, bubbles: true, cancelable: true });
+      now.dispatchEvent(held);
+      await flush();
+
+      assert.equal(held.defaultPrevented, true, 'a repeat of the held key typed a space into the target query');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('keeps the held key across an unrelated press, like Shift', async () => {
+    // REVIEW FINDING ON THIS CHANGE. The record was cleared by ANY fresh
+    // non-repeat press, so a reader holding `Space` on a control and touching
+    // `Shift` — or anything else — dropped it, and the next `Space` repeat
+    // landed wherever the activation had since sent focus. That is the inserted
+    // spaces the record exists to prevent, one keystroke away from every use.
+    const page = await mounted();
+    try {
+      await selectFirstIssue(page);
+      const add = page.control('add');
+      assert.ok(add !== null, 'no add control');
+      press(page, add, 'Enter');
+      await flush();
+
+      const chosen = KIND_KEYS[0];
+      assert.ok(chosen !== undefined, 'the vocabulary has no first kind');
+      const option = page.element.querySelector<HTMLElement>(
+        `[data-ig-command="kind"][data-ig-value="${chosen.edgeKind}"]`,
+      );
+      assert.ok(option !== null, 'the chooser drew no option to press');
+      press(page, option, ' ');
+      await flush();
+
+      const search = focused(page);
+      assert.equal(search.getAttribute('data-ig-command'), 'target-query', 'activating the kind did not move focus');
+
+      // STILL HOLDING SPACE, and now something else is pressed.
+      search.dispatchEvent(new page.win.KeyboardEvent('keydown', { key: 'Shift', bubbles: true, cancelable: true }));
+
+      const held = new page.win.KeyboardEvent('keydown', { key: ' ', repeat: true, bubbles: true, cancelable: true });
+      search.dispatchEvent(held);
+      await flush();
+
+      assert.equal(held.defaultPrevented, true, 'an unrelated press forgot the still-held activation');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('keeps every held key’s record, not just the latest one', async () => {
+    // REVIEW FINDING ON THIS CHANGE. Two keys can be down at once — hold `Space`
+    // on one control and press `Enter` on another — and a scalar record answered
+    // that by forgetting the first, so the `Space` repeats stopped being
+    // recognised as its own and went wherever focus had since moved. The set is
+    // what stops the case existing rather than guarding against it.
+    // THE REPEAT HAS TO LAND SOMEWHERE THE TWO ANSWERS DIFFER, which is why this
+    // drives the loop to the target input rather than pressing two chrome
+    // buttons: on a control, a lost record is invisible — the repeat simply
+    // reaches the arm and is cancelled again for its own reasons. On the INPUT
+    // the arm hands the press back, so a forgotten record shows up as the
+    // reader's search box taking a character from a key they are holding on a
+    // button. An earlier draft of this test pressed two chrome buttons and
+    // passed with the set replaced by a scalar.
+    const page = await mounted();
+    try {
+      await selectFirstIssue(page);
+      const add = page.control('add');
+      assert.ok(add !== null, 'no add control');
+
+      // ENTER GOES DOWN FIRST, and stays down for the rest of the test.
+      press(page, add, 'Enter');
+      await flush();
+
+      // SPACE ACTIVATES A SECOND CONTROL while Enter is still held, and this one
+      // moves focus into the target search.
+      const chosen = KIND_KEYS[0];
+      assert.ok(chosen !== undefined, 'the vocabulary has no first kind');
+      const option = page.element.querySelector<HTMLElement>(
+        `[data-ig-command="kind"][data-ig-value="${chosen.edgeKind}"]`,
+      );
+      assert.ok(option !== null, 'the chooser drew no option to press');
+      press(page, option, ' ');
+      await flush();
+
+      const search = focused(page);
+      assert.equal(search.getAttribute('data-ig-command'), 'target-query', 'activating the kind did not move focus');
+
+      // NOW ENTER REPEATS, at the input. It is still this package's press.
+      const held = new page.win.KeyboardEvent('keydown', {
+        key: 'Enter',
+        repeat: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      search.dispatchEvent(held);
+      await flush();
+
+      assert.equal(held.defaultPrevented, true, 'a second activation overwrote the first still-held key’s record');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('releases the held key on keyup, so a later repeat is the reader’s own', async () => {
+    // THE OTHER SIDE OF THE SAME FLAG, isolated to `keyup` alone. Remembering
+    // the press must not outlive it, or the reader who let go and then held
+    // `Space` inside the search box they were sent to would find it swallowed by
+    // a press that ended.
+    //
+    // A REPEAT is what discriminates: `onKeydown` clears the flag on any fresh
+    // NON-repeat press, so a test driving one of those would pass with the
+    // `keyup` listener deleted.
+    const page = await mounted();
+    try {
+      await selectFirstIssue(page);
+      const add = page.control('add');
+      assert.ok(add !== null, 'no add control');
+      press(page, add, 'Enter');
+      await flush();
+
+      const chosen = KIND_KEYS[0];
+      assert.ok(chosen !== undefined, 'the vocabulary has no first kind');
+      const option = page.element.querySelector<HTMLElement>(`[data-ig-command="kind"][data-ig-value="${chosen.edgeKind}"]`);
+      assert.ok(option !== null, 'the chooser drew no option to press');
+      press(page, option, ' ');
+      await flush();
+
+      const search = focused(page);
+      assert.equal(search.getAttribute('data-ig-command'), 'target-query', 'activating the kind did not move focus');
+
+      // LET GO.
+      search.dispatchEvent(new page.win.KeyboardEvent('keyup', { key: ' ', bubbles: true }));
+
+      const held = new page.win.KeyboardEvent('keydown', { key: ' ', repeat: true, bubbles: true, cancelable: true });
+      search.dispatchEvent(held);
+      await flush();
+
+      // NOW IT IS THE READER TYPING, and the input owns it again.
+      assert.equal(held.defaultPrevented, false, 'a repeat after keyup was still held by the finished press');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('leaves a host’s own command its native activation', async () => {
+    // REVIEW FINDING ON THIS CHANGE, and the one that made the arm a regression
+    // rather than only an addition. `data-ig-command` is a SHARED NAMESPACE:
+    // `reduceHost`'s default arm says a host's chrome publishes on it too, and
+    // layer 1 already does — `refresh`, `retry:index`, `review-pick-order`,
+    // `dismiss:adoption` are drawn inside this surface and answered by the
+    // host's own `click` listener. Cancelling their keydown suppresses the
+    // native click that listener waits for, so every one of them would stop
+    // answering the keyboard while looking untouched from in here.
+    //
+    // A COMMAND NO ARM KNOWS is the general case, driven directly rather than
+    // through one of those four: what the arm must key on is the REDUCER's
+    // answer, not a list of names it would have to keep in step with layer 1.
+    const page = await mounted();
+    try {
+      const host = page.win.document.createElement('button');
+      host.setAttribute('data-ig-command', 'a-command-this-reducer-has-no-arm-for');
+      const inspector = page.zone('inspector');
+      assert.ok(inspector !== null);
+      inspector.append(host);
+
+      const event = press(page, host, 'Enter');
+      await flush();
+
+      // NOT CANCELLED, so the browser still activates the button and the host's
+      // click listener still hears it. This is the whole assertion: everything
+      // else about that control is the host's business, not this package's.
+      assert.equal(
+        event.defaultPrevented,
+        false,
+        'the arm cancelled a host-owned command and took its control off the keyboard',
+      );
+      // AND NOT REDRAWN, which is the same defect by a different route and was
+      // the second finding on it. A redraw replaces `surface.innerHTML`, and
+      // `Space` activates a `<button>` on KEYUP — so destroying the held button
+      // before then loses the activation exactly as cancelling would. The node
+      // still being in the document is what says no redraw ran.
+      assert.ok(host.isConnected, 'a redraw replaced the host’s button before its activation could land');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('stops a refused press before the identity branches, on the click path too', async () => {
+    // THE EXTRACTION'S CENTRAL CLAIM, pinned. `controlAnswer` answers `refused`
+    // rather than `null` so that `onClick` STOPS — fall through and a press on a
+    // control the mount declined reaches the `data-ig-group` / `data-ig-key`
+    // branch and selects whatever sits under it, an act the reader never asked
+    // for.
+    //
+    // NO CONTROL IS DRAWN INSIDE A KEYED ELEMENT TODAY, which is why this
+    // configuration is BUILT here rather than found. That is the point: the
+    // guard exists against a future renderer nesting one, and a test that waited
+    // for that renderer would arrive after the regression it was meant to catch.
+    const page = await mounted(SEED, { project: withEntry });
+    try {
+      const entry = page.control('first-pass');
+      assert.ok(entry !== null, 'no first-pass entry drawn');
+      const parent = entry.parentElement;
+      assert.ok(parent !== null, 'the entry has no parent to key');
+      parent.setAttribute('data-ig-key', '4');
+
+      page.click(entry);
+      await flush();
+
+      const inspector = page.zone('inspector');
+      assert.ok(inspector !== null);
+      assert.equal(
+        inspector.textContent?.includes('Rename the config flag') ?? false,
+        false,
+        'a refused press fell through and selected the element underneath it',
+      );
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('runs the whole create loop with no pointer activation route available', async () => {
+    const page = await mounted();
+    const { win } = page;
+    const realMouse = win.MouseEvent;
+    const realPointer = win.PointerEvent;
+    const realClick = win.HTMLElement.prototype.click;
+    const poisoned = (what: string) =>
+      function (this: unknown): never {
+        throw new Error(`${what} was used — this scenario is meant to be pointer-free`);
+      };
+    const put = (host: object, name: string, value: unknown): void => {
+      Object.defineProperty(host, name, { value, configurable: true, writable: true });
+    };
+    try {
+      // POISONED AFTER THE MOUNT, so the mount's own setup is unaffected and only
+      // the scenario is bound by it.
+      //
+      // `defineProperty` RATHER THAN AN ASSIGNMENT, and then CHECKED. A plain set
+      // answers `false` on a property that is not writable instead of throwing,
+      // so a jsdom that ever made these non-configurable would leave the scenario
+      // running against the real constructors while every assertion still passed
+      // — the same silently-stops-proving-anything failure this test replaces.
+      put(win, 'MouseEvent', poisoned('MouseEvent'));
+      put(win, 'PointerEvent', poisoned('PointerEvent'));
+      put(win.HTMLElement.prototype, 'click', poisoned('HTMLElement.click()'));
+      assert.throws(() => new win.MouseEvent('click'), /pointer-free/, 'MouseEvent was not poisoned');
+      assert.throws(() => new win.PointerEvent('pointerdown'), /pointer-free/, 'PointerEvent was not poisoned');
+      assert.throws(() => win.document.body.click(), /pointer-free/, 'HTMLElement.click was not poisoned');
+
+      // 1. THE SUBJECT, chosen with the rail's roving tab stop and `⏎`.
+      await selectFirstIssue(page);
+
+      // 2. `add`, THE STEP THIS ISSUE ADDED. Deliberately not `r` on the rail
+      //    row: `r` resolves through `keyIntent`'s own `relate` binding, so that
+      //    variant would stay green with the keydown arm deleted — the same
+      //    vacuity this test exists to retire, wearing a different shape.
+      const add = page.control('add');
+      assert.ok(add !== null, 'no add control');
+      press(page, add, 'Enter');
+      await flush();
+
+      // 3. THE KIND, by its digit — read from `KIND_KEYS` so a sixth edge field
+      //    cannot silently falsify the pairing.
+      const chosen = KIND_KEYS[0];
+      assert.ok(chosen !== undefined, 'the vocabulary has no first kind');
+      const landed = page.win.document.activeElement;
+      assert.ok(landed !== null, 'the chooser left nothing focused');
+      landed.dispatchEvent(new win.KeyboardEvent('keydown', { key: chosen.key, bubbles: true, cancelable: true }));
+      await flush();
+
+      // 4. THE TARGET, typed and committed.
+      const search = page.element.querySelector<HTMLInputElement>('input[data-ig-command="target-query"]');
+      assert.ok(search !== null, 'the draft never reached its target step');
+      search.focus();
+      search.value = '3';
+      search.dispatchEvent(new win.Event('input', { bubbles: true }));
+      await flush();
+      // RE-QUERIED, because the redraw the query causes replaces the box. The
+      // stale node is detached, so a press dispatched at it bubbles to nothing
+      // and the commit silently never happens.
+      const typed = page.element.querySelector<HTMLInputElement>('input[data-ig-command="target-query"]');
+      assert.ok(typed !== null, 'the target search went away as the query landed');
+      typed.focus();
+      typed.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      await flush();
+
+      const proposed = page.store.getSnapshot().writes.map((write) => write.mutation);
+      assert.equal(proposed.length, 1, `the loop proposed ${String(proposed.length)} edits, not one`);
+      assert.equal(proposed[0]?.op, 'create');
+    } finally {
+      put(win, 'MouseEvent', realMouse);
+      put(win, 'PointerEvent', realPointer);
+      put(win.HTMLElement.prototype, 'click', realClick);
       page.handle.destroy();
       page.dom.window.close();
     }
