@@ -229,6 +229,81 @@ describe('mountWorkspace', () => {
     page.dom.window.close();
   });
 
+  describe('done when: §17b\u2019s flip is offered once, and reaches the store', () => {
+    /**
+     * Select the seed’s one landed edge, the way a reader does.
+     *
+     * THE ISSUE FIRST. Nothing is selected on mount, so the inspector lists no
+     * relationships and there is no edge row to click — the carrier has to be
+     * selected before the edge it declares exists as a control.
+     */
+    const selectTheEdge = async (on: Mounted = page): Promise<void> => {
+      const carrier = on.rows().find((row) => row.getAttribute('data-ig-key') === '1');
+      assert.ok(carrier !== undefined, 'no rail row for 1');
+      on.click(carrier);
+      await flush();
+      const row = on.element.querySelector('[data-ig-command="select-edge"]');
+      assert.ok(row !== null, 'no relationship row to select an edge from');
+      on.click(row);
+      await flush();
+    };
+
+    it('draws exactly one flip and one statement for the selected edge', async () => {
+      await selectTheEdge();
+      const inspector = page.zone('inspector');
+      assert.ok(inspector !== null);
+      // ONE CONTROL. The workspace draws it and the composed picker no longer
+      // does; two would be the double-draw this work exists to remove, and it
+      // is the assertion that fails if the picker ever grows one back.
+      assert.equal(inspector.querySelectorAll('[data-ig-command="flip"]').length, 1);
+      // ONE STATEMENT, for the same reason from the other side.
+      assert.equal(inspector.querySelectorAll('.ig-relationship-kind').length, 1);
+      // AND THE PICKER IS STILL THERE, so this is not passing by the chrome
+      // having gone missing.
+      assert.ok(inspector.querySelector('.ig-picker') !== null, 'the retype picker is gone');
+    });
+
+    it('emits one flip proposal, and no other, when it is pressed', async () => {
+      await selectTheEdge();
+      const flip = page.control('flip');
+      assert.ok(flip !== null, 'the workspace published no flip control');
+      const landed = page.store.getSnapshot().landed[0];
+      assert.ok(landed !== undefined);
+
+      page.click(flip);
+      await flush();
+
+      // ONE WRITE, AND IT IS THE FLIP. The store stamps its own `mutationId`, so
+      // the assertion reads the two fields the control is responsible for
+      // rather than the record's whole shape.
+      const mutations = page.store.getSnapshot().writes.map((write) => write.mutation);
+      assert.deepEqual(
+        mutations.map(({ op, ...rest }) => ({ op, edgeId: 'edgeId' in rest ? rest.edgeId : null })),
+        [{ op: 'flip', edgeId: landed.id }],
+      );
+    });
+
+    it('offers no flip on a symmetric edge, and still states it', async () => {
+      // THE ABSENCE IS OF THE ACT, NEVER OF THE FACT. `serialize-with` reads
+      // the same both ways, so there is nothing to reverse — and the store
+      // would refuse the edit as `symmetric-edge` anyway.
+      const symmetric = await mounted({
+        ...SEED,
+        edges: [makeEdge('serialize-with', '1', '2')],
+      });
+      try {
+        await selectTheEdge(symmetric);
+        const inspector = symmetric.zone('inspector');
+        assert.ok(inspector !== null);
+        assert.equal(inspector.querySelectorAll('[data-ig-command="flip"]').length, 0);
+        assert.equal(inspector.querySelectorAll('.ig-relationship-kind').length, 1);
+      } finally {
+        symmetric.handle.destroy();
+        symmetric.dom.window.close();
+      }
+    });
+  });
+
   describe('done when: it draws the workspace from the store’s snapshot', () => {
     it('draws the rail, the canvas, the inspector and the audit header', () => {
       for (const name of ['rail', 'canvas', 'inspector', 'header']) {

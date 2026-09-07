@@ -87,8 +87,9 @@ output, escaped by `renderMarkup` — is the mount's now, not this page's.
   hierarchy under its closed origins.
 - **Every edit path.** Create by the inspector (`+ add` → kind → search), by the
   keyboard (`R` → `1`–`5` → search → `⏎`), and by the canvas (drag a node onto
-  another; the kind chooser opens at the drop point). Retype and flip from the
-  picker on a selected edge, delete from its button or `⌫`, `Esc` to cancel.
+  another; the kind chooser opens at the drop point). Retype from the picker on a
+  selected edge, flip from the control at the end of that edge's own row, delete
+  from its button or `⌫`, `Esc` to cancel.
 - **Every edge state.** `pending-write` on any edit; `invalid` from a refusal the
   adapter never sees (a self-edge, a duplicate, a would-be cycle); `failed` and
   `conflict` by arming what the tracker answers next. A conflict offers **retry

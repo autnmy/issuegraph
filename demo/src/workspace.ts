@@ -81,7 +81,6 @@ export const KIND_PHRASE: Readonly<Record<EdgeKind, string>> = {
 export const PICKER_WORDS: PickerWords = {
   kinds: KIND_PHRASE,
   heading: 'Relationship kind',
-  flip: 'flip the direction',
   current: 'current',
 };
 
@@ -147,6 +146,10 @@ export const WORKSPACE_WORDS: MountWords = {
   // An inbound relationship is declared in the other issue's body, so it cannot
   // be removed from this panel.
   inbound: 'inbound',
+  // §17b's flip, on the selected relationship's row. A VERB PHRASE rather than
+  // the frame's bare "flip", because the row it sits in is a sentence and a
+  // one-word control there reads as part of it.
+  flip: 'flip the direction',
   // The store's codes, worded for someone grooming a backlog rather than for
   // someone reading the store. `would-cycle` is the one this host's guard
   // actually produces; the rest are refused before dispatch.

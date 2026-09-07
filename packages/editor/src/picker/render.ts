@@ -1,5 +1,21 @@
 /**
- * The type picker, the direction statement and the flip control, as markup.
+ * The type picker — the five kinds an edge can be retyped to — as markup.
+ *
+ * ## The direction statement and the flip are NOT here, and once were
+ *
+ * §17b's direction card belongs to the panel that has an edge selected, and
+ * `renderWorkspace` draws it: the relationship row already states the pair and
+ * the kind, and the flip sits at the end of that row where frame 17b draws it.
+ * They lived here because this surface landed first, and a picker composed into
+ * that panel then drew a second statement and a second flip one element from
+ * the first — which is the encoding ambiguity §17b exists to remove, produced by
+ * the surface meant to remove it.
+ *
+ * {@link ./view.ts PickerView} still carries `direction` and `flip`: they are
+ * the MODEL, `reduceHost` builds its proposal from them, and a host that wants
+ * another arrangement renders them itself — `PickerView` carries the ordered
+ * pair and the kind and no word order beyond that, which is what makes such a
+ * host cheap. What moved is the drawing, not the answer.
  *
  * ## Every readable byte comes from the host or from the document
  *
@@ -9,24 +25,18 @@
  * being worded here is a RELATIONSHIP, so a phrase written in would be an
  * English clause in the one place the design says a reader most often gets the
  * encoding wrong. `render.test.ts` enforces it by asserting that every text node
- * is either a {@link ./words.ts PickerWords} entry or an issue reference — a
- * total claim rather than a spot check, so a word added later fails rather than
- * slipping in.
+ * is a {@link ./words.ts PickerWords} entry — a total claim rather than a spot
+ * check, so a word added later fails rather than slipping in.
  *
- * ## The default word order is a DEFAULT
- *
- * The statement is drawn subject · phrase · object, which is a word order and
- * therefore a presentation choice this layer is not entitled to impose. It is
- * offered as the ordinary case and bypassed the same way the re-evaluate
- * summary's is: {@link ./view.ts PickerView} carries the ordered pair and the
- * kind and no order beyond that, so a host that needs another arrangement
- * renders the view model. Nothing here is load-bearing for it.
+ * IT NO LONGER ADMITS AN ISSUE REFERENCE EITHER, and the tightening is the
+ * statement leaving rather than a decision: the two references this surface
+ * used to draw were the statement's. A list of KINDS naming an ISSUE would now
+ * itself be the finding.
  *
  * ## It publishes commands and wires nothing
  *
- * `data-ig-command="retype"` with a `data-ig-kind`, and
- * `data-ig-command="flip"`. Listener wiring, focus and dispatch belong to the
- * mount, exactly as the scale ladder and the re-evaluate surface already defer
+ * `data-ig-command="retype"` with a `data-ig-kind`. Listener wiring, focus and
+ * dispatch belong to the mount, exactly as the scale ladder and the re-evaluate surface already defer
  * them — and the proposal each command stands for is on the view model, so a
  * mount reads it rather than reconstructing it from attributes.
  *
@@ -49,7 +59,7 @@ import {
 } from '@issuegraph/viewer';
 import type { EdgeId, GraphDocument } from '@issuegraph/store';
 
-import { type DirectionStatement, type KindOption, type PickerView, pickerView } from './view.ts';
+import { type KindOption, type PickerView, pickerView } from './view.ts';
 import { pickerStylesheet } from './styles.ts';
 import type { PickerWords } from './words.ts';
 
@@ -66,7 +76,7 @@ export interface PickerOptions {
 
 export interface PickerResult {
   readonly view: PickerView;
-  /** The picker, the statement and the flip control, under one root. */
+  /** The kind list, under one root. */
   readonly markup: string;
   /**
    * The theme and this surface's own stylesheet. Install both.
@@ -115,21 +125,6 @@ function optionSpec(option: KindOption, words: PickerWords): ElementSpec {
 }
 
 /**
- * The direction statement.
- *
- * The two references are the DOCUMENT's, not this package's words, and each
- * carries the role it plays so a host can restyle or reorder them without
- * parsing the sentence back apart.
- */
-function directionSpec(direction: DirectionStatement, words: PickerWords): ElementSpec {
-  return element('p', { class: 'ig-picker-direction', 'data-ig-kind': direction.kind }, [
-    element('span', { class: 'ig-picker-ref', 'data-ig-role': 'from' }, [direction.from]),
-    element('span', { class: 'ig-picker-phrase' }, [words.kinds[direction.kind]]),
-    element('span', { class: 'ig-picker-ref', 'data-ig-role': 'to' }, [direction.to]),
-  ]);
-}
-
-/**
  * The picker for one existing edge.
  *
  * Takes a DOCUMENT and an edge id — never a store and never a source. A host
@@ -153,17 +148,6 @@ export function renderPicker(
           'ul',
           { class: 'ig-picker-kinds', 'aria-label': words.heading },
           view.options.map((option) => optionSpec(option, words)),
-        ),
-    // Symmetric kinds render NEITHER of the next two. The absence is the
-    // finding: a control to reverse a relationship that carries no direction
-    // would claim the format says something it does not.
-    view.direction === null ? null : directionSpec(view.direction, words),
-    view.flip === null
-      ? null
-      : element(
-          'button',
-          { type: 'button', class: 'ig-picker-flip', 'data-ig-command': 'flip' },
-          [words.flip],
         ),
   ]);
 

@@ -10,13 +10,13 @@
  * IT ADDS SELECTORS RATHER THAN REDEFINING THEM. Nothing here reaches into the
  * viewer's own classes; this file styles only what the picker introduces.
  *
- * ## The statement is laid out as a FLEX ROW, and that is load-bearing
+ * ## §17b's direction statement is no longer styled here
  *
- * render.ts draws the statement subject, phrase, object, and calls that word
- * order a default a host may bypass. A flex row is what makes the bypass cheap:
- * the CSS order property reorders flex children, so a host whose language puts
- * the relationship elsewhere restyles rather than re-implements. Laying it out
- * as inline text would have made the claim in render.ts true only in principle.
+ * This sheet once laid the statement out as a flex row so a host could reorder
+ * it with the CSS order property. The statement is `renderWorkspace`'s
+ * relationship row now — see `picker/render.ts`'s header for why — and its
+ * layout went with it, to `workspace/styles.ts`. Nothing here draws a
+ * relationship any more; this sheet styles the kind list and nothing else.
  *
  * Shipped as a string for the same reason the viewer's is: an entry that
  * imports CSS cannot be loaded by a bare Node runtime, and a string needs no
@@ -66,8 +66,7 @@ export const pickerStylesheet = `
   line-height: inherit;
 }
 
-.ig-picker-choice:focus-visible,
-.ig-picker-flip:focus-visible {
+.ig-picker-choice:focus-visible {
   outline: var(--ig-focus-ring) solid var(--ig-focus);
   outline-offset: var(--ig-stroke);
 }
@@ -84,33 +83,5 @@ export const pickerStylesheet = `
   margin-left: auto;
   font-size: var(--ig-font-size-small);
   color: var(--ig-text-muted);
-}
-
-/* Wraps rather than truncates: a qualified reference is long, and a statement
-   whose object is cut off says something other than what the format holds. */
-.ig-picker-direction {
-  margin: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--ig-space-tight);
-  color: var(--ig-text-body);
-}
-
-.ig-picker-ref {
-  font-family: var(--ig-font-mono);
-  color: var(--ig-accent);
-}
-
-.ig-picker-flip {
-  align-self: flex-start;
-  background: var(--ig-surface);
-  color: var(--ig-text-body);
-  border: var(--ig-stroke) solid var(--ig-line);
-  border-radius: var(--ig-radius);
-  padding: var(--ig-space-tight);
-  font-family: inherit;
-  font-size: var(--ig-font-size-small);
-  line-height: inherit;
 }
 `;

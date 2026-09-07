@@ -117,6 +117,11 @@ export type CanvasMode = (typeof CANVAS_MODES)[number];
  * still readable here, through the extension, and a host supplies each exactly
  * once — redeclaring one on this interface would be a second place for the same
  * word to be documented and the first place for the two to disagree.
+ *
+ * `flip` MOVED THE SAME WAY AND IS NOT THE SAME MOVE. It came from
+ * {@link PickerWords}, which this interface holds in a NESTED field, so a host
+ * reads `words.flip` where it read `words.picker.flip`. That path change is the
+ * breaking half of §17b's control moving to the surface that draws it.
  */
 export interface MountWords extends WorkspaceWords {
   readonly picker: PickerWords;
@@ -772,7 +777,12 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     const edgeId = selectedEdgeId(state.selection);
     const { draft } = state;
 
-    // WHAT IS LEFT HERE IS WHAT NEEDS A DOM. `+ add` and the numbered kind list
+    // WHAT IS LEFT HERE IS WHAT NEEDS A DOM. `+ add`, the numbered kind list
+    // and §17b's flip are `renderWorkspace`'s now — the flip because the
+    // statement it reverses is the selected relationship's ROW, and a picker
+    // composed into this same panel drew a second statement and a second flip
+    // one element from the first. What is left below draws one control, not two.
+    // The older half of this note stands: `+ add` and the numbered kind list
     // are `renderWorkspace`'s now — they are markup, and a host rendering the
     // package without mounting had a panel it could only read. The retype
     // picker and the target search stay: the first is another package's

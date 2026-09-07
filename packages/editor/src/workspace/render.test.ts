@@ -2,10 +2,11 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { buildModel } from '@issuegraph/reader';
-import { EDGE_FIELDS, edgeIdentity } from '@issuegraph/core';
-import { KEY_ATTRIBUTE, type ViewerHold } from '@issuegraph/viewer';
+import { EDGE_FIELDS, type EdgeField, edgeIdentity, isSymmetricEdgeField } from '@issuegraph/core';
+import { KEY_ATTRIBUTE, type ViewerHold, labelFrom, treatmentFor } from '@issuegraph/viewer';
 
 import { AUDIT_SEVERITY_ATTRIBUTE } from '../audit/surface.ts';
+import { treatmentForState } from '../overlay/grammar.ts';
 import type { AuditGraph } from '../audit/findings.ts';
 import { type WorkspaceRecovery, ZONES, renderWorkspace } from './render.ts';
 import type { ViewerDocument } from '@issuegraph/viewer';
@@ -823,7 +824,12 @@ describe('a relationship row says what it is, and which way round', () => {
     assert.equal(/ig-relationship-remove/.test(row), false);
     // WITH NO ISSUE SUBJECT THERE IS NO "OTHER END", so both are drawn and the
     // kind takes its plain forward wording.
-    assert.match(row, /<span>blocked by<\/span><\/span><span class="ig-relationship-ref">i0001<\/span><span class="ig-relationship-ref">i0002<\/span>/);
+    //
+    // AND EACH END IS NAMED. Order alone would leave which reference is which
+    // to be inferred, which is exactly what §17b's statement exists to stop —
+    // `directionSpec` published these two roles before the statement became
+    // this row, and the row publishes them now.
+    assert.match(row, /<span>blocked by<\/span><\/span><span class="ig-relationship-ref" data-ig-role="from">i0001<\/span><span class="ig-relationship-ref" data-ig-role="to">i0002<\/span>/);
   });
 
   it('states an empty list rather than drawing none', () => {
@@ -1753,5 +1759,184 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
       false,
       'the card claimed nothing differs about an edit that removes a relationship',
     );
+  });
+});
+
+/**
+ * §17b's flip, on the published surface rather than only on the mount.
+ *
+ * THE STATEMENT IS NOT UNDER TEST HERE, and that is the finding this block was
+ * written after. `relationshipDescription`'s `subject === null` arm already
+ * draws the kind and both references in stored order for an edge selection, so
+ * the sentence §17b asks for has shipped since the panel had rows at all. What
+ * had not shipped is the control beside it: `renderPicker` drew the flip, the
+ * mount composed the picker, and a host wiring `renderWorkspace`'s published
+ * attributes got nothing. These cases pin the control and leave the sentence to
+ * the row tests above, so the panel keeps ONE statement.
+ */
+describe("§17b's flip control is published markup, not mount chrome", () => {
+  /**
+   * A backlog whose one edge is of the kind under test.
+   *
+   * `together-with` NEEDS THE UNIT, and the exception is layer 1's rather than
+   * this suite's: `normalizeDocument` drops a `together-with` the order does not
+   * group, because no row could draw it. Without the unit the fixture hands
+   * every case a document whose edge does not survive normalization, the
+   * selection resolves to `none`, and the symmetric cases pass by the panel
+   * being empty rather than by the control being withheld.
+   */
+  const edgeOf = (field: EdgeField) =>
+    backlogOf(4, {
+      edges: [[field, 'i0001', 'i0002']],
+      ...(field === 'together-with' ? { unitOf: { i0002: 'i0001' } } : {}),
+    });
+  const selectionOf = (field: EdgeField) => ({
+    kind: 'edge' as const,
+    edgeId: edgeIdentity(field, 'i0001', 'i0002'),
+  });
+
+  /**
+   * THE WHOLE VOCABULARY, so a sixth field gets a case for free. The split is
+   * read off the format rather than listed here, which is the same rule the
+   * picker's own suite states: a local list of directed kinds would be the
+   * second implementation that goes quietly wrong when the format grows.
+   */
+  for (const field of EDGE_FIELDS) {
+    const directed = !isSymmetricEdgeField(field);
+
+    it(`${directed ? 'offers' : 'withholds'} the flip for ${field}`, () => {
+      const panel = inspectorOf(
+        renderWorkspace(edgeOf(field), { ...WORDS, selection: selectionOf(field) }).markup,
+      );
+      assert.equal(
+        panel.includes('data-ig-command="flip"'),
+        directed,
+        directed
+          ? 'a directed selection published no flip'
+          : 'a symmetric selection published a flip there is no direction to reverse',
+      );
+      // THE SENTENCE IS PRESENT EITHER WAY. A symmetric kind loses the control
+      // and keeps the statement — the absence is of an act, never of the fact.
+      assert.match(panel, new RegExp(`>${labelFrom(treatmentFor(field), true)}<`));
+    });
+  }
+
+  it('puts the flip in the selected row, beside the statement it reverses', () => {
+    const panel = inspectorOf(
+      renderWorkspace(edgeOf('blocked-by'), {
+        ...WORDS,
+        selection: selectionOf('blocked-by'),
+      }).markup,
+    );
+    const row = rowFor(panel, 'blocked-by');
+    // IN THE ROW, not beside the list. Frame 17b draws the control at the end
+    // of the statement's own line; a control one element away from the sentence
+    // it acts on is the ambiguity §17b exists to remove.
+    assert.match(row, /data-ig-command="flip"/);
+    // AND AT THE ROW'S END, which membership alone does not say. The frame puts
+    // `⇅ flip` last on the statement's line, and the flip reaches that position
+    // by being drawn last rather than by a margin — so the position IS the
+    // draw order, and this is the assertion that sees it move.
+    assert.match(row, /<button type="button" class="ig-relationship-flip" data-ig-command="flip">[^<]*<\/button><\/li>$/);
+    // The statement it reverses names both its ends, so "which way round" is
+    // read rather than inferred from their order.
+    assert.match(row, /data-ig-role="from">i0001</);
+    assert.match(row, /data-ig-role="to">i0002</);
+    // ON A BUTTON. A span carries no tab stop and no native activation, so a
+    // command on one is reachable by pointer and by nothing else.
+    assert.match(row, /<button type="button" class="ig-relationship-flip" data-ig-command="flip">/);
+    // THE STATE MARKER KEEPS ITS PLACE. It names the state the canvas is
+    // drawing a halo for; dropping it for directed kinds would leave the
+    // marker appearing only on symmetric selections.
+    assert.match(row, /data-ig-state="selected"/);
+  });
+
+  it('still offers the flip on a selected row a refusal landed on', () => {
+    // A REACHABLE COMPOSITION NOTHING ELSE COVERS: one `li` carrying the head,
+    // a stated refusal, the `selected` marker AND the flip. `duplicate-edge`,
+    // `unchanged-kind` and `symmetric-edge` all mark an edge that is still
+    // LANDED, so a refused retype of the very edge the reader has selected puts
+    // all four in one row.
+    //
+    // THE FLIP MUST SURVIVE IT, and stay last. The refusal is about an edit
+    // that did not happen; the relationship is still there and still reversible,
+    // and withdrawing the corrective act at the moment an edit was refused is
+    // exactly when a reader most needs it.
+    const edgeId = edgeIdentity('blocked-by', 'i0001', 'i0002');
+    const panel = inspectorOf(
+      renderWorkspace(edgeOf('blocked-by'), {
+        ...WORDS,
+        selection: selectionOf('blocked-by'),
+        refusals: [{ edgeId, code: 'unchanged-kind', carrier: 'i0001', phantom: false }],
+      }).markup,
+    );
+    const row = rowFor(panel, 'blocked-by');
+    assert.match(row, /ig-relationship-reason/, 'the refusal was not stated on the row');
+    assert.match(row, /data-ig-state="selected"/);
+    assert.match(row, /<button type="button" class="ig-relationship-flip" data-ig-command="flip">[^<]*<\/button><\/li>$/);
+  });
+
+  it('draws no flip on a row the reader has not selected', () => {
+    // THE REDUCER TAKES ITS EDGE FROM THE SELECTION, so a flip on an unselected
+    // row would publish a command about a different edge — or, with an issue
+    // selected, about none at all. A control that cannot complete the act it
+    // advertises is not drawn.
+    const panel = inspectorOf(
+      renderWorkspace(edgeOf('blocked-by'), {
+        ...WORDS,
+        selection: { kind: 'issue', key: 'i0001' },
+      }).markup,
+    );
+    assert.equal(/data-ig-command="flip"/.test(panel), false);
+  });
+
+  it('states the relationship once, and words every readable byte from the vocabulary', () => {
+    const panel = inspectorOf(
+      renderWorkspace(edgeOf('blocked-by'), {
+        ...WORDS,
+        selection: selectionOf('blocked-by'),
+      }).markup,
+    );
+    // ONE STATEMENT. This is the assertion that fails if a second direction
+    // sentence is ever added beside the row — the defect this issue exists to
+    // remove, reintroduced by its own fix.
+    assert.equal(panel.match(/class="ig-relationship-kind"/g)?.length, 1);
+
+    const treatment = treatmentFor('blocked-by');
+    const allowed = new Set([
+      treatment.glyph,
+      labelFrom(treatment, true),
+      'i0001',
+      'i0002',
+      treatmentForState('selected').label,
+      WORKSPACE_WORDS.flip,
+    ]);
+    const readable = [...rowFor(panel, 'blocked-by').matchAll(/>([^<>]*)</g)]
+      .map((match) => (match[1] ?? '').trim())
+      .filter((text) => text !== '');
+    assert.ok(readable.length > 0, 'the row rendered no readable text at all');
+    assert.deepEqual(
+      readable.filter((text) => !allowed.has(text)),
+      [],
+      'the row rendered a word neither the host nor the vocabulary supplied',
+    );
+    // AND THE HOST'S WORD IS ACTUALLY THERE, so the total claim above cannot
+    // pass by the control being absent.
+    assert.ok(readable.includes(WORKSPACE_WORDS.flip));
+  });
+
+  it('reads directedness from one source, not two', () => {
+    // KTD4. The control's EXISTENCE and the row's WORDING both hang off
+    // `treatmentFor(field)`; `picker/view.ts` hangs its own answer off
+    // `isSymmetricEdgeField`. Nothing else in the repository pins the two to
+    // agree, and a package whose stated objection is "not a wrong answer, a
+    // second answer" should not have two oracles for one question unpinned.
+    for (const field of EDGE_FIELDS) {
+      assert.equal(
+        treatmentFor(field).symmetric,
+        isSymmetricEdgeField(field),
+        `the vocabulary and the format disagree about whether ${field} is symmetric`,
+      );
+    }
   });
 });
