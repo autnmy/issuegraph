@@ -37,6 +37,7 @@ export const WORKSPACE_WORDS: WorkspaceWords = {
   noRelationships: 'nothing is related to this',
   addRelationship: 'begin a relationship',
   cancel: 'abandon the draft',
+  relatingFrom: 'the draft starts at',
   remove: 'unlink this row',
   inbound: 'declared elsewhere',
   // ONE DISTINCT SENTENCE PER CODE, for the reason the whole constant states:

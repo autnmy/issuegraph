@@ -138,6 +138,15 @@ const RENDERS = [
     selection: { kind: 'issue', key: 'i0001' },
     draft: { source: 'i0001', target: null, kind: null },
   }),
+  // THE SAME STEP UNDER A PANEL THAT IS NOT ITS SOURCE. A draft can outlive the
+  // selection it began under, and the step is drawn anyway — it carries the only
+  // pointer cancel there is — with a line naming whose draft it is. That line is
+  // reached by no other render here.
+  renderWorkspace(DOCUMENT, {
+    words: WORKSPACE_WORDS,
+    selection: { kind: 'issue', key: 'i0003' },
+    draft: { source: 'i0001', target: null, kind: null },
+  }),
   // A REFUSED EDIT, IN THE ROW IT WOULD HAVE BEEN. The capsule replaces a row
   // rather than joining the list, so it needs a refusal naming an edge the
   // subject actually has — and `phantom`, which is what makes it a capsule at

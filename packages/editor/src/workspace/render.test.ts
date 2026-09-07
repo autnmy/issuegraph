@@ -921,14 +921,18 @@ describe('the create path begins in the panel, and its digits are the keyboard\u
     assert.equal(/data-ig-command="add"/.test(typed), false);
   });
 
-  it('draws the kind list only under the issue the draft is FROM', () => {
-    // `pointed` diverts a click to the draft only once a KIND has been chosen,
-    // so at the kind step a click anywhere else moves the selection and leaves
-    // `draft.source` where it was. The panel drew the numbered list under
-    // whatever had just been selected: "choose a kind" beneath one issue's
-    // heading while the write would go out from another, with nothing on screen
-    // naming the real source. The shell's chooser this replaced always printed
-    // it.
+  it('draws the kind step under a panel that is NOT its source, and says whose it is', () => {
+    // THE DEFECT THIS PINS, AND IT WAS INTRODUCED BY THE FIX ABOVE IT. `pointed`
+    // diverts a click to the draft only once a KIND has been chosen, so at the
+    // kind step a click anywhere else moves the selection and leaves
+    // `draft.source` where it was — and `R` on a together unit's non-lead member
+    // begins a draft from the member while the panel is canonicalized onto the
+    // slot's lead, so the two diverge with no click at all. Withholding the list
+    // there left the reader a LIVE draft with no pointer route to it: no
+    // choices, and no cancel, because the cancel sits with the list. The shell
+    // draws no chooser at this step either — its floating one needs a drop and
+    // its target search needs a kind — so "the shell's cancel still reaches it"
+    // was false.
     const diverged = inspectorOf(
       renderWorkspace(document, {
         ...WORDS,
@@ -936,32 +940,61 @@ describe('the create path begins in the panel, and its digits are the keyboard\u
         draft,
       }).markup,
     );
-    assert.equal(/ig-kind-list/.test(diverged), false, 'the list is drawn under the wrong issue');
-
-    // AND `+ add` IS DRAWN INSTEAD, for this panel's own subject — that control
-    // CAN complete the act it advertises, because `begin` starts a draft from
-    // the key it is given.
-    assert.ok(
-      diverged.includes('data-ig-command="add" data-ig-target="i0004"'),
-      diverged,
-    );
-
-    // The source's own panel is unaffected, so this narrowed rather than
-    // removed the step.
+    assert.match(diverged, /ig-kind-list/, 'the reader cannot see the choices');
     assert.match(
-      inspectorOf(renderWorkspace(document, { ...WORDS, selection, draft }).markup),
-      /ig-kind-list/,
+      diverged,
+      /<button type="button" class="ig-inspector-cancel" data-ig-command="cancel">abandon the draft<\/button>/,
+      'the reader cannot abandon the draft with a pointer',
     );
+
+    // AND IT NAMES THE SOURCE, which is what makes drawing it honest: the panel
+    // is headed by `i0004` and the write would go out from `i0001`. The phrase
+    // is the host's and the reference is the package's, as the why-rank
+    // sentence's unit clause already is.
+    assert.match(
+      diverged,
+      /<p class="ig-inspector-source">the draft starts at <span class="ig-id">i0001<\/span><\/p>/,
+    );
+
+    // `+ add` IS NOT DRAWN BESIDE IT. It does not cancel a draft, it RESETS one
+    // — `begin` clears the kind and the target — so on a panel that is not the
+    // source it silently moves the write to whatever the reader is looking at.
+    assert.equal(/data-ig-command="add"/.test(diverged), false, 'a reset wearing the label of a start');
   });
 
-  it('offers a way out of the draft it opened', () => {
+  it('keeps a live draft cancellable on a panel with no subject at all', () => {
+    // `reconcileHost` REACHES THIS. It clears a selection whose issue a landed
+    // write removed and leaves a draft begun from a DIFFERENT issue standing,
+    // because that draft's own references are all still in the document — so
+    // the panel resolves to `none` with a live draft under it. Guarding the
+    // whole create step on `subject.kind === 'issue'` took the choices and the
+    // cancel away there too.
+    const orphaned = inspectorOf(renderWorkspace(document, { ...WORDS, draft }).markup);
+    assert.match(orphaned, /ig-kind-list/);
+    assert.match(orphaned, /data-ig-command="cancel"/);
+    assert.match(
+      orphaned,
+      /<p class="ig-inspector-source">the draft starts at <span class="ig-id">i0001<\/span><\/p>/,
+    );
+    // `+ add` IS STILL WITHHELD, and for its own reason rather than this one:
+    // `reduceHost`'s `add` arm answers `null` with nothing selected, so the
+    // control could not complete the act it advertises.
+    assert.equal(/data-ig-command="add"/.test(orphaned), false);
+  });
+
+  it('offers a way out of the draft it opened, and names no source on its own panel', () => {
     // A DRAFT THE READER CANNOT ABANDON is worse than one they cannot start —
     // `create/keys.ts` says so for the keyboard, and the pointer path lost its
     // own cancel when the step moved out of the shell's chooser.
+    const own = inspectorOf(renderWorkspace(document, { ...WORDS, selection, draft }).markup);
     assert.match(
-      inspectorOf(renderWorkspace(document, { ...WORDS, selection, draft }).markup),
+      own,
       /<button type="button" class="ig-inspector-cancel" data-ig-command="cancel">abandon the draft<\/button>/,
     );
+    // THE SOURCE LINE IS ONLY FOR THE DIVERGED CASE. On the source's own panel
+    // it would name the issue whose heading is directly above it — the same
+    // fact twice, in two registers.
+    assert.equal(/ig-inspector-source/.test(own), false, 'the panel names its own subject back');
   });
 });
 
@@ -997,8 +1030,12 @@ describe('a refused relationship is drawn where the reader was building it', () 
     // THE WORD IS KEYED OFF THE CODE, not one message for every refusal.
     assert.equal(/that field holds one reference/.test(capsule), false);
     // The relationship it was about is still named, so the reader knows which
-    // edit was refused.
-    assert.ok(capsule.includes(`data-ig-target="${refused}"`), capsule);
+    // edit was refused — as a DESCRIPTION, not as a control. See the suite
+    // below for the control half.
+    assert.match(
+      capsule,
+      /<span class="ig-relationship-name"><span class="ig-relationship-kind"><span class="ig-glyph" aria-hidden="true">⊘<\/span><span>blocked by<\/span><\/span><span class="ig-relationship-ref">i0002<\/span><\/span>/,
+    );
 
     // AND IT IS NOT ALSO AN ORDINARY ROW. A refused edit is not a relationship:
     // listing it beside the real ones would assert one the document does not
@@ -1163,6 +1200,42 @@ describe('a refusal about a relationship that EXISTS keeps the relationship', ()
       /class="ig-relationship-remove"/.test(phantom),
       false,
       'a remove control for an edge that was never added',
+    );
+  });
+
+  it('gives a phantom capsule no select-edge, while the landed refusal keeps one', () => {
+    // THE OTHER CONTROL ON THE SAME CAPSULE. `phantom` withheld the `✕` from the
+    // start and the capsule went on reusing the row's HEAD, which is itself a
+    // `select-edge` — so a refused create whose phantom survives normalization
+    // published a live selector for an edge the LANDED document does not carry.
+    // Under `mountWorkspace` that click selects the phantom and the next
+    // render's `reconcileHost` drops the selection again, so the control closes
+    // the inspector instead of inspecting anything.
+    //
+    // ONE FIXTURE, BOTH ANSWERS, so `phantom` stays the only thing separating
+    // them: the same edge, the same subject, the same list.
+    const phantom = inspectorOf(
+      renderWorkspace(document, {
+        ...WORDS,
+        selection: { kind: 'issue', key: 'i0001' },
+        refusals: [{ edgeId: landed, code: 'would-cycle', phantom: true }],
+      }).markup,
+    );
+    assert.equal(
+      /data-ig-command="select-edge"/.test(phantom),
+      false,
+      'a selector for an edge the document does not carry',
+    );
+    // AND THE DESCRIPTION SURVIVES, so this withheld the control rather than the
+    // fact: a capsule that names no relationship tells the reader nothing about
+    // which edit was refused.
+    assert.match(phantom, /<span class="ig-relationship-name">/);
+    assert.match(phantom, /<span class="ig-relationship-ref">i0002<\/span>/);
+    // The landed half is unchanged on the very same fixture.
+    assert.ok(
+      rowFor(panel, 'blocked-by').includes(
+        `data-ig-command="select-edge" data-ig-target="${landed}"`,
+      ),
     );
   });
 });

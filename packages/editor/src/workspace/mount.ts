@@ -47,7 +47,7 @@
  */
 
 import { edgeIdentity } from '@issuegraph/core';
-import type { EdgeId, EdgeKind, GraphDocument, InvalidCode, MutationId, Store, StoreSnapshot } from '@issuegraph/store';
+import type { EdgeKind, GraphDocument, InvalidCode, MutationId, Store, StoreSnapshot } from '@issuegraph/store';
 import { nextDocument } from '@issuegraph/store';
 import {
   type Scene,
@@ -904,12 +904,9 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // and moved past. `renderWorkspace` collapses its own input the same way,
     // and the two agree by that rule rather than by both happening to scan
     // forwards.
-    const marked = new Set<EdgeId>();
     const projectedRefusals: readonly WorkspaceRefusal[] = snapshot.projected.flatMap((edge) => {
       const code = edge.writes.map((write) => refusedBy.get(write)).findLast((one) => one !== undefined);
-      if (code === undefined) return [];
-      marked.add(edge.id);
-      return [{ edgeId: edge.id, code, phantom: !landedIds.has(edge.id) }];
+      return code === undefined ? [] : [{ edgeId: edge.id, code, phantom: !landedIds.has(edge.id) }];
     });
     // AND THE REFUSALS THE PROJECTION HAS NOTHING TO HANG ON. `unknown-edge` is
     // the whole class: a retype, flip or delete of an edge the document no
@@ -918,10 +915,25 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // the "never silently dropped" half of §17b's rule failing on exactly the
     // refusal that says the thing they acted on is gone. The mutation names the
     // edge it was about, so that id is what the capsule is keyed on.
+    //
+    // "ALREADY PROJECTED" IS ASKED OF THE MUTATION, NEVER BY COMPARING EDGE IDS.
+    // A retype or a flip is refused precisely when it would produce an edge that
+    // already exists, and `edgeChangeFor` marks the PRODUCED identity — so the
+    // record the projection speaks for names one edge in `mutation.edgeId` and
+    // is recorded under another. Compared by edge id, one write was both
+    // projected and stranded, and the panel drew its reason twice: once on the
+    // produced edge's row and once as an orphan capsule for the id the reader's
+    // edit named. `ProjectedEdge.writes` is the projection's own record of which
+    // mutations it is speaking for, so that is what is asked — and it covers the
+    // whole of an edge's list, not only the `findLast` one the capsule states,
+    // because an earlier refusal on the same edge is projected too.
+    const projectedMutations = new Set<MutationId>(
+      snapshot.projected.flatMap((edge) => edge.writes),
+    );
     const strandedRefusals: readonly WorkspaceRefusal[] = snapshot.writes.flatMap((record) =>
       record.state === 'invalid' &&
       record.mutation.op !== 'create' &&
-      !marked.has(record.mutation.edgeId)
+      !projectedMutations.has(record.mutationId)
         ? [{ edgeId: record.mutation.edgeId, code: record.reason.code, phantom: !landedIds.has(record.mutation.edgeId) }]
         : [],
     );

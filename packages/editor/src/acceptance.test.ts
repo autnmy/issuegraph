@@ -741,6 +741,7 @@ const WORKSPACE_WORDS: surface.WorkspaceWords = {
   noRelationships: 'nothing is related to this',
   addRelationship: 'begin a relationship',
   cancel: 'abandon the draft',
+  relatingFrom: 'the draft starts at',
   remove: 'unlink this row',
   inbound: 'declared elsewhere',
   refusals: {

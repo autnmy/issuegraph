@@ -426,15 +426,26 @@ export const workspaceStylesheet = `
   border-left-color: var(--ig-edge-decomposed-from);
 }
 
+/* THE DESCRIPTION'S BOX, WHETHER OR NOT A CONTROL IS WRAPPING IT. A row's head
+   is a button and a phantom capsule's is a plain span -- 'render.ts' withholds
+   the selector for an edge the landed document does not carry -- and the two
+   occupy the row identically: they fill it, so the reason wraps under them
+   rather than squeezing the reference out, and their parts sit on one baseline.
+   Declared once, so the capsule cannot come to sit differently from the row it
+   stands in for. */
+.ig-relationship-select,
+.ig-relationship-name {
+  flex: 1;
+  display: flex;
+  gap: var(--ig-space-tight);
+  align-items: baseline;
+}
+
 /* The button fills its row, so the whole relationship is the hit target rather
    than the words inside it. Transparent and borderless: the li already carries
    the border and the hue, and a second box around it would read as two
    controls. */
 .ig-relationship-select {
-  flex: 1;
-  display: flex;
-  gap: var(--ig-space-tight);
-  align-items: baseline;
   background: none;
   border: none;
   padding: 0;
@@ -554,6 +565,17 @@ export const workspaceStylesheet = `
 .ig-inspector-addbutton,
 .ig-inspector-cancel {
   align-self: flex-start;
+}
+
+/* WHOSE DRAFT THIS IS, drawn only when it is not the panel's subject. Quiet and
+   small, like every other line that states a fact rather than offering an act:
+   it is a caption on the step below it, not a heading over it. The reference
+   inside keeps layer 1's '.ig-id' treatment, so the issue reads the same here
+   as it does in the why-rank sentence. */
+.ig-inspector-source {
+  margin: 0;
+  color: var(--ig-text-muted);
+  font-size: var(--ig-font-size-small);
 }
 
 .ig-kind-list {

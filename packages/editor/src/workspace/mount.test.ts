@@ -26,6 +26,7 @@ import { PICKER_WORDS } from '../testing/picker.ts';
 import { WORKSPACE_WORDS } from '../testing/workspace.ts';
 import { mountStylesheet } from './chrome.ts';
 import {
+  type CanvasMode,
   type FirstPassOption,
   type MountWords,
   type WorkspaceProjection,
@@ -152,6 +153,27 @@ function hostedProject(snapshot: StoreSnapshot): WorkspaceProjection {
   };
 }
 
+/**
+ * The harness projection with `2` folded into `1`'s slot — one together unit
+ * with a non-lead member.
+ *
+ * A UNIT IS THE ONE SHAPE WHERE THE PANEL'S SUBJECT AND A KEY THE READER CAN
+ * STAND ON DIVERGE WITHOUT A CLICK: `inspectorView` canonicalizes a selection
+ * naming a member onto the slot's lead, so `R` on the member begins a draft
+ * from a source the panel is not about.
+ */
+function unitProject(snapshot: StoreSnapshot): WorkspaceProjection {
+  const base = project(snapshot);
+  const slots = base.viewer.order.slots
+    .filter((slot) => slot.lead !== '2')
+    .map((slot, index) => ({
+      ...slot,
+      rank: index + 1,
+      members: slot.lead === '1' ? ['1', '2'] : slot.members,
+    }));
+  return { ...base, viewer: { ...base.viewer, order: { ...base.viewer.order, slots } } };
+}
+
 async function mounted(
   seed: GraphDocument = SEED,
   options: {
@@ -159,6 +181,7 @@ async function mounted(
     derive?: OrderDeriver;
     project?: (snapshot: StoreSnapshot) => WorkspaceProjection;
     firstPass?: FirstPassOption;
+    canvas?: CanvasMode;
   } = {},
 ) {
   const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>');
@@ -383,6 +406,51 @@ describe('mountWorkspace', () => {
       const search = page.element.querySelector<HTMLInputElement>('input[data-ig-command="target-query"]');
       assert.ok(search !== null);
       assert.equal(page.win.document.activeElement, search);
+    });
+
+    it('R on a together unit’s non-lead member leaves the draft visible and cancellable', async () => {
+      // THE PANEL AND THE DRAFT DIVERGE WITH NO CLICK AT ALL. `R` begins from
+      // the FOCUSED key, and the tree canvas draws every issue — including a
+      // unit's non-lead members, which the rail folds into one row — so the
+      // draft starts at `2` while `inspectorView` canonicalizes the panel onto
+      // the slot's lead, `1`. The panel used to withhold the numbered list
+      // whenever the two disagreed, and the cancel control sits WITH that list:
+      // the reader was left holding a live draft with no pointer route to the
+      // choices and none to abandoning it either. The shell draws nothing here
+      // to fall back on — its floating chooser needs a canvas drop and its
+      // target search needs a kind already chosen.
+      page.handle.destroy();
+      page = await mounted(SEED, { project: unitProject, canvas: 'tree' });
+      const member = page.element.querySelector<HTMLElement>(
+        '[data-zone="canvas"] [data-ig-key="2"]',
+      );
+      assert.ok(member !== null, 'the tree canvas draws no node for the unit’s partner');
+      member.focus();
+      member.dispatchEvent(new page.win.KeyboardEvent('keydown', { key: 'r', bubbles: true }));
+      await flush();
+      assert.equal(page.handle.state.draft.source, '2');
+
+      const panel = page.zone('inspector');
+      assert.ok(panel !== null);
+      // The panel really is about the LEAD, so this is the diverged case rather
+      // than an ordinary draft that happens to pass.
+      assert.equal(panel.querySelector('.ig-inspector-title')?.textContent, 'Publish the first release');
+      assert.ok(panel.querySelector('.ig-kind-list') !== null, 'the reader cannot see the choices');
+      const cancel = panel.querySelector<HTMLElement>('[data-ig-command="cancel"]');
+      assert.ok(cancel !== null, 'the reader cannot abandon the draft with a pointer');
+      // AND THE STEP SAYS WHOSE DRAFT IT IS, because the heading above it names
+      // a different issue.
+      assert.equal(
+        panel.querySelector('.ig-inspector-source')?.textContent,
+        `${WORDS.relatingFrom} 2`,
+      );
+
+      // The cancel it drew actually cancels — a control pinned only by its
+      // presence is a control that can be drawn inert.
+      page.click(cancel);
+      await flush();
+      assert.equal(page.handle.state.draft.source, null);
+      assert.equal(page.source.pending().length, 0);
     });
 
     it('ArrowDown moves focus along the rail, through the viewer’s navigation', async () => {
@@ -678,6 +746,40 @@ describe('mountWorkspace', () => {
       assert.equal(capsule.getAttribute('data-ig-code'), 'unknown-edge');
       // The subject's real relationship is untouched beside it.
       assert.ok(inspector.querySelector('.ig-relationship[data-edge="blocked-by"]') !== null);
+    });
+
+    it('states a refusal ONCE when the refused edit named one edge and produced another', async () => {
+      // THE DOUBLE DRAW. A retype is refused as `duplicate-edge` exactly when
+      // the kind it asks for already exists between the pair — and
+      // `edgeChangeFor` hides the original and marks the PRODUCED identity, so
+      // the projection records the write under one id while
+      // `record.mutation.edgeId` still names the other. Asked "is this record
+      // already projected" by comparing edge ids, the answer was no, and the
+      // panel drew the reason twice: on the produced edge's row, and again as an
+      // orphan capsule for the id the reader's edit named — an edge the canvas
+      // is no longer even drawing.
+      page.handle.destroy();
+      page = await mounted({
+        issues: SEED.issues,
+        edges: [makeEdge('blocked-by', '1', '2'), makeEdge('serialize-with', '1', '2')],
+      });
+      const original = makeEdge('blocked-by', '1', '2');
+      void page.store.propose({ op: 'retype', edgeId: original.id, nextKind: 'serialize-with' });
+      const inspector = await select('1');
+
+      // ONE STATEMENT, COUNTED — the count is the assertion, because both
+      // halves rendered correctly on their own and only their number was wrong.
+      assert.equal(inspector.querySelectorAll('.ig-relationship-reason').length, 1);
+      assert.equal(
+        inspector.querySelector('.ig-relationship-refused'),
+        null,
+        'an orphan capsule for the id the mutation named',
+      );
+      // AND IT IS ON THE EDGE THE STORE MARKED, which is the produced one.
+      const row = inspector.querySelector<HTMLElement>('.ig-relationship[data-ig-code]');
+      assert.ok(row !== null, 'the refusal is stated nowhere at all');
+      assert.equal(row.getAttribute('data-edge'), 'serialize-with');
+      assert.equal(row.getAttribute('data-ig-code'), 'duplicate-edge');
     });
   });
 

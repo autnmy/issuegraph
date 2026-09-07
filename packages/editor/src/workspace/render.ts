@@ -199,6 +199,21 @@ export interface WorkspaceWords {
    */
   readonly cancel: string;
   /**
+   * Names the issue a live draft was begun from, when that is not the panel's
+   * subject — "relating from", read before the reference the package supplies.
+   *
+   * IT EXISTS BECAUSE THE TWO CAN DIVERGE AND THE DRAFT MUST STILL BE
+   * CANCELLABLE. See {@link addStepSpec}: a draft begun by `R` on a together
+   * unit's non-lead member, or one outlived by a change of selection, leaves
+   * the kind step live under a panel headed by a different issue. The step is
+   * drawn anyway — it carries the only pointer cancel there is — so it has to
+   * say whose it is, and the package invents that phrase no more readily than
+   * it invents {@link WorkspaceWords.workedAsOneUnit}. The REFERENCE is the
+   * package's, appended as its own element, so a host writes a phrase and never
+   * a template.
+   */
+  readonly relatingFrom: string;
+  /**
    * The accessible name of a row's remove control — the `✕` in frame 17a's
    * right-hand slot.
    *
@@ -588,15 +603,21 @@ function refusalReason(code: InvalidCode, words: WorkspaceWords): ElementSpec {
 }
 
 /**
- * A relationship's head: the control that selects it, wearing the kind's glyph
- * and word and the reference at the other end.
+ * What a relationship READS as: the kind's glyph and word, and the reference at
+ * the other end. No control, no wrapper — only the description.
  *
- * ONE HEAD FOR THE ROW AND FOR THE CAPSULE. They state the same thing about the
- * same edge, and they briefly stated it twice — including deriving `outgoing`
- * from the same two values in both places, which is the shape this package
- * calls a second answer rather than a repetition. What actually differs between
- * a row and a capsule is the SLOT beside this and the border around it, so
- * those are what the two callers write.
+ * ONE DESCRIPTION FOR THE ROW AND FOR THE CAPSULE. They state the same thing
+ * about the same edge, and they briefly stated it twice — including deriving
+ * `outgoing` from the same two values in both places, which is the shape this
+ * package calls a second answer rather than a repetition.
+ *
+ * SPLIT FROM THE CONTROL THAT WRAPS IT, rather than parameterised with a
+ * "draw a button?" flag, because the two callers do not differ in a DETAIL of
+ * one element: one of them draws no control at all. A flag would leave the
+ * element that IS the control deciding whether to be one, and every attribute
+ * on it conditional on that. The description is the shared fact; who wraps it
+ * is the caller's, exactly as the slot beside it and the border around it
+ * already are.
  *
  * ## It draws the OTHER end, and words the kind from the subject's end
  *
@@ -612,14 +633,47 @@ function refusalReason(code: InvalidCode, words: WorkspaceWords): ElementSpec {
  * and the kind takes its plain forward wording. Picking one end there would
  * mean picking arbitrarily and then wording the sentence around the choice.
  */
-function relationshipHead(
+function relationshipDescription(
   relationship: InspectorRelationship,
   subject: string | null,
-): ElementSpec {
+): readonly ElementSpec[] {
   const treatment = treatmentFor(relationship.field);
   const outgoing = subject === null || relationship.from === subject;
   const reference = (ref: string): ElementSpec =>
     element('span', { class: 'ig-relationship-ref' }, [ref]);
+  return [
+    element(
+      'span',
+      { class: 'ig-relationship-kind' },
+      // LAYER 1's PAIRING, not a second one. The glyph is one of the four
+      // channels the colour-blind-safety claim rests on and is
+      // `aria-hidden` because it announces as a character description;
+      // the word beside it is what a reader hears. A local copy of that
+      // arrangement is free to drop the second half.
+      glyphAndLabel(treatment.glyph, labelFrom(treatment, outgoing)),
+    ),
+    ...(subject === null
+      ? [reference(relationship.from), reference(relationship.to)]
+      : [reference(outgoing ? relationship.to : relationship.from)]),
+  ];
+}
+
+/**
+ * A relationship's head on a row that HAS one: the description, inside the
+ * control that selects the edge.
+ *
+ * ONLY WHERE THE EDGE IS IN THE DOCUMENT. `select-edge` reduces to a selection,
+ * and the next render's `reconcileHost` drops a selection naming an edge the
+ * landed document does not carry — so on a phantom this control would close the
+ * inspector instead of inspecting anything. That is the rule the panel's own
+ * header already states about `+ add`: a control that cannot complete the act
+ * it advertises is not drawn. {@link refusalCapsule} draws the description
+ * bare for exactly that reason.
+ */
+function relationshipHead(
+  relationship: InspectorRelationship,
+  subject: string | null,
+): ElementSpec {
   return element(
     'button',
     {
@@ -628,21 +682,7 @@ function relationshipHead(
       'data-ig-command': 'select-edge',
       'data-ig-target': relationship.edgeId,
     },
-    [
-      element(
-        'span',
-        { class: 'ig-relationship-kind' },
-        // LAYER 1's PAIRING, not a second one. The glyph is one of the four
-        // channels the colour-blind-safety claim rests on and is
-        // `aria-hidden` because it announces as a character description;
-        // the word beside it is what a reader hears. A local copy of that
-        // arrangement is free to drop the second half.
-        glyphAndLabel(treatment.glyph, labelFrom(treatment, outgoing)),
-      ),
-      ...(subject === null
-        ? [reference(relationship.from), reference(relationship.to)]
-        : [reference(outgoing ? relationship.to : relationship.from)]),
-    ],
+    relationshipDescription(relationship, subject),
   );
 }
 
@@ -725,6 +765,19 @@ function relationshipSpec(
  * is written inline in this package, which is a debt rather than a precedent;
  * the reason here is the host's, keyed off the store's own code.
  *
+ * IT NAMES THE EDGE AND OPERATES NOTHING. The capsule reused the row's head,
+ * which is a `select-edge` control — so a phantom that survived normalization
+ * (a `would-cycle` refusal reaches the panel as an edge, because the store
+ * draws a refused create precisely so a surface can mark it) published a live
+ * selector for an edge the LANDED document does not carry. Under
+ * `mountWorkspace` that click selected the phantom and the next render's
+ * `reconcileHost` dropped the selection again, so the one control on the
+ * capsule closed the inspector rather than inspecting anything. The
+ * description is drawn bare instead, on the rule
+ * {@link WorkspaceRefusal.phantom} already states in as many words: there is no
+ * relationship to operate. Its remove control was withheld for the same reason
+ * from the start; this is the half that was missed.
+ *
  * `data-ig-code` IS THE STORE'S VOCABULARY VERBATIM, so a host that wants to
  * style or count refusals reads the code rather than matching a sentence.
  */
@@ -748,7 +801,13 @@ function refusalCapsule(
       // has something to be about — but a host that projects only landed edges
       // gives us a code and nothing to word, and a refusal the reader cannot
       // see is worse than one drawn without its subject.
-      relationship === undefined ? null : relationshipHead(relationship, subject),
+      relationship === undefined
+        ? null
+        : element(
+            'span',
+            { class: 'ig-relationship-name' },
+            relationshipDescription(relationship, subject),
+          ),
       refusalReason(code, words),
     ],
   );
@@ -770,9 +829,21 @@ function refusalCapsule(
  * target search is a live input over the reader's query, so that step stays the
  * shell's. A host using this renderer without `mountWorkspace` can read,
  * remove and BEGIN a relationship, and must supply its own target picker.
+ *
+ * `source` NAMES THE DRAFT WHEN IT IS NOT THIS PANEL'S OWN, and is `null` when
+ * it is — see {@link addStepSpec} for why the list is drawn either way. Written
+ * as the reference beside the host's phrase, which is `whyRankSpec`'s own shape
+ * for the same problem: the package names the issue and the host writes the
+ * English around it.
  */
-function kindListSpec(words: WorkspaceWords): ElementSpec {
+function kindListSpec(words: WorkspaceWords, source: string | null): ElementSpec {
   return element('div', { class: 'ig-inspector-add' }, [
+    source === null
+      ? null
+      : element('p', { class: 'ig-inspector-source' }, [
+          `${words.relatingFrom} `,
+          element('span', { class: 'ig-id' }, [source]),
+        ]),
     element(
       'ul',
       { class: 'ig-kind-list' },
@@ -1100,51 +1171,83 @@ function inspectorSpec(view: InspectorView, context: InspectorContext): ElementS
         entries.length === 0 ? null : element('ul', { class: 'ig-relationship-list' }, entries),
         // THE STEPS ARE EXCLUSIVE, AND THE CHAIN IS THE SHELL'S OWN. `+ add`
         // begins a draft; the numbered list is what a live draft with no kind
-        // yet looks like. Drawing `+ add` beside its own list would offer a
+        // yet looks like. Drawing `+ add` beside a live list would offer a
         // reader mid-draft a control that RESETS the draft they are in —
         // `create/draft.ts` makes `begin` clear the kind and the target
         // deliberately.
-        subject.kind !== 'issue' ? null : addStepSpec(context, subject.issue.key),
+        // ASKED UNCONDITIONALLY, because the step belongs to the DRAFT and only
+        // `+ add` belongs to the subject. `subject.kind !== 'issue' ? null : …`
+        // was one guard doing both jobs, and it dropped a live draft's controls
+        // on a panel with no issue subject — which `reconcileHost` reaches by
+        // clearing a selection whose issue a write removed while leaving a
+        // draft begun from another issue standing.
+        addStepSpec(context, subject.kind === 'issue' ? subject.issue.key : null),
       ],
     ),
   ]);
 }
 
 /**
- * Which step of the create path the panel is showing FOR ITS OWN SUBJECT.
+ * Which step of the create path the panel is showing.
  *
- * THE STEP FOLLOWS THE DRAFT'S SOURCE, NOT THE SELECTION. A draft survives a
- * change of selection on purpose — `pointed` diverts a click to the draft only
- * once a kind has been chosen, so at the kind step a click anywhere else moves
- * the selection and leaves the draft's source behind — and the panel then drew
- * the numbered list under whatever issue had just been selected. The reader was
- * shown "choose a kind" beneath the heading of one issue while the write went
- * out from another, with nothing on screen naming the real source. The shell's
- * chooser this replaced could not have that defect: it printed the source in
- * its own sentence.
+ * THE STEP FOLLOWS THE DRAFT, NOT THE SELECTION, and the draft's source is
+ * NAMED when it is not this panel's subject. The two can diverge: `pointed`
+ * diverts a click to the draft only once a kind has been chosen, so at the kind
+ * step a click anywhere else moves the selection and leaves the draft's source
+ * behind — and `R` on a together unit's non-lead member begins a draft from
+ * that member while `inspectorView` canonicalizes the panel onto the slot's
+ * LEAD, so the two disagree from the first keystroke. Unnamed, the panel showed
+ * "choose a kind" beneath the heading of one issue while the write would go out
+ * from another. Named, it says whose draft it is.
  *
- * SO THE LIST IS WITHHELD RATHER THAN RELABELLED. Drawing the source here was
- * the alternative and it is the more expensive one — it makes the panel word a
- * second sentence about an issue that is not its subject — while the panel's
- * own standing rule already settles it: a control that cannot complete the act
- * it advertises is not drawn. The reader still has the draft; the shell's
- * cancel and the keyboard's escape both still reach it, and selecting the
- * source again brings the list back.
+ * WITHHOLDING THE LIST WAS THE FIRST ANSWER AND IT WAS WORSE. It left the
+ * reader a LIVE draft with no pointer route to it at all: the numbered choices
+ * were gone, the cancel that sits with them was gone, and the shell draws no
+ * chooser of its own at this step — `mount.ts`'s floating one is drawn only
+ * under a canvas drop, and its target search only once a kind is chosen. So the
+ * one control still on screen was `+ add`, which does not cancel a draft, it
+ * RESETS one, silently moving the source to whatever the reader happened to be
+ * looking at. "The shell's cancel still reaches it" was the reasoning, and the
+ * shell has no cancel to reach it with. A draft the reader cannot abandon with
+ * a pointer is the failure `create/keys.ts` names for the keyboard, and the
+ * cost of the alternative — one phrase naming an issue that is not the panel's
+ * subject — is the cost the shell's own chooser always paid, in the sentence it
+ * printed above its kinds.
  *
- * `+ add` IS STILL DRAWN THERE, because it CAN complete: it begins a draft from
- * this panel's subject, which is exactly what `create/draft.ts` makes `begin`
- * do. The one panel it is withheld from is the source's own, where it would
- * offer a reader mid-draft a control that resets the draft they are in.
+ * `+ add` IS NOT DRAWN BESIDE IT, on either panel. Two entries into one draft is
+ * the rule {@link WorkspaceOptions.drop} already states for the floating
+ * chooser, and here the second entry is the destructive one: `create/draft.ts`
+ * makes `begin` clear the kind and the target deliberately, so a reader
+ * mid-draft offered `+ add` is offered a reset wearing the label of a start.
+ * They restart by cancelling first, which is now a control they can see.
+ *
+ * IT IS ASKED FOR EVERY SUBJECT, INCLUDING NONE. `+ add` is the half that needs
+ * one — `reduceHost`'s `add` arm answers `null` for an edge selection and for
+ * none, so a control there could not complete — and the step is not. One guard
+ * over both dropped a live draft's controls on a panel with no issue subject,
+ * which `reconcileHost` reaches: it clears a selection whose issue a landed
+ * write removed while leaving a draft begun from a DIFFERENT issue standing,
+ * because that draft's own references are all still in the document.
  *
  * `null` AT THE TARGET STEP AND UNDER A LIVE DROP, which are two more different
  * silences and both deliberate. The target step belongs to the shell, which
- * owns the live input. A drop means a chooser is already open at the pointer,
- * and a second copy of the same step in the column beside it would be two
- * controls writing to one draft — see {@link WorkspaceOptions.drop}.
+ * owns the live input — and draws its own cancel beside it, naming the source
+ * in the same sentence. A drop means a chooser is already open at the pointer,
+ * with a cancel of its own, and a second copy of the same step in the column
+ * beside it would be two controls writing to one draft.
  */
-function addStepSpec(context: InspectorContext, subject: string): ElementSpec | null {
+function addStepSpec(context: InspectorContext, subject: string | null): ElementSpec | null {
   const { draft, drop, words } = context;
-  if (draft.source !== subject) {
+  // THE ONE LIVE KIND STEP, WHEREVER IT WAS BEGUN. Asked of the draft alone, so
+  // there is exactly one panel state for it rather than one per subject — and
+  // so a panel with no issue subject at all still carries the cancel.
+  if (draft.source !== null && draft.kind === null && drop === null) {
+    return kindListSpec(words, draft.source === subject ? null : draft.source);
+  }
+  // `+ add` NEEDS A SUBJECT TO BEGIN FROM, and `reduceHost`'s `add` arm answers
+  // `null` for an edge selection and for none — so drawing it there would
+  // publish an act that cannot complete.
+  if (subject !== null && draft.source !== subject) {
     return element('div', { class: 'ig-inspector-add' }, [
       element(
         'button',
@@ -1166,8 +1269,7 @@ function addStepSpec(context: InspectorContext, subject: string): ElementSpec | 
       ),
     ]);
   }
-  if (draft.kind !== null || drop !== null) return null;
-  return kindListSpec(words);
+  return null;
 }
 
 /**
