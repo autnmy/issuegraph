@@ -729,12 +729,19 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     }
   };
 
-  const dispatch = (command: HostCommand): void => {
-    if (destroyed) return;
+  /**
+   * Reduce a command, perform its effects, and answer whether the reducer OWNED
+   * it — see {@link HostResult.claimed}. Every caller but the keyboard arm
+   * ignores the answer, and that is fine: a pointer press needs no decision
+   * about a default action, so only the key press has a question to ask.
+   */
+  const dispatch = (command: HostCommand): boolean => {
+    if (destroyed) return false;
     const result = reduceHost(state, command, landed());
     state = result.state;
     for (const effect of result.effects) perform(effect);
     schedule();
+    return result.claimed;
   };
 
   const zone = (name: string): HTMLElement | null => surface.querySelector<HTMLElement>(`.ig-zone[data-zone="${name}"]`);
@@ -2220,17 +2227,36 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // (`Enter` repeats natively either way; only `Space` carries the asymmetry,
     // and a rule that split them would be a rule about keyboards rather than
     // about acts.)
+    // A REFUSAL IS THIS PACKAGE'S OWN ANSWER, so it keeps the press: `Space`
+    // would otherwise scroll the page under a reader who has just pressed
+    // something, and there is nothing else waiting for this key.
+    if (answer.kind === 'refused') {
+      event.preventDefault();
+      return;
+    }
+    // DISPATCH FIRST, THEN DECIDE WHETHER THE PRESS WAS OURS TO KEEP — and that
+    // order is the whole of this arm's remaining subtlety.
+    //
+    // `data-ig-command` IS A SHARED NAMESPACE. `reduceHost`'s `default` arm says
+    // so in terms: a host's own chrome publishes on the same attribute, and
+    // layer 1 already does — the freshness `refresh`, `retry:index`,
+    // `review-pick-order`, `dismiss:adoption` are all drawn inside this surface
+    // and all answered by the host's own `click` listener, never by this
+    // reducer. Cancelling their keydown would suppress the native click that
+    // listener is waiting for, and every one of those controls would stop
+    // answering the keyboard — a regression this arm introduced and could not
+    // see, because from out here a command the reducer ignored and one it
+    // handled without changing anything look identical. So the reducer is asked.
+    //
+    // Unclaimed means HANDS OFF, all the way off: no `preventDefault`, and no
+    // `activating` either. The platform's own activation is that control's
+    // route, repeats and all, exactly as before this arm existed.
+    const claimed = dispatch(answer.command);
+    if (!claimed) return;
     event.preventDefault();
-    // KEPT BESIDE THE FLAG ABOVE, not replaced by it. This arm answers for a
-    // repeat that reached it with no activation recorded — a first press some
-    // other handler consumed, say — where the flag has nothing to say and a
-    // dispatch per repeat is the wrong answer anyway. The flag answers for the
-    // repeats that never get here.
-    if (event.repeat) return;
-    if (answer.kind !== 'dispatch') return;
-    // RECORDED BEFORE THE DISPATCH, because the dispatch is what moves focus.
+    // THE PRESS IS NOW RECORDED AS OURS, so its repeats are swallowed at the top
+    // of this handler wherever the dispatch has since sent focus.
     activating = event.key;
-    dispatch(answer.command);
   };
 
   // THE HELD KEY IS LET GO. Registered beside the keydown listener rather than on

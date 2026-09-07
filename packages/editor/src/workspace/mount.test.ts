@@ -3822,6 +3822,44 @@ describe('a control activates from the keyboard', () => {
     }
   });
 
+  it('leaves a host’s own command its native activation', async () => {
+    // REVIEW FINDING ON THIS CHANGE, and the one that made the arm a regression
+    // rather than only an addition. `data-ig-command` is a SHARED NAMESPACE:
+    // `reduceHost`'s default arm says a host's chrome publishes on it too, and
+    // layer 1 already does — `refresh`, `retry:index`, `review-pick-order`,
+    // `dismiss:adoption` are drawn inside this surface and answered by the
+    // host's own `click` listener. Cancelling their keydown suppresses the
+    // native click that listener waits for, so every one of them would stop
+    // answering the keyboard while looking untouched from in here.
+    //
+    // A COMMAND NO ARM KNOWS is the general case, driven directly rather than
+    // through one of those four: what the arm must key on is the REDUCER's
+    // answer, not a list of names it would have to keep in step with layer 1.
+    const page = await mounted();
+    try {
+      const host = page.win.document.createElement('button');
+      host.setAttribute('data-ig-command', 'a-command-this-reducer-has-no-arm-for');
+      const inspector = page.zone('inspector');
+      assert.ok(inspector !== null);
+      inspector.append(host);
+
+      const event = press(page, host, 'Enter');
+      await flush();
+
+      // NOT CANCELLED, so the browser still activates the button and the host's
+      // click listener still hears it. This is the whole assertion: everything
+      // else about that control is the host's business, not this package's.
+      assert.equal(
+        event.defaultPrevented,
+        false,
+        'the arm cancelled a host-owned command and took its control off the keyboard',
+      );
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
   it('stops a refused press before the identity branches, on the click path too', async () => {
     // THE EXTRACTION'S CENTRAL CLAIM, pinned. `controlAnswer` answers `refused`
     // rather than `null` so that `onClick` STOPS — fall through and a press on a
