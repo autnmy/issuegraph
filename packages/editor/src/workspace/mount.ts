@@ -232,6 +232,16 @@ const DRAG_THRESHOLD = 6;
 const KEY_ATTRIBUTE = 'data-ig-key';
 const GROUP_ATTRIBUTE = 'data-ig-group';
 const COMMAND_ATTRIBUTE = 'data-ig-command';
+/**
+ * Which subject a command acts on, when one command names several.
+ *
+ * Named here because this file now READS it in two places rather than one —
+ * `onClick` turns it into the dispatch's `target`, and the focus token below
+ * uses it to tell one `select-edge` from the next. A third bare literal for an
+ * attribute the renderer writes on every relationship row and every recovery
+ * button is how a typo becomes a control that silently stops matching.
+ */
+const TARGET_ATTRIBUTE = 'data-ig-target';
 
 /**
  * An element, recognised by what it can do.
@@ -246,6 +256,19 @@ function isElement(target: EventTarget | null | undefined): target is Element {
 
 function isFocusable(node: Element | null | undefined): node is HTMLElement {
   return node !== null && node !== undefined && 'focus' in node;
+}
+
+/**
+ * A command control's identity across a redraw: which zone it was in, which
+ * command it publishes, and which subject it acts on when the command names
+ * several. `target` is `null` for a control that carries none, and matching
+ * requires all three, so a namesake is never mistaken for the control that had
+ * focus.
+ */
+interface CommandFocus {
+  readonly zone: string | null;
+  readonly command: string;
+  readonly target: string | null;
 }
 
 function isInput(node: Element | null | undefined): node is HTMLInputElement {
@@ -673,7 +696,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         list.append(
           el('li', {}, [
             button(`#${match.ref} ${match.title}`, 'target', {
-              'data-ig-target': match.ref,
+              [TARGET_ATTRIBUTE]: match.ref,
               class: 'ig-chrome-button ig-chrome-match',
             }),
           ]),
@@ -847,6 +870,57 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     const command = active.getAttribute(COMMAND_ATTRIBUTE);
     if (command !== null) return `[${COMMAND_ATTRIBUTE}="${command}"]`;
     return '';
+  };
+
+  /**
+   * The command control that owns focus, as facts a redraw can match again.
+   *
+   * `overlayFocusToken` above answers the same question for the first-pass
+   * overlay and only for it, so every command control OUTSIDE that overlay had
+   * no restore path at all: the arms below cover the overlay, an `input`'s
+   * caret, the target search on the render that opens it, and a pending rail
+   * jump — and then fall through to restoring by RAIL ROW, which needs a
+   * `[data-ig-key]` ancestor. An inspector button has none, so focus fell to
+   * the body. The keydown listener is on the mount's element, so that killed
+   * the whole keyboard loop until the reader clicked something else.
+   *
+   * FACTS, NOT A SELECTOR STRING. `overlayFocusToken` interpolates its value
+   * into `[attr="value"]`, which is safe only because `data-ig-answer` and the
+   * overlay's own commands come from closed sets. A general token carries
+   * {@link TARGET_ATTRIBUTE} — edge identities and issue keys straight out of
+   * a host's tracker — and a `"` in one would break the selector or match the
+   * wrong control. Comparing attribute values during a walk removes the class
+   * instead of escaping it.
+   *
+   * THE ZONE IS PART OF THE IDENTITY. One command name is published by many
+   * controls — every relationship row carries `select-edge` — and an issue is
+   * commonly drawn in the rail and again on the canvas, so a token without its
+   * zone would restore focus to a namesake in a zone the reader was not in.
+   */
+  const commandFocusToken = (): CommandFocus | null => {
+    const active = doc.activeElement;
+    if (!isElement(active) || !surface.contains(active)) return null;
+    const command = active.getAttribute(COMMAND_ATTRIBUTE);
+    if (command === null) return null;
+    return {
+      zone: active.closest('.ig-zone')?.getAttribute('data-zone') ?? null,
+      command,
+      target: active.getAttribute(TARGET_ATTRIBUTE),
+    };
+  };
+
+  /** Give focus back to the control a {@link CommandFocus} names. `false` when it is gone. */
+  const refocusCommand = (token: CommandFocus): boolean => {
+    // THE ATTRIBUTE NAME IS A CONSTANT AND THE VALUES ARE COMPARED, so nothing
+    // a host's tracker can spell reaches a selector. See the token above.
+    const scope = token.zone === null ? surface : (zone(token.zone) ?? surface);
+    for (const node of scope.querySelectorAll<HTMLElement>(`[${COMMAND_ATTRIBUTE}]`)) {
+      if (node.getAttribute(COMMAND_ATTRIBUTE) !== token.command) continue;
+      if (node.getAttribute(TARGET_ATTRIBUTE) !== token.target) continue;
+      node.focus({ preventScroll: true });
+      return true;
+    }
+    return false;
   };
 
   /** Focus the element carrying `key`, inside one zone when named, without scrolling the page. */
@@ -1159,6 +1233,10 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         : null;
     const focused = focusedKey();
     const overlayToken = overlayFocusToken();
+    // CAPTURED BEFORE THE REDRAW, like every other fact here: the node itself
+    // does not survive `surface.innerHTML`, so what crosses is a way to name
+    // the control rather than a reference to the one about to be destroyed.
+    const commandToken = commandFocusToken();
     // The ZONE too: an issue is commonly drawn in the rail and on the canvas,
     // and restoring "the first element with this key" would move focus from
     // a canvas node into the rail on every redraw.
@@ -1296,7 +1374,19 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         }
       }
     } else {
-      focusRow(focused);
+      // THE COMMAND CONTROL, WHERE THE RAIL CANNOT ANSWER. Strictly additive:
+      // it is reached only when `focusedKey()` found nothing, which is exactly
+      // the case `focusRow(null)` returned from without moving focus at all —
+      // so no control that has a keyed ancestor changes behaviour, and the
+      // rail's roving tab stop is untouched.
+      //
+      // The control can legitimately be gone: the edit it named landed, the
+      // relationship it belonged to was deleted, the recovery card it sat in
+      // resolved. `refocusCommand` says so rather than guessing, and the rail
+      // fallback below is then the same one that ran before.
+      const restored =
+        focused === null && commandToken !== null && refocusCommand(commandToken);
+      if (!restored) focusRow(focused);
     }
     // THE KEYBOARD IS GIVEN BACK. The overlay is removed with focus inside it,
     // so without this `activeElement` is the body — and the keydown listener is
@@ -1389,7 +1479,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       dispatch({
         kind: 'control',
         name,
-        target: control.getAttribute('data-ig-target') ?? undefined,
+        target: control.getAttribute(TARGET_ATTRIBUTE) ?? undefined,
         // The picker publishes its kind as `data-ig-kind`; the mount's chrome
         // publishes `data-ig-value`. One command channel, two spellings.
         value: control.getAttribute('data-ig-value') ?? control.getAttribute('data-ig-kind') ?? undefined,

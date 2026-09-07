@@ -2871,3 +2871,122 @@ describe('a failed or conflicted write cannot change a rank either', () => {
     }
   });
 });
+
+/**
+ * #149: focus survives the redraw for a command control, so the keyboard loop
+ * lives through an edit.
+ *
+ * ## Why the disclosure is the case that proves it
+ *
+ * `view-diff` is the first control in the package whose design needs a SECOND
+ * press — everything else acts once, so losing focus afterwards was survivable
+ * and invisible. Open a conflict's difference with the keyboard and, before the
+ * fix, the control that would close it no longer had focus and no key reached
+ * the mount to get back to it.
+ *
+ * ## `.click()` rather than a constructed event, and why that is the keyboard path
+ *
+ * `onKeydown` binds no Enter or Space: activation runs through `onClick`, which
+ * a browser fires as a button's own NATIVE activation behaviour when Enter is
+ * pressed on it. jsdom does not synthesize that, so a test dispatching
+ * `keydown{key:'Enter'}` would assert against a path the product does not have —
+ * and teaching the mount to handle Enter itself would fire twice in a real
+ * browser, once from the handler and once from the native click.
+ *
+ * `HTMLElement.click()` is the activation behaviour Enter reaches. The test
+ * constructs no `MouseEvent` and no `PointerEvent` of its own, which is what
+ * "driven from the keyboard alone" is protecting: no pointer INTERACTION is
+ * simulated, and focus is established and asserted at every step.
+ */
+describe('a command control keeps focus across the redraw it causes', () => {
+  const conflicted = async (page: Mounted): Promise<HTMLElement> => {
+    void page.store.propose({ op: 'create', kind: 'blocked-by', from: '3', to: '4' });
+    await page.source.whenPending();
+    page.source.settleNext({
+      outcome: 'conflict',
+      upstream: { issues: SEED.issues, edges: [...SEED.edges, makeEdge('blocked-by', '2', '3')] },
+    });
+    await flush();
+    const row = page.rows().find((each) => each.getAttribute('data-ig-key') === '3');
+    assert.ok(row !== undefined, 'no rail row for 3');
+    page.click(row);
+    await flush();
+    const inspector = page.zone('inspector');
+    assert.ok(inspector !== null, 'no inspector zone');
+    return inspector;
+  };
+
+  const viewDiff = (page: Mounted): HTMLElement => {
+    const zone = page.zone('inspector');
+    assert.ok(zone !== null, 'no inspector zone');
+    const node = zone.querySelector<HTMLElement>('[data-ig-command="view-diff"]');
+    assert.ok(node !== null, 'no view-diff control');
+    return node;
+  };
+
+  it('opens the difference, keeps focus, and can be closed by pressing it again', async () => {
+    const page = await mounted();
+    try {
+      await conflicted(page);
+
+      const open = viewDiff(page);
+      assert.equal(open.getAttribute('aria-expanded'), 'false');
+      open.focus();
+      assert.equal(page.win.document.activeElement, open, 'the control never took focus');
+
+      open.click();
+      await flush();
+
+      // THE ASSERTION THIS ISSUE EXISTS FOR. Before the fix `activeElement` was
+      // `BODY` here: the node was destroyed by `surface.innerHTML` and no
+      // restore arm covered a command control outside the first-pass overlay.
+      const opened = viewDiff(page);
+      assert.equal(opened.getAttribute('aria-expanded'), 'true', 'the difference did not open');
+      assert.equal(
+        page.win.document.activeElement,
+        opened,
+        `focus was lost across the redraw — activeElement is ${page.win.document.activeElement?.nodeName ?? 'null'}`,
+      );
+
+      // THE SECOND PRESS, which is the one that was unreachable.
+      opened.click();
+      await flush();
+      const closed = viewDiff(page);
+      assert.equal(closed.getAttribute('aria-expanded'), 'false', 'the difference did not close');
+      assert.equal(page.win.document.activeElement, closed, 'focus was lost closing it');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('leaves the keyboard loop alive — a later press still reaches the mount', async () => {
+    const page = await mounted();
+    try {
+      await conflicted(page);
+      const open = viewDiff(page);
+      open.focus();
+      open.click();
+      await flush();
+
+      // THE WHOLE-LOOP HALF OF THE DEFECT, and it is not the same assertion as
+      // the one above. The keydown listener is on the mount's element, so a
+      // press only reaches the workspace if it starts inside it and bubbles.
+      // Counted on the mount element rather than asserted through one key's
+      // effect, because what is being proved is that ANY press arrives — the
+      // meaning of a particular key is `keyIntent`'s to decide and is pinned
+      // where that lives.
+      let reached = 0;
+      page.element.addEventListener('keydown', () => {
+        reached += 1;
+      });
+      const active = page.win.document.activeElement;
+      assert.ok(active !== null, 'nothing holds focus');
+      active.dispatchEvent(new page.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      assert.equal(reached, 1, 'the press did not reach the mount — the keyboard loop is dead');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+});
