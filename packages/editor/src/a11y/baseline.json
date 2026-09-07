@@ -120,6 +120,19 @@
       "aria": {
         "aria-expanded": "false"
       }
+    },
+    {
+      "zone": "rail",
+      "channel": "data-ig-command",
+      "control": "refresh",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
     }
   ],
   "disclosure-open": [
@@ -244,6 +257,19 @@
         "aria-expanded": "true",
         "aria-controls": "resolves"
       }
+    },
+    {
+      "zone": "rail",
+      "channel": "data-ig-command",
+      "control": "refresh",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
     }
   ],
   "draft-open": [
@@ -432,6 +458,19 @@
       "aria": {
         "aria-expanded": "false"
       }
+    },
+    {
+      "zone": "rail",
+      "channel": "data-ig-command",
+      "control": "refresh",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
     }
   ],
   "search-open": [
@@ -594,6 +633,19 @@
       "aria": {
         "aria-expanded": "false"
       }
+    },
+    {
+      "zone": "rail",
+      "channel": "data-ig-command",
+      "control": "refresh",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
     }
   ],
   "first-pass-open": [
@@ -782,6 +834,19 @@
       "aria": {
         "aria-expanded": "false"
       }
+    },
+    {
+      "zone": "rail",
+      "channel": "data-ig-command",
+      "control": "refresh",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "none",
+      "inert": true,
+      "name": "text",
+      "aria": {}
     }
   ],
   "refusal-tier": [
@@ -1113,6 +1178,19 @@
       "aria": {
         "aria-expanded": "false"
       }
+    },
+    {
+      "zone": "rail",
+      "channel": "data-ig-command",
+      "control": "refresh",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
     }
   ],
   "edge-selected": [
@@ -1270,6 +1348,19 @@
       "inert": false,
       "name": "text",
       "aria": {}
+    },
+    {
+      "zone": "rail",
+      "channel": "data-ig-command",
+      "control": "refresh",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
     }
   ],
   "isolated-shut": [
@@ -1408,6 +1499,19 @@
       "aria": {
         "aria-expanded": "false"
       }
+    },
+    {
+      "zone": "rail",
+      "channel": "data-ig-command",
+      "control": "refresh",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
     }
   ],
   "isolated-open": [
@@ -1546,6 +1650,19 @@
       "aria": {
         "aria-expanded": "false"
       }
+    },
+    {
+      "zone": "rail",
+      "channel": "data-ig-command",
+      "control": "refresh",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
     }
   ],
   "held-slot": [
@@ -1682,6 +1799,19 @@
       "aria": {
         "aria-expanded": "false"
       }
+    },
+    {
+      "zone": "rail",
+      "channel": "data-ig-command",
+      "control": "refresh",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
     }
   ]
 }

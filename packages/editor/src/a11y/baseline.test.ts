@@ -156,6 +156,7 @@ const RENDERED_CONTROLS: readonly string[] = Object.freeze([
   'focus',
   'kind',
   'open-isolated',
+  'refresh',
   'reject',
   'retry',
   'retype',

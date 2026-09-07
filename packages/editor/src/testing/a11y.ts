@@ -87,7 +87,16 @@ function project(snapshot: StoreSnapshot, held = false): WorkspaceProjection {
       // `host.firstPass` is a non-empty string. An earlier revision supplied
       // the mount option alone and claimed the entry was therefore drawn; it
       // was not, and the baseline recorded only the inspector.
-      host: { firstPass: 'find relationships', identity: 'demo/backlog' },
+      // FRESHNESS TOO, because its `refresh` label is what draws the rail's
+      // refresh button — the viewer renders it "when present, and only then".
+      // Without it that control was in no state, and the coverage list below
+      // did not name it either: a gap in the list is the one thing the list
+      // cannot catch about itself.
+      host: {
+        firstPass: 'find relationships',
+        identity: 'demo/backlog',
+        freshness: { asOf: '14:32', age: '2m ago', refresh: 'refresh the mirror' },
+      },
     },
     audit: { document: landed, graph: { cycles: [], duplicateCanonical: () => null } },
   };
