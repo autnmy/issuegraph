@@ -124,6 +124,37 @@ const RENDERS = [
     },
     { words: WORKSPACE_WORDS, selection: { kind: 'issue', key: 'i0005' } },
   ),
+  // AN ISSUE ON THE RECEIVING END OF TWO DIRECTED EDGES. `i0006` is the `to` of
+  // the duplicate and the decomposition, so this is the only render that draws
+  // the inbound marker — and the inbound row is also the one that draws NO
+  // remove control, so without it the slot's two exclusive occupants are never
+  // both on screen.
+  renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, selection: { kind: 'issue', key: 'i0006' } }),
+  // THE CREATE PATH'S SECOND STEP. `+ add` is drawn by the render above; the
+  // numbered kind list needs a live draft with no kind chosen yet, which no
+  // render reaches by selecting alone.
+  renderWorkspace(DOCUMENT, {
+    words: WORKSPACE_WORDS,
+    selection: { kind: 'issue', key: 'i0001' },
+    draft: { source: 'i0001', target: null, kind: null },
+  }),
+  // A REFUSED EDIT, IN THE ROW IT WOULD HAVE BEEN. The capsule replaces a row
+  // rather than joining the list, so it needs a refusal naming an edge the
+  // subject actually has — and `phantom`, which is what makes it a capsule at
+  // all rather than a reason attached to the row.
+  renderWorkspace(DOCUMENT, {
+    words: WORKSPACE_WORDS,
+    selection: { kind: 'issue', key: 'i0001' },
+    refusals: [{ edgeId: 'blocked-by|i0001|i0002', code: 'would-cycle', phantom: true }],
+  }),
+  // AND THE OTHER SHAPE OF THE SAME FACT. A refusal about an edge that EXISTS
+  // keeps its row and attaches the reason to it, which is a different rule
+  // (`.ig-relationship[data-ig-code]`) that no other render here reaches.
+  renderWorkspace(DOCUMENT, {
+    words: WORKSPACE_WORDS,
+    selection: { kind: 'issue', key: 'i0001' },
+    refusals: [{ edgeId: 'blocked-by|i0001|i0002', code: 'duplicate-edge', phantom: false }],
+  }),
 ];
 
 /** Every class THIS package's workspace emits, across those states. */
@@ -268,6 +299,25 @@ describe('the workspace stylesheet carries structure, never a value', () => {
       false,
       'a row carries a margin again, so the spacer pitch is short by it',
     );
+  });
+
+  it('lets the head’s baseline reach the control sitting on it', () => {
+    // A COMMENT THAT DESCRIBED THE OPPOSITE OF THE CASCADE. `.ig-inspector-head`
+    // is a baseline row and says in terms that this is so a caps heading and a
+    // sentence-case button sit on one optical line — while the button was in a
+    // shared quiet-button rule declaring `align-self: flex-start`, which beats
+    // the container's `align-items` and left it top-aligned. The alignment
+    // belongs to the two buttons in the create step, a COLUMN, where without it
+    // they stretch to the panel's full width.
+    const head = css.match(/\.ig-inspector-head\s*\{([^}]*)\}/)?.[1];
+    assert.ok(head !== undefined, 'nothing lays out the panel heading row');
+    assert.match(head, /align-items:\s*baseline/);
+
+    for (const rule of [...css.matchAll(/([^{}]*)\{([^}]*)\}/g)]) {
+      const [, selector = '', body = ''] = rule;
+      if (!selector.includes('.ig-inspector-clear') || !/align-self/.test(body)) continue;
+      assert.fail(`the clear control overrides the head's baseline: ${selector.trim()}`);
+    }
   });
 
   it('gives each zone a fixed area rather than letting content negotiate it', () => {

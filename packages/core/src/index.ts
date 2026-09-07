@@ -192,6 +192,43 @@ export function edgeIdentity(field: EdgeField, from: string, to: string): string
   return `${field}|${encodeRef(first)}|${encodeRef(second)}`;
 }
 
+/**
+ * Whether an identity names this reference at either of its ends.
+ *
+ * HERE BECAUSE THE FORMAT IS HERE, and that is the whole of the argument. An
+ * identity is written by {@link edgeIdentity} alone, and until this the only
+ * way to ask anything about a written one was to split it on `|` at the call
+ * site — a second spelling of the format, in a package that cannot see
+ * {@link encodeRef} and would therefore have compared a RAW reference against
+ * an ENCODED segment. That comparison is right for every reference a test
+ * happens to use and wrong for every one carrying a `#`, a `/` or a space,
+ * which is most of them: `owner/repo#9` encodes to `owner%2Frepo%239`.
+ *
+ * IT COMPARES FORWARDS RATHER THAN DECODING. `encodeRef` is deliberately not
+ * invertible in one place — a lone surrogate becomes `%uXXXX`, which
+ * `decodeURIComponent` rejects — so the question is asked by encoding the
+ * reference and matching a segment, never by reading one back out. That also
+ * keeps the answer exact: two references that differ collide in no encoding.
+ *
+ * TOTAL OVER ARBITRARY STRINGS, including an `id` this package did not write.
+ * A string with no separators simply names nothing, which is the answer a
+ * caller wants for a value that reached it from a host.
+ *
+ * The reader that needs it is `@issuegraph/editor`'s inspector: a refused edit
+ * arrives as one identity and a code, and the panel has to know whether the
+ * refusal is about the issue it is drawing — including when the edit named an
+ * issue the document does not carry, which is precisely the `unknown-issue`
+ * refusal and the one case no reconstruction from the document can answer.
+ */
+export function edgeIdentityNames(id: string, ref: string): boolean {
+  const encoded = encodeRef(ref);
+  const parts = id.split('|');
+  // THE TWO REFERENCE SEGMENTS, AND NOT THE FIELD. `encodeRef` escapes nothing
+  // to a bare field name, so a field could not collide with a reference — but
+  // reading only the ends says what is meant rather than relying on that.
+  return parts.length === 3 && (parts[1] === encoded || parts[2] === encoded);
+}
+
 /** Narrow an arbitrary string to a scalar field name. */
 export function isScalarField(value: string): value is ScalarField {
   return SCALAR_FIELD_SET.has(value);

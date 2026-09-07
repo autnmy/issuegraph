@@ -17,7 +17,7 @@ import { afterEach, beforeEach, describe, it } from 'node:test';
 
 import type { GraphDocument, Mutation, StoreSnapshot } from '@issuegraph/store';
 import { type OrderDeriver, createScriptedSource, createStore, makeEdge } from '@issuegraph/store';
-import { THEME_TOKENS } from '@issuegraph/viewer';
+import { THEME_TOKENS, treatmentFor } from '@issuegraph/viewer';
 import { JSDOM } from 'jsdom';
 
 import type { Candidate } from '../firstpass/candidates.ts';
@@ -296,9 +296,36 @@ describe('mountWorkspace', () => {
       page.click(add);
       await flush();
 
-      const kind = page.element.querySelector<HTMLElement>('[data-ig-command="kind"][data-ig-value="blocked-by"]');
-      assert.ok(kind !== null, 'the kind chooser is not drawn');
-      assert.equal(kind.textContent, `1 ${PICKER_WORDS.kinds['blocked-by']}`);
+      // SCOPED TO THE PANEL, because the query is no longer unambiguous. The
+      // kind step is drawn in two places now — the package's panel entry here,
+      // and the mount's floating chooser after a canvas drop — and an unscoped
+      // `querySelector` silently retargeted from the second to the first when
+      // the step moved into the package. The message said "the kind chooser is
+      // not drawn" while asserting about the panel, and the floating chooser's
+      // own digits stopped being pinned by anything at all.
+      const panel = page.zone('inspector');
+      assert.ok(panel !== null);
+      const kind = panel.querySelector<HTMLElement>('.ig-kind-option[data-ig-value="blocked-by"]');
+      assert.ok(kind !== null, 'the panel draws no numbered kind list');
+      // THE DIGIT AND THE WORD, ASSERTED SEPARATELY, because they now come from
+      // two different places on purpose. The digit is `create/keys.ts`'s own —
+      // the entry is drawn from `KIND_KEYS` rather than numbered here — and the
+      // word is the EDGE VOCABULARY's, the same string §16's badge draws one
+      // zone away, rather than the picker's clause-register wording. The old
+      // assertion pinned `1 ${PICKER_WORDS.kinds['blocked-by']}` as one string
+      // and would have gone on passing if either half had been re-derived
+      // locally, which is the failure this whole change is about.
+      assert.equal(kind.querySelector('.ig-kind-digit')?.textContent, '1');
+      // THE PAIR, COMPARED AS STRINGS. `new RegExp(label)` is the shape this
+      // change removed twice elsewhere in the suite: a word carrying a regex
+      // metacharacter stops being the assertion it reads as. And the pairing is
+      // what matters, not the word alone — the glyph is `aria-hidden` and the
+      // word beside it is the accessible name, so a copy that drops either half
+      // is the failure `glyphAndLabel` exists to prevent.
+      const glyph = kind.querySelector('.ig-glyph');
+      assert.equal(glyph?.textContent, treatmentFor('blocked-by').glyph);
+      assert.equal(glyph?.getAttribute('aria-hidden'), 'true');
+      assert.equal(glyph?.nextElementSibling?.textContent, treatmentFor('blocked-by').label);
       page.click(kind);
       await flush();
 
@@ -497,6 +524,15 @@ describe('mountWorkspace', () => {
       assert.ok(floating !== null, 'the kind chooser was not placed inside the workspace root');
       const kind = floating.querySelector<HTMLElement>('[data-ig-command="kind"][data-ig-value="blocked-by"]');
       assert.ok(kind !== null);
+      // THE FLOATING CHOOSER'S OWN DIGIT AND WORD, which nothing pinned once
+      // the panel's list took the unscoped query above. Its digit comes from
+      // `KIND_KEYS` — the same table the keyboard reads, so a chooser cannot
+      // tell the reader to press a key that resolves to another kind — and its
+      // word is the PICKER's clause register rather than the vocabulary's,
+      // because the sentence above it reads "#2 … <kind>". Compared as a
+      // string, not as a pattern: a word with a regex metacharacter in it
+      // stops being an assertion.
+      assert.equal(kind.textContent, `1 ${PICKER_WORDS.kinds['blocked-by']}`);
       page.click(kind);
       const handed = await page.source.whenPending();
       const { mutationId, ...edit } = handed.mutation;
@@ -535,6 +571,113 @@ describe('mountWorkspace', () => {
       const { mutationId, ...edit } = handed.mutation;
       assert.ok(mutationId !== '');
       assert.deepEqual(edit, { op: 'delete', edgeId: edge.id });
+    });
+  });
+
+  describe('a refusal reaches the panel through the store, not through a fixture', () => {
+    /**
+     * THE JOIN NOTHING TESTED. `renderWorkspace`'s refusal capsule had a suite
+     * of its own, driven by handing the renderer a `refusals` array — so the
+     * derivation that BUILDS that array from a snapshot was covered by nothing
+     * at all. Measured: replacing `refusals` with `[]` at the call site left
+     * every one of the package's tests green, which is the whole join deletable
+     * in silence.
+     *
+     * Driven through the real store: the refusals here are the ones
+     * `store/validity.ts` actually produces, not codes chosen by hand.
+     */
+    const select = async (key: string): Promise<HTMLElement> => {
+      const row = page.rows().find((each) => each.getAttribute('data-ig-key') === key);
+      assert.ok(row !== undefined, `no rail row for ${key}`);
+      page.click(row);
+      await flush();
+      const inspector = page.zone('inspector');
+      assert.ok(inspector !== null);
+      return inspector;
+    };
+
+    it('states a refusal about a LANDED edge on that relationship’s own row', async () => {
+      // A create of a relationship the document already carries. `project`
+      // folds the refused phantom onto the landed edge, so the code marks an
+      // edge that is really there — and the row has to survive, remove control
+      // and all, or the reader is told about a relationship and left with
+      // nothing that can undo it.
+      void page.store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+      const inspector = await select('1');
+
+      const row = inspector.querySelector<HTMLElement>('.ig-relationship[data-edge="blocked-by"]');
+      assert.ok(row !== null, 'the relationship row is gone');
+      assert.equal(row.getAttribute('data-ig-code'), 'duplicate-edge');
+      assert.equal(
+        row.querySelector('.ig-relationship-reason')?.textContent,
+        WORDS.refusals['duplicate-edge'],
+      );
+      assert.ok(row.querySelector('.ig-relationship-remove') !== null, 'the remove control went with it');
+      assert.equal(inspector.querySelector('.ig-relationship-refused'), null);
+    });
+
+    it('draws a capsule for a refusal about an edge the document never got', async () => {
+      // `unknown-issue`: the create names an issue the backlog does not hold,
+      // so the store's phantom edge is dropped by layer 1's normalization and
+      // the panel has a code with no row to attach it to. §17b's rule is that
+      // such a refusal is never silently dropped.
+      void page.store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: 'nope' });
+      const inspector = await select('1');
+
+      const capsule = inspector.querySelector<HTMLElement>('.ig-relationship-refused');
+      assert.ok(capsule !== null, 'the refusal was dropped');
+      assert.equal(capsule.getAttribute('data-ig-code'), 'unknown-issue');
+      assert.equal(
+        capsule.querySelector('.ig-relationship-reason')?.textContent,
+        WORDS.refusals['unknown-issue'],
+      );
+      // AND NOT ON THE PANEL OF AN ISSUE IT SAYS NOTHING ABOUT. One list serves
+      // the whole surface, so this is the same render asked a second question.
+      const elsewhere = await select('3');
+      assert.equal(elsewhere.querySelector('.ig-relationship-refused'), null);
+    });
+
+    it('states the refusal the reader most recently caused, of two on one edge', async () => {
+      // TWO REFUSALS ON ONE EDGE ARE REACHABLE, and a note here once said they
+      // were not — "an edge is at most one unsettled write" is not a rule the
+      // store has. `ProjectedEdge.writes` is a list because two edits touching
+      // one edge compose in the order the reader made them, and one row states
+      // one reason. A retype to the kind it already is, then a create of the
+      // relationship that already exists: two codes, one edge, in that order.
+      //
+      // THE LAST WINS. The first is one the reader has read and moved past.
+      // `findLast` here and `Map`'s repeated-key rule in `renderWorkspace` are
+      // the same decision at the two ends of one list, and this is what holds
+      // them to it.
+      const edge = makeEdge('blocked-by', '1', '2');
+      void page.store.propose({ op: 'retype', edgeId: edge.id, nextKind: 'blocked-by' });
+      void page.store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+      const inspector = await select('1');
+
+      const row = inspector.querySelector<HTMLElement>('.ig-relationship[data-edge="blocked-by"]');
+      assert.ok(row !== null);
+      assert.equal(row.getAttribute('data-ig-code'), 'duplicate-edge');
+      assert.equal(
+        row.querySelector('.ig-relationship-reason')?.textContent,
+        WORDS.refusals['duplicate-edge'],
+      );
+    });
+
+    it('draws a refusal the store’s projection has no edge for at all', async () => {
+      // `unknown-edge` is the class the projection cannot carry: a delete of an
+      // edge nobody has produces `{ hidden: [], drawn: [], marked: [] }`, so a
+      // walk over `snapshot.projected` sees nothing and the reader's refused
+      // act vanished — on exactly the refusal whose message is that the thing
+      // they acted on is gone. The mutation names its own edge, and that is
+      // what the capsule is keyed on.
+      void page.store.propose({ op: 'delete', edgeId: makeEdge('blocked-by', '1', '3').id });
+      const inspector = await select('1');
+
+      const capsule = inspector.querySelector<HTMLElement>('.ig-relationship-refused');
+      assert.ok(capsule !== null, 'a refusal with no projected edge was dropped');
+      assert.equal(capsule.getAttribute('data-ig-code'), 'unknown-edge');
+      // The subject's real relationship is untouched beside it.
+      assert.ok(inspector.querySelector('.ig-relationship[data-edge="blocked-by"]') !== null);
     });
   });
 

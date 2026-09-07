@@ -219,6 +219,8 @@ export {
   type KeyIntent,
   type KeyPress,
   type KeyboardContext,
+  type KindKey,
+  KIND_KEYS,
   keyIntent,
 } from './create/keys.ts';
 
@@ -350,6 +352,12 @@ export {
 export {
   type Zone,
   type WorkspaceOptions,
+  // ON THE SURFACE BECAUSE IT IS ALREADY IN A SIGNATURE. `WorkspaceRefusal` is
+  // the element type of `WorkspaceOptions.refusals`, so without it a host could
+  // build the array and could not name it — no typed helper, no variable, no
+  // function returning one. A shape a consumer must construct and cannot
+  // declare is exported by accident, not withheld on purpose.
+  type WorkspaceRefusal,
   type WorkspaceResult,
   type WorkspaceView,
   type WorkspaceWords,
@@ -365,7 +373,6 @@ export {
   type HostResult,
   type HostState,
   INITIAL_HOST_STATE,
-  KINDS,
   RAIL_SLACK,
   railSlackFor,
   railWindowTarget,

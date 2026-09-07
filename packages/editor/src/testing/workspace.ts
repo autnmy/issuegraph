@@ -20,14 +20,40 @@ import type { WorkspaceWords } from '../index.ts';
  * Every entry is distinct and none is a substring of another, so an assertion
  * that finds one word cannot be satisfied by a different one — the same rule
  * `reevaluate.ts`'s `WORDS` states.
+ *
+ * AND NONE OF THEM IS THE THING IT NAMES. `inspector: 'inspector'` was the
+ * exception and it made its own pin vacuous: hard-coding the word into
+ * `render.ts` left every test green, because the fixture and the hardcode are
+ * the same string. A fixture word has to be one no renderer would write.
  */
 export const WORKSPACE_WORDS: WorkspaceWords = {
+  inspector: 'the detail panel',
   nothingSelected: 'pick a row to inspect it',
   clearSelection: 'clear the selection',
   relationships: 'relationships',
   whyRank: 'why rank',
   whyHeld: 'why held',
   workedAsOneUnit: 'worked as one unit with',
+  noRelationships: 'nothing is related to this',
+  addRelationship: 'begin a relationship',
+  cancel: 'abandon the draft',
+  remove: 'unlink this row',
+  inbound: 'declared elsewhere',
+  // ONE DISTINCT SENTENCE PER CODE, for the reason the whole constant states:
+  // a capsule that renders the wrong refusal is exactly the failure a shared
+  // string would hide, and `would-cycle` — the one refusal this package family
+  // cannot detect for itself — is the one a test most needs to tell apart.
+  refusals: {
+    'self-edge': 'an issue cannot relate to itself',
+    'unknown-issue': 'that issue is not in this backlog',
+    'unknown-edge': 'that relationship is already gone',
+    'duplicate-edge': 'that relationship is already declared',
+    'unchanged-kind': 'it is already that kind',
+    'symmetric-edge': 'that kind reads the same both ways',
+    'cardinality': 'that field holds one reference',
+    'would-cycle': 'that would close a loop',
+    'guard-failed': 'the check could not be run',
+  },
 };
 
 /** `count` keys, zero-padded so lexical and numeric order agree. */

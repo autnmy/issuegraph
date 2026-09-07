@@ -215,10 +215,26 @@ export const workspaceStylesheet = `
   padding: var(--ig-space);
 }
 
-.ig-inspector-empty {
+/* TWO EMPTIES, ONE TREATMENT. "Nothing is selected" and "this issue is related
+   to nothing" are different facts and the panel states each in its own place —
+   but they are the same KIND of statement, a quiet line where content would be,
+   and giving them separate looks would suggest a distinction that is not
+   there. */
+.ig-inspector-empty,
+.ig-inspector-none {
   margin: 0;
   color: var(--ig-text-muted);
   font-size: var(--ig-font-size-small);
+}
+
+/* The panel's heading row: the name at one end, the way out at the other.
+   Baseline-aligned rather than centred, so a heading in caps and a button in
+   sentence case sit on one line rather than on two optical ones. */
+.ig-inspector-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ig-space-tight);
 }
 
 .ig-inspector-issue {
@@ -283,6 +299,7 @@ export const workspaceStylesheet = `
    spelled per heading. Tracking widens with the caps because letterforms at a
    small size need it; that is what --ig-tracking-label is for. */
 .ig-inspector-heading,
+.ig-inspector-name,
 .ig-why-rank-heading {
   margin: 0;
   font-size: var(--ig-font-size-small);
@@ -313,8 +330,23 @@ export const workspaceStylesheet = `
 }
 
 
-.ig-inspector-clear {
-  align-self: flex-start;
+/* THE PANEL'S THREE QUIET BUTTONS SHARE ONE TREATMENT — clear, '+ add' and
+   cancel. They are the same affordance at three moments (leave this selection,
+   begin a relationship, abandon the draft) and drawing them three ways would
+   invent a hierarchy the design does not state. The destructive controls are
+   deliberately NOT in this set: a row's '✕' is a glyph in the row's own slot,
+   and the mount's delete button carries its own danger treatment.
+
+   ALIGNMENT IS NOT PART OF THE TREATMENT, and putting it here was a silent
+   contradiction. 'align-self: flex-start' belongs to the two buttons in
+   '.ig-inspector-add', a COLUMN, where without it they stretch to the panel's
+   full width. The clear button sits in '.ig-inspector-head', a baseline row —
+   and 'align-self' beats the container's 'align-items', so it overrode the
+   baseline that rule's own comment says it is there to get. Declared where each
+   is true instead. */
+.ig-inspector-clear,
+.ig-inspector-addbutton,
+.ig-inspector-cancel {
   background: var(--ig-surface-2);
   color: var(--ig-text-body);
   border: var(--ig-stroke) solid var(--ig-line);
@@ -325,7 +357,9 @@ export const workspaceStylesheet = `
   cursor: pointer;
 }
 
-.ig-inspector-clear:focus-visible {
+.ig-inspector-clear:focus-visible,
+.ig-inspector-addbutton:focus-visible,
+.ig-inspector-cancel:focus-visible {
   outline: var(--ig-focus-ring) solid var(--ig-focus);
   outline-offset: var(--ig-space-tight);
 }
@@ -349,25 +383,46 @@ export const workspaceStylesheet = `
   background: var(--ig-surface);
 }
 
-/* Hue by field, from the theme's own edge tokens — the same channel layer 1
-   uses, so a relationship reads the same colour in the list as on the canvas. */
-.ig-relationship[data-edge='blocked-by'] {
+/* HUE BY FIELD, ONCE, FOR EVERY ELEMENT THAT CARRIES 'data-edge'. From the
+   theme's own edge tokens — the same channel layer 1 uses — so a relationship
+   reads the same colour in the row and in the kind-list entry it was chosen
+   from as it does on the canvas. The refusal capsule is deliberately NOT in
+   this set: its whole border is the invalid state's dotted stroke, and a hue on
+   its left edge would overwrite the half of that a reader looks for first.
+
+   WRITTEN PER FIELD RATHER THAN FROM A 'data-edge'-KEYED TOKEN, because CSS has
+   no way to build 'var(--ig-edge-' + attr() + ')': 'attr()' is usable in
+   'content' and nowhere a custom property name is read. Five rules is the cost
+   of that, and the alternative the package rejected is a token per hue set
+   inline by the renderer, which moves a theme value into markup.
+
+   ONE SELECTOR LIST PER FIELD, AND THAT IS THE POINT OF THIS BLOCK. The kind
+   list arrived with a verbatim second copy of these five rules under
+   '.ig-kind-option' — same five fields, same five tokens — under a comment
+   claiming the file should not hold two ways of reading the theme while it
+   held the same way twice. A sixth field is now one line here, not two. */
+.ig-relationship[data-edge='blocked-by'],
+.ig-kind-option[data-edge='blocked-by'] {
   border-left-color: var(--ig-edge-blocked-by);
 }
 
-.ig-relationship[data-edge='duplicate-of'] {
+.ig-relationship[data-edge='duplicate-of'],
+.ig-kind-option[data-edge='duplicate-of'] {
   border-left-color: var(--ig-edge-duplicate-of);
 }
 
-.ig-relationship[data-edge='serialize-with'] {
+.ig-relationship[data-edge='serialize-with'],
+.ig-kind-option[data-edge='serialize-with'] {
   border-left-color: var(--ig-edge-serialize-with);
 }
 
-.ig-relationship[data-edge='together-with'] {
+.ig-relationship[data-edge='together-with'],
+.ig-kind-option[data-edge='together-with'] {
   border-left-color: var(--ig-edge-together-with);
 }
 
-.ig-relationship[data-edge='decomposed-from'] {
+.ig-relationship[data-edge='decomposed-from'],
+.ig-kind-option[data-edge='decomposed-from'] {
   border-left-color: var(--ig-edge-decomposed-from);
 }
 
@@ -395,12 +450,146 @@ export const workspaceStylesheet = `
   outline-offset: var(--ig-space-tight);
 }
 
+/* The glyph and its word are one phrase, so they get their own gap rather than
+   inheriting the row's — which spaces the phrase from the reference beside it,
+   a wider relationship. NOT a literal space character in the markup: the word
+   is the vocabulary's and this package does not add characters to it, which is
+   the same rule the why-rank sentence's clauses are spaced by. */
 .ig-relationship-kind {
-  font-family: var(--ig-font-mono);
+  display: inline-flex;
+  gap: var(--ig-space-micro);
+  align-items: baseline;
   color: var(--ig-text-body);
 }
 
 .ig-relationship-ref {
+  font-family: var(--ig-font-mono);
+  color: var(--ig-text-muted);
+}
+
+/* THE RIGHT-HAND SLOT, WHOSE THREE OCCUPANTS ARE EXCLUSIVE. Two of them are
+   statements and one is a control, and they are drawn as such: the state and
+   the inbound marker are quiet label text, the remove is a button. */
+.ig-relationship-state,
+.ig-relationship-inbound {
+  align-self: center;
+  color: var(--ig-text-muted);
+  font-size: var(--ig-font-size-small);
+  text-transform: uppercase;
+  letter-spacing: var(--ig-tracking-label);
+}
+
+/* The selected row names the state the canvas is drawing a halo for, so it
+   takes the focus hue rather than the muted one — one selection, one colour,
+   across the zones. */
+.ig-relationship-state[data-ig-state='selected'] {
+  color: var(--ig-focus);
+}
+
+/* A GLYPH BUTTON, SIZED BY ITS GLYPH. No border and no fill: the row already
+   carries a border, and a second box inside it would read as two controls —
+   the same reasoning '.ig-relationship-select' records. */
+.ig-relationship-remove {
+  align-self: center;
+  background: none;
+  border: none;
+  padding: 0 var(--ig-space-tight);
+  color: var(--ig-text-muted);
+  font-family: inherit;
+  font-size: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ig-relationship-remove:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-tight);
+}
+
+/* A REFUSED EDIT, IN THE ROW IT WOULD HAVE BEEN. It borrows the ghost the
+   canvas draws for the same state — a dotted edge in the invalid hue — so the
+   line and the row a reader looks between are recognisably one fact.
+   NO OPACITY HERE. 'overlay/grammar.ts' holds the opacity every write state is
+   drawn at, on the record that a second copy would drift; what this sheet
+   contributes is the structure. */
+.ig-relationship-refused {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ig-space-tight);
+  align-items: baseline;
+  padding: var(--ig-space-tight);
+  border: var(--ig-stroke) dotted var(--ig-state-invalid);
+  border-radius: var(--ig-radius);
+  background: var(--ig-surface);
+}
+
+.ig-relationship-reason {
+  color: var(--ig-state-invalid);
+  font-size: var(--ig-font-size-small);
+}
+
+/* A REFUSAL ON A RELATIONSHIP THAT IS STILL THERE. The row stays — it names a
+   real edge and its remove control still works — so this marks it rather than
+   replacing it: the capsule's dotted stroke, and room for the reason to wrap
+   under the row rather than squeezing the reference out of it.
+   BORDER-STYLE ONLY, NOT BORDER-COLOR: the field's hue is on the left edge from
+   the block above, and a shorthand here would overwrite it and take the row's
+   one colour channel away on exactly the rows carrying the most information. */
+.ig-relationship[data-ig-code] {
+  flex-wrap: wrap;
+  border-style: dotted;
+}
+
+/* THE CREATE STEP, WHICHEVER STEP IT IS. One box holds '+ add' on its own and
+   the numbered list with its cancel, because they are one place in the panel
+   the reader returns to rather than two that happen to alternate. */
+.ig-inspector-add {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+}
+
+/* Sized by their own words rather than stretched across the column — see the
+   quiet-button rule above, which deliberately does not carry this. */
+.ig-inspector-addbutton,
+.ig-inspector-cancel {
+  align-self: flex-start;
+}
+
+.ig-kind-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-micro);
+}
+
+/* Full width, so the whole entry is the hit target and the digits form a
+   readable column down the left — which is what makes the list legible as a
+   set of KEYS rather than as five buttons that happen to start with a number. */
+.ig-kind-option {
+  width: 100%;
+  display: flex;
+  gap: var(--ig-space-tight);
+  align-items: baseline;
+  background: var(--ig-surface);
+  color: var(--ig-text-body);
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  padding: var(--ig-space-tight);
+  font-family: inherit;
+  font-size: var(--ig-font-size-small);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ig-kind-option:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-tight);
+}
+
+.ig-kind-digit {
   font-family: var(--ig-font-mono);
   color: var(--ig-text-muted);
 }

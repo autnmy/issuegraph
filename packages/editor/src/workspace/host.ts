@@ -27,7 +27,7 @@
  * handles beside the mount rather than through it.
  */
 
-import { type EdgeField, EDGE_FIELDS, isEdgeField } from '@issuegraph/core';
+import { type EdgeField, isEdgeField } from '@issuegraph/core';
 import type { GraphDocument, MutationId, Proposal, StoredIssue } from '@issuegraph/store';
 import { findEdge } from '@issuegraph/store';
 
@@ -85,10 +85,12 @@ export const INITIAL_HOST_STATE: HostState = Object.freeze({
  * What the shell saw.
  *
  * `control` carries a `data-ig-command` — the package's own vocabulary
- * (`select-edge`, `focus`, `search`, `retype`, `flip`, …) and the mount's
- * chrome (`add`, `kind`, `target`, `delete`, `retry`, …) share one channel
- * because the shell reads one attribute. `point` and `group` are the viewer's
- * two identities: a focusable issue key, and a mark naming an edge or a slot.
+ * (`select-edge`, `focus`, `add`, `kind`, `delete`, `cancel`, …) and the
+ * mount's chrome, which is now the handful of controls that need a DOM or a
+ * host's own surface (`target-query`, `target`, `audit-filter`, `retry`,
+ * `discard`) — share one channel because the shell reads one attribute.
+ * `point` and `group` are the viewer's two identities: a focusable issue key,
+ * and a mark naming an edge or a slot.
  */
 export type HostCommand =
   | { readonly kind: 'point'; readonly key: string }
@@ -335,28 +337,68 @@ function controlled(
     }
     case 'dismiss-change':
       return { state, effects: [{ kind: 'dismiss-change' }] };
-
-    // --- the mount's chrome ---
-    case 'audit-filter':
-      return settled({ ...state, auditFiltered: !state.auditFiltered });
     case 'add': {
-      const source = selectedKey(state.selection);
+      // THE CONTROL'S OWN SUBJECT FIRST, AND THE SELECTION AS THE FALLBACK —
+      // the same one rule the `delete` arm below states, for the same reason.
+      //
+      // `inspectorView` CANONICALIZES a selection naming a together-unit member
+      // onto its slot's LEAD, and `renderWorkspace` words the whole panel from
+      // that: the heading, the title, every row. `selectedKey` answers the RAW
+      // key. So with a partner selected the panel was titled with the lead and
+      // its `+ add` began a relationship from the partner — one control writing
+      // about a different issue from the one every other line of its own panel
+      // named. The panel publishes the canonical key on the control, which is
+      // the fact only it holds.
+      const source = target ?? selectedKey(state.selection);
       return source === null ? settled(state) : drafted(state, { kind: 'begin', source });
     }
     case 'kind':
       return value === undefined || !isEdgeField(value)
         ? settled(state)
         : drafted(state, { kind: 'type', edgeKind: value });
+    case 'cancel':
+      return settled({ ...state, draft: IDLE_CREATE_DRAFT, targetQuery: '', drop: null });
+    case 'delete': {
+      // THE CONTROL'S OWN EDGE FIRST, AND THE SELECTION AS THE FALLBACK.
+      //
+      // This arm read the selection and ignored `target` entirely, which was
+      // sound for exactly as long as the only delete control lived inside
+      // `if (edgeId !== null)` — one button, about the one selected edge, and
+      // nothing else could publish the command. §17a's inspector puts a remove
+      // control on EVERY relationship row, and against the old arm each of them
+      // was wrong in one of two ways: with an issue selected `edgeId` is `null`
+      // and every row's remove was a silent no-op, and with row B's edge
+      // selected row A's remove deleted B. A control that deletes a different
+      // relationship from the one it sits on is worse than one that does
+      // nothing.
+      //
+      // THE FALLBACK IS NOT A CONVENIENCE — it is the keyboard. `create/keys.ts`
+      // binds `⌫` to the SELECTED edge, because a selection is the only edge a
+      // keyboard has named, and that intent arrives through `intended` rather
+      // than here; what still needs the fallback is the mount's own labelled
+      // delete button, which is drawn only for a selected edge and carries no
+      // target. One rule — "the edge the act names" — with the selection as the
+      // subject when nothing else names one.
+      const subject = target ?? edgeId;
+      return subject === null
+        ? settled(state)
+        : { state, effects: [{ kind: 'propose', proposal: { op: 'delete', edgeId: subject } }] };
+    }
+
+    // --- the mount's chrome: what still needs a DOM, or a host's own surface ---
+    // `add`, `kind`, `cancel` and `delete` used to be listed here, and they are
+    // not the mount's any more: `renderWorkspace` draws every one of them in its
+    // own markup, so a host rendering the package without mounting it publishes
+    // them too. What is left below genuinely is the shell's — a live input over
+    // the reader's query and the matches it offers, the audit toggle the header
+    // publishes, and the two write-recovery controls the mount draws beside a
+    // failed record.
+    case 'audit-filter':
+      return settled({ ...state, auditFiltered: !state.auditFiltered });
     case 'target-query':
       return settled({ ...state, targetQuery: value ?? '' });
     case 'target':
       return target === undefined ? settled(state) : drafted(state, { kind: 'target', ref: target });
-    case 'cancel':
-      return settled({ ...state, draft: IDLE_CREATE_DRAFT, targetQuery: '', drop: null });
-    case 'delete':
-      return edgeId === null
-        ? settled(state)
-        : { state, effects: [{ kind: 'propose', proposal: { op: 'delete', edgeId } }] };
     case 'retry':
       return target === undefined ? settled(state) : { state, effects: [{ kind: 'retry', mutationId: target }] };
     case 'discard':
@@ -489,9 +531,6 @@ export function targetMatches(
     .filter((issue) => issue.ref.includes(needle) || issue.title.toLowerCase().includes(needle))
     .slice(0, limit);
 }
-
-/** The edge kinds, in the format's order — the keyboard path's `1`–`5` is this list. */
-export const KINDS: readonly EdgeField[] = EDGE_FIELDS;
 
 /** How far the reader may scroll into the rail window before it is re-cut around them, in rows. */
 export const RAIL_SLACK = 20;

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { buildModel } from '@issuegraph/reader';
-import { edgeIdentity } from '@issuegraph/core';
+import { EDGE_FIELDS, edgeIdentity } from '@issuegraph/core';
 import { KEY_ATTRIBUTE, type ViewerHold } from '@issuegraph/viewer';
 
 import { AUDIT_SEVERITY_ATTRIBUTE } from '../audit/surface.ts';
@@ -40,6 +40,32 @@ function graphFor(
 }
 
 const WORDS = { words: WORKSPACE_WORDS } as const;
+
+/** The inspector zone alone — it is the last of the four, so it runs to the end. */
+function inspectorOf(markup: string): string {
+  return markup.slice(markup.indexOf('data-zone="inspector"'));
+}
+
+/** The relationship list alone, so a `data-edge` on a kind-list entry cannot answer for a row. */
+function listOf(panel: string): string {
+  const at = panel.indexOf('<ul class="ig-relationship-list">');
+  return at === -1 ? '' : panel.slice(at, panel.indexOf('</ul>', at));
+}
+
+/**
+ * One ORDINARY row of the relationship list, by the kind it draws.
+ *
+ * Matched on the whole opening tag rather than on `data-edge` alone, because a
+ * refusal capsule carries that attribute too — so the looser match handed this
+ * back a capsule for a refused edge and the assertion about the surviving row
+ * was made against the wrong element. No `li` nests inside another.
+ */
+function rowFor(panel: string, field: string): string {
+  const list = listOf(panel);
+  const at = list.indexOf(`<li class="ig-relationship" data-edge="${field}"`);
+  assert.notEqual(at, -1, `no ${field} row`);
+  return list.slice(at, list.indexOf('</li>', at) + '</li>'.length);
+}
 
 describe('the three zones render at their fixed positions', () => {
   it('draws header, rail, canvas and inspector, in that order, inside one root', () => {
@@ -439,11 +465,16 @@ describe('selection crosses the zones from one value', () => {
       ...WORDS,
       selection: { kind: 'issue', key: 'i0001' },
     });
-    assert.match(
-      result.markup,
-      new RegExp(
+    // COMPARED AS A STRING, NOT AS A PATTERN, for the reason the remove
+    // control's own assertion records further down: `edgeIdentity` joins with
+    // `|`, which is ALTERNATION inside a RegExp, so this written as
+    // `new RegExp(...)` decomposes and passes on its shortest branch. It was
+    // written that way, and it was near-vacuous the whole time.
+    assert.ok(
+      result.markup.includes(
         `data-ig-command="select-edge" data-ig-target="${edgeIdentity('blocked-by', 'i0001', 'i0002')}"`,
       ),
+      result.markup,
     );
   });
 });
@@ -614,14 +645,525 @@ describe('the surface renders words it was given and invents none', () => {
     assert.match(result.markup, /pick a row to inspect it/);
   });
 
-  it('renders the clear control only while a filter is narrowing the list', () => {
+  it('renders the clear control whenever there is a selection to clear', () => {
+    // THE CONDITION IT ALWAYS WANTED. It was drawn only while `view.filtered`
+    // was true — an EDGE selection — so a reader who had selected an issue had
+    // no way back to nothing selected, on a control whose own doc says it
+    // "returns to nothing selected" and whose command is `clear`. Both
+    // selections are a selection; only `none` is not.
     const document = backlogOf(3, { edges: [['blocked-by', 'i0001', 'i0002']] });
     const filtered = renderWorkspace(document, {
       ...WORDS,
       selection: { kind: 'edge', edgeId: edgeIdentity('blocked-by', 'i0001', 'i0002') },
     });
+    const issue = renderWorkspace(document, { ...WORDS, selection: { kind: 'issue', key: 'i0001' } });
     assert.match(filtered.markup, /clear the selection/);
+    assert.match(issue.markup, /clear the selection/);
+    // And absent where pressing it would do nothing: `INITIAL_SELECTION` is
+    // already `none`, so a clear there is a control that cannot complete the
+    // act it advertises.
     assert.equal(/clear the selection/.test(renderWorkspace(document, WORDS).markup), false);
+  });
+
+  it('names the panel, whatever is selected', () => {
+    // UNCONDITIONAL. The zone used to open with whatever the selection resolved
+    // to, so a reader who had selected nothing met a bare sentence in an
+    // unnamed column.
+    const document = backlogOf(3, { edges: [['blocked-by', 'i0001', 'i0002']] });
+    for (const selection of [
+      undefined,
+      { kind: 'issue', key: 'i0001' } as const,
+      { kind: 'edge', edgeId: edgeIdentity('blocked-by', 'i0001', 'i0002') } as const,
+    ]) {
+      // READ OFF THE FIXTURE, NEVER SPELLED HERE. The words object is the
+      // whole subject of the assertion — that the panel draws what it was
+      // GIVEN — so a literal here would pass on a renderer that ignored the
+      // input and wrote the same string itself, which is exactly what a
+      // fixture reading `inspector: 'inspector'` made undetectable.
+      assert.ok(
+        inspectorOf(renderWorkspace(document, { ...WORDS, selection }).markup).includes(
+          `<h2 class="ig-inspector-name">${WORKSPACE_WORDS.inspector}</h2>`,
+        ),
+        String(selection?.kind),
+      );
+    }
+  });
+});
+
+describe('a relationship row says what it is, and which way round', () => {
+  // AE1's three shapes on one subject: an OUTGOING directed edge, a SYMMETRIC
+  // one, and an INCOMING directed edge. `together-with` needs its members in one
+  // slot or layer 1 drops the edge as undrawable, which is why `i0003` is folded
+  // into `i0001`'s unit rather than left as its own row.
+  const document = backlogOf(5, {
+    unitOf: { i0003: 'i0001' },
+    edges: [
+      ['blocked-by', 'i0001', 'i0002'],
+      ['together-with', 'i0001', 'i0003'],
+      ['duplicate-of', 'i0004', 'i0001'],
+    ],
+  });
+  const panel = inspectorOf(
+    renderWorkspace(document, { ...WORDS, selection: { kind: 'issue', key: 'i0001' } }).markup,
+  );
+
+  it('words an outgoing edge from the subject\u2019s end, and draws the other end', () => {
+    const row = rowFor(panel, 'blocked-by');
+    assert.match(row, /data-direction="outgoing"/);
+    assert.match(row, /<span class="ig-glyph" aria-hidden="true">\u2298<\/span><span>blocked by<\/span>/);
+    assert.match(row, /<span class="ig-relationship-ref">i0002<\/span>/);
+    // AND NOT THE SUBJECT BACK. The row used to draw the field's machine name
+    // and BOTH endpoints, one of which is the issue whose panel this is.
+    assert.equal(/ig-relationship-ref">i0001</.test(row), false, 'the row draws the subject back');
+  });
+
+  it('words an INCOMING edge with the reverse verb, never the forward one', () => {
+    // THE DISCRIMINATING ASSERTION OF THE WHOLE ROW. `duplicate-of` from #i0004
+    // to #i0001 means i0001 is the DUPLICATED one; a row that drew the forward
+    // label here would assert the exact opposite of the relationship, and
+    // `data-direction` — which is published and was drawn by nothing — is not a
+    // fix a reader can apply in their head.
+    const row = rowFor(panel, 'duplicate-of');
+    assert.match(row, /data-direction="incoming"/);
+    assert.match(row, /<span class="ig-glyph" aria-hidden="true">\u2261<\/span><span>duplicated by<\/span>/);
+    assert.match(row, /<span class="ig-relationship-ref">i0004<\/span>/);
+    assert.equal(/>duplicate of</.test(row), false, 'the inbound row took the forward label');
+  });
+
+  it('claims no direction for a symmetric kind, at either end', () => {
+    // `together-with` states one fact whichever way round it is stored, so
+    // there is no reverse verb to take and no direction to publish.
+    const row = rowFor(panel, 'together-with');
+    assert.equal(/data-direction/.test(row), false, 'a symmetric edge claimed a direction');
+    assert.match(row, /<span class="ig-glyph" aria-hidden="true">\u29c9<\/span><span>together with<\/span>/);
+    assert.match(row, /<span class="ig-relationship-ref">i0003<\/span>/);
+
+    // BOTH ENDS, AND THE FIXTURE HAS TO ALLOW TWO. "At either end" was asserted
+    // above against `together-with`, whose members must share ONE slot or layer
+    // 1 drops the edge — so the second subject was a unit PARTNER, which
+    // `inspectorView` canonicalizes back to the lead. Both renders were the
+    // identical panel, and the assertion could not fail however the `to` end
+    // was worded. `serialize-with` is symmetric and needs no unit folding, so
+    // `i0002` is a genuinely different subject: its row draws the other
+    // reference, and a direction read off the stored order would surface here
+    // as `data-direction` and as an `inbound` marker in place of the remove.
+    const pair = backlogOf(4, { edges: [['serialize-with', 'i0001', 'i0002']] });
+    const ends = ['i0001', 'i0002'].map((key) =>
+      rowFor(
+        inspectorOf(renderWorkspace(pair, { ...WORDS, selection: { kind: 'issue', key } }).markup),
+        'serialize-with',
+      ),
+    );
+    const [fromEnd = '', toEnd = ''] = ends;
+    assert.match(fromEnd, /<span class="ig-relationship-ref">i0002<\/span>/);
+    assert.match(toEnd, /<span class="ig-relationship-ref">i0001<\/span>/, 'the two ends render one panel');
+    for (const end of ends) {
+      assert.equal(/data-direction/.test(end), false, end);
+      assert.match(end, /<span class="ig-glyph" aria-hidden="true">\u21c4<\/span><span>serialized with<\/span>/);
+      // NO DIRECTION MEANS NO INBOUND SLOT EITHER. A symmetric edge read as
+      // incoming loses its remove control, which is the visible half of the
+      // same defect and the half a reader would report.
+      assert.match(end, /class="ig-relationship-remove"/, end);
+    }
+  });
+
+  it('gives an inbound row no remove control, and every other row one', () => {
+    // AN INBOUND EDGE'S FIELD IS IN THE OTHER ISSUE'S BODY, so this panel's
+    // subject cannot declare it away. The slot carries the word instead.
+    const inbound = rowFor(panel, 'duplicate-of');
+    assert.equal(/ig-relationship-remove/.test(inbound), false, 'an inbound row offers a remove');
+    assert.match(inbound, /<span class="ig-relationship-inbound">declared elsewhere<\/span>/);
+
+    for (const field of ['blocked-by', 'together-with']) {
+      assert.match(rowFor(panel, field), /class="ig-relationship-remove"/, field);
+    }
+  });
+
+  it('addresses the remove control at its OWN row, and names it as an attribute', () => {
+    // THE GLYPH CARRIES NO NAME. `✕` announces as whatever a screen reader's
+    // character table calls it, so it is hidden and the host's word is the
+    // button's `aria-label` — on the BUTTON, because a span takes the generic
+    // role and ARIA prohibits naming one.
+    const row = rowFor(panel, 'together-with');
+    // COMPARED AS A STRING, NOT AS A PATTERN. `edgeIdentity` joins with `|`,
+    // which is ALTERNATION inside a RegExp — so the same assertion written as
+    // `new RegExp(...)` decomposes into several alternatives and passes on the
+    // shortest of them. A mutation test caught it: dropping `aria-hidden` from
+    // the glyph left the pattern version green. This file already records the
+    // same trap once, on the canvas's edge ids.
+    assert.ok(
+      row.includes(
+        `<button type="button" class="ig-relationship-remove" data-ig-command="delete" data-ig-target="${edgeIdentity('together-with', 'i0001', 'i0003')}" aria-label="unlink this row"><span class="ig-glyph" aria-hidden="true">\u2715</span></button>`,
+      ),
+      row,
+    );
+    // EACH ROW NAMES A DIFFERENT EDGE, which is the property a per-row control
+    // needs and the one a selection-addressed delete cannot have.
+    const targets = [
+      ...listOf(panel).matchAll(/data-ig-command="delete" data-ig-target="([^"]+)"/g),
+    ].map((match) => match[1]);
+    assert.deepEqual(targets, [
+      edgeIdentity('blocked-by', 'i0001', 'i0002'),
+      edgeIdentity('together-with', 'i0001', 'i0003'),
+    ]);
+  });
+
+  it('marks the selected row as selected, and gives it no remove', () => {
+    // The package's own state name, from `treatmentForState` — the same word the
+    // canvas's halo is announced with. A `selected` on the words object would be
+    // a second spelling of one the overlay grammar already publishes.
+    const selected = inspectorOf(
+      renderWorkspace(document, {
+        ...WORDS,
+        selection: { kind: 'edge', edgeId: edgeIdentity('blocked-by', 'i0001', 'i0002') },
+      }).markup,
+    );
+    const row = rowFor(selected, 'blocked-by');
+    assert.match(row, /<span class="ig-relationship-state" data-ig-state="selected">selected<\/span>/);
+    assert.equal(/ig-relationship-remove/.test(row), false);
+    // WITH NO ISSUE SUBJECT THERE IS NO "OTHER END", so both are drawn and the
+    // kind takes its plain forward wording.
+    assert.match(row, /<span>blocked by<\/span><\/span><span class="ig-relationship-ref">i0001<\/span><span class="ig-relationship-ref">i0002<\/span>/);
+  });
+
+  it('states an empty list rather than drawing none', () => {
+    // AE5. The heading with nothing under it reads as a list that failed to
+    // load, rather than as an issue that is genuinely related to nothing.
+    const alone = inspectorOf(
+      renderWorkspace(backlogOf(3), { ...WORDS, selection: { kind: 'issue', key: 'i0002' } }).markup,
+    );
+    assert.match(alone, /<p class="ig-inspector-none">nothing is related to this<\/p>/);
+    assert.equal(/ig-relationship-list/.test(alone), false, 'an empty list was still drawn');
+    // AND NOT TWICE OVER. With nothing selected the panel already says so once,
+    // in its own words; adding "nothing is related to this" under it would state
+    // one absence in two registers on the render where nothing has been asked.
+    const nothing = inspectorOf(renderWorkspace(backlogOf(3), WORDS).markup);
+    assert.match(nothing, /pick a row to inspect it/);
+    assert.equal(/ig-inspector-none/.test(nothing), false);
+  });
+});
+
+describe('the create path begins in the panel, and its digits are the keyboard\u2019s', () => {
+  const document = backlogOf(4, { edges: [['blocked-by', 'i0001', 'i0002']] });
+  const selection = { kind: 'issue', key: 'i0001' } as const;
+  const draft = { source: 'i0001', target: null, kind: null } as const;
+
+  it('draws + add for an issue, and nothing to add from with no subject', () => {
+    // THE CONTROL PUBLISHES ITS SUBJECT, exactly as a row's remove control
+    // does. `reduceHost`'s `add` arm read the raw selection while the panel
+    // around it is worded from the slot LEAD, so a together-unit partner drew
+    // one issue's panel and began a relationship from another.
+    assert.ok(
+      inspectorOf(renderWorkspace(document, { ...WORDS, selection }).markup).includes(
+        '<button type="button" class="ig-inspector-addbutton" data-ig-command="add" data-ig-target="i0001">begin a relationship</button>',
+      ),
+      inspectorOf(renderWorkspace(document, { ...WORDS, selection }).markup),
+    );
+    // `reduceHost`'s `add` reads `selectedKey`, which answers `null` for an edge
+    // selection and for none — so the control would publish an act that cannot
+    // complete.
+    for (const without of [
+      undefined,
+      { kind: 'edge', edgeId: edgeIdentity('blocked-by', 'i0001', 'i0002') } as const,
+    ]) {
+      assert.equal(
+        /data-ig-command="add"/.test(renderWorkspace(document, { ...WORDS, selection: without }).markup),
+        false,
+      );
+    }
+  });
+
+  it('numbers the kind list from the table the keyboard reads', () => {
+    // AE2, OVER THE MARKUP. Both expectations are derived from `EDGE_FIELDS`,
+    // never from `KIND_KEYS` — a comparison against the table the renderer walks
+    // would be true however that table was built.
+    const panel = inspectorOf(renderWorkspace(document, { ...WORDS, selection, draft }).markup);
+    const digits = [...panel.matchAll(/<span class="ig-kind-digit">([^<]*)<\/span>/g)].map(
+      (match) => match[1],
+    );
+    assert.deepEqual(digits, EDGE_FIELDS.map((_, index) => String(index + 1)));
+    const kinds = [...panel.matchAll(/data-ig-command="kind" data-ig-value="([^"]+)"/g)].map(
+      (match) => match[1],
+    );
+    assert.deepEqual(kinds, [...EDGE_FIELDS]);
+    // AND THE ENTRY IS WORDED BY THE EDGE VOCABULARY, so an entry and the row it
+    // becomes read the same. The picker's `kinds` record is a different
+    // register — worded to sit inside a clause — and using it here would put two
+    // wordings of one kind on one screen.
+    assert.match(panel, /<span class="ig-kind-digit">1<\/span><span class="ig-glyph" aria-hidden="true">\u2298<\/span><span>blocked by<\/span>/);
+  });
+
+  it('shows one step at a time, and none of it while a canvas drop is in flight', () => {
+    const stepped = inspectorOf(renderWorkspace(document, { ...WORDS, selection, draft }).markup);
+    // `+ add` BEGINS a draft, and `create/draft.ts` makes `begin` reset the kind
+    // and the target — so a reader mid-draft offered it again would silently
+    // discard the slot they had just filled.
+    assert.equal(/data-ig-command="add"/.test(stepped), false, 'add is drawn beside its own list');
+
+    // TWO CHOOSERS WRITING TO ONE DRAFT is what the shell's own drop guard
+    // prevented while it drew both of them; the panel now restates it for the
+    // half it draws.
+    const dropped = inspectorOf(
+      renderWorkspace(document, { ...WORDS, selection, draft, drop: { x: 40, y: 50 } }).markup,
+    );
+    assert.equal(/ig-kind-list/.test(dropped), false, 'the panel list appeared beside a floating one');
+
+    // The target step is the shell's — a live input over the reader's query,
+    // which a markup-only renderer cannot be.
+    const typed = inspectorOf(
+      renderWorkspace(document, {
+        ...WORDS,
+        selection,
+        draft: { source: 'i0001', target: null, kind: 'blocked-by' },
+      }).markup,
+    );
+    assert.equal(/ig-kind-list/.test(typed), false);
+    assert.equal(/data-ig-command="add"/.test(typed), false);
+  });
+
+  it('draws the kind list only under the issue the draft is FROM', () => {
+    // `pointed` diverts a click to the draft only once a KIND has been chosen,
+    // so at the kind step a click anywhere else moves the selection and leaves
+    // `draft.source` where it was. The panel drew the numbered list under
+    // whatever had just been selected: "choose a kind" beneath one issue's
+    // heading while the write would go out from another, with nothing on screen
+    // naming the real source. The shell's chooser this replaced always printed
+    // it.
+    const diverged = inspectorOf(
+      renderWorkspace(document, {
+        ...WORDS,
+        selection: { kind: 'issue', key: 'i0004' },
+        draft,
+      }).markup,
+    );
+    assert.equal(/ig-kind-list/.test(diverged), false, 'the list is drawn under the wrong issue');
+
+    // AND `+ add` IS DRAWN INSTEAD, for this panel's own subject — that control
+    // CAN complete the act it advertises, because `begin` starts a draft from
+    // the key it is given.
+    assert.ok(
+      diverged.includes('data-ig-command="add" data-ig-target="i0004"'),
+      diverged,
+    );
+
+    // The source's own panel is unaffected, so this narrowed rather than
+    // removed the step.
+    assert.match(
+      inspectorOf(renderWorkspace(document, { ...WORDS, selection, draft }).markup),
+      /ig-kind-list/,
+    );
+  });
+
+  it('offers a way out of the draft it opened', () => {
+    // A DRAFT THE READER CANNOT ABANDON is worse than one they cannot start —
+    // `create/keys.ts` says so for the keyboard, and the pointer path lost its
+    // own cancel when the step moved out of the shell's chooser.
+    assert.match(
+      inspectorOf(renderWorkspace(document, { ...WORDS, selection, draft }).markup),
+      /<button type="button" class="ig-inspector-cancel" data-ig-command="cancel">abandon the draft<\/button>/,
+    );
+  });
+});
+
+describe('a refused relationship is drawn where the reader was building it', () => {
+  const document = backlogOf(4, {
+    edges: [
+      ['blocked-by', 'i0001', 'i0002'],
+      ['blocked-by', 'i0001', 'i0003'],
+    ],
+  });
+  const refused = edgeIdentity('blocked-by', 'i0001', 'i0002');
+
+  it('draws the store\u2019s code and the host\u2019s word, and keeps the other rows', () => {
+    // AE3. `would-cycle` is the refusal this package family cannot detect for
+    // itself — it comes from the host's guard — so it arrives only after the
+    // reader has committed to the relationship, and before this the panel they
+    // had just used said nothing about it at all.
+    const panel = inspectorOf(
+      renderWorkspace(document, {
+        ...WORDS,
+        selection: { kind: 'issue', key: 'i0001' },
+        refusals: [{ edgeId: refused, code: 'would-cycle', phantom: true }],
+      }).markup,
+    );
+    const capsule = panel.slice(
+      panel.indexOf('<li class="ig-relationship-refused"'),
+      panel.indexOf('</li>', panel.indexOf('<li class="ig-relationship-refused"')),
+    );
+    // THE CODE IS THE STORE'S VOCABULARY VERBATIM, so a host styles or counts
+    // refusals without matching a sentence.
+    assert.match(capsule, /data-ig-code="would-cycle"/);
+    assert.match(capsule, /<span class="ig-relationship-reason">that would close a loop<\/span>/);
+    // THE WORD IS KEYED OFF THE CODE, not one message for every refusal.
+    assert.equal(/that field holds one reference/.test(capsule), false);
+    // The relationship it was about is still named, so the reader knows which
+    // edit was refused.
+    assert.ok(capsule.includes(`data-ig-target="${refused}"`), capsule);
+
+    // AND IT IS NOT ALSO AN ORDINARY ROW. A refused edit is not a relationship:
+    // listing it beside the real ones would assert one the document does not
+    // have, with a `✕` offering to remove something that was never added.
+    assert.equal(
+      panel.includes(
+        `<li class="ig-relationship" data-edge="blocked-by" data-direction="outgoing"><button type="button" class="ig-relationship-select" data-ig-command="select-edge" data-ig-target="${refused}"`,
+      ),
+      false,
+      'the refused edge is listed as an ordinary row as well',
+    );
+    // The subject's other relationship is untouched.
+    const survivor = rowFor(panel, 'blocked-by');
+    assert.ok(
+      survivor.includes(`data-ig-target="${edgeIdentity('blocked-by', 'i0001', 'i0003')}"`),
+      survivor,
+    );
+  });
+
+  it('draws no capsule when nothing was refused', () => {
+    const panel = inspectorOf(
+      renderWorkspace(document, { ...WORDS, selection: { kind: 'issue', key: 'i0001' } }).markup,
+    );
+    assert.equal(/ig-relationship-refused/.test(panel), false);
+    assert.equal(/data-ig-code/.test(panel), false);
+  });
+
+  it('still says so for a refusal the host\u2019s document does not carry', () => {
+    // §17b's rule has two halves — never snapped back, and never silently
+    // dropped — and the second one fails quietly. The store draws a refused
+    // create as a phantom so a surface can mark it, but that reaches the
+    // renderer only through the HOST's projection: a host projecting landed
+    // edges alone hands us a code and nothing to word it against.
+    const panel = inspectorOf(
+      renderWorkspace(backlogOf(4), {
+        ...WORDS,
+        selection: { kind: 'issue', key: 'i0001' },
+        refusals: [{ edgeId: edgeIdentity('blocked-by', 'i0001', 'i0009'), code: 'unknown-issue', phantom: true }],
+      }).markup,
+    );
+    assert.match(panel, /<li class="ig-relationship-refused" data-ig-code="unknown-issue">/);
+    assert.match(panel, /that issue is not in this backlog/);
+  });
+
+  it('draws a refusal about another pair on nobody\u2019s panel but its own', () => {
+    // THE OTHER HALF OF "NEVER SILENTLY DROPPED", and the one it was traded
+    // for. `refusals` is one list for the whole surface, and an unmatched
+    // refusal was appended to EVERY panel — so a `would-cycle` between two
+    // issues the reader is not looking at was stated under the heading of one
+    // that has nothing to do with it.
+    //
+    // THE FIXTURE HAS EDGES, WHICH THE FIRST VERSION OF THIS TEST DID NOT. A
+    // document with no relationships cannot tell "the panel drew nothing
+    // because the refusal was filtered" from "the panel drew nothing because
+    // there was nothing to draw"; `i0001` here has a row of its own, so the
+    // capsule's absence is about the capsule.
+    const elsewhere = edgeIdentity('blocked-by', 'i0005', 'i0006');
+    const panel = inspectorOf(
+      renderWorkspace(
+        backlogOf(6, {
+          edges: [
+            ['blocked-by', 'i0001', 'i0002'],
+            ['blocked-by', 'i0005', 'i0006'],
+          ],
+        }),
+        {
+          ...WORDS,
+          selection: { kind: 'issue', key: 'i0001' },
+          refusals: [{ edgeId: elsewhere, code: 'would-cycle', phantom: true }],
+        },
+      ).markup,
+    );
+    assert.equal(/ig-relationship-refused/.test(panel), false, 'another pair\u2019s refusal');
+    assert.equal(/that would close a loop/.test(panel), false);
+    // The subject's own row is still there, so the filter narrowed rather than
+    // emptied.
+    assert.ok(rowFor(panel, 'blocked-by').includes(edgeIdentity('blocked-by', 'i0001', 'i0002')));
+  });
+
+  it('draws no capsule at all where there is no subject to draw one for', () => {
+    // WITH NOTHING SELECTED THE PANEL SAYS SO, AND SAYS NOTHING ELSE. An
+    // unfiltered append put the capsule under "pick a row to inspect it" — and
+    // because the list was then non-empty, it also suppressed the stated empty
+    // line that renders exactly when there is nothing to list.
+    const document = backlogOf(4, { edges: [['blocked-by', 'i0001', 'i0002']] });
+    const refusals = [
+      { edgeId: edgeIdentity('blocked-by', 'i0001', 'i0002'), code: 'would-cycle' as const, phantom: true },
+    ];
+    const nothing = inspectorOf(renderWorkspace(document, { ...WORDS, refusals }).markup);
+    assert.equal(/ig-relationship-refused/.test(nothing), false, 'a capsule with nothing selected');
+    assert.match(nothing, /pick a row to inspect it/);
+
+    // AND NOT FOR AN EDGE SELECTION EITHER, unless the refusal is about the one
+    // edge on show: the panel is one relationship, and a refusal about a
+    // different one is not part of it.
+    const otherEdge = inspectorOf(
+      renderWorkspace(backlogOf(6, {
+        edges: [
+          ['blocked-by', 'i0001', 'i0002'],
+          ['blocked-by', 'i0005', 'i0006'],
+        ],
+      }), {
+        ...WORDS,
+        selection: { kind: 'edge', edgeId: edgeIdentity('blocked-by', 'i0001', 'i0002') },
+        refusals: [
+          { edgeId: edgeIdentity('blocked-by', 'i0005', 'i0006'), code: 'would-cycle' as const, phantom: true },
+        ],
+      }).markup,
+    );
+    assert.equal(/ig-relationship-refused/.test(otherEdge), false);
+  });
+});
+
+describe('a refusal about a relationship that EXISTS keeps the relationship', () => {
+  // The codes that mark a landed edge — `duplicate-edge`, `unchanged-kind`,
+  // `symmetric-edge` — refuse an edit ABOUT an edge rather than an edge into
+  // being. `store/validity.ts` marks the original for a retype or flip whose
+  // result has the identity it started from, and `project` folds a refused
+  // duplicate create onto the edge it duplicates.
+  const document = backlogOf(4, { edges: [['blocked-by', 'i0001', 'i0002']] });
+  const landed = edgeIdentity('blocked-by', 'i0001', 'i0002');
+  const panel = inspectorOf(
+    renderWorkspace(document, {
+      ...WORDS,
+      selection: { kind: 'issue', key: 'i0001' },
+      refusals: [{ edgeId: landed, code: 'duplicate-edge', phantom: false }],
+    }).markup,
+  );
+
+  it('keeps the row, its selector and its remove control', () => {
+    // THE DEFECT THIS PINS. With the capsule replacing the row for every code,
+    // "that relationship is already declared" took the declared relationship
+    // off the panel — so the reader was told about an edge and left with no
+    // control on any surface that could remove it.
+    const row = rowFor(panel, 'blocked-by');
+    assert.ok(row.includes(`data-ig-command="select-edge" data-ig-target="${landed}"`), row);
+    assert.ok(
+      row.includes(`class="ig-relationship-remove" data-ig-command="delete" data-ig-target="${landed}"`),
+      row,
+    );
+    assert.equal(/ig-relationship-refused/.test(panel), false, 'the row was replaced by a capsule');
+  });
+
+  it('attaches the reason and the store\u2019s code to that row', () => {
+    const row = rowFor(panel, 'blocked-by');
+    assert.match(row, /<li class="ig-relationship" data-edge="blocked-by" data-direction="outgoing" data-ig-code="duplicate-edge">/);
+    assert.match(row, /<span class="ig-relationship-reason">that relationship is already declared<\/span>/);
+  });
+
+  it('still replaces the row for a refusal about an edge that does not exist', () => {
+    // The other half of the same question, on one fixture, so the two answers
+    // cannot drift: `phantom` is what separates them and nothing else is.
+    const phantom = inspectorOf(
+      renderWorkspace(document, {
+        ...WORDS,
+        selection: { kind: 'issue', key: 'i0001' },
+        refusals: [{ edgeId: landed, code: 'would-cycle', phantom: true }],
+      }).markup,
+    );
+    assert.match(phantom, /<li class="ig-relationship-refused" data-ig-code="would-cycle"/);
+    assert.equal(
+      /class="ig-relationship-remove"/.test(phantom),
+      false,
+      'a remove control for an edge that was never added',
+    );
   });
 });
 

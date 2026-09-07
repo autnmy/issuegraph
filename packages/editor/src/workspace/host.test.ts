@@ -244,6 +244,66 @@ describe('edits on a selected edge come from the picker’s own view', () => {
       assert.equal(drive([{ kind: 'control', name, value: 'duplicate-of' }]).effects.length, 0, name);
     }
   });
+
+  it('deletes the edge the CONTROL names, whatever is selected', () => {
+    // AE4, AND THE ONLY PLACE IT CAN BE ASSERTED. §17a puts a remove control on
+    // every relationship row, and this arm read the selection and ignored the
+    // target — which was sound for exactly as long as the one delete button
+    // lived inside `if (edgeId !== null)`.
+    //
+    // TWO FAILURES, AND THIS COVERS BOTH. With an ISSUE selected there is no
+    // selected edge at all, so every row's remove was a silent no-op. With
+    // ANOTHER edge selected the arm proposed a delete of the selected one —
+    // a control that removes a different relationship from the one it sits on,
+    // which is worse than one that does nothing.
+    const onIssue = drive(
+      [{ kind: 'control', name: 'delete', target: serialize.id }],
+      drive([{ kind: 'point', key: '1' }]).state,
+    );
+    assert.deepEqual(onIssue.effects, [
+      { kind: 'propose', proposal: { op: 'delete', edgeId: serialize.id } },
+    ]);
+
+    const onAnotherEdge = drive(
+      [{ kind: 'control', name: 'delete', target: serialize.id }],
+      drive([{ kind: 'group', id: blockedBy.id }]).state,
+    );
+    assert.deepEqual(onAnotherEdge.effects, [
+      { kind: 'propose', proposal: { op: 'delete', edgeId: serialize.id } },
+    ]);
+  });
+});
+
+describe('a create begins from the issue the control NAMES', () => {
+  it('prefers the control\u2019s target over the raw selection', () => {
+    // §17a's panel is worded from the CANONICAL subject — `inspectorView` folds
+    // a together-unit member onto its slot's lead and lists the lead's
+    // relationships — while this arm read `selectedKey`, the raw key. So
+    // selecting a partner drew a panel headed by the lead, with a `+ add`
+    // under it that began a relationship from the partner: one control
+    // disagreeing with every other line of its own panel about which issue it
+    // was about. The panel publishes the canonical key; the arm takes it.
+    const canonical = drive(
+      [{ kind: 'control', name: 'add', target: '1' }],
+      drive([{ kind: 'point', key: '4' }]).state,
+    );
+    assert.equal(canonical.state.draft.source, '1');
+    assert.deepEqual(canonical.effects, []);
+  });
+
+  it('still falls back to the selection for a control that names no subject', () => {
+    // The keyboard's own create path names no target — it has only a selection
+    // — so the fallback is the same one rule the `delete` arm states, not a
+    // second one.
+    const fallback = drive(
+      [{ kind: 'control', name: 'add' }],
+      drive([{ kind: 'point', key: '2' }]).state,
+    );
+    assert.equal(fallback.state.draft.source, '2');
+    // And with nothing selected and nothing named there is no source at all,
+    // so the draft stays idle rather than beginning from `undefined`.
+    assert.equal(drive([{ kind: 'control', name: 'add' }]).state.draft.source, null);
+  });
 });
 
 describe('the rest of the chrome', () => {

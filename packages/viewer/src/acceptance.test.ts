@@ -192,12 +192,29 @@ describe('the public surface', () => {
       'defaultTheme',
       'element',
       'extendTheme',
-      // `identity` and `provenanceClause` joined for the same reason and on the
-      // same terms: §17a's inspector states the qualified reference and the
-      // provenance sentence, and layer 2 spelling either one itself would give
-      // a single fact two wordings, free to drift from the rail's.
+      // `glyphAndLabel`, `identity` and `provenanceClause` joined for the same
+      // reason and on the same terms: §17a's inspector states the qualified
+      // reference, the provenance sentence and a relationship's glyph-and-word
+      // pair, and layer 2 spelling any of them itself would give a single fact
+      // two renderings, free to drift from the rail's. The pairing is the one
+      // whose second copy fails silently rather than visibly: it is what makes
+      // the glyph `aria-hidden` and the word the accessible name, so a local
+      // reimplementation that omits half of it looks identical on screen.
+      'glyphAndLabel',
+      // The half of that pairing a GLYPH-ONLY control needs. §17a's remove
+      // button carries its name as an `aria-label` and its `✕` as a silent
+      // mark, so the pairing above does not fit it — and publishing only the
+      // pairing is what made layer 2 write the class and the `aria-hidden` out
+      // by hand, which is the copy the pairing exists to prevent.
+      'hiddenGlyph',
       'identity',
       'initialNavigationState',
+      // The one construction of "which verb, read from which end". The rail
+      // badge and the inspector row draw one edge one zone apart, and a
+      // consumer left to write the ternary itself has a second copy whose
+      // failure is an INVERTED word rather than a missing one: an inbound
+      // `duplicate-of` worded forwards asserts the reverse of the fact.
+      'labelFrom',
       'mountViewer',
       'navigate',
       'normalizeDocument',

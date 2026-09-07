@@ -120,6 +120,9 @@ const FIRST_PASS_WORDS: FirstPassWords = {
 
 /** The words the packages refuse to invent. */
 export const WORKSPACE_WORDS: MountWords = {
+  // The frame draws the panel's name in caps; the caps are the stylesheet's, as
+  // they are for every other heading in this zone, so the word reads as a word.
+  inspector: 'Inspector',
   nothingSelected: 'Pick a row, a node or an edge to inspect it.',
   clearSelection: 'clear the selection',
   relationships: 'Relationships',
@@ -129,10 +132,33 @@ export const WORKSPACE_WORDS: MountWords = {
   whyRank: 'Why rank',
   whyHeld: 'Why held',
   workedAsOneUnit: 'worked as one unit with',
-  picker: PICKER_WORDS,
+  noRelationships: 'Nothing is related to this issue yet.',
   addRelationship: '+ add a relationship',
-  deleteRelationship: 'delete this relationship',
   cancel: 'cancel',
+  // NAMES THE ACT, NOT THE ROW. The `✕` is repeated once per relationship and
+  // the markup already says which one it is about, so a word naming a
+  // particular reference would be wrong on every other row.
+  remove: 'remove this relationship',
+  // WHY THERE IS NO CONTROL BESIDE IT, said plainly rather than left as a gap.
+  // An inbound relationship is declared in the other issue's body, so it cannot
+  // be removed from this panel.
+  inbound: 'inbound',
+  // The store's codes, worded for someone grooming a backlog rather than for
+  // someone reading the store. `would-cycle` is the one this host's guard
+  // actually produces; the rest are refused before dispatch.
+  refusals: {
+    'self-edge': 'An issue cannot be related to itself.',
+    'unknown-issue': 'That issue is not in this backlog.',
+    'unknown-edge': 'That relationship is no longer there.',
+    'duplicate-edge': 'That relationship is already declared.',
+    'unchanged-kind': 'It is already that kind of relationship.',
+    'symmetric-edge': 'That kind of relationship reads the same both ways.',
+    'cardinality': 'That field holds one reference, and it already has one.',
+    'would-cycle': 'That would make the two issues block each other.',
+    'guard-failed': 'The cycle check could not be run, so nothing was written.',
+  },
+  picker: PICKER_WORDS,
+  deleteRelationship: 'delete this relationship',
   chooseKind: 'choose the kind',
   targetLabel: 'Target issue',
   targetPlaceholder: 'find the other issue by number or title',

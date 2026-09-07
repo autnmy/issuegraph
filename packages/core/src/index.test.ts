@@ -9,6 +9,7 @@ import {
   EDGE_CARDINALITY,
   EDGE_FIELDS,
   edgeIdentity,
+  edgeIdentityNames,
   EVIDENCE_VALUES,
   FIELDS,
   FRONTMATTER_KEY,
@@ -323,6 +324,46 @@ test('an edge identity leaves every well-formed reference byte-identical', () =>
       `${JSON.stringify(ref)} did not encode the way encodeURIComponent does`,
     );
   }
+});
+
+test('an identity names the references it was built from, at either end', () => {
+  // The predicate exists so a consumer never splits an identity itself. Driven
+  // over every field so a symmetric one — whose endpoints are SORTED into the
+  // string — is answered from the pair the caller wrote rather than from the
+  // order they came out in.
+  for (const field of EDGE_FIELDS) {
+    const id = edgeIdentity(field, 'owner/repo#9', 'b c');
+    assert.equal(edgeIdentityNames(id, 'owner/repo#9'), true, field);
+    assert.equal(edgeIdentityNames(id, 'b c'), true, field);
+    assert.equal(edgeIdentityNames(id, 'owner/repo#8'), false, field);
+  }
+});
+
+test('naming compares the ENCODED reference, not the raw one', () => {
+  // The failure this exists to prevent, stated as an assertion: a caller
+  // splitting the identity itself has no encoder, so it compares the raw
+  // reference against an encoded segment and answers `false` for every
+  // reference the format actually admits — `#`, `/` and a space are all
+  // escaped, and §4.2 admits all three.
+  const id = edgeIdentity('blocked-by', 'owner/repo#9', '1');
+  assert.ok(id.includes('owner%2Frepo%239'), id);
+  assert.equal(edgeIdentityNames(id, 'owner/repo#9'), true);
+  // And the encoded spelling is not itself a reference: a host holding
+  // `owner%2Frepo%239` names a different issue.
+  assert.equal(edgeIdentityNames(id, 'owner%2Frepo%239'), false);
+});
+
+test('naming is total over strings this package did not write', () => {
+  // A host may hand back anything at all — a value it invented, an empty
+  // string, a reference with the separator inside it. None of them throws and
+  // none of them names an issue by accident.
+  for (const id of ['', 'blocked-by', 'blocked-by|1', 'a|b|c|d', '|||']) {
+    assert.equal(edgeIdentityNames(id, '1'), false, JSON.stringify(id));
+  }
+  // A reference carrying the separator is encoded on both sides of the
+  // question, so it cannot forge a match against either segment.
+  assert.equal(edgeIdentityNames(edgeIdentity('blocked-by', '1|2', '3'), '1'), false);
+  assert.equal(edgeIdentityNames(edgeIdentity('blocked-by', '1|2', '3'), '1|2'), true);
 });
 
 test('a lone surrogate cannot collide with another reference', () => {

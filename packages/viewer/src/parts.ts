@@ -19,7 +19,7 @@ import type {
 } from './document.ts';
 import { type ElementSpec, element, svg } from './element.ts';
 import { GROUP_ATTRIBUTE } from './scene.ts';
-import { EDGE_ORDER, type EdgeTerminal, dashArrayFor, treatmentFor } from './vocabulary.ts';
+import { EDGE_ORDER, type EdgeTerminal, dashArrayFor, labelFrom, treatmentFor } from './vocabulary.ts';
 
 /**
  * The attribute a control the viewer publishes but does not wire carries. The
@@ -29,12 +29,44 @@ import { EDGE_ORDER, type EdgeTerminal, dashArrayFor, treatmentFor } from './voc
  */
 export const COMMAND_ATTRIBUTE = 'data-ig-command';
 
-/** A badge's inner pair — the glyph a reader can see and the word a reader can hear. */
-function glyphAndLabel(glyph: string, label: string): readonly ElementSpec[] {
-  return [
-    element('span', { class: 'ig-glyph', 'aria-hidden': 'true' }, [glyph]),
-    element('span', {}, [label]),
-  ];
+/**
+ * A mark for the eye and for nothing else.
+ *
+ * FOUR CHANNELS SEPARATE A RELATIONSHIP AND ONLY ONE OF THEM IS AUDIBLE. The
+ * glyph is `aria-hidden` because `⊘` announces as whatever a given screen
+ * reader's character table calls it — "circle with slash", or nothing at all —
+ * which is a description of the mark rather than of the relationship. Whatever
+ * carries the NAME has to be something else: the word beside it, or an
+ * `aria-label` on the control the mark sits inside.
+ *
+ * IT IS ITS OWN FUNCTION BECAUSE THE PAIRING IS NOT ITS ONLY CONSUMER. A word
+ * beside the glyph is the common shape and {@link glyphAndLabel} is it, but a
+ * glyph-only control — §17a's `✕` in a relationship row's slot, whose name is
+ * on the button — genuinely needs the hidden mark with no visible word. Given
+ * only the pairing, that call site writes the class and the `aria-hidden` out
+ * by hand, which is the copy the pairing exists to prevent wearing a different
+ * shape. Two published pieces, one rule.
+ */
+export function hiddenGlyph(glyph: string): ElementSpec {
+  return element('span', { class: 'ig-glyph', 'aria-hidden': 'true' }, [glyph]);
+}
+
+/**
+ * A badge's inner pair — the glyph a reader can see and the word a reader can
+ * hear.
+ *
+ * THE WORD IS THE ACCESSIBLE NAME, and it is the vocabulary's own. The mark
+ * beside it is {@link hiddenGlyph}, so the `aria-hidden` that makes this pair
+ * work at all is written in one place for every surface that draws one.
+ *
+ * EXPORTED FOR THE EDITOR, which draws the same pair in §17a's inspector rows
+ * and its numbered kind list. A second spelling of the pairing there would be
+ * free to drop the `aria-hidden` — the failure it exists to prevent — and would
+ * put the same relationship on screen in two shapes one zone apart from the
+ * §16 badge this already draws.
+ */
+export function glyphAndLabel(glyph: string, label: string): readonly ElementSpec[] {
+  return [hiddenGlyph(glyph), element('span', {}, [label])];
 }
 
 /** How a readiness station is filled — the parallelism channel. */
@@ -985,11 +1017,10 @@ export function edgeBadgeList(
         // is announced as one relationship rather than as two directions.
         const outgoing = mine.has(edge.from);
         const other = outgoing ? edge.to : edge.from;
-        // THE VERB CHANGES, NOT THE NOUN. Read from the far end an asymmetric
-        // edge has its own plain wording, and the vocabulary carries it, so a
-        // row never has to say "(incoming)" and leave the reader to invert it.
-        const label =
-          outgoing || treatment.symmetric ? treatment.label : (treatment.reverseLabel ?? treatment.label);
+        // THE VOCABULARY WORDS IT, not this loop. `labelFrom` is the one
+        // construction of "which verb, read from which end", and §17a's
+        // inspector row draws the same edge from it one zone away.
+        const label = labelFrom(treatment, outgoing);
         badges.push(edgeBadge(field, edgeId, label, other));
       }
     }
@@ -1190,8 +1221,12 @@ export function legend(): ElementSpec {
       const treatment = treatmentFor(field);
       return element('span', { class: 'ig-legend-item' }, [
         legendSample(field),
-        element('span', { class: 'ig-glyph', 'aria-hidden': 'true' }, [treatment.glyph]),
-        element('span', {}, [treatment.label]),
+        // THE PAIRING, NOT A COPY OF IT. This spelled the glyph span and the
+        // word out by hand — the same two elements `glyphAndLabel` returns,
+        // free to lose the `aria-hidden` that makes the mark silent, in the
+        // file whose own header calls that the failure the shared pairing
+        // exists to prevent.
+        ...glyphAndLabel(treatment.glyph, treatment.label),
       ]);
     }),
     element('span', { class: 'ig-legend-keys' }, [

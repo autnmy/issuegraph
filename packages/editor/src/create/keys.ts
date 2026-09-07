@@ -22,6 +22,12 @@
  * itself, a sixth field gets a `6` for free and the picker and the keyboard
  * cannot disagree about which digit means what.
  *
+ * A SURFACE THAT DRAWS THE DIGITS READS {@link KIND_KEYS}, which is the same
+ * table filtered rather than a second walk of `EDGE_FIELDS`. The renderer and
+ * the key map then cannot disagree about which digit means what either, which
+ * is the half the paragraph above did not cover and the half that had already
+ * drifted.
+ *
  * ## Retype opens the picker; it does not emit a retype
  *
  * `T` answers with the edge to open {@link ../picker/view.ts pickerView} on,
@@ -218,6 +224,45 @@ const BINDINGS: ReadonlyMap<string, Binding> = new Map<string, Binding>([
   ['t', { kind: 'retype-edge', reachesTargetSearch: false }],
   ['escape', { kind: 'cancel', reachesTargetSearch: true }],
 ]);
+
+/** A digit the reader can press, and the kind it chooses. */
+export interface KindKey {
+  /** The key as {@link keyIntent} spells it — `'1'`, `'2'`, … */
+  readonly key: string;
+  readonly edgeKind: EdgeKind;
+}
+
+/**
+ * The numbered kind list, for a surface that DRAWS the digits this map reads.
+ *
+ * ONE CONSTRUCTION, FILTERED — not a second `EDGE_FIELDS.map((_, i) => …)`
+ * somewhere a renderer can see. `workspace/mount.ts` had exactly that second
+ * copy: its chooser built `${index + 1} ${word}` from a `KINDS` alias — since
+ * removed with it — while this table built the same digits from `EDGE_FIELDS`,
+ * and the two agreed only because both happened to walk the same array (the
+ * alias WAS `EDGE_FIELDS`). Nothing pinned them, so a change to
+ * either — a reordering, a skipped digit, a sixth field — would have left the
+ * chooser telling the reader to press a key the keyboard resolves differently.
+ * That is the drift this module's header rejects in terms, live in the package
+ * that reads this module.
+ *
+ * DERIVED FROM `BINDINGS`, which stays private. Exporting the map itself would
+ * publish `reachesTargetSearch` and the five non-kind actions, leaving every
+ * consumer to work out which entries name a kind — the same "here is the whole
+ * table, sort it out" surface a decision table exists to remove. `Map`
+ * preserves insertion order and the digits are spread from `EDGE_FIELDS.map`,
+ * so this comes out in the format's own order without sorting it.
+ *
+ * `binding.kind === 'choose-type'` narrows through the intersection for the
+ * reason {@link Binding} records: it is written as an intersection precisely so
+ * the discriminated union still narrows, which is what lets `edgeKind` be read
+ * here without a cast.
+ */
+export const KIND_KEYS: readonly KindKey[] = Object.freeze(
+  [...BINDINGS].flatMap(([key, binding]) =>
+    binding.kind === 'choose-type' ? [{ key, edgeKind: binding.edgeKind }] : [],
+  ),
+);
 
 const NONE: KeyIntent = Object.freeze({ kind: 'none' });
 
