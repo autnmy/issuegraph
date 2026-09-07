@@ -179,4 +179,22 @@ export const reevaluateStylesheet = `
 .ig-delta-presence {
   color: var(--ig-text-muted);
 }
+
+/* THE PLACED CHIP IS NOT A LIST ITEM and does not lay out like one: it sits at
+   the end of its row, after whatever the row already drew, and it never grows
+   the row's height on its own. margin-inline-start: auto is what puts it at
+   the row's trailing edge in the frame; the row is layer 1's flex container and
+   this does not touch it. */
+.ig-delta-chip[data-placed] {
+  display: inline-flex;
+  gap: var(--ig-space-tight);
+  align-items: baseline;
+  align-self: center;
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  padding: 0 var(--ig-space-tight);
+  background: var(--ig-surface-2);
+  font-size: var(--ig-font-size-small);
+}
+
 `;

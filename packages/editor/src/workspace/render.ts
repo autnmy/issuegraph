@@ -77,7 +77,15 @@ import {
   viewerStylesheet,
 } from '@issuegraph/viewer';
 
-import type { EdgeId, InvalidCode, MutationId, ProjectedEdge, StoredEdge } from '@issuegraph/store';
+import type {
+  EdgeId,
+  InvalidCode,
+  MutationId,
+  OrderChange,
+  OrderStatus,
+  ProjectedEdge,
+  StoredEdge,
+} from '@issuegraph/store';
 
 import type { AuditInput, AuditSeverity } from '../audit/findings.ts';
 import { auditStylesheet } from '../audit/styles.ts';
@@ -85,6 +93,10 @@ import { type CreateDraft, IDLE_CREATE_DRAFT } from '../create/draft.ts';
 import { KIND_KEYS } from '../create/keys.ts';
 import type { Point } from '../create/placement.ts';
 import { type OverlayAffordance, OVERLAY_TREATMENTS, treatmentForState } from '../overlay/grammar.ts';
+import { DELTA_ATTRIBUTE, chipSpec, deltaKind, summarySpec } from '../reevaluate/parts.ts';
+import { reevaluateStylesheet } from '../reevaluate/styles.ts';
+import { type PlacedChip, reevaluateView } from '../reevaluate/view.ts';
+import type { ChangeWords } from '../reevaluate/words.ts';
 import { edgeOverlayStylesheet } from '../overlay/styles.ts';
 import {
   AUDIT_SEVERITY_ATTRIBUTE,
@@ -120,6 +132,21 @@ export const ZONES = Object.freeze(['header', 'rail', 'canvas', 'inspector'] as 
 export type Zone = (typeof ZONES)[number];
 
 export interface WorkspaceWords {
+  /**
+   * §17c's vocabulary — the change summary's facets, its dismiss control and
+   * its direction words.
+   *
+   * OPTIONAL, AND ITS ABSENCE DRAWS NOTHING rather than drawing a default.
+   * `ChangeWords` states the doctrine and this obeys it exactly: the store
+   * ships the change as COUNTS so a host writes the sentence in its own
+   * language, and a default supplied here would take that choice back one layer
+   * down. So a host that has not supplied these gets no summary and no chips —
+   * not an English summary it cannot translate.
+   *
+   * It is the one shape that also keeps this a non-breaking addition: every
+   * host built against 0.12 renders exactly as it did.
+   */
+  readonly change?: ChangeWords | undefined;
   /**
    * Reads the freshness stamp in §17a's header — the frame's `as of 14:32 ↻`,
    * minus the clock.
@@ -509,6 +536,25 @@ export interface WorkspaceOptions {
    * not invent an English sentence, and a default would be one.
    */
   readonly words: WorkspaceWords;
+  /**
+   * The store's `lastChange` — what the last landed edit did to the order.
+   *
+   * ABSENT MEANS NO EDIT HAS LANDED TO REPORT, which is not the same as an edit
+   * that landed and moved nothing. The second is a `change` whose summary is
+   * `unchanged`, and §17c draws it in the summary's own place because "landed
+   * and moved nothing" is the finding an owner auditing an encoding most needs.
+   */
+  readonly change?: OrderChange | null | undefined;
+  /**
+   * The store's `order.status`. `held` labels the rail and greys it one step.
+   *
+   * THE RANKS DRAWN ARE STILL THE ONES THE CALLER VOUCHED FOR. This says the
+   * order is being re-evaluated; it does not re-rank anything, and nothing in
+   * this render moves a row because a write is in flight. §122's rule —
+   * optimistic rendering yes, optimistic re-ORDERING no — is held by there
+   * being no code path here that reorders at all.
+   */
+  readonly orderStatus?: OrderStatus | undefined;
   readonly selection?: WorkspaceSelection | undefined;
   /** The ladder's reader position — search, focus, opened isolates. */
   readonly scale?: ScaleState | undefined;
@@ -709,9 +755,27 @@ function severityForRow(
  * `readonly` throughout, and a mutating walk would also be visible to the
  * caller's own copy of `scene.root`.
  */
+/**
+ * What a keyed rail row needs to draw its delta: the chip, the words that word
+ * it, and the kind that tints the row.
+ *
+ * THE WORDS TRAVEL WITH THE CHIP rather than being closed over separately, so
+ * a row can only be marked by a caller that actually has a vocabulary for it.
+ * Without `words.change` there is no `RowDelta` to hand out at all, which is
+ * how "the package invents no English" is held by the types instead of by a
+ * branch someone has to remember.
+ */
+interface RowDelta {
+  readonly chip: PlacedChip;
+  readonly words: ChangeWords;
+  /** `undefined` when no member carries a drawable delta. See {@link DELTA_ATTRIBUTE}. */
+  readonly kind: string | undefined;
+}
+
 function markRail(
   root: ElementSpec,
   severityOf: (key: string) => AuditSeverity | undefined,
+  deltaOf: (key: string) => RowDelta | undefined,
 ): ElementSpec {
   // TYPED AS `ElementSpec -> ElementSpec` AT THE BOUNDARY, with the child walk
   // kept inside. A single function over `SpecChild` would hand `renderMarkup` a
@@ -728,11 +792,34 @@ function markRail(
     // resolves to nothing today and to something the day a host names an issue
     // that. Narrowed rather than coerced.
     const severity = typeof key === 'string' ? severityOf(key) : undefined;
-    const children = spec.children?.map(markChild);
+    const delta = typeof key === 'string' ? deltaOf(key) : undefined;
+    const walked = spec.children?.map(markChild);
+    // THE CHIP IS APPENDED TO THE ROW, WHICH IS WHY IT IS DRAWN HERE AND NOT
+    // IN A MOUNT. §17c puts the effect in place — "only affected rows carry a
+    // delta chip · unaffected rows are left completely alone" — and
+    // `reevaluate/render.ts` deferred that to "the change that assembles the
+    // workspace" on the ground that placing a chip needs the row's geometry.
+    // It does not: the row is a SPEC here, keyed and reachable, and this walk
+    // was already composing one decoration onto it. So the chip is composed
+    // like the audit's mark rather than positioned like an overlay, and no
+    // geometry is consulted at all.
+    //
+    // AN UNAFFECTED ROW IS RETURNED WITH ITS OWN `children` ARRAY, not a
+    // rebuilt one carrying an appended `null` — `deltaOf` answering `undefined`
+    // has to leave the row byte-identical, which is the design's rule made
+    // structural rather than asserted.
+    const children =
+      delta === undefined
+        ? walked
+        : [...(walked ?? []), chipSpec(delta.chip, delta.words, { placed: true })];
+    const marked: Record<string, AttrValue> = { ...spec.attrs };
+    if (severity !== undefined) marked[AUDIT_SEVERITY_ATTRIBUTE] = severity;
+    // OMITTED WHEN THE CHIP HAS NO DRAWABLE KIND, rather than stamped empty.
+    // `DELTA_ATTRIBUTE` records why: an attribute on every row with one value
+    // meaning "nothing" is marking the row, not leaving it alone.
+    if (delta?.kind !== undefined) marked[DELTA_ATTRIBUTE] = delta.kind;
     const attrs: Readonly<Record<string, AttrValue>> | undefined =
-      severity === undefined
-        ? spec.attrs
-        : { ...spec.attrs, [AUDIT_SEVERITY_ATTRIBUTE]: severity };
+      severity === undefined && delta?.kind === undefined ? spec.attrs : marked;
     return {
       ...spec,
       ...(attrs === undefined ? {} : { attrs }),
@@ -2276,21 +2363,70 @@ export function renderWorkspace(
 
   const inspector = inspectorView(document, selection);
 
+  // §17c'S LOOP, OVER THE RAIL THE READER IS ACTUALLY LOOKING AT.
+  // `reevaluateView` is handed the WINDOWED scene, so a chip whose row is
+  // scrolled out of the window resolves to no row and draws nowhere — which is
+  // right: a chip is a mark ON a row, and there is no row. The summary still
+  // counts it, because the summary is about the ORDER and not about the window.
+  //
+  // NO WORDS, NO LOOP. `words.change` is optional and its absence is the whole
+  // reason there is no default sentence here; see `ChangeWords`.
+  const changeWords = options.words.change;
+  const orderStatus: OrderStatus = options.orderStatus ?? 'settled';
+  const change = reevaluateView(
+    changeWords === undefined ? null : options.change,
+    railRender.scene,
+    orderStatus,
+  );
+  const deltaByKey = new Map<string, RowDelta>(
+    changeWords === undefined
+      ? []
+      : change.chips.map((chip) => [
+          chip.key,
+          { chip, words: changeWords, kind: deltaKind(chip) },
+        ]),
+  );
+
   const markup = [
-    `<div class="ig-workspace">`,
+    // THE ORDER'S STATUS, ON THE SURFACE ROOT. `mount.ts` already publishes the
+    // same value on the mounted element for a host to read; this puts it where
+    // the stylesheet can reach it in the UNMOUNTED rendering too, so §17c's
+    // "greyed one step, and labelled" is drawn by whoever renders rather than
+    // only by whoever mounts. Same vocabulary, verbatim, so the two agree.
+    `<div class="ig-workspace" data-order="${orderStatus}">`,
     zone(
       'header',
-      headerMarkup(
-        document.host,
-        overlay === null ? '' : renderAuditHeader(overlay, { filtered }),
-        options.words,
-      ),
+      [
+        headerMarkup(
+          document.host,
+          overlay === null ? '' : renderAuditHeader(overlay, { filtered }),
+          options.words,
+        ),
+        // §17c'S SUMMARY LIVES IN THE HEADER, NOT AT THE TOP OF THE RAIL, and
+        // the frame draws them adjacent so this is a real departure worth the
+        // sentence. The rail zone is the SCROLLER — `mount.ts` preserves
+        // `railBefore.scrollTop` across every redraw — so a summary placed
+        // inside it scrolls away from the reader, and §17c's rule is that the
+        // summary "persists until the next edit or an explicit dismiss". A
+        // summary that survives a dismiss but not a scroll is not persistent.
+        //
+        // The header is where #135 settled that a workspace-wide fact is
+        // stated, and it is stated in exactly one zone. The chips carry the
+        // adjacency instead: cause in the header, effect on the row.
+        changeWords === undefined ? '' : renderMarkup(summarySpec(change.summary, changeWords)),
+      ].join(''),
     ),
     zone(
       'rail',
       [
         railSpacer(rail.before, 'before'),
-        renderMarkup(markRail(railRender.scene.root, (key) => severityByKey.get(key))),
+        renderMarkup(
+          markRail(
+            railRender.scene.root,
+            (key) => severityByKey.get(key),
+            (key) => deltaByKey.get(key),
+          ),
+        ),
         railSpacer(rail.after, 'after'),
       ].join(''),
     ),
@@ -2347,6 +2483,11 @@ export function renderWorkspace(
       // it.
       edgeOverlayStylesheet,
       ...(overlay === null ? [] : [auditStylesheet]),
+      // UNCONDITIONAL, for the reason `edgeOverlayStylesheet` above records:
+      // the summary and the chips arrive with the NEXT snapshot after an edit,
+      // so a sheet installed only once something has already changed is missing
+      // on exactly the render that first draws one.
+      reevaluateStylesheet,
       workspaceStylesheet,
     ].join('\n'),
     // CONCATENATED, NOT DEDUPED — and the dedupe that used to sit here is worth

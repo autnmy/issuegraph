@@ -1,12 +1,14 @@
 /**
- * One row's delta chip, in the two places §17c puts it.
+ * The pieces every §17c rendering draws the same way.
  *
  * ## Why this is its own module
  *
- * The chip is drawn twice: as an item in `renderReevaluate`'s standalone list,
- * and ON its row in the mounted workspace. Two spellings of one chip is the
- * drift the package split exists to prevent, so both call this and neither
- * builds spans of its own.
+ * The loop is drawn twice: by `renderReevaluate`, standalone, with its chips in
+ * a list beside the rail; and by the workspace, with the summary in the header
+ * and each chip ON its row. Two spellings of one summary or one chip is the
+ * drift the package split exists to prevent, so both call these and neither
+ * builds spans of its own. Same reasoning as `@issuegraph/viewer`'s own
+ * `parts.ts`, one layer up.
  *
  * ## PLACED IS NOT A STYLING FLAG — it removes a fact the row already states
  *
@@ -37,7 +39,7 @@ import { type ElementSpec, KEY_ATTRIBUTE, element } from '@issuegraph/viewer';
 import type { RankDelta } from '@issuegraph/store';
 
 import type { ChangeWords } from './words.ts';
-import type { PlacedChip } from './view.ts';
+import type { ChangeSummary, PlacedChip } from './view.ts';
 
 /**
  * The attribute a rail row carries while the last edit moved it.
@@ -78,11 +80,82 @@ export function deltaKind(chip: PlacedChip): string | undefined {
   return chip.deltas.find((delta) => delta.presence !== undefined)?.presence;
 }
 
-function countWord(count: number, word: string): readonly ElementSpec[] {
+export function countWord(count: number, word: string): readonly ElementSpec[] {
   return [
     element('span', { class: 'ig-change-count' }, [String(count)]),
     element('span', { class: 'ig-change-word' }, [word]),
   ];
+}
+
+export function summarySpec(summary: ChangeSummary | null, words: ChangeWords): ElementSpec {
+  return element(
+    'div',
+    {
+      class: 'ig-change-summary',
+      // Omitted rather than falsified while there is nothing to report: an
+      // element() attribute whose value is `undefined` is not written at all,
+      // and `data-unchanged="false"` would claim an edit landed and moved
+      // nothing when no edit has landed.
+      'data-unchanged': summary === null ? undefined : summary.unchanged ? 'true' : 'false',
+      'data-op': summary?.op,
+      'data-mutation': summary?.mutationId,
+    },
+    [
+      // THE LIVE REGION IS ALWAYS MOUNTED, AND EMPTY UNTIL THERE IS SOMETHING
+      // TO SAY. A `role="status"` node that is CREATED already carrying its
+      // text is not reliably announced — the region has to exist first and
+      // then have its contents change — so rendering it only alongside a
+      // summary would silently lose the FIRST summary after a load, which is
+      // the one a reader is most likely to be waiting for.
+      //
+      // It is also why the region is this wrapper rather than the content
+      // inside it: an edit that moved something renders a list and one that
+      // moved nothing renders a paragraph, so a role on either would come and
+      // go with the shape. And the dismiss button stays OUTSIDE, or its label
+      // would be re-announced with every summary.
+      //
+      // It is a role, not a timer. Nothing about it expires and the region
+      // stays put until the next edit or an explicit dismissal.
+      element(
+        'div',
+        { class: 'ig-change-line', role: 'status' },
+        summary === null
+          ? []
+          : [
+              // THE ZERO CASE RENDERS, in the summary's own place. An edit that
+              // landed and moved nothing is the finding an owner auditing an
+              // encoding most needs, and drawing nothing for it is the defect
+              // this branch prevents.
+              summary.unchanged
+                ? element('p', { class: 'ig-change-unchanged' }, [words.unchanged])
+                : element(
+                    'ul',
+                    { class: 'ig-change-parts' },
+                    summary.parts.map((part) =>
+                      element('li', { class: 'ig-change-part', 'data-facet': part.facet }, [
+                        ...countWord(part.count, words.facets[part.facet]),
+                      ]),
+                    ),
+                  ),
+            ],
+      ),
+      // ITS OWN CLASS, not the ladder's `.ig-chip`. That class is defined only
+      // in `scale/styles.ts`, so borrowing it would leave this control unstyled
+      // for a host that installs this surface and not that one. Folding the two
+      // chip looks into one rule is the assembling change's call, not this
+      // leaf's — it is the change that first has both on screen at once.
+      //
+      // Absent with no summary: a control that clears nothing is a control that
+      // does nothing, and the region above is what has to persist, not this.
+      summary === null
+        ? null
+        : element(
+            'button',
+            { type: 'button', class: 'ig-change-dismiss', 'data-ig-command': 'dismiss-change' },
+            [words.dismiss],
+          ),
+    ],
+  );
 }
 
 /**

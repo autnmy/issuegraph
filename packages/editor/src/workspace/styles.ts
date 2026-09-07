@@ -883,4 +883,67 @@ export const workspaceStylesheet = `
   font-size: var(--ig-font-size-small);
   color: var(--ig-text-muted);
 }
+
+/* §17c ON THE ROW: the tint, the third column, and the chip in place.
+
+   THE TINT IS DRAWN FROM AN ATTRIBUTE rather than from a class the row is
+   given, which is audit/surface.ts's precedent and its reason: layer 1 owns
+   the row's markup, so layer 2 says WHICH KIND and the stylesheet says what
+   that kind looks like. A row the edit did not touch carries no attribute at
+   all, so none of these rules can reach it, and "unaffected rows are left
+   completely alone" is structural rather than asserted.
+
+   THESE REACH .ig-slot, WHICH IS LAYER 1'S CLASS, and that is a deliberate
+   exception of exactly the shape reevaluate/styles.ts already declares for the
+   greyed rail: only from INSIDE this surface's own root, and only for a state
+   layer 1 does not model. The viewer draws a row; whether the last edit moved
+   that row is a fact only the store knows, so the mark belongs to whoever
+   knows it. Nothing here changes how a row looks outside the workspace.
+
+   COLOUR-MIX ON THE TOKEN THE KIND ALREADY NAMES, at the strength layer 1
+   tints its own rows with. Inventing --ig-row-promoted would put a hue in this
+   package that a host retheming the station colours could not move in step,
+   and inventing a percentage would make this tint drift from the unit tint
+   layer 1 draws with --ig-tint-unit. */
+.ig-workspace .ig-slot[data-ig-delta] {
+  background: color-mix(in srgb, var(--ig-station-ready) var(--ig-tint-unit), transparent);
+}
+
+.ig-workspace .ig-slot[data-ig-delta='newly-held'],
+.ig-workspace .ig-slot[data-ig-delta='down'] {
+  background: color-mix(in srgb, var(--ig-station-held) var(--ig-tint-unit), transparent);
+}
+
+.ig-workspace .ig-slot[data-ig-delta='absent'] {
+  background: color-mix(in srgb, var(--ig-text-muted) var(--ig-tint-unit), transparent);
+}
+
+/* THE THIRD COLUMN IS WHAT PUTS THE CHIP AT THE ROW'S TRAILING EDGE.
+
+   The frame draws the row as rank, body, chip — three columns, the last
+   sized to its content. Layer 1's own rule is a TWO-column grid, so a chip
+   appended as a third child wrapped onto an implicit second row and sat under
+   the rank. That was visible in the first capture of this pair, and it is why
+   this rule is a column template rather than a margin: in a grid, an auto
+   inline margin cannot move an item that is in the wrong row to begin with.
+
+   ONLY ON A ROW THAT HAS A CHIP, so a row with no delta keeps layer 1's own
+   template untouched. */
+.ig-workspace .ig-slot[data-ig-delta] {
+  grid-template-columns: var(--ig-rank-column) 1fr auto;
+}
+
+/* §17c's "write landed · order computing": the PREVIOUS order, held still and
+   greyed one step, with the label saying why.
+
+   THE SAME FILTER, ON THE WORKSPACE'S OWN ROOT. reevaluate/styles.ts greys
+   .ig-reevaluate[data-order='held'] .ig-viewer, and the whole reason it is a
+   filter and not a colour is written there: layer 1 sets color directly on its
+   own descendants, so an inherited colour greys almost nothing, and a list of
+   descendants to override goes stale the first time layer 1 colours something
+   new. The mounted workspace carries a different root class and needs the same
+   treatment, so it gets the same rule rather than a second mechanism. */
+.ig-workspace[data-order='held'] .ig-viewer {
+  filter: grayscale(1);
+}
 `;

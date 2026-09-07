@@ -16,20 +16,27 @@
  * string — would have re-introduced exactly the hand-built escaping surface the
  * spec grammar exists to remove.
  *
- * ## The chips are a KEYED LIST, and this package does not position them
+ * ## The chips are a KEYED LIST here, and the WORKSPACE draws them on the row
  *
  * Said plainly because the earlier wording did not: `data-ig-key` has no
- * browser behaviour of its own. The chips render as a list beside the rail, and
- * putting one ON its row needs that row's geometry — which only a mount has,
- * and this package has no mount. Naming it an overlay while shipping a
- * normal-flow list claimed a positioning this markup cannot do.
+ * browser behaviour of its own. In THIS surface the chips render as a list
+ * beside the rail, and the list is built to stand on its own: every chip NAMES
+ * the row it describes, which is what lets a reader account for the rows that
+ * got no chip.
  *
- * So the list is built to stand on its own instead: every chip NAMES the row it
- * describes, which is what lets a reader account for the rows that got no chip.
- * The key is published for the mount that will position them, and that mount
- * lands with the change that assembles the workspace — the same boundary the
- * scale ladder already draws when it defers listener wiring and focus
- * restoration to whoever owns the mount.
+ * THE DEFERRAL THIS COMMENT USED TO CARRY IS DISCHARGED, and its premise was
+ * wrong rather than merely stale. It said placing a chip on its row "needs that
+ * row's geometry — which only a mount has". It does not: a row is a keyed SPEC
+ * before it is an element, and `workspace/render.ts`'s `markRail` was already
+ * walking that tree to compose the audit's mark onto it. So the workspace
+ * composes the chip the same way — no geometry, no mount, no positioning — and
+ * `parts.ts` holds the one builder both call.
+ *
+ * This surface keeps the list because it is the honest answer for a host that
+ * renders WITHOUT the workspace's rail: there is no row to sit on, so naming
+ * the row in text is the only thing that accounts for the ones that did not
+ * move. `chipSpec`'s `placed` arm is the other half, and it drops that name
+ * because there the row already carries it.
  *
  * ## Two rejected alternatives from the design, recorded so they stay rejected
  *
@@ -48,7 +55,6 @@
  */
 
 import {
-  type ElementSpec,
   type Theme,
   type ViewerDocument,
   element,
@@ -59,8 +65,8 @@ import {
 import type { OrderChange, OrderStatus } from '@issuegraph/store';
 
 import type { ChangeWords } from './words.ts';
-import { chipSpec } from './chip.ts';
-import { type ChangeSummary, type ReevaluateView, reevaluateView } from './view.ts';
+import { chipSpec, summarySpec } from './parts.ts';
+import { type ReevaluateView, reevaluateView } from './view.ts';
 import { reevaluateStylesheet } from './styles.ts';
 
 export interface ReevaluateOptions {
@@ -85,84 +91,6 @@ export interface ReevaluateResult {
   /** The viewer's stylesheet, the theme, and this surface's own. Install all. */
   readonly styles: string;
   readonly diagnostics: readonly string[];
-}
-
-function countWord(count: number, word: string): readonly ElementSpec[] {
-  return [
-    element('span', { class: 'ig-change-count' }, [String(count)]),
-    element('span', { class: 'ig-change-word' }, [word]),
-  ];
-}
-
-function summarySpec(summary: ChangeSummary | null, words: ChangeWords): ElementSpec {
-  return element(
-    'div',
-    {
-      class: 'ig-change-summary',
-      // Omitted rather than falsified while there is nothing to report: an
-      // element() attribute whose value is `undefined` is not written at all,
-      // and `data-unchanged="false"` would claim an edit landed and moved
-      // nothing when no edit has landed.
-      'data-unchanged': summary === null ? undefined : summary.unchanged ? 'true' : 'false',
-      'data-op': summary?.op,
-      'data-mutation': summary?.mutationId,
-    },
-    [
-      // THE LIVE REGION IS ALWAYS MOUNTED, AND EMPTY UNTIL THERE IS SOMETHING
-      // TO SAY. A `role="status"` node that is CREATED already carrying its
-      // text is not reliably announced — the region has to exist first and
-      // then have its contents change — so rendering it only alongside a
-      // summary would silently lose the FIRST summary after a load, which is
-      // the one a reader is most likely to be waiting for.
-      //
-      // It is also why the region is this wrapper rather than the content
-      // inside it: an edit that moved something renders a list and one that
-      // moved nothing renders a paragraph, so a role on either would come and
-      // go with the shape. And the dismiss button stays OUTSIDE, or its label
-      // would be re-announced with every summary.
-      //
-      // It is a role, not a timer. Nothing about it expires and the region
-      // stays put until the next edit or an explicit dismissal.
-      element(
-        'div',
-        { class: 'ig-change-line', role: 'status' },
-        summary === null
-          ? []
-          : [
-              // THE ZERO CASE RENDERS, in the summary's own place. An edit that
-              // landed and moved nothing is the finding an owner auditing an
-              // encoding most needs, and drawing nothing for it is the defect
-              // this branch prevents.
-              summary.unchanged
-                ? element('p', { class: 'ig-change-unchanged' }, [words.unchanged])
-                : element(
-                    'ul',
-                    { class: 'ig-change-parts' },
-                    summary.parts.map((part) =>
-                      element('li', { class: 'ig-change-part', 'data-facet': part.facet }, [
-                        ...countWord(part.count, words.facets[part.facet]),
-                      ]),
-                    ),
-                  ),
-            ],
-      ),
-      // ITS OWN CLASS, not the ladder's `.ig-chip`. That class is defined only
-      // in `scale/styles.ts`, so borrowing it would leave this control unstyled
-      // for a host that installs this surface and not that one. Folding the two
-      // chip looks into one rule is the assembling change's call, not this
-      // leaf's — it is the change that first has both on screen at once.
-      //
-      // Absent with no summary: a control that clears nothing is a control that
-      // does nothing, and the region above is what has to persist, not this.
-      summary === null
-        ? null
-        : element(
-            'button',
-            { type: 'button', class: 'ig-change-dismiss', 'data-ig-command': 'dismiss-change' },
-            [words.dismiss],
-          ),
-    ],
-  );
 }
 
 /** Render the order, and what the last edit did to it. */

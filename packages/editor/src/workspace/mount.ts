@@ -1357,6 +1357,20 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
 
     const result = renderWorkspace(viewer, {
       words: current.words,
+      // §17c's CAUSE AND EFFECT, STRAIGHT OFF THE SNAPSHOT. The store is the
+      // single source of truth for both — `lastChange` persists until the next
+      // edit or an explicit dismissal, and `dismissChange()` is already the
+      // only thing besides the next edit that clears it — so nothing about
+      // "has this been dismissed" is held out here. A second copy of that is
+      // exactly the drift the command grammar exists to avoid.
+      //
+      // `orderStatus` is the SAME value stamped on `surface` below. They cannot
+      // disagree because they are one read of one snapshot, and each is for a
+      // different reader: the attribute on `surface` is the host's, on the
+      // element the host holds; the option is the stylesheet's, on the root the
+      // renderer owns, so an unmounted rendering greys the held rail too.
+      change: snapshot.lastChange ?? null,
+      orderStatus: snapshot.order.status,
       selection: state.selection,
       scale: state.scale,
       rail: { start: state.railStart, count: railCount() },
