@@ -107,16 +107,12 @@ export function marksFor(overlay: EdgeOverlay): readonly EdgeMark[] {
       return declared.includes(mark);
     });
     const tone = owner === undefined ? null : OVERLAY_TREATMENTS[owner].hueToken;
-    marks.push({
-      placement: spec.placement,
-      glyph: spec.glyph,
-      // No accessible name. The canvas is `aria-hidden` and the rail beside it
-      // carries every name, so a labelled mark would be a second, flattened
-      // description of something already said properly. The state is announced
-      // once, on the edge's own `aria-label`, by `attachEdgeOverlays`.
-      label: null,
-      tone,
-    });
+    // NO ACCESSIBLE NAME, and there is no longer a field for one. The canvas is
+    // `aria-hidden`, so nothing inside it can carry a name however it is marked
+    // up — and the state is already announced once, on the edge's own
+    // `aria-label`, by `attachEdgeOverlays`. Saying it twice is what the hidden
+    // canvas exists to prevent.
+    marks.push({ placement: spec.placement, glyph: spec.glyph, tone });
   }
 
   return marks;

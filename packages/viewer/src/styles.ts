@@ -1034,16 +1034,27 @@ export const viewerStylesheet = `
   stroke-width: var(--ig-stroke);
 }
 
-/* A MARK IS DECORATION, AND IT NEVER TAKES A POINTER. Every one of these sits in
-   front of the line it decorates, so without this the mark under the reader's
-   cursor would swallow the click that was aimed at the edge — the same rule the
-   halo already has to follow for the same reason.
+/* A MARK IS HIT-TESTABLE, AND THAT IS THE OPPOSITE OF WHAT IT FIRST SAID.
+
+   It carried a pointer-events none rule, reasoning from the halo: a decoration
+   over a line must not swallow the click aimed at the line. That reasoning does
+   not transfer, because a halo IS the line again and a mark is NOT — every one
+   of these is deliberately offset AWAY from the path, so a click on it does not
+   fall through onto the edge. It falls through onto the canvas, and the viewer's
+   walk climbs to the canvas group and reports a click on nothing, clearing the
+   very selection the reader was making. A conflict's companion is the clearest
+   case: a visibly separate line that could not be pointed at.
+
+   That is a defect this package has already paid for once. The overlay module
+   keeps its pointer identity on the dash clone for exactly this reason, and says
+   so: dropping the identity makes a clone a dead zone over its own edge. Every
+   mark here publishes the same identity, so making it unhittable spent the
+   identity it had just been given.
 
    Colour is set per element, from the token name the caller supplied, for the
    reason the edge hues are set per element: one source for a channel. Nothing
    here paints a state, because nothing here knows what a state is. */
 .ig-edge-mark {
-  pointer-events: none;
   font-family: var(--ig-font-ui);
   font-size: var(--ig-font-size-small);
 }

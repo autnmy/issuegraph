@@ -10,6 +10,7 @@ import {
   type EdgeMark,
   edgeMarkSpecs,
 } from './marks.ts';
+import { viewerStylesheet } from './styles.ts';
 import { defaultTheme } from './theme.ts';
 
 const IDENTITY = 'blocked-by|a|b';
@@ -68,7 +69,7 @@ function attrsOf(spec: ElementSpec): Readonly<Record<string, unknown>> {
 }
 
 function marked(placement: EdgeMark['placement'], glyph: string | null = '✕'): EdgeMark {
-  return { placement, glyph, label: null, tone: null };
+  return { placement, glyph, tone: null };
 }
 
 describe('a mark is placed by the layer that computed the layout', () => {
@@ -213,13 +214,13 @@ describe('a mark is placed by the layer that computed the layout', () => {
     );
   });
 
-  it('grows a worded chip AWAY from the line rather than centring it', () => {
-    // A centred box half as wide as the word reaches back across the line the
-    // sideways offset moved it off, which is how the chip kept landing on the
-    // arrowhead. Anchoring the near edge makes it grow outward at any length
-    // and in any font — the only fix available to a layer that cannot measure.
+  it('grows a worded chip away from its own card, not back across it', () => {
+    // A centred box half as wide as the word reaches back across the bound the
+    // sideways offset just cleared, which is how the chip kept landing on the
+    // card. Anchoring the near edge makes it grow outward at any length and in
+    // any font — the only fix available to a layer that cannot measure a glyph.
     const [chip] = edgeMarkSpecs(
-      [{ placement: 'both-ends', glyph: 'writing…', label: null, tone: null }],
+      [{ placement: 'both-ends', glyph: 'writing…', tone: null }],
       verticalGeometry(),
       defaultTheme,
       IDENTITY,
@@ -233,7 +234,7 @@ describe('a mark is placed by the layer that computed the layout', () => {
     // The same contract the edge hues already use: a host that rethemes moves
     // the mark and the stroke together, and nothing here holds a value.
     const [chip] = edgeMarkSpecs(
-      [{ placement: 'beside', glyph: '!', label: null, tone: '--ig-state-invalid' }],
+      [{ placement: 'beside', glyph: '!', tone: '--ig-state-invalid' }],
       verticalGeometry(),
       defaultTheme,
       IDENTITY,
@@ -257,33 +258,12 @@ describe('a mark is placed by the layer that computed the layout', () => {
     assert.deepEqual(specs, []);
   });
 
-  it('stays out of the accessibility tree unless a host names the mark', () => {
-    // The canvas is `aria-hidden` and the rail beside it carries every name, so
-    // an unlabelled mark that announced itself would be a second, flattened
-    // description of something already said properly.
-    const [quiet] = edgeMarkSpecs([marked('beside', '!')], verticalGeometry(), defaultTheme, IDENTITY, SOLID);
-    assert.ok(quiet !== undefined);
-    assert.equal(attrsOf(quiet)['aria-hidden'], 'true');
-    assert.equal(attrsOf(quiet)['aria-label'], undefined);
-
-    const [named] = edgeMarkSpecs(
-      [{ placement: 'beside', glyph: '!', label: 'refused', tone: null }],
-      verticalGeometry(),
-      defaultTheme,
-      IDENTITY,
-      SOLID,
-    );
-    assert.ok(named !== undefined);
-    assert.equal(attrsOf(named)['aria-label'], 'refused');
-    assert.equal(attrsOf(named)['aria-hidden'], undefined);
-  });
-
   it('carries the relationship’s own dash onto every companion stroke', () => {
     // A companion drops `class` like every mark, so `.ig-edge[data-edge=…]` no
     // longer patterns it. Left alone, a SOLID second version draws beside a
     // dotted `duplicate-of` — which is not the same line twice, it is a
     // different relationship drawn next to the first, with the dash channel
-    // silently spent exactly where a reader is comparing two versions.
+    // silently spent exactly where a reader is being asked to compare.
     const geometry = verticalGeometry();
     for (const drawing of [DOTTED, { ...DOTTED, doubled: true }]) {
       const specs = edgeMarkSpecs([marked('companion', null)], geometry, defaultTheme, IDENTITY, drawing);
@@ -292,7 +272,6 @@ describe('a mark is placed by the layer that computed the layout', () => {
         assert.equal(attrsOf(spec)['stroke-dasharray'], DOTTED.dashArray);
       }
     }
-    // And a solid relationship stays solid rather than gaining a pattern.
     const [solid] = edgeMarkSpecs([marked('companion', null)], geometry, defaultTheme, IDENTITY, SOLID);
     assert.ok(solid !== undefined);
     assert.equal(attrsOf(solid)['stroke-dasharray'], null);
@@ -304,9 +283,6 @@ describe('a mark is placed by the layer that computed the layout', () => {
     // line. `currentColor` therefore renders a `pending-write` chip grey beside
     // the red line it belongs to, dropping the channel that says WHICH
     // relationship is being written.
-    //
-    // `overlay/render.ts` states its dashed clone's stroke inline for exactly
-    // this reason, in a comment about exactly this trap — one element over.
     const specs = edgeMarkSpecs(
       [marked('beside', '!'), marked('companion', null)],
       verticalGeometry(),
@@ -317,9 +293,6 @@ describe('a mark is placed by the layer that computed the layout', () => {
     assert.ok(specs.length > 0);
     for (const spec of specs) {
       const attrs = attrsOf(spec);
-      // A glyph paints with `fill` and a line with `stroke` — the companion sets
-      // `fill: none` deliberately, so read the one that carries the colour for
-      // this element rather than the first that happens to be set.
       const painted = spec.tag === 'text' ? attrs['fill'] : attrs['stroke'];
       assert.equal(painted, `var(${SOLID.hueToken})`, `${String(spec.tag)} painted ${String(painted)}`);
     }
@@ -327,7 +300,7 @@ describe('a mark is placed by the layer that computed the layout', () => {
 
   it('lets a state that HAS a hue override the relationship’s', () => {
     const [spec] = edgeMarkSpecs(
-      [{ placement: 'beside', glyph: '!', label: null, tone: '--ig-state-invalid' }],
+      [{ placement: 'beside', glyph: '!', tone: '--ig-state-invalid' }],
       verticalGeometry(),
       defaultTheme,
       IDENTITY,
@@ -363,33 +336,16 @@ describe('a mark is placed by the layer that computed the layout', () => {
       const attrs = attrsOf(spec);
       const transform = attrs['transform'];
       if (typeof transform === 'string') {
-        // A companion: its shift must carry it toward the channel, so negative x.
         const match = /translate\((-?[\d.]+) /.exec(transform);
         assert.ok(match !== null);
         assert.ok(Number(match[1]) < 0, `companion shifted toward the cards: ${transform}`);
         continue;
       }
-      // A glyph: its own x must sit on the channel side of the chord.
       assert.ok(
         Number(attrs['x']) < geometry.start.x,
         `${String(attrs[MARK_PLACEMENT_ATTRIBUTE])} landed at x=${String(attrs['x'])}, past the chord`,
       );
     }
-  });
-
-  it('grows a worded chip away from its card, not back across the line', () => {
-    // The anchor has to follow the side. With the chip moved left of a left
-    // bound, a `start` anchor would grow it straight back over the card the
-    // offset just cleared.
-    const [chip] = edgeMarkSpecs(
-      [{ placement: 'both-ends', glyph: 'writing…', label: null, tone: null }],
-      verticalGeometry(),
-      defaultTheme,
-      IDENTITY,
-      SOLID,
-    );
-    assert.ok(chip !== undefined);
-    assert.equal(attrsOf(chip)['text-anchor'], 'end');
   });
 
   it('clears each end against ITS OWN card when the two differ', () => {
@@ -399,7 +355,7 @@ describe('a mark is placed by the layer that computed the layout', () => {
     // card — which is exactly what a same-column-only fix left behind.
     const geometry = crossColumnGeometry();
     const [from, to] = edgeMarkSpecs(
-      [{ placement: 'both-ends', glyph: 'writing…', label: null, tone: null }],
+      [{ placement: 'both-ends', glyph: 'writing…', tone: null }],
       geometry,
       defaultTheme,
       IDENTITY,
@@ -407,11 +363,9 @@ describe('a mark is placed by the layer that computed the layout', () => {
     );
     assert.ok(from !== undefined && to !== undefined);
 
-    // Right bound: cleared rightward, and grown rightward.
     assert.ok(Number(attrsOf(from)['x']) > geometry.start.x);
     assert.equal(attrsOf(from)['text-anchor'], 'start');
 
-    // Left bound: cleared leftward, and grown leftward. Opposite, on one edge.
     assert.ok(Number(attrsOf(to)['x']) < geometry.end.x);
     assert.equal(attrsOf(to)['text-anchor'], 'end');
   });
@@ -425,6 +379,53 @@ describe('a mark is placed by the layer that computed the layout', () => {
     assert.ok(
       Number(attrsOf(cross)['x']) < geometry.end.x,
       'a left-bound arrival is cleared leftward',
+    );
+  });
+
+  it('stays out of the accessibility tree, and cannot be talked into it', () => {
+    // The canvas is `aria-hidden`, and that excludes the whole SUBTREE — so no
+    // descendant can carry an accessible name however it is marked up. An
+    // earlier draft took a `label` and rendered `role="img"` with an
+    // `aria-label` when a host supplied one; it was a field that lied, because
+    // the renderer could never honour the contract it advertised.
+    //
+    // There is no label option now, and every mark is hidden explicitly rather
+    // than by inheritance, so the intent is legible on the element itself.
+    const specs = edgeMarkSpecs(
+      [marked('beside', '!'), marked('terminal'), marked('both-ends', 'writing…')],
+      verticalGeometry(),
+      defaultTheme,
+      IDENTITY,
+      SOLID,
+    );
+    assert.ok(specs.length > 0);
+    for (const spec of specs) {
+      const attrs = attrsOf(spec);
+      assert.equal(attrs['aria-hidden'], 'true');
+      assert.equal(attrs['aria-label'], undefined);
+      assert.equal(attrs['role'], undefined);
+    }
+  });
+
+  it('can be pointed at, because it publishes an identity worth asking for', () => {
+    // A MARK IS NOT A HALO. A halo is the line again, so a click passing through
+    // it lands on the line; a mark is deliberately offset AWAY, so a click
+    // passing through it lands on the canvas — and the viewer's walk then climbs
+    // to the canvas group and reports a click on nothing, clearing the very
+    // selection the reader was making. A conflict's companion is the clearest
+    // case: a visibly separate line that could not be pointed at.
+    //
+    // `overlay/render.ts` already paid for this once and keeps `data-ig-group`
+    // on its dash clone for exactly this reason. Every mark publishes the same
+    // identity, so it must also be hit-testable, or the identity is spent.
+    //
+    // Pinned on the STYLESHEET, because that is where it was lost: the element
+    // carried the identity the whole time and a `pointer-events: none` rule made
+    // it unaskable.
+    assert.equal(
+      /\.ig-edge-mark\s*\{[^}]*pointer-events\s*:\s*none/.test(viewerStylesheet),
+      false,
+      'a mark that cannot be clicked wastes the identity it publishes',
     );
   });
 

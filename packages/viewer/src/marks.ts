@@ -34,11 +34,11 @@
  *
  * ## Content is opaque, and the tone is a token NAME
  *
- * A mark carries a glyph and an accessible label the host supplies verbatim,
- * because "✕" and "writing…" belong to whoever knows what they mean. Colour
- * travels as the NAME of a theme custom property rather than a value, which is
- * the contract the edge vocabulary already uses for its own hues: a host that
- * rethemes moves both at once, and nothing here holds a colour.
+ * A mark carries a glyph the host supplies verbatim, because "✕" and "writing…"
+ * belong to whoever knows what they mean. Colour travels as the NAME of a theme
+ * custom property rather than a value, which is the contract the edge vocabulary
+ * already uses for its own hues: a host that rethemes moves both at once, and
+ * nothing here holds a colour.
  *
  * ## The offset is derived, never chosen
  *
@@ -67,11 +67,30 @@ export interface EdgeMark {
   readonly placement: EdgeMarkPlacement;
   /** Drawn verbatim. Absent for a placement whose whole form is the line. */
   readonly glyph?: string | null;
-  /** The accessible name for this mark, if it should have one of its own. */
-  readonly label?: string | null;
   /** A theme custom-property NAME, e.g. `--ig-state-failed`. Never a value. */
   readonly tone?: string | null;
 }
+
+/*
+ * THERE IS NO `label`, AND ITS ABSENCE IS DELIBERATE.
+ *
+ * An earlier draft took one and rendered `role="img"` with an `aria-label` when a
+ * host supplied it. That could never have worked: the canvas is an
+ * `<svg aria-hidden="true">`, and `aria-hidden` excludes the whole SUBTREE, so no
+ * descendant of it can carry an accessible name however it is marked up.
+ *
+ * It was a field that lied — a published option whose contract the renderer
+ * cannot honour — which is worse than not having one, because a host wiring it
+ * gets silence rather than an error. This package's own rule is that a control
+ * which cannot complete the act it advertises is not drawn; the same applies to
+ * an option that cannot deliver what it promises.
+ *
+ * Marks need no accessible name of their own. Every state is announced once, on
+ * the edge's own `aria-label`, and the rail beside the canvas carries every node,
+ * name and tab stop. A second, flattened description of the same fact is what the
+ * canvas is hidden to avoid. If a host ever does need one, it belongs in the
+ * RAIL, which is where accessible content already lives.
+ */
 
 /** The class every mark carries, so a host can find them and a sheet can style them. */
 export const EDGE_MARK_CLASS = 'ig-edge-mark';
@@ -195,11 +214,16 @@ function toneOf(mark: EdgeMark, drawing: EdgeDrawing): string {
 /**
  * One glyph, placed.
  *
- * `aria-hidden` unless the host gave it a label. The canvas as a whole is
- * already hidden from the accessibility tree — every node, name and tab stop is
- * carried by the HTML rail beside it — so a mark that announced itself would be
- * a second, flattened description of something already said properly. A host
- * that wants one says so by supplying a label.
+ * IT ANNOUNCES NOTHING, and cannot: the canvas is `aria-hidden`, so its whole
+ * subtree is out of the accessibility tree whatever this writes. That is also
+ * the right answer — every node, name and tab stop is carried by the HTML rail
+ * beside it, and the state is announced once on the edge's own `aria-label`, so
+ * a mark that spoke would be a second, flattened description of something
+ * already said properly.
+ *
+ * `aria-hidden` is still written rather than left implicit, so the intent is
+ * legible on the element rather than inherited from an ancestor a reader of this
+ * function cannot see.
  */
 function glyphMark(
   at: Point,
@@ -220,7 +244,6 @@ function glyphMark(
   anchor: 'middle' | 'start' | 'end' = 'middle',
 ): ElementSpec | null {
   if (mark.glyph === undefined || mark.glyph === null || mark.glyph === '') return null;
-  const labelled = mark.label !== undefined && mark.label !== null && mark.label !== '';
   return svg(
     'text',
     {
@@ -237,7 +260,7 @@ function glyphMark(
       'text-anchor': anchor,
       'dominant-baseline': 'middle',
       fill: toneOf(mark, drawing),
-      ...(labelled ? { role: 'img', 'aria-label': mark.label } : { 'aria-hidden': 'true' }),
+      'aria-hidden': 'true',
     },
     [mark.glyph],
   );
