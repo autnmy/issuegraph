@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import { EDGE_FIELDS } from '@issuegraph/core';
 
-import { EDGE_TREATMENTS, dashArrayFor, treatmentFor } from './vocabulary.ts';
+import { EDGE_TREATMENTS, dashArrayFor, labelFrom, treatmentFor } from './vocabulary.ts';
 
 describe('the edge vocabulary', () => {
   it('treats every relationship the format declares', () => {
@@ -60,5 +60,38 @@ describe('the edge vocabulary', () => {
 
   it('is frozen', () => {
     assert.ok(Object.isFrozen(EDGE_TREATMENTS));
+  });
+});
+
+describe('labelFrom words an edge from the end the reader stands at', () => {
+  it('gives an asymmetric edge its own verb at each end', () => {
+    // The failure this exists to prevent is not a missing word, it is an
+    // INVERTED one: read from the far end, `duplicate-of` worded as its forward
+    // label asserts that the reader's subject is the duplicate when the other
+    // issue is.
+    for (const field of EDGE_FIELDS.filter((one) => !treatmentFor(one).symmetric)) {
+      const treatment = treatmentFor(field);
+      assert.equal(labelFrom(treatment, true), treatment.label);
+      assert.notEqual(labelFrom(treatment, false), treatment.label);
+      assert.equal(labelFrom(treatment, false), treatment.reverseLabel);
+    }
+  });
+
+  it('gives a symmetric edge one word at both ends', () => {
+    for (const field of EDGE_FIELDS.filter((one) => treatmentFor(one).symmetric)) {
+      const treatment = treatmentFor(field);
+      assert.equal(labelFrom(treatment, true), treatment.label);
+      assert.equal(labelFrom(treatment, false), treatment.label);
+    }
+  });
+
+  it('covers every field the format has', () => {
+    // The control that makes the two loops above mean something: between them
+    // they must account for the whole vocabulary, so a sixth field cannot be
+    // added and silently tested by neither.
+    const symmetric = EDGE_FIELDS.filter((one) => treatmentFor(one).symmetric).length;
+    const asymmetric = EDGE_FIELDS.filter((one) => !treatmentFor(one).symmetric).length;
+    assert.equal(symmetric + asymmetric, EDGE_FIELDS.length);
+    assert.ok(symmetric > 0 && asymmetric > 0);
   });
 });

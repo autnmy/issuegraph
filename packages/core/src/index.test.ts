@@ -9,6 +9,7 @@ import {
   EDGE_CARDINALITY,
   EDGE_FIELDS,
   edgeIdentity,
+  edgeIdentityEnd,
   EVIDENCE_VALUES,
   FIELDS,
   FRONTMATTER_KEY,
@@ -323,6 +324,91 @@ test('an edge identity leaves every well-formed reference byte-identical', () =>
       `${JSON.stringify(ref)} did not encode the way encodeURIComponent does`,
     );
   }
+});
+
+test('an identity names both the references it was built from, and no others', () => {
+  // The function exists so a consumer never splits an identity itself. Driven
+  // over every field so a symmetric one — whose endpoints are SORTED into the
+  // string — is answered from the string rather than from the order the caller
+  // happened to write the pair in.
+  for (const field of EDGE_FIELDS) {
+    const id = edgeIdentity(field, 'owner/repo#9', 'b c');
+    assert.notEqual(edgeIdentityEnd(id, 'owner/repo#9'), null, field);
+    assert.notEqual(edgeIdentityEnd(id, 'b c'), null, field);
+    assert.equal(edgeIdentityEnd(id, 'owner/repo#8'), null, field);
+  }
+});
+
+test('a DIRECTED identity still names the end that declared the relationship', () => {
+  // THE HALF OF THE FORMAT THAT DOES KEEP ITS ORDER. The carrier is the issue
+  // whose own frontmatter declares the relationship (§4.3), which is `from`,
+  // and `edgeIdentity` sorts the endpoints of the SYMMETRIC fields only — so
+  // for these three the first segment IS the declaring end. A revision of this
+  // function answered a bare `true`/`false` for every field on the argument
+  // that a sort had thrown the order away; that argument is the symmetric
+  // half's, and read across the whole vocabulary it discarded a fact the
+  // string still carries.
+  //
+  // WRITTEN FROM `z` TO `a`, deliberately: a pair already in sorted order
+  // would answer `carrier` whether or not anything sorted it.
+  for (const field of EDGE_FIELDS.filter((each) => !isSymmetricEdgeField(each))) {
+    const written = edgeIdentity(field, 'z', 'a');
+    assert.equal(edgeIdentityEnd(written, 'z'), 'carrier', field);
+    assert.equal(edgeIdentityEnd(written, 'a'), 'far', field);
+    // And the same pair declared the other way round is the opposite claim,
+    // which is why these fields are not sorted in the first place.
+    const reversed = edgeIdentity(field, 'a', 'z');
+    assert.equal(edgeIdentityEnd(reversed, 'z'), 'far', field);
+    assert.equal(edgeIdentityEnd(reversed, 'a'), 'carrier', field);
+  }
+});
+
+test('a SYMMETRIC identity cannot be asked WHICH end declared the relationship', () => {
+  // THE LIMIT, pinned rather than only argued in a doc comment. The two
+  // spellings of one symmetric relationship produce one identity, so `from` is
+  // not a function of the string. A revision of this function reported the
+  // first segment as the carrier; for these two fields that is the sort order,
+  // and it answers the same end for a pair written from either. `either` is
+  // the honest answer and there is no other one to reach for.
+  for (const field of SYMMETRIC_EDGE_FIELDS) {
+    const written = edgeIdentity(field, 'z', 'a');
+    assert.equal(written, edgeIdentity(field, 'a', 'z'), field);
+    assert.equal(edgeIdentityEnd(written, 'z'), 'either', field);
+    assert.equal(edgeIdentityEnd(written, 'a'), 'either', field);
+  }
+});
+
+test('naming compares the ENCODED reference, not the raw one', () => {
+  // The failure this exists to prevent, stated as an assertion: a caller
+  // splitting the identity itself has no encoder, so it compares the raw
+  // reference against an encoded segment and answers `false` for every
+  // reference the format actually admits — `#`, `/` and a space are all
+  // escaped, and §4.2 admits all three.
+  const id = edgeIdentity('blocked-by', 'owner/repo#9', '1');
+  assert.ok(id.includes('owner%2Frepo%239'), id);
+  assert.equal(edgeIdentityEnd(id, 'owner/repo#9'), 'carrier');
+  // And the encoded spelling is not itself a reference: a host holding
+  // `owner%2Frepo%239` names a different issue.
+  assert.equal(edgeIdentityEnd(id, 'owner%2Frepo%239'), null);
+});
+
+test('naming is total over strings this package did not write', () => {
+  // A host may hand back anything at all — a value it invented, an empty
+  // string, a reference with the separator inside it. None of them throws and
+  // none of them names an issue by accident.
+  for (const id of ['', 'blocked-by', 'blocked-by|1', 'a|b|c|d', '|||']) {
+    assert.equal(edgeIdentityEnd(id, '1'), null, JSON.stringify(id));
+  }
+  // A THREE-SEGMENT STRING WHOSE FIELD IS NOT ONE OF OURS STILL NAMES ITS ENDS,
+  // and answers `either` about them: nothing here wrote it, so whether its
+  // endpoints were sorted is unknown — and reporting an order that may never
+  // have been written is the mistake this shape exists to avoid.
+  assert.equal(edgeIdentityEnd('made-up|1|2', '1'), 'either');
+  assert.equal(edgeIdentityEnd('made-up|1|2', '3'), null);
+  // A reference carrying the separator is encoded on both sides of the
+  // question, so it cannot forge a match against either segment.
+  assert.equal(edgeIdentityEnd(edgeIdentity('blocked-by', '1|2', '3'), '1'), null);
+  assert.equal(edgeIdentityEnd(edgeIdentity('blocked-by', '1|2', '3'), '1|2'), 'carrier');
 });
 
 test('a lone surrogate cannot collide with another reference', () => {

@@ -122,6 +122,31 @@ export function treatmentFor(field: EdgeField): EdgeTreatment {
 }
 
 /**
+ * A relationship's word, read from the end the reader is standing at.
+ *
+ * THE VERB CHANGES, NOT THE NOUN. Read from the far end an asymmetric edge has
+ * its own plain wording and the vocabulary carries it, so a surface never has
+ * to say "(incoming)" and leave the reader to invert a sentence in their head.
+ *
+ * IT IS A FUNCTION HERE RATHER THAN A TEST AT EACH CALL SITE, and that is the
+ * whole reason it exists: the badge row in `parts.ts` and §17a's inspector row
+ * in `@issuegraph/editor` draw the SAME edge one zone apart on one screen, and
+ * two copies of this expression would be free to disagree the moment either was
+ * edited. They were, briefly, and a comment at one of them claimed to be "layer
+ * 1's own expression" while being a second copy of it — which is the failure
+ * this package names everywhere else: not a wrong answer, a second answer.
+ *
+ * A symmetric kind takes {@link EdgeTreatment.label} at either end, because
+ * `serialize-with` and `together-with` state one fact whichever way round they
+ * are stored; `reverseLabel` is `undefined` on them for that reason rather than
+ * by omission. The `??` is not a second answer to that question — it is what
+ * the optional field's type requires, and it lands on the same string.
+ */
+export function labelFrom(treatment: EdgeTreatment, outgoing: boolean): string {
+  return outgoing || treatment.symmetric ? treatment.label : (treatment.reverseLabel ?? treatment.label);
+}
+
+/**
  * The dash patterns, as SVG `stroke-dasharray` values keyed by dash name.
  *
  * `solid` and `double` carry none: a solid line has no pattern, and a double

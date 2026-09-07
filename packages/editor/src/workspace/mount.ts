@@ -47,7 +47,7 @@
  */
 
 import { edgeIdentity } from '@issuegraph/core';
-import type { EdgeKind, GraphDocument, MutationId, Store, StoreSnapshot } from '@issuegraph/store';
+import type { EdgeId, EdgeKind, GraphDocument, MutationId, Store, StoreSnapshot } from '@issuegraph/store';
 import { nextDocument } from '@issuegraph/store';
 import {
   type Scene,
@@ -59,7 +59,7 @@ import {
 } from '@issuegraph/viewer';
 
 import type { AuditInput } from '../audit/findings.ts';
-import { type CreateInteraction, type KeyboardContext, keyIntent } from '../create/keys.ts';
+import { type CreateInteraction, type KeyboardContext, KIND_KEYS, keyIntent } from '../create/keys.ts';
 import { pickerPlacement } from '../create/placement.ts';
 import type { CandidateSource } from '../firstpass/candidates.ts';
 import { type FirstPassContext, firstPassIntent } from '../firstpass/keys.ts';
@@ -79,7 +79,7 @@ import {
   type HostEffect,
   type HostState,
   INITIAL_HOST_STATE,
-  KINDS,
+  editCarrier,
   railRowAt,
   railSlackFor,
   railWindowTarget,
@@ -88,7 +88,7 @@ import {
   targetMatches,
 } from './host.ts';
 import type { RailWindow } from './rail.ts';
-import { type WorkspaceWords, renderWorkspace } from './render.ts';
+import { type WorkspaceRefusal, type WorkspaceWords, renderWorkspace } from './render.ts';
 import { selectedEdgeId, selectedKey } from './selection.ts';
 
 /** What the canvas zone draws: the editor's scale ladder, or the viewer's tree projection. */
@@ -103,15 +103,26 @@ export type CanvasMode = (typeof CANVAS_MODES)[number];
  * picker's vocabulary, which the mount draws for a selected edge; `keys` is
  * the one optional entry, because a host may prefer to document the keyboard
  * elsewhere.
+ *
+ * `addRelationship` AND `cancel` MOVED DOWN to {@link WorkspaceWords} with the
+ * controls they name: `renderWorkspace` draws `+ add` and the numbered kind
+ * list now, so a host rendering markup without mounting needs both. They are
+ * still readable here, through the extension, and a host supplies each exactly
+ * once — redeclaring one on this interface would be a second place for the same
+ * word to be documented and the first place for the two to disagree.
  */
 export interface MountWords extends WorkspaceWords {
   readonly picker: PickerWords;
-  /** The control that begins a relationship from the selected issue. */
-  readonly addRelationship: string;
-  /** The control that proposes deleting the selected edge. */
+  /**
+   * The control that proposes deleting the SELECTED edge, drawn beside the
+   * retype picker.
+   *
+   * Distinct from `WorkspaceWords.remove`, which names the glyph control each
+   * relationship ROW carries: this one is a labelled button about the one edge
+   * the panel is filtered to, and a glyph button needs a name a row-independent
+   * label cannot supply.
+   */
   readonly deleteRelationship: string;
-  /** The control that returns a draft to idle. */
-  readonly cancel: string;
   /** The chooser's sentence tail while no target is known yet. */
   readonly chooseKind: string;
   /** The target search's accessible name. */
@@ -330,6 +341,42 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
    */
   const appliedWrites = new Map<string, MutationId>();
 
+  /**
+   * The issue each unsettled write is about, answered once and then remembered.
+   *
+   * THE ANSWER GOES STALE, WHICH IS WHY IT IS KEPT RATHER THAN RE-ASKED. A
+   * refusal reaches the panel through the ledger, long after the act that
+   * caused it, and `editCarrier` reads the LANDED document — so between the two
+   * moments a sibling write can land and take the relationship away, leaving
+   * that call with nothing but the edge's identity. An identity records which
+   * two issues a relationship was between, and for a SYMMETRIC field it does not
+   * record which of them declared it: `edgeIdentity` sorts those endpoints, so
+   * the declaring end is not in the string at all. Re-asking therefore answered a
+   * different issue from the one the edit went out under, for exactly the pairs
+   * whose stored `from` sorted after their `to` — and `renderWorkspace` draws a
+   * refusal only on the panel it names, so it was drawn where the reader was
+   * not. Asked once, there is nothing for a second answer to disagree with.
+   *
+   * TWO WAYS IN, AND THE EARLIER ONE WINS. `reduceHost` decides the carrier as
+   * it emits the edit — before `store.propose` is even called, from the
+   * document as it stood when the reader acted — and `perform` records it under
+   * the identity the store mints. A write this mount did not emit (a host
+   * proposing on the same store) has no such moment, so it is answered the first
+   * time this render sees it in the ledger, which is the earliest moment there
+   * is. Neither is ever recomputed.
+   *
+   * ITS LIFETIME IS THE LEDGER'S, exactly. A record that lands is REMOVED from
+   * `snapshot.writes` — that is the store's own contract — and a refused or
+   * failed one stays until the reader discards it, which is precisely as long as
+   * it can still be drawn. So the map is pruned to the ledger's own keys on
+   * every render and needs no rule of its own. Clearing it beside
+   * `appliedWrites` was the alternative and is wrong in both directions: those
+   * clears are the first pass's lifecycle, not the write ledger's, so a queue
+   * that closes over a still-refused write would forget where to state it, and
+   * a write settling with no queue in sight would never be forgotten at all.
+   */
+  const writeCarriers = new Map<MutationId, string | null>();
+
   const railCount = (): number => current.railCount ?? MOUNT_RAIL_COUNT;
   const theme = (): Theme => resolveTheme(current.theme);
 
@@ -370,7 +417,10 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   const perform = (effect: HostEffect): void => {
     switch (effect.kind) {
       case 'propose':
-        void store.propose(effect.proposal);
+        // THE CARRIER IS RECORDED, NOT RE-DERIVED. See `writeCarriers`: the
+        // reducer decided it from the document the reader acted on, and the
+        // `MutationId` that binds the two exists only here.
+        writeCarriers.set(store.propose(effect.proposal).mutationId, effect.carrier);
         return;
       case 'retry': {
         // A conflict retries against the LATEST document. The store owns that
@@ -497,6 +547,12 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         }
         const handle = store.propose(effect.proposal);
         appliedWrites.set(effect.candidateId, handle.mutationId);
+        // AND THE SAME RECORDING AS THE PLAIN ROUTE, because this is the same
+        // kind of event: a write going out with a panel it belongs to. The
+        // effect carries one now — it used to be built without going through
+        // the reducer's emit funnel at all, so a refused first-pass answer had
+        // no panel to be stated on.
+        writeCarriers.set(handle.mutationId, effect.carrier);
         return;
       }
       case 'first-pass-withdraw': {
@@ -549,15 +605,22 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     chooser.append(
       el('p', { class: 'ig-chrome-sentence' }, [`#${source} … ${target === null ? words.chooseKind : `#${target}`}`]),
     );
+    // THE DIGITS ARE THE KEYBOARD'S OWN, READ OFF `KIND_KEYS`. They used to be
+    // computed here as `index + 1` over a `KINDS` alias in `host.ts` — a second
+    // construction of `create/keys.ts`'s table: the two agreed only because
+    // both walked `EDGE_FIELDS`, and nothing pinned them, so a chooser could
+    // have told the reader to press a key the key map resolved to a different
+    // kind. That alias is gone with its last caller, so this is now the only
+    // numbering in the package.
     const list = el('div', { class: 'ig-chrome-kinds' });
-    KINDS.forEach((kind, index) => {
+    for (const entry of KIND_KEYS) {
       list.append(
-        button(`${String(index + 1)} ${words.picker.kinds[kind]}`, 'kind', {
-          'data-ig-value': kind,
-          'data-edge': kind,
+        button(`${entry.key} ${words.picker.kinds[entry.edgeKind]}`, 'kind', {
+          'data-ig-value': entry.edgeKind,
+          'data-edge': entry.edgeKind,
         }),
       );
-    });
+    }
     chooser.append(list, button(words.cancel, 'cancel', { class: 'ig-chrome-button ig-chrome-quiet' }));
     return chooser;
   };
@@ -599,20 +662,26 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     const { words } = current;
     const panel = el('div', { class: 'ig-chrome', 'data-chrome': 'inspector' });
     const edgeId = selectedEdgeId(state.selection);
-    const issue = selectedKey(state.selection);
     const { draft } = state;
 
+    // WHAT IS LEFT HERE IS WHAT NEEDS A DOM. `+ add` and the numbered kind list
+    // are `renderWorkspace`'s now — they are markup, and a host rendering the
+    // package without mounting had a panel it could only read. The retype
+    // picker and the target search stay: the first is another package's
+    // renderer composed as markup, and the second is a live input over
+    // `state.targetQuery` with a caret to preserve, which a markup-only
+    // renderer cannot be.
+    //
+    // THE CHAIN'S EXCLUSIVITY IS NOW SPLIT ACROSS TWO LAYERS, and that is why
+    // `renderWorkspace` is told about the draft and the drop: it re-states the
+    // same guards for the steps it draws, rather than the two surfaces each
+    // drawing whatever they can see.
     if (edgeId !== null) {
       const picker = el('div', { class: 'ig-chrome-picker' });
       // Package-rendered markup, escaped by the package.
       picker.innerHTML = renderPicker(document, edgeId, { words: words.picker, theme: theme() }).markup;
       panel.append(picker, button(words.deleteRelationship, 'delete', { class: 'ig-chrome-button ig-chrome-danger' }));
-    } else if (draft.source === null) {
-      if (issue !== null) panel.append(button(words.addRelationship, 'add'));
-    } else if (draft.kind === null) {
-      // Placed at the drop point when a canvas drag got here; inline otherwise.
-      if (state.drop === null) panel.append(kindChooser(draft.source, draft.target));
-    } else if (draft.target === null) {
+    } else if (draft.source !== null && draft.kind !== null && draft.target === null) {
       panel.append(targetSearch(document, draft.source, draft.kind));
     }
 
@@ -809,8 +878,16 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     if (destroyed) return;
     const snapshot = store.getSnapshot();
     const document_ = landed();
-    // A landed write can retire what the state names; agree with the document first.
-    state = reconcileHost(state, document_);
+    // WHAT THE STORE IS NOT SHOWING, computed before the reconcile rather than
+    // beside the edges below, because the reconcile is the first reader of it:
+    // an unsettled retype or flip hides the edge it replaces, and the landed
+    // document the reconcile is otherwise handed still carries it. Both halves
+    // of "the reader can no longer see this" reach `reconcileHost` together.
+    const shown = new Set(snapshot.projected.map((edge) => edge.id));
+    const hidden = new Set(snapshot.landed.map((edge) => edge.id).filter((id) => !shown.has(id)));
+    // A landed write can retire what the state names, and an unsettled one can
+    // hide it; agree with what is on show first.
+    state = reconcileHost(state, document_, hidden);
     const projected = current.project(snapshot);
     // WHAT TO DRAW IS THE STORE'S PROJECTION, by the store's own contract:
     // `projected` is "landed plus every unsettled edit, each carrying its
@@ -825,8 +902,6 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // projection hides the old one until the write settles; the host's
     // document still carries it, so without this the old line and the new
     // dashed one were drawn together for the life of the write.
-    const shown = new Set(snapshot.projected.map((edge) => edge.id));
-    const hidden = new Set(snapshot.landed.map((edge) => edge.id).filter((id) => !shown.has(id)));
     const kept = projected.viewer.edges.filter((edge) => !hidden.has(edgeIdentity(edge.field, edge.from, edge.to)));
     const drawn_ = new Set(kept.map((edge) => edgeIdentity(edge.field, edge.from, edge.to)));
     const unsettled = snapshot.projected
@@ -845,6 +920,86 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     const writeStates = snapshot.projected.map((edge) =>
       edge.states.includes('selected') ? { ...edge, states: edge.states.filter((state) => state !== 'selected') } : edge,
     );
+    // THE WRITE LEDGER, TURNED INTO WHAT THE PANEL DRAWS — in ONE pass, in the
+    // ledger's own order.
+    //
+    // IT WAS TWO PASSES AND A CONCATENATION: one walk over the projection for
+    // the refusals it had an edge for, then one over the ledger for the ones it
+    // did not, appended after. Both halves were right and the JOIN was not.
+    // The renderer collapses repeated edges last-wins, so the array's order is
+    // the chronology — and appending every stranded record after every
+    // projected one is not the order the reader made them in. An older
+    // `unknown-edge` naming an edge a later refused create then projects
+    // reported the older reason. There is nothing to get wrong now: the ledger
+    // is walked once, and its order is the order.
+    //
+    // WHICH EDGE A REFUSAL MARKS IS THE PROJECTION'S OWN ANSWER.
+    // `ProjectedEdge.writes` is its record of which mutations it is speaking
+    // for, and `validity.ts` has already decided which edge each one marks — a
+    // create marks the edge it would have made, a retype the one it would have
+    // become. Rebuilding that here would be a second answer, free to disagree
+    // with the line the canvas draws the ghost on; asked of the projection, the
+    // record that produced one edge cannot also be counted against another,
+    // which is the double-draw this join used to be able to produce.
+    const markedBy = new Map<MutationId, EdgeId>(
+      snapshot.projected.flatMap((edge) => edge.writes.map((write) => [write, edge.id] as const)),
+    );
+    // WHETHER THE MARKED EDGE IS REAL. Three codes refuse an edit ABOUT a
+    // landed relationship — `duplicate-edge`, `unchanged-kind`,
+    // `symmetric-edge` — and the panel keeps the row for those rather than
+    // replacing it with a capsule; see `WorkspaceRefusal.phantom`.
+    //
+    // ASKED OF `landed`, NEVER OF THE CODE. A list of codes here would be a
+    // second copy of `validity.ts`'s decision about which edge each refusal
+    // marks, and it would already be wrong: `cardinality` reads like a fourth
+    // member of that set and marks a PHANTOM through both of its routes. This
+    // is the store's own answer to "what does the document actually carry".
+    const landedIds = new Set(snapshot.landed.map((edge) => edge.id));
+    const landedNow: GraphDocument = { issues: snapshot.issues, edges: snapshot.landed };
+    // THE CARRIER MAP, BROUGHT LEVEL WITH THE LEDGER. See `writeCarriers` for
+    // why the answer is kept rather than re-asked, and why the ledger's own
+    // membership is the whole of its lifetime.
+    const ledger = new Set(snapshot.writes.map((record) => record.mutationId));
+    for (const mutationId of writeCarriers.keys()) {
+      if (!ledger.has(mutationId)) writeCarriers.delete(mutationId);
+    }
+    for (const record of snapshot.writes) {
+      // FIRST SIGHT IS THE EARLIEST MOMENT THERE IS for a write this mount did
+      // not emit. Its own edits are already recorded by `perform`, from the
+      // document the reader acted on, so this fills in only what a host
+      // proposed on the same store — and never a second time.
+      if (!writeCarriers.has(record.mutationId)) {
+        writeCarriers.set(record.mutationId, editCarrier(landedNow, record.mutation));
+      }
+    }
+    const refusals: readonly WorkspaceRefusal[] = snapshot.writes.flatMap((record) => {
+      if (record.state !== 'invalid') return [];
+      // WHOSE PANEL STATES IT, READ BACK RATHER THAN WORKED OUT. The panel used
+      // to derive this from the refused edge's endpoints, against a subject it
+      // had derived by an unrelated rule; then `editCarrier` was called here
+      // instead, which is one rule but still asked at the wrong TIME — a
+      // sibling write can remove the relationship between the act and the
+      // refusal, and what is left says which end declared it only for the
+      // directed fields — `edgeIdentity` sorts the symmetric ones. The answer
+      // was taken when the edit was made; this only looks it up. The two loops
+      // above run over this same `snapshot.writes`, so the key is always
+      // present, and `null` means the document held neither end — there is no
+      // panel a reader could be standing on to read it.
+      const carrier = writeCarriers.get(record.mutationId) ?? null;
+      if (carrier === null) return [];
+      // THE PROJECTION'S EDGE, AND THE EDIT'S OWN AS THE FALLBACK. A refusal
+      // the projection has nothing to hang on is the whole `unknown-edge`
+      // class — a retype, flip or delete of an edge the document no longer
+      // carries produces `{ hidden: [], drawn: [], marked: [] }` — and the
+      // mutation names the edge it was about, so that id is what the capsule
+      // is keyed on.
+      const edgeId =
+        markedBy.get(record.mutationId) ??
+        (record.mutation.op === 'create'
+          ? edgeIdentity(record.mutation.kind, record.mutation.from, record.mutation.to)
+          : record.mutation.edgeId);
+      return [{ edgeId, code: record.reason.code, carrier, phantom: !landedIds.has(edgeId) }];
+    });
 
     const result = renderWorkspace(viewer, {
       words: current.words,
@@ -860,6 +1015,16 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       // through `store.select()` would draw a second halo the inspector does
       // not reflect, so it is stripped before the projection reaches the canvas.
       projected: writeStates,
+      // THE SAME TWO VALUES THE CHROME BELOW READS. The create path's steps are
+      // split across the two surfaces now, so both have to be told which step is
+      // live — and a drop in flight suppresses the panel's list for the reason
+      // `WorkspaceOptions.drop` records: the floating chooser is already open
+      // at the pointer, and two choosers writing to one draft is what the
+      // shell's own `if (state.drop === null)` was preventing while it drew
+      // both of them.
+      draft: state.draft,
+      drop: state.drop,
+      refusals,
     });
     // THE FIRST PASS'S OWN SHEET, IMPORTED — not `renderFirstPass(...).styles`,
     // which carries a second copy of the theme block written just above it. The

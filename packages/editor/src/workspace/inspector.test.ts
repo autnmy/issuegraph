@@ -100,18 +100,30 @@ describe('an edge selection FILTERS the list rather than opening another panel',
     // The rule is the FORMAT's, not a rendering choice — `edgeIdentity`
     // normalizes symmetric endpoints for the same reason — and `picker/view.ts`
     // already refuses a direction for these two kinds.
+    //
+    // DRIVEN FROM BOTH ENDS, which is what makes the symmetric half mean
+    // anything. Read from `i0001` — the `from` — a rule that answered
+    // `null` only when the subject is the `from` is indistinguishable from the
+    // correct one, and that is the whole shape of the defect: a direction read
+    // off the stored order for a kind that has none. `i0002` is the end where
+    // the two answers differ.
     for (const field of EDGE_FIELDS) {
       const document =
         field === 'together-with'
           ? backlogOf(2, { unitOf: { i0002: 'i0001' }, edges: [[field, 'i0001', 'i0002']] })
           : backlogOf(2, { edges: [[field, 'i0001', 'i0002']] });
-      const view = inspectorView(document, { kind: 'issue', key: 'i0001' });
-      assert.equal(view.relationships.length, 1, `${field} was dropped from the list`);
-      assert.equal(
-        view.relationships[0]?.direction,
-        isSymmetricEdgeField(field) ? null : 'outgoing',
-        field,
-      );
+      for (const [key, directed] of [
+        ['i0001', 'outgoing'],
+        ['i0002', 'incoming'],
+      ] as const) {
+        const view = inspectorView(document, { kind: 'issue', key });
+        assert.equal(view.relationships.length, 1, `${field} was dropped from ${key}'s list`);
+        assert.equal(
+          view.relationships[0]?.direction,
+          isSymmetricEdgeField(field) ? null : directed,
+          `${field} at ${key}`,
+        );
+      }
     }
   });
 

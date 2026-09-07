@@ -27,8 +27,8 @@
  * handles beside the mount rather than through it.
  */
 
-import { type EdgeField, EDGE_FIELDS, isEdgeField } from '@issuegraph/core';
-import type { GraphDocument, MutationId, Proposal, StoredIssue } from '@issuegraph/store';
+import { type EdgeField, edgeIdentityEnd, isEdgeField } from '@issuegraph/core';
+import type { EdgeId, GraphDocument, MutationId, Proposal, StoredEdge, StoredIssue } from '@issuegraph/store';
 import { findEdge } from '@issuegraph/store';
 
 import { type CreateDraft, IDLE_CREATE_DRAFT, createReducer } from '../create/draft.ts';
@@ -85,10 +85,12 @@ export const INITIAL_HOST_STATE: HostState = Object.freeze({
  * What the shell saw.
  *
  * `control` carries a `data-ig-command` — the package's own vocabulary
- * (`select-edge`, `focus`, `search`, `retype`, `flip`, …) and the mount's
- * chrome (`add`, `kind`, `target`, `delete`, `retry`, …) share one channel
- * because the shell reads one attribute. `point` and `group` are the viewer's
- * two identities: a focusable issue key, and a mark naming an edge or a slot.
+ * (`select-edge`, `focus`, `add`, `kind`, `delete`, `cancel`, …) and the
+ * mount's chrome, which is now the handful of controls that need a DOM or a
+ * host's own surface (`target-query`, `target`, `audit-filter`, `retry`,
+ * `discard`) — share one channel because the shell reads one attribute.
+ * `point` and `group` are the viewer's two identities: a focusable issue key,
+ * and a mark naming an edge or a slot.
  */
 export type HostCommand =
   | { readonly kind: 'point'; readonly key: string }
@@ -116,7 +118,24 @@ export type HostCommand =
 
 /** What the shell performs against the store after reducing. */
 export type HostEffect =
-  | { readonly kind: 'propose'; readonly proposal: Proposal }
+  | {
+      readonly kind: 'propose';
+      readonly proposal: Proposal;
+      /**
+       * The issue this edit is about, answered ONCE — here, and never again.
+       *
+       * THE SHELL REMEMBERS IT AGAINST THE WRITE. A refusal arrives from the
+       * store long after the act that caused it, by which time a sibling write
+       * may have taken the relationship away; asking then is asking a document
+       * that no longer holds the answer. See {@link editCarrier} for what the
+       * remaining sources can and cannot say, and `mount.ts` for the map this
+       * value is recorded in.
+       *
+       * `null` when the document holds NEITHER end — there is no panel for an
+       * issue this backlog does not carry, so there is nowhere to state it.
+       */
+      readonly carrier: string | null;
+    }
   | { readonly kind: 'retry'; readonly mutationId: MutationId }
   | { readonly kind: 'discard'; readonly mutationId: MutationId }
   | { readonly kind: 'dismiss-change' }
@@ -143,6 +162,8 @@ export type HostEffect =
       readonly kind: 'first-pass-apply';
       readonly candidateId: CandidateId;
       readonly proposal: Proposal;
+      /** As on `propose`, and for the same reason — this arm emits a write too. */
+      readonly carrier: string | null;
     }
   /**
    * An `undo` took back an `apply`, and the shell decides what the store can do
@@ -163,10 +184,225 @@ function settled(state: HostState): HostResult {
   return { state, effects: [] };
 }
 
+/**
+ * The issue whose own frontmatter declares a relationship.
+ *
+ * ONE SPELLING OF A FACT TWO DECISIONS DEPEND ON. `from` is the carrier for
+ * every field, the symmetric ones included: §4.3 puts a relationship in ONE
+ * issue's block, and `from` is the end it was declared from — which is why a
+ * flip of a symmetric kind is refused rather than moving it. Both readers
+ * below — where the panel goes when the edge it was showing stops being drawn,
+ * and which issue a refused edit is stated under — wrote `edge.from` for
+ * themselves, which is two answers to one question, agreeing only for as long
+ * as nobody touched either.
+ *
+ * IT CAN ONLY BE READ WHILE THE DOCUMENT STILL HOLDS THE EDGE, and every reader
+ * of it is shaped by that. Once the edge is gone its identity is the only record
+ * left, and it is a weaker record for the SYMMETRIC fields: `edgeIdentity` sorts
+ * their endpoints, so a `serialize-with` declared from `z` to `a` and one
+ * declared from `a` to `z` are one string and `from` is not a function of it. A revision of `@issuegraph/core` named the carrying end of
+ * every identity anyway; for the symmetric fields that answer was the sort order
+ * wearing the carrier's name, and a refusal about such an edge was stated on the
+ * far end's panel — the panel the reader was NOT on — whenever the pair sorted
+ * the other way. `edgeIdentityEnd` now answers `either` for exactly those and
+ * names the carrier for the directed fields, so this function stays the only
+ * source of the fact while the edge is there, and nothing downstream has to
+ * guess which kind of record it is holding.
+ */
+function carrierOf(edge: StoredEdge): string {
+  return edge.from;
+}
+
+/**
+ * What an edit can still say about its two ends.
+ *
+ * TWO SOURCES, AND THEY DO NOT ANSWER THE SAME QUESTION. A create, and an edit
+ * on an edge the document still holds, yield an ORDERED pair: the carrier, and
+ * the far end. An edit naming an edge the document no longer carries yields an
+ * identity — a weaker record, which names WHICH TWO ISSUES and says which of
+ * them declared the relationship only for the directed fields, because those
+ * are the ones `edgeIdentity` does not sort. Holding the two apart in the type
+ * is what stops the second being read as the first, which is exactly the
+ * reading this shape replaced; how much the identity kept is then
+ * `@issuegraph/core`'s answer rather than this layer's assumption.
+ */
+type EditEnds =
+  | { readonly kind: 'pair'; readonly carrier: string; readonly far: string }
+  | { readonly kind: 'identity'; readonly edgeId: EdgeId };
+
+function endsOf(document: GraphDocument, proposal: Proposal): EditEnds {
+  // A CREATE HAS NO EDGE YET, and its own two references are the whole of what
+  // it is about — including the `unknown-issue` case, where one of them is an
+  // issue the document does not hold and no lookup could recover it.
+  if (proposal.op === 'create') return { kind: 'pair', carrier: proposal.from, far: proposal.to };
+  const edge = findEdge(document, proposal.edgeId);
+  if (edge !== undefined) return { kind: 'pair', carrier: carrierOf(edge), far: edge.to };
+  // AND THE EDGE CAN BE ABSENT, which is the `unknown-edge` refusal itself: the
+  // reader acted on a relationship a landed write had already removed. All that
+  // is left is the identity the act named.
+  return { kind: 'identity', edgeId: proposal.edgeId };
+}
+
+/**
+ * Which issue an edit is ABOUT — the panel that states it, and the panel it is
+ * refused on.
+ *
+ * THE SUBJECT OF AN EDIT IS DECIDED ONCE, AND THAT MEANS ONCE IN TIME AS WELL
+ * AS ONCE IN THE SOURCE. It used to be decided twice and in two vocabularies:
+ * the panel derived its own subject from the selection (canonicalized onto a
+ * together unit's lead), and the inspector separately asked whether the REFUSED
+ * EDGE's identity named that subject. Two derivations of one fact diverge, and
+ * they did, three times over. This function replaced the second derivation —
+ * and then a fourth divergence appeared inside it, because it was still being
+ * CALLED twice: once when the edit went out, and again when the refusal came
+ * back, against a document a sibling write had changed in between. So the shell
+ * calls it at the moment of emission, records the answer against the write, and
+ * reads the record afterwards. See `HostEffect`'s `carrier` and `mount.ts`.
+ *
+ * THE CARRIER'S END WINS, AND THE FAR END IS THE FALLBACK. The relationship is
+ * declared in the carrier's block, so that is the panel a reader made the edit
+ * from and the panel that can undo it. A create naming an unknown SOURCE has
+ * no such panel, and stating the refusal on the target's — the only issue the
+ * document holds — beats stating it nowhere.
+ *
+ * AND WITH ONLY AN IDENTITY LEFT, THE SAME RANKING APPLIES AS FAR AS THE FORMAT
+ * KEPT IT. `edgeIdentity` discards the declaring end of a SYMMETRIC pair and
+ * keeps it for a directed one, so `edgeIdentityEnd` names the carrier of a
+ * directed identity and answers `either` for a symmetric one — and both arms
+ * here rank by one rule instead of two. THIS ARM HAS BEEN WRONG IN BOTH
+ * DIRECTIONS: ranking a symmetric identity's segments invented an order the
+ * format had thrown away and stated a refusal on the far end's panel, and the
+ * correction — ranking nothing at all — discarded the order a DIRECTED identity
+ * still carries, so a host proposing on the shared store had its refusal placed
+ * under whichever end `document.issues` listed first. `either`, and a directed
+ * identity whose carrier this backlog does not hold, both fall through to the
+ * fallback this arm always had: "an issue this backlog holds and this edit was
+ * between", in the document's own order. The reader's own edits reach none of
+ * it, because their carrier was taken while the edge was still there.
+ *
+ * `null` when the document holds NEITHER end, which is not a refusal being
+ * dropped: there is no panel for an issue this backlog does not carry, so
+ * there is nowhere the reader could be standing to read it.
+ */
+export function editCarrier(document: GraphDocument, proposal: Proposal): string | null {
+  const keys = document.issues.map((issue) => issue.ref);
+  const ends = endsOf(document, proposal);
+  switch (ends.kind) {
+    case 'pair':
+      return keys.find((ref) => ref === ends.carrier) ?? keys.find((ref) => ref === ends.far) ?? null;
+    case 'identity':
+      return (
+        keys.find((ref) => edgeIdentityEnd(ends.edgeId, ref) === 'carrier') ??
+        keys.find((ref) => edgeIdentityEnd(ends.edgeId, ref) !== null) ??
+        null
+      );
+  }
+}
+
+/**
+ * What the shell is to do with an emitted proposal — the ONE axis on which the
+ * two emissions differ.
+ *
+ * A ROUTE RATHER THAN TWO EMITTERS. The first pass needs its write performed
+ * differently — the shell has to be able to find that exact record again if the
+ * reader takes the answer back, so the effect carries the candidate — and for
+ * one review round that difference was reason enough for it to build its own
+ * effect and skip {@link emitting} entirely. Everything else about the two is
+ * identical, and the part it skipped was the part that decides which panel the
+ * refusal lands on. The difference is this value; the funnel is one.
+ */
+type EmitRoute =
+  | { readonly kind: 'propose' }
+  | { readonly kind: 'first-pass-apply'; readonly candidateId: CandidateId };
+
+/** The reader's own edits: performed as a plain write, with nothing to take back by name. */
+const TO_THE_STORE: EmitRoute = { kind: 'propose' };
+
+/**
+ * The effect a route emits, as an exhaustive switch rather than a pair of
+ * branches: a third way to write is a compile error here, not a route that
+ * quietly builds its own effect again.
+ */
+function effectFor(route: EmitRoute, proposal: Proposal, carrier: string | null): HostEffect {
+  switch (route.kind) {
+    case 'propose':
+      return { kind: 'propose', proposal, carrier };
+    case 'first-pass-apply':
+      return { kind: 'first-pass-apply', candidateId: route.candidateId, proposal, carrier };
+  }
+}
+
+/**
+ * Emit an edit, and leave the panel on the issue the edit is about.
+ *
+ * EVERY PROPOSAL THIS REDUCER EMITS GOES THROUGH HERE, which is the point. The
+ * type does not prove that on its own — a new arm could still write out a
+ * `carrier` by hand — but it makes skipping this deliberate rather than an
+ * omission: both of `HostEffect`'s write-bearing arms REQUIRE the field, so a
+ * route that goes round the funnel has to invent an answer in plain sight
+ * instead of quietly not having one.
+ *
+ * §17b requires a refusal to be visible at the moment the reader is refused,
+ * and a refusal is stated on its carrier's panel — so the panel has
+ * to BE the carrier's when the edit goes out, rather than arriving there
+ * afterwards by whichever route happens to notice. Each route that had to
+ * notice separately cost a review round: a retype's projection hides the edge
+ * the panel was filtered to, and until `reconcileHost` was taught about hidden
+ * edges the panel resolved to nothing selected and the reason was drawn
+ * nowhere; a create completed after the reader had clicked another issue went
+ * out from the draft's source while the panel was headed by the issue they
+ * clicked, which nothing downstream can see at all — a completed draft leaves
+ * no trace of where it began; and a first-pass `apply` built its effect for
+ * itself, so a queue opened with nothing selected answered `Y`, was refused,
+ * and closed onto a panel that stated nothing.
+ *
+ * IT WRITES BACK WHAT WAS ALREADY THERE ON THE CREATE PATHS, which is the
+ * check that this is not a behaviour change smuggled in beside a fix.
+ * Beginning a draft already selects its source and a canvas drop already
+ * selects the node it started on, so the undiverted paths land on the same
+ * selection. The picker's routes DO move — an edit on a selected edge takes
+ * the panel to that edge's carrier now rather than one render later, which is
+ * where a retype or a flip already ended up through `reconcileHost` and where
+ * a delete of the selected edge used to leave the reader with `none` once the
+ * write landed and took the edge away.
+ *
+ * SO DOES THE FIRST PASS, AND IT MOVES THE PANEL UNDER A SURFACE THAT COVERS
+ * IT. That is the intended effect rather than a side one: the overlay is modal,
+ * the reader answers `Y`, and where they are put down when it closes is the
+ * only chance a refusal of that answer has of being read. Whether the write
+ * will be refused is not knowable here, so every `apply` moves the panel and
+ * the last one answered is the panel the reader lands on.
+ *
+ * AN EDIT ABOUT NO ISSUE THIS DOCUMENT HOLDS LEAVES THE SELECTION ALONE. See
+ * {@link editCarrier}: there is no panel to move to, and clearing would take
+ * the reader off the one they are on for a reason they could not see. The
+ * effect still carries the `null`, because "no panel states this" is an answer
+ * the shell must not go and compute a different one for.
+ */
+function emitting(
+  state: HostState,
+  proposal: Proposal,
+  document: GraphDocument,
+  route: EmitRoute,
+): HostResult {
+  const carrier = editCarrier(document, proposal);
+  return {
+    state:
+      carrier === null
+        ? state
+        : {
+            ...state,
+            selection: selectionReducer(INITIAL_SELECTION, { kind: 'select-issue', key: carrier }),
+          },
+    effects: [effectFor(route, proposal, carrier)],
+  };
+}
+
 /** A draft step: apply the create reducer, and emit the proposal it completes. */
 function drafted(
   state: HostState,
   command: Parameters<typeof createReducer>[1],
+  document: GraphDocument,
 ): HostResult {
   const result = createReducer(state.draft, command);
   if (result.proposal === null) {
@@ -185,9 +421,15 @@ function drafted(
     const chrome = command.kind === 'cancel' ? { targetQuery: '', drop: null } : {};
     return settled({ ...state, draft: result.draft, selection, ...chrome });
   }
+  // THE DRAFT ENDS WHERE IT BEGAN. `begin` selects the source three lines
+  // above; `emitting` puts the panel back on the edit's carrier, which for a
+  // create IS that source. Without it a click on another issue between the two
+  // steps left the write going out from one issue and the panel headed by
+  // another — and a refusal about the first stated on no panel at all.
+  const proposed = emitting(state, result.proposal, document, TO_THE_STORE);
   return {
-    state: { ...state, draft: IDLE_CREATE_DRAFT, targetQuery: '', drop: null },
-    effects: [{ kind: 'propose', proposal: result.proposal }],
+    ...proposed,
+    state: { ...proposed.state, draft: IDLE_CREATE_DRAFT, targetQuery: '', drop: null },
   };
 }
 
@@ -214,8 +456,18 @@ function isAnswer(value: string): value is Answer {
  * keeps §17e's consent rule a property of the shape — drawing a candidate,
  * opening the surface, closing it and skipping all emit nothing because there is
  * no arm on which they could.
+ *
+ * THE APPLY GOES THROUGH {@link emitting}, AND FOR A ROUND IT DID NOT. This
+ * function built the `first-pass-apply` effect itself, which made the claim
+ * "every proposal this reducer emits goes through one funnel" false at the one
+ * emission that could not be reached any other way — the overlay is modal, so
+ * the reader's hands are nowhere near the panel. A queue opened with nothing
+ * selected, or with an unrelated issue selected, answered `Y`, had the create
+ * refused, closed, and put the reader back exactly where they had been: a panel
+ * that states no refusal because the edit was about some other issue. It is the
+ * `document` argument that this route was missing, so that is what it now takes.
  */
-function firstPassed(state: HostState, command: FirstPassCommand): HostResult {
+function firstPassed(state: HostState, command: FirstPassCommand, document: GraphDocument): HostResult {
   const outcome = firstPassReducer(state.firstPass, command);
   // THE DRAFT IS NOT TOUCHED HERE, and an earlier revision's attempt to is worth
   // recording: opening the surface does have to cancel a live draft — the queue
@@ -225,7 +477,7 @@ function firstPassed(state: HostState, command: FirstPassCommand): HostResult {
   // refuse for want of a source. Clearing on every open destroyed the reader's
   // draft for a queue that then never appeared. So the cancel belongs to the
   // shell, which knows, and it is dispatched there — see `mount.ts`.
-  const next: HostState = { ...state, firstPass: outcome.state };
+  let next: HostState = { ...state, firstPass: outcome.state };
   const effects: HostEffect[] = [];
   if (outcome.scanning !== null) effects.push({ kind: 'find-candidates', scan: outcome.scanning });
   const result: QueueResult | null = outcome.result;
@@ -234,11 +486,15 @@ function firstPassed(state: HostState, command: FirstPassCommand): HostResult {
     // off the screen: by the time this runs the cursor has already advanced.
     const given = result.state.answers[result.state.answers.length - 1];
     if (result.proposal !== null && given !== undefined) {
-      effects.push({
+      const applied = emitting(next, result.proposal, document, {
         kind: 'first-pass-apply',
         candidateId: given.candidate.id,
-        proposal: result.proposal,
       });
+      // THE PANEL MOVE IS KEPT, not discarded beside the effect. It is the whole
+      // of what this route was missing: the overlay closes onto the issue the
+      // answered create was about, which is the panel its refusal is stated on.
+      next = applied.state;
+      effects.push(...applied.effects);
     }
     // ONLY A WITHDRAWN `apply` REACHES THE STORE. A withdrawn `reject` or `skip`
     // dispatched nothing, so there is nothing out there to take back.
@@ -250,10 +506,10 @@ function firstPassed(state: HostState, command: FirstPassCommand): HostResult {
 }
 
 /** A pointer on an issue: a target while one is being chosen, a selection otherwise. */
-function pointed(state: HostState, key: string): HostResult {
+function pointed(state: HostState, key: string, document: GraphDocument): HostResult {
   const choosingTarget = state.draft.kind !== null && state.draft.target === null;
   if (choosingTarget && key !== state.draft.source) {
-    return drafted(state, { kind: 'target', ref: key });
+    return drafted(state, { kind: 'target', ref: key }, document);
   }
   return settled({
     ...state,
@@ -299,7 +555,7 @@ function controlled(
       // open blocker, the claimed peer — as this control, so a reader can reach
       // the issue holding the one they are looking at. It is a pointer on that
       // issue, with a pointer's rules: a selection, or the target of a draft.
-      return target === undefined ? settled(state) : pointed(state, target);
+      return target === undefined ? settled(state) : pointed(state, target, document);
     case 'clear':
       return settled({
         ...state,
@@ -326,37 +582,77 @@ function controlled(
     case 'retype': {
       if (edgeId === null || value === undefined || !isEdgeField(value)) return settled(state);
       const proposal = pickerProposal(document, edgeId, { kind: 'retype', field: value });
-      return proposal === null ? settled(state) : { state, effects: [{ kind: 'propose', proposal }] };
+      return proposal === null ? settled(state) : emitting(state, proposal, document, TO_THE_STORE);
     }
     case 'flip': {
       if (edgeId === null) return settled(state);
       const proposal = pickerProposal(document, edgeId, { kind: 'flip' });
-      return proposal === null ? settled(state) : { state, effects: [{ kind: 'propose', proposal }] };
+      return proposal === null ? settled(state) : emitting(state, proposal, document, TO_THE_STORE);
     }
     case 'dismiss-change':
       return { state, effects: [{ kind: 'dismiss-change' }] };
-
-    // --- the mount's chrome ---
-    case 'audit-filter':
-      return settled({ ...state, auditFiltered: !state.auditFiltered });
     case 'add': {
-      const source = selectedKey(state.selection);
-      return source === null ? settled(state) : drafted(state, { kind: 'begin', source });
+      // THE CONTROL'S OWN SUBJECT FIRST, AND THE SELECTION AS THE FALLBACK —
+      // the same one rule the `delete` arm below states, for the same reason.
+      //
+      // `inspectorView` CANONICALIZES a selection naming a together-unit member
+      // onto its slot's LEAD, and `renderWorkspace` words the whole panel from
+      // that: the heading, the title, every row. `selectedKey` answers the RAW
+      // key. So with a partner selected the panel was titled with the lead and
+      // its `+ add` began a relationship from the partner — one control writing
+      // about a different issue from the one every other line of its own panel
+      // named. The panel publishes the canonical key on the control, which is
+      // the fact only it holds.
+      const source = target ?? selectedKey(state.selection);
+      return source === null ? settled(state) : drafted(state, { kind: 'begin', source }, document);
     }
     case 'kind':
       return value === undefined || !isEdgeField(value)
         ? settled(state)
-        : drafted(state, { kind: 'type', edgeKind: value });
+        : drafted(state, { kind: 'type', edgeKind: value }, document);
+    case 'cancel':
+      return settled({ ...state, draft: IDLE_CREATE_DRAFT, targetQuery: '', drop: null });
+    case 'delete': {
+      // THE CONTROL'S OWN EDGE FIRST, AND THE SELECTION AS THE FALLBACK.
+      //
+      // This arm read the selection and ignored `target` entirely, which was
+      // sound for exactly as long as the only delete control lived inside
+      // `if (edgeId !== null)` — one button, about the one selected edge, and
+      // nothing else could publish the command. §17a's inspector puts a remove
+      // control on EVERY relationship row, and against the old arm each of them
+      // was wrong in one of two ways: with an issue selected `edgeId` is `null`
+      // and every row's remove was a silent no-op, and with row B's edge
+      // selected row A's remove deleted B. A control that deletes a different
+      // relationship from the one it sits on is worse than one that does
+      // nothing.
+      //
+      // THE FALLBACK IS NOT A CONVENIENCE — it is the keyboard. `create/keys.ts`
+      // binds `⌫` to the SELECTED edge, because a selection is the only edge a
+      // keyboard has named, and that intent arrives through `intended` rather
+      // than here; what still needs the fallback is the mount's own labelled
+      // delete button, which is drawn only for a selected edge and carries no
+      // target. One rule — "the edge the act names" — with the selection as the
+      // subject when nothing else names one.
+      const subject = target ?? edgeId;
+      return subject === null
+        ? settled(state)
+        : emitting(state, { op: 'delete', edgeId: subject }, document, TO_THE_STORE);
+    }
+
+    // --- the mount's chrome: what still needs a DOM, or a host's own surface ---
+    // `add`, `kind`, `cancel` and `delete` used to be listed here, and they are
+    // not the mount's any more: `renderWorkspace` draws every one of them in its
+    // own markup, so a host rendering the package without mounting it publishes
+    // them too. What is left below genuinely is the shell's — a live input over
+    // the reader's query and the matches it offers, the audit toggle the header
+    // publishes, and the two write-recovery controls the mount draws beside a
+    // failed record.
+    case 'audit-filter':
+      return settled({ ...state, auditFiltered: !state.auditFiltered });
     case 'target-query':
       return settled({ ...state, targetQuery: value ?? '' });
     case 'target':
-      return target === undefined ? settled(state) : drafted(state, { kind: 'target', ref: target });
-    case 'cancel':
-      return settled({ ...state, draft: IDLE_CREATE_DRAFT, targetQuery: '', drop: null });
-    case 'delete':
-      return edgeId === null
-        ? settled(state)
-        : { state, effects: [{ kind: 'propose', proposal: { op: 'delete', edgeId } }] };
+      return target === undefined ? settled(state) : drafted(state, { kind: 'target', ref: target }, document);
     case 'retry':
       return target === undefined ? settled(state) : { state, effects: [{ kind: 'retry', mutationId: target }] };
     case 'discard':
@@ -366,18 +662,18 @@ function controlled(
 
     // --- the first pass ---
     case 'first-pass':
-      return firstPassed(state, { kind: 'open' });
+      return firstPassed(state, { kind: 'open' }, document);
     case 'first-pass-close':
-      return firstPassed(state, { kind: 'close' });
+      return firstPassed(state, { kind: 'close' }, document);
     case 'first-pass-answer':
       return value === undefined || !isAnswer(value)
         ? settled(state)
-        : firstPassed(state, { kind: 'queue', command: { kind: 'answer', answer: value } });
+        : firstPassed(state, { kind: 'queue', command: { kind: 'answer', answer: value } }, document);
     case 'undo':
       // GUARDED BY THE PHASE, not by the control's existence: `undo` is a name a
       // host's own chrome could publish too, and `firstPassReducer` answers a
       // queue command with no queue by changing nothing.
-      return firstPassed(state, { kind: 'queue', command: { kind: 'undo' } });
+      return firstPassed(state, { kind: 'queue', command: { kind: 'undo' } }, document);
     default:
       // A COMMAND THIS REDUCER DOES NOT KNOW CHANGES NOTHING. A host's own
       // chrome may publish commands on the same attribute — the demo's theme
@@ -387,7 +683,7 @@ function controlled(
   }
 }
 
-function intended(state: HostState, intent: KeyIntent): HostResult {
+function intended(state: HostState, intent: KeyIntent, document: GraphDocument): HostResult {
   switch (intent.kind) {
     case 'none':
     // `T` opens the picker; the picker is already drawn whenever an edge is
@@ -395,9 +691,9 @@ function intended(state: HostState, intent: KeyIntent): HostResult {
     case 'retype':
       return settled(state);
     case 'create':
-      return drafted(state, intent.command);
+      return drafted(state, intent.command, document);
     case 'propose':
-      return { state, effects: [{ kind: 'propose', proposal: intent.proposal }] };
+      return emitting(state, intent.proposal, document, TO_THE_STORE);
   }
 }
 
@@ -405,7 +701,7 @@ function intended(state: HostState, intent: KeyIntent): HostResult {
 export function reduceHost(state: HostState, command: HostCommand, document: GraphDocument): HostResult {
   switch (command.kind) {
     case 'point':
-      return pointed(state, command.key);
+      return pointed(state, command.key, document);
     case 'group': {
       // A mark names either an edge (its store identity) or a slot (its lead).
       // A MARK NAMING NEITHER CHANGES NOTHING. The canvas draws an edge the
@@ -414,15 +710,15 @@ export function reduceHost(state: HostState, command: HostCommand, document: Gra
       // is no issue key. Falling through to `pointed` would select that
       // identity as an issue, or worse, commit it as a draft's target.
       if (findEdge(document, command.id) !== undefined) return selectEdge(state, command.id);
-      if (document.issues.some((issue) => issue.ref === command.id)) return pointed(state, command.id);
+      if (document.issues.some((issue) => issue.ref === command.id)) return pointed(state, command.id, document);
       return settled(state);
     }
     case 'control':
       return controlled(state, command.name, command.target, command.value, document);
     case 'first-pass':
-      return firstPassed(state, command.command);
+      return firstPassed(state, command.command, document);
     case 'intent':
-      return intended(state, command.intent);
+      return intended(state, command.intent, document);
     case 'scroll':
       return settled({ ...state, railStart: Math.max(0, Math.floor(command.start)) });
     case 'drag-start':
@@ -446,7 +742,7 @@ export function reduceHost(state: HostState, command: HostCommand, document: Gra
 }
 
 /**
- * Bring the state back into agreement with a document that moved under it.
+ * Bring the state back into agreement with what the reader can SEE.
  *
  * The store re-renders on every landed write, and a write can remove what the
  * state names: a retype or a flip gives the edge a NEW identity, a delete
@@ -455,22 +751,76 @@ export function reduceHost(state: HostState, command: HostCommand, document: Gra
  * the inspector showing a picker for nothing — the viewer already refuses a
  * stale selection the same way, so the host does too, from the document
  * rather than from memory of what it just proposed.
+ *
+ * ## `hidden` is the OTHER half of "no longer carries", and the landed
+ * document cannot state it
+ *
+ * `document` is what LANDED, and an unsettled retype or flip lands nothing —
+ * so the edge the reader was inspecting is still in it, and the check above
+ * passes, while the store's projection has already hidden that edge and the
+ * workspace has already stopped drawing it. Two documents were answering
+ * "does this selection resolve", and they disagreed for the whole life of the
+ * write: the panel resolved the selection to `none` and drew the empty
+ * sentence, and — because a refusal is only drawn for the subject it names —
+ * the reason the edit was refused was drawn nowhere at all. A reader who
+ * retyped an edge into a relationship that already exists saw the picker
+ * close and nothing else. `hidden` is the store's own set of landed edges its
+ * projection is not showing, so both halves of the question are asked here
+ * and the answer is one.
+ *
+ * A HIDDEN EDGE RETURNS THE PANEL TO ITS CARRIER, not to nothing. Through
+ * {@link carrierOf}, which is the same rule the refusal's own carrier was taken
+ * by when the edit went out — so the panel this lands on and the panel the
+ * refusal is stated under are one answer rather than two that agree. Clearing to `none`
+ * instead would be the same silence the check above already produced.
+ *
+ * IT IS A BACKSTOP NOW, NOT THE ONLY GUARD. `emitting` already puts the panel
+ * on the carrier the moment the reader's own edit goes out, so the route this
+ * paragraph was written for cannot reach here any more. What still can is a
+ * SIBLING write: another edit's retype or flip hiding the edge this selection
+ * names, which no act of the reader's announced.
+ *
+ * RECONCILING ONTO THE PROJECTED REPLACEMENT was the other candidate — follow
+ * the selection to the identity the edit produced — and it cannot be done from
+ * here or anywhere else. It works only when that identity happens to be
+ * landed, which is exactly one of the two refusals this route reaches:
+ * `duplicate-edge` produces an edge that already exists, but `cardinality`
+ * produces a PHANTOM, and a selection naming an edge the landed document does
+ * not carry is dropped by the first check in this very function on the next
+ * render. Measured: `reconcileHost` returns `{ kind: 'none' }` for it. That is
+ * the same vanishing one frame later, and it is the same decision the phantom
+ * capsule already records by publishing no `select-edge` — there is nothing
+ * there to select.
  */
-export function reconcileHost(state: HostState, document: GraphDocument): HostState {
+export function reconcileHost(
+  state: HostState,
+  document: GraphDocument,
+  hidden: ReadonlySet<EdgeId>,
+): HostState {
   const edgeId = selectedEdgeId(state.selection);
-  const selection =
-    edgeId !== null && findEdge(document, edgeId) === undefined ? INITIAL_SELECTION : state.selection;
-  const issueKey = selectedKey(state.selection);
+  const edge = edgeId === null ? undefined : findEdge(document, edgeId);
+  const resolved =
+    edgeId === null
+      ? state.selection
+      : edge === undefined
+        ? INITIAL_SELECTION
+        : hidden.has(edge.id)
+          ? selectionReducer(INITIAL_SELECTION, { kind: 'select-issue', key: carrierOf(edge) })
+          : state.selection;
+  const issueKey = selectedKey(resolved);
   const known = new Set(document.issues.map((issue) => issue.ref));
+  // ASKED OF `resolved`, NOT OF `state.selection`. The carrier above is read
+  // off an edge, and an edge can name an issue the document does not list;
+  // asking the question of the selection that came IN would let that one
+  // through unchecked, which is the stale name this function exists to refuse.
+  const selection = issueKey !== null && !known.has(issueKey) ? INITIAL_SELECTION : resolved;
   const draftStands =
     (state.draft.source === null || known.has(state.draft.source)) &&
     (state.draft.target === null || known.has(state.draft.target));
-  if (selection === state.selection && draftStands && (issueKey === null || known.has(issueKey))) {
-    return state;
-  }
+  if (selection === state.selection && draftStands) return state;
   return {
     ...state,
-    selection: issueKey !== null && !known.has(issueKey) ? INITIAL_SELECTION : selection,
+    selection,
     ...(draftStands ? {} : { draft: IDLE_CREATE_DRAFT, targetQuery: '', drop: null }),
   };
 }
@@ -489,9 +839,6 @@ export function targetMatches(
     .filter((issue) => issue.ref.includes(needle) || issue.title.toLowerCase().includes(needle))
     .slice(0, limit);
 }
-
-/** The edge kinds, in the format's order — the keyboard path's `1`–`5` is this list. */
-export const KINDS: readonly EdgeField[] = EDGE_FIELDS;
 
 /** How far the reader may scroll into the rail window before it is re-cut around them, in rows. */
 export const RAIL_SLACK = 20;

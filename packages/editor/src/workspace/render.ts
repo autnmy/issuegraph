@@ -59,20 +59,28 @@ import {
   type ViewerHold,
   KEY_ATTRIBUTE,
   element,
+  glyphAndLabel,
+  hiddenGlyph,
   identity,
+  labelFrom,
   normalizeDocument,
   renderMarkup,
   provenanceClause,
   renderViewer,
   resolveTheme,
   themeCss,
+  treatmentFor,
   viewerStylesheet,
 } from '@issuegraph/viewer';
 
-import type { ProjectedEdge } from '@issuegraph/store';
+import type { EdgeId, InvalidCode, ProjectedEdge } from '@issuegraph/store';
 
 import type { AuditInput, AuditSeverity } from '../audit/findings.ts';
 import { auditStylesheet } from '../audit/styles.ts';
+import { type CreateDraft, IDLE_CREATE_DRAFT } from '../create/draft.ts';
+import { KIND_KEYS } from '../create/keys.ts';
+import type { Point } from '../create/placement.ts';
+import { treatmentForState } from '../overlay/grammar.ts';
 import { edgeOverlayStylesheet } from '../overlay/styles.ts';
 import {
   AUDIT_SEVERITY_ATTRIBUTE,
@@ -107,6 +115,16 @@ export const ZONES = Object.freeze(['header', 'rail', 'canvas', 'inspector'] as 
 export type Zone = (typeof ZONES)[number];
 
 export interface WorkspaceWords {
+  /**
+   * The panel's own heading — frame 17a's `INSPECTOR`.
+   *
+   * UNCONDITIONAL, and that is what it is for: the zone used to begin with
+   * whatever the selection happened to resolve to, so a reader who had selected
+   * nothing met a bare sentence in an unnamed column. The caps are the
+   * stylesheet's, as they already are for `WHY RANK` and `RELATIONSHIPS`, so
+   * the word supplied here reads as a word.
+   */
+  readonly inspector: string;
   /** Shown in the inspector when nothing is selected. */
   readonly nothingSelected: string;
   /**
@@ -145,6 +163,174 @@ export interface WorkspaceWords {
    * unit"*, and this is that phrase minus the members, which the package names.
    */
   readonly workedAsOneUnit: string;
+  /**
+   * Stated when the subject has no relationships at all.
+   *
+   * A STATED EMPTY IS NOT THE SAME AS AN ABSENT LIST. The panel used to draw
+   * the `RELATIONSHIPS` heading and then nothing under it, which reads as a
+   * list that failed to load rather than as an issue that is genuinely
+   * unrelated to everything — and "this issue is connected to nothing" is one
+   * of the more actionable things a grooming surface can say.
+   */
+  readonly noRelationships: string;
+  /**
+   * The control that begins a relationship from the selected issue — frame
+   * 17a's `+ add`, publishing `add`.
+   *
+   * MOVED HERE FROM `MountWords`, where it was while the mount drew the button.
+   * `renderWorkspace` is the published surface and the panel is now what draws
+   * it, so a host rendering the markup without mounting gets the control rather
+   * than a panel that can only be read. `MountWords` extends this, so the mount
+   * still reads the same field and no host supplies two.
+   */
+  readonly addRelationship: string;
+  /**
+   * The control that abandons a draft — frame 17b's escape hatch beside the
+   * numbered kind list, publishing `cancel`.
+   *
+   * MOVED HERE FROM `MountWords` WITH THE STEP IT BELONGS TO. The kind list and
+   * the control that withdraws from it are one affordance; leaving the cancel
+   * in host chrome while the list moved into the package would have split a
+   * control group across two layers, and a draft the reader cannot abandon with
+   * a pointer is the failure `create/keys.ts` names for the keyboard. The
+   * mount's target-search step still reads this field, through the extension.
+   */
+  readonly cancel: string;
+  /**
+   * Names the issue a live draft was begun from, when that is not the panel's
+   * subject — "relating from", read before the reference the package supplies.
+   *
+   * IT EXISTS BECAUSE THE TWO CAN DIVERGE AND THE DRAFT MUST STILL BE
+   * CANCELLABLE. See {@link addStepSpec}: a draft begun by `R` on a together
+   * unit's non-lead member, or one outlived by a change of selection, leaves
+   * the kind step live under a panel headed by a different issue. The step is
+   * drawn anyway — it carries the only pointer cancel there is — so it has to
+   * say whose it is, and the package invents that phrase no more readily than
+   * it invents {@link WorkspaceWords.workedAsOneUnit}. The REFERENCE is the
+   * package's, appended as its own element, so a host writes a phrase and never
+   * a template.
+   */
+  readonly relatingFrom: string;
+  /**
+   * The accessible name of a row's remove control — the `✕` in frame 17a's
+   * right-hand slot.
+   *
+   * ROW-INDEPENDENT WORDING. Which relationship it removes is in the markup
+   * (`data-ig-target`) and in the row the button sits on, not in this string, so
+   * a host writing "remove #488" here would be wrong on every other row.
+   *
+   * DISTINCT FROM `MountWords.deleteRelationship`, which names a different
+   * control: that is the mount's labelled button for the one SELECTED edge, and
+   * this is a glyph button repeated once per row. A glyph carries no name of its
+   * own — see {@link relationshipSpec} — so the two cannot share one string
+   * without one of them reading wrongly.
+   */
+  readonly remove: string;
+  /**
+   * The right-hand marker on an incoming row — frame 17a's `inbound`.
+   *
+   * IT IS A STATED FACT, NOT A MISSING CONTROL. An inbound edge's field lives in
+   * the OTHER issue's body, so this panel's subject cannot declare it away; the
+   * slot says which relationship this is rather than leaving a gap where the
+   * other rows have a `✕`.
+   */
+  readonly inbound: string;
+  /**
+   * Why the store refused an edit, keyed by its code.
+   *
+   * TOTAL OVER `InvalidCode`, so a code the store adds is a compile error in
+   * every host rather than a capsule that renders blank on the one refusal
+   * nobody anticipated. The store's own `InvalidReason.message` is deliberately
+   * not used: it is one sentence in one language chosen by the layer that
+   * detected the refusal, and `overlay/grammar.ts` already records that an
+   * invalid edge's sentence is the host's, keyed off the code.
+   */
+  readonly refusals: Readonly<Record<InvalidCode, string>>;
+}
+
+/**
+ * One refused edit, as the panel needs it: which edge, and why.
+ *
+ * NARROW ON PURPOSE, AND THE NARROWNESS IS THE ARGUMENT. `WorkspaceOptions.projected`
+ * already carries every edge's states, and `invalid` is among them — but a
+ * state says an edge was refused and never says why, because the code lives on
+ * `WriteRecord.reason`, which reaches no renderer. The alternative was to hand
+ * the panel the whole write ledger, which is the input #137's conflict cards
+ * need and is a much larger surface: both versions of a conflicted body, the
+ * upstream document, the retry and discard affordances. This is one code per
+ * edge id, derivable in a shell from what the store already publishes, and
+ * nothing here is blocked on that larger shape.
+ */
+export interface WorkspaceRefusal {
+  readonly edgeId: EdgeId;
+  readonly code: InvalidCode;
+  /**
+   * The issue whose panel states this refusal.
+   *
+   * THE EDIT'S OWN SUBJECT, DECIDED BY WHOEVER MADE THE EDIT. This panel used
+   * to work it out for itself, by asking whether the refused edge's identity
+   * named the issue on show — a derivation entirely separate from the one that
+   * produced the subject, and free to disagree with it. It did, three times
+   * over: an unfiltered orphan branch drew every refusal on every panel; a
+   * retype whose projection hid the edge the panel was filtered to left the
+   * panel with no subject and the reason nowhere; and a draft begun from a
+   * together-unit partner produced an edge naming the partner while
+   * `inspectorView` had canonicalized the panel onto the slot's lead, so
+   * nothing matched. None of the three is a question this renderer can answer
+   * from an identity, because none of them is about the identity.
+   *
+   * A MOUNT KNOWS IT WITHOUT GUESSING, BECAUSE IT WROTE IT DOWN. `editCarrier`
+   * in `host.ts` answers it — for a create from a draft, for a retype or flip
+   * whose produced identity differs from the one the reader named, and for a
+   * delete — and `mountWorkspace` asks it as the edit goes OUT, while the
+   * document still holds the relationship, then keeps the answer against the
+   * write. It cannot be asked again afterwards: by the time a refusal comes
+   * back a sibling write may have removed the edge, and an identity records
+   * which two issues a relationship was between and never which of them
+   * declared it. A host rendering without `mountWorkspace` states the same fact
+   * the same way: whichever issue's panel it wants the refusal read on, decided
+   * when it made the edit.
+   *
+   * NOT DERIVABLE FROM {@link WorkspaceRefusal.edgeId}, which is why it is a
+   * second field rather than a lookup. `unknown-issue` names an issue the
+   * document does not hold; `unknown-edge` names an edge it does not hold; and
+   * a together unit's panel is headed by a key the edge may never mention.
+   */
+  readonly carrier: string;
+  /**
+   * Whether the edge this refusal marks exists only because the refusal does.
+   *
+   * NOT EVERY REFUSAL IS ABOUT AN EDIT THAT LEFT NO TRACE, and reading them as
+   * if they were deleted a relationship the reader still has. Three of the
+   * store's codes mark an edge that is already LANDED — measured against the
+   * store rather than reasoned from the code list: `duplicate-edge` (a create
+   * of a relationship that exists; `project` folds the phantom onto the real
+   * edge), and `unchanged-kind` and `symmetric-edge` (a retype or flip whose
+   * result has the identity it started from, so `edgeChangeFor` marks the
+   * original rather than swapping it). `cardinality` looks like a fourth and is
+   * not: through a create it marks the edge it would have made, and through a
+   * retype it marks the edge it would have BECOME — a phantom either way, with
+   * the original hidden — which is exactly why this is asked of the document
+   * rather than keyed off a list of codes. With the capsule REPLACING the row
+   * for all of them, telling a reader "this relationship is already declared"
+   * removed the declared relationship's row from the panel, remove control
+   * included — so the one message they were given was contradicted by the list
+   * beside it, and nothing on the surface could undo the edge they had just
+   * been told about.
+   *
+   * TRUE MEANS THE ROW IS THE REFUSAL. A refused CREATE of a genuinely new
+   * relationship draws as a capsule in the row it would have been: there is no
+   * relationship to operate, and a `select-edge` and a `✕` on it would offer to
+   * remove something that was never added. False means the relationship is
+   * real, so the row stands and the reason is attached to it.
+   *
+   * REQUIRED, BECAUSE NEITHER DEFAULT IS SAFE. Defaulted to `true` the panel
+   * eats real rows; defaulted to `false` it draws a live remove control for an
+   * edge the document does not have. A host derives it in one line — the
+   * refused id is in `snapshot.landed` or it is not — and the store's own
+   * projection is where both halves already come from.
+   */
+  readonly phantom: boolean;
 }
 
 export interface WorkspaceOptions {
@@ -187,8 +373,62 @@ export interface WorkspaceOptions {
    * The store's projection, for the canvas to draw each edge's write states.
    * See `ScaleLadderOptions.projected`; the workspace forwards it and reads
    * none of it, because the rail and the inspector draw no line to overlay.
+   *
+   * AND IT IS NOT WHERE THE INSPECTOR'S REFUSALS COME FROM, which is worth
+   * saying here because it is the obvious place to look. A `ProjectedEdge`
+   * carries `states` and `writes` — so it says an edge is `invalid` and never
+   * says why. The code is on the write record, and the panel takes it through
+   * {@link WorkspaceOptions.refusals}.
    */
   readonly projected?: readonly ProjectedEdge[] | undefined;
+  /**
+   * The create draft in flight, so the panel can draw the step the reader is on.
+   *
+   * §17b's inspector path is `+ add` → kind → target, and `create/draft.ts`
+   * makes `begin` RESET the kind and the target on purpose. An always-visible
+   * kind list would therefore let a reader fill a slot that the next `+ add`
+   * silently discards, so the list is drawn only while a draft is live —
+   * which the panel cannot know without being told.
+   *
+   * Absent means idle, which is the state a host that has no create path is in.
+   */
+  readonly draft?: CreateDraft | undefined;
+  /**
+   * Where a canvas drop landed, or `null`. Read for its NULLNESS alone.
+   *
+   * THE PANEL SUPPRESSES ITS KIND LIST WHILE A DROP IS LIVE, which is the
+   * invariant that keeps the two choosers mutually exclusive. A drag that ends
+   * on the canvas opens a chooser AT THE DROP POINT; a panel list drawn at the
+   * same moment would be a second copy of the same step, one under the
+   * reader's pointer and one in the column beside it, both writing to the one
+   * draft. The shell held that rule alone while it drew both, and it cannot
+   * hold it any more now that one of them is package markup.
+   *
+   * The host's own value is forwarded rather than a boolean derived from it:
+   * a `dropInFlight: boolean` would be a second spelling of a fact the shell
+   * already holds, free to disagree with it on the render where it matters.
+   */
+  readonly drop?: Point | null | undefined;
+  /**
+   * The edits the store refused, so the panel can say so where the reader made
+   * them. See {@link WorkspaceRefusal}.
+   *
+   * IN THE ORDER THE STORE RECORDED THEM, and that is part of the contract
+   * rather than an accident of how a caller happened to build it. One row
+   * states one reason, so two refusals naming one edge collapse to the LAST —
+   * the one the reader just caused, rather than the one they have read and
+   * moved past. A caller assembling this from two passes and concatenating
+   * them loses that chronology at the join; `mountWorkspace` walks
+   * `snapshot.writes` once for exactly this reason.
+   *
+   * ABSENT MEANS "NOTHING REFUSED", which is unlike {@link WorkspaceOptions.audit}
+   * and is safe for the reason that one is not: a refusal is a fact the store
+   * produces, so a host with no refusals to report and a host that never asked
+   * are in the same position — there is nothing to draw either way. An audit
+   * count is a NUMBER, and inventing a zero for one nobody computed is the
+   * distinction that option exists to keep.
+   */
+  readonly refusals?: readonly WorkspaceRefusal[] | undefined;
 }
 
 export interface WorkspaceView {
@@ -316,6 +556,175 @@ function markRail(
   return markSpec(root);
 }
 
+
+/**
+ * A row's right-hand slot: exactly one of `selected`, a remove control, or the
+ * inbound marker.
+ *
+ * THE ORDER IS THE FRAME'S AND IT IS ALSO THE SAFE ONE. A selected row says so
+ * and offers nothing else, which matters because `selected` is the state that
+ * FILTERS this panel: the reader is looking at one edge on purpose, and a
+ * destructive control is not what the slot is for at that moment.
+ *
+ * AN INBOUND ROW GETS NO REMOVE CONTROL, and that is a fact about the format
+ * rather than caution. An incoming edge's field is declared in the OTHER
+ * issue's body, so this panel's subject cannot declare it away; a `✕` there
+ * would publish an edit that either does nothing or edits a document the
+ * reader is not looking at. The reference implementation encodes the same rule
+ * as `removable: false`, and frame 17a puts the word `inbound` in the slot the
+ * other rows spend on `✕`.
+ *
+ * THE KEYBOARD'S `⌫` IS NOT A SECOND RULE. `create/keys.ts` acts on the
+ * SELECTED edge because a selection is the only edge a keyboard has named; that
+ * is this rule with the selection as the subject, not an exception to it.
+ *
+ * `selected` IS THE PACKAGE'S OWN WORD, taken from `treatmentForState` rather
+ * than from the words object. Write-state names are already authored here —
+ * `writing…`, `failed`, `invalid` — and a `selected` on `WorkspaceWords` would
+ * be a second spelling of one the overlay grammar publishes on the canvas.
+ */
+function rowSlot(
+  relationship: InspectorRelationship,
+  selected: string | null,
+  words: WorkspaceWords,
+): ElementSpec {
+  if (relationship.edgeId === selected) {
+    return element(
+      'span',
+      { class: 'ig-relationship-state', 'data-ig-state': 'selected' },
+      [treatmentForState('selected').label],
+    );
+  }
+  if (relationship.direction === 'incoming') {
+    return element('span', { class: 'ig-relationship-inbound' }, [words.inbound]);
+  }
+  // THE GLYPH IS HIDDEN AND THE NAME IS AN ATTRIBUTE. `glyphAndLabel` draws a
+  // VISIBLE word beside its glyph, which is right for the kind and wrong here:
+  // the frame's slot is a bare `✕`. So the mark is layer 1's `hiddenGlyph` —
+  // the published half of that same pairing, rather than its class and its
+  // `aria-hidden` written out again here, which is exactly the local copy
+  // `glyphAndLabel`'s own header calls the failure it exists to prevent. `✕`
+  // announces as whatever a screen reader's character table calls it, which
+  // describes the mark and not the act, so the host's word becomes the
+  // button's accessible name. On the BUTTON, never on a span around it:
+  // `parts.ts` records that a plain span takes the generic role, on which ARIA
+  // prohibits naming, so the name would be dropped without a warning.
+  return element(
+    'button',
+    {
+      type: 'button',
+      class: 'ig-relationship-remove',
+      'data-ig-command': 'delete',
+      // ITS OWN ROW'S EDGE, WHICH IS THE WHOLE POINT OF THE ATTRIBUTE HERE.
+      // `reduceHost`'s delete arm read the selection and ignored the target
+      // while the only delete control lived inside `if (edgeId !== null)`; a
+      // control repeated per row makes that wrong in both directions — a no-op
+      // with an issue selected, and a delete of the WRONG edge with a
+      // different row's edge selected.
+      'data-ig-target': relationship.edgeId,
+      'aria-label': words.remove,
+    },
+    [hiddenGlyph('\u2715')],
+  );
+}
+
+/**
+ * The host's sentence for a refusal, wherever the panel states one.
+ *
+ * SHARED FOR THE REASON THE HEAD BELOW IS. A refusal reaches the reader in two
+ * shapes — a capsule standing in for a relationship that does not exist, and a
+ * reason attached to one that does — and a second element built at the second
+ * site would be free to take a different class and lose the rule that styles
+ * it, on the half that ships later.
+ */
+function refusalReason(code: InvalidCode, words: WorkspaceWords): ElementSpec {
+  return element('span', { class: 'ig-relationship-reason' }, [words.refusals[code]]);
+}
+
+/**
+ * What a relationship READS as: the kind's glyph and word, and the reference at
+ * the other end. No control, no wrapper — only the description.
+ *
+ * ONE DESCRIPTION FOR THE ROW AND FOR THE CAPSULE. They state the same thing
+ * about the same edge, and they briefly stated it twice — including deriving
+ * `outgoing` from the same two values in both places, which is the shape this
+ * package calls a second answer rather than a repetition.
+ *
+ * SPLIT FROM THE CONTROL THAT WRAPS IT, rather than parameterised with a
+ * "draw a button?" flag, because the two callers do not differ in a DETAIL of
+ * one element: one of them draws no control at all. A flag would leave the
+ * element that IS the control deciding whether to be one, and every attribute
+ * on it conditional on that. The description is the shared fact; who wraps it
+ * is the caller's, exactly as the slot beside it and the border around it
+ * already are.
+ *
+ * ## It draws the OTHER end, and words the kind from the subject's end
+ *
+ * The row used to draw three bare tokens — the field's machine name, then both
+ * endpoints — one of which is the issue whose panel this is. So the reader read
+ * their own subject back on every row and had to work out which of the two
+ * references was the other one, from a token that stated no direction at all
+ * while `data-direction` sat unread on the same element.
+ *
+ * WITH NO ISSUE SUBJECT THERE IS NO "OTHER END", and both are drawn. That is an
+ * edge selection: the panel is showing one relationship rather than one issue's
+ * relationships, so the head reads as the edge is stored, `from` before `to`,
+ * and the kind takes its plain forward wording. Picking one end there would
+ * mean picking arbitrarily and then wording the sentence around the choice.
+ */
+function relationshipDescription(
+  relationship: InspectorRelationship,
+  subject: string | null,
+): readonly ElementSpec[] {
+  const treatment = treatmentFor(relationship.field);
+  const outgoing = subject === null || relationship.from === subject;
+  const reference = (ref: string): ElementSpec =>
+    element('span', { class: 'ig-relationship-ref' }, [ref]);
+  return [
+    element(
+      'span',
+      { class: 'ig-relationship-kind' },
+      // LAYER 1's PAIRING, not a second one. The glyph is one of the four
+      // channels the colour-blind-safety claim rests on and is
+      // `aria-hidden` because it announces as a character description;
+      // the word beside it is what a reader hears. A local copy of that
+      // arrangement is free to drop the second half.
+      glyphAndLabel(treatment.glyph, labelFrom(treatment, outgoing)),
+    ),
+    ...(subject === null
+      ? [reference(relationship.from), reference(relationship.to)]
+      : [reference(outgoing ? relationship.to : relationship.from)]),
+  ];
+}
+
+/**
+ * A relationship's head on a row that HAS one: the description, inside the
+ * control that selects the edge.
+ *
+ * ONLY WHERE THE EDGE IS IN THE DOCUMENT. `select-edge` reduces to a selection,
+ * and the next render's `reconcileHost` drops a selection naming an edge the
+ * landed document does not carry — so on a phantom this control would close the
+ * inspector instead of inspecting anything. That is the rule the panel's own
+ * header already states about `+ add`: a control that cannot complete the act
+ * it advertises is not drawn. {@link refusalCapsule} draws the description
+ * bare for exactly that reason.
+ */
+function relationshipHead(
+  relationship: InspectorRelationship,
+  subject: string | null,
+): ElementSpec {
+  return element(
+    'button',
+    {
+      type: 'button',
+      class: 'ig-relationship-select',
+      'data-ig-command': 'select-edge',
+      'data-ig-target': relationship.edgeId,
+    },
+    relationshipDescription(relationship, subject),
+  );
+}
+
 /**
  * One relationship, as a row the reader can actually operate.
  *
@@ -324,12 +733,30 @@ function markRail(
  * reachable by pointer and by nothing else — and a host wiring the published
  * attributes cannot fix that without rebuilding the semantics this package
  * should have supplied. Every other command in the package is already on a
- * button; `refusalSpec`'s capsule is the same `li` + `button` shape.
+ * button; {@link refusalCapsule}'s capsule is the same `li` + `button` shape.
  *
  * The `li` keeps the hue and the direction, because those describe the
  * relationship rather than the action.
+ *
+ * ## A REFUSAL CAN LAND ON A ROW THAT STAYS
+ *
+ * `refused` is the code when the store refused an edit ABOUT this relationship
+ * and the relationship is still there — a create of an edge that already
+ * exists, a retype to the kind it already has, a flip of a symmetric kind. The
+ * reason joins the row and the row keeps its remove control, because the edge
+ * it names is real and removable; only a refusal about an edge that does not
+ * exist replaces the row, and {@link WorkspaceRefusal.phantom} is which. It is
+ * published as `data-ig-code` here for the same reason the capsule publishes
+ * it: a host styles or counts refusals off the store's vocabulary rather than
+ * by matching a sentence.
  */
-function relationshipSpec(relationship: InspectorRelationship): ElementSpec {
+function relationshipSpec(
+  relationship: InspectorRelationship,
+  subject: string | null,
+  selected: string | null,
+  words: WorkspaceWords,
+  refused: InvalidCode | undefined,
+): ElementSpec {
   return element(
     'li',
     {
@@ -338,24 +765,153 @@ function relationshipSpec(relationship: InspectorRelationship): ElementSpec {
       // Omitted rather than falsified when the subject is not an issue: an edge
       // selection has no "my end", and `data-direction=""` would claim one.
       'data-direction': relationship.direction ?? undefined,
+      'data-ig-code': refused,
     },
     [
-      element(
-        'button',
-        {
-          type: 'button',
-          class: 'ig-relationship-select',
-          'data-ig-command': 'select-edge',
-          'data-ig-target': relationship.edgeId,
-        },
-        [
-          element('span', { class: 'ig-relationship-kind' }, [relationship.field]),
-          element('span', { class: 'ig-relationship-ref' }, [relationship.from]),
-          element('span', { class: 'ig-relationship-ref' }, [relationship.to]),
-        ],
-      ),
+      relationshipHead(relationship, subject),
+      refused === undefined ? null : refusalReason(refused, words),
+      rowSlot(relationship, selected, words),
     ],
   );
+}
+
+/**
+ * A refused relationship, drawn where the reader was building it.
+ *
+ * §17b's rule is that a refusal is shown IN PLACE and never snapped back, and
+ * until this the package had no surface that said so: the store marked the edge
+ * `invalid`, the canvas drew a ghost line, and the panel the reader had just
+ * used listed nothing about it. `would-cycle` is the case that matters — it is
+ * the one refusal this package family cannot detect for itself, so it arrives
+ * only after the reader has committed to the relationship.
+ *
+ * IT REPLACES THE ROW ONLY WHEN THERE IS NO RELATIONSHIP UNDER IT, and that
+ * qualification is the correction to an earlier "a refused edge is not a
+ * relationship: it is an edit that did not happen". Three of the store's codes
+ * refuse an edit ABOUT AN EDGE THAT EXISTS — `duplicate-edge`, `unchanged-kind`
+ * and `symmetric-edge` all mark a landed edge — so replacing the row for those
+ * deleted a real relationship from the panel, and with it the only control that
+ * could remove the edge the reader had just been told about.
+ * For an edge that genuinely does not exist the argument stands unchanged:
+ * listing it as an ordinary row would assert a relationship the document does
+ * not have, with a `select-edge` and a `✕` on it offering to remove something
+ * that was never added. {@link WorkspaceRefusal.phantom} is the question, and
+ * {@link relationshipEntries} is where it is asked. Either way the reader's
+ * POSITION is kept, because that is where they were working.
+ *
+ * THE SHAPE IS `scale/render.ts`'s CAPSULE — an `li` carrying a button and a
+ * stated reason — and the shape is all that is copied. That capsule's English
+ * is written inline in this package, which is a debt rather than a precedent;
+ * the reason here is the host's, keyed off the store's own code.
+ *
+ * IT NAMES THE EDGE AND OPERATES NOTHING. The capsule reused the row's head,
+ * which is a `select-edge` control — so a phantom that survived normalization
+ * (a `would-cycle` refusal reaches the panel as an edge, because the store
+ * draws a refused create precisely so a surface can mark it) published a live
+ * selector for an edge the LANDED document does not carry. Under
+ * `mountWorkspace` that click selected the phantom and the next render's
+ * `reconcileHost` dropped the selection again, so the one control on the
+ * capsule closed the inspector rather than inspecting anything. The
+ * description is drawn bare instead, on the rule
+ * {@link WorkspaceRefusal.phantom} already states in as many words: there is no
+ * relationship to operate. Its remove control was withheld for the same reason
+ * from the start; this is the half that was missed.
+ *
+ * `data-ig-code` IS THE STORE'S VOCABULARY VERBATIM, so a host that wants to
+ * style or count refusals reads the code rather than matching a sentence.
+ */
+function refusalCapsule(
+  relationship: InspectorRelationship | undefined,
+  code: InvalidCode,
+  subject: string | null,
+  words: WorkspaceWords,
+): ElementSpec {
+  return element(
+    'li',
+    {
+      class: 'ig-relationship-refused',
+      'data-ig-code': code,
+      'data-edge': relationship?.field,
+    },
+    [
+      // THE RELATIONSHIP IS NAMED WHEN IT CAN BE, AND THE CAPSULE STANDS WHEN
+      // IT CANNOT. The refused edge normally reaches the document as the
+      // store's phantom — `edgeChangeFor` draws a refused create so the refusal
+      // has something to be about — but a host that projects only landed edges
+      // gives us a code and nothing to word, and a refusal the reader cannot
+      // see is worse than one drawn without its subject.
+      relationship === undefined
+        ? null
+        : element(
+            'span',
+            { class: 'ig-relationship-name' },
+            relationshipDescription(relationship, subject),
+          ),
+      refusalReason(code, words),
+    ],
+  );
+}
+/**
+ * Frame 17b's numbered kind list, and the control that withdraws from it.
+ *
+ * THE DIGITS ARE `create/keys.ts`'s OWN, through `KIND_KEYS`. Drawing
+ * `index + 1` over the kind order here would be a second construction of the
+ * keyboard's table — which is exactly what the mount's chooser did, agreeing
+ * with the key map only because both walked `EDGE_FIELDS`, with nothing
+ * pinning them to each other.
+ *
+ * THE WORD IS THE EDGE VOCABULARY'S, so an entry in this list and the row it
+ * will become read the same. A `kinds` record on `WorkspaceWords` would be a
+ * third spelling of a wording layer 1 already publishes twice over.
+ *
+ * IT IS NOT DRAWN AT THE TARGET STEP. `renderWorkspace` is markup-only and the
+ * target search is a live input over the reader's query, so that step stays the
+ * shell's. A host using this renderer without `mountWorkspace` can read,
+ * remove and BEGIN a relationship, and must supply its own target picker.
+ *
+ * `source` NAMES THE DRAFT WHEN IT IS NOT THIS PANEL'S OWN, and is `null` when
+ * it is — see {@link addStepSpec} for why the list is drawn either way. Written
+ * as the reference beside the host's phrase, which is `whyRankSpec`'s own shape
+ * for the same problem: the package names the issue and the host writes the
+ * English around it.
+ */
+function kindListSpec(words: WorkspaceWords, source: string | null): ElementSpec {
+  return element('div', { class: 'ig-inspector-add' }, [
+    source === null
+      ? null
+      : element('p', { class: 'ig-inspector-source' }, [
+          `${words.relatingFrom} `,
+          element('span', { class: 'ig-id' }, [source]),
+        ]),
+    element(
+      'ul',
+      { class: 'ig-kind-list' },
+      KIND_KEYS.map((entry) => {
+        const treatment = treatmentFor(entry.edgeKind);
+        return element('li', {}, [
+          element(
+            'button',
+            {
+              type: 'button',
+              class: 'ig-kind-option',
+              'data-ig-command': 'kind',
+              'data-ig-value': entry.edgeKind,
+              'data-edge': entry.edgeKind,
+            },
+            [
+              element('span', { class: 'ig-kind-digit' }, [entry.key]),
+              ...glyphAndLabel(treatment.glyph, treatment.label),
+            ],
+          ),
+        ]);
+      }),
+    ),
+    element(
+      'button',
+      { type: 'button', class: 'ig-inspector-cancel', 'data-ig-command': 'cancel' },
+      [words.cancel],
+    ),
+  ]);
 }
 
 /**
@@ -477,20 +1033,214 @@ function headerMarkup(host: HostFacts | undefined, auditHeader: string): string 
   return `<div class="ig-workspace-header">${parts.join('')}</div>`;
 }
 
-function inspectorSpec(
+/**
+ * Everything the panel needs beyond the view it is drawing.
+ *
+ * AN OBJECT RATHER THAN SIX POSITIONAL PARAMETERS, and the reason is the same
+ * one the binding tables give: a call site that has to remember an order is a
+ * call site that can get it wrong silently, and two of these are
+ * `ReadonlyMap`s of string, which no signature distinguishes.
+ */
+interface InspectorContext {
+  readonly words: WorkspaceWords;
+  /** The keys a hold's subject control may name — see {@link holdRow}. */
+  readonly known: ReadonlySet<string>;
+  /** Which slot a key sits in, by lead. See {@link holdRow}. */
+  readonly leadOf: ReadonlyMap<string, string>;
+  readonly draft: CreateDraft;
+  readonly drop: Point | null;
+  /**
+   * Refused edits, in the order the store recorded them. See {@link
+   * relationshipEntries}.
+   *
+   * A LIST, AND THE LEDGER'S OWN ORDER. It was a `ReadonlyMap` keyed by edge,
+   * collapsed by the caller — which threw the chronology away at the seam
+   * where two collections were joined, so a stale refusal on an edge could
+   * outrank the one the reader had just caused. The collapse is a rendering
+   * decision ("one row states one reason, the last one") and it now happens
+   * where that decision is made, over a list whose order is the store's.
+   */
+  readonly refusals: readonly WorkspaceRefusal[];
+}
+
+/**
+ * Which refusals a panel is entitled to state.
+ *
+ * THE PANEL'S REACH, AS DATA. The three subjects reach different things and
+ * the difference is not a detail: an issue panel speaks for a whole together
+ * unit, because `inspectorView` folds every member onto the slot's lead and
+ * words the panel from it — so an edit made from a PARTNER is an edit made
+ * from this panel, and stating its refusal anywhere else states it nowhere. An
+ * edge panel is one relationship narrowed out of a list, so it states a
+ * refusal about that relationship and no other. And `none` states nothing at
+ * all: a refusal drawn under "pick a row to inspect it" is a refusal about an
+ * issue the reader is not looking at, and it also suppresses the empty line by
+ * making the list non-empty.
+ *
+ * BUILT FROM THE VIEW, NOT FROM THE SELECTION. `unitPartners` is
+ * `inspectorView`'s own record of which keys canonicalize onto this subject —
+ * the same canonicalization that chose the subject — so the set cannot come
+ * apart from the heading above it.
+ */
+type PanelScope =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'issue'; readonly keys: ReadonlySet<string> }
+  | { readonly kind: 'edge'; readonly edgeId: EdgeId };
+
+function panelScope(view: InspectorView): PanelScope {
+  const { subject } = view;
+  switch (subject.kind) {
+    case 'none':
+      return { kind: 'none' };
+    case 'issue':
+      return {
+        kind: 'issue',
+        keys: new Set([subject.issue.key, ...(subject.whyRank?.unitPartners ?? [])]),
+      };
+    case 'edge':
+      return { kind: 'edge', edgeId: subject.relationship.edgeId };
+  }
+}
+
+/** Whether this panel is the one that states this refusal. */
+function statedHere(scope: PanelScope, refusal: WorkspaceRefusal): boolean {
+  switch (scope.kind) {
+    case 'none':
+      return false;
+    case 'issue':
+      return scope.keys.has(refusal.carrier);
+    case 'edge':
+      return refusal.edgeId === scope.edgeId;
+  }
+}
+
+/**
+ * The relationship list, with a refused edit drawn where the reader made it.
+ *
+ * ## A refusal about an edge that EXISTS keeps its row
+ *
+ * See {@link WorkspaceRefusal.phantom}. Four of the store's codes mark a landed
+ * edge, so the capsule replaces the row only when there is no relationship
+ * under it; otherwise the reason joins the row and the remove control stays.
+ *
+ * ## Whose refusal it is, is not a question asked here
+ *
+ * {@link statedHere} asks it, of the carrier the refusal arrived carrying —
+ * and that is the whole of the change this function used to be the wrong place
+ * for. `refusals` is one list for the whole surface, not one per panel, and
+ * this function used to filter it by asking whether the refused edge's
+ * IDENTITY named the panel's subject. That is a second derivation of the
+ * edit's subject, run against a subject derived by a different rule, and every
+ * way the two can come apart is a refusal drawn in the wrong place or in no
+ * place: on every panel when nothing matched, on none when the panel had been
+ * canonicalized onto a together unit's lead, on none again when the projection
+ * had hidden the edge and left the panel with no subject at all. The refusal
+ * names its own carrier now, so there is one derivation and nothing for a
+ * second one to disagree with.
+ *
+ * ## The list is the ledger's, and the LAST refusal on an edge is the one
+ *
+ * One row states one reason, and the reader can be refused twice on one
+ * relationship — `ProjectedEdge.writes` is a list because two edits touching
+ * one edge compose in the order the reader made them. The last is the one they
+ * just caused; the first is one they have read and moved past. That collapse
+ * is `Map`'s repeated-key rule over `refusals` IN ORDER, which is why the
+ * option is a list rather than a map a caller had already collapsed: a caller
+ * assembling one from two passes loses the chronology at the join, and reports
+ * a stale reason for an edge the reader has just been refused on again.
+ *
+ * ## A refusal with no row is still drawn
+ *
+ * The refused edge normally reaches the document — the store draws a refused
+ * create as a phantom precisely so a surface can mark it — but that depends on
+ * the host's projection, and a refusal that vanished because the host projects
+ * only landed edges is the "never silently dropped" half of §17b's rule failing
+ * quietly. So a refusal this panel states and no row carries is appended after
+ * the rest, as a capsule.
+ */
+function relationshipEntries(
   view: InspectorView,
-  words: WorkspaceWords,
-  known: ReadonlySet<string>,
-  leadOf: ReadonlyMap<string, string>,
-): ElementSpec {
+  subject: string | null,
+  selected: string | null,
+  context: InspectorContext,
+): readonly ElementSpec[] {
+  const scope = panelScope(view);
+  const stated = new Map<EdgeId, WorkspaceRefusal>();
+  for (const refusal of context.refusals) {
+    if (statedHere(scope, refusal)) stated.set(refusal.edgeId, refusal);
+  }
+  const listed = new Set<EdgeId>();
+  const rows = view.relationships.map((relationship) => {
+    const refusal = stated.get(relationship.edgeId);
+    if (refusal === undefined) {
+      return relationshipSpec(relationship, subject, selected, context.words, undefined);
+    }
+    listed.add(relationship.edgeId);
+    return refusal.phantom
+      ? refusalCapsule(relationship, refusal.code, subject, context.words)
+      : relationshipSpec(relationship, subject, selected, context.words, refusal.code);
+  });
+  const orphaned = [...stated.values()]
+    .filter((refusal) => !listed.has(refusal.edgeId))
+    .map((refusal) => refusalCapsule(undefined, refusal.code, subject, context.words));
+  return [...rows, ...orphaned];
+}
+
+/**
+ * §17a's inspector panel.
+ *
+ * ## The heading and the clear control are the panel's, not the list's
+ *
+ * Both used to hang off the relationship list, and the clear control was drawn
+ * only while an EDGE selection was narrowing it — so a reader who had selected
+ * an issue had no way back to nothing selected, on a control whose own doc
+ * says it "returns to nothing selected" and whose command is `clear`. The
+ * condition it wanted was "is there a selection to clear", which is what it now
+ * asks. `INITIAL_SELECTION` resolves to `none`, so the control is absent
+ * exactly when pressing it would do nothing.
+ *
+ * ## The create step is drawn here, and the target step is not
+ *
+ * See {@link kindListSpec}. What the panel owns is `+ add` and the numbered
+ * kind list; the target search stays in the shell because it is a live input
+ * over the reader's query and this renderer returns markup.
+ *
+ * WITH AN EDGE SELECTED IT DRAWS NEITHER. That is not the create path being
+ * unavailable — it is the panel filtered to one relationship, where "add a
+ * relationship from the selected issue" has no subject: `reduceHost`'s `add`
+ * reads `selectedKey`, which answers `null` for an edge selection. A control
+ * that could not complete the act it advertises is the finding the audit
+ * header already records paying for once.
+ */
+function inspectorSpec(view: InspectorView, context: InspectorContext): ElementSpec {
+  const { words } = context;
   const subject = view.subject;
+  // THE CANONICAL SUBJECT, NOT THE SELECTION'S KEY. `inspectorView` folds a
+  // together-unit member onto its slot's lead and lists the LEAD's
+  // relationships, so a row worded against the key the reader clicked would
+  // read every relationship from the wrong end on exactly the units where a
+  // partner was selected. Read off the view, which is what the list was built
+  // from.
+  const key = subject.kind === 'issue' ? subject.issue.key : null;
+  const selected = subject.kind === 'edge' ? subject.relationship.edgeId : null;
+  const entries = relationshipEntries(view, key, selected, context);
   return element('div', { class: 'ig-inspector', 'data-subject': subject.kind }, [
+    element('div', { class: 'ig-inspector-head' }, [
+      element('h2', { class: 'ig-inspector-name' }, [words.inspector]),
+      subject.kind === 'none'
+        ? null
+        : element(
+            'button',
+            { type: 'button', class: 'ig-inspector-clear', 'data-ig-command': 'clear' },
+            [words.clearSelection],
+          ),
+    ]),
     subject.kind === 'none'
       ? element('p', { class: 'ig-inspector-empty' }, [words.nothingSelected])
       : null,
     subject.kind === 'issue'
       ? element('div', { class: 'ig-inspector-issue' }, [
-          element('h2', { class: 'ig-inspector-title' }, [subject.issue.title]),
+          element('h3', { class: 'ig-inspector-title' }, [subject.issue.title]),
           // LAYER 1's CHIP, not a second spelling of it. `identity` links the
           // qualified reference when the host gave a URL and prints it plain
           // when it did not — the rule for which is exactly the knowledge this
@@ -506,7 +1256,9 @@ function inspectorSpec(
                 subject.whyRank,
                 words,
                 subject.whyRank.holds.map((hold) =>
-                  holdRow(hold, known, (key) => leadOf.get(key) === leadOf.get(subject.issue.key)),
+                  holdRow(hold, context.known, (subjectKey) =>
+                    context.leadOf.get(subjectKey) === context.leadOf.get(subject.issue.key),
+                  ),
                 ),
               ),
         ])
@@ -516,23 +1268,116 @@ function inspectorSpec(
       { class: 'ig-inspector-relationships', 'data-filtered': view.filtered ? 'true' : 'false' },
       [
         element('h3', { class: 'ig-inspector-heading' }, [words.relationships]),
-        view.filtered
-          ? element(
-              'button',
-              { type: 'button', class: 'ig-inspector-clear', 'data-ig-command': 'clear' },
-              [words.clearSelection],
-            )
+        // A STATED EMPTY, AND ONLY WHERE THERE IS A SUBJECT TO STATE IT ABOUT.
+        // With nothing selected the panel already says so once, in
+        // `nothingSelected`; adding "no relationships" under it would be the
+        // same absence reported twice, in two registers, on the render where
+        // the reader has asked nothing yet.
+        entries.length === 0 && subject.kind !== 'none'
+          ? element('p', { class: 'ig-inspector-none' }, [words.noRelationships])
           : null,
-        view.relationships.length === 0
-          ? null
-          : element(
-              'ul',
-              { class: 'ig-relationship-list' },
-              view.relationships.map((relationship) => relationshipSpec(relationship)),
-            ),
+        entries.length === 0 ? null : element('ul', { class: 'ig-relationship-list' }, entries),
+        // THE STEPS ARE EXCLUSIVE, AND THE CHAIN IS THE SHELL'S OWN. `+ add`
+        // begins a draft; the numbered list is what a live draft with no kind
+        // yet looks like. Drawing `+ add` beside a live list would offer a
+        // reader mid-draft a control that RESETS the draft they are in —
+        // `create/draft.ts` makes `begin` clear the kind and the target
+        // deliberately.
+        // ASKED UNCONDITIONALLY, because the step belongs to the DRAFT and only
+        // `+ add` belongs to the subject. `subject.kind !== 'issue' ? null : …`
+        // was one guard doing both jobs, and it dropped a live draft's controls
+        // on a panel with no issue subject — which `reconcileHost` reaches by
+        // clearing a selection whose issue a write removed while leaving a
+        // draft begun from another issue standing.
+        addStepSpec(context, subject.kind === 'issue' ? subject.issue.key : null),
       ],
     ),
   ]);
+}
+
+/**
+ * Which step of the create path the panel is showing.
+ *
+ * THE STEP FOLLOWS THE DRAFT, NOT THE SELECTION, and the draft's source is
+ * NAMED when it is not this panel's subject. The two can diverge: `pointed`
+ * diverts a click to the draft only once a kind has been chosen, so at the kind
+ * step a click anywhere else moves the selection and leaves the draft's source
+ * behind — and `R` on a together unit's non-lead member begins a draft from
+ * that member while `inspectorView` canonicalizes the panel onto the slot's
+ * LEAD, so the two disagree from the first keystroke. Unnamed, the panel showed
+ * "choose a kind" beneath the heading of one issue while the write would go out
+ * from another. Named, it says whose draft it is.
+ *
+ * WITHHOLDING THE LIST WAS THE FIRST ANSWER AND IT WAS WORSE. It left the
+ * reader a LIVE draft with no pointer route to it at all: the numbered choices
+ * were gone, the cancel that sits with them was gone, and the shell draws no
+ * chooser of its own at this step — `mount.ts`'s floating one is drawn only
+ * under a canvas drop, and its target search only once a kind is chosen. So the
+ * one control still on screen was `+ add`, which does not cancel a draft, it
+ * RESETS one, silently moving the source to whatever the reader happened to be
+ * looking at. "The shell's cancel still reaches it" was the reasoning, and the
+ * shell has no cancel to reach it with. A draft the reader cannot abandon with
+ * a pointer is the failure `create/keys.ts` names for the keyboard, and the
+ * cost of the alternative — one phrase naming an issue that is not the panel's
+ * subject — is the cost the shell's own chooser always paid, in the sentence it
+ * printed above its kinds.
+ *
+ * `+ add` IS NOT DRAWN BESIDE IT, on either panel. Two entries into one draft is
+ * the rule {@link WorkspaceOptions.drop} already states for the floating
+ * chooser, and here the second entry is the destructive one: `create/draft.ts`
+ * makes `begin` clear the kind and the target deliberately, so a reader
+ * mid-draft offered `+ add` is offered a reset wearing the label of a start.
+ * They restart by cancelling first, which is now a control they can see.
+ *
+ * IT IS ASKED FOR EVERY SUBJECT, INCLUDING NONE. `+ add` is the half that needs
+ * one — `reduceHost`'s `add` arm answers `null` for an edge selection and for
+ * none, so a control there could not complete — and the step is not. One guard
+ * over both dropped a live draft's controls on a panel with no issue subject,
+ * which `reconcileHost` reaches: it clears a selection whose issue a landed
+ * write removed while leaving a draft begun from a DIFFERENT issue standing,
+ * because that draft's own references are all still in the document.
+ *
+ * `null` AT THE TARGET STEP AND UNDER A LIVE DROP, which are two more different
+ * silences and both deliberate. The target step belongs to the shell, which
+ * owns the live input — and draws its own cancel beside it, naming the source
+ * in the same sentence. A drop means a chooser is already open at the pointer,
+ * with a cancel of its own, and a second copy of the same step in the column
+ * beside it would be two controls writing to one draft.
+ */
+function addStepSpec(context: InspectorContext, subject: string | null): ElementSpec | null {
+  const { draft, drop, words } = context;
+  // THE ONE LIVE KIND STEP, WHEREVER IT WAS BEGUN. Asked of the draft alone, so
+  // there is exactly one panel state for it rather than one per subject — and
+  // so a panel with no issue subject at all still carries the cancel.
+  if (draft.source !== null && draft.kind === null && drop === null) {
+    return kindListSpec(words, draft.source === subject ? null : draft.source);
+  }
+  // `+ add` NEEDS A SUBJECT TO BEGIN FROM, and `reduceHost`'s `add` arm answers
+  // `null` for an edge selection and for none — so drawing it there would
+  // publish an act that cannot complete.
+  if (subject !== null && draft.source !== subject) {
+    return element('div', { class: 'ig-inspector-add' }, [
+      element(
+        'button',
+        {
+          type: 'button',
+          class: 'ig-inspector-addbutton',
+          'data-ig-command': 'add',
+          // THE CANONICAL SUBJECT, PUBLISHED, for the reason the row's remove
+          // control publishes its own edge. `reduceHost`'s `add` arm read
+          // `selectedKey` — the RAW key — while everything around it is worded
+          // against the slot LEAD that `inspectorView` canonicalizes to, so
+          // selecting a together-unit PARTNER drew a panel titled with the lead
+          // and began a relationship from the partner. The act names its
+          // subject; the selection is the fallback for a control that names
+          // none.
+          'data-ig-target': subject,
+        },
+        [words.addRelationship],
+      ),
+    ]);
+  }
+  return null;
 }
 
 /**
@@ -737,7 +1582,28 @@ export function renderWorkspace(
       ].join(''),
     ),
     zone('canvas', canvas.markup),
-    zone('inspector', renderMarkup(inspectorSpec(inspector, options.words, known, leadOf))),
+    zone(
+      'inspector',
+      renderMarkup(
+        inspectorSpec(inspector, {
+          words: options.words,
+          known,
+          leadOf,
+          draft: options.draft ?? IDLE_CREATE_DRAFT,
+          drop: options.drop ?? null,
+          // FORWARDED IN THE ORDER IT ARRIVED, and turned into an answer per
+          // edge inside `relationshipEntries` — after the panel has decided
+          // which of them are its to state. Collapsing here instead put the
+          // "one reason per row" rule one layer away from the filter that
+          // decides which reasons there are, and made the ORDER of this array
+          // load-bearing at a distance: a caller building it from two passes
+          // lost the ledger's chronology at the join, and the panel reported a
+          // refusal the reader had already read instead of the one they had
+          // just caused.
+          refusals: options.refusals ?? [],
+        }),
+      ),
+    ),
     `</div>`,
   ].join('');
 

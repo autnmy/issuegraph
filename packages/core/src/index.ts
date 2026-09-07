@@ -192,6 +192,80 @@ export function edgeIdentity(field: EdgeField, from: string, to: string): string
   return `${field}|${encodeRef(first)}|${encodeRef(second)}`;
 }
 
+/**
+ * Which end of a relationship a reference sits on, so far as an identity
+ * records it.
+ *
+ * `either` IS AN ANSWER RATHER THAN A MISSING ONE. The carrier is the issue
+ * whose own frontmatter declares the relationship (§4.3), which is `from`, and
+ * {@link edgeIdentity} keeps that order for the directed fields — for them the
+ * direction IS the fact — while SORTING it away for the symmetric ones so that
+ * both spellings of one relationship collapse to one string. A symmetric
+ * identity therefore names two references and records nothing about which of
+ * them declared the relationship; `either` says that, instead of naming one and
+ * being right half the time.
+ */
+export type EdgeIdentityEnd = 'carrier' | 'far' | 'either';
+
+/**
+ * Which end of an identity names this reference — `null` when neither does.
+ *
+ * HERE BECAUSE THE FORMAT IS HERE, and that is the whole of the argument. An
+ * identity is written by {@link edgeIdentity} alone, and the only other way to
+ * ask anything about a written one is to split it on `|` at the call site — a
+ * second spelling of the format, in a package that cannot see {@link encodeRef}
+ * and would therefore have compared a RAW reference against an ENCODED segment.
+ * That comparison is right for every reference a test happens to use and wrong
+ * for every one carrying a `#`, a `/` or a space, which is most of them:
+ * `owner/repo#9` encodes to `owner%2Frepo%239`.
+ *
+ * IT ANSWERS AS MUCH AS THE FIELD ALLOWS AND NO MORE, WHICH TOOK TWO WRONG
+ * SHAPES TO ARRIVE AT. A revision returned `'carrier' | 'far' | null` for every
+ * field, on the argument that its one reader — `@issuegraph/editor`, placing a
+ * refused edit whose relationship the document no longer holds — needed a way
+ * to choose between two candidates. That answer was false for the SYMMETRIC
+ * fields: their first segment is the sort order, not the declaring end, so a
+ * refusal about such an edge landed on the far end's panel whenever the pair
+ * sorted the other way. The correction was a plain boolean, and it was false in
+ * the other direction — it discarded the order the DIRECTED fields do keep, and
+ * left that same reader picking whichever end its own document listed first,
+ * which put a `blocked-by` refusal on the target's panel for every identity
+ * whose target was listed before its source. Half a format is not a fact about
+ * the whole of it. The split is the answer: {@link isSymmetricEdgeField} is the
+ * same predicate {@link edgeIdentity} sorts by, so there is one rule and this
+ * reads it rather than restating it.
+ *
+ * A FIELD SEGMENT THIS FORMAT DOES NOT RECOGNISE ANSWERS `either` TOO. Such a
+ * string was not written here, so whether its ends were sorted is unknown —
+ * and unknown is `either`, the same answer as a fact deliberately discarded.
+ * Reporting an order that may never have been written is the mistake above.
+ *
+ * IT COMPARES FORWARDS RATHER THAN DECODING. `encodeRef` is deliberately not
+ * invertible in one place — a lone surrogate becomes `%uXXXX`, which
+ * `decodeURIComponent` rejects — so the question is asked by encoding the
+ * reference and matching a segment, never by reading one back out. That also
+ * keeps the answer exact: two references that differ collide in no encoding.
+ *
+ * TOTAL OVER ARBITRARY STRINGS, including an `id` this package did not write.
+ * A string with no separators simply names nothing, which is the answer a
+ * caller wants for a value that reached it from a host.
+ */
+export function edgeIdentityEnd(id: string, ref: string): EdgeIdentityEnd | null {
+  const parts = id.split('|');
+  // THE TWO REFERENCE SEGMENTS ARE MATCHED, AND THE FIELD IS ONLY ASKED ABOUT
+  // ITS ORDERING. `encodeRef` escapes nothing to a bare field name, so a field
+  // could not collide with a reference — but matching only the ends says what
+  // is meant rather than relying on that.
+  if (parts.length !== 3) return null;
+  const encoded = encodeRef(ref);
+  const [field, first, second] = parts;
+  if (first !== encoded && second !== encoded) return null;
+  if (field === undefined || !isEdgeField(field) || isSymmetricEdgeField(field)) return 'either';
+  // A SELF-EDGE MATCHES BOTH SEGMENTS AND ANSWERS `carrier`: its two ends are
+  // one issue, so there is one panel and no tie for a caller to break.
+  return first === encoded ? 'carrier' : 'far';
+}
+
 /** Narrow an arbitrary string to a scalar field name. */
 export function isScalarField(value: string): value is ScalarField {
   return SCALAR_FIELD_SET.has(value);

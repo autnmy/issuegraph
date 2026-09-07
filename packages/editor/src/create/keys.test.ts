@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import { EDGE_FIELDS } from '@issuegraph/core';
 import { makeEdge } from '@issuegraph/store';
 
-import { type KeyboardContext, keyIntent } from './keys.ts';
+import { KIND_KEYS, type KeyboardContext, keyIntent } from './keys.ts';
 import { OBJECT, SUBJECT } from '../testing/picker.ts';
 
 const EMPTY: KeyboardContext = Object.freeze({
@@ -79,6 +79,45 @@ describe('the digits are the format\'s vocabulary, not a list kept here', () => 
     // length to `EDGE_FIELDS` rather than to the number five.
     assert.deepEqual(keyIntent({ key: String(EDGE_FIELDS.length + 1) }, EMPTY), { kind: 'none' });
     assert.deepEqual(keyIntent({ key: '0' }, EMPTY), { kind: 'none' });
+  });
+});
+
+describe('the drawn digits are these digits, not a second walk of the format', () => {
+  // WHAT THIS HAS TO CATCH is a renderer numbering the kinds itself. That is not
+  // hypothetical: `workspace/mount.ts` did exactly it, building `index + 1` from
+  // a `KINDS` alias — since deleted along with the chooser that read it — while
+  // this map built the same digits from `EDGE_FIELDS`, with nothing tying the
+  // two together.
+  //
+  // BOTH SIDES ARE DERIVED FROM `EDGE_FIELDS`, NEVER FROM `KIND_KEYS` ITSELF.
+  // An assertion that read the expectation off the table it is testing — say, a
+  // round trip through `keyIntent(entry.key)` back to `entry.edgeKind` — reads
+  // both halves out of one `Map` entry, so it is true by construction and could
+  // not fail if the table were built wrongly. These two compare the table
+  // against the vocabulary it claims to be numbering.
+  it('numbers the format\u2019s fields from 1, in the format\u2019s order', () => {
+    assert.deepEqual(
+      KIND_KEYS.map((entry) => entry.key),
+      EDGE_FIELDS.map((_, index) => String(index + 1)),
+    );
+  });
+
+  it('names the format\u2019s kinds, in the format\u2019s order', () => {
+    assert.deepEqual(
+      KIND_KEYS.map((entry) => entry.edgeKind),
+      [...EDGE_FIELDS],
+    );
+  });
+
+  it('publishes the kinds and nothing else the keyboard binds', () => {
+    // `r`, `⏎`, `⌫`, `Delete`, `t` and `Escape` are on the same table and are not
+    // kinds. Exporting the table whole would have handed every consumer the job
+    // of telling them apart; this is the assertion that the filtering happened.
+    assert.equal(KIND_KEYS.length, EDGE_FIELDS.length);
+    assert.equal(
+      KIND_KEYS.some((entry) => ['r', 'enter', 'backspace', 'delete', 't', 'escape'].includes(entry.key)),
+      false,
+    );
   });
 });
 

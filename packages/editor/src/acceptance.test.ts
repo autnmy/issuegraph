@@ -731,12 +731,30 @@ const {
 } = surface;
 
 const WORKSPACE_WORDS: surface.WorkspaceWords = {
+  inspector: 'the detail panel',
   nothingSelected: 'pick a row to inspect it',
   clearSelection: 'clear the selection',
   relationships: 'relationships',
   whyRank: 'why rank',
   whyHeld: 'why held',
   workedAsOneUnit: 'worked as one unit with',
+  noRelationships: 'nothing is related to this',
+  addRelationship: 'begin a relationship',
+  cancel: 'abandon the draft',
+  relatingFrom: 'the draft starts at',
+  remove: 'unlink this row',
+  inbound: 'declared elsewhere',
+  refusals: {
+    'self-edge': 'an issue cannot relate to itself',
+    'unknown-issue': 'that issue is not in this backlog',
+    'unknown-edge': 'that relationship is already gone',
+    'duplicate-edge': 'that relationship is already declared',
+    'unchanged-kind': 'it is already that kind',
+    'symmetric-edge': 'that kind reads the same both ways',
+    'cardinality': 'that field holds one reference',
+    'would-cycle': 'that would close a loop',
+    'guard-failed': 'the check could not be run',
+  },
 };
 
 /** A backlog of `total` issues, ranked in key order. */

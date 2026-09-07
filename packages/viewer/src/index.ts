@@ -100,20 +100,40 @@ export { resolveTheme,
 export { viewerStylesheet } from './styles.ts';
 
 export type { EdgeDash, EdgeTerminal, EdgeTreatment, OrderingEffect } from './vocabulary.ts';
-export { EDGE_TREATMENTS, dashArrayFor, treatmentFor } from './vocabulary.ts';
+// `labelFrom` is on the surface for the same reason `treatmentFor` beside it
+// is, and it carries more than a lookup: it is the ONE construction of "which
+// verb, read from which end". §16's rail badge and §17a's inspector row draw
+// the same edge one zone apart on one screen, so a consumer left to write
+// `outgoing || symmetric ? label : reverseLabel` itself has a second copy of an
+// expression whose failure mode is not a missing word but an INVERTED one — an
+// inbound `duplicate-of` worded forwards asserts that the reader's subject is
+// the duplicate when the other issue is. Publishing the treatment's fields and
+// withholding the rule that reads them is what put two copies of it here once
+// already.
+export { EDGE_TREATMENTS, dashArrayFor, labelFrom, treatmentFor } from './vocabulary.ts';
 
 export { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET } from './projections/graph.ts';
 // `COMMAND_ATTRIBUTE` is on the surface because a host that reads the DOM rather
 // than the callback needs the attribute name, and knowing it by inspection is
 // how a consumer ends up with a literal that drifts.
-// `identity` and `provenanceClause` are on the surface for the EDITOR, which
-// composes both into §17a's inspector. Reaching them by relative path instead
-// is a package escape `check:isolation` fails, and re-spelling either in layer
-// 2 would give one fact two wordings — the identity chip's link rule and the
-// provenance sentence would then be free to drift from the rail's.
+// `identity`, `provenanceClause`, `glyphAndLabel` and `hiddenGlyph` are on the
+// surface for the EDITOR, which composes all four into §17a's inspector.
+// Reaching them by relative path instead is a package escape
+// `check:isolation` fails, and re-spelling any of them in layer 2 would give
+// one fact two wordings — the identity chip's link rule and the provenance
+// sentence would then be free to drift from the rail's, and a second
+// glyph/word pairing is free to drop the `aria-hidden` that makes the pair
+// accessible at all.
+// TWO PIECES OF ONE RULE, BECAUSE ONE OF THEM ALONE PUBLISHED A COPY. The
+// inspector's `✕` is a glyph with no visible word — its name is on the button
+// it sits in — so given only the pairing, layer 2 wrote the `ig-glyph` class
+// and the `aria-hidden` out by hand: the same duplication, in the same commit
+// that argued against it. `hiddenGlyph` is the half that call site needs.
 export {
   COMMAND_ATTRIBUTE,
   ROW_BADGE_BUDGET,
+  glyphAndLabel,
+  hiddenGlyph,
   identity,
   provenanceClause,
 } from './parts.ts';
