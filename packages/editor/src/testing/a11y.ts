@@ -49,7 +49,11 @@ function apply(document: GraphDocument, mutation: Mutation): GraphDocument {
   return { ...document, edges: [...document.edges, makeEdge(mutation.kind, mutation.from, mutation.to)] };
 }
 
-function project(snapshot: StoreSnapshot): WorkspaceProjection {
+function projectWith(held: boolean) {
+  return (snapshot: StoreSnapshot): WorkspaceProjection => project(snapshot, held);
+}
+
+function project(snapshot: StoreSnapshot, held = false): WorkspaceProjection {
   const landed = { issues: snapshot.issues, edges: snapshot.landed };
   return {
     viewer: {
@@ -65,8 +69,15 @@ function project(snapshot: StoreSnapshot): WorkspaceProjection {
           rank: row.rank + 1,
           lead: row.ref,
           members: [row.ref],
-          ready: row.ready,
-          holds: [],
+          ready: held && row.ref === '3' ? false : row.ready,
+          // A HOLD WITH A SUBJECT THE DOCUMENT CARRIES, which is the only
+          // shape that draws one: `holdRow` publishes `select-issue` on the
+          // holder, and withholds the control for a subject the inspector
+          // could not resolve or one already in the inspected slot.
+          holds:
+            held && row.ref === '3'
+              ? [{ family: 'graph' as const, reason: 'held until #2 closes', code: 'blocked-by', subject: '2' }]
+              : [],
         })),
         excluded: [],
       },
@@ -108,6 +119,12 @@ export async function a11ySurface(
     readonly refusalTier?: boolean;
     /** Select an edge, which is the only thing that renders the retype picker. */
     readonly selectEdge?: boolean;
+    /** A backlog with nothing related, which is what draws the isolated chip. */
+    readonly isolated?: boolean;
+    /** Open that chip, so its other command is recorded too. */
+    readonly openIsolated?: boolean;
+    /** Put a hold on the inspected slot, which is what draws its subject control. */
+    readonly held?: boolean;
   } = {},
 ): Promise<{ root: Element; close: () => void }> {
   const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>');
@@ -121,7 +138,12 @@ export async function a11ySurface(
   // to cover what this package renders.
   const dense = 90;
   const seed: GraphDocument =
-    options.refusalTier === true
+    options.isolated === true
+      ? // NOTHING RELATED TO ANYTHING, which is what leaves issues isolated:
+        // the chip is drawn only for a non-empty isolated set, and every other
+        // fixture here connects its issues.
+        { issues: SEED.issues, edges: [] }
+      : options.refusalTier === true
       ? {
           issues: Array.from({ length: dense }, (_unused, index) => ({
             ref: String(index + 1),
@@ -139,7 +161,7 @@ export async function a11ySurface(
   await store.hydrate();
   const handle = mountWorkspace(host, {
     store,
-    project,
+    project: projectWith(options.held === true),
     words: WORDS,
     // SUPPLIED SO §17a's ENTRY IS DRAWN, and so the QUEUE can be opened. The
     // entry is a command control in the rail's panel header, and the queue
@@ -178,6 +200,16 @@ export async function a11ySurface(
   assert.ok(row !== undefined, 'no rail row for 3');
   row.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
   await flush();
+
+  // THE ISOLATED CHIP'S OTHER STATE, when asked for. One button, two commands
+  // — the same toggle the focus token had to learn to follow — so recording it
+  // shut and open is what puts both names in the artifact.
+  if (options.openIsolated === true) {
+    const chip = host.querySelector<HTMLElement>('[data-ig-command="open-isolated"]');
+    assert.ok(chip !== null, 'no isolated chip to open');
+    chip.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    await flush();
+  }
 
   // AN EDGE SELECTION, when asked for. `inspectorChrome` renders the mounted
   // retype picker only while an edge is selected, so `retype` and `flip` — two

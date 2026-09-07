@@ -73,6 +73,9 @@ async function surfaces(): Promise<Record<string, readonly ControlEntry[]>> {
     ['first-pass-open', { openFirstPass: true }],
     ['refusal-tier', { refusalTier: true }],
     ['edge-selected', { selectEdge: true }],
+    ['isolated-shut', { isolated: true }],
+    ['isolated-open', { isolated: true, openIsolated: true }],
+    ['held-slot', { held: true }],
   ] as const) {
     const page = await a11ySurface(options);
     try {
@@ -118,6 +121,88 @@ describe('the control surface matches its committed baseline', () => {
     assert.equal(shut?.aria['aria-controls'], undefined, 'a shut disclosure named a region');
     assert.equal(open?.aria['aria-expanded'], 'true');
     assert.equal(open?.aria['aria-controls'], 'resolves');
+  });
+});
+
+/**
+ * Which controls the recorded states are supposed to contain.
+ *
+ * DECLARED, NOT SCANNED. Half these names never appear as a literal —
+ * `open-isolated` and `close-isolated` come out of a ternary, `target` and
+ * `undo` are built at mount — so a grep over the source would report the list
+ * it could see and call it complete, which is the failure mode `purity.test.ts`
+ * records paying for with a regex it eventually deleted.
+ *
+ * WHY IT EXISTS AT ALL. Five separate review rounds on this change found the
+ * same thing: a control the package renders that no recorded state contained,
+ * so a regression in its name, role or tab stop moved neither the artifact nor
+ * a rule. Each was a real gap and each was cheap, and there was no end to them,
+ * because nothing said which controls the artifact had never seen. This does.
+ * Adding a control to the package now fails HERE, on the change that adds it,
+ * instead of surfacing one review round at a time on some later pull request.
+ */
+const RENDERED_CONTROLS: readonly string[] = Object.freeze([
+  'add',
+  'apply',
+  'cancel',
+  'clear',
+  'clear-focus',
+  'close-isolated',
+  'delete',
+  'discard',
+  'first-pass',
+  'first-pass-close',
+  'flip',
+  'focus',
+  'kind',
+  'open-isolated',
+  'reject',
+  'retry',
+  'retype',
+  'search',
+  'select-edge',
+  'select-issue',
+  'skip',
+  'target',
+  'target-query',
+  'undo',
+  'view-diff',
+]);
+
+/**
+ * Controls the fixture cannot reach, each with the reason.
+ *
+ * A NAMED GAP IS NOT THE SAME AS AN UNKNOWN ONE. An entry here is a decision
+ * someone made and wrote down; a control missing from both lists is an
+ * oversight the test now refuses.
+ */
+const UNREACHABLE: Readonly<Record<string, string>> = Object.freeze({
+  // The re-evaluate summary is drawn from a LANDED edit that moved the order,
+  // and every write this fixture stages is refused or conflicted on purpose —
+  // the recovery cards are what it exists to record. A landed-and-moved state
+  // is a different fixture, not another step in this one.
+  'dismiss-change': 'needs a landed edit that moved the order',
+});
+
+describe('the recorded states cover what the package renders', () => {
+  it('records every control, or names why it cannot', async () => {
+    const seen = new Set((await everyEntry()).map((entry) => entry.control));
+    const missing = RENDERED_CONTROLS.filter(
+      (control) => !seen.has(control) && UNREACHABLE[control] === undefined,
+    );
+    assert.deepEqual(
+      missing,
+      [],
+      `no recorded state contains: ${missing.join(', ')} — add a surface that draws them, or name them in UNREACHABLE with a reason`,
+    );
+  });
+
+  it('does not carry a reason for a control it actually records', async () => {
+    // AN EXEMPTION THAT STOPPED BEING TRUE IS A LIE THE NEXT READER INHERITS.
+    const seen = new Set((await everyEntry()).map((entry) => entry.control));
+    for (const control of Object.keys(UNREACHABLE)) {
+      assert.equal(seen.has(control), false, `${control} is recorded — drop its UNREACHABLE entry`);
+    }
   });
 });
 
