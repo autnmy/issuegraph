@@ -112,6 +112,37 @@ describe('a mark is placed by the layer that computed the layout', () => {
     const doubled = edgeMarkSpecs([marked('companion', null)], geometry, defaultTheme, IDENTITY, DOUBLED);
     assert.equal(single.length, 1);
     assert.equal(doubled.length, 2);
+
+    // AND THEY ARE IN TWO PLACES, which the count alone does not say. The first
+    // version of this pair separated with `translate(0 ±stroke)` — the global
+    // y-axis, copied from the edge treatment — and on a VERTICAL chord that runs
+    // ALONG the line, so the two strokes coincided and drew as one. Two specs
+    // were emitted the whole time, so a count assertion passed over it.
+    const [first, second] = doubled;
+    assert.ok(first !== undefined && second !== undefined);
+    assert.notEqual(attrsOf(first)['transform'], attrsOf(second)['transform']);
+  });
+
+  it('separates a doubled companion ACROSS the line, not along it', () => {
+    // The same rule the single companion obeys, applied to the pair: every
+    // offset here rides the chord's normal, so a vertical chord is cleared
+    // horizontally and the two versions stay two at any orientation.
+    const doubled = edgeMarkSpecs(
+      [marked('companion', null)],
+      verticalGeometry(),
+      defaultTheme,
+      IDENTITY,
+      DOUBLED,
+    );
+    const shifts = doubled.map((spec) => {
+      const match = /translate\((-?[\d.]+) (-?[\d.]+)\)/.exec(String(attrsOf(spec)['transform']));
+      assert.ok(match !== null);
+      return { x: Number(match[1]), y: Number(match[2]) };
+    });
+    // A vertical chord has a horizontal normal, so every shift is pure x — and
+    // crucially the two differ in x rather than in y.
+    for (const shift of shifts) assert.equal(shift.y, 0, 'a shift along the line');
+    assert.notEqual(shifts[0]?.x, shifts[1]?.x, 'the pair must not coincide');
   });
 
   it('keeps the companion the same shape as the line it doubles', () => {

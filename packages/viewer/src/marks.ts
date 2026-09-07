@@ -256,13 +256,27 @@ function companionPaths(
     'aria-hidden': 'true',
   } as const;
 
-  const aside = `translate(${round(normal.x * gap)} ${round(normal.y * gap)})`;
+  /** A shift of `distance` along the chord's normal, as a transform. */
+  const along = (distance: number): string =>
+    `translate(${round(normal.x * distance)} ${round(normal.y * distance)})`;
 
-  if (!drawing.doubled) return [svg('path', { ...base, transform: aside })];
+  if (!drawing.doubled) return [svg('path', { ...base, transform: along(gap) })];
 
+  // THE DOUBLING RIDES THE NORMAL TOO, and the first version of this did not.
+  //
+  // It separated the pair with `translate(0 ±stroke)` — copied from the edge
+  // treatment, which doubles on the global y-axis. That is right for the shapes
+  // the viewer happens to draw and wrong here for the same reason the whole
+  // module exists: on a VERTICAL chord the y-axis runs ALONG the line, so the
+  // two companion strokes slid over each other and drew as one.
+  //
+  // A vertical chord is the ordinary same-column case, not a corner, so this was
+  // the recorded round-4 failure reintroduced inside the change that claims to
+  // retire it — and it survived a test asserting the pair's COUNT, because two
+  // strokes were emitted and they simply coincided.
   return [
-    svg('path', { ...base, transform: `${aside} translate(0 ${String(-stroke)})` }),
-    svg('path', { ...base, transform: `${aside} translate(0 ${String(stroke)})` }),
+    svg('path', { ...base, transform: along(gap - stroke) }),
+    svg('path', { ...base, transform: along(gap + stroke) }),
   ];
 }
 
