@@ -650,6 +650,19 @@
       "aria": {}
     },
     {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "undo",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
       "zone": "header",
       "channel": "data-ig-audit-filter",
       "control": "",

@@ -274,6 +274,14 @@ export async function a11ySurface(
     // THE SCAN IS A PROMISE, so the queue is drawn on the render after it
     // settles rather than on the one that asked for it.
     await flush();
+
+    // AND ONE ANSWER, because `undo` is rendered only once something can be
+    // undone. A freshly opened queue has no such control, so the recovery the
+    // whole surface leans on was in no recorded state.
+    const answer = host.querySelector<HTMLElement>('[data-ig-answer]');
+    assert.ok(answer !== null, 'no answer control in the opened queue');
+    answer.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    await flush();
   }
 
   return {
