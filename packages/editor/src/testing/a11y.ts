@@ -93,7 +93,12 @@ const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 
  * record a surface where the interesting attributes do not appear at all.
  */
 export async function a11ySurface(
-  options: { readonly openDiff?: boolean; readonly openDraft?: boolean } = {},
+  options: {
+    readonly openDiff?: boolean;
+    readonly openDraft?: boolean;
+    /** Choose a kind too, which advances the draft to the target search. */
+    readonly openSearch?: boolean;
+  } = {},
 ): Promise<{ root: Element; close: () => void }> {
   const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>');
   const host = dom.window.document.getElementById('host');
@@ -154,10 +159,33 @@ export async function a11ySurface(
   // are the controls whose keyboard behaviour matters most — so a baseline that
   // never opened the draft would omit exactly what mounting was chosen for. It
   // is also the only state that exercises a `tabindex` other than none.
-  if (options.openDraft === true) {
+  if (options.openDraft === true || options.openSearch === true) {
     const add = host.querySelector<HTMLElement>('[data-ig-command="add"]');
     assert.ok(add !== null, 'no add control to open the draft');
     add.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    await flush();
+  }
+
+  // THE SECOND STEP, and it needs its own state. Opening the draft renders the
+  // KIND CHOOSER; the target search only appears once a kind is chosen, so a
+  // baseline that stopped at `add` recorded the chooser and left `target-query`,
+  // the match buttons and their cancel out of every surface — while this
+  // module's own header justified mounting by that search. Regressions in its
+  // accessible name, tab stop or ARIA state would have moved neither the
+  // artifact nor a rule.
+  if (options.openSearch === true) {
+    const kind = host.querySelector<HTMLElement>('[data-ig-command="kind"]');
+    assert.ok(kind !== null, 'no kind option to choose');
+    kind.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    await flush();
+
+    // AND A QUERY, because the MATCH LIST is a third thing again: the search
+    // renders its input with no matches until one is typed, and the match
+    // buttons are the controls a reader actually operates to finish the edit.
+    const input = host.querySelector<HTMLInputElement>('[data-ig-command="target-query"]');
+    assert.ok(input !== null, 'no target search to type into');
+    input.value = 'release';
+    input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
     await flush();
   }
 

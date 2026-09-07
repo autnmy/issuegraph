@@ -46,11 +46,14 @@ const BASELINE_PATH = new URL('./baseline.json', import.meta.url);
  * absent — the region it would name is not rendered — and open it is present
  * and must resolve. A single-state baseline would cover half of what it claims.
  *
- * AND THE DRAFT OPEN, because the kind chooser and the target search are built
- * by the mount rather than by a renderer, and they are the reason this record
- * is taken over a mounted surface at all. Without them the artifact would be
- * one a spec walk could have produced, and the rules would never meet a
- * `tabindex`.
+ * AND THE DRAFT IN BOTH ITS STEPS, because the kind chooser and the target
+ * search are built by the mount rather than by a renderer, and they are the
+ * reason this record is taken over a mounted surface at all. They are two
+ * states, not one: `add` renders the chooser, and the search appears only once
+ * a kind is chosen — so stopping at the chooser left `target-query`, the match
+ * buttons and their cancel out of every surface while this file claimed to
+ * cover them. Without these the artifact would be one a spec walk could have
+ * produced.
  */
 async function surfaces(): Promise<Record<string, readonly ControlEntry[]>> {
   const out: Record<string, readonly ControlEntry[]> = {};
@@ -58,6 +61,7 @@ async function surfaces(): Promise<Record<string, readonly ControlEntry[]>> {
     ['disclosure-shut', {}],
     ['disclosure-open', { openDiff: true }],
     ['draft-open', { openDraft: true }],
+    ['search-open', { openSearch: true }],
   ] as const) {
     const page = await a11ySurface(options);
     try {
