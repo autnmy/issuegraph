@@ -136,12 +136,18 @@ describe('rules that hold whatever the baseline says', () => {
     // first-pass overlay is up — and demanding reachability there would fail on
     // the modal behaving correctly. The exemption is narrow and it is a fact
     // read off the markup, not a list of names anyone can add to.
+    // `tab`, NOT "ANYTHING BUT none". Rejecting only `none` accepted
+    // `programmatic` — a control at `tabindex="-1"`, reachable by pointer and
+    // by a script and by no key — which is the precise defect `TabStop`'s own
+    // header says the three-valued field exists to catch. So the rule
+    // contradicted the reason the field is not a boolean, and a tab stop
+    // regressing to -1 would have regenerated the artifact and passed.
     await each((entry) => {
       if (entry.inert) return;
-      assert.notEqual(
+      assert.equal(
         entry.tabStop,
-        'none',
-        `${entry.channel}="${entry.control}" in ${entry.zone ?? 'no zone'} is not reachable by keyboard`,
+        'tab',
+        `${entry.channel}="${entry.control}" in ${entry.zone ?? 'no zone'} is not in the tab order (${entry.tabStop})`,
       );
     });
   });
