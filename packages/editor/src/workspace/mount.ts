@@ -60,6 +60,7 @@ import {
 
 import { CONTROL_ATTRIBUTES } from '../a11y/baseline.ts';
 import type { AuditInput } from '../audit/findings.ts';
+import { isChoosingKind } from '../create/draft.ts';
 import { type CreateInteraction, type KeyboardContext, KIND_KEYS, keyIntent } from '../create/keys.ts';
 import { pickerPlacement } from '../create/placement.ts';
 import type { CandidateSource } from '../firstpass/candidates.ts';
@@ -1773,15 +1774,51 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
    * filter or the delete button is a control with its own Enter and Space, and
    * a Backspace there must not delete the selected edge; the key map names
    * `elsewhere` as "everything that is not our own search box", and a button is
-   * that. The target search keeps its two bindings, and everything else is
-   * someone else's key.
+   * that. The target search keeps its two bindings.
+   *
+   * ## The kind chooser is the ONE button group that is not `elsewhere`
+   *
+   * The rule above is right for every control it names and wrong for this one,
+   * and the difference is namable rather than a taste: the audit filter and the
+   * delete button share no vocabulary with the key map, while the chooser IS the
+   * key map rendered — its digits are `KIND_KEYS`, the same table `keyIntent`
+   * resolves the press against. A group whose labels tell the reader to press
+   * `2` cannot be a group the reader's `2` is refused by.
+   *
+   * ## Asked of the DRAFT, not of where focus happens to be
+   *
+   * `#152`, and the reason three consecutive rounds of `#150` each fixed a real
+   * bug and surfaced the next one: every one of them moved focus somewhere else,
+   * and this predicate never read the draft, so the next place focus landed
+   * classified `elsewhere` again. Focus is not the fact. A draft with a source
+   * and no kind IS the reader being at the kind step, wherever the mount's
+   * restore happened to put them — and it puts them on the inspector's `clear`,
+   * because the last-resort arm takes the zone's FIRST command control and
+   * `clear` is drawn above the kind list.
+   *
+   * A CONJUNCT ON THE CHOOSER'S OWN MARKUP WAS TRIED ON PAPER AND WOULD HAVE
+   * SHIPPED THE BUG: `closest('<the chooser>')` is false from `clear`, so the
+   * digits would still have died while the change typechecked and its own table
+   * test passed.
+   *
+   * ## `canvas` is asked FIRST, and that ordering is the safety property
+   *
+   * The only answers that move are ones that read `elsewhere` today — where
+   * nothing reaches, so nothing can regress. A reader who leaves the chooser
+   * open and tabs back to a row keeps the whole canvas vocabulary exactly as
+   * before. Note that the order is NOT needed to keep a chooser out of `canvas`:
+   * `focusedKey` walks DOM ancestry, the floating chooser is appended to the
+   * workspace root beside the zones rather than inside the canvas, and the panel
+   * list sits in an inspector that carries no key — so it answers null from
+   * inside either one however this is ordered.
    */
   const interaction = (): CreateInteraction => {
     const active = doc.activeElement;
     if (isElement(active) && isInput(active) && active.getAttribute(COMMAND_ATTRIBUTE) === 'target-query') {
       return 'target-search';
     }
-    return focusedKey() !== null ? 'canvas' : 'elsewhere';
+    if (focusedKey() !== null) return 'canvas';
+    return isChoosingKind(state.draft) ? 'kind-chooser' : 'elsewhere';
   };
 
   /**

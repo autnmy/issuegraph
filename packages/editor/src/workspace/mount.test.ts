@@ -21,6 +21,7 @@ import { type OrderDeriver, createScriptedSource, createStore, makeEdge } from '
 import { THEME_TOKENS, treatmentFor } from '@issuegraph/viewer';
 import { JSDOM } from 'jsdom';
 
+import { KIND_KEYS } from '../create/keys.ts';
 import type { Candidate } from '../firstpass/candidates.ts';
 import { FIRST_PASS_WORDS } from '../testing/firstpass.ts';
 import { PICKER_WORDS } from '../testing/picker.ts';
@@ -3197,6 +3198,84 @@ describe('a command control keeps focus across the redraw it causes', () => {
         now.getAttribute('data-ig-command'),
         'close-isolated',
         'focus left the toggle when it redrew with the other command',
+      );
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('answers the kind chooser from the keyboard with no rail row to stand on', async () => {
+    // `#152`. The advertised loop is `R → 1–5 → search → ⏎`, "full loop, no
+    // pointer" — and its second step was dead wherever focus was not on a rail
+    // row. `interaction()` read focus alone and `focusedKey()` answers only for
+    // a keyed row, so the chooser classified `elsewhere` and `keyIntent`
+    // returned `none` for the chooser's OWN digits.
+    //
+    // THE RAIL IS EMPTIED DELIBERATELY, because that is the case with no repair
+    // available from focus: with the audit filter on and nothing flagged there
+    // is no row for the mount to fall back to, while the inspector stays
+    // perfectly usable. The selection is made FIRST, while rows still exist, so
+    // the inspector keeps a subject and draws `+ add` after the rail empties.
+    const page = await mounted();
+    try {
+      const row = page.rows().find((each) => each.getAttribute('data-ig-key') === '1');
+      assert.ok(row !== undefined, 'no rail row for 1');
+      page.click(row);
+      await flush();
+
+      const filter = page.element.querySelector<HTMLElement>('[data-ig-audit-filter]');
+      assert.ok(filter !== null, 'no audit filter control');
+      page.click(filter);
+      await flush();
+      assert.equal(page.rows().length, 0, 'the rail still has rows — the case is not reproduced');
+
+      const add = page.control('add');
+      assert.ok(add !== null, 'no add control');
+      add.focus();
+      page.click(add);
+      await flush();
+
+      // WHERE FOCUS ACTUALLY IS, asserted rather than assumed — and it is NOT
+      // inside the chooser. The last-resort restore takes the zone's FIRST
+      // command control and the inspector draws `clear` above the kind list, so
+      // a predicate conjoining the draft with `closest(<the chooser>)` would be
+      // false here and the digits would still be dead. Pinning the landing spot
+      // is what stops that predicate being reintroduced as an "improvement".
+      const landed = page.win.document.activeElement;
+      assert.equal(
+        landed?.getAttribute('data-ig-command') ?? null,
+        'clear',
+        `focus did not land on the inspector's clear control (${landed?.nodeName ?? 'null'})`,
+      );
+
+      // THE DIGIT AND ITS KIND BOTH COME FROM `KIND_KEYS`, never written out.
+      // The table is built from `EDGE_FIELDS`, so a literal `'2'` paired with a
+      // remembered kind is a pin that a sixth field silently falsifies — the
+      // exact drift `create/keys.ts` rejects in its own header.
+      const chosen = KIND_KEYS[1];
+      assert.ok(chosen !== undefined, 'the vocabulary has no second kind');
+      landed?.dispatchEvent(new page.win.KeyboardEvent('keydown', { key: chosen.key, bubbles: true }));
+      await flush();
+
+      const picked = page.element.querySelector<HTMLElement>('[data-ig-command="target-query"]');
+      assert.ok(
+        picked !== null,
+        `pressing ${chosen.key} chose no kind — the draft never reached its target step`,
+      );
+
+      // AND `ESCAPE` WITHDRAWS, the other half of the create context. A draft a
+      // reader cannot abandon from the keyboard is worse than one they cannot
+      // start, and it died in exactly the same place for exactly the same
+      // reason.
+      page.win.document.activeElement?.dispatchEvent(
+        new page.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      );
+      await flush();
+      assert.equal(
+        page.element.querySelector('[data-ig-command="target-query"]'),
+        null,
+        'Escape did not withdraw the draft',
       );
     } finally {
       page.handle.destroy();

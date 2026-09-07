@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import { EDGE_FIELDS } from '@issuegraph/core';
 import { makeEdge } from '@issuegraph/store';
 
-import { KIND_KEYS, type KeyboardContext, keyIntent } from './keys.ts';
+import { type CreateInteraction, KIND_KEYS, type KeyboardContext, keyIntent } from './keys.ts';
 import { OBJECT, SUBJECT } from '../testing/picker.ts';
 
 const EMPTY: KeyboardContext = Object.freeze({
@@ -437,5 +437,101 @@ describe('shifted and unshifted are the same key', () => {
       keyIntent({ key: 'T' }, context({ selectedEdge })),
       keyIntent({ key: 't' }, context({ selectedEdge })),
     );
+  });
+});
+
+describe('the kind chooser is its own interaction, and the table says what reaches it', () => {
+  /**
+   * The whole reach matrix, as data.
+   *
+   * ONE TABLE OVER EVERY BINDING × EVERY INTERACTION, because `#152` was a hole
+   * in exactly the cell no test named: the digits under a chooser the reader was
+   * standing in. A suite that pins the cells it happens to think of leaves the
+   * next hole in the ones it does not, and this map has 4 × 8 cells with nowhere
+   * for one to hide.
+   *
+   * The digits are spread from `KIND_KEYS` rather than written out, for the
+   * reason `keys.ts`'s header gives: a sixth field must not need this file
+   * edited to stay covered.
+   */
+  const REACHES: ReadonlyMap<string, readonly CreateInteraction[]> = new Map([
+    ['r', ['canvas', 'kind-chooser']],
+    ...KIND_KEYS.map((entry): readonly [string, readonly CreateInteraction[]] => [
+      entry.key,
+      ['canvas', 'kind-chooser'],
+    ]),
+    ['Enter', ['canvas', 'target-search']],
+    ['Backspace', ['canvas']],
+    ['Delete', ['canvas']],
+    ['t', ['canvas']],
+    ['Escape', ['canvas', 'kind-chooser', 'target-search']],
+  ] as readonly (readonly [string, readonly CreateInteraction[]])[]);
+
+  const INTERACTIONS: readonly CreateInteraction[] = ['canvas', 'kind-chooser', 'target-search', 'elsewhere'];
+
+  /**
+   * Every guard satisfied at once, so a `none` in the matrix below is always the
+   * INTERACTION refusing the key and never a missing subject. Without this a
+   * cell could read correct while `reaches` was wrong, which is the failure the
+   * matrix exists to catch.
+   */
+  const ARMED = context({
+    focused: SUBJECT,
+    match: OBJECT,
+    selectedEdge: edgeIdFor('blocked-by'),
+  });
+
+  for (const [key, live] of REACHES) {
+    for (const interaction of INTERACTIONS) {
+      const expected = live.includes(interaction);
+      it(`${expected ? 'answers' : 'hands back'} ${key} in ${interaction}`, () => {
+        const intent = keyIntent({ key }, { ...ARMED, interaction });
+        assert.equal(
+          intent.kind !== 'none',
+          expected,
+          `${key} in ${interaction} answered ${intent.kind}`,
+        );
+      });
+    }
+  }
+
+  it('refuses ⏎ at the kind step even when a stale query still resolves', () => {
+    // THE REASON `kind-chooser` IS A STATE RATHER THAN AN ALIAS FOR `canvas`.
+    // `targetQuery` is cleared on `cancel` alone, so `R → 1 → type → R` leaves a
+    // kind-step draft whose `match` is still set. Under `canvas` this press
+    // would commit a target with no kind chosen — and be taken from the kind
+    // button under focus on the way. The assertion is deliberately made with
+    // `match` SET: with it null the guard would answer `none` and the test
+    // would pass against the very mapping it exists to reject.
+    assert.deepEqual(
+      keyIntent({ key: 'Enter' }, context({ match: OBJECT, interaction: 'kind-chooser' })),
+      { kind: 'none' },
+    );
+  });
+
+  it('refuses ⌫ at the kind step even when an edge is selected', () => {
+    // NOT BECAUSE THE GUARD COVERS IT. `reduceHost` replaces the selection with
+    // the draft's source on `begin`, so `selectedEdge` is null through the kind
+    // step in the shipping mount — but that is another module's rule, and this
+    // table must not start claiming the press the day that rule changes.
+    assert.deepEqual(
+      keyIntent(
+        { key: 'Backspace' },
+        context({ selectedEdge: edgeIdFor('blocked-by'), interaction: 'kind-chooser' }),
+      ),
+      { kind: 'none' },
+    );
+  });
+
+  it('chooses the kind the vocabulary numbers, not one this file remembers', () => {
+    // The digit → kind pairing is read back from `KIND_KEYS`, so this cannot
+    // drift into asserting a position the format no longer has.
+    for (const entry of KIND_KEYS) {
+      assert.deepEqual(
+        keyIntent({ key: entry.key }, context({ interaction: 'kind-chooser' })),
+        { kind: 'create', command: { kind: 'type', edgeKind: entry.edgeKind } },
+        `${entry.key} did not choose ${entry.edgeKind}`,
+      );
+    }
   });
 });

@@ -9,6 +9,7 @@ import {
   type CreateResult,
   IDLE_CREATE_DRAFT,
   createReducer,
+  isChoosingKind,
 } from './draft.ts';
 import { OBJECT, SUBJECT } from '../testing/picker.ts';
 
@@ -169,5 +170,42 @@ describe('an incomplete draft is inert, never a guess', () => {
     const before = { source: SUBJECT, target: null, kind: null } as const;
     createReducer(before, target(OBJECT));
     assert.deepEqual(before, { source: SUBJECT, target: null, kind: null });
+  });
+});
+
+describe('the kind step is a fact about the draft', () => {
+  /**
+   * EVERY SHAPE, not the two that read well. `isChoosingKind` classifies the
+   * keyboard, so a shape it answers wrongly is a press claimed or handed back
+   * wrongly — and the two that are easy to skip are exactly the interesting
+   * ones: a draft carrying a target but still no kind is at the kind step (the
+   * canvas drop gathers the target first), and one with a kind but no source
+   * cannot occur through the reducer yet must not answer `true` if it ever does.
+   */
+  const SHAPES = [
+    { name: 'idle', draft: IDLE_CREATE_DRAFT, choosing: false },
+    { name: 'source only', draft: { source: SUBJECT, target: null, kind: null }, choosing: true },
+    { name: 'source and target, no kind', draft: { source: SUBJECT, target: OBJECT, kind: null }, choosing: true },
+    { name: 'source and kind', draft: { source: SUBJECT, target: null, kind: 'blocked-by' as EdgeKind }, choosing: false },
+    { name: 'complete', draft: { source: SUBJECT, target: OBJECT, kind: 'blocked-by' as EdgeKind }, choosing: false },
+    { name: 'kind with no source', draft: { source: null, target: null, kind: 'blocked-by' as EdgeKind }, choosing: false },
+  ] as const;
+
+  for (const shape of SHAPES) {
+    it(`${shape.choosing ? 'is' : 'is not'} the kind step: ${shape.name}`, () => {
+      assert.equal(isChoosingKind(shape.draft), shape.choosing);
+    });
+  }
+
+  it('turns true the moment a begin reduces, and false again when a kind arrives', () => {
+    // THROUGH THE REDUCER, not by writing the shapes out — the predicate and
+    // the transitions have to agree about where the step starts and ends, and
+    // only driving one against the other can say that they do.
+    const begun = createReducer(IDLE_CREATE_DRAFT, { kind: 'begin', source: SUBJECT });
+    assert.equal(isChoosingKind(begun.draft), true);
+    const typed = createReducer(begun.draft, { kind: 'type', edgeKind: EDGE_FIELDS[0] });
+    assert.equal(isChoosingKind(typed.draft), false);
+    const cancelled = createReducer(typed.draft, { kind: 'cancel' });
+    assert.equal(isChoosingKind(cancelled.draft), false);
   });
 });

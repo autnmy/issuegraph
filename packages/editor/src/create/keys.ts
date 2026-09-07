@@ -54,7 +54,7 @@
  * it, and gets one more entry every time a host grows a control.
  *
  * So the question is inverted. {@link CreateInteraction} enumerates OUR OWN
- * interaction, which §17b fixes at three states, and the host says which one it
+ * interaction, which §17b fixes at four states, and the host says which one it
  * is in. A fifth widget adds no code here: the host reports `elsewhere` and the
  * map is silent. What was an open-ended list of other people's claims became a
  * closed description of this design's own flow.
@@ -123,7 +123,7 @@ export interface KeyboardContext {
    * The host answers it because the host is the only one who can: this package
    * has no DOM, and which control holds focus is visible only to the shell.
    * Crucially, answering it needs no knowledge of THIS package — a host maps
-   * its own world onto three states it already understands.
+   * its own world onto four states it already understands.
    */
   readonly interaction: CreateInteraction;
 }
@@ -131,11 +131,19 @@ export interface KeyboardContext {
 /**
  * Where the keyboard is, in terms of the create flow §17b specifies.
  *
- * Three states, and the set is closed by the DESIGN rather than by the host's
+ * Four states, and the set is closed by the DESIGN rather than by the host's
  * inventory of controls — which is the whole reason it replaced a growing list
  * of other owners.
  *
  * - `canvas` — the create vocabulary is live. Every binding reaches it.
+ * - `kind-chooser` — the draft has a source and no kind, and the reader is
+ *   answering the chooser this package drew for it. The digits reach, and
+ *   `Escape` withdraws. `⏎` DOES NOT, and it is the reason this state exists
+ *   rather than folding into `canvas`: `commit-target` fires on
+ *   {@link KeyboardContext.match }, which is derived from a target query that
+ *   survives a second `begin` — so a reader who typed a query, restarted the
+ *   draft, and pressed `⏎` at the kind step would commit a target with no kind
+ *   chosen, while the press was also taken from the kind button under focus.
  * - `target-search` — the create flow's OWN search box has focus. Only the
  *   bindings that must survive it reach: `⏎` commits the target and `Escape`
  *   withdraws, which is precisely the middle of `R → digit → search → ⏎`. Its
@@ -149,8 +157,26 @@ export interface KeyboardContext {
  *
  * `elsewhere` is what makes the set closed. It is the state for everything not
  * named, so a host growing a fifth control changes nothing here.
+ *
+ * ## Why this grew to four, when the whole point was that it does not grow
+ *
+ * It grew because it was UNDER-COUNTED, not because the closure argument
+ * failed. The header's rule is that this enumerates OUR OWN flow; the kind
+ * chooser is a step in that flow, and it was folded into `canvas` on the
+ * assumption that focus stays on the row the draft was begun from. `#152` is
+ * the evidence that it does not: activating `add` REPLACES that control with
+ * the kind list, so the mount's focus restore lands on whatever command control
+ * is nearest, and where the audit filter has emptied the rail there is no row to
+ * land on at all. `canvas` answers only for a focused ROW, so every create
+ * binding — the chooser's own digits included — returned `none` at exactly the
+ * step whose whole purpose is to be answered with a digit.
+ *
+ * A HOST STILL ANSWERS IT WITHOUT KNOWING THIS PACKAGE: "my reader is choosing
+ * a relationship kind" is a fact about the host's own screen, the same shape as
+ * the other three. What did NOT change is the thing the closure protects — no
+ * state here names a host's widget, and a fifth control still adds no code.
  */
-export type CreateInteraction = 'canvas' | 'target-search' | 'elsewhere';
+export type CreateInteraction = 'canvas' | 'kind-chooser' | 'target-search' | 'elsewhere';
 
 /**
  * What a key means. `none` leaves the key to the host.
@@ -176,15 +202,38 @@ type BindingAction =
   | { readonly kind: 'cancel' };
 
 /**
- * An action, plus whether it still applies while a text control owns the key.
+ * The interactions a binding can be RESTRICTED to surviving.
+ *
+ * `canvas` admits every binding and `elsewhere` admits none, so neither is a
+ * question any binding answers — naming them here would invite an entry that
+ * contradicts {@link reaches }. Written as an `Exclude` rather than a second
+ * hand-written union so a fifth {@link CreateInteraction } joins it without a
+ * list to keep aligned.
+ *
+ * WHAT THIS DOES NOT BUY, stated because the shape suggests otherwise: a fifth
+ * interaction does NOT force the existing entries to answer it — every
+ * `survives: []` keeps compiling and silently means "does not survive it".
+ * The only compile error a fifth interaction raises is the switch in
+ * {@link reaches }. What the column DOES guarantee is the half it was built
+ * for: a sixth BINDING cannot be added without answering.
+ */
+type Restricted = Exclude<CreateInteraction, 'canvas' | 'elsewhere'>;
+
+/**
+ * An action, plus the restricted interactions it still applies in.
  *
  * DATA ON THE TABLE, NOT A TEST AT THE CALL SITE — the same shape
  * `audit/findings.ts` uses for severity, and for the same payoff: no site picks
- * the answer, and a sixth binding is a compile error until the table says
- * whether an editable control owns it. Written as an intersection so the
- * discriminated union still narrows in the switch below.
+ * the answer, and a sixth binding is a compile error until the table says where
+ * it survives. Written as an intersection so the discriminated union still
+ * narrows in the switch below.
+ *
+ * A LIST RATHER THAN ONE FLAG PER STATE. This was `reachesTargetSearch: boolean`
+ * while there was one restricted state to answer about; a second boolean beside
+ * it would have made a fifth state a third boolean, and nothing would have
+ * related the three to the union they are about.
  */
-type Binding = BindingAction & { readonly reachesTargetSearch: boolean };
+type Binding = BindingAction & { readonly survives: readonly Restricted[] };
 
 /**
  * The vocabulary, as data.
@@ -198,10 +247,18 @@ type Binding = BindingAction & { readonly reachesTargetSearch: boolean };
 const BINDINGS: ReadonlyMap<string, Binding> = new Map<string, Binding>([
   // `r`, the digits and `t` are PRINTABLE. While a text control has focus they
   // are that control's characters, so they do not survive editing.
-  ['r', { kind: 'relate', reachesTargetSearch: false }],
+  // `r` SURVIVES THE CHOOSER because restarting is ordinary: `draft.ts` says on
+  // `begin` that the reader changing their mind about the subject is expected,
+  // and it already clears what a previous draft gathered. Withholding it would
+  // take the restart away from a reader whose focus is off the rail while
+  // leaving it for one whose focus is on it — a difference with no meaning.
+  ['r', { kind: 'relate', survives: ['kind-chooser'] }],
+  // THE DIGITS ARE WHAT THE CHOOSER IS FOR. `#152`: with focus anywhere but a
+  // keyed row the interaction read `elsewhere` and these returned `none` at the
+  // one step whose whole purpose is to be answered with a digit.
   ...EDGE_FIELDS.map((edgeKind, index): readonly [string, Binding] => [
     String(index + 1),
-    { kind: 'choose-type', edgeKind, reachesTargetSearch: false },
+    { kind: 'choose-type', edgeKind, survives: ['kind-chooser'] },
   ]),
   // `⏎` and `Escape` SURVIVE, and they are the reason this is a per-binding flag
   // rather than one "printable" test: the flow §17b specifies is
@@ -210,7 +267,14 @@ const BINDINGS: ReadonlyMap<string, Binding> = new Map<string, Binding>([
   // while editing would break the loop it exists to deliver. `Escape` survives
   // for the same reason it is always available: a draft you cannot abandon is
   // worse than one you cannot start.
-  ['enter', { kind: 'commit-target', reachesTargetSearch: true }],
+  // NOT IN THE CHOOSER, which is the whole reason `kind-chooser` is a state of
+  // its own rather than an alias for `canvas`. `commit-target` fires on `match`,
+  // and `match` is derived from a target query the host clears on `cancel` only
+  // — so `R → 1 → type a query → R` leaves a kind-step draft whose `match` is
+  // still set, and `⏎` there would commit a target before a kind was chosen.
+  // It would also be `preventDefault()`ed away from the kind button under focus,
+  // so one press would do the wrong thing twice.
+  ['enter', { kind: 'commit-target', survives: ['target-search'] }],
   // BOTH SPELLINGS OF THE DELETE KEY. §17b writes it `⌫`, which is `Backspace`
   // on the keyboards that have it and `Delete` on those that do not — most
   // notably Apple's, where the key in that position reports `Backspace` and the
@@ -219,10 +283,16 @@ const BINDINGS: ReadonlyMap<string, Binding> = new Map<string, Binding>([
   // NOT SURVIVING EDITING is the non-obvious half: in a focused text box `⌫`
   // deletes a CHARACTER, and a map that claimed it would delete the reader's
   // selected edge while they were correcting a typo in the search.
-  ['backspace', { kind: 'delete-edge', reachesTargetSearch: false }],
-  ['delete', { kind: 'delete-edge', reachesTargetSearch: false }],
-  ['t', { kind: 'retype-edge', reachesTargetSearch: false }],
-  ['escape', { kind: 'cancel', reachesTargetSearch: true }],
+  // NEITHER SURVIVES THE CHOOSER, and the reason is the design rather than the
+  // guard that happens to cover it today. `reduceHost` replaces the selection
+  // with the draft's source when `begin` reduces, so `selectedEdge` is null
+  // through the kind step and both of these would answer `none` anyway — but
+  // that is a fact about ANOTHER module's reducer, and a table that relied on it
+  // would silently start claiming presses the day the selection rule changed.
+  ['backspace', { kind: 'delete-edge', survives: [] }],
+  ['delete', { kind: 'delete-edge', survives: [] }],
+  ['t', { kind: 'retype-edge', survives: [] }],
+  ['escape', { kind: 'cancel', survives: ['target-search', 'kind-chooser'] }],
 ]);
 
 /** A digit the reader can press, and the kind it chooses. */
@@ -247,7 +317,7 @@ export interface KindKey {
  * that reads this module.
  *
  * DERIVED FROM `BINDINGS`, which stays private. Exporting the map itself would
- * publish `reachesTargetSearch` and the five non-kind actions, leaving every
+ * publish `survives` and the five non-kind actions, leaving every
  * consumer to work out which entries name a kind — the same "here is the whole
  * table, sort it out" surface a decision table exists to remove. `Map`
  * preserves insertion order and the digits are spread from `EDGE_FIELDS.map`,
@@ -361,19 +431,26 @@ function repeated(press: KeyPress): boolean {
 /**
  * Whether a binding is live in the interaction the host reports.
  *
- * A DECISION TABLE OVER THE THREE STATES, exhaustive so a fourth interaction —
+ * A DECISION TABLE OVER THE FOUR STATES, exhaustive so a fifth interaction —
  * were the design ever to grow one — is a compile error here rather than a
- * silently permissive default. `elsewhere` returning `false` for EVERY binding
- * is the whole of the fix for an unrelated control's `Escape`: that control
- * needs `Escape` to cancel its own edit, and a create draft it knows nothing
- * about must not consume it.
+ * silently permissive default. This is the ONLY site a new interaction breaks:
+ * {@link Restricted } widens on its own and every existing `survives` list keeps
+ * compiling, so the answer for the bindings is decided here or not at all.
+ *
+ * `elsewhere` returning `false` for EVERY binding is the whole of the fix for an
+ * unrelated control's `Escape`: that control needs `Escape` to cancel its own
+ * edit, and a create draft it knows nothing about must not consume it. The two
+ * middle arms read the table rather than naming keys, so the vocabulary stays in
+ * one place.
  */
 function reaches(binding: Binding, interaction: CreateInteraction): boolean {
   switch (interaction) {
     case 'canvas':
       return true;
+    case 'kind-chooser':
+      return binding.survives.includes('kind-chooser');
     case 'target-search':
-      return binding.reachesTargetSearch;
+      return binding.survives.includes('target-search');
     case 'elsewhere':
       return false;
   }
@@ -409,9 +486,9 @@ export function keyIntent(press: KeyPress, context: KeyboardContext): KeyIntent 
   // whether it is a fresh ACT at all, which is a different thing and the reason
   // it is its own predicate.
   // COMPOSITION BITES THE TWO BINDINGS THAT REACH THE TARGET SEARCH, which is
-  // why it cannot be folded into `reachesTargetSearch`: `⏎` and `Escape` are
-  // exactly the two that reach a focused search box, and exactly the two an IME
-  // needs while composing.
+  // why it cannot be folded into `survives`: `⏎` and `Escape` are exactly the
+  // two that reach a focused search box, and exactly the two an IME needs while
+  // composing.
   if (chorded(press) || composing(press) || repeated(press)) return NONE;
 
   const binding = BINDINGS.get(normalize(press.key));
