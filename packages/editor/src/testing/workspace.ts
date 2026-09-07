@@ -27,6 +27,9 @@ import type { WorkspaceWords } from '../index.ts';
  * the same string. A fixture word has to be one no renderer would write.
  */
 export const WORKSPACE_WORDS: WorkspaceWords = {
+  asOf: 'read at',
+  open: 'in the backlog',
+  encoded: 'carry relationships',
   inspector: 'the detail panel',
   nothingSelected: 'pick a row to inspect it',
   clearSelection: 'clear the selection',

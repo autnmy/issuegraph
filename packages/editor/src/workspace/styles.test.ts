@@ -92,6 +92,12 @@ const RENDERS = [
       host: {
         identity: 'acme/widgets',
         firstPass: 'First pass',
+        // THE TWO #135 MOVED UP FROM LAYER 1's PANEL HEADER. Both are drawn
+        // here and nowhere else now, so without them on this render their
+        // rules read as orphaned — the same reason the identity and the
+        // first-pass entry are on it.
+        adoption: { counts: { declaring: 64, total: 312 } },
+        freshness: { asOf: '14:32', age: '2m ago', refresh: '↻' },
       },
     },
     { words: WORKSPACE_WORDS },

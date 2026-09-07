@@ -803,6 +803,9 @@ const {
 } = surface;
 
 const WORKSPACE_WORDS: surface.WorkspaceWords = {
+  asOf: 'read at',
+  open: 'in the backlog',
+  encoded: 'carry relationships',
   inspector: 'the detail panel',
   nothingSelected: 'pick a row to inspect it',
   clearSelection: 'clear the selection',

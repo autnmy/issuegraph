@@ -30,7 +30,7 @@ import {
 import { createDeriver, explainDocument, slotCount } from './order.ts';
 import { SCENARIOS, type Scenario, compSeed } from './seed.ts';
 import { createDemoSource } from './source.ts';
-import { HOST_COMMANDS_FROM_WORKSPACE, type Live, mountSandbox } from './workspace.ts';
+import { HOST_COMMANDS_FROM_WORKSPACE, type Live, WORKSPACE_WORDS, mountSandbox } from './workspace.ts';
 
 const OBSERVED = new Date(Date.UTC(2026, 8, 6, 14, 32, 0));
 const NOW = new Date(OBSERVED.getTime() + 2 * 60_000);
@@ -234,7 +234,7 @@ describe('the refresh control reaches the host', () => {
       await settle();
       assert.equal(hydrations, 1, 'the sandbox did not hydrate once on start');
       const stamp = (): string | null | undefined =>
-        win.document.querySelector('#workspace .ig-freshness .ig-id')?.textContent;
+        win.document.querySelector('#workspace .ig-workspace-freshness .ig-id')?.textContent;
       // THE ELAPSED TIME MOVED WITH §16a's BAND. It used to sit at the far end
       // of the NOW row, where the frame puts a "working" indicator; it is now on
       // the row's own metadata line, beside the identity, which is where §16a
@@ -305,14 +305,14 @@ describe('the refresh control reaches the host', () => {
       current = new Date(current.getTime() + STALE_AFTER_MS + 60_000);
       await new Promise((resolve) => setTimeout(resolve, 20));
       await settle();
-      assert.equal(win.document.querySelector('#workspace .ig-freshness')?.getAttribute('data-stale'), 'true', 'the stamp never went stale on its own');
+      assert.equal(win.document.querySelector('#workspace .ig-workspace-freshness')?.getAttribute('data-stale'), 'true', 'the stamp never went stale on its own');
       assert.equal(stamp(), fresh, 'a clock tick re-stamped the read');
       handle.destroy();
       // TORN DOWN, NO TIMER: a later tick draws nothing.
-      const after = win.document.querySelector('#workspace .ig-freshness')?.textContent;
+      const after = win.document.querySelector('#workspace .ig-workspace-freshness')?.textContent;
       current = new Date(current.getTime() + 60_000);
       await new Promise((resolve) => setTimeout(resolve, 20));
-      assert.equal(win.document.querySelector('#workspace .ig-freshness')?.textContent, after);
+      assert.equal(win.document.querySelector('#workspace .ig-workspace-freshness')?.textContent, after);
     } finally {
       Object.assign(globalThis, previous);
       win.close();
@@ -402,7 +402,7 @@ describe('the §16g states are reachable from the sandbox, with their affordance
       assert.ok(has('[data-ig-command="review-pick-order"]'), 'the empty state drew no action');
       await chooseState('stale');
       assert.equal(
-        win.document.querySelector('#workspace .ig-freshness')?.getAttribute('data-stale'),
+        win.document.querySelector('#workspace .ig-workspace-freshness')?.getAttribute('data-stale'),
         'true',
         'the stale state is unreachable',
       );
@@ -425,14 +425,14 @@ describe('the §16g states are reachable from the sandbox, with their affordance
       // nothing a reader could see.
       await chooseState('stale');
       assert.equal(
-        win.document.querySelector('#workspace .ig-freshness')?.getAttribute('data-stale'),
+        win.document.querySelector('#workspace .ig-workspace-freshness')?.getAttribute('data-stale'),
         'true',
       );
       click('#workspace [data-ig-command="refresh"]', 'the stale state drew no refresh');
       await settle();
       await settle();
       assert.equal(
-        win.document.querySelector('#workspace .ig-freshness')?.getAttribute('data-stale'),
+        win.document.querySelector('#workspace .ig-workspace-freshness')?.getAttribute('data-stale'),
         'false',
         'a landed refresh left the panel stale',
       );
@@ -448,7 +448,7 @@ describe('the §16g states are reachable from the sandbox, with their affordance
       await settle();
       await settle();
       assert.equal(
-        win.document.querySelector('#workspace .ig-freshness')?.getAttribute('data-stale'),
+        win.document.querySelector('#workspace .ig-workspace-freshness')?.getAttribute('data-stale'),
         'true',
         'a refresh that failed still read as fresh',
       );
@@ -464,7 +464,7 @@ describe('the §16g states are reachable from the sandbox, with their affordance
         await settle();
         assert.equal(conditionNow(), null, `a landed read left the ${backdated} state standing`);
         assert.equal(
-          win.document.querySelector('#workspace .ig-freshness')?.getAttribute('data-stale'),
+          win.document.querySelector('#workspace .ig-workspace-freshness')?.getAttribute('data-stale'),
           'false',
           `a landed read left the ${backdated} stamp backdated`,
         );
@@ -500,11 +500,19 @@ describe('the §16g states are reachable from the sandbox, with their affordance
       click('[data-chrome="scenario"] [data-ig-value="backlog"]', 'no control for the big backlog');
       await settle();
       await settle();
+      // IN §17a's HEADER SINCE #135, not in layer 1's panel header, and worded
+      // the frame's way round: `312 open · 64 encoded` rather than §16a's
+      // `64 of 312 declare relationships`. The chip still exists on the §16a
+      // panel this demo also renders — the assertion above on `renderViewer`
+      // covers that one — so the selector has to name the zone, not the class.
       const chip = (): string =>
-        win.document.querySelector('#workspace [data-count="adoption"]')?.textContent ?? '';
+        win.document.querySelector('#workspace .ig-workspace-counts')?.textContent ?? '';
       const populated = chip();
-      assert.ok(/^\d+ of \d+ declare relationships$/.test(populated), `no adoption chip: ${populated}`);
-      assert.ok(!populated.startsWith('0 of 0'), 'the backlog counted nothing');
+      assert.ok(
+        new RegExp(`^\\d+ ${WORKSPACE_WORDS.open} · \\d+ ${WORKSPACE_WORDS.encoded}$`).test(populated),
+        `no adoption counts in the header: ${populated}`,
+      );
+      assert.ok(!populated.startsWith('0 '), 'the backlog counted nothing');
       await chooseState('empty');
       assert.equal(chip(), populated, 'the empty state emptied the repository as well as the order');
     } finally {
