@@ -106,6 +106,8 @@ export async function a11ySurface(
      * are drawn at all.
      */
     readonly refusalTier?: boolean;
+    /** Select an edge, which is the only thing that renders the retype picker. */
+    readonly selectEdge?: boolean;
   } = {},
 ): Promise<{ root: Element; close: () => void }> {
   const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>');
@@ -176,6 +178,27 @@ export async function a11ySurface(
   assert.ok(row !== undefined, 'no rail row for 3');
   row.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
   await flush();
+
+  // AN EDGE SELECTION, when asked for. `inspectorChrome` renders the mounted
+  // retype picker only while an edge is selected, so `retype` and `flip` — two
+  // controls this package draws — were in no recorded state at all.
+  if (options.selectEdge === true) {
+    // A LANDED EDGE, and the distinction cost a round to find. The conflicted
+    // write this fixture stages is NOT in the landed document, so selecting it
+    // resolves to nothing and `inspectorView` correctly answers `none` — the
+    // panel empties and the picker has no subject. The seed's own `1 -> 2` is
+    // landed, so the carrier is switched first.
+    const carrier = [...host.querySelectorAll<HTMLElement>('[data-zone="rail"] [data-ig-key][tabindex]')].find(
+      (each) => each.getAttribute('data-ig-key') === '1',
+    );
+    assert.ok(carrier !== undefined, 'no rail row for 1');
+    carrier.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    await flush();
+    const edge = host.querySelector<HTMLElement>('[data-ig-command="select-edge"]');
+    assert.ok(edge !== null, 'no relationship row to select an edge from');
+    edge.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    await flush();
+  }
 
   // THE CANVAS SEARCH, which is what turns the refusal tier into a state with
   // results and a focused component in it rather than a bare refusal.

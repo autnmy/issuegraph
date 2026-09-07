@@ -72,6 +72,7 @@ async function surfaces(): Promise<Record<string, readonly ControlEntry[]>> {
     ['search-open', { openSearch: true }],
     ['first-pass-open', { openFirstPass: true }],
     ['refusal-tier', { refusalTier: true }],
+    ['edge-selected', { selectEdge: true }],
   ] as const) {
     const page = await a11ySurface(options);
     try {

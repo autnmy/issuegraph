@@ -3129,6 +3129,42 @@ describe('a command control keeps focus across the redraw it causes', () => {
     }
   });
 
+  it('keeps a press reaching the mount even when the rail has no rows to fall back to', async () => {
+    // A FALLBACK WITH A PRECONDITION IS NOT A LAST RESORT. The rail is not
+    // always there: with the audit filter on and nothing flagged it draws no
+    // rows, while the inspector stays perfectly usable. Pressing a
+    // self-removing control there found no row, and focus fell to the body —
+    // the original defect, still reachable through the repair for it.
+    const page = await mounted();
+    try {
+      const row = page.rows().find((each) => each.getAttribute('data-ig-key') === '1');
+      assert.ok(row !== undefined, 'no rail row for 1');
+      page.click(row);
+      await flush();
+
+      const filter = page.element.querySelector<HTMLElement>('[data-ig-audit-filter]');
+      assert.ok(filter !== null, 'no audit filter control');
+      page.click(filter);
+      await flush();
+      assert.equal(page.rows().length, 0, 'the rail still has rows — the case is not reproduced');
+
+      const add = page.control('add');
+      assert.ok(add !== null, 'no add control');
+      add.focus();
+      page.click(add);
+      await flush();
+
+      const now = page.win.document.activeElement;
+      assert.ok(
+        now !== null && page.element.contains(now),
+        `focus left the workspace — activeElement is ${now?.nodeName ?? 'null'}`,
+      );
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
   it('leaves the keyboard loop alive — a later press still reaches the mount', async () => {
     const page = await mounted();
     try {

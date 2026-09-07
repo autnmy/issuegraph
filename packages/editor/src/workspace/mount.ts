@@ -1534,6 +1534,23 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         const key = first?.getAttribute(KEY_ATTRIBUTE);
         if (key !== null && key !== undefined) focusIn('rail', key);
       }
+      // AND A RESORT THAT CANNOT ITSELF FAIL. The rail is not always there to
+      // fall back to: with the audit filter on and nothing flagged it draws no
+      // rows at all, while the inspector stays perfectly usable — so pressing a
+      // self-removing control there left focus on the body and killed the
+      // keyboard loop exactly as before. A fallback with a precondition is not
+      // a last resort.
+      //
+      // The surface itself always exists, and the keydown listener is on it, so
+      // focus landing here is by definition focus the loop can hear. `tabindex`
+      // is -1: this is somewhere to PUT focus, never a stop Tab should find.
+      if (
+        heldFocus &&
+        (!isElement(doc.activeElement) || !surface.contains(doc.activeElement))
+      ) {
+        surface.setAttribute('tabindex', '-1');
+        surface.focus({ preventScroll: true });
+      }
     }
     // THE KEYBOARD IS GIVEN BACK. The overlay is removed with focus inside it,
     // so without this `activeElement` is the body — and the keydown listener is
