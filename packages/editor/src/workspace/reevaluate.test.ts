@@ -20,6 +20,24 @@ import { WORKSPACE_WORDS } from '../testing/workspace.ts';
 
 const WORDS: WorkspaceWords = { ...WORKSPACE_WORDS, change: CHANGE_WORDS };
 
+/**
+ * Every value `deltaKind` can return: a readiness, then a movement's direction,
+ * then a presence.
+ *
+ * Spelled out rather than derived, and it is the one list here that is allowed
+ * to be — it exists to CATCH a rule keyed on something outside it, so deriving
+ * it from the same place the rules come from would make it agree by
+ * construction and prove nothing.
+ */
+const DELTA_KINDS: ReadonlySet<string> = new Set([
+  'promoted',
+  'newly-held',
+  'up',
+  'down',
+  'entered',
+  'left',
+]);
+
 /** `a` and `b` swap; `c` and `d` do not move. */
 const SWAPPED = diffOrder(
   orderOf(['a', 'b', 'c', 'd']),
@@ -161,6 +179,82 @@ describe('§17c draws the effect on the row, not beside it', () => {
       assert.equal(row(railZone(after.markup), key), row(railZone(before.markup), key), key);
     }
     assert.notEqual(row(railZone(after.markup), 'a'), row(railZone(before.markup), 'a'));
+  });
+});
+
+describe('a delta can land on either row shape, and every value it emits is styled', () => {
+  /** The same rail with `c` taken out of the order and excluded — a footer row. */
+  const withAnExclusion = (): ViewerDocument => {
+    const base = railOf(['a', 'b', 'c']);
+    return {
+      ...base,
+      order: {
+        slots: base.order.slots.filter((slot) => slot.lead !== 'c'),
+        excluded: [{ key: 'c', reason: 'duplicate-of', canonical: 'a' }],
+      },
+    };
+  };
+
+  const LEFT_THE_ORDER = diffOrder(orderOf(['a', 'b', 'c']), orderOf(['a', 'b']), editOf());
+
+  it('marks an EXCLUDED row, which is a footer row and not a slot', () => {
+    // An edit that turns an issue into a duplicate takes it out of the order
+    // while the projection keeps it, so its chip lands on an `.ig-footer-row`.
+    // A rule naming `.ig-slot` only gave that row its chip and its extended
+    // name and no ground at all.
+    const { markup } = renderWorkspace(withAnExclusion(), {
+      words: WORDS,
+      change: LEFT_THE_ORDER,
+    });
+    const footer = /<li class="ig-footer-row"[^>]*>/.exec(markup)?.[0] ?? '';
+    assert.match(footer, /data-ig-delta="left"/);
+  });
+
+  it('styles every value the markup actually emits, and keys no rule on one it cannot', () => {
+    // `absent` was keyed here once and is not a value any code path produces —
+    // `RankDelta.presence` is 'entered' | 'left' — so the rule matched nothing
+    // while reading as the neutral case, and a row that LEFT took the ready
+    // tint from the bare fallback instead. Both directions are checked, so
+    // neither a missing rule nor a dead one can come back.
+    const renders = [
+      renderWorkspace(railOf(['b', 'a', 'c', 'd']), { words: WORDS, change: SWAPPED }),
+      renderWorkspace(withAnExclusion(), { words: WORDS, change: LEFT_THE_ORDER }),
+    ];
+    const emitted = new Set(
+      renders.flatMap((result) => [...result.markup.matchAll(/data-ig-delta="([^"]+)"/g)].map((m) => m[1] ?? '')),
+    );
+    assert.ok(emitted.size >= 3, `too few delta kinds to prove anything: ${[...emitted].join(',')}`);
+
+    const styles = renders[0]?.styles ?? '';
+    const keyed = new Set(
+      [...styles.matchAll(/\[data-ig-delta='([^']+)'\]/g)].map((m) => m[1] ?? ''),
+    );
+    assert.deepEqual(
+      [...emitted].filter((kind) => !keyed.has(kind)).sort(),
+      [],
+      'a delta kind reaches the markup with no rule to tint it',
+    );
+    assert.deepEqual(
+      [...keyed].filter((kind) => !DELTA_KINDS.has(kind)).sort(),
+      [],
+      'a rule is keyed on a value deltaKind cannot produce',
+    );
+
+    // AND THE ROW SHAPE, not only the value. A rule set naming every kind but
+    // only `.ig-slot` still leaves the excluded row untinted, and the value
+    // check above passes over that completely — which it did, until this.
+    const shapes = new Set(
+      renders.flatMap((result) =>
+        [...result.markup.matchAll(/class="(ig-[a-z-]+)"[^>]*data-ig-delta=/g)].map((m) => m[1] ?? ''),
+      ),
+    );
+    assert.ok(shapes.has('ig-slot') && shapes.has('ig-footer-row'), `shapes: ${[...shapes].join(',')}`);
+    for (const shape of shapes) {
+      assert.ok(
+        new RegExp(`\\.${shape}\\[data-ig-delta`).test(styles),
+        `${shape} carries a delta and no rule tints that shape`,
+      );
+    }
   });
 });
 

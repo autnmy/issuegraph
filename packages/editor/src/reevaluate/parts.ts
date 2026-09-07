@@ -50,6 +50,15 @@ import type { ChangeSummary, PlacedChip } from './view.ts';
  * `AUDIT_SEVERITY_ATTRIBUTE` takes and for the same reason — the styling
  * decision stays the host's, and this package only says which kind it is.
  *
+ * THE VALUES ARE {@link deltaKind}'S, AND THEY COME FROM THE STORE'S OWN
+ * VOCABULARY: `promoted`, `newly-held`, `up`, `down`, `entered`, `left`. An
+ * earlier revision of this comment named `present` and `absent`, which no code
+ * path has ever produced — `RankDelta.presence` is `'entered' | 'left'` — and
+ * the stylesheet keyed a rule on `absent` accordingly. It matched nothing while
+ * reading as the neutral case, so a row the edit removed from the order took
+ * the READY tint instead. Read the union at its type rather than this list if
+ * the two ever disagree.
+ *
  * ABSENT ON AN UNAFFECTED ROW, never `""` or `"none"`. §17c's rule is that
  * unaffected rows are *left completely alone*, and an attribute stamped on
  * every row with one value meaning "nothing" is not leaving it alone — it is

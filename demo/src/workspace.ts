@@ -119,6 +119,29 @@ const FIRST_PASS_WORDS: FirstPassWords = {
 
 /** The words the packages refuse to invent. */
 export const WORKSPACE_WORDS: MountWords = {
+  // §17c's re-evaluate loop. OPTIONAL IN THE PACKAGE AND SUPPLIED HERE, which
+  // is the whole point: the vocabulary is optional so a host built before §17c
+  // keeps rendering, and the demo is the proof the feature is real — without
+  // these words a landed edit draws no summary, no dismiss control, no row
+  // chips and no held-order label, and the loop would ship dark on the one
+  // surface anyone can actually try.
+  //
+  // Worded for a reader rather than for a log: each facet has to read on its
+  // own AND after a number, because `ChangeWords.facets` words both the summary
+  // line and the per-row chips.
+  change: {
+    facets: {
+      moved: 'moved',
+      promoted: 'promoted',
+      'newly-held': 'newly held',
+      entered: 'entered the order',
+      left: 'left the order',
+    },
+    unchanged: 'That edit landed and moved nothing.',
+    computing: 'Your edit is saved. The order below is the previous one while it is re-evaluated.',
+    dismiss: 'dismiss',
+    direction: { up: 'up', down: 'down' },
+  },
   // §17a's header: `312 open · 64 encoded` and `as of 14:32 ↻`. The numbers are
   // the package's and these are the nouns beside them.
   asOf: 'as of',

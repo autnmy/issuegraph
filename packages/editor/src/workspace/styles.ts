@@ -893,12 +893,26 @@ export const workspaceStylesheet = `
    all, so none of these rules can reach it, and "unaffected rows are left
    completely alone" is structural rather than asserted.
 
-   THESE REACH .ig-slot, WHICH IS LAYER 1'S CLASS, and that is a deliberate
-   exception of exactly the shape reevaluate/styles.ts already declares for the
-   greyed rail: only from INSIDE this surface's own root, and only for a state
-   layer 1 does not model. The viewer draws a row; whether the last edit moved
-   that row is a fact only the store knows, so the mark belongs to whoever
-   knows it. Nothing here changes how a row looks outside the workspace.
+   THESE REACH LAYER 1'S OWN CLASSES, and that is a deliberate exception of
+   exactly the shape reevaluate/styles.ts already declares for the greyed rail:
+   only from INSIDE this surface's own root, and only for a state layer 1 does
+   not model. The viewer draws a row; whether the last edit moved that row is a
+   fact only the store knows, so the mark belongs to whoever knows it.
+
+   BOTH ROW SHAPES, because a delta can land on either. A ranked row is an
+   .ig-slot; an excluded one — the shape an issue takes when an edit turns it
+   into a duplicate — is an .ig-footer-row, and it is still navigable, so
+   reevaluateView still places its chip. An earlier revision listed .ig-slot
+   only, so a left row got its chip and its extended name and no ground.
+
+   EVERY VALUE deltaKind CAN EMIT, and that list is readiness, then a
+   movement's direction, then a presence: promoted, newly-held, up, down,
+   entered, left. An earlier revision keyed a rule on 'absent', which is not a
+   value this code has ever produced — presence is 'entered' | 'left' — so that
+   rule matched nothing while looking like the neutral case, and a left row
+   took the READY tint from the bare fallback below. Named exhaustively now
+   rather than defaulted, so a seventh value renders untinted rather than
+   wrong.
 
    BACKGROUND-COLOR, NEVER THE SHORTHAND. the background shorthand resets background-image
    to none, and layer 1 draws the HELD row's hatch as a repeating-linear-
@@ -913,16 +927,26 @@ export const workspaceStylesheet = `
    package that a host retheming the station colours could not move in step,
    and inventing a percentage would make this tint drift from the unit tint
    layer 1 draws with --ig-tint-unit. */
-.ig-workspace .ig-slot[data-ig-delta] {
+.ig-workspace .ig-slot[data-ig-delta='promoted'],
+.ig-workspace .ig-slot[data-ig-delta='up'],
+.ig-workspace .ig-slot[data-ig-delta='entered'],
+.ig-workspace .ig-footer-row[data-ig-delta='promoted'],
+.ig-workspace .ig-footer-row[data-ig-delta='up'],
+.ig-workspace .ig-footer-row[data-ig-delta='entered'] {
   background-color: color-mix(in srgb, var(--ig-station-ready) var(--ig-tint-unit), transparent);
 }
 
 .ig-workspace .ig-slot[data-ig-delta='newly-held'],
-.ig-workspace .ig-slot[data-ig-delta='down'] {
+.ig-workspace .ig-slot[data-ig-delta='down'],
+.ig-workspace .ig-footer-row[data-ig-delta='newly-held'],
+.ig-workspace .ig-footer-row[data-ig-delta='down'] {
   background-color: color-mix(in srgb, var(--ig-station-held) var(--ig-tint-unit), transparent);
 }
 
-.ig-workspace .ig-slot[data-ig-delta='absent'] {
+/* A row the edit took OUT of the order. Neutral rather than held: it is not
+   waiting on anything, it is simply no longer ranked. */
+.ig-workspace .ig-slot[data-ig-delta='left'],
+.ig-workspace .ig-footer-row[data-ig-delta='left'] {
   background-color: color-mix(in srgb, var(--ig-text-muted) var(--ig-tint-unit), transparent);
 }
 
@@ -936,7 +960,8 @@ export const workspaceStylesheet = `
    inline margin cannot move an item that is in the wrong row to begin with.
 
    ONLY ON A ROW THAT HAS A CHIP, so a row with no delta keeps layer 1's own
-   template untouched. */
+   template untouched. AND ONLY ON .ig-slot: a footer row is not that grid, so
+   naming it here would set a column template on a box that has none. */
 .ig-workspace .ig-slot[data-ig-delta] {
   grid-template-columns: var(--ig-rank-column) 1fr auto;
 }

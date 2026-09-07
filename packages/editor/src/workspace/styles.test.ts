@@ -71,6 +71,23 @@ const DOCUMENT = backlogOf(6, {
   ],
 });
 
+/**
+ * The same backlog with one issue taken OUT of the order and excluded.
+ *
+ * Its own constant because BOTH directions of the accounting need it: the
+ * workspace renders an `.ig-footer-row` only here, and layer 1's footer classes
+ * are only `COMPOSED` from a document that has one. Built by removing the key
+ * from the slots as well as adding the exclusion — an issue in both places is
+ * ranked, so it draws as a slot and no footer row appears at all.
+ */
+const WITH_AN_EXCLUSION = {
+  ...DOCUMENT,
+  order: {
+    slots: DOCUMENT.order.slots.filter((slot) => slot.lead !== 'i0006'),
+    excluded: [{ key: 'i0006', reason: 'duplicate-of' as const, canonical: 'i0003' }],
+  },
+};
+
 const RENDERS = [
   renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS }),
   renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, selection: { kind: 'issue', key: 'i0005' } }),
@@ -79,6 +96,12 @@ const RENDERS = [
     words: WORKSPACE_WORDS,
     selection: { kind: 'edge', edgeId: 'blocked-by|i0001|i0002' },
   }),
+  // A ROW THE ORDER EXCLUDES, which renders as an `.ig-footer-row` rather than
+  // an `.ig-slot`. §17c can place a chip on one — an edit that turns an issue
+  // into a duplicate takes it out of the order while its projection keeps it —
+  // so without this render the rule that tints it looks orphaned, and the
+  // earlier revision that named only `.ig-slot` went unnoticed.
+  renderWorkspace(WITH_AN_EXCLUSION, { words: WORKSPACE_WORDS }),
   // A WINDOW WITH ROWS ON BOTH SIDES OF IT. The spacers only render when the
   // window is narrower than the order, so without this render their rule looks
   // orphaned and the "no unstyled class" direction never sees them at all.
@@ -266,6 +289,9 @@ const EMITTED: ReadonlySet<string> = new Set(RENDERS.flatMap((result) => classes
 const COMPOSED: ReadonlySet<string> = new Set([
   ...classesIn(renderViewer(DOCUMENT, { projection: 'linear' }).markup),
   ...classesIn(renderViewer(DOCUMENT, { projection: 'graph' }).markup),
+  // The footer group and its rows are layer 1's, drawn only for a document that
+  // excludes something — so they are COMPOSED rather than this sheet's to style.
+  ...classesIn(renderViewer(WITH_AN_EXCLUSION, { projection: 'linear' }).markup),
   // The ladder's chrome and the audit header ship their own stylesheets, which
   // `renderWorkspace` installs alongside this one.
   'ig-ladder',
