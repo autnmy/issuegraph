@@ -258,7 +258,13 @@ function visibleText(element: SurfaceElement): string {
       if (node.nodeType === TEXT_NODE) out += node.nodeValue ?? '';
       return;
     }
+    // `hidden` AS WELL AS `aria-hidden`, and for the same reason one step
+    // further along: a natively hidden subtree is not rendered at all, so its
+    // text reaches no reader. `<button><span hidden>Save</span></button>` is
+    // exposed with NO accessible name, and counting that text reported one —
+    // letting the naming rule pass on a control that announces nothing.
     if (node.getAttribute('aria-hidden') === 'true') return;
+    if (node.getAttribute('hidden') !== null) return;
     for (let index = 0; index < node.childNodes.length; index += 1) {
       const child = node.childNodes[index];
       if (child !== undefined) walk(child);

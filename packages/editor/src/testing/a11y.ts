@@ -100,12 +100,39 @@ export async function a11ySurface(
     readonly openSearch?: boolean;
     /** Open the first-pass queue, so its `data-ig-answer` controls are recorded. */
     readonly openFirstPass?: boolean;
+    /**
+     * Use a backlog big enough to leave the ladder's direct tier, and drive its
+     * canvas search — which is the only way `search`, `focus` and `clear-focus`
+     * are drawn at all.
+     */
+    readonly refusalTier?: boolean;
   } = {},
 ): Promise<{ root: Element; close: () => void }> {
   const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>');
   const host = dom.window.document.getElementById('host');
   assert.ok(host !== null);
-  const source = createScriptedSource(SEED, apply);
+  // A CHAINED BACKLOG FOR THE REFUSAL TIER. The ladder draws capsules, search
+  // results and a focused state only above its node budget; below it there is
+  // nothing to refuse and none of those controls exist. The four-issue seed
+  // every other surface uses keeps it in the direct tier, so the baseline had
+  // no `search`, `focus` or `clear-focus` in any state while the rules claimed
+  // to cover what this package renders.
+  const dense = 90;
+  const seed: GraphDocument =
+    options.refusalTier === true
+      ? {
+          issues: Array.from({ length: dense }, (_unused, index) => ({
+            ref: String(index + 1),
+            title: `Release task ${index + 1}`,
+            state: 'open' as const,
+            priority: 2,
+          })),
+          edges: Array.from({ length: dense - 1 }, (_unused, index) =>
+            makeEdge('blocked-by', String(index + 1), String(index + 2)),
+          ),
+        }
+      : SEED;
+  const source = createScriptedSource(seed, apply);
   const store = createStore({ source, derive: flatDeriver });
   await store.hydrate();
   const handle = mountWorkspace(host, {
@@ -127,11 +154,17 @@ export async function a11ySurface(
     },
   });
 
-  void store.propose({ op: 'create', kind: 'blocked-by', from: '3', to: '4' });
+  // AN EDGE THE SEED DOES NOT ALREADY CARRY. The dense backlog is a CHAIN, so
+  // `3 -> 4` is already in it and the store refuses a duplicate before any
+  // dispatch — `whenPending` then never settles and the fixture hangs rather
+  // than failing. A non-adjacent pair is new, and it closes no cycle because 3
+  // already reaches 7 through the chain.
+  const to = options.refusalTier === true ? '7' : '4';
+  void store.propose({ op: 'create', kind: 'blocked-by', from: '3', to });
   await source.whenPending();
   source.settleNext({
     outcome: 'conflict',
-    upstream: { issues: SEED.issues, edges: [...SEED.edges, makeEdge('blocked-by', '2', '3')] },
+    upstream: { issues: seed.issues, edges: [...seed.edges, makeEdge('blocked-by', '2', '3')] },
   });
   await flush();
 
@@ -143,6 +176,20 @@ export async function a11ySurface(
   assert.ok(row !== undefined, 'no rail row for 3');
   row.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
   await flush();
+
+  // THE CANVAS SEARCH, which is what turns the refusal tier into a state with
+  // results and a focused component in it rather than a bare refusal.
+  if (options.refusalTier === true) {
+    const canvasSearch = host.querySelector<HTMLInputElement>('input[data-ig-command="search"]');
+    assert.ok(canvasSearch !== null, 'no canvas search — the ladder is not in a refusal tier');
+    canvasSearch.value = 'Release task 3';
+    canvasSearch.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    await flush();
+    const match = host.querySelector<HTMLElement>('[data-ig-command="focus"]');
+    assert.ok(match !== null, 'no focus control among the search results');
+    match.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    await flush();
+  }
 
   // THE DISCLOSURE'S OTHER STATE, when asked for. `aria-controls` is rendered
   // only while the region exists, so a baseline taken with the difference shut

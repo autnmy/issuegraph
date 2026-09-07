@@ -71,6 +71,7 @@ async function surfaces(): Promise<Record<string, readonly ControlEntry[]>> {
     ['draft-open', { openDraft: true }],
     ['search-open', { openSearch: true }],
     ['first-pass-open', { openFirstPass: true }],
+    ['refusal-tier', { refusalTier: true }],
   ] as const) {
     const page = await a11ySurface(options);
     try {
@@ -274,6 +275,13 @@ describe('controlSurface reads markup this package does not itself render', () =
   it('ignores text that only a screen reader cannot see', () => {
     assert.equal(
       only('<button data-ig-command="x"><span aria-hidden="true">✕</span></button>').name,
+      'none',
+    );
+    // NATIVELY HIDDEN COUNTS TOO. This subtree is not rendered at all, so the
+    // button is exposed with no accessible name — counting its text reported
+    // one and let the naming rule pass on a silent control.
+    assert.equal(
+      only('<button data-ig-command="x"><span hidden>Save</span></button>').name,
       'none',
     );
   });
