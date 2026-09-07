@@ -966,6 +966,19 @@ export const workspaceStylesheet = `
   grid-template-columns: var(--ig-rank-column) 1fr auto;
 }
 
+/* A FOOTER ROW IS A FLEX BOX, NOT THE THREE-COLUMN GRID.
+
+   A ranked row reaches the trailing edge by the column template above. An
+   excluded or tracker-held row is layer 1's .ig-footer-row — display:flex —
+   so a chip appended to it simply follows the content it was appended after,
+   and the frame puts it at the row's end. An auto inline margin is the flex
+   idiom for that, and it is the right tool HERE for the same reason it was the
+   wrong one on the grid: it moves an item within its line, and on the grid the
+   item was in the wrong line to begin with. */
+.ig-workspace .ig-footer-row > .ig-delta-chip[data-placed] {
+  margin-inline-start: auto;
+}
+
 /* §17c's "write landed · order computing": the PREVIOUS order, held still and
    greyed one step, with the label saying why.
 

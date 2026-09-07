@@ -9,10 +9,14 @@ import {
   viewerStylesheet,
 } from '@issuegraph/viewer';
 
+import { diffOrder } from '@issuegraph/store';
+
 import { AUDIT_SEVERITY_ATTRIBUTE } from '../audit/surface.ts';
 import { ZONES, renderWorkspace } from './render.ts';
+import { reevaluateStylesheet } from '../reevaluate/styles.ts';
 import { workspaceStylesheet } from './styles.ts';
 import { WORKSPACE_WORDS, backlogOf } from '../testing/workspace.ts';
+import { WORDS as CHANGE_WORDS, editOf, orderOf } from '../testing/reevaluate.ts';
 
 /**
  * Every `calc(...)` body in the sheet, matched on BALANCED parentheses.
@@ -102,6 +106,19 @@ const RENDERS = [
   // so without this render the rule that tints it looks orphaned, and the
   // earlier revision that named only `.ig-slot` went unnoticed.
   renderWorkspace(WITH_AN_EXCLUSION, { words: WORKSPACE_WORDS }),
+  // §17c LIVE, on BOTH row shapes. Without a change and the vocabulary for it,
+  // no summary, no dismiss control and no placed chip is emitted at all — so
+  // every §17c rule in this sheet reads as orphaned in the accounting below,
+  // and the rule that tints a footer row was added while nothing rendered one.
+  renderWorkspace(WITH_AN_EXCLUSION, {
+    words: { ...WORKSPACE_WORDS, change: CHANGE_WORDS },
+    change: diffOrder(
+      orderOf(['i0001', 'i0002', 'i0003', 'i0004', 'i0005', 'i0006']),
+      orderOf(['i0002', 'i0001', 'i0003', 'i0004', 'i0005']),
+      editOf(),
+    ),
+    orderStatus: 'held',
+  }),
   // A WINDOW WITH ROWS ON BOTH SIDES OF IT. The spacers only render when the
   // window is narrower than the order, so without this render their rule looks
   // orphaned and the "no unstyled class" direction never sees them at all.
@@ -301,6 +318,13 @@ const COMPOSED: ReadonlySet<string> = new Set([
   'ig-audit-toggle',
   'ig-audit-count',
   'ig-audit-label',
+  // §17c's summary, its dismiss control and its placed chips. Their rules live
+  // in `reevaluateStylesheet`, which `renderWorkspace` installs alongside this
+  // one — so they are that leaf's to style, exactly like the ladder chrome and
+  // the audit header above. DERIVED FROM THAT SHEET rather than listed here,
+  // because a hand list is the thing this file's other direction exists to
+  // avoid: a class the leaf stops styling would go on passing.
+  ...[...reevaluateStylesheet.matchAll(/\.(ig-[a-z0-9-]+)/g)].map((match) => match[1] ?? ''),
   // The canvas's selection halo. `renderScaleLadder` draws it when an edge is
   // selected and ships `edgeOverlayStylesheet` with it, and `renderWorkspace`
   // installs that sheet alongside this one — so these are styled, by the leaf

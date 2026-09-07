@@ -210,6 +210,20 @@ describe('a delta can land on either row shape, and every value it emits is styl
     assert.match(footer, /data-ig-delta="left"/);
   });
 
+  it('pushes a footer chip to the trailing edge, which the grid column cannot do', () => {
+    // A ranked row reaches the edge by the third grid column. A footer row is
+    // layer 1's flex box, so a chip appended to it just follows the content it
+    // came after — the auto inline margin is the flex idiom, and it is the
+    // right tool here for the same reason it was the wrong one on the grid.
+    const { styles } = renderWorkspace(withAnExclusion(), {
+      words: WORDS,
+      change: LEFT_THE_ORDER,
+    });
+    const rule = /\.ig-footer-row > \.ig-delta-chip\[data-placed\]\s*\{([^}]*)\}/.exec(styles);
+    assert.ok(rule !== null, 'no trailing-edge rule for a chip on a footer row');
+    assert.match(rule[1] ?? '', /margin-inline-start:\s*auto/);
+  });
+
   it('styles every value the markup actually emits, and keys no rule on one it cannot', () => {
     // `absent` was keyed here once and is not a value any code path produces —
     // `RankDelta.presence` is 'entered' | 'left' — so the rule matched nothing
