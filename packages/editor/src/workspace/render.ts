@@ -2373,10 +2373,24 @@ export function renderWorkspace(
   // reason there is no default sentence here; see `ChangeWords`.
   const changeWords = options.words.change;
   const orderStatus: OrderStatus = options.orderStatus ?? 'settled';
+  // EVERY REF THE ORDER HAS, WINDOWED OR NOT — and taken from the UNFILTERED
+  // document on purpose, so a row the audit filter is hiding counts as expected
+  // for the same reason an off-window row does. The rail this render hands the
+  // viewer is narrowed twice over; neither narrowing is a disagreement between
+  // the projection and the change, and only this function holds the order both
+  // narrowings started from.
+  const inTheOrder = new Set<string>();
+  for (const slot of document.order.slots) {
+    inTheOrder.add(slot.lead);
+    for (const member of slot.members) inTheOrder.add(member);
+  }
+  for (const exclusion of document.order.excluded) inTheOrder.add(exclusion.key);
+
   const change = reevaluateView(
     changeWords === undefined ? null : options.change,
     railRender.scene,
     orderStatus,
+    inTheOrder,
   );
   const deltaByKey = new Map<string, RowDelta>(
     changeWords === undefined
@@ -2413,6 +2427,19 @@ export function renderWorkspace(
         // The header is where #135 settled that a workspace-wide fact is
         // stated, and it is stated in exactly one zone. The chips carry the
         // adjacency instead: cause in the header, effect on the row.
+        // "A STALE-BUT-LABELLED ORDER BEATS A HALF-COMPUTED ONE." §17c greys the
+        // held rail and says WHY beside it, and the greying without the label
+        // is the half of that pair which communicates nothing — a reader sees a
+        // dimmed surface and is told nothing about it, by sight or by
+        // assistive technology.
+        //
+        // IT IS THE ONLY THING DRAWN WHILE A WRITE IS IN FLIGHT, which is what
+        // makes leaving it out worse than it first looks: the store clears
+        // `lastChange` before it sets the order to `held`, so the summary
+        // beside this is empty exactly when the rail is greyest.
+        changeWords === undefined || !change.held
+          ? ''
+          : renderMarkup(element('p', { class: 'ig-order-computing' }, [changeWords.computing])),
         changeWords === undefined ? '' : renderMarkup(summarySpec(change.summary, changeWords)),
       ].join(''),
     ),
@@ -2505,6 +2532,16 @@ export function renderWorkspace(
     // Nothing replaces it, because nothing needs to: the zones now receive an
     // already-sound document, so they contribute nothing to this list at all.
     // `reports every occurrence, and the zones add nothing` pins both halves.
-    diagnostics: [...sound.diagnostics, ...railRender.diagnostics, ...canvas.diagnostics],
+    // THE PLACEMENT DIAGNOSTICS ARE THE CHANGE'S, and they are only worth
+    // reporting because `expected` above makes them mean what they say. Dropped
+    // entirely, a host got no signal that its projection and its change
+    // disagree; forwarded unfiltered, every scroll past a changed row would
+    // have reported one.
+    diagnostics: [
+      ...sound.diagnostics,
+      ...railRender.diagnostics,
+      ...canvas.diagnostics,
+      ...change.diagnostics,
+    ],
   };
 }

@@ -142,10 +142,26 @@ export function summaryOf(change: OrderChange): ChangeSummary {
  * report — NOT that nothing happened, which is what {@link ChangeSummary.unchanged}
  * says.
  */
+/**
+ * Refs the CALLER knows are in the order but not in this scene.
+ *
+ * WITHOUT IT A DIAGNOSTIC CANNOT TELL TWO THINGS APART, and they are opposite
+ * facts: a projection that disagrees with the change — the defect worth
+ * reporting — and a surface that deliberately drew fewer rows than the order
+ * has. The workspace does the second on every render: its rail is windowed, and
+ * its audit filter narrows it further. Both are ordinary, and a diagnostic for
+ * either is noise that trains a host to ignore the ones that matter.
+ *
+ * A SET OF REFS RATHER THAN A BOOLEAN, because "this surface windows" is not
+ * the question. A ref in the order but off-window is expected; a ref in NO row
+ * of the order at all is the inconsistency, and only the caller holding the
+ * unwindowed order can tell which one it has.
+ */
 export function reevaluateView(
   change: OrderChange | null | undefined,
   scene: Scene,
   status: OrderStatus,
+  expected: ReadonlySet<string> = new Set(),
 ): ReevaluateView {
   const held = status === 'held';
   if (change === null || change === undefined) {
@@ -169,6 +185,10 @@ export function reevaluateView(
     // A row that LEFT the order is expected to be missing from the rail that
     // renders the order it left. Its count still reaches the summary.
     if (delta.presence === 'left') continue;
+    // The caller narrowed its own rail and said so. Its chip has nowhere to
+    // attach here, which is a fact about the window rather than about the
+    // change, and the summary still counts the row.
+    if (expected.has(delta.ref) || expected.has(key)) continue;
     diagnostics.push(`${delta.ref} changed, but no row draws it; its chip has nowhere to attach`);
   }
 

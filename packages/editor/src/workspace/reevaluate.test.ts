@@ -182,6 +182,78 @@ describe('a write in flight labels the order and never re-ranks it', () => {
   });
 });
 
+describe('a held order is LABELLED, not merely greyed', () => {
+  it('draws the computing word beside the greyed rail', () => {
+    // "A stale-but-labelled order beats a half-computed one." Greying without
+    // the label is the half that communicates nothing.
+    const result = renderWorkspace(railOf(['a', 'b', 'c']), {
+      words: WORDS,
+      orderStatus: 'held',
+    });
+    assert.match(headerZone(result.markup), /class="ig-order-computing">write landed, order computing</);
+  });
+
+  it('draws it even with no summary, which is the state a write in flight leaves', () => {
+    // The store clears `lastChange` before it sets the order to held, so this
+    // label is the ONLY thing drawn exactly when the rail is greyest.
+    const result = renderWorkspace(railOf(['a', 'b', 'c']), {
+      words: WORDS,
+      orderStatus: 'held',
+      change: null,
+    });
+    assert.match(headerZone(result.markup), /ig-order-computing/);
+  });
+
+  it('draws no label once the order settles', () => {
+    const result = renderWorkspace(railOf(['a', 'b', 'c']), { words: WORDS, change: SWAPPED });
+    assert.equal(/ig-order-computing/.test(result.markup), false);
+  });
+
+  it('greys the RAIL only, so the canvas keeps the hues its write states need', () => {
+    // #164 put pending, failed and conflict on the canvas partly in hue. What
+    // is stale while a write is in flight is the ORDER, so greying the canvas
+    // would strip the colour channel off the very marks saying an edit is in
+    // flight — the opposite of what the held state means.
+    const { styles } = renderWorkspace(railOf(['a', 'b']), { words: WORDS, orderStatus: 'held' });
+    assert.match(
+      styles,
+      /\.ig-workspace\[data-order='held'\] \.ig-zone\[data-zone='rail'\] \.ig-viewer/,
+    );
+    assert.equal(/\.ig-workspace\[data-order='held'\] \.ig-viewer/.test(styles), false);
+  });
+});
+
+describe('a placement diagnostic means the projection disagrees, and nothing else', () => {
+  it('reports a change naming a ref no row of the order carries', () => {
+    const orphan = diffOrder(
+      orderOf(['a', 'b', 'ghost']),
+      orderOf(['ghost', 'a', 'b']),
+      editOf(),
+    );
+    const result = renderWorkspace(railOf(['a', 'b']), { words: WORDS, change: orphan });
+    assert.ok(
+      result.diagnostics.some((line) => line.includes('ghost')),
+      `expected a diagnostic naming ghost, got ${JSON.stringify(result.diagnostics)}`,
+    );
+  });
+
+  it('stays silent about a changed row the WINDOW merely did not draw', () => {
+    // The ordinary case: the rail windows, so a changed row off-window has
+    // nowhere to attach and that is a fact about the window, not the change.
+    // Reporting it would train a host to ignore the diagnostics that matter.
+    const keys = ['a', 'b', 'c', 'd', 'e'];
+    const result = renderWorkspace(railOf(keys), {
+      words: WORDS,
+      rail: { start: 0, count: 2 },
+      change: diffOrder(orderOf(keys), orderOf(['e', 'a', 'b', 'c', 'd']), editOf()),
+    });
+    assert.deepEqual(
+      result.diagnostics.filter((line) => line.includes('nowhere to attach')),
+      [],
+    );
+  });
+});
+
 describe('a placed chip is decoration, so it changes no tab order', () => {
   it('takes no tab stop and leaves the rail\'s stops exactly as they were', () => {
     // #155 is open on the control surface not seeing a tab-order change, so

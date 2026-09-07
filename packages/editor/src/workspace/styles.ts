@@ -936,14 +936,22 @@ export const workspaceStylesheet = `
 /* §17c's "write landed · order computing": the PREVIOUS order, held still and
    greyed one step, with the label saying why.
 
-   THE SAME FILTER, ON THE WORKSPACE'S OWN ROOT. reevaluate/styles.ts greys
-   .ig-reevaluate[data-order='held'] .ig-viewer, and the whole reason it is a
-   filter and not a colour is written there: layer 1 sets color directly on its
-   own descendants, so an inherited colour greys almost nothing, and a list of
-   descendants to override goes stale the first time layer 1 colours something
-   new. The mounted workspace carries a different root class and needs the same
-   treatment, so it gets the same rule rather than a second mechanism. */
-.ig-workspace[data-order='held'] .ig-viewer {
+   THE SAME FILTER, for the reason reevaluate/styles.ts gives where it greys
+   .ig-reevaluate[data-order='held'] .ig-viewer: layer 1 sets color directly on
+   its own descendants, so an inherited colour greys almost nothing, and a list
+   of descendants to override goes stale the first time layer 1 colours
+   something new.
+
+   SCOPED TO THE RAIL ZONE, WHICH THE STANDALONE SURFACE DID NOT HAVE TO BE.
+   There, .ig-viewer is the rail and nothing else. The workspace draws a SECOND
+   viewer in the canvas zone, and greying that one is not a smaller version of
+   the same idea — it is the opposite of what the held state means. What is
+   stale is the ORDER; the canvas is drawing the write states #164 put there,
+   and pending, failed and conflict are told partly in hue. So an in-flight edit
+   would have stripped the colour channel off the very marks that say an edit is
+   in flight. The rail is the only surface whose ranks the store cannot vouch
+   for, so it is the only one greyed. */
+.ig-workspace[data-order='held'] .ig-zone[data-zone='rail'] .ig-viewer {
   filter: grayscale(1);
 }
 `;
