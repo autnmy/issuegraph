@@ -59,10 +59,15 @@ describe('a write state becomes a position, and nothing else crosses', () => {
     assert.equal(alone[0]?.tone, OVERLAY_TREATMENTS.conflict.hueToken);
   });
 
-  it('gives a state with no hue of its own no tone to impose', () => {
+  it('asks for no tone where the state has no hue, and lets layer 1 fill it in', () => {
     // `pending-write` declares no hue: a write in flight on a `blocked-by` is
-    // still a `blocked-by`, so the mark inherits the relationship's colour the
-    // same way the dashed clone does.
+    // still a `blocked-by`, so the mark should take the RELATIONSHIP's colour.
+    //
+    // Asking for none is how that is expressed, and the resolution belongs to
+    // the layer that owns the relationship vocabulary. It is emphatically NOT
+    // inheritance: a mark is a sibling of the edge, so `currentColor` there is
+    // the viewer's body text, and a chip left on it rendered grey beside the red
+    // line it belonged to. `marks.ts` pins the other half.
     const marks = marksFor(overlayFor(projected('pending-write')));
     assert.ok(marks.length > 0);
     for (const mark of marks) assert.equal(mark.tone, null);

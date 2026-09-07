@@ -32,8 +32,19 @@
  *
  * The hue travels as a token NAME, read from the treatment table rather than
  * copied, so a retheme moves the mark and the stroke together. Where a state has
- * no hue of its own the mark takes none either, and inherits the relationship's
- * — which is the same rule the dashed clone follows.
+ * no hue of its own this asks for NONE, and layer 1 fills in the relationship's.
+ *
+ * That last clause used to say the mark "inherits the relationship's — which is
+ * the same rule the dashed clone follows", and both halves were wrong. A mark is
+ * a SIBLING of the edge, so it inherits the viewer's body text and not the hue
+ * `.ig-edge[data-edge=…]` gives the line; and the dashed clone does not inherit
+ * either — `render.ts` states its stroke inline for exactly that reason, in a
+ * comment about exactly this trap. A `pending-write` chip therefore rendered
+ * grey beside the red line it belonged to.
+ *
+ * So "no tone" is a REQUEST for the kind's hue rather than a decision to have
+ * none, and the layer that owns the relationship vocabulary is the one that
+ * resolves it.
  */
 
 import type { ProjectedEdge } from '@issuegraph/store';

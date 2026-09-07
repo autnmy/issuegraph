@@ -3,10 +3,21 @@ import { describe, it } from 'node:test';
 
 import { type ElementSpec, renderMarkup } from './element.ts';
 import type { EdgeGeometry, Point } from './layout.ts';
-import { EDGE_MARK_CLASS, MARK_PLACEMENT_ATTRIBUTE, type EdgeMark, edgeMarkSpecs } from './marks.ts';
+import {
+  EDGE_MARK_CLASS,
+  MARK_PLACEMENT_ATTRIBUTE,
+  type EdgeDrawing,
+  type EdgeMark,
+  edgeMarkSpecs,
+} from './marks.ts';
 import { defaultTheme } from './theme.ts';
 
 const IDENTITY = 'blocked-by|a|b';
+
+/** A solid, single-stroke relationship — the ordinary case. */
+const SOLID: EdgeDrawing = { doubled: false, dashArray: null, hueToken: '--ig-edge-blocked-by' };
+const DOUBLED: EdgeDrawing = { ...SOLID, doubled: true };
+const DOTTED: EdgeDrawing = { ...SOLID, dashArray: '1 3' };
 
 /**
  * A geometry whose chord is VERTICAL, which is the case the companion has to
@@ -37,8 +48,8 @@ function marked(placement: EdgeMark['placement'], glyph: string | null = '✕'):
 describe('a mark is placed by the layer that computed the layout', () => {
   it('draws one mark at each end for both-ends, and only one for the rest', () => {
     const geometry = verticalGeometry();
-    const both = edgeMarkSpecs([marked('both-ends')], geometry, defaultTheme, IDENTITY, false);
-    const beside = edgeMarkSpecs([marked('beside')], geometry, defaultTheme, IDENTITY, false);
+    const both = edgeMarkSpecs([marked('both-ends')], geometry, defaultTheme, IDENTITY, SOLID);
+    const beside = edgeMarkSpecs([marked('beside')], geometry, defaultTheme, IDENTITY, SOLID);
 
     // §17b: "writing… chip on BOTH nodes". One chip reads as a property of
     // whichever end happened to get it, which is the opposite of what an edit
@@ -53,7 +64,7 @@ describe('a mark is placed by the layer that computed the layout', () => {
       verticalGeometry(),
       defaultTheme,
       IDENTITY,
-      false,
+      SOLID,
     );
     assert.ok(specs.length > 0);
     for (const spec of specs) {
@@ -81,7 +92,7 @@ describe('a mark is placed by the layer that computed the layout', () => {
       verticalGeometry(),
       defaultTheme,
       IDENTITY,
-      false,
+      SOLID,
     );
     assert.ok(companion !== undefined);
     const transform = String(attrsOf(companion)['transform']);
@@ -97,8 +108,8 @@ describe('a mark is placed by the layer that computed the layout', () => {
     // asked to compare — and the design record names exactly that as one of the
     // rounds it already paid for.
     const geometry = verticalGeometry();
-    const single = edgeMarkSpecs([marked('companion', null)], geometry, defaultTheme, IDENTITY, false);
-    const doubled = edgeMarkSpecs([marked('companion', null)], geometry, defaultTheme, IDENTITY, true);
+    const single = edgeMarkSpecs([marked('companion', null)], geometry, defaultTheme, IDENTITY, SOLID);
+    const doubled = edgeMarkSpecs([marked('companion', null)], geometry, defaultTheme, IDENTITY, DOUBLED);
     assert.equal(single.length, 1);
     assert.equal(doubled.length, 2);
   });
@@ -113,7 +124,7 @@ describe('a mark is placed by the layer that computed the layout', () => {
       geometry,
       defaultTheme,
       IDENTITY,
-      false,
+      SOLID,
     );
     assert.ok(companion !== undefined);
     assert.equal(attrsOf(companion)['d'], geometry.d);
@@ -129,7 +140,7 @@ describe('a mark is placed by the layer that computed the layout', () => {
     // renders to a string and can never measure one. So the sideways step is
     // what does the work, and this pins that it exists.
     const geometry = verticalGeometry();
-    const [cross] = edgeMarkSpecs([marked('terminal')], geometry, defaultTheme, IDENTITY, false);
+    const [cross] = edgeMarkSpecs([marked('terminal')], geometry, defaultTheme, IDENTITY, SOLID);
     assert.ok(cross !== undefined);
     const attrs = attrsOf(cross);
     const x = Number(attrs['x']);
@@ -155,7 +166,7 @@ describe('a mark is placed by the layer that computed the layout', () => {
       verticalGeometry(),
       defaultTheme,
       IDENTITY,
-      false,
+      SOLID,
     );
     assert.ok(chip !== undefined);
     assert.notEqual(attrsOf(chip)['text-anchor'], 'middle');
@@ -169,7 +180,7 @@ describe('a mark is placed by the layer that computed the layout', () => {
       verticalGeometry(),
       defaultTheme,
       IDENTITY,
-      false,
+      SOLID,
     );
     assert.ok(chip !== undefined);
     assert.equal(attrsOf(chip)['fill'], 'var(--ig-state-invalid)');
@@ -184,7 +195,7 @@ describe('a mark is placed by the layer that computed the layout', () => {
       verticalGeometry(),
       defaultTheme,
       IDENTITY,
-      false,
+      SOLID,
     );
     assert.deepEqual(specs, []);
   });
@@ -193,7 +204,7 @@ describe('a mark is placed by the layer that computed the layout', () => {
     // The canvas is `aria-hidden` and the rail beside it carries every name, so
     // an unlabelled mark that announced itself would be a second, flattened
     // description of something already said properly.
-    const [quiet] = edgeMarkSpecs([marked('beside', '!')], verticalGeometry(), defaultTheme, IDENTITY, false);
+    const [quiet] = edgeMarkSpecs([marked('beside', '!')], verticalGeometry(), defaultTheme, IDENTITY, SOLID);
     assert.ok(quiet !== undefined);
     assert.equal(attrsOf(quiet)['aria-hidden'], 'true');
     assert.equal(attrsOf(quiet)['aria-label'], undefined);
@@ -203,11 +214,70 @@ describe('a mark is placed by the layer that computed the layout', () => {
       verticalGeometry(),
       defaultTheme,
       IDENTITY,
-      false,
+      SOLID,
     );
     assert.ok(named !== undefined);
     assert.equal(attrsOf(named)['aria-label'], 'refused');
     assert.equal(attrsOf(named)['aria-hidden'], undefined);
+  });
+
+  it('carries the relationship’s own dash onto every companion stroke', () => {
+    // A companion drops `class` like every mark, so `.ig-edge[data-edge=…]` no
+    // longer patterns it. Left alone, a SOLID second version draws beside a
+    // dotted `duplicate-of` — which is not the same line twice, it is a
+    // different relationship drawn next to the first, with the dash channel
+    // silently spent exactly where a reader is comparing two versions.
+    const geometry = verticalGeometry();
+    for (const drawing of [DOTTED, { ...DOTTED, doubled: true }]) {
+      const specs = edgeMarkSpecs([marked('companion', null)], geometry, defaultTheme, IDENTITY, drawing);
+      assert.ok(specs.length > 0);
+      for (const spec of specs) {
+        assert.equal(attrsOf(spec)['stroke-dasharray'], DOTTED.dashArray);
+      }
+    }
+    // And a solid relationship stays solid rather than gaining a pattern.
+    const [solid] = edgeMarkSpecs([marked('companion', null)], geometry, defaultTheme, IDENTITY, SOLID);
+    assert.ok(solid !== undefined);
+    assert.equal(attrsOf(solid)['stroke-dasharray'], null);
+  });
+
+  it('paints a mark with no tone in the RELATIONSHIP’s hue, never currentColor', () => {
+    // A mark is a SIBLING of the edge, not a descendant, so it inherits the
+    // viewer's body text rather than the hue `.ig-edge[data-edge=…]` gives the
+    // line. `currentColor` therefore renders a `pending-write` chip grey beside
+    // the red line it belongs to, dropping the channel that says WHICH
+    // relationship is being written.
+    //
+    // `overlay/render.ts` states its dashed clone's stroke inline for exactly
+    // this reason, in a comment about exactly this trap — one element over.
+    const specs = edgeMarkSpecs(
+      [marked('beside', '!'), marked('companion', null)],
+      verticalGeometry(),
+      defaultTheme,
+      IDENTITY,
+      SOLID,
+    );
+    assert.ok(specs.length > 0);
+    for (const spec of specs) {
+      const attrs = attrsOf(spec);
+      // A glyph paints with `fill` and a line with `stroke` — the companion sets
+      // `fill: none` deliberately, so read the one that carries the colour for
+      // this element rather than the first that happens to be set.
+      const painted = spec.tag === 'text' ? attrs['fill'] : attrs['stroke'];
+      assert.equal(painted, `var(${SOLID.hueToken})`, `${String(spec.tag)} painted ${String(painted)}`);
+    }
+  });
+
+  it('lets a state that HAS a hue override the relationship’s', () => {
+    const [spec] = edgeMarkSpecs(
+      [{ placement: 'beside', glyph: '!', label: null, tone: '--ig-state-invalid' }],
+      verticalGeometry(),
+      defaultTheme,
+      IDENTITY,
+      SOLID,
+    );
+    assert.ok(spec !== undefined);
+    assert.equal(attrsOf(spec)['fill'], 'var(--ig-state-invalid)');
   });
 
   it('names no write state anywhere in what it draws', () => {
@@ -224,7 +294,7 @@ describe('a mark is placed by the layer that computed the layout', () => {
       verticalGeometry(),
       defaultTheme,
       IDENTITY,
-      true,
+      DOUBLED,
     )
       .map((spec) => renderMarkup(spec))
       .join('');

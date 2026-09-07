@@ -868,14 +868,19 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
       // projection chose to point the arrow.
       const requested = options.edgeMarks?.get(identity);
       if (requested !== undefined && requested.length > 0) {
+        const treatment = treatmentFor(edge.field);
         edgeLayers.push(
-          ...edgeMarkSpecs(
-            requested,
-            geometry,
-            theme,
-            identity,
-            treatmentFor(edge.field).dash === 'double',
-          ),
+          ...edgeMarkSpecs(requested, geometry, theme, identity, {
+            doubled: treatment.dash === 'double',
+            // THE KIND'S OWN DASH AND HUE, HANDED OVER RATHER THAN LEFT TO CSS.
+            // Every mark drops `class`, so `.ig-edge[data-edge=…]` reaches none
+            // of them — a companion would draw solid beside a dotted line, and a
+            // chip would take the viewer's body text instead of the
+            // relationship's colour. Both are channels the type identity rests
+            // on, lost exactly where a reader is comparing two versions.
+            dashArray: dashArrayFor(treatment.dash),
+            hueToken: treatment.hueToken,
+          }),
         );
       }
     }

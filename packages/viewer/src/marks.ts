@@ -119,6 +119,24 @@ function round(value: number): string {
 }
 
 /**
+ * The colour a mark paints with.
+ *
+ * A mark that declares no tone takes the RELATIONSHIP's, never `currentColor`.
+ * The two are not the same thing here: a mark is a sibling of the edge, so it
+ * inherits the viewer's body text rather than the hue `.ig-edge[data-edge=…]`
+ * gives the line — which would render a `pending-write` chip grey beside the
+ * red line it belongs to, silently dropping the one channel that says which
+ * relationship is being written.
+ *
+ * "No tone" therefore means "the kind's", which is what a state with no hue of
+ * its own is asking for; a state that has one overrides it here.
+ */
+function toneOf(mark: EdgeMark, drawing: EdgeDrawing): string {
+  const token = mark.tone === undefined || mark.tone === null ? drawing.hueToken : mark.tone;
+  return `var(${token})`;
+}
+
+/**
  * One glyph, placed.
  *
  * `aria-hidden` unless the host gave it a label. The canvas as a whole is
@@ -132,6 +150,7 @@ function glyphMark(
   mark: EdgeMark,
   placement: EdgeMarkPlacement,
   identity: string,
+  drawing: EdgeDrawing,
   /**
    * Which end of the glyph sits on `at`.
    *
@@ -161,11 +180,36 @@ function glyphMark(
       // position rather than about a glyph's own box.
       'text-anchor': anchor,
       'dominant-baseline': 'middle',
-      fill: mark.tone === undefined || mark.tone === null ? 'currentColor' : `var(${mark.tone})`,
+      fill: toneOf(mark, drawing),
       ...(labelled ? { role: 'img', 'aria-label': mark.label } : { 'aria-hidden': 'true' }),
     },
     [mark.glyph],
   );
+}
+
+/**
+ * How the edge this mark decorates is DRAWN.
+ *
+ * Passed in rather than re-derived, because the relationship vocabulary belongs
+ * to `vocabulary.ts` and a second reading of it here is the drifting copy this
+ * package family objects to everywhere else.
+ */
+export interface EdgeDrawing {
+  /** Whether the kind draws its line twice. */
+  readonly doubled: boolean;
+  /** The kind's own dash array, or `null` for a solid line. */
+  readonly dashArray: string | null;
+  /**
+   * The kind's hue token, used by a mark that declares none of its own.
+   *
+   * A MARK CANNOT INHERIT IT, which is the whole reason this is here. Marks are
+   * siblings of the edge rather than its descendants, and the hue reaches the
+   * line through `.ig-edge[data-edge=…]` — a selector no mark matches — so a
+   * mark left on `currentColor` resolves to the viewer's body text and not to
+   * the relationship at all. `overlay/render.ts` states the hue inline on its
+   * dashed clone for exactly this reason; the same trap is one element over.
+   */
+  readonly hueToken: string;
 }
 
 /**
@@ -187,28 +231,34 @@ function companionPaths(
   mark: EdgeMark,
   theme: Theme,
   identity: string,
-  doubled: boolean,
+  drawing: EdgeDrawing,
 ): readonly ElementSpec[] {
   const normal = normalAt(geometry.start, geometry.end);
   const stroke = theme.metrics['--ig-stroke'];
   // Clear of the original by more than the original's own doubling, or the two
   // versions merge into one thicker line at exactly the width the doubling uses.
-  const gap = stroke * (doubled ? 4 : 3);
+  const gap = stroke * (drawing.doubled ? 4 : 3);
   const base = {
     class: `${EDGE_MARK_CLASS} ig-edge-companion`,
     [MARK_PLACEMENT_ATTRIBUTE]: 'companion',
     'data-ig-group': identity,
     d: geometry.d,
     fill: 'none',
-    stroke:
-      mark.tone === undefined || mark.tone === null ? 'currentColor' : `var(${mark.tone})`,
+    stroke: toneOf(mark, drawing),
+    // THE KIND'S OWN DASH, CARRIED. A companion drops `class` like every other
+    // mark, so `.ig-edge[data-edge=…]` no longer patterns it — and a SOLID
+    // second version beside a dotted `duplicate-of` is not the same line twice,
+    // it is a different relationship drawn beside the first. The dash is one of
+    // the four redundant channels the type identity rests on, and losing it on
+    // the companion loses it exactly where a reader is being asked to compare.
+    'stroke-dasharray': drawing.dashArray,
     // Decoration over a rail that already carries every name.
     'aria-hidden': 'true',
   } as const;
 
   const aside = `translate(${round(normal.x * gap)} ${round(normal.y * gap)})`;
 
-  if (!doubled) return [svg('path', { ...base, transform: aside })];
+  if (!drawing.doubled) return [svg('path', { ...base, transform: aside })];
 
   return [
     svg('path', { ...base, transform: `${aside} translate(0 ${String(-stroke)})` }),
@@ -227,7 +277,7 @@ export function edgeMarkSpecs(
   geometry: EdgeGeometry,
   theme: Theme,
   identity: string,
-  doubled: boolean,
+  drawing: EdgeDrawing,
 ): readonly ElementSpec[] {
   const specs: ElementSpec[] = [];
 
@@ -256,8 +306,8 @@ export function edgeMarkSpecs(
         // The chip is a WORD, and a centred word reaches back across the line it
         // was moved off — which is how it kept landing on the arrowhead.
         const anchor = normal.x >= 0 ? 'start' : 'end';
-        const at = glyphMark(shift(geometry.start), mark, 'both-ends', identity, anchor);
-        const to = glyphMark(shift(geometry.end), mark, 'both-ends', identity, anchor);
+        const at = glyphMark(shift(geometry.start), mark, 'both-ends', identity, drawing, anchor);
+        const to = glyphMark(shift(geometry.end), mark, 'both-ends', identity, drawing, anchor);
         if (at !== null) specs.push(at);
         if (to !== null) specs.push(to);
         break;
@@ -294,7 +344,7 @@ export function edgeMarkSpecs(
           x: geometry.end.x - cos * back - sin * aside,
           y: geometry.end.y - sin * back + cos * aside,
         };
-        const spec = glyphMark(at, mark, 'terminal', identity);
+        const spec = glyphMark(at, mark, 'terminal', identity, drawing);
         if (spec !== null) specs.push(spec);
         break;
       }
@@ -307,12 +357,13 @@ export function edgeMarkSpecs(
           mark,
           'beside',
           identity,
+          drawing,
         );
         if (spec !== null) specs.push(spec);
         break;
       }
       case 'companion':
-        specs.push(...companionPaths(geometry, mark, theme, identity, doubled));
+        specs.push(...companionPaths(geometry, mark, theme, identity, drawing));
         break;
     }
   }
