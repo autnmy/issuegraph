@@ -1034,6 +1034,24 @@ export const viewerStylesheet = `
   stroke-width: var(--ig-stroke);
 }
 
+/* A MARK IS DECORATION, AND IT NEVER TAKES A POINTER. Every one of these sits in
+   front of the line it decorates, so without this the mark under the reader's
+   cursor would swallow the click that was aimed at the edge — the same rule the
+   halo already has to follow for the same reason.
+
+   Colour is set per element, from the token name the caller supplied, for the
+   reason the edge hues are set per element: one source for a channel. Nothing
+   here paints a state, because nothing here knows what a state is. */
+.ig-edge-mark {
+  pointer-events: none;
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+}
+
+.ig-edge-companion {
+  stroke-width: var(--ig-stroke);
+}
+
 .ig-terminal[data-edge='blocked-by'] { color: var(--ig-edge-blocked-by); }
 .ig-terminal[data-edge='serialize-with'] { color: var(--ig-edge-serialize-with); }
 .ig-terminal[data-edge='together-with'] { color: var(--ig-edge-together-with); }

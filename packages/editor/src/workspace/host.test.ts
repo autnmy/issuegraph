@@ -15,6 +15,9 @@ import type { GraphDocument } from '@issuegraph/store';
 import { makeEdge } from '@issuegraph/store';
 
 import { keyIntent } from '../create/keys.ts';
+import { documentOf } from '../testing/documents.ts';
+import { WORKSPACE_WORDS } from '../testing/workspace.ts';
+import { renderWorkspace } from './render.ts';
 import { candidates } from '../testing/firstpass.ts';
 import {
   type HostCommand,
@@ -802,5 +805,46 @@ describe('the first pass reaches the store only through consent', () => {
     const opened = drive([{ kind: 'first-pass', command: { kind: 'open' } }], drafting.state);
     assert.equal(opened.state.draft.source, '2');
     assert.equal(opened.state.targetQuery, 'chang');
+  });
+
+  it('puts a failed write on the CANVAS, not only in a panel beside it', () => {
+    // THE CONTROL THIS FILE WAS OWED. The demo measured the gap first: it hosts
+    // the workspace and the store together, and the honest thing it could do was
+    // list writes in a panel above the canvas while the drawn line looked
+    // ordinary. A reader watching the picture had no way to see that the edge
+    // they had just edited was rejected.
+    //
+    // Driven through `renderWorkspace` rather than through the reducer, because
+    // the claim is about what reaches the canvas — the reducer never had an
+    // opinion about drawing, which is exactly why the gap survived so long.
+    // A two-issue component, which is the smallest document whose canvas draws
+    // an arc at all — the edge has to exist before a state on it can.
+    const drawn = documentOf({ components: [2] });
+    const edge = drawn.edges[0];
+    assert.ok(edge !== undefined);
+    const failed = renderWorkspace(drawn, {
+      words: WORKSPACE_WORDS,
+      projected: [
+        {
+          id: edgeIdentity(edge.field, edge.from, edge.to),
+          kind: edge.field,
+          from: edge.from,
+          to: edge.to,
+          states: ['failed'],
+          writes: [],
+        },
+      ],
+    });
+
+    // Both halves, because either alone was the bug. The state on the line is
+    // what the hue and the ghost hang off; the mark is the ✕ beside the
+    // terminal, and it is the half that reached nothing at all.
+    assert.match(failed.markup, /data-ig-state="failed"/);
+    assert.match(failed.markup, /data-ig-mark="terminal"/);
+
+    // And a settled edge is left completely alone, so the marks say something.
+    const settled = renderWorkspace(drawn, { words: WORKSPACE_WORDS });
+    assert.equal(/data-ig-mark=/.test(settled.markup), false);
+    assert.equal(/data-ig-state=/.test(settled.markup), false);
   });
 });

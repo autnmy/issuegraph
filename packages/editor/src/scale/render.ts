@@ -46,6 +46,7 @@ import type { ProjectedEdge } from '@issuegraph/store';
 
 import { overlaysFor } from '../overlay/projected.ts';
 import { attachEdgeOverlays } from '../overlay/render.ts';
+import { edgeMarkRequests } from '../overlay/request.ts';
 import { edgeOverlayStylesheet } from '../overlay/styles.ts';
 import { INITIAL_SCALE_STATE, type ScaleState } from './commands.ts';
 import {
@@ -253,6 +254,15 @@ export function renderScaleLadder(
   const ladder = scaleLadder(input, state);
   const theme = resolveTheme(options.theme);
 
+  // THE OVERLAYS ARE RESOLVED BEFORE THE CANVAS IS DRAWN, because the marks
+  // among them are an INPUT to the drawing rather than something added over it.
+  // A mark needs a position, and the only layer that has one is the layer that
+  // computes the layout — so the request goes in with the render and the placed
+  // marks come back inside the scene. The stroke-derived overlays still go the
+  // other way, attached to the scene afterwards, because those reuse a position
+  // that is already solved.
+  const requestedOverlays = overlaysFor(ladder.canvas.edges, options.projected, options.selectedEdge);
+
   const canvas =
     ladder.tier === 'direct'
       ? renderViewer(ladder.canvas, {
@@ -263,6 +273,7 @@ export function renderScaleLadder(
           // drawing it. Two would mean two projection toggles disagreeing
           // about which projection is current.
           chrome: false,
+          edgeMarks: edgeMarkRequests(requestedOverlays),
         })
       : null;
 
@@ -273,7 +284,7 @@ export function renderScaleLadder(
   // promise every zone makes. A selection is a NAME, and a name that no longer
   // resolves renders as nothing selected. The merge itself is `overlaysFor`,
   // shared with the workspace's tree canvas so the two cannot drift.
-  const overlays = canvas === null ? [] : overlaysFor(ladder.canvas.edges, options.projected, options.selectedEdge);
+  const overlays = canvas === null ? [] : requestedOverlays;
   // `unattached` IS DELIBERATELY NOT SURFACED HERE, and the reason is a fact
   // about this call site rather than about the value.
   //

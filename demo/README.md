@@ -238,10 +238,13 @@ silently break" a property of CI rather than a hope.
 - **It is not the first-pass review queue.** That surface takes a candidate port
   the host fills from evidence — two bodies naming one path, a comment linking an
   issue — and a sandbox with no tracker has no evidence to offer it.
-- **It does not draw write states on the canvas.** `renderWorkspace` takes no
-  projected edges, so a pending, failed or conflicting write shows in the writes
-  panel above the workspace rather than as an overlay on the drawn edge. That is
-  a gap in the package, not a choice here, and it is filed upstream.
+- **It does not resolve a conflict for you.** A conflicted edge draws both
+  versions and offers view diff, retry on latest and discard mine; nothing here
+  merges, and nothing here will. The write states themselves DO draw on the
+  canvas now — a pending edit marches and chips both its nodes, a refusal and a
+  rejection take their own hue and mark, and a conflict draws its second version
+  beside the first — so the writes panel above the workspace is a log rather
+  than the only place a state is visible.
 - **It is not published.** `private: true`, and it lives outside `packages/` on
   purpose — that directory is what the isolation guard, the consumer smoke test
   and the lint config all read as "this ships". The demo is a **consumer**.

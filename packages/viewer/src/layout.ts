@@ -694,6 +694,16 @@ export interface EdgeGeometry {
   readonly d: string;
   readonly start: Point;
   readonly end: Point;
+  /**
+   * The quadratic's control point — the one `d` bows through.
+   *
+   * Published so a caller that needs a point ON the curve can solve for one
+   * rather than estimate it from the chord. The midpoint of a quadratic is
+   * `¼P₀ + ½C + ¼P₂`, which is a different point from the chord's midpoint
+   * wherever the curve actually bows, and the difference is the whole width of
+   * a channel.
+   */
+  readonly control: Point;
   /** Radians. Orients the terminal marker along the path's own tangent. */
   readonly endAngle: number;
 }
@@ -789,6 +799,7 @@ export function edgeGeometry(
     d,
     start,
     end,
+    control: { x: controlX, y: controlY },
     endAngle: Math.atan2(end.y - controlY, end.x - controlX),
   };
 }
