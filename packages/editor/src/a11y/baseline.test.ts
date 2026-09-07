@@ -210,11 +210,11 @@ describe('rules that hold whatever the baseline says', () => {
 /**
  * The reader itself, on markup this package does not render.
  *
- * `controlSurface` is EXPORTED for hosts to run over their own chrome, so its
- * behaviour has to be pinned beyond what the mounted fixture happens to draw.
- * Nothing here writes `hidden` or `aria-labelledby` today — which is precisely
- * why the fixture cannot cover them, and why reading them wrong would have gone
- * unnoticed until a consumer hit it.
+ * KEPT AFTER THE EXPORT WAS WITHDRAWN, and worth saying why. These cases are no
+ * longer a published contract, but they are cheap, they are already correct,
+ * and each one pins a rule in this file against a shape that would make it pass
+ * silently — an `aria-hidden` wrapper, an `aria-labelledby` naming nothing, a
+ * `hidden` subtree. Deleting them would remove evidence, not obligation.
  */
 describe('controlSurface reads markup this package does not itself render', () => {
   const read = (body: string): readonly ControlEntry[] => {
@@ -276,6 +276,9 @@ describe('controlSurface reads markup this package does not itself render', () =
 
   it('does not accept an empty aria-label as a name', () => {
     assert.equal(only('<button data-ig-command="x" aria-label="">Go</button>').name, 'empty');
+    // NOR ONE MADE OF SPACES, which a template padding an empty translation
+    // produces and which the browser exposes as no name at all.
+    assert.equal(only('<button data-ig-command="x" aria-label="  ">Go</button>').name, 'empty');
   });
 
   it('ignores text that only a screen reader cannot see', () => {

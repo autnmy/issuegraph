@@ -17,6 +17,27 @@
  * The rendered DOM has all of it, and it is also what a screen reader actually
  * meets.
  *
+ * ## NOT EXPORTED, and that is the correction of a real mistake
+ *
+ * An earlier revision published `controlSurface` on the package surface,
+ * reasoning that a host composing these zones into its own chrome would want
+ * the same record. Nothing asked for it, and `index.ts` states the rule it
+ * broke: "a published package can add an export later and can never take one
+ * back, so nothing is exported before something is owed."
+ *
+ * The cost was not theoretical. Exporting it turned this file into a
+ * general-purpose accessible-name and focusability reader, and accessible-name
+ * computation has a long tail — `title`, `placeholder`, an input's own `value`,
+ * whitespace-only labels, hidden inputs, `contenteditable`. Three consecutive
+ * review rounds produced findings of exactly that shape: each real, each cheap,
+ * and none about markup this package draws. That tail has no end, and this
+ * change cannot discharge it.
+ *
+ * Internal, the obligation is bounded and discharged: the reader only ever
+ * meets what this package renders, which is a closed set recorded in six
+ * states. If a host ever owes this, export it then — with its tail addressed,
+ * and against a consumer that actually needs it.
+ *
  * ## Structurally typed, so this module still touches no global
  *
  * {@link SurfaceElement} is declared by what it must answer rather than as
@@ -329,7 +350,10 @@ function nameSource(root: SurfaceElement, element: SurfaceElement): NameSource {
   }
 
   const label = element.getAttribute('aria-label');
-  if (label !== null) return label === '' ? 'empty' : 'aria-label';
+  // TRIMMED, because a name made of spaces is not a name: the browser exposes
+  // an empty accessible name for `aria-label=" "`, which a template padding an
+  // empty translation produces easily.
+  if (label !== null) return label.trim() === '' ? 'empty' : 'aria-label';
   if (visibleText(element) !== '') return 'text';
   return labelNames(root, element) ? 'label' : 'none';
 }

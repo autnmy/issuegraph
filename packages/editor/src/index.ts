@@ -416,18 +416,3 @@ export {
 } from './workspace/mount.ts';
 
 export { mountStylesheet } from './workspace/chrome.ts';
-
-// THE A11Y BASELINE'S READER, published because a HOST has the same question
-// this package does: a consumer composing these zones into its own chrome can
-// take the same record over its own mounted surface and hold it to the same
-// rules. `commandSurface` reads a DOM node structurally and reaches no global,
-// so it costs a consumer nothing to import.
-export {
-  type ControlEntry,
-  type NameSource,
-  type SurfaceElement,
-  type SurfaceNode,
-  type TabStop,
-  controlSurface,
-} from './a11y/baseline.ts';
-
