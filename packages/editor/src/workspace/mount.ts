@@ -428,10 +428,16 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   let drawn: { readonly viewer: ViewerDocument; readonly rail: RailWindow } | null = null;
   // A rail row to focus once the window has been re-cut around it.
   let pendingFocus: { readonly kind: 'after' | 'before' | 'first' | 'last'; readonly key: string | null } | null = null;
-  // The key currently holding a control it activated — `null` between presses.
-  // See `onKeydown`'s first arm for why this is a fact about the PRESS and not a
-  // question asked of whatever holds focus by the time the repeats arrive.
-  let activating: string | null = null;
+  // The keys currently holding a control they activated. See `onKeydown`'s first
+  // arm for why this is a fact about the PRESS and not a question asked of
+  // whatever holds focus by the time the repeats arrive.
+  //
+  // A SET RATHER THAN THE LATEST KEY. Two can be down at once — hold `Space` on
+  // one control and press `Enter` on another — and a scalar answers that by
+  // forgetting the first, so its repeats stop being recognised as its own and go
+  // wherever focus has since moved. That is not a case to guard; it is a case
+  // the representation should not be able to express, which is what this is.
+  const activating = new Set<string>();
   let pressed:
     | { readonly pointerId: number; readonly key: string; readonly x: number; readonly y: number; dragging: boolean }
     | null = null;
@@ -2112,17 +2118,16 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // where focus is is not what the question was about. It ends at `keyup`, and
     // a fresh non-repeat press of the same key clears it too — so a `keyup` lost
     // to a window blur costs one held key rather than every later one.
-    if (event.key === activating && event.repeat) {
+    if (event.repeat && activating.has(event.key)) {
       event.preventDefault();
       return;
     }
-    // CLEARED ONLY BY A FRESH PRESS OF THE SAME KEY. Clearing on any other key
-    // forgets a press that is still held: a reader holding `Space` on a control
-    // and touching `Shift` would have the record dropped, and the next `Space`
-    // repeat would land wherever the activation had since sent focus — the
-    // inserted spaces this record exists to prevent, one keystroke away. The
-    // record is about ONE key being down, so only that key's own press ends it.
-    if (!event.repeat && event.key === activating) activating = null;
+    // A FRESH PRESS ENDS ONLY ITS OWN KEY'S RECORD, and with a set that falls
+    // out rather than being arranged: every key's record is its own, so no other
+    // key's press can reach it. A reader holding `Space` on a control and
+    // touching `Shift` used to have the whole record dropped, and the next
+    // `Space` repeat landed wherever the activation had sent focus.
+    if (!event.repeat) activating.delete(event.key);
     if (firstPassKeydown(event)) {
       event.preventDefault();
       return;
@@ -2277,8 +2282,9 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     applyResult(result);
     event.preventDefault();
     // THE PRESS IS NOW RECORDED AS OURS, so its repeats are swallowed at the top
-    // of this handler wherever the dispatch has since sent focus.
-    activating = event.key;
+    // of this handler wherever the dispatch has since sent focus. Added beside
+    // any other key already held rather than replacing it.
+    activating.add(event.key);
   };
 
   // THE HELD KEY IS LET GO. Registered beside the keydown listener rather than on
@@ -2286,7 +2292,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   // that never arrives because focus left the window is survivable, which is why
   // `onKeydown` clears the flag on a fresh press too.
   const onKeyup = (event: KeyboardEvent): void => {
-    if (event.key === activating) activating = null;
+    activating.delete(event.key);
   };
 
   const onPointerDown = (event: PointerEvent): void => {

@@ -3820,6 +3820,61 @@ describe('a control activates from the keyboard', () => {
     }
   });
 
+  it('keeps every held key’s record, not just the latest one', async () => {
+    // REVIEW FINDING ON THIS CHANGE. Two keys can be down at once — hold `Space`
+    // on one control and press `Enter` on another — and a scalar record answered
+    // that by forgetting the first, so the `Space` repeats stopped being
+    // recognised as its own and went wherever focus had since moved. The set is
+    // what stops the case existing rather than guarding against it.
+    // THE REPEAT HAS TO LAND SOMEWHERE THE TWO ANSWERS DIFFER, which is why this
+    // drives the loop to the target input rather than pressing two chrome
+    // buttons: on a control, a lost record is invisible — the repeat simply
+    // reaches the arm and is cancelled again for its own reasons. On the INPUT
+    // the arm hands the press back, so a forgotten record shows up as the
+    // reader's search box taking a character from a key they are holding on a
+    // button. An earlier draft of this test pressed two chrome buttons and
+    // passed with the set replaced by a scalar.
+    const page = await mounted();
+    try {
+      await selectFirstIssue(page);
+      const add = page.control('add');
+      assert.ok(add !== null, 'no add control');
+
+      // ENTER GOES DOWN FIRST, and stays down for the rest of the test.
+      press(page, add, 'Enter');
+      await flush();
+
+      // SPACE ACTIVATES A SECOND CONTROL while Enter is still held, and this one
+      // moves focus into the target search.
+      const chosen = KIND_KEYS[0];
+      assert.ok(chosen !== undefined, 'the vocabulary has no first kind');
+      const option = page.element.querySelector<HTMLElement>(
+        `[data-ig-command="kind"][data-ig-value="${chosen.edgeKind}"]`,
+      );
+      assert.ok(option !== null, 'the chooser drew no option to press');
+      press(page, option, ' ');
+      await flush();
+
+      const search = focused(page);
+      assert.equal(search.getAttribute('data-ig-command'), 'target-query', 'activating the kind did not move focus');
+
+      // NOW ENTER REPEATS, at the input. It is still this package's press.
+      const held = new page.win.KeyboardEvent('keydown', {
+        key: 'Enter',
+        repeat: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      search.dispatchEvent(held);
+      await flush();
+
+      assert.equal(held.defaultPrevented, true, 'a second activation overwrote the first still-held key’s record');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
   it('releases the held key on keyup, so a later repeat is the reader’s own', async () => {
     // THE OTHER SIDE OF THE SAME FLAG, isolated to `keyup` alone. Remembering
     // the press must not outlive it, or the reader who let go and then held
