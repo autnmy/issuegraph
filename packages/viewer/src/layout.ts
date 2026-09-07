@@ -704,6 +704,24 @@ export interface EdgeGeometry {
    * a channel.
    */
   readonly control: Point;
+  /**
+   * Which bound of its own box each endpoint sits on.
+   *
+   * PUBLISHED BECAUSE "OUTSIDE THE CARD" IS NOT DERIVABLE FROM THE LINE, and
+   * three separate attempts to derive it proved that the hard way. A caller
+   * placing a mark beside an endpoint must know which way is away from the card,
+   * and the chord's direction, the arriving tangent and the routing channel each
+   * answer a different question — so each of them was right for some edges and
+   * put marks inside a card for others.
+   *
+   * `facingSide` already decides this, per endpoint, and used to discard it. A
+   * `left` anchor is cleared by moving further left; a `right` one by moving
+   * right. The two ends genuinely differ: an arc between a gutter card and a
+   * spine card leaves one box's right face and arrives on the other's left, so
+   * one shared direction cannot clear both.
+   */
+  readonly startSide: 'left' | 'right';
+  readonly endSide: 'left' | 'right';
   /** Radians. Orients the terminal marker along the path's own tangent. */
   readonly endAngle: number;
 }
@@ -788,8 +806,10 @@ export function edgeGeometry(
   const usesRight = from.column === 'right' || to.column === 'right';
   const controlX = usesRight ? layout.rightChannel : layout.leftChannel;
 
-  const start = anchor(from, DEPART_FRACTION, facingSide(from, to, controlX));
-  const end = anchor(to, ARRIVE_FRACTION, facingSide(to, from, controlX));
+  const startSide = facingSide(from, to, controlX);
+  const endSide = facingSide(to, from, controlX);
+  const start = anchor(from, DEPART_FRACTION, startSide);
+  const end = anchor(to, ARRIVE_FRACTION, endSide);
   const controlY = (start.y + end.y) / 2;
 
   const round = (value: number): string => (Math.round(value * 100) / 100).toFixed(2);
@@ -800,6 +820,8 @@ export function edgeGeometry(
     start,
     end,
     control: { x: controlX, y: controlY },
+    startSide,
+    endSide,
     endAngle: Math.atan2(end.y - controlY, end.x - controlX),
   };
 }

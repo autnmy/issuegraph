@@ -138,6 +138,29 @@ function outwardNormal(geometry: EdgeGeometry): Point {
   return facing < 0 ? { x: -normal.x, y: -normal.y } : normal;
 }
 
+/**
+ * Which way is away from the CARD at one endpoint, as a unit x.
+ *
+ * THIS IS THE FACT EVERY EARLIER ATTEMPT WAS APPROXIMATING, and it is the reason
+ * three of them were wrong. A mark beside an endpoint has to clear that
+ * endpoint's own card, and nothing about the LINE says where that card is: the
+ * chord's direction, the arriving tangent and the routing channel each answer a
+ * different question, and each of them put marks inside a card for some edges.
+ *
+ * `edgeGeometry` knows, because it resolved the box — an anchor on a box's left
+ * bound is cleared by moving further left, and a right one by moving right — and
+ * it publishes the side per endpoint precisely because THE TWO CAN DIFFER. An
+ * arc between a gutter card and a spine card leaves one box's right face and
+ * arrives on the other's left, so one shared direction clears one end and drives
+ * the other mark straight into its card.
+ *
+ * The y component is zero: cards are laid out in columns and every anchor sits
+ * on a vertical bound, so "away" is horizontal by construction.
+ */
+function awayFromCard(side: 'left' | 'right'): Point {
+  return { x: side === 'left' ? -1 : 1, y: 0 };
+}
+
 /** The point on the curve at `t = ½`. The control point is a quarter of it. */
 function midpointOf(geometry: EdgeGeometry): Point {
   const { start, control, end } = geometry;
@@ -343,18 +366,28 @@ export function edgeMarkSpecs(
         // the marker at once, and the pair stays symmetric — the same sideways
         // step at each end, so the two read as one state rather than as two
         // marks that happen to share a colour.
-        const normal = outwardNormal(geometry);
         const aside = theme.metrics['--ig-terminal-width'] + theme.metrics['--ig-stroke'] * 4;
-        const shift = (point: Point): Point => ({
-          x: point.x + normal.x * aside,
-          y: point.y + normal.y * aside,
-        });
-        // Grown outward from the line rather than centred on the offset point.
-        // The chip is a WORD, and a centred word reaches back across the line it
-        // was moved off — which is how it kept landing on the arrowhead.
-        const anchor = normal.x >= 0 ? 'start' : 'end';
-        const at = glyphMark(shift(geometry.start), mark, 'both-ends', identity, drawing, anchor);
-        const to = glyphMark(shift(geometry.end), mark, 'both-ends', identity, drawing, anchor);
+        // EACH END IS CLEARED AGAINST ITS OWN CARD. A single direction for the
+        // pair is only right when both anchors sit on the same face, which a
+        // same-column edge satisfies and a gutter-to-spine edge does not — there
+        // one box is left by its right face and the other entered by its left,
+        // so one shared direction drove the second chip into its card.
+        //
+        // The text anchor follows the same side, or a chip cleared leftward
+        // grows straight back across the line the offset just moved it off.
+        const chip = (point: Point, side: 'left' | 'right'): ElementSpec | null => {
+          const away = awayFromCard(side);
+          return glyphMark(
+            { x: point.x + away.x * aside, y: point.y + away.y * aside },
+            mark,
+            'both-ends',
+            identity,
+            drawing,
+            side === 'left' ? 'end' : 'start',
+          );
+        };
+        const at = chip(geometry.start, geometry.startSide);
+        const to = chip(geometry.end, geometry.endSide);
         if (at !== null) specs.push(at);
         if (to !== null) specs.push(to);
         break;
@@ -383,34 +416,46 @@ export function edgeMarkSpecs(
         // END — the tangent there — rather than the chord's, because this mark
         // is about the arrival and not about the line as a whole.
         //
-        // ITS SIGN IS STILL THE CHANNEL'S. Which way "sideways" points cannot be
-        // read off the tangent either: measured, an upward arrival between two
-        // spine cards sent the ✕ across the destination card's left bound, where
-        // the opaque rail hides it. So the tangent decides the AXIS and the
-        // channel decides the SIDE — the same rule every other placement here
-        // follows, applied to a different perpendicular.
+        // THE STEP BACK IS THE TANGENT'S; THE STEP ASIDE IS THE CARD'S. Which
+        // way "sideways" points cannot be read off the tangent, and measured, an
+        // upward arrival between two spine cards sent the ✕ across the
+        // destination card's left bound where the opaque rail hides it.
+        //
+        // It is the ARRIVING endpoint's own side, not the routing channel's:
+        // those agree for a same-column arc and disagree for one that crosses
+        // between columns, which is the case a channel-derived sign gets wrong.
         const stroke = theme.metrics['--ig-stroke'];
         const back = theme.metrics['--ig-terminal-length'] + stroke;
         const aside = theme.metrics['--ig-terminal-width'] + stroke * 4;
         const cos = Math.cos(geometry.endAngle);
         const sin = Math.sin(geometry.endAngle);
-        const outward = outwardNormal(geometry);
-        // The tangent's own perpendicular, turned to agree with the channel.
-        const side = -sin * outward.x + cos * outward.y >= 0 ? 1 : -1;
+        const away = awayFromCard(geometry.endSide);
         const at: Point = {
-          x: geometry.end.x - cos * back - sin * aside * side,
-          y: geometry.end.y - sin * back + cos * aside * side,
+          x: geometry.end.x - cos * back + away.x * aside,
+          y: geometry.end.y - sin * back + away.y * aside,
         };
         const spec = glyphMark(at, mark, 'terminal', identity, drawing);
         if (spec !== null) specs.push(spec);
         break;
       }
       case 'beside': {
-        const normal = outwardNormal(geometry);
-        const gap = theme.metrics['--ig-stroke'] * 3;
+        // IN THE CHANNEL, WHICH IS FREE OF CARDS BY DEFINITION — rather than
+        // beside the curve by an offset in some derived direction.
+        //
+        // That distinction is the whole fix. A routing channel is the gap the
+        // layout leaves BETWEEN columns precisely so an arc has somewhere to go,
+        // so a point at the channel's x is clear of every card without anything
+        // needing to know where the cards are. An offset from the curve's
+        // midpoint is not: measured, a long arc crossing between the gutters has
+        // its midpoint over a spine card, so the glyph landed under the opaque
+        // rail — the same invisible-mark failure the endpoint marks had, arrived
+        // at from the one placement that has no endpoint of its own to clear.
+        //
+        // The y is still the curve's, so the mark sits at the line's own height
+        // and reads as belonging to it. Only the x is taken from the channel.
         const mid = midpointOf(geometry);
         const spec = glyphMark(
-          { x: mid.x + normal.x * gap, y: mid.y + normal.y * gap },
+          { x: geometry.control.x, y: mid.y },
           mark,
           'beside',
           identity,

@@ -33,6 +33,32 @@ function verticalGeometry(): EdgeGeometry {
     start,
     end,
     control,
+    // Two spine cards: both anchors sit on their own box's LEFT bound, which is
+    // what `facingSide` answers on a same-column tie.
+    startSide: 'left',
+    endSide: 'left',
+    endAngle: Math.atan2(end.y - control.y, end.x - control.x),
+  };
+}
+
+/**
+ * An arc that CROSSES columns, whose two endpoints sit on opposing faces.
+ *
+ * A gutter card is left by its RIGHT bound and the spine card entered by its
+ * LEFT, so the two ends are cleared in opposite directions. This is the case a
+ * single shared direction cannot serve, whichever one it picks.
+ */
+function crossColumnGeometry(): EdgeGeometry {
+  const start: Point = { x: 200, y: 200 };
+  const end: Point = { x: 400, y: 210 };
+  const control: Point = { x: 300, y: 205 };
+  return {
+    d: 'M 200.00 200.00 Q 300.00 205.00 400.00 210.00',
+    start,
+    end,
+    control,
+    startSide: 'right',
+    endSide: 'left',
     endAngle: Math.atan2(end.y - control.y, end.x - control.x),
   };
 }
@@ -311,20 +337,18 @@ describe('a mark is placed by the layer that computed the layout', () => {
     assert.equal(attrsOf(spec)['fill'], 'var(--ig-state-invalid)');
   });
 
-  it('puts every mark on the CHANNEL side, where no card is drawn', () => {
-    // THE SIDE IS NOT THE TRAVERSAL DIRECTION, and reading it off the endpoint
-    // order is how every mark ended up inside a node card. Measured: for an
-    // upward `blocked-by` between two spine cards both endpoints sit on the
-    // cards' LEFT bounds, `normalAt` points at +x, and the rail — an opaque HTML
-    // layer painted after the canvas — hid the marks completely. Drawn, and
-    // invisible, which is worse than not drawn.
+  it('puts every mark clear of the CARD it belongs to', () => {
+    // THE SIDE IS A FACT ABOUT THE CARD, and three separate attempts to derive
+    // it from the LINE were each wrong for some edges. Measured: for an upward
+    // `blocked-by` between two spine cards both anchors sit on the cards' LEFT
+    // bounds, the naive normal points at +x, and the rail — an opaque HTML layer
+    // painted after the canvas — hid every mark completely. Drawn and invisible,
+    // which is worse than not drawn.
     //
-    // The layout routes every arc through a free channel, so the side the curve
-    // bows toward has no card on it by construction. Every placement is checked,
-    // because the sign was wrong in three of them independently.
+    // `edgeGeometry` publishes the side per endpoint, so nothing here infers it.
     const geometry = verticalGeometry();
-    // The control point is LEFT of this chord, so every mark must be too.
-    assert.ok(geometry.control.x < geometry.start.x, 'fixture must bow left');
+    assert.equal(geometry.startSide, 'left');
+    assert.equal(geometry.endSide, 'left');
 
     const specs = edgeMarkSpecs(
       [marked('both-ends', 'writing…'), marked('terminal'), marked('beside'), marked('companion', null)],
@@ -342,7 +366,7 @@ describe('a mark is placed by the layer that computed the layout', () => {
         // A companion: its shift must carry it toward the channel, so negative x.
         const match = /translate\((-?[\d.]+) /.exec(transform);
         assert.ok(match !== null);
-        assert.ok(Number(match[1]) < 0, `companion shifted away from the channel: ${transform}`);
+        assert.ok(Number(match[1]) < 0, `companion shifted toward the cards: ${transform}`);
         continue;
       }
       // A glyph: its own x must sit on the channel side of the chord.
@@ -353,9 +377,9 @@ describe('a mark is placed by the layer that computed the layout', () => {
     }
   });
 
-  it('grows a worded chip toward the channel, not back across the line', () => {
-    // The anchor has to follow the side. With the chip moved left of the chord,
-    // a `start` anchor would grow it back across the line and into the card the
+  it('grows a worded chip away from its card, not back across the line', () => {
+    // The anchor has to follow the side. With the chip moved left of a left
+    // bound, a `start` anchor would grow it straight back over the card the
     // offset just cleared.
     const [chip] = edgeMarkSpecs(
       [{ placement: 'both-ends', glyph: 'writing…', label: null, tone: null }],
@@ -366,6 +390,42 @@ describe('a mark is placed by the layer that computed the layout', () => {
     );
     assert.ok(chip !== undefined);
     assert.equal(attrsOf(chip)['text-anchor'], 'end');
+  });
+
+  it('clears each end against ITS OWN card when the two differ', () => {
+    // THE CASE ONE SHARED DIRECTION CANNOT SERVE. A gutter-to-spine arc leaves
+    // one box by its right face and enters the other by its left, so a single
+    // channel-facing direction clears one chip and drives the other into its
+    // card — which is exactly what a same-column-only fix left behind.
+    const geometry = crossColumnGeometry();
+    const [from, to] = edgeMarkSpecs(
+      [{ placement: 'both-ends', glyph: 'writing…', label: null, tone: null }],
+      geometry,
+      defaultTheme,
+      IDENTITY,
+      SOLID,
+    );
+    assert.ok(from !== undefined && to !== undefined);
+
+    // Right bound: cleared rightward, and grown rightward.
+    assert.ok(Number(attrsOf(from)['x']) > geometry.start.x);
+    assert.equal(attrsOf(from)['text-anchor'], 'start');
+
+    // Left bound: cleared leftward, and grown leftward. Opposite, on one edge.
+    assert.ok(Number(attrsOf(to)['x']) < geometry.end.x);
+    assert.equal(attrsOf(to)['text-anchor'], 'end');
+  });
+
+  it('clears a terminal mark against the ARRIVING card, not the channel', () => {
+    // The two agree on a same-column arc and disagree on one that crosses, so a
+    // channel-derived sign is right until it is not.
+    const geometry = crossColumnGeometry();
+    const [cross] = edgeMarkSpecs([marked('terminal')], geometry, defaultTheme, IDENTITY, SOLID);
+    assert.ok(cross !== undefined);
+    assert.ok(
+      Number(attrsOf(cross)['x']) < geometry.end.x,
+      'a left-bound arrival is cleared leftward',
+    );
   });
 
   it('names no write state anywhere in what it draws', () => {
