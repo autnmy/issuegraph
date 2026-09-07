@@ -443,6 +443,25 @@ describe('the workspace stylesheet carries structure, never a value', () => {
     assert.equal(offsets.size, 1, `the row's controls ring at different offsets: ${[...offsets]}`);
   });
 
+  it('wraps the relationship row rather than pushing its controls out of the zone', () => {
+    // §17b's STATEMENT INHERITED '.ig-picker-direction''s WRAPPING, and this is
+    // the case that says so. That rule wrapped because a qualified reference is
+    // long, and a statement whose object is cut off says something other than
+    // what the format holds. The statement is this row now, and the inspector is
+    // a fixed 40-character track with no horizontal scroll — so without a wrap
+    // an 'owner/repo#602' pair pushes the slot and the flip clean out of the
+    // zone, and the control §17b calls the guard against the most common
+    // encoding mistake becomes unreachable.
+    //
+    // BOTH CONTAINERS, because wrapping one leaves the other overflowing: the
+    // row wraps its trailing controls, the statement wraps its reference pair.
+    for (const selector of ['\\.ig-relationship', '\\.ig-relationship-select,\\s*\\.ig-relationship-name']) {
+      const rule = css.match(new RegExp(`${selector}\\s*\\{([^}]*)\\}`))?.[1];
+      assert.ok(rule !== undefined, `no rule for ${selector}`);
+      assert.match(rule, /flex-wrap:\s*wrap/, selector);
+    }
+  });
+
   it('pushes the row\u2019s trailing controls out by the statement, not by a margin', () => {
     // WHAT ACTUALLY PUTS §17b's FLIP AT THE ROW'S END. The flip carries no
     // margin of its own — see the rule's own comment — so the position is this

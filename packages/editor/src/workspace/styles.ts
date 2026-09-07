@@ -373,8 +373,21 @@ export const workspaceStylesheet = `
   gap: var(--ig-space-tight);
 }
 
+/* IT WRAPS RATHER THAN TRUNCATES, which is '.ig-picker-direction''s rule
+   inherited along with §17b's statement. A qualified reference is long —
+   'owner/repo#602' — the inspector is a fixed 40-character track with no
+   horizontal scroll, and a row that cannot wrap pushes its trailing controls
+   out of the zone entirely. A statement whose object is cut off says something
+   other than what the format holds, and a flip a reader cannot reach is the
+   affordance this row exists to offer.
+
+   ON THE ROW AND ON THE STATEMENT BOTH. The row wraps so the slot and the flip
+   drop to a second line rather than overflow; '.ig-relationship-select' below
+   wraps so the reference pair does the same inside it. Wrapping one without the
+   other leaves the other overflowing. */
 .ig-relationship {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--ig-space-tight);
   align-items: baseline;
   padding: var(--ig-space-tight);
@@ -437,6 +450,7 @@ export const workspaceStylesheet = `
 .ig-relationship-name {
   flex: 1;
   display: flex;
+  flex-wrap: wrap;
   gap: var(--ig-space-tight);
   align-items: baseline;
 }
