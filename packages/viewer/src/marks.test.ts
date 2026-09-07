@@ -311,6 +311,63 @@ describe('a mark is placed by the layer that computed the layout', () => {
     assert.equal(attrsOf(spec)['fill'], 'var(--ig-state-invalid)');
   });
 
+  it('puts every mark on the CHANNEL side, where no card is drawn', () => {
+    // THE SIDE IS NOT THE TRAVERSAL DIRECTION, and reading it off the endpoint
+    // order is how every mark ended up inside a node card. Measured: for an
+    // upward `blocked-by` between two spine cards both endpoints sit on the
+    // cards' LEFT bounds, `normalAt` points at +x, and the rail — an opaque HTML
+    // layer painted after the canvas — hid the marks completely. Drawn, and
+    // invisible, which is worse than not drawn.
+    //
+    // The layout routes every arc through a free channel, so the side the curve
+    // bows toward has no card on it by construction. Every placement is checked,
+    // because the sign was wrong in three of them independently.
+    const geometry = verticalGeometry();
+    // The control point is LEFT of this chord, so every mark must be too.
+    assert.ok(geometry.control.x < geometry.start.x, 'fixture must bow left');
+
+    const specs = edgeMarkSpecs(
+      [marked('both-ends', 'writing…'), marked('terminal'), marked('beside'), marked('companion', null)],
+      geometry,
+      defaultTheme,
+      IDENTITY,
+      SOLID,
+    );
+    assert.ok(specs.length > 0);
+
+    for (const spec of specs) {
+      const attrs = attrsOf(spec);
+      const transform = attrs['transform'];
+      if (typeof transform === 'string') {
+        // A companion: its shift must carry it toward the channel, so negative x.
+        const match = /translate\((-?[\d.]+) /.exec(transform);
+        assert.ok(match !== null);
+        assert.ok(Number(match[1]) < 0, `companion shifted away from the channel: ${transform}`);
+        continue;
+      }
+      // A glyph: its own x must sit on the channel side of the chord.
+      assert.ok(
+        Number(attrs['x']) < geometry.start.x,
+        `${String(attrs[MARK_PLACEMENT_ATTRIBUTE])} landed at x=${String(attrs['x'])}, past the chord`,
+      );
+    }
+  });
+
+  it('grows a worded chip toward the channel, not back across the line', () => {
+    // The anchor has to follow the side. With the chip moved left of the chord,
+    // a `start` anchor would grow it back across the line and into the card the
+    // offset just cleared.
+    const [chip] = edgeMarkSpecs(
+      [{ placement: 'both-ends', glyph: 'writing…', label: null, tone: null }],
+      verticalGeometry(),
+      defaultTheme,
+      IDENTITY,
+      SOLID,
+    );
+    assert.ok(chip !== undefined);
+    assert.equal(attrsOf(chip)['text-anchor'], 'end');
+  });
+
   it('names no write state anywhere in what it draws', () => {
     // THE PROPERTY THAT KEEPS THIS LAYER EDIT-UNAWARE, checked on the output
     // rather than asserted in the module note. The vocabulary that crosses is

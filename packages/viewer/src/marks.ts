@@ -105,6 +105,39 @@ function normalAt(start: Point, end: Point): Point {
   return { x: -dy / length, y: dx / length };
 }
 
+/**
+ * The edge's normal, turned to face the CHANNEL rather than the cards.
+ *
+ * A normal has two directions and `normalAt` picks one from the order the
+ * endpoints happen to be in — which is a fact about traversal, not about the
+ * drawing. Measured: for an upward `blocked-by` between two spine cards it
+ * points at +x, and both endpoints sit on the cards' LEFT bounds, so every mark
+ * offset that way landed INSIDE the card — where the rail, an opaque HTML layer
+ * painted after the canvas, hides it completely. Marks that render and cannot be
+ * seen, which is worse than marks that do not render.
+ *
+ * The control point is the answer, and it needs no new input: the layout routes
+ * every arc through a free vertical channel, so the side the curve bows toward
+ * is by construction the side with no card on it. Facing the normal that way
+ * puts every mark in the space the line already occupies.
+ *
+ * It also holds where the naive sign happened to be right, so there is one rule
+ * rather than a rule and an exception.
+ */
+function outwardNormal(geometry: EdgeGeometry): Point {
+  const normal = normalAt(geometry.start, geometry.end);
+  const chordMid = {
+    x: (geometry.start.x + geometry.end.x) / 2,
+    y: (geometry.start.y + geometry.end.y) / 2,
+  };
+  const toChannel = {
+    x: geometry.control.x - chordMid.x,
+    y: geometry.control.y - chordMid.y,
+  };
+  const facing = normal.x * toChannel.x + normal.y * toChannel.y;
+  return facing < 0 ? { x: -normal.x, y: -normal.y } : normal;
+}
+
 /** The point on the curve at `t = ½`. The control point is a quarter of it. */
 function midpointOf(geometry: EdgeGeometry): Point {
   const { start, control, end } = geometry;
@@ -233,7 +266,7 @@ function companionPaths(
   identity: string,
   drawing: EdgeDrawing,
 ): readonly ElementSpec[] {
-  const normal = normalAt(geometry.start, geometry.end);
+  const normal = outwardNormal(geometry);
   const stroke = theme.metrics['--ig-stroke'];
   // Clear of the original by more than the original's own doubling, or the two
   // versions merge into one thicker line at exactly the width the doubling uses.
@@ -310,7 +343,7 @@ export function edgeMarkSpecs(
         // the marker at once, and the pair stays symmetric — the same sideways
         // step at each end, so the two read as one state rather than as two
         // marks that happen to share a colour.
-        const normal = normalAt(geometry.start, geometry.end);
+        const normal = outwardNormal(geometry);
         const aside = theme.metrics['--ig-terminal-width'] + theme.metrics['--ig-stroke'] * 4;
         const shift = (point: Point): Point => ({
           x: point.x + normal.x * aside,
@@ -349,21 +382,31 @@ export function edgeMarkSpecs(
         // Both distances are theme data, and the perpendicular is the one at the
         // END — the tangent there — rather than the chord's, because this mark
         // is about the arrival and not about the line as a whole.
+        //
+        // ITS SIGN IS STILL THE CHANNEL'S. Which way "sideways" points cannot be
+        // read off the tangent either: measured, an upward arrival between two
+        // spine cards sent the ✕ across the destination card's left bound, where
+        // the opaque rail hides it. So the tangent decides the AXIS and the
+        // channel decides the SIDE — the same rule every other placement here
+        // follows, applied to a different perpendicular.
         const stroke = theme.metrics['--ig-stroke'];
         const back = theme.metrics['--ig-terminal-length'] + stroke;
         const aside = theme.metrics['--ig-terminal-width'] + stroke * 4;
         const cos = Math.cos(geometry.endAngle);
         const sin = Math.sin(geometry.endAngle);
+        const outward = outwardNormal(geometry);
+        // The tangent's own perpendicular, turned to agree with the channel.
+        const side = -sin * outward.x + cos * outward.y >= 0 ? 1 : -1;
         const at: Point = {
-          x: geometry.end.x - cos * back - sin * aside,
-          y: geometry.end.y - sin * back + cos * aside,
+          x: geometry.end.x - cos * back - sin * aside * side,
+          y: geometry.end.y - sin * back + cos * aside * side,
         };
         const spec = glyphMark(at, mark, 'terminal', identity, drawing);
         if (spec !== null) specs.push(spec);
         break;
       }
       case 'beside': {
-        const normal = normalAt(geometry.start, geometry.end);
+        const normal = outwardNormal(geometry);
         const gap = theme.metrics['--ig-stroke'] * 3;
         const mid = midpointOf(geometry);
         const spec = glyphMark(
