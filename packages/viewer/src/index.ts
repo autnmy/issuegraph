@@ -113,6 +113,18 @@ export type { EdgeDash, EdgeTerminal, EdgeTreatment, OrderingEffect } from './vo
 export { EDGE_TREATMENTS, dashArrayFor, labelFrom, treatmentFor } from './vocabulary.ts';
 
 export { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET } from './projections/graph.ts';
+
+/**
+ * The mark vocabulary, and it is deliberately the ONLY thing `marks.ts` puts on
+ * the surface.
+ *
+ * A host asks for a mark by where it goes — `companion`, `terminal` — and never
+ * by what it means, so this package cannot learn that one of its consumers is an
+ * editor. The geometry that places them stays internal: publishing the ANSWER is
+ * the seam, and publishing the machine that computes it is not.
+ */
+export type { EdgeMark, EdgeMarkPlacement } from './marks.ts';
+export { EDGE_MARK_CLASS, MARK_PLACEMENT_ATTRIBUTE } from './marks.ts';
 // `COMMAND_ATTRIBUTE` is on the surface because a host that reads the DOM rather
 // than the callback needs the attribute name, and knowing it by inspection is
 // how a consumer ends up with a literal that drifts.

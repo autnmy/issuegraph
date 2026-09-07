@@ -77,20 +77,51 @@ export const edgeOverlayStylesheet = `
   }
 }
 
-/* NOT prefixed with the edge class. A together-with relationship is drawn as a
-   connector rather than an edge path, so an edge-anchored rule left one of the
-   five relationships unstyled in every state. Only an overlaid element carries
-   the attribute at all, so the bare selector reaches exactly the intended set.
+/* QUALIFIED, AND THE QUALIFICATION IS THE WHOLE RULE — it is what makes these
+   three declarations apply at all.
+
+   They used to be bare, and the comment here explained why: a together-with was
+   drawn as a CONNECTOR rather than an edge path, so an edge-anchored rule left
+   one of the five relationships unstyled. Both halves of that have since stopped
+   being true, and nothing noticed either.
+
+   The connector is gone — layer 1's section-16 pass draws a together unit as ONE
+   card with its members listed inside, so the relationship's whole drawn form is
+   its badge, and the badge rules below are what reach it.
+
+   And the bare selector never painted an edge. A drawn path carries BOTH the edge
+   class with its kind attribute, which the viewer hues at specificity (0,2,0), and
+   the state attribute, which at (0,1,0) loses to it — and specificity beats source
+   order, so concatenating this sheet last changed nothing. Measured in a browser:
+   a conflicted blocked-by edge computed the relationship's own red, never the
+   state's gold.
+
+   So the bare rules matched exactly two kinds of element and were dead on both.
+   On a path they lost the cascade; on a badge they set a stroke, which a span has
+   no use for.
+
+   invalid was the only state that looked right, and by accident: it is the one
+   settled state carrying a dash, so render.ts builds a CLONE for it, and a clone
+   drops its class — which is precisely why that file sets the stroke inline on
+   one. The states that build no clone had nothing to fall back on, which is why
+   failed rendered identically to invalid, and conflict identically to a settled
+   edge.
+
+   The kind attribute is carried by every drawn path and by nothing else, so adding
+   it reaches (0,3,0) and wins OUTRIGHT rather than by tying and being placed later.
+   A tie would work today and would break the first time a host reordered the
+   sheets — and this rule has already failed silently once.
+
    (No backticks in here: this is inside a template literal, and one ends it.) */
-[data-ig-state~='invalid'] {
+.ig-edge[data-edge][data-ig-state~='invalid'] {
   stroke: var(--ig-state-invalid);
 }
 
-[data-ig-state~='failed'] {
+.ig-edge[data-edge][data-ig-state~='failed'] {
   stroke: var(--ig-state-failed);
 }
 
-[data-ig-state~='conflict'] {
+.ig-edge[data-edge][data-ig-state~='conflict'] {
   stroke: var(--ig-state-conflict);
 }
 

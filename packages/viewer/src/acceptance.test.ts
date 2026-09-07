@@ -179,10 +179,18 @@ describe('the public surface', () => {
       // The attribute a host reads to hear a control the viewer publishes and
       // does not wire — refresh, the projection toggle, expand and collapse.
       'COMMAND_ATTRIBUTE',
+      // The class every drawn mark carries and the attribute it publishes its
+      // PLACEMENT on. Both joined for `@issuegraph/editor`, which decides which
+      // marks an edge owes and cannot place one: a mark needs a position, and
+      // this is the layer that computed the layout. The vocabulary that crosses
+      // is positional — `companion`, never `conflict` — so nothing here learns
+      // that one consumer is an editor.
+      'EDGE_MARK_CLASS',
       'EDGE_TREATMENTS',
       'EFFECT_TOKENS',
       'GRAPH_NODE_BUDGET',
       'KEY_ATTRIBUTE',
+      'MARK_PLACEMENT_ATTRIBUTE',
       'METRIC_TOKENS',
       'ROW_BADGE_BUDGET',
       'THEME_TOKENS',

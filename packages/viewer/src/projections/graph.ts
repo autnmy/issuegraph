@@ -31,6 +31,7 @@ import {
   edgeGeometry,
   layoutGraph,
 } from '../layout.ts';
+import { type EdgeMark, edgeMarkSpecs } from '../marks.ts';
 import {
   type CardBlock,
   adoptionNote,
@@ -88,6 +89,20 @@ export interface GraphOptions extends SceneOptions {
    */
   readonly compact?: boolean | undefined;
   readonly theme?: Theme | undefined;
+  /**
+   * Marks to draw on edges, keyed by `edgeIdentity(field, from, to)` — the same
+   * string the strokes publish on `data-ig-group`, so a caller needs no second
+   * identity and nothing to keep in step.
+   *
+   * AN INPUT IN A VOCABULARY OF POSITIONS, and that is what keeps this
+   * projection ignorant of why a mark was asked for. See `marks.ts`: a caller
+   * says `companion`, never `conflict`. The mapping from its own states onto
+   * these four placements stays with the caller and never travels here.
+   *
+   * Absent draws nothing, which is also what an older consumer of this package
+   * gets — the reason this is an option rather than a field on the scene.
+   */
+  readonly edgeMarks?: ReadonlyMap<string, readonly EdgeMark[]> | undefined;
 }
 
 function terminalMarker(
@@ -834,15 +849,40 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
         edge.field === 'blocked-by' ? { field: edge.field, from: edge.to, to: edge.from } : edge;
       const geometry = edgeGeometry(layout, drawn);
       if (geometry === null) continue;
+      const identity = edgeIdentity(edge.field, edge.from, edge.to);
       edgeLayers.push(...edgePaths(edge, geometry, theme));
       const marker = terminalMarker(
         treatmentFor(edge.field).terminal,
         geometry,
         edge.field,
-        edgeIdentity(edge.field, edge.from, edge.to),
+        identity,
         theme,
       );
       if (marker !== null) edgeLayers.push(marker);
+      // THE MARKS A CALLER ASKED FOR, LAST, so every one of them sits in front
+      // of the line it decorates rather than under it.
+      //
+      // Keyed on the DECLARED identity, like the terminal above, even though the
+      // geometry was solved from a possibly-swapped `drawn` edge — a caller
+      // holds the edge as written and has no way to know which way this
+      // projection chose to point the arrow.
+      const requested = options.edgeMarks?.get(identity);
+      if (requested !== undefined && requested.length > 0) {
+        const treatment = treatmentFor(edge.field);
+        edgeLayers.push(
+          ...edgeMarkSpecs(requested, geometry, theme, identity, {
+            doubled: treatment.dash === 'double',
+            // THE KIND'S OWN DASH AND HUE, HANDED OVER RATHER THAN LEFT TO CSS.
+            // Every mark drops `class`, so `.ig-edge[data-edge=…]` reaches none
+            // of them — a companion would draw solid beside a dotted line, and a
+            // chip would take the viewer's body text instead of the
+            // relationship's colour. Both are channels the type identity rests
+            // on, lost exactly where a reader is comparing two versions.
+            dashArray: dashArrayFor(treatment.dash),
+            hueToken: treatment.hueToken,
+          }),
+        );
+      }
     }
 
     // THE SPINE ITSELF, painted first so every arc bows off a line that is

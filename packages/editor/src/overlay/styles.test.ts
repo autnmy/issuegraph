@@ -109,4 +109,43 @@ describe('the overlay stylesheet carries structure, never a value', () => {
       );
     }
   });
+
+  it('outranks the hue layer 1 paints an edge with, rather than tying it', () => {
+    // THE ONE CLAIM IN THIS FILE THAT IS ABOUT THE CASCADE, so it is the one
+    // claim `node:test` cannot check by rendering — there is no cascade here to
+    // ask. It is checked as the arithmetic instead, and the arithmetic is the
+    // thing that was wrong.
+    //
+    // A drawn path carries `class="ig-edge" data-edge=<kind>`, which the viewer
+    // hues with `.ig-edge[data-edge='blocked-by']` — one class and one
+    // attribute, (0,2,0). A bare `[data-ig-state~='conflict']` is (0,1,0) and
+    // loses, whatever order the sheets are concatenated in. That is not a
+    // hypothetical: measured in a browser, a conflicted edge computed
+    // `--ig-edge-blocked-by` and never `--ig-state-conflict`.
+    //
+    // So each state rule must reach at least one class and TWO attributes, and
+    // this asserts the shape rather than a specificity number, because the shape
+    // is what a later edit would drop.
+    for (const state of ['invalid', 'failed', 'conflict'] as const) {
+      const rule = new RegExp(`\\.ig-edge\\[data-edge\\]\\[data-ig-state~='${state}'\\]`);
+      assert.match(
+        css,
+        rule,
+        `${state} paints the edge at a specificity the relationship hue outranks`,
+      );
+    }
+  });
+
+  it('leaves no bare state rule that a qualified one has replaced', () => {
+    // The failure this file already had was a rule that EXISTED and never
+    // applied, so the absence is worth pinning: a bare `[data-ig-state~=…]`
+    // carrying a stroke is dead on both the elements that can match it — it
+    // loses the cascade on a path, and a span has no stroke.
+    //
+    // Written against the declaration rather than the selector alone, because
+    // `.ig-badge[data-ig-state~=…]` is a legitimate bare-attribute rule and
+    // paints border and ink, which a badge does use.
+    const bareStroke = /(^|[\s,{}])\[data-ig-state~='[a-z-]+'\]\s*\{[^}]*stroke\s*:/;
+    assert.equal(bareStroke.test(css), false, 'a bare state rule cannot paint a stroke');
+  });
 });

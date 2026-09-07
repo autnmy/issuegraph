@@ -33,17 +33,36 @@
  * globals removed, which is what catches a computed access like
  * `globalThis['fet' + 'ch']`.
  *
- * ## The one declared crossing
+ * ## The declared crossings
  *
- * The `together-with` connector lives in the VIEWER, not here. A `together-with`
- * edge must be individually selectable, retypeable and deletable, and an
- * enclosure has no edge to click — so the connector is a hit target, and only
- * the layer that computes the layout knows where its endpoints are. Adding it
- * from out here would mean re-deriving positions layer 1 already has, which is
- * the drifting second implementation the package split exists to avoid.
+ * Two, and both are the same argument: only the layer that computes the layout
+ * knows where anything is, so a thing that needs a POSITION is drawn there.
  *
- * It is written down as a declared crossing rather than discovered later. Treat
- * it as the precedent for DECLARING a crossing, never as permission for more.
+ * **The `together-with` connector lives in the VIEWER, not here.** A
+ * `together-with` edge must be individually selectable, retypeable and
+ * deletable, and an enclosure has no edge to click — so the connector is a hit
+ * target, and only the layer that computes the layout knows where its endpoints
+ * are. Adding it from out here would mean re-deriving positions layer 1 already
+ * has, which is the drifting second implementation the package split exists to
+ * avoid.
+ *
+ * **The four edge MARKS are drawn by the viewer, from a request built here.** A
+ * `writing…` chip sits on two nodes, a ✕ beside a terminal, a reason beside the
+ * line, and a conflict's second version on the line's perpendicular. None of
+ * those is the path's own position, and `overlay/render.ts` records four review
+ * rounds of what happens when this layer tries to guess one — each fix correct,
+ * each followed by another, because the missing thing was never a property but
+ * the geometry.
+ *
+ * What crosses is a vocabulary of POSITIONS — `companion`, never `conflict` —
+ * built by `overlay/request.ts` and consumed by the viewer's `marks.ts`. So the
+ * viewer gains no edit awareness: it learns where to put a second line, not that
+ * a write can conflict. Every state word, glyph and hue token stays on this side.
+ *
+ * Both are written down as declared crossings rather than discovered later.
+ * Treat them as the precedent for DECLARING a crossing, never as permission for
+ * more — and note that neither publishes layer 1's geometry outward, which is
+ * the move both of them rejected.
  *
  * ## The surface
  *

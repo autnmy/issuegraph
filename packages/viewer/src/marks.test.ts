@@ -1,0 +1,492 @@
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+
+import { type ElementSpec, renderMarkup } from './element.ts';
+import type { EdgeGeometry, Point } from './layout.ts';
+import {
+  EDGE_MARK_CLASS,
+  MARK_PLACEMENT_ATTRIBUTE,
+  type EdgeDrawing,
+  type EdgeMark,
+  edgeMarkSpecs,
+} from './marks.ts';
+import { viewerStylesheet } from './styles.ts';
+import { EDGE_TOKENS, STATE_TOKENS, TEXT_TOKENS } from './testing/contrast.ts';
+import { defaultTheme } from './theme.ts';
+
+const IDENTITY = 'blocked-by|a|b';
+
+/** A solid, single-stroke relationship — the ordinary case. */
+const SOLID: EdgeDrawing = { doubled: false, dashArray: null, hueToken: '--ig-edge-blocked-by' };
+const DOUBLED: EdgeDrawing = { ...SOLID, doubled: true };
+const DOTTED: EdgeDrawing = { ...SOLID, dashArray: '1 3' };
+
+/**
+ * A geometry whose chord is VERTICAL, which is the case the companion has to
+ * survive: two boxes in one column share an x, so this is the ordinary shape of
+ * a spine-to-spine edge rather than a corner case.
+ */
+function verticalGeometry(): EdgeGeometry {
+  const start: Point = { x: 400, y: 300 };
+  const end: Point = { x: 400, y: 100 };
+  const control: Point = { x: 320, y: 200 };
+  return {
+    d: 'M 400.00 300.00 Q 320.00 200.00 400.00 100.00',
+    start,
+    end,
+    control,
+    // Two spine cards: both anchors sit on their own box's LEFT bound, which is
+    // what `facingSide` answers on a same-column tie.
+    startSide: 'left',
+    endSide: 'left',
+    endAngle: Math.atan2(end.y - control.y, end.x - control.x),
+  };
+}
+
+/**
+ * An arc that CROSSES columns, whose two endpoints sit on opposing faces.
+ *
+ * A gutter card is left by its RIGHT bound and the spine card entered by its
+ * LEFT, so the two ends are cleared in opposite directions. This is the case a
+ * single shared direction cannot serve, whichever one it picks.
+ */
+function crossColumnGeometry(): EdgeGeometry {
+  const start: Point = { x: 200, y: 200 };
+  const end: Point = { x: 400, y: 210 };
+  const control: Point = { x: 300, y: 205 };
+  return {
+    d: 'M 200.00 200.00 Q 300.00 205.00 400.00 210.00',
+    start,
+    end,
+    control,
+    startSide: 'right',
+    endSide: 'left',
+    endAngle: Math.atan2(end.y - control.y, end.x - control.x),
+  };
+}
+
+function attrsOf(spec: ElementSpec): Readonly<Record<string, unknown>> {
+  return spec.attrs ?? {};
+}
+
+function marked(placement: EdgeMark['placement'], glyph: string | null = '✕'): EdgeMark {
+  return { placement, glyph, tone: null };
+}
+
+describe('a mark is placed by the layer that computed the layout', () => {
+  it('draws one mark at each end for both-ends, and only one for the rest', () => {
+    const geometry = verticalGeometry();
+    const both = edgeMarkSpecs([marked('both-ends')], geometry, defaultTheme, IDENTITY, SOLID);
+    const beside = edgeMarkSpecs([marked('beside')], geometry, defaultTheme, IDENTITY, SOLID);
+
+    // §17b: "writing… chip on BOTH nodes". One chip reads as a property of
+    // whichever end happened to get it, which is the opposite of what an edit
+    // in flight between two issues means.
+    assert.equal(both.length, 2);
+    assert.equal(beside.length, 1);
+  });
+
+  it('publishes the placement and the edge identity on every mark', () => {
+    const specs = edgeMarkSpecs(
+      [marked('both-ends'), marked('terminal'), marked('beside'), marked('companion', null)],
+      verticalGeometry(),
+      defaultTheme,
+      IDENTITY,
+      SOLID,
+    );
+    assert.ok(specs.length > 0);
+    for (const spec of specs) {
+      const attrs = attrsOf(spec);
+      // The identity is a POINTER identity, and a mark sitting on its own edge
+      // that resolved to nothing would read as the click having missed — the
+      // defect the terminal marker's own identity was added to fix.
+      assert.equal(attrs['data-ig-group'], IDENTITY);
+      assert.ok(String(attrs['class']).includes(EDGE_MARK_CLASS));
+      assert.ok(typeof attrs[MARK_PLACEMENT_ATTRIBUTE] === 'string');
+    }
+  });
+
+  it('offsets a mark PERPENDICULAR to a vertical chord, never along it', () => {
+    // THE REGRESSION THE DESIGN RECORD ENDS ON, pinned. Four review rounds each
+    // found a different way a companion drawn without the geometry goes wrong,
+    // and the last was an offset that slid ALONG a line that happened to run
+    // vertically — drawing the second version on top of the first, which is the
+    // one thing a second version must not do.
+    //
+    // A vertical chord has a HORIZONTAL normal, so the check is that the shift
+    // has an x and no y.
+    const [companion] = edgeMarkSpecs(
+      [marked('companion', null)],
+      verticalGeometry(),
+      defaultTheme,
+      IDENTITY,
+      SOLID,
+    );
+    assert.ok(companion !== undefined);
+    const transform = String(attrsOf(companion)['transform']);
+    const match = /translate\((-?[\d.]+) (-?[\d.]+)\)/.exec(transform);
+    assert.ok(match !== null, `no translate in ${transform}`);
+    assert.notEqual(Number(match[1]), 0, 'a vertical chord must be cleared sideways');
+    assert.equal(Number(match[2]), 0, 'a shift along the line draws one version on the other');
+  });
+
+  it('draws as many companion strokes as the relationship draws originals', () => {
+    // A doubled relationship is two paths. A single companion beside that pair
+    // is a THIRD line, which is neither of the two things a reader is being
+    // asked to compare — and the design record names exactly that as one of the
+    // rounds it already paid for.
+    const geometry = verticalGeometry();
+    const single = edgeMarkSpecs([marked('companion', null)], geometry, defaultTheme, IDENTITY, SOLID);
+    const doubled = edgeMarkSpecs([marked('companion', null)], geometry, defaultTheme, IDENTITY, DOUBLED);
+    assert.equal(single.length, 1);
+    assert.equal(doubled.length, 2);
+
+    // AND THEY ARE IN TWO PLACES, which the count alone does not say. The first
+    // version of this pair separated with `translate(0 ±stroke)` — the global
+    // y-axis, copied from the edge treatment — and on a VERTICAL chord that runs
+    // ALONG the line, so the two strokes coincided and drew as one. Two specs
+    // were emitted the whole time, so a count assertion passed over it.
+    const [first, second] = doubled;
+    assert.ok(first !== undefined && second !== undefined);
+    assert.notEqual(attrsOf(first)['transform'], attrsOf(second)['transform']);
+  });
+
+  it('separates a doubled companion ACROSS the line, not along it', () => {
+    // The same rule the single companion obeys, applied to the pair: every
+    // offset here rides the chord's normal, so a vertical chord is cleared
+    // horizontally and the two versions stay two at any orientation.
+    const doubled = edgeMarkSpecs(
+      [marked('companion', null)],
+      verticalGeometry(),
+      defaultTheme,
+      IDENTITY,
+      DOUBLED,
+    );
+    const shifts = doubled.map((spec) => {
+      const match = /translate\((-?[\d.]+) (-?[\d.]+)\)/.exec(String(attrsOf(spec)['transform']));
+      assert.ok(match !== null);
+      return { x: Number(match[1]), y: Number(match[2]) };
+    });
+    // A vertical chord has a horizontal normal, so every shift is pure x — and
+    // crucially the two differ in x rather than in y.
+    for (const shift of shifts) assert.equal(shift.y, 0, 'a shift along the line');
+    assert.notEqual(shifts[0]?.x, shifts[1]?.x, 'the pair must not coincide');
+  });
+
+  it('keeps the companion the same shape as the line it doubles', () => {
+    // A TRANSLATION, not a re-solved curve: a translated quadratic is congruent
+    // to its original, so the two versions are the same line twice — which is
+    // what "two versions" has to mean.
+    const geometry = verticalGeometry();
+    const [companion] = edgeMarkSpecs(
+      [marked('companion', null)],
+      geometry,
+      defaultTheme,
+      IDENTITY,
+      SOLID,
+    );
+    assert.ok(companion !== undefined);
+    assert.equal(attrsOf(companion)['d'], geometry.d);
+  });
+
+  it('steps a terminal mark clear of the arrowhead on BOTH axes', () => {
+    // The terminal marker is one of the four redundant channels the type
+    // identity rests on — the one that survives without colour — so a mark may
+    // sit beside it and must never sit on it.
+    //
+    // Stepping back along the tangent alone did not achieve that, measurably: a
+    // glyph is centred on its point and has a width of its own, and this layer
+    // renders to a string and can never measure one. So the sideways step is
+    // what does the work, and this pins that it exists.
+    const geometry = verticalGeometry();
+    const [cross] = edgeMarkSpecs([marked('terminal')], geometry, defaultTheme, IDENTITY, SOLID);
+    assert.ok(cross !== undefined);
+    const attrs = attrsOf(cross);
+    const x = Number(attrs['x']);
+    const y = Number(attrs['y']);
+    assert.notEqual(x, geometry.end.x, 'a mark on the terminal occludes it');
+    assert.notEqual(y, geometry.end.y);
+    // Clear by more than the marker's own width, so the two cannot meet
+    // whatever the glyph turns out to be.
+    const away = Math.hypot(x - geometry.end.x, y - geometry.end.y);
+    assert.ok(
+      away > defaultTheme.metrics['--ig-terminal-width'],
+      `only ${String(away)} from the terminal`,
+    );
+  });
+
+  it('grows a worded chip away from its own card, not back across it', () => {
+    // A centred box half as wide as the word reaches back across the bound the
+    // sideways offset just cleared, which is how the chip kept landing on the
+    // card. Anchoring the near edge makes it grow outward at any length and in
+    // any font — the only fix available to a layer that cannot measure a glyph.
+    const [chip] = edgeMarkSpecs(
+      [{ placement: 'both-ends', glyph: 'writing…', tone: null }],
+      verticalGeometry(),
+      defaultTheme,
+      IDENTITY,
+      SOLID,
+    );
+    assert.ok(chip !== undefined);
+    assert.notEqual(attrsOf(chip)['text-anchor'], 'middle');
+  });
+
+  it('takes the tone as a token NAME and never as a colour', () => {
+    // The same contract the edge hues already use: a host that rethemes moves
+    // the mark and the stroke together, and nothing here holds a value.
+    //
+    // Read on a STROKE, because that is the carrier a tone reaches. A glyph is
+    // TEXT and is drawn text-grade whatever tone was asked for — the hues are
+    // guaranteed at the 3:1 non-text bar, and text may not be drawn at it.
+    const [companion] = edgeMarkSpecs(
+      [{ placement: 'companion', glyph: null, tone: '--ig-state-invalid' }],
+      verticalGeometry(),
+      defaultTheme,
+      IDENTITY,
+      SOLID,
+    );
+    assert.ok(companion !== undefined);
+    assert.equal(attrsOf(companion)['stroke'], 'var(--ig-state-invalid)');
+  });
+
+  it('draws nothing for a mark with no glyph but a glyph placement', () => {
+    // `companion`'s whole form is the line, so it carries no glyph. The three
+    // point placements carry one, and a caller that supplies none gets nothing
+    // rather than an empty element that styles as a gap.
+    const specs = edgeMarkSpecs(
+      [marked('beside', null), marked('terminal', null), marked('both-ends', null)],
+      verticalGeometry(),
+      defaultTheme,
+      IDENTITY,
+      SOLID,
+    );
+    assert.deepEqual(specs, []);
+  });
+
+  it('carries the relationship’s own dash onto every companion stroke', () => {
+    // A companion drops `class` like every mark, so `.ig-edge[data-edge=…]` no
+    // longer patterns it. Left alone, a SOLID second version draws beside a
+    // dotted `duplicate-of` — which is not the same line twice, it is a
+    // different relationship drawn next to the first, with the dash channel
+    // silently spent exactly where a reader is being asked to compare.
+    const geometry = verticalGeometry();
+    for (const drawing of [DOTTED, { ...DOTTED, doubled: true }]) {
+      const specs = edgeMarkSpecs([marked('companion', null)], geometry, defaultTheme, IDENTITY, drawing);
+      assert.ok(specs.length > 0);
+      for (const spec of specs) {
+        assert.equal(attrsOf(spec)['stroke-dasharray'], DOTTED.dashArray);
+      }
+    }
+    const [solid] = edgeMarkSpecs([marked('companion', null)], geometry, defaultTheme, IDENTITY, SOLID);
+    assert.ok(solid !== undefined);
+    assert.equal(attrsOf(solid)['stroke-dasharray'], null);
+  });
+
+  it('paints a STROKE with no tone in the relationship’s hue, never currentColor', () => {
+    // A mark is a SIBLING of the edge, not a descendant, so it inherits the
+    // viewer's body text rather than the hue `.ig-edge[data-edge=…]` gives the
+    // line. `currentColor` therefore renders a companion grey beside the red
+    // line it doubles, dropping the channel that says WHICH relationship is
+    // being written.
+    const [companion] = edgeMarkSpecs(
+      [marked('companion', null)],
+      verticalGeometry(),
+      defaultTheme,
+      IDENTITY,
+      SOLID,
+    );
+    assert.ok(companion !== undefined);
+    assert.equal(attrsOf(companion)['stroke'], `var(${SOLID.hueToken})`);
+  });
+
+  it('lets a state that HAS a hue override the relationship’s, on a stroke', () => {
+    const [companion] = edgeMarkSpecs(
+      [{ placement: 'companion', glyph: null, tone: '--ig-state-conflict' }],
+      verticalGeometry(),
+      defaultTheme,
+      IDENTITY,
+      SOLID,
+    );
+    assert.ok(companion !== undefined);
+    assert.equal(attrsOf(companion)['stroke'], 'var(--ig-state-conflict)');
+  });
+
+  it('draws every GLYPH in a text-grade colour, never in an edge or state hue', () => {
+    // THE HUES ARE NOT AVAILABLE TO TEXT. `theme.ts` guarantees text at 4.5:1
+    // and holds every edge hue AND every edit-state hue to the 3:1 bar that
+    // applies to a line or a badge outline — and `theme.test.ts` says why the
+    // two are kept apart: "stating the DIFFERENT bar explicitly is what stops
+    // the looser number leaking onto text later". A glyph painted in a
+    // relationship hue is that leak; measured, `writing…` in
+    // `--ig-edge-duplicate-of` lands around 4.47:1.
+    //
+    // Nothing is lost: a mark's channel is its SHAPE, and the hue stays on the
+    // line, which is drawn at the bar it is actually guaranteed at.
+    // Read from the CONTRAST module's own groups, so a token added to either
+    // family is covered here without this test being edited.
+    const hues = [...EDGE_TOKENS, ...STATE_TOKENS];
+    const specs = edgeMarkSpecs(
+      [
+        marked('beside', '!'),
+        marked('terminal'),
+        marked('both-ends', 'writing…'),
+        { placement: 'beside', glyph: '!', tone: '--ig-state-invalid' },
+      ],
+      verticalGeometry(),
+      defaultTheme,
+      IDENTITY,
+      SOLID,
+    );
+    const glyphs = specs.filter((spec) => spec.tag === 'text');
+    assert.ok(glyphs.length > 0);
+    for (const glyph of glyphs) {
+      const fill = String(attrsOf(glyph)['fill']);
+      for (const hue of hues) {
+        assert.equal(fill.includes(hue), false, `a glyph painted with ${hue}`);
+      }
+      assert.ok(TEXT_TOKENS.some((token) => fill.includes(token)), `glyph fill ${fill} is not text-grade`);
+    }
+  });
+
+  it('puts every mark clear of the CARD it belongs to', () => {
+    // THE SIDE IS A FACT ABOUT THE CARD, and three separate attempts to derive
+    // it from the LINE were each wrong for some edges. Measured: for an upward
+    // `blocked-by` between two spine cards both anchors sit on the cards' LEFT
+    // bounds, the naive normal points at +x, and the rail — an opaque HTML layer
+    // painted after the canvas — hid every mark completely. Drawn and invisible,
+    // which is worse than not drawn.
+    //
+    // `edgeGeometry` publishes the side per endpoint, so nothing here infers it.
+    const geometry = verticalGeometry();
+    assert.equal(geometry.startSide, 'left');
+    assert.equal(geometry.endSide, 'left');
+
+    const specs = edgeMarkSpecs(
+      [marked('both-ends', 'writing…'), marked('terminal'), marked('beside'), marked('companion', null)],
+      geometry,
+      defaultTheme,
+      IDENTITY,
+      SOLID,
+    );
+    assert.ok(specs.length > 0);
+
+    for (const spec of specs) {
+      const attrs = attrsOf(spec);
+      const transform = attrs['transform'];
+      if (typeof transform === 'string') {
+        const match = /translate\((-?[\d.]+) /.exec(transform);
+        assert.ok(match !== null);
+        assert.ok(Number(match[1]) < 0, `companion shifted toward the cards: ${transform}`);
+        continue;
+      }
+      assert.ok(
+        Number(attrs['x']) < geometry.start.x,
+        `${String(attrs[MARK_PLACEMENT_ATTRIBUTE])} landed at x=${String(attrs['x'])}, past the chord`,
+      );
+    }
+  });
+
+  it('clears each end against ITS OWN card when the two differ', () => {
+    // THE CASE ONE SHARED DIRECTION CANNOT SERVE. A gutter-to-spine arc leaves
+    // one box by its right face and enters the other by its left, so a single
+    // channel-facing direction clears one chip and drives the other into its
+    // card — which is exactly what a same-column-only fix left behind.
+    const geometry = crossColumnGeometry();
+    const [from, to] = edgeMarkSpecs(
+      [{ placement: 'both-ends', glyph: 'writing…', tone: null }],
+      geometry,
+      defaultTheme,
+      IDENTITY,
+      SOLID,
+    );
+    assert.ok(from !== undefined && to !== undefined);
+
+    assert.ok(Number(attrsOf(from)['x']) > geometry.start.x);
+    assert.equal(attrsOf(from)['text-anchor'], 'start');
+
+    assert.ok(Number(attrsOf(to)['x']) < geometry.end.x);
+    assert.equal(attrsOf(to)['text-anchor'], 'end');
+  });
+
+  it('clears a terminal mark against the ARRIVING card, not the channel', () => {
+    // The two agree on a same-column arc and disagree on one that crosses, so a
+    // channel-derived sign is right until it is not.
+    const geometry = crossColumnGeometry();
+    const [cross] = edgeMarkSpecs([marked('terminal')], geometry, defaultTheme, IDENTITY, SOLID);
+    assert.ok(cross !== undefined);
+    assert.ok(
+      Number(attrsOf(cross)['x']) < geometry.end.x,
+      'a left-bound arrival is cleared leftward',
+    );
+  });
+
+  it('stays out of the accessibility tree, and cannot be talked into it', () => {
+    // The canvas is `aria-hidden`, and that excludes the whole SUBTREE — so no
+    // descendant can carry an accessible name however it is marked up. An
+    // earlier draft took a `label` and rendered `role="img"` with an
+    // `aria-label` when a host supplied one; it was a field that lied, because
+    // the renderer could never honour the contract it advertised.
+    //
+    // There is no label option now, and every mark is hidden explicitly rather
+    // than by inheritance, so the intent is legible on the element itself.
+    const specs = edgeMarkSpecs(
+      [marked('beside', '!'), marked('terminal'), marked('both-ends', 'writing…')],
+      verticalGeometry(),
+      defaultTheme,
+      IDENTITY,
+      SOLID,
+    );
+    assert.ok(specs.length > 0);
+    for (const spec of specs) {
+      const attrs = attrsOf(spec);
+      assert.equal(attrs['aria-hidden'], 'true');
+      assert.equal(attrs['aria-label'], undefined);
+      assert.equal(attrs['role'], undefined);
+    }
+  });
+
+  it('can be pointed at, because it publishes an identity worth asking for', () => {
+    // A MARK IS NOT A HALO. A halo is the line again, so a click passing through
+    // it lands on the line; a mark is deliberately offset AWAY, so a click
+    // passing through it lands on the canvas — and the viewer's walk then climbs
+    // to the canvas group and reports a click on nothing, clearing the very
+    // selection the reader was making. A conflict's companion is the clearest
+    // case: a visibly separate line that could not be pointed at.
+    //
+    // `overlay/render.ts` already paid for this once and keeps `data-ig-group`
+    // on its dash clone for exactly this reason. Every mark publishes the same
+    // identity, so it must also be hit-testable, or the identity is spent.
+    //
+    // Pinned on the STYLESHEET, because that is where it was lost: the element
+    // carried the identity the whole time and a `pointer-events: none` rule made
+    // it unaskable.
+    assert.equal(
+      /\.ig-edge-mark\s*\{[^}]*pointer-events\s*:\s*none/.test(viewerStylesheet),
+      false,
+      'a mark that cannot be clicked wastes the identity it publishes',
+    );
+  });
+
+  it('names no write state anywhere in what it draws', () => {
+    // THE PROPERTY THAT KEEPS THIS LAYER EDIT-UNAWARE, checked on the output
+    // rather than asserted in the module note. The vocabulary that crosses is
+    // positional — `companion`, never `conflict` — so a state word appearing in
+    // this markup means the seam has moved, whatever the types still say.
+    //
+    // The glyph and tone are excluded from the check by being supplied here as
+    // neutral values: they are the host's opaque content, and a host that puts
+    // its own word in one has not made this module aware of anything.
+    const markup = edgeMarkSpecs(
+      [marked('both-ends', '·'), marked('terminal', '·'), marked('beside', '·'), marked('companion', null)],
+      verticalGeometry(),
+      defaultTheme,
+      IDENTITY,
+      DOUBLED,
+    )
+      .map((spec) => renderMarkup(spec))
+      .join('');
+    for (const state of ['pending-write', 'invalid', 'failed', 'conflict', 'selected']) {
+      assert.equal(markup.includes(state), false, `the drawing names ${state}`);
+    }
+  });
+});

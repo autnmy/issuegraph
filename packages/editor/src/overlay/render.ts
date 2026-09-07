@@ -45,9 +45,17 @@
  *
  * ## How an edge is recognised
  *
- * Viewer edge paths publish no per-edge identity — only the `together-with`
- * connector carries one — so an edge is matched by the accessible name the
- * viewer gives it: `${from} ${treatment.label} ${to}`.
+ * Edge paths publish `edgeIdentity(field, from, to)` on `data-ig-group`, and that
+ * is the key an edge is matched by. The accessible name — `${from}
+ * ${treatment.label} ${to}` — is the FALLBACK, kept for a viewer that has not
+ * shipped the identity yet; `overlayOn` below states the full reasoning.
+ *
+ * This paragraph used to say the opposite, that only the `together-with`
+ * connector carried an identity and the name was the only key. It was true when
+ * it was written and stopped being true when the paths gained one, while the
+ * correct version sat 140 lines below it in the same file. A reader consulting
+ * the design record before touching this seam would have concluded the key it
+ * rests on does not exist.
  *
  * The label is read from the viewer's OWN `treatmentFor`, never from a copy, so
  * a renamed relationship moves both sides at once. What stays local is the
@@ -576,9 +584,17 @@ export function renderOverlayMark(
         'data-ig-code': reasonCode ?? null,
       });
     case 'second-version':
-      // Also a slot. The held version is DRAWN by `attachEdgeOverlays` as the
-      // companion stroke; what a host adds here is whatever labels or offers to
-      // act on it — view-diff, retry-on-latest, discard-mine. Never a merge.
+      // Also a slot, and this comment used to say the held version was drawn
+      // "by `attachEdgeOverlays` as the companion stroke". That contradicted the
+      // module note at the top of this file, which is the half that was true:
+      // the companion needs the path's PERPENDICULAR, which cannot be recovered
+      // from a `d` this layer does not interpret, so it is not drawn here and
+      // never was after the fourth round removed it.
+      //
+      // It is drawn by layer 1 now, from the `companion` placement `request.ts`
+      // asks for — the layer that computed the layout is the one that can put a
+      // line beside a line. What a host adds HERE is whatever labels or offers
+      // to act on it — view-diff, retry-on-latest, discard-mine. Never a merge.
       return element('span', {
         class: `${OVERLAY_CLASS} ig-overlay-held`,
         'data-ig-overlay': 'conflict',

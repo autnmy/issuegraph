@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { edgeIdentity } from '@issuegraph/core';
+import type { EdgeState } from '@issuegraph/store';
 import { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET } from '@issuegraph/viewer';
 
 import { componentKey, componentsSumming, documentOf } from '../testing/documents.ts';
@@ -339,6 +340,50 @@ describe('the canvas draws each edge’s WRITE STATES from the store’s project
     const result = renderScaleLadder(document, { projected: [absent, settled] });
     assert.equal(/ig-overlay/.test(result.markup), false);
     assert.equal(/data-ig-state=/.test(result.markup), false);
+    assert.equal(/data-ig-mark=/.test(result.markup), false);
     assert.deepEqual([...result.diagnostics], []);
+  });
+
+  it('draws the mark each state declares, on the canvas', () => {
+    // THE HALF THAT USED TO REACH NOTHING. The overlay grammar has always
+    // declared these, and `renderOverlayMark` has always been able to build one,
+    // but nothing placed them — so the states whose whole remaining signal is a
+    // mark were drawn as ordinary lines.
+    //
+    // Read off the markup rather than off a returned value, because "the marks
+    // are placed" is a claim about what the canvas contains.
+    const owed: readonly (readonly [EdgeState, string])[] = [
+      ['pending-write', 'both-ends'],
+      ['invalid', 'beside'],
+      ['failed', 'terminal'],
+      ['conflict', 'companion'],
+    ];
+    for (const [state, placement] of owed) {
+      const result = renderScaleLadder(document, {
+        projected: [{ ...pending, states: [state] }],
+      });
+      const placements = [...result.markup.matchAll(/data-ig-mark="([a-z-]+)"/g)].map(
+        (match) => match[1],
+      );
+      assert.deepEqual(
+        [...new Set(placements)],
+        [placement],
+        `${state} draws ${JSON.stringify(placements)}`,
+      );
+    }
+  });
+
+  it('draws a pending chip at BOTH ends, because an edit is in flight at both', () => {
+    const result = renderScaleLadder(document, { projected: [pending] });
+    const chips = [...result.markup.matchAll(/data-ig-mark="both-ends"/g)];
+    assert.equal(chips.length, 2);
+  });
+
+  it('draws no mark for a selection, which needs no position of its own', () => {
+    // A halo is the path stroked wider, so it is drawn where the path already
+    // is. Nothing about selecting an edge needs the layout.
+    const result = renderScaleLadder(document, { selectedEdge: first });
+    assert.match(result.markup, /ig-overlay-halo/);
+    assert.equal(/data-ig-mark=/.test(result.markup), false);
   });
 });
