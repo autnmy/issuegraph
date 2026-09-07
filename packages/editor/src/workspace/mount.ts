@@ -1818,6 +1818,21 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       return 'target-search';
     }
     if (focusedKey() !== null) return 'canvas';
+    // A FOCUSED TEXT BOX IS NEVER THE CHOOSER, whatever the draft is doing.
+    // `scale/render.ts` draws the search-to-focus input, and it stays usable
+    // while a draft is open — so without this a reader who clicked it and typed
+    // `1` would have the digit taken from their query and spent on a
+    // relationship kind, `preventDefault()` included. That is the failure
+    // `create/keys.ts` withholds the digits from `target-search` to avoid, and
+    // this arm would have reintroduced it one control over.
+    //
+    // NARROWING THE NEW ARM ONLY, deliberately: an input that is not the target
+    // search already read `elsewhere` before this predicate existed, so this
+    // hands those presses back exactly as they were rather than reclassifying
+    // anything that works today. A focused input INSIDE a keyed node still
+    // answers `canvas` above, which is a pre-existing question and not this
+    // change's to settle.
+    if (isInput(active)) return 'elsewhere';
     return isChoosingKind(state.draft) ? 'kind-chooser' : 'elsewhere';
   };
 

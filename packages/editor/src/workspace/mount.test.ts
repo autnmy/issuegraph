@@ -3283,6 +3283,65 @@ describe('a command control keeps focus across the redraw it causes', () => {
     }
   });
 
+  it('leaves the canvas search its own digits while a kind-step draft is open', async () => {
+    // REVIEW FINDING ON THIS CHANGE, pinned so it cannot come back. Classifying
+    // the kind step from the draft alone said `kind-chooser` for EVERY
+    // non-keyed focus except the target search — including the ladder's
+    // search-to-focus input, which stays usable while a draft is open. A reader
+    // who clicked it and typed `1` had the digit taken from their query,
+    // `preventDefault()`ed, and spent on a relationship kind.
+    //
+    // That is precisely the failure `create/keys.ts` withholds the digits from
+    // `target-search` to avoid — "most issue references carry a digit, so a map
+    // that claimed 1–5 here would eat nearly every query" — reintroduced one
+    // control over.
+    const size = 80;
+    const page = await mounted({
+      issues: Array.from({ length: size }, (_unused, index) => ({
+        ref: String(index + 1),
+        title: `Release task ${index + 1}`,
+        state: 'open' as const,
+        priority: 2,
+      })),
+      edges: Array.from({ length: size - 1 }, (_unused, index) =>
+        makeEdge('blocked-by', String(index + 1), String(index + 2)),
+      ),
+    });
+    try {
+      const row = page.rows()[0];
+      assert.ok(row !== undefined, 'no rail row to begin a draft from');
+      page.click(row);
+      await flush();
+
+      const add = page.control('add');
+      assert.ok(add !== null, 'no add control');
+      page.click(add);
+      await flush();
+
+      const search = page.element.querySelector<HTMLInputElement>('input[data-ig-command="search"]');
+      assert.ok(search !== null, 'no canvas search — the case is not reproduced');
+      search.focus();
+
+      const chosen = KIND_KEYS[0];
+      assert.ok(chosen !== undefined, 'the vocabulary has no first kind');
+      const press = new page.win.KeyboardEvent('keydown', { key: chosen.key, bubbles: true, cancelable: true });
+      search.dispatchEvent(press);
+      await flush();
+
+      // THE PRESS IS HANDED BACK, which is the assertion that discriminates: a
+      // digit the map declines is one the platform types into the box.
+      assert.equal(press.defaultPrevented, false, 'the create map claimed a digit typed into the search');
+      assert.equal(
+        page.element.querySelector('[data-ig-command="target-query"]'),
+        null,
+        'typing into the canvas search chose a relationship kind',
+      );
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
   it('keeps a press reaching the mount even when the rail has no rows to fall back to', async () => {
     // A FALLBACK WITH A PRECONDITION IS NOT A LAST RESORT. The rail is not
     // always there: with the audit filter on and nothing flagged it draws no
