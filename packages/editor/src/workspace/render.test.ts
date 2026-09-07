@@ -1571,27 +1571,120 @@ describe('§17a\'s header names the backlog, whatever else it knows', () => {
   });
 });
 
-describe('the workspace draws the host facts in the rail', () => {
-  it('renders the summary line and the NOW row from the projection the host supplied', () => {
-    const document: ViewerDocument = {
-      ...backlogOf(8),
-      host: {
-        concurrencyCap: 2,
-        counts: { ranked: 8, readyNow: 8, held: 0 },
-        running: [{ key: 'i0003', phase: 'Review', elapsed: '12m' }],
-        freshness: { asOf: '14:32', age: '2m ago', refresh: 'refresh' },
-      },
-    };
-    const result = renderWorkspace(document, WORDS);
-    const railAt = result.markup.indexOf('data-zone="rail"');
-    const canvasAt = result.markup.indexOf('data-zone="canvas"');
-    assert.ok(railAt !== -1 && canvasAt > railAt, 'the rail zone does not precede the canvas');
-    const rail = result.markup.slice(railAt, canvasAt);
+describe('the workspace splits the host facts between the header and the rail', () => {
+  /**
+   * #135's ruling, as an executable statement of it.
+   *
+   * THE ADOPTION PAIR AND THE FRESHNESS STAMP GO UP, the order's own tally and
+   * the NOW row STAY. Both halves are asserted here, in both directions, because
+   * either alone passes on a fact that is drawn twice — which is one of the two
+   * failures the issue named (the other being a fact dropped on the way past,
+   * which the totals at the end of this test are what catch).
+   */
+  const HOSTED: ViewerDocument = {
+    ...backlogOf(8),
+    host: {
+      identity: 'acme/widgets',
+      concurrencyCap: 2,
+      counts: { ranked: 8, readyNow: 8, held: 0 },
+      adoption: { counts: { declaring: 64, total: 312 } },
+      running: [{ key: 'i0003', phase: 'Review', elapsed: '12m' }],
+      freshness: { asOf: '14:32', age: '2m ago', refresh: 'refresh' },
+    },
+  };
+
+  /** The zone spans, read off the markup in the order `renderWorkspace` emits them. */
+  function zones(markup: string): { header: string; rail: string } {
+    const headerAt = markup.indexOf('data-zone="header"');
+    const railAt = markup.indexOf('data-zone="rail"');
+    const canvasAt = markup.indexOf('data-zone="canvas"');
+    assert.ok(headerAt !== -1 && railAt > headerAt, 'the header zone does not precede the rail');
+    assert.ok(canvasAt > railAt, 'the rail zone does not precede the canvas');
+    return { header: markup.slice(headerAt, railAt), rail: markup.slice(railAt, canvasAt) };
+  }
+
+  it('keeps the order’s own tally and the NOW row in the rail', () => {
+    const { rail } = zones(renderWorkspace(HOSTED, WORDS).markup);
     assert.match(rail, /<span class="ig-count-chip" data-count="ready">8 ready now · cap 2<\/span>/);
     assert.match(rail, /<li class="ig-now-row" data-ig-group="i0003"/);
-    assert.match(rail, /data-ig-command="refresh"/);
-    // Once in the workspace: the canvas draws no header of its own.
+  });
+
+  it('draws the adoption pair and the freshness stamp in §17a’s header, and only there', () => {
+    const { header, rail } = zones(renderWorkspace(HOSTED, WORDS).markup);
+    // THE FRAME'S ORDER, TOTAL FIRST. §16a words the same pair the other way
+    // round; see `adoptionCountsSpec` for why the two surfaces differ.
+    assert.match(header, /class="ig-workspace-counts"/);
+    assert.match(header, />312<\/span> in the backlog · <span class="ig-id">64<\/span> carry relationships/);
+    assert.match(header, /class="ig-workspace-freshness" data-stale="false"/);
+    assert.match(header, /read at <span class="ig-id">14:32<\/span> · 2m ago/);
+    assert.match(header, /data-ig-command="refresh"/);
+
+    // The other direction, which is the half that fails when a fact is stated
+    // twice rather than moved.
+    assert.equal(/data-count="adoption"/.test(rail), false, 'layer 1 still draws the adoption chip');
+    assert.equal(/class="ig-freshness"/.test(rail), false, 'layer 1 still draws the stamp');
+    assert.equal(/data-ig-command="refresh"/.test(rail), false, 'the refresh control is drawn twice');
+  });
+
+  it('carries the stale flag as an attribute, and words it nowhere', () => {
+    const stale: ViewerDocument = {
+      ...HOSTED,
+      host: { ...HOSTED.host, freshness: { asOf: '14:32', stale: true, refresh: 'refresh' } },
+    };
+    const { header } = zones(renderWorkspace(stale, WORDS).markup);
+    assert.match(header, /class="ig-workspace-freshness" data-stale="true"/);
+    // §17a's stamp is `as of 14:32 ↻` and says no more; layer 1's appends a
+    // literal ` · stale`, which is §16's wording and not this surface's.
+    assert.equal(header.includes('stale<'), false, 'the header worded the state the sheet draws');
+  });
+
+  it('leaves the rail’s panel header out entirely when the order states no tally', () => {
+    // `hostHeader` returns null once nothing is left for it, which is what makes
+    // the move a subtraction rather than a new option. Nothing is dropped: the
+    // two facts are in the header above, asserted here so the empty rail header
+    // cannot be mistaken for a loss.
+    const noTally: ViewerDocument = {
+      ...HOSTED,
+      host: {
+        identity: 'acme/widgets',
+        adoption: { counts: { declaring: 64, total: 312 } },
+        freshness: { asOf: '14:32', refresh: 'refresh' },
+      },
+    };
+    const { header, rail } = zones(renderWorkspace(noTally, WORDS).markup);
+    assert.equal(/class="ig-header"/.test(rail), false);
+    assert.match(header, /class="ig-workspace-counts"/);
+    assert.match(header, /class="ig-workspace-freshness"/);
+  });
+
+  it('leaves the adoption NOTE and the condition with the rail', () => {
+    // THE REASON `chrome: false` WAS NOT THE LEVER. That switch also takes
+    // these two, neither of which §17a's header replaces, so the flip could
+    // only have been made by dropping them.
+    const noted: ViewerDocument = {
+      ...HOSTED,
+      host: {
+        ...HOSTED.host,
+        adoption: { counts: { declaring: 64, total: 312 }, note: { text: 'nothing declares yet' } },
+        condition: {
+          kind: 'importing',
+          headline: 'reading the backlog',
+          caution: 'ranks will change as the rest arrive',
+          progress: '412 of ~1,200 issues',
+        },
+      },
+    };
+    const { header, rail } = zones(renderWorkspace(noted, WORDS).markup);
+    assert.match(rail, /nothing declares yet/);
+    assert.match(rail, /reading the backlog/);
+    assert.equal(header.includes('nothing declares yet'), false, 'the note followed the counts up');
+  });
+
+  it('draws one header per workspace, and none in the canvas', () => {
+    const result = renderWorkspace(HOSTED, WORDS);
     assert.equal((result.markup.match(/class="ig-header"/g) ?? []).length, 1);
+    assert.equal((result.markup.match(/class="ig-workspace-header"/g) ?? []).length, 1);
+    assert.equal((result.markup.match(/data-ig-command="refresh"/g) ?? []).length, 1);
   });
 });
 

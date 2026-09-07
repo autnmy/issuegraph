@@ -119,6 +119,11 @@ const FIRST_PASS_WORDS: FirstPassWords = {
 
 /** The words the packages refuse to invent. */
 export const WORKSPACE_WORDS: MountWords = {
+  // §17a's header: `312 open · 64 encoded` and `as of 14:32 ↻`. The numbers are
+  // the package's and these are the nouns beside them.
+  asOf: 'as of',
+  open: 'open',
+  encoded: 'encoded',
   // The frame draws the panel's name in caps; the caps are the stylesheet's, as
   // they are for every other heading in this zone, so the word reads as a word.
   inspector: 'Inspector',

@@ -50,10 +50,13 @@
  */
 
 import {
+  type Adoption,
   type AttrValue,
   type ElementSpec,
   type EdgeTreatment,
+  type Freshness,
   type HostFacts,
+  type NormalizedHostFacts,
   type SpecChild,
   type Theme,
   type ViewerDocument,
@@ -117,6 +120,41 @@ export const ZONES = Object.freeze(['header', 'rail', 'canvas', 'inspector'] as 
 export type Zone = (typeof ZONES)[number];
 
 export interface WorkspaceWords {
+  /**
+   * Reads the freshness stamp in §17a's header — the frame's `as of 14:32 ↻`,
+   * minus the clock.
+   *
+   * THE NUMBER IS APPENDED, NOT INTERPOLATED, exactly as {@link whyRank}'s is
+   * and for the reason stated there: a `{n}` template makes every host
+   * reimplement the substitution, which is how a package that refuses to invent
+   * English ships a tiny template language instead. `Freshness.asOf` and
+   * `Freshness.age` are the host's own strings and are printed verbatim.
+   *
+   * THE STALE FLAG CARRIES NO WORD, unlike layer 1's stamp, which appends a
+   * literal ` · stale`. §17a's stamp is `as of 14:32 ↻` and says nothing more,
+   * so staleness rides on `data-stale` for the stylesheet to treat. A word here
+   * would be a fourth thing to translate for a state the frame draws silently.
+   */
+  readonly asOf: string;
+  /**
+   * The noun after the backlog's total — frame 17a's `312 open`.
+   *
+   * IT WORDS `Adoption.counts.total`, WHICH IS NOT `OrderCounts`. Two different
+   * pairs reach this surface and only one of them is §17a's header content: the
+   * adoption pair says how much of the backlog is encoded, and the order pair
+   * (`ranked` / `readyNow` / `held`) says how the order splits. The second stays
+   * in the rail, where it belongs to the order it describes.
+   */
+  readonly open: string;
+  /**
+   * The noun after the encoded count — frame 17a's `64 encoded`, wording
+   * `Adoption.counts.declaring`.
+   *
+   * SEPARATE FROM {@link open} RATHER THAN ONE PHRASE, because the two numbers
+   * are the package's and the two nouns are the host's; a single string would
+   * have to carry both figures and would be a template again.
+   */
+  readonly encoded: string;
   /**
    * The panel's own heading — frame 17a's `INSPECTOR`.
    *
@@ -1217,6 +1255,108 @@ function whyRankSpec(
 }
 
 /**
+ * One header member, rendered, or the empty string.
+ *
+ * The zone is assembled by concatenating already-rendered markup — the audit
+ * header arrives that way and owns its own `aria-pressed` — so a member that is
+ * a spec has to be rendered before it joins them, and an absent member has to
+ * join as nothing rather than as a gap.
+ */
+function specMarkup(spec: ElementSpec | null): string {
+  return spec === null ? '' : renderMarkup(spec);
+}
+
+/**
+ * §17a's `312 open · 64 encoded` — how much of the backlog carries relationships.
+ *
+ * OMITTED WHEN THE HOST STATED NO NUMBERS, never defaulted, on this zone's
+ * standing rule: a zero the reader can trust and a zero nobody computed are
+ * different facts. `Adoption.counts` is optional precisely so a host that
+ * cannot count says nothing.
+ *
+ * THE TOTAL LEADS, WHICH IS THE FRAME'S ORDER AND NOT LAYER 1's. §16a words the
+ * same pair as `64 of 312 declare relationships`, subject first. §17a reads the
+ * backlog first and the encoded subset second, and the two surfaces are allowed
+ * to differ: this is the header of a grooming workspace, where "how much is
+ * left to encode" is the question, and that one is answered by the pair read in
+ * this direction.
+ */
+function adoptionCountsSpec(adoption: Adoption | undefined, words: WorkspaceWords): ElementSpec | null {
+  const counts = adoption?.counts;
+  if (counts === undefined) return null;
+  return element('span', { class: 'ig-workspace-counts' }, [
+    element('span', { class: 'ig-id' }, [String(counts.total)]),
+    ` ${words.open} · `,
+    element('span', { class: 'ig-id' }, [String(counts.declaring)]),
+    ` ${words.encoded}`,
+  ]);
+}
+
+/**
+ * §17a's `as of 14:32 ↻` — how fresh the read is, and the way to take another.
+ *
+ * THE CONTROL IS PUBLISHED AND NOT WIRED, the shape layer 1 already gives it:
+ * refreshing a mirror is fetching, which no layer here does, so the button
+ * carries `refresh` on the command attribute and the host that can listens. A
+ * real `button`, so the mount's own click and Enter handling treat it as a
+ * control rather than as a row.
+ *
+ * DRAWN ONLY WHEN THE HOST SUPPLIED A WORD FOR IT, again as layer 1 does: a
+ * control nobody named is one nobody wired.
+ *
+ * STALENESS IS AN ATTRIBUTE, NOT A WORD. See {@link WorkspaceWords.asOf}.
+ */
+function freshnessSpec(freshness: Freshness | undefined, words: WorkspaceWords): ElementSpec | null {
+  if (freshness === undefined) return null;
+  return element(
+    'span',
+    {
+      class: 'ig-workspace-freshness',
+      'data-stale': freshness.stale === true ? 'true' : 'false',
+    },
+    [
+      `${words.asOf} `,
+      element('span', { class: 'ig-id' }, [freshness.asOf]),
+      freshness.age === undefined || freshness.age === '' ? null : ` · ${freshness.age}`,
+      freshness.refresh === undefined || freshness.refresh === ''
+        ? null
+        : element(
+            'button',
+            { type: 'button', class: 'ig-workspace-refresh', 'data-ig-command': 'refresh' },
+            [freshness.refresh],
+          ),
+    ],
+  );
+}
+
+/**
+ * The host facts the RAIL is given: everything except the two §17a's header now
+ * draws.
+ *
+ * THIS IS THE WHOLE MECHANISM OF #135's MOVE, and it is a subtraction rather
+ * than a switch. Layer 1 draws a fact when it is given one and omits it when it
+ * is not — `hostHeader` returns `null` outright once nothing is left for it —
+ * so the zone that receives a fact is the zone that states it, and no option
+ * has to be invented to say so. `SceneOptions.chrome` is the switch that could
+ * not do this: it would also take the condition notice, the adoption NOTE and
+ * `data-ig-condition`, none of which §17a's header replaces.
+ *
+ * `adoption.note` SURVIVES WHILE `adoption.counts` DOES NOT, which is why this
+ * cannot drop the field whole. They are two independent members of one optional
+ * object — §16h's own note says the design draws the count where adoption is
+ * partial and the line where it is absent — and the line is the rail's panel
+ * footer, a place §17a's header is not.
+ *
+ * `running` SURVIVES BY BEING LEFT ALONE. The NOW row is not part of layer 1's
+ * panel header and never was gated with it; see {@link headerMarkup} for the
+ * premise that said otherwise.
+ */
+function railHostFacts(host: NormalizedHostFacts): HostFacts {
+  const { freshness, adoption, ...rest } = host;
+  return adoption?.note === undefined ? rest : { ...rest, adoption: { note: adoption.note } };
+}
+
+/**
  * §17a's workspace header: what backlog this is, how much of it is encoded,
  * what is wrong with it, how fresh the read is, and the way into a first pass.
  *
@@ -1226,18 +1366,37 @@ function whyRankSpec(
  * input had no header at all. §17a's header carries five facts and the audit
  * count is one of them.
  *
- * WHAT IT DRAWS IS WHAT THE RAIL DOES NOT. §17a hoists the identity, the
- * counts and the freshness stamp into a header spanning all three zones, and
- * the rail below still draws the last two as layer 1's panel header — so this
- * carries the three facts that appear NOWHERE else today: what backlog this
- * is, what the audit found, and the way into a first pass.
+ * WHAT IT DRAWS IS WHAT THE RAIL DOES NOT, and #135 settled the split. §17a
+ * hoists the identity, the adoption counts and the freshness stamp into a
+ * header spanning all three zones, so this carries five facts: what backlog
+ * this is, how much of it is encoded, what the audit found, how fresh the read
+ * is, and the way into a first pass.
  *
- * MOVING THE OTHER TWO IS ITS OWN CHANGE, not an omission here. Layer 1's panel
- * header is one element carrying the stamp, the refresh control, the count
- * chips AND the running-job NOW row; `SceneOptions.chrome` takes all of them or
- * none. §17a's header replaces some and its rail does not obviously replace the
- * NOW row, so which of them survives is a design ruling, and a half-made one
- * would either state a fact twice or drop a control on the way past.
+ * THE RULING, RECORDED HERE BECAUSE THIS IS THE SURFACE IT IS ABOUT:
+ *
+ *   - `Adoption.counts` and the freshness stamp (with its refresh control) are
+ *     drawn HERE and nowhere else. §17a draws both, and layer 1's panel header
+ *     drew both until this change.
+ *   - `OrderCounts` and `concurrencyCap` stay in the RAIL. They are a different
+ *     pair from the adoption one — how the order splits, not how much of the
+ *     backlog is encoded — and §17a's header does not draw them. The rail is
+ *     the order, so the order's own tally belongs to its panel header.
+ *   - The running-job NOW row stays in the rail, unchanged.
+ *
+ * ⚠️ #135's PREMISE WAS WRONG ABOUT THE NOW ROW, and correcting it is what made
+ * the ruling small. The issue records that `SceneOptions.chrome` takes the
+ * stamp, the refresh control, the count chips AND the NOW row together, so that
+ * flipping it would drop a row §17a's rail does not replace. It does not:
+ * `nowRows` is called unconditionally by all three projection roots, beside the
+ * `chrome`-gated header, so no setting of that switch has ever reached it.
+ *
+ * SO THE SWITCH IS NOT THE LEVER, and it is deliberately left alone. `chrome:
+ * false` also takes the condition notice, the adoption NOTE and the panel's
+ * `data-ig-condition` — three things §17a's header does not replace — so the
+ * all-or-nothing flip could only be made by dropping them. What moves a fact
+ * instead is WHICH ZONE IS GIVEN IT: {@link railHostFacts} hands the rail the
+ * host facts minus the two this header now draws, and layer 1 then omits them
+ * on its own existing "omitted when absent" rule rather than on a new option.
  *
  * EVERY FACT COMES FROM THE PORT THAT ALREADY CARRIES IT. `ViewerDocument.host`
  * is commented "THE HOST-FACTS PORT", and #127 rejected deriving its numbers in
@@ -1249,7 +1408,11 @@ function whyRankSpec(
  * gives: a zero the reader can trust and a zero nobody computed are different
  * facts, and a header that invents either is worse than one that says less.
  */
-function headerMarkup(host: HostFacts | undefined, auditHeader: string): string {
+function headerMarkup(
+  host: HostFacts | undefined,
+  auditHeader: string,
+  words: WorkspaceWords,
+): string {
 
   // A STRING, not a spec, because one member of this zone already is one: the
   // audit header comes from its own leaf rendered, and it owns the filter
@@ -1260,8 +1423,9 @@ function headerMarkup(host: HostFacts | undefined, auditHeader: string): string 
     host?.identity === undefined || host.identity === ''
       ? ''
       : renderMarkup(element('span', { class: 'ig-workspace-identity' }, [host.identity])),
-
+    specMarkup(adoptionCountsSpec(host?.adoption, words)),
     auditHeader,
+    specMarkup(freshnessSpec(host?.freshness, words)),
     host?.firstPass === undefined || host.firstPass === ''
       ? ''
       : renderMarkup(
@@ -2042,9 +2206,14 @@ export function renderWorkspace(
   // members rather than the lead, for the reason the bar is: a finding can name
   // a member that does not lead its unit.
   const filtered = overlay !== null && options.auditFiltered === true;
+  // THE HEADER'S TWO FACTS ARE WITHHELD FROM THE RAIL HERE, and this is the one
+  // place they are: see `railHostFacts` for why a subtraction rather than
+  // `SceneOptions.chrome`.
+  const railHost = railHostFacts(document.host);
   const railInput: ViewerDocument = filtered
     ? {
         ...document,
+        host: railHost,
         order: {
           // EXCLUSIONS ARE ROWS TOO, and filtering only the slots left the clean
           // ones on screen while the header said the filter was on — the toggle
@@ -2057,7 +2226,7 @@ export function renderWorkspace(
           ),
         },
       }
-    : document;
+    : { ...document, host: railHost };
 
   const rail = railWindow(railInput, options.rail ?? {});
   const railRender = renderViewer(rail.document, {
@@ -2111,7 +2280,11 @@ export function renderWorkspace(
     `<div class="ig-workspace">`,
     zone(
       'header',
-      headerMarkup(document.host, overlay === null ? '' : renderAuditHeader(overlay, { filtered })),
+      headerMarkup(
+        document.host,
+        overlay === null ? '' : renderAuditHeader(overlay, { filtered }),
+        options.words,
+      ),
     ),
     zone(
       'rail',

@@ -1372,11 +1372,17 @@ describe('a pending write cannot change a rank', () => {
 });
 
 describe('the host facts are drawn once per workspace', () => {
-  it('draws the header, the NOW list and the refresh control in the rail only, in both canvas modes', async () => {
-    // Every host fact is whole-order and the rail is the order surface. The
-    // graph canvas already drops `host` through the ladder's focus; the tree
-    // canvas rendered the whole hosted document and drew a second header and
-    // a second refresh control beside the rail's.
+  it('draws each host fact in exactly one zone, in both canvas modes', async () => {
+    // Every host fact is whole-order, and the property this pins is that each
+    // is stated ONCE. The graph canvas already drops `host` through the
+    // ladder's focus; the tree canvas rendered the whole hosted document and
+    // drew a second header and a second refresh control beside the rail's.
+    //
+    // RE-AIMED BY #135, NOT WEAKENED. The counts and the NOW row still belong
+    // to the rail; the freshness stamp and its refresh control now belong to
+    // §17a's workspace header, so "in the rail only" became the wrong shape of
+    // the same claim. The counts below are unchanged — what moved is which
+    // zone each answer is asserted in, which is the whole of the ruling.
     const page = await mounted(SEED, { project: hostedProject });
     try {
       const count = (selector: string): number => page.element.querySelectorAll(selector).length;
@@ -1384,6 +1390,18 @@ describe('the host facts are drawn once per workspace', () => {
       assert.equal(count('[data-ig-command="refresh"]'), 1);
       assert.equal(count('.ig-now'), 1);
       assert.ok(page.zone('rail')?.querySelector('.ig-header') !== null, 'the header is not in the rail');
+      // THE MOVE ITSELF, ASSERTED IN BOTH DIRECTIONS. One of these alone would
+      // pass while the control was drawn twice.
+      assert.ok(
+        page.zone('header')?.querySelector('[data-ig-command="refresh"]') !== null,
+        'the refresh control did not reach §17a\'s header',
+      );
+      assert.equal(
+        page.zone('rail')?.querySelector('[data-ig-command="refresh"]'),
+        null,
+        'layer 1 still draws the refresh control the header now owns',
+      );
+      assert.ok(page.zone('rail')?.querySelector('.ig-now') !== null, 'the NOW row left the rail');
 
       page.handle.update({ canvas: 'tree' });
       await flush();

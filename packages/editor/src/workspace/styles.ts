@@ -107,6 +107,46 @@ export const workspaceStylesheet = `
   font-family: var(--ig-font-mono);
 }
 
+/* The adoption pair and the freshness stamp, hoisted out of layer 1's panel
+   header by #135. Quiet, because the row's only loud element is the entry at
+   its far end -- these are orientation, read once and then ignored. */
+.ig-workspace-counts,
+.ig-workspace-freshness {
+  color: var(--ig-text-muted);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+}
+
+/* THE ONLY TREATMENT STALENESS GETS, and it is why the stamp carries no word
+   for it: the state is on the element, so the sheet says what a stale read
+   looks like and no host has to translate an adjective. */
+.ig-workspace-freshness[data-stale='true'] {
+  color: var(--ig-state-invalid);
+}
+
+/* A CONTROL, NOT A CHIP. It sits inside the stamp because that is what it
+   refreshes, and it takes the button reset the sheet gives every other quiet
+   control on this surface rather than the accent the first-pass entry spends. */
+.ig-workspace-refresh {
+  margin-left: var(--ig-space-tight);
+  font: inherit;
+  color: var(--ig-text);
+  background: var(--ig-surface-2);
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  padding: 0 var(--ig-space-tight);
+  cursor: pointer;
+}
+
+.ig-workspace-refresh:hover {
+  border-color: var(--ig-accent);
+}
+
+.ig-workspace-refresh:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-tight);
+}
+
 /* The one place the accent is spent on this surface, on the only action that
    starts something. The frame draws it as the header's primary control. */
 .ig-workspace-firstpass {

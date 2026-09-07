@@ -29,6 +29,19 @@
       "aria": {}
     },
     {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "refresh",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
       "zone": "inspector",
       "channel": "data-ig-command",
       "control": "add",
@@ -120,19 +133,6 @@
       "aria": {
         "aria-expanded": "false"
       }
-    },
-    {
-      "zone": "rail",
-      "channel": "data-ig-command",
-      "control": "refresh",
-      "target": null,
-      "value": null,
-      "tag": "button",
-      "role": "button",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {}
     }
   ],
   "disclosure-open": [
@@ -155,6 +155,19 @@
       "zone": "header",
       "channel": "data-ig-command",
       "control": "first-pass",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "refresh",
       "target": null,
       "value": null,
       "tag": "button",
@@ -257,19 +270,6 @@
         "aria-expanded": "true",
         "aria-controls": "resolves"
       }
-    },
-    {
-      "zone": "rail",
-      "channel": "data-ig-command",
-      "control": "refresh",
-      "target": null,
-      "value": null,
-      "tag": "button",
-      "role": "button",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {}
     }
   ],
   "draft-open": [
@@ -292,6 +292,19 @@
       "zone": "header",
       "channel": "data-ig-command",
       "control": "first-pass",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "refresh",
       "target": null,
       "value": null,
       "tag": "button",
@@ -458,19 +471,6 @@
       "aria": {
         "aria-expanded": "false"
       }
-    },
-    {
-      "zone": "rail",
-      "channel": "data-ig-command",
-      "control": "refresh",
-      "target": null,
-      "value": null,
-      "tag": "button",
-      "role": "button",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {}
     }
   ],
   "search-open": [
@@ -493,6 +493,19 @@
       "zone": "header",
       "channel": "data-ig-command",
       "control": "first-pass",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "refresh",
       "target": null,
       "value": null,
       "tag": "button",
@@ -633,19 +646,6 @@
       "aria": {
         "aria-expanded": "false"
       }
-    },
-    {
-      "zone": "rail",
-      "channel": "data-ig-command",
-      "control": "refresh",
-      "target": null,
-      "value": null,
-      "tag": "button",
-      "role": "button",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {}
     }
   ],
   "first-pass-open": [
@@ -733,6 +733,19 @@
       "zone": "header",
       "channel": "data-ig-command",
       "control": "first-pass",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "none",
+      "inert": true,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "refresh",
       "target": null,
       "value": null,
       "tag": "button",
@@ -834,19 +847,6 @@
       "aria": {
         "aria-expanded": "false"
       }
-    },
-    {
-      "zone": "rail",
-      "channel": "data-ig-command",
-      "control": "refresh",
-      "target": null,
-      "value": null,
-      "tag": "button",
-      "role": "button",
-      "tabStop": "none",
-      "inert": true,
-      "name": "text",
-      "aria": {}
     }
   ],
   "refusal-tier": [
@@ -1048,6 +1048,19 @@
       "aria": {}
     },
     {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "refresh",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
       "zone": "inspector",
       "channel": "data-ig-command",
       "control": "add",
@@ -1178,19 +1191,6 @@
       "aria": {
         "aria-expanded": "false"
       }
-    },
-    {
-      "zone": "rail",
-      "channel": "data-ig-command",
-      "control": "refresh",
-      "target": null,
-      "value": null,
-      "tag": "button",
-      "role": "button",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {}
     }
   ],
   "edge-selected": [
@@ -1213,6 +1213,19 @@
       "zone": "header",
       "channel": "data-ig-command",
       "control": "first-pass",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "refresh",
       "target": null,
       "value": null,
       "tag": "button",
@@ -1348,19 +1361,6 @@
       "inert": false,
       "name": "text",
       "aria": {}
-    },
-    {
-      "zone": "rail",
-      "channel": "data-ig-command",
-      "control": "refresh",
-      "target": null,
-      "value": null,
-      "tag": "button",
-      "role": "button",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {}
     }
   ],
   "isolated-shut": [
@@ -1408,6 +1408,19 @@
       "aria": {}
     },
     {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "refresh",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
       "zone": "inspector",
       "channel": "data-ig-command",
       "control": "add",
@@ -1499,19 +1512,6 @@
       "aria": {
         "aria-expanded": "false"
       }
-    },
-    {
-      "zone": "rail",
-      "channel": "data-ig-command",
-      "control": "refresh",
-      "target": null,
-      "value": null,
-      "tag": "button",
-      "role": "button",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {}
     }
   ],
   "isolated-open": [
@@ -1559,6 +1559,19 @@
       "aria": {}
     },
     {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "refresh",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
       "zone": "inspector",
       "channel": "data-ig-command",
       "control": "add",
@@ -1650,19 +1663,6 @@
       "aria": {
         "aria-expanded": "false"
       }
-    },
-    {
-      "zone": "rail",
-      "channel": "data-ig-command",
-      "control": "refresh",
-      "target": null,
-      "value": null,
-      "tag": "button",
-      "role": "button",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {}
     }
   ],
   "held-slot": [
@@ -1685,6 +1685,19 @@
       "zone": "header",
       "channel": "data-ig-command",
       "control": "first-pass",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "refresh",
       "target": null,
       "value": null,
       "tag": "button",
@@ -1799,19 +1812,6 @@
       "aria": {
         "aria-expanded": "false"
       }
-    },
-    {
-      "zone": "rail",
-      "channel": "data-ig-command",
-      "control": "refresh",
-      "target": null,
-      "value": null,
-      "tag": "button",
-      "role": "button",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {}
     }
   ]
 }
