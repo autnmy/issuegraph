@@ -10,6 +10,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { edgeIdentity } from '@issuegraph/core';
 import type { GraphDocument } from '@issuegraph/store';
 import { makeEdge } from '@issuegraph/store';
 
@@ -24,6 +25,7 @@ import {
   railRowAt,
   railSlackFor,
   railWindowTarget,
+  editCarrier,
   reconcileHost,
   reduceHost,
   targetMatches,
@@ -303,6 +305,117 @@ describe('a create begins from the issue the control NAMES', () => {
     // And with nothing selected and nothing named there is no source at all,
     // so the draft stays idle rather than beginning from `undefined`.
     assert.equal(drive([{ kind: 'control', name: 'add' }]).state.draft.source, null);
+  });
+});
+
+describe('an edit names the issue it is about, and the panel goes there', () => {
+  // THE ONE DERIVATION. A refusal is stated on its carrier's panel, so the
+  // panel has to BE the carrier's at the moment the edit goes out — rather
+  // than becoming it later by a route that happens to agree. Two routes did
+  // not agree, and each cost a review round: a retype whose projection hid the
+  // edge the panel was filtered to, and a draft completed after the reader had
+  // clicked somewhere else.
+
+  it('reads a create\u2019s carrier off the proposal, and falls back to the far end', () => {
+    assert.equal(editCarrier(document, { op: 'create', kind: 'blocked-by', from: '2', to: '3' }), '2');
+    // AN UNKNOWN SOURCE STILL HAS A PANEL — the target's. `unknown-issue` is
+    // exactly the refusal where one end is not in the backlog, and stating it
+    // on the only end that IS beats stating it nowhere.
+    assert.equal(editCarrier(document, { op: 'create', kind: 'blocked-by', from: 'nope', to: '3' }), '3');
+    // AND NEITHER END KNOWN IS `null`, not a guess: there is no panel for an
+    // issue this document does not hold.
+    assert.equal(editCarrier(document, { op: 'create', kind: 'blocked-by', from: 'nope', to: 'gone' }), null);
+  });
+
+  it('reads an edit\u2019s carrier off the edge, and off the identity when the edge is gone', () => {
+    assert.equal(editCarrier(document, { op: 'delete', edgeId: blockedBy.id }), '1');
+    assert.equal(editCarrier(document, { op: 'retype', edgeId: serialize.id, nextKind: 'blocked-by' }), '3');
+    // THE `unknown-edge` CLASS: the reader acted on a relationship a landed
+    // write had already removed, so the identity is the only record of its
+    // ends left — and it is read through `@issuegraph/core`, which owns the
+    // encoding. A reference carrying a `#` or a `/` is escaped into the
+    // identity, so a split on `|` here would answer for `1` and fail for every
+    // reference the format actually admits.
+    const qualified: GraphDocument = {
+      issues: [{ ref: 'owner/repo#9', title: 'Qualified', state: 'open' }],
+      edges: [],
+    };
+    const gone = edgeIdentity('blocked-by', 'owner/repo#9', 'owner/repo#8');
+    assert.ok(gone.includes('owner%2Frepo%239'), gone);
+    assert.equal(editCarrier(qualified, { op: 'delete', edgeId: gone }), 'owner/repo#9');
+    // The FAR end answers when the carrier is the one the document lost.
+    const far = edgeIdentity('blocked-by', 'owner/repo#8', 'owner/repo#9');
+    assert.equal(editCarrier(qualified, { op: 'delete', edgeId: far }), 'owner/repo#9');
+  });
+
+  it('returns the panel to the create\u2019s source when the reader moved it mid-draft', () => {
+    // THE DIVERGENCE THIS CLOSES. `pointed` only diverts a click to the draft
+    // once a KIND has been chosen, so a click at the kind step moves the
+    // selection and leaves the draft's source behind. The write then goes out
+    // from one issue while the panel is headed by another — and a refusal
+    // about the first is stated on no panel the reader is looking at.
+    const { state, effects } = drive([
+      { kind: 'point', key: '2' },
+      { kind: 'control', name: 'add' },
+      { kind: 'point', key: '1' },
+      { kind: 'control', name: 'kind', value: 'blocked-by' },
+      { kind: 'control', name: 'target', target: '3' },
+    ]);
+    assert.deepEqual(effects, [CREATED], 'the write still goes out from the draft\u2019s source');
+    assert.deepEqual(state.selection, { kind: 'issue', key: '2' });
+  });
+
+  it('leaves the panel where it was on the routes that already agreed', () => {
+    // THE CHECK THAT THIS IS NOT A BEHAVIOUR CHANGE SMUGGLED IN BESIDE A FIX.
+    // Beginning a draft already selects its source and a drop already selects
+    // the node it started on, so the undiverted create paths write back the
+    // selection that was already there.
+    const inspector = drive([
+      { kind: 'point', key: '2' },
+      { kind: 'control', name: 'add' },
+      { kind: 'control', name: 'kind', value: 'blocked-by' },
+      { kind: 'control', name: 'target', target: '3' },
+    ]);
+    assert.deepEqual(inspector.state.selection, { kind: 'issue', key: '2' });
+    const canvas = drive([
+      { kind: 'drag-start', key: '2' },
+      { kind: 'drop', key: '3', at: { x: 0, y: 0 } },
+      { kind: 'control', name: 'kind', value: 'blocked-by' },
+    ]);
+    assert.deepEqual(canvas.state.selection, { kind: 'issue', key: '2' });
+  });
+
+  it('puts the panel on the carrier for every edit made on a selected edge', () => {
+    // A RETYPE OR A FLIP GIVES THE EDGE A NEW IDENTITY AND THE PROJECTION HIDES
+    // THE OLD ONE, so a panel still filtered to the edge resolves to nothing
+    // selected and can state no reason at all. The carrier's panel is a subject
+    // that exists whether the produced edge landed or is a phantom.
+    const selected = drive([{ kind: 'group', id: blockedBy.id }]).state;
+    for (const command of [
+      { kind: 'control' as const, name: 'retype', value: 'duplicate-of' },
+      { kind: 'control' as const, name: 'flip' },
+      { kind: 'control' as const, name: 'delete' },
+    ]) {
+      const { state, effects } = drive([command], selected);
+      assert.equal(effects.length, 1, command.name);
+      assert.deepEqual(state.selection, { kind: 'issue', key: '1' }, command.name);
+    }
+    // A CONTROL THAT PROPOSES NOTHING MOVES NOTHING — the picker refuses a
+    // retype to the kind the edge already has, and the panel stays on the edge.
+    assert.deepEqual(
+      drive([{ kind: 'control', name: 'retype', value: 'blocked-by' }], selected).state.selection,
+      { kind: 'edge', edgeId: blockedBy.id },
+    );
+  });
+
+  it('deletes from a row without taking the reader off the panel the row is on', () => {
+    // The remove control on a relationship row sits on its carrier's own panel
+    // already, so this route writes back the selection it found.
+    const onIssue = drive(
+      [{ kind: 'control', name: 'delete', target: blockedBy.id }],
+      drive([{ kind: 'point', key: '1' }]).state,
+    );
+    assert.deepEqual(onIssue.state.selection, { kind: 'issue', key: '1' });
   });
 });
 

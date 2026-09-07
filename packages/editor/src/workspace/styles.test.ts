@@ -154,7 +154,7 @@ const RENDERS = [
   renderWorkspace(DOCUMENT, {
     words: WORKSPACE_WORDS,
     selection: { kind: 'issue', key: 'i0001' },
-    refusals: [{ edgeId: 'blocked-by|i0001|i0002', code: 'would-cycle', phantom: true }],
+    refusals: [{ edgeId: 'blocked-by|i0001|i0002', code: 'would-cycle', carrier: 'i0001', phantom: true }],
   }),
   // AND THE OTHER SHAPE OF THE SAME FACT. A refusal about an edge that EXISTS
   // keeps its row and attaches the reason to it, which is a different rule
@@ -162,7 +162,7 @@ const RENDERS = [
   renderWorkspace(DOCUMENT, {
     words: WORKSPACE_WORDS,
     selection: { kind: 'issue', key: 'i0001' },
-    refusals: [{ edgeId: 'blocked-by|i0001|i0002', code: 'duplicate-edge', phantom: false }],
+    refusals: [{ edgeId: 'blocked-by|i0001|i0002', code: 'duplicate-edge', carrier: 'i0001', phantom: false }],
   }),
 ];
 

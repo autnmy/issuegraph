@@ -47,7 +47,7 @@
  */
 
 import { edgeIdentity } from '@issuegraph/core';
-import type { EdgeKind, GraphDocument, InvalidCode, MutationId, Store, StoreSnapshot } from '@issuegraph/store';
+import type { EdgeId, EdgeKind, GraphDocument, MutationId, Store, StoreSnapshot } from '@issuegraph/store';
 import { nextDocument } from '@issuegraph/store';
 import {
   type Scene,
@@ -79,6 +79,7 @@ import {
   type HostEffect,
   type HostState,
   INITIAL_HOST_STATE,
+  editCarrier,
   railRowAt,
   railSlackFor,
   railWindowTarget,
@@ -874,17 +875,29 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     const writeStates = snapshot.projected.map((edge) =>
       edge.states.includes('selected') ? { ...edge, states: edge.states.filter((state) => state !== 'selected') } : edge,
     );
-    // THE REFUSAL'S CODE, JOINED BACK ONTO THE EDGE IT IS ABOUT. The projection
-    // says an edge is `invalid`; only the write record says WHY, and the two
-    // meet on the `MutationId` the projection already publishes per edge. So
-    // nothing new reaches this mount — both halves are on the snapshot it
-    // already reads for `pendingWriteFor` and `recordedWriteFor` — and the
-    // renderer is handed one code per edge rather than the whole ledger, which
-    // is the larger input #137's conflict cards are waiting on.
-    const refusedBy = new Map<MutationId, InvalidCode>(
-      snapshot.writes.flatMap((record) =>
-        record.state === 'invalid' ? [[record.mutationId, record.reason.code] as const] : [],
-      ),
+    // THE WRITE LEDGER, TURNED INTO WHAT THE PANEL DRAWS — in ONE pass, in the
+    // ledger's own order.
+    //
+    // IT WAS TWO PASSES AND A CONCATENATION: one walk over the projection for
+    // the refusals it had an edge for, then one over the ledger for the ones it
+    // did not, appended after. Both halves were right and the JOIN was not.
+    // The renderer collapses repeated edges last-wins, so the array's order is
+    // the chronology — and appending every stranded record after every
+    // projected one is not the order the reader made them in. An older
+    // `unknown-edge` naming an edge a later refused create then projects
+    // reported the older reason. There is nothing to get wrong now: the ledger
+    // is walked once, and its order is the order.
+    //
+    // WHICH EDGE A REFUSAL MARKS IS THE PROJECTION'S OWN ANSWER.
+    // `ProjectedEdge.writes` is its record of which mutations it is speaking
+    // for, and `validity.ts` has already decided which edge each one marks — a
+    // create marks the edge it would have made, a retype the one it would have
+    // become. Rebuilding that here would be a second answer, free to disagree
+    // with the line the canvas draws the ghost on; asked of the projection, the
+    // record that produced one edge cannot also be counted against another,
+    // which is the double-draw this join used to be able to produce.
+    const markedBy = new Map<MutationId, EdgeId>(
+      snapshot.projected.flatMap((edge) => edge.writes.map((write) => [write, edge.id] as const)),
     );
     // WHETHER THE MARKED EDGE IS REAL. Three codes refuse an edit ABOUT a
     // landed relationship — `duplicate-edge`, `unchanged-kind`,
@@ -897,53 +910,30 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // member of that set and marks a PHANTOM through both of its routes. This
     // is the store's own answer to "what does the document actually carry".
     const landedIds = new Set(snapshot.landed.map((edge) => edge.id));
-    // BY THE EDGE'S OWN WRITES, never by re-deriving what the mutation would have
-    // produced: `validity.ts` already decides which edge a refused edit marks —
-    // a create marks the edge it would have made, a retype the one it would have
-    // become — and a second answer here would be free to disagree with the line
-    // the canvas draws the ghost on.
-    //
-    // `findLast`, NOT `find`. `ProjectedEdge.writes` is a list because two edits
-    // touching one edge compose in the order the reader made them, so an edge
-    // can carry two refusals — and one capsule can state one reason. The LAST is
-    // the one the reader just caused; the first is one they have already read
-    // and moved past. `renderWorkspace` collapses its own input the same way,
-    // and the two agree by that rule rather than by both happening to scan
-    // forwards.
-    const projectedRefusals: readonly WorkspaceRefusal[] = snapshot.projected.flatMap((edge) => {
-      const code = edge.writes.map((write) => refusedBy.get(write)).findLast((one) => one !== undefined);
-      return code === undefined ? [] : [{ edgeId: edge.id, code, phantom: !landedIds.has(edge.id) }];
+    const landedNow: GraphDocument = { issues: snapshot.issues, edges: snapshot.landed };
+    const refusals: readonly WorkspaceRefusal[] = snapshot.writes.flatMap((record) => {
+      if (record.state !== 'invalid') return [];
+      // WHOSE PANEL STATES IT, FROM THE MUTATION AND NOTHING ELSE. The panel
+      // used to work this out from the refused edge's endpoints, against a
+      // subject it had derived by an unrelated rule; `editCarrier` is the one
+      // answer, and it covers every route a refusal arrives by — see its own
+      // header. `null` means this document holds neither end, so there is no
+      // panel a reader could be standing on to read it.
+      const carrier = editCarrier(landedNow, record.mutation);
+      if (carrier === null) return [];
+      // THE PROJECTION'S EDGE, AND THE EDIT'S OWN AS THE FALLBACK. A refusal
+      // the projection has nothing to hang on is the whole `unknown-edge`
+      // class — a retype, flip or delete of an edge the document no longer
+      // carries produces `{ hidden: [], drawn: [], marked: [] }` — and the
+      // mutation names the edge it was about, so that id is what the capsule
+      // is keyed on.
+      const edgeId =
+        markedBy.get(record.mutationId) ??
+        (record.mutation.op === 'create'
+          ? edgeIdentity(record.mutation.kind, record.mutation.from, record.mutation.to)
+          : record.mutation.edgeId);
+      return [{ edgeId, code: record.reason.code, carrier, phantom: !landedIds.has(edgeId) }];
     });
-    // AND THE REFUSALS THE PROJECTION HAS NOTHING TO HANG ON. `unknown-edge` is
-    // the whole class: a retype, flip or delete of an edge the document no
-    // longer carries produces `{ hidden: [], drawn: [], marked: [] }`, so the
-    // walk above sees no edge at all and the reader's refused act vanished —
-    // the "never silently dropped" half of §17b's rule failing on exactly the
-    // refusal that says the thing they acted on is gone. The mutation names the
-    // edge it was about, so that id is what the capsule is keyed on.
-    //
-    // "ALREADY PROJECTED" IS ASKED OF THE MUTATION, NEVER BY COMPARING EDGE IDS.
-    // A retype or a flip is refused precisely when it would produce an edge that
-    // already exists, and `edgeChangeFor` marks the PRODUCED identity — so the
-    // record the projection speaks for names one edge in `mutation.edgeId` and
-    // is recorded under another. Compared by edge id, one write was both
-    // projected and stranded, and the panel drew its reason twice: once on the
-    // produced edge's row and once as an orphan capsule for the id the reader's
-    // edit named. `ProjectedEdge.writes` is the projection's own record of which
-    // mutations it is speaking for, so that is what is asked — and it covers the
-    // whole of an edge's list, not only the `findLast` one the capsule states,
-    // because an earlier refusal on the same edge is projected too.
-    const projectedMutations = new Set<MutationId>(
-      snapshot.projected.flatMap((edge) => edge.writes),
-    );
-    const strandedRefusals: readonly WorkspaceRefusal[] = snapshot.writes.flatMap((record) =>
-      record.state === 'invalid' &&
-      record.mutation.op !== 'create' &&
-      !projectedMutations.has(record.mutationId)
-        ? [{ edgeId: record.mutation.edgeId, code: record.reason.code, phantom: !landedIds.has(record.mutation.edgeId) }]
-        : [],
-    );
-    const refusals: readonly WorkspaceRefusal[] = [...projectedRefusals, ...strandedRefusals];
 
     const result = renderWorkspace(viewer, {
       words: current.words,

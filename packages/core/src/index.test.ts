@@ -9,7 +9,7 @@ import {
   EDGE_CARDINALITY,
   EDGE_FIELDS,
   edgeIdentity,
-  edgeIdentityNames,
+  edgeIdentityEnd,
   EVIDENCE_VALUES,
   FIELDS,
   FRONTMATTER_KEY,
@@ -326,44 +326,53 @@ test('an edge identity leaves every well-formed reference byte-identical', () =>
   }
 });
 
-test('an identity names the references it was built from, at either end', () => {
-  // The predicate exists so a consumer never splits an identity itself. Driven
+test('an identity places the references it was built from, carrier end first', () => {
+  // The function exists so a consumer never splits an identity itself. Driven
   // over every field so a symmetric one — whose endpoints are SORTED into the
-  // string — is answered from the pair the caller wrote rather than from the
-  // order they came out in.
+  // string — is answered from the string rather than from the order the caller
+  // happened to write the pair in.
   for (const field of EDGE_FIELDS) {
     const id = edgeIdentity(field, 'owner/repo#9', 'b c');
-    assert.equal(edgeIdentityNames(id, 'owner/repo#9'), true, field);
-    assert.equal(edgeIdentityNames(id, 'b c'), true, field);
-    assert.equal(edgeIdentityNames(id, 'owner/repo#8'), false, field);
+    // `b c` sorts before `owner/repo#9`, so the symmetric fields put it first
+    // and the directed ones keep the pair as written. Asked of the identity
+    // itself rather than of a list of which fields are symmetric, which is the
+    // second spelling this function exists to prevent.
+    const first = id.split('|')[1];
+    assert.equal(edgeIdentityEnd(id, 'owner/repo#9'), first === 'owner%2Frepo%239' ? 'carrier' : 'far', field);
+    assert.equal(edgeIdentityEnd(id, 'b c'), first === 'b%20c' ? 'carrier' : 'far', field);
+    assert.equal(edgeIdentityEnd(id, 'owner/repo#8'), null, field);
   }
+  // A directed field's carrier is `from`, which is the fact the editor's panel
+  // depends on: the relationship is declared in that issue's own frontmatter.
+  assert.equal(edgeIdentityEnd(edgeIdentity('blocked-by', 'z', 'a'), 'z'), 'carrier');
+  assert.equal(edgeIdentityEnd(edgeIdentity('blocked-by', 'z', 'a'), 'a'), 'far');
 });
 
-test('naming compares the ENCODED reference, not the raw one', () => {
+test('placing compares the ENCODED reference, not the raw one', () => {
   // The failure this exists to prevent, stated as an assertion: a caller
   // splitting the identity itself has no encoder, so it compares the raw
-  // reference against an encoded segment and answers `false` for every
+  // reference against an encoded segment and answers `null` for every
   // reference the format actually admits — `#`, `/` and a space are all
   // escaped, and §4.2 admits all three.
   const id = edgeIdentity('blocked-by', 'owner/repo#9', '1');
   assert.ok(id.includes('owner%2Frepo%239'), id);
-  assert.equal(edgeIdentityNames(id, 'owner/repo#9'), true);
+  assert.equal(edgeIdentityEnd(id, 'owner/repo#9'), 'carrier');
   // And the encoded spelling is not itself a reference: a host holding
   // `owner%2Frepo%239` names a different issue.
-  assert.equal(edgeIdentityNames(id, 'owner%2Frepo%239'), false);
+  assert.equal(edgeIdentityEnd(id, 'owner%2Frepo%239'), null);
 });
 
-test('naming is total over strings this package did not write', () => {
+test('placing is total over strings this package did not write', () => {
   // A host may hand back anything at all — a value it invented, an empty
   // string, a reference with the separator inside it. None of them throws and
   // none of them names an issue by accident.
   for (const id of ['', 'blocked-by', 'blocked-by|1', 'a|b|c|d', '|||']) {
-    assert.equal(edgeIdentityNames(id, '1'), false, JSON.stringify(id));
+    assert.equal(edgeIdentityEnd(id, '1'), null, JSON.stringify(id));
   }
   // A reference carrying the separator is encoded on both sides of the
   // question, so it cannot forge a match against either segment.
-  assert.equal(edgeIdentityNames(edgeIdentity('blocked-by', '1|2', '3'), '1'), false);
-  assert.equal(edgeIdentityNames(edgeIdentity('blocked-by', '1|2', '3'), '1|2'), true);
+  assert.equal(edgeIdentityEnd(edgeIdentity('blocked-by', '1|2', '3'), '1'), null);
+  assert.equal(edgeIdentityEnd(edgeIdentity('blocked-by', '1|2', '3'), '1|2'), 'carrier');
 });
 
 test('a lone surrogate cannot collide with another reference', () => {

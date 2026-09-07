@@ -49,8 +49,6 @@
  * `styles.ts` writes structure against its custom properties.
  */
 
-import { edgeIdentityNames } from '@issuegraph/core';
-
 import {
   type AttrValue,
   type ElementSpec,
@@ -267,6 +265,36 @@ export interface WorkspaceRefusal {
   readonly edgeId: EdgeId;
   readonly code: InvalidCode;
   /**
+   * The issue whose panel states this refusal.
+   *
+   * THE EDIT'S OWN SUBJECT, DECIDED BY WHOEVER MADE THE EDIT. This panel used
+   * to work it out for itself, by asking whether the refused edge's identity
+   * named the issue on show — a derivation entirely separate from the one that
+   * produced the subject, and free to disagree with it. It did, three times
+   * over: an unfiltered orphan branch drew every refusal on every panel; a
+   * retype whose projection hid the edge the panel was filtered to left the
+   * panel with no subject and the reason nowhere; and a draft begun from a
+   * together-unit partner produced an edge naming the partner while
+   * `inspectorView` had canonicalized the panel onto the slot's lead, so
+   * nothing matched. None of the three is a question this renderer can answer
+   * from an identity, because none of them is about the identity.
+   *
+   * A MOUNT KNOWS IT WITHOUT GUESSING. The refusal comes from a write record,
+   * the record carries the mutation, and the mutation says which issue the
+   * edit was about — `editCarrier` in `host.ts` is the one function that
+   * answers it, for a create from a draft, for a retype or flip whose produced
+   * identity differs from the one the reader named, for a delete, and for an
+   * edit naming an edge the document no longer carries. A host rendering
+   * without `mountWorkspace` states the same fact: whichever issue's panel it
+   * wants the refusal read on.
+   *
+   * NOT DERIVABLE FROM {@link WorkspaceRefusal.edgeId}, which is why it is a
+   * second field rather than a lookup. `unknown-issue` names an issue the
+   * document does not hold; `unknown-edge` names an edge it does not hold; and
+   * a together unit's panel is headed by a key the edge may never mention.
+   */
+  readonly carrier: string;
+  /**
    * Whether the edge this refusal marks exists only because the refusal does.
    *
    * NOT EVERY REFUSAL IS ABOUT AN EDIT THAT LEFT NO TRACE, and reading them as
@@ -381,6 +409,14 @@ export interface WorkspaceOptions {
   /**
    * The edits the store refused, so the panel can say so where the reader made
    * them. See {@link WorkspaceRefusal}.
+   *
+   * IN THE ORDER THE STORE RECORDED THEM, and that is part of the contract
+   * rather than an accident of how a caller happened to build it. One row
+   * states one reason, so two refusals naming one edge collapse to the LAST —
+   * the one the reader just caused, rather than the one they have read and
+   * moved past. A caller assembling this from two passes and concatenating
+   * them loses that chronology at the join; `mountWorkspace` walks
+   * `snapshot.writes` once for exactly this reason.
    *
    * ABSENT MEANS "NOTHING REFUSED", which is unlike {@link WorkspaceOptions.audit}
    * and is safe for the reason that one is not: a refusal is a fact the store
@@ -1010,8 +1046,69 @@ interface InspectorContext {
   readonly leadOf: ReadonlyMap<string, string>;
   readonly draft: CreateDraft;
   readonly drop: Point | null;
-  /** Refused edits, by the edge each is about. See {@link refusalCapsule}. */
-  readonly refusals: ReadonlyMap<EdgeId, WorkspaceRefusal>;
+  /**
+   * Refused edits, in the order the store recorded them. See {@link
+   * relationshipEntries}.
+   *
+   * A LIST, AND THE LEDGER'S OWN ORDER. It was a `ReadonlyMap` keyed by edge,
+   * collapsed by the caller — which threw the chronology away at the seam
+   * where two collections were joined, so a stale refusal on an edge could
+   * outrank the one the reader had just caused. The collapse is a rendering
+   * decision ("one row states one reason, the last one") and it now happens
+   * where that decision is made, over a list whose order is the store's.
+   */
+  readonly refusals: readonly WorkspaceRefusal[];
+}
+
+/**
+ * Which refusals a panel is entitled to state.
+ *
+ * THE PANEL'S REACH, AS DATA. The three subjects reach different things and
+ * the difference is not a detail: an issue panel speaks for a whole together
+ * unit, because `inspectorView` folds every member onto the slot's lead and
+ * words the panel from it — so an edit made from a PARTNER is an edit made
+ * from this panel, and stating its refusal anywhere else states it nowhere. An
+ * edge panel is one relationship narrowed out of a list, so it states a
+ * refusal about that relationship and no other. And `none` states nothing at
+ * all: a refusal drawn under "pick a row to inspect it" is a refusal about an
+ * issue the reader is not looking at, and it also suppresses the empty line by
+ * making the list non-empty.
+ *
+ * BUILT FROM THE VIEW, NOT FROM THE SELECTION. `unitPartners` is
+ * `inspectorView`'s own record of which keys canonicalize onto this subject —
+ * the same canonicalization that chose the subject — so the set cannot come
+ * apart from the heading above it.
+ */
+type PanelScope =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'issue'; readonly keys: ReadonlySet<string> }
+  | { readonly kind: 'edge'; readonly edgeId: EdgeId };
+
+function panelScope(view: InspectorView): PanelScope {
+  const { subject } = view;
+  switch (subject.kind) {
+    case 'none':
+      return { kind: 'none' };
+    case 'issue':
+      return {
+        kind: 'issue',
+        keys: new Set([subject.issue.key, ...(subject.whyRank?.unitPartners ?? [])]),
+      };
+    case 'edge':
+      return { kind: 'edge', edgeId: subject.relationship.edgeId };
+  }
+}
+
+/** Whether this panel is the one that states this refusal. */
+function statedHere(scope: PanelScope, refusal: WorkspaceRefusal): boolean {
+  switch (scope.kind) {
+    case 'none':
+      return false;
+    case 'issue':
+      return scope.keys.has(refusal.carrier);
+    case 'edge':
+      return refusal.edgeId === scope.edgeId;
+  }
 }
 
 /**
@@ -1023,31 +1120,40 @@ interface InspectorContext {
  * edge, so the capsule replaces the row only when there is no relationship
  * under it; otherwise the reason joins the row and the remove control stays.
  *
- * ## A refusal with no row is still drawn — for THIS subject
+ * ## Whose refusal it is, is not a question asked here
+ *
+ * {@link statedHere} asks it, of the carrier the refusal arrived carrying —
+ * and that is the whole of the change this function used to be the wrong place
+ * for. `refusals` is one list for the whole surface, not one per panel, and
+ * this function used to filter it by asking whether the refused edge's
+ * IDENTITY named the panel's subject. That is a second derivation of the
+ * edit's subject, run against a subject derived by a different rule, and every
+ * way the two can come apart is a refusal drawn in the wrong place or in no
+ * place: on every panel when nothing matched, on none when the panel had been
+ * canonicalized onto a together unit's lead, on none again when the projection
+ * had hidden the edge and left the panel with no subject at all. The refusal
+ * names its own carrier now, so there is one derivation and nothing for a
+ * second one to disagree with.
+ *
+ * ## The list is the ledger's, and the LAST refusal on an edge is the one
+ *
+ * One row states one reason, and the reader can be refused twice on one
+ * relationship — `ProjectedEdge.writes` is a list because two edits touching
+ * one edge compose in the order the reader made them. The last is the one they
+ * just caused; the first is one they have read and moved past. That collapse
+ * is `Map`'s repeated-key rule over `refusals` IN ORDER, which is why the
+ * option is a list rather than a map a caller had already collapsed: a caller
+ * assembling one from two passes loses the chronology at the join, and reports
+ * a stale reason for an edge the reader has just been refused on again.
+ *
+ * ## A refusal with no row is still drawn
  *
  * The refused edge normally reaches the document — the store draws a refused
  * create as a phantom precisely so a surface can mark it — but that depends on
  * the host's projection, and a refusal that vanished because the host projects
  * only landed edges is the "never silently dropped" half of §17b's rule failing
- * quietly. So an unmatched refusal is appended after the rest.
- *
- * AND ONLY THE ONES THAT NAME THE SUBJECT, which is the half that was missing.
- * `refusals` is one list for the whole surface, not one per panel, so an
- * unfiltered append drew every refusal on EVERY issue's panel — a `would-cycle`
- * between two issues the reader is not looking at, stated under the heading of
- * one that has nothing to do with it — and, with nothing selected, under the
- * "nothing is selected" line, where it also suppressed the empty-list sentence
- * by making the list non-empty. Nothing is drawn for a subject that is not an
- * issue for the same reason: an edge selection is one relationship, and a
- * refusal about a different edge is not part of it.
- *
- * `edgeIdentityNames` ASKS THE FORMAT'S OWN OWNER. An identity is written by
- * `@issuegraph/core` and reading one back by splitting it here would be the
- * format spelled twice — and spelled wrongly, because this layer cannot see the
- * percent-encoding the segments carry, so `owner/repo#9` would match nothing.
- * Reconstructing candidate identities from the document was the alternative and
- * it cannot answer the case that matters: an `unknown-issue` refusal names an
- * issue the document does not hold, by definition.
+ * quietly. So a refusal this panel states and no row carries is appended after
+ * the rest, as a capsule.
  */
 function relationshipEntries(
   view: InspectorView,
@@ -1055,9 +1161,14 @@ function relationshipEntries(
   selected: string | null,
   context: InspectorContext,
 ): readonly ElementSpec[] {
+  const scope = panelScope(view);
+  const stated = new Map<EdgeId, WorkspaceRefusal>();
+  for (const refusal of context.refusals) {
+    if (statedHere(scope, refusal)) stated.set(refusal.edgeId, refusal);
+  }
   const listed = new Set<EdgeId>();
   const rows = view.relationships.map((relationship) => {
-    const refusal = context.refusals.get(relationship.edgeId);
+    const refusal = stated.get(relationship.edgeId);
     if (refusal === undefined) {
       return relationshipSpec(relationship, subject, selected, context.words, undefined);
     }
@@ -1066,15 +1177,9 @@ function relationshipEntries(
       ? refusalCapsule(relationship, refusal.code, subject, context.words)
       : relationshipSpec(relationship, subject, selected, context.words, refusal.code);
   });
-  const orphaned =
-    subject === null
-      ? []
-      : [...context.refusals.values()]
-          .filter(
-            (refusal) =>
-              !listed.has(refusal.edgeId) && edgeIdentityNames(refusal.edgeId, subject),
-          )
-          .map((refusal) => refusalCapsule(undefined, refusal.code, subject, context.words));
+  const orphaned = [...stated.values()]
+    .filter((refusal) => !listed.has(refusal.edgeId))
+    .map((refusal) => refusalCapsule(undefined, refusal.code, subject, context.words));
   return [...rows, ...orphaned];
 }
 
@@ -1483,25 +1588,16 @@ export function renderWorkspace(
           leadOf,
           draft: options.draft ?? IDLE_CREATE_DRAFT,
           drop: options.drop ?? null,
-          // BY EDGE, BECAUSE THAT IS THE JOIN THE PANEL MAKES. A refusal names
-          // one edge and the panel asks, per row, "was this one refused" — so
-          // the list is turned once here rather than scanned once per row.
-          //
-          // TWO REFUSALS ON ONE EDGE ARE REACHABLE, and an earlier note here
-          // said they were not — "an edge is at most one unsettled write" is
-          // not a rule the store has. `ProjectedEdge.writes` is a LIST, and
-          // `store/write.ts` states the model in terms: "two edits touching one
-          // edge compose in the order the user made them". So the reader can
-          // be refused twice on one relationship, and one row can state only
-          // one reason.
-          //
-          // THE LAST ONE WINS, which is what `Map` does with a repeated key and
-          // is also the answer the reader wants: the capsule states the refusal
-          // they most recently caused, not the one they have already read and
-          // moved past. `mount.ts` picks the same end of its own list for the
-          // same reason, and the two are pinned to each other by that sentence
-          // rather than by the coincidence of both walking forwards.
-          refusals: new Map((options.refusals ?? []).map((one) => [one.edgeId, one])),
+          // FORWARDED IN THE ORDER IT ARRIVED, and turned into an answer per
+          // edge inside `relationshipEntries` — after the panel has decided
+          // which of them are its to state. Collapsing here instead put the
+          // "one reason per row" rule one layer away from the filter that
+          // decides which reasons there are, and made the ORDER of this array
+          // load-bearing at a distance: a caller building it from two passes
+          // lost the ledger's chronology at the join, and the panel reported a
+          // refusal the reader had already read instead of the one they had
+          // just caused.
+          refusals: options.refusals ?? [],
         }),
       ),
     ),

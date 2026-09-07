@@ -374,6 +374,12 @@ export {
   type HostState,
   INITIAL_HOST_STATE,
   RAIL_SLACK,
+  // ON THE SURFACE BECAUSE `WorkspaceRefusal` REQUIRES WHAT IT ANSWERS. A host
+  // rendering without `mountWorkspace` has to say which issue each refusal is
+  // about, and working that out from the refused edge's endpoints is the exact
+  // derivation the `carrier` field exists to replace — so the answer ships
+  // beside the field that asks for it.
+  editCarrier,
   railSlackFor,
   railWindowTarget,
   reconcileHost,

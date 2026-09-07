@@ -842,6 +842,141 @@ describe('mountWorkspace', () => {
       assert.equal(inspector.querySelector('.ig-picker'), null);
     });
 
+    it('states a refusal for a create the reader began on a DIFFERENT panel', async () => {
+      // THE DRAFT'S SOURCE AND THE PANEL COME APART WITHOUT ANY OF IT BEING A
+      // MISTAKE. `pointed` only diverts a click to the draft once a KIND has
+      // been chosen, so a click at the kind step moves the selection and leaves
+      // the draft where it was — which is the behaviour the panel's own
+      // "the draft starts at #n" line exists to state. The write then goes out
+      // from `1` while the panel is headed by `3`, and the refused edge names
+      // neither end of `3`: the reason was stated on no panel at all, and the
+      // target picker vanished with the draft, so nothing on the surface said
+      // the edit had happened.
+      await select('1');
+      page.click(page.control('add') ?? assert.fail('no add control'));
+      await flush();
+      const elsewhere = await select('3');
+      assert.equal(
+        elsewhere.querySelector('.ig-inspector-source')?.textContent,
+        `${WORDS.relatingFrom} 1`,
+        'the panel is not the diverged one this test needs',
+      );
+      const kind = elsewhere.querySelector<HTMLElement>(
+        '[data-ig-command="kind"][data-ig-value="blocked-by"]',
+      );
+      assert.ok(kind !== null, 'the panel offers no blocked-by to choose');
+      page.click(kind);
+      await flush();
+      // THE TARGET IS THE LAST CLICK. The create it completes — `1 blocked-by 2`
+      // — is the relationship the seed already carries, so the store refuses it.
+      const target = page.rows().find((row) => row.getAttribute('data-ig-key') === '2');
+      assert.ok(target !== undefined);
+      page.click(target);
+      await flush();
+
+      // NOTHING ELSE IS CLICKED BETWEEN THERE AND HERE.
+      const inspector = page.zone('inspector');
+      assert.ok(inspector !== null);
+      const row = inspector.querySelector<HTMLElement>('.ig-relationship[data-ig-code]');
+      assert.ok(row !== null, 'the refusal is stated nowhere at the moment it happened');
+      assert.equal(row.getAttribute('data-ig-code'), 'duplicate-edge');
+      assert.equal(
+        row.querySelector('.ig-relationship-reason')?.textContent,
+        WORDS.refusals['duplicate-edge'],
+      );
+      // AND THE PANEL IS THE CREATE'S OWN SOURCE, which is what makes it
+      // readable: the reader is returned to the issue they were relating FROM.
+      assert.deepEqual(page.handle.state.selection, { kind: 'issue', key: '1' });
+    });
+
+    it('states a refusal a together unit\u2019s PARTNER caused, on the unit\u2019s panel', async () => {
+      // THE DIVERGENCE THAT NEEDS NO CLICK AT ALL. `R` begins a draft from the
+      // FOCUSED key, and the tree canvas draws a unit's non-lead members, which
+      // the rail folds into one row — so the draft starts at `2` while
+      // `inspectorView` canonicalizes the panel onto the slot's lead, `1`. The
+      // refused edge names `2` and `3` and the panel is headed by `1`, so
+      // nothing about the edge could place it.
+      //
+      // THE SELECTION CANNOT BE MOVED TO CLOSE THIS ONE. Selecting `2` IS
+      // selecting the unit, and the panel canonicalizes it back to `1` — which
+      // is why the panel has to speak for every member of its slot rather than
+      // for the one key it prints.
+      page.handle.destroy();
+      page = await mounted(
+        { issues: SEED.issues, edges: [makeEdge('blocked-by', '1', '2'), makeEdge('blocked-by', '2', '3')] },
+        { project: unitProject, canvas: 'tree' },
+      );
+      const member = page.element.querySelector<HTMLElement>('[data-zone="canvas"] [data-ig-key="2"]');
+      assert.ok(member !== null, 'the tree canvas draws no node for the unit\u2019s partner');
+      member.focus();
+      member.dispatchEvent(new page.win.KeyboardEvent('keydown', { key: 'r', bubbles: true }));
+      await flush();
+      assert.equal(page.handle.state.draft.source, '2');
+
+      const kind = page.element.querySelector<HTMLElement>(
+        '[data-ig-command="kind"][data-ig-value="blocked-by"]',
+      );
+      assert.ok(kind !== null, 'the panel offers no blocked-by to choose');
+      page.click(kind);
+      await flush();
+      const target = page.rows().find((row) => row.getAttribute('data-ig-key') === '3');
+      assert.ok(target !== undefined);
+      page.click(target);
+      await flush();
+
+      const inspector = page.zone('inspector');
+      assert.ok(inspector !== null);
+      // The panel really is the LEAD's, so this is the diverged case rather
+      // than one that happens to pass because the two agree.
+      assert.equal(
+        inspector.querySelector('.ig-inspector-title')?.textContent,
+        'Publish the first release',
+      );
+      const stated = inspector.querySelector<HTMLElement>('[data-ig-code]');
+      assert.ok(stated !== null, 'the partner\u2019s refusal is stated nowhere');
+      assert.equal(stated.getAttribute('data-ig-code'), 'duplicate-edge');
+      assert.equal(
+        stated.querySelector('.ig-relationship-reason')?.textContent,
+        WORDS.refusals['duplicate-edge'],
+      );
+    });
+
+    it('reports the refusal the reader most recently caused, not an older one on the same edge', async () => {
+      // THE JOIN, NOT EITHER HALF. Two refusals can name one edge from two
+      // different places in the store: a retype of an edge the document does
+      // not carry marks NOTHING, so its record reaches the panel only through
+      // the ledger, while a later refused create DRAWS that same edge and
+      // reaches it through the projection. Assembled as "every projected
+      // refusal, then every stranded one", the older record was appended last —
+      // and the panel collapses repeated edges last-wins, so it reported
+      // `unknown-edge` about an edit the reader had already moved past instead
+      // of the `cardinality` they had just been refused.
+      page.handle.destroy();
+      page = await mounted({
+        issues: SEED.issues,
+        edges: [makeEdge('blocked-by', '1', '2'), makeEdge('duplicate-of', '1', '4')],
+      });
+      const absent = makeEdge('duplicate-of', '1', '3').id;
+      // OLDER: a retype of an edge nobody has. `edgeChangeFor` marks nothing.
+      void page.store.propose({ op: 'retype', edgeId: absent, nextKind: 'blocked-by' });
+      // LATER: a create that PRODUCES that same edge, refused because `1`
+      // already carries a `duplicate-of` and the field holds one reference.
+      void page.store.propose({ op: 'create', kind: 'duplicate-of', from: '1', to: '3' });
+      const inspector = await select('1');
+
+      const stated = inspector.querySelector<HTMLElement>('[data-ig-code]');
+      assert.ok(stated !== null, 'neither refusal was stated');
+      assert.equal(stated.getAttribute('data-ig-code'), 'cardinality');
+      assert.equal(
+        /that relationship is already gone/.test(inspector.innerHTML),
+        false,
+        'the older refusal outranked the one the reader just caused',
+      );
+      // ONE STATEMENT, still: the two records name one edge and one edge states
+      // one reason.
+      assert.equal(inspector.querySelectorAll('.ig-relationship-reason').length, 1);
+    });
+
     it('states a refusal whose produced edge never landed, at that same moment', async () => {
       // THE ROUTE THAT RULES OUT FOLLOWING THE REPLACEMENT. `cardinality`
       // refuses a retype into an occupied single-valued field, and the edge it

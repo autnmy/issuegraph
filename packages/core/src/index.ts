@@ -192,8 +192,11 @@ export function edgeIdentity(field: EdgeField, from: string, to: string): string
   return `${field}|${encodeRef(first)}|${encodeRef(second)}`;
 }
 
+/** Which end of an identity a reference sits on. See {@link edgeIdentityEnd}. */
+export type EdgeIdentityEnd = 'carrier' | 'far';
+
 /**
- * Whether an identity names this reference at either of its ends.
+ * Which end of an identity this reference sits on, or `null` for neither.
  *
  * HERE BECAUSE THE FORMAT IS HERE, and that is the whole of the argument. An
  * identity is written by {@link edgeIdentity} alone, and until this the only
@@ -204,6 +207,18 @@ export function edgeIdentity(field: EdgeField, from: string, to: string): string
  * happens to use and wrong for every one carrying a `#`, a `/` or a space,
  * which is most of them: `owner/repo#9` encodes to `owner%2Frepo%239`.
  *
+ * IT NAMES THE END RATHER THAN ANSWERING YES OR NO, and that is not a
+ * convenience. The one reader is `@issuegraph/editor`, which has to decide
+ * WHICH ISSUE a refused edit belongs to when the relationship it named is gone
+ * from the document — the `unknown-edge` refusal, whose whole message is that
+ * the thing the reader acted on is no longer there. A boolean "does this name
+ * that reference" answers "either end", so the caller would have had to pick
+ * between two candidates with nothing to pick on; `carrier` is the end
+ * {@link edgeIdentity} writes first, which for a directed field is `from` —
+ * the issue whose own frontmatter declares the relationship (§4.3) — and for a
+ * symmetric one is the end the sort put there, which is the same end
+ * `edgeIdentity` would give a freshly written pair.
+ *
  * IT COMPARES FORWARDS RATHER THAN DECODING. `encodeRef` is deliberately not
  * invertible in one place — a lone surrogate becomes `%uXXXX`, which
  * `decodeURIComponent` rejects — so the question is asked by encoding the
@@ -211,22 +226,19 @@ export function edgeIdentity(field: EdgeField, from: string, to: string): string
  * keeps the answer exact: two references that differ collide in no encoding.
  *
  * TOTAL OVER ARBITRARY STRINGS, including an `id` this package did not write.
- * A string with no separators simply names nothing, which is the answer a
+ * A string with no separators simply sits on no end, which is the answer a
  * caller wants for a value that reached it from a host.
- *
- * The reader that needs it is `@issuegraph/editor`'s inspector: a refused edit
- * arrives as one identity and a code, and the panel has to know whether the
- * refusal is about the issue it is drawing — including when the edit named an
- * issue the document does not carry, which is precisely the `unknown-issue`
- * refusal and the one case no reconstruction from the document can answer.
  */
-export function edgeIdentityNames(id: string, ref: string): boolean {
-  const encoded = encodeRef(ref);
+export function edgeIdentityEnd(id: string, ref: string): EdgeIdentityEnd | null {
   const parts = id.split('|');
   // THE TWO REFERENCE SEGMENTS, AND NOT THE FIELD. `encodeRef` escapes nothing
   // to a bare field name, so a field could not collide with a reference — but
   // reading only the ends says what is meant rather than relying on that.
-  return parts.length === 3 && (parts[1] === encoded || parts[2] === encoded);
+  if (parts.length !== 3) return null;
+  const encoded = encodeRef(ref);
+  if (parts[1] === encoded) return 'carrier';
+  if (parts[2] === encoded) return 'far';
+  return null;
 }
 
 /** Narrow an arbitrary string to a scalar field name. */

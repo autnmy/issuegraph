@@ -27,8 +27,8 @@
  * handles beside the mount rather than through it.
  */
 
-import { type EdgeField, isEdgeField } from '@issuegraph/core';
-import type { EdgeId, GraphDocument, MutationId, Proposal, StoredIssue } from '@issuegraph/store';
+import { type EdgeField, edgeIdentityEnd, isEdgeField } from '@issuegraph/core';
+import type { EdgeId, GraphDocument, MutationId, Proposal, StoredEdge, StoredIssue } from '@issuegraph/store';
 import { findEdge } from '@issuegraph/store';
 
 import { type CreateDraft, IDLE_CREATE_DRAFT, createReducer } from '../create/draft.ts';
@@ -165,10 +165,147 @@ function settled(state: HostState): HostResult {
   return { state, effects: [] };
 }
 
+/**
+ * The issue whose own frontmatter declares a relationship.
+ *
+ * ONE SPELLING OF A FACT TWO DECISIONS DEPEND ON. `from` is the carrier for
+ * every field, the symmetric ones included: §4.3 puts a relationship in ONE
+ * issue's block, and `from` is the end it was declared from — which is why a
+ * flip of a symmetric kind is refused rather than moving it. Both readers
+ * below — where the panel goes when the edge it was showing stops being drawn,
+ * and which issue a refused edit is stated under — wrote `edge.from` for
+ * themselves, which is two answers to one question, agreeing only for as long
+ * as nobody touched either.
+ *
+ * IT IS NOT THE SAME QUESTION {@link edgeIdentityEnd} ANSWERS, and the two are
+ * asked in different places for that reason: an identity's carrying end is its
+ * FIRST segment, which `edgeIdentity` sorts for the symmetric kinds — so it
+ * answers for an edge nobody holds any more, while this answers for one the
+ * document still has, from the pair as the document stores it.
+ */
+function carrierOf(edge: StoredEdge): string {
+  return edge.from;
+}
+
+/**
+ * The two ends of an edit, as questions a reference can be asked.
+ *
+ * PREDICATES RATHER THAN A PAIR OF STRINGS, because one of the three sources
+ * cannot produce strings at all. An edit that names an edge the document no
+ * longer carries has only the IDENTITY left, and its segments are
+ * percent-encoded by a function `@issuegraph/core` deliberately does not
+ * invert — so that end is asked forwards, by encoding a candidate reference
+ * and matching a segment, and never read back out. Asking all three sources
+ * the same question is what lets {@link editCarrier} be one rule instead of
+ * three.
+ */
+interface EditEnds {
+  readonly carrier: (ref: string) => boolean;
+  readonly far: (ref: string) => boolean;
+}
+
+function endsOf(document: GraphDocument, proposal: Proposal): EditEnds {
+  const pair = (from: string, to: string): EditEnds => ({
+    carrier: (ref) => ref === from,
+    far: (ref) => ref === to,
+  });
+  // A CREATE HAS NO EDGE YET, and its own two references are the whole of what
+  // it is about — including the `unknown-issue` case, where one of them is an
+  // issue the document does not hold and no lookup could recover it.
+  if (proposal.op === 'create') return pair(proposal.from, proposal.to);
+  const edge = findEdge(document, proposal.edgeId);
+  if (edge !== undefined) return pair(carrierOf(edge), edge.to);
+  // AND THE EDGE CAN BE GONE, which is not an edge case but the `unknown-edge`
+  // refusal itself: the reader acted on a relationship a landed write had
+  // already removed. The identity the act named is the only surviving record
+  // of its ends, and `edgeIdentityEnd` is the format owner reading its own
+  // format — a split on `|` here would compare a raw reference against an
+  // encoded segment and answer for `i0001` while failing for `owner/repo#9`.
+  return {
+    carrier: (ref) => edgeIdentityEnd(proposal.edgeId, ref) === 'carrier',
+    far: (ref) => edgeIdentityEnd(proposal.edgeId, ref) === 'far',
+  };
+}
+
+/**
+ * Which issue an edit is ABOUT — the panel that states it, and the panel it is
+ * refused on.
+ *
+ * THE SUBJECT OF AN EDIT IS DECIDED ONCE, HERE. It used to be decided twice
+ * and in two vocabularies: the panel derived its own subject from the
+ * selection (canonicalized onto a together unit's lead), and the inspector
+ * separately asked whether the REFUSED EDGE's identity named that subject. Two
+ * derivations of one fact diverge, and they did, three times over — a refusal
+ * that matched nothing was drawn on every panel, a hidden edge left the panel
+ * with no subject at all, and a draft begun from a unit partner produced an
+ * edge naming the partner while the panel was headed by the lead. None of
+ * those is reachable from a single value the edit carries with it.
+ *
+ * THE CARRIER'S END WINS, AND THE FAR END IS THE FALLBACK. The relationship is
+ * declared in the carrier's block, so that is the panel a reader made the edit
+ * from and the panel that can undo it. A create naming an unknown SOURCE has
+ * no such panel, and stating the refusal on the target's — the only issue the
+ * document holds — beats stating it nowhere.
+ *
+ * `null` when the document holds NEITHER end, which is not a refusal being
+ * dropped: there is no panel for an issue this backlog does not carry, so
+ * there is nowhere the reader could be standing to read it.
+ */
+export function editCarrier(document: GraphDocument, proposal: Proposal): string | null {
+  const ends = endsOf(document, proposal);
+  const keys = document.issues.map((issue) => issue.ref);
+  return keys.find((ref) => ends.carrier(ref)) ?? keys.find((ref) => ends.far(ref)) ?? null;
+}
+
+/**
+ * Emit an edit, and leave the panel on the issue the edit is about.
+ *
+ * EVERY PROPOSAL IN THIS REDUCER GOES THROUGH HERE, which is the point. §17b
+ * requires a refusal to be visible at the moment the reader is refused, and a
+ * refusal is stated on its carrier's panel — so the panel has to BE the
+ * carrier's when the edit goes out, rather than arriving there afterwards by
+ * whichever route happens to notice. Each route that had to notice separately
+ * cost a review round: a retype's projection hides the edge the panel was
+ * filtered to, and until `reconcileHost` was taught about hidden edges the
+ * panel resolved to nothing selected and the reason was drawn nowhere; a
+ * create completed after the reader had clicked another issue went out from
+ * the draft's source while the panel was headed by the issue they clicked,
+ * which nothing downstream can see at all — a completed draft leaves no trace
+ * of where it began.
+ *
+ * IT WRITES BACK WHAT WAS ALREADY THERE ON THE CREATE PATHS, which is the
+ * check that this is not a behaviour change smuggled in beside a fix.
+ * Beginning a draft already selects its source and a canvas drop already
+ * selects the node it started on, so the undiverted paths land on the same
+ * selection. The picker's routes DO move — an edit on a selected edge takes
+ * the panel to that edge's carrier now rather than one render later, which is
+ * where a retype or a flip already ended up through `reconcileHost` and where
+ * a delete of the selected edge used to leave the reader with `none` once the
+ * write landed and took the edge away.
+ *
+ * AN EDIT ABOUT NO ISSUE THIS DOCUMENT HOLDS LEAVES THE SELECTION ALONE. See
+ * {@link editCarrier}: there is no panel to move to, and clearing would take
+ * the reader off the one they are on for a reason they could not see.
+ */
+function proposing(state: HostState, proposal: Proposal, document: GraphDocument): HostResult {
+  const carrier = editCarrier(document, proposal);
+  return {
+    state:
+      carrier === null
+        ? state
+        : {
+            ...state,
+            selection: selectionReducer(INITIAL_SELECTION, { kind: 'select-issue', key: carrier }),
+          },
+    effects: [{ kind: 'propose', proposal }],
+  };
+}
+
 /** A draft step: apply the create reducer, and emit the proposal it completes. */
 function drafted(
   state: HostState,
   command: Parameters<typeof createReducer>[1],
+  document: GraphDocument,
 ): HostResult {
   const result = createReducer(state.draft, command);
   if (result.proposal === null) {
@@ -187,9 +324,15 @@ function drafted(
     const chrome = command.kind === 'cancel' ? { targetQuery: '', drop: null } : {};
     return settled({ ...state, draft: result.draft, selection, ...chrome });
   }
+  // THE DRAFT ENDS WHERE IT BEGAN. `begin` selects the source three lines
+  // above; `proposing` puts the panel back on the edit's carrier, which for a
+  // create IS that source. Without it a click on another issue between the two
+  // steps left the write going out from one issue and the panel headed by
+  // another — and a refusal about the first stated on no panel at all.
+  const proposed = proposing(state, result.proposal, document);
   return {
-    state: { ...state, draft: IDLE_CREATE_DRAFT, targetQuery: '', drop: null },
-    effects: [{ kind: 'propose', proposal: result.proposal }],
+    ...proposed,
+    state: { ...proposed.state, draft: IDLE_CREATE_DRAFT, targetQuery: '', drop: null },
   };
 }
 
@@ -252,10 +395,10 @@ function firstPassed(state: HostState, command: FirstPassCommand): HostResult {
 }
 
 /** A pointer on an issue: a target while one is being chosen, a selection otherwise. */
-function pointed(state: HostState, key: string): HostResult {
+function pointed(state: HostState, key: string, document: GraphDocument): HostResult {
   const choosingTarget = state.draft.kind !== null && state.draft.target === null;
   if (choosingTarget && key !== state.draft.source) {
-    return drafted(state, { kind: 'target', ref: key });
+    return drafted(state, { kind: 'target', ref: key }, document);
   }
   return settled({
     ...state,
@@ -301,7 +444,7 @@ function controlled(
       // open blocker, the claimed peer — as this control, so a reader can reach
       // the issue holding the one they are looking at. It is a pointer on that
       // issue, with a pointer's rules: a selection, or the target of a draft.
-      return target === undefined ? settled(state) : pointed(state, target);
+      return target === undefined ? settled(state) : pointed(state, target, document);
     case 'clear':
       return settled({
         ...state,
@@ -328,12 +471,12 @@ function controlled(
     case 'retype': {
       if (edgeId === null || value === undefined || !isEdgeField(value)) return settled(state);
       const proposal = pickerProposal(document, edgeId, { kind: 'retype', field: value });
-      return proposal === null ? settled(state) : { state, effects: [{ kind: 'propose', proposal }] };
+      return proposal === null ? settled(state) : proposing(state, proposal, document);
     }
     case 'flip': {
       if (edgeId === null) return settled(state);
       const proposal = pickerProposal(document, edgeId, { kind: 'flip' });
-      return proposal === null ? settled(state) : { state, effects: [{ kind: 'propose', proposal }] };
+      return proposal === null ? settled(state) : proposing(state, proposal, document);
     }
     case 'dismiss-change':
       return { state, effects: [{ kind: 'dismiss-change' }] };
@@ -350,12 +493,12 @@ function controlled(
       // named. The panel publishes the canonical key on the control, which is
       // the fact only it holds.
       const source = target ?? selectedKey(state.selection);
-      return source === null ? settled(state) : drafted(state, { kind: 'begin', source });
+      return source === null ? settled(state) : drafted(state, { kind: 'begin', source }, document);
     }
     case 'kind':
       return value === undefined || !isEdgeField(value)
         ? settled(state)
-        : drafted(state, { kind: 'type', edgeKind: value });
+        : drafted(state, { kind: 'type', edgeKind: value }, document);
     case 'cancel':
       return settled({ ...state, draft: IDLE_CREATE_DRAFT, targetQuery: '', drop: null });
     case 'delete': {
@@ -382,7 +525,7 @@ function controlled(
       const subject = target ?? edgeId;
       return subject === null
         ? settled(state)
-        : { state, effects: [{ kind: 'propose', proposal: { op: 'delete', edgeId: subject } }] };
+        : proposing(state, { op: 'delete', edgeId: subject }, document);
     }
 
     // --- the mount's chrome: what still needs a DOM, or a host's own surface ---
@@ -398,7 +541,7 @@ function controlled(
     case 'target-query':
       return settled({ ...state, targetQuery: value ?? '' });
     case 'target':
-      return target === undefined ? settled(state) : drafted(state, { kind: 'target', ref: target });
+      return target === undefined ? settled(state) : drafted(state, { kind: 'target', ref: target }, document);
     case 'retry':
       return target === undefined ? settled(state) : { state, effects: [{ kind: 'retry', mutationId: target }] };
     case 'discard':
@@ -429,7 +572,7 @@ function controlled(
   }
 }
 
-function intended(state: HostState, intent: KeyIntent): HostResult {
+function intended(state: HostState, intent: KeyIntent, document: GraphDocument): HostResult {
   switch (intent.kind) {
     case 'none':
     // `T` opens the picker; the picker is already drawn whenever an edge is
@@ -437,9 +580,9 @@ function intended(state: HostState, intent: KeyIntent): HostResult {
     case 'retype':
       return settled(state);
     case 'create':
-      return drafted(state, intent.command);
+      return drafted(state, intent.command, document);
     case 'propose':
-      return { state, effects: [{ kind: 'propose', proposal: intent.proposal }] };
+      return proposing(state, intent.proposal, document);
   }
 }
 
@@ -447,7 +590,7 @@ function intended(state: HostState, intent: KeyIntent): HostResult {
 export function reduceHost(state: HostState, command: HostCommand, document: GraphDocument): HostResult {
   switch (command.kind) {
     case 'point':
-      return pointed(state, command.key);
+      return pointed(state, command.key, document);
     case 'group': {
       // A mark names either an edge (its store identity) or a slot (its lead).
       // A MARK NAMING NEITHER CHANGES NOTHING. The canvas draws an edge the
@@ -456,7 +599,7 @@ export function reduceHost(state: HostState, command: HostCommand, document: Gra
       // is no issue key. Falling through to `pointed` would select that
       // identity as an issue, or worse, commit it as a draft's target.
       if (findEdge(document, command.id) !== undefined) return selectEdge(state, command.id);
-      if (document.issues.some((issue) => issue.ref === command.id)) return pointed(state, command.id);
+      if (document.issues.some((issue) => issue.ref === command.id)) return pointed(state, command.id, document);
       return settled(state);
     }
     case 'control':
@@ -464,7 +607,7 @@ export function reduceHost(state: HostState, command: HostCommand, document: Gra
     case 'first-pass':
       return firstPassed(state, command.command);
     case 'intent':
-      return intended(state, command.intent);
+      return intended(state, command.intent, document);
     case 'scroll':
       return settled({ ...state, railStart: Math.max(0, Math.floor(command.start)) });
     case 'drag-start':
@@ -514,12 +657,17 @@ export function reduceHost(state: HostState, command: HostCommand, document: Gra
  * projection is not showing, so both halves of the question are asked here
  * and the answer is one.
  *
- * A HIDDEN EDGE RETURNS THE PANEL TO ITS CARRIER, not to nothing. The refusal
- * is about a relationship, and `edge.from` is the issue whose field carries it
- * — for the symmetric kinds too — so the produced edge, phantom or landed,
- * touches that issue and the panel that opens on it states the reason with no
- * further click. Clearing to `none` instead would be the same silence the
- * check above already produced.
+ * A HIDDEN EDGE RETURNS THE PANEL TO ITS CARRIER, not to nothing. Through
+ * {@link carrierOf}, which is the same answer {@link editCarrier} gives the
+ * refusal itself — so the panel this lands on and the panel the refusal is
+ * stated under are one value rather than two that agree. Clearing to `none`
+ * instead would be the same silence the check above already produced.
+ *
+ * IT IS A BACKSTOP NOW, NOT THE ONLY GUARD. `proposing` already puts the panel
+ * on the carrier the moment the reader's own edit goes out, so the route this
+ * paragraph was written for cannot reach here any more. What still can is a
+ * SIBLING write: another edit's retype or flip hiding the edge this selection
+ * names, which no act of the reader's announced.
  *
  * RECONCILING ONTO THE PROJECTED REPLACEMENT was the other candidate — follow
  * the selection to the identity the edit produced — and it cannot be done from
@@ -546,7 +694,7 @@ export function reconcileHost(
       : edge === undefined
         ? INITIAL_SELECTION
         : hidden.has(edge.id)
-          ? selectionReducer(INITIAL_SELECTION, { kind: 'select-issue', key: edge.from })
+          ? selectionReducer(INITIAL_SELECTION, { kind: 'select-issue', key: carrierOf(edge) })
           : state.selection;
   const issueKey = selectedKey(resolved);
   const known = new Set(document.issues.map((issue) => issue.ref));

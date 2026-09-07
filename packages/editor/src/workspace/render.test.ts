@@ -1016,7 +1016,7 @@ describe('a refused relationship is drawn where the reader was building it', () 
       renderWorkspace(document, {
         ...WORDS,
         selection: { kind: 'issue', key: 'i0001' },
-        refusals: [{ edgeId: refused, code: 'would-cycle', phantom: true }],
+        refusals: [{ edgeId: refused, code: 'would-cycle', carrier: 'i0001', phantom: true }],
       }).markup,
     );
     const capsule = panel.slice(
@@ -1073,7 +1073,7 @@ describe('a refused relationship is drawn where the reader was building it', () 
       renderWorkspace(backlogOf(4), {
         ...WORDS,
         selection: { kind: 'issue', key: 'i0001' },
-        refusals: [{ edgeId: edgeIdentity('blocked-by', 'i0001', 'i0009'), code: 'unknown-issue', phantom: true }],
+        refusals: [{ edgeId: edgeIdentity('blocked-by', 'i0001', 'i0009'), code: 'unknown-issue', carrier: 'i0001', phantom: true }],
       }).markup,
     );
     assert.match(panel, /<li class="ig-relationship-refused" data-ig-code="unknown-issue">/);
@@ -1104,7 +1104,7 @@ describe('a refused relationship is drawn where the reader was building it', () 
         {
           ...WORDS,
           selection: { kind: 'issue', key: 'i0001' },
-          refusals: [{ edgeId: elsewhere, code: 'would-cycle', phantom: true }],
+          refusals: [{ edgeId: elsewhere, code: 'would-cycle', carrier: 'i0005', phantom: true }],
         },
       ).markup,
     );
@@ -1115,6 +1115,84 @@ describe('a refused relationship is drawn where the reader was building it', () 
     assert.ok(rowFor(panel, 'blocked-by').includes(edgeIdentity('blocked-by', 'i0001', 'i0002')));
   });
 
+  it('states a refusal carried by a together unit\u2019s PARTNER on the unit\u2019s panel', () => {
+    // THE DIVERGENCE THE PANEL CANNOT SEE FROM AN EDGE. `inspectorView` folds a
+    // together unit onto its slot's LEAD and words the whole panel from it, so
+    // a reader working from a PARTNER — `R` on a non-lead member begins a draft
+    // from that member — makes an edit whose edge names the partner while the
+    // panel around them is headed by the lead. Asked "does this edge name my
+    // subject", the answer is no, and the reason the edit was refused was
+    // stated on no panel at all.
+    //
+    // THE REFUSED EDGE NAMES NEITHER END OF THE PANEL'S SUBJECT, deliberately:
+    // this pins the carrier rather than a coincidence of endpoints. The unit's
+    // members are what the panel speaks for, and `unitPartners` is
+    // `inspectorView`'s own record of them.
+    const unit = backlogOf(6, {
+      edges: [['blocked-by', 'i0001', 'i0004']],
+      unitOf: { i0002: 'i0001' },
+    });
+    const partnerEdge = edgeIdentity('blocked-by', 'i0002', 'i0003');
+    const options = {
+      ...WORDS,
+      refusals: [{ edgeId: partnerEdge, code: 'would-cycle' as const, carrier: 'i0002', phantom: true }],
+    };
+    for (const key of ['i0001', 'i0002']) {
+      // EITHER SELECTION, ONE PANEL. Both canonicalize onto the lead, so this
+      // is the same render twice — which is exactly the point: the reader who
+      // selected the partner and the reader who selected the lead are looking
+      // at one panel, and the refusal belongs on it whichever way they got there.
+      const panel = inspectorOf(
+        renderWorkspace(unit, { ...options, selection: { kind: 'issue', key } }).markup,
+      );
+      assert.match(panel, /<li class="ig-relationship-refused" data-ig-code="would-cycle"/, key);
+      assert.match(panel, /that would close a loop/, key);
+    }
+    // AND NOWHERE ELSE. `i0004` is at the other end of the lead's own
+    // relationship, so its panel lists a row and is not empty for a reason
+    // unrelated to the filter.
+    const elsewhere = inspectorOf(
+      renderWorkspace(unit, { ...options, selection: { kind: 'issue', key: 'i0004' } }).markup,
+    );
+    assert.equal(/ig-relationship-refused/.test(elsewhere), false, 'a partner\u2019s refusal on another panel');
+    assert.ok(rowFor(elsewhere, 'blocked-by').includes(edgeIdentity('blocked-by', 'i0001', 'i0004')));
+  });
+
+  it('reports the LAST refusal on an edge, in the order the list arrives', () => {
+    // ONE ROW STATES ONE REASON, and the reader can be refused twice on one
+    // relationship. The last is the one they just caused; the first is one they
+    // have read and moved past. The collapse is `Map`'s repeated-key rule over
+    // this list, so the list's ORDER is load-bearing — which is why the option
+    // is a list and not a map a caller has already collapsed.
+    const document_ = backlogOf(4, { edges: [['blocked-by', 'i0001', 'i0002']] });
+    const landed_ = edgeIdentity('blocked-by', 'i0001', 'i0002');
+    const both = [
+      { edgeId: landed_, code: 'unknown-edge' as const, carrier: 'i0001', phantom: false },
+      { edgeId: landed_, code: 'duplicate-edge' as const, carrier: 'i0001', phantom: false },
+    ];
+    const panel = inspectorOf(
+      renderWorkspace(document_, {
+        ...WORDS,
+        selection: { kind: 'issue', key: 'i0001' },
+        refusals: both,
+      }).markup,
+    );
+    const row = rowFor(panel, 'blocked-by');
+    assert.match(row, /data-ig-code="duplicate-edge"/);
+    assert.match(row, /that relationship is already declared/);
+    assert.equal(/that relationship is already gone/.test(panel), false, 'the older reason');
+    // REVERSED, THE OTHER ONE WINS — so this measures the rule rather than the
+    // fixture's happening to end on the code being asserted.
+    const reversed = inspectorOf(
+      renderWorkspace(document_, {
+        ...WORDS,
+        selection: { kind: 'issue', key: 'i0001' },
+        refusals: [...both].reverse(),
+      }).markup,
+    );
+    assert.match(rowFor(reversed, 'blocked-by'), /data-ig-code="unknown-edge"/);
+  });
+
   it('draws no capsule at all where there is no subject to draw one for', () => {
     // WITH NOTHING SELECTED THE PANEL SAYS SO, AND SAYS NOTHING ELSE. An
     // unfiltered append put the capsule under "pick a row to inspect it" — and
@@ -1122,7 +1200,7 @@ describe('a refused relationship is drawn where the reader was building it', () 
     // line that renders exactly when there is nothing to list.
     const document = backlogOf(4, { edges: [['blocked-by', 'i0001', 'i0002']] });
     const refusals = [
-      { edgeId: edgeIdentity('blocked-by', 'i0001', 'i0002'), code: 'would-cycle' as const, phantom: true },
+      { edgeId: edgeIdentity('blocked-by', 'i0001', 'i0002'), code: 'would-cycle' as const, carrier: 'i0001', phantom: true },
     ];
     const nothing = inspectorOf(renderWorkspace(document, { ...WORDS, refusals }).markup);
     assert.equal(/ig-relationship-refused/.test(nothing), false, 'a capsule with nothing selected');
@@ -1141,7 +1219,7 @@ describe('a refused relationship is drawn where the reader was building it', () 
         ...WORDS,
         selection: { kind: 'edge', edgeId: edgeIdentity('blocked-by', 'i0001', 'i0002') },
         refusals: [
-          { edgeId: edgeIdentity('blocked-by', 'i0005', 'i0006'), code: 'would-cycle' as const, phantom: true },
+          { edgeId: edgeIdentity('blocked-by', 'i0005', 'i0006'), code: 'would-cycle' as const, carrier: 'i0005', phantom: true },
         ],
       }).markup,
     );
@@ -1161,7 +1239,7 @@ describe('a refusal about a relationship that EXISTS keeps the relationship', ()
     renderWorkspace(document, {
       ...WORDS,
       selection: { kind: 'issue', key: 'i0001' },
-      refusals: [{ edgeId: landed, code: 'duplicate-edge', phantom: false }],
+      refusals: [{ edgeId: landed, code: 'duplicate-edge', carrier: 'i0001', phantom: false }],
     }).markup,
   );
 
@@ -1192,7 +1270,7 @@ describe('a refusal about a relationship that EXISTS keeps the relationship', ()
       renderWorkspace(document, {
         ...WORDS,
         selection: { kind: 'issue', key: 'i0001' },
-        refusals: [{ edgeId: landed, code: 'would-cycle', phantom: true }],
+        refusals: [{ edgeId: landed, code: 'would-cycle', carrier: 'i0001', phantom: true }],
       }).markup,
     );
     assert.match(phantom, /<li class="ig-relationship-refused" data-ig-code="would-cycle"/);
@@ -1218,7 +1296,7 @@ describe('a refusal about a relationship that EXISTS keeps the relationship', ()
       renderWorkspace(document, {
         ...WORDS,
         selection: { kind: 'issue', key: 'i0001' },
-        refusals: [{ edgeId: landed, code: 'would-cycle', phantom: true }],
+        refusals: [{ edgeId: landed, code: 'would-cycle', carrier: 'i0001', phantom: true }],
       }).markup,
     );
     assert.equal(
