@@ -74,6 +74,26 @@ export const IDLE_CREATE_DRAFT: CreateDraft = Object.freeze({
 });
 
 /**
+ * Whether the draft is at the KIND step: a source gathered, no kind yet.
+ *
+ * A PREDICATE RATHER THAN A SHELL'S TWO NULL CHECKS, because two of them
+ * disagreed. `render.ts`'s panel asks this question to draw the kind list and
+ * `mount.ts` now asks it to classify the keyboard, and a step whose definition
+ * is written out at each site is one a later edit can move at one of them —
+ * which is how the chooser came to be drawn at a moment the key map did not
+ * recognise (`#152`).
+ *
+ * IT ASKS ABOUT THE DRAFT ALONE, and deliberately says nothing about focus or
+ * about which of the two choosers is on screen. Whether a drop is live decides
+ * WHICH renderer draws the step, never WHETHER the reader is at it; folding that
+ * in would give this predicate a second subject and make it false for the
+ * floating chooser, which is the one opened by a pointer.
+ */
+export function isChoosingKind(draft: CreateDraft): boolean {
+  return draft.source !== null && draft.kind === null;
+}
+
+/**
  * One fact arriving, from whichever path gathered it.
  *
  * `begin` is deliberately not "set source": it starts a NEW relationship, so it

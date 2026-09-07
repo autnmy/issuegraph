@@ -154,7 +154,7 @@ element.addEventListener('keydown', (event) => {
     selectedEdge,
     // Which of the create flow's own interactions is the keyboard in?
     // Only the shell can see this.
-    interaction: activeInteraction(),   // 'canvas' | 'target-search' | 'elsewhere'
+    interaction: activeInteraction(),   // 'canvas' | 'kind-chooser' | 'target-search' | 'elsewhere'
   });
   if (intent.kind === 'none') return;   // someone else's key — let it through
   event.preventDefault();
@@ -164,17 +164,22 @@ element.addEventListener('keydown', (event) => {
 
 **It asks about *our* interaction, not about who else might own the key** — and that is the design decision worth reading, because it replaced the obvious one. Four review rounds each found a different owner the map had failed to anticipate: the platform's `Cmd+R`, the target search's digits, an input method's `⏎`, then an unrelated editable control's `Escape`. Every fix was correct and every one invited the next, because they answered an unanswerable question. *Who else might own this press?* is an inventory of the **host's** widgets — unbounded from in here, and one entry longer every time a host grows a control.
 
-So `CreateInteraction` enumerates **this design's own flow**, which §17b fixes at three states, and the host says which one it is in:
+So `CreateInteraction` enumerates **this design's own flow**, which §17b fixes at four states, and the host says which one it is in:
 
 | state | what reaches the map |
 |---|---|
 | `canvas` | every binding |
+| `kind-chooser` | `R`, the digits `1`–`5`, and `Escape` — **not** `⏎` |
 | `target-search` | only `⏎` and `Escape` |
 | `elsewhere` | nothing |
 
-`elsewhere` is what closes the set: it is *everything that is not our own search box* — an inline title, a filter, a modal, a control this package has never heard of. A fifth widget adds no code here, and `Escape` is surrendered along with the rest, because that control needs `Escape` to cancel its own edit.
+`elsewhere` is what closes the set: it is *everything that is not one of our own steps* — an inline title, a filter, a modal, a control this package has never heard of. A fifth widget adds no code here, and `Escape` is surrendered along with the rest, because that control needs `Escape` to cancel its own edit.
 
-Which bindings reach `target-search` is **data on the binding table**, so no call site decides it and a sixth binding is a compile error until the table answers. `⏎` and `Escape` reach it because the search box is focused at exactly the moment `⏎` must commit the target — the middle of `R → digit → search → ⏎`. Its printable keys do not: most issue references carry a digit, so a map that claimed `1`–`5` there would eat nearly every query, and `⌫` deletes a *character* rather than the reader's selected edge.
+**`kind-chooser` is a fact about the DRAFT, not about focus** — a source gathered and no kind yet, with a focused text box excluded so a search box keeps its own digits. It was folded into `canvas` until [#152](https://github.com/autnmy/issuegraph/issues/152), on the assumption that focus stays on the row a draft was begun from; activating the add control *replaces* that control with the kind list, so focus lands wherever the host's restore puts it, and where a filter has emptied the list there is no row to land on at all. `canvas` answers only for a focused row, so the chooser's own digits were handed back at the one step whose entire purpose is to be answered with a digit.
+
+`⏎` is withheld there deliberately, and it is the reason this is a state rather than an alias for `canvas`: `commit-target` fires on `match`, a target query survives a restarted draft, and a `⏎` at the kind step would commit a target before any kind was chosen — while also being taken from the kind button under focus.
+
+Which bindings survive `kind-chooser` and `target-search` is **data on the binding table**, so no call site decides it and a sixth binding is a compile error until the table answers. `⏎` and `Escape` reach it because the search box is focused at exactly the moment `⏎` must commit the target — the middle of `R → digit → search → ⏎`. Its printable keys do not: most issue references carry a digit, so a map that claimed `1`–`5` there would eat nearly every query, and `⌫` deletes a *character* rather than the reader's selected edge.
 
 `interaction` is **required, not optional**. Every default is wrong for some host, and the plausible one — assume the canvas — is the one that steals keystrokes.
 

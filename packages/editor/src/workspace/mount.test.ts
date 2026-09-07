@@ -21,6 +21,7 @@ import { type OrderDeriver, createScriptedSource, createStore, makeEdge } from '
 import { THEME_TOKENS, treatmentFor } from '@issuegraph/viewer';
 import { JSDOM } from 'jsdom';
 
+import { KIND_KEYS } from '../create/keys.ts';
 import type { Candidate } from '../firstpass/candidates.ts';
 import { FIRST_PASS_WORDS } from '../testing/firstpass.ts';
 import { PICKER_WORDS } from '../testing/picker.ts';
@@ -3197,6 +3198,143 @@ describe('a command control keeps focus across the redraw it causes', () => {
         now.getAttribute('data-ig-command'),
         'close-isolated',
         'focus left the toggle when it redrew with the other command',
+      );
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('answers the kind chooser from the keyboard with no rail row to stand on', async () => {
+    // `#152`. The advertised loop is `R → 1–5 → search → ⏎`, "full loop, no
+    // pointer" — and its second step was dead wherever focus was not on a rail
+    // row. `interaction()` read focus alone and `focusedKey()` answers only for
+    // a keyed row, so the chooser classified `elsewhere` and `keyIntent`
+    // returned `none` for the chooser's OWN digits.
+    //
+    // THE RAIL IS EMPTIED DELIBERATELY, because that is the case with no repair
+    // available from focus: with the audit filter on and nothing flagged there
+    // is no row for the mount to fall back to, while the inspector stays
+    // perfectly usable. The selection is made FIRST, while rows still exist, so
+    // the inspector keeps a subject and draws `+ add` after the rail empties.
+    const page = await mounted();
+    try {
+      const row = page.rows().find((each) => each.getAttribute('data-ig-key') === '1');
+      assert.ok(row !== undefined, 'no rail row for 1');
+      page.click(row);
+      await flush();
+
+      const filter = page.element.querySelector<HTMLElement>('[data-ig-audit-filter]');
+      assert.ok(filter !== null, 'no audit filter control');
+      page.click(filter);
+      await flush();
+      assert.equal(page.rows().length, 0, 'the rail still has rows — the case is not reproduced');
+
+      const add = page.control('add');
+      assert.ok(add !== null, 'no add control');
+      add.focus();
+      page.click(add);
+      await flush();
+
+      // WHERE FOCUS ACTUALLY IS, asserted rather than assumed — and it is NOT
+      // inside the chooser. The last-resort restore takes the zone's FIRST
+      // command control and the inspector draws `clear` above the kind list, so
+      // a predicate conjoining the draft with `closest(<the chooser>)` would be
+      // false here and the digits would still be dead. Pinning the landing spot
+      // is what stops that predicate being reintroduced as an "improvement".
+      const landed = page.win.document.activeElement;
+      assert.equal(
+        landed?.getAttribute('data-ig-command') ?? null,
+        'clear',
+        `focus did not land on the inspector's clear control (${landed?.nodeName ?? 'null'})`,
+      );
+
+      // THE DIGIT AND ITS KIND BOTH COME FROM `KIND_KEYS`, never written out.
+      // The table is built from `EDGE_FIELDS`, so a literal `'2'` paired with a
+      // remembered kind is a pin that a sixth field silently falsifies — the
+      // exact drift `create/keys.ts` rejects in its own header.
+      const chosen = KIND_KEYS[1];
+      assert.ok(chosen !== undefined, 'the vocabulary has no second kind');
+      landed?.dispatchEvent(new page.win.KeyboardEvent('keydown', { key: chosen.key, bubbles: true }));
+      await flush();
+
+      const picked = page.element.querySelector<HTMLElement>('[data-ig-command="target-query"]');
+      assert.ok(
+        picked !== null,
+        `pressing ${chosen.key} chose no kind — the draft never reached its target step`,
+      );
+
+      // AND `ESCAPE` WITHDRAWS, the other half of the create context. A draft a
+      // reader cannot abandon from the keyboard is worse than one they cannot
+      // start, and it died in exactly the same place for exactly the same
+      // reason.
+      page.win.document.activeElement?.dispatchEvent(
+        new page.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      );
+      await flush();
+      assert.equal(
+        page.element.querySelector('[data-ig-command="target-query"]'),
+        null,
+        'Escape did not withdraw the draft',
+      );
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('leaves the canvas search its own digits while a kind-step draft is open', async () => {
+    // REVIEW FINDING ON THIS CHANGE, pinned so it cannot come back. Classifying
+    // the kind step from the draft alone said `kind-chooser` for EVERY
+    // non-keyed focus except the target search — including the ladder's
+    // search-to-focus input, which stays usable while a draft is open. A reader
+    // who clicked it and typed `1` had the digit taken from their query,
+    // `preventDefault()`ed, and spent on a relationship kind.
+    //
+    // That is precisely the failure `create/keys.ts` withholds the digits from
+    // `target-search` to avoid — "most issue references carry a digit, so a map
+    // that claimed 1–5 here would eat nearly every query" — reintroduced one
+    // control over.
+    const size = 80;
+    const page = await mounted({
+      issues: Array.from({ length: size }, (_unused, index) => ({
+        ref: String(index + 1),
+        title: `Release task ${index + 1}`,
+        state: 'open' as const,
+        priority: 2,
+      })),
+      edges: Array.from({ length: size - 1 }, (_unused, index) =>
+        makeEdge('blocked-by', String(index + 1), String(index + 2)),
+      ),
+    });
+    try {
+      const row = page.rows()[0];
+      assert.ok(row !== undefined, 'no rail row to begin a draft from');
+      page.click(row);
+      await flush();
+
+      const add = page.control('add');
+      assert.ok(add !== null, 'no add control');
+      page.click(add);
+      await flush();
+
+      const search = page.element.querySelector<HTMLInputElement>('input[data-ig-command="search"]');
+      assert.ok(search !== null, 'no canvas search — the case is not reproduced');
+      search.focus();
+
+      const chosen = KIND_KEYS[0];
+      assert.ok(chosen !== undefined, 'the vocabulary has no first kind');
+      const press = new page.win.KeyboardEvent('keydown', { key: chosen.key, bubbles: true, cancelable: true });
+      search.dispatchEvent(press);
+      await flush();
+
+      // THE PRESS IS HANDED BACK, which is the assertion that discriminates: a
+      // digit the map declines is one the platform types into the box.
+      assert.equal(press.defaultPrevented, false, 'the create map claimed a digit typed into the search');
+      assert.equal(
+        page.element.querySelector('[data-ig-command="target-query"]'),
+        null,
+        'typing into the canvas search chose a relationship kind',
       );
     } finally {
       page.handle.destroy();
