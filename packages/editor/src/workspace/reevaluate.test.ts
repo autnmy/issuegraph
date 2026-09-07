@@ -130,6 +130,25 @@ describe('§17c draws the effect on the row, not beside it', () => {
     }
   });
 
+  it('says the delta in the row\'s NAME, or a screen reader never hears it', () => {
+    // An accessible name computed from `aria-label` wins over descendant text,
+    // and layer 1 gives every row one — so a chip appended into the row is seen
+    // and not heard. The rail is the surface a reader arrows through, and the
+    // summary carries aggregate counts that cannot recover which row moved.
+    const rail = railZone(
+      renderWorkspace(railOf(['b', 'a', 'c']), { words: WORDS, change: SWAPPED }).markup,
+    );
+    const nameOf = (key: string): string =>
+      /aria-label="([^"]*)"/.exec(row(rail, key))?.[1] ?? '';
+
+    assert.match(nameOf('b'), / — 1 up$/);
+    assert.match(nameOf('a'), / — 1 down$/);
+    // Layer 1's own name is kept whole in front of it, not replaced.
+    assert.match(nameOf('b'), /^Issue b/);
+    // And an unmoved row's name is untouched.
+    assert.equal(/ — 1 /.test(nameOf('c')), false);
+  });
+
   it('leaves an unaffected row byte-identical across the edit', () => {
     // The design's rule — "unaffected rows are left completely alone" — asserted
     // over the WORKSPACE now that the workspace is what appends to a row.

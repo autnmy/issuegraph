@@ -93,7 +93,7 @@ import { type CreateDraft, IDLE_CREATE_DRAFT } from '../create/draft.ts';
 import { KIND_KEYS } from '../create/keys.ts';
 import type { Point } from '../create/placement.ts';
 import { type OverlayAffordance, OVERLAY_TREATMENTS, treatmentForState } from '../overlay/grammar.ts';
-import { DELTA_ATTRIBUTE, chipSpec, deltaKind, summarySpec } from '../reevaluate/parts.ts';
+import { DELTA_ATTRIBUTE, chipSpec, deltaKind, summarySpec, textOf } from '../reevaluate/parts.ts';
 import { reevaluateStylesheet } from '../reevaluate/styles.ts';
 import { type PlacedChip, reevaluateView } from '../reevaluate/view.ts';
 import type { ChangeWords } from '../reevaluate/words.ts';
@@ -808,12 +808,33 @@ function markRail(
     // rebuilt one carrying an appended `null` — `deltaOf` answering `undefined`
     // has to leave the row byte-identical, which is the design's rule made
     // structural rather than asserted.
-    const children =
-      delta === undefined
-        ? walked
-        : [...(walked ?? []), chipSpec(delta.chip, delta.words, { placed: true })];
+    const chip = delta === undefined ? null : chipSpec(delta.chip, delta.words, { placed: true });
+    const children = chip === null ? walked : [...(walked ?? []), chip];
     const marked: Record<string, AttrValue> = { ...spec.attrs };
     if (severity !== undefined) marked[AUDIT_SEVERITY_ATTRIBUTE] = severity;
+    // THE CHIP IS IN THE ROW'S NAME, OR IT IS SILENT.
+    //
+    // Layer 1 gives the row an `aria-label`, and an accessible name computed
+    // from `aria-label` WINS over descendant text — so a chip appended here is
+    // seen and not heard. The rail is the surface a reader arrows through, and
+    // "which row moved, and by how much" is exactly what §17c puts on the row;
+    // the summary above carries aggregate counts and cannot recover it.
+    //
+    // APPENDED TO THE NAME rather than hung off `aria-describedby`, and the
+    // reason is that the alternative costs more than it looks. A description
+    // needs an id, this package emits none anywhere, and `a11y/baseline.ts`
+    // records what ids cost here — a host-derived token reaching an attribute
+    // that other code resolves, which is the injection class the mount's focus
+    // token was written to avoid. A name needs no id and is announced as the
+    // reader arrives rather than after it.
+    //
+    // The separator is layer 1's own: `slotLabel` joins its three parts with
+    // the same em dash, so this reads as one more part rather than a second
+    // sentence in a different hand.
+    const label = marked['aria-label'];
+    if (chip !== null && typeof label === 'string') {
+      marked['aria-label'] = `${label} — ${textOf(chip)}`;
+    }
     // OMITTED WHEN THE CHIP HAS NO DRAWABLE KIND, rather than stamped empty.
     // `DELTA_ATTRIBUTE` records why: an attribute on every row with one value
     // meaning "nothing" is marking the row, not leaving it alone.

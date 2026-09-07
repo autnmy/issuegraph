@@ -35,7 +35,7 @@
  * @see https://github.com/autnmy/issuegraph/blob/main/SPEC.md
  */
 
-import { type ElementSpec, KEY_ATTRIBUTE, element } from '@issuegraph/viewer';
+import { type ElementSpec, type SpecChild, KEY_ATTRIBUTE, element } from '@issuegraph/viewer';
 import type { RankDelta } from '@issuegraph/store';
 
 import type { ChangeWords } from './words.ts';
@@ -78,6 +78,33 @@ export function deltaKind(chip: PlacedChip): string | undefined {
   const movement = chip.deltas.find((delta) => delta.movement !== undefined)?.movement;
   if (movement !== undefined) return movement.direction;
   return chip.deltas.find((delta) => delta.presence !== undefined)?.presence;
+}
+
+/**
+ * The words a spec renders, in order, as one string.
+ *
+ * DERIVED FROM THE SPEC RATHER THAN FROM THE CHIP, which is the whole point:
+ * the row's accessible name has to say exactly what the chip says, and a second
+ * walk over `chip.deltas` composing the same words again is two spellings of
+ * one sentence — the drift this module exists to prevent, arriving on the
+ * channel where nobody would see it drift, because the difference is only
+ * audible.
+ *
+ * Whitespace-joined because the spans are laid out with a gap and no
+ * punctuation between them; the separator is the layout's, so it is a space
+ * here rather than a glyph this package would have to choose.
+ */
+export function textOf(spec: ElementSpec): string {
+  const parts: string[] = [];
+  const walk = (child: SpecChild): void => {
+    if (typeof child === 'string') {
+      if (child !== '') parts.push(child);
+      return;
+    }
+    for (const nested of child.children ?? []) walk(nested);
+  };
+  walk(spec);
+  return parts.join(' ');
 }
 
 export function countWord(count: number, word: string): readonly ElementSpec[] {
