@@ -79,6 +79,7 @@ import type { FirstPassPhase } from './firstpass.ts';
 import {
   type HostCommand,
   type HostEffect,
+  type HostResult,
   type HostState,
   INITIAL_HOST_STATE,
   editCarrier,
@@ -730,18 +731,25 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   };
 
   /**
-   * Reduce a command, perform its effects, and answer whether the reducer OWNED
-   * it — see {@link HostResult.claimed}. Every caller but the keyboard arm
-   * ignores the answer, and that is fine: a pointer press needs no decision
-   * about a default action, so only the key press has a question to ask.
+   * Take a reduction: keep its state, perform its effects, draw.
+   *
+   * SPLIT FROM `dispatch` SO ONE CALLER CAN LOOK BEFORE IT LEAPS. The keyboard
+   * arm has to know whether this reducer owns a command BEFORE it does anything
+   * at all, and `schedule()` is not nothing: it redraws, which replaces
+   * `surface.innerHTML` and with it the very button the reader is holding. A
+   * `<button>`'s `Space` activation lands on KEYUP, so destroying it first takes
+   * the host's own control off the keyboard just as surely as cancelling the
+   * press did. `reduceHost` is pure, so asking costs nothing and answers safely.
    */
-  const dispatch = (command: HostCommand): boolean => {
-    if (destroyed) return false;
-    const result = reduceHost(state, command, landed());
+  const applyResult = (result: HostResult): void => {
     state = result.state;
     for (const effect of result.effects) perform(effect);
     schedule();
-    return result.claimed;
+  };
+
+  const dispatch = (command: HostCommand): void => {
+    if (destroyed) return;
+    applyResult(reduceHost(state, command, landed()));
   };
 
   const zone = (name: string): HTMLElement | null => surface.querySelector<HTMLElement>(`.ig-zone[data-zone="${name}"]`);
@@ -2108,7 +2116,13 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       event.preventDefault();
       return;
     }
-    if (!event.repeat) activating = null;
+    // CLEARED ONLY BY A FRESH PRESS OF THE SAME KEY. Clearing on any other key
+    // forgets a press that is still held: a reader holding `Space` on a control
+    // and touching `Shift` would have the record dropped, and the next `Space`
+    // repeat would land wherever the activation had since sent focus — the
+    // inserted spaces this record exists to prevent, one keystroke away. The
+    // record is about ONE key being down, so only that key's own press ends it.
+    if (!event.repeat && event.key === activating) activating = null;
     if (firstPassKeydown(event)) {
       event.preventDefault();
       return;
@@ -2248,11 +2262,19 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // see, because from out here a command the reducer ignored and one it
     // handled without changing anything look identical. So the reducer is asked.
     //
-    // Unclaimed means HANDS OFF, all the way off: no `preventDefault`, and no
-    // `activating` either. The platform's own activation is that control's
-    // route, repeats and all, exactly as before this arm existed.
-    const claimed = dispatch(answer.command);
-    if (!claimed) return;
+    // Unclaimed means HANDS OFF, ALL THE WAY OFF — and "all the way" is the
+    // part that needed a second try. Not cancelling is not enough: dispatching
+    // an unclaimed command still ends in `schedule()`, and the redraw replaces
+    // `surface.innerHTML` — including the button the reader is holding. Since
+    // `Space` activates a `<button>` on KEYUP, destroying it before then loses
+    // the activation just as completely as cancelling the press would. So the
+    // reduction is computed, read, and only THEN applied. No `preventDefault`,
+    // no redraw, no `activating`: the platform's own activation is that
+    // control's route, repeats and all, exactly as before this arm existed.
+    if (destroyed) return;
+    const result = reduceHost(state, answer.command, landed());
+    if (!result.claimed) return;
+    applyResult(result);
     event.preventDefault();
     // THE PRESS IS NOW RECORDED AS OURS, so its repeats are swallowed at the top
     // of this handler wherever the dispatch has since sent focus.

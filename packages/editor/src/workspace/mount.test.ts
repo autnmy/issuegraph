@@ -3780,6 +3780,46 @@ describe('a control activates from the keyboard', () => {
     }
   });
 
+  it('keeps the held key across an unrelated press, like Shift', async () => {
+    // REVIEW FINDING ON THIS CHANGE. The record was cleared by ANY fresh
+    // non-repeat press, so a reader holding `Space` on a control and touching
+    // `Shift` — or anything else — dropped it, and the next `Space` repeat
+    // landed wherever the activation had since sent focus. That is the inserted
+    // spaces the record exists to prevent, one keystroke away from every use.
+    const page = await mounted();
+    try {
+      await selectFirstIssue(page);
+      const add = page.control('add');
+      assert.ok(add !== null, 'no add control');
+      press(page, add, 'Enter');
+      await flush();
+
+      const chosen = KIND_KEYS[0];
+      assert.ok(chosen !== undefined, 'the vocabulary has no first kind');
+      const option = page.element.querySelector<HTMLElement>(
+        `[data-ig-command="kind"][data-ig-value="${chosen.edgeKind}"]`,
+      );
+      assert.ok(option !== null, 'the chooser drew no option to press');
+      press(page, option, ' ');
+      await flush();
+
+      const search = focused(page);
+      assert.equal(search.getAttribute('data-ig-command'), 'target-query', 'activating the kind did not move focus');
+
+      // STILL HOLDING SPACE, and now something else is pressed.
+      search.dispatchEvent(new page.win.KeyboardEvent('keydown', { key: 'Shift', bubbles: true, cancelable: true }));
+
+      const held = new page.win.KeyboardEvent('keydown', { key: ' ', repeat: true, bubbles: true, cancelable: true });
+      search.dispatchEvent(held);
+      await flush();
+
+      assert.equal(held.defaultPrevented, true, 'an unrelated press forgot the still-held activation');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
   it('releases the held key on keyup, so a later repeat is the reader’s own', async () => {
     // THE OTHER SIDE OF THE SAME FLAG, isolated to `keyup` alone. Remembering
     // the press must not outlive it, or the reader who let go and then held
@@ -3854,6 +3894,12 @@ describe('a control activates from the keyboard', () => {
         false,
         'the arm cancelled a host-owned command and took its control off the keyboard',
       );
+      // AND NOT REDRAWN, which is the same defect by a different route and was
+      // the second finding on it. A redraw replaces `surface.innerHTML`, and
+      // `Space` activates a `<button>` on KEYUP — so destroying the held button
+      // before then loses the activation exactly as cancelling would. The node
+      // still being in the document is what says no redraw ran.
+      assert.ok(host.isConnected, 'a redraw replaced the host’s button before its activation could land');
     } finally {
       page.handle.destroy();
       page.dom.window.close();
