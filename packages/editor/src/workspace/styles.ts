@@ -480,7 +480,10 @@ export const workspaceStylesheet = `
 
 /* THE RIGHT-HAND SLOT, WHOSE THREE OCCUPANTS ARE EXCLUSIVE. Two of them are
    statements and one is a control, and they are drawn as such: the state and
-   the inbound marker are quiet label text, the remove is a button. */
+   the inbound marker are quiet label text, the remove is a button.
+   '.ig-relationship-flip' below is NOT one of the three: it sits beside the
+   slot on the selected row, because it is neither a statement about the row nor
+   a destructive act on it. */
 .ig-relationship-state,
 .ig-relationship-inbound {
   align-self: center;
@@ -513,6 +516,44 @@ export const workspaceStylesheet = `
 }
 
 .ig-relationship-remove:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-tight);
+}
+
+/* §17b's FLIP, AT THE ROW'S END. It is drawn last and needs no margin of its
+   own to get there: '.ig-relationship-select' above carries 'flex: 1', so the
+   statement takes the free space and everything after it is already pushed to
+   the end — which is where frame 17b draws this control. A 'margin-left: auto'
+   here would be inert, and a comment crediting it would be an explanation that
+   outlived the thing it explained.
+
+   A BORDERED CONTROL RATHER THAN THE REMOVE'S BARE GLYPH, which is the frame's
+   own distinction and not decoration: '✕' is a mark a reader recognises without
+   a box, and 'flip' is a word that would otherwise read as part of the sentence
+   it sits beside. The border is what says it is pressable.
+
+   ITS FOCUS RING IS NOT OPTIONAL, and it takes the offset the row's OTHER two
+   controls already use rather than the one it was born with. This rule came
+   from the picker's sheet, where the ring sat a hairline out;
+   '.ig-relationship-select' and '.ig-relationship-remove' share this row and
+   both ring at '--ig-space-tight', and one control ringing tighter than its
+   neighbours reads as a rendering fault rather than as a distinction. This is
+   the control §17b calls the guard against the most common encoding mistake; a
+   keyboard reader who cannot see where they are has it and not its affordance. */
+.ig-relationship-flip {
+  align-self: center;
+  background: var(--ig-surface);
+  color: var(--ig-text-body);
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  padding: 0 var(--ig-space-tight);
+  font-family: inherit;
+  font-size: var(--ig-font-size-small);
+  line-height: inherit;
+  cursor: pointer;
+}
+
+.ig-relationship-flip:focus-visible {
   outline: var(--ig-focus-ring) solid var(--ig-focus);
   outline-offset: var(--ig-space-tight);
 }

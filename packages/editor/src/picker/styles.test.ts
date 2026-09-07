@@ -31,21 +31,27 @@ describe('the picker stylesheet carries structure, never a value', () => {
     assert.equal(/\b\d+(\.\d+)?(px|rem|em|pt)\b/.test(css), false, 'a fixed length');
   });
 
-  it('gives both controls a visible focus ring', () => {
+  it('gives its control a visible focus ring', () => {
     // Every affordance here is a button and the mount wires the keyboard, so a
     // control with no focus-visible rule is unreachable for a keyboard user on
     // a host that resets the UA outline.
-    for (const control of ['.ig-picker-choice', '.ig-picker-flip']) {
-      assert.match(css, new RegExp(`\\${control}:focus-visible`), control);
-    }
+    //
+    // ONE CONTROL, WHERE THERE WERE TWO. The flip left with §17b's statement;
+    // `workspace/styles.test.ts` carries the same claim for it now, and it has
+    // to — that control is the one §17b calls the guard against the most common
+    // encoding mistake.
+    assert.match(css, /\.ig-picker-choice:focus-visible/);
   });
 
-  it('lays the statement out as a flex row, so a host can reorder it', () => {
-    // render.ts calls its subject-phrase-object order a DEFAULT a host may
-    // bypass. The CSS order property reorders flex children and does nothing to
-    // inline text, so laying this out any other way would make that claim true
-    // only in principle. Enforced rather than restated.
-    assert.match(css, /\.ig-picker-direction\s*\{[^}]*display:\s*flex/);
+  it('carries no rule for markup it no longer draws', () => {
+    // THE DEAD-SELECTOR CHECK THIS SHEET LACKS, written for the one deletion
+    // that could leave one. `.ig-picker-ref` was written only by the direction
+    // statement, so it is a peer of the two obvious rules rather than a
+    // survivor — and unlike the workspace sheet, nothing here asserts
+    // markup/stylesheet agreement, so a rule with no element would ship silently.
+    for (const gone of ['.ig-picker-direction', '.ig-picker-ref', '.ig-picker-flip']) {
+      assert.equal(css.includes(gone), false, gone);
+    }
   });
 
   it('marks the current kind on the row rather than only on the control', () => {

@@ -52,6 +52,7 @@
 import {
   type AttrValue,
   type ElementSpec,
+  type EdgeTreatment,
   type HostFacts,
   type SpecChild,
   type Theme,
@@ -236,6 +237,26 @@ export interface WorkspaceWords {
    * other rows have a `✕`.
    */
   readonly inbound: string;
+  /**
+   * The control that reverses a directed relationship — frame 17b's `⇅ flip`.
+   *
+   * MOVED HERE FROM `PickerWords` WITH THE CONTROL ITSELF, on the same rule
+   * that brought `addRelationship` and `cancel` down from `MountWords`: the
+   * surface that draws a control owns the word for it, so a host rendering the
+   * markup without mounting gets the affordance rather than a panel it can only
+   * read. §17b calls direction “the single most common encoding mistake”, which
+   * made this the worst control to have reachable from one rendering path only.
+   *
+   * IT IS NOT #144's MOVE, AND THE DIFFERENCE IS VISIBLE TO EVERY HOST.
+   * `addRelationship` travelled between two interfaces in one `extends` chain,
+   * so `words.addRelationship` read the same before and after. `MountWords`
+   * holds the picker's vocabulary in a NESTED field, so this word's path
+   * changed: `words.picker.flip` became `words.flip`.
+   *
+   * ROW-INDEPENDENT WORDING, exactly as {@link WorkspaceWords.remove} is. Which
+   * relationship it reverses is the selected row it sits in, never this string.
+   */
+  readonly flip: string;
   /**
    * Why the store refused an edit, keyed by its code.
    *
@@ -689,10 +710,15 @@ function markRail(
  * A row's right-hand slot: exactly one of `selected`, a remove control, or the
  * inbound marker.
  *
- * THE ORDER IS THE FRAME'S AND IT IS ALSO THE SAFE ONE. A selected row says so
- * and offers nothing else, which matters because `selected` is the state that
- * FILTERS this panel: the reader is looking at one edge on purpose, and a
- * destructive control is not what the slot is for at that moment.
+ * THE ORDER IS THE FRAME'S AND IT IS ALSO THE SAFE ONE. A selected row's SLOT
+ * says so and offers nothing else, which matters because `selected` is the
+ * state that FILTERS this panel: the reader is looking at one edge on purpose,
+ * and a destructive control is not what the slot is for at that moment.
+ *
+ * THE SLOT, NOT THE ROW — §17b's flip sits beside it on exactly that row. The
+ * reasoning above is specific to a DESTRUCTIVE control; a flip is the
+ * corrective act §17b asks for, so it is admitted where a `✕` is not.
+ * {@link relationshipSpec} draws it as the slot's peer and says why there.
  *
  * AN INBOUND ROW GETS NO REMOVE CONTROL, and that is a fact about the format
  * rather than caution. An incoming edge's field is declared in the OTHER
@@ -757,6 +783,75 @@ function rowSlot(
 }
 
 /**
+ * §17b's flip, on the selected row.
+ *
+ * ## It is drawn where the sentence is, and only where the reducer can act
+ *
+ * Frame 17b draws a directed relationship as a statement with `⇅ flip` at the
+ * end of the same line, and the row already IS that statement: with an edge
+ * selected the panel filters to one relationship and
+ * {@link relationshipDescription}'s no-subject arm words it forward with both
+ * references in stored order. So the control joins the row rather than opening
+ * a second card above it — a card would need a sentence of its own, and the
+ * panel would then state one relationship twice, one element apart, which is
+ * the encoding ambiguity §17b exists to remove.
+ *
+ * ONLY ON THE SELECTED ROW, and that is a fact about the REDUCER rather than
+ * restraint. `reduceHost`'s `flip` arm takes its edge from
+ * `selectedEdgeId(state.selection)` and ignores `data-ig-target` — deliberately,
+ * because a flip is one operation about the edge the reader is looking at. A
+ * control on an unselected row would publish a command the reducer would answer
+ * about a different edge, or, with an issue selected, about none; the panel's
+ * standing rule is that a control which cannot complete the act it advertises
+ * is not drawn.
+ *
+ * THAT GUARANTEE IS THE MOUNT'S, AND A STANDALONE HOST OWES THE SAME STEP. This
+ * surface is handed a `ViewerDocument` and the reducer a `GraphDocument`, so
+ * "the selected edge exists" is only true while the two agree. `mountWorkspace`
+ * makes them agree by running `reconcileHost` against the landed document
+ * before every render, which clears a selection naming an edge that is gone and
+ * moves one naming an edge hidden behind an unsettled write. A host wiring the
+ * published attributes itself must do the same, or it can draw a flip whose
+ * press the reducer answers with nothing.
+ *
+ * ## A symmetric kind gets no control, and the absence is the finding
+ *
+ * `serialize-with` and `together-with` state one fact whichever way round they
+ * are stored, so a control to reverse them claims something the format does not
+ * say — and the store would refuse the edit as `symmetric-edge` anyway.
+ * `picker/view.ts` already answers `null` there; this agrees with it rather
+ * than contradicting it from the next zone over.
+ *
+ * ONE ORACLE FOR THAT QUESTION. The directedness is read off the SAME
+ * {@link EdgeTreatment} `relationshipDescription` already reads to word the
+ * row, which is what `labelFrom` itself branches on. Importing
+ * `isSymmetricEdgeField` here instead would put two answers to one question at
+ * one call site, in a package whose objection everywhere else is "not a wrong
+ * answer, a second answer". `render.test.ts` pins the two to agree across the
+ * whole vocabulary, so the shorter reach is safe in both directions.
+ *
+ * ## It publishes and wires nothing
+ *
+ * `data-ig-command="flip"` and no target: the attribute the reducer does not
+ * read would advertise a per-row flip it does not implement. On a `button`,
+ * because a span has no tab stop and no native activation — the control §17b
+ * names most error-prone is the last one that should be pointer-only.
+ */
+function flipControl(
+  relationship: InspectorRelationship,
+  selected: string | null,
+  words: WorkspaceWords,
+): ElementSpec | null {
+  if (relationship.edgeId !== selected) return null;
+  if (treatmentFor(relationship.field).symmetric) return null;
+  return element(
+    'button',
+    { type: 'button', class: 'ig-relationship-flip', 'data-ig-command': 'flip' },
+    [words.flip],
+  );
+}
+
+/**
  * The host's sentence for a refusal, wherever the panel states one.
  *
  * SHARED FOR THE REASON THE HEAD BELOW IS. A refusal reaches the reader in two
@@ -806,8 +901,21 @@ function relationshipDescription(
 ): readonly ElementSpec[] {
   const treatment = treatmentFor(relationship.field);
   const outgoing = subject === null || relationship.from === subject;
-  const reference = (ref: string): ElementSpec =>
-    element('span', { class: 'ig-relationship-ref' }, [ref]);
+  // THE ROLE TRAVELS WITH THE REFERENCE, and it is not decoration. §17b's rule
+  // is that direction is STATED, never inferred — and with no issue subject
+  // both ends are drawn, so without a role the only thing saying which is which
+  // is their ORDER. That is inference, by the reader and by any host restyling
+  // the row. `directionSpec` published exactly this pair of roles before §17b's
+  // statement became the row; dropping them would have moved the statement and
+  // quietly lost the half that made it a statement.
+  //
+  // OMITTED, NOT FALSIFIED, WHERE THERE IS NO PAIR. With an issue subject the
+  // row draws one reference — the other end — and it is worded relative to the
+  // subject by `labelFrom`, so a `from`/`to` on it would name an end of the
+  // stored pair while the words name an end of the reader's sentence, and those
+  // are not always the same one.
+  const reference = (ref: string, role?: 'from' | 'to'): ElementSpec =>
+    element('span', { class: 'ig-relationship-ref', 'data-ig-role': role }, [ref]);
   return [
     element(
       'span',
@@ -820,7 +928,7 @@ function relationshipDescription(
       glyphAndLabel(treatment.glyph, labelFrom(treatment, outgoing)),
     ),
     ...(subject === null
-      ? [reference(relationship.from), reference(relationship.to)]
+      ? [reference(relationship.from, 'from'), reference(relationship.to, 'to')]
       : [reference(outgoing ? relationship.to : relationship.from)]),
   ];
 }
@@ -899,6 +1007,13 @@ function relationshipSpec(
       relationshipHead(relationship, subject),
       refused === undefined ? null : refusalReason(refused, words),
       rowSlot(relationship, selected, words),
+      // A PEER OF THE SLOT RATHER THAN A FOURTH OCCUPANT OF IT. The slot's
+      // three occupants are exclusive because two are statements and one is a
+      // destructive control, and a row is only ever one of those things; the
+      // flip is neither, and it coexists with the `selected` marker on the one
+      // row that draws both. Last, because frame 17b ends the statement's line
+      // with it.
+      flipControl(relationship, selected, words),
     ],
   );
 }

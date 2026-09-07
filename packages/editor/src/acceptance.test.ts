@@ -11,7 +11,7 @@ import {
   makeEdge,
   nextDocument,
 } from '@issuegraph/store';
-import { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET } from '@issuegraph/viewer';
+import { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET, labelFrom, treatmentFor } from '@issuegraph/viewer';
 
 import * as surface from './index.ts';
 import { componentKey, componentsSumming, documentOf } from './testing/documents.ts';
@@ -475,19 +475,56 @@ describe('done when: a picker emits Proposals and never touches a DataSource', (
   });
 });
 
+/**
+ * §17b's split, across the two surfaces that now hold its halves.
+ *
+ * THE MODEL AND THE MARKUP ARE ASSERTED IN ONE CASE ON PURPOSE. `pickerView`
+ * answers the question — is there a direction, and a flip — and
+ * `renderWorkspace` draws the answer; they were one surface until §17b's card
+ * moved to the panel that has the edge selected, and a done-when that checked
+ * only one of them would let the two drift into disagreeing about a kind.
+ */
 describe('done when: directed kinds state a direction and offer a flip; symmetric kinds do neither', () => {
   for (const kind of EDGE_FIELDS) {
     const symmetric = isSymmetricEdgeField(kind);
 
     it(`drives ${kind}`, () => {
-      const document = documentWith(kind);
-      const { view, markup } = renderPicker(document, onlyEdge(document).id, {
-        words: PICKER_WORDS,
-      });
-
+      // The MODEL, unchanged by the move: `reduceHost` builds its proposal from
+      // exactly these two fields, so they are the load-bearing half.
+      const picked = documentWith(kind);
+      const view = pickerView(picked, onlyEdge(picked).id);
       assert.equal(view.direction === null, symmetric);
       assert.equal(view.flip === null, symmetric);
-      assert.equal(markup.includes('class="ig-picker-direction"'), !symmetric);
+
+      // The MARKUP, on the surface that draws it. A `together-with` the order
+      // does not group is dropped by layer 1 — nothing could draw it — so the
+      // unit is what makes this case about the control rather than about an
+      // empty panel.
+      const document = ranked(4, [[kind, 'i0001', 'i0002']]);
+      const grouped =
+        kind === 'together-with'
+          ? {
+              ...document,
+              order: {
+                ...document.order,
+                slots: [
+                  { rank: 1, lead: 'i0001', members: ['i0001', 'i0002'], ready: true, holds: [] },
+                  ...document.order.slots.filter(
+                    (slot) => slot.lead !== 'i0001' && slot.lead !== 'i0002',
+                  ),
+                ],
+              },
+            }
+          : document;
+      const { markup } = renderWorkspace(grouped, {
+        words: WORKSPACE_WORDS,
+        selection: { kind: 'edge', edgeId: edgeIdentity(kind, 'i0001', 'i0002') },
+      });
+
+      assert.match(markup, /data-subject="edge"/, 'the selection did not resolve to the edge');
+      // The STATEMENT is the relationship row's, and it is drawn for every kind
+      // — a symmetric edge loses the act, never the fact.
+      assert.match(markup, new RegExp(`>${labelFrom(treatmentFor(kind), true)}<`));
       assert.equal(markup.includes('data-ig-command="flip"'), !symmetric);
     });
   }
@@ -500,18 +537,53 @@ describe('done when: no English sentence is constructed inside the package', () 
     assert.deepEqual(view.direction, { kind: 'blocked-by', from: SUBJECT, to: OBJECT });
 
     const { markup } = renderPicker(document, onlyEdge(document).id, { words: PICKER_WORDS });
+    // THE PICKER'S CLAIM GOT STRICTER WHEN §17b's STATEMENT LEFT IT. No issue
+    // reference is admitted any more: the two that were are the statement's,
+    // and a reference in a list of KINDS would itself be the finding.
     const allowed = new Set([
       ...Object.values(PICKER_WORDS.kinds),
       PICKER_WORDS.heading,
-      PICKER_WORDS.flip,
       PICKER_WORDS.current,
-      SUBJECT,
-      OBJECT,
     ]);
     const readable = [...markup.matchAll(/>([^<>]*)</g)]
       .map((match) => (match[1] ?? '').trim())
       .filter((text) => text !== '');
     assert.ok(readable.length > 0);
+    assert.deepEqual(readable.filter((text) => !allowed.has(text)), []);
+  });
+
+  it('words the flip from the host, and the statement from the vocabulary', () => {
+    // THE CLAIM FOLLOWED THE CONTROL. `renderWorkspace` draws §17b's flip now,
+    // so the total "every readable byte is accounted for" assertion has to
+    // cover the row it sits in — otherwise the move would have quietly retired
+    // the only test standing between this surface and a package-authored word.
+    //
+    // TWO SOURCES, NAMED SEPARATELY, because they are different kinds of thing:
+    // the flip's label is the HOST's, and the relationship's phrase is layer
+    // 1's `EDGE_TREATMENTS` — the same register every other row in the panel
+    // uses, which is why the statement needs no vocabulary of its own.
+    const document = ranked(4, [['blocked-by', 'i0001', 'i0002']]);
+    const { markup } = renderWorkspace(document, {
+      words: WORKSPACE_WORDS,
+      selection: { kind: 'edge', edgeId: edgeIdentity('blocked-by', 'i0001', 'i0002') },
+    });
+    const row = markup.slice(
+      markup.indexOf('<li class="ig-relationship"'),
+      markup.indexOf('</li>', markup.indexOf('<li class="ig-relationship"')),
+    );
+    const treatment = treatmentFor('blocked-by');
+    const allowed = new Set([
+      treatment.glyph,
+      labelFrom(treatment, true),
+      'i0001',
+      'i0002',
+      surface.treatmentForState('selected').label,
+      WORKSPACE_WORDS.flip,
+    ]);
+    const readable = [...row.matchAll(/>([^<>]*)</g)]
+      .map((match) => (match[1] ?? '').trim())
+      .filter((text) => text !== '');
+    assert.ok(readable.includes(WORKSPACE_WORDS.flip), 'the host word never reached the markup');
     assert.deepEqual(readable.filter((text) => !allowed.has(text)), []);
   });
 });
@@ -743,6 +815,7 @@ const WORKSPACE_WORDS: surface.WorkspaceWords = {
   cancel: 'abandon the draft',
   relatingFrom: 'the draft starts at',
   remove: 'unlink this row',
+  flip: 'read it the other way round',
   inbound: 'declared elsewhere',
   refusals: {
     'self-edge': 'an issue cannot relate to itself',

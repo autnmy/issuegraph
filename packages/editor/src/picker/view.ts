@@ -50,11 +50,12 @@
  * The rejected shape was a per-option PREVIEW: every option carrying the
  * statement it would produce, so the direction is chosen at the same moment as
  * the kind. It was rejected because it doubles what the picker says in order to
- * pre-empt a case the surface already answers — the retype lands, the picker
+ * pre-empt a case the surface already answers — the retype lands, this model
  * re-derives from the new document, and the direction is then STATED with a
  * flip beside it, one act from correct. §17b's rule is that direction is stated
- * rather than inferred, and it is stated. Revisit this if the flip turns out to
- * be reached often enough to be the real cost.
+ * rather than inferred, and it is stated: on `renderWorkspace`'s relationship
+ * row, which is where both the statement and the flip are drawn. Revisit this
+ * if the flip turns out to be reached often enough to be the real cost.
  *
  * ## It writes no words and holds no state
  *
@@ -82,7 +83,10 @@ import {
  * The kind travels with them because a pair alone cannot be worded.
  *
  * There is deliberately no `text`. A host renders "#530 is blocked by #602" in
- * its own language and its own word order; see {@link ./words.ts PickerWords}.
+ * its own language and its own word order — and no shipped surface words one
+ * from this shape any more: `renderWorkspace`'s row states the direction from
+ * layer 1's `EDGE_TREATMENTS`, and this pair is here for the hosts that draw
+ * their own.
  */
 export interface DirectionStatement {
   readonly kind: EdgeKind;

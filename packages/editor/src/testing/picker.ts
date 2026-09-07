@@ -39,7 +39,6 @@ export const PICKER_WORDS: PickerWords = Object.freeze({
     'together-with': 'travels with',
   }),
   heading: 'Relationship',
-  flip: 'Flip',
   current: 'current',
 });
 

@@ -416,6 +416,47 @@ describe('the workspace stylesheet carries structure, never a value', () => {
     }
   });
 
+  it('rings every control in the relationship row, and rings them alike', () => {
+    // THE CLAIM THE PICKER'S SHEET USED TO CARRY FOR THE FLIP, moved here with
+    // the control. §17b calls direction the most common encoding mistake, so
+    // the control that corrects it is the last one that should be invisible to
+    // a keyboard reader on a host that resets the UA outline.
+    //
+    // AND RINGS THEM ALIKE. The offset is asserted to be one value across the
+    // three, because the flip arrived from another sheet carrying that sheet's
+    // hairline offset — a difference no test could see, and one that reads on
+    // screen as a rendering fault rather than as a distinction.
+    const offsets = new Set<string>();
+    for (const control of ['select', 'remove', 'flip']) {
+      const rule = css.match(
+        new RegExp(`\\.ig-relationship-${control}:focus-visible\\s*\\{([^}]*)\\}`),
+      )?.[1];
+      assert.ok(rule !== undefined, `.ig-relationship-${control} has no focus ring`);
+      assert.match(rule, /outline:/, control);
+      const offset = rule.match(/outline-offset:\s*([^;]+);/)?.[1]?.trim();
+      // ASSERTED PRESENT, NOT DEFAULTED. Collapsing a missing offset to '' would
+      // let all three lose the declaration together and still agree, which is
+      // the one way this case could pass while the rings it exists for got worse.
+      assert.ok(offset !== undefined, `.ig-relationship-${control} rings with no offset`);
+      offsets.add(offset);
+    }
+    assert.equal(offsets.size, 1, `the row's controls ring at different offsets: ${[...offsets]}`);
+  });
+
+  it('pushes the row\u2019s trailing controls out by the statement, not by a margin', () => {
+    // WHAT ACTUALLY PUTS §17b's FLIP AT THE ROW'S END. The flip carries no
+    // margin of its own — see the rule's own comment — so the position is this
+    // declaration plus the draw order. Without it the control would sit against
+    // the statement rather than where frame 17b draws it, and every assertion
+    // about the markup would stay green.
+    const select = css.match(/\.ig-relationship-select,\s*\.ig-relationship-name\s*\{([^}]*)\}/)?.[1];
+    assert.ok(select !== undefined, 'nothing lays out the relationship row\u2019s statement');
+    assert.match(select, /flex:\s*1/);
+    const flip = css.match(/\.ig-relationship-flip\s*\{([^}]*)\}/)?.[1];
+    assert.ok(flip !== undefined, 'the flip has no rule');
+    assert.equal(/margin-left:\s*auto/.test(flip), false, 'an inert margin came back');
+  });
+
   it('gives each zone a fixed area rather than letting content negotiate it', () => {
     // §17f: the rail is complete at any backlog size and the canvas refuses
     // above its budget, and assembling them must not average the two. A large

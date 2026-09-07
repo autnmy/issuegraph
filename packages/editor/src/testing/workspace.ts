@@ -40,6 +40,7 @@ export const WORKSPACE_WORDS: WorkspaceWords = {
   relatingFrom: 'the draft starts at',
   remove: 'unlink this row',
   inbound: 'declared elsewhere',
+  flip: 'read it the other way round',
   // ONE DISTINCT SENTENCE PER CODE, for the reason the whole constant states:
   // a capsule that renders the wrong refusal is exactly the failure a shared
   // string would hide, and `would-cycle` — the one refusal this package family

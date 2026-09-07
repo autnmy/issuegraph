@@ -13,16 +13,20 @@
  * default would be a second implementation of something this layer is not
  * entitled to decide.
  *
- * ## One vocabulary, read in two places
+ * ## One vocabulary, read in ONE place — and it used to be two
  *
- * {@link PickerWords.kinds} words both a picker OPTION ("is blocked by", chosen
- * from a list of five) and the DIRECTION STATEMENT it produces ("#530 is
- * blocked by #602"). One entry has to read in both positions, which is the same
- * constraint `ChangeWords.facets` carries for the summary and its chips.
+ * {@link PickerWords.kinds} words a picker OPTION: "is blocked by", chosen from
+ * a list of five. It also worded the DIRECTION STATEMENT this surface drew
+ * beneath that list, and one entry had to read in both positions.
  *
- * A host wanting two registers — a short label in the list, a full clause in
- * the statement — renders {@link ../picker/view.ts PickerView} itself. Nothing
- * in the default render is load-bearing for that.
+ * §17b's statement is `renderWorkspace`'s relationship row now, worded from
+ * layer 1's `EDGE_TREATMENTS` through `labelFrom` — the same register every
+ * other row in that panel already uses. So the two-position constraint is gone,
+ * and a host wanting a fuller clause than its list label writes it here without
+ * having to make one string read in a sentence as well.
+ *
+ * `flip` WENT WITH THE CONTROL, to `WorkspaceWords`. A host supplies it once,
+ * at the layer that draws it.
  */
 
 import type { EdgeKind } from '@issuegraph/store';
@@ -41,8 +45,6 @@ export interface PickerWords {
   readonly kinds: Readonly<Record<EdgeKind, string>>;
   /** Names the picker for a screen reader and for a visible heading. */
   readonly heading: string;
-  /** The control that reverses a directed relationship. */
-  readonly flip: string;
   /**
    * Marks the option the edge already carries.
    *
