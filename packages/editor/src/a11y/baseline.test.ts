@@ -141,33 +141,66 @@ describe('the control surface matches its committed baseline', () => {
  * Adding a control to the package now fails HERE, on the change that adds it,
  * instead of surfacing one review round at a time on some later pull request.
  */
+/** How a control is named in {@link RENDERED_CONTROLS}: its channel and its value. */
+function nameOf(entry: ControlEntry): string {
+  return `${entry.channel}:${entry.control}`;
+}
+
+/**
+ * Which controls the recorded states are supposed to contain.
+ *
+ * QUALIFIED BY CHANNEL, and that is not decoration. Keyed on the control VALUE
+ * alone, this list silently exempted a whole channel: `renderAuditHeader`
+ * publishes its toggle as a bare boolean `data-ig-audit-filter`, so its value
+ * is the empty string — a name no list of command words would ever contain.
+ * Deleting the toggle left `missing` empty and every universal rule simply ran
+ * over the controls that remained. A coverage check that cannot notice a
+ * missing channel is not one.
+ *
+ * DECLARED, NOT SCANNED. Half these names never appear as a literal —
+ * `open-isolated` and `close-isolated` come out of a ternary, `target` and
+ * `undo` are built at mount — so a grep over the source would report the list
+ * it could see and call it complete, which is the failure `purity.test.ts`
+ * records paying for with a regex it eventually deleted. The cost of declaring
+ * is that the list can be short by one, and it has been: `refresh` was missing
+ * until a review round found it. That is a smaller and more visible failure
+ * than the one it replaces.
+ *
+ * WHY IT EXISTS AT ALL. Five separate review rounds on this change found the
+ * same thing: a control the package renders that no recorded state contained,
+ * so a regression in its name, role or tab stop moved neither the artifact nor
+ * a rule. Adding a control now fails HERE, on the change that adds it.
+ */
 const RENDERED_CONTROLS: readonly string[] = Object.freeze([
-  'add',
-  'apply',
-  'cancel',
-  'clear',
-  'clear-focus',
-  'close-isolated',
-  'delete',
-  'discard',
-  'first-pass',
-  'first-pass-close',
-  'flip',
-  'focus',
-  'kind',
-  'open-isolated',
-  'refresh',
-  'reject',
-  'retry',
-  'retype',
-  'search',
-  'select-edge',
-  'select-issue',
-  'skip',
-  'target',
-  'target-query',
-  'undo',
-  'view-diff',
+  'data-ig-answer:apply',
+  'data-ig-answer:reject',
+  'data-ig-answer:skip',
+  // THE BARE BOOLEAN, spelled out so it cannot be mistaken for a typo and
+  // tidied away: the audit toggle's channel carries no value at all.
+  'data-ig-audit-filter:',
+  'data-ig-command:add',
+  'data-ig-command:cancel',
+  'data-ig-command:clear',
+  'data-ig-command:clear-focus',
+  'data-ig-command:close-isolated',
+  'data-ig-command:delete',
+  'data-ig-command:discard',
+  'data-ig-command:first-pass',
+  'data-ig-command:first-pass-close',
+  'data-ig-command:flip',
+  'data-ig-command:focus',
+  'data-ig-command:kind',
+  'data-ig-command:open-isolated',
+  'data-ig-command:refresh',
+  'data-ig-command:retry',
+  'data-ig-command:retype',
+  'data-ig-command:search',
+  'data-ig-command:select-edge',
+  'data-ig-command:select-issue',
+  'data-ig-command:target',
+  'data-ig-command:target-query',
+  'data-ig-command:undo',
+  'data-ig-command:view-diff',
 ]);
 
 /**
@@ -182,12 +215,12 @@ const UNREACHABLE: Readonly<Record<string, string>> = Object.freeze({
   // and every write this fixture stages is refused or conflicted on purpose —
   // the recovery cards are what it exists to record. A landed-and-moved state
   // is a different fixture, not another step in this one.
-  'dismiss-change': 'needs a landed edit that moved the order',
+  'data-ig-command:dismiss-change': 'needs a landed edit that moved the order',
 });
 
 describe('the recorded states cover what the package renders', () => {
   it('records every control, or names why it cannot', async () => {
-    const seen = new Set((await everyEntry()).map((entry) => entry.control));
+    const seen = new Set((await everyEntry()).map(nameOf));
     const missing = RENDERED_CONTROLS.filter(
       (control) => !seen.has(control) && UNREACHABLE[control] === undefined,
     );
@@ -200,7 +233,7 @@ describe('the recorded states cover what the package renders', () => {
 
   it('does not carry a reason for a control it actually records', async () => {
     // AN EXEMPTION THAT STOPPED BEING TRUE IS A LIE THE NEXT READER INHERITS.
-    const seen = new Set((await everyEntry()).map((entry) => entry.control));
+    const seen = new Set((await everyEntry()).map(nameOf));
     for (const control of Object.keys(UNREACHABLE)) {
       assert.equal(seen.has(control), false, `${control} is recorded — drop its UNREACHABLE entry`);
     }
