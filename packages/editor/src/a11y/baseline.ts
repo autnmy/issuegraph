@@ -295,10 +295,28 @@ function nameSource(root: SurfaceElement, element: SurfaceElement): NameSource {
   // `renderMarkup` omits only `undefined`, `null` and `false`, so
   // `aria-label=""` does reach the markup — the case the "omitted, never empty"
   // rule `holdLine` states for `data-code` exists to prevent.
-  for (const attribute of ['aria-label', 'aria-labelledby'] as const) {
-    const value = element.getAttribute(attribute);
-    if (value === null) continue;
-    return value === '' ? 'empty' : attribute;
+  const label = element.getAttribute('aria-label');
+  if (label !== null) return label === '' ? 'empty' : 'aria-label';
+
+  // AN IDREF THAT RESOLVES IS NOT YET A NAME. `aria-labelledby` naming an
+  // element that exists but carries no text computes to an empty accessible
+  // name, and reading the attribute alone reported a supplied name for a
+  // control that announces nothing. This is the same defect as `aria-label=""`,
+  // which is already answered `empty` — fixing one half and not the other
+  // would have left the rule inconsistent about the same mistake.
+  //
+  // `ariaOf` keeps answering `resolves` for the same attribute, and the two are
+  // not in conflict: it reports whether the reference POINTS at something,
+  // which is its own defect when it does not. Whether the thing it points at
+  // says anything is this function's question.
+  const labelledBy = element.getAttribute('aria-labelledby');
+  if (labelledBy !== null) {
+    const named = labelledBy.split(/\s+/).filter((token) => token !== '');
+    let text = '';
+    for (const target of root.querySelectorAll('[id]')) {
+      if (named.includes(target.getAttribute('id') ?? '')) text += visibleText(target);
+    }
+    return text.trim() === '' ? 'empty' : 'aria-labelledby';
   }
   if (visibleText(element) !== '') return 'text';
   return labelNames(root, element) ? 'label' : 'none';
@@ -312,6 +330,12 @@ function tabStopOf(element: SurfaceElement): TabStop {
   // refusing focus to all of them.
   if (element.getAttribute('disabled') !== null) return 'none';
   if (element.closest('[inert]') !== null) return 'none';
+  // `hidden` TOO, and for the same reason: the browser takes a hidden subtree
+  // out of the tab order, so a native button inside one is not reachable
+  // however focusable its tag is. Nothing in this package renders it today —
+  // which is exactly why it is worth handling here rather than later, since
+  // `controlSurface` is exported for hosts to run over their own chrome.
+  if (element.closest('[hidden]') !== null) return 'none';
   const raw = element.getAttribute('tabindex');
   if (raw === null) {
     // NATIVELY IN THE TAB ORDER. `a` only with an `href`: without one it is not

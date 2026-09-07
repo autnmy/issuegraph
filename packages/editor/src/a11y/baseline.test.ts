@@ -33,6 +33,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
+import { JSDOM } from 'jsdom';
+
 import { a11ySurface } from '../testing/a11y.ts';
 import { type ControlEntry, controlSurface } from './baseline.ts';
 
@@ -194,5 +196,111 @@ describe('rules that hold whatever the baseline says', () => {
         assert.notEqual(value, 'dangling', `${entry.control}'s ${attribute} names nothing`);
       }
     });
+  });
+});
+
+
+/**
+ * The reader itself, on markup this package does not render.
+ *
+ * `controlSurface` is EXPORTED for hosts to run over their own chrome, so its
+ * behaviour has to be pinned beyond what the mounted fixture happens to draw.
+ * Nothing here writes `hidden` or `aria-labelledby` today — which is precisely
+ * why the fixture cannot cover them, and why reading them wrong would have gone
+ * unnoticed until a consumer hit it.
+ */
+describe('controlSurface reads markup this package does not itself render', () => {
+  const read = (body: string): readonly ControlEntry[] => {
+    const dom = new JSDOM(`<!doctype html><html><body>${body}</body></html>`);
+    try {
+      const root = dom.window.document.body;
+      return controlSurface(root);
+    } finally {
+      dom.window.close();
+    }
+  };
+
+  const only = (body: string): ControlEntry => {
+    const entries = read(body);
+    assert.equal(entries.length, 1, `expected one control, got ${String(entries.length)}`);
+    const entry = entries[0];
+    assert.ok(entry !== undefined);
+    return entry;
+  };
+
+  it('takes a control inside a hidden subtree out of the tab order', () => {
+    assert.equal(
+      only('<div hidden><button data-ig-command="x">Go</button></div>').tabStop,
+      'none',
+    );
+    // The control on its own is a tab stop, so the assertion above is about
+    // `hidden` rather than about buttons.
+    assert.equal(only('<button data-ig-command="x">Go</button>').tabStop, 'tab');
+  });
+
+  it('does not count a disabled control as reachable', () => {
+    assert.equal(only('<button data-ig-command="x" disabled>Go</button>').tabStop, 'none');
+  });
+
+  it('reads a name from a wrapping label and from one that names it', () => {
+    assert.equal(
+      only('<label>Find an issue<input data-ig-command="q"></label>').name,
+      'label',
+    );
+    assert.equal(
+      only('<label for="q">Find an issue</label><input id="q" data-ig-command="q">').name,
+      'label',
+    );
+  });
+
+  it('calls an aria-labelledby that names no text empty, not a name', () => {
+    // THE POINT OF THE `empty` ANSWER. The reference resolves — the element is
+    // there — and the computed accessible name is still nothing, so reading the
+    // attribute alone would report a named control that announces silence.
+    assert.equal(
+      only('<span id="n"></span><button data-ig-command="x" aria-labelledby="n"></button>').name,
+      'empty',
+    );
+    assert.equal(
+      only('<span id="n">Retry</span><button data-ig-command="x" aria-labelledby="n"></button>').name,
+      'aria-labelledby',
+    );
+  });
+
+  it('does not accept an empty aria-label as a name', () => {
+    assert.equal(only('<button data-ig-command="x" aria-label="">Go</button>').name, 'empty');
+  });
+
+  it('ignores text that only a screen reader cannot see', () => {
+    assert.equal(
+      only('<button data-ig-command="x"><span aria-hidden="true">✕</span></button>').name,
+      'none',
+    );
+  });
+
+  it('gives an anchor a role only when it can be followed', () => {
+    assert.equal(only('<a data-ig-command="x">Open</a>').role, null);
+    assert.equal(only('<a href="#a" data-ig-command="x">Open</a>').role, 'link');
+  });
+
+  it('takes an input\'s role from its type', () => {
+    assert.equal(only('<input type="search" data-ig-command="q" aria-label="q">').role, 'searchbox');
+    assert.equal(only('<input data-ig-command="q" aria-label="q">').role, 'textbox');
+    assert.equal(only('<input type="color" data-ig-command="q" aria-label="q">').role, null);
+  });
+
+  it('reports a reference to a missing id as dangling', () => {
+    assert.equal(
+      only('<button data-ig-command="x" aria-controls="gone">Go</button>').aria['aria-controls'],
+      'dangling',
+    );
+  });
+
+  it('survives an id a selector could not have carried', () => {
+    // THE INJECTION THIS MODULE HAD TO REMOVE ONCE. An id is host data, and an
+    // earlier revision built `[id="${id}"]` from it — this input made the
+    // reader throw rather than answer.
+    const entry = only('<button data-ig-command="x" aria-describedby=\'a"]\'>Go</button>');
+    assert.equal(entry.aria['aria-describedby'], 'dangling');
   });
 });
