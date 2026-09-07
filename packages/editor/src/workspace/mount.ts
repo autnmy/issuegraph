@@ -309,6 +309,23 @@ interface CommandFocus {
   readonly control: string;
   readonly target: string | null;
   readonly value: string | null;
+  /**
+   * Which of the identical controls it was, counted in document order.
+   *
+   * ADDED TO CLOSE THE CLASS RATHER THAN THE CASE. Three separate findings on
+   * this branch were one shape: two controls the token could not tell apart —
+   * the kind options, the target matches, and finally a scale capsule beside a
+   * search result, both publishing `focus` with the same lead in the same zone.
+   * Each was fixable by carrying one more attribute, and the next one would
+   * have been too. When two controls are genuinely indistinguishable by every
+   * attribute they publish, their ORDER is the only thing left that separates
+   * them, so that is what is recorded.
+   *
+   * It is a weaker key than the others and is used only as a tiebreak: a list
+   * that reorders under the reader restores the wrong sibling. That is a real
+   * limit, and it beats the alternative of always restoring the first.
+   */
+  readonly ordinal: number;
 }
 
 function isInput(node: Element | null | undefined): node is HTMLInputElement {
@@ -949,7 +966,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     for (const channel of CONTROL_ATTRIBUTES) {
       const control = active.getAttribute(channel);
       if (control === null) continue;
-      return {
+      const partial = {
         channel,
         zone: active.closest('.ig-zone')?.getAttribute('data-zone') ?? null,
         control,
@@ -959,34 +976,61 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         // `data-ig-value`.
         value: active.getAttribute('data-ig-value') ?? active.getAttribute('data-ig-kind'),
       };
+      // `findIndex` RATHER THAN `indexOf`, because `active` is narrowed to
+      // `Element` and the siblings are `HTMLElement`. Identity comparison is
+      // the same question either way, and the alternative — widening the list
+      // or asserting the narrower type — would be a cast this repository bans.
+      const ordinal = siblingsOf(partial).findIndex((node) => node === active);
+      // A CONTROL THAT DOES NOT FIND ITSELF is one this scope cannot name, so
+      // there is no token to carry. `indexOf` answering -1 would otherwise
+      // become an ordinal that matches nothing on the way back.
+      return ordinal < 0 ? null : { ...partial, ordinal };
     }
     return null;
   };
 
-  /** Give focus back to the control a {@link CommandFocus} names. `false` when it is gone. */
-  const refocusCommand = (token: CommandFocus): boolean => {
-    // THE ATTRIBUTE NAME IS A CONSTANT AND THE VALUES ARE COMPARED, so nothing
-    // a host's tracker can spell reaches a selector. See the token above.
+  /**
+   * Every control this token could name, in document order.
+   *
+   * THE ATTRIBUTE NAME IS A CONSTANT AND THE VALUES ARE COMPARED, so nothing a
+   * host's tracker can spell reaches a selector. See the token above.
+   *
+   * Shared by the token and the restore so the ordinal means the same thing on
+   * both sides: a list computed two ways is a list that can disagree with
+   * itself, and the ordinal would then point at a different control than the
+   * one it was counted against.
+   */
+  const siblingsOf = (token: Omit<CommandFocus, 'ordinal'>): readonly HTMLElement[] => {
     const scope = token.zone === null ? surface : (zone(token.zone) ?? surface);
-    for (const node of scope.querySelectorAll<HTMLElement>(`[${token.channel}]`)) {
+    return [...scope.querySelectorAll<HTMLElement>(`[${token.channel}]`)].filter((node) => {
       const control = node.getAttribute(token.channel);
       // BY IDENTITY, so a toggle that redraws itself with the other command is
       // still the control the reader was on. See {@link TOGGLE_IDENTITY}.
-      if (control === null || controlIdentity(control) !== controlIdentity(token.control)) continue;
-      if (node.getAttribute(TARGET_ATTRIBUTE) !== token.target) continue;
+      if (control === null || controlIdentity(control) !== controlIdentity(token.control)) return false;
+      if (node.getAttribute(TARGET_ATTRIBUTE) !== token.target) return false;
       const value = node.getAttribute('data-ig-value') ?? node.getAttribute('data-ig-kind');
-      if (value !== token.value) continue;
+      if (value !== token.value) return false;
       // A ZONELESS TOKEN MUST NOT MATCH A ZONED CONTROL. The floating chooser
       // and the first-pass overlay are appended OUTSIDE the four zones, so
       // their tokens carry `zone: null` and scope to the whole surface — and
       // without this the chooser's `cancel` restored onto the inspector's.
       // The two directions are asymmetric on purpose: a zoned token is already
       // confined by `scope`.
-      if (token.zone === null && node.closest('.ig-zone') !== null) continue;
-      node.focus({ preventScroll: true });
-      return true;
-    }
-    return false;
+      return !(token.zone === null && node.closest('.ig-zone') !== null);
+    });
+  };
+
+  /** Give focus back to the control a {@link CommandFocus} names. `false` when it is gone. */
+  const refocusCommand = (token: CommandFocus): boolean => {
+    const siblings = siblingsOf(token);
+    // THE SAME ONE, THEN THE FIRST. A list that shrank under the reader — a
+    // match that stopped matching, a capsule that collapsed — has no nth
+    // member, and landing on the first sibling keeps the keyboard alive where
+    // returning `false` would drop to the rail.
+    const again = siblings[token.ordinal] ?? siblings[0];
+    if (again === undefined) return false;
+    again.focus({ preventScroll: true });
+    return true;
   };
 
   /** Focus the element carrying `key`, inside one zone when named, without scrolling the page. */

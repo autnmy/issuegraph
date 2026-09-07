@@ -3032,6 +3032,70 @@ describe('a command control keeps focus across the redraw it causes', () => {
     }
   });
 
+  it('restores the right one of two controls that publish the same identity', async () => {
+    // THE THIRD SHAPE OF THIS BUG, and the reason the token carries an ordinal
+    // rather than a fourth attribute. The scale ladder draws a capsule button
+    // and a search-result button with the SAME command and the same lead in one
+    // zone, so no attribute separates them at all — order is what is left.
+    //
+    // A CHAINED BACKLOG, because the collision only exists above the direct
+    // tier: below it the ladder draws no capsules and there is nothing to
+    // collide with. An earlier revision of this test used the ordinary fixture,
+    // where two `target` matches differ by `data-ig-target` — so the filter
+    // already narrowed to one, the ordinal never did any work, and the test
+    // passed with the fix reverted. That is the fifth guard on this branch that
+    // could not fail, so this one is pinned against its own falsification below.
+    const size = 90;
+    const page = await mounted({
+      issues: Array.from({ length: size }, (_unused, index) => ({
+        ref: String(index + 1),
+        title: `Release task ${index + 1}`,
+        state: 'open' as const,
+        priority: 2,
+      })),
+      edges: Array.from({ length: size - 1 }, (_unused, index) =>
+        makeEdge('blocked-by', String(index + 1), String(index + 2)),
+      ),
+    });
+    try {
+      const search = page.element.querySelector<HTMLInputElement>(
+        'input[data-ig-command="search"]',
+      );
+      assert.ok(search !== null, 'no canvas search');
+      search.value = 'Release task 3';
+      search.dispatchEvent(new page.win.Event('input', { bubbles: true }));
+      await flush();
+
+      const duplicates = [
+        ...page.element.querySelectorAll<HTMLElement>('[data-ig-command="focus"]'),
+      ].filter((node) => node.getAttribute('data-ig-target') === '1');
+      assert.ok(
+        duplicates.length > 1,
+        `only ${String(duplicates.length)} controls share this identity — no ambiguity to test`,
+      );
+
+      const second = duplicates[1];
+      assert.ok(second !== undefined);
+      second.focus();
+      page.handle.update();
+      await flush();
+
+      const again = [
+        ...page.element.querySelectorAll<HTMLElement>('[data-ig-command="focus"]'),
+      ].filter((node) => node.getAttribute('data-ig-target') === '1');
+      const active = page.win.document.activeElement;
+      assert.ok(active !== null, 'nothing holds focus');
+      assert.equal(
+        again.findIndex((node) => node === active),
+        1,
+        'focus moved to a different control publishing the same identity',
+      );
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
   it('keeps focus on a toggle that redraws itself with the other command', async () => {
     // THIS PULL REQUEST'S OWN DEFECT, wearing a different attribute value. The
     // isolated-issues chip is one button whose command flips between
