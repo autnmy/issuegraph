@@ -900,22 +900,30 @@ export const workspaceStylesheet = `
    that row is a fact only the store knows, so the mark belongs to whoever
    knows it. Nothing here changes how a row looks outside the workspace.
 
+   BACKGROUND-COLOR, NEVER THE SHORTHAND. the background shorthand resets background-image
+   to none, and layer 1 draws the HELD row's hatch as a repeating-linear-
+   gradient on exactly that property. These rules are more specific and load
+   after it, so the shorthand silently took the hatch off any row that was both
+   held and changed — which is not a corner: newly-held is the delta that
+   co-occurs with data-held='true' by definition, so the most common overlap
+   lost the held channel entirely. The longhand leaves the gradient alone.
+
    COLOUR-MIX ON THE TOKEN THE KIND ALREADY NAMES, at the strength layer 1
    tints its own rows with. Inventing --ig-row-promoted would put a hue in this
    package that a host retheming the station colours could not move in step,
    and inventing a percentage would make this tint drift from the unit tint
    layer 1 draws with --ig-tint-unit. */
 .ig-workspace .ig-slot[data-ig-delta] {
-  background: color-mix(in srgb, var(--ig-station-ready) var(--ig-tint-unit), transparent);
+  background-color: color-mix(in srgb, var(--ig-station-ready) var(--ig-tint-unit), transparent);
 }
 
 .ig-workspace .ig-slot[data-ig-delta='newly-held'],
 .ig-workspace .ig-slot[data-ig-delta='down'] {
-  background: color-mix(in srgb, var(--ig-station-held) var(--ig-tint-unit), transparent);
+  background-color: color-mix(in srgb, var(--ig-station-held) var(--ig-tint-unit), transparent);
 }
 
 .ig-workspace .ig-slot[data-ig-delta='absent'] {
-  background: color-mix(in srgb, var(--ig-text-muted) var(--ig-tint-unit), transparent);
+  background-color: color-mix(in srgb, var(--ig-text-muted) var(--ig-tint-unit), transparent);
 }
 
 /* THE THIRD COLUMN IS WHAT PUTS THE CHIP AT THE ROW'S TRAILING EDGE.

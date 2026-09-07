@@ -2407,7 +2407,22 @@ export function renderWorkspace(
     // the stylesheet can reach it in the UNMOUNTED rendering too, so §17c's
     // "greyed one step, and labelled" is drawn by whoever renders rather than
     // only by whoever mounts. Same vocabulary, verbatim, so the two agree.
-    `<div class="ig-workspace" data-order="${orderStatus}">`,
+    // STAMPED ONLY WHERE THE LABEL CAN BE DRAWN, and the two really are one
+    // treatment. §17c's held state is a greyed rail AND the word saying why —
+    // "a stale-but-labelled order beats a half-computed one" — and half of that
+    // is worse than neither: a dimmed order with no explanation is exactly the
+    // defect the label exists to prevent. `mountWorkspace` passes the store's
+    // status unconditionally, so a host that has not supplied `words.change`
+    // would otherwise get the greying with the label suppressed one branch
+    // below, on the very path the optional vocabulary exists to keep working.
+    //
+    // THE FACT IS NOT LOST TO A HOST. `mount.ts` publishes the same status on
+    // the element the host holds, which is the reader this attribute was never
+    // for: this one is the stylesheet's hook, so it is absent exactly when the
+    // stylesheet must not act.
+    changeWords === undefined
+      ? `<div class="ig-workspace">`
+      : `<div class="ig-workspace" data-order="${orderStatus}">`,
     zone(
       'header',
       [

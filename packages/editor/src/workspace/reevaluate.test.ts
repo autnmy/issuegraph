@@ -98,6 +98,38 @@ describe('§17c draws the effect on the row, not beside it', () => {
     }
   });
 
+  it('tints with background-color, so a held row keeps layer 1\'s hatch', () => {
+    // `newly-held` is the delta that co-occurs with data-held='true' BY
+    // DEFINITION, so this overlap is the common case rather than a corner. The
+    // background shorthand resets background-image, and layer 1 draws the held
+    // row's hatch as a repeating-linear-gradient on exactly that property —
+    // and these rules are both more specific and loaded later, so the shorthand
+    // silently took the held channel off every newly-held row.
+    //
+    // EVERY DELTA RULE IS CHECKED, including the VALUED selectors. The first
+    // version of this test split the sheet on the bare `[data-ig-delta]`
+    // string, which does not occur in `[data-ig-delta='down']` at all — so it
+    // examined two rules, missed the three that carry the tints, and stayed
+    // green with the shorthand restored.
+    const { styles } = renderWorkspace(railOf(['a', 'b']), { words: WORDS, change: SWAPPED });
+    const rules = styles
+      .split('}')
+      .map((chunk) => chunk.split('{'))
+      .filter((pair): pair is [string, string] => pair.length === 2)
+      .filter(([selector]) => selector.includes('data-ig-delta'));
+
+    assert.equal(rules.length, 4, `expected the four delta rules, got ${rules.length}`);
+    const tints = rules.filter(([, block]) => block.includes('color-mix'));
+    assert.equal(tints.length, 3, 'expected three tint rules');
+    for (const [selector, block] of tints) {
+      assert.equal(
+        /(^|[\s;])background\s*:/.test(block),
+        false,
+        `the background shorthand would clear the hatch on ${selector.trim()}`,
+      );
+    }
+  });
+
   it('leaves an unaffected row byte-identical across the edit', () => {
     // The design's rule — "unaffected rows are left completely alone" — asserted
     // over the WORKSPACE now that the workspace is what appends to a row.
@@ -202,6 +234,20 @@ describe('a held order is LABELLED, not merely greyed', () => {
       change: null,
     });
     assert.match(headerZone(result.markup), /ig-order-computing/);
+  });
+
+  it('greys nothing for a wordless host, rather than dimming with no explanation', () => {
+    // The backwards-compatible path. `mountWorkspace` passes the store's status
+    // whatever the host supplied, so without this the 0.12 host that omits
+    // `words.change` gets the greying with the label suppressed — the exact
+    // defect the label exists to prevent, on the one path the optional
+    // vocabulary exists to keep working.
+    const result = renderWorkspace(railOf(['a', 'b']), {
+      words: WORKSPACE_WORDS,
+      orderStatus: 'held',
+    });
+    assert.match(result.markup, /^<div class="ig-workspace">/);
+    assert.equal(/data-order/.test(result.markup), false);
   });
 
   it('draws no label once the order settles', () => {

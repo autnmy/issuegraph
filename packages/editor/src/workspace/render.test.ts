@@ -75,10 +75,14 @@ describe('the three zones render at their fixed positions', () => {
     // overlay existed, which made the header BE the audit header; §17a's header
     // carries five facts and the audit count is one of them.
     assert.deepEqual(zonesIn(result.markup), [...ZONES]);
-    // THE ROOT CARRIES THE ORDER'S STATUS SINCE §17c. It is asserted as an
-    // exact opening tag rather than a prefix so an attribute added here later
-    // has to be considered rather than absorbed.
-    assert.match(result.markup, /^<div class="ig-workspace" data-order="settled">/);
+    // NO `data-order` HERE, and its absence is the contract rather than an
+    // omission: `WORDS` carries no §17c vocabulary, and the root attribute is
+    // the stylesheet's hook for a held order — which must not grey a rail this
+    // workspace cannot also label. `reevaluate.test.ts` pins both arms.
+    //
+    // Asserted as an exact opening tag rather than a prefix, so an attribute
+    // added here later has to be considered rather than absorbed.
+    assert.match(result.markup, /^<div class="ig-workspace">/);
     assert.match(result.markup, /<\/div>$/);
   });
 
