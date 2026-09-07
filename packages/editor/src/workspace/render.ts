@@ -1452,7 +1452,17 @@ function recoveryCard(
               // tells a screen-reader user nothing about the region that
               // appeared. The other two act once and carry neither.
               'aria-expanded': affordance === 'view-diff' ? (open ? 'true' : 'false') : undefined,
-              'aria-controls': affordance === 'view-diff' ? diffRegionId(recovery.mutationId) : undefined,
+              // ONLY WHILE THE REGION EXISTS. The difference is rendered only
+              // when open, so naming it while shut pointed `aria-controls` at
+              // no element at all — which the test for this control already
+              // calls "worse than none at all", while checking only the open
+              // case where it does resolve. `aria-expanded="false"` is
+              // complete on its own; `aria-controls` is optional, and a
+              // dangling IDREF is invisible on screen and total for a
+              // screen-reader user. Found by the a11y baseline's
+              // reference rule on its first run.
+              'aria-controls':
+                affordance === 'view-diff' && open ? diffRegionId(recovery.mutationId) : undefined,
             },
             [affordanceWord(affordance, recovery.kind, words)],
           ),

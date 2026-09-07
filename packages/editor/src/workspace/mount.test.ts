@@ -2871,3 +2871,337 @@ describe('a failed or conflicted write cannot change a rank either', () => {
     }
   });
 });
+
+/**
+ * #149: focus survives the redraw for a command control, so the keyboard loop
+ * lives through an edit.
+ *
+ * ## Why the disclosure is the case that proves it
+ *
+ * `view-diff` is the first control in the package whose design needs a SECOND
+ * press — everything else acts once, so losing focus afterwards was survivable
+ * and invisible. Open a conflict's difference with the keyboard and, before the
+ * fix, the control that would close it no longer had focus and no key reached
+ * the mount to get back to it.
+ *
+ * ## `.click()` rather than a constructed event, and why that is the keyboard path
+ *
+ * `onKeydown` binds no Enter or Space: activation runs through `onClick`, which
+ * a browser fires as a button's own NATIVE activation behaviour when Enter is
+ * pressed on it. jsdom does not synthesize that, so a test dispatching
+ * `keydown{key:'Enter'}` would assert against a path the product does not have —
+ * and teaching the mount to handle Enter itself would fire twice in a real
+ * browser, once from the handler and once from the native click.
+ *
+ * `HTMLElement.click()` is the activation behaviour Enter reaches, so the
+ * INTERACTION under test constructs no event of its own and no pointer gesture
+ * is simulated — focus is established, activated and asserted at every step.
+ *
+ * Be exact about the bound: reaching the state under test needs a rail row
+ * selected, and `conflicted()` does that with `page.click(row)`, which IS a
+ * `MouseEvent`. That is fixture setup, not the behaviour being asserted, and
+ * pretending otherwise would be the kind of claim this suite exists to replace.
+ * What the assertions cover is everything after the disclosure has focus.
+ */
+describe('a command control keeps focus across the redraw it causes', () => {
+  const conflicted = async (page: Mounted): Promise<HTMLElement> => {
+    void page.store.propose({ op: 'create', kind: 'blocked-by', from: '3', to: '4' });
+    await page.source.whenPending();
+    page.source.settleNext({
+      outcome: 'conflict',
+      upstream: { issues: SEED.issues, edges: [...SEED.edges, makeEdge('blocked-by', '2', '3')] },
+    });
+    await flush();
+    const row = page.rows().find((each) => each.getAttribute('data-ig-key') === '3');
+    assert.ok(row !== undefined, 'no rail row for 3');
+    page.click(row);
+    await flush();
+    const inspector = page.zone('inspector');
+    assert.ok(inspector !== null, 'no inspector zone');
+    return inspector;
+  };
+
+  const viewDiff = (page: Mounted): HTMLElement => {
+    const zone = page.zone('inspector');
+    assert.ok(zone !== null, 'no inspector zone');
+    const node = zone.querySelector<HTMLElement>('[data-ig-command="view-diff"]');
+    assert.ok(node !== null, 'no view-diff control');
+    return node;
+  };
+
+  it('opens the difference, keeps focus, and can be closed by pressing it again', async () => {
+    const page = await mounted();
+    try {
+      await conflicted(page);
+
+      const open = viewDiff(page);
+      assert.equal(open.getAttribute('aria-expanded'), 'false');
+      open.focus();
+      assert.equal(page.win.document.activeElement, open, 'the control never took focus');
+
+      open.click();
+      await flush();
+
+      // THE ASSERTION THIS ISSUE EXISTS FOR. Before the fix `activeElement` was
+      // `BODY` here: the node was destroyed by `surface.innerHTML` and no
+      // restore arm covered a command control outside the first-pass overlay.
+      const opened = viewDiff(page);
+      assert.equal(opened.getAttribute('aria-expanded'), 'true', 'the difference did not open');
+      assert.equal(
+        page.win.document.activeElement,
+        opened,
+        `focus was lost across the redraw — activeElement is ${page.win.document.activeElement?.nodeName ?? 'null'}`,
+      );
+
+      // THE SECOND PRESS, which is the one that was unreachable.
+      opened.click();
+      await flush();
+      const closed = viewDiff(page);
+      assert.equal(closed.getAttribute('aria-expanded'), 'false', 'the difference did not close');
+      assert.equal(page.win.document.activeElement, closed, 'focus was lost closing it');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('restores the SAME option when one command is published by several', async () => {
+    // MEASURED REGRESSION. A token of zone + command + target alone matched the
+    // first `kind` button in document order, because the five options carry one
+    // command and no target and differ only by `data-ig-value`. Focus the
+    // `together-with` option, let an unrelated redraw land, and focus came back
+    // on `blocked-by` — worse than the body it replaced, because the reader's
+    // next Enter then encodes a DIFFERENT relationship rather than nothing.
+    const page = await mounted();
+    try {
+      const row = page.rows().find((each) => each.getAttribute('data-ig-key') === '1');
+      assert.ok(row !== undefined, 'no rail row for 1');
+      page.click(row);
+      await flush();
+      const add = page.control('add');
+      assert.ok(add !== null, 'no add control');
+      page.click(add);
+      await flush();
+
+      const options = [...page.element.querySelectorAll<HTMLElement>('[data-ig-command="kind"]')];
+      const wanted = options.find((node) => node.getAttribute('data-ig-value') === 'together-with');
+      assert.ok(wanted !== undefined, 'no together-with option');
+      assert.ok(options.length > 1, 'only one option — the namesake case is not exercised');
+      wanted.focus();
+
+      // AN UNRELATED REDRAW: a write settling elsewhere, which is the ordinary
+      // way a render lands while the reader is mid-draft.
+      page.handle.update();
+      await flush();
+
+      const now = page.win.document.activeElement;
+      assert.ok(now !== null);
+      assert.equal(
+        now.getAttribute('data-ig-value'),
+        'together-with',
+        `focus moved to a different option (${now.getAttribute('data-ig-value') ?? 'none'})`,
+      );
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('keeps a press reaching the mount even when the control resolves itself', async () => {
+    // THE OTHER HALF, and it needs its own case: `refocusCommand` correctly
+    // answers "gone" for a control that removes itself — `discard` takes its
+    // whole card away — and without a last resort focus then falls to the body
+    // exactly as before. Every one-shot control has this shape, so fixing only
+    // the disclosure would have left the class alive.
+    const page = await mounted();
+    try {
+      await conflicted(page);
+      const inspector = page.zone('inspector');
+      assert.ok(inspector !== null);
+      const discard = inspector.querySelector<HTMLElement>('[data-ig-command="discard"]');
+      assert.ok(discard !== null, 'no discard control');
+      discard.focus();
+      discard.click();
+      await flush();
+
+      const now = page.win.document.activeElement;
+      assert.ok(now !== null && page.element.contains(now), 'focus left the workspace entirely');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('restores the right one of two controls that publish the same identity', async () => {
+    // THE THIRD SHAPE OF THIS BUG, and the reason the token carries an ordinal
+    // rather than a fourth attribute. The scale ladder draws a capsule button
+    // and a search-result button with the SAME command and the same lead in one
+    // zone, so no attribute separates them at all — order is what is left.
+    //
+    // A CHAINED BACKLOG, because the collision only exists above the direct
+    // tier: below it the ladder draws no capsules and there is nothing to
+    // collide with. An earlier revision of this test used the ordinary fixture,
+    // where two `target` matches differ by `data-ig-target` — so the filter
+    // already narrowed to one, the ordinal never did any work, and the test
+    // passed with the fix reverted. That is the fifth guard on this branch that
+    // could not fail, so this one is pinned against its own falsification below.
+    const size = 90;
+    const page = await mounted({
+      issues: Array.from({ length: size }, (_unused, index) => ({
+        ref: String(index + 1),
+        title: `Release task ${index + 1}`,
+        state: 'open' as const,
+        priority: 2,
+      })),
+      edges: Array.from({ length: size - 1 }, (_unused, index) =>
+        makeEdge('blocked-by', String(index + 1), String(index + 2)),
+      ),
+    });
+    try {
+      const search = page.element.querySelector<HTMLInputElement>(
+        'input[data-ig-command="search"]',
+      );
+      assert.ok(search !== null, 'no canvas search');
+      search.value = 'Release task 3';
+      search.dispatchEvent(new page.win.Event('input', { bubbles: true }));
+      await flush();
+
+      const duplicates = [
+        ...page.element.querySelectorAll<HTMLElement>('[data-ig-command="focus"]'),
+      ].filter((node) => node.getAttribute('data-ig-target') === '1');
+      assert.ok(
+        duplicates.length > 1,
+        `only ${String(duplicates.length)} controls share this identity — no ambiguity to test`,
+      );
+
+      const second = duplicates[1];
+      assert.ok(second !== undefined);
+      second.focus();
+      page.handle.update();
+      await flush();
+
+      const again = [
+        ...page.element.querySelectorAll<HTMLElement>('[data-ig-command="focus"]'),
+      ].filter((node) => node.getAttribute('data-ig-target') === '1');
+      const active = page.win.document.activeElement;
+      assert.ok(active !== null, 'nothing holds focus');
+      assert.equal(
+        again.findIndex((node) => node === active),
+        1,
+        'focus moved to a different control publishing the same identity',
+      );
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('keeps focus on a toggle that redraws itself with the other command', async () => {
+    // THIS PULL REQUEST'S OWN DEFECT, wearing a different attribute value. The
+    // isolated-issues chip is one button whose command flips between
+    // `open-isolated` and `close-isolated`, so an exact command match rejected
+    // the replacement and dropped the reader onto the rail — on a control that,
+    // like the disclosure, exists to be pressed a second time.
+    // A DOCUMENT WITH NO EDGES, because the chip is drawn only when something is
+    // isolated. An earlier revision of this test used the shared fixture and
+    // returned early when the chip was absent — it always was, so the test
+    // asserted nothing while reading as coverage. That is the same "a rule that
+    // cannot fail" this pull request had to fix three times already, so it is
+    // spelled out rather than quietly corrected.
+    const page = await mounted({ issues: SEED.issues, edges: [] });
+    try {
+      const chip = page.control('open-isolated');
+      assert.ok(chip !== null, 'no isolated chip was drawn — the test would prove nothing');
+      chip.focus();
+      chip.click();
+      await flush();
+
+      const now = page.win.document.activeElement;
+      assert.ok(now !== null);
+      assert.equal(
+        now.getAttribute('data-ig-command'),
+        'close-isolated',
+        'focus left the toggle when it redrew with the other command',
+      );
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('keeps a press reaching the mount even when the rail has no rows to fall back to', async () => {
+    // A FALLBACK WITH A PRECONDITION IS NOT A LAST RESORT. The rail is not
+    // always there: with the audit filter on and nothing flagged it draws no
+    // rows, while the inspector stays perfectly usable. Pressing a
+    // self-removing control there found no row, and focus fell to the body —
+    // the original defect, still reachable through the repair for it.
+    const page = await mounted();
+    try {
+      const row = page.rows().find((each) => each.getAttribute('data-ig-key') === '1');
+      assert.ok(row !== undefined, 'no rail row for 1');
+      page.click(row);
+      await flush();
+
+      const filter = page.element.querySelector<HTMLElement>('[data-ig-audit-filter]');
+      assert.ok(filter !== null, 'no audit filter control');
+      page.click(filter);
+      await flush();
+      assert.equal(page.rows().length, 0, 'the rail still has rows — the case is not reproduced');
+
+      const add = page.control('add');
+      assert.ok(add !== null, 'no add control');
+      add.focus();
+      page.click(add);
+      await flush();
+
+      const now = page.win.document.activeElement;
+      assert.ok(
+        now !== null && page.element.contains(now),
+        `focus left the workspace — activeElement is ${now?.nodeName ?? 'null'}`,
+      );
+      // AND SOMEWHERE THE READER CAN ACT FROM, which is a stronger claim than
+      // "inside the surface" and the one this issue actually makes. `add` opens
+      // the kind chooser, so the chooser is what focus should land on — on the
+      // bare surface the press reaches the listener and every create binding
+      // still answers `none`.
+      assert.notEqual(
+        now?.getAttribute('data-ig-command') ?? null,
+        null,
+        `focus landed on the bare surface rather than a control (${now?.className ?? 'none'})`,
+      );
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('leaves the keyboard loop alive — a later press still reaches the mount', async () => {
+    const page = await mounted();
+    try {
+      await conflicted(page);
+      const open = viewDiff(page);
+      open.focus();
+      open.click();
+      await flush();
+
+      // THE WHOLE-LOOP HALF OF THE DEFECT, and it is not the same assertion as
+      // the one above. The keydown listener is on the mount's element, so a
+      // press only reaches the workspace if it starts inside it and bubbles.
+      // Counted on the mount element rather than asserted through one key's
+      // effect, because what is being proved is that ANY press arrives — the
+      // meaning of a particular key is `keyIntent`'s to decide and is pinned
+      // where that lives.
+      let reached = 0;
+      page.element.addEventListener('keydown', () => {
+        reached += 1;
+      });
+      const active = page.win.document.activeElement;
+      assert.ok(active !== null, 'nothing holds focus');
+      active.dispatchEvent(new page.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      assert.equal(reached, 1, 'the press did not reach the mount — the keyboard loop is dead');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+});

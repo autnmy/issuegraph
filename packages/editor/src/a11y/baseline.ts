@@ -1,0 +1,512 @@
+/**
+ * The accessible contract of every command control, read off a rendered
+ * surface — so it is committed as an artifact rather than asserted in prose.
+ *
+ * ## Why a DOM node and not an `ElementSpec`
+ *
+ * There is no spec tree for the workspace to walk. `renderWorkspace` returns
+ * `markup: string`; it composes its four zones by joining independently
+ * rendered strings, the `data-zone` wrapper is the one tag written by hand in
+ * that file, and every `…Spec` builder is module-private. Worse for a spec
+ * walk, a substantial part of the interactive surface never passes a renderer
+ * at all — `mountWorkspace` builds the kind chooser, the target search and its
+ * match list with `createElement`, and says so ("WHAT IS LEFT HERE IS WHAT
+ * NEEDS A DOM"). A baseline taken over specs would silently omit exactly the
+ * keyboard-relevant controls.
+ *
+ * The rendered DOM has all of it, and it is also what a screen reader actually
+ * meets.
+ *
+ * ## NOT EXPORTED, and that is the correction of a real mistake
+ *
+ * An earlier revision published `controlSurface` on the package surface,
+ * reasoning that a host composing these zones into its own chrome would want
+ * the same record. Nothing asked for it, and `index.ts` states the rule it
+ * broke: "a published package can add an export later and can never take one
+ * back, so nothing is exported before something is owed."
+ *
+ * The cost was not theoretical. Exporting it turned this file into a
+ * general-purpose accessible-name and focusability reader, and accessible-name
+ * computation has a long tail — `title`, `placeholder`, an input's own `value`,
+ * whitespace-only labels, hidden inputs, `contenteditable`. Three consecutive
+ * review rounds produced findings of exactly that shape: each real, each cheap,
+ * and none about markup this package draws. That tail has no end, and this
+ * change cannot discharge it.
+ *
+ * Internal, the obligation is bounded and discharged: the reader only ever
+ * meets what this package renders, which is a closed set recorded in six
+ * states. If a host ever owes this, export it then — with its tail addressed,
+ * and against a consumer that actually needs it.
+ *
+ * ## Structurally typed, so this module still touches no global
+ *
+ * {@link SurfaceElement} is declared by what it must answer rather than as
+ * `Element`, which is `element.ts`'s own `SpecDocument` idiom — "declared
+ * structurally rather than as `Document` so a host can pass any implementation
+ * that answers these five calls, and so this module stays honest about how
+ * little of the DOM it actually needs". `purity.test.ts` imports every shipped
+ * module with the browser globals removed; nothing here reaches for one.
+ *
+ * ## What is recorded, and what is deliberately not
+ *
+ * VALUES ARE KEPT FOR MACHINE STATES AND DROPPED FOR HUMAN-READABLE NAMES.
+ * That split is by provenance, not one blanket rule, because the two fail
+ * differently. `aria-pressed` is rendered as `cond ? 'true' : 'false'`, so a
+ * baseline holding only the attribute NAME is byte-identical when a toggle
+ * inverts — the regression it exists to catch. A label, meanwhile, is often
+ * the host's word (`picker/words.ts`, `reevaluate/words.ts` and
+ * `firstpass/words.ts` all require a `Record<K, string>` from the host and
+ * default none), so pinning the string would fail any host that translated it.
+ *
+ * An earlier draft justified dropping every value with "the package ships no
+ * English", which is false: `scale/render.ts` writes `'connected components'`,
+ * `'what to do next'`, `'search matches'` and `'isolated issues'` itself, and
+ * the viewer ships more landmark names. The true, narrower claim is the one
+ * above.
+ *
+ * AN IDREF IS RECORDED BY WHETHER IT RESOLVES, never by its value. The
+ * disclosure's `aria-controls` names `diffRegionId(recovery.mutationId)`, and a
+ * mutation id is generated per run — pinning it would make the artifact churn
+ * on every render for no signal. What is worth pinning is the fact a reader
+ * depends on: that the id names a region that is actually there. A dangling
+ * `aria-controls` is a real defect and a stable one to record.
+ */
+
+/** A text node, or anything else with no tag. */
+export interface SurfaceNode {
+  readonly nodeType: number;
+  readonly nodeValue: string | null;
+}
+
+/** The slice of `Element` this module reads. */
+export interface SurfaceElement extends SurfaceNode {
+  readonly tagName: string;
+  readonly childNodes: ArrayLike<SurfaceNode>;
+  getAttribute(name: string): string | null;
+  closest(selectors: string): SurfaceElement | null;
+  querySelectorAll(selectors: string): Iterable<SurfaceElement>;
+}
+
+/**
+ * Where a control's accessible name comes from, or why it has none.
+ *
+ * `label` IS A REAL NAME AND WAS MISSING. `scale/render.ts` wraps its search
+ * input in a `<label>` carrying the text — the input has a genuine accessible
+ * name and no text of its own, no `aria-label` and no `aria-labelledby`. Read
+ * without this, it came back `none`, so the naming rule reported a false
+ * failure on correct markup and the control could not join the baseline at all.
+ * An exported reader that is wrong about native HTML is worse than no reader.
+ *
+ * `empty` IS ITS OWN ANSWER, not a kind of `none`. An `aria-label=""` is an
+ * author who meant to supply a name and supplied nothing — a different defect
+ * from a control nobody labelled, and one that reads as deliberate in the
+ * markup. Recording it separately is what lets a rule name it. THE VALUE IS
+ * NEVER RECORDED: a label is routinely the host's own word (`picker/words.ts`
+ * and `reevaluate/words.ts` both require a `Record<K, string>` from the host
+ * and default none), so pinning the string would fail any host that translated
+ * it. Whether one was supplied is a fact about the markup; what it says is not.
+ */
+export type NameSource = 'aria-label' | 'aria-labelledby' | 'label' | 'text' | 'empty' | 'none';
+
+/**
+ * How the keyboard reaches a control.
+ *
+ * NOT A BOOLEAN, and that is the whole point of the field. This package uses a
+ * roving tab stop — the projections render `tabindex: focused ? 0 : -1` — and
+ * the viewer's own focusability predicate counts `tabindex="-1"` as focusable.
+ * So a boolean "focusable" is satisfied by a control reachable only by pointer
+ * and by programmatic focus, which is precisely the defect a keyboard record
+ * exists to catch.
+ */
+export type TabStop = 'tab' | 'programmatic' | 'none';
+
+/** One control's accessible contract. */
+export interface ControlEntry {
+  readonly zone: string | null;
+  /** Which attribute published it — see {@link CONTROL_ATTRIBUTES}. */
+  readonly channel: string;
+  /** That attribute's value: the command, the answer, or the filter's state. */
+  readonly control: string;
+  /**
+   * What the control acts on, and which option it is.
+   *
+   * RECORDED BECAUSE THEY SEPARATE OTHERWISE IDENTICAL ROWS. Every relationship
+   * row publishes `select-edge`, and the kind list publishes `kind` several
+   * times — without these, N controls collapse to N byte-identical entries and
+   * losing one of them is invisible in the artifact's diff.
+   */
+  readonly target: string | null;
+  readonly value: string | null;
+  readonly tag: string;
+  /** `null` where this module has no mapping, which is a fact; a guess would not be. */
+  readonly role: string | null;
+  readonly tabStop: TabStop;
+  /**
+   * Whether the control sits under an `inert` subtree.
+   *
+   * DELIBERATE UNREACHABILITY IS NOT A DEFECT, and without recording it the two
+   * are indistinguishable. The mount sets `inert` on every zone while the
+   * first-pass overlay is up — "the zones go inert under it" — so those
+   * controls are correctly out of the tab order, and a rule that simply
+   * demanded reachability would fail on the modal working as designed. Recorded
+   * rather than filtered out, because "these eight controls are deliberately
+   * unreachable right now" is exactly what a reader of a modal state wants to
+   * see.
+   */
+  readonly inert: boolean;
+  readonly name: NameSource;
+  /** Enumerated ARIA states with their values, and IDREFs by whether they resolve. */
+  readonly aria: Readonly<Record<string, string>>;
+}
+
+/**
+ * Every attribute a control publishes itself on.
+ *
+ * THREE CHANNELS, NOT ONE, and reading only the first is how a record comes to
+ * claim a surface it never saw. `data-ig-command` is the general one, but the
+ * first pass's y/n/s answers carry `data-ig-answer` and the audit header's
+ * toggle carries `data-ig-audit-filter` — `firstpass/render.ts` and
+ * `audit/surface.ts` each say so where they declare theirs. Keyed on the
+ * command alone, this would have recorded `null` for the audit toggle and for
+ * every answer, and the rules below would have skipped exactly the controls a
+ * keyboard reader depends on most.
+ */
+export const CONTROL_ATTRIBUTES: readonly string[] = Object.freeze([
+  'data-ig-command',
+  'data-ig-answer',
+  'data-ig-audit-filter',
+]);
+
+/**
+ * Implicit roles, for the tags this package actually renders.
+ *
+ * Closed and small on purpose. A general HTML-AAM table would be a second
+ * implementation of a specification this package does not own, and every entry
+ * beyond what is rendered here would be untested. An unmapped tag records
+ * `null` rather than a guess — including everything in the SVG namespace,
+ * where the HTML implicit roles do not apply and `path` has none at all.
+ */
+const IMPLICIT_ROLES: Readonly<Record<string, string>> = Object.freeze({
+  button: 'button',
+  h1: 'heading',
+  h2: 'heading',
+  h3: 'heading',
+  h4: 'heading',
+  li: 'listitem',
+  ol: 'list',
+  ul: 'list',
+});
+
+/**
+ * The two tags whose implicit role depends on more than the tag.
+ *
+ * `a` is a `link` only with an `href` — without one it is not a link and not
+ * focusable. `section` is a `region` only when it has an accessible name;
+ * unnamed it exposes no role at all. Both were mapped unconditionally in an
+ * earlier revision, which recorded a role the accessibility tree does not have.
+ */
+/**
+ * `input`'s implicit role, which is its `type`'s rather than its tag's.
+ *
+ * The mounted target search is `<input type="search">` — `searchbox`, not
+ * nothing — and recording `null` for a control this package itself renders
+ * means the role column could not notice it being changed into a semantically
+ * different control. Only the types rendered here are mapped; the rest stay
+ * `null`, on the same rule as every other unmapped tag.
+ */
+const INPUT_ROLES: Readonly<Record<string, string>> = Object.freeze({
+  button: 'button',
+  checkbox: 'checkbox',
+  radio: 'radio',
+  reset: 'button',
+  search: 'searchbox',
+  submit: 'button',
+  text: 'textbox',
+});
+
+function conditionalRole(
+  root: SurfaceElement,
+  element: SurfaceElement,
+  tag: string,
+): string | null {
+  if (tag === 'a') return element.getAttribute('href') === null ? null : 'link';
+  if (tag === 'section') return nameSource(root, element) === 'none' ? null : 'region';
+  // NO `type` IS `type="text"`, which is HTML's own default rather than an
+  // assumption: an `<input>` with no type is a text field.
+  if (tag === 'input') return INPUT_ROLES[element.getAttribute('type') ?? 'text'] ?? null;
+  return null;
+}
+
+/** ARIA attributes whose value is drawn from a fixed set, so the value is data. */
+const ENUMERATED_ARIA: readonly string[] = Object.freeze([
+  'aria-busy',
+  'aria-checked',
+  'aria-current',
+  'aria-expanded',
+  'aria-hidden',
+  'aria-live',
+  'aria-modal',
+  'aria-pressed',
+  'aria-selected',
+]);
+
+/** ARIA attributes whose value is an id, recorded by whether it resolves. */
+const IDREF_ARIA: readonly string[] = Object.freeze([
+  'aria-controls',
+  'aria-describedby',
+  'aria-labelledby',
+]);
+
+const TEXT_NODE = 3;
+
+function isElement(node: SurfaceNode): node is SurfaceElement {
+  return 'tagName' in node;
+}
+
+/**
+ * The text a screen reader would announce for this element.
+ *
+ * SUBTREES MARKED `aria-hidden` CONTRIBUTE NOTHING, which is the case a naive
+ * "does it have a text child" test gets wrong. `parts.ts` renders a command
+ * button as a hidden glyph beside its label; delete the label and the button
+ * still has a text descendant while its accessible name is empty. That is a
+ * name loss no presence check would report.
+ */
+function visibleText(element: SurfaceElement): string {
+  let out = '';
+  const walk = (node: SurfaceNode): void => {
+    if (!isElement(node)) {
+      if (node.nodeType === TEXT_NODE) out += node.nodeValue ?? '';
+      return;
+    }
+    // `hidden` AS WELL AS `aria-hidden`, and for the same reason one step
+    // further along: a natively hidden subtree is not rendered at all, so its
+    // text reaches no reader. `<button><span hidden>Save</span></button>` is
+    // exposed with NO accessible name, and counting that text reported one —
+    // letting the naming rule pass on a control that announces nothing.
+    if (node.getAttribute('aria-hidden') === 'true') return;
+    if (node.getAttribute('hidden') !== null) return;
+    for (let index = 0; index < node.childNodes.length; index += 1) {
+      const child = node.childNodes[index];
+      if (child !== undefined) walk(child);
+    }
+  };
+  walk(element);
+  return out.trim();
+}
+
+/**
+ * Whether a `<label>` names this control, by either association HTML defines.
+ *
+ * WRAPPING FIRST, then `for`. `scale/render.ts` uses the wrapping form and says
+ * why in as many words — two search boxes side by side with one `id` would make
+ * `for` resolve to whichever came first, so one would silently lose its label.
+ *
+ * THE `for` LOOKUP WALKS AND COMPARES rather than building `label[for="..."]`:
+ * an id is host data, and interpolating one into a selector is the injection
+ * this module already had to remove once.
+ */
+function labelNames(root: SurfaceElement, element: SurfaceElement): boolean {
+  const wrapping = element.closest('label');
+  if (wrapping !== null && visibleText(wrapping) !== '') return true;
+  const id = element.getAttribute('id');
+  if (id === null || id === '') return false;
+  for (const label of root.querySelectorAll('label')) {
+    if (label.getAttribute('for') === id && visibleText(label) !== '') return true;
+  }
+  return false;
+}
+
+function nameSource(root: SurfaceElement, element: SurfaceElement): NameSource {
+  // AN EMPTY VALUE IS NOT A NAME, and it is not the same as no attribute.
+  // `renderMarkup` omits only `undefined`, `null` and `false`, so
+  // `aria-label=""` does reach the markup — the case the "omitted, never empty"
+  // rule `holdLine` states for `data-code` exists to prevent.
+  // `aria-labelledby` FIRST, because accessible-name computation resolves it
+  // BEFORE `aria-label` — so a host supplying both, with the reference pointing
+  // at an empty element, is exposed with no name while a reader that took the
+  // label would have reported one. Order is the whole of the fix; each branch
+  // was already right on its own.
+  //
+  // AN IDREF THAT RESOLVES IS NOT YET A NAME. `aria-labelledby` naming an
+  // element that exists but carries no text computes to an empty accessible
+  // name, and reading the attribute alone reported a supplied name for a
+  // control that announces nothing. This is the same defect as `aria-label=""`,
+  // which is already answered `empty` — fixing one half and not the other
+  // would have left the rule inconsistent about the same mistake.
+  //
+  // `ariaOf` keeps answering `resolves` for the same attribute, and the two are
+  // not in conflict: it reports whether the reference POINTS at something,
+  // which is its own defect when it does not. Whether the thing it points at
+  // says anything is this function's question.
+  const labelledBy = element.getAttribute('aria-labelledby');
+  if (labelledBy !== null) {
+    const named = labelledBy.split(/\s+/).filter((token) => token !== '');
+    let text = '';
+    for (const target of root.querySelectorAll('[id]')) {
+      if (named.includes(target.getAttribute('id') ?? '')) text += visibleText(target);
+    }
+    return text.trim() === '' ? 'empty' : 'aria-labelledby';
+  }
+
+  const label = element.getAttribute('aria-label');
+  // TRIMMED, because a name made of spaces is not a name: the browser exposes
+  // an empty accessible name for `aria-label=" "`, which a template padding an
+  // empty translation produces easily.
+  if (label !== null) return label.trim() === '' ? 'empty' : 'aria-label';
+  if (visibleText(element) !== '') return 'text';
+  return labelNames(root, element) ? 'label' : 'none';
+}
+
+function tabStopOf(element: SurfaceElement): TabStop {
+  // DISABLED AND INERT ARE NOT TAB STOPS, whatever the tag says. The mount sets
+  // `inert` on every zone while the first-pass overlay is up — "the zones go
+  // inert under it" — so without this every covered control recorded `tab` and
+  // passed a rule asserting the keyboard can reach it, while the browser was
+  // refusing focus to all of them.
+  if (element.getAttribute('disabled') !== null) return 'none';
+  if (element.closest('[inert]') !== null) return 'none';
+  // `hidden` TOO, and for the same reason: the browser takes a hidden subtree
+  // out of the tab order, so a native button inside one is not reachable
+  // however focusable its tag is. Nothing in this package renders it today —
+  // which is exactly why it is worth handling here rather than later, since
+  // `controlSurface` is exported for hosts to run over their own chrome.
+  if (element.closest('[hidden]') !== null) return 'none';
+  const raw = element.getAttribute('tabindex');
+  if (raw === null) {
+    // NATIVELY IN THE TAB ORDER. `a` only with an `href`: without one it is not
+    // focusable, and recording it as a tab stop would claim a reachability the
+    // markup does not have.
+    const tag = element.tagName.toLowerCase();
+    if (tag === 'button' || tag === 'input' || tag === 'select' || tag === 'textarea') return 'tab';
+    return tag === 'a' && element.getAttribute('href') !== null ? 'tab' : 'none';
+  }
+  const index = Number(raw);
+  if (!Number.isInteger(index)) return 'none';
+  return index < 0 ? 'programmatic' : 'tab';
+}
+
+/**
+ * Every id under `root`, gathered once.
+ *
+ * A SET RATHER THAN A QUERY PER TOKEN, and that is a correctness fix, not a
+ * speed one. An earlier revision resolved each IDREF with
+ * `` querySelectorAll(`[id="${id}"]`) `` — interpolating a value read off the
+ * DOM straight into a selector, which is verbatim the class the mount's focus
+ * token was written to avoid. Measured: `aria-describedby='a"]'` made this
+ * function THROW, and a token containing `],[id` resolved against the wrong
+ * elements. `controlSurface` is exported for hosts to run over their own
+ * chrome, where ids are tracker-derived, so the injection was reachable.
+ *
+ * SCOPED TO `root`, which is a real bound and is stated rather than hidden: an
+ * IDREF pointing into the host's own chrome outside the mounted surface reads
+ * as `dangling` here. That is the right default for a record ABOUT this
+ * surface, and a host taking it over its whole page gets the wider answer.
+ */
+function idsUnder(root: SurfaceElement): ReadonlySet<string> {
+  const ids = new Set<string>();
+  // `root` ITSELF IS NOT IN ITS OWN `querySelectorAll`, so it is added by hand:
+  // a host may well hang the surface off an element that carries an id.
+  const own = root.getAttribute('id');
+  if (own !== null) ids.add(own);
+  for (const element of root.querySelectorAll('[id]')) {
+    const id = element.getAttribute('id');
+    if (id !== null) ids.add(id);
+  }
+  return ids;
+}
+
+function ariaOf(ids: ReadonlySet<string>, element: SurfaceElement): Readonly<Record<string, string>> {
+  const out: Record<string, string> = {};
+  for (const attribute of ENUMERATED_ARIA) {
+    const value = element.getAttribute(attribute);
+    if (value !== null) out[attribute] = value;
+  }
+  // `aria-hidden` IS INHERITED, and the rule that reads it is about exactly
+  // that. A wrapper carrying it takes its descendants out of the accessibility
+  // tree WITHOUT taking them out of the tab order — which is the "focusable and
+  // announces nothing" case the rule exists to reject. Read off the element
+  // alone, the rule could not see the shape it was written for: the entry
+  // carried no `aria-hidden` at all and passed.
+  //
+  // The other enumerated states are properties of the element that carries
+  // them, so only this one is resolved through ancestry.
+  if (element.closest('[aria-hidden="true"]') !== null) out['aria-hidden'] = 'true';
+  for (const attribute of IDREF_ARIA) {
+    const value = element.getAttribute(attribute);
+    if (value === null) continue;
+    // EVERY id IT NAMES, because the attribute takes a list and a half-resolved
+    // reference is still broken for the token that dangles.
+    const named = value.split(/\s+/).filter((token) => token !== '');
+    out[attribute] =
+      named.length > 0 && named.every((id) => ids.has(id)) ? 'resolves' : 'dangling';
+  }
+  return out;
+}
+
+/**
+ * Every control under `root`, in document order, sorted so the record is stable.
+ *
+ * Pure and total. SORTED RATHER THAN LEFT IN DOCUMENT ORDER: a baseline is
+ * diffed by people, and a control moving between zones should read as one
+ * changed line rather than as a reordering of the whole file. Document order is
+ * a fact about layout, which the zone already carries.
+ *
+ * The bound it does NOT cover is stated where it can be checked: a control
+ * publishing itself on some fourth attribute is invisible here, and
+ * {@link CONTROL_ATTRIBUTES} is the list to extend.
+ */
+export function controlSurface(root: SurfaceElement): readonly ControlEntry[] {
+  const entries: ControlEntry[] = [];
+  const seen = new Set<SurfaceElement>();
+  const ids = idsUnder(root);
+  for (const channel of CONTROL_ATTRIBUTES) {
+    for (const element of root.querySelectorAll(`[${channel}]`)) {
+      const control = element.getAttribute(channel);
+      // ONE ENTRY PER ELEMENT, even where a control carries two channels: the
+      // record is about the control, and a second row for one button would
+      // make every rule below count it twice.
+      if (control === null || seen.has(element)) continue;
+      seen.add(element);
+      const tag = element.tagName.toLowerCase();
+      entries.push({
+        zone: element.closest('.ig-zone')?.getAttribute('data-zone') ?? null,
+        channel,
+        control,
+        target: element.getAttribute('data-ig-target'),
+        value: element.getAttribute('data-ig-value') ?? element.getAttribute('data-ig-kind'),
+        tag,
+        role:
+          element.getAttribute('role') ??
+          IMPLICIT_ROLES[tag] ??
+          conditionalRole(root, element, tag),
+        tabStop: tabStopOf(element),
+        inert: element.closest('[inert]') !== null,
+        name: nameSource(root, element),
+        aria: ariaOf(ids, element),
+      });
+    }
+  }
+  // FIELD BY FIELD, BY CODE POINT. `localeCompare` was both non-total and
+  // machine-dependent here: it treats `\u0000` as ignorable, so the separator
+  // bought nothing and distinct keys compared EQUAL, and with no locale it
+  // follows the runner's own ICU build — which would reorder a committed
+  // artifact that is compared with an order-sensitive `deepEqual`.
+  const key = (entry: ControlEntry): readonly string[] => [
+    entry.zone ?? '',
+    entry.channel,
+    entry.control,
+    entry.target ?? '',
+    entry.value ?? '',
+  ];
+  return [...entries].sort((a, b) => {
+    const left = key(a);
+    const right = key(b);
+    for (let index = 0; index < left.length; index += 1) {
+      const one = left[index] ?? '';
+      const other = right[index] ?? '';
+      if (one !== other) return one < other ? -1 : 1;
+    }
+    return 0;
+  });
+}

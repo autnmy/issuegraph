@@ -58,6 +58,7 @@ import {
   resolveTheme,
 } from '@issuegraph/viewer';
 
+import { CONTROL_ATTRIBUTES } from '../a11y/baseline.ts';
 import type { AuditInput } from '../audit/findings.ts';
 import { type CreateInteraction, type KeyboardContext, KIND_KEYS, keyIntent } from '../create/keys.ts';
 import { pickerPlacement } from '../create/placement.ts';
@@ -232,6 +233,42 @@ const DRAG_THRESHOLD = 6;
 const KEY_ATTRIBUTE = 'data-ig-key';
 const GROUP_ATTRIBUTE = 'data-ig-group';
 const COMMAND_ATTRIBUTE = 'data-ig-command';
+/**
+ * Which subject a command acts on, when one command names several.
+ *
+ * Named here because this file now READS it in two places rather than one —
+ * `onClick` turns it into the dispatch's `target`, and the focus token below
+ * uses it to tell one `select-edge` from the next. A third bare literal for an
+ * attribute the renderer writes on every relationship row and every recovery
+ * button is how a typo becomes a control that silently stops matching.
+ */
+const TARGET_ATTRIBUTE = 'data-ig-target';
+
+/**
+ * Commands that name ONE control in two states.
+ *
+ * The isolated-issues chip redraws the SAME button with its command flipped
+ * (`scale/render.ts`), so a focus token comparing the raw command rejects the
+ * replacement and sends the reader to the rail — and that control, like the
+ * conflict disclosure, is one you press a second time to undo. It is this
+ * pull request's own defect wearing a different attribute value, which is
+ * why it is worth a table rather than a special case: the next toggle gets
+ * one line here instead of a new bug.
+ *
+ * A TABLE, NOT A PREFIX RULE. `open-` / `close-` looks like a pattern and is
+ * not one — `first-pass` and `first-pass-close` are two different controls in
+ * two different places, and a rule that folded them would restore focus onto
+ * the wrong one.
+ */
+const TOGGLE_IDENTITY: Readonly<Record<string, string>> = Object.freeze({
+  'open-isolated': 'isolated',
+  'close-isolated': 'isolated',
+});
+
+/** What a control is, rather than which of its states is showing. */
+function controlIdentity(control: string): string {
+  return TOGGLE_IDENTITY[control] ?? control;
+}
 
 /**
  * An element, recognised by what it can do.
@@ -246,6 +283,49 @@ function isElement(target: EventTarget | null | undefined): target is Element {
 
 function isFocusable(node: Element | null | undefined): node is HTMLElement {
   return node !== null && node !== undefined && 'focus' in node;
+}
+
+/**
+ * A control's identity across a redraw — every field `onClick` reads when it
+ * turns a press into a dispatch, and for that reason.
+ *
+ * THE IDENTITY IS THE DISPATCH'S, NOT A SUBSET OF IT. An earlier revision
+ * carried zone, command and target only, and claimed a namesake could never be
+ * mistaken for the control that had focus. Measured false: the inspector's kind
+ * list and the picker's retype options each publish ONE command across several
+ * buttons carrying no target, separated only by `data-ig-value` /
+ * `data-ig-kind`. Focus the `together-with` option, let any redraw land, and
+ * focus came back on `blocked-by` — worse than the body it replaced, because
+ * the reader's next Enter then performs a DIFFERENT act rather than none.
+ *
+ * So the fields here mirror `onClick` exactly. Anything it reads to decide
+ * WHICH act a press performs has to be part of what identifies the control, or
+ * restoring focus can silently change the act.
+ */
+interface CommandFocus {
+  /** Which attribute published it — see {@link CONTROL_ATTRIBUTES}. */
+  readonly channel: string;
+  readonly zone: string | null;
+  readonly control: string;
+  readonly target: string | null;
+  readonly value: string | null;
+  /**
+   * Which of the identical controls it was, counted in document order.
+   *
+   * ADDED TO CLOSE THE CLASS RATHER THAN THE CASE. Three separate findings on
+   * this branch were one shape: two controls the token could not tell apart —
+   * the kind options, the target matches, and finally a scale capsule beside a
+   * search result, both publishing `focus` with the same lead in the same zone.
+   * Each was fixable by carrying one more attribute, and the next one would
+   * have been too. When two controls are genuinely indistinguishable by every
+   * attribute they publish, their ORDER is the only thing left that separates
+   * them, so that is what is recorded.
+   *
+   * It is a weaker key than the others and is used only as a tiebreak: a list
+   * that reorders under the reader restores the wrong sibling. That is a real
+   * limit, and it beats the alternative of always restoring the first.
+   */
+  readonly ordinal: number;
 }
 
 function isInput(node: Element | null | undefined): node is HTMLInputElement {
@@ -673,7 +753,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         list.append(
           el('li', {}, [
             button(`#${match.ref} ${match.title}`, 'target', {
-              'data-ig-target': match.ref,
+              [TARGET_ATTRIBUTE]: match.ref,
               class: 'ig-chrome-button ig-chrome-match',
             }),
           ]),
@@ -847,6 +927,110 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     const command = active.getAttribute(COMMAND_ATTRIBUTE);
     if (command !== null) return `[${COMMAND_ATTRIBUTE}="${command}"]`;
     return '';
+  };
+
+  /**
+   * The command control that owns focus, as facts a redraw can match again.
+   *
+   * `overlayFocusToken` above answers the same question for the first-pass
+   * overlay and only for it, so every command control OUTSIDE that overlay had
+   * no restore path at all: the arms below cover the overlay, an `input`'s
+   * caret, the target search on the render that opens it, and a pending rail
+   * jump — and then fall through to restoring by RAIL ROW, which needs a
+   * `[data-ig-key]` ancestor. An inspector button has none, so focus fell to
+   * the body. The keydown listener is on the mount's element, so that killed
+   * the whole keyboard loop until the reader clicked something else.
+   *
+   * FACTS, NOT A SELECTOR STRING. `overlayFocusToken` interpolates its value
+   * into `[attr="value"]`, which is safe only because `data-ig-answer` and the
+   * overlay's own commands come from closed sets. A general token carries
+   * {@link TARGET_ATTRIBUTE} — edge identities and issue keys straight out of
+   * a host's tracker — and a `"` in one would break the selector or match the
+   * wrong control. Comparing attribute values during a walk removes the class
+   * instead of escaping it.
+   *
+   * THE ZONE IS PART OF THE IDENTITY. One command name is published by many
+   * controls — every relationship row carries `select-edge` — and an issue is
+   * commonly drawn in the rail and again on the canvas, so a token without its
+   * zone would restore focus to a namesake in a zone the reader was not in.
+   */
+  const commandFocusToken = (): CommandFocus | null => {
+    const active = doc.activeElement;
+    if (!isElement(active) || !surface.contains(active)) return null;
+    // ALL THREE CHANNELS, because the defect is not the command channel's. The
+    // audit header's toggle publishes on `data-ig-audit-filter` alone and the
+    // first pass's answers on `data-ig-answer` — `onClick` dispatches each from
+    // its own branch — so a token reading only `data-ig-command` left the audit
+    // toggle dropping focus to the body exactly as before. #149 says "any
+    // command control", and this is the list that makes that true.
+    for (const channel of CONTROL_ATTRIBUTES) {
+      const control = active.getAttribute(channel);
+      if (control === null) continue;
+      const partial = {
+        channel,
+        zone: active.closest('.ig-zone')?.getAttribute('data-zone') ?? null,
+        control,
+        target: active.getAttribute(TARGET_ATTRIBUTE),
+        // THE SAME TWO SPELLINGS `onClick` READS, and in its order: the picker
+        // publishes its kind as `data-ig-kind`, the mount's own chrome as
+        // `data-ig-value`.
+        value: active.getAttribute('data-ig-value') ?? active.getAttribute('data-ig-kind'),
+      };
+      // `findIndex` RATHER THAN `indexOf`, because `active` is narrowed to
+      // `Element` and the siblings are `HTMLElement`. Identity comparison is
+      // the same question either way, and the alternative — widening the list
+      // or asserting the narrower type — would be a cast this repository bans.
+      const ordinal = siblingsOf(partial).findIndex((node) => node === active);
+      // A CONTROL THAT DOES NOT FIND ITSELF is one this scope cannot name, so
+      // there is no token to carry. `indexOf` answering -1 would otherwise
+      // become an ordinal that matches nothing on the way back.
+      return ordinal < 0 ? null : { ...partial, ordinal };
+    }
+    return null;
+  };
+
+  /**
+   * Every control this token could name, in document order.
+   *
+   * THE ATTRIBUTE NAME IS A CONSTANT AND THE VALUES ARE COMPARED, so nothing a
+   * host's tracker can spell reaches a selector. See the token above.
+   *
+   * Shared by the token and the restore so the ordinal means the same thing on
+   * both sides: a list computed two ways is a list that can disagree with
+   * itself, and the ordinal would then point at a different control than the
+   * one it was counted against.
+   */
+  const siblingsOf = (token: Omit<CommandFocus, 'ordinal'>): readonly HTMLElement[] => {
+    const scope = token.zone === null ? surface : (zone(token.zone) ?? surface);
+    return [...scope.querySelectorAll<HTMLElement>(`[${token.channel}]`)].filter((node) => {
+      const control = node.getAttribute(token.channel);
+      // BY IDENTITY, so a toggle that redraws itself with the other command is
+      // still the control the reader was on. See {@link TOGGLE_IDENTITY}.
+      if (control === null || controlIdentity(control) !== controlIdentity(token.control)) return false;
+      if (node.getAttribute(TARGET_ATTRIBUTE) !== token.target) return false;
+      const value = node.getAttribute('data-ig-value') ?? node.getAttribute('data-ig-kind');
+      if (value !== token.value) return false;
+      // A ZONELESS TOKEN MUST NOT MATCH A ZONED CONTROL. The floating chooser
+      // and the first-pass overlay are appended OUTSIDE the four zones, so
+      // their tokens carry `zone: null` and scope to the whole surface — and
+      // without this the chooser's `cancel` restored onto the inspector's.
+      // The two directions are asymmetric on purpose: a zoned token is already
+      // confined by `scope`.
+      return !(token.zone === null && node.closest('.ig-zone') !== null);
+    });
+  };
+
+  /** Give focus back to the control a {@link CommandFocus} names. `false` when it is gone. */
+  const refocusCommand = (token: CommandFocus): boolean => {
+    const siblings = siblingsOf(token);
+    // THE SAME ONE, THEN THE FIRST. A list that shrank under the reader — a
+    // match that stopped matching, a capsule that collapsed — has no nth
+    // member, and landing on the first sibling keeps the keyboard alive where
+    // returning `false` would drop to the rail.
+    const again = siblings[token.ordinal] ?? siblings[0];
+    if (again === undefined) return false;
+    again.focus({ preventScroll: true });
+    return true;
   };
 
   /** Focus the element carrying `key`, inside one zone when named, without scrolling the page. */
@@ -1159,6 +1343,18 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         : null;
     const focused = focusedKey();
     const overlayToken = overlayFocusToken();
+    // CAPTURED BEFORE THE REDRAW, like every other fact here: the node itself
+    // does not survive `surface.innerHTML`, so what crosses is a way to name
+    // the control rather than a reference to the one about to be destroyed.
+    const commandToken = commandFocusToken();
+    // WAS THE FOCUS OURS TO RESTORE? A reader whose focus is on the host's own
+    // chrome must not have it dragged into the workspace by a redraw the
+    // workspace happened to do — the search arm below already records paying
+    // for that once. The last-resort arm needs this because it fires on
+    // "nothing inside the surface holds focus", which is equally true of a
+    // redraw that destroyed the focused control and of a reader who simply is
+    // not here.
+    const heldFocus = isElement(active) && surface.contains(active);
     // The ZONE too: an issue is commonly drawn in the rail and on the canvas,
     // and restoring "the first element with this key" would move focus from
     // a canvas node into the rail on every redraw.
@@ -1296,7 +1492,91 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         }
       }
     } else {
-      focusRow(focused);
+      // THE COMMAND CONTROL, WHERE THE RAIL CANNOT ANSWER. Strictly additive:
+      // it is reached only when `focusedKey()` found nothing, which is exactly
+      // the case `focusRow(null)` returned from without moving focus at all —
+      // so no control that has a keyed ancestor changes behaviour, and the
+      // rail's roving tab stop is untouched.
+      //
+      // The control can legitimately be gone: the edit it named landed, the
+      // relationship it belonged to was deleted, the recovery card it sat in
+      // resolved. `refocusCommand` says so rather than guessing, and the rail
+      // fallback below is then the same one that ran before.
+      const restored =
+        focused === null && commandToken !== null && refocusCommand(commandToken);
+      if (!restored) focusRow(focused);
+      // A LAST RESORT, because half of these controls RESOLVE THEMSELVES. A
+      // picker option closes the picker; `retry`, `discard`, `cancel` and
+      // `dismiss-change` each remove the card they sit in — so `refocusCommand`
+      // correctly answers "gone", `focusRow(null)` moves nothing, and the
+      // keyboard loop died anyway. That is the whole-loop half of the defect,
+      // and leaving it would have fixed the disclosure while every one-shot
+      // control kept failing the same way.
+      //
+      // The first drawn row, on the same reasoning the first-pass close arm
+      // gives for returning to §17a's entry: somewhere inside the surface that
+      // reaches the listener beats the body, and the rail is the zone the
+      // reader can navigate out of.
+      // THE TEST IS "INSIDE THE SURFACE", NOT "FOCUSABLE". `isFocusable` asks
+      // whether a node has `focus`, and `<body>` does — so it answers true for
+      // exactly the state this arm exists to repair. What the keydown listener
+      // needs is a focus owner it can receive an event from.
+      const adrift =
+        !isElement(doc.activeElement) || !surface.contains(doc.activeElement);
+      if (!restored && focused === null && heldFocus && adrift) {
+        // THROUGH `focusIn`, NOT `focus()`. The rail renders one row at
+        // `tabindex="0"` and the rest at `-1`, and focusing a row directly
+        // leaves the STOP on whichever row had it — so Tab out and back
+        // returns to a different row than the one the reader is on.
+        // `focusIn` moves the stop with the focus, which is why every other
+        // row-focus path in this file goes through it.
+        const first = zone('rail')?.querySelector<HTMLElement>(`[${KEY_ATTRIBUTE}][tabindex]`);
+        const key = first?.getAttribute(KEY_ATTRIBUTE);
+        if (key !== null && key !== undefined) focusIn('rail', key);
+      }
+      // AND A RESORT THAT CANNOT ITSELF FAIL. The rail is not always there to
+      // fall back to: with the audit filter on and nothing flagged it draws no
+      // rows at all, while the inspector stays perfectly usable — so pressing a
+      // self-removing control there left focus on the body and killed the
+      // keyboard loop exactly as before. A fallback with a precondition is not
+      // a last resort.
+      //
+      // The surface itself always exists, and the keydown listener is on it, so
+      // focus landing here is by definition focus the loop can hear. `tabindex`
+      // is -1: this is somewhere to PUT focus, never a stop Tab should find.
+      if (
+        heldFocus &&
+        (!isElement(doc.activeElement) || !surface.contains(doc.activeElement))
+      ) {
+        // A CONTROL, BEFORE THE SURFACE ITSELF. Most of these do not merely
+        // vanish — they REPLACE themselves with the step they opened, and `add`
+        // becoming the kind list is the ordinary case. Landing on the bare
+        // surface there put the press back in reach of the listener and no
+        // further: `interaction()` answers `canvas` only for a focused ROW, so
+        // on the surface every create binding — the kind digits, Escape —
+        // returns `none`. Reachable and inoperable is not the loop this is about.
+        //
+        // THE ZONE THE READER WAS IN FIRST, then anywhere. Which control
+        // replaced which is not knowable from here — the chooser is sometimes
+        // floating and sometimes the inspector's own list — so this asks the
+        // weaker, answerable question: what can the reader act on, nearest to
+        // where they were.
+        const zoneName = commandToken?.zone ?? null;
+        const near = zoneName === null ? null : zone(zoneName);
+        const opened =
+          near?.querySelector<HTMLElement>(`[${COMMAND_ATTRIBUTE}]`) ??
+          surface.querySelector<HTMLElement>(`[${COMMAND_ATTRIBUTE}]`);
+        if (opened !== null) {
+          opened.focus({ preventScroll: true });
+        } else {
+          // AND THE SURFACE LAST, which is the resort that cannot itself fail.
+          // It leaves the reader without a binding to press, but it keeps the
+          // listener reachable so Tab moves them somewhere useful — strictly
+          // better than the body, which reaches nothing at all.
+          surface.setAttribute('tabindex', '-1');
+          surface.focus({ preventScroll: true });
+        }
+      }
     }
     // THE KEYBOARD IS GIVEN BACK. The overlay is removed with focus inside it,
     // so without this `activeElement` is the body — and the keydown listener is
@@ -1389,7 +1669,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       dispatch({
         kind: 'control',
         name,
-        target: control.getAttribute('data-ig-target') ?? undefined,
+        target: control.getAttribute(TARGET_ATTRIBUTE) ?? undefined,
         // The picker publishes its kind as `data-ig-kind`; the mount's chrome
         // publishes `data-ig-value`. One command channel, two spellings.
         value: control.getAttribute('data-ig-value') ?? control.getAttribute('data-ig-kind') ?? undefined,
