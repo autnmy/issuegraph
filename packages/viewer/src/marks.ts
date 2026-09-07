@@ -194,22 +194,47 @@ function round(value: number): string {
 }
 
 /**
- * The colour a mark paints with.
+ * The colour a STROKE paints with.
  *
- * A mark that declares no tone takes the RELATIONSHIP's, never `currentColor`.
+ * A stroke that declares no tone takes the RELATIONSHIP's, never `currentColor`.
  * The two are not the same thing here: a mark is a sibling of the edge, so it
  * inherits the viewer's body text rather than the hue `.ig-edge[data-edge=…]`
- * gives the line — which would render a `pending-write` chip grey beside the
- * red line it belongs to, silently dropping the one channel that says which
- * relationship is being written.
+ * gives the line — which would render a companion grey beside the red line it
+ * doubles, silently dropping the one channel that says which relationship is
+ * being written.
  *
  * "No tone" therefore means "the kind's", which is what a state with no hue of
  * its own is asking for; a state that has one overrides it here.
+ *
+ * ONLY A STROKE. A glyph is TEXT and takes {@link GLYPH_FILL} instead — see the
+ * note there, and `theme.ts`, which guarantees these hues at a bar text may not
+ * be drawn at.
  */
-function toneOf(mark: EdgeMark, drawing: EdgeDrawing): string {
+function strokeToneOf(mark: EdgeMark, drawing: EdgeDrawing): string {
   const token = mark.tone === undefined || mark.tone === null ? drawing.hueToken : mark.tone;
   return `var(${token})`;
 }
+
+/**
+ * The colour every worded or glyphed mark is drawn in, and it is TEXT-GRADE.
+ *
+ * THE HUES ARE NOT AVAILABLE TO TEXT, and the palette says so in as many words:
+ * `theme.ts` guarantees text at WCAG AA's 4.5:1 and holds every edge hue AND
+ * every edit-state hue to the 3:1 bar that applies to a line or a badge outline
+ * instead. `theme.test.ts` states the reason for keeping the two apart —
+ * "stating the DIFFERENT bar explicitly is what stops the looser number leaking
+ * onto text later" — which is precisely what a glyph painted in a relationship
+ * hue does. Measured, a `writing…` chip in `--ig-edge-duplicate-of` lands at
+ * about 4.47:1, and a host's own theme may sit nearer 3:1 and still be valid.
+ *
+ * NOTHING IS LOST BY IT, because the mark was never the hue's carrier. The type
+ * identity rests on four redundant channels, and a mark's contribution is its
+ * SHAPE — a ✕ is not a `!` is not a word, without colour. The hue stays on the
+ * line, where the bar it is guaranteed at is the right one: the edge's own
+ * stroke, the dashed ghost, and the conflict's companion, which is a stroke and
+ * so keeps its tone.
+ */
+const GLYPH_FILL = 'var(--ig-text-body)';
 
 /**
  * One glyph, placed.
@@ -230,7 +255,6 @@ function glyphMark(
   mark: EdgeMark,
   placement: EdgeMarkPlacement,
   identity: string,
-  drawing: EdgeDrawing,
   /**
    * Which end of the glyph sits on `at`.
    *
@@ -259,7 +283,7 @@ function glyphMark(
       // position rather than about a glyph's own box.
       'text-anchor': anchor,
       'dominant-baseline': 'middle',
-      fill: toneOf(mark, drawing),
+      fill: GLYPH_FILL,
       'aria-hidden': 'true',
     },
     [mark.glyph],
@@ -323,7 +347,7 @@ function companionPaths(
     'data-ig-group': identity,
     d: geometry.d,
     fill: 'none',
-    stroke: toneOf(mark, drawing),
+    stroke: strokeToneOf(mark, drawing),
     // THE KIND'S OWN DASH, CARRIED. A companion drops `class` like every other
     // mark, so `.ig-edge[data-edge=…]` no longer patterns it — and a SOLID
     // second version beside a dotted `duplicate-of` is not the same line twice,
@@ -405,7 +429,6 @@ export function edgeMarkSpecs(
             mark,
             'both-ends',
             identity,
-            drawing,
             side === 'left' ? 'end' : 'start',
           );
         };
@@ -457,7 +480,7 @@ export function edgeMarkSpecs(
           x: geometry.end.x - cos * back + away.x * aside,
           y: geometry.end.y - sin * back + away.y * aside,
         };
-        const spec = glyphMark(at, mark, 'terminal', identity, drawing);
+        const spec = glyphMark(at, mark, 'terminal', identity);
         if (spec !== null) specs.push(spec);
         break;
       }
@@ -482,7 +505,6 @@ export function edgeMarkSpecs(
           mark,
           'beside',
           identity,
-          drawing,
         );
         if (spec !== null) specs.push(spec);
         break;

@@ -11,6 +11,7 @@ import {
   edgeMarkSpecs,
 } from './marks.ts';
 import { viewerStylesheet } from './styles.ts';
+import { EDGE_TOKENS, STATE_TOKENS, TEXT_TOKENS } from './testing/contrast.ts';
 import { defaultTheme } from './theme.ts';
 
 const IDENTITY = 'blocked-by|a|b';
@@ -233,15 +234,19 @@ describe('a mark is placed by the layer that computed the layout', () => {
   it('takes the tone as a token NAME and never as a colour', () => {
     // The same contract the edge hues already use: a host that rethemes moves
     // the mark and the stroke together, and nothing here holds a value.
-    const [chip] = edgeMarkSpecs(
-      [{ placement: 'beside', glyph: '!', tone: '--ig-state-invalid' }],
+    //
+    // Read on a STROKE, because that is the carrier a tone reaches. A glyph is
+    // TEXT and is drawn text-grade whatever tone was asked for — the hues are
+    // guaranteed at the 3:1 non-text bar, and text may not be drawn at it.
+    const [companion] = edgeMarkSpecs(
+      [{ placement: 'companion', glyph: null, tone: '--ig-state-invalid' }],
       verticalGeometry(),
       defaultTheme,
       IDENTITY,
       SOLID,
     );
-    assert.ok(chip !== undefined);
-    assert.equal(attrsOf(chip)['fill'], 'var(--ig-state-invalid)');
+    assert.ok(companion !== undefined);
+    assert.equal(attrsOf(companion)['stroke'], 'var(--ig-state-invalid)');
   });
 
   it('draws nothing for a mark with no glyph but a glyph placement', () => {
@@ -277,37 +282,70 @@ describe('a mark is placed by the layer that computed the layout', () => {
     assert.equal(attrsOf(solid)['stroke-dasharray'], null);
   });
 
-  it('paints a mark with no tone in the RELATIONSHIP’s hue, never currentColor', () => {
+  it('paints a STROKE with no tone in the relationship’s hue, never currentColor', () => {
     // A mark is a SIBLING of the edge, not a descendant, so it inherits the
     // viewer's body text rather than the hue `.ig-edge[data-edge=…]` gives the
-    // line. `currentColor` therefore renders a `pending-write` chip grey beside
-    // the red line it belongs to, dropping the channel that says WHICH
-    // relationship is being written.
-    const specs = edgeMarkSpecs(
-      [marked('beside', '!'), marked('companion', null)],
+    // line. `currentColor` therefore renders a companion grey beside the red
+    // line it doubles, dropping the channel that says WHICH relationship is
+    // being written.
+    const [companion] = edgeMarkSpecs(
+      [marked('companion', null)],
       verticalGeometry(),
       defaultTheme,
       IDENTITY,
       SOLID,
     );
-    assert.ok(specs.length > 0);
-    for (const spec of specs) {
-      const attrs = attrsOf(spec);
-      const painted = spec.tag === 'text' ? attrs['fill'] : attrs['stroke'];
-      assert.equal(painted, `var(${SOLID.hueToken})`, `${String(spec.tag)} painted ${String(painted)}`);
-    }
+    assert.ok(companion !== undefined);
+    assert.equal(attrsOf(companion)['stroke'], `var(${SOLID.hueToken})`);
   });
 
-  it('lets a state that HAS a hue override the relationship’s', () => {
-    const [spec] = edgeMarkSpecs(
-      [{ placement: 'beside', glyph: '!', tone: '--ig-state-invalid' }],
+  it('lets a state that HAS a hue override the relationship’s, on a stroke', () => {
+    const [companion] = edgeMarkSpecs(
+      [{ placement: 'companion', glyph: null, tone: '--ig-state-conflict' }],
       verticalGeometry(),
       defaultTheme,
       IDENTITY,
       SOLID,
     );
-    assert.ok(spec !== undefined);
-    assert.equal(attrsOf(spec)['fill'], 'var(--ig-state-invalid)');
+    assert.ok(companion !== undefined);
+    assert.equal(attrsOf(companion)['stroke'], 'var(--ig-state-conflict)');
+  });
+
+  it('draws every GLYPH in a text-grade colour, never in an edge or state hue', () => {
+    // THE HUES ARE NOT AVAILABLE TO TEXT. `theme.ts` guarantees text at 4.5:1
+    // and holds every edge hue AND every edit-state hue to the 3:1 bar that
+    // applies to a line or a badge outline — and `theme.test.ts` says why the
+    // two are kept apart: "stating the DIFFERENT bar explicitly is what stops
+    // the looser number leaking onto text later". A glyph painted in a
+    // relationship hue is that leak; measured, `writing…` in
+    // `--ig-edge-duplicate-of` lands around 4.47:1.
+    //
+    // Nothing is lost: a mark's channel is its SHAPE, and the hue stays on the
+    // line, which is drawn at the bar it is actually guaranteed at.
+    // Read from the CONTRAST module's own groups, so a token added to either
+    // family is covered here without this test being edited.
+    const hues = [...EDGE_TOKENS, ...STATE_TOKENS];
+    const specs = edgeMarkSpecs(
+      [
+        marked('beside', '!'),
+        marked('terminal'),
+        marked('both-ends', 'writing…'),
+        { placement: 'beside', glyph: '!', tone: '--ig-state-invalid' },
+      ],
+      verticalGeometry(),
+      defaultTheme,
+      IDENTITY,
+      SOLID,
+    );
+    const glyphs = specs.filter((spec) => spec.tag === 'text');
+    assert.ok(glyphs.length > 0);
+    for (const glyph of glyphs) {
+      const fill = String(attrsOf(glyph)['fill']);
+      for (const hue of hues) {
+        assert.equal(fill.includes(hue), false, `a glyph painted with ${hue}`);
+      }
+      assert.ok(TEXT_TOKENS.some((token) => fill.includes(token)), `glyph fill ${fill} is not text-grade`);
+    }
   });
 
   it('puts every mark clear of the CARD it belongs to', () => {
