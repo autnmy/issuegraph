@@ -3032,6 +3032,39 @@ describe('a command control keeps focus across the redraw it causes', () => {
     }
   });
 
+  it('keeps focus on a toggle that redraws itself with the other command', async () => {
+    // THIS PULL REQUEST'S OWN DEFECT, wearing a different attribute value. The
+    // isolated-issues chip is one button whose command flips between
+    // `open-isolated` and `close-isolated`, so an exact command match rejected
+    // the replacement and dropped the reader onto the rail — on a control that,
+    // like the disclosure, exists to be pressed a second time.
+    // A DOCUMENT WITH NO EDGES, because the chip is drawn only when something is
+    // isolated. An earlier revision of this test used the shared fixture and
+    // returned early when the chip was absent — it always was, so the test
+    // asserted nothing while reading as coverage. That is the same "a rule that
+    // cannot fail" this pull request had to fix three times already, so it is
+    // spelled out rather than quietly corrected.
+    const page = await mounted({ issues: SEED.issues, edges: [] });
+    try {
+      const chip = page.control('open-isolated');
+      assert.ok(chip !== null, 'no isolated chip was drawn — the test would prove nothing');
+      chip.focus();
+      chip.click();
+      await flush();
+
+      const now = page.win.document.activeElement;
+      assert.ok(now !== null);
+      assert.equal(
+        now.getAttribute('data-ig-command'),
+        'close-isolated',
+        'focus left the toggle when it redrew with the other command',
+      );
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
   it('leaves the keyboard loop alive — a later press still reaches the mount', async () => {
     const page = await mounted();
     try {

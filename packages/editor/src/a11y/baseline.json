@@ -532,7 +532,7 @@
       "target": null,
       "value": null,
       "tag": "input",
-      "role": null,
+      "role": "searchbox",
       "tabStop": "tab",
       "name": "aria-label",
       "aria": {}

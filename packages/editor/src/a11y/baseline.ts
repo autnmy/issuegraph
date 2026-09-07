@@ -69,6 +69,13 @@ export interface SurfaceElement extends SurfaceNode {
 /**
  * Where a control's accessible name comes from, or why it has none.
  *
+ * `label` IS A REAL NAME AND WAS MISSING. `scale/render.ts` wraps its search
+ * input in a `<label>` carrying the text — the input has a genuine accessible
+ * name and no text of its own, no `aria-label` and no `aria-labelledby`. Read
+ * without this, it came back `none`, so the naming rule reported a false
+ * failure on correct markup and the control could not join the baseline at all.
+ * An exported reader that is wrong about native HTML is worse than no reader.
+ *
  * `empty` IS ITS OWN ANSWER, not a kind of `none`. An `aria-label=""` is an
  * author who meant to supply a name and supplied nothing — a different defect
  * from a control nobody labelled, and one that reads as deliberate in the
@@ -78,7 +85,7 @@ export interface SurfaceElement extends SurfaceNode {
  * and default none), so pinning the string would fail any host that translated
  * it. Whether one was supplied is a fact about the markup; what it says is not.
  */
-export type NameSource = 'aria-label' | 'aria-labelledby' | 'text' | 'empty' | 'none';
+export type NameSource = 'aria-label' | 'aria-labelledby' | 'label' | 'text' | 'empty' | 'none';
 
 /**
  * How the keyboard reaches a control.
@@ -164,9 +171,35 @@ const IMPLICIT_ROLES: Readonly<Record<string, string>> = Object.freeze({
  * unnamed it exposes no role at all. Both were mapped unconditionally in an
  * earlier revision, which recorded a role the accessibility tree does not have.
  */
-function conditionalRole(element: SurfaceElement, tag: string): string | null {
+/**
+ * `input`'s implicit role, which is its `type`'s rather than its tag's.
+ *
+ * The mounted target search is `<input type="search">` — `searchbox`, not
+ * nothing — and recording `null` for a control this package itself renders
+ * means the role column could not notice it being changed into a semantically
+ * different control. Only the types rendered here are mapped; the rest stay
+ * `null`, on the same rule as every other unmapped tag.
+ */
+const INPUT_ROLES: Readonly<Record<string, string>> = Object.freeze({
+  button: 'button',
+  checkbox: 'checkbox',
+  radio: 'radio',
+  reset: 'button',
+  search: 'searchbox',
+  submit: 'button',
+  text: 'textbox',
+});
+
+function conditionalRole(
+  root: SurfaceElement,
+  element: SurfaceElement,
+  tag: string,
+): string | null {
   if (tag === 'a') return element.getAttribute('href') === null ? null : 'link';
-  if (tag === 'section') return nameSource(element) === 'none' ? null : 'region';
+  if (tag === 'section') return nameSource(root, element) === 'none' ? null : 'region';
+  // NO `type` IS `type="text"`, which is HTML's own default rather than an
+  // assumption: an `<input>` with no type is a text field.
+  if (tag === 'input') return INPUT_ROLES[element.getAttribute('type') ?? 'text'] ?? null;
   return null;
 }
 
@@ -222,7 +255,29 @@ function visibleText(element: SurfaceElement): string {
   return out.trim();
 }
 
-function nameSource(element: SurfaceElement): NameSource {
+/**
+ * Whether a `<label>` names this control, by either association HTML defines.
+ *
+ * WRAPPING FIRST, then `for`. `scale/render.ts` uses the wrapping form and says
+ * why in as many words — two search boxes side by side with one `id` would make
+ * `for` resolve to whichever came first, so one would silently lose its label.
+ *
+ * THE `for` LOOKUP WALKS AND COMPARES rather than building `label[for="..."]`:
+ * an id is host data, and interpolating one into a selector is the injection
+ * this module already had to remove once.
+ */
+function labelNames(root: SurfaceElement, element: SurfaceElement): boolean {
+  const wrapping = element.closest('label');
+  if (wrapping !== null && visibleText(wrapping) !== '') return true;
+  const id = element.getAttribute('id');
+  if (id === null || id === '') return false;
+  for (const label of root.querySelectorAll('label')) {
+    if (label.getAttribute('for') === id && visibleText(label) !== '') return true;
+  }
+  return false;
+}
+
+function nameSource(root: SurfaceElement, element: SurfaceElement): NameSource {
   // AN EMPTY VALUE IS NOT A NAME, and it is not the same as no attribute.
   // `renderMarkup` omits only `undefined`, `null` and `false`, so
   // `aria-label=""` does reach the markup — the case the "omitted, never empty"
@@ -232,7 +287,8 @@ function nameSource(element: SurfaceElement): NameSource {
     if (value === null) continue;
     return value === '' ? 'empty' : attribute;
   }
-  return visibleText(element) === '' ? 'none' : 'text';
+  if (visibleText(element) !== '') return 'text';
+  return labelNames(root, element) ? 'label' : 'none';
 }
 
 function tabStopOf(element: SurfaceElement): TabStop {
@@ -340,9 +396,9 @@ export function controlSurface(root: SurfaceElement): readonly ControlEntry[] {
         role:
           element.getAttribute('role') ??
           IMPLICIT_ROLES[tag] ??
-          conditionalRole(element, tag),
+          conditionalRole(root, element, tag),
         tabStop: tabStopOf(element),
-        name: nameSource(element),
+        name: nameSource(root, element),
         aria: ariaOf(ids, element),
       });
     }

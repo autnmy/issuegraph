@@ -245,6 +245,32 @@ const COMMAND_ATTRIBUTE = 'data-ig-command';
 const TARGET_ATTRIBUTE = 'data-ig-target';
 
 /**
+ * Commands that name ONE control in two states.
+ *
+ * The isolated-issues chip redraws the SAME button with its command flipped
+ * (`scale/render.ts`), so a focus token comparing the raw command rejects the
+ * replacement and sends the reader to the rail — and that control, like the
+ * conflict disclosure, is one you press a second time to undo. It is this
+ * pull request's own defect wearing a different attribute value, which is
+ * why it is worth a table rather than a special case: the next toggle gets
+ * one line here instead of a new bug.
+ *
+ * A TABLE, NOT A PREFIX RULE. `open-` / `close-` looks like a pattern and is
+ * not one — `first-pass` and `first-pass-close` are two different controls in
+ * two different places, and a rule that folded them would restore focus onto
+ * the wrong one.
+ */
+const TOGGLE_IDENTITY: Readonly<Record<string, string>> = Object.freeze({
+  'open-isolated': 'isolated',
+  'close-isolated': 'isolated',
+});
+
+/** What a control is, rather than which of its states is showing. */
+function controlIdentity(control: string): string {
+  return TOGGLE_IDENTITY[control] ?? control;
+}
+
+/**
  * An element, recognised by what it can do.
  *
  * Not `instanceof Element`: that reaches for a constructor this module has no
@@ -943,7 +969,10 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // a host's tracker can spell reaches a selector. See the token above.
     const scope = token.zone === null ? surface : (zone(token.zone) ?? surface);
     for (const node of scope.querySelectorAll<HTMLElement>(`[${token.channel}]`)) {
-      if (node.getAttribute(token.channel) !== token.control) continue;
+      const control = node.getAttribute(token.channel);
+      // BY IDENTITY, so a toggle that redraws itself with the other command is
+      // still the control the reader was on. See {@link TOGGLE_IDENTITY}.
+      if (control === null || controlIdentity(control) !== controlIdentity(token.control)) continue;
       if (node.getAttribute(TARGET_ATTRIBUTE) !== token.target) continue;
       const value = node.getAttribute('data-ig-value') ?? node.getAttribute('data-ig-kind');
       if (value !== token.value) continue;
@@ -1451,9 +1480,15 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       const adrift =
         !isElement(doc.activeElement) || !surface.contains(doc.activeElement);
       if (!restored && focused === null && heldFocus && adrift) {
-        surface
-          .querySelector<HTMLElement>(`[${KEY_ATTRIBUTE}][tabindex]`)
-          ?.focus({ preventScroll: true });
+        // THROUGH `focusIn`, NOT `focus()`. The rail renders one row at
+        // `tabindex="0"` and the rest at `-1`, and focusing a row directly
+        // leaves the STOP on whichever row had it — so Tab out and back
+        // returns to a different row than the one the reader is on.
+        // `focusIn` moves the stop with the focus, which is why every other
+        // row-focus path in this file goes through it.
+        const first = zone('rail')?.querySelector<HTMLElement>(`[${KEY_ATTRIBUTE}][tabindex]`);
+        const key = first?.getAttribute(KEY_ATTRIBUTE);
+        if (key !== null && key !== undefined) focusIn('rail', key);
       }
     }
     // THE KEYBOARD IS GIVEN BACK. The overlay is removed with focus inside it,
