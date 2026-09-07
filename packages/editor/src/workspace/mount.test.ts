@@ -3492,6 +3492,19 @@ describe('a control activates from the keyboard', () => {
     return event;
   };
 
+  /**
+   * Whatever holds focus, narrowed without a cast.
+   *
+   * `instanceof` against THIS page's own `HTMLElement`, which is safe here for
+   * the reason `mount.ts` avoids it in the product: a test has exactly one
+   * window and knows which, while the mount may be handed a node from another.
+   */
+  const focused = (page: Mounted): HTMLElement => {
+    const active = page.win.document.activeElement;
+    if (!(active instanceof page.win.HTMLElement)) throw new Error('nothing focusable holds focus');
+    return active;
+  };
+
   /** Select an issue with the keyboard alone — the rail's roving tab stop, then `⏎`. */
   const selectFirstIssue = async (page: Mounted): Promise<void> => {
     const row = page.rows().find((each) => each.getAttribute('data-ig-key') === '1');
@@ -3721,6 +3734,88 @@ describe('a control activates from the keyboard', () => {
       // native activation here to observe, so `defaultPrevented` stands in for
       // it, which is why it is asserted rather than assumed.
       assert.equal(held.defaultPrevented, true, 'the repeat was handed back — a native keyup would act again');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('keeps a held key with the control it activated, even after focus moves', async () => {
+    // REVIEW FINDING ON THIS CHANGE, and the half the in-arm repeat guard cannot
+    // reach. ACTIVATING A CONTROL OFTEN MOVES FOCUS — pressing a kind option
+    // redraws and focuses `target-query` — so the repeats of that same held
+    // press arrive at the INPUT. There the arm asks "is what holds focus a
+    // control?", answers "an input, hand it back", and the platform types a
+    // space into a query the reader never started. Held long enough, the target
+    // search fills with spaces from a press that was aimed at a button.
+    const page = await mounted();
+    try {
+      await selectFirstIssue(page);
+      const add = page.control('add');
+      assert.ok(add !== null, 'no add control');
+      press(page, add, 'Enter');
+      await flush();
+
+      const chosen = KIND_KEYS[0];
+      assert.ok(chosen !== undefined, 'the vocabulary has no first kind');
+      const option = page.element.querySelector<HTMLElement>(`[data-ig-command="kind"][data-ig-value="${chosen.edgeKind}"]`);
+      assert.ok(option !== null, 'the chooser drew no option to press');
+
+      press(page, option, ' ');
+      await flush();
+
+      // FOCUS HAS MOVED, and the test says so rather than assuming it — the
+      // whole finding rests on this step happening.
+      const now = focused(page);
+      assert.equal(now.getAttribute('data-ig-command'), 'target-query', 'activating the kind did not move focus');
+
+      const held = new page.win.KeyboardEvent('keydown', { key: ' ', repeat: true, bubbles: true, cancelable: true });
+      now.dispatchEvent(held);
+      await flush();
+
+      assert.equal(held.defaultPrevented, true, 'a repeat of the held key typed a space into the target query');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('releases the held key on keyup, so a later repeat is the reader’s own', async () => {
+    // THE OTHER SIDE OF THE SAME FLAG, isolated to `keyup` alone. Remembering
+    // the press must not outlive it, or the reader who let go and then held
+    // `Space` inside the search box they were sent to would find it swallowed by
+    // a press that ended.
+    //
+    // A REPEAT is what discriminates: `onKeydown` clears the flag on any fresh
+    // NON-repeat press, so a test driving one of those would pass with the
+    // `keyup` listener deleted.
+    const page = await mounted();
+    try {
+      await selectFirstIssue(page);
+      const add = page.control('add');
+      assert.ok(add !== null, 'no add control');
+      press(page, add, 'Enter');
+      await flush();
+
+      const chosen = KIND_KEYS[0];
+      assert.ok(chosen !== undefined, 'the vocabulary has no first kind');
+      const option = page.element.querySelector<HTMLElement>(`[data-ig-command="kind"][data-ig-value="${chosen.edgeKind}"]`);
+      assert.ok(option !== null, 'the chooser drew no option to press');
+      press(page, option, ' ');
+      await flush();
+
+      const search = focused(page);
+      assert.equal(search.getAttribute('data-ig-command'), 'target-query', 'activating the kind did not move focus');
+
+      // LET GO.
+      search.dispatchEvent(new page.win.KeyboardEvent('keyup', { key: ' ', bubbles: true }));
+
+      const held = new page.win.KeyboardEvent('keydown', { key: ' ', repeat: true, bubbles: true, cancelable: true });
+      search.dispatchEvent(held);
+      await flush();
+
+      // NOW IT IS THE READER TYPING, and the input owns it again.
+      assert.equal(held.defaultPrevented, false, 'a repeat after keyup was still held by the finished press');
     } finally {
       page.handle.destroy();
       page.dom.window.close();

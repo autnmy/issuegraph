@@ -427,6 +427,10 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   let drawn: { readonly viewer: ViewerDocument; readonly rail: RailWindow } | null = null;
   // A rail row to focus once the window has been re-cut around it.
   let pendingFocus: { readonly kind: 'after' | 'before' | 'first' | 'last'; readonly key: string | null } | null = null;
+  // The key currently holding a control it activated — `null` between presses.
+  // See `onKeydown`'s first arm for why this is a fact about the PRESS and not a
+  // question asked of whatever holds focus by the time the repeats arrive.
+  let activating: string | null = null;
   let pressed:
     | { readonly pointerId: number; readonly key: string; readonly x: number; readonly y: number; dragging: boolean }
     | null = null;
@@ -2076,6 +2080,28 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   };
 
   const onKeydown = (event: KeyboardEvent): void => {
+    // A HELD KEY BELONGS TO THE CONTROL IT ACTIVATED, wherever focus went next.
+    //
+    // The arm below already refuses to dispatch twice for one held key, and that
+    // is not enough, because ACTIVATING A CONTROL OFTEN MOVES FOCUS: pressing a
+    // kind option redraws and focuses `target-query`, and a self-removing
+    // control falls back to a rail row. So the repeats of that same press arrive
+    // at a DIFFERENT element, where the arm's question — "is what holds focus
+    // now a control?" — answers about the wrong thing entirely. Held `Space` on
+    // a kind option would type spaces into the query the reader has not started;
+    // held `Space` on `add` would walk the rail. Each is the platform doing
+    // exactly the right thing with a press this package took halfway.
+    //
+    // Recorded as a FACT ABOUT THE PRESS rather than re-derived from focus,
+    // which is the same shape as the rest of this file's fixes for this class:
+    // where focus is is not what the question was about. It ends at `keyup`, and
+    // a fresh non-repeat press of the same key clears it too — so a `keyup` lost
+    // to a window blur costs one held key rather than every later one.
+    if (event.key === activating && event.repeat) {
+      event.preventDefault();
+      return;
+    }
+    if (!event.repeat) activating = null;
     if (firstPassKeydown(event)) {
       event.preventDefault();
       return;
@@ -2195,8 +2221,24 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // and a rule that split them would be a rule about keyboards rather than
     // about acts.)
     event.preventDefault();
+    // KEPT BESIDE THE FLAG ABOVE, not replaced by it. This arm answers for a
+    // repeat that reached it with no activation recorded — a first press some
+    // other handler consumed, say — where the flag has nothing to say and a
+    // dispatch per repeat is the wrong answer anyway. The flag answers for the
+    // repeats that never get here.
     if (event.repeat) return;
-    if (answer.kind === 'dispatch') dispatch(answer.command);
+    if (answer.kind !== 'dispatch') return;
+    // RECORDED BEFORE THE DISPATCH, because the dispatch is what moves focus.
+    activating = event.key;
+    dispatch(answer.command);
+  };
+
+  // THE HELD KEY IS LET GO. Registered beside the keydown listener rather than on
+  // the document, so a mount that is torn down takes it with it — and a `keyup`
+  // that never arrives because focus left the window is survivable, which is why
+  // `onKeydown` clears the flag on a fresh press too.
+  const onKeyup = (event: KeyboardEvent): void => {
+    if (event.key === activating) activating = null;
   };
 
   const onPointerDown = (event: PointerEvent): void => {
@@ -2284,6 +2326,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   element.addEventListener('compositionend', onCompositionEnd);
   element.addEventListener('scroll', onScroll, true);
   element.addEventListener('keydown', onKeydown);
+  element.addEventListener('keyup', onKeyup);
   element.addEventListener('pointerdown', onPointerDown);
   element.addEventListener('pointermove', onPointerMove);
   element.addEventListener('pointerup', onPointerUp);
@@ -2302,6 +2345,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     element.removeEventListener('compositionend', onCompositionEnd);
     element.removeEventListener('scroll', onScroll, true);
     element.removeEventListener('keydown', onKeydown);
+    element.removeEventListener('keyup', onKeyup);
     element.removeEventListener('pointerdown', onPointerDown);
     element.removeEventListener('pointermove', onPointerMove);
     element.removeEventListener('pointerup', onPointerUp);
