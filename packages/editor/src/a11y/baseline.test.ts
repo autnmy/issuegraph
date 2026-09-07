@@ -297,6 +297,28 @@ describe('controlSurface reads markup this package does not itself render', () =
     assert.equal(only('<input type="color" data-ig-command="q" aria-label="q">').role, null);
   });
 
+  it('resolves a name the way the browser does when both attributes are set', () => {
+    // PRECEDENCE, NOT PREFERENCE. Accessible-name computation takes
+    // `aria-labelledby` first, so a control with both is exposed with the empty
+    // name its reference resolves to — and reporting the fallback label would
+    // pass the naming rule on a control that announces nothing.
+    assert.equal(
+      only(
+        '<span id="n"></span><button data-ig-command="x" aria-label="Retry" aria-labelledby="n"></button>',
+      ).name,
+      'empty',
+    );
+  });
+
+  it('inherits aria-hidden from a wrapper, so a hidden tab stop is visible', () => {
+    const entry = only('<div aria-hidden="true"><button data-ig-command="x">Go</button></div>');
+    assert.equal(entry.aria['aria-hidden'], 'true');
+    // AND IT IS STILL A TAB STOP, which is the pairing the rule rejects:
+    // `aria-hidden` hides from the accessibility tree and does not remove
+    // focus, unlike `hidden` and `inert`.
+    assert.equal(entry.tabStop, 'tab');
+  });
+
   it('reports a reference to a missing id as dangling', () => {
     assert.equal(
       only('<button data-ig-command="x" aria-controls="gone">Go</button>').aria['aria-controls'],

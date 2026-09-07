@@ -301,9 +301,12 @@ function nameSource(root: SurfaceElement, element: SurfaceElement): NameSource {
   // `renderMarkup` omits only `undefined`, `null` and `false`, so
   // `aria-label=""` does reach the markup — the case the "omitted, never empty"
   // rule `holdLine` states for `data-code` exists to prevent.
-  const label = element.getAttribute('aria-label');
-  if (label !== null) return label === '' ? 'empty' : 'aria-label';
-
+  // `aria-labelledby` FIRST, because accessible-name computation resolves it
+  // BEFORE `aria-label` — so a host supplying both, with the reference pointing
+  // at an empty element, is exposed with no name while a reader that took the
+  // label would have reported one. Order is the whole of the fix; each branch
+  // was already right on its own.
+  //
   // AN IDREF THAT RESOLVES IS NOT YET A NAME. `aria-labelledby` naming an
   // element that exists but carries no text computes to an empty accessible
   // name, and reading the attribute alone reported a supplied name for a
@@ -324,6 +327,9 @@ function nameSource(root: SurfaceElement, element: SurfaceElement): NameSource {
     }
     return text.trim() === '' ? 'empty' : 'aria-labelledby';
   }
+
+  const label = element.getAttribute('aria-label');
+  if (label !== null) return label === '' ? 'empty' : 'aria-label';
   if (visibleText(element) !== '') return 'text';
   return labelNames(root, element) ? 'label' : 'none';
 }
@@ -392,6 +398,16 @@ function ariaOf(ids: ReadonlySet<string>, element: SurfaceElement): Readonly<Rec
     const value = element.getAttribute(attribute);
     if (value !== null) out[attribute] = value;
   }
+  // `aria-hidden` IS INHERITED, and the rule that reads it is about exactly
+  // that. A wrapper carrying it takes its descendants out of the accessibility
+  // tree WITHOUT taking them out of the tab order — which is the "focusable and
+  // announces nothing" case the rule exists to reject. Read off the element
+  // alone, the rule could not see the shape it was written for: the entry
+  // carried no `aria-hidden` at all and passed.
+  //
+  // The other enumerated states are properties of the element that carries
+  // them, so only this one is resolved through ancestry.
+  if (element.closest('[aria-hidden="true"]') !== null) out['aria-hidden'] = 'true';
   for (const attribute of IDREF_ARIA) {
     const value = element.getAttribute(attribute);
     if (value === null) continue;
