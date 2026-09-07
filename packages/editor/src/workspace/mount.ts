@@ -1548,8 +1548,34 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         heldFocus &&
         (!isElement(doc.activeElement) || !surface.contains(doc.activeElement))
       ) {
-        surface.setAttribute('tabindex', '-1');
-        surface.focus({ preventScroll: true });
+        // A CONTROL, BEFORE THE SURFACE ITSELF. Most of these do not merely
+        // vanish — they REPLACE themselves with the step they opened, and `add`
+        // becoming the kind list is the ordinary case. Landing on the bare
+        // surface there put the press back in reach of the listener and no
+        // further: `interaction()` answers `canvas` only for a focused ROW, so
+        // on the surface every create binding — the kind digits, Escape —
+        // returns `none`. Reachable and inoperable is not the loop this is about.
+        //
+        // THE ZONE THE READER WAS IN FIRST, then anywhere. Which control
+        // replaced which is not knowable from here — the chooser is sometimes
+        // floating and sometimes the inspector's own list — so this asks the
+        // weaker, answerable question: what can the reader act on, nearest to
+        // where they were.
+        const zoneName = commandToken?.zone ?? null;
+        const near = zoneName === null ? null : zone(zoneName);
+        const opened =
+          near?.querySelector<HTMLElement>(`[${COMMAND_ATTRIBUTE}]`) ??
+          surface.querySelector<HTMLElement>(`[${COMMAND_ATTRIBUTE}]`);
+        if (opened !== null) {
+          opened.focus({ preventScroll: true });
+        } else {
+          // AND THE SURFACE LAST, which is the resort that cannot itself fail.
+          // It leaves the reader without a binding to press, but it keeps the
+          // listener reachable so Tab moves them somewhere useful — strictly
+          // better than the body, which reaches nothing at all.
+          surface.setAttribute('tabindex', '-1');
+          surface.focus({ preventScroll: true });
+        }
       }
     }
     // THE KEYBOARD IS GIVEN BACK. The overlay is removed with focus inside it,

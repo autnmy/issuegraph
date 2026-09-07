@@ -3159,6 +3159,16 @@ describe('a command control keeps focus across the redraw it causes', () => {
         now !== null && page.element.contains(now),
         `focus left the workspace — activeElement is ${now?.nodeName ?? 'null'}`,
       );
+      // AND SOMEWHERE THE READER CAN ACT FROM, which is a stronger claim than
+      // "inside the surface" and the one this issue actually makes. `add` opens
+      // the kind chooser, so the chooser is what focus should land on — on the
+      // bare surface the press reaches the listener and every create binding
+      // still answers `none`.
+      assert.notEqual(
+        now?.getAttribute('data-ig-command') ?? null,
+        null,
+        `focus landed on the bare surface rather than a control (${now?.className ?? 'none'})`,
+      );
     } finally {
       page.handle.destroy();
       page.dom.window.close();
