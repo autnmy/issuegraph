@@ -349,9 +349,9 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
    * caused it, and `editCarrier` reads the LANDED document — so between the two
    * moments a sibling write can land and take the relationship away, leaving
    * that call with nothing but the edge's identity. An identity records which
-   * two issues a relationship was between and NOT which of them declared it:
-   * `edgeIdentity` sorts the endpoints of a symmetric field, so for those the
-   * declaring end is not in the string at all. Re-asking therefore answered a
+   * two issues a relationship was between, and for a SYMMETRIC field it does not
+   * record which of them declared it: `edgeIdentity` sorts those endpoints, so
+   * the declaring end is not in the string at all. Re-asking therefore answered a
    * different issue from the one the edit went out under, for exactly the pairs
    * whose stored `from` sorted after their `to` — and `renderWorkspace` draws a
    * refusal only on the panel it names, so it was drawn where the reader was
@@ -979,7 +979,8 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       // had derived by an unrelated rule; then `editCarrier` was called here
       // instead, which is one rule but still asked at the wrong TIME — a
       // sibling write can remove the relationship between the act and the
-      // refusal, and what is left cannot say which end declared it. The answer
+      // refusal, and what is left says which end declared it only for the
+      // directed fields — `edgeIdentity` sorts the symmetric ones. The answer
       // was taken when the edit was made; this only looks it up. The two loops
       // above run over this same `snapshot.writes`, so the key is always
       // present, and `null` means the document held neither end — there is no

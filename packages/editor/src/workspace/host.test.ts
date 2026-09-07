@@ -350,11 +350,30 @@ describe('an edit names the issue it is about, and the panel goes there', () => 
     const gone = edgeIdentity('blocked-by', 'owner/repo#9', 'owner/repo#8');
     assert.ok(gone.includes('owner%2Frepo%239'), gone);
     assert.equal(editCarrier(qualified, { op: 'delete', edgeId: gone }), 'owner/repo#9');
-    // EITHER END ANSWERS, and the identity is not consulted about which. The
-    // one issue this backlog holds is the only panel a reader could be standing
-    // on, whichever end of the pair it sat on.
+    // AND THE FAR END ANSWERS WHEN THE CARRIER IS NOT IN THIS BACKLOG. Here the
+    // identity does say which end is which — `blocked-by` is directed, so its
+    // first segment is the declaring end — and it names `owner/repo#8`, an issue
+    // this document does not hold. The one issue it does hold is the only panel
+    // a reader could be standing on, so the fallback names it.
     const far = edgeIdentity('blocked-by', 'owner/repo#8', 'owner/repo#9');
     assert.equal(editCarrier(qualified, { op: 'delete', edgeId: far }), 'owner/repo#9');
+  });
+
+  it('takes a gone DIRECTED edge\u2019s carrier over the end listed first', () => {
+    // THE HALF THE PREVIOUS ROUND OVER-CORRECTED. `edgeIdentity` sorts the
+    // endpoints of a SYMMETRIC field only, so for the directed three the first
+    // segment IS `from` — the issue whose own block declares the relationship
+    // (§4.3) and the only panel carrying a remove control for the row. Read as
+    // naming neither end, this arm fell back to the first end `document.issues`
+    // happened to list, which is `1`: the target, and the panel the reader
+    // making this edit was not on. Driven end to end in `mount.test.ts`.
+    const gone = edgeIdentity('blocked-by', '3', '1');
+    assert.ok(gone.startsWith('blocked-by|3|'), gone);
+    assert.equal(document.issues.findIndex((issue) => issue.ref === '1'), 0);
+    assert.equal(editCarrier(document, { op: 'delete', edgeId: gone }), '3');
+    // The same pair declared the other way is the opposite claim, and answers
+    // the other panel — the direction is not being ignored, it is being read.
+    assert.equal(editCarrier(document, { op: 'delete', edgeId: edgeIdentity('blocked-by', '1', '3') }), '1');
   });
 
   it('cannot recover a symmetric edge’s carrier once the edge is gone', () => {

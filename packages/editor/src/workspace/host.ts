@@ -27,7 +27,7 @@
  * handles beside the mount rather than through it.
  */
 
-import { type EdgeField, edgeIdentityNames, isEdgeField } from '@issuegraph/core';
+import { type EdgeField, edgeIdentityEnd, isEdgeField } from '@issuegraph/core';
 import type { EdgeId, GraphDocument, MutationId, Proposal, StoredEdge, StoredIssue } from '@issuegraph/store';
 import { findEdge } from '@issuegraph/store';
 
@@ -197,13 +197,17 @@ function settled(state: HostState): HostResult {
  * as nobody touched either.
  *
  * IT CAN ONLY BE READ WHILE THE DOCUMENT STILL HOLDS THE EDGE, and every reader
- * of it is shaped by that. `edgeIdentity` SORTS the endpoints of a symmetric
- * field, so a `serialize-with` declared from `z` to `a` and one declared from
- * `a` to `z` are one string and `from` is not a function of it. A revision of
- * `@issuegraph/core` offered to name the carrying end of an identity anyway;
- * for the symmetric fields that answer was the sort order wearing the carrier's
- * name, and a refusal about such an edge was stated on the far end's panel —
- * the panel the reader was NOT on — whenever the pair sorted the other way.
+ * of it is shaped by that. Once the edge is gone its identity is the only record
+ * left, and it is a weaker record for the SYMMETRIC fields: `edgeIdentity` sorts
+ * their endpoints, so a `serialize-with` declared from `z` to `a` and one
+ * declared from `a` to `z` are one string and `from` is not a function of it. A revision of `@issuegraph/core` named the carrying end of
+ * every identity anyway; for the symmetric fields that answer was the sort order
+ * wearing the carrier's name, and a refusal about such an edge was stated on the
+ * far end's panel — the panel the reader was NOT on — whenever the pair sorted
+ * the other way. `edgeIdentityEnd` now answers `either` for exactly those and
+ * names the carrier for the directed fields, so this function stays the only
+ * source of the fact while the edge is there, and nothing downstream has to
+ * guess which kind of record it is holding.
  */
 function carrierOf(edge: StoredEdge): string {
   return edge.from;
@@ -214,11 +218,13 @@ function carrierOf(edge: StoredEdge): string {
  *
  * TWO SOURCES, AND THEY DO NOT ANSWER THE SAME QUESTION. A create, and an edit
  * on an edge the document still holds, yield an ORDERED pair: the carrier, and
- * the far end. An edit naming an edge the document no longer carries yields
- * neither — the identity is the only surviving record of it, and it records
- * WHICH TWO ISSUES, never which of them declared the relationship. Holding the
- * two apart in the type is what stops the second being read as the first, which
- * is exactly the reading this shape replaced.
+ * the far end. An edit naming an edge the document no longer carries yields an
+ * identity — a weaker record, which names WHICH TWO ISSUES and says which of
+ * them declared the relationship only for the directed fields, because those
+ * are the ones `edgeIdentity` does not sort. Holding the two apart in the type
+ * is what stops the second being read as the first, which is exactly the
+ * reading this shape replaced; how much the identity kept is then
+ * `@issuegraph/core`'s answer rather than this layer's assumption.
  */
 type EditEnds =
   | { readonly kind: 'pair'; readonly carrier: string; readonly far: string }
@@ -259,13 +265,19 @@ function endsOf(document: GraphDocument, proposal: Proposal): EditEnds {
  * no such panel, and stating the refusal on the target's — the only issue the
  * document holds — beats stating it nowhere.
  *
- * AND WITH ONLY AN IDENTITY LEFT THERE IS NO RANKING TO APPLY. `edgeIdentity`
- * discards the declaring end of a symmetric pair, so an identity can be asked
- * WHETHER it names an issue and not WHICH end that issue is on; ranking its
- * segments would be inventing an order the format threw away, which is the
- * defect this arm was rewritten to remove. The answer is "an issue this backlog
- * holds and this edit was between", in the document's own order — one rule with
- * nothing for a second to disagree with, and the reader's own edits never reach
+ * AND WITH ONLY AN IDENTITY LEFT, THE SAME RANKING APPLIES AS FAR AS THE FORMAT
+ * KEPT IT. `edgeIdentity` discards the declaring end of a SYMMETRIC pair and
+ * keeps it for a directed one, so `edgeIdentityEnd` names the carrier of a
+ * directed identity and answers `either` for a symmetric one — and both arms
+ * here rank by one rule instead of two. THIS ARM HAS BEEN WRONG IN BOTH
+ * DIRECTIONS: ranking a symmetric identity's segments invented an order the
+ * format had thrown away and stated a refusal on the far end's panel, and the
+ * correction — ranking nothing at all — discarded the order a DIRECTED identity
+ * still carries, so a host proposing on the shared store had its refusal placed
+ * under whichever end `document.issues` listed first. `either`, and a directed
+ * identity whose carrier this backlog does not hold, both fall through to the
+ * fallback this arm always had: "an issue this backlog holds and this edit was
+ * between", in the document's own order. The reader's own edits reach none of
  * it, because their carrier was taken while the edge was still there.
  *
  * `null` when the document holds NEITHER end, which is not a refusal being
@@ -279,7 +291,11 @@ export function editCarrier(document: GraphDocument, proposal: Proposal): string
     case 'pair':
       return keys.find((ref) => ref === ends.carrier) ?? keys.find((ref) => ref === ends.far) ?? null;
     case 'identity':
-      return keys.find((ref) => edgeIdentityNames(ends.edgeId, ref)) ?? null;
+      return (
+        keys.find((ref) => edgeIdentityEnd(ends.edgeId, ref) === 'carrier') ??
+        keys.find((ref) => edgeIdentityEnd(ends.edgeId, ref) !== null) ??
+        null
+      );
   }
 }
 

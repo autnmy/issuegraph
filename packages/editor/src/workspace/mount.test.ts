@@ -748,6 +748,32 @@ describe('mountWorkspace', () => {
       assert.ok(inspector.querySelector('.ig-relationship[data-edge="blocked-by"]') !== null);
     });
 
+    it('states a gone DIRECTED edge\u2019s refusal on its SOURCE, not the end listed first', async () => {
+      // A HOST PROPOSING ON THE SHARED STORE — the one route with no emit-time
+      // carrier to record, because `reduceHost` never saw this edit. The panel
+      // is worked out from the identity the first time the ledger is rendered,
+      // and `blocked-by` is DIRECTED: `edgeIdentity` sorts the symmetric fields
+      // only, so `blocked-by|3|1` still records that `3` declared the
+      // relationship (§4.3). `3` is also the only panel that could have made
+      // this delete — the row on `1` is inbound and inbound rows carry no
+      // remove control.
+      //
+      // AND `1` IS THE WRONG ANSWER THIS PINS OUT. `document.issues` is ordered
+      // `1,2,3,4`, so an arm that reads an identity as naming NEITHER end takes
+      // the first end the document lists and states the refusal under the
+      // target, for every directed pair listed in this order.
+      void page.store.propose({ op: 'delete', edgeId: makeEdge('blocked-by', '3', '1').id });
+      const source = await select('3');
+
+      const capsule = source.querySelector<HTMLElement>('.ig-relationship-refused');
+      assert.ok(capsule !== null, 'the refusal is stated nowhere on the declaring panel');
+      assert.equal(capsule.getAttribute('data-ig-code'), 'unknown-edge');
+      // AND NOT ON THE TARGET'S PANEL — the same render asked a second
+      // question, which is where the unordered answer put it.
+      const target = await select('1');
+      assert.equal(target.querySelector('[data-ig-code]'), null, 'the refusal was stated on the target');
+    });
+
     it('states a symmetric refusal on the end that DECLARED it, not the end its identity leads with', async () => {
       // MECHANISM A, END TO END, AND IT IS ABOUT TIME RATHER THAN PLACE.
       // `edgeIdentity` SORTS a symmetric pair, so this relationship — declared
