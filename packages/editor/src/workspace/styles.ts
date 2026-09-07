@@ -615,4 +615,177 @@ export const workspaceStylesheet = `
   font-family: var(--ig-font-mono);
   color: var(--ig-text-muted);
 }
+
+/* §17b's RECOVERY CARDS. An unsettled write the reader can still act on, drawn
+   where they made it.
+   THE HUE COMES FROM THE STATE, through the same custom properties the canvas
+   draws the line with — so a card and the edge it is about are recognisably one
+   fact, and a host retheming the palette moves both at once. The tokens are
+   named per state below rather than set once, because '--ig-state-failed' and
+   '--ig-state-conflict' are different channels and a shared variable here would
+   be a third place the pairing could drift.
+   NO OPACITY, for the reason the refusal capsule states: 'overlay/grammar.ts'
+   holds what each write state is drawn at, and this sheet contributes structure. */
+.ig-recovery-region {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+  margin-top: var(--ig-space);
+}
+
+.ig-recovery-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+}
+
+.ig-recovery {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+  padding: var(--ig-space-tight);
+  border-radius: var(--ig-radius);
+  background: var(--ig-surface);
+  border: var(--ig-stroke) solid var(--ig-line);
+}
+
+/* GHOST + THE ✕ THE CANVAS DRAWS. §17b gives a failed write a ghosted line with
+   a cross terminal; the card carries the same hue so the two read together. */
+.ig-recovery[data-ig-state='failed'] {
+  border-color: var(--ig-state-failed);
+  border-style: dashed;
+}
+
+/* THE GOLD DOUBLE RULE. §17b draws a conflict as a doubled line holding two
+   versions. 'border-style: double' is the card's half of that grammar — the
+   LINE's half is the 'second-version' mark, which needs a position this layer
+   does not have and is issue #102's. */
+.ig-recovery[data-ig-state='conflict'] {
+  border-color: var(--ig-state-conflict);
+  border-style: double;
+  border-width: calc(var(--ig-stroke) * 3);
+}
+
+.ig-recovery-name {
+  margin: 0;
+  font-size: var(--ig-font-size-small);
+  font-weight: 600;
+}
+
+.ig-recovery[data-ig-state='failed'] .ig-recovery-name {
+  color: var(--ig-state-failed);
+}
+
+.ig-recovery[data-ig-state='conflict'] .ig-recovery-name {
+  color: var(--ig-state-conflict);
+}
+
+.ig-recovery-reason,
+.ig-recovery-refresh-error {
+  margin: 0;
+  font-size: var(--ig-font-size-small);
+  color: var(--ig-text-muted);
+}
+
+.ig-recovery-refresh-detail {
+  font-family: var(--ig-font-mono);
+}
+
+/* THE THREE RESOLUTIONS, IN A ROW AND NEVER IN A MENU. §17b lists them as
+   peers; nesting one behind a disclosure would rank them, and the one that
+   would end up hidden is 'view diff' — the one that lets a reader decide
+   between the other two. */
+.ig-recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ig-space-tight);
+}
+
+.ig-recovery-action {
+  background: var(--ig-surface);
+  color: var(--ig-text-body);
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  padding: var(--ig-space-tight);
+  font-family: inherit;
+  font-size: var(--ig-font-size-small);
+  cursor: pointer;
+}
+
+.ig-recovery-action:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-tight);
+}
+
+.ig-recovery-action[aria-pressed='true'] {
+  border-color: var(--ig-focus);
+}
+
+/* TWO SIDES, SIDE BY SIDE, AND NOTHING BETWEEN THEM THAT COMBINES THEM. The
+   layout is the design constraint: there is no column for a merged result,
+   because there is no merged result to put in one. */
+.ig-recovery-diff {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+  padding-top: var(--ig-space-tight);
+  border-top: var(--ig-stroke) solid var(--ig-line);
+}
+
+/* ONE SIDE OF THE DIFFERENCE. Stacked rather than columned: at a panel's width
+   two columns give each side about half of an already narrow zone, and a
+   relationship row is a sentence rather than a cell. */
+.ig-recovery-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+}
+
+.ig-recovery-side-name {
+  margin: 0;
+  font-size: var(--ig-font-size-small);
+  color: var(--ig-text-muted);
+  font-weight: 400;
+}
+
+.ig-recovery-edges,
+.ig-recovery-issues {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+}
+
+.ig-recovery-edge,
+.ig-recovery-issue {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ig-space-tight);
+  align-items: baseline;
+  font-size: var(--ig-font-size-small);
+}
+
+/* BOTH TITLES, NEITHER STRUCK THROUGH. A strike-out would say the old one is
+   gone, which is exactly the judgement this card must not make for the reader. */
+.ig-recovery-was,
+.ig-recovery-now {
+  color: var(--ig-text-muted);
+}
+
+.ig-recovery-now {
+  color: var(--ig-state-conflict);
+}
+
+.ig-recovery-diff-empty {
+  margin: 0;
+  padding-top: var(--ig-space-tight);
+  border-top: var(--ig-stroke) solid var(--ig-line);
+  font-size: var(--ig-font-size-small);
+  color: var(--ig-text-muted);
+}
 `;

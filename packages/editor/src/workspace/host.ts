@@ -67,6 +67,23 @@ export interface HostState {
   readonly drop: Point | null;
   /** The first-pass surface: shut, scanning, failed, or holding a queue. */
   readonly firstPass: FirstPassState;
+  /**
+   * Which conflicted write has its held document on show, if any.
+   *
+   * ONE AT A TIME: the difference is drawn inside a panel rather than a dialog,
+   * and two open at once would push the second past the fold on the surface
+   * whose whole job is to be read at a glance.
+   *
+   * PRUNED BY THE SHELL, NOT BY `reconcileHost`. Its lifetime is the WRITE
+   * LEDGER's and reconciliation sees only the landed document — a mutation id
+   * is not answerable from a `GraphDocument`. `mountWorkspace` already walks
+   * the ledger to prune `writeCarriers` and clears this in the same pass, on a
+   * rule stricter than "still in the ledger": a `retry on latest` reserves its
+   * record as `pending` and a resolve whose re-check refuses leaves it
+   * `invalid`, and in BOTH the record is still there with its held document
+   * gone. So the rule is "still a conflict".
+   */
+  readonly diffOpen: MutationId | null;
 }
 
 export const INITIAL_HOST_STATE: HostState = Object.freeze({
@@ -79,6 +96,7 @@ export const INITIAL_HOST_STATE: HostState = Object.freeze({
   drag: null,
   drop: null,
   firstPass: INITIAL_FIRST_PASS,
+  diffOpen: null,
 });
 
 /**
@@ -659,6 +677,19 @@ function controlled(
       return target === undefined
         ? settled(state)
         : { state, effects: [{ kind: 'discard', mutationId: target }] };
+    // A TOGGLE, AND NOTHING LEAVES THE CLIENT. Showing a held document is a
+    // reading act: it dispatches nothing, adopts nothing, and cannot be the
+    // step that resolves a conflict. So it emits NO effect — which is also the
+    // strongest thing that can be said about it, and what its test asserts.
+    //
+    // IT IS A `control` LIKE ITS TWO SIBLINGS, not a command arm of its own.
+    // The shell turns every `data-ig-command` into `{ kind: 'control', name,
+    // target }`, so an arm outside that shape has no route from a button and
+    // would be unreachable code behind a control that did nothing.
+    case 'view-diff':
+      return target === undefined
+        ? settled(state)
+        : settled({ ...state, diffOpen: state.diffOpen === target ? null : target });
 
     // --- the first pass ---
     case 'first-pass':

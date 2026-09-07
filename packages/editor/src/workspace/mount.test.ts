@@ -16,6 +16,7 @@ import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 
 import type { GraphDocument, Mutation, StoreSnapshot } from '@issuegraph/store';
+import type { DataSource } from '@issuegraph/store';
 import { type OrderDeriver, createScriptedSource, createStore, makeEdge } from '@issuegraph/store';
 import { THEME_TOKENS, treatmentFor } from '@issuegraph/viewer';
 import { JSDOM } from 'jsdom';
@@ -182,6 +183,16 @@ async function mounted(
     project?: (snapshot: StoreSnapshot) => WorkspaceProjection;
     firstPass?: FirstPassOption;
     canvas?: CanvasMode;
+    /**
+     * Wrap the scripted source before the store sees it.
+     *
+     * The scripted adapter's `hydrate` always resolves, and a READ that fails
+     * is a state the store models deliberately — so the only way to reach it is
+     * to decorate the adapter. Injected here rather than grown onto
+     * `createScriptedSource`, which is a published testing surface and should
+     * not sprout a knob for one consumer's suite.
+     */
+    wrap?: (source: ReturnType<typeof createScriptedSource>) => DataSource;
   } = {},
 ) {
   const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>');
@@ -189,8 +200,8 @@ async function mounted(
   const element = win.document.getElementById('host');
   assert.ok(element !== null);
   const source = createScriptedSource(seed, applyAny);
-  const { derive = flatDeriver, project: projection = project, ...mountOptions } = options;
-  const store = createStore({ source, derive });
+  const { derive = flatDeriver, project: projection = project, wrap, ...mountOptions } = options;
+  const store = createStore({ source: wrap === undefined ? source : wrap(source), derive });
   await store.hydrate();
   const handle = mountWorkspace(element, { store, project: projection, words: WORDS, ...mountOptions });
   const click = (node: Element): void => {
@@ -2409,6 +2420,451 @@ describe('the first pass, composed behind §17a’s entry', () => {
         [...page.element.querySelectorAll('.ig-zone')].every((covered) => !covered.hasAttribute('inert')),
         'a zone stayed inert after the overlay came down',
       );
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+});
+
+/**
+ * §17b's recovery cards, driven through the real store.
+ *
+ * NOT THROUGH A `recoveries` FIXTURE, which is the defect the refusal suite
+ * above records paying for: hand the renderer an array and the derivation that
+ * BUILDS that array from a snapshot is covered by nothing at all. Every card
+ * here comes from a write the scripted source actually refused.
+ */
+describe('a failed or conflicted write reaches the panel it was made from', () => {
+  const upstreamWith = (extra: readonly ReturnType<typeof makeEdge>[]): GraphDocument => ({
+    issues: SEED.issues,
+    edges: [...SEED.edges, ...extra],
+  });
+
+  const select = async (page: Mounted, key: string): Promise<HTMLElement> => {
+    const row = page.rows().find((each) => each.getAttribute('data-ig-key') === key);
+    assert.ok(row !== undefined, `no rail row for ${key}`);
+    page.click(row);
+    await flush();
+    const inspector = page.zone('inspector');
+    assert.ok(inspector !== null);
+    return inspector;
+  };
+
+  const cards = (inspector: HTMLElement): HTMLElement[] => [
+    ...inspector.querySelectorAll<HTMLElement>('.ig-recovery'),
+  ];
+
+  /**
+   * The one element matching `selector`, narrowed by an assertion.
+   *
+   * NOT A CAST. This file had none before these suites and the repository bans
+   * them outright; `assert.ok(x !== null)` is both the rule and this file's own
+   * idiom, and it also turns "the control is missing" into a named failure
+   * rather than a null dereference three lines later.
+   */
+  const one = (root: HTMLElement, selector: string): HTMLElement => {
+    const node = root.querySelector<HTMLElement>(selector);
+    assert.ok(node !== null, `no ${selector}`);
+    return node;
+  };
+
+  const inspectorOf = (page: Mounted): HTMLElement => {
+    const zone = page.zone('inspector');
+    assert.ok(zone !== null, 'no inspector zone');
+    return zone;
+  };
+
+  it('draws a failed write with retry and discard, and no view-diff', async () => {
+    const page = await mounted();
+    try {
+      void page.store.propose({ op: 'create', kind: 'blocked-by', from: '3', to: '4' });
+      await page.source.whenPending();
+      page.source.settleNext({ outcome: 'rejected', reason: 'the tracker said no' });
+      await flush();
+
+      const inspector = await select(page, '3');
+      const card = cards(inspector)[0];
+      assert.ok(card !== undefined, 'no recovery card for a failed write');
+      assert.equal(card.getAttribute('data-ig-state'), 'failed');
+      assert.equal(card.querySelector('.ig-recovery-reason')?.textContent, 'the tracker said no');
+
+      // THE GRAMMAR TABLE'S OWN ANSWER, not a list written in the test either:
+      // if `OVERLAY_TREATMENTS.failed` ever offered a third thing, this moves
+      // with it rather than going red for the wrong reason.
+      assert.deepEqual(
+        [...card.querySelectorAll('.ig-recovery-action')].map((node) =>
+          node.getAttribute('data-ig-command'),
+        ),
+        ['retry', 'discard'],
+      );
+      // §17b gives a failed write no second version to look at, and the word
+      // for a plain retry rather than the one that re-reads first.
+      assert.equal(card.querySelector('[data-ig-command="view-diff"]'), null);
+      assert.equal(
+        card.querySelector('[data-ig-command="retry"]')?.textContent,
+        WORKSPACE_WORDS.recovery.retry,
+      );
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('draws a conflict with all three resolutions, and names the one that re-reads', async () => {
+    const page = await mounted();
+    try {
+      void page.store.propose({ op: 'create', kind: 'blocked-by', from: '3', to: '4' });
+      await page.source.whenPending();
+      page.source.settleNext({
+        outcome: 'conflict',
+        upstream: upstreamWith([makeEdge('blocked-by', '2', '3')]),
+      });
+      await flush();
+
+      const inspector = await select(page, '3');
+      const card = cards(inspector)[0];
+      assert.ok(card !== undefined, 'no recovery card for a conflict');
+      assert.equal(card.getAttribute('data-ig-state'), 'conflict');
+      assert.deepEqual(
+        [...card.querySelectorAll('.ig-recovery-action')].map((node) =>
+          node.getAttribute('data-ig-command'),
+        ),
+        ['view-diff', 'retry', 'discard'],
+      );
+      // TWO DIFFERENT CALLS, TWO DIFFERENT WORDS. `retryOnLatest` re-reads and
+      // adopts the newest document before re-dispatching, and a card labelled
+      // with the plain `retry` word would be telling the reader it does less
+      // than it does.
+      assert.equal(
+        card.querySelector('[data-ig-command="retry"]')?.textContent,
+        WORKSPACE_WORDS.recovery.retryOnLatest,
+      );
+
+      // EVERY BUTTON NAMES ITS WRITE. Without `data-ig-target` the reducer's
+      // retry and discard arms return no effect at all — the controls render,
+      // read correctly, and do nothing, while every assertion above still
+      // passes.
+      for (const action of card.querySelectorAll('.ig-recovery-action')) {
+        assert.ok(
+          (action.getAttribute('data-ig-target') ?? '').length > 0,
+          `${String(action.getAttribute('data-ig-command'))} names no write`,
+        );
+      }
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('offers nothing that merges the two versions, in markup or in command', async () => {
+    const page = await mounted();
+    try {
+      void page.store.propose({ op: 'create', kind: 'blocked-by', from: '3', to: '4' });
+      await page.source.whenPending();
+      page.source.settleNext({
+        outcome: 'conflict',
+        upstream: upstreamWith([makeEdge('blocked-by', '2', '3')]),
+      });
+      await flush();
+      const inspector = await select(page, '3');
+      const card = cards(inspector)[0];
+      assert.ok(card !== undefined);
+      page.click(one(card, '[data-ig-command=\"view-diff\"]'));
+      await flush();
+
+      // OVER THE RENDERED MARKUP AND THE COMMANDS, which is the idiom
+      // `overlay/render.test.ts` already uses for this property — NOT over
+      // source text, where `merge` legitimately appears in the comments that
+      // state this very rule.
+      const opened = cards(inspectorOf(page))[0];
+      assert.ok(opened !== undefined);
+      assert.equal(/merge|combine|accept-both/i.test(opened.innerHTML), false);
+      for (const action of opened.querySelectorAll('[data-ig-command]')) {
+        assert.equal(
+          /merge|combine|accept-both/i.test(action.getAttribute('data-ig-command') ?? ''),
+          false,
+        );
+      }
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('shows both sides when the difference is opened, and combines neither', async () => {
+    const page = await mounted();
+    try {
+      void page.store.propose({ op: 'create', kind: 'blocked-by', from: '3', to: '4' });
+      await page.source.whenPending();
+      page.source.settleNext({
+        outcome: 'conflict',
+        upstream: upstreamWith([makeEdge('blocked-by', '3', '2')]),
+      });
+      await flush();
+      let inspector = await select(page, '3');
+      assert.equal(inspector.querySelector('.ig-recovery-diff'), null, 'the diff opened itself');
+
+      page.click(one(inspector, '[data-ig-command=\"view-diff\"]'));
+      await flush();
+      inspector = inspectorOf(page);
+
+      const diff = inspector.querySelector('.ig-recovery-diff');
+      assert.ok(diff !== null, 'view-diff drew nothing');
+      const sides = [...diff.querySelectorAll('.ig-recovery-side-name')].map(
+        (node) => node.textContent,
+      );
+      // THE READER'S EDIT AND UPSTREAM'S, UNDER SEPARATE HEADINGS. `landed`
+      // cannot hold the reader's edge at all — `conflictDiff` rebuilds it from
+      // the mutation — so its presence here is the whole join working.
+      assert.ok(sides.includes(WORKSPACE_WORDS.recovery.mineOnly), 'the reader’s own edit is missing');
+      assert.ok(sides.includes(WORKSPACE_WORDS.recovery.upstreamOnly), 'the upstream edge is missing');
+
+      // A SECOND PRESS CLOSES IT. The control says `aria-pressed`, so it has to
+      // be a toggle rather than a one-way door.
+      page.click(one(inspector, '[data-ig-command=\"view-diff\"]'));
+      await flush();
+      assert.equal(inspectorOf(page).querySelector('.ig-recovery-diff'), null);
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('closes an open difference when the record stops being a conflict', async () => {
+    // ITS LIFETIME IS THE CONFLICT'S, NOT THE LEDGER'S. `discardMine` drops the
+    // record; a `retry on latest` would reserve it as `pending` and a refused
+    // resolve would leave it `invalid` — in both of those the record is STILL
+    // in the ledger with its held document gone, which is why the shell's rule
+    // is "still a conflict" rather than "still there".
+    const page = await mounted();
+    try {
+      void page.store.propose({ op: 'create', kind: 'blocked-by', from: '3', to: '4' });
+      await page.source.whenPending();
+      page.source.settleNext({
+        outcome: 'conflict',
+        upstream: upstreamWith([makeEdge('blocked-by', '2', '3')]),
+      });
+      await flush();
+      const inspector = await select(page, '3');
+      page.click(one(inspector, '[data-ig-command=\"view-diff\"]'));
+      await flush();
+      assert.ok(inspectorOf(page).querySelector('.ig-recovery-diff') !== null);
+
+      page.click(one(inspectorOf(page), '[data-ig-command="discard"]'));
+      await flush();
+      const after = inspectorOf(page);
+      assert.equal(after.querySelector('.ig-recovery'), null, 'the card outlived the record');
+      assert.equal(after.querySelector('.ig-recovery-diff'), null, 'the diff outlived the record');
+      assert.equal(page.handle.state.diffOpen, null);
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('closes an open difference when the record is RESERVED, not only when it leaves', async () => {
+    // THE MUTATION THE `discardMine` TEST CANNOT KILL. Discarding removes the
+    // record from the ledger, so "still in the ledger" and "still a conflict"
+    // agree there and a prune written either way passes. `retryOnLatest`
+    // separates them: the store reserves the record as `pending` SYNCHRONOUSLY,
+    // so it is still in the ledger with its held document gone — and a region
+    // left open over it is a difference the store can no longer answer for.
+    const page = await mounted();
+    try {
+      void page.store.propose({ op: 'create', kind: 'blocked-by', from: '3', to: '4' });
+      await page.source.whenPending();
+      page.source.settleNext({
+        outcome: 'conflict',
+        upstream: upstreamWith([makeEdge('blocked-by', '2', '3')]),
+      });
+      await flush();
+      const inspector = await select(page, '3');
+      page.click(one(inspector, '[data-ig-command="view-diff"]'));
+      await flush();
+      assert.ok(inspectorOf(page).querySelector('.ig-recovery-diff') !== null, 'the diff never opened');
+
+      page.click(one(inspectorOf(page), '[data-ig-command="retry"]'));
+      await flush();
+
+      // STILL THERE, AND NO LONGER A CONFLICT — which is exactly the state the
+      // weaker rule would have kept the region open through.
+      const record = page.store.getSnapshot().writes[0];
+      assert.equal(record?.mutationId !== undefined, true, 'the record left the ledger');
+      assert.notEqual(record?.state, 'conflict');
+      assert.equal(page.handle.state.diffOpen, null, 'the difference outlived its conflict');
+      assert.equal(inspectorOf(page).querySelector('.ig-recovery-diff'), null);
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('says why a retry on latest could not even read, and only on that card', async () => {
+    // MEASURED: `refreshError: null` passed every test. The field also used to
+    // read `snapshot.hydrationError` unconditionally — which the store sets from
+    // ANY failed read and attributes to no mutation, so it painted "could not
+    // read the newest version" on cards whose button nobody pressed.
+    let readFails = false;
+    const page = await mounted(SEED, {
+      wrap: (source) => ({
+        ...source,
+        hydrate: () =>
+          readFails ? Promise.reject(new Error('the tracker did not answer')) : source.hydrate(),
+      }),
+    });
+    try {
+      // TWO CONFLICTS, so "only on that card" is a claim the fixture can test.
+      void page.store.propose({ op: 'create', kind: 'blocked-by', from: '3', to: '4' });
+      await page.source.whenPending();
+      page.source.settleNext({ outcome: 'conflict', upstream: upstreamWith([makeEdge('blocked-by', '2', '3')]) });
+      await flush();
+      void page.store.propose({ op: 'create', kind: 'blocked-by', from: '4', to: '2' });
+      await page.source.whenPending();
+      page.source.settleNext({ outcome: 'conflict', upstream: upstreamWith([makeEdge('blocked-by', '2', '3')]) });
+      await flush();
+
+      // BOTH CARDS ON ONE PANEL, or "only that card" is answered by the panel
+      // filter rather than by the attribution under test. `3` carries the first
+      // conflict; the second is a create FROM `4` TO `2`, so selecting `4`
+      // would split them. Instead both are stated on `3` only if `3` carries
+      // both — it does not — so the honest fixture selects the carrier of the
+      // one under test and asserts the OTHER card is absent from it.
+      const first = page.store.getSnapshot().writes[0];
+      assert.ok(first !== undefined);
+      await select(page, '3');
+      readFails = true;
+      page.handle.dispatch({ kind: 'control', name: 'retry', target: first.mutationId });
+      await flush();
+      await flush();
+
+      const snapshot = page.store.getSnapshot();
+      assert.equal(snapshot.hydrationError !== undefined, true, 'the read did not fail');
+      assert.equal(
+        snapshot.writes.filter((record) => record.state === 'conflict').length,
+        2,
+        'the fixture needs two standing conflicts for "only that card" to mean anything',
+      );
+      const drawn = [...page.element.querySelectorAll('.ig-recovery-refresh-error')];
+      assert.equal(drawn.length, 1, 'the read failure was drawn on the wrong number of cards');
+      assert.match(drawn[0]?.textContent ?? '', /the tracker did not answer/);
+      assert.match(drawn[0]?.textContent ?? '', new RegExp(WORKSPACE_WORDS.recovery.retryFailed));
+
+      // AND NOT ON THE OTHER CONFLICT, which is standing with the same
+      // snapshot-level hydration error behind it and no press of its own.
+      const other = page.store.getSnapshot().writes.find((record) => record.mutationId !== first.mutationId);
+      assert.ok(other !== undefined);
+      const otherPanel = await select(page, '4');
+      assert.ok(otherPanel.querySelector('.ig-recovery') !== null, 'the other conflict has no card');
+      assert.equal(
+        otherPanel.querySelector('.ig-recovery-refresh-error'),
+        null,
+        'a read nobody asked for was blamed on this card',
+      );
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('states a partner’s write on the together unit’s lead panel, diff and all', async () => {
+    // THE CASE A SINGLE-KEY SCOPE WOULD LOSE. `inspectorView` folds `2` onto
+    // `1`'s slot, so an edit made from `2` is stated on `1`'s panel — and the
+    // difference drawn there has to be narrowed by the SAME key set that
+    // entitled it, or the card lands on the right panel showing nothing.
+    const page = await mounted(SEED, { project: unitProject });
+    try {
+      void page.store.propose({ op: 'create', kind: 'blocked-by', from: '2', to: '4' });
+      await page.source.whenPending();
+      // THE UPSTREAM EDGE TOUCHES THE LEAD AND NOT THE CARRIER, which is what
+      // makes this pin discriminate. The edit went out from `2`, so a diff
+      // narrowed by the carrier ALONE keeps only edges touching `2` and drops
+      // this one — on the very panel entitled to state it. Narrowed by the
+      // panel's key set it survives. Measured: with an upstream edge touching
+      // `2`, both rules pass and the test proves nothing.
+      page.source.settleNext({
+        outcome: 'conflict',
+        upstream: upstreamWith([makeEdge('blocked-by', '1', '3')]),
+      });
+      await flush();
+
+      const inspector = await select(page, '1');
+      const card = cards(inspector)[0];
+      assert.ok(card !== undefined, 'the partner’s conflict was stated nowhere');
+
+      page.click(one(card, '[data-ig-command=\"view-diff\"]'));
+      await flush();
+      const diff = inspectorOf(page).querySelector('.ig-recovery-diff');
+      assert.ok(diff !== null, 'the diff drew nothing on the lead’s panel');
+      assert.ok(
+        [...diff.querySelectorAll('.ig-recovery-side-name')]
+          .map((node) => node.textContent)
+          .includes(WORKSPACE_WORDS.recovery.upstreamOnly),
+        'the partner’s upstream edge was narrowed away on the panel entitled to it',
+      );
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+});
+
+/**
+ * The half of §17b that is about the ORDER rather than about a card.
+ *
+ * `a pending write cannot change a rank` above pins the PENDING state. These
+ * are the two settled ones, and they need the same `blockingDeriver`: with the
+ * harness's flat deriver every write lands on the same order, so a mount that
+ * folded an unsettled edge into the drawn order would pass regardless.
+ */
+describe('a failed or conflicted write cannot change a rank either', () => {
+  const drawnRanks = (page: Mounted): (string | null)[][] =>
+    page.rows().map((row) => [row.getAttribute('data-ig-key'), row.querySelector('.ig-rank')?.textContent ?? null]);
+
+  it('draws the same ranks after a write the tracker refused', async () => {
+    const page = await mounted(SEED, { derive: blockingDeriver });
+    try {
+      const before = drawnRanks(page);
+      assert.deepEqual(before, [['2', '1'], ['3', '2'], ['4', '3'], ['1', '4']]);
+
+      void page.store.propose({ op: 'create', kind: 'blocked-by', from: '2', to: '3' });
+      await page.source.whenPending();
+      page.source.settleNext({ outcome: 'rejected', reason: 'refused upstream' });
+      await flush();
+
+      // THE PRECONDITION, NOT A CAST WRAPPED IN AN ASSERTION. The earlier form
+      // read `(page.zone(...) as HTMLElement) !== null`, which the cast makes
+      // statically true — so only the ledger half was ever asserted.
+      assert.equal(
+        page.store.getSnapshot().writes.length,
+        1,
+        'the failed record is not in the ledger, so this pin proves nothing',
+      );
+      assert.deepEqual(drawnRanks(page), before, 'a failed write moved a rank');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('draws the same ranks while a conflict is unresolved', async () => {
+    const page = await mounted(SEED, { derive: blockingDeriver });
+    try {
+      const before = drawnRanks(page);
+      void page.store.propose({ op: 'create', kind: 'blocked-by', from: '2', to: '3' });
+      await page.source.whenPending();
+      // AN UPSTREAM THAT WOULD MOVE THE ORDER IF IT WERE ADOPTED — `4` blocked
+      // by `1` sorts `4` last under this deriver. It is held, never adopted, so
+      // the rail must not move: adopting a held document is the auto-merge §17b
+      // forbids, and it would be visible right here.
+      page.source.settleNext({
+        outcome: 'conflict',
+        upstream: { issues: SEED.issues, edges: [...SEED.edges, makeEdge('blocked-by', '4', '1')] },
+      });
+      await flush();
+
+      assert.equal(page.store.getSnapshot().writes[0]?.state, 'conflict');
+      assert.deepEqual(drawnRanks(page), before, 'a conflict moved a rank');
     } finally {
       page.handle.destroy();
       page.dom.window.close();

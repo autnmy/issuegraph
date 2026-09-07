@@ -7,7 +7,7 @@ import { KEY_ATTRIBUTE, type ViewerHold } from '@issuegraph/viewer';
 
 import { AUDIT_SEVERITY_ATTRIBUTE } from '../audit/surface.ts';
 import type { AuditGraph } from '../audit/findings.ts';
-import { ZONES, renderWorkspace } from './render.ts';
+import { type WorkspaceRecovery, ZONES, renderWorkspace } from './render.ts';
 import type { ViewerDocument } from '@issuegraph/viewer';
 import { selectionReducer } from './selection.ts';
 import { WORKSPACE_WORDS, backlogOf, drawnKeys, zonesIn } from '../testing/workspace.ts';
@@ -1586,5 +1586,172 @@ describe('the workspace draws the host facts in the rail', () => {
     assert.match(rail, /data-ig-command="refresh"/);
     // Once in the workspace: the canvas draws no header of its own.
     assert.equal((result.markup.match(/class="ig-header"/g) ?? []).length, 1);
+  });
+});
+
+/**
+ * The recovery card's rules that only the RENDERER can be asked about.
+ *
+ * Each of these was measured surviving the mount suite: a mutation that broke
+ * it left all 883 tests green, so the behaviour was shipped on the strength of
+ * a comment. They are pinned here rather than in `mount.test.ts` because each
+ * is a property of what `renderWorkspace` draws from a given input.
+ */
+describe('§17b: the recovery card narrows, discloses and never doubles', () => {
+  const CONFLICT: WorkspaceRecovery = {
+    kind: 'conflict',
+    mutationId: 'm1',
+    edgeId: 'blocked-by|i0001|i0002',
+    carrier: 'i0001',
+    refreshError: null,
+    diff: {
+      // ONE SIDE ON THIS PANEL AND ONE FAR AWAY. Without the far one, dropping
+      // the narrowing entirely changes nothing an assertion could see.
+      upstreamOnly: [
+        { id: 'blocked-by|i0001|i0003', kind: 'blocked-by', from: 'i0001', to: 'i0003' },
+        { id: 'blocked-by|i0005|i0006', kind: 'blocked-by', from: 'i0005', to: 'i0006' },
+      ],
+      mineOnly: [],
+      mineRemoved: [],
+      issuesChanged: [],
+      carrierReversed: [],
+    },
+  };
+
+  // SIX ISSUES WITH THE PANEL'S EDGE AMONG THEM, so a narrowing assertion has
+  // both a near reference and a far one to tell apart.
+  const BACKLOG = backlogOf(6, {
+    edges: [
+      ['blocked-by', 'i0001', 'i0002'],
+      ['blocked-by', 'i0005', 'i0006'],
+    ],
+  });
+
+  const drawn = (options: Parameters<typeof renderWorkspace>[1]): string =>
+    renderWorkspace(BACKLOG, options).markup;
+
+  it('shows only the part of a difference this panel is entitled to', () => {
+    // MEASURED: dropping `diffWithin` at the call site left every test green,
+    // and a panel then drew upstream changes about issues elsewhere in the
+    // backlog — which also makes `diffEmpty` meaningless, since it can only be
+    // true of a NARROWED difference.
+    const markup = drawn({
+      words: WORKSPACE_WORDS,
+      selection: { kind: 'issue', key: 'i0001' },
+      diffOpen: 'm1',
+      recoveries: [CONFLICT],
+    });
+    // READ OFF THE DIFF REGION, NOT THE WHOLE SURFACE. `i0005` is also a rail
+    // row on this backlog, so a document-wide search finds it either way and
+    // the assertion would be vacuous in the direction that matters.
+    const region = /<div class="ig-recovery-diff"[\s\S]*?<\/div><\/li>/.exec(markup)?.[0];
+    assert.ok(region !== undefined, 'the difference region was not drawn');
+    assert.ok(region.includes('i0003'), 'the panel’s own upstream change is missing');
+    assert.equal(
+      region.includes('i0005'),
+      false,
+      'a change about an issue this panel does not speak for was drawn',
+    );
+  });
+
+  it('discloses the difference as a region, not as a pressed button', () => {
+    // `aria-pressed` announces a two-state button and says nothing about the
+    // region that appeared; a disclosure needs `aria-expanded` and a control
+    // that names what it opened.
+    const shut = drawn({
+      words: WORKSPACE_WORDS,
+      selection: { kind: 'issue', key: 'i0001' },
+      recoveries: [CONFLICT],
+    });
+    assert.match(shut, /data-ig-command="view-diff"[^>]*aria-expanded="false"/);
+    assert.equal(shut.includes('aria-pressed'), false, 'a disclosure announced as a toggle');
+
+    const open = drawn({
+      words: WORKSPACE_WORDS,
+      selection: { kind: 'issue', key: 'i0001' },
+      diffOpen: 'm1',
+      recoveries: [CONFLICT],
+    });
+    assert.match(open, /aria-expanded="true"/);
+    // THE CONTROL NAMES THE REGION, and the region carries that id — an
+    // `aria-controls` pointing at nothing is worse than none at all.
+    const controls = /aria-controls="([^"]+)"/.exec(open)?.[1];
+    assert.ok(controls !== undefined, 'the control names no region');
+    assert.ok(open.includes(`id="${controls}"`), 'the region it names is not there');
+  });
+
+  it('draws a carrier-less write once, even on the panel filtered to its edge', () => {
+    // MEASURED: two identical cards, two tab stops, and two buttons carrying
+    // one write's id. `statedHere`'s EDGE arm matches on `edgeId` and ignores
+    // the carrier, so the unplaced region drew it a second time.
+    const markup = drawn({
+      words: WORKSPACE_WORDS,
+      selection: { kind: 'edge', edgeId: 'blocked-by|i0001|i0002' },
+      recoveries: [
+        {
+          kind: 'failed',
+          mutationId: 'm2',
+          edgeId: 'blocked-by|i0001|i0002',
+          carrier: null,
+          reason: 'the tracker was unreachable',
+        },
+      ],
+    });
+    assert.equal((markup.match(/class="ig-recovery"/g) ?? []).length, 1);
+    assert.equal((markup.match(/data-ig-target="m2"/g) ?? []).length, 2, 'retry and discard, once each');
+  });
+
+  it('draws a carrier-less write in the unplaced region when no panel states it', () => {
+    // THE REGION ITSELF HAD NO TEST: deleting it left every test green, and it
+    // is the one the code calls Done-when 1 failing where it matters most.
+    const markup = drawn({
+      words: WORKSPACE_WORDS,
+      selection: { kind: 'issue', key: 'i0001' },
+      recoveries: [
+        {
+          kind: 'failed',
+          mutationId: 'm3',
+          edgeId: 'blocked-by|gone|alsogone',
+          carrier: null,
+          reason: 'the tracker was unreachable',
+        },
+      ],
+    });
+    assert.ok(markup.includes(WORKSPACE_WORDS.recovery.unplaced), 'the unplaced heading is missing');
+    assert.equal((markup.match(/class="ig-recovery"/g) ?? []).length, 1);
+    // AND IT KEEPS ITS CONTROLS, which is the whole reason it is drawn at all.
+    assert.equal((markup.match(/data-ig-target="m3"/g) ?? []).length, 2);
+  });
+
+  it('says a conflicted delete removes something, rather than that nothing differs', () => {
+    const markup = drawn({
+      words: WORKSPACE_WORDS,
+      selection: { kind: 'issue', key: 'i0001' },
+      diffOpen: 'm4',
+      recoveries: [
+        {
+          kind: 'conflict',
+          mutationId: 'm4',
+          edgeId: 'blocked-by|i0001|i0002',
+          carrier: 'i0001',
+          refreshError: null,
+          diff: {
+            upstreamOnly: [],
+            mineOnly: [],
+            mineRemoved: [
+              { id: 'blocked-by|i0001|i0002', kind: 'blocked-by', from: 'i0001', to: 'i0002' },
+            ],
+            issuesChanged: [],
+            carrierReversed: [],
+          },
+        },
+      ],
+    });
+    assert.ok(markup.includes(WORKSPACE_WORDS.recovery.mineRemoved));
+    assert.equal(
+      markup.includes(WORKSPACE_WORDS.recovery.diffEmpty),
+      false,
+      'the card claimed nothing differs about an edit that removes a relationship',
+    );
   });
 });
