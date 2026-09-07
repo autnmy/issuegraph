@@ -51,16 +51,16 @@ import {
   type ElementSpec,
   type Theme,
   type ViewerDocument,
-  KEY_ATTRIBUTE,
   element,
   renderMarkup,
   renderViewer,
   resolveTheme,
 } from '@issuegraph/viewer';
-import type { OrderChange, OrderStatus, RankDelta } from '@issuegraph/store';
+import type { OrderChange, OrderStatus } from '@issuegraph/store';
 
 import type { ChangeWords } from './words.ts';
-import { type ChangeSummary, type PlacedChip, type ReevaluateView, reevaluateView } from './view.ts';
+import { chipSpec } from './chip.ts';
+import { type ChangeSummary, type ReevaluateView, reevaluateView } from './view.ts';
 import { reevaluateStylesheet } from './styles.ts';
 
 export interface ReevaluateOptions {
@@ -163,75 +163,6 @@ function summarySpec(summary: ChangeSummary | null, words: ChangeWords): Element
           ),
     ],
   );
-}
-
-/**
- * What one issue's delta says, as spans.
- *
- * IT NAMES A DIRECTION AND A DISTANCE, NEVER A RANK. `RankMovement.from` and
- * `.to` are the deriver's 0-BASED positions, while the rail beside them renders
- * the viewer's 1-BASED ranks — so printing either as a number would put two
- * different bases side by side and read as an off-by-one. `by` is a distance,
- * which is basis-independent and safe to print. A host that knows the basis and
- * wants the endpoints reads them off `view.chips[].deltas`, which carries every
- * `RankDelta` untouched.
- */
-function memberSpec(delta: RankDelta, words: ChangeWords, named: boolean): ElementSpec {
-  return element('span', { class: 'ig-delta-member', 'data-ref': delta.ref }, [
-    // NAMED ONLY WHEN THE NAME ADDS SOMETHING. On a chip whose single member IS
-    // the row, the row key above has already said it and repeating it is noise.
-    // Everywhere else the ref is load-bearing: two members reading
-    // `lead 1 down 1 down` says the row moved twice rather than that a unit of
-    // two each moved down one, and a lone member that is NOT the lead is a
-    // change to an issue the row key does not name at all.
-    named ? element('span', { class: 'ig-delta-ref' }, [delta.ref]) : null,
-    delta.movement === undefined
-      ? null
-      : element(
-          'span',
-          {
-            class: 'ig-delta-move',
-            'data-direction': delta.movement.direction,
-            'data-by': delta.movement.by,
-          },
-          [...countWord(delta.movement.by, words.direction[delta.movement.direction])],
-        ),
-    delta.readiness === undefined
-      ? null
-      : element('span', { class: 'ig-delta-readiness', 'data-readiness': delta.readiness }, [
-          words.facets[delta.readiness],
-        ]),
-    delta.presence === undefined
-      ? null
-      : element('span', { class: 'ig-delta-presence', 'data-presence': delta.presence }, [
-          words.facets[delta.presence],
-        ]),
-  ]);
-}
-
-/**
- * One ROW's chip — which can speak for more than one issue.
- *
- * A `together-with` unit is one row and several refs, so its members are nested
- * inside a single chip rather than given one each. Each keeps its own
- * `data-ref`, so a host can still tell which member moved.
- *
- * IT NAMES ITS ROW IN TEXT, not only in `KEY_ATTRIBUTE`. Unpositioned, a chip
- * that carried its key only as an attribute said nothing a reader could see
- * about WHICH row moved — and the rows that did not move are accounted for
- * precisely by not being named here. The key is data, not language, so naming
- * it costs the host no word.
- */
-function chipSpec(chip: PlacedChip, words: ChangeWords): ElementSpec {
-  // One member whose ref IS the row: the key names it, so naming it again would
-  // be the only text on the chip that says nothing. Any other shape — several
-  // members, or a lone member the row is not named after — needs each fact
-  // attributed, or the chip reads as one row's facts repeated.
-  const named = chip.deltas.length > 1 || chip.deltas[0]?.ref !== chip.key;
-  return element('li', { class: 'ig-delta-chip', [KEY_ATTRIBUTE]: chip.key }, [
-    element('span', { class: 'ig-delta-key' }, [chip.key]),
-    ...chip.deltas.map((delta) => memberSpec(delta, words, named)),
-  ]);
 }
 
 /** Render the order, and what the last edit did to it. */
