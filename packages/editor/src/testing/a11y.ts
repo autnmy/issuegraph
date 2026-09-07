@@ -71,6 +71,12 @@ function project(snapshot: StoreSnapshot): WorkspaceProjection {
         excluded: [],
       },
       cycles: [],
+      // THE PANEL HEADER'S OWN CONTROLS, and they are gated HERE rather than on
+      // the mount's `firstPass` option — `render.ts` draws the entry only when
+      // `host.firstPass` is a non-empty string. An earlier revision supplied
+      // the mount option alone and claimed the entry was therefore drawn; it
+      // was not, and the baseline recorded only the inspector.
+      host: { firstPass: 'find relationships', identity: 'demo/backlog' },
     },
     audit: { document: landed, graph: { cycles: [], duplicateCanonical: () => null } },
   };
@@ -87,7 +93,7 @@ const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 
  * record a surface where the interesting attributes do not appear at all.
  */
 export async function a11ySurface(
-  options: { readonly openDiff?: boolean } = {},
+  options: { readonly openDiff?: boolean; readonly openDraft?: boolean } = {},
 ): Promise<{ root: Element; close: () => void }> {
   const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>');
   const host = dom.window.document.getElementById('host');
@@ -140,6 +146,18 @@ export async function a11ySurface(
     const disclosure = host.querySelector<HTMLElement>('[data-ig-command="view-diff"]');
     assert.ok(disclosure !== null, 'no disclosure to open');
     disclosure.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    await flush();
+  }
+
+  // THE DRAFT FLOW, when asked for. The kind chooser and the target search are
+  // built by the mount with `createElement` and never pass a renderer, and they
+  // are the controls whose keyboard behaviour matters most — so a baseline that
+  // never opened the draft would omit exactly what mounting was chosen for. It
+  // is also the only state that exercises a `tabindex` other than none.
+  if (options.openDraft === true) {
+    const add = host.querySelector<HTMLElement>('[data-ig-command="add"]');
+    assert.ok(add !== null, 'no add control to open the draft');
+    add.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
     await flush();
   }
 

@@ -2893,10 +2893,15 @@ describe('a failed or conflicted write cannot change a rank either', () => {
  * and teaching the mount to handle Enter itself would fire twice in a real
  * browser, once from the handler and once from the native click.
  *
- * `HTMLElement.click()` is the activation behaviour Enter reaches. The test
- * constructs no `MouseEvent` and no `PointerEvent` of its own, which is what
- * "driven from the keyboard alone" is protecting: no pointer INTERACTION is
- * simulated, and focus is established and asserted at every step.
+ * `HTMLElement.click()` is the activation behaviour Enter reaches, so the
+ * INTERACTION under test constructs no event of its own and no pointer gesture
+ * is simulated — focus is established, activated and asserted at every step.
+ *
+ * Be exact about the bound: reaching the state under test needs a rail row
+ * selected, and `conflicted()` does that with `page.click(row)`, which IS a
+ * `MouseEvent`. That is fixture setup, not the behaviour being asserted, and
+ * pretending otherwise would be the kind of claim this suite exists to replace.
+ * What the assertions cover is everything after the disclosure has focus.
  */
 describe('a command control keeps focus across the redraw it causes', () => {
   const conflicted = async (page: Mounted): Promise<HTMLElement> => {
@@ -2954,6 +2959,73 @@ describe('a command control keeps focus across the redraw it causes', () => {
       const closed = viewDiff(page);
       assert.equal(closed.getAttribute('aria-expanded'), 'false', 'the difference did not close');
       assert.equal(page.win.document.activeElement, closed, 'focus was lost closing it');
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('restores the SAME option when one command is published by several', async () => {
+    // MEASURED REGRESSION. A token of zone + command + target alone matched the
+    // first `kind` button in document order, because the five options carry one
+    // command and no target and differ only by `data-ig-value`. Focus the
+    // `together-with` option, let an unrelated redraw land, and focus came back
+    // on `blocked-by` — worse than the body it replaced, because the reader's
+    // next Enter then encodes a DIFFERENT relationship rather than nothing.
+    const page = await mounted();
+    try {
+      const row = page.rows().find((each) => each.getAttribute('data-ig-key') === '1');
+      assert.ok(row !== undefined, 'no rail row for 1');
+      page.click(row);
+      await flush();
+      const add = page.control('add');
+      assert.ok(add !== null, 'no add control');
+      page.click(add);
+      await flush();
+
+      const options = [...page.element.querySelectorAll<HTMLElement>('[data-ig-command="kind"]')];
+      const wanted = options.find((node) => node.getAttribute('data-ig-value') === 'together-with');
+      assert.ok(wanted !== undefined, 'no together-with option');
+      assert.ok(options.length > 1, 'only one option — the namesake case is not exercised');
+      wanted.focus();
+
+      // AN UNRELATED REDRAW: a write settling elsewhere, which is the ordinary
+      // way a render lands while the reader is mid-draft.
+      page.handle.update();
+      await flush();
+
+      const now = page.win.document.activeElement;
+      assert.ok(now !== null);
+      assert.equal(
+        now.getAttribute('data-ig-value'),
+        'together-with',
+        `focus moved to a different option (${now.getAttribute('data-ig-value') ?? 'none'})`,
+      );
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('keeps a press reaching the mount even when the control resolves itself', async () => {
+    // THE OTHER HALF, and it needs its own case: `refocusCommand` correctly
+    // answers "gone" for a control that removes itself — `discard` takes its
+    // whole card away — and without a last resort focus then falls to the body
+    // exactly as before. Every one-shot control has this shape, so fixing only
+    // the disclosure would have left the class alive.
+    const page = await mounted();
+    try {
+      await conflicted(page);
+      const inspector = page.zone('inspector');
+      assert.ok(inspector !== null);
+      const discard = inspector.querySelector<HTMLElement>('[data-ig-command="discard"]');
+      assert.ok(discard !== null, 'no discard control');
+      discard.focus();
+      discard.click();
+      await flush();
+
+      const now = page.win.document.activeElement;
+      assert.ok(now !== null && page.element.contains(now), 'focus left the workspace entirely');
     } finally {
       page.handle.destroy();
       page.dom.window.close();

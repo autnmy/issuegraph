@@ -58,6 +58,7 @@ import {
   resolveTheme,
 } from '@issuegraph/viewer';
 
+import { CONTROL_ATTRIBUTES } from '../a11y/baseline.ts';
 import type { AuditInput } from '../audit/findings.ts';
 import { type CreateInteraction, type KeyboardContext, KIND_KEYS, keyIntent } from '../create/keys.ts';
 import { pickerPlacement } from '../create/placement.ts';
@@ -259,16 +260,29 @@ function isFocusable(node: Element | null | undefined): node is HTMLElement {
 }
 
 /**
- * A command control's identity across a redraw: which zone it was in, which
- * command it publishes, and which subject it acts on when the command names
- * several. `target` is `null` for a control that carries none, and matching
- * requires all three, so a namesake is never mistaken for the control that had
- * focus.
+ * A control's identity across a redraw — every field `onClick` reads when it
+ * turns a press into a dispatch, and for that reason.
+ *
+ * THE IDENTITY IS THE DISPATCH'S, NOT A SUBSET OF IT. An earlier revision
+ * carried zone, command and target only, and claimed a namesake could never be
+ * mistaken for the control that had focus. Measured false: the inspector's kind
+ * list and the picker's retype options each publish ONE command across several
+ * buttons carrying no target, separated only by `data-ig-value` /
+ * `data-ig-kind`. Focus the `together-with` option, let any redraw land, and
+ * focus came back on `blocked-by` — worse than the body it replaced, because
+ * the reader's next Enter then performs a DIFFERENT act rather than none.
+ *
+ * So the fields here mirror `onClick` exactly. Anything it reads to decide
+ * WHICH act a press performs has to be part of what identifies the control, or
+ * restoring focus can silently change the act.
  */
 interface CommandFocus {
+  /** Which attribute published it — see {@link CONTROL_ATTRIBUTES}. */
+  readonly channel: string;
   readonly zone: string | null;
-  readonly command: string;
+  readonly control: string;
   readonly target: string | null;
+  readonly value: string | null;
 }
 
 function isInput(node: Element | null | undefined): node is HTMLInputElement {
@@ -900,13 +914,27 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   const commandFocusToken = (): CommandFocus | null => {
     const active = doc.activeElement;
     if (!isElement(active) || !surface.contains(active)) return null;
-    const command = active.getAttribute(COMMAND_ATTRIBUTE);
-    if (command === null) return null;
-    return {
-      zone: active.closest('.ig-zone')?.getAttribute('data-zone') ?? null,
-      command,
-      target: active.getAttribute(TARGET_ATTRIBUTE),
-    };
+    // ALL THREE CHANNELS, because the defect is not the command channel's. The
+    // audit header's toggle publishes on `data-ig-audit-filter` alone and the
+    // first pass's answers on `data-ig-answer` — `onClick` dispatches each from
+    // its own branch — so a token reading only `data-ig-command` left the audit
+    // toggle dropping focus to the body exactly as before. #149 says "any
+    // command control", and this is the list that makes that true.
+    for (const channel of CONTROL_ATTRIBUTES) {
+      const control = active.getAttribute(channel);
+      if (control === null) continue;
+      return {
+        channel,
+        zone: active.closest('.ig-zone')?.getAttribute('data-zone') ?? null,
+        control,
+        target: active.getAttribute(TARGET_ATTRIBUTE),
+        // THE SAME TWO SPELLINGS `onClick` READS, and in its order: the picker
+        // publishes its kind as `data-ig-kind`, the mount's own chrome as
+        // `data-ig-value`.
+        value: active.getAttribute('data-ig-value') ?? active.getAttribute('data-ig-kind'),
+      };
+    }
+    return null;
   };
 
   /** Give focus back to the control a {@link CommandFocus} names. `false` when it is gone. */
@@ -914,9 +942,18 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // THE ATTRIBUTE NAME IS A CONSTANT AND THE VALUES ARE COMPARED, so nothing
     // a host's tracker can spell reaches a selector. See the token above.
     const scope = token.zone === null ? surface : (zone(token.zone) ?? surface);
-    for (const node of scope.querySelectorAll<HTMLElement>(`[${COMMAND_ATTRIBUTE}]`)) {
-      if (node.getAttribute(COMMAND_ATTRIBUTE) !== token.command) continue;
+    for (const node of scope.querySelectorAll<HTMLElement>(`[${token.channel}]`)) {
+      if (node.getAttribute(token.channel) !== token.control) continue;
       if (node.getAttribute(TARGET_ATTRIBUTE) !== token.target) continue;
+      const value = node.getAttribute('data-ig-value') ?? node.getAttribute('data-ig-kind');
+      if (value !== token.value) continue;
+      // A ZONELESS TOKEN MUST NOT MATCH A ZONED CONTROL. The floating chooser
+      // and the first-pass overlay are appended OUTSIDE the four zones, so
+      // their tokens carry `zone: null` and scope to the whole surface — and
+      // without this the chooser's `cancel` restored onto the inspector's.
+      // The two directions are asymmetric on purpose: a zoned token is already
+      // confined by `scope`.
+      if (token.zone === null && node.closest('.ig-zone') !== null) continue;
       node.focus({ preventScroll: true });
       return true;
     }
@@ -1237,6 +1274,14 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // does not survive `surface.innerHTML`, so what crosses is a way to name
     // the control rather than a reference to the one about to be destroyed.
     const commandToken = commandFocusToken();
+    // WAS THE FOCUS OURS TO RESTORE? A reader whose focus is on the host's own
+    // chrome must not have it dragged into the workspace by a redraw the
+    // workspace happened to do — the search arm below already records paying
+    // for that once. The last-resort arm needs this because it fires on
+    // "nothing inside the surface holds focus", which is equally true of a
+    // redraw that destroyed the focused control and of a reader who simply is
+    // not here.
+    const heldFocus = isElement(active) && surface.contains(active);
     // The ZONE too: an issue is commonly drawn in the rail and on the canvas,
     // and restoring "the first element with this key" would move focus from
     // a canvas node into the rail on every redraw.
@@ -1387,6 +1432,29 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       const restored =
         focused === null && commandToken !== null && refocusCommand(commandToken);
       if (!restored) focusRow(focused);
+      // A LAST RESORT, because half of these controls RESOLVE THEMSELVES. A
+      // picker option closes the picker; `retry`, `discard`, `cancel` and
+      // `dismiss-change` each remove the card they sit in — so `refocusCommand`
+      // correctly answers "gone", `focusRow(null)` moves nothing, and the
+      // keyboard loop died anyway. That is the whole-loop half of the defect,
+      // and leaving it would have fixed the disclosure while every one-shot
+      // control kept failing the same way.
+      //
+      // The first drawn row, on the same reasoning the first-pass close arm
+      // gives for returning to §17a's entry: somewhere inside the surface that
+      // reaches the listener beats the body, and the rail is the zone the
+      // reader can navigate out of.
+      // THE TEST IS "INSIDE THE SURFACE", NOT "FOCUSABLE". `isFocusable` asks
+      // whether a node has `focus`, and `<body>` does — so it answers true for
+      // exactly the state this arm exists to repair. What the keydown listener
+      // needs is a focus owner it can receive an event from.
+      const adrift =
+        !isElement(doc.activeElement) || !surface.contains(doc.activeElement);
+      if (!restored && focused === null && heldFocus && adrift) {
+        surface
+          .querySelector<HTMLElement>(`[${KEY_ATTRIBUTE}][tabindex]`)
+          ?.focus({ preventScroll: true });
+      }
     }
     // THE KEYBOARD IS GIVEN BACK. The overlay is removed with focus inside it,
     // so without this `activeElement` is the body — and the keydown listener is

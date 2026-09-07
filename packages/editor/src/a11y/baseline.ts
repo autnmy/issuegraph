@@ -66,8 +66,19 @@ export interface SurfaceElement extends SurfaceNode {
   querySelectorAll(selectors: string): Iterable<SurfaceElement>;
 }
 
-/** Where a control's accessible name comes from, or that it has none. */
-export type NameSource = 'aria-label' | 'aria-labelledby' | 'text' | 'none';
+/**
+ * Where a control's accessible name comes from, or why it has none.
+ *
+ * `empty` IS ITS OWN ANSWER, not a kind of `none`. An `aria-label=""` is an
+ * author who meant to supply a name and supplied nothing — a different defect
+ * from a control nobody labelled, and one that reads as deliberate in the
+ * markup. Recording it separately is what lets a rule name it. THE VALUE IS
+ * NEVER RECORDED: a label is routinely the host's own word (`picker/words.ts`
+ * and `reevaluate/words.ts` both require a `Record<K, string>` from the host
+ * and default none), so pinning the string would fail any host that translated
+ * it. Whether one was supplied is a fact about the markup; what it says is not.
+ */
+export type NameSource = 'aria-label' | 'aria-labelledby' | 'text' | 'empty' | 'none';
 
 /**
  * How the keyboard reaches a control.
@@ -88,6 +99,16 @@ export interface ControlEntry {
   readonly channel: string;
   /** That attribute's value: the command, the answer, or the filter's state. */
   readonly control: string;
+  /**
+   * What the control acts on, and which option it is.
+   *
+   * RECORDED BECAUSE THEY SEPARATE OTHERWISE IDENTICAL ROWS. Every relationship
+   * row publishes `select-edge`, and the kind list publishes `kind` several
+   * times — without these, N controls collapse to N byte-identical entries and
+   * losing one of them is invisible in the artifact's diff.
+   */
+  readonly target: string | null;
+  readonly value: string | null;
   readonly tag: string;
   /** `null` where this module has no mapping, which is a fact; a guess would not be. */
   readonly role: string | null;
@@ -109,7 +130,7 @@ export interface ControlEntry {
  * every answer, and the rules below would have skipped exactly the controls a
  * keyboard reader depends on most.
  */
-const CONTROL_ATTRIBUTES: readonly string[] = Object.freeze([
+export const CONTROL_ATTRIBUTES: readonly string[] = Object.freeze([
   'data-ig-command',
   'data-ig-answer',
   'data-ig-audit-filter',
@@ -125,7 +146,6 @@ const CONTROL_ATTRIBUTES: readonly string[] = Object.freeze([
  * where the HTML implicit roles do not apply and `path` has none at all.
  */
 const IMPLICIT_ROLES: Readonly<Record<string, string>> = Object.freeze({
-  a: 'link',
   button: 'button',
   h1: 'heading',
   h2: 'heading',
@@ -133,9 +153,22 @@ const IMPLICIT_ROLES: Readonly<Record<string, string>> = Object.freeze({
   h4: 'heading',
   li: 'listitem',
   ol: 'list',
-  section: 'region',
   ul: 'list',
 });
+
+/**
+ * The two tags whose implicit role depends on more than the tag.
+ *
+ * `a` is a `link` only with an `href` — without one it is not a link and not
+ * focusable. `section` is a `region` only when it has an accessible name;
+ * unnamed it exposes no role at all. Both were mapped unconditionally in an
+ * earlier revision, which recorded a role the accessibility tree does not have.
+ */
+function conditionalRole(element: SurfaceElement, tag: string): string | null {
+  if (tag === 'a') return element.getAttribute('href') === null ? null : 'link';
+  if (tag === 'section') return nameSource(element) === 'none' ? null : 'region';
+  return null;
+}
 
 /** ARIA attributes whose value is drawn from a fixed set, so the value is data. */
 const ENUMERATED_ARIA: readonly string[] = Object.freeze([
@@ -190,16 +223,26 @@ function visibleText(element: SurfaceElement): string {
 }
 
 function nameSource(element: SurfaceElement): NameSource {
-  // AN EMPTY VALUE IS NOT A NAME. `renderMarkup` omits only `undefined`, `null`
-  // and `false`, so `aria-label=""` reaches the markup and would otherwise be
-  // recorded as a supplied name — the same "omitted, never empty" rule
-  // `holdLine` states for `data-code`.
-  if ((element.getAttribute('aria-label') ?? '') !== '') return 'aria-label';
-  if ((element.getAttribute('aria-labelledby') ?? '') !== '') return 'aria-labelledby';
+  // AN EMPTY VALUE IS NOT A NAME, and it is not the same as no attribute.
+  // `renderMarkup` omits only `undefined`, `null` and `false`, so
+  // `aria-label=""` does reach the markup — the case the "omitted, never empty"
+  // rule `holdLine` states for `data-code` exists to prevent.
+  for (const attribute of ['aria-label', 'aria-labelledby'] as const) {
+    const value = element.getAttribute(attribute);
+    if (value === null) continue;
+    return value === '' ? 'empty' : attribute;
+  }
   return visibleText(element) === '' ? 'none' : 'text';
 }
 
 function tabStopOf(element: SurfaceElement): TabStop {
+  // DISABLED AND INERT ARE NOT TAB STOPS, whatever the tag says. The mount sets
+  // `inert` on every zone while the first-pass overlay is up — "the zones go
+  // inert under it" — so without this every covered control recorded `tab` and
+  // passed a rule asserting the keyboard can reach it, while the browser was
+  // refusing focus to all of them.
+  if (element.getAttribute('disabled') !== null) return 'none';
+  if (element.closest('[inert]') !== null) return 'none';
   const raw = element.getAttribute('tabindex');
   if (raw === null) {
     // NATIVELY IN THE TAB ORDER. `a` only with an `href`: without one it is not
@@ -214,7 +257,37 @@ function tabStopOf(element: SurfaceElement): TabStop {
   return index < 0 ? 'programmatic' : 'tab';
 }
 
-function ariaOf(root: SurfaceElement, element: SurfaceElement): Readonly<Record<string, string>> {
+/**
+ * Every id under `root`, gathered once.
+ *
+ * A SET RATHER THAN A QUERY PER TOKEN, and that is a correctness fix, not a
+ * speed one. An earlier revision resolved each IDREF with
+ * `` querySelectorAll(`[id="${id}"]`) `` — interpolating a value read off the
+ * DOM straight into a selector, which is verbatim the class the mount's focus
+ * token was written to avoid. Measured: `aria-describedby='a"]'` made this
+ * function THROW, and a token containing `],[id` resolved against the wrong
+ * elements. `controlSurface` is exported for hosts to run over their own
+ * chrome, where ids are tracker-derived, so the injection was reachable.
+ *
+ * SCOPED TO `root`, which is a real bound and is stated rather than hidden: an
+ * IDREF pointing into the host's own chrome outside the mounted surface reads
+ * as `dangling` here. That is the right default for a record ABOUT this
+ * surface, and a host taking it over its whole page gets the wider answer.
+ */
+function idsUnder(root: SurfaceElement): ReadonlySet<string> {
+  const ids = new Set<string>();
+  // `root` ITSELF IS NOT IN ITS OWN `querySelectorAll`, so it is added by hand:
+  // a host may well hang the surface off an element that carries an id.
+  const own = root.getAttribute('id');
+  if (own !== null) ids.add(own);
+  for (const element of root.querySelectorAll('[id]')) {
+    const id = element.getAttribute('id');
+    if (id !== null) ids.add(id);
+  }
+  return ids;
+}
+
+function ariaOf(ids: ReadonlySet<string>, element: SurfaceElement): Readonly<Record<string, string>> {
   const out: Record<string, string> = {};
   for (const attribute of ENUMERATED_ARIA) {
     const value = element.getAttribute(attribute);
@@ -225,11 +298,9 @@ function ariaOf(root: SurfaceElement, element: SurfaceElement): Readonly<Record<
     if (value === null) continue;
     // EVERY id IT NAMES, because the attribute takes a list and a half-resolved
     // reference is still broken for the token that dangles.
-    const ids = value.split(/\s+/).filter((token) => token !== '');
-    const resolved =
-      ids.length > 0 &&
-      ids.every((id) => [...root.querySelectorAll(`[id="${id}"]`)].length > 0);
-    out[attribute] = resolved ? 'resolves' : 'dangling';
+    const named = value.split(/\s+/).filter((token) => token !== '');
+    out[attribute] =
+      named.length > 0 && named.every((id) => ids.has(id)) ? 'resolves' : 'dangling';
   }
   return out;
 }
@@ -249,6 +320,7 @@ function ariaOf(root: SurfaceElement, element: SurfaceElement): Readonly<Record<
 export function controlSurface(root: SurfaceElement): readonly ControlEntry[] {
   const entries: ControlEntry[] = [];
   const seen = new Set<SurfaceElement>();
+  const ids = idsUnder(root);
   for (const channel of CONTROL_ATTRIBUTES) {
     for (const element of root.querySelectorAll(`[${channel}]`)) {
       const control = element.getAttribute(channel);
@@ -262,17 +334,39 @@ export function controlSurface(root: SurfaceElement): readonly ControlEntry[] {
         zone: element.closest('.ig-zone')?.getAttribute('data-zone') ?? null,
         channel,
         control,
+        target: element.getAttribute('data-ig-target'),
+        value: element.getAttribute('data-ig-value') ?? element.getAttribute('data-ig-kind'),
         tag,
-        role: element.getAttribute('role') ?? IMPLICIT_ROLES[tag] ?? null,
+        role:
+          element.getAttribute('role') ??
+          IMPLICIT_ROLES[tag] ??
+          conditionalRole(element, tag),
         tabStop: tabStopOf(element),
         name: nameSource(element),
-        aria: ariaOf(root, element),
+        aria: ariaOf(ids, element),
       });
     }
   }
-  return [...entries].sort((a, b) =>
-    `${a.zone ?? ''}\u0000${a.channel}\u0000${a.control}`.localeCompare(
-      `${b.zone ?? ''}\u0000${b.channel}\u0000${b.control}`,
-    ),
-  );
+  // FIELD BY FIELD, BY CODE POINT. `localeCompare` was both non-total and
+  // machine-dependent here: it treats `\u0000` as ignorable, so the separator
+  // bought nothing and distinct keys compared EQUAL, and with no locale it
+  // follows the runner's own ICU build — which would reorder a committed
+  // artifact that is compared with an order-sensitive `deepEqual`.
+  const key = (entry: ControlEntry): readonly string[] => [
+    entry.zone ?? '',
+    entry.channel,
+    entry.control,
+    entry.target ?? '',
+    entry.value ?? '',
+  ];
+  return [...entries].sort((a, b) => {
+    const left = key(a);
+    const right = key(b);
+    for (let index = 0; index < left.length; index += 1) {
+      const one = left[index] ?? '';
+      const other = right[index] ?? '';
+      if (one !== other) return one < other ? -1 : 1;
+    }
+    return 0;
+  });
 }

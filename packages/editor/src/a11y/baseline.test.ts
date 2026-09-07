@@ -39,21 +39,27 @@ import { type ControlEntry, controlSurface } from './baseline.ts';
 const BASELINE_PATH = new URL('./baseline.json', import.meta.url);
 
 /**
- * The baseline's two surfaces: the disclosure shut, and the disclosure open.
+ * The baseline's three surfaces.
  *
- * TWO RATHER THAN ONE, because the attributes #149 asks the baseline to cover
- * do not both exist in either state alone. Shut, `aria-controls` is correctly
- * absent — the region it would name is not rendered. Open, it is present and
- * must resolve. A single-state baseline would silently cover only half of what
- * it claims.
+ * THE DISCLOSURE TWICE, because the attributes #149 asks the baseline to cover
+ * do not both exist in either state alone: shut, `aria-controls` is correctly
+ * absent — the region it would name is not rendered — and open it is present
+ * and must resolve. A single-state baseline would cover half of what it claims.
+ *
+ * AND THE DRAFT OPEN, because the kind chooser and the target search are built
+ * by the mount rather than by a renderer, and they are the reason this record
+ * is taken over a mounted surface at all. Without them the artifact would be
+ * one a spec walk could have produced, and the rules would never meet a
+ * `tabindex`.
  */
 async function surfaces(): Promise<Record<string, readonly ControlEntry[]>> {
   const out: Record<string, readonly ControlEntry[]> = {};
-  for (const [name, openDiff] of [
-    ['disclosure-shut', false],
-    ['disclosure-open', true],
+  for (const [name, options] of [
+    ['disclosure-shut', {}],
+    ['disclosure-open', { openDiff: true }],
+    ['draft-open', { openDraft: true }],
   ] as const) {
-    const page = await a11ySurface({ openDiff });
+    const page = await a11ySurface(options);
     try {
       out[name] = controlSurface(page.root);
     } finally {
@@ -117,16 +123,27 @@ describe('rules that hold whatever the baseline says', () => {
   });
 
   it('gives every control an accessible name', async () => {
+    // BOTH FAILURES, because they are different mistakes with the same effect.
+    // `none` is a control nobody labelled; `empty` is an `aria-label=""` — an
+    // author who meant to name it and named nothing, which reads as deliberate
+    // in the markup and is why it earns its own answer rather than folding into
+    // `none`.
     await each((entry) => {
-      assert.notEqual(entry.name, 'none', `${entry.control} has no accessible name`);
+      assert.ok(
+        entry.name !== 'none' && entry.name !== 'empty',
+        `${entry.control} has no accessible name (${entry.name})`,
+      );
     });
   });
 
   it('never leaves an ARIA value empty', async () => {
-    // "OMITTED, NEVER EMPTY" is this package's own rule for `data-code`, and it
-    // holds for the same reason here: `aria-label=""` claims a name the author
-    // did not supply, and `renderMarkup` omits only `undefined`, `null` and
-    // `false`, so an empty string does reach the markup.
+    // ITS SUBJECT IS THE ENUMERATED STATES, and saying so is the point: an
+    // earlier revision cited `aria-label=""` here, which `entry.aria` does not
+    // carry — so the rule had no input that could fail it and passed
+    // vacuously. The empty-label case is real and is caught one rule up, by
+    // `NameSource`'s own `empty`. What is left for this rule is a state
+    // attribute rendered with no value, which `renderMarkup` will emit
+    // because it omits only `undefined`, `null` and `false`.
     await each((entry) => {
       for (const [attribute, value] of Object.entries(entry.aria)) {
         assert.notEqual(value, '', `${entry.control} carries an empty ${attribute}`);
