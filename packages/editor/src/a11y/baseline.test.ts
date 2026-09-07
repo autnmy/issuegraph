@@ -170,6 +170,22 @@ function nameOf(entry: ControlEntry): string {
  * same thing: a control the package renders that no recorded state contained,
  * so a regression in its name, role or tab stop moved neither the artifact nor
  * a rule. Adding a control now fails HERE, on the change that adds it.
+ *
+ * ## What it deliberately does NOT cover
+ *
+ * THE VIEWER'S OWN CONTROLS. `retry:index`, `review-pick-order` and
+ * `dismiss:adoption` are drawn by `@issuegraph/viewer` from host facts this
+ * workspace merely forwards, and they are pinned where they are rendered —
+ * `viewer/src/states.test.ts` asserts each of them, and asserts that none is
+ * drawn when nothing is wired to it. Listing them here would make this file
+ * layer 1's second opinion about layer 1's markup, which is the drifting
+ * duplicate the package split exists to prevent.
+ *
+ * That leaves a real gap, and it is a gap in the VIEWER rather than a hole in
+ * this list: those controls have their presence pinned and their accessible
+ * name, role and tab stop pinned nowhere, because layer 1 has no baseline of
+ * its own. Filed rather than absorbed — a baseline for the viewer is its own
+ * piece of work with its own fixtures, not three names appended here.
  */
 const RENDERED_CONTROLS: readonly string[] = Object.freeze([
   'data-ig-answer:apply',
