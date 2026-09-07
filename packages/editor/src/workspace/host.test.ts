@@ -371,11 +371,44 @@ describe('targetMatches searches by reference and title, never offering the sour
 });
 
 describe('reconcileHost agrees with a document that moved', () => {
+  /** Nothing is hidden: the state a store with no unsettled edit is in. */
+  const NOTHING_HIDDEN: ReadonlySet<string> = new Set();
+
   it('drops an edge selection the document no longer carries, and keeps one it does', () => {
     const selected = drive([{ kind: 'group', id: blockedBy.id }]).state;
-    assert.equal(reconcileHost(selected, document), selected, 'a live selection is returned as-is');
+    assert.equal(
+      reconcileHost(selected, document, NOTHING_HIDDEN),
+      selected,
+      'a live selection is returned as-is',
+    );
     const retyped: GraphDocument = { issues: document.issues, edges: [serialize] };
-    assert.deepEqual(reconcileHost(selected, retyped).selection, { kind: 'none' });
+    assert.deepEqual(reconcileHost(selected, retyped, NOTHING_HIDDEN).selection, { kind: 'none' });
+  });
+
+  it('returns an edge selection the store is hiding to the edge’s carrier', () => {
+    // THE LANDED DOCUMENT CANNOT SEE THIS. An unsettled retype lands nothing,
+    // so the edge is still in `document` and the check above passes — while the
+    // store has already hidden it and the workspace has already stopped drawing
+    // it. Cleared to `none`, the panel says nothing is selected and the reason
+    // the edit was refused has no subject to be drawn under; on the carrier's
+    // panel, the produced edge is one of the relationships listed.
+    const selected = drive([{ kind: 'group', id: blockedBy.id }]).state;
+    const reconciled = reconcileHost(selected, document, new Set([blockedBy.id]));
+    assert.deepEqual(reconciled.selection, { kind: 'issue', key: blockedBy.from });
+    // AND ONLY THE SELECTED ONE. Hiding some other edge is not about the panel.
+    assert.equal(reconcileHost(selected, document, new Set([serialize.id])), selected);
+  });
+
+  it('clears rather than inventing a carrier the document does not list', () => {
+    const selected = drive([{ kind: 'group', id: blockedBy.id }]).state;
+    const orphaned: GraphDocument = {
+      issues: document.issues.filter((issue) => issue.ref !== blockedBy.from),
+      edges: document.edges,
+    };
+    assert.deepEqual(
+      reconcileHost(selected, orphaned, new Set([blockedBy.id])).selection,
+      { kind: 'none' },
+    );
   });
 
   it('drops an issue selection and a draft aimed at an issue that vanished', () => {
@@ -386,11 +419,15 @@ describe('reconcileHost agrees with a document that moved', () => {
       { kind: 'control', name: 'target-query', value: 'x' },
     ]).state;
     const without2: GraphDocument = { issues: document.issues.filter((issue) => issue.ref !== '2'), edges: [] };
-    const reconciled = reconcileHost(drafted, without2);
+    const reconciled = reconcileHost(drafted, without2, NOTHING_HIDDEN);
     assert.deepEqual(reconciled.selection, { kind: 'none' });
     assert.equal(reconciled.draft.source, null);
     assert.equal(reconciled.targetQuery, '');
-    assert.equal(reconcileHost(drafted, document), drafted, 'nothing moved, nothing changes');
+    assert.equal(
+      reconcileHost(drafted, document, NOTHING_HIDDEN),
+      drafted,
+      'nothing moved, nothing changes',
+    );
   });
 });
 

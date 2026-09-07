@@ -28,7 +28,7 @@
  */
 
 import { type EdgeField, isEdgeField } from '@issuegraph/core';
-import type { GraphDocument, MutationId, Proposal, StoredIssue } from '@issuegraph/store';
+import type { EdgeId, GraphDocument, MutationId, Proposal, StoredIssue } from '@issuegraph/store';
 import { findEdge } from '@issuegraph/store';
 
 import { type CreateDraft, IDLE_CREATE_DRAFT, createReducer } from '../create/draft.ts';
@@ -488,7 +488,7 @@ export function reduceHost(state: HostState, command: HostCommand, document: Gra
 }
 
 /**
- * Bring the state back into agreement with a document that moved under it.
+ * Bring the state back into agreement with what the reader can SEE.
  *
  * The store re-renders on every landed write, and a write can remove what the
  * state names: a retype or a flip gives the edge a NEW identity, a delete
@@ -497,22 +497,71 @@ export function reduceHost(state: HostState, command: HostCommand, document: Gra
  * the inspector showing a picker for nothing — the viewer already refuses a
  * stale selection the same way, so the host does too, from the document
  * rather than from memory of what it just proposed.
+ *
+ * ## `hidden` is the OTHER half of "no longer carries", and the landed
+ * document cannot state it
+ *
+ * `document` is what LANDED, and an unsettled retype or flip lands nothing —
+ * so the edge the reader was inspecting is still in it, and the check above
+ * passes, while the store's projection has already hidden that edge and the
+ * workspace has already stopped drawing it. Two documents were answering
+ * "does this selection resolve", and they disagreed for the whole life of the
+ * write: the panel resolved the selection to `none` and drew the empty
+ * sentence, and — because a refusal is only drawn for the subject it names —
+ * the reason the edit was refused was drawn nowhere at all. A reader who
+ * retyped an edge into a relationship that already exists saw the picker
+ * close and nothing else. `hidden` is the store's own set of landed edges its
+ * projection is not showing, so both halves of the question are asked here
+ * and the answer is one.
+ *
+ * A HIDDEN EDGE RETURNS THE PANEL TO ITS CARRIER, not to nothing. The refusal
+ * is about a relationship, and `edge.from` is the issue whose field carries it
+ * — for the symmetric kinds too — so the produced edge, phantom or landed,
+ * touches that issue and the panel that opens on it states the reason with no
+ * further click. Clearing to `none` instead would be the same silence the
+ * check above already produced.
+ *
+ * RECONCILING ONTO THE PROJECTED REPLACEMENT was the other candidate — follow
+ * the selection to the identity the edit produced — and it cannot be done from
+ * here or anywhere else. It works only when that identity happens to be
+ * landed, which is exactly one of the two refusals this route reaches:
+ * `duplicate-edge` produces an edge that already exists, but `cardinality`
+ * produces a PHANTOM, and a selection naming an edge the landed document does
+ * not carry is dropped by the first check in this very function on the next
+ * render. Measured: `reconcileHost` returns `{ kind: 'none' }` for it. That is
+ * the same vanishing one frame later, and it is the same decision the phantom
+ * capsule already records by publishing no `select-edge` — there is nothing
+ * there to select.
  */
-export function reconcileHost(state: HostState, document: GraphDocument): HostState {
+export function reconcileHost(
+  state: HostState,
+  document: GraphDocument,
+  hidden: ReadonlySet<EdgeId>,
+): HostState {
   const edgeId = selectedEdgeId(state.selection);
-  const selection =
-    edgeId !== null && findEdge(document, edgeId) === undefined ? INITIAL_SELECTION : state.selection;
-  const issueKey = selectedKey(state.selection);
+  const edge = edgeId === null ? undefined : findEdge(document, edgeId);
+  const resolved =
+    edgeId === null
+      ? state.selection
+      : edge === undefined
+        ? INITIAL_SELECTION
+        : hidden.has(edge.id)
+          ? selectionReducer(INITIAL_SELECTION, { kind: 'select-issue', key: edge.from })
+          : state.selection;
+  const issueKey = selectedKey(resolved);
   const known = new Set(document.issues.map((issue) => issue.ref));
+  // ASKED OF `resolved`, NOT OF `state.selection`. The carrier above is read
+  // off an edge, and an edge can name an issue the document does not list;
+  // asking the question of the selection that came IN would let that one
+  // through unchecked, which is the stale name this function exists to refuse.
+  const selection = issueKey !== null && !known.has(issueKey) ? INITIAL_SELECTION : resolved;
   const draftStands =
     (state.draft.source === null || known.has(state.draft.source)) &&
     (state.draft.target === null || known.has(state.draft.target));
-  if (selection === state.selection && draftStands && (issueKey === null || known.has(issueKey))) {
-    return state;
-  }
+  if (selection === state.selection && draftStands) return state;
   return {
     ...state,
-    selection: issueKey !== null && !known.has(issueKey) ? INITIAL_SELECTION : selection,
+    selection,
     ...(draftStands ? {} : { draft: IDLE_CREATE_DRAFT, targetQuery: '', drop: null }),
   };
 }

@@ -781,6 +781,103 @@ describe('mountWorkspace', () => {
       assert.equal(row.getAttribute('data-edge'), 'serialize-with');
       assert.equal(row.getAttribute('data-ig-code'), 'duplicate-edge');
     });
+
+    it('states the refusal at the moment the reader is refused, with no second click', async () => {
+      // THE MOMENT THAT ACTUALLY HAPPENS. Every test above reaches the panel by
+      // selecting an issue AFTER the refused edit, and that is the one path the
+      // reader does not take: they had the EDGE selected — that is what the
+      // picker is drawn for — and the refusal has to be readable where they
+      // already are.
+      //
+      // It was not. `edgeChangeFor` hides the retyped edge the instant the edit
+      // is proposed, so the workspace stops drawing it, while `reconcileHost`
+      // asked the LANDED document — where an edit that landed nothing has
+      // changed nothing — and kept the selection on it. `inspectorView`
+      // resolved that selection against the document actually being drawn,
+      // found no such edge, and answered `none`; a refusal is drawn only for
+      // the subject it names, and `none` names nothing. So the picker closed
+      // and the panel said "nothing is selected", with the reason nowhere.
+      page.handle.destroy();
+      page = await mounted({
+        issues: SEED.issues,
+        edges: [makeEdge('blocked-by', '1', '2'), makeEdge('serialize-with', '1', '2')],
+      });
+      const original = makeEdge('blocked-by', '1', '2');
+      const mark = page.element.querySelector<HTMLElement>(`[data-ig-group="${original.id}"]`);
+      assert.ok(mark !== null, 'the canvas draws no mark for the seeded edge');
+      page.click(mark);
+      await flush();
+      assert.deepEqual(page.handle.state.selection, { kind: 'edge', edgeId: original.id });
+
+      // THE READER'S OWN ACT, through the picker the selection drew — not a
+      // proposal handed to the store behind the panel's back.
+      const choice = page.element.querySelector<HTMLElement>(
+        '[data-ig-command="retype"][data-ig-kind="serialize-with"]',
+      );
+      assert.ok(choice !== null, 'the picker offers no serialize-with to retype into');
+      page.click(choice);
+      await flush();
+
+      // NOTHING ELSE IS CLICKED BETWEEN THERE AND HERE.
+      const inspector = page.zone('inspector');
+      assert.ok(inspector !== null);
+      const row = inspector.querySelector<HTMLElement>('.ig-relationship[data-ig-code]');
+      assert.ok(row !== null, 'the refusal is stated nowhere at the moment it happened');
+      assert.equal(row.getAttribute('data-ig-code'), 'duplicate-edge');
+      assert.equal(
+        row.querySelector('.ig-relationship-reason')?.textContent,
+        WORDS.refusals['duplicate-edge'],
+      );
+      // ONCE, still. The panel it returned to is the carrier's, which is the
+      // same panel the deliberate selection above reaches.
+      assert.equal(inspector.querySelectorAll('.ig-relationship-reason').length, 1);
+      // AND THE PANEL IS THE CARRIER'S, which is what makes the row reachable:
+      // the edge the reader was inspecting is not drawn any more, so a panel
+      // still filtered to it can state nothing.
+      assert.deepEqual(page.handle.state.selection, { kind: 'issue', key: '1' });
+      // THE WHOLE PANEL AGREES, chrome included. The empty sentence used to be
+      // drawn with the vanished edge's picker still open beneath it — one zone
+      // saying nothing is selected and the next offering to retype something.
+      assert.equal(inspector.querySelector('.ig-inspector-empty'), null);
+      assert.equal(inspector.querySelector('.ig-picker'), null);
+    });
+
+    it('states a refusal whose produced edge never landed, at that same moment', async () => {
+      // THE ROUTE THAT RULES OUT FOLLOWING THE REPLACEMENT. `cardinality`
+      // refuses a retype into an occupied single-valued field, and the edge it
+      // produces exists in no document — a phantom. Reconciling the selection
+      // onto that produced identity, the other candidate, would name an edge
+      // the landed document does not carry, which this same function drops on
+      // the next render; the carrier issue is a subject that exists either way.
+      page.handle.destroy();
+      page = await mounted({
+        issues: SEED.issues,
+        edges: [makeEdge('blocked-by', '1', '2'), makeEdge('duplicate-of', '1', '3')],
+      });
+      const original = makeEdge('blocked-by', '1', '2');
+      const mark = page.element.querySelector<HTMLElement>(`[data-ig-group="${original.id}"]`);
+      assert.ok(mark !== null, 'the canvas draws no mark for the seeded edge');
+      page.click(mark);
+      await flush();
+
+      const choice = page.element.querySelector<HTMLElement>(
+        '[data-ig-command="retype"][data-ig-kind="duplicate-of"]',
+      );
+      assert.ok(choice !== null, 'the picker offers no duplicate-of to retype into');
+      page.click(choice);
+      await flush();
+
+      const inspector = page.zone('inspector');
+      assert.ok(inspector !== null);
+      const capsule = inspector.querySelector<HTMLElement>('.ig-relationship-refused');
+      assert.ok(capsule !== null, 'the refusal is stated nowhere at the moment it happened');
+      assert.equal(capsule.getAttribute('data-ig-code'), 'cardinality');
+      assert.deepEqual(page.handle.state.selection, { kind: 'issue', key: '1' });
+      // AND THE PICKER WENT WITH THE EDGE. The chrome is drawn from the same
+      // one selection, so an edge the workspace has stopped drawing leaves no
+      // picker behind offering to retype it again.
+      assert.equal(inspector.querySelector('.ig-picker'), null);
+    });
   });
 
   describe('the one selection is the workspace’s, not the store’s', () => {

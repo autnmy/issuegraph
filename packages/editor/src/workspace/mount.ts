@@ -832,8 +832,16 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     if (destroyed) return;
     const snapshot = store.getSnapshot();
     const document_ = landed();
-    // A landed write can retire what the state names; agree with the document first.
-    state = reconcileHost(state, document_);
+    // WHAT THE STORE IS NOT SHOWING, computed before the reconcile rather than
+    // beside the edges below, because the reconcile is the first reader of it:
+    // an unsettled retype or flip hides the edge it replaces, and the landed
+    // document the reconcile is otherwise handed still carries it. Both halves
+    // of "the reader can no longer see this" reach `reconcileHost` together.
+    const shown = new Set(snapshot.projected.map((edge) => edge.id));
+    const hidden = new Set(snapshot.landed.map((edge) => edge.id).filter((id) => !shown.has(id)));
+    // A landed write can retire what the state names, and an unsettled one can
+    // hide it; agree with what is on show first.
+    state = reconcileHost(state, document_, hidden);
     const projected = current.project(snapshot);
     // WHAT TO DRAW IS THE STORE'S PROJECTION, by the store's own contract:
     // `projected` is "landed plus every unsettled edit, each carrying its
@@ -848,8 +856,6 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // projection hides the old one until the write settles; the host's
     // document still carries it, so without this the old line and the new
     // dashed one were drawn together for the life of the write.
-    const shown = new Set(snapshot.projected.map((edge) => edge.id));
-    const hidden = new Set(snapshot.landed.map((edge) => edge.id).filter((id) => !shown.has(id)));
     const kept = projected.viewer.edges.filter((edge) => !hidden.has(edgeIdentity(edge.field, edge.from, edge.to)));
     const drawn_ = new Set(kept.map((edge) => edgeIdentity(edge.field, edge.from, edge.to)));
     const unsettled = snapshot.projected
