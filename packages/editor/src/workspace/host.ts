@@ -27,7 +27,7 @@
  * handles beside the mount rather than through it.
  */
 
-import { type EdgeField, edgeIdentityEnd, isEdgeField } from '@issuegraph/core';
+import { type EdgeField, edgeIdentityNames, isEdgeField } from '@issuegraph/core';
 import type { EdgeId, GraphDocument, MutationId, Proposal, StoredEdge, StoredIssue } from '@issuegraph/store';
 import { findEdge } from '@issuegraph/store';
 
@@ -118,7 +118,24 @@ export type HostCommand =
 
 /** What the shell performs against the store after reducing. */
 export type HostEffect =
-  | { readonly kind: 'propose'; readonly proposal: Proposal }
+  | {
+      readonly kind: 'propose';
+      readonly proposal: Proposal;
+      /**
+       * The issue this edit is about, answered ONCE — here, and never again.
+       *
+       * THE SHELL REMEMBERS IT AGAINST THE WRITE. A refusal arrives from the
+       * store long after the act that caused it, by which time a sibling write
+       * may have taken the relationship away; asking then is asking a document
+       * that no longer holds the answer. See {@link editCarrier} for what the
+       * remaining sources can and cannot say, and `mount.ts` for the map this
+       * value is recorded in.
+       *
+       * `null` when the document holds NEITHER end — there is no panel for an
+       * issue this backlog does not carry, so there is nowhere to state it.
+       */
+      readonly carrier: string | null;
+    }
   | { readonly kind: 'retry'; readonly mutationId: MutationId }
   | { readonly kind: 'discard'; readonly mutationId: MutationId }
   | { readonly kind: 'dismiss-change' }
@@ -145,6 +162,8 @@ export type HostEffect =
       readonly kind: 'first-pass-apply';
       readonly candidateId: CandidateId;
       readonly proposal: Proposal;
+      /** As on `propose`, and for the same reason — this arm emits a write too. */
+      readonly carrier: string | null;
     }
   /**
    * An `undo` took back an `apply`, and the shell decides what the store can do
@@ -177,69 +196,62 @@ function settled(state: HostState): HostResult {
  * themselves, which is two answers to one question, agreeing only for as long
  * as nobody touched either.
  *
- * IT IS NOT THE SAME QUESTION {@link edgeIdentityEnd} ANSWERS, and the two are
- * asked in different places for that reason: an identity's carrying end is its
- * FIRST segment, which `edgeIdentity` sorts for the symmetric kinds — so it
- * answers for an edge nobody holds any more, while this answers for one the
- * document still has, from the pair as the document stores it.
+ * IT CAN ONLY BE READ WHILE THE DOCUMENT STILL HOLDS THE EDGE, and every reader
+ * of it is shaped by that. `edgeIdentity` SORTS the endpoints of a symmetric
+ * field, so a `serialize-with` declared from `z` to `a` and one declared from
+ * `a` to `z` are one string and `from` is not a function of it. A revision of
+ * `@issuegraph/core` offered to name the carrying end of an identity anyway;
+ * for the symmetric fields that answer was the sort order wearing the carrier's
+ * name, and a refusal about such an edge was stated on the far end's panel —
+ * the panel the reader was NOT on — whenever the pair sorted the other way.
  */
 function carrierOf(edge: StoredEdge): string {
   return edge.from;
 }
 
 /**
- * The two ends of an edit, as questions a reference can be asked.
+ * What an edit can still say about its two ends.
  *
- * PREDICATES RATHER THAN A PAIR OF STRINGS, because one of the three sources
- * cannot produce strings at all. An edit that names an edge the document no
- * longer carries has only the IDENTITY left, and its segments are
- * percent-encoded by a function `@issuegraph/core` deliberately does not
- * invert — so that end is asked forwards, by encoding a candidate reference
- * and matching a segment, and never read back out. Asking all three sources
- * the same question is what lets {@link editCarrier} be one rule instead of
- * three.
+ * TWO SOURCES, AND THEY DO NOT ANSWER THE SAME QUESTION. A create, and an edit
+ * on an edge the document still holds, yield an ORDERED pair: the carrier, and
+ * the far end. An edit naming an edge the document no longer carries yields
+ * neither — the identity is the only surviving record of it, and it records
+ * WHICH TWO ISSUES, never which of them declared the relationship. Holding the
+ * two apart in the type is what stops the second being read as the first, which
+ * is exactly the reading this shape replaced.
  */
-interface EditEnds {
-  readonly carrier: (ref: string) => boolean;
-  readonly far: (ref: string) => boolean;
-}
+type EditEnds =
+  | { readonly kind: 'pair'; readonly carrier: string; readonly far: string }
+  | { readonly kind: 'identity'; readonly edgeId: EdgeId };
 
 function endsOf(document: GraphDocument, proposal: Proposal): EditEnds {
-  const pair = (from: string, to: string): EditEnds => ({
-    carrier: (ref) => ref === from,
-    far: (ref) => ref === to,
-  });
   // A CREATE HAS NO EDGE YET, and its own two references are the whole of what
   // it is about — including the `unknown-issue` case, where one of them is an
   // issue the document does not hold and no lookup could recover it.
-  if (proposal.op === 'create') return pair(proposal.from, proposal.to);
+  if (proposal.op === 'create') return { kind: 'pair', carrier: proposal.from, far: proposal.to };
   const edge = findEdge(document, proposal.edgeId);
-  if (edge !== undefined) return pair(carrierOf(edge), edge.to);
-  // AND THE EDGE CAN BE GONE, which is not an edge case but the `unknown-edge`
-  // refusal itself: the reader acted on a relationship a landed write had
-  // already removed. The identity the act named is the only surviving record
-  // of its ends, and `edgeIdentityEnd` is the format owner reading its own
-  // format — a split on `|` here would compare a raw reference against an
-  // encoded segment and answer for `i0001` while failing for `owner/repo#9`.
-  return {
-    carrier: (ref) => edgeIdentityEnd(proposal.edgeId, ref) === 'carrier',
-    far: (ref) => edgeIdentityEnd(proposal.edgeId, ref) === 'far',
-  };
+  if (edge !== undefined) return { kind: 'pair', carrier: carrierOf(edge), far: edge.to };
+  // AND THE EDGE CAN BE ABSENT, which is the `unknown-edge` refusal itself: the
+  // reader acted on a relationship a landed write had already removed. All that
+  // is left is the identity the act named.
+  return { kind: 'identity', edgeId: proposal.edgeId };
 }
 
 /**
  * Which issue an edit is ABOUT — the panel that states it, and the panel it is
  * refused on.
  *
- * THE SUBJECT OF AN EDIT IS DECIDED ONCE, HERE. It used to be decided twice
- * and in two vocabularies: the panel derived its own subject from the
- * selection (canonicalized onto a together unit's lead), and the inspector
- * separately asked whether the REFUSED EDGE's identity named that subject. Two
- * derivations of one fact diverge, and they did, three times over — a refusal
- * that matched nothing was drawn on every panel, a hidden edge left the panel
- * with no subject at all, and a draft begun from a unit partner produced an
- * edge naming the partner while the panel was headed by the lead. None of
- * those is reachable from a single value the edit carries with it.
+ * THE SUBJECT OF AN EDIT IS DECIDED ONCE, AND THAT MEANS ONCE IN TIME AS WELL
+ * AS ONCE IN THE SOURCE. It used to be decided twice and in two vocabularies:
+ * the panel derived its own subject from the selection (canonicalized onto a
+ * together unit's lead), and the inspector separately asked whether the REFUSED
+ * EDGE's identity named that subject. Two derivations of one fact diverge, and
+ * they did, three times over. This function replaced the second derivation —
+ * and then a fourth divergence appeared inside it, because it was still being
+ * CALLED twice: once when the edit went out, and again when the refusal came
+ * back, against a document a sibling write had changed in between. So the shell
+ * calls it at the moment of emission, records the answer against the write, and
+ * reads the record afterwards. See `HostEffect`'s `carrier` and `mount.ts`.
  *
  * THE CARRIER'S END WINS, AND THE FAR END IS THE FALLBACK. The relationship is
  * declared in the carrier's block, so that is the panel a reader made the edit
@@ -247,31 +259,86 @@ function endsOf(document: GraphDocument, proposal: Proposal): EditEnds {
  * no such panel, and stating the refusal on the target's — the only issue the
  * document holds — beats stating it nowhere.
  *
+ * AND WITH ONLY AN IDENTITY LEFT THERE IS NO RANKING TO APPLY. `edgeIdentity`
+ * discards the declaring end of a symmetric pair, so an identity can be asked
+ * WHETHER it names an issue and not WHICH end that issue is on; ranking its
+ * segments would be inventing an order the format threw away, which is the
+ * defect this arm was rewritten to remove. The answer is "an issue this backlog
+ * holds and this edit was between", in the document's own order — one rule with
+ * nothing for a second to disagree with, and the reader's own edits never reach
+ * it, because their carrier was taken while the edge was still there.
+ *
  * `null` when the document holds NEITHER end, which is not a refusal being
  * dropped: there is no panel for an issue this backlog does not carry, so
  * there is nowhere the reader could be standing to read it.
  */
 export function editCarrier(document: GraphDocument, proposal: Proposal): string | null {
-  const ends = endsOf(document, proposal);
   const keys = document.issues.map((issue) => issue.ref);
-  return keys.find((ref) => ends.carrier(ref)) ?? keys.find((ref) => ends.far(ref)) ?? null;
+  const ends = endsOf(document, proposal);
+  switch (ends.kind) {
+    case 'pair':
+      return keys.find((ref) => ref === ends.carrier) ?? keys.find((ref) => ref === ends.far) ?? null;
+    case 'identity':
+      return keys.find((ref) => edgeIdentityNames(ends.edgeId, ref)) ?? null;
+  }
+}
+
+/**
+ * What the shell is to do with an emitted proposal — the ONE axis on which the
+ * two emissions differ.
+ *
+ * A ROUTE RATHER THAN TWO EMITTERS. The first pass needs its write performed
+ * differently — the shell has to be able to find that exact record again if the
+ * reader takes the answer back, so the effect carries the candidate — and for
+ * one review round that difference was reason enough for it to build its own
+ * effect and skip {@link emitting} entirely. Everything else about the two is
+ * identical, and the part it skipped was the part that decides which panel the
+ * refusal lands on. The difference is this value; the funnel is one.
+ */
+type EmitRoute =
+  | { readonly kind: 'propose' }
+  | { readonly kind: 'first-pass-apply'; readonly candidateId: CandidateId };
+
+/** The reader's own edits: performed as a plain write, with nothing to take back by name. */
+const TO_THE_STORE: EmitRoute = { kind: 'propose' };
+
+/**
+ * The effect a route emits, as an exhaustive switch rather than a pair of
+ * branches: a third way to write is a compile error here, not a route that
+ * quietly builds its own effect again.
+ */
+function effectFor(route: EmitRoute, proposal: Proposal, carrier: string | null): HostEffect {
+  switch (route.kind) {
+    case 'propose':
+      return { kind: 'propose', proposal, carrier };
+    case 'first-pass-apply':
+      return { kind: 'first-pass-apply', candidateId: route.candidateId, proposal, carrier };
+  }
 }
 
 /**
  * Emit an edit, and leave the panel on the issue the edit is about.
  *
- * EVERY PROPOSAL IN THIS REDUCER GOES THROUGH HERE, which is the point. §17b
- * requires a refusal to be visible at the moment the reader is refused, and a
- * refusal is stated on its carrier's panel — so the panel has to BE the
- * carrier's when the edit goes out, rather than arriving there afterwards by
- * whichever route happens to notice. Each route that had to notice separately
- * cost a review round: a retype's projection hides the edge the panel was
- * filtered to, and until `reconcileHost` was taught about hidden edges the
- * panel resolved to nothing selected and the reason was drawn nowhere; a
- * create completed after the reader had clicked another issue went out from
- * the draft's source while the panel was headed by the issue they clicked,
- * which nothing downstream can see at all — a completed draft leaves no trace
- * of where it began.
+ * EVERY PROPOSAL THIS REDUCER EMITS GOES THROUGH HERE, which is the point. The
+ * type does not prove that on its own — a new arm could still write out a
+ * `carrier` by hand — but it makes skipping this deliberate rather than an
+ * omission: both of `HostEffect`'s write-bearing arms REQUIRE the field, so a
+ * route that goes round the funnel has to invent an answer in plain sight
+ * instead of quietly not having one.
+ *
+ * §17b requires a refusal to be visible at the moment the reader is refused,
+ * and a refusal is stated on its carrier's panel — so the panel has
+ * to BE the carrier's when the edit goes out, rather than arriving there
+ * afterwards by whichever route happens to notice. Each route that had to
+ * notice separately cost a review round: a retype's projection hides the edge
+ * the panel was filtered to, and until `reconcileHost` was taught about hidden
+ * edges the panel resolved to nothing selected and the reason was drawn
+ * nowhere; a create completed after the reader had clicked another issue went
+ * out from the draft's source while the panel was headed by the issue they
+ * clicked, which nothing downstream can see at all — a completed draft leaves
+ * no trace of where it began; and a first-pass `apply` built its effect for
+ * itself, so a queue opened with nothing selected answered `Y`, was refused,
+ * and closed onto a panel that stated nothing.
  *
  * IT WRITES BACK WHAT WAS ALREADY THERE ON THE CREATE PATHS, which is the
  * check that this is not a behaviour change smuggled in beside a fix.
@@ -283,11 +350,25 @@ export function editCarrier(document: GraphDocument, proposal: Proposal): string
  * a delete of the selected edge used to leave the reader with `none` once the
  * write landed and took the edge away.
  *
+ * SO DOES THE FIRST PASS, AND IT MOVES THE PANEL UNDER A SURFACE THAT COVERS
+ * IT. That is the intended effect rather than a side one: the overlay is modal,
+ * the reader answers `Y`, and where they are put down when it closes is the
+ * only chance a refusal of that answer has of being read. Whether the write
+ * will be refused is not knowable here, so every `apply` moves the panel and
+ * the last one answered is the panel the reader lands on.
+ *
  * AN EDIT ABOUT NO ISSUE THIS DOCUMENT HOLDS LEAVES THE SELECTION ALONE. See
  * {@link editCarrier}: there is no panel to move to, and clearing would take
- * the reader off the one they are on for a reason they could not see.
+ * the reader off the one they are on for a reason they could not see. The
+ * effect still carries the `null`, because "no panel states this" is an answer
+ * the shell must not go and compute a different one for.
  */
-function proposing(state: HostState, proposal: Proposal, document: GraphDocument): HostResult {
+function emitting(
+  state: HostState,
+  proposal: Proposal,
+  document: GraphDocument,
+  route: EmitRoute,
+): HostResult {
   const carrier = editCarrier(document, proposal);
   return {
     state:
@@ -297,7 +378,7 @@ function proposing(state: HostState, proposal: Proposal, document: GraphDocument
             ...state,
             selection: selectionReducer(INITIAL_SELECTION, { kind: 'select-issue', key: carrier }),
           },
-    effects: [{ kind: 'propose', proposal }],
+    effects: [effectFor(route, proposal, carrier)],
   };
 }
 
@@ -325,11 +406,11 @@ function drafted(
     return settled({ ...state, draft: result.draft, selection, ...chrome });
   }
   // THE DRAFT ENDS WHERE IT BEGAN. `begin` selects the source three lines
-  // above; `proposing` puts the panel back on the edit's carrier, which for a
+  // above; `emitting` puts the panel back on the edit's carrier, which for a
   // create IS that source. Without it a click on another issue between the two
   // steps left the write going out from one issue and the panel headed by
   // another — and a refusal about the first stated on no panel at all.
-  const proposed = proposing(state, result.proposal, document);
+  const proposed = emitting(state, result.proposal, document, TO_THE_STORE);
   return {
     ...proposed,
     state: { ...proposed.state, draft: IDLE_CREATE_DRAFT, targetQuery: '', drop: null },
@@ -359,8 +440,18 @@ function isAnswer(value: string): value is Answer {
  * keeps §17e's consent rule a property of the shape — drawing a candidate,
  * opening the surface, closing it and skipping all emit nothing because there is
  * no arm on which they could.
+ *
+ * THE APPLY GOES THROUGH {@link emitting}, AND FOR A ROUND IT DID NOT. This
+ * function built the `first-pass-apply` effect itself, which made the claim
+ * "every proposal this reducer emits goes through one funnel" false at the one
+ * emission that could not be reached any other way — the overlay is modal, so
+ * the reader's hands are nowhere near the panel. A queue opened with nothing
+ * selected, or with an unrelated issue selected, answered `Y`, had the create
+ * refused, closed, and put the reader back exactly where they had been: a panel
+ * that states no refusal because the edit was about some other issue. It is the
+ * `document` argument that this route was missing, so that is what it now takes.
  */
-function firstPassed(state: HostState, command: FirstPassCommand): HostResult {
+function firstPassed(state: HostState, command: FirstPassCommand, document: GraphDocument): HostResult {
   const outcome = firstPassReducer(state.firstPass, command);
   // THE DRAFT IS NOT TOUCHED HERE, and an earlier revision's attempt to is worth
   // recording: opening the surface does have to cancel a live draft — the queue
@@ -370,7 +461,7 @@ function firstPassed(state: HostState, command: FirstPassCommand): HostResult {
   // refuse for want of a source. Clearing on every open destroyed the reader's
   // draft for a queue that then never appeared. So the cancel belongs to the
   // shell, which knows, and it is dispatched there — see `mount.ts`.
-  const next: HostState = { ...state, firstPass: outcome.state };
+  let next: HostState = { ...state, firstPass: outcome.state };
   const effects: HostEffect[] = [];
   if (outcome.scanning !== null) effects.push({ kind: 'find-candidates', scan: outcome.scanning });
   const result: QueueResult | null = outcome.result;
@@ -379,11 +470,15 @@ function firstPassed(state: HostState, command: FirstPassCommand): HostResult {
     // off the screen: by the time this runs the cursor has already advanced.
     const given = result.state.answers[result.state.answers.length - 1];
     if (result.proposal !== null && given !== undefined) {
-      effects.push({
+      const applied = emitting(next, result.proposal, document, {
         kind: 'first-pass-apply',
         candidateId: given.candidate.id,
-        proposal: result.proposal,
       });
+      // THE PANEL MOVE IS KEPT, not discarded beside the effect. It is the whole
+      // of what this route was missing: the overlay closes onto the issue the
+      // answered create was about, which is the panel its refusal is stated on.
+      next = applied.state;
+      effects.push(...applied.effects);
     }
     // ONLY A WITHDRAWN `apply` REACHES THE STORE. A withdrawn `reject` or `skip`
     // dispatched nothing, so there is nothing out there to take back.
@@ -471,12 +566,12 @@ function controlled(
     case 'retype': {
       if (edgeId === null || value === undefined || !isEdgeField(value)) return settled(state);
       const proposal = pickerProposal(document, edgeId, { kind: 'retype', field: value });
-      return proposal === null ? settled(state) : proposing(state, proposal, document);
+      return proposal === null ? settled(state) : emitting(state, proposal, document, TO_THE_STORE);
     }
     case 'flip': {
       if (edgeId === null) return settled(state);
       const proposal = pickerProposal(document, edgeId, { kind: 'flip' });
-      return proposal === null ? settled(state) : proposing(state, proposal, document);
+      return proposal === null ? settled(state) : emitting(state, proposal, document, TO_THE_STORE);
     }
     case 'dismiss-change':
       return { state, effects: [{ kind: 'dismiss-change' }] };
@@ -525,7 +620,7 @@ function controlled(
       const subject = target ?? edgeId;
       return subject === null
         ? settled(state)
-        : proposing(state, { op: 'delete', edgeId: subject }, document);
+        : emitting(state, { op: 'delete', edgeId: subject }, document, TO_THE_STORE);
     }
 
     // --- the mount's chrome: what still needs a DOM, or a host's own surface ---
@@ -551,18 +646,18 @@ function controlled(
 
     // --- the first pass ---
     case 'first-pass':
-      return firstPassed(state, { kind: 'open' });
+      return firstPassed(state, { kind: 'open' }, document);
     case 'first-pass-close':
-      return firstPassed(state, { kind: 'close' });
+      return firstPassed(state, { kind: 'close' }, document);
     case 'first-pass-answer':
       return value === undefined || !isAnswer(value)
         ? settled(state)
-        : firstPassed(state, { kind: 'queue', command: { kind: 'answer', answer: value } });
+        : firstPassed(state, { kind: 'queue', command: { kind: 'answer', answer: value } }, document);
     case 'undo':
       // GUARDED BY THE PHASE, not by the control's existence: `undo` is a name a
       // host's own chrome could publish too, and `firstPassReducer` answers a
       // queue command with no queue by changing nothing.
-      return firstPassed(state, { kind: 'queue', command: { kind: 'undo' } });
+      return firstPassed(state, { kind: 'queue', command: { kind: 'undo' } }, document);
     default:
       // A COMMAND THIS REDUCER DOES NOT KNOW CHANGES NOTHING. A host's own
       // chrome may publish commands on the same attribute — the demo's theme
@@ -582,7 +677,7 @@ function intended(state: HostState, intent: KeyIntent, document: GraphDocument):
     case 'create':
       return drafted(state, intent.command, document);
     case 'propose':
-      return proposing(state, intent.proposal, document);
+      return emitting(state, intent.proposal, document, TO_THE_STORE);
   }
 }
 
@@ -605,7 +700,7 @@ export function reduceHost(state: HostState, command: HostCommand, document: Gra
     case 'control':
       return controlled(state, command.name, command.target, command.value, document);
     case 'first-pass':
-      return firstPassed(state, command.command);
+      return firstPassed(state, command.command, document);
     case 'intent':
       return intended(state, command.intent, document);
     case 'scroll':
@@ -658,12 +753,12 @@ export function reduceHost(state: HostState, command: HostCommand, document: Gra
  * and the answer is one.
  *
  * A HIDDEN EDGE RETURNS THE PANEL TO ITS CARRIER, not to nothing. Through
- * {@link carrierOf}, which is the same answer {@link editCarrier} gives the
- * refusal itself — so the panel this lands on and the panel the refusal is
- * stated under are one value rather than two that agree. Clearing to `none`
+ * {@link carrierOf}, which is the same rule the refusal's own carrier was taken
+ * by when the edit went out — so the panel this lands on and the panel the
+ * refusal is stated under are one answer rather than two that agree. Clearing to `none`
  * instead would be the same silence the check above already produced.
  *
- * IT IS A BACKSTOP NOW, NOT THE ONLY GUARD. `proposing` already puts the panel
+ * IT IS A BACKSTOP NOW, NOT THE ONLY GUARD. `emitting` already puts the panel
  * on the carrier the moment the reader's own edit goes out, so the route this
  * paragraph was written for cannot reach here any more. What still can is a
  * SIBLING write: another edit's retype or flip hiding the edge this selection

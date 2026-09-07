@@ -378,7 +378,9 @@ export {
   // rendering without `mountWorkspace` has to say which issue each refusal is
   // about, and working that out from the refused edge's endpoints is the exact
   // derivation the `carrier` field exists to replace — so the answer ships
-  // beside the field that asks for it.
+  // beside the field that asks for it. ASK IT AS THE EDIT GOES OUT AND KEEP THE
+  // ANSWER: it reads the document, and by the time a refusal comes back the
+  // relationship it was about may be gone. See its own header.
   editCarrier,
   railSlackFor,
   railWindowTarget,

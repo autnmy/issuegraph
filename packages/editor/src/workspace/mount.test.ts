@@ -748,6 +748,66 @@ describe('mountWorkspace', () => {
       assert.ok(inspector.querySelector('.ig-relationship[data-edge="blocked-by"]') !== null);
     });
 
+    it('states a symmetric refusal on the end that DECLARED it, not the end its identity leads with', async () => {
+      // MECHANISM A, END TO END, AND IT IS ABOUT TIME RATHER THAN PLACE.
+      // `edgeIdentity` SORTS a symmetric pair, so this relationship — declared
+      // from `3` — carries the identity `serialize-with|1|3`. While the document
+      // holds the edge, `edge.from` answers `3`. Once a sibling write has
+      // removed it, the identity is the only record left and it records the SORT
+      // ORDER, not the declaring end; a revision read that first segment as the
+      // carrier and stated this refusal under `1`.
+      //
+      // `1` IS NOT MERELY THE WRONG PANEL, IT IS THE ONE THAT COULD NOT HAVE
+      // CAUSED IT. The row on `1` is inbound and inbound rows carry no remove
+      // control, so `3`'s panel is the only place this delete can be made from
+      // and the only place the reader can be standing when it is refused.
+      page.handle.destroy();
+      const symmetric = makeEdge('serialize-with', '3', '1');
+      assert.equal(symmetric.from, '3');
+      assert.ok(symmetric.id.startsWith('serialize-with|1|'), symmetric.id);
+      page = await mounted({ issues: SEED.issues, edges: [symmetric, makeEdge('blocked-by', '1', '2')] });
+      const inspector = await select('3');
+      const remove = inspector.querySelector<HTMLElement>(
+        `.ig-relationship-remove[data-ig-target="${symmetric.id}"]`,
+      );
+      assert.ok(remove !== null, 'the declaring panel offers no remove control for its own row');
+
+      // THE SIBLING GOES FIRST AND THE READER'S SECOND, both before either
+      // lands — which is the whole scenario. The store re-checks a queued edit
+      // against the document as it stands when its turn comes, so the reader's
+      // delete is refused `unknown-edge` on a relationship that was still there
+      // when they clicked.
+      void page.store.propose({ op: 'delete', edgeId: symmetric.id });
+      page.click(remove);
+      await page.source.whenPending();
+      page.source.settleNext('applied');
+      await flush();
+
+      const records = page.store.getSnapshot().writes;
+      assert.equal(records.length, 1, 'the sibling did not land, or the reader’s edit did not queue');
+      const refused = records[0];
+      assert.ok(refused !== undefined && refused.state === 'invalid');
+      assert.equal(refused.reason.code, 'unknown-edge');
+
+      // NOTHING IS CLICKED BETWEEN THERE AND HERE.
+      const after = page.zone('inspector');
+      assert.ok(after !== null);
+      assert.equal(
+        after.querySelector('.ig-inspector-title')?.textContent,
+        'Cut the changelog',
+        'the panel is not the one the reader made the edit from',
+      );
+      const capsule = after.querySelector<HTMLElement>('.ig-relationship-refused');
+      assert.ok(capsule !== null, 'the refusal is stated nowhere on the panel the reader is on');
+      assert.equal(capsule.getAttribute('data-ig-code'), 'unknown-edge');
+      assert.deepEqual(page.handle.state.selection, { kind: 'issue', key: '3' });
+
+      // AND NOT ON THE END THE IDENTITY LEADS WITH — the same render asked a
+      // second question, which is where the reconstructed answer put it.
+      const far = await select('1');
+      assert.equal(far.querySelector('[data-ig-code]'), null, 'the refusal was stated on the far end');
+    });
+
     it('states a refusal ONCE when the refused edit named one edge and produced another', async () => {
       // THE DOUBLE DRAW. A retype is refused as `duplicate-edge` exactly when
       // the kind it asks for already exists between the pair — and
@@ -1645,6 +1705,75 @@ describe('the first pass, composed behind §17a’s entry', () => {
         page.dom.window.close();
       }
     });
+  });
+
+  it('states a refused answer’s reason on a panel, with nothing ever selected', async () => {
+    // MECHANISM B, END TO END. The apply route built its own `first-pass-apply`
+    // effect and never went through the reducer's emit funnel, so the one thing
+    // that funnel does — leave the panel on the issue the write is about —
+    // never happened on this route. The queue is entered from the HOST HEADER,
+    // so the ordinary reader opens it with nothing selected: a refused `Y` then
+    // closed the overlay back onto "nothing is selected", which states no
+    // refusal at all, and §17b's rule that a refusal is never silently dropped
+    // failed on the one route where the reader was never looking at the
+    // relationship in the first place.
+    const seeded: GraphDocument = { ...backlog(6), edges: [makeEdge('duplicate-of', '1', '2')] };
+    const candidate: Candidate = {
+      id: 'dup',
+      kind: 'duplicate-of',
+      from: '1',
+      to: '3',
+      evidence: [{ token: 'shared-path', text: 'both bodies reference the same file' }],
+    };
+    const held = heldSource([candidate]);
+    const page = await mounted(seeded, {
+      project: entryProject,
+      firstPass: { source: held.scanner, ...FIRST_PASS_OPTION },
+    });
+    try {
+      const entry = page.control('first-pass');
+      assert.ok(entry !== null, 'no first-pass entry was drawn');
+      page.click(entry);
+      await flush();
+      await held.answer();
+      assert.deepEqual(page.handle.state.selection, { kind: 'none' }, 'the queue opened with a selection');
+
+      press(page, 'y');
+      await flush();
+      // REFUSED BEFORE ANY WRITE, and by a rule of the FORMAT rather than of
+      // the adapter: `duplicate-of` holds one reference (§4.3) and `1` already
+      // declares one, so the source is never called and the reader has only the
+      // panel to learn it from.
+      const records = page.store.getSnapshot().writes;
+      const refused = records[0];
+      assert.ok(refused !== undefined && refused.state === 'invalid', 'the answer was not refused');
+      assert.equal(refused.reason.code, 'cardinality');
+
+      const exit = page.control('first-pass-close');
+      assert.ok(exit !== null, 'no exit control');
+      page.click(exit);
+      await flush();
+      assert.equal(overlayOf(page), null, 'the overlay is still up');
+
+      // NOTHING WAS EVER SELECTED: the only two clicks were the header's entry
+      // and the overlay's exit, and the answer was a keypress.
+      const inspector = page.zone('inspector');
+      assert.ok(inspector !== null);
+      assert.equal(inspector.querySelector('.ig-inspector-empty'), null, 'the panel still says nothing is selected');
+      const stated = inspector.querySelector<HTMLElement>('[data-ig-code]');
+      assert.ok(stated !== null, 'the refused answer is stated nowhere');
+      assert.equal(stated.getAttribute('data-ig-code'), 'cardinality');
+      assert.equal(
+        stated.querySelector('.ig-relationship-reason')?.textContent,
+        WORDS.refusals.cardinality,
+      );
+      // AND THE PANEL IS THE CREATE'S OWN CARRIER — the issue whose block would
+      // have declared the relationship the reader consented to.
+      assert.deepEqual(page.handle.state.selection, { kind: 'issue', key: '1' });
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
   });
 
   it('hands focus back to the control the reader came in through', async () => {

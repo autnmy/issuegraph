@@ -279,14 +279,17 @@ export interface WorkspaceRefusal {
    * nothing matched. None of the three is a question this renderer can answer
    * from an identity, because none of them is about the identity.
    *
-   * A MOUNT KNOWS IT WITHOUT GUESSING. The refusal comes from a write record,
-   * the record carries the mutation, and the mutation says which issue the
-   * edit was about — `editCarrier` in `host.ts` is the one function that
-   * answers it, for a create from a draft, for a retype or flip whose produced
-   * identity differs from the one the reader named, for a delete, and for an
-   * edit naming an edge the document no longer carries. A host rendering
-   * without `mountWorkspace` states the same fact: whichever issue's panel it
-   * wants the refusal read on.
+   * A MOUNT KNOWS IT WITHOUT GUESSING, BECAUSE IT WROTE IT DOWN. `editCarrier`
+   * in `host.ts` answers it — for a create from a draft, for a retype or flip
+   * whose produced identity differs from the one the reader named, and for a
+   * delete — and `mountWorkspace` asks it as the edit goes OUT, while the
+   * document still holds the relationship, then keeps the answer against the
+   * write. It cannot be asked again afterwards: by the time a refusal comes
+   * back a sibling write may have removed the edge, and an identity records
+   * which two issues a relationship was between and never which of them
+   * declared it. A host rendering without `mountWorkspace` states the same fact
+   * the same way: whichever issue's panel it wants the refusal read on, decided
+   * when it made the edit.
    *
    * NOT DERIVABLE FROM {@link WorkspaceRefusal.edgeId}, which is why it is a
    * second field rather than a lookup. `unknown-issue` names an issue the

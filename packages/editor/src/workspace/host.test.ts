@@ -59,6 +59,11 @@ function drive(commands: readonly HostCommand[], from: HostState = INITIAL_HOST_
 const CREATED: HostEffect = {
   kind: 'propose',
   proposal: { op: 'create', kind: 'blocked-by', from: '2', to: '3' },
+  // THE PANEL THE REFUSAL WOULD BE STATED ON, RIDING WITH THE WRITE. It is
+  // decided here, once, and the shell records it against the mutation the store
+  // mints — see `editCarrier`. Every create path below reaches this same value,
+  // which is what makes them one emitter rather than three that agree.
+  carrier: '2',
 };
 
 describe('selection is one value the zones share', () => {
@@ -218,21 +223,23 @@ describe('edits on a selected edge come from the picker’s own view', () => {
     const selected = drive([{ kind: 'group', id: blockedBy.id }]).state;
     const retyped = drive([{ kind: 'control', name: 'retype', value: 'duplicate-of' }], selected);
     assert.deepEqual(retyped.effects, [
-      { kind: 'propose', proposal: { op: 'retype', edgeId: blockedBy.id, nextKind: 'duplicate-of' } },
+      { kind: 'propose', proposal: { op: 'retype', edgeId: blockedBy.id, nextKind: 'duplicate-of' }, carrier: '1' },
     ]);
     assert.equal(drive([{ kind: 'control', name: 'retype', value: 'blocked-by' }], selected).effects.length, 0);
   });
 
   it('flip proposes on a directed edge and does nothing on a symmetric one', () => {
     const directed = drive([{ kind: 'group', id: blockedBy.id }, { kind: 'control', name: 'flip' }]);
-    assert.deepEqual(directed.effects, [{ kind: 'propose', proposal: { op: 'flip', edgeId: blockedBy.id } }]);
+    assert.deepEqual(directed.effects, [
+      { kind: 'propose', proposal: { op: 'flip', edgeId: blockedBy.id }, carrier: '1' },
+    ]);
     const symmetric = drive([{ kind: 'group', id: serialize.id }, { kind: 'control', name: 'flip' }]);
     assert.equal(symmetric.effects.length, 0);
   });
 
   it('delete proposes from the button and from ⌫ alike', () => {
     const selected = drive([{ kind: 'group', id: blockedBy.id }]).state;
-    const expected: HostEffect = { kind: 'propose', proposal: { op: 'delete', edgeId: blockedBy.id } };
+    const expected: HostEffect = { kind: 'propose', proposal: { op: 'delete', edgeId: blockedBy.id }, carrier: '1' };
     assert.deepEqual(drive([{ kind: 'control', name: 'delete' }], selected).effects, [expected]);
     const backspace = keyIntent(
       { key: 'Backspace' },
@@ -263,7 +270,7 @@ describe('edits on a selected edge come from the picker’s own view', () => {
       drive([{ kind: 'point', key: '1' }]).state,
     );
     assert.deepEqual(onIssue.effects, [
-      { kind: 'propose', proposal: { op: 'delete', edgeId: serialize.id } },
+      { kind: 'propose', proposal: { op: 'delete', edgeId: serialize.id }, carrier: '3' },
     ]);
 
     const onAnotherEdge = drive(
@@ -271,7 +278,7 @@ describe('edits on a selected edge come from the picker’s own view', () => {
       drive([{ kind: 'group', id: blockedBy.id }]).state,
     );
     assert.deepEqual(onAnotherEdge.effects, [
-      { kind: 'propose', proposal: { op: 'delete', edgeId: serialize.id } },
+      { kind: 'propose', proposal: { op: 'delete', edgeId: serialize.id }, carrier: '3' },
     ]);
   });
 });
@@ -327,7 +334,7 @@ describe('an edit names the issue it is about, and the panel goes there', () => 
     assert.equal(editCarrier(document, { op: 'create', kind: 'blocked-by', from: 'nope', to: 'gone' }), null);
   });
 
-  it('reads an edit\u2019s carrier off the edge, and off the identity when the edge is gone', () => {
+  it('reads an edit’s carrier off the edge, and names either end when it is gone', () => {
     assert.equal(editCarrier(document, { op: 'delete', edgeId: blockedBy.id }), '1');
     assert.equal(editCarrier(document, { op: 'retype', edgeId: serialize.id, nextKind: 'blocked-by' }), '3');
     // THE `unknown-edge` CLASS: the reader acted on a relationship a landed
@@ -343,9 +350,38 @@ describe('an edit names the issue it is about, and the panel goes there', () => 
     const gone = edgeIdentity('blocked-by', 'owner/repo#9', 'owner/repo#8');
     assert.ok(gone.includes('owner%2Frepo%239'), gone);
     assert.equal(editCarrier(qualified, { op: 'delete', edgeId: gone }), 'owner/repo#9');
-    // The FAR end answers when the carrier is the one the document lost.
+    // EITHER END ANSWERS, and the identity is not consulted about which. The
+    // one issue this backlog holds is the only panel a reader could be standing
+    // on, whichever end of the pair it sat on.
     const far = edgeIdentity('blocked-by', 'owner/repo#8', 'owner/repo#9');
     assert.equal(editCarrier(qualified, { op: 'delete', edgeId: far }), 'owner/repo#9');
+  });
+
+  it('cannot recover a symmetric edge’s carrier once the edge is gone', () => {
+    // MECHANISM A, PINNED AS THE LIMIT IT IS — not as an answer worth having.
+    // `edgeIdentity` SORTS a symmetric pair, so this relationship is declared
+    // from `z` and its identity leads with `a`. Asked of a document that still
+    // holds the edge, the carrier is `z`: the issue whose own block declares it
+    // (§4.3), which is the panel the reader made the edit from. Asked once the
+    // edge is gone, no order survives in the identity to be read, so the answer
+    // is the first end this backlog lists — `a`, the other panel entirely.
+    //
+    // THIS IS WHY THE ANSWER IS TAKEN AT EMIT AND KEPT. A revision read the
+    // identity's first segment as the declaring end and called that the
+    // carrier; it produced `a` here and stated the refusal on a panel the
+    // reader was not on. Ranking the segments cannot be made correct — the fact
+    // is not in the string — so nothing ranks them any more, and `mount.ts`
+    // records the answer while the edge is still there. Driven end to end in
+    // `mount.test.ts`.
+    const symmetric = makeEdge('serialize-with', 'z', 'a');
+    assert.equal(symmetric.from, 'z', 'a stored edge keeps the pair as declared');
+    assert.ok(symmetric.id.startsWith('serialize-with|a|'), symmetric.id);
+    const issues = [
+      { ref: 'a', title: 'Sorts first', state: 'open' as const },
+      { ref: 'z', title: 'Declares it', state: 'open' as const },
+    ];
+    assert.equal(editCarrier({ issues, edges: [symmetric] }, { op: 'delete', edgeId: symmetric.id }), 'z');
+    assert.equal(editCarrier({ issues, edges: [] }, { op: 'delete', edgeId: symmetric.id }), 'a');
   });
 
   it('returns the panel to the create\u2019s source when the reader moved it mid-draft', () => {
@@ -626,6 +662,11 @@ describe('the first pass reaches the store only through consent', () => {
           // `candidates.ts` keeps those two questions apart on purpose.
           candidateId: 'c0',
           proposal: { op: 'create', kind: 'blocked-by', from: '100', to: '101' },
+          // AND THE CARRIER, WHICH THIS ROUTE USED TO OMIT BY BUILDING ITS OWN
+          // EFFECT. `null` because the fixture's candidates name issues this
+          // document does not hold, which is the honest answer — there is no
+          // panel for them. The case where it is a real key is driven below.
+          carrier: null,
         },
       ],
     );
@@ -636,6 +677,43 @@ describe('the first pass reaches the store only through consent', () => {
         `${value} emitted something`,
       );
     }
+  });
+
+  it('puts the panel on an applied candidate’s carrier, from nothing selected', () => {
+    // MECHANISM B, AT THE REDUCER. This route built its own `first-pass-apply`
+    // effect and never reached the emit funnel, so the selection stayed exactly
+    // where the reader left it when they opened the queue. Opened with nothing
+    // selected — the ordinary case, since the entry is in the host header —
+    // that is `none`, and `none` states no refusal at all: a structurally
+    // refused answer closed the overlay onto a panel that could say nothing
+    // about it. The panel now belongs to the create the reader consented to.
+    const known = [
+      { id: 'k0', kind: 'blocked-by' as const, from: '2', to: '3', evidence: [] },
+      { id: 'k1', kind: 'blocked-by' as const, from: '3', to: '4', evidence: [] },
+    ];
+    const opened = drive([{ kind: 'control', name: 'first-pass' }]);
+    assert.deepEqual(opened.state.selection, { kind: 'none' }, 'the queue opened with a selection');
+    const asked = opened.effects.find((effect) => effect.kind === 'find-candidates');
+    assert.ok(asked !== undefined && asked.kind === 'find-candidates');
+    const queue = drive(
+      [{ kind: 'first-pass', command: { kind: 'candidates', scan: asked.scan, candidates: known } }],
+      opened.state,
+    );
+    assert.deepEqual(queue.state.selection, { kind: 'none' }, 'drawing a queue moved the panel');
+    const applied = drive([{ kind: 'control', name: 'first-pass-answer', value: 'apply' }], queue.state);
+    assert.deepEqual(applied.effects, [
+      {
+        kind: 'first-pass-apply',
+        candidateId: 'k0',
+        proposal: { op: 'create', kind: 'blocked-by', from: '2', to: '3' },
+        carrier: '2',
+      },
+    ]);
+    assert.deepEqual(applied.state.selection, { kind: 'issue', key: '2' });
+    // A REJECTION MOVES NOTHING, which is what keeps the move a property of
+    // emitting rather than of answering: only a write has a panel.
+    const rejected = drive([{ kind: 'control', name: 'first-pass-answer', value: 'reject' }], queue.state);
+    assert.deepEqual(rejected.state.selection, { kind: 'none' });
   });
 
   it('ignores an answer that is not one of the three', () => {

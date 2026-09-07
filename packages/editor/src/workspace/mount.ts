@@ -341,6 +341,42 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
    */
   const appliedWrites = new Map<string, MutationId>();
 
+  /**
+   * The issue each unsettled write is about, answered once and then remembered.
+   *
+   * THE ANSWER GOES STALE, WHICH IS WHY IT IS KEPT RATHER THAN RE-ASKED. A
+   * refusal reaches the panel through the ledger, long after the act that
+   * caused it, and `editCarrier` reads the LANDED document — so between the two
+   * moments a sibling write can land and take the relationship away, leaving
+   * that call with nothing but the edge's identity. An identity records which
+   * two issues a relationship was between and NOT which of them declared it:
+   * `edgeIdentity` sorts the endpoints of a symmetric field, so for those the
+   * declaring end is not in the string at all. Re-asking therefore answered a
+   * different issue from the one the edit went out under, for exactly the pairs
+   * whose stored `from` sorted after their `to` — and `renderWorkspace` draws a
+   * refusal only on the panel it names, so it was drawn where the reader was
+   * not. Asked once, there is nothing for a second answer to disagree with.
+   *
+   * TWO WAYS IN, AND THE EARLIER ONE WINS. `reduceHost` decides the carrier as
+   * it emits the edit — before `store.propose` is even called, from the
+   * document as it stood when the reader acted — and `perform` records it under
+   * the identity the store mints. A write this mount did not emit (a host
+   * proposing on the same store) has no such moment, so it is answered the first
+   * time this render sees it in the ledger, which is the earliest moment there
+   * is. Neither is ever recomputed.
+   *
+   * ITS LIFETIME IS THE LEDGER'S, exactly. A record that lands is REMOVED from
+   * `snapshot.writes` — that is the store's own contract — and a refused or
+   * failed one stays until the reader discards it, which is precisely as long as
+   * it can still be drawn. So the map is pruned to the ledger's own keys on
+   * every render and needs no rule of its own. Clearing it beside
+   * `appliedWrites` was the alternative and is wrong in both directions: those
+   * clears are the first pass's lifecycle, not the write ledger's, so a queue
+   * that closes over a still-refused write would forget where to state it, and
+   * a write settling with no queue in sight would never be forgotten at all.
+   */
+  const writeCarriers = new Map<MutationId, string | null>();
+
   const railCount = (): number => current.railCount ?? MOUNT_RAIL_COUNT;
   const theme = (): Theme => resolveTheme(current.theme);
 
@@ -381,7 +417,10 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   const perform = (effect: HostEffect): void => {
     switch (effect.kind) {
       case 'propose':
-        void store.propose(effect.proposal);
+        // THE CARRIER IS RECORDED, NOT RE-DERIVED. See `writeCarriers`: the
+        // reducer decided it from the document the reader acted on, and the
+        // `MutationId` that binds the two exists only here.
+        writeCarriers.set(store.propose(effect.proposal).mutationId, effect.carrier);
         return;
       case 'retry': {
         // A conflict retries against the LATEST document. The store owns that
@@ -508,6 +547,12 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         }
         const handle = store.propose(effect.proposal);
         appliedWrites.set(effect.candidateId, handle.mutationId);
+        // AND THE SAME RECORDING AS THE PLAIN ROUTE, because this is the same
+        // kind of event: a write going out with a panel it belongs to. The
+        // effect carries one now — it used to be built without going through
+        // the reducer's emit funnel at all, so a refused first-pass answer had
+        // no panel to be stated on.
+        writeCarriers.set(handle.mutationId, effect.carrier);
         return;
       }
       case 'first-pass-withdraw': {
@@ -911,15 +956,35 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // is the store's own answer to "what does the document actually carry".
     const landedIds = new Set(snapshot.landed.map((edge) => edge.id));
     const landedNow: GraphDocument = { issues: snapshot.issues, edges: snapshot.landed };
+    // THE CARRIER MAP, BROUGHT LEVEL WITH THE LEDGER. See `writeCarriers` for
+    // why the answer is kept rather than re-asked, and why the ledger's own
+    // membership is the whole of its lifetime.
+    const ledger = new Set(snapshot.writes.map((record) => record.mutationId));
+    for (const mutationId of writeCarriers.keys()) {
+      if (!ledger.has(mutationId)) writeCarriers.delete(mutationId);
+    }
+    for (const record of snapshot.writes) {
+      // FIRST SIGHT IS THE EARLIEST MOMENT THERE IS for a write this mount did
+      // not emit. Its own edits are already recorded by `perform`, from the
+      // document the reader acted on, so this fills in only what a host
+      // proposed on the same store — and never a second time.
+      if (!writeCarriers.has(record.mutationId)) {
+        writeCarriers.set(record.mutationId, editCarrier(landedNow, record.mutation));
+      }
+    }
     const refusals: readonly WorkspaceRefusal[] = snapshot.writes.flatMap((record) => {
       if (record.state !== 'invalid') return [];
-      // WHOSE PANEL STATES IT, FROM THE MUTATION AND NOTHING ELSE. The panel
-      // used to work this out from the refused edge's endpoints, against a
-      // subject it had derived by an unrelated rule; `editCarrier` is the one
-      // answer, and it covers every route a refusal arrives by — see its own
-      // header. `null` means this document holds neither end, so there is no
+      // WHOSE PANEL STATES IT, READ BACK RATHER THAN WORKED OUT. The panel used
+      // to derive this from the refused edge's endpoints, against a subject it
+      // had derived by an unrelated rule; then `editCarrier` was called here
+      // instead, which is one rule but still asked at the wrong TIME — a
+      // sibling write can remove the relationship between the act and the
+      // refusal, and what is left cannot say which end declared it. The answer
+      // was taken when the edit was made; this only looks it up. The two loops
+      // above run over this same `snapshot.writes`, so the key is always
+      // present, and `null` means the document held neither end — there is no
       // panel a reader could be standing on to read it.
-      const carrier = editCarrier(landedNow, record.mutation);
+      const carrier = writeCarriers.get(record.mutationId) ?? null;
       if (carrier === null) return [];
       // THE PROJECTION'S EDGE, AND THE EDIT'S OWN AS THE FALLBACK. A refusal
       // the projection has nothing to hang on is the whole `unknown-edge`
