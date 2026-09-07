@@ -25,6 +25,7 @@ import { KIND_KEYS } from '../create/keys.ts';
 import type { Candidate } from '../firstpass/candidates.ts';
 import { FIRST_PASS_WORDS } from '../testing/firstpass.ts';
 import { PICKER_WORDS } from '../testing/picker.ts';
+import { WORDS as CHANGE_WORDS } from '../testing/reevaluate.ts';
 import { WORKSPACE_WORDS } from '../testing/workspace.ts';
 import { mountStylesheet } from './chrome.ts';
 import {
@@ -181,6 +182,15 @@ async function mounted(
   options: {
     railCount?: number;
     derive?: OrderDeriver;
+    /**
+     * Override the vocabulary.
+     *
+     * The default deliberately carries no `change`, so §17c draws nothing for
+     * the suite's other tests — the package refuses to invent those words, and
+     * a fixture that supplied them everywhere would put the loop on surfaces
+     * whose tests are not about it. A test that IS about it passes its own.
+     */
+    words?: MountWords;
     project?: (snapshot: StoreSnapshot) => WorkspaceProjection;
     firstPass?: FirstPassOption;
     canvas?: CanvasMode;
@@ -217,6 +227,51 @@ async function mounted(
 }
 
 type Mounted = Awaited<ReturnType<typeof mounted>>;
+
+describe('§17c\u2019s live region survives the redraw that would destroy it', () => {
+  /**
+   * The region is the ONE node this shell carries across a redraw.
+   *
+   * `summarySpec` mounts it always and leaves it empty until there is
+   * something to say, because a status node created already carrying its text
+   * is not reliably announced. This shell replaces its whole subtree on every
+   * redraw, so without the carry the region is destroyed and re-created
+   * populated each time — present, correct in the markup, and inert.
+   */
+  it('keeps the very same element across a redraw, rather than an equal one', async () => {
+    const page = await mounted(SEED, { words: { ...WORDS, change: CHANGE_WORDS } });
+    try {
+      const region = (): Element | null =>
+        page.element.querySelector('.ig-change-line[role="status"]');
+      const before = region();
+      assert.ok(before !== null, 'no live region was mounted');
+
+      const inspectorBefore = page.zone('inspector');
+      // The plain redraw, which is the one every other redraw reduces to.
+      page.handle.update();
+      await flush();
+
+      // THE REDRAW MUST ACTUALLY HAVE HAPPENED, or the identity assertion
+      // below is vacuous — it would be comparing a node nothing replaced. A
+      // sibling inside the replaced subtree is the witness.
+      assert.notEqual(
+        page.zone('inspector'),
+        inspectorBefore,
+        'no redraw happened, so this test would prove nothing',
+      );
+
+      const after = region();
+      assert.ok(after !== null, 'the live region did not survive the redraw');
+      // IDENTITY, not equality. An equal node in the same place is exactly the
+      // defect: assistive technology announces a mutation to a region it
+      // already knows, and never an insertion of a populated one.
+      assert.equal(after, before, 'the live region was replaced rather than carried');
+      page.handle.destroy();
+    } finally {
+      page.dom.window.close();
+    }
+  });
+});
 
 describe('mountWorkspace', () => {
   let page: Mounted;
