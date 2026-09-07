@@ -88,7 +88,13 @@ import {
   targetMatches,
 } from './host.ts';
 import type { RailWindow } from './rail.ts';
-import { type WorkspaceRefusal, type WorkspaceWords, renderWorkspace } from './render.ts';
+import { conflictDiff } from './recovery.ts';
+import {
+  type WorkspaceRecovery,
+  type WorkspaceRefusal,
+  type WorkspaceWords,
+  renderWorkspace,
+} from './render.ts';
 import { selectedEdgeId, selectedKey } from './selection.ts';
 
 /** What the canvas zone draws: the editor's scale ladder, or the viewer's tree projection. */
@@ -377,6 +383,24 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
    */
   const writeCarriers = new Map<MutationId, string | null>();
 
+  /**
+   * The conflict whose `retry on latest` is the last one the reader pressed.
+   *
+   * WITHOUT IT, `hydrationError` IS THE WRONG FACT TO DRAW. The store sets that
+   * field from ANY failed read — a host's own `refresh()`, a background
+   * rehydrate, a failed first load — and attributes it to no mutation. Painted
+   * on every conflict card it says "could not read the newest version" on cards
+   * whose button nobody pressed, and on all of them at once when two conflicts
+   * stand. The card's claim is about a control the reader operated, so the
+   * shell records which control that was; the store cannot answer it.
+   *
+   * CLEARED WHEN THE READ SUCCEEDS, which the ledger cannot express: a resolve
+   * that reads fine and is then refused leaves an `invalid` record and no
+   * hydration error, and a stale flag here would keep explaining a failure that
+   * did not happen.
+   */
+  let refreshFailedFor: MutationId | null = null;
+
   const railCount = (): number => current.railCount ?? MOUNT_RAIL_COUNT;
   const theme = (): Theme => resolveTheme(current.theme);
 
@@ -428,6 +452,10 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         // operation, so there is nothing for the mount to sequence.
         const record = store.getSnapshot().writes.find((each) => each.mutationId === effect.mutationId);
         if (record?.state === 'conflict') {
+          // WHOSE READ THIS IS, recorded as the press happens. See
+          // `refreshFailedFor`: after the fact there is nothing that ties the
+          // store's hydration error to the edit it was read for.
+          refreshFailedFor = effect.mutationId;
           void store.retryOnLatest(effect.mutationId);
         } else {
           void store.retry(effect.mutationId);
@@ -960,6 +988,21 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // why the answer is kept rather than re-asked, and why the ledger's own
     // membership is the whole of its lifetime.
     const ledger = new Set(snapshot.writes.map((record) => record.mutationId));
+    // CLEARED WHEN THE RECORD GOES, AND NOT BEFORE.
+    //
+    // Clearing it on `hydrationError === undefined` as well was the obvious
+    // rule and it was WRONG BY ONE RENDER: `retryOnLatest` reserves its record
+    // synchronously and publishes, so the very next render happens BEFORE the
+    // read has had a chance to fail — the error is still undefined, the flag
+    // was dropped, and when the failure did arrive there was nothing left to
+    // attribute it to. The card then stayed silent on exactly the failure this
+    // field exists to explain. Measured: the pin below went red.
+    //
+    // So the flag's lifetime is the RECORD's, and whether there is anything to
+    // draw is asked of the snapshot at draw time instead.
+    if (refreshFailedFor !== null && !ledger.has(refreshFailedFor)) {
+      refreshFailedFor = null;
+    }
     for (const mutationId of writeCarriers.keys()) {
       if (!ledger.has(mutationId)) writeCarriers.delete(mutationId);
     }
@@ -1001,6 +1044,73 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       return [{ edgeId, code: record.reason.code, carrier, phantom: !landedIds.has(edgeId) }];
     });
 
+    // §17b's RECOVERY CARDS, BUILT FROM THE SAME LEDGER PASS AS THE REFUSALS.
+    // One walk of `snapshot.writes` keeps the chronology the panel relies on,
+    // and reuses the `edgeId` and `carrier` answers already worked out above
+    // rather than asking either question a second time.
+    //
+    // THE CARRIER IS CARRIED EVEN WHEN IT IS `null`, and that is the one place
+    // this deliberately parts company with the refusal derivation above, which
+    // drops those. A refusal dropped costs the reader a sentence. A RECOVERY
+    // dropped costs them the only retry and discard they have, on a write that
+    // is still theirs to resolve — so it travels, and the panel draws it in the
+    // unplaced region instead of nowhere.
+    // ANNOTATED RATHER THAN INFERRED. `flatMap` takes its element type from the
+    // first arm it sees, which here is the `failed` one — so an unannotated
+    // callback types the whole list as failures and rejects the conflict arm
+    // for want of a `reason`. The repair this repository bans is a cast; the
+    // repair it wants is saying what the function returns.
+    const recoveries: readonly WorkspaceRecovery[] = snapshot.writes.flatMap(
+      (record): readonly WorkspaceRecovery[] => {
+      if (record.state !== 'failed' && record.state !== 'conflict') return [];
+      const carrier = writeCarriers.get(record.mutationId) ?? null;
+      const edgeId =
+        markedBy.get(record.mutationId) ??
+        (record.mutation.op === 'create'
+          ? edgeIdentity(record.mutation.kind, record.mutation.from, record.mutation.to)
+          : record.mutation.edgeId);
+      if (record.state === 'failed') {
+        return [{ kind: 'failed' as const, mutationId: record.mutationId, edgeId, carrier, reason: record.reason }];
+      }
+      return [
+        {
+          kind: 'conflict' as const,
+          mutationId: record.mutationId,
+          edgeId,
+          carrier,
+          // AGAINST `landedNow`, WHICH CANNOT HOLD THE EDIT — that is the
+          // point. `conflictDiff` reconstructs the reader's own side from the
+          // mutation, so the card is guaranteed to name the relationship it is
+          // about rather than depending on a document that by contract omits it.
+          diff: conflictDiff(landedNow, record.upstream, record.mutation),
+          // THE READ'S OWN FAILURE, WHICH IS NOT THE RECORD'S. A `retry on
+          // latest` whose refresh fails restores this record verbatim and
+          // dispatches nothing; the reason lands on the snapshot instead. Read
+          // from there, the card can say why the button appeared to do nothing.
+          // ONLY ON THE CARD WHOSE READ FAILED. Both halves are required: a
+          // hydration error with no press behind it belongs to no card, and a
+          // press whose read succeeded leaves no error to draw.
+          refreshError:
+            refreshFailedFor === record.mutationId ? (snapshot.hydrationError ?? null) : null,
+        },
+      ];
+      },
+    );
+    // ITS LIFETIME IS THE CONFLICT'S, NOT THE LEDGER'S, and the distinction is
+    // load-bearing: `retryOnLatest` reserves its record as `pending`
+    // synchronously, and a resolve whose re-check refuses leaves it `invalid`.
+    // In both the record is still in the ledger and its held document is gone,
+    // so "still in the ledger" would leave a difference region open over
+    // nothing. Asked of the state, it closes on every route out of `conflict`.
+    if (
+      state.diffOpen !== null &&
+      !snapshot.writes.some(
+        (record) => record.mutationId === state.diffOpen && record.state === 'conflict',
+      )
+    ) {
+      state = { ...state, diffOpen: null };
+    }
+
     const result = renderWorkspace(viewer, {
       words: current.words,
       selection: state.selection,
@@ -1025,6 +1135,8 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       draft: state.draft,
       drop: state.drop,
       refusals,
+      recoveries,
+      diffOpen: state.diffOpen,
     });
     // THE FIRST PASS'S OWN SHEET, IMPORTED — not `renderFirstPass(...).styles`,
     // which carries a second copy of the theme block written just above it. The

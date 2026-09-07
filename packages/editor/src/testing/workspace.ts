@@ -55,6 +55,27 @@ export const WORKSPACE_WORDS: WorkspaceWords = {
     'would-cycle': 'that would close a loop',
     'guard-failed': 'the check could not be run',
   },
+  // `retry` AND `retryOnLatest` ARE DELIBERATELY UNALIKE HERE, not two
+  // spellings of one word. They label two different store calls, and a fixture
+  // where one contained the other would let a card labelled with the wrong one
+  // satisfy a test looking for the right one — which is the single mistake
+  // these two words exist to make impossible.
+  recovery: {
+    failed: 'the tracker refused this write',
+    conflict: 'the issue moved while you were editing',
+    viewDiff: 'compare the two versions',
+    retry: 'send it again',
+    retryOnLatest: 'read the newest, then send it again',
+    discardMine: 'throw my edit away',
+    upstreamOnly: 'only in theirs',
+    mineOnly: 'only in mine',
+    mineRemoved: 'only in mine, taken away',
+    carrierReversed: 'declared from the other end upstream',
+    issuesChanged: 'issues that moved',
+    diffEmpty: 'nothing on this row differs',
+    retryFailed: 'could not read the newest version',
+    unplaced: 'writes about issues this backlog does not hold',
+  },
 };
 
 /** `count` keys, zero-padded so lexical and numeric order agree. */

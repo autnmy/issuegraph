@@ -164,6 +164,93 @@ const RENDERS = [
     selection: { kind: 'issue', key: 'i0001' },
     refusals: [{ edgeId: 'blocked-by|i0001|i0002', code: 'duplicate-edge', carrier: 'i0001', phantom: false }],
   }),
+  // §17b's TWO RECOVERY CARDS, WITH THE DIFFERENCE OPEN. Both states at once
+  // because they take different hues and different border grammar, and the open
+  // difference because its lists are drawn by nothing else here — a closed card
+  // would leave every `.ig-recovery-diff*` rule styling markup no render emits,
+  // which is exactly what this suite refuses.
+  renderWorkspace(DOCUMENT, {
+    words: WORKSPACE_WORDS,
+    selection: { kind: 'issue', key: 'i0001' },
+    diffOpen: 'm-conflict',
+    recoveries: [
+      {
+        kind: 'failed',
+        mutationId: 'm-failed',
+        edgeId: 'blocked-by|i0001|i0002',
+        carrier: 'i0001',
+        reason: 'the tracker was unreachable',
+      },
+      {
+        kind: 'conflict',
+        mutationId: 'm-conflict',
+        edgeId: 'blocked-by|i0001|i0003',
+        carrier: 'i0001',
+        // A REFRESH ERROR TOO, so its own rule is reached. It is the state a
+        // reader lands in when `retry on latest` cannot even read.
+        refreshError: 'the tracker did not answer',
+        diff: {
+          upstreamOnly: [
+            { id: 'blocked-by|i0001|i0004', kind: 'blocked-by', from: 'i0001', to: 'i0004' },
+          ],
+          mineOnly: [
+            { id: 'blocked-by|i0001|i0003', kind: 'blocked-by', from: 'i0001', to: 'i0003' },
+          ],
+          mineRemoved: [
+            { id: 'blocked-by|i0001|i0005', kind: 'blocked-by', from: 'i0001', to: 'i0005' },
+          ],
+          carrierReversed: [
+            {
+              id: 'serialize-with|i0001|i0006',
+              mine: { id: 'serialize-with|i0001|i0006', kind: 'serialize-with', from: 'i0001', to: 'i0006' },
+              upstream: { id: 'serialize-with|i0001|i0006', kind: 'serialize-with', from: 'i0006', to: 'i0001' },
+            },
+          ],
+          issuesChanged: [
+            {
+              ref: 'i0001',
+              mine: { ref: 'i0001', title: 'as I have it', state: 'open' },
+              upstream: { ref: 'i0001', title: 'as they have it', state: 'open' },
+            },
+          ],
+        },
+      },
+    ],
+  }),
+  // AN OPEN DIFFERENCE WITH NOTHING ON THIS PANEL. Reachable and worth its own
+  // render: the upstream change can be somewhere else in the backlog entirely,
+  // and the card says so rather than opening onto a blank.
+  renderWorkspace(DOCUMENT, {
+    words: WORKSPACE_WORDS,
+    selection: { kind: 'issue', key: 'i0001' },
+    diffOpen: 'm-elsewhere',
+    recoveries: [
+      {
+        kind: 'conflict',
+        mutationId: 'm-elsewhere',
+        edgeId: 'blocked-by|i0001|i0003',
+        carrier: 'i0001',
+        refreshError: null,
+        diff: { upstreamOnly: [], mineOnly: [], mineRemoved: [], issuesChanged: [], carrierReversed: [] },
+      },
+    ],
+  }),
+  // THE UNPLACED REGION. A recovery whose carrier is `null` belongs to no panel
+  // and is drawn under its own heading on every one — the only render here that
+  // reaches that heading.
+  renderWorkspace(DOCUMENT, {
+    words: WORKSPACE_WORDS,
+    selection: { kind: 'issue', key: 'i0001' },
+    recoveries: [
+      {
+        kind: 'failed',
+        mutationId: 'm-nowhere',
+        edgeId: 'blocked-by|gone|alsogone',
+        carrier: null,
+        reason: 'the tracker refused it',
+      },
+    ],
+  }),
 ];
 
 /** Every class THIS package's workspace emits, across those states. */

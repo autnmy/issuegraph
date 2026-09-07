@@ -73,14 +73,14 @@ import {
   viewerStylesheet,
 } from '@issuegraph/viewer';
 
-import type { EdgeId, InvalidCode, ProjectedEdge } from '@issuegraph/store';
+import type { EdgeId, InvalidCode, MutationId, ProjectedEdge, StoredEdge } from '@issuegraph/store';
 
 import type { AuditInput, AuditSeverity } from '../audit/findings.ts';
 import { auditStylesheet } from '../audit/styles.ts';
 import { type CreateDraft, IDLE_CREATE_DRAFT } from '../create/draft.ts';
 import { KIND_KEYS } from '../create/keys.ts';
 import type { Point } from '../create/placement.ts';
-import { treatmentForState } from '../overlay/grammar.ts';
+import { type OverlayAffordance, OVERLAY_TREATMENTS, treatmentForState } from '../overlay/grammar.ts';
 import { edgeOverlayStylesheet } from '../overlay/styles.ts';
 import {
   AUDIT_SEVERITY_ATTRIBUTE,
@@ -101,6 +101,7 @@ import {
   inspectorView,
 } from './inspector.ts';
 import { type RailWindow, type RailWindowOptions, railWindow } from './rail.ts';
+import { type ConflictDiff, diffIsEmpty, diffWithin } from './recovery.ts';
 import {
   type WorkspaceSelection,
   INITIAL_SELECTION,
@@ -246,7 +247,117 @@ export interface WorkspaceWords {
    * invalid edge's sentence is the host's, keyed off the code.
    */
   readonly refusals: Readonly<Record<InvalidCode, string>>;
+  /**
+   * §17b's recovery cards, in the host's own words.
+   *
+   * `retry` AND `retryOnLatest` ARE TWO WORDS BECAUSE THEY ARE TWO CALLS. §17b
+   * names the failed affordance "retry" and the conflict affordance "retry on
+   * latest", and they reach `store.retry` and `store.retryOnLatest`
+   * respectively — the second of which re-reads and ADOPTS the upstream
+   * document as the new base before re-dispatching. One string for both would
+   * make one card lie about what pressing it does, and it would be the card
+   * whose consequence most needs stating.
+   */
+  readonly recovery: RecoveryWords;
 }
+
+export interface RecoveryWords {
+  /** Names the state on a failed card. */
+  readonly failed: string;
+  /** Names the state on a conflicted card. */
+  readonly conflict: string;
+  readonly viewDiff: string;
+  /** `failed` → `store.retry`. */
+  readonly retry: string;
+  /** `conflict` → `store.retryOnLatest`, which adopts upstream as the new base. */
+  readonly retryOnLatest: string;
+  readonly discardMine: string;
+  /** Heads the edges the held document has and the reader's does not. */
+  readonly upstreamOnly: string;
+  /** Heads the reader's own unlanded edit, where it ADDS a relationship. */
+  readonly mineOnly: string;
+  /** Heads the reader's own unlanded edit, where it REMOVES one. */
+  readonly mineRemoved: string;
+  /** Heads relationships both sides hold pointing opposite ways. */
+  readonly carrierReversed: string;
+  /** Heads the issues the two documents disagree about. */
+  readonly issuesChanged: string;
+  /** Shown when the diff has nothing to show on THIS panel. */
+  readonly diffEmpty: string;
+  /**
+   * Why a `retry on latest` could not even read.
+   *
+   * The store's refresh is half of one operation: when it fails the record is
+   * restored verbatim and nothing is dispatched, so without this the button
+   * reads as dead on exactly the failure the store went to trouble to make
+   * observable.
+   */
+  readonly retryFailed: string;
+  /**
+   * Heads the region for recoveries with no panel to sit on.
+   *
+   * See {@link WorkspaceRecovery.carrier}: a write about issues this backlog
+   * does not hold has no panel, and dropping it would leave the reader's work
+   * unrecoverable.
+   */
+  readonly unplaced: string;
+}
+
+/**
+ * One unsettled write the reader can still act on: §17b's `failed` and
+ * `conflict`.
+ *
+ * NARROW FOR THE REASON {@link WorkspaceRefusal} IS, and shaped the same way.
+ * The whole write ledger is the larger surface this deliberately is not: a
+ * `WriteRecord` carries a `Mutation` and, on a conflict, an entire second
+ * `GraphDocument`, none of which a renderer can draw. What a card needs is the
+ * state, the reason or the difference, and which panel states it.
+ *
+ * A UNION, BECAUSE THE TWO STATES CARRY DIFFERENT FACTS. `WriteRecord` is
+ * already a union on this exact line. Two optionals would admit a conflict with
+ * no diff and a failure with one, and the renderer would need a runtime guard
+ * for a case the type can refuse outright.
+ *
+ * NO `phantom` EQUIVALENT, and the absence is deliberate rather than an
+ * oversight. {@link WorkspaceRefusal.phantom} exists because a refusal either
+ * JOINS a relationship row or REPLACES it, and getting that wrong deletes a
+ * removable relationship from the panel. A recovery card is its own element in
+ * its own region and replaces nothing, so the question does not arise.
+ */
+export type WorkspaceRecovery =
+  | {
+      readonly kind: 'failed';
+      readonly mutationId: MutationId;
+      readonly edgeId: EdgeId;
+      readonly carrier: string | null;
+      /**
+       * The adapter's own sentence, verbatim.
+       *
+       * NOT KEYED OFF A CODE, and the asymmetry with {@link
+       * WorkspaceWords.refusals} is the argument. The store's refusal codes are
+       * a CLOSED set the store owns, so a host can be made total over them. An
+       * adapter's failure is an open one — a status, a rate limit, a network
+       * message — and there is no code to key on, so the sentence travels.
+       */
+      readonly reason: string;
+    }
+  | {
+      readonly kind: 'conflict';
+      readonly mutationId: MutationId;
+      readonly edgeId: EdgeId;
+      readonly carrier: string | null;
+      /** Both sides, held apart. See `recovery.ts`. */
+      readonly diff: ConflictDiff;
+      /**
+       * Why the last refresh could not read, or `null`.
+       *
+       * A `retry on latest` whose READ fails restores the record exactly as it
+       * was and dispatches nothing — the conflict keeps its held document so it
+       * can still be compared against. Without this the card re-renders
+       * identically and the button reads as dead.
+       */
+      readonly refreshError: string | null;
+    };
 
 /**
  * One refused edit, as the panel needs it: which edge, and why.
@@ -429,6 +540,23 @@ export interface WorkspaceOptions {
    * distinction that option exists to keep.
    */
   readonly refusals?: readonly WorkspaceRefusal[] | undefined;
+  /**
+   * The failed and conflicted writes the reader can still act on.
+   *
+   * OPTIONAL, on the same reasoning as {@link WorkspaceOptions.refusals}: an
+   * unsettled write is a fact the store produces, so "none" and "never asked"
+   * leave the panel with the same nothing to draw.
+   */
+  readonly recoveries?: readonly WorkspaceRecovery[] | undefined;
+  /**
+   * Which conflict has its difference open, if any.
+   *
+   * ONE AT A TIME, because the region is inside a panel rather than a dialog.
+   * The shell holds it for the reason `auditFiltered` is held: the card
+   * publishes a toggle, so something has to carry its state or every render
+   * answers "closed" and the control cannot complete what it advertises.
+   */
+  readonly diffOpen?: MutationId | null | undefined;
 }
 
 export interface WorkspaceView {
@@ -1061,6 +1189,9 @@ interface InspectorContext {
    * where that decision is made, over a list whose order is the store's.
    */
   readonly refusals: readonly WorkspaceRefusal[];
+  /** Unsettled writes the reader can act on, in the ledger's own order. */
+  readonly recoveries: readonly WorkspaceRecovery[];
+  readonly diffOpen: MutationId | null;
 }
 
 /**
@@ -1102,16 +1233,264 @@ function panelScope(view: InspectorView): PanelScope {
   }
 }
 
-/** Whether this panel is the one that states this refusal. */
-function statedHere(scope: PanelScope, refusal: WorkspaceRefusal): boolean {
+/**
+ * What this panel needs to know to decide whether a record is its to state.
+ *
+ * STRUCTURAL RATHER THAN NAMED, so a refusal and a recovery share one rule.
+ * Typed as `WorkspaceRefusal` it could not take a {@link WorkspaceRecovery},
+ * which carries neither `code` nor `phantom` — and the repair a caller reaches
+ * for at that point is a second copy of the rule, which is exactly the drift
+ * `carrier` was introduced to end.
+ *
+ * `carrier` is nullable here because a recovery's is: see
+ * {@link WorkspaceRecovery.carrier}. A `null` carrier is stated by no panel,
+ * which falls out of `Set.has(null)` being false rather than needing its own arm.
+ */
+interface Stateable {
+  readonly edgeId: EdgeId;
+  readonly carrier: string | null;
+}
+
+/** Whether this panel is the one that states this record. */
+function statedHere(scope: PanelScope, record: Stateable): boolean {
   switch (scope.kind) {
     case 'none':
       return false;
     case 'issue':
-      return scope.keys.has(refusal.carrier);
+      return record.carrier !== null && scope.keys.has(record.carrier);
     case 'edge':
-      return refusal.edgeId === scope.edgeId;
+      return record.edgeId === scope.edgeId;
   }
+}
+
+/**
+ * The three affordances, mapped to the commands that carry them out.
+ *
+ * `satisfies Record<OverlayAffordance, string>` IS THE POINT. A fourth
+ * affordance is a compile error here rather than a button that renders and does
+ * nothing, and the vocabulary it is total over cannot spell `merge` — §17b's
+ * one prohibition, encoded in a type rather than left to a reviewer.
+ */
+const AFFORDANCE_COMMANDS = Object.freeze({
+  'view-diff': 'view-diff',
+  retry: 'retry',
+  'discard-mine': 'discard',
+} as const satisfies Record<OverlayAffordance, string>);
+
+/**
+ * The region a card's `view-diff` control discloses.
+ *
+ * Derived from the write's own identity so `aria-controls` can name it, and
+ * scoped by a prefix because a page may mount more than one workspace.
+ */
+function diffRegionId(mutationId: MutationId): string {
+  return `ig-recovery-diff-${mutationId}`;
+}
+
+/** One edge in a difference, named the way the relationship rows name one. */
+function diffEdgeSpec(edge: StoredEdge): ElementSpec {
+  return element('li', { class: 'ig-recovery-edge', 'data-edge': edge.kind }, [
+    // OUTGOING, because a diff row names the edge as the document stores it —
+    // `from` then `to` — rather than from the point of view of a subject. There
+    // is no subject here: the list is about the document, not about one issue.
+    element('span', { class: 'ig-relationship-kind' }, [labelFrom(treatmentFor(edge.kind), true)]),
+    element('span', { class: 'ig-id' }, [edge.from]),
+    element('span', { class: 'ig-id' }, [edge.to]),
+  ]);
+}
+
+/** One side of a difference, or nothing when that side is empty. */
+function diffSideSpec(
+  heading: string,
+  edges: readonly StoredEdge[],
+): ElementSpec | null {
+  return edges.length === 0
+    ? null
+    : element('div', { class: 'ig-recovery-side' }, [
+        element('h5', { class: 'ig-recovery-side-name' }, [heading]),
+        element('ul', { class: 'ig-recovery-edges' }, edges.map(diffEdgeSpec)),
+      ]);
+}
+
+/**
+ * The held difference, drawn.
+ *
+ * NOTHING HERE COMBINES THE TWO SIDES. They are separate lists under separate
+ * headings, with no control that takes both — which is what "never auto-merge"
+ * looks like in markup rather than in a comment.
+ */
+function diffSpec(diff: ConflictDiff, words: RecoveryWords, id: string): ElementSpec {
+  if (diffIsEmpty(diff)) {
+    return element('p', { class: 'ig-recovery-diff-empty', id }, [words.diffEmpty]);
+  }
+  return element('div', { class: 'ig-recovery-diff', id }, [
+    diffSideSpec(words.upstreamOnly, diff.upstreamOnly),
+    diffSideSpec(words.mineOnly, diff.mineOnly),
+    diffSideSpec(words.mineRemoved, diff.mineRemoved),
+    diff.carrierReversed.length === 0
+      ? null
+      : element('div', { class: 'ig-recovery-side' }, [
+          element('h5', { class: 'ig-recovery-side-name' }, [words.carrierReversed]),
+          element(
+            'ul',
+            { class: 'ig-recovery-edges' },
+            // BOTH DIRECTIONS, SIDE BY SIDE. Which end declares a symmetric
+            // relationship is the fact `edgeId` discards, so stating one
+            // direction here would be this package picking a winner.
+            diff.carrierReversed.flatMap((change) => [
+              diffEdgeSpec(change.mine),
+              diffEdgeSpec(change.upstream),
+            ]),
+          ),
+        ]),
+    diff.issuesChanged.length === 0
+      ? null
+      : element('div', { class: 'ig-recovery-side' }, [
+          element('h5', { class: 'ig-recovery-side-name' }, [words.issuesChanged]),
+          element(
+            'ul',
+            { class: 'ig-recovery-issues' },
+            diff.issuesChanged.map((change) =>
+              element('li', { class: 'ig-recovery-issue' }, [
+                element('span', { class: 'ig-id' }, [change.ref]),
+                // BOTH TITLES, NEVER ONE RECONCILED ONE. A single line here
+                // would be this package choosing a winner, which is the whole
+                // of what §17b forbids.
+                element('span', { class: 'ig-recovery-was' }, [change.mine?.title ?? '']),
+                element('span', { class: 'ig-recovery-now' }, [change.upstream?.title ?? '']),
+              ]),
+            ),
+          ),
+        ]),
+  ]);
+}
+
+/**
+ * The label for one affordance on one card.
+ *
+ * KEYED OFF THE CARD'S KIND, not off the affordance alone: `retry` is two
+ * different operations and §17b gives them two different names.
+ */
+function affordanceWord(
+  affordance: OverlayAffordance,
+  kind: WorkspaceRecovery['kind'],
+  words: RecoveryWords,
+): string {
+  switch (affordance) {
+    case 'view-diff':
+      return words.viewDiff;
+    case 'retry':
+      return kind === 'conflict' ? words.retryOnLatest : words.retry;
+    case 'discard-mine':
+      return words.discardMine;
+  }
+}
+
+/**
+ * One unsettled write the reader can act on.
+ *
+ * THE BUTTONS ARE THE GRAMMAR TABLE'S, NOT A LIST WRITTEN HERE.
+ * `OVERLAY_TREATMENTS[kind].affordances` is what the line already draws its
+ * state from, so the card and the edge cannot come to offer different things —
+ * and because `OverlayAffordance` has no `merge` member, no entry in that table
+ * can produce a merge button. That is what this construction buys, and it is
+ * worth being exact about what it does NOT buy: the behavioural guarantee that
+ * nothing merges lives one layer down, in a store that exposes no merge call
+ * and a `HostEffect` with no merge arm.
+ *
+ * EVERY BUTTON CARRIES `data-ig-target`. The mount turns an attribute-borne
+ * command into `{ kind: 'control', name, target }`, and the reducer's `retry`
+ * and `discard` arms return NO EFFECT when `target` is undefined. Without the
+ * attribute all three controls render, read correctly, and do nothing — while
+ * every assertion about the command names stays green.
+ */
+function recoveryCard(
+  recovery: WorkspaceRecovery,
+  words: RecoveryWords,
+  diffOpen: MutationId | null,
+  keys: ReadonlySet<string> | null,
+): ElementSpec {
+  const treatment = OVERLAY_TREATMENTS[recovery.kind];
+  const open = recovery.kind === 'conflict' && diffOpen === recovery.mutationId;
+  return element(
+    'li',
+    {
+      class: 'ig-recovery',
+      // THE STORE'S OWN VOCABULARY, so a host styles or counts these off the
+      // state rather than by matching a sentence — `data-ig-code`'s rule.
+      'data-ig-state': recovery.kind,
+    },
+    [
+      element('h4', { class: 'ig-recovery-name' }, [
+        recovery.kind === 'conflict' ? words.conflict : words.failed,
+      ]),
+      recovery.kind === 'failed'
+        ? element('p', { class: 'ig-recovery-reason' }, [recovery.reason])
+        : null,
+      // THE REFRESH ERROR SITS ABOVE THE CONTROLS, because it is the reason the
+      // control the reader last pressed did nothing.
+      recovery.kind === 'conflict' && recovery.refreshError !== null
+        ? element('p', { class: 'ig-recovery-refresh-error' }, [
+            `${words.retryFailed} `,
+            element('span', { class: 'ig-recovery-refresh-detail' }, [recovery.refreshError]),
+          ])
+        : null,
+      element(
+        'div',
+        { class: 'ig-recovery-actions' },
+        treatment.affordances.map((affordance) =>
+          element(
+            'button',
+            {
+              type: 'button',
+              class: 'ig-recovery-action',
+              'data-ig-command': AFFORDANCE_COMMANDS[affordance],
+              'data-ig-target': recovery.mutationId,
+              // A DISCLOSURE, NOT A TOGGLE BUTTON. `view-diff` shows and hides
+              // a region, so `aria-expanded` (with `aria-controls` naming it)
+              // is the pattern; `aria-pressed` announces a two-state button and
+              // tells a screen-reader user nothing about the region that
+              // appeared. The other two act once and carry neither.
+              'aria-expanded': affordance === 'view-diff' ? (open ? 'true' : 'false') : undefined,
+              'aria-controls': affordance === 'view-diff' ? diffRegionId(recovery.mutationId) : undefined,
+            },
+            [affordanceWord(affordance, recovery.kind, words)],
+          ),
+        ),
+      ),
+      // NARROWED BY THE PANEL'S KEY SET, not by the carrier alone. A together
+      // unit's lead speaks for its partners, so a single key would drop a
+      // partner's conflicted edge from the one panel entitled to state it.
+      // `null` keys is the unplaced region, which is nobody's unit: nothing is
+      // narrowed away there.
+      open && recovery.kind === 'conflict'
+        ? diffSpec(
+            keys === null ? recovery.diff : diffWithin(recovery.diff, keys),
+            words,
+            diffRegionId(recovery.mutationId),
+          )
+        : null,
+    ],
+  );
+}
+
+/** The cards a panel states, or nothing when it states none. */
+function recoveryListSpec(
+  recoveries: readonly WorkspaceRecovery[],
+  words: RecoveryWords,
+  diffOpen: MutationId | null,
+  keys: ReadonlySet<string> | null,
+  heading: string | null,
+): ElementSpec | null {
+  if (recoveries.length === 0) return null;
+  return element('div', { class: 'ig-recovery-region' }, [
+    heading === null ? null : element('h3', { class: 'ig-inspector-heading' }, [heading]),
+    element(
+      'ul',
+      { class: 'ig-recovery-list' },
+      recoveries.map((recovery) => recoveryCard(recovery, words, diffOpen, keys)),
+    ),
+  ]);
 }
 
 /**
@@ -1224,6 +1603,10 @@ function inspectorSpec(view: InspectorView, context: InspectorContext): ElementS
   const key = subject.kind === 'issue' ? subject.issue.key : null;
   const selected = subject.kind === 'edge' ? subject.relationship.edgeId : null;
   const entries = relationshipEntries(view, key, selected, context);
+  // THE SAME SCOPE THE RELATIONSHIP LIST USED, asked once here rather than
+  // recomputed per region: two calls could not disagree today, but a panel that
+  // decides its own reach twice is the shape `carrier` exists to have ended.
+  const scope = panelScope(view);
   return element('div', { class: 'ig-inspector', 'data-subject': subject.kind }, [
     element('div', { class: 'ig-inspector-head' }, [
       element('h2', { class: 'ig-inspector-name' }, [words.inspector]),
@@ -1291,6 +1674,38 @@ function inspectorSpec(view: InspectorView, context: InspectorContext): ElementS
         // draft begun from another issue standing.
         addStepSpec(context, subject.kind === 'issue' ? subject.issue.key : null),
       ],
+    ),
+    // STATED WHERE THE READER MADE THE EDIT, by the same rule the refusals use
+    // — one `statedHere`, one carrier, no second derivation of whose panel this
+    // is. No heading: the cards carry their own state names, and a heading over
+    // a region that is usually absent is a heading a reader learns to skip.
+    recoveryListSpec(
+      context.recoveries.filter((recovery) => statedHere(scope, recovery)),
+      words.recovery,
+      context.diffOpen,
+      scope.kind === 'issue' ? scope.keys : null,
+      null,
+    ),
+    // THE WRITES WITH NOWHERE TO SIT, ON EVERY PANEL. A recovery whose carrier
+    // is `null` is about issues this backlog does not hold, so no panel is
+    // entitled to it — and the refusal path drops exactly these. Dropping a
+    // REFUSAL costs a sentence the reader can live without; dropping a RECOVERY
+    // takes away the only retry and discard they have, which is #137's
+    // Done-when 1 ("offers all three resolutions from the editor's own
+    // surface") failing on the state where it matters most. So they are drawn
+    // here, under a heading that says why they are not on a relationship.
+    // AND NEVER TWICE ON ONE PANEL. `statedHere`'s EDGE arm matches on
+    // `edgeId` and ignores the carrier, so an edge panel narrowed to a
+    // null-carrier recovery's own edge states it above AND here — two identical
+    // cards, two tab stops, and two buttons carrying one write's id.
+    recoveryListSpec(
+      context.recoveries.filter(
+        (recovery) => recovery.carrier === null && !statedHere(scope, recovery),
+      ),
+      words.recovery,
+      context.diffOpen,
+      null,
+      words.recovery.unplaced,
     ),
   ]);
 }
@@ -1601,6 +2016,11 @@ export function renderWorkspace(
           // refusal the reader had already read instead of the one they had
           // just caused.
           refusals: options.refusals ?? [],
+          // FORWARDED IN THE LEDGER'S ORDER too, for the reason above: the
+          // cards are drawn in the order the writes were made, so the one the
+          // reader just caused is the one nearest what they were doing.
+          recoveries: options.recoveries ?? [],
+          diffOpen: options.diffOpen ?? null,
         }),
       ),
     ),

@@ -161,6 +161,35 @@ export const WORKSPACE_WORDS: MountWords = {
     'would-cycle': 'That would make the two issues block each other.',
     'guard-failed': 'The cycle check could not be run, so nothing was written.',
   },
+  // §17b's RECOVERY CARDS, worded for someone grooming a backlog. Both of these
+  // states are reachable from the page's own controls: the writes panel arms
+  // the next dispatch to reject or to conflict.
+  //
+  // "RETRY ON LATEST" IS SPELLED OUT, because it is not the same act as a plain
+  // retry: it re-reads the issue first and sends the edit against what it finds.
+  // A visitor who reads it as "try again" would be surprised by the order
+  // moving, which it can — the base really did change.
+  recovery: {
+    failed: 'This edit was refused.',
+    conflict: 'This issue changed while you were editing it.',
+    viewDiff: 'view diff',
+    retry: 'retry',
+    retryOnLatest: 'retry on latest',
+    discardMine: 'discard mine',
+    upstreamOnly: 'Only upstream',
+    mineOnly: 'Only yours',
+    mineRemoved: 'Yours removes',
+    // WHICH END DECLARES IT. Both documents hold the relationship; they
+    // disagree about whose body it is written in, which the identity hides.
+    carrierReversed: 'Declared from the other end upstream',
+    issuesChanged: 'Issues that changed',
+    // NOT "no changes". The difference is narrowed to the panel you are on, so
+    // an empty one means the upstream edit was somewhere else in the backlog —
+    // which is a different fact, and the one a groomer needs.
+    diffEmpty: 'Nothing on this issue differs; the change upstream was elsewhere.',
+    retryFailed: 'Could not read the latest version:',
+    unplaced: 'Unresolved edits about issues not in this backlog',
+  },
   picker: PICKER_WORDS,
   deleteRelationship: 'delete this relationship',
   chooseKind: 'choose the kind',

@@ -229,6 +229,20 @@ The selection reaches the **canvas** too, through two additive options on `Scale
 
 Ranking a unit's members is `heaviestRow`'s job, in the audit module, **because the weights live there**. The shortcut — take the first matching entry in `overlay.rows` — is wrong in a way that looks right: those rows are sorted by `ref`, lexicographically, so a `stale-blocker` on `a` masks a `cycle` on `b`. A row's severity is the heaviest across its **members**, not its lead. A `together-with` unit is one row and several refs, and a finding can name a member that does not lead — read off the lead alone, an affected unit renders clean, which is the audit failing silently on exactly the rows where an encoding error is hardest to see.
 
+**An unsettled write the reader can act on gets a card.** §17b draws `failed` as a ghost with a ✕ and `conflict` as a doubled line, and gives each a set of resolutions: `retry` and `discard mine` for a failure, plus `view diff` and `retry on latest` for a conflict — and **never** an auto-merge. `WorkspaceOptions.recoveries` is the narrow input those cards need: the state, the reason or the difference, and the panel it belongs on. Not the write ledger, which carries a mutation and an entire second document per conflict.
+
+**The buttons are read from `OVERLAY_TREATMENTS`, which is what makes the prohibition structural.** A card emits one control per affordance the grammar table declares for its state, through a mapping declared `satisfies Record<OverlayAffordance, string>` — so a fourth affordance is a compile error rather than a control that renders and does nothing, and since `OverlayAffordance` has no `merge` member no table entry can produce one. Be exact about what that buys: **no merge button can be drawn**. The behavioural guarantee is one layer down, in a store with no merge call and a `HostEffect` with no merge arm.
+
+`retry` and `retryOnLatest` are separate words because they are separate calls. The second re-reads and **adopts the upstream document as the new base** before dispatching again, so the order can move on the press — a single word would make one card understate what its button does.
+
+**Every card control carries `data-ig-target` naming its write.** The reducer's `retry` and `discard` arms emit no effect without it, so an omitted attribute leaves three controls that render, read correctly and do nothing. `view-diff` is a `control` case beside them rather than a command arm of its own, because the shell turns every `data-ig-command` into a `control` and an arm outside that shape has no route from a button.
+
+**The difference is narrowed by the panel's key set, not by the carrier.** An issue panel speaks for every member of its slot, so a together unit's lead states a partner's conflict — and scoping the difference to the carrier alone would drop the partner's own edge from the one panel entitled to show it. The reader's side of that difference is rebuilt from the mutation through `edgeChangeFor`, because the landed document by contract does not carry an unlanded edit. It covers **issues as well as edges**: §17b's stated cause is that the body changed upstream, and an edges-only difference is empty for the commonest conflict there is.
+
+**A recovery with no panel is still drawn.** Where a refusal whose carrier is `null` is dropped — there is nowhere to state it, and the cost is a sentence — a recovery in that position keeps the reader's only retry and discard, so it goes in a region at the foot of the panel under a heading that says why it is not on a relationship.
+
+**Not yet drawn: the gold double line.** §17b's conflict *treatment* is a doubled line holding both versions, and `second-version` is a mark for whoever computed the layout. The card is the *affordance* surface; the treatment is [#102](https://github.com/autnmy/issuegraph/issues/102).
+
 **Dark only.** The pass-2 brief carries "light + dark" over from pass 1; light was cut after that pass. There is no forked token set and no `prefers-color-scheme` block — the palette is the viewer's, reached through its custom properties.
 
 ## The mount

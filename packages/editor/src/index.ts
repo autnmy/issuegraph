@@ -350,6 +350,14 @@ export {
 } from './workspace/inspector.ts';
 
 export {
+  type ConflictDiff,
+  type ConflictIssueChange,
+  conflictDiff,
+  diffIsEmpty,
+  diffWithin,
+} from './workspace/recovery.ts';
+
+export {
   type Zone,
   type WorkspaceOptions,
   // ON THE SURFACE BECAUSE IT IS ALREADY IN A SIGNATURE. `WorkspaceRefusal` is
@@ -358,9 +366,14 @@ export {
   // function returning one. A shape a consumer must construct and cannot
   // declare is exported by accident, not withheld on purpose.
   type WorkspaceRefusal,
+  // ON THE SURFACE FOR `WorkspaceRefusal`'s OWN REASON: it is the element type
+  // of `WorkspaceOptions.recoveries`, so without it a host could build the
+  // array and could not name it.
+  type WorkspaceRecovery,
   type WorkspaceResult,
   type WorkspaceView,
   type WorkspaceWords,
+  type RecoveryWords,
   ZONES,
   renderWorkspace,
 } from './workspace/render.ts';
