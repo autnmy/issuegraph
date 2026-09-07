@@ -15,7 +15,7 @@ import { createScriptedSource, createStore, makeEdge } from '@issuegraph/store';
 import { JSDOM } from 'jsdom';
 
 import { type MountWords, type WorkspaceProjection, mountWorkspace } from '../workspace/mount.ts';
-import { FIRST_PASS_WORDS } from './firstpass.ts';
+import { FIRST_PASS_WORDS, candidates } from './firstpass.ts';
 import { PICKER_WORDS } from './picker.ts';
 import { WORKSPACE_WORDS } from './workspace.ts';
 
@@ -98,6 +98,8 @@ export async function a11ySurface(
     readonly openDraft?: boolean;
     /** Choose a kind too, which advances the draft to the target search. */
     readonly openSearch?: boolean;
+    /** Open the first-pass queue, so its `data-ig-answer` controls are recorded. */
+    readonly openFirstPass?: boolean;
   } = {},
 ): Promise<{ root: Element; close: () => void }> {
   const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>');
@@ -110,13 +112,14 @@ export async function a11ySurface(
     store,
     project,
     words: WORDS,
-    // SUPPLIED SO §17a's ENTRY IS DRAWN. The entry is a command control in the
-    // rail's panel header, and without a `firstPass` option the mount renders
-    // none — so the baseline would record only the inspector's controls and
-    // read as if the rest of the surface published no commands. The scanner is
-    // never called: nothing in this fixture opens the queue.
+    // SUPPLIED SO §17a's ENTRY IS DRAWN, and so the QUEUE can be opened. The
+    // entry is a command control in the rail's panel header, and the queue
+    // behind it is the only surface publishing `data-ig-answer` — which
+    // `CONTROL_ATTRIBUTES` names and the rules claim to cover, so a fixture
+    // that never opened it left that whole channel unrecorded while the
+    // baseline read as if it covered three.
     firstPass: {
-      source: { findCandidates: () => Promise.resolve([]) },
+      source: { findCandidates: () => Promise.resolve(candidates(3)) },
       words: FIRST_PASS_WORDS,
       exit: 'leave the first pass',
       scanning: 'looking for candidates',
@@ -186,6 +189,20 @@ export async function a11ySurface(
     assert.ok(input !== null, 'no target search to type into');
     input.value = 'release';
     input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    await flush();
+  }
+
+  // THE FIRST-PASS QUEUE, when asked for. Its y/n/s answers are the package's
+  // only `data-ig-answer` controls, and they are keyboard-first by design —
+  // §17e advertises a pointer-free loop — so they are exactly the controls a
+  // keyboard record should not be missing.
+  if (options.openFirstPass === true) {
+    const entry = host.querySelector<HTMLElement>('[data-ig-command="first-pass"]');
+    assert.ok(entry !== null, 'no first-pass entry to open');
+    entry.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    await flush();
+    // THE SCAN IS A PROMISE, so the queue is drawn on the render after it
+    // settles rather than on the one that asked for it.
     await flush();
   }
 

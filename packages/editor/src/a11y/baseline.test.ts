@@ -54,6 +54,12 @@ const BASELINE_PATH = new URL('./baseline.json', import.meta.url);
  * buttons and their cancel out of every surface while this file claimed to
  * cover them. Without these the artifact would be one a spec walk could have
  * produced.
+ *
+ * AND THE FIRST-PASS QUEUE, because its y/n/s answers are the only controls on
+ * the `data-ig-answer` channel. `CONTROL_ATTRIBUTES` names three channels and
+ * the rules below quantify over all of them — with the queue closed, one of the
+ * three had no members in any surface, so a regression in an answer's
+ * accessible name or keyboard reachability passed every rule here.
  */
 async function surfaces(): Promise<Record<string, readonly ControlEntry[]>> {
   const out: Record<string, readonly ControlEntry[]> = {};
@@ -62,6 +68,7 @@ async function surfaces(): Promise<Record<string, readonly ControlEntry[]>> {
     ['disclosure-open', { openDiff: true }],
     ['draft-open', { openDraft: true }],
     ['search-open', { openSearch: true }],
+    ['first-pass-open', { openFirstPass: true }],
   ] as const) {
     const page = await a11ySurface(options);
     try {
@@ -121,8 +128,18 @@ describe('rules that hold whatever the baseline says', () => {
     // surface, so it also covers the chooser and the target search that never
     // pass a renderer — and it reads the tab order rather than the tag, so a
     // `tabindex="-1"` control does not pass as reachable.
+    // EXCEPT WHERE IT IS DELIBERATE. A control under an `inert` subtree is out
+    // of the tab order on purpose — the mount makes the zones inert while the
+    // first-pass overlay is up — and demanding reachability there would fail on
+    // the modal behaving correctly. The exemption is narrow and it is a fact
+    // read off the markup, not a list of names anyone can add to.
     await each((entry) => {
-      assert.notEqual(entry.tabStop, 'none', `${entry.control} is not reachable by keyboard`);
+      if (entry.inert) return;
+      assert.notEqual(
+        entry.tabStop,
+        'none',
+        `${entry.channel}="${entry.control}" in ${entry.zone ?? 'no zone'} is not reachable by keyboard`,
+      );
     });
   });
 
@@ -135,7 +152,7 @@ describe('rules that hold whatever the baseline says', () => {
     await each((entry) => {
       assert.ok(
         entry.name !== 'none' && entry.name !== 'empty',
-        `${entry.control} has no accessible name (${entry.name})`,
+        `${entry.channel}="${entry.control}" in ${entry.zone ?? 'no zone'} has no accessible name (${entry.name})`,
       );
     });
   });

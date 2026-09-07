@@ -120,6 +120,19 @@ export interface ControlEntry {
   /** `null` where this module has no mapping, which is a fact; a guess would not be. */
   readonly role: string | null;
   readonly tabStop: TabStop;
+  /**
+   * Whether the control sits under an `inert` subtree.
+   *
+   * DELIBERATE UNREACHABILITY IS NOT A DEFECT, and without recording it the two
+   * are indistinguishable. The mount sets `inert` on every zone while the
+   * first-pass overlay is up — "the zones go inert under it" — so those
+   * controls are correctly out of the tab order, and a rule that simply
+   * demanded reachability would fail on the modal working as designed. Recorded
+   * rather than filtered out, because "these eight controls are deliberately
+   * unreachable right now" is exactly what a reader of a modal state wants to
+   * see.
+   */
+  readonly inert: boolean;
   readonly name: NameSource;
   /** Enumerated ARIA states with their values, and IDREFs by whether they resolve. */
   readonly aria: Readonly<Record<string, string>>;
@@ -398,6 +411,7 @@ export function controlSurface(root: SurfaceElement): readonly ControlEntry[] {
           IMPLICIT_ROLES[tag] ??
           conditionalRole(root, element, tag),
         tabStop: tabStopOf(element),
+        inert: element.closest('[inert]') !== null,
         name: nameSource(root, element),
         aria: ariaOf(ids, element),
       });

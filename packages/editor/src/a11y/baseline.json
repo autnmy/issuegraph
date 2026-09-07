@@ -9,6 +9,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {
         "aria-pressed": "false"
@@ -23,6 +24,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -35,6 +37,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -47,6 +50,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -59,6 +63,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "aria-label",
       "aria": {}
     },
@@ -71,6 +76,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -83,6 +89,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -95,6 +102,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -107,6 +115,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {
         "aria-expanded": "false"
@@ -123,6 +132,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {
         "aria-pressed": "false"
@@ -137,6 +147,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -149,6 +160,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -161,6 +173,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -173,6 +186,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "aria-label",
       "aria": {}
     },
@@ -185,6 +199,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -197,6 +212,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -209,6 +225,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -221,6 +238,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {
         "aria-expanded": "true",
@@ -238,6 +256,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {
         "aria-pressed": "false"
@@ -252,6 +271,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -264,6 +284,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -276,6 +297,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -288,6 +310,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "aria-label",
       "aria": {}
     },
@@ -300,6 +323,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -312,6 +336,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -324,6 +349,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -336,6 +362,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -348,6 +375,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -360,6 +388,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -372,6 +401,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -384,6 +414,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -396,6 +427,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {
         "aria-expanded": "false"
@@ -412,6 +444,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {
         "aria-pressed": "false"
@@ -426,6 +459,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -438,6 +472,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -450,6 +485,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -462,6 +498,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "aria-label",
       "aria": {}
     },
@@ -474,6 +511,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -486,6 +524,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -498,6 +537,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -510,6 +550,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -522,6 +563,7 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
       "name": "text",
       "aria": {}
     },
@@ -534,6 +576,7 @@
       "tag": "input",
       "role": "searchbox",
       "tabStop": "tab",
+      "inert": false,
       "name": "aria-label",
       "aria": {}
     },
@@ -546,6 +589,182 @@
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-expanded": "false"
+      }
+    }
+  ],
+  "first-pass-open": [
+    {
+      "zone": null,
+      "channel": "data-ig-answer",
+      "control": "apply",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-answer",
+      "control": "reject",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-answer",
+      "control": "skip",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "first-pass-close",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-audit-filter",
+      "control": "",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "none",
+      "inert": true,
+      "name": "text",
+      "aria": {
+        "aria-pressed": "false"
+      }
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "first-pass",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "none",
+      "inert": true,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "inspector",
+      "channel": "data-ig-command",
+      "control": "add",
+      "target": "3",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "none",
+      "inert": true,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "inspector",
+      "channel": "data-ig-command",
+      "control": "clear",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "none",
+      "inert": true,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "inspector",
+      "channel": "data-ig-command",
+      "control": "delete",
+      "target": "blocked-by|3|4",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "none",
+      "inert": true,
+      "name": "aria-label",
+      "aria": {}
+    },
+    {
+      "zone": "inspector",
+      "channel": "data-ig-command",
+      "control": "discard",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "none",
+      "inert": true,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "inspector",
+      "channel": "data-ig-command",
+      "control": "retry",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "none",
+      "inert": true,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "inspector",
+      "channel": "data-ig-command",
+      "control": "select-edge",
+      "target": "blocked-by|3|4",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "none",
+      "inert": true,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "inspector",
+      "channel": "data-ig-command",
+      "control": "view-diff",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "none",
+      "inert": true,
       "name": "text",
       "aria": {
         "aria-expanded": "false"
