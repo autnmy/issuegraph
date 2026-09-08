@@ -138,7 +138,17 @@ export const WORKSPACE_WORDS: MountWords = {
       left: 'left the order',
     },
     unchanged: 'That edit landed and moved nothing.',
-    computing: 'Your edit is saved. The order below is the previous one while it is re-evaluated.',
+    // NOT "your edit is saved", WHICH THIS STATE DOES NOT MEAN. `held` is
+    // `anyPending(records)`, and `dispatch` reserves the record as `pending`
+    // and publishes BEFORE it drains — so this sentence is on screen while the
+    // adapter can still reject, throw or come back with a conflict. Telling a
+    // reader their edit is saved and then showing them a failure card is the
+    // one thing the §17b recovery states exist to avoid.
+    //
+    // The frame's own title reads "write landed · order computing", and that is
+    // the frame being about a state the store does not have: nothing publishes
+    // "landed, still recomputing". So this words what `held` actually is.
+    computing: 'Your edit is on its way. The order below is the previous one until it lands.',
     dismiss: 'dismiss',
     direction: { up: 'up', down: 'down' },
   },
