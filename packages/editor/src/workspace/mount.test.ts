@@ -4326,4 +4326,41 @@ describe('opening the isolated list reveals it', () => {
       page.dom.window.close();
     }
   });
+
+  /**
+   * THE TREE REPLACES THE CANVAS ZONE'S `innerHTML`, and the list is drawn in
+   * that zone. The control is not — §17a puts it at the foot of the rail — so
+   * without preserving the block the reader gets a toggle that flips to "hide"
+   * and `aria-expanded="true"` over nothing at all.
+   *
+   * That is worse than what it replaced: before the control moved, the chip sat
+   * in this zone beside its list and the tree deleted both, so the affordance
+   * was absent rather than lying.
+   */
+  it('keeps the list in tree mode, where the canvas markup is replaced', async () => {
+    const page = await mounted(SEED, { words: { ...WORDS, rail: RAIL_WORDS }, canvas: 'tree' });
+    try {
+      const toggle = page.element.querySelector<HTMLElement>('[data-ig-command="open-isolated"]');
+      assert.ok(toggle !== null, 'no isolated toggle in the rail footer');
+      toggle.click();
+      await flush();
+
+      const opened = page.element.querySelector<HTMLElement>('[data-ig-command="close-isolated"]');
+      assert.ok(opened !== null, 'the control did not flip to its open state');
+      assert.equal(opened.getAttribute('aria-expanded'), 'true');
+      // THE ASSERTION THIS TEST EXISTS FOR: the control says open, so something
+      // has to be open.
+      assert.ok(
+        page.element.querySelector('.ig-isolated-list') !== null,
+        'the control reports an open list the tree canvas deleted',
+      );
+      assert.ok(
+        page.zone('canvas')?.querySelector('.ig-isolated-list') != null,
+        'the list survived but not in the canvas zone',
+      );
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
 });

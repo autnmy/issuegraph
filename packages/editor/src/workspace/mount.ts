@@ -1558,6 +1558,25 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         // same rule that keeps the caption off the refusing tiers.
         const toolbar = canvas.querySelector('.ig-canvas-toolbar');
         toolbar?.querySelector('.ig-canvas-caption')?.remove();
+        // THE ISOLATED BLOCK SURVIVES THIS ASSIGNMENT TOO, and for a sharper
+        // reason than the row above. §17a moves the isolated CONTROL to the
+        // foot of the order rail, which this branch does not touch — so the
+        // control survives the switch to the tree whatever happens here, while
+        // the list it opens is drawn in THIS zone and would not. The reader
+        // presses it, the label turns to "hide" and `aria-expanded` to `true`,
+        // and nothing appears: a control that reports a state the surface is
+        // not in.
+        //
+        // WORSE THAN WHAT IT REPLACED, WHICH IS WHY IT IS FIXED HERE RATHER
+        // THAN NOTED. Before that move the chip lived in this zone beside its
+        // list, so the tree deleted BOTH and the affordance was merely absent —
+        // wrong, but not lying. Keeping the list is what makes the control it
+        // is now separated from honest.
+        //
+        // UNCONDITIONAL, unlike the toolbar's `childElementCount` guard. This
+        // element is not assembled from optional parts: `isolatedSpec` returns
+        // null rather than an empty husk, so anything found here has content.
+        const isolated = canvas.querySelector('.ig-ladder-isolated');
         canvas.innerHTML = renderViewer(withoutChrome(viewer), {
           projection: 'tree',
           theme: resolved,
@@ -1576,6 +1595,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         // emptied husk here left a sticky padded band with a border and no
         // content over the tree. Reading the element rather than re-deriving
         // the condition keeps the rule in one place.
+        if (isolated !== null) canvas.append(isolated);
         if (toolbar !== null && toolbar.childElementCount > 0) canvas.prepend(toolbar);
         const states = new Map(
           overlaysFor(viewer.edges, writeStates, selectedEdgeId(state.selection)).map((edge) => [edge.id, overlayFor(edge).attribute]),
