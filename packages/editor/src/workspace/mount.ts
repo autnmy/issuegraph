@@ -437,6 +437,21 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   let drawn: { readonly viewer: ViewerDocument; readonly rail: RailWindow } | null = null;
   // A rail row to focus once the window has been re-cut around it.
   let pendingFocus: { readonly kind: 'after' | 'before' | 'first' | 'last'; readonly key: string | null } | null = null;
+  /**
+   * Set when a command opened the isolated list, cleared by the redraw that
+   * reveals it.
+   *
+   * THE LIST IS NOT WHERE ITS CONTROL IS, and that is what makes this
+   * necessary rather than tidy. §17a puts the count and the toggle at the foot
+   * of the ORDER RAIL; the list itself is drawn by the ladder in the CANVAS,
+   * because the rail is virtualized on a fixed row pitch (`railRowAt`,
+   * `railSpacer`) and content of arbitrary height inside that scroll track
+   * makes every offset beneath it name the wrong row. So pressing the toggle
+   * flips a control in one zone and grows a list in another, below whatever
+   * that zone was already scrolled to — and the reader is told the list is open
+   * while seeing nothing change.
+   */
+  let revealIsolated = false;
   // The keys currently holding a control they activated. See `onKeydown`'s first
   // arm for why this is a fact about the PRESS and not a question asked of
   // whatever holds focus by the time the repeats arrive.
@@ -764,6 +779,11 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
 
   const dispatch = (command: HostCommand): void => {
     if (destroyed) return;
+    // ON THE COMMAND, NOT ON THE RESULTING STATE. `open-isolated` is what the
+    // reader just asked for; `scale.isolatedOpen` is also true on every redraw
+    // that follows for any other reason, and revealing it again there would
+    // yank the canvas back under a reader who had scrolled away.
+    if (command.kind === 'control' && command.name === 'open-isolated') revealIsolated = true;
     applyResult(reduceHost(state, command, landed()));
   };
 
@@ -1583,6 +1603,18 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
 
     const rail = zone('rail');
     if (rail !== null) rail.scrollTop = scrollTop;
+    // THE LIST THE READER JUST OPENED IS BROUGHT INTO VIEW. See
+    // `revealIsolated` for why the control and the list are in different zones.
+    // `block: 'nearest'` so a list already visible is not scrolled at all, and
+    // guarded on the method because the same guard is used for the rail's own
+    // jumps — this module renders into whatever document a host hands it.
+    if (revealIsolated) {
+      revealIsolated = false;
+      const list = surface.querySelector('.ig-isolated-list');
+      if (list !== null && typeof list.scrollIntoView === 'function') {
+        list.scrollIntoView({ block: 'nearest' });
+      }
+    }
     // FOCUS SURVIVES THE REDRAW, and it moves to the target search when that
     // step opens. The keyboard path is R -> kind -> search -> Enter, and every
     // step redraws: without this, R destroyed the focused row, the next press

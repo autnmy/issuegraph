@@ -180,7 +180,11 @@ export const workspaceStylesheet = `
    IN HERE: an element taller than its scrollport cannot stick — the browser
    clamps it and it scrolls like any other block — so a footer holding 248
    entries loses the pin exactly when it grows, and covers the whole rail on the
-   way. .ig-rail-isolated-list is ordinary flow content instead. */
+   way. The deeper reason is the rail's VIRTUALIZATION: railRowAt maps a scroll
+   offset to a row by floor((scrollTop - chrome) / pitch), so content of
+   arbitrary height anywhere in this track makes every offset below it name the
+   wrong row. The list is drawn in the canvas zone, which has no such
+   arithmetic. */
 .ig-rail-footer {
   position: sticky;
   bottom: 0;
@@ -200,44 +204,6 @@ export const workspaceStylesheet = `
 
 .ig-rail-count {
   color: var(--ig-text);
-}
-
-/* NO STICKY, NO MAX-HEIGHT, NO SCROLLER OF ITS OWN. The rail already scrolls,
-   and a second scroll track inside it is a box a reader has to notice before
-   they can reach its end. */
-.ig-rail-isolated-list {
-  margin: 0;
-  padding: 0 var(--ig-space) var(--ig-space-tight);
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: var(--ig-space-tight);
-  font-family: var(--ig-font-mono);
-  font-size: var(--ig-font-size-small);
-  line-height: var(--ig-line-height);
-  color: var(--ig-text-body);
-}
-
-/* A ROW PER ENTRY, WITH A GAP THE MARKUP DOES NOT SUPPLY. The element helper
-   concatenates its children with no whitespace between them, so the key and the
-   title render as one run of text unless the layout separates them. The ladder's
-   own list has the same shape and the same need. */
-.ig-rail-isolated-list li {
-  display: flex;
-  gap: var(--ig-space-tight);
-  align-items: baseline;
-  min-width: 0;
-}
-
-.ig-rail-isolated-list .ig-id {
-  color: var(--ig-text-muted);
-  flex: none;
-}
-
-.ig-rail-isolated-list .ig-title {
-  color: var(--ig-text-body);
-  min-width: 0;
-  overflow: hidden;
 }
 
 .ig-rail-isolated-toggle {

@@ -98,8 +98,21 @@ export const scaleLadderStylesheet = `
   gap: var(--ig-space-tight);
 }
 
+/* A ROW PER ENTRY, WITH A GAP THE MARKUP DOES NOT SUPPLY. The element helper
+   concatenates its children with no whitespace, so the key and the title
+   rendered as one run of text — #492Audit log pagination. Latent until §17a
+   moved the CONTROL to the rail footer and made this list the thing a reader is
+   sent to, rather than a chip's afterthought. */
+.ig-isolated-list li {
+  display: flex;
+  gap: var(--ig-space-tight);
+  align-items: baseline;
+  min-width: 0;
+}
+
 .ig-isolated-list .ig-id {
   font-family: var(--ig-font-mono);
   color: var(--ig-text-muted);
+  flex: none;
 }
 `;

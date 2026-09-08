@@ -122,16 +122,32 @@ describe('the isolated chip opens a LIST', () => {
   });
 
   /**
-   * A CALLER THAT DRAWS THE ROUTE ITSELF TURNS THIS COPY OFF. `searchFor` omits
-   * every isolated issue, so the chip is the only way to reach them FROM THE
-   * LADDER — which is why the option is contracted on the caller drawing the
-   * count, the toggle and the list somewhere else, and not on taste.
-   * `renderWorkspace` is that caller: §17a puts them at the foot of the rail.
+   * A CALLER THAT DRAWS THE CONTROL ITSELF TURNS THIS COPY OFF. `searchFor`
+   * omits every isolated issue, so this is the only way to reach them FROM THE
+   * LADDER — which is why the option is contracted on the caller drawing a
+   * control somewhere else, and not on taste. `renderWorkspace` is that caller:
+   * §17a puts the count at the foot of the rail.
    */
-  it('suppresses its own chip for a caller that draws the route', () => {
+  it('suppresses its own chip for a caller that draws the control', () => {
     const result = renderScaleLadder(document, { isolatedChip: false });
-    assert.equal(/ig-ladder-isolated/.test(result.markup), false);
     assert.equal(/data-ig-command="open-isolated"/.test(result.markup), false);
+    // Shut and chip-less is nothing at all — not an empty bordered box.
+    assert.equal(/ig-ladder-isolated/.test(result.markup), false);
+  });
+
+  /**
+   * THE LIST IS NOT PART OF THE SUPPRESSION, and this is the assertion that says
+   * so. The caller that takes the control cannot take the list: its rail is
+   * virtualized on a fixed row pitch, so an arbitrary-height list in that scroll
+   * track makes every offset beneath it name the wrong row.
+   */
+  it('still draws the list it no longer has a chip for', () => {
+    const result = renderScaleLadder(document, {
+      isolatedChip: false,
+      state: { ...INITIAL_SCALE_STATE, isolatedOpen: true },
+    });
+    assert.match(result.markup, /<ol class="ig-isolated-list"/);
+    assert.equal(/data-ig-command="close-isolated"/.test(result.markup), false);
   });
 
   it('is unchanged when the option is omitted or true', () => {
@@ -140,11 +156,12 @@ describe('the isolated chip opens a LIST', () => {
   });
 
   /**
-   * THE CHIP, AND NOTHING ELSE. Stated as a difference rather than as two
-   * separate absences: cutting the chip's own element out of the unsuppressed
-   * markup has to leave exactly the suppressed markup, so an option that also
-   * dropped the search box or the clear-focus button would fail here rather
-   * than pass two narrower assertions.
+   * THE CHIP, AND NOTHING ELSE. Stated as a difference rather than as separate
+   * absences: cutting the isolated block out of the unsuppressed markup has to
+   * leave exactly the suppressed markup, so an option that also dropped the
+   * search box or the clear-focus button would fail here rather than pass two
+   * narrower assertions. Taken on the SHUT state, where the block is the chip
+   * alone; the open state is covered above.
    */
   it('touches the chip and nothing else', () => {
     const bare = renderScaleLadder(document).markup;

@@ -1,11 +1,16 @@
 /**
  * §17a's rail footer — the isolated route, drawn where the frame puts it.
  *
- * The count and its toggle already existed; what they had was one home, in the
+ * The count and its control already existed; what they had was one home, in the
  * canvas ladder's chrome. These pin that the workspace draws them at the foot
- * of the order rail instead, that it draws them EXACTLY once, and that the two
- * halves of that move cannot come apart — no configuration yields two copies of
- * the control, and none yields none.
+ * of the order rail instead, that it offers EXACTLY one control, and that the
+ * two halves of that move cannot come apart — no configuration yields two, and
+ * none yields none.
+ *
+ * THE LIST STAYS IN THE CANVAS, and one of these guards that deliberately. The
+ * rail is virtualized on a fixed row pitch (`railRowAt`, `railSpacer`), so an
+ * arbitrary-height list anywhere in its scroll track makes every offset beneath
+ * it name the wrong row.
  */
 
 import assert from 'node:assert/strict';
@@ -85,7 +90,6 @@ describe("§17a's rail footer", () => {
     const { markup } = renderWorkspace(withoutIsolated(), { words: WITH_RAIL });
 
     assert.ok(!markup.includes('ig-rail-footer'), 'a footer over an empty set');
-    assert.ok(!markup.includes('ig-rail-isolated-list'), 'a list over an empty set');
   });
 
   /**
@@ -113,10 +117,14 @@ describe("§17a's rail footer", () => {
    * means. The second assertion is the one that would catch a footer drawn
    * beside a chip the suppression missed.
    */
-  it('states the count once, not twice', () => {
+  it('offers one control, not two', () => {
     const { markup } = renderWorkspace(withIsolated(), { words: WITH_RAIL });
 
-    assert.ok(!markup.includes('ig-ladder-isolated'), 'the ladder still drew its chip');
+    assert.equal(
+      (markup.match(/data-ig-command="open-isolated"/g) ?? []).length,
+      1,
+      'the surface offers more than one isolated control',
+    );
     assert.equal(
       occurrences(markup, RAIL_WORDS.isolated),
       1,
@@ -134,7 +142,7 @@ describe("§17a's rail footer", () => {
     assert.ok(!rail.includes(RAIL_WORDS.hide), 'the closed control offers to hide');
   });
 
-  it('flips the label with the state, and draws the issues', () => {
+  it('flips the label with the state', () => {
     const { markup } = renderWorkspace(withIsolated(), {
       words: WITH_RAIL,
       scale: { ...INITIAL_SCALE_STATE, isolatedOpen: true },
@@ -144,36 +152,31 @@ describe("§17a's rail footer", () => {
     assert.match(rail, /data-ig-command="close-isolated"/);
     assert.match(rail, /aria-expanded="true"/);
     assert.ok(rail.includes(RAIL_WORDS.hide), 'the open control is not the host’s word');
-    assert.match(rail, /<ol class="ig-rail-isolated-list"/);
-    // KEY AND TITLE, as the ladder's own list drew them. Dropping the titles
-    // would make this a downgrade wearing a move's clothes.
-    assert.match(rail, /<span class="ig-id">i0003<\/span>/);
-    assert.ok(rail.includes('Issue i0003'), 'the list drew keys without titles');
   });
 
   /**
-   * RULING 2, PINNED. The footer is `position: sticky`, and an element taller
-   * than its scrollport cannot stick — so a list inside it would lose the pin
-   * exactly as it grew, and would occlude the order rows while it held it. The
-   * list is flow content in the rail's scroll track, which this asserts
-   * structurally rather than trusting the stylesheet to be read.
+   * THE VIRTUALIZATION GUARD, AND IT IS THE POINT OF THE WHOLE ARRANGEMENT.
+   * `mount.ts` re-cuts the rail window from `railRowAt(scrollTop, chrome,
+   * pitch)`, and `railSpacer` stands in for the undrawn rows on that same fixed
+   * pitch. Any element of arbitrary height inside this zone's scroll track
+   * therefore makes every offset beneath it resolve to the wrong row. The list
+   * is drawn in the CANVAS for that reason, and this asserts it structurally so
+   * a later change cannot quietly move it back.
    */
-  it('keeps the open list out of the pinned footer', () => {
+  it('keeps the opened list out of the virtualized rail', () => {
     const { markup } = renderWorkspace(withIsolated(), {
       words: WITH_RAIL,
       scale: { ...INITIAL_SCALE_STATE, isolatedOpen: true },
     });
     const rail = railZone(markup);
 
-    const list = rail.indexOf('<ol class="ig-rail-isolated-list"');
-    const footer = rail.indexOf('<div class="ig-rail-footer">');
-    assert.notEqual(list, -1, 'no list');
-    assert.notEqual(footer, -1, 'no footer');
-    assert.ok(list < footer, 'the list is inside or after the footer, not above it');
-    assert.ok(
-      !rail.slice(footer).includes('ig-rail-isolated-list'),
-      'the footer contains the list',
-    );
+    // NARROWED TO THE ISOLATED LIST ON PURPOSE: the rail's own rows are an `ol`
+    // too, so a blanket "no list here" assertion fails on layer 1's order.
+    assert.ok(!rail.includes('ig-isolated-list'), 'the isolated list is inside the rail');
+    assert.ok(!rail.includes('ig-rail-isolated-list'), 'a rail-owned isolated list came back');
+    // AND IT REALLY IS ON THE SURFACE, so this pair cannot pass by the list
+    // having been dropped altogether.
+    assert.match(markup, /<ol class="ig-isolated-list"/, 'the list is nowhere at all');
   });
 
   /**

@@ -116,14 +116,21 @@ export interface ScaleLadderOptions {
    */
   readonly projected?: readonly ProjectedEdge[] | undefined;
   /**
-   * Whether this ladder draws its own isolated chip. Default `true`.
+   * Whether this ladder draws its own isolated CHIP. Default `true`.
    *
-   * SUPPRESS THIS ONLY IF YOU DRAW THE ROUTE YOURSELF — the count, the toggle
-   * AND the list. `searchFor` deliberately omits every issue with no component
-   * (`ladder.ts`, and the reasoning is recorded there), so the chip is the only
-   * way these issues are reachable from the ladder's own surface. What may
-   * never be optional is a route to them; this option says who draws it, not
-   * whether it exists.
+   * SUPPRESS THIS ONLY IF YOU DRAW THE CONTROL YOURSELF. `searchFor`
+   * deliberately omits every issue with no component (`ladder.ts`, and the
+   * reasoning is recorded there), so this is the only way these issues are
+   * reachable from the ladder's own surface. What may never be optional is a
+   * route to them; this option says who draws its control, not whether it
+   * exists.
+   *
+   * THE LIST IS NOT OPTIONAL AND IS NOT PART OF THIS. `isolatedSpec` keeps
+   * drawing it whatever this says, because the caller that wants the control
+   * has nowhere better to put the rows: `renderWorkspace`'s rail is virtualized
+   * on a fixed row pitch, and content of arbitrary height inside that scroll
+   * track breaks the offset-to-row arithmetic the window is re-cut from. This
+   * zone has no such constraint.
    *
    * A BOOLEAN AMONG DATA-SHAPED OPTIONS, and it is one deliberately. Its three
    * siblings hand this renderer a VALUE it could not otherwise know — what is
@@ -133,7 +140,7 @@ export interface ScaleLadderOptions {
    * the caller's own markup.
    *
    * DEFAULT `true`, so a standalone ladder is unchanged. It has no rail to put
-   * a footer at the foot of, which is why the route lives in its chrome by
+   * a footer at the foot of, which is why the control lives in its chrome by
    * default rather than by accident; `renderWorkspace` is the caller that has
    * one, and §17a puts the count there.
    */
@@ -235,13 +242,30 @@ function searchSpec(search: ScaleSearch): ElementSpec {
   ]);
 }
 
-function isolatedSpec(isolated: IsolatedChip): ElementSpec | null {
+/**
+ * The isolated set: a chip that toggles it, and the list it opens.
+ *
+ * `chip` DROPS THE CONTROL AND KEEPS THE LIST, which is the whole shape
+ * `ScaleLadderOptions.isolatedChip` needs. A caller drawing the toggle
+ * elsewhere still has nowhere of its own to put 248 rows: the workspace's rail
+ * is VIRTUALIZED — `railRowAt` maps a scroll offset to a row index by
+ * `floor((scrollTop - chrome) / pitch)` — so a list of arbitrary height inside
+ * that track makes every offset below it name the wrong row, and the window
+ * re-cuts against a geometry that no longer holds. This zone has no such
+ * arithmetic, so the list stays here and only the control moves.
+ */
+function isolatedSpec(isolated: IsolatedChip, chip: boolean): ElementSpec | null {
   // NOTHING IS DRAWN FOR AN EMPTY SET. A chip reading "0 isolated issues" is a
   // control that opens nothing, and the count IS the information these issues
   // carry — so with no issues there is nothing to say.
   if (isolated.count === 0) return null;
+  // NO CONTROL AND NOTHING OPEN IS NOTHING AT ALL. A caller that drew the chip
+  // elsewhere leaves this with only the list to draw, and a shut list is no
+  // list — so the wrapper would be an empty bordered box, which is the chrome
+  // carrying no fact that the count-zero rule above already refuses.
+  if (!chip && !isolated.open) return null;
   return element('div', { class: 'ig-ladder-isolated' }, [
-    element(
+    !chip ? null : element(
       'button',
       {
         type: 'button',
@@ -336,10 +360,10 @@ export function renderScaleLadder(
         ),
     ladder.refusal === null ? null : refusalSpec(ladder.refusal, ladder),
     ladder.search === null ? null : searchSpec(ladder.search),
-    // THE ROUTE, UNLESS THE CALLER DREW IT. See `ScaleLadderOptions.isolatedChip`
-    // for what a caller takes on by turning this off, and `ladder.ts`'s
-    // `searchFor` for why there has to be a route at all.
-    (options.isolatedChip ?? true) ? isolatedSpec(ladder.isolated) : null,
+    // THE CONTROL, UNLESS THE CALLER DREW IT — the LIST is drawn either way.
+    // See `ScaleLadderOptions.isolatedChip`, and `ladder.ts`'s `searchFor` for
+    // why there has to be a route at all.
+    isolatedSpec(ladder.isolated, options.isolatedChip ?? true),
   ]);
 
   return {

@@ -340,6 +340,11 @@ const COMPOSED: ReadonlySet<string> = new Set([
   // `renderWorkspace` installs alongside this one.
   'ig-ladder',
   'ig-ladder-isolated',
+  // The list that chip opens. It appears here now that a render above opens it,
+  // and it is the LADDER's to style (`scaleLadderStylesheet`) even though the
+  // control that opens it has moved to the rail — see `railFooter` for why the
+  // virtualized rail cannot hold the list itself.
+  'ig-isolated-list',
   'ig-chip',
   'ig-audit',
   'ig-audit-toggle',

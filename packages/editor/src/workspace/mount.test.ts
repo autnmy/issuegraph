@@ -4267,3 +4267,63 @@ describe('a control activates from the keyboard', () => {
     }
   });
 });
+
+describe('opening the isolated list reveals it', () => {
+  /**
+   * §17a PUTS THE CONTROL AND THE LIST IN DIFFERENT ZONES, which is the whole
+   * reason this behaviour exists. The count and its toggle are at the foot of
+   * the ORDER RAIL; the list the ladder draws is in the CANVAS, because the
+   * rail is virtualized on a fixed row pitch and an arbitrary-height list in
+   * that scroll track makes every offset beneath it name the wrong row.
+   *
+   * So the press flips a control in one zone and grows a list in another, below
+   * whatever that zone was already scrolled to. Without the reveal the reader
+   * is told the list is open and sees nothing move.
+   */
+  const RAIL_WORDS = { isolated: 'carrying no edges', show: 'reveal', hide: 'fold away' };
+
+  it('scrolls the opened list into view, and only on the press that opens it', async () => {
+    const page = await mounted(SEED, { words: { ...WORDS, rail: RAIL_WORDS } });
+    try {
+      const revealed: string[] = [];
+      // jsdom implements no scrolling at all, so `scrollIntoView` is absent —
+      // which is also the case the mount guards for. Installing it here is what
+      // makes the call observable rather than a no-op.
+      page.win.Element.prototype.scrollIntoView = function scrollIntoView(this: Element): void {
+        revealed.push(this.className);
+      };
+
+      const toggle = page.element.querySelector<HTMLElement>('[data-ig-command="open-isolated"]');
+      assert.ok(toggle !== null, 'no isolated toggle in the rail footer');
+      toggle.click();
+      await flush();
+
+      assert.ok(
+        revealed.some((name) => name.includes('ig-isolated-list')),
+        `the opened list was never revealed — scrolled: ${JSON.stringify(revealed)}`,
+      );
+      assert.ok(
+        page.element.querySelector('.ig-isolated-list') !== null,
+        'the list did not open at all',
+      );
+
+      // AND NOT AGAIN ON AN UNRELATED REDRAW. The flag is set by the command,
+      // not read off `scale.isolatedOpen` — which stays true — so a later
+      // render must not yank the canvas back under a reader who scrolled away.
+      revealed.length = 0;
+      const row = page.rows()[0];
+      assert.ok(row !== undefined, 'no rail row to select');
+      page.click(row);
+      await flush();
+
+      assert.deepEqual(
+        revealed.filter((name) => name.includes('ig-isolated-list')),
+        [],
+        'an unrelated redraw revealed the list again',
+      );
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+});

@@ -131,18 +131,6 @@ import { workspaceStylesheet } from './styles.ts';
 /** The four fixed positions. A closed union, which is what keeps `zone` safe. */
 export const ZONES = Object.freeze(['header', 'rail', 'canvas', 'inspector'] as const);
 
-/**
- * The id §17a's rail footer labels its isolated list with.
- *
- * A CONSTANT, NOT A MINTED ID, and the difference is worth stating because this
- * package mints them elsewhere (`diffRegionId`). Those are per-mutation and
- * there can be many at once. This one names a single element in a single
- * workspace, and the surface draws exactly one rail — so a counter would add a
- * moving part to make one thing unique among one thing. Two workspaces mounted
- * over one page would collide, which is also true of every other fixed id on
- * this surface and is not a case the package supports.
- */
-const RAIL_ISOLATED_LABEL_ID = 'ig-rail-isolated-label';
 
 export type Zone = (typeof ZONES)[number];
 
@@ -408,10 +396,12 @@ export interface WorkspaceWords {
    *
    * IT IS ALSO THE ONE WORDS MEMBER WHOSE PRESENCE MOVES SOMETHING IN ANOTHER
    * ZONE, and that is worth stating where a host reads it. Supplying this draws
-   * the isolated route at the foot of the rail and turns the canvas ladder's own
-   * chip off, so the surface states the count once rather than twice. The
-   * `isolatedChip` argument at the ladder call records why the two are safely
-   * the same condition.
+   * the count and its control at the foot of the rail and turns the canvas
+   * ladder's own chip off, so the surface offers one control rather than two.
+   * The list the control opens is drawn in the CANVAS either way — the rail is
+   * virtualized and cannot hold it; `railFooter` records the arithmetic. The
+   * `isolatedChip` argument at the ladder call records why the two conditions
+   * are safely the same.
    */
   readonly rail?: RailWords | undefined;
 }
@@ -979,12 +969,17 @@ function canvasToolbar(
  * the focus statement and the edit-mode pill instead — so this is where the
  * count belongs, and `renderScaleLadder` is told not to draw its own.
  *
- * ONE LINE, AND THE LIST IS NOT IN IT. The footer is sticky (`styles.ts`), and
- * an element taller than its scrollport cannot stick — the browser clamps it
- * and it scrolls like any other block, losing the pin exactly when the content
- * grows. While it IS pinned it is opaque, so a list inside it would occlude the
- * order rows, which are the rail's entire content. {@link railIsolatedList}
- * draws them in the scroll track instead.
+ * THE COUNT AND THE CONTROL ONLY — THE LIST IS DRAWN IN THE CANVAS. Two reasons
+ * it cannot live in this zone, and the second is the load-bearing one. The
+ * footer is sticky, and an element taller than its scrollport cannot stick: the
+ * browser clamps it, so a list inside the footer would lose the pin exactly as
+ * it grew. And the rail is VIRTUALIZED — `railRowAt` turns a scroll offset into
+ * a row index by `floor((scrollTop - chrome) / pitch)`, and `railSpacer` stands
+ * in for the rows outside the window on that same fixed pitch — so content of
+ * arbitrary height anywhere in this scroll track makes every offset beneath it
+ * name the wrong row, and the window is then re-cut against a geometry that no
+ * longer holds. `renderScaleLadder` keeps drawing the list in the canvas zone,
+ * which has no such arithmetic; only the control moves here.
  *
  * NOTHING TO SAY, NO ROW — the rule `canvasToolbar` follows and `isolatedSpec`
  * follows before it. With no words there is no footer, and with no isolated
@@ -994,12 +989,11 @@ function railFooter(isolated: IsolatedChip, words: RailWords | undefined): Eleme
   if (words === undefined) return null;
   if (isolated.count === 0) return null;
   return element('div', { class: 'ig-rail-footer' }, [
-    // NO CLASS ON THE WRAPPER, ONLY THE ID. It needs no rule of its own — the
-    // footer sets the muted body colour and `.ig-rail-count` lifts the number
-    // out of it — and a class with no rule is exactly what `styles.test.ts`'s
-    // second direction refuses. The id is here because the list is labelled by
-    // this text rather than by English this package would have to invent.
-    element('span', { id: RAIL_ISOLATED_LABEL_ID }, [
+    // NO CLASS ON THE WRAPPER. It needs no rule of its own — the footer sets the
+    // muted body colour and `.ig-rail-count` lifts the number out of it — and a
+    // class with no rule is exactly what `styles.test.ts`'s second direction
+    // refuses.
+    element('span', {}, [
       element('span', { class: 'ig-rail-count' }, [String(isolated.count)]),
       ' ',
       element('span', {}, [words.isolated]),
@@ -1018,39 +1012,6 @@ function railFooter(isolated: IsolatedChip, words: RailWords | undefined): Eleme
       [isolated.open ? words.hide : words.show],
     ),
   ]);
-}
-
-/**
- * The isolated issues themselves, once the footer's control has opened them.
- *
- * IN THE SCROLL TRACK, NOT IN THE FOOTER — see {@link railFooter} for what a
- * sticky element does when its content outgrows the scrollport. Here the list
- * is ordinary rail content: 248 entries scroll the way 248 rows do.
- *
- * KEY AND TITLE, AS THE LADDER'S OWN LIST DRAWS THEM. This route replaces that
- * one in the workspace, and dropping the titles would make the replacement a
- * quiet downgrade rather than a move.
- *
- * NO ENGLISH IS INVENTED FOR THE LABEL. `isolatedSpec` hard-codes
- * `aria-label="isolated issues"`; this list is labelled by the footer's own
- * count text instead, which is already the host's words and already on screen.
- */
-function railIsolatedList(
-  isolated: IsolatedChip,
-  words: RailWords | undefined,
-): ElementSpec | null {
-  if (words === undefined) return null;
-  if (isolated.count === 0 || !isolated.open) return null;
-  return element(
-    'ol',
-    { class: 'ig-rail-isolated-list', 'aria-labelledby': RAIL_ISOLATED_LABEL_ID },
-    isolated.issues.map((issue) =>
-      element('li', {}, [
-        element('span', { class: 'ig-id' }, [issue.key]),
-        element('span', { class: 'ig-title' }, [issue.title]),
-      ]),
-    ),
-  );
 }
 
 /**
@@ -2832,11 +2793,12 @@ export function renderWorkspace(
   const canvas = renderScaleLadder(document, {
     state: options.scale ?? INITIAL_SCALE_STATE,
     theme,
-    // ONE COUNT, ONE ZONE — and the condition is WHETHER THIS SURFACE DRAWS THE
-    // ROUTE, which is exactly what `words.rail` says. That is the contract
-    // `ScaleLadderOptions.isolatedChip` states: suppress only if you draw the
-    // count, the toggle and the list yourself. §17a puts them at the foot of
-    // the rail, and `railFooter`/`railIsolatedList` below draw them there.
+    // ONE CONTROL, ONE ZONE — and the condition is WHETHER THIS SURFACE DRAWS
+    // ONE, which is exactly what `words.rail` says. That is the contract
+    // `ScaleLadderOptions.isolatedChip` states: suppress the ladder's chip only
+    // if you draw the control yourself. §17a puts the count at the foot of the
+    // rail and `railFooter` below draws it there. The LIST is unaffected and
+    // stays in the canvas — see `railFooter` for why this zone cannot hold it.
     //
     // "THE WORDS EXIST" AND "THE FOOTER WAS DRAWN" ARE THE SAME CONDITION HERE,
     // and it is worth saying why rather than leaving a reader to check. The only
@@ -2875,7 +2837,6 @@ export function renderWorkspace(
   // different value from `options.words.rail`. Two things called rail in one
   // scope is a reading hazard worth one name, not one comment per use.
   const railFooterSpec = railFooter(canvas.ladder.isolated, options.words.rail);
-  const railIsolated = railIsolatedList(canvas.ladder.isolated, options.words.rail);
 
   const inspector = inspectorView(document, selection);
 
@@ -2984,12 +2945,6 @@ export function renderWorkspace(
             (key) => deltaByKey.get(key),
           ),
         ),
-        // THE OPEN LIST SCROLLS; THE FOOTER DOES NOT. The list is ordinary rail
-        // content and sits inside the spacers' track with the rows, so 248
-        // entries scroll the way 248 rows do. The footer is sticky and stays
-        // one line — `railFooter` records what happens to a sticky element that
-        // outgrows its scrollport, and why an opaque one must not hold a list.
-        railIsolated === null ? '' : renderMarkup(railIsolated),
         railSpacer(rail.after, 'after'),
         railFooterSpec === null ? '' : renderMarkup(railFooterSpec),
       ].join(''),
