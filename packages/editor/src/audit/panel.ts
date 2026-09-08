@@ -56,15 +56,24 @@
  *
  * `./surface.ts` states the section's own doctrine: *"every finding is a
  * judgment call, so the surface offers navigation and never a remedy."* The
- * frame's other three buttons are remedies and are deferred. This one mutates
- * nothing — it selects the finding's first member on the `select-issue` channel
- * the inspector's hold rows already publish — and without it the panel is a
- * paragraph you cannot act on or navigate from, sitting at the top of a column
- * whose whole job is the selection.
+ * frame's other three buttons are remedies and are deferred. Without this one
+ * the panel is a paragraph you cannot act on or navigate from, sitting at the
+ * top of a column whose whole job is the selection.
+ *
+ * IT PUBLISHES `reveal-issue`, NOT the `select-issue` the inspector's hold rows
+ * use, and the difference is the whole of the control's safety. `select-issue`
+ * is a POINTER: with a relationship draft awaiting its target, `workspace/host
+ * .ts` reads a pointer as CHOOSING that target and emits the create proposal.
+ * So "go and look" would have declared a relationship — a write, from the one
+ * surface whose stated rule is that it never offers one. `reveal-issue` moves
+ * the selection and abandons the draft, and can produce no edit at all.
+ *
+ * AND IT IS DRAWN ONLY FOR A LOADED MEMBER — see {@link navigableMember}.
  *
  * @see https://github.com/autnmy/issuegraph/blob/main/SPEC.md
  */
 
+import type { IssueRef } from '@issuegraph/store';
 import { type ElementSpec, element } from '@issuegraph/viewer';
 
 import type { AuditClass, AuditFinding } from './findings.ts';
@@ -107,17 +116,47 @@ export interface AuditPanelOptions {
 }
 
 /**
+ * The navigable member of a finding, or `undefined` when it has none.
+ *
+ * THE FIRST MEMBER THE DOCUMENT ACTUALLY CARRIES, and the filter is not
+ * defensive tidying. An encoding refusal is a fact the HOST asserted about an
+ * issue it read, and `findings.ts` keeps one whose ref lies outside the loaded
+ * document ON PURPOSE — filtering findings to the loaded set would drop them on
+ * exactly the issues a paging boundary has not reached. So a finding's members
+ * are not all rail rows, and a control targeting one that is not navigates
+ * nowhere: the mount reconciles the unknown selection straight back away, and
+ * the button advertises a move it cannot make.
+ *
+ * `rowFor` IS THE QUESTION, ALREADY ANSWERED. `auditOverlay` builds a row only
+ * for a ref the document carries, and that is the same predicate this needs —
+ * asking it again here would be a second spelling of "is this issue loaded",
+ * free to disagree with the rail the click is aimed at.
+ *
+ * FIRST RATHER THAN "MOST IMPORTANT": a finding names a component, no member of
+ * it leads, and a rule invented here would be a second ranking nothing else in
+ * the package agrees with.
+ */
+function navigableMember(
+  finding: AuditFinding,
+  overlay: AuditOverlay,
+): IssueRef | undefined {
+  return finding.members.find((ref) => overlay.rowFor(ref) !== undefined);
+}
+
+/**
  * The card for one finding.
  *
- * The `select-issue` target is the finding's FIRST member, and `members` is a
- * sorted set with at least one entry established where the finding is built —
- * so this cannot name nothing. It is deliberately not the "most important"
- * member: a finding names a component, no member of it leads, and picking one by
- * a rule invented here would be a second ranking nothing else in the package
- * agrees with.
+ * A card whose finding names no loaded issue draws no control — see
+ * {@link navigableMember}. It keeps its chip, title and sentence, because the
+ * FINDING is still true and still worth reading; what it loses is a move that
+ * would not have moved anything.
  */
-function cardSpec(finding: AuditFinding, words: AuditWords): ElementSpec {
-  const target = finding.members[0];
+function cardSpec(
+  finding: AuditFinding,
+  overlay: AuditOverlay,
+  words: AuditWords,
+): ElementSpec {
+  const target = navigableMember(finding, overlay);
   return element(
     'li',
     {
@@ -142,7 +181,13 @@ function cardSpec(finding: AuditFinding, words: AuditWords): ElementSpec {
             {
               type: 'button',
               class: 'ig-audit-show',
-              'data-ig-command': 'select-issue',
+              // `reveal-issue`, NEVER `select-issue`. The latter is a POINTER,
+              // and with a draft awaiting its target `workspace/host.ts` reads a
+              // pointer as choosing that target and emits the create proposal —
+              // so this button would declare a relationship. §17d's surface
+              // "offers navigation and never a remedy", and a control that can
+              // write is a remedy whatever its label says.
+              'data-ig-command': 'reveal-issue',
               'data-ig-target': target,
             },
             [words.show],
@@ -184,7 +229,7 @@ export function renderAuditPanel(
     element(
       'ul',
       { class: 'ig-audit-list' },
-      overlay.findings.map((finding) => cardSpec(finding, words)),
+      overlay.findings.map((finding) => cardSpec(finding, overlay, words)),
     ),
   ]);
 }

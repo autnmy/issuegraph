@@ -194,12 +194,17 @@ describe('the findings panel', () => {
     // §17d's rule, from `surface.ts`: "the surface offers navigation and never a
     // remedy". A `button` rather than a styled span, because the a11y baseline's
     // universal rule reads the TAB ORDER and a `tabindex="-1"` control does not
-    // pass as reachable.
+    // pass as reachable. `reveal-issue` rather than `select-issue`, because the
+    // latter is a pointer and a pointer mid-draft WRITES — pinned in
+    // `workspace/host.test.ts` against the control that does create.
     const markup = markupOf(EVERY_CLASS.issues, EVERY_CLASS.edges, [{ ref: 'f' }]);
     const cards = markup.match(/<li class="ig-audit-card"/g) ?? [];
     const shows = [
-      ...markup.matchAll(/<button type="button" class="ig-audit-show" data-ig-command="select-issue" data-ig-target="([^"]+)"/g),
+      ...markup.matchAll(/class="ig-audit-show" data-ig-command="reveal-issue" data-ig-target="([^"]+)"/g),
     ];
+    // EVERY CARD, because every member of this fixture IS loaded. The one case
+    // where a card legitimately has no control has its own test below, so this
+    // equality stays an equality rather than softening to "at least one".
     assert.equal(shows.length, cards.length, 'a card has no way out');
     const overlay = overlayOf(EVERY_CLASS.issues, EVERY_CLASS.edges, [{ ref: 'f' }]);
     // THE TARGET IS THE FINDING'S OWN, not merely some issue in the document —
@@ -248,6 +253,24 @@ describe('the findings panel', () => {
     for (const text of drawn) {
       assert.ok(supplied.has(text), `the package wrote "${text}"`);
     }
+  });
+
+  it('publishes no navigation for a finding naming no loaded issue', () => {
+    // THE PAGING CASE `findings.ts` SUPPORTS ON PURPOSE. A refusal is a fact the
+    // HOST asserted about an issue it read, so a finding may name a ref outside
+    // the loaded document — `findings.test.ts` pins that it is kept rather than
+    // filtered away, "the quiet direction". The FINDING is still worth reading;
+    // a button targeting a ref with no rail row is not, because the mount
+    // reconciles the unknown selection straight back away and the control
+    // advertises a move it cannot make.
+    const markup = markupOf([issue('a')], [], [{ ref: 'unloaded' }]);
+    assert.match(markup, /ig-audit-card/, 'the finding itself was dropped');
+    assert.match(markup, new RegExp(WORDS.classes['encoding-refused']));
+    assert.equal(markup.includes('ig-audit-show'), false, markup);
+    // THE CONTROL, so this cannot pass by drawing no button anywhere: a refusal
+    // on a ref the document DOES carry keeps its way out.
+    const loaded = markupOf([issue('a')], [], [{ ref: 'a' }]);
+    assert.match(loaded, /data-ig-command="reveal-issue" data-ig-target="a"/);
   });
 
   it('draws nothing at all when the audit found nothing', () => {

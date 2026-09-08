@@ -1924,8 +1924,8 @@
     {
       "zone": "inspector",
       "channel": "data-ig-command",
-      "control": "select-edge",
-      "target": "blocked-by|3|4",
+      "control": "reveal-issue",
+      "target": "1",
       "value": null,
       "tag": "button",
       "role": "button",
@@ -1937,8 +1937,8 @@
     {
       "zone": "inspector",
       "channel": "data-ig-command",
-      "control": "select-issue",
-      "target": "1",
+      "control": "select-edge",
+      "target": "blocked-by|3|4",
       "value": null,
       "tag": "button",
       "role": "button",

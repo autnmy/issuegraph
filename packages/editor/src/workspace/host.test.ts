@@ -98,6 +98,33 @@ describe('selection is one value the zones share', () => {
     assert.deepEqual(drive([{ kind: 'control', name: 'select-issue' }]).state, INITIAL_HOST_STATE);
   });
 
+  it('reveal-issue navigates and CANNOT complete a draft, unlike select-issue', () => {
+    // THE PAIRED CONTROL, AND THE PAIRING IS THE POINT. The test above pins
+    // that `select-issue` while a target is wanted IS the target — correct for
+    // the hold deep link, and a WRITE. §17d's findings panel offers navigation
+    // and never a remedy, so its control must not be able to reach `CREATED`.
+    const armed = [
+      { kind: 'point', key: '2' },
+      { kind: 'control', name: 'add' },
+      { kind: 'control', name: 'kind', value: 'blocked-by' },
+    ] as const;
+    // THE CONTROL: the same drive with `select-issue` DOES create, so this
+    // fixture really has a draft awaiting a target and the assertion below is
+    // about the command rather than about an idle state.
+    assert.deepEqual(
+      drive([...armed, { kind: 'control', name: 'select-issue', target: '3' }]).effects,
+      [CREATED],
+    );
+    const { state, effects } = drive([
+      ...armed,
+      { kind: 'control', name: 'reveal-issue', target: '3' },
+    ]);
+    assert.deepEqual(effects, [], 'reveal-issue wrote something');
+    assert.deepEqual(state.selection, { kind: 'issue', key: '3' });
+    assert.equal(state.draft.kind, null, 'the draft was left armed behind the navigation');
+    assert.deepEqual(drive([{ kind: 'control', name: 'reveal-issue' }]).state, INITIAL_HOST_STATE);
+  });
+
   it('ignores a group mark naming neither a landed edge nor an issue — a pending edge’s mark', () => {
     // The canvas draws an edge from the moment it is proposed, so its mark
     // is clickable while the landed document does not carry it yet.
