@@ -567,11 +567,18 @@ function pointed(state: HostState, key: string, document: GraphDocument): HostRe
  * The same shape as {@link selectEdge} one function down, and for the same
  * reason: a navigation that leaves a half-built draft armed behind it would let
  * the NEXT click land somewhere the reader is no longer looking.
+ *
+ * AND IT DOES NOT TOGGLE. `select-issue` clears when it names what is already
+ * selected — right for a row click, which is ambivalent, and wrong for a
+ * control that says where to arrive: an audit finding whose member is already
+ * inspected would answer "go and look" by emptying the panel.
  */
 function revealIssue(state: HostState, key: string): HostResult {
   return settled({
     ...state,
-    selection: selectionReducer(state.selection, { kind: 'select-issue', key }),
+    // `reveal-issue`, NOT `select-issue`: the latter TOGGLES, so revealing the
+    // issue already selected would empty the panel the reader was sent to.
+    selection: selectionReducer(state.selection, { kind: 'reveal-issue', key }),
     draft: IDLE_CREATE_DRAFT,
     targetQuery: '',
     drop: null,

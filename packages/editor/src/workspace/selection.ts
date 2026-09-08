@@ -46,6 +46,7 @@ export const INITIAL_SELECTION: WorkspaceSelection = { kind: 'none' };
  */
 export type SelectionCommand =
   | { readonly kind: 'select-issue'; readonly key: string }
+  | { readonly kind: 'reveal-issue'; readonly key: string }
   | { readonly kind: 'select-edge'; readonly edgeId: string }
   | { readonly kind: 'clear' };
 
@@ -57,6 +58,14 @@ export type SelectionCommand =
  * what is already selected CLEARS it — a second click on the same row is how a
  * reader gets back to the whole document without hunting for a control, and it
  * is the behaviour the canvas and the rail both need.
+ *
+ * `reveal-issue` IS THAT SAME MOVE WITHOUT THE TOGGLE, and the pair is why it
+ * is a command rather than a flag. A row click is ambivalent — the reader is
+ * pointing at something and may be pointing away from it — but a control that
+ * says "go and look at this finding" is DIRECTED: it names where to arrive, so
+ * landing on the issue already selected must leave the reader there. Under the
+ * toggle it emptied the panel instead, which is the one outcome that control
+ * cannot mean.
  */
 export function selectionReducer(
   selection: WorkspaceSelection,
@@ -67,6 +76,8 @@ export function selectionReducer(
       return selection.kind === 'issue' && selection.key === command.key
         ? INITIAL_SELECTION
         : { kind: 'issue', key: command.key };
+    case 'reveal-issue':
+      return { kind: 'issue', key: command.key };
     case 'select-edge':
       return selection.kind === 'edge' && selection.edgeId === command.edgeId
         ? INITIAL_SELECTION

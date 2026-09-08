@@ -125,6 +125,23 @@ describe('selection is one value the zones share', () => {
     assert.deepEqual(drive([{ kind: 'control', name: 'reveal-issue' }]).state, INITIAL_HOST_STATE);
   });
 
+  it('reveal-issue on the issue ALREADY selected leaves the reader on it', () => {
+    // THE PAIR, END TO END. `select-issue` toggles — right for a row click and
+    // wrong for a control that names where to arrive — so an audit finding
+    // whose member is already inspected answered "go and look" by emptying the
+    // panel. The control below is the same drive with the toggling command, so
+    // this is about the command rather than about the state it starts from.
+    const on = [{ kind: 'point', key: '3' }] as const;
+    assert.deepEqual(
+      drive([...on, { kind: 'control', name: 'select-issue', target: '3' }]).state.selection,
+      INITIAL_HOST_STATE.selection,
+    );
+    assert.deepEqual(
+      drive([...on, { kind: 'control', name: 'reveal-issue', target: '3' }]).state.selection,
+      { kind: 'issue', key: '3' },
+    );
+  });
+
   it('ignores a group mark naming neither a landed edge nor an issue — a pending edge’s mark', () => {
     // The canvas draws an edge from the moment it is proposed, so its mark
     // is clickable while the landed document does not carry it yet.

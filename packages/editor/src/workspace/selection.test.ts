@@ -70,3 +70,30 @@ describe('only an issue selection reaches the viewer as a selected key', () => {
     assert.equal(selectedKey(INITIAL_SELECTION), null);
   });
 });
+
+describe('reveal-issue is the directed move, and does not toggle', () => {
+  it('lands on the issue even when it is the one already selected', () => {
+    // THE PAIR IS THE TEST. `select-issue` on what is already selected CLEARS —
+    // correct for a row click, which is ambivalent — and a control that says
+    // "go and look at this finding" is not ambivalent. Under the toggle it
+    // answered by emptying the panel it had sent the reader to.
+    const on = { kind: 'issue', key: 'a' } as const;
+    assert.deepEqual(selectionReducer(on, { kind: 'select-issue', key: 'a' }), INITIAL_SELECTION);
+    assert.deepEqual(selectionReducer(on, { kind: 'reveal-issue', key: 'a' }), on);
+  });
+
+  it('replaces any other selection, exactly as select-issue does', () => {
+    assert.deepEqual(selectionReducer(INITIAL_SELECTION, { kind: 'reveal-issue', key: 'b' }), {
+      kind: 'issue',
+      key: 'b',
+    });
+    assert.deepEqual(
+      selectionReducer({ kind: 'issue', key: 'a' }, { kind: 'reveal-issue', key: 'b' }),
+      { kind: 'issue', key: 'b' },
+    );
+    assert.deepEqual(
+      selectionReducer({ kind: 'edge', edgeId: 'e' }, { kind: 'reveal-issue', key: 'b' }),
+      { kind: 'issue', key: 'b' },
+    );
+  });
+});
