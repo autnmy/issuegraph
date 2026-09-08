@@ -115,6 +115,50 @@ export interface ScaleLadderOptions {
    * because `overlayFor` reads a list of states.
    */
   readonly projected?: readonly ProjectedEdge[] | undefined;
+  /**
+   * Whether this ladder draws its own isolated CHIP. Default `true`.
+   *
+   * SUPPRESS THIS ONLY IF YOU DRAW THE CONTROL YOURSELF. `searchFor`
+   * deliberately omits every issue with no component (`ladder.ts`, and the
+   * reasoning is recorded there), so this is the only way these issues are
+   * reachable from the ladder's own surface. What may never be optional is a
+   * route to them; this option says who draws its control, not whether it
+   * exists.
+   *
+   * THE LIST IS NOT OPTIONAL AND IS NOT PART OF THIS. `isolatedSpec` keeps
+   * drawing it whatever this says, because the caller that wants the control
+   * has nowhere better to put the rows: `renderWorkspace`'s rail is virtualized
+   * on a fixed row pitch, and content of arbitrary height inside that scroll
+   * track breaks the offset-to-row arithmetic the window is re-cut from. This
+   * zone has no such constraint.
+   *
+   * A BOOLEAN AMONG DATA-SHAPED OPTIONS, and it is one deliberately. Its three
+   * siblings hand this renderer a VALUE it could not otherwise know — what is
+   * selected, which edges are in flight. This one answers a different question:
+   * whether a caller has already drawn a control this renderer would otherwise
+   * draw. There is no value that carries that fact, because it is a fact about
+   * the caller's own markup.
+   *
+   * DEFAULT `true`, so a standalone ladder is unchanged. It has no rail to put
+   * a footer at the foot of, which is why the control lives in its chrome by
+   * default rather than by accident; `renderWorkspace` is the caller that has
+   * one, and §17a puts the count there.
+   */
+  readonly isolatedChip?: boolean | undefined;
+  /**
+   * The id to put on the isolated list, for a caller whose control is elsewhere.
+   *
+   * MINTED BY THE CALLER, BECAUSE ONLY THE CALLER KNOWS THE PAGE. `searchSpec`
+   * records why this renderer must not invent one: a host rendering two
+   * documents side by side emits the markup twice, and a duplicated `id` makes
+   * the second surface's reference resolve to the first surface's element. The
+   * caller drawing the remote control is the one that can make the value unique
+   * and use the same string on both halves.
+   *
+   * Absent, the list carries no `id` and no control names it — which is right
+   * for the adjacent chip, whose list is already its next sibling.
+   */
+  readonly isolatedListId?: string | undefined;
 }
 
 export interface ScaleLadderResult {
@@ -212,18 +256,54 @@ function searchSpec(search: ScaleSearch): ElementSpec {
   ]);
 }
 
-function isolatedSpec(isolated: IsolatedChip): ElementSpec | null {
+/**
+ * The isolated set: a chip that toggles it, and the list it opens.
+ *
+ * `chip` DROPS THE CONTROL AND KEEPS THE LIST, which is the whole shape
+ * `ScaleLadderOptions.isolatedChip` needs. A caller drawing the toggle
+ * elsewhere still has nowhere of its own to put 248 rows: the workspace's rail
+ * is VIRTUALIZED — `railRowAt` maps a scroll offset to a row index by
+ * `floor((scrollTop - chrome) / pitch)` — so a list of arbitrary height inside
+ * that track makes every offset below it name the wrong row, and the window
+ * re-cuts against a geometry that no longer holds. This zone has no such
+ * arithmetic, so the list stays here and only the control moves.
+ */
+function isolatedSpec(
+  isolated: IsolatedChip,
+  chip: boolean,
+  listId: string | undefined,
+): ElementSpec | null {
   // NOTHING IS DRAWN FOR AN EMPTY SET. A chip reading "0 isolated issues" is a
   // control that opens nothing, and the count IS the information these issues
   // carry — so with no issues there is nothing to say.
   if (isolated.count === 0) return null;
+  // NO CONTROL AND NOTHING OPEN IS NOTHING AT ALL. A caller that drew the chip
+  // elsewhere leaves this with only the list to draw, and a shut list is no
+  // list — so the wrapper would be an empty bordered box, which is the chrome
+  // carrying no fact that the count-zero rule above already refuses.
+  if (!chip && !isolated.open) return null;
   return element('div', { class: 'ig-ladder-isolated' }, [
-    element(
+    !chip ? null : element(
       'button',
       {
         type: 'button',
         class: 'ig-chip',
         'aria-expanded': isolated.open ? 'true' : 'false',
+        // NO `aria-controls` WHEN THIS CHIP IS THE CONTROL, AND THAT IS NOT AN
+        // OMISSION. The list is this button's immediate next sibling, so the
+        // relationship is already there in reading order; `aria-controls` earns
+        // its keep for a REMOTE disclosure, which is why the workspace's footer
+        // carries one and this does not.
+        //
+        // AND A FIXED ID HERE WOULD BE A DEFECT, not a shortcut. `searchSpec`
+        // below nests its input inside its label precisely so it needs no `id`,
+        // recording that "a host rendering two documents side by side would emit
+        // it twice" — the same host, the same page, and the second list would
+        // then answer to the first surface's button. An earlier revision of this
+        // file shipped a module constant with a comment claiming fixed ids were
+        // the norm on these surfaces; the control ten lines down had already
+        // decided otherwise.
+        ...(isolated.open && listId !== undefined ? { 'aria-controls': listId } : {}),
         'data-ig-command': isolated.open ? 'close-isolated' : 'open-isolated',
       },
       [isolated.label],
@@ -233,7 +313,16 @@ function isolatedSpec(isolated: IsolatedChip): ElementSpec | null {
     isolated.open
       ? element(
           'ol',
-          { class: 'ig-isolated-list', 'aria-label': 'isolated issues' },
+          // THE ID IS THE CALLER'S, OR THERE IS NONE. Only a caller drawing the
+          // control somewhere else needs to name this list, and only that caller
+          // knows what else is on its page — so it mints the value and passes it
+          // to both halves. This renderer inventing one would be the collision
+          // `searchSpec` avoids.
+          {
+            class: 'ig-isolated-list',
+            ...(listId === undefined ? {} : { id: listId }),
+            'aria-label': 'isolated issues',
+          },
           isolated.issues.map((issue) =>
             element('li', {}, [
               element('span', { class: 'ig-id' }, [issue.key]),
@@ -313,7 +402,10 @@ export function renderScaleLadder(
         ),
     ladder.refusal === null ? null : refusalSpec(ladder.refusal, ladder),
     ladder.search === null ? null : searchSpec(ladder.search),
-    isolatedSpec(ladder.isolated),
+    // THE CONTROL, UNLESS THE CALLER DREW IT — the LIST is drawn either way.
+    // See `ScaleLadderOptions.isolatedChip`, and `ladder.ts`'s `searchFor` for
+    // why there has to be a route at all.
+    isolatedSpec(ladder.isolated, options.isolatedChip ?? true, options.isolatedListId),
   ]);
 
   return {

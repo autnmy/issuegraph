@@ -108,7 +108,7 @@ import {
   renderAuditHeader,
 } from '../audit/surface.ts';
 import { type ScaleState, INITIAL_SCALE_STATE } from '../scale/commands.ts';
-import type { ScaleLadder } from '../scale/ladder.ts';
+import type { IsolatedChip, ScaleLadder } from '../scale/ladder.ts';
 import { renderScaleLadder } from '../scale/render.ts';
 import { scaleLadderStylesheet } from '../scale/styles.ts';
 
@@ -130,6 +130,7 @@ import { workspaceStylesheet } from './styles.ts';
 
 /** The four fixed positions. A closed union, which is what keeps `zone` safe. */
 export const ZONES = Object.freeze(['header', 'rail', 'canvas', 'inspector'] as const);
+
 
 export type Zone = (typeof ZONES)[number];
 
@@ -385,6 +386,24 @@ export interface WorkspaceWords {
    * has not worded the row gets the canvas it already had.
    */
   readonly canvas?: CanvasWords | undefined;
+  /**
+   * The order rail's footer — frame 17a's `248 with no relationships · show`.
+   *
+   * OPTIONAL, AND ITS ABSENCE DRAWS NO FOOTER, on `canvas`'s reasoning exactly:
+   * a required member here would break every host built against the current
+   * version, and a default supplied here would be this package writing English
+   * for a host that may not speak it.
+   *
+   * IT IS ALSO THE ONE WORDS MEMBER WHOSE PRESENCE MOVES SOMETHING IN ANOTHER
+   * ZONE, and that is worth stating where a host reads it. Supplying this draws
+   * the count and its control at the foot of the rail and turns the canvas
+   * ladder's own chip off, so the surface offers one control rather than two.
+   * The list the control opens is drawn in the CANVAS either way — the rail is
+   * virtualized and cannot hold it; `railFooter` records the arithmetic. The
+   * `isolatedChip` argument at the ladder call records why the two conditions
+   * are safely the same.
+   */
+  readonly rail?: RailWords | undefined;
 }
 
 /**
@@ -449,6 +468,35 @@ export interface CanvasWords {
    * surface was mounted. Absent, the caption still draws and the pill does not.
    */
   readonly editMode?: string | undefined;
+}
+
+/**
+ * Frame 17a's rail footer reads `248 with no relationships · show`, and every
+ * word in it is the host's.
+ *
+ * NUMBERS ARE APPENDED, NEVER INTERPOLATED — {@link CanvasWords} states the
+ * doctrine and {@link WorkspaceWords.whyRank} the reason. The row is assembled
+ * as spans, `<count> <isolated>`, so a host is never handed a format string.
+ *
+ * `IsolatedChip.label` IS NOT REUSED, and the reason is the one `CanvasWords`
+ * already records: the scale module writes English with numbers in it, that is
+ * a pre-existing inconsistency, and a row composed in the workspace follows the
+ * workspace's rule rather than inheriting it. Reusing the label here would have
+ * been the cheaper line and would have imported the defect.
+ */
+export interface RailWords {
+  /** Trails the count — the frame's `248 WITH NO RELATIONSHIPS`. */
+  readonly isolated: string;
+  /** The toggle while the list is closed — the frame's `show`. */
+  readonly show: string;
+  /**
+   * The toggle while the list is open.
+   *
+   * ITS OWN MEMBER RATHER THAN REUSING `show`. The control carries
+   * `aria-expanded`, which flips; a label that did not flip with it would tell
+   * a screen-reader user the list is open and offer to open it in one breath.
+   */
+  readonly hide: string;
 }
 
 export interface RecoveryWords {
@@ -766,6 +814,23 @@ export interface WorkspaceOptions {
    * answers "closed" and the control cannot complete what it advertises.
    */
   readonly diffOpen?: MutationId | null | undefined;
+  /**
+   * A value unique to this surface, used to bind §17a's rail footer to the
+   * isolated list the canvas draws.
+   *
+   * SUPPLIED BY WHOEVER KNOWS THE PAGE. The footer's toggle and the list are in
+   * different zones, so the toggle names the list with `aria-controls` — and an
+   * id invented in here would be emitted twice by a host rendering two
+   * workspaces, leaving the second toggle pointing at the first surface's list.
+   * `scale/render.ts`'s `searchSpec` records the same hazard for its own label.
+   *
+   * ABSENT, NO ASSOCIATION IS DRAWN, and that is the honest default rather than
+   * a degraded one: `mountWorkspace` mints a value per mount, and markup served
+   * WITHOUT a mount is not operable anyway — the same argument
+   * `CanvasWords.editMode` is optional under. A toggle nobody can press needs no
+   * `aria-controls`.
+   */
+  readonly surfaceId?: string | undefined;
 }
 
 export interface WorkspaceView {
@@ -830,8 +895,14 @@ function zone(name: Zone, inner: string): string {
  * never the raw input, whose counts no zone drew, and never `ladder.canvas`,
  * which would print `6 out of 6`.
  *
- * THE COUNT EXCLUDES ISSUES WITH NO RELATIONSHIP, and the chip below says so in
- * its own words. UNFOCUSED the two are complementary and do sum to the total:
+ * THE COUNT EXCLUDES ISSUES WITH NO RELATIONSHIP, and the surface says so
+ * elsewhere in its own words — at the FOOT OF THE RAIL where §17a puts it
+ * (`railFooter`), or, on a host that has not worded that row, in the ladder's
+ * own chip directly beneath this caption. This sentence read "the chip below"
+ * until the rail grew the footer, and the count is now in exactly one of those
+ * two places rather than reliably in the nearer one. Nothing else in this
+ * comment moves with it: the argument below is about the two NUMBERS, not about
+ * where the second one is drawn. UNFOCUSED the two are complementary and do sum to the total:
  * `nodeCount` is every issue carrying a relationship and the chip is every issue
  * carrying none. FOCUSED they do not, and an earlier draft of this comment said
  * they did — `nodeCount` is then ONE component's members, so the shortfall is
@@ -903,6 +974,80 @@ function canvasToolbar(
   // and an empty bordered band above the canvas is chrome that carries no fact.
   if (statement === null && pill === null) return null;
   return element('div', { class: 'ig-canvas-toolbar' }, [statement, pill]);
+}
+
+/**
+ * §17a's rail footer — the isolated count and the control that opens it.
+ *
+ * THE FACT IS THE DOCUMENT'S, NOT THE CANVAS'S. `ladder.isolated` is
+ * `document.issues` minus everything in a component, so it is a property of the
+ * backlog rather than of how far the graph narrowed. Frame 17a draws it at the
+ * foot of the order rail and gives the canvas toolbar the projection toggle,
+ * the focus statement and the edit-mode pill instead — so this is where the
+ * count belongs, and `renderScaleLadder` is told not to draw its own.
+ *
+ * THE COUNT AND THE CONTROL ONLY — THE LIST IS DRAWN IN THE CANVAS. Two reasons
+ * it cannot live in this zone, and the second is the load-bearing one. The
+ * footer is sticky, and an element taller than its scrollport cannot stick: the
+ * browser clamps it, so a list inside the footer would lose the pin exactly as
+ * it grew. And the rail is VIRTUALIZED — `railRowAt` turns a scroll offset into
+ * a row index by `floor((scrollTop - chrome) / pitch)`, and `railSpacer` stands
+ * in for the rows outside the window on that same fixed pitch — so content of
+ * arbitrary height anywhere in this scroll track makes every offset beneath it
+ * name the wrong row, and the window is then re-cut against a geometry that no
+ * longer holds. `renderScaleLadder` keeps drawing the list in the canvas zone,
+ * which has no such arithmetic; only the control moves here.
+ *
+ * NOTHING TO SAY, NO ROW — the rule `canvasToolbar` follows and `isolatedSpec`
+ * follows before it. With no words there is no footer, and with no isolated
+ * issues the count is not a fact anyone asked for.
+ */
+function railFooter(
+  isolated: IsolatedChip,
+  words: RailWords | undefined,
+  listId: string | undefined,
+): ElementSpec | null {
+  if (words === undefined) return null;
+  if (isolated.count === 0) return null;
+  return element('div', { class: 'ig-rail-footer' }, [
+    // NO CLASS ON THE WRAPPER. It needs no rule of its own — the footer sets the
+    // muted body colour and `.ig-rail-count` lifts the number out of it — and a
+    // class with no rule is exactly what `styles.test.ts`'s second direction
+    // refuses.
+    element('span', {}, [
+      element('span', { class: 'ig-rail-count' }, [String(isolated.count)]),
+      ' ',
+      element('span', {}, [words.isolated]),
+    ]),
+    // A REAL BUTTON, NOT THE FRAME'S `cursor:pointer` SPAN. It is a control, and
+    // a span that looks pressable is the dead control `headerControls` refuses
+    // to draw; the frame's span is a mock's shorthand for one.
+    element(
+      'button',
+      {
+        type: 'button',
+        class: 'ig-rail-isolated-toggle',
+        'aria-expanded': isolated.open ? 'true' : 'false',
+        // NAMES WHAT IT OPENS, because what it opens is not beside it. This
+        // toggle is in the rail and its list is drawn by the ladder in the
+        // canvas, so `aria-expanded` alone tells a screen-reader user that
+        // something opened and nothing about where — the one thing the adjacent
+        // disclosure it replaced never had to say. `scrollIntoView` moves the
+        // visual viewport and not accessibility focus, so it does not answer
+        // this either.
+        //
+        // ONLY WHILE THE LIST EXISTS, AND ONLY WITH AN ID TO NAME. A shut
+        // disclosure renders no list, so naming one would be a dangling
+        // reference the a11y baseline refuses — and there would be nothing to
+        // reach. With no `surfaceId` there is no value that would be unique on
+        // the host's page, and a guessed one is the collision `searchSpec`
+        // avoids.
+        ...(isolated.open && listId !== undefined ? { 'aria-controls': listId } : {}),
+        'data-ig-command': isolated.open ? 'close-isolated' : 'open-isolated',
+      },
+      [isolated.open ? words.hide : words.show],
+    ),
+  ]);
 }
 
 /**
@@ -2681,9 +2826,33 @@ export function renderWorkspace(
   // scrolling position and says nothing about what surrounds the selected
   // issue; handing the ladder a windowed document would make its budgets — and
   // therefore its refusal — depend on where the reader had scrolled to.
+  // THE LIST'S ID, DERIVED ONCE AND USED BY BOTH ZONES. Undefined unless the
+  // caller supplied a surface value; see `WorkspaceOptions.surfaceId` for why
+  // this renderer must not invent one.
+  const isolatedListId =
+    options.surfaceId === undefined ? undefined : `ig-isolated-list-${options.surfaceId}`;
+
   const canvas = renderScaleLadder(document, {
     state: options.scale ?? INITIAL_SCALE_STATE,
     theme,
+    isolatedListId,
+    // ONE CONTROL, ONE ZONE — and the condition is WHETHER THIS SURFACE DRAWS
+    // ONE, which is exactly what `words.rail` says. That is the contract
+    // `ScaleLadderOptions.isolatedChip` states: suppress the ladder's chip only
+    // if you draw the control yourself. §17a puts the count at the foot of the
+    // rail and `railFooter` below draws it there. The LIST is unaffected and
+    // stays in the canvas — see `railFooter` for why this zone cannot hold it.
+    //
+    // "THE WORDS EXIST" AND "THE FOOTER WAS DRAWN" ARE THE SAME CONDITION HERE,
+    // and it is worth saying why rather than leaving a reader to check. The only
+    // other reason `railFooter` returns null is an empty isolated set — and
+    // `isolatedSpec` refuses that case too, so at count 0 neither draws and the
+    // flag changes nothing. Gating on the words rather than on the returned spec
+    // keeps this to ONE derivation of the ladder: the footer is built from
+    // `canvas.ladder` below, which is the same value this call computes.
+    // `rail-footer.test.ts` pins both halves — no configuration yields two
+    // copies, and none yields none.
+    isolatedChip: options.words.rail === undefined,
     // THE SAME ONE VALUE THE RAIL READ. Without this the canvas drew the
     // selected issue as ordinary while the rail marked it current, so the
     // single selection this surface advertises disagreed with itself between
@@ -2699,6 +2868,18 @@ export function renderWorkspace(
   });
 
   const toolbar = canvasToolbar(canvas.ladder, document, options.words.canvas);
+
+  // §17a'S RAIL FOOTER, FROM THE LADDER THE CANVAS ALREADY DERIVED. `isolated`
+  // is a property of the whole document rather than of the tier the canvas
+  // settled on, so the rail and the canvas cannot disagree about it: there is
+  // one derivation and both zones read it.
+  //
+  // NAMED `railFooterSpec`, NOT `railFooter`, because `railFooter` is the
+  // function and — more to the point — the bare identifier `rail` a few lines
+  // below is the WINDOW (`options.rail`, a `RailWindowOptions`), which is a
+  // different value from `options.words.rail`. Two things called rail in one
+  // scope is a reading hazard worth one name, not one comment per use.
+  const railFooterSpec = railFooter(canvas.ladder.isolated, options.words.rail, isolatedListId);
 
   const inspector = inspectorView(document, selection);
 
@@ -2808,6 +2989,7 @@ export function renderWorkspace(
           ),
         ),
         railSpacer(rail.after, 'after'),
+        railFooterSpec === null ? '' : renderMarkup(railFooterSpec),
       ].join(''),
     ),
     zone(

@@ -120,6 +120,60 @@ describe('the isolated chip opens a LIST', () => {
     const result = renderScaleLadder(documentOf({ components: [4] }));
     assert.equal(/ig-chip/.test(result.markup), false);
   });
+
+  /**
+   * A CALLER THAT DRAWS THE CONTROL ITSELF TURNS THIS COPY OFF. `searchFor`
+   * omits every isolated issue, so this is the only way to reach them FROM THE
+   * LADDER — which is why the option is contracted on the caller drawing a
+   * control somewhere else, and not on taste. `renderWorkspace` is that caller:
+   * §17a puts the count at the foot of the rail.
+   */
+  it('suppresses its own chip for a caller that draws the control', () => {
+    const result = renderScaleLadder(document, { isolatedChip: false });
+    assert.equal(/data-ig-command="open-isolated"/.test(result.markup), false);
+    // Shut and chip-less is nothing at all — not an empty bordered box.
+    assert.equal(/ig-ladder-isolated/.test(result.markup), false);
+  });
+
+  /**
+   * THE LIST IS NOT PART OF THE SUPPRESSION, and this is the assertion that says
+   * so. The caller that takes the control cannot take the list: its rail is
+   * virtualized on a fixed row pitch, so an arbitrary-height list in that scroll
+   * track makes every offset beneath it name the wrong row.
+   */
+  it('still draws the list it no longer has a chip for', () => {
+    const result = renderScaleLadder(document, {
+      isolatedChip: false,
+      state: { ...INITIAL_SCALE_STATE, isolatedOpen: true },
+    });
+    assert.match(result.markup, /<ol class="ig-isolated-list"/);
+    assert.equal(/data-ig-command="close-isolated"/.test(result.markup), false);
+  });
+
+  it('is unchanged when the option is omitted or true', () => {
+    const bare = renderScaleLadder(document).markup;
+    assert.equal(renderScaleLadder(document, { isolatedChip: true }).markup, bare);
+  });
+
+  /**
+   * THE CHIP, AND NOTHING ELSE. Stated as a difference rather than as separate
+   * absences: cutting the isolated block out of the unsuppressed markup has to
+   * leave exactly the suppressed markup, so an option that also dropped the
+   * search box or the clear-focus button would fail here rather than pass two
+   * narrower assertions. Taken on the SHUT state, where the block is the chip
+   * alone; the open state is covered above.
+   */
+  it('touches the chip and nothing else', () => {
+    const bare = renderScaleLadder(document).markup;
+    const suppressed = renderScaleLadder(document, { isolatedChip: false }).markup;
+    assert.notEqual(bare, suppressed, 'the option changed nothing at all');
+
+    const start = bare.indexOf('<div class="ig-ladder-isolated">');
+    assert.notEqual(start, -1, 'no chip to cut');
+    const end = bare.indexOf('</section>', start);
+    assert.notEqual(end, -1, 'the chip is not inside the chrome section');
+    assert.equal(bare.slice(0, start) + bare.slice(end), suppressed);
+  });
 });
 
 describe('search-to-focus, as a reader sees it', () => {

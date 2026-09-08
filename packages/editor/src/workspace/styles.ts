@@ -168,6 +168,68 @@ export const workspaceStylesheet = `
   border-right: var(--ig-stroke) solid var(--ig-line);
 }
 
+/* §17a'S RAIL FOOTER, AND IT IS THE ZONE'S LAST ROW. The frame ends the rail
+   with it; that it is PINNED is this sheet's decision, on the reasoning §17c
+   already settled one zone over — the rail is the scroller, mount.ts restores
+   its scrollTop on every redraw, and a fact placed in the scrolled content is a
+   fact you have to go back for. .ig-canvas-toolbar below pins itself against
+   the other edge for exactly this reason and is the shape copied here.
+
+   IT ANCHORS ON A SHORT RAIL TOO, WITH NO FLEX LAYOUT, and this is recorded
+   because it looks as though it should not. A sticky box is offset within its
+   CONTAINING BLOCK to stay in the scrollport, and this zone's containing block
+   is the grid area — the full track height — not the height of the rows inside
+   it. So content shorter than the track still leaves the footer against the
+   bottom edge. Measured: rows 416px in a 445px track, footer flush, no flex
+   rule present. A review round proposed a column wrapper with an expanding row
+   to "push the footer down"; it was built, measured against this, changed
+   nothing, and was removed.
+
+   OPAQUE, BECAUSE IT OCCLUDES. Rows slide under it, so a transparent ground
+   would show the order through the count. That is also why the OPEN LIST IS NOT
+   IN HERE: an element taller than its scrollport cannot stick — the browser
+   clamps it and it scrolls like any other block — so a footer holding 248
+   entries loses the pin exactly when it grows, and covers the whole rail on the
+   way. The deeper reason is the rail's VIRTUALIZATION: railRowAt maps a scroll
+   offset to a row by floor((scrollTop - chrome) / pitch), so content of
+   arbitrary height anywhere in this track makes every offset below it name the
+   wrong row. The list is drawn in the canvas zone, which has no such
+   arithmetic. */
+.ig-rail-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ig-space-tight);
+  padding: var(--ig-space-tight) var(--ig-space);
+  border-top: var(--ig-stroke) solid var(--ig-line);
+  background: var(--ig-bg);
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-small);
+  line-height: var(--ig-line-height);
+  color: var(--ig-text-body);
+}
+
+.ig-rail-count {
+  color: var(--ig-text);
+}
+
+.ig-rail-isolated-toggle {
+  font: inherit;
+  color: var(--ig-accent);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.ig-rail-isolated-toggle:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-tight);
+}
+
 .ig-zone[data-zone='canvas'] {
   grid-area: canvas;
   overflow: auto;

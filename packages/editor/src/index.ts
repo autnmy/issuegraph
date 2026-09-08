@@ -401,6 +401,10 @@ export {
   // `WorkspaceWords` member, so a host that cannot name it cannot build the
   // words object that member belongs to.
   type CanvasWords,
+  // AND FOR THE SAME REASON AGAIN — §17a's rail footer. A host that cannot name
+  // this type cannot build the `WorkspaceWords.rail` member, and without that
+  // member the footer never draws.
+  type RailWords,
   ZONES,
   renderWorkspace,
 } from './workspace/render.ts';

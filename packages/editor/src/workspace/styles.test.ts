@@ -93,6 +93,13 @@ const WITH_AN_EXCLUSION = {
   },
 };
 
+/**
+ * §17a's rail footer words, local for the reason `rail-footer.test.ts` records:
+ * putting `rail` on the shared fixture would suppress the ladder's isolated
+ * chip and move two committed a11y baselines as a side effect.
+ */
+const RAIL_WORDS = { isolated: 'carrying no edges', show: 'reveal', hide: 'fold away' };
+
 const RENDERS = [
   renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS }),
   renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, selection: { kind: 'issue', key: 'i0005' } }),
@@ -306,6 +313,17 @@ const RENDERS = [
     words: WORKSPACE_WORDS,
     scale: { ...INITIAL_SCALE_STATE, focus: 'i0001' },
   }),
+  // §17a'S RAIL FOOTER, SHUT AND OPEN. It draws only when the host has worded
+  // it, so every render above leaves all four of its rules looking orphaned —
+  // and the list's rule needs the second render, because the entries are not
+  // emitted until the control has opened them. `WORKSPACE_WORDS` deliberately
+  // carries no `rail` member (see `rail-footer.test.ts` for why the shared
+  // fixture stays out of this), so the words are supplied here.
+  renderWorkspace(DOCUMENT, { words: { ...WORKSPACE_WORDS, rail: RAIL_WORDS } }),
+  renderWorkspace(DOCUMENT, {
+    words: { ...WORKSPACE_WORDS, rail: RAIL_WORDS },
+    scale: { ...INITIAL_SCALE_STATE, isolatedOpen: true },
+  }),
 ];
 
 /** Every class THIS package's workspace emits, across those states. */
@@ -322,6 +340,11 @@ const COMPOSED: ReadonlySet<string> = new Set([
   // `renderWorkspace` installs alongside this one.
   'ig-ladder',
   'ig-ladder-isolated',
+  // The list that chip opens. It appears here now that a render above opens it,
+  // and it is the LADDER's to style (`scaleLadderStylesheet`) even though the
+  // control that opens it has moved to the rail — see `railFooter` for why the
+  // virtualized rail cannot hold the list itself.
+  'ig-isolated-list',
   'ig-chip',
   'ig-audit',
   'ig-audit-toggle',

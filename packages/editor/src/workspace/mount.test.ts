@@ -4267,3 +4267,134 @@ describe('a control activates from the keyboard', () => {
     }
   });
 });
+
+describe('opening the isolated list reveals it', () => {
+  /**
+   * §17a PUTS THE CONTROL AND THE LIST IN DIFFERENT ZONES, which is the whole
+   * reason this behaviour exists. The count and its toggle are at the foot of
+   * the ORDER RAIL; the list the ladder draws is in the CANVAS, because the
+   * rail is virtualized on a fixed row pitch and an arbitrary-height list in
+   * that scroll track makes every offset beneath it name the wrong row.
+   *
+   * So the press flips a control in one zone and grows a list in another, below
+   * whatever that zone was already scrolled to. Without the reveal the reader
+   * is told the list is open and sees nothing move.
+   */
+  const RAIL_WORDS = { isolated: 'carrying no edges', show: 'reveal', hide: 'fold away' };
+
+  it('scrolls the opened list into view, and only on the press that opens it', async () => {
+    const page = await mounted(SEED, { words: { ...WORDS, rail: RAIL_WORDS } });
+    try {
+      const revealed: string[] = [];
+      // jsdom implements no scrolling at all, so `scrollIntoView` is absent —
+      // which is also the case the mount guards for. Installing it here is what
+      // makes the call observable rather than a no-op.
+      page.win.Element.prototype.scrollIntoView = function scrollIntoView(this: Element): void {
+        revealed.push(this.className);
+      };
+
+      const toggle = page.element.querySelector<HTMLElement>('[data-ig-command="open-isolated"]');
+      assert.ok(toggle !== null, 'no isolated toggle in the rail footer');
+      toggle.click();
+      await flush();
+
+      assert.ok(
+        revealed.some((name) => name.includes('ig-isolated-list')),
+        `the opened list was never revealed — scrolled: ${JSON.stringify(revealed)}`,
+      );
+      assert.ok(
+        page.element.querySelector('.ig-isolated-list') !== null,
+        'the list did not open at all',
+      );
+
+      // AND NOT AGAIN ON AN UNRELATED REDRAW. The flag is set by the command,
+      // not read off `scale.isolatedOpen` — which stays true — so a later
+      // render must not yank the canvas back under a reader who scrolled away.
+      revealed.length = 0;
+      const row = page.rows()[0];
+      assert.ok(row !== undefined, 'no rail row to select');
+      page.click(row);
+      await flush();
+
+      assert.deepEqual(
+        revealed.filter((name) => name.includes('ig-isolated-list')),
+        [],
+        'an unrelated redraw revealed the list again',
+      );
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  /**
+   * THE ID IS PER MOUNT, WHICH IS THE POINT OF MINTING IT HERE. `renderWorkspace`
+   * is pure and cannot know what else is on the host's page; `mountWorkspace`
+   * can, because it is the thing being called twice. Two mounted workspaces must
+   * not name one element — `scale/render.ts`'s `searchSpec` records what a
+   * duplicated id costs, and an earlier revision of this work shipped one.
+   */
+  it('gives two mounted workspaces different ids for their lists', async () => {
+    const first = await mounted(SEED, { words: { ...WORDS, rail: RAIL_WORDS } });
+    const second = await mounted(SEED, { words: { ...WORDS, rail: RAIL_WORDS } });
+    try {
+      const openIn = async (page: Awaited<ReturnType<typeof mounted>>): Promise<string> => {
+        const toggle = page.element.querySelector<HTMLElement>('[data-ig-command="open-isolated"]');
+        assert.ok(toggle !== null, 'no isolated toggle');
+        toggle.click();
+        await flush();
+        const list = page.element.querySelector('.ig-isolated-list');
+        assert.ok(list !== null, 'no list after opening');
+        const id = list.getAttribute('id');
+        assert.ok(id !== null && id !== '', 'the list carries no id');
+        const control = page.element.querySelector('[data-ig-command="close-isolated"]');
+        assert.equal(control?.getAttribute('aria-controls'), id, 'the toggle names another element');
+        return id;
+      };
+
+      assert.notEqual(await openIn(first), await openIn(second), 'both mounts named one element');
+    } finally {
+      first.handle.destroy();
+      first.dom.window.close();
+      second.handle.destroy();
+      second.dom.window.close();
+    }
+  });
+
+  /**
+   * THE TREE REPLACES THE CANVAS ZONE'S `innerHTML`, and the list is drawn in
+   * that zone. The control is not — §17a puts it at the foot of the rail — so
+   * without preserving the block the reader gets a toggle that flips to "hide"
+   * and `aria-expanded="true"` over nothing at all.
+   *
+   * That is worse than what it replaced: before the control moved, the chip sat
+   * in this zone beside its list and the tree deleted both, so the affordance
+   * was absent rather than lying.
+   */
+  it('keeps the list in tree mode, where the canvas markup is replaced', async () => {
+    const page = await mounted(SEED, { words: { ...WORDS, rail: RAIL_WORDS }, canvas: 'tree' });
+    try {
+      const toggle = page.element.querySelector<HTMLElement>('[data-ig-command="open-isolated"]');
+      assert.ok(toggle !== null, 'no isolated toggle in the rail footer');
+      toggle.click();
+      await flush();
+
+      const opened = page.element.querySelector<HTMLElement>('[data-ig-command="close-isolated"]');
+      assert.ok(opened !== null, 'the control did not flip to its open state');
+      assert.equal(opened.getAttribute('aria-expanded'), 'true');
+      // THE ASSERTION THIS TEST EXISTS FOR: the control says open, so something
+      // has to be open.
+      assert.ok(
+        page.element.querySelector('.ig-isolated-list') !== null,
+        'the control reports an open list the tree canvas deleted',
+      );
+      assert.ok(
+        page.zone('canvas')?.querySelector('.ig-isolated-list') != null,
+        'the list survived but not in the canvas zone',
+      );
+    } finally {
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+});

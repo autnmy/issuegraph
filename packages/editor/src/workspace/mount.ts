@@ -249,6 +249,22 @@ const KEY_ATTRIBUTE = 'data-ig-key';
 const LIVE_REGION = '.ig-change-line[role="status"]';
 const GROUP_ATTRIBUTE = 'data-ig-group';
 const COMMAND_ATTRIBUTE = 'data-ig-command';
+
+/**
+ * How many surfaces this module has mounted, so each gets an id nothing else
+ * on the page carries.
+ *
+ * MODULE STATE, DELIBERATELY, and it is the smallest honest way to do this. The
+ * renderer is pure and must stay so — `scale/render.ts`'s `searchSpec` records
+ * what a fixed id costs when a host draws two documents side by side — and the
+ * value has to be stable across every redraw of the SAME mount, so it cannot be
+ * derived per render. A counter in the module that does the mounting satisfies
+ * both: one value per `mountWorkspace` call, fixed for that surface's life.
+ *
+ * Not a random value: a deterministic sequence keeps the markup reproducible
+ * for anything that snapshots it.
+ */
+let surfaces = 0;
 /**
  * Which subject a command acts on, when one command names several.
  *
@@ -423,6 +439,10 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   const doc = element.ownerDocument;
   const { store } = options;
   let current: MountWorkspaceOptions = options;
+  // ONE PER MOUNT, FIXED FOR ITS LIFE. See `surfaces` for why it is taken here
+  // rather than per render.
+  surfaces += 1;
+  const surfaceId = `w${String(surfaces)}`;
 
   const styles = doc.createElement('style');
   const surface = doc.createElement('div');
@@ -437,6 +457,21 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   let drawn: { readonly viewer: ViewerDocument; readonly rail: RailWindow } | null = null;
   // A rail row to focus once the window has been re-cut around it.
   let pendingFocus: { readonly kind: 'after' | 'before' | 'first' | 'last'; readonly key: string | null } | null = null;
+  /**
+   * Set when a command opened the isolated list, cleared by the redraw that
+   * reveals it.
+   *
+   * THE LIST IS NOT WHERE ITS CONTROL IS, and that is what makes this
+   * necessary rather than tidy. §17a puts the count and the toggle at the foot
+   * of the ORDER RAIL; the list itself is drawn by the ladder in the CANVAS,
+   * because the rail is virtualized on a fixed row pitch (`railRowAt`,
+   * `railSpacer`) and content of arbitrary height inside that scroll track
+   * makes every offset beneath it name the wrong row. So pressing the toggle
+   * flips a control in one zone and grows a list in another, below whatever
+   * that zone was already scrolled to — and the reader is told the list is open
+   * while seeing nothing change.
+   */
+  let revealIsolated = false;
   // The keys currently holding a control they activated. See `onKeydown`'s first
   // arm for why this is a fact about the PRESS and not a question asked of
   // whatever holds focus by the time the repeats arrive.
@@ -764,6 +799,11 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
 
   const dispatch = (command: HostCommand): void => {
     if (destroyed) return;
+    // ON THE COMMAND, NOT ON THE RESULTING STATE. `open-isolated` is what the
+    // reader just asked for; `scale.isolatedOpen` is also true on every redraw
+    // that follows for any other reason, and revealing it again there would
+    // yank the canvas back under a reader who had scrolled away.
+    if (command.kind === 'control' && command.name === 'open-isolated') revealIsolated = true;
     applyResult(reduceHost(state, command, landed()));
   };
 
@@ -1414,6 +1454,11 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       selection: state.selection,
       scale: state.scale,
       rail: { start: state.railStart, count: railCount() },
+      // UNIQUE TO THIS MOUNT, so §17a's rail footer can name the isolated list
+      // the canvas draws without two mounted workspaces on one page naming the
+      // same element. See `WorkspaceOptions.surfaceId`; the counter is why a
+      // second mount gets a second value.
+      surfaceId,
       audit,
       auditFiltered: state.auditFiltered,
       theme: resolved,
@@ -1538,6 +1583,25 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         // same rule that keeps the caption off the refusing tiers.
         const toolbar = canvas.querySelector('.ig-canvas-toolbar');
         toolbar?.querySelector('.ig-canvas-caption')?.remove();
+        // THE ISOLATED BLOCK SURVIVES THIS ASSIGNMENT TOO, and for a sharper
+        // reason than the row above. §17a moves the isolated CONTROL to the
+        // foot of the order rail, which this branch does not touch — so the
+        // control survives the switch to the tree whatever happens here, while
+        // the list it opens is drawn in THIS zone and would not. The reader
+        // presses it, the label turns to "hide" and `aria-expanded` to `true`,
+        // and nothing appears: a control that reports a state the surface is
+        // not in.
+        //
+        // WORSE THAN WHAT IT REPLACED, WHICH IS WHY IT IS FIXED HERE RATHER
+        // THAN NOTED. Before that move the chip lived in this zone beside its
+        // list, so the tree deleted BOTH and the affordance was merely absent —
+        // wrong, but not lying. Keeping the list is what makes the control it
+        // is now separated from honest.
+        //
+        // UNCONDITIONAL, unlike the toolbar's `childElementCount` guard. This
+        // element is not assembled from optional parts: `isolatedSpec` returns
+        // null rather than an empty husk, so anything found here has content.
+        const isolated = canvas.querySelector('.ig-ladder-isolated');
         canvas.innerHTML = renderViewer(withoutChrome(viewer), {
           projection: 'tree',
           theme: resolved,
@@ -1556,6 +1620,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         // emptied husk here left a sticky padded band with a border and no
         // content over the tree. Reading the element rather than re-deriving
         // the condition keeps the rule in one place.
+        if (isolated !== null) canvas.append(isolated);
         if (toolbar !== null && toolbar.childElementCount > 0) canvas.prepend(toolbar);
         const states = new Map(
           overlaysFor(viewer.edges, writeStates, selectedEdgeId(state.selection)).map((edge) => [edge.id, overlayFor(edge).attribute]),
@@ -1583,6 +1648,18 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
 
     const rail = zone('rail');
     if (rail !== null) rail.scrollTop = scrollTop;
+    // THE LIST THE READER JUST OPENED IS BROUGHT INTO VIEW. See
+    // `revealIsolated` for why the control and the list are in different zones.
+    // `block: 'nearest'` so a list already visible is not scrolled at all, and
+    // guarded on the method because the same guard is used for the rail's own
+    // jumps — this module renders into whatever document a host hands it.
+    if (revealIsolated) {
+      revealIsolated = false;
+      const list = surface.querySelector('.ig-isolated-list');
+      if (list !== null && typeof list.scrollIntoView === 'function') {
+        list.scrollIntoView({ block: 'nearest' });
+      }
+    }
     // FOCUS SURVIVES THE REDRAW, and it moves to the target search when that
     // step opens. The keyboard path is R -> kind -> search -> Enter, and every
     // step redraws: without this, R destroyed the focused row, the next press

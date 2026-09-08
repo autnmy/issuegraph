@@ -323,7 +323,19 @@ function searchFor(
     // ONLY ISSUES THAT SIT IN A COMPONENT. This search exists to focus one, and
     // an issue with no relationship has none to focus — offering it would be a
     // match that cannot be acted on. The issues it leaves out are the ones the
-    // isolated chip is for, which is why the chip is not optional chrome.
+    // isolated chip is for, which is why the ROUTE TO THEM IS NOT OPTIONAL.
+    //
+    // THE ROUTE IS THE INVARIANT; THE CHIP IS ONE DRAWING OF IT. This sentence
+    // read "the chip is not optional chrome" until a caller needed to draw the
+    // same route somewhere else, and the two claims are not the same: what may
+    // never be suppressed is a way to reach these issues, because this search
+    // will not offer them and nothing else on the ladder does either. So
+    // `ScaleLadderOptions.isolatedChip` lets a caller that draws the route
+    // ITSELF — the count, the toggle and the list — turn the ladder's own copy
+    // off, and forbids it to anyone who does not. `renderWorkspace` is that
+    // caller: §17a puts the count at the foot of the order rail, and two copies
+    // of one control would also give `mount.ts`'s focus restore two elements
+    // under its single `isolated` identity.
     const lead = leadOf.get(issue.key);
     if (lead === undefined) continue;
     if (

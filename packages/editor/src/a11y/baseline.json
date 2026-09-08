@@ -1527,7 +1527,8 @@
       "inert": false,
       "name": "text",
       "aria": {
-        "aria-expanded": "true"
+        "aria-expanded": "true",
+        "aria-controls": "resolves"
       }
     },
     {
