@@ -80,6 +80,7 @@ import {
 import type { EdgeId, InvalidCode, MutationId, ProjectedEdge, StoredEdge } from '@issuegraph/store';
 
 import type { AuditInput, AuditSeverity } from '../audit/findings.ts';
+import { type AuditWords, renderAuditPanel } from '../audit/panel.ts';
 import { auditStylesheet } from '../audit/styles.ts';
 import { type CreateDraft, IDLE_CREATE_DRAFT } from '../create/draft.ts';
 import { KIND_KEYS, RELATE_KEY } from '../create/keys.ts';
@@ -337,6 +338,15 @@ export interface WorkspaceWords {
    * whose consequence most needs stating.
    */
   readonly recovery: RecoveryWords;
+  /**
+   * §17d's findings panel, in the host's own words.
+   *
+   * NESTED, like `recovery` and `refusals` beside it, because it is a record
+   * over a closed class table rather than a loose string — flattening four
+   * chips and four titles into this interface would put eight members here
+   * whose relationship to each other is only legible from their names.
+   */
+  readonly audit: AuditWords;
 }
 
 export interface RecoveryWords {
@@ -1486,6 +1496,14 @@ function headerMarkup(
  */
 interface InspectorContext {
   readonly words: WorkspaceWords;
+  /**
+   * The audit, when the host asked for one, so the zone can carry §17d's list.
+   *
+   * `null` IS "NO AUDIT INPUT", NOT "NOTHING FOUND" — the same distinction
+   * {@link WorkspaceOptions.audit} keeps. A zero count is a fact about a
+   * question that was asked; an absent overlay is the absence of the question.
+   */
+  readonly audit: AuditOverlay | null;
   /** The keys a hold's subject control may name — see {@link holdRow}. */
   readonly known: ReadonlySet<string>;
   /** Which slot a key sits in, by lead. See {@link holdRow}. */
@@ -1937,6 +1955,19 @@ function inspectorSpec(view: InspectorView, context: InspectorContext): ElementS
   // their own heading — and a step derived separately per zone is two answers
   // to one question, free to disagree the day either guard moves.
   const step = createStep(context, key);
+  // §17d'S LIST, AFTER THE HEAD AND BEFORE THE SELECTION. `words.inspector`
+  // exists so this column is never headed by whatever happened to render first
+  // — "a reader who had selected nothing met a bare sentence in an unnamed
+  // column" — so the panel goes UNDER `INSPECTOR`, not above it.
+  //
+  // IT IS GLOBAL CONTENT IN A SELECTION-SCOPED ZONE, and that tension is real
+  // rather than resolved: §17d wants the findings visible WHILE you work, and
+  // the workspace has three zones plus a header, so there is nowhere else they
+  // can be ambient. What keeps it honest is that the list carries its own
+  // scroll budget (`.ig-audit-list`), so a long audit cannot evict the
+  // selection detail from the screen — only from the list's own overflow.
+  const auditPanel =
+    context.audit === null ? null : renderAuditPanel(context.audit, { words: words.audit });
   return element('div', { class: 'ig-inspector', 'data-subject': subject.kind }, [
     element('div', { class: 'ig-inspector-head' }, [
       element('h2', { class: 'ig-inspector-name' }, [words.inspector]),
@@ -1948,6 +1979,7 @@ function inspectorSpec(view: InspectorView, context: InspectorContext): ElementS
             [words.clearSelection],
           ),
     ]),
+    auditPanel,
     subject.kind === 'none'
       ? element('p', { class: 'ig-inspector-empty' }, [words.nothingSelected])
       : null,
@@ -2421,6 +2453,7 @@ export function renderWorkspace(
       renderMarkup(
         inspectorSpec(inspector, {
           words: options.words,
+          audit: overlay,
           known,
           leadOf,
           draft: options.draft ?? IDLE_CREATE_DRAFT,

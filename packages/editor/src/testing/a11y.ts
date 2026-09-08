@@ -49,11 +49,11 @@ function apply(document: GraphDocument, mutation: Mutation): GraphDocument {
   return { ...document, edges: [...document.edges, makeEdge(mutation.kind, mutation.from, mutation.to)] };
 }
 
-function projectWith(held: boolean) {
-  return (snapshot: StoreSnapshot): WorkspaceProjection => project(snapshot, held);
+function projectWith(held: boolean, audited = false) {
+  return (snapshot: StoreSnapshot): WorkspaceProjection => project(snapshot, held, audited);
 }
 
-function project(snapshot: StoreSnapshot, held = false): WorkspaceProjection {
+function project(snapshot: StoreSnapshot, held = false, audited = false): WorkspaceProjection {
   const landed = { issues: snapshot.issues, edges: snapshot.landed };
   return {
     viewer: {
@@ -98,7 +98,26 @@ function project(snapshot: StoreSnapshot, held = false): WorkspaceProjection {
         freshness: { asOf: '14:32', age: '2m ago', refresh: 'refresh the mirror' },
       },
     },
-    audit: { document: landed, graph: { cycles: [], duplicateCanonical: () => null } },
+    // AN AUDIT THAT FINDS SOMETHING IS A SEPARATE SURFACE, and it has to be.
+    // Every other fixture here reports no cycles and no duplicate canonical, so
+    // the overlay's count is ZERO — which is correct for those states and means
+    // §17d's findings panel never renders in them. Its `select-issue` control
+    // would then be recorded in no baseline at all: not a broken pin, an ABSENT
+    // one, which is exactly the blind spot `baseline.ts` describes — "a
+    // regression in an answer's accessible name or keyboard reachability passed
+    // every rule here" because the channel had no members in any surface.
+    //
+    // THE CYCLE IS ASSERTED ON THE GRAPH RATHER THAN BUILT FROM EDGES. The
+    // audit reads `AuditGraph.cycles`, which is the reader's answer and not
+    // something this fixture should re-derive; naming two seed refs is the
+    // whole of what the panel needs to draw a card about them.
+    audit: {
+      document: landed,
+      graph: {
+        cycles: audited ? [['1', '2']] : [],
+        duplicateCanonical: () => null,
+      },
+    },
   };
 }
 
@@ -134,6 +153,11 @@ export async function a11ySurface(
     readonly openIsolated?: boolean;
     /** Put a hold on the inspected slot, which is what draws its subject control. */
     readonly held?: boolean;
+    /**
+     * Report a cycle, which is the only thing that draws §17d's findings panel
+     * — and therefore the only state where its `select-issue` control exists.
+     */
+    readonly audited?: boolean;
   } = {},
 ): Promise<{ root: Element; close: () => void }> {
   const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>');
@@ -170,7 +194,7 @@ export async function a11ySurface(
   await store.hydrate();
   const handle = mountWorkspace(host, {
     store,
-    project: projectWith(options.held === true),
+    project: projectWith(options.held === true, options.audited === true),
     words: WORDS,
     // SUPPLIED SO §17a's ENTRY IS DRAWN, and so the QUEUE can be opened. The
     // entry is a command control in the rail's panel header, and the queue

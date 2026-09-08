@@ -849,6 +849,22 @@ const WORKSPACE_WORDS: surface.WorkspaceWords = {
     retryFailed: 'could not read the newest version',
     unplaced: 'writes about issues this backlog does not hold',
   },
+  audit: {
+    heading: 'problems in the encoding',
+    classes: {
+      cycle: 'a loop',
+      'stale-blocker': 'closed blocker',
+      'dead-duplicate-ref': 'dead canonical',
+      'encoding-refused': 'unreadable',
+    },
+    titles: {
+      cycle: 'these issues wait on each other for ever',
+      'stale-blocker': 'this waits on something already finished',
+      'dead-duplicate-ref': 'this is filed against an issue that is gone',
+      'encoding-refused': 'this declaration could not be read',
+    },
+    show: 'go to it',
+  },
 };
 
 /** A backlog of `total` issues, ranked in key order. */

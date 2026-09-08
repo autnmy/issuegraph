@@ -203,8 +203,12 @@ export const workspaceStylesheet = `
 
    ONE TREATMENT FOR ALL FOUR SEVERITIES, which is also a correction. §17d
    names exactly one ambient mark — "a 2px gold left-bar on the affected rail
-   row" — and puts the severity distinction in the findings list, which is
-   host-side. The misleading variant this replaces gave the LEAST urgent
+   row" — and puts the severity distinction in the findings list, which
+   audit/panel.ts now draws. (It read "which is host-side" until that panel
+   existed; the reasoning is unaffected — the distinction still belongs to the
+   list rather than to this bar — but the list is the package's now.)
+
+   The misleading variant this replaces gave the LEAST urgent
    severity ("clearing is bookkeeping, not urgency") the alarm colour while
    every other finding got cyan, inverting the design it came from. */
 .ig-zone[data-zone='rail'] [data-ig-audit] {

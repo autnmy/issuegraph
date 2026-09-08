@@ -57,6 +57,12 @@ const BASELINE_PATH = new URL('./baseline.json', import.meta.url);
  * cover them. Without these the artifact would be one a spec walk could have
  * produced.
  *
+ * AND AN AUDIT THAT FOUND SOMETHING, for the same reason one step along: every
+ * other surface reports no cycles, so the overlay counts zero, §17d's findings
+ * panel never renders, and its `select-issue` control is covered by no rule
+ * here at all. An ABSENT entry passes every rule below, which is the failure
+ * this list exists to make impossible.
+ *
  * AND THE FIRST-PASS QUEUE, because its y/n/s answers are the only controls on
  * the `data-ig-answer` channel. `CONTROL_ATTRIBUTES` names three channels and
  * the rules below quantify over all of them — with the queue closed, one of the
@@ -76,6 +82,7 @@ async function surfaces(): Promise<Record<string, readonly ControlEntry[]>> {
     ['isolated-shut', { isolated: true }],
     ['isolated-open', { isolated: true, openIsolated: true }],
     ['held-slot', { held: true }],
+    ['audit-findings', { audited: true }],
   ] as const) {
     const page = await a11ySurface(options);
     try {

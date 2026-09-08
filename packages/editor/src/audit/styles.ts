@@ -34,6 +34,7 @@
  * test that says so.
  */
 
+import { AUDIT_KIND_ATTRIBUTE } from './panel.ts';
 import { AUDIT_SEVERITY_ATTRIBUTE } from './surface.ts';
 
 export const auditStylesheet = `
@@ -69,5 +70,153 @@ export const auditStylesheet = `
 
 [${AUDIT_SEVERITY_ATTRIBUTE}] {
   box-shadow: inset var(--ig-stroke-audit) 0 0 0 var(--ig-edge-serialize-with);
+}
+
+/* §17d'S PANEL. Note what it does NOT select on: ${AUDIT_SEVERITY_ATTRIBUTE},
+   whose rule immediately above is deliberately unqualified because it lands on a
+   row the VIEWER rendered. A chip wearing that attribute would draw the rail's
+   gold bar whatever hue the class table gave it, which is the four-hue mapping
+   below defeated by one attribute. Chips carry ${AUDIT_KIND_ATTRIBUTE}. */
+.ig-audit-panel {
+  border-bottom: var(--ig-stroke) solid var(--ig-line);
+  display: flex;
+  flex-direction: column;
+  font-family: var(--ig-font-ui);
+  gap: var(--ig-space-snug);
+  padding-bottom: var(--ig-space);
+}
+
+.ig-audit-panel-head {
+  align-items: center;
+  display: flex;
+  gap: var(--ig-space-tight);
+}
+
+/* THE GOLD IS THE AMBIENT MARK'S, not a fifth hue. §17d names one attention
+   colour and the rail bar already spends it; the panel head answering in the
+   same gold is what makes the count and the list read as one thing. */
+.ig-audit-mark {
+  color: var(--ig-edge-serialize-with);
+  font-size: var(--ig-font-size-small);
+}
+
+.ig-audit-panel-count {
+  color: var(--ig-edge-serialize-with);
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.ig-audit-panel-heading {
+  color: var(--ig-edge-serialize-with);
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-small);
+  letter-spacing: var(--ig-tracking-group);
+  text-transform: uppercase;
+}
+
+/* THE LIST SCROLLS INSIDE THE PANEL, and this is load-bearing rather than
+   tidy. The inspector zone is ONE overflow track, so an unbounded list of
+   findings pushes the selection detail the reader just clicked below the fold —
+   a global list quietly evicting the selection-scoped column it borrowed. The
+   panel keeps its own budget and the detail keeps its place on screen. */
+.ig-audit-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-snug);
+  list-style: none;
+  margin: 0;
+  max-height: calc(var(--ig-space-wide) * 24);
+  overflow-y: auto;
+  padding: 0;
+}
+
+.ig-audit-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-micro);
+}
+
+.ig-audit-chip {
+  align-self: flex-start;
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius-small);
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-pill);
+  padding: 0 var(--ig-space-tight);
+}
+
+.ig-audit-title {
+  color: var(--ig-text);
+  font-size: var(--ig-font-size);
+  margin: 0;
+}
+
+/* SENTENCE-LENGTH COPY TAKES --ig-text-body, NEVER --ig-text-muted. SPEC's
+   closing note measures muted at 4.65:1 on a plain surface and about 0.4 less
+   inside a tint, which drops it under AA — so muted is reserved there for short
+   mono labels, and a finding's detail is a sentence. */
+.ig-audit-detail {
+  color: var(--ig-text-body);
+  font-size: var(--ig-font-size-compact);
+  line-height: var(--ig-line-height);
+  margin: 0;
+}
+
+.ig-audit-show {
+  align-self: flex-start;
+  background: none;
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius-small);
+  color: var(--ig-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--ig-font-size-meta);
+  padding: var(--ig-space-micro) var(--ig-space-tight);
+}
+
+.ig-audit-show:hover {
+  border-color: var(--ig-accent);
+}
+
+.ig-audit-show:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-micro);
+}
+
+/* ONE RULE PER CLASS, WRITTEN OUT, never through an intermediate property: the
+   viewer's own badge sheet records why — a \`--ig-audit-hue\` set here and read
+   here names something no theme and no layout declares, and the token scan
+   exists to refuse exactly that.
+
+   THE TINTS ARE THE VIEWER'S RECIPE, not new numbers. \`--ig-tint-fill\` and
+   \`--ig-tint-border\` are what \`.ig-badge[data-edge]\` already mixes an edge hue
+   with, and they are the frame's own chip wash to within a point.
+
+   THE TEXT IS THE BASE HUE. The frame lightens each chip's label a step off the
+   hue it tints with; those derivatives have no token, and a literal here is
+   refused by the scan two files over, so the label takes the hue itself. */
+.ig-audit-chip[${AUDIT_KIND_ATTRIBUTE}='cycle'] {
+  background: color-mix(in srgb, var(--ig-edge-blocked-by) var(--ig-tint-fill), transparent);
+  border-color: color-mix(in srgb, var(--ig-edge-blocked-by) var(--ig-tint-border), transparent);
+  color: var(--ig-edge-blocked-by);
+}
+
+.ig-audit-chip[${AUDIT_KIND_ATTRIBUTE}='stale-blocker'] {
+  background: color-mix(in srgb, var(--ig-edge-serialize-with) var(--ig-tint-fill), transparent);
+  border-color: color-mix(in srgb, var(--ig-edge-serialize-with) var(--ig-tint-border), transparent);
+  color: var(--ig-edge-serialize-with);
+}
+
+.ig-audit-chip[${AUDIT_KIND_ATTRIBUTE}='dead-duplicate-ref'] {
+  background: color-mix(in srgb, var(--ig-edge-duplicate-of) var(--ig-tint-fill), transparent);
+  border-color: color-mix(in srgb, var(--ig-edge-duplicate-of) var(--ig-tint-border), transparent);
+  color: var(--ig-edge-duplicate-of);
+}
+
+.ig-audit-chip[${AUDIT_KIND_ATTRIBUTE}='encoding-refused'] {
+  background: color-mix(in srgb, var(--ig-edge-blocked-by) var(--ig-tint-fill), transparent);
+  border-color: color-mix(in srgb, var(--ig-edge-blocked-by) var(--ig-tint-border), transparent);
+  color: var(--ig-edge-blocked-by);
 }
 `;
