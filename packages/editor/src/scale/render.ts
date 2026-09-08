@@ -145,6 +145,20 @@ export interface ScaleLadderOptions {
    * one, and §17a puts the count there.
    */
   readonly isolatedChip?: boolean | undefined;
+  /**
+   * The id to put on the isolated list, for a caller whose control is elsewhere.
+   *
+   * MINTED BY THE CALLER, BECAUSE ONLY THE CALLER KNOWS THE PAGE. `searchSpec`
+   * records why this renderer must not invent one: a host rendering two
+   * documents side by side emits the markup twice, and a duplicated `id` makes
+   * the second surface's reference resolve to the first surface's element. The
+   * caller drawing the remote control is the one that can make the value unique
+   * and use the same string on both halves.
+   *
+   * Absent, the list carries no `id` and no control names it — which is right
+   * for the adjacent chip, whose list is already its next sibling.
+   */
+  readonly isolatedListId?: string | undefined;
 }
 
 export interface ScaleLadderResult {
@@ -254,25 +268,11 @@ function searchSpec(search: ScaleSearch): ElementSpec {
  * re-cuts against a geometry that no longer holds. This zone has no such
  * arithmetic, so the list stays here and only the control moves.
  */
-/**
- * The id the isolated list carries, so a control that is NOT beside it can name
- * it with `aria-controls`.
- *
- * EXPORTED BECAUSE THE CONTROL MAY NOT BE HERE. `ScaleLadderOptions.isolatedChip`
- * lets a caller draw the toggle in its own zone — §17a puts it at the foot of
- * the order rail — and a disclosure whose `aria-expanded` flips while nothing
- * names what opened leaves a screen-reader user in the rail with no way to
- * reach the list. A shared constant is the smallest thing that makes the two
- * halves refer to each other; the alternative is each side inventing a string
- * and one of them being wrong.
- *
- * Fixed rather than minted, on the same reasoning the workspace's own ids use:
- * one ladder draws one list, and two ladders over one page collide the way
- * every other fixed id on these surfaces does.
- */
-export const ISOLATED_LIST_ID = 'ig-isolated-list';
-
-function isolatedSpec(isolated: IsolatedChip, chip: boolean): ElementSpec | null {
+function isolatedSpec(
+  isolated: IsolatedChip,
+  chip: boolean,
+  listId: string | undefined,
+): ElementSpec | null {
   // NOTHING IS DRAWN FOR AN EMPTY SET. A chip reading "0 isolated issues" is a
   // control that opens nothing, and the count IS the information these issues
   // carry — so with no issues there is nothing to say.
@@ -289,12 +289,21 @@ function isolatedSpec(isolated: IsolatedChip, chip: boolean): ElementSpec | null
         type: 'button',
         class: 'ig-chip',
         'aria-expanded': isolated.open ? 'true' : 'false',
-        // ONLY WHILE THE LIST EXISTS. A shut disclosure renders no list, so a
-        // constant `aria-controls` would name an id nothing carries — which is
-        // a dangling reference, and `a11y/baseline.test.ts` refuses one. There
-        // is also nothing to point at: the association exists so a reader can
-        // reach what just opened.
-        ...(isolated.open ? { 'aria-controls': ISOLATED_LIST_ID } : {}),
+        // NO `aria-controls` WHEN THIS CHIP IS THE CONTROL, AND THAT IS NOT AN
+        // OMISSION. The list is this button's immediate next sibling, so the
+        // relationship is already there in reading order; `aria-controls` earns
+        // its keep for a REMOTE disclosure, which is why the workspace's footer
+        // carries one and this does not.
+        //
+        // AND A FIXED ID HERE WOULD BE A DEFECT, not a shortcut. `searchSpec`
+        // below nests its input inside its label precisely so it needs no `id`,
+        // recording that "a host rendering two documents side by side would emit
+        // it twice" — the same host, the same page, and the second list would
+        // then answer to the first surface's button. An earlier revision of this
+        // file shipped a module constant with a comment claiming fixed ids were
+        // the norm on these surfaces; the control ten lines down had already
+        // decided otherwise.
+        ...(isolated.open && listId !== undefined ? { 'aria-controls': listId } : {}),
         'data-ig-command': isolated.open ? 'close-isolated' : 'open-isolated',
       },
       [isolated.label],
@@ -304,7 +313,16 @@ function isolatedSpec(isolated: IsolatedChip, chip: boolean): ElementSpec | null
     isolated.open
       ? element(
           'ol',
-          { class: 'ig-isolated-list', id: ISOLATED_LIST_ID, 'aria-label': 'isolated issues' },
+          // THE ID IS THE CALLER'S, OR THERE IS NONE. Only a caller drawing the
+          // control somewhere else needs to name this list, and only that caller
+          // knows what else is on its page — so it mints the value and passes it
+          // to both halves. This renderer inventing one would be the collision
+          // `searchSpec` avoids.
+          {
+            class: 'ig-isolated-list',
+            ...(listId === undefined ? {} : { id: listId }),
+            'aria-label': 'isolated issues',
+          },
           isolated.issues.map((issue) =>
             element('li', {}, [
               element('span', { class: 'ig-id' }, [issue.key]),
@@ -387,7 +405,7 @@ export function renderScaleLadder(
     // THE CONTROL, UNLESS THE CALLER DREW IT — the LIST is drawn either way.
     // See `ScaleLadderOptions.isolatedChip`, and `ladder.ts`'s `searchFor` for
     // why there has to be a route at all.
-    isolatedSpec(ladder.isolated, options.isolatedChip ?? true),
+    isolatedSpec(ladder.isolated, options.isolatedChip ?? true, options.isolatedListId),
   ]);
 
   return {

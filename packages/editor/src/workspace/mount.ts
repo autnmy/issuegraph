@@ -249,6 +249,22 @@ const KEY_ATTRIBUTE = 'data-ig-key';
 const LIVE_REGION = '.ig-change-line[role="status"]';
 const GROUP_ATTRIBUTE = 'data-ig-group';
 const COMMAND_ATTRIBUTE = 'data-ig-command';
+
+/**
+ * How many surfaces this module has mounted, so each gets an id nothing else
+ * on the page carries.
+ *
+ * MODULE STATE, DELIBERATELY, and it is the smallest honest way to do this. The
+ * renderer is pure and must stay so — `scale/render.ts`'s `searchSpec` records
+ * what a fixed id costs when a host draws two documents side by side — and the
+ * value has to be stable across every redraw of the SAME mount, so it cannot be
+ * derived per render. A counter in the module that does the mounting satisfies
+ * both: one value per `mountWorkspace` call, fixed for that surface's life.
+ *
+ * Not a random value: a deterministic sequence keeps the markup reproducible
+ * for anything that snapshots it.
+ */
+let surfaces = 0;
 /**
  * Which subject a command acts on, when one command names several.
  *
@@ -423,6 +439,10 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   const doc = element.ownerDocument;
   const { store } = options;
   let current: MountWorkspaceOptions = options;
+  // ONE PER MOUNT, FIXED FOR ITS LIFE. See `surfaces` for why it is taken here
+  // rather than per render.
+  surfaces += 1;
+  const surfaceId = `w${String(surfaces)}`;
 
   const styles = doc.createElement('style');
   const surface = doc.createElement('div');
@@ -1434,6 +1454,11 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       selection: state.selection,
       scale: state.scale,
       rail: { start: state.railStart, count: railCount() },
+      // UNIQUE TO THIS MOUNT, so §17a's rail footer can name the isolated list
+      // the canvas draws without two mounted workspaces on one page naming the
+      // same element. See `WorkspaceOptions.surfaceId`; the counter is why a
+      // second mount gets a second value.
+      surfaceId,
       audit,
       auditFiltered: state.auditFiltered,
       theme: resolved,

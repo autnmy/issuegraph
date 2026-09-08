@@ -109,7 +109,7 @@ import {
 } from '../audit/surface.ts';
 import { type ScaleState, INITIAL_SCALE_STATE } from '../scale/commands.ts';
 import type { IsolatedChip, ScaleLadder } from '../scale/ladder.ts';
-import { ISOLATED_LIST_ID, renderScaleLadder } from '../scale/render.ts';
+import { renderScaleLadder } from '../scale/render.ts';
 import { scaleLadderStylesheet } from '../scale/styles.ts';
 
 import {
@@ -814,6 +814,23 @@ export interface WorkspaceOptions {
    * answers "closed" and the control cannot complete what it advertises.
    */
   readonly diffOpen?: MutationId | null | undefined;
+  /**
+   * A value unique to this surface, used to bind §17a's rail footer to the
+   * isolated list the canvas draws.
+   *
+   * SUPPLIED BY WHOEVER KNOWS THE PAGE. The footer's toggle and the list are in
+   * different zones, so the toggle names the list with `aria-controls` — and an
+   * id invented in here would be emitted twice by a host rendering two
+   * workspaces, leaving the second toggle pointing at the first surface's list.
+   * `scale/render.ts`'s `searchSpec` records the same hazard for its own label.
+   *
+   * ABSENT, NO ASSOCIATION IS DRAWN, and that is the honest default rather than
+   * a degraded one: `mountWorkspace` mints a value per mount, and markup served
+   * WITHOUT a mount is not operable anyway — the same argument
+   * `CanvasWords.editMode` is optional under. A toggle nobody can press needs no
+   * `aria-controls`.
+   */
+  readonly surfaceId?: string | undefined;
 }
 
 export interface WorkspaceView {
@@ -985,7 +1002,11 @@ function canvasToolbar(
  * follows before it. With no words there is no footer, and with no isolated
  * issues the count is not a fact anyone asked for.
  */
-function railFooter(isolated: IsolatedChip, words: RailWords | undefined): ElementSpec | null {
+function railFooter(
+  isolated: IsolatedChip,
+  words: RailWords | undefined,
+  listId: string | undefined,
+): ElementSpec | null {
   if (words === undefined) return null;
   if (isolated.count === 0) return null;
   return element('div', { class: 'ig-rail-footer' }, [
@@ -1015,11 +1036,13 @@ function railFooter(isolated: IsolatedChip, words: RailWords | undefined): Eleme
         // visual viewport and not accessibility focus, so it does not answer
         // this either.
         //
-        // ONLY WHILE THE LIST EXISTS, for the reason `isolatedSpec` records at
-        // its own copy: a shut disclosure renders no list, so naming one would
-        // be a dangling reference the a11y baseline refuses — and there would
-        // be nothing to reach.
-        ...(isolated.open ? { 'aria-controls': ISOLATED_LIST_ID } : {}),
+        // ONLY WHILE THE LIST EXISTS, AND ONLY WITH AN ID TO NAME. A shut
+        // disclosure renders no list, so naming one would be a dangling
+        // reference the a11y baseline refuses — and there would be nothing to
+        // reach. With no `surfaceId` there is no value that would be unique on
+        // the host's page, and a guessed one is the collision `searchSpec`
+        // avoids.
+        ...(isolated.open && listId !== undefined ? { 'aria-controls': listId } : {}),
         'data-ig-command': isolated.open ? 'close-isolated' : 'open-isolated',
       },
       [isolated.open ? words.hide : words.show],
@@ -2803,9 +2826,16 @@ export function renderWorkspace(
   // scrolling position and says nothing about what surrounds the selected
   // issue; handing the ladder a windowed document would make its budgets — and
   // therefore its refusal — depend on where the reader had scrolled to.
+  // THE LIST'S ID, DERIVED ONCE AND USED BY BOTH ZONES. Undefined unless the
+  // caller supplied a surface value; see `WorkspaceOptions.surfaceId` for why
+  // this renderer must not invent one.
+  const isolatedListId =
+    options.surfaceId === undefined ? undefined : `ig-isolated-list-${options.surfaceId}`;
+
   const canvas = renderScaleLadder(document, {
     state: options.scale ?? INITIAL_SCALE_STATE,
     theme,
+    isolatedListId,
     // ONE CONTROL, ONE ZONE — and the condition is WHETHER THIS SURFACE DRAWS
     // ONE, which is exactly what `words.rail` says. That is the contract
     // `ScaleLadderOptions.isolatedChip` states: suppress the ladder's chip only
@@ -2849,7 +2879,7 @@ export function renderWorkspace(
   // below is the WINDOW (`options.rail`, a `RailWindowOptions`), which is a
   // different value from `options.words.rail`. Two things called rail in one
   // scope is a reading hazard worth one name, not one comment per use.
-  const railFooterSpec = railFooter(canvas.ladder.isolated, options.words.rail);
+  const railFooterSpec = railFooter(canvas.ladder.isolated, options.words.rail, isolatedListId);
 
   const inspector = inspectorView(document, selection);
 

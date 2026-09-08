@@ -4328,6 +4328,40 @@ describe('opening the isolated list reveals it', () => {
   });
 
   /**
+   * THE ID IS PER MOUNT, WHICH IS THE POINT OF MINTING IT HERE. `renderWorkspace`
+   * is pure and cannot know what else is on the host's page; `mountWorkspace`
+   * can, because it is the thing being called twice. Two mounted workspaces must
+   * not name one element — `scale/render.ts`'s `searchSpec` records what a
+   * duplicated id costs, and an earlier revision of this work shipped one.
+   */
+  it('gives two mounted workspaces different ids for their lists', async () => {
+    const first = await mounted(SEED, { words: { ...WORDS, rail: RAIL_WORDS } });
+    const second = await mounted(SEED, { words: { ...WORDS, rail: RAIL_WORDS } });
+    try {
+      const openIn = async (page: Awaited<ReturnType<typeof mounted>>): Promise<string> => {
+        const toggle = page.element.querySelector<HTMLElement>('[data-ig-command="open-isolated"]');
+        assert.ok(toggle !== null, 'no isolated toggle');
+        toggle.click();
+        await flush();
+        const list = page.element.querySelector('.ig-isolated-list');
+        assert.ok(list !== null, 'no list after opening');
+        const id = list.getAttribute('id');
+        assert.ok(id !== null && id !== '', 'the list carries no id');
+        const control = page.element.querySelector('[data-ig-command="close-isolated"]');
+        assert.equal(control?.getAttribute('aria-controls'), id, 'the toggle names another element');
+        return id;
+      };
+
+      assert.notEqual(await openIn(first), await openIn(second), 'both mounts named one element');
+    } finally {
+      first.handle.destroy();
+      first.dom.window.close();
+      second.handle.destroy();
+      second.dom.window.close();
+    }
+  });
+
+  /**
    * THE TREE REPLACES THE CANVAS ZONE'S `innerHTML`, and the list is drawn in
    * that zone. The control is not — §17a puts it at the foot of the rail — so
    * without preserving the block the reader gets a toggle that flips to "hide"

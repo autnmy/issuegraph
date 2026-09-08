@@ -193,19 +193,57 @@ describe("§17a's rail footer", () => {
     const { markup } = renderWorkspace(withIsolated(), {
       words: WITH_RAIL,
       scale: { ...INITIAL_SCALE_STATE, isolatedOpen: true },
+      surfaceId: 'w1',
     });
     const rail = railZone(markup);
 
     const controls = /aria-controls="([^"]+)"/.exec(rail);
     assert.ok(controls !== null, 'the toggle names nothing');
     const target = controls[1] ?? '';
-    // THE ID MUST ACTUALLY RESOLVE, which is the whole point: a constant that
+    // THE ID MUST ACTUALLY RESOLVE, which is the whole point: a value that
     // drifted from the list's own id would satisfy an attribute check and help
     // nobody.
     assert.ok(
-      markup.includes(`<ol class="ig-isolated-list" id="${target}"`),
+      markup.includes(`id="${target}"`),
       `aria-controls names ${target}, which nothing on the surface carries`,
     );
+    assert.match(markup, /<ol class="ig-isolated-list" id="/);
+  });
+
+  /**
+   * TWO SURFACES, TWO IDS. `searchSpec` records the hazard this guards: a host
+   * rendering two documents side by side emits the markup twice, and a
+   * duplicated id makes the second surface's `aria-controls` resolve to the
+   * FIRST surface's list. An earlier revision shipped a module constant here.
+   */
+  it('does not hand two surfaces the same id', () => {
+    const open = { ...INITIAL_SCALE_STATE, isolatedOpen: true };
+    const one = renderWorkspace(withIsolated(), { words: WITH_RAIL, scale: open, surfaceId: 'w1' });
+    const two = renderWorkspace(withIsolated(), { words: WITH_RAIL, scale: open, surfaceId: 'w2' });
+
+    const idOf = (markup: string): string => {
+      const m = /<ol class="ig-isolated-list" id="([^"]+)"/.exec(markup);
+      assert.ok(m !== null, 'no isolated list id');
+      return m[1] ?? '';
+    };
+    assert.notEqual(idOf(one.markup), idOf(two.markup), 'both surfaces named one element');
+    assert.ok(one.markup.includes(`aria-controls="${idOf(one.markup)}"`));
+    assert.ok(two.markup.includes(`aria-controls="${idOf(two.markup)}"`));
+  });
+
+  /**
+   * NO SURFACE VALUE, NO ASSOCIATION — and no id either, so nothing dangles.
+   * Markup served without a mount is not operable, which is the same argument
+   * `CanvasWords.editMode` is optional under.
+   */
+  it('draws no association for markup that was never mounted', () => {
+    const { markup } = renderWorkspace(withIsolated(), {
+      words: WITH_RAIL,
+      scale: { ...INITIAL_SCALE_STATE, isolatedOpen: true },
+    });
+
+    assert.ok(!markup.includes('aria-controls'), 'an association with no unique id behind it');
+    assert.ok(!markup.includes('<ol class="ig-isolated-list" id='), 'an id nothing names');
   });
 
   /**
