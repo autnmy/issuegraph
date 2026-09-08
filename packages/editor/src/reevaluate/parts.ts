@@ -123,7 +123,26 @@ export function countWord(count: number, word: string): readonly ElementSpec[] {
   ];
 }
 
-export function summarySpec(summary: ChangeSummary | null, words: ChangeWords): ElementSpec {
+/**
+ * The summary, and the held-order label when the order is being re-evaluated.
+ *
+ * THE COMPUTING LABEL IS INSIDE THE LIVE REGION, and it was a sibling of it
+ * until a reader pointed out that this makes it silent. A pending write CLEARS
+ * `lastChange`, so the region is empty in exactly the state the label exists
+ * for — a sighted reader gets a greyed rail and a sentence saying why, and a
+ * screen-reader user is told nothing at all about the ranks having gone stale.
+ * Rendered inside, its appearance IS a change to the region, which is what
+ * announces.
+ *
+ * BOTH SURFACES DRAW IT FROM HERE for that reason. `renderReevaluate` had its
+ * own copy outside its own region and had the identical defect; one builder
+ * means the fix could not land on one surface and miss the other.
+ */
+export function summarySpec(
+  summary: ChangeSummary | null,
+  words: ChangeWords,
+  options: { readonly held: boolean } = { held: false },
+): ElementSpec {
   return element(
     'div',
     {
@@ -155,7 +174,13 @@ export function summarySpec(summary: ChangeSummary | null, words: ChangeWords): 
       element(
         'div',
         { class: 'ig-change-line', role: 'status' },
-        summary === null
+        [
+        // THE HELD LABEL FIRST, and it renders whether or not there is a
+        // summary beside it — a pending write clears `lastChange`, so "held
+        // with no summary" is the ordinary shape of this state rather than an
+        // edge of it.
+        options.held ? element('p', { class: 'ig-order-computing' }, [words.computing]) : null,
+        ...(summary === null
           ? []
           : [
               // THE ZERO CASE RENDERS, in the summary's own place. An edit that
@@ -173,7 +198,8 @@ export function summarySpec(summary: ChangeSummary | null, words: ChangeWords): 
                       ]),
                     ),
                   ),
-            ],
+            ]),
+        ],
       ),
       // ITS OWN CLASS, not the ladder's `.ig-chip`. That class is defined only
       // in `scale/styles.ts`, so borrowing it would leave this control unstyled

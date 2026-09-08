@@ -123,8 +123,7 @@ export function renderReevaluate(
       // sure of — which is why nothing here re-ranks anything: the ranks drawn
       // are the ones the caller vouched for, and a chip's movement is drawn as
       // a chip rather than as a rank.
-      view.held ? element('p', { class: 'ig-order-computing' }, [options.words.computing]) : null,
-      summarySpec(view.summary, options.words),
+      summarySpec(view.summary, options.words, { held: view.held }),
       view.chips.length === 0
         ? null
         : element(

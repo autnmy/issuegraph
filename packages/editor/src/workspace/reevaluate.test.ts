@@ -377,6 +377,19 @@ describe('a held order is LABELLED, not merely greyed', () => {
     assert.equal(/data-order/.test(result.markup), false);
   });
 
+  it('draws the label INSIDE the live region, or nothing announces it', () => {
+    // A pending write clears `lastChange`, so the region is empty in exactly
+    // the state this label is for. Drawn as a SIBLING of the region it is
+    // silent: a sighted reader gets the greyed rail and the sentence, and a
+    // screen-reader user is told nothing about the ranks having gone stale.
+    const header = headerZone(
+      renderWorkspace(railOf(['a', 'b', 'c']), { words: WORDS, orderStatus: 'held' }).markup,
+    );
+    const region = /<div class="ig-change-line" role="status">([\s\S]*?)<\/div>/.exec(header);
+    assert.ok(region !== null, 'no live region');
+    assert.match(region[1] ?? '', /ig-order-computing/);
+  });
+
   it('draws no label once the order settles', () => {
     const result = renderWorkspace(railOf(['a', 'b', 'c']), { words: WORDS, change: SWAPPED });
     assert.equal(/ig-order-computing/.test(result.markup), false);

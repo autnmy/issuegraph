@@ -2586,18 +2586,17 @@ export function renderWorkspace(
         // adjacency instead: cause in the header, effect on the row.
         // "A STALE-BUT-LABELLED ORDER BEATS A HALF-COMPUTED ONE." §17c greys the
         // held rail and says WHY beside it, and the greying without the label
-        // is the half of that pair which communicates nothing — a reader sees a
-        // dimmed surface and is told nothing about it, by sight or by
-        // assistive technology.
+        // is the half of that pair which communicates nothing.
         //
-        // IT IS THE ONLY THING DRAWN WHILE A WRITE IS IN FLIGHT, which is what
-        // makes leaving it out worse than it first looks: the store clears
-        // `lastChange` before it sets the order to `held`, so the summary
-        // beside this is empty exactly when the rail is greyest.
-        changeWords === undefined || !change.held
+        // THE LABEL IS `summarySpec`'S, INSIDE ITS LIVE REGION, and it was a
+        // sibling of that region until a reader pointed out this made it
+        // silent. The store clears `lastChange` when a write goes PENDING, so
+        // the region is empty in exactly the state the label exists for — a
+        // sighted reader got the greying and the sentence, and a screen-reader
+        // user was told nothing about the ranks having gone stale.
+        changeWords === undefined
           ? ''
-          : renderMarkup(element('p', { class: 'ig-order-computing' }, [changeWords.computing])),
-        changeWords === undefined ? '' : renderMarkup(summarySpec(change.summary, changeWords)),
+          : renderMarkup(summarySpec(change.summary, changeWords, { held: change.held })),
       ].join(''),
     ),
     zone(
