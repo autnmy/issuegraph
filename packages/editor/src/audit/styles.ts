@@ -93,8 +93,16 @@ export const auditStylesheet = `
    false of a shortfall. A percentage resolves here because the zone's grid row
    is 1fr against a workspace of definite height, so half the column is a real
    bound rather than a hopeful one, and the inspector is guaranteed the other
-   half whatever the audit found. */
+   half whatever the audit found.
+
+   BORDER-BOX, OR THE CAP IS NOT THE CAP. max-height measures the CONTENT box by
+   default, so a pane capped at half the zone still took that half PLUS its two
+   paddings and its border — and the guaranteed remainder was guaranteed of the
+   wrong box. The viewer scopes border-box to .ig-viewer *, and this panel is
+   not inside one, so it inherits whatever the host page sets. Stated here
+   rather than assumed. */
 .ig-audit-panel {
+  box-sizing: border-box;
   flex: 0 1 auto;
   max-height: 50%;
   border-bottom: var(--ig-stroke) solid var(--ig-line);
