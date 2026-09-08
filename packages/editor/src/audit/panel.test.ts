@@ -85,12 +85,20 @@ function overlayOf(
   return auditOverlay({ document, graph: graphOf(document), encodingRefused });
 }
 
+/**
+ * `known` defaults to every issue in the fixture — the ordinary case, where the
+ * surface draws what it audited. The tests that care pass their own.
+ */
 function markupOf(
   issues: readonly StoredIssue[],
   edges: readonly (readonly [EdgeKind, IssueRef, IssueRef])[],
   encodingRefused: readonly { readonly ref: IssueRef; readonly diagnostic?: string }[] = [],
+  known: ReadonlySet<string> = new Set(issues.map((held) => held.ref)),
 ): string {
-  const spec = renderAuditPanel(overlayOf(issues, edges, encodingRefused), { words: WORDS });
+  const spec = renderAuditPanel(overlayOf(issues, edges, encodingRefused), {
+    words: WORDS,
+    known,
+  });
   assert.ok(spec !== null, 'the fixture produced no findings, so this proves nothing');
   return renderMarkup(spec);
 }
@@ -232,11 +240,31 @@ describe('the findings panel', () => {
     // and nothing around them, so several identical `go and look` buttons are
     // indistinguishable and the ref in `data-ig-target` — which is not exposed
     // to assistive technology at all — cannot separate them.
-    const markup = markupOf(EVERY_CLASS.issues, EVERY_CLASS.edges, [{ ref: 'f' }]);
+    //
+    // THE FIXTURE IS THE HARD CASE, not the easy one. `EVERY_CLASS` gives every
+    // card a DIFFERENT first member, so a name carrying only the ref passes it
+    // — which is how an earlier revision shipped exactly that. Here `a` is in
+    // the cycle AND refused, so two cards share a navigable member and only the
+    // finding separates them. `auditDocument` concatenates those on purpose.
+    const markup = markupOf(
+      [issue('a'), issue('b'), issue('c')],
+      [
+        ['blocked-by', 'a', 'b'],
+        ['blocked-by', 'b', 'c'],
+        ['blocked-by', 'c', 'a'],
+      ],
+      [{ ref: 'a' }],
+    );
     const names = [...markup.matchAll(/class="ig-audit-show"[^>]*aria-label="([^"]+)"/g)].map(
       (match) => match[1] as string,
     );
+    const targets = [...markup.matchAll(/class="ig-audit-show"[^>]*data-ig-target="([^"]+)"/g)].map(
+      (match) => match[1] as string,
+    );
     assert.ok(names.length > 1, 'one button proves nothing about distinctness');
+    // THE PREMISE, ASSERTED: two buttons really do point at the same issue, so
+    // the distinctness below is about the NAME rather than about the fixture.
+    assert.ok(new Set(targets).size < targets.length, targets.join(' | '));
     assert.equal(new Set(names).size, names.length, names.join(' | '));
     // THE HOST'S WORD SURVIVES IN EVERY ONE, so this cannot pass by replacing
     // the label with a bare ref — which would be the package naming its own
@@ -303,13 +331,36 @@ describe('the findings panel', () => {
     assert.match(tag, /data-ig-target="a"/);
   });
 
+  it('publishes no navigation for a ref the DRAWN surface does not carry', () => {
+    // AUDITED IS NOT DRAWN. A host audits the repository it holds and renders a
+    // page of it — the demo's own projection audits `held` while drawing
+    // `landed`, which can be empty — so a ref can be in `AuditInput.document`,
+    // have an overlay row, and still reach a view with nothing in it. The
+    // overlay cannot see that difference; the caller can, and says so.
+    const issues = [issue('a'), issue('b'), issue('c')];
+    const edges = [
+      ['blocked-by', 'a', 'b'],
+      ['blocked-by', 'b', 'c'],
+      ['blocked-by', 'c', 'a'],
+    ] as const;
+    const overlay = overlayOf(issues, edges);
+    // THE PREMISE: the overlay DOES carry rows for these refs, so this test is
+    // about `known` rather than about an empty audit.
+    assert.ok(overlay.rowFor('a') !== undefined, 'the overlay has no row to withhold');
+    const drawnNone = markupOf(issues, edges, [], new Set());
+    assert.match(drawnNone, /ig-audit-card/, 'the finding itself was dropped');
+    assert.equal(drawnNone.includes('ig-audit-show'), false, drawnNone);
+    // THE CONTROL, so this cannot pass by drawing no button ever.
+    assert.ok(markupOf(issues, edges, [], new Set(['b'])).includes('data-ig-target="b"'));
+  });
+
   it('draws nothing at all when the audit found nothing', () => {
     // UNLIKE THE HEADER COUNT, which is drawn at zero because it IS the control.
     // A list of nothing is a heading over an empty region in a column whose
     // space belongs to the selection.
     const overlay = overlayOf([issue('a'), issue('b')], [['blocked-by', 'a', 'b']]);
     assert.equal(overlay.count, 0);
-    assert.equal(renderAuditPanel(overlay, { words: WORDS }), null);
+    assert.equal(renderAuditPanel(overlay, { words: WORDS, known: new Set(['a', 'b']) }), null);
   });
 
   it('carries no script, no inline handler and nothing that animates', () => {

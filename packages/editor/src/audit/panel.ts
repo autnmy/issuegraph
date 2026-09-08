@@ -113,24 +113,42 @@ export interface AuditWords {
 
 export interface AuditPanelOptions {
   readonly words: AuditWords;
+  /**
+   * The keys the surface being drawn actually carries, so navigation can only
+   * name somewhere the reader can arrive.
+   *
+   * REQUIRED, AND IT IS THE CALLER'S ANSWER RATHER THAN ONE DERIVED HERE. The
+   * audit reads a document that is not always the document on screen: a host
+   * audits the whole repository it holds and renders a page of it — the demo's
+   * own projection audits `held` while drawing `landed`, which can be empty —
+   * so a ref present in `AuditInput.document` may still have no row to reach.
+   * The overlay cannot see that difference, and neither can this module.
+   *
+   * THE SAME SET AND THE SAME RULE `holdRow` ALREADY USES. A hold's subject
+   * control is withheld for "a subject the inspector could not resolve", which
+   * is this question asked one panel over; `renderWorkspace` computes the set
+   * once, off the NORMALIZED document it draws, and hands it to both.
+   */
+  readonly known: ReadonlySet<string>;
 }
 
 /**
  * The navigable member of a finding, or `undefined` when it has none.
  *
- * THE FIRST MEMBER THE DOCUMENT ACTUALLY CARRIES, and the filter is not
- * defensive tidying. An encoding refusal is a fact the HOST asserted about an
- * issue it read, and `findings.ts` keeps one whose ref lies outside the loaded
- * document ON PURPOSE — filtering findings to the loaded set would drop them on
- * exactly the issues a paging boundary has not reached. So a finding's members
- * are not all rail rows, and a control targeting one that is not navigates
- * nowhere: the mount reconciles the unknown selection straight back away, and
- * the button advertises a move it cannot make.
+ * THE FIRST MEMBER THE DRAWN SURFACE CARRIES, and the filter is not defensive
+ * tidying. An encoding refusal is a fact the HOST asserted about an issue it
+ * read, and `findings.ts` keeps one whose ref lies outside the loaded document
+ * ON PURPOSE — filtering findings to the loaded set would drop them on exactly
+ * the issues a paging boundary has not reached. So a finding's members are not
+ * all rows, and a control targeting one that is not advertises a move it cannot
+ * make: the mount reconciles the unknown selection straight back away.
  *
- * `rowFor` IS THE QUESTION, ALREADY ANSWERED. `auditOverlay` builds a row only
- * for a ref the document carries, and that is the same predicate this needs —
- * asking it again here would be a second spelling of "is this issue loaded",
- * free to disagree with the rail the click is aimed at.
+ * IT ASKS THE CALLER, NOT THE OVERLAY, AND THE DIFFERENCE IS NOT PEDANTRY. An
+ * earlier revision used `overlay.rowFor`, which answers "does the AUDIT's
+ * document carry this ref" — a different question, and the two come apart
+ * exactly where a host audits more than it draws. The demo does: it audits the
+ * repository it holds and renders a page of it, so a ref can be audited, have
+ * an overlay row, and still reach a view with nothing in it.
  *
  * FIRST RATHER THAN "MOST IMPORTANT": a finding names a component, no member of
  * it leads, and a rule invented here would be a second ranking nothing else in
@@ -138,9 +156,9 @@ export interface AuditPanelOptions {
  */
 function navigableMember(
   finding: AuditFinding,
-  overlay: AuditOverlay,
+  known: ReadonlySet<string>,
 ): IssueRef | undefined {
-  return finding.members.find((ref) => overlay.rowFor(ref) !== undefined);
+  return finding.members.find((ref) => known.has(ref));
 }
 
 /**
@@ -153,10 +171,10 @@ function navigableMember(
  */
 function cardSpec(
   finding: AuditFinding,
-  overlay: AuditOverlay,
+  known: ReadonlySet<string>,
   words: AuditWords,
 ): ElementSpec {
-  const target = navigableMember(finding, overlay);
+  const target = navigableMember(finding, known);
   return element(
     'li',
     {
@@ -188,12 +206,18 @@ function cardSpec(
               // "offers navigation and never a remedy", and a control that can
               // write is a remedy whatever its label says.
               'data-ig-command': 'reveal-issue',
-              // THE REF IS APPENDED TO THE NAME, NOT WRITTEN INTO THE WORD.
-              // Several findings mean several of these buttons, and a repeated
+              // THE NAME CARRIES THE FINDING, NOT ONLY THE ISSUE. Several
+              // findings mean several of these buttons, and a repeated
               // `show me` is indistinguishable in the one navigation mode that
-              // strips the surrounding card: a screen reader's BUTTON LIST. The
-              // visible label stays the host's word, and the name it announces
-              // carries the ref that says which card it belongs to.
+              // strips the surrounding card: a screen reader's BUTTON LIST.
+              //
+              // THE CLASS IS IN IT BECAUSE THE REF ALONE IS NOT ENOUGH, which
+              // an earlier revision got wrong. One issue can carry SEVERAL
+              // findings — `auditDocument` concatenates a cycle and a refusal
+              // naming the same ref on purpose — so two cards can share a
+              // navigable member, and the ref would then name both. What
+              // separates them is which finding is being offered, and the chip
+              // word is already the host's name for exactly that.
               //
               // APPENDED RATHER THAN INTERPOLATED, the idiom `WorkspaceWords
               // .whyRank` fixes for exactly this: a `{ref}` placeholder would
@@ -207,10 +231,10 @@ function cardSpec(
               // its note rejects a name like `remove #488` — on the ground that
               // a HOST writing that string would be wrong on every other row,
               // which is true and is a different question from appending the
-              // ref out here. The same treatment is owed there; it is filed
+              // out here. The same treatment is owed there; filed as #176
               // rather than widened into this change.
               'data-ig-target': target,
-              'aria-label': `${words.show} ${target}`,
+              'aria-label': `${words.show} ${words.classes[finding.kind]} ${target}`,
             },
             [words.show],
           ),
@@ -251,7 +275,7 @@ export function renderAuditPanel(
     element(
       'ul',
       { class: 'ig-audit-list' },
-      overlay.findings.map((finding) => cardSpec(finding, overlay, words)),
+      overlay.findings.map((finding) => cardSpec(finding, options.known, words)),
     ),
   ]);
 }

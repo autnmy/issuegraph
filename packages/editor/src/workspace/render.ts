@@ -1967,7 +1967,13 @@ function inspectorSpec(view: InspectorView, context: InspectorContext): ElementS
   // scroll budget (`.ig-audit-list`), so a long audit cannot evict the
   // selection detail from the screen — only from the list's own overflow.
   const auditPanel =
-    context.audit === null ? null : renderAuditPanel(context.audit, { words: words.audit });
+    context.audit === null
+      ? null
+      : // `known` IS THE DRAWN DOCUMENT'S KEYS, the same set `holdRow` withholds
+        // its subject control on, and NOT the audit's. A host audits what it
+        // holds and draws a page of it, so a ref can be audited and still have
+        // no row here; the panel cannot see that difference and is told.
+        renderAuditPanel(context.audit, { words: words.audit, known: context.known });
   return element('div', { class: 'ig-inspector', 'data-subject': subject.kind }, [
     element('div', { class: 'ig-inspector-head' }, [
       element('h2', { class: 'ig-inspector-name' }, [words.inspector]),
