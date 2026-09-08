@@ -9,7 +9,7 @@
  * |-----------|-------------------------------------------------------|
  * | header    | `auditOverlay` + `renderAuditHeader`                   |
  * | rail      | `renderViewer(…, { projection: 'linear' })`, windowed  |
- * | canvas    | `renderScaleLadder`                                    |
+ * | canvas    | `canvasToolbar` + `renderScaleLadder`                  |
  * | inspector | `inspectorView`, rendered here                         |
  *
  * ## The audit left-bar is applied to the rail's SPEC, never to its markup
@@ -108,6 +108,7 @@ import {
   renderAuditHeader,
 } from '../audit/surface.ts';
 import { type ScaleState, INITIAL_SCALE_STATE } from '../scale/commands.ts';
+import type { ScaleLadder } from '../scale/ladder.ts';
 import { renderScaleLadder } from '../scale/render.ts';
 import { scaleLadderStylesheet } from '../scale/styles.ts';
 
@@ -374,6 +375,80 @@ export interface WorkspaceWords {
    * whose relationship to each other is only legible from their names.
    */
   readonly audit: AuditWords;
+  /**
+   * The canvas toolbar's words — frame 17a's caption over the graph.
+   *
+   * OPTIONAL, AND ITS ABSENCE DRAWS NO TOOLBAR, on `change`'s reasoning
+   * exactly: a required member here would break every host built against the
+   * current version, and a default supplied here would be this package writing
+   * an English caption for a host that may not speak English. So a host that
+   * has not worded the row gets the canvas it already had.
+   */
+  readonly canvas?: CanvasWords | undefined;
+}
+
+/**
+ * Frame 17a's canvas toolbar reads `focus: #512 · 1 hop · 6 of 312 shown`, and
+ * every word in it is the host's.
+ *
+ * NUMBERS ARE APPENDED, NEVER INTERPOLATED, which is why this is four words
+ * rather than one sentence with two `{n}` holes in it. {@link
+ * WorkspaceWords.whyRank} states the doctrine and the reason: a template makes
+ * every host reimplement the substitution. The row is assembled as spans —
+ * `<focus> <key> · <n> <of> <total> <shown>` — so a host whose language orders
+ * those differently is no worse off than it is with `whyRank`, and no host has
+ * to parse a format string.
+ *
+ * THE DOCTRINE IS THIS INTERFACE'S, NOT THE WHOLE PACKAGE'S, and saying
+ * otherwise would be refuted by the markup directly beneath this row. The scale
+ * module writes English with numbers in it — the refusal sentence
+ * (`scale/ladder.ts`), the isolated chip's label, and a literal button label in
+ * `scale/render.ts`. That is a pre-existing inconsistency; the row follows
+ * `WorkspaceWords`' rule because the row is composed in the workspace, and it
+ * neither resolves nor extends the other one.
+ *
+ * THE FRAME'S `1 hop` IS NOT HERE, and its absence is a decision rather than an
+ * omission. `scaleLadder` narrows the canvas to a whole CONNECTED COMPONENT,
+ * not to an n-hop ball around the focus: there is no hop radius in
+ * `ScaleState`, in `ScaleLadder`, or in the viewer's graph projection, and a
+ * component can be ten hops deep. Printing `1 hop` would state a bound the
+ * canvas does not honour — the same defect as a rank the rail is not sure of —
+ * so the row prints what the ladder computed and nothing else.
+ */
+export interface CanvasWords {
+  /**
+   * Leads the focus clause — the frame's `focus:`, minus the colon, which is
+   * punctuation this package draws rather than a word a host translates.
+   */
+  readonly focus: string;
+  /**
+   * Sits between the two counts: the frame's `6 OF 312`.
+   *
+   * ITS OWN MEMBER RATHER THAN PART OF `shown`, because the two numbers
+   * straddle it. Folding it into either neighbour would put a number in the
+   * middle of a host's string, which is the interpolation this interface's
+   * whole shape exists to avoid.
+   */
+  readonly of: string;
+  /** Trails the counts — the frame's `6 of 312 SHOWN`. */
+  readonly shown: string;
+  /**
+   * The trailing pill — the frame's `edit mode`.
+   *
+   * A STATE, NOT A CONTROL. The workspace is the editing surface and there is
+   * no read-only workspace to toggle into, so this names what the reader is
+   * looking at rather than offering to change it. It is drawn as text, never as
+   * a button, because a pill that looked pressable and did nothing is the dead
+   * control `headerControls` refuses to draw.
+   *
+   * OPTIONAL AND SEPARATELY SO, on `headerControls`' own reasoning rather than
+   * on this group's. `renderWorkspace` returns markup, and markup can be served
+   * without `mountWorkspace` — nothing on such a surface is editable, so a pill
+   * asserting that it is would be a claim the render layer cannot honour. The
+   * host knows which it built, so the host says: supply this only where the
+   * surface was mounted. Absent, the caption still draws and the pill does not.
+   */
+  readonly editMode?: string | undefined;
 }
 
 export interface RecoveryWords {
@@ -727,6 +802,107 @@ export interface WorkspaceResult {
  */
 function zone(name: Zone, inner: string): string {
   return `<section class="ig-zone" data-zone="${name}">${inner}</section>`;
+}
+
+/**
+ * §17f's canvas caption — what this canvas is drawing, and out of how much.
+ *
+ * THE GAP IS THE `direct` TIER, AND ONLY IT. The zone is not silent in general:
+ * `renderScaleLadder` appends the ladder's own chrome after the graph, so a
+ * focused canvas already carries a "return to every component" button, a
+ * declining one already prints a counted refusal sentence, and the isolated
+ * chip and the search are already there. What none of them states is the RATIO
+ * on the one tier where the canvas succeeds — it narrows to a component, draws
+ * it, and says nothing about the rest — so a canvas showing 6 of 312 issues
+ * read exactly like a backlog that has 6.
+ *
+ * SO THE STATEMENT IS SCOPED TO THAT TIER, deliberately. Above the node budget
+ * `renderScaleLadder` draws NO graph at all — the canvas is `null` and the
+ * refusal takes its place — and a caption reading "1500 out of 2000 drawn here"
+ * over an empty canvas would state a thing the surface does not do. That is the
+ * defect {@link CanvasWords} refuses on the frame's own `1 hop`, and refusing it
+ * there while committing it here would be worse than not drawing the row.
+ *
+ * THE NUMBERS ARE THE LADDER'S AND THE DOCUMENT'S, ON ONE BASIS. `nodeCount` is
+ * "the nodes the canvas would draw", the same value the refusal is computed
+ * from, so the caption cannot disagree with the ladder beneath it. The total is
+ * the NORMALIZED document's — the one every zone in this function derives from —
+ * never the raw input, whose counts no zone drew, and never `ladder.canvas`,
+ * which would print `6 out of 6`.
+ *
+ * THE COUNT EXCLUDES ISSUES WITH NO RELATIONSHIP, and the chip below says so in
+ * its own words. UNFOCUSED the two are complementary and do sum to the total:
+ * `nodeCount` is every issue carrying a relationship and the chip is every issue
+ * carrying none. FOCUSED they do not, and an earlier draft of this comment said
+ * they did — `nodeCount` is then ONE component's members, so the shortfall is
+ * the chip's population PLUS every other component. What holds either way, and
+ * what the row actually relies on, is that the two count DISJOINT sets: they can
+ * never contradict, whatever they leave between them. So the row does not
+ * restate the chip, and no third number may be derived by subtracting one from
+ * the other.
+ */
+function canvasToolbar(
+  ladder: ScaleLadder,
+  document: ViewerDocument,
+  words: CanvasWords | undefined,
+): ElementSpec | null {
+  if (words === undefined) return null;
+  const focused = ladder.focus;
+  const statement =
+    ladder.tier !== 'direct'
+      ? null
+      : element('p', { class: 'ig-canvas-caption' }, [
+          // NO CLAUSE AT ALL WHEN NOTHING IS FOCUSED, rather than the label with
+          // an empty value after it. An unfocused canvas is drawing every
+          // component, which is a true thing the counts already say.
+          focused === null
+            ? null
+            : element('span', { class: 'ig-canvas-focus' }, [
+                element('span', {}, [words.focus]),
+                // THE PUNCTUATION IS THE PACKAGE'S, AND IT HAS TO ACTUALLY BE
+                // DRAWN. `CanvasWords.focus` tells a host to omit the colon
+                // because this draws it; an earlier revision made that promise
+                // and then emitted only a space, so a host that obeyed the
+                // contract got `focus #512`. The interpunct after the key is
+                // the frame's own typography for the same reason.
+                ': ',
+                // NOT `identity()`, AND NOT BECAUSE OF THE URL. That helper is
+                // right about who owns a tracker's link shape — but it renders
+                // an ANCHOR when the host supplied a url, and an anchor here is
+                // focusable inside a region that is replaced wholesale on every
+                // mounted redraw. `focusedKey()` and `commandFocusToken()` both
+                // read null for it, so the restore falls through to the first
+                // rail row and `WorkspaceHandle.update`'s promise to keep focus
+                // is broken by a caption. The caption is a READ-OUT: the canvas
+                // below it already draws this issue as a focusable node, and the
+                // rail already links it. So the key is drawn as text, which
+                // invents no URL and takes no focus.
+                element('span', { class: 'ig-id' }, [focused]),
+                ' · ',
+              ]),
+          element('span', { class: 'ig-canvas-shown' }, [
+            element('span', { class: 'ig-canvas-count' }, [String(ladder.nodeCount)]),
+            ' ',
+            element('span', {}, [words.of]),
+            ' ',
+            element('span', { class: 'ig-canvas-count' }, [String(document.issues.length)]),
+            ' ',
+            element('span', {}, [words.shown]),
+          ]),
+        ]);
+  // A STATE, NOT A CONTROL, AND NOT A ROLE. It carries text, so it is announced
+  // in reading order on its own; `role="img"` with an `aria-label` — the shape
+  // `station()` uses — is for an indicator with NO text, and giving one to this
+  // would replace the host's word with a copy of itself. A `button` would be
+  // the dead control `headerControls` refuses to draw.
+  const pill =
+    words.editMode === undefined
+      ? null
+      : element('span', { class: 'ig-edit-mode' }, [words.editMode]);
+  // NOTHING TO SAY, NO ROW. Both halves are conditional and independently so,
+  // and an empty bordered band above the canvas is chrome that carries no fact.
+  if (statement === null && pill === null) return null;
+  return element('div', { class: 'ig-canvas-toolbar' }, [statement, pill]);
 }
 
 /**
@@ -2522,6 +2698,8 @@ export function renderWorkspace(
     projected: options.projected,
   });
 
+  const toolbar = canvasToolbar(canvas.ladder, document, options.words.canvas);
+
   const inspector = inspectorView(document, selection);
 
   // §17c'S LOOP, OVER THE RAIL THE READER IS ACTUALLY LOOKING AT.
@@ -2632,7 +2810,17 @@ export function renderWorkspace(
         railSpacer(rail.after, 'after'),
       ].join(''),
     ),
-    zone('canvas', canvas.markup),
+    zone(
+      'canvas',
+      // THE CAPTION LEADS THE ZONE, above the graph, exactly as frame 17a
+      // draws it — and it is assembled HERE rather than inside the ladder.
+      // `renderScaleLadder` is also used standalone, where `chrome: false` is
+      // the deliberate answer, and the words this row needs are the
+      // workspace's. Both halves are already-rendered markup, which is the
+      // rule `zone` exists under: it writes the only hand-authored tag in this
+      // package and takes no caller value.
+      [toolbar === null ? '' : renderMarkup(toolbar), canvas.markup].join(''),
+    ),
     zone(
       'inspector',
       // §17d'S LIST IS THE SELECTION'S SIBLING, AND THEY SHARE ONE SCROLL

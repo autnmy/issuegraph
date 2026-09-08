@@ -173,6 +173,104 @@ export const workspaceStylesheet = `
   overflow: auto;
 }
 
+/* §17f'S CAPTION, AND IT IS THE ZONE'S FIRST ROW. Frame 17a puts it above the
+   graph with a rule under it, which is the same shape the header row beside it
+   already has — so it takes that row's padding tokens rather than a bespoke
+   pair, and the two read as one band across the surface.
+
+   THE GROUND, NOT THE CARD COLOUR. --ig-surface is what a RAISED element takes
+   here: a bordered card, a button. This row is a full-bleed structural band, and
+   painting it the panel colour made it read as a card floating on the canvas —
+   which is also what the frame does not draw, and what the comment above it
+   claimed it was not. --ig-bg is the ground .ig-workspace itself paints and the
+   header row inherits, so the two really do match. It has to be OPAQUE either
+   way: the row is sticky over a scrolling graph and must occlude it.
+
+   IT DOES NOT SCROLL WITH THE CANVAS, deliberately. The zone scrolls (above),
+   and a caption saying "6 of 312 shown" that scrolls away is a caption you have
+   to go back for. A sticky position keeps it against the zone's top edge
+   without taking the graph out of the zone's own scroll. */
+.ig-canvas-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--ig-space-tight);
+  padding: var(--ig-space-tight) var(--ig-space);
+  border-bottom: var(--ig-stroke) solid var(--ig-line);
+  position: sticky;
+  top: 0;
+  background: var(--ig-bg);
+  z-index: 1;
+}
+
+/* MONO AND MUTED, because it is a read-out rather than a heading: the frame
+   sets it in the same mono face at the same muted hue as the rail's own footer
+   count, and the two are the same kind of fact. */
+.ig-canvas-caption {
+  margin: 0;
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-micro);
+  color: var(--ig-text-muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ITS OWN CLASS, NOT LAYER 1'S .ig-count. They look like the same thing and are
+   not: layer 1's is the isolated-issue tally that "sits directly on the panel,
+   outside the padded groups, so it carries the panel's own inset" — 12px 20px of
+   it. Borrowing the name put that inset around two numbers in the middle of a
+   sentence, which is what the frame comparison caught. */
+.ig-canvas-count {
+  color: var(--ig-text-body);
+  font-variant-numeric: tabular-nums;
+}
+
+/* THE CLAUSES DO NOT BREAK INTERNALLY. The caption is one line that ellipsizes
+   as a whole; what must not happen is a label parting from the key it names, or
+   a count parting from the word that says what it counts. */
+.ig-canvas-focus,
+.ig-canvas-shown {
+  white-space: nowrap;
+}
+
+/* PUSHED RIGHT BY ITS OWN MARGIN, NOT BY THE ROW'S JUSTIFICATION. The row's
+   arity changes: off the direct tier the caption is gone and the pill is the
+   only child, and justify-content: space-between puts a lone item at main
+   START — so the pill jumped to the left edge on exactly the tiers a large
+   backlog is always in, which is the state this surface exists to handle well.
+   margin-left: auto is one declaration that is correct at either arity, and it
+   is also what leaves #181's projection toggle a real slot: a control added
+   ahead of the caption lands in the left group without touching this rule.
+
+   THE TINT PAIR, NOT A BARE OUTLINE. The tint fill and tint border tokens
+   exist for exactly this — "a fill of its own hue inside a heavier border of
+   the same hue" — and the frame draws the pill that way. Reaching for the
+   accent directly would give a solid chip that reads as loud as the selection.
+
+   IT NEVER SHRINKS. The caption beside it is the part that may ellipsize; the
+   pill is three or four characters and losing them would leave a coloured stub
+   saying nothing. */
+.ig-edit-mode {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-pill);
+  letter-spacing: var(--ig-tracking-pill);
+  color: var(--ig-accent);
+  /* THE TINT TOKENS ARE PERCENTAGES, NOT COLOURS — 8% and 30% — so they are only
+     meaningful inside color-mix, which is how every other tinted badge in the
+     package consumes them. Handed straight to background and border-color they
+     are invalid, and an invalid declaration is DROPPED SILENTLY: the pill
+     rendered as bare cyan text with no fill and no border, and no test noticed
+     because nothing here was a hex literal. */
+  background: color-mix(in srgb, var(--ig-accent) var(--ig-tint-fill), transparent);
+  border: var(--ig-stroke) solid
+    color-mix(in srgb, var(--ig-accent) var(--ig-tint-border), transparent);
+  border-radius: var(--ig-radius-small);
+  padding: var(--ig-space-micro) var(--ig-space-snug);
+}
+
 /* ONE SCROLL TRACK, AND THE PANEL SHARES IT. §17d's findings panel is a sibling
    of .ig-inspector here rather than a child, so it keeps its own padding and
    reads as a peer of the selection rather than part of it — but the ZONE still

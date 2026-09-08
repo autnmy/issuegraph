@@ -1522,6 +1522,22 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         // as data, the same `data-ig-state` the ladder's line carries, so a
         // pending edge is not drawn as a settled one and a host styles or reads
         // it the same way in both modes. The merge is the ladder's own.
+        // §17f'S ROW SURVIVES THIS ASSIGNMENT, AND ITS CAPTION DOES NOT.
+        // `innerHTML` replaces every child, and `renderWorkspace` puts the
+        // toolbar in this zone as its FIRST child — so the row, the pill
+        // included, was silently deleted the moment a reader switched to the
+        // tree. The pill is a property of the SURFACE, and a mounted surface is
+        // exactly where a host is told to supply it, so losing it here took the
+        // control away in the one state it is documented to exist in.
+        //
+        // THE CAPTION IS DIFFERENT, and is dropped on purpose rather than by
+        // accident. It states what the LADDER's canvas draws — one connected
+        // component out of the whole backlog — and this branch does not draw the
+        // ladder's canvas: it draws `viewer`, the whole document, as a tree. So
+        // "6 out of 312 drawn here" is simply false over a tree of 312, on the
+        // same rule that keeps the caption off the refusing tiers.
+        const toolbar = canvas.querySelector('.ig-canvas-toolbar');
+        toolbar?.querySelector('.ig-canvas-caption')?.remove();
         canvas.innerHTML = renderViewer(withoutChrome(viewer), {
           projection: 'tree',
           theme: resolved,
@@ -1529,6 +1545,18 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
           // The rail beside this canvas draws the panel's one header.
           chrome: false,
         }).markup;
+        // Re-inserted rather than re-rendered: the row is already assembled,
+        // and rebuilding it here would be a second place that decides what it
+        // says.
+        //
+        // ONLY IF IT STILL HAS CONTENT, which is `canvasToolbar`'s own rule —
+        // "nothing to say, no row" — and removing the caption above is exactly
+        // what can empty it. A host that words the caption and not the pill
+        // gets a caption-only row on the direct tier, and prepending its
+        // emptied husk here left a sticky padded band with a border and no
+        // content over the tree. Reading the element rather than re-deriving
+        // the condition keeps the rule in one place.
+        if (toolbar !== null && toolbar.childElementCount > 0) canvas.prepend(toolbar);
         const states = new Map(
           overlaysFor(viewer.edges, writeStates, selectedEdgeId(state.selection)).map((edge) => [edge.id, overlayFor(edge).attribute]),
         );

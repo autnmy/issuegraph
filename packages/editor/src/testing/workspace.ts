@@ -27,6 +27,16 @@ import type { WorkspaceWords } from '../index.ts';
  * the same string. A fixture word has to be one no renderer would write.
  */
 export const WORKSPACE_WORDS: WorkspaceWords = {
+  // FOUR WORDS THAT SHARE NO SUBSTRING, on this constant's standing rule. The
+  // caption prints them in one line either side of two numbers, so a fixture
+  // where `of` occurred inside `shown` would let a row that dropped a word
+  // still satisfy a test looking for it.
+  canvas: {
+    focus: 'centred on',
+    of: 'out of',
+    shown: 'drawn here',
+    editMode: 'you may edit',
+  },
   asOf: 'read at',
   open: 'in the backlog',
   encoded: 'carry relationships',
