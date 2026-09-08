@@ -124,6 +124,55 @@ describe('§17f’s caption says what the canvas is drawing', () => {
   });
 
   /**
+   * THE PUNCTUATION IS THE PACKAGE'S, AND THE CONTRACT SAYS SO. `CanvasWords`
+   * tells a host to omit the colon because this package draws it. An earlier
+   * revision made that promise and emitted only a space, so a host that obeyed
+   * the contract got `focus #512`.
+   */
+  it('draws the colon its own contract tells the host to omit', () => {
+    const zone = canvasZone(
+      renderWorkspace(FRAME, {
+        words: WORKSPACE_WORDS,
+        scale: { ...INITIAL_SCALE_STATE, focus: 'i0002' },
+      }).markup,
+    );
+
+    assert.ok(CANVAS !== undefined);
+    assert.ok(
+      focusClause(zone).includes(`<span>${CANVAS.focus}</span>: `),
+      'the label is not followed by the colon the interface promises',
+    );
+  });
+
+  /**
+   * THE CAPTION TAKES NO FOCUS, and a url is the state where it nearly did.
+   * `identity()` renders an ANCHOR when the host supplied one, and an anchor
+   * here sits inside a region the mount replaces wholesale on every redraw —
+   * `focusedKey()` and `commandFocusToken()` both read null for it, so the
+   * restore falls through to the first rail row and `WorkspaceHandle.update`'s
+   * promise to keep focus is broken by a read-out.
+   */
+  it('draws the key as text even when the host supplied a url', () => {
+    const linked: ViewerDocument = {
+      ...FRAME,
+      issues: FRAME.issues.map((issue) =>
+        issue.key === 'i0002' ? { ...issue, url: 'https://example.invalid/i0002' } : issue,
+      ),
+    };
+    const zone = canvasZone(
+      renderWorkspace(linked, {
+        words: WORKSPACE_WORDS,
+        scale: { ...INITIAL_SCALE_STATE, focus: 'i0002' },
+      }).markup,
+    );
+
+    const clause = focusClause(zone);
+    assert.match(clause, /<span class="ig-id">i0002<\/span>/, 'the key is not drawn at all');
+    assert.equal(/<a[\s>]/.test(clause), false, 'the caption drew a focusable link');
+    assert.equal(clause.includes('example.invalid'), false, 'the caption drew the url');
+  });
+
+  /**
    * AE2. An unfocused canvas draws every component, which the counts already
    * say — so the label with nothing after it would be the only untrue part.
    */

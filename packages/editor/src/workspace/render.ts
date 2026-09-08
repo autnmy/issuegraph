@@ -848,17 +848,6 @@ function canvasToolbar(
 ): ElementSpec | null {
   if (words === undefined) return null;
   const focused = ladder.focus;
-  // RESOLVED TO AN ISSUE SO THE CHIP IS LAYER 1'S. `identity` is the one place
-  // that decides whether a key is a link, and it decides that from the host's
-  // own `url` — a second spelling here would be this layer inventing a
-  // tracker's URL shape, which is the knowledge layer 1 exists not to carry.
-  // `find` IS WHY THERE IS A FALLBACK BELOW, not a state the ladder can reach:
-  // `ScaleLadder.focus` is "the focused member, once resolved against a real
-  // component", so a key that is set is a key this document holds. The lookup
-  // still answers `undefined` to the type system, and the honest handling of
-  // that is the bare chip rather than a non-null assertion.
-  const subject =
-    focused === null ? undefined : document.issues.find((issue) => issue.key === focused);
   const statement =
     ladder.tier !== 'direct'
       ? null
@@ -870,13 +859,25 @@ function canvasToolbar(
             ? null
             : element('span', { class: 'ig-canvas-focus' }, [
                 element('span', {}, [words.focus]),
-                ' ',
-                subject === undefined
-                  ? element('span', { class: 'ig-id' }, [focused])
-                  : identity(subject),
-                // THE SEPARATOR IS PUNCTUATION, NOT A WORD. A host translates
-                // the words; the interpunct is the frame's own typography, like
-                // the colon this label does not carry.
+                // THE PUNCTUATION IS THE PACKAGE'S, AND IT HAS TO ACTUALLY BE
+                // DRAWN. `CanvasWords.focus` tells a host to omit the colon
+                // because this draws it; an earlier revision made that promise
+                // and then emitted only a space, so a host that obeyed the
+                // contract got `focus #512`. The interpunct after the key is
+                // the frame's own typography for the same reason.
+                ': ',
+                // NOT `identity()`, AND NOT BECAUSE OF THE URL. That helper is
+                // right about who owns a tracker's link shape — but it renders
+                // an ANCHOR when the host supplied a url, and an anchor here is
+                // focusable inside a region that is replaced wholesale on every
+                // mounted redraw. `focusedKey()` and `commandFocusToken()` both
+                // read null for it, so the restore falls through to the first
+                // rail row and `WorkspaceHandle.update`'s promise to keep focus
+                // is broken by a caption. The caption is a READ-OUT: the canvas
+                // below it already draws this issue as a focusable node, and the
+                // rail already links it. So the key is drawn as text, which
+                // invents no URL and takes no focus.
+                element('span', { class: 'ig-id' }, [focused]),
                 ' · ',
               ]),
           element('span', { class: 'ig-canvas-shown' }, [

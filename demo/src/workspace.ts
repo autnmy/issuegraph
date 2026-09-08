@@ -118,6 +118,25 @@ const FIRST_PASS_WORDS: FirstPassWords = {
 
 /** The words the packages refuse to invent. */
 export const WORKSPACE_WORDS: MountWords = {
+  // §17f's canvas caption, OPTIONAL IN THE PACKAGE AND SUPPLIED HERE for the
+  // reason the `change` block below states in full: the demo is the one surface
+  // anyone can actually try, so a feature the demo does not word ships dark.
+  // Without these the canvas draws no caption and no edit-mode pill, and the
+  // narrowing that makes the graph legible stays as silent as it was before.
+  //
+  // `editMode` IS SUPPLIED BECAUSE THIS HOST MOUNTS. The package leaves it
+  // separately optional so markup served without `mountWorkspace` cannot claim
+  // to be editable; this demo calls `mountWorkspace`, so the claim is true here.
+  //
+  // No colon after `focus` and no punctuation anywhere: the package draws its
+  // own. Each word has to read on its own AND next to a number, because the two
+  // counts sit between them.
+  canvas: {
+    focus: 'focused on',
+    of: 'of',
+    shown: 'drawn',
+    editMode: 'edit mode',
+  },
   // §17c's re-evaluate loop. OPTIONAL IN THE PACKAGE AND SUPPLIED HERE, which
   // is the whole point: the vocabulary is optional so a host built before §17c
   // keeps rendering, and the demo is the proof the feature is real — without
