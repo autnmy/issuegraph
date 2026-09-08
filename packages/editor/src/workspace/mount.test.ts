@@ -741,6 +741,38 @@ describe('mountWorkspace', () => {
   });
 
   describe('the tree canvas carries the same overlays as the ladder', () => {
+    /**
+     * THE TREE BRANCH ASSIGNS `innerHTML` OVER THE WHOLE ZONE, and §17f's row is
+     * that zone's first child — so it was deleted, pill included, the moment a
+     * reader switched canvas. The pill is a property of the SURFACE and a
+     * mounted surface is the one place a host is told to supply it, so this is
+     * the state it must survive.
+     *
+     * THE CAPTION IS DROPPED ON PURPOSE, and that asymmetry is the point of
+     * asserting both halves here. The caption states what the LADDER's canvas
+     * draws; this branch draws the whole document as a tree, so its ratio would
+     * be false — the same rule that keeps the caption off the refusing tiers.
+     */
+    it('keeps §17f’s pill across the canvas switch, and drops its caption', async () => {
+      const row = () => page.element.querySelector('[data-zone="canvas"] .ig-canvas-toolbar');
+      assert.ok(row() !== null, 'the neighbourhood canvas drew no toolbar to begin with');
+      assert.ok(row()?.querySelector('.ig-canvas-caption') !== null, 'no caption to lose');
+
+      page.handle.update({ canvas: 'tree' });
+      await flush();
+      assert.ok(row() !== null, 'the tree canvas deleted the whole toolbar');
+      assert.ok(row()?.querySelector('.ig-edit-mode') !== null, 'the tree canvas deleted the pill');
+      assert.equal(
+        row()?.querySelector('.ig-canvas-caption') ?? null,
+        null,
+        'the caption states a ratio the tree canvas does not honour',
+      );
+
+      page.handle.update({ canvas: 'neighbourhood' });
+      await flush();
+      assert.ok(row()?.querySelector('.ig-canvas-caption') !== null, 'the caption did not come back');
+    });
+
     it('marks a pending edge and the selected edge on their badges', async () => {
       page.handle.update({ canvas: 'tree' });
       await flush();

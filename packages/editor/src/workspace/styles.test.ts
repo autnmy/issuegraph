@@ -12,6 +12,7 @@ import {
 import { diffOrder } from '@issuegraph/store';
 
 import { AUDIT_SEVERITY_ATTRIBUTE } from '../audit/surface.ts';
+import { INITIAL_SCALE_STATE } from '../scale/commands.ts';
 import { ZONES, renderWorkspace } from './render.ts';
 import { reevaluateStylesheet } from '../reevaluate/styles.ts';
 import { workspaceStylesheet } from './styles.ts';
@@ -296,6 +297,14 @@ const RENDERS = [
         reason: 'the tracker refused it',
       },
     ],
+  }),
+  // §17f'S CAPTION WITH A FOCUS RESOLVED. Every render above leaves the canvas
+  // unfocused, so the caption's focus clause — the label and the key it names —
+  // was styled and never emitted, and this pair of tests is the only thing that
+  // notices a rule for a class nothing draws.
+  renderWorkspace(DOCUMENT, {
+    words: WORKSPACE_WORDS,
+    scale: { ...INITIAL_SCALE_STATE, focus: 'i0001' },
   }),
 ];
 
@@ -669,6 +678,32 @@ describe('the workspace stylesheet carries structure, never a value', () => {
       false,
       'a per-severity bar override is back; §17d states one ambient treatment',
     );
+  });
+});
+
+/**
+ * A TOKEN IN THE WRONG POSITION IS DROPPED SILENTLY, and the sheet stays green.
+ *
+ * `--ig-tint-fill` and `--ig-tint-border` are PERCENTAGES — 8% and 30% — for
+ * `color-mix` to consume. Handed to `background` or `border-color` directly they
+ * are invalid, the browser drops the declaration, and the element renders with
+ * no fill and no border. That shipped once here: the edit-mode pill drew as bare
+ * text, and every existing check passed, because nothing about it was a hex
+ * literal and the class was styled.
+ */
+describe('the tint tokens are only used where they mean something', () => {
+  const css = withoutComments(workspaceStylesheet);
+
+  it('never hands a percentage token to a property that wants a colour', () => {
+    for (const token of ['--ig-tint-fill', '--ig-tint-border']) {
+      for (const use of css.matchAll(new RegExp(`[^;{}]*var\\(${token}\\)[^;{}]*`, 'g'))) {
+        assert.match(
+          use[0],
+          /color-mix\(/,
+          `${token} is used outside color-mix, where it is invalid and dropped: ${use[0].trim()}`,
+        );
+      }
+    }
   });
 });
 

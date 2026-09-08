@@ -397,6 +397,10 @@ export {
   type WorkspaceView,
   type WorkspaceWords,
   type RecoveryWords,
+  // ON THE SURFACE FOR THE SAME REASON `RecoveryWords` IS: it is the type of a
+  // `WorkspaceWords` member, so a host that cannot name it cannot build the
+  // words object that member belongs to.
+  type CanvasWords,
   ZONES,
   renderWorkspace,
 } from './workspace/render.ts';
