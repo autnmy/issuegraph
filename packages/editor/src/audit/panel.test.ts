@@ -303,7 +303,10 @@ describe('the findings panel', () => {
     const markup = markupOf(EVERY_CLASS.issues, EVERY_CLASS.edges, [{ ref: 'f' }]);
     const overlay = overlayOf(EVERY_CLASS.issues, EVERY_CLASS.edges, [{ ref: 'f' }]);
     assert.match(markup, new RegExp(`<span class="ig-audit-panel-count">${overlay.count}</span>`));
-    assert.match(markup, new RegExp(`<h3 class="ig-audit-panel-heading">${WORDS.heading}</h3>`));
+    // `h2` BECAUSE THE PANEL IS THE INSPECTOR'S PEER, not its child: it is a
+    // sibling in the zone and is drawn FIRST, so an `h3` would announce a level
+    // three ahead of the level two it claimed to sit under.
+    assert.match(markup, new RegExp(`<h2 class="ig-audit-panel-heading">${WORDS.heading}</h2>`));
     // AND THE SECTION IS NAMED. An unnamed `section` carries no landmark role at
     // all, so a reader navigating by landmark cannot reach the panel.
     assert.match(markup, new RegExp(`<section class="ig-audit-panel" aria-label="${WORDS.heading}"`));

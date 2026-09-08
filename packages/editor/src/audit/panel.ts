@@ -283,12 +283,18 @@ export function renderAuditPanel(
       // reader needs said twice — the count and the heading beside it do.
       element('span', { class: 'ig-audit-mark', 'aria-hidden': 'true' }, ['◆']),
       element('span', { class: 'ig-audit-panel-count' }, [String(overlay.count)]),
-      // A REAL HEADING, AT THE INSPECTOR'S OWN LEVEL. The zone's name is an
-      // `h2` and its relationship list an `h3`, so a `span` here left the panel
-      // invisible to heading navigation and put a gap in the column's outline.
-      // The caps are the stylesheet's, as they are for every other heading in
-      // this zone, so the host's word stays a word.
-      element('h3', { class: 'ig-audit-panel-heading' }, [words.heading]),
+      // A REAL HEADING, AT THE LEVEL ITS PLACE IN THE ZONE EARNS. A `span` left
+      // the panel invisible to heading navigation and put a gap in the column's
+      // outline; the caps are the stylesheet's, as they are for every other
+      // heading here, so the host's word stays a word.
+      //
+      // `h2`, NOT `h3`, AND THE LEVEL FOLLOWS THE COMPOSITION. It was an `h3`
+      // while the panel was drawn INSIDE `.ig-inspector`, under that column's
+      // own `h2`. The panel is a SIBLING of it now, and `renderWorkspace`
+      // concatenates the panel first — so an `h3` announced a level three
+      // before the level two it claimed to sit under, describing a nesting the
+      // markup does not have. Two peers, two `h2`s.
+      element('h2', { class: 'ig-audit-panel-heading' }, [words.heading]),
     ]),
     // ORDERED BY THE CLASS TABLE, WHICH `auditOverlay` ALREADY DID. `findings`
     // arrives in `AUDIT_CLASSES` order because `auditDocument` concatenates its
