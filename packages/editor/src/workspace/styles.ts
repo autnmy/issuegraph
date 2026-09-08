@@ -334,6 +334,16 @@ export const workspaceStylesheet = `
   gap: var(--ig-space-tight);
 }
 
+/* §17a PUTS '+ add' ON THE HEADING'S ROW, opposite the heading. The list
+   between them is unbounded, so a control after it drifts down the panel as a
+   subject gains relationships; here its position does not depend on content. */
+.ig-inspector-relationships-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ig-space-tight);
+}
+
 /* SECTION 17a DRAWS EVERY INSPECTOR HEADING IN CAPS -- WHY RANK 2,
    RELATIONSHIPS, ADD RELATIONSHIP -- so the treatment is shared rather than
    spelled per heading. Tracking widens with the caps because letterforms at a
@@ -370,10 +380,17 @@ export const workspaceStylesheet = `
 }
 
 
-/* THE PANEL'S THREE QUIET BUTTONS SHARE ONE TREATMENT — clear, '+ add' and
-   cancel. They are the same affordance at three moments (leave this selection,
-   begin a relationship, abandon the draft) and drawing them three ways would
-   invent a hierarchy the design does not state. The destructive controls are
+/* THE PANEL'S TWO QUIET BUTTONS SHARE ONE TREATMENT — clear and cancel. They
+   are the same affordance at two moments (leave this selection, abandon the
+   draft) and drawing them two ways would invent a hierarchy the design does
+   not state.
+
+   '+ add' WAS THE THIRD AND HAS LEFT THE SET, because frame 17a moved it and
+   redrew it: on the relationships header row it is unbordered accent text with
+   the key beside it, not a filled box. That is a hierarchy the design DOES
+   state — a header affordance reads differently from a control in the panel
+   body — so matching it here is following the frame rather than inventing a
+   difference. Its focus ring is still shared, below. The destructive controls are
    deliberately NOT in this set: a row's '✕' is a glyph in the row's own slot,
    and the mount's delete button carries its own danger treatment.
 
@@ -385,7 +402,6 @@ export const workspaceStylesheet = `
    baseline that rule's own comment says it is there to get. Declared where each
    is true instead. */
 .ig-inspector-clear,
-.ig-inspector-addbutton,
 .ig-inspector-cancel {
   background: var(--ig-surface-2);
   color: var(--ig-text-body);
@@ -400,8 +416,40 @@ export const workspaceStylesheet = `
 .ig-inspector-clear:focus-visible,
 .ig-inspector-addbutton:focus-visible,
 .ig-inspector-cancel:focus-visible {
+  /* '+ add' keeps the shared focus ring though it left the shared fill: a
+     focus indicator is an accessibility guarantee, not a visual register. */
   outline: var(--ig-focus-ring) solid var(--ig-focus);
   outline-offset: var(--ig-space-tight);
+}
+
+/* §17a's '+ add', AS THE FRAME DRAWS IT: accent text on the header row, no box.
+   It is a header affordance rather than a control in the panel body, and the
+   frame states that difference by removing the border and the fill rather than
+   by moving it alone. */
+.ig-inspector-addbutton {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--ig-space-micro);
+  background: none;
+  border: none;
+  border-radius: var(--ig-radius);
+  padding: 0;
+  color: var(--ig-accent);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+  cursor: pointer;
+}
+
+/* THE KEY, QUIETER THAN THE ACT IT NAMES. It is a hint about how to reach the
+   control, not part of the control's label, so it takes the muted tone the
+   panel gives every line that states a fact rather than offering an act.
+   UPPERCASED HERE, NEVER IN THE MARKUP: the binding table stores the lowercase
+   key a press normalizes to, and drawing 'R' is presentation. A second,
+   uppercase copy in the package would be the drift RELATE_KEY exists to end. */
+.ig-inspector-addkey {
+  color: var(--ig-text-muted);
+  font-family: var(--ig-font-mono);
+  text-transform: uppercase;
 }
 
 .ig-relationship-list {
@@ -646,18 +694,30 @@ export const workspaceStylesheet = `
   border-style: dotted;
 }
 
-/* THE CREATE STEP, WHICHEVER STEP IT IS. One box holds '+ add' on its own and
-   the numbered list with its cancel, because they are one place in the panel
-   the reader returns to rather than two that happen to alternate. */
+/* THE KIND STEP'S OWN BOX — the heading, the numbered list and the cancel that
+   withdraws from it.
+
+   IT NO LONGER HOLDS '+ add'. This box was once "one place the reader returns
+   to", holding whichever of the two create steps was live; frame 17a splits
+   them by zone, putting '+ add' on the relationships header row and leaving the
+   kinds here under a heading of their own. The two steps are still exclusive —
+   'createStep' answers one of them — but they are no longer drawn in one
+   place, so this rule is about the kind step alone. */
 .ig-inspector-add {
   display: flex;
   flex-direction: column;
   gap: var(--ig-space-tight);
 }
 
-/* Sized by their own words rather than stretched across the column — see the
-   quiet-button rule above, which deliberately does not carry this. */
-.ig-inspector-addbutton,
+/* Sized by its own word rather than stretched across the column — see the
+   quiet-button rule above, which deliberately does not carry this.
+
+   '+ add' IS NO LONGER LISTED HERE, and dropping it was required rather than
+   tidy. This declaration is scoped to '.ig-inspector-add', a COLUMN; '+ add'
+   now sits in the relationships header, a ROW, where 'align-self' beats the
+   container's 'align-items' and would top-align the control against the
+   heading — the exact bug the '.ig-inspector-clear' comment above records
+   having already been fixed once. */
 .ig-inspector-cancel {
   align-self: flex-start;
 }
@@ -682,14 +742,25 @@ export const workspaceStylesheet = `
   gap: var(--ig-space-micro);
 }
 
-/* Full width, so the whole entry is the hit target and the digits form a
-   readable column down the left — which is what makes the list legible as a
-   set of KEYS rather than as five buttons that happen to start with a number. */
+/* Full width, so the whole entry is the hit target.
+
+   THE DIGIT IS A CHIP AT THE ROW'S END, which is frame 17a's device and
+   REVERSES the placement #144 shipped. That decision was made in the same §17a
+   pass and with this frame available, so it is overturned on the merits rather
+   than as an oversight: what made the old left-hand column read as a set of
+   KEYS was vertical alignment, which a label long enough to wrap breaks, while
+   a bordered chip carries the key-cap signal on each row by itself and cannot
+   come apart. Reversing a same-campaign decision is called out on the pull
+   request so autnmy/issuegraph#147 rules rather than the implementer.
+
+   CENTRED, NOT BASELINE-ALIGNED. A chip has its own border and padding, so on a
+   baseline it sits low against the glyph and the label; the frame's row centres
+   all three. */
 .ig-kind-option {
   width: 100%;
   display: flex;
   gap: var(--ig-space-tight);
-  align-items: baseline;
+  align-items: center;
   background: var(--ig-surface);
   color: var(--ig-text-body);
   border: var(--ig-stroke) solid var(--ig-line);
@@ -706,7 +777,18 @@ export const workspaceStylesheet = `
   outline-offset: var(--ig-space-tight);
 }
 
+/* THE CHIP TAKES THE SLACK BEFORE IT, rather than the label being told to grow.
+   The label is drawn by layer 1's shared 'glyphAndLabel' and carries no class of
+   its own, so selecting it from here means selecting by exclusion — a rule that
+   silently stops matching the day that helper adds an element. An auto margin
+   is stated on the element this rule already owns, needs nothing of the label,
+   and puts the chip at the row's end whatever precedes it. */
 .ig-kind-digit {
+  flex: 0 0 auto;
+  margin-left: auto;
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  padding: 0 var(--ig-space-micro);
   font-family: var(--ig-font-mono);
   color: var(--ig-text-muted);
 }

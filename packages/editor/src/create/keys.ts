@@ -236,6 +236,34 @@ type Restricted = Exclude<CreateInteraction, 'canvas' | 'elsewhere'>;
 type Binding = BindingAction & { readonly survives: readonly Restricted[] };
 
 /**
+ * The key that begins a relationship — §17b's `R`, and the one key a surface
+ * DRAWS beside a control rather than in a legend.
+ *
+ * DECLARED ABOVE THE TABLE AND USED AS ITS KEY, so the binding and the drawn
+ * hint are the same literal by construction. The obvious alternative — deriving
+ * it the way {@link KIND_KEYS} is derived — does not survive this package's
+ * rules: a `find` over `BINDINGS` is `string | undefined`, and every way to
+ * discharge that nil is worse than the problem. A `?? 'r'` fallback is the
+ * second literal this constant exists to prevent; a module-load `throw` puts a
+ * side effect in a package published `"sideEffects": false`; and exporting
+ * `string | undefined` pushes an impossible case onto every renderer. `KIND_KEYS`
+ * escapes it only because `flatMap` makes "no entries" a legal value, and a
+ * single key has no such empty form.
+ *
+ * LOWERCASE, BECAUSE THAT IS WHAT THE TABLE MATCHES. {@link normalize} lowercases
+ * every press before the lookup, so this is the value a key press actually
+ * resolves to. §17a draws it uppercase; that is the stylesheet's `text-transform`
+ * and never a second string here.
+ *
+ * IT IS A LAYOUT VALUE, NOT A PHYSICAL POSITION. `KeyboardEvent.key` reports what
+ * the layout produces, so on a layout with no Latin `r` this binding is
+ * unreachable and a surface drawing the hint promises a key that does nothing.
+ * That is a property of the whole table rather than of this constant, and it is
+ * recorded here because publishing the letter is what makes the promise visible.
+ */
+export const RELATE_KEY = 'r';
+
+/**
  * The vocabulary, as data.
  *
  * THE KIND TRAVELS IN THE BINDING, not an index into `EDGE_FIELDS`. Storing a
@@ -252,7 +280,7 @@ const BINDINGS: ReadonlyMap<string, Binding> = new Map<string, Binding>([
   // and it already clears what a previous draft gathered. Withholding it would
   // take the restart away from a reader whose focus is off the rail while
   // leaving it for one whose focus is on it — a difference with no meaning.
-  ['r', { kind: 'relate', survives: ['kind-chooser'] }],
+  [RELATE_KEY, { kind: 'relate', survives: ['kind-chooser'] }],
   // THE DIGITS ARE WHAT THE CHOOSER IS FOR. `#152`: with focus anywhere but a
   // keyed row the interaction read `elsewhere` and these returned `none` at the
   // one step whose whole purpose is to be answered with a digit.

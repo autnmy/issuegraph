@@ -90,7 +90,7 @@ import type {
 import type { AuditInput, AuditSeverity } from '../audit/findings.ts';
 import { auditStylesheet } from '../audit/styles.ts';
 import { type CreateDraft, IDLE_CREATE_DRAFT } from '../create/draft.ts';
-import { KIND_KEYS } from '../create/keys.ts';
+import { KIND_KEYS, RELATE_KEY } from '../create/keys.ts';
 import type { Point } from '../create/placement.ts';
 import { type OverlayAffordance, OVERLAY_TREATMENTS, treatmentForState } from '../overlay/grammar.ts';
 import { DELTA_ATTRIBUTE, chipSpec, deltaKind, summarySpec, textOf } from '../reevaluate/parts.ts';
@@ -252,6 +252,25 @@ export interface WorkspaceWords {
    */
   readonly addRelationship: string;
   /**
+   * §17a's `ADD RELATIONSHIP` heading, over the numbered kinds.
+   *
+   * NOT {@link WorkspaceWords.addRelationship}, AND THE FRAME IS WHY. That
+   * field is the CONTROL's label — frame 17a writes it `+ add`, on the
+   * relationships header row — and this is the HEADING over the five numbered
+   * choices, which the frame writes in full. They are two strings in the frame
+   * and reusing one for both would put a control's label where a section name
+   * belongs, in a panel whose other two headings are already section names.
+   *
+   * REQUIRED, on the same rule the three header nouns took. An optional field
+   * would draw the heading only for a host that opted in, leaving every other
+   * host with the frame's two moved placements and not its third — a panel that
+   * half-applies the pass this exists to complete. The usual argument for
+   * optional, that a host built against the previous version renders
+   * byte-identically, has nothing to preserve here: this release moves `+ add`
+   * and the kind digits for every host regardless of what it passes.
+   */
+  readonly addRelationshipHeading: string;
+  /**
    * The control that abandons a draft — frame 17b's escape hatch beside the
    * numbered kind list, publishing `cancel`.
    *
@@ -268,7 +287,7 @@ export interface WorkspaceWords {
    * subject — "relating from", read before the reference the package supplies.
    *
    * IT EXISTS BECAUSE THE TWO CAN DIVERGE AND THE DRAFT MUST STILL BE
-   * CANCELLABLE. See {@link addStepSpec}: a draft begun by `R` on a together
+   * CANCELLABLE. See {@link createStep}: a draft begun by `R` on a together
    * unit's non-lead member, or one outlived by a change of selection, leaves
    * the kind step live under a panel headed by a different issue. The step is
    * drawn anyway — it carries the only pointer cancel there is — so it has to
@@ -1241,7 +1260,13 @@ function refusalCapsule(
   );
 }
 /**
- * Frame 17b's numbered kind list, and the control that withdraws from it.
+ * The numbered kind list, its heading, and the control that withdraws from it.
+ *
+ * DRAWN IN BOTH FRAMES, AND THIS FUNCTION ANSWERS TO BOTH. §17b fixes the
+ * keyboard loop the digits belong to; §17a draws the same list in the inspector
+ * with a heading over it and the digit as a chip at each row's end. Those two
+ * placements are §17a's, taken here under autnmy/issuegraph#147; the flip, the
+ * target search and delete/retype remain §17b's and are not drawn here.
  *
  * THE DIGITS ARE `create/keys.ts`'s OWN, through `KIND_KEYS`. Drawing
  * `index + 1` over the kind order here would be a second construction of the
@@ -1259,13 +1284,19 @@ function refusalCapsule(
  * remove and BEGIN a relationship, and must supply its own target picker.
  *
  * `source` NAMES THE DRAFT WHEN IT IS NOT THIS PANEL'S OWN, and is `null` when
- * it is — see {@link addStepSpec} for why the list is drawn either way. Written
+ * it is — see {@link createStep} for why the list is drawn either way. Written
  * as the reference beside the host's phrase, which is `whyRankSpec`'s own shape
  * for the same problem: the package names the issue and the host writes the
  * English around it.
  */
 function kindListSpec(words: WorkspaceWords, source: string | null): ElementSpec {
   return element('div', { class: 'ig-inspector-add' }, [
+    // §17a HEADS THE KINDS, in the caps treatment the stylesheet already
+    // declares for three headings and until now drew only two of. Without it
+    // the five numbered rows run straight on from the relationship rows above,
+    // and nothing on screen says the numbers choose a kind rather than name
+    // more relationships.
+    element('h3', { class: 'ig-inspector-heading' }, [words.addRelationshipHeading]),
     source === null
       ? null
       : element('p', { class: 'ig-inspector-source' }, [
@@ -1288,8 +1319,13 @@ function kindListSpec(words: WorkspaceWords, source: string | null): ElementSpec
               'data-edge': entry.edgeKind,
             },
             [
-              element('span', { class: 'ig-kind-digit' }, [entry.key]),
+              // §17a PUTS THE DIGIT LAST, IN A CHIP. The kind is what the reader
+              // is choosing between, so it comes first in the reading order and
+              // the key follows it — "blocked-by, 1" rather than "1,
+              // blocked-by". The chip is what carries the "this is a key"
+              // signal a left-hand column used to carry by alignment alone.
               ...glyphAndLabel(treatment.glyph, treatment.label),
+              element('span', { class: 'ig-kind-digit' }, [entry.key]),
             ],
           ),
         ]);
@@ -2004,6 +2040,11 @@ function inspectorSpec(view: InspectorView, context: InspectorContext): ElementS
   // recomputed per region: two calls could not disagree today, but a panel that
   // decides its own reach twice is the shape `carrier` exists to have ended.
   const scope = panelScope(view);
+  // ASKED ONCE, FOR THE SAME REASON `scope` IS. §17a draws the create path in
+  // two zones — `+ add` on the relationships header, the numbered kinds under
+  // their own heading — and a step derived separately per zone is two answers
+  // to one question, free to disagree the day either guard moves.
+  const step = createStep(context, key);
   return element('div', { class: 'ig-inspector', 'data-subject': subject.kind }, [
     element('div', { class: 'ig-inspector-head' }, [
       element('h2', { class: 'ig-inspector-name' }, [words.inspector]),
@@ -2043,33 +2084,43 @@ function inspectorSpec(view: InspectorView, context: InspectorContext): ElementS
               ),
         ])
       : null,
+    // ONE DERIVATION, READ TWICE. The step is asked once here and both
+    // placements below read the answer, so the header and the body cannot
+    // disagree about WHICH step is live. What each draws for a given arm is
+    // still a discipline this file keeps rather than one the type checker
+    // keeps — the single-return shape this replaces made drawing both
+    // unrepresentable, and a value read at two sites does not. The pin that
+    // stands where the return ordering used to is the one asserting no `add`
+    // control exists anywhere in the panel at the kind step.
     element(
       'div',
       { class: 'ig-inspector-relationships', 'data-filtered': view.filtered ? 'true' : 'false' },
       [
-        element('h3', { class: 'ig-inspector-heading' }, [words.relationships]),
-        // A STATED EMPTY, AND ONLY WHERE THERE IS A SUBJECT TO STATE IT ABOUT.
-        // With nothing selected the panel already says so once, in
-        // `nothingSelected`; adding "no relationships" under it would be the
-        // same absence reported twice, in two registers, on the render where
-        // the reader has asked nothing yet.
-        entries.length === 0 && subject.kind !== 'none'
-          ? element('p', { class: 'ig-inspector-none' }, [words.noRelationships])
-          : null,
-        entries.length === 0 ? null : element('ul', { class: 'ig-relationship-list' }, entries),
-        // THE STEPS ARE EXCLUSIVE, AND THE CHAIN IS THE SHELL'S OWN. `+ add`
-        // begins a draft; the numbered list is what a live draft with no kind
-        // yet looks like. Drawing `+ add` beside a live list would offer a
-        // reader mid-draft a control that RESETS the draft they are in —
-        // `create/draft.ts` makes `begin` clear the kind and the target
-        // deliberately.
-        // ASKED UNCONDITIONALLY, because the step belongs to the DRAFT and only
-        // `+ add` belongs to the subject. `subject.kind !== 'issue' ? null : …`
-        // was one guard doing both jobs, and it dropped a live draft's controls
-        // on a panel with no issue subject — which `reconcileHost` reaches by
-        // clearing a selection whose issue a write removed while leaving a
-        // draft begun from another issue standing.
-        addStepSpec(context, subject.kind === 'issue' ? subject.issue.key : null),
+          // §17a PUTS `+ add` ON THE HEADING'S OWN ROW, and the reason is the
+          // list between them: it is unbounded, so a control after it drifts
+          // down the panel as a subject gains relationships and is below the
+          // fold on the busy issues a groomer most needs it for. On the header
+          // row its position does not depend on the content.
+          element('div', { class: 'ig-inspector-relationships-head' }, [
+            element('h3', { class: 'ig-inspector-heading' }, [words.relationships]),
+            step.kind === 'add' ? addControlSpec(words, step.subject) : null,
+          ]),
+          // A STATED EMPTY, AND ONLY WHERE THERE IS A SUBJECT TO STATE IT ABOUT.
+          // With nothing selected the panel already says so once, in
+          // `nothingSelected`; adding "no relationships" under it would be the
+          // same absence reported twice, in two registers, on the render where
+          // the reader has asked nothing yet.
+          entries.length === 0 && subject.kind !== 'none'
+            ? element('p', { class: 'ig-inspector-none' }, [words.noRelationships])
+            : null,
+          entries.length === 0 ? null : element('ul', { class: 'ig-relationship-list' }, entries),
+          // THE STEPS ARE EXCLUSIVE, AND THE CHAIN IS THE SHELL'S OWN. `+ add`
+          // begins a draft; the numbered list is what a live draft with no kind
+          // yet looks like. Drawing `+ add` beside a live list would offer a
+          // reader mid-draft a control that RESETS the draft they are in —
+          // `create/draft.ts` makes `begin` clear the kind and the target
+          // deliberately.
+        step.kind === 'kinds' ? kindListSpec(words, step.source) : null,
       ],
     ),
     // STATED WHERE THE READER MADE THE EDIT, by the same rule the refusals use
@@ -2108,7 +2159,21 @@ function inspectorSpec(view: InspectorView, context: InspectorContext): ElementS
 }
 
 /**
- * Which step of the create path the panel is showing.
+ * Which step of the create path the panel is showing, as one value.
+ *
+ * §17a DRAWS THE TWO STEPS IN DIFFERENT ZONES, which is why this is a value
+ * rather than the markup it used to return. `+ add` sits on the relationships
+ * header row and the numbered kinds sit under their own heading further down,
+ * so one function can no longer return "the step's markup" — but the QUESTION
+ * is still one question, and asking it twice is how the two zones would come to
+ * disagree. `inspectorSpec` asks once and each zone reads the arm it owns.
+ *
+ * WHAT THIS BUYS, AND WHAT IT DOES NOT. It buys one derivation: no second
+ * predicate to keep in step. It does NOT make the two placements exclusive the
+ * way the single-return shape did — that made drawing both unrepresentable,
+ * because there was one slot. Nothing here stops a later edit drawing `+ add`
+ * on the `kinds` arm. The pin standing where the return ordering used to is the
+ * test asserting no `add` control exists ANYWHERE in the panel at the kind step.
  *
  * THE STEP FOLLOWS THE DRAFT, NOT THE SELECTION, and the draft's source is
  * NAMED when it is not this panel's subject. The two can diverge: `pointed`
@@ -2128,68 +2193,124 @@ function inspectorSpec(view: InspectorView, context: InspectorContext): ElementS
  * one control still on screen was `+ add`, which does not cancel a draft, it
  * RESETS one, silently moving the source to whatever the reader happened to be
  * looking at. "The shell's cancel still reaches it" was the reasoning, and the
- * shell has no cancel to reach it with. A draft the reader cannot abandon with
- * a pointer is the failure `create/keys.ts` names for the keyboard, and the
- * cost of the alternative — one phrase naming an issue that is not the panel's
- * subject — is the cost the shell's own chooser always paid, in the sentence it
- * printed above its kinds.
+ * shell has no cancel to reach it with.
  *
- * `+ add` IS NOT DRAWN BESIDE IT, on either panel. Two entries into one draft is
- * the rule {@link WorkspaceOptions.drop} already states for the floating
- * chooser, and here the second entry is the destructive one: `create/draft.ts`
- * makes `begin` clear the kind and the target deliberately, so a reader
+ * `add` IS NOT ANSWERED BESIDE `kinds`, on either panel. Two entries into one
+ * draft is the rule {@link WorkspaceOptions.drop} already states for the
+ * floating chooser, and here the second entry is the destructive one:
+ * `create/draft.ts` makes `begin` clear the kind and the target, so a reader
  * mid-draft offered `+ add` is offered a reset wearing the label of a start.
- * They restart by cancelling first, which is now a control they can see.
+ * The arms are ordered, so `kinds` answers first and `add` cannot follow it.
  *
- * IT IS ASKED FOR EVERY SUBJECT, INCLUDING NONE. `+ add` is the half that needs
- * one — `reduceHost`'s `add` arm answers `null` for an edge selection and for
- * none, so a control there could not complete — and the step is not. One guard
- * over both dropped a live draft's controls on a panel with no issue subject,
- * which `reconcileHost` reaches: it clears a selection whose issue a landed
- * write removed while leaving a draft begun from a DIFFERENT issue standing,
- * because that draft's own references are all still in the document.
+ * THE `kinds` ARM IS ASKED OF THE DRAFT ALONE, INCLUDING FOR NO SUBJECT. One
+ * guard over both steps dropped a live draft's controls on a panel with no
+ * issue subject, which `reconcileHost` reaches: it clears a selection whose
+ * issue a landed write removed while leaving a draft begun from a DIFFERENT
+ * issue standing, because that draft's own references are all still in the
+ * document.
  *
- * `null` AT THE TARGET STEP AND UNDER A LIVE DROP, which are two more different
- * silences and both deliberate. The target step belongs to the shell, which
- * owns the live input — and draws its own cancel beside it, naming the source
- * in the same sentence. A drop means a chooser is already open at the pointer,
- * with a cancel of its own, and a second copy of the same step in the column
- * beside it would be two controls writing to one draft.
+ * THE `add` ARM ASKS NOTHING ABOUT `drop` OR ABOUT `draft.kind`, AND THAT IS
+ * DELIBERATELY PRESERVED. It is `subject !== null && draft.source !== subject`,
+ * exactly as it has been — so on a panel whose subject is NOT the draft's
+ * source, `+ add` is drawn at the target step and under a live drop. Whether
+ * that is right is a live question (autnmy/issuegraph#147): pressing it there
+ * `begin`s from this panel's subject and clears the in-flight kind and target.
+ * It is not answered here, because this change moves where controls sit and
+ * must not quietly change when they appear. The existing fixtures cannot see
+ * the case — both set the selection to the draft's own source, the one case
+ * this arm refuses — so it is pinned explicitly instead.
+ *
+ * `none` AT THE TARGET STEP AND UNDER A LIVE DROP is therefore only the answer
+ * for a panel whose subject IS the draft's source. The target step belongs to
+ * the shell, which owns the live input and draws its own cancel beside it; a
+ * drop means a chooser is already open at the pointer, and a second copy of the
+ * same step in the column beside it would be two controls writing to one draft.
  */
-function addStepSpec(context: InspectorContext, subject: string | null): ElementSpec | null {
-  const { draft, drop, words } = context;
-  // THE ONE LIVE KIND STEP, WHEREVER IT WAS BEGUN. Asked of the draft alone, so
-  // there is exactly one panel state for it rather than one per subject — and
-  // so a panel with no issue subject at all still carries the cancel.
+type CreateStep =
+  | { readonly kind: 'add'; readonly subject: string }
+  | { readonly kind: 'kinds'; readonly source: string | null }
+  | { readonly kind: 'none' };
+
+function createStep(context: InspectorContext, subject: string | null): CreateStep {
+  const { draft, drop } = context;
   if (draft.source !== null && draft.kind === null && drop === null) {
-    return kindListSpec(words, draft.source === subject ? null : draft.source);
+    return { kind: 'kinds', source: draft.source === subject ? null : draft.source };
   }
   // `+ add` NEEDS A SUBJECT TO BEGIN FROM, and `reduceHost`'s `add` arm answers
   // `null` for an edge selection and for none — so drawing it there would
   // publish an act that cannot complete.
-  if (subject !== null && draft.source !== subject) {
-    return element('div', { class: 'ig-inspector-add' }, [
-      element(
-        'button',
-        {
-          type: 'button',
-          class: 'ig-inspector-addbutton',
-          'data-ig-command': 'add',
-          // THE CANONICAL SUBJECT, PUBLISHED, for the reason the row's remove
-          // control publishes its own edge. `reduceHost`'s `add` arm read
-          // `selectedKey` — the RAW key — while everything around it is worded
-          // against the slot LEAD that `inspectorView` canonicalizes to, so
-          // selecting a together-unit PARTNER drew a panel titled with the lead
-          // and began a relationship from the partner. The act names its
-          // subject; the selection is the fallback for a control that names
-          // none.
-          'data-ig-target': subject,
-        },
-        [words.addRelationship],
-      ),
-    ]);
-  }
-  return null;
+  if (subject !== null && draft.source !== subject) return { kind: 'add', subject };
+  return { kind: 'none' };
+}
+
+/**
+ * §17a's `+ add`, with the key that does the same thing beside it.
+ *
+ * THE HINT IS THE BINDING'S OWN LETTER, through {@link RELATE_KEY}. A literal
+ * here would be a second spelling of a key the map already owns, free to go
+ * stale the day the binding moves and with nothing failing to say so — the
+ * drift `create/keys.ts`'s header rejects in terms, and the reason `KIND_KEYS`
+ * exists for the digits one function below.
+ *
+ * IT IS `aria-hidden`, AND THE BUTTON KEEPS THE HOST'S WORD AS ITS NAME. An
+ * accessible name is computed from descendant text, so an exposed hint appends
+ * a bare letter to the act — "add relationship R" — which announces a shortcut
+ * as though it were part of the label. Hidden, the name is the host's word
+ * alone. This is the pairing rule `hiddenGlyph` already applies to every mark
+ * beside a word in this package: the mark is seen, the word is heard.
+ *
+ * UPPERCASE IS THE STYLESHEET'S. The map stores the lowercase key a press
+ * normalizes to; §17a draws `R`. `text-transform` renders it, as it already
+ * does for every heading in this panel, so there is no second string.
+ *
+ * NOTE THE HINT AND THE CONTROL CAN BEGIN FROM DIFFERENT ISSUES. `keyIntent`'s
+ * `relate` arm begins from `KeyboardContext.focused`, while this button
+ * publishes the canonical `data-ig-target`; on a together unit's non-lead
+ * member those are different issues, which {@link createStep} records. Both
+ * begin a draft the reader can see and cancel, so the pairing is kept.
+ *
+ * AND THE KEY DOES NOT WORK WHILE THIS BUTTON ITSELF HOLDS FOCUS. Measured, not
+ * inferred: `mountWorkspace`'s `interaction()` answers `elsewhere` for a focused
+ * command control, and `create/keys.ts`'s `reaches()` refuses every binding
+ * there — and `KeyboardContext.focused` is the rail's tab stop, which is `null`
+ * then, so the `relate` arm would answer `none` even if the interaction did
+ * reach. `R` works from the rail, which is where a reader who has not yet
+ * touched this control is standing, and the button itself answers `Enter` and
+ * `Space`; so the hint names a key the reader has, at the one focus position
+ * where it is inert.
+ *
+ * IT IS NOT REPAIRED HERE, DELIBERATELY. Making it true needs BOTH a new
+ * `interaction()` answer and a second source for `focused` — and `interaction`'s
+ * own header records that conjoining this predicate on where focus happens to
+ * be is what produced three consecutive rounds of defects ("Focus is not the
+ * fact"). That is a keyboard-routing change, and this one moves where controls
+ * sit without changing what any key does. Filed on autnmy/issuegraph#147.
+ */
+function addControlSpec(words: WorkspaceWords, subject: string): ElementSpec {
+  return element(
+    'button',
+    {
+      type: 'button',
+      class: 'ig-inspector-addbutton',
+      'data-ig-command': 'add',
+      // THE CANONICAL SUBJECT, PUBLISHED, for the reason the row's remove
+      // control publishes its own edge. `reduceHost`'s `add` arm read
+      // `selectedKey` — the RAW key — while everything around it is worded
+      // against the slot LEAD that `inspectorView` canonicalizes to, so
+      // selecting a together-unit PARTNER drew a panel titled with the lead
+      // and began a relationship from the partner. The act names its
+      // subject; the selection is the fallback for a control that names none.
+      'data-ig-target': subject,
+    },
+    [
+      // THE WORD IS A BARE CHILD, NOT A WRAPPED ONE. A span around it would need
+      // a class, and a class with no rule is what `styles.test.ts` refuses —
+      // correctly, since an element this sheet does not style is one a host
+      // cannot theme.
+      words.addRelationship,
+      element('span', { class: 'ig-inspector-addkey', 'aria-hidden': 'true' }, [RELATE_KEY]),
+    ],
+  );
 }
 
 /**
