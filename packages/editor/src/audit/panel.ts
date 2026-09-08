@@ -188,7 +188,29 @@ function cardSpec(
               // "offers navigation and never a remedy", and a control that can
               // write is a remedy whatever its label says.
               'data-ig-command': 'reveal-issue',
+              // THE REF IS APPENDED TO THE NAME, NOT WRITTEN INTO THE WORD.
+              // Several findings mean several of these buttons, and a repeated
+              // `show me` is indistinguishable in the one navigation mode that
+              // strips the surrounding card: a screen reader's BUTTON LIST. The
+              // visible label stays the host's word, and the name it announces
+              // carries the ref that says which card it belongs to.
+              //
+              // APPENDED RATHER THAN INTERPOLATED, the idiom `WorkspaceWords
+              // .whyRank` fixes for exactly this: a `{ref}` placeholder would
+              // make every host reimplement the substitution, which is how a
+              // package that refuses to invent English ships a template
+              // language instead. A ref is a package value, so nothing here is
+              // a word this package wrote.
+              //
+              // IT DIFFERS FROM `WorkspaceWords.remove` ON PURPOSE. That
+              // control is also repeated per row and also row-independent, and
+              // its note rejects a name like `remove #488` — on the ground that
+              // a HOST writing that string would be wrong on every other row,
+              // which is true and is a different question from appending the
+              // ref out here. The same treatment is owed there; it is filed
+              // rather than widened into this change.
               'data-ig-target': target,
+              'aria-label': `${words.show} ${target}`,
             },
             [words.show],
           ),

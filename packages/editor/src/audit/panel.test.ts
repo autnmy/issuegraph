@@ -199,9 +199,16 @@ describe('the findings panel', () => {
     // `workspace/host.test.ts` against the control that does create.
     const markup = markupOf(EVERY_CLASS.issues, EVERY_CLASS.edges, [{ ref: 'f' }]);
     const cards = markup.match(/<li class="ig-audit-card"/g) ?? [];
+    // MATCHED ON THE WHOLE TAG rather than on an attribute ADJACENCY: an
+    // assertion spelling attributes in one fixed order fails the next time one
+    // is added between them, which says nothing about the behaviour it pins.
     const shows = [
-      ...markup.matchAll(/class="ig-audit-show" data-ig-command="reveal-issue" data-ig-target="([^"]+)"/g),
-    ];
+      ...markup.matchAll(/<button[^>]*class="ig-audit-show"[^>]*>/g),
+    ].map((tag) => {
+      const whole = tag[0] as string;
+      assert.match(whole, /data-ig-command="reveal-issue"/, whole);
+      return /data-ig-target="([^"]+)"/.exec(whole)?.[1];
+    });
     // EVERY CARD, because every member of this fixture IS loaded. The one case
     // where a card legitimately has no control has its own test below, so this
     // equality stays an equality rather than softening to "at least one".
@@ -210,14 +217,34 @@ describe('the findings panel', () => {
     // THE TARGET IS THE FINDING'S OWN, not merely some issue in the document —
     // a control that navigated to an unrelated row would satisfy a presence
     // check and mislead every reader who pressed it.
-    shows.forEach((show, index) => {
+    shows.forEach((target, index) => {
       const finding = overlay.findings[index];
       assert.ok(finding !== undefined);
       assert.ok(
-        finding.members.includes(show[1] as IssueRef),
-        `${String(show[1])} is not a member of the ${finding.kind} finding`,
+        target !== undefined && finding.members.includes(target as IssueRef),
+        `${String(target)} is not a member of the ${finding.kind} finding`,
       );
     });
+  });
+
+  it('names each navigation button distinctly, for a reader listing buttons', () => {
+    // THE MODE THAT STRIPS THE CARD. A screen reader's button list shows names
+    // and nothing around them, so several identical `go and look` buttons are
+    // indistinguishable and the ref in `data-ig-target` — which is not exposed
+    // to assistive technology at all — cannot separate them.
+    const markup = markupOf(EVERY_CLASS.issues, EVERY_CLASS.edges, [{ ref: 'f' }]);
+    const names = [...markup.matchAll(/class="ig-audit-show"[^>]*aria-label="([^"]+)"/g)].map(
+      (match) => match[1] as string,
+    );
+    assert.ok(names.length > 1, 'one button proves nothing about distinctness');
+    assert.equal(new Set(names).size, names.length, names.join(' | '));
+    // THE HOST'S WORD SURVIVES IN EVERY ONE, so this cannot pass by replacing
+    // the label with a bare ref — which would be the package naming its own
+    // control.
+    for (const name of names) assert.ok(name.startsWith(WORDS.show), name);
+    // AND THE VISIBLE TEXT IS STILL JUST THE WORD: the ref is announced, not
+    // drawn, so the card does not repeat a reference its own sentence carries.
+    assert.match(markup, new RegExp(`>${WORDS.show}</button>`));
   });
 
   it('says how many, in the host’s word, beside the ambient mark', () => {
@@ -270,7 +297,10 @@ describe('the findings panel', () => {
     // THE CONTROL, so this cannot pass by drawing no button anywhere: a refusal
     // on a ref the document DOES carry keeps its way out.
     const loaded = markupOf([issue('a')], [], [{ ref: 'a' }]);
-    assert.match(loaded, /data-ig-command="reveal-issue" data-ig-target="a"/);
+    const tag = /<button[^>]*class="ig-audit-show"[^>]*>/.exec(loaded)?.[0];
+    assert.ok(tag !== undefined, loaded);
+    assert.match(tag, /data-ig-command="reveal-issue"/);
+    assert.match(tag, /data-ig-target="a"/);
   });
 
   it('draws nothing at all when the audit found nothing', () => {

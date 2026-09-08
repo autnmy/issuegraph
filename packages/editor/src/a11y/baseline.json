@@ -1931,7 +1931,7 @@
       "role": "button",
       "tabStop": "tab",
       "inert": false,
-      "name": "text",
+      "name": "aria-label",
       "aria": {}
     },
     {
