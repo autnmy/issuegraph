@@ -1955,25 +1955,6 @@ function inspectorSpec(view: InspectorView, context: InspectorContext): ElementS
   // their own heading — and a step derived separately per zone is two answers
   // to one question, free to disagree the day either guard moves.
   const step = createStep(context, key);
-  // §17d'S LIST, AFTER THE HEAD AND BEFORE THE SELECTION. `words.inspector`
-  // exists so this column is never headed by whatever happened to render first
-  // — "a reader who had selected nothing met a bare sentence in an unnamed
-  // column" — so the panel goes UNDER `INSPECTOR`, not above it.
-  //
-  // IT IS GLOBAL CONTENT IN A SELECTION-SCOPED ZONE, and that tension is real
-  // rather than resolved: §17d wants the findings visible WHILE you work, and
-  // the workspace has three zones plus a header, so there is nowhere else they
-  // can be ambient. What keeps it honest is that the list carries its own
-  // scroll budget (`.ig-audit-list`), so a long audit cannot evict the
-  // selection detail from the screen — only from the list's own overflow.
-  const auditPanel =
-    context.audit === null
-      ? null
-      : // `known` IS THE DRAWN DOCUMENT'S KEYS, the same set `holdRow` withholds
-        // its subject control on, and NOT the audit's. A host audits what it
-        // holds and draws a page of it, so a ref can be audited and still have
-        // no row here; the panel cannot see that difference and is told.
-        renderAuditPanel(context.audit, { words: words.audit, known: context.known });
   return element('div', { class: 'ig-inspector', 'data-subject': subject.kind }, [
     element('div', { class: 'ig-inspector-head' }, [
       element('h2', { class: 'ig-inspector-name' }, [words.inspector]),
@@ -1985,7 +1966,6 @@ function inspectorSpec(view: InspectorView, context: InspectorContext): ElementS
             [words.clearSelection],
           ),
     ]),
-    auditPanel,
     subject.kind === 'none'
       ? element('p', { class: 'ig-inspector-empty' }, [words.nothingSelected])
       : null,
@@ -2456,6 +2436,28 @@ export function renderWorkspace(
     zone('canvas', canvas.markup),
     zone(
       'inspector',
+      // §17d'S LIST AND THE SELECTION ARE TWO PANES, NOT ONE COLUMN, and that
+      // is what makes the panel's scroll budget mean anything. As a CHILD of
+      // `.ig-inspector` it shared that column's single scroll track, so a long
+      // audit pushed the detail the reader had just clicked below the fold
+      // however the list was capped — the cap can only bound the list, never
+      // the zone. As siblings each takes its own share of the zone's height and
+      // scrolls inside it, so neither can evict the other.
+      //
+      // BOTH SIDES ARE ALREADY-RENDERED MARKUP, which is the rule `zone` exists
+      // under: it writes the only hand-authored tag in this package and takes
+      // no caller value, and everything with a dynamic value in it went through
+      // `renderMarkup`.
+      //
+      // `known` IS THE DRAWN DOCUMENT'S KEYS, the same set `holdRow` withholds
+      // its subject control on, and NOT the audit's: a host audits what it
+      // holds and draws a page of it, so a ref can be audited and still have no
+      // row here. The panel cannot see that difference and is told.
+      (() => {
+        if (overlay === null) return '';
+        const panel = renderAuditPanel(overlay, { words: options.words.audit, known });
+        return panel === null ? '' : renderMarkup(panel);
+      })() +
       renderMarkup(
         inspectorSpec(inspector, {
           words: options.words,

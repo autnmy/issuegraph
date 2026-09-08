@@ -77,13 +77,22 @@ export const auditStylesheet = `
    row the VIEWER rendered. A chip wearing that attribute would draw the rail's
    gold bar whatever hue the class table gave it, which is the four-hue mapping
    below defeated by one attribute. Chips carry ${AUDIT_KIND_ATTRIBUTE}. */
+/* IT IS ITS OWN PANE. The panel is a sibling of the inspector inside the zone
+   rather than a child of it, so it carries its own padding — that column's no
+   longer reaches it — and it takes its own share of the zone's height:
+   flex: 0 1 auto against a sibling that claims the rest, so a long audit and a
+   long selection cannot push each other off screen. workspace/styles.ts makes
+   the zone the flex column this sits in; the share is declared here because
+   this sheet owns this class. */
 .ig-audit-panel {
+  flex: 0 1 auto;
   border-bottom: var(--ig-stroke) solid var(--ig-line);
   display: flex;
   flex-direction: column;
   font-family: var(--ig-font-ui);
   gap: var(--ig-space-snug);
-  padding-bottom: var(--ig-space);
+  min-height: 0;
+  padding: var(--ig-space);
 }
 
 .ig-audit-panel-head {
@@ -117,18 +126,23 @@ export const auditStylesheet = `
   text-transform: uppercase;
 }
 
-/* THE LIST SCROLLS INSIDE THE PANEL, and this is load-bearing rather than
-   tidy. The inspector zone is ONE overflow track, so an unbounded list of
-   findings pushes the selection detail the reader just clicked below the fold —
-   a global list quietly evicting the selection-scoped column it borrowed. The
-   panel keeps its own budget and the detail keeps its place on screen. */
+/* THE LIST SCROLLS INSIDE THE PANEL, and the pane above it is what makes that
+   a guarantee rather than a hope. A FIXED cap could not be one: a calc of 24
+   times the wide space step is, under the default theme, most of a short
+   workspace's whole column — the list obeyed its budget and the selection
+   detail went below the fold anyway. The bound that matters is the share of the
+   ZONE this pane may take, and flex: 0 1 auto against a sibling that claims
+   the rest is what states it; the list then simply fills its pane.
+
+   min-height: 0 again, for the reason the zone's children carry it: without
+   it this scroll container refuses to shrink below its content. */
 .ig-audit-list {
   display: flex;
   flex-direction: column;
   gap: var(--ig-space-snug);
   list-style: none;
   margin: 0;
-  max-height: calc(var(--ig-space-wide) * 24);
+  min-height: 0;
   overflow-y: auto;
   padding: 0;
 }
@@ -187,12 +201,12 @@ export const auditStylesheet = `
 }
 
 /* ONE RULE PER CLASS, WRITTEN OUT, never through an intermediate property: the
-   viewer's own badge sheet records why — a \`--ig-audit-hue\` set here and read
+   viewer's own badge sheet records why — a \--ig-audit-hue\ set here and read
    here names something no theme and no layout declares, and the token scan
    exists to refuse exactly that.
 
-   THE TINTS ARE THE VIEWER'S RECIPE, not new numbers. \`--ig-tint-fill\` and
-   \`--ig-tint-border\` are what \`.ig-badge[data-edge]\` already mixes an edge hue
+   THE TINTS ARE THE VIEWER'S RECIPE, not new numbers. \--ig-tint-fill\ and
+   \--ig-tint-border\ are what \.ig-badge[data-edge]\ already mixes an edge hue
    with, and they are the frame's own chip wash to within a point.
 
    THE TEXT IS THE BASE HUE. The frame lightens each chip's label a step off the

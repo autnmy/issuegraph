@@ -669,10 +669,48 @@ export function auditDocument(input: AuditInput): readonly AuditFinding[] {
   const { document, graph } = input;
   const refusals = input.encodingRefused ?? [];
   const refused = new Set(refusals.map((refusal) => refusal.ref));
-  return Object.freeze([
-    ...cycleFindings(graph),
-    ...staleBlockerFindings(document, graph, refused),
-    ...deadDuplicateFindings(document, graph, refused),
-    ...encodingRefusedFindings(refusals),
-  ]);
+  return Object.freeze(
+    distinct([
+      ...cycleFindings(graph),
+      ...staleBlockerFindings(document, graph, refused),
+      ...deadDuplicateFindings(document, graph, refused),
+      ...encodingRefusedFindings(refusals),
+    ]),
+  );
+}
+
+/**
+ * One entry per distinct finding, keeping the first of any repeat.
+ *
+ * A FINDING IS WHAT IT SAYS. `detail` is composed from the very edge or members
+ * the finding is about, so two findings with one kind, one member set and one
+ * sentence are not two findings — they are one, found twice.
+ *
+ * THE INPUT THAT PRODUCES THEM IS SUPPORTED REDUNDANCY, NOT MALFORMED DATA.
+ * `@issuegraph/viewer`'s `indexEdges` collapses an exact repeated directed edge
+ * into one relationship without a diagnostic, so a store document carrying the
+ * same `blocked-by` twice is ordinary; the audit reads that document
+ * unnormalized and its per-edge detectors duly emit one finding per occurrence.
+ *
+ * IT IS DONE HERE RATHER THAN IN EACH DETECTOR, and rather than in a renderer.
+ * A detector deduplicating its own output would be four copies of one rule, and
+ * `encodingRefusedFindings` already carries a fifth for refusals. A renderer
+ * doing it would leave the HEADER COUNT wrong — a repeated edge would have said
+ * "3 encoding problems" over a list of two — which is the reading the count and
+ * the list exist to keep identical.
+ */
+function distinct(findings: readonly AuditFinding[]): AuditFinding[] {
+  const seen = new Set<string>();
+  const out: AuditFinding[] = [];
+  for (const found of findings) {
+    // THE MEMBERS ARE IN THE KEY AS WELL AS THE SENTENCE. `detail` determines
+    // them today for every detector, but the key should not rest on a property
+    // of the prose: a class that ever states two member sets in one sentence
+    // would silently drop a finding rather than fail a test.
+    const key = `${found.kind}\u0000${found.members.join('\u0001')}\u0000${found.detail}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(found);
+  }
+  return out;
 }

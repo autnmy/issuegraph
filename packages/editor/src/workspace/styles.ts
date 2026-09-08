@@ -173,11 +173,37 @@ export const workspaceStylesheet = `
   overflow: auto;
 }
 
+/* TWO PANES, EACH SCROLLING ITSELF. §17d's findings panel and the selection
+   detail are siblings here, so the zone is a flex COLUMN rather than one scroll
+   track: the audit takes what it needs up to its own cap and the detail keeps
+   the rest, and neither can push the other off screen. As one track — which is
+   what this was — a long audit sent the detail below the fold however the list
+   was capped, because a cap on the list bounds the list and not the column.
+
+   min-height: 0 ON THE CHILDREN, not here: a flex item's default min-height
+   is auto, so a scroll container inside one refuses to shrink below its
+   content and overflows the column instead of scrolling. It is the declaration
+   this layout does not work without.
+
+   THE PANEL'S OWN SHARE IS DECLARED IN ITS OWN SHEET, not here. audit/styles.ts
+   owns .ig-audit-panel, and this sheet styles only what this surface renders —
+   there is a test for that in both directions. What belongs here is the zone
+   and the inspector, which are this surface's. */
 .ig-zone[data-zone='inspector'] {
   grid-area: inspector;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
   border-left: var(--ig-stroke) solid var(--ig-line);
 }
+
+.ig-zone[data-zone='inspector'] > .ig-inspector {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 
 /* THE AMBIENT LEFT-BAR. A 2px gold rule on the affected row and nothing else —
    no fill, no icon, no badge. §17a's whole ask is that encoding errors stay
