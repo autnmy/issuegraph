@@ -173,35 +173,28 @@ export const workspaceStylesheet = `
   overflow: auto;
 }
 
-/* TWO PANES, EACH SCROLLING ITSELF. §17d's findings panel and the selection
-   detail are siblings here, so the zone is a flex COLUMN rather than one scroll
-   track: the audit takes what it needs up to its own cap and the detail keeps
-   the rest, and neither can push the other off screen. As one track — which is
-   what this was — a long audit sent the detail below the fold however the list
-   was capped, because a cap on the list bounds the list and not the column.
+/* ONE SCROLL TRACK, AND THE PANEL SHARES IT. §17d's findings panel is a sibling
+   of .ig-inspector here rather than a child, so it keeps its own padding and
+   reads as a peer of the selection rather than part of it — but the ZONE still
+   scrolls, exactly as it did before the panel existed.
 
-   min-height: 0 ON THE CHILDREN, not here: a flex item's default min-height
-   is auto, so a scroll container inside one refuses to shrink below its
-   content and overflows the column instead of scrolling. It is the declaration
-   this layout does not work without.
+   A TWO-PANE VERSION WAS TRIED AND REVERTED, and the reason is recorded so it
+   is not tried again the same way. Making the zone a flex column with
+   overflow: hidden did give the audit and the selection independent scroll —
+   and it CLIPPED the mount's chrome, which mountWorkspace appends to this zone
+   as a third sibling: the target search's lower matches, the cancel button and
+   the key legend all lost the scrolling the zone used to give them. Any future
+   attempt has to treat the chrome as a pane too, and how these three share one
+   column is a design question rather than a CSS one. It is filed.
 
-   THE PANEL'S OWN SHARE IS DECLARED IN ITS OWN SHEET, not here. audit/styles.ts
-   owns .ig-audit-panel, and this sheet styles only what this surface renders —
-   there is a test for that in both directions. What belongs here is the zone
-   and the inspector, which are this surface's. */
+   What that revert gives back is the known cost: a long audit pushes the
+   selection detail down this single track. That is a property this zone already
+   had — a long relationship list does the same — and the panel makes it easier
+   to reach rather than inventing it. */
 .ig-zone[data-zone='inspector'] {
   grid-area: inspector;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
-  border-left: var(--ig-stroke) solid var(--ig-line);
-}
-
-.ig-zone[data-zone='inspector'] > .ig-inspector {
-  flex: 1 1 auto;
-  min-height: 0;
   overflow-y: auto;
+  border-left: var(--ig-stroke) solid var(--ig-line);
 }
 
 

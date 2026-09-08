@@ -77,34 +77,18 @@ export const auditStylesheet = `
    row the VIEWER rendered. A chip wearing that attribute would draw the rail's
    gold bar whatever hue the class table gave it, which is the four-hue mapping
    below defeated by one attribute. Chips carry ${AUDIT_KIND_ATTRIBUTE}. */
-/* IT IS ITS OWN PANE. The panel is a sibling of the inspector inside the zone
-   rather than a child of it, so it carries its own padding — that column's no
-   longer reaches it — and it takes its own share of the zone's height:
-   flex: 0 1 auto against a sibling that claims the rest, so a long audit and a
-   long selection cannot push each other off screen. workspace/styles.ts makes
-   the zone the flex column this sits in; the share is declared here because
-   this sheet owns this class.
+/* IT IS THE SELECTION'S PEER, NOT ITS HEADING, so it carries its own padding:
+   it is a sibling of .ig-inspector inside the zone rather than a child, and
+   that column's padding does not reach it.
 
-   THE MAX IS A FRACTION OF THE ZONE, AND flex ALONE WAS NOT ENOUGH. Both panes
-   shrink — this one at 0 1 auto, the inspector at 1 1 auto — and flexbox
-   removes negative space in proportion to each item's BASIS, which for auto is
-   its content. So twenty findings simply out-weighed the inspector and squeezed
-   it toward nothing; "the sibling claims the rest" was true of free space and
-   false of a shortfall. A percentage resolves here because the zone's grid row
-   is 1fr against a workspace of definite height, so half the column is a real
-   bound rather than a hopeful one, and the inspector is guaranteed the other
-   half whatever the audit found.
-
-   BORDER-BOX, OR THE CAP IS NOT THE CAP. max-height measures the CONTENT box by
-   default, so a pane capped at half the zone still took that half PLUS its two
-   paddings and its border — and the guaranteed remainder was guaranteed of the
-   wrong box. The viewer scopes border-box to .ig-viewer *, and this panel is
-   not inside one, so it inherits whatever the host page sets. Stated here
-   rather than assumed. */
+   IT DECLARES NO SHARE OF THE ZONE, and that is a reversal worth recording. It
+   carried flex: 0 1 auto and max-height: 50% against a zone made a flex column,
+   which gave the audit and the selection independent scrolling — and clipped
+   the mount's chrome, a third sibling this package appends to the same zone.
+   The zone scrolls as one track again; see workspace/styles.ts. How three
+   siblings should share one column is a design question, and it is filed rather
+   than answered in a stylesheet. */
 .ig-audit-panel {
-  box-sizing: border-box;
-  flex: 0 1 auto;
-  max-height: 50%;
   border-bottom: var(--ig-stroke) solid var(--ig-line);
   display: flex;
   flex-direction: column;
@@ -145,24 +129,17 @@ export const auditStylesheet = `
   text-transform: uppercase;
 }
 
-/* THE LIST SCROLLS INSIDE THE PANEL, and the pane above it is what makes that
-   a guarantee rather than a hope. A FIXED cap could not be one: a calc of 24
-   times the wide space step is, under the default theme, most of a short
-   workspace's whole column — the list obeyed its budget and the selection
-   detail went below the fold anyway. The bound that matters is the share of the
-   ZONE this pane may take, and flex: 0 1 auto against a sibling that claims
-   the rest is what states it; the list then simply fills its pane.
-
-   min-height: 0 again, for the reason the zone's children carry it: without
-   it this scroll container refuses to shrink below its content. */
+/* NO CAP ON THE LIST. Three of them were tried — a fixed length, a share of a
+   flex column, that share measured on the right box — and each was correct
+   about the previous one's defect while the column itself stayed the thing that
+   could not be bounded from in here. The zone scrolls as one track, the list
+   scrolls with it, and the sharing question is filed. */
 .ig-audit-list {
   display: flex;
   flex-direction: column;
   gap: var(--ig-space-snug);
   list-style: none;
   margin: 0;
-  min-height: 0;
-  overflow-y: auto;
   padding: 0;
 }
 
