@@ -235,23 +235,37 @@ describe('the findings panel', () => {
     });
   });
 
-  it('names each navigation button distinctly, for a reader listing buttons', () => {
+  it('names each navigation button distinctly, whatever two findings share', () => {
     // THE MODE THAT STRIPS THE CARD. A screen reader's button list shows names
-    // and nothing around them, so several identical `go and look` buttons are
-    // indistinguishable and the ref in `data-ig-target` — which is not exposed
-    // to assistive technology at all — cannot separate them.
+    // and nothing around them, so the name is all a reader has; the ref in
+    // `data-ig-target` is not exposed to assistive technology at all.
     //
-    // THE FIXTURE IS THE HARD CASE, not the easy one. `EVERY_CLASS` gives every
-    // card a DIFFERENT first member, so a name carrying only the ref passes it
-    // — which is how an earlier revision shipped exactly that. Here `a` is in
-    // the cycle AND refused, so two cards share a navigable member and only the
-    // finding separates them. `auditDocument` concatenates those on purpose.
+    // THREE COLLISION SHAPES IN ONE FIXTURE, and the list is the point rather
+    // than the count. Three revisions each summarised a finding into its name
+    // and each summary collided on a shape the last had not met, so this
+    // asserts over ALL of them at once:
+    //
+    //   1. several findings at all       — the host's word alone collides
+    //   2. one issue, two CLASSES        — `a` in the cycle and refused
+    //   3. two findings, one class AND one target — `a blocked-by y` and
+    //      `a blocked-by z`, two closed blockers on one issue
+    //
+    // Shape 3 is what defeats "class plus ref", and nothing short of the
+    // finding's own sentence separates it.
     const markup = markupOf(
-      [issue('a'), issue('b'), issue('c')],
+      [
+        issue('a'),
+        issue('b'),
+        issue('c'),
+        issue('y', 'closed'),
+        issue('z', 'closed'),
+      ],
       [
         ['blocked-by', 'a', 'b'],
         ['blocked-by', 'b', 'c'],
         ['blocked-by', 'c', 'a'],
+        ['blocked-by', 'a', 'y'],
+        ['blocked-by', 'a', 'z'],
       ],
       [{ ref: 'a' }],
     );
@@ -261,17 +275,27 @@ describe('the findings panel', () => {
     const targets = [...markup.matchAll(/class="ig-audit-show"[^>]*data-ig-target="([^"]+)"/g)].map(
       (match) => match[1] as string,
     );
-    assert.ok(names.length > 1, 'one button proves nothing about distinctness');
-    // THE PREMISE, ASSERTED: two buttons really do point at the same issue, so
-    // the distinctness below is about the NAME rather than about the fixture.
-    assert.ok(new Set(targets).size < targets.length, targets.join(' | '));
-    assert.equal(new Set(names).size, names.length, names.join(' | '));
-    // THE HOST'S WORD SURVIVES IN EVERY ONE, so this cannot pass by replacing
-    // the label with a bare ref — which would be the package naming its own
-    // control.
+    const kinds = [...markup.matchAll(/<li class="ig-audit-card" data-ig-audit-kind="([^"]+)"/g)].map(
+      (match) => match[1] as string,
+    );
+    assert.ok(names.length > 2, 'too few buttons to collide');
+
+    // THE PREMISES, ASSERTED RATHER THAN HOPED FOR. Without these the fixture
+    // could stop producing the collisions and this test would go on passing
+    // while proving nothing — which is exactly how the ref-only name shipped.
+    assert.ok(new Set(targets).size < targets.length, `no shared target: ${targets.join(' | ')}`);
+    const pairs = kinds.map((kind, index) => `${kind}\u0000${targets[index] ?? ''}`);
+    assert.ok(
+      new Set(pairs).size < pairs.length,
+      `no two findings share a class AND a target: ${pairs.join(' | ')}`,
+    );
+
+    assert.equal(new Set(names).size, names.length, names.join('\n'));
+    // THE HOST'S WORD LEADS EVERY ONE, so this cannot pass by dropping the
+    // label for a bare sentence the package wrote.
     for (const name of names) assert.ok(name.startsWith(WORDS.show), name);
-    // AND THE VISIBLE TEXT IS STILL JUST THE WORD: the ref is announced, not
-    // drawn, so the card does not repeat a reference its own sentence carries.
+    // AND THE VISIBLE TEXT IS STILL THE SHORT WORD: the sentence is announced,
+    // not drawn twice.
     assert.match(markup, new RegExp(`>${WORDS.show}</button>`));
   });
 

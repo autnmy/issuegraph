@@ -206,35 +206,41 @@ function cardSpec(
               // "offers navigation and never a remedy", and a control that can
               // write is a remedy whatever its label says.
               'data-ig-command': 'reveal-issue',
-              // THE NAME CARRIES THE FINDING, NOT ONLY THE ISSUE. Several
-              // findings mean several of these buttons, and a repeated
-              // `show me` is indistinguishable in the one navigation mode that
-              // strips the surrounding card: a screen reader's BUTTON LIST.
+              // THE NAME IS THE FINDING'S OWN SENTENCE, AND THAT IS A CLASS
+              // REMOVED RATHER THAN A THIRD ATTEMPT AT IT.
               //
-              // THE CLASS IS IN IT BECAUSE THE REF ALONE IS NOT ENOUGH, which
-              // an earlier revision got wrong. One issue can carry SEVERAL
-              // findings — `auditDocument` concatenates a cycle and a refusal
-              // naming the same ref on purpose — so two cards can share a
-              // navigable member, and the ref would then name both. What
-              // separates them is which finding is being offered, and the chip
-              // word is already the host's name for exactly that.
+              // Several findings mean several of these buttons, and in the one
+              // navigation mode that strips the surrounding card — a screen
+              // reader's BUTTON LIST — the name is all a reader has. Three
+              // revisions tried to SUMMARISE a finding into that name, and each
+              // summary collided on a shape the last had not met: the host's
+              // word alone collided everywhere; adding the ref collided when
+              // one issue carried two findings; adding the class collided when
+              // two findings shared a class AND a target — `a blocked-by y` and
+              // `a blocked-by z`, two closed blockers on one issue.
               //
-              // APPENDED RATHER THAN INTERPOLATED, the idiom `WorkspaceWords
-              // .whyRank` fixes for exactly this: a `{ref}` placeholder would
-              // make every host reimplement the substitution, which is how a
-              // package that refuses to invent English ships a template
-              // language instead. A ref is a package value, so nothing here is
-              // a word this package wrote.
+              // The PATTERN is the defect. Any hand-picked subset of a
+              // finding's attributes has two findings that agree on it, so
+              // counting the collisions was never going to end. `detail` is the
+              // one value that cannot collide by construction: `findings.ts`
+              // composes it from the specific edge or members the finding is
+              // about, and documents it as "what the reader can be told, in one
+              // sentence" — so two findings with one sentence are one finding.
               //
-              // IT DIFFERS FROM `WorkspaceWords.remove` ON PURPOSE. That
-              // control is also repeated per row and also row-independent, and
-              // its note rejects a name like `remove #488` — on the ground that
-              // a HOST writing that string would be wrong on every other row,
-              // which is true and is a different question from appending the
-              // out here. The same treatment is owed there; filed as #176
-              // rather than widened into this change.
+              // IT ADDS NO ENGLISH. `detail` is already this card's visible
+              // prose, so nothing is announced that is not on screen, and the
+              // host's word still leads. Appended, never interpolated, the
+              // `WorkspaceWords.whyRank` idiom.
+              //
+              // A LONG NAME IS THE RIGHT TRADE. In a button list a name is an
+              // identifier before it is a label, and a distinct sentence beats
+              // a short ambiguous phrase; the VISIBLE label stays the short
+              // word.
+              //
+              // `WorkspaceWords.remove` has the same shape one leaf over and is
+              // deliberately untouched — filed as #176 rather than widened.
               'data-ig-target': target,
-              'aria-label': `${words.show} ${words.classes[finding.kind]} ${target}`,
+              'aria-label': `${words.show} ${finding.detail}`,
             },
             [words.show],
           ),
