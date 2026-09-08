@@ -2287,22 +2287,23 @@ function createStep(context: InspectorContext, subject: string | null): CreateSt
  * member those are different issues, which {@link createStep} records. Both
  * begin a draft the reader can see and cancel, so the pairing is kept.
  *
- * AND THE KEY DOES NOT WORK WHILE THIS BUTTON ITSELF HOLDS FOCUS. Measured, not
- * inferred: `mountWorkspace`'s `interaction()` answers `elsewhere` for a focused
- * command control, and `create/keys.ts`'s `reaches()` refuses every binding
- * there — and `KeyboardContext.focused` is the rail's tab stop, which is `null`
- * then, so the `relate` arm would answer `none` even if the interaction did
- * reach. `R` works from the rail, which is where a reader who has not yet
- * touched this control is standing, and the button itself answers `Enter` and
- * `Space`; so the hint names a key the reader has, at the one focus position
- * where it is inert.
+ * AND THE KEY NOW WORKS WHILE THIS BUTTON ITSELF HOLDS FOCUS — it did not when
+ * the hint was first drawn beside it, and `#173` is the repair. The hint had
+ * been naming a key the reader genuinely has at the one focus position where it
+ * was inert: `interaction()` answered `elsewhere` for a focused command control
+ * and `create/keys.ts`'s `reaches()` refuses every binding there, while
+ * `KeyboardContext.focused` was the rail's tab stop and so `null` then, leaving
+ * the `relate` arm with nothing to relate FROM even had the interaction
+ * reached. Both halves moved: `add-control` is a `CreateInteraction` admitting
+ * `RELATE_KEY` alone, and `focusedAddSubject` supplies the source from the
+ * attribute below.
  *
- * IT IS NOT REPAIRED HERE, DELIBERATELY. Making it true needs BOTH a new
- * `interaction()` answer and a second source for `focused` — and `interaction`'s
- * own header records that conjoining this predicate on where focus happens to
- * be is what produced three consecutive rounds of defects ("Focus is not the
- * fact"). That is a keyboard-routing change, and this one moves where controls
- * sit without changing what any key does. Filed on autnmy/issuegraph#147.
+ * WHICH IS WHY THE ATTRIBUTE IS LOAD-BEARING FOR THE KEYBOARD TOO, and no
+ * longer only for the pointer: `focusedAddSubject` reads exactly this
+ * `data-ig-target`, narrowed to the `add` command, so the note above about the
+ * hint and the control beginning from different issues is now the ONE case
+ * where they still can — a together unit's non-lead member holding the rail's
+ * tab stop, where `focusedKey` answers first and this fallback is not reached.
  */
 function addControlSpec(words: WorkspaceWords, subject: string): ElementSpec {
   return element(

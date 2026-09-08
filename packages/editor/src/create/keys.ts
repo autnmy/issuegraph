@@ -54,10 +54,15 @@
  * it, and gets one more entry every time a host grows a control.
  *
  * So the question is inverted. {@link CreateInteraction} enumerates OUR OWN
- * interaction, which §17b fixes at four states, and the host says which one it
- * is in. A fifth widget adds no code here: the host reports `elsewhere` and the
- * map is silent. What was an open-ended list of other people's claims became a
- * closed description of this design's own flow.
+ * interaction — one state per step of the create flow §17b specifies — and the
+ * host says which one it is in. A new widget adds no code here: the host reports
+ * `elsewhere` and the map is silent. What was an open-ended list of other
+ * people's claims became a closed description of this design's own flow.
+ *
+ * THE SET IS CLOSED BY THE FLOW, NOT BY A COUNT. It has grown twice, both times
+ * because a step of this flow was missing from it rather than because the
+ * closure argument failed — see {@link CreateInteraction}. The invariant that
+ * has never moved is the one that matters: no state here names a host's widget.
  *
  * Two press-level facts remain, and they are bounded in a way the widget list
  * never was — a modifier set and a composition flag are fields on the event
@@ -123,7 +128,7 @@ export interface KeyboardContext {
    * The host answers it because the host is the only one who can: this package
    * has no DOM, and which control holds focus is visible only to the shell.
    * Crucially, answering it needs no knowledge of THIS package — a host maps
-   * its own world onto four states it already understands.
+   * its own world onto states it already understands.
    */
   readonly interaction: CreateInteraction;
 }
@@ -150,13 +155,18 @@ export interface KeyboardContext {
  *   printable keys belong to the box — most issue references carry a digit, so
  *   a map that claimed `1`–`5` here would eat nearly every query — and `⌫`
  *   deletes a CHARACTER rather than the reader's selected edge.
+ * - `add-control` — the create flow's OWN begin control holds focus: §17b's
+ *   inspector path, the `+ add` button, which draws {@link RELATE_KEY} beside
+ *   its own word. Only `relate` reaches, for the reason the state exists at all
+ *   (below). A press at this position begins the draft the control would have
+ *   begun, from the subject the control publishes.
  * - `elsewhere` — something else owns the keyboard entirely: an inline title,
  *   a filter box, a modal, a control this package has never heard of. NOTHING
  *   reaches, `Escape` included, because that control needs `Escape` to cancel
  *   its own edit.
  *
  * `elsewhere` is what makes the set closed. It is the state for everything not
- * named, so a host growing a fifth control changes nothing here.
+ * named, so a host growing another control changes nothing here.
  *
  * ## Why this grew to four, when the whole point was that it does not grow
  *
@@ -174,9 +184,37 @@ export interface KeyboardContext {
  * A HOST STILL ANSWERS IT WITHOUT KNOWING THIS PACKAGE: "my reader is choosing
  * a relationship kind" is a fact about the host's own screen, the same shape as
  * the other three. What did NOT change is the thing the closure protects — no
- * state here names a host's widget, and a fifth control still adds no code.
+ * state here names a host's widget, and another control still adds no code.
+ *
+ * ## And then to five, by the same argument and for the same kind of step
+ *
+ * `#173`. §17b gives the create flow three equivalent entries — canvas, keyboard
+ * and the inspector's `+ add` — and the third one's control was `elsewhere`, so
+ * `R` was inert at exactly the position that DRAWS `R` as its own hint. That is
+ * the `#152` shape again: a step of this flow classified as somebody else's
+ * widget.
+ *
+ * THE DIFFERENCE IS NAMABLE, WHICH IS WHAT KEEPS THIS FROM BEING A SLOPE. It is
+ * the test the kind chooser already passes and the audit filter already fails:
+ * the chooser IS the key map rendered — its digits are {@link KIND_KEYS} — and
+ * `+ add` IS this binding rendered, drawing {@link RELATE_KEY} itself. A control
+ * that tells the reader to press a key cannot be a control that key is refused
+ * by. A delete button, a filter box or a host's own control shares no vocabulary
+ * with this map and stays `elsewhere`, which is where every control that draws
+ * no key belongs.
+ *
+ * ONLY `relate` REACHES IT, and that follows from the same sentence rather than
+ * from caution: the argument is about the ONE binding this control renders, and
+ * it says nothing about any other. `⌫` there would delete a selected edge the
+ * reader is not looking at, and a digit would fill a kind slot on a draft that
+ * has not begun.
  */
-export type CreateInteraction = 'canvas' | 'kind-chooser' | 'target-search' | 'elsewhere';
+export type CreateInteraction =
+  | 'canvas'
+  | 'kind-chooser'
+  | 'target-search'
+  | 'add-control'
+  | 'elsewhere';
 
 /**
  * What a key means. `none` leaves the key to the host.
@@ -280,7 +318,11 @@ const BINDINGS: ReadonlyMap<string, Binding> = new Map<string, Binding>([
   // and it already clears what a previous draft gathered. Withholding it would
   // take the restart away from a reader whose focus is off the rail while
   // leaving it for one whose focus is on it — a difference with no meaning.
-  [RELATE_KEY, { kind: 'relate', survives: ['kind-chooser'] }],
+  // `r` ALSO SURVIVES `add-control`, and this is the one binding that does:
+  // that state IS this binding rendered as a button, drawing this very letter
+  // as its hint (`#173`). The entry is the whole of the fix — the state admits
+  // what it renders and nothing else.
+  [RELATE_KEY, { kind: 'relate', survives: ['kind-chooser', 'add-control'] }],
   // THE DIGITS ARE WHAT THE CHOOSER IS FOR. `#152`: with focus anywhere but a
   // keyed row the interaction read `elsewhere` and these returned `none` at the
   // one step whose whole purpose is to be answered with a digit.
@@ -479,6 +521,8 @@ function reaches(binding: Binding, interaction: CreateInteraction): boolean {
       return binding.survives.includes('kind-chooser');
     case 'target-search':
       return binding.survives.includes('target-search');
+    case 'add-control':
+      return binding.survives.includes('add-control');
     case 'elsewhere':
       return false;
   }

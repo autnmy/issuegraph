@@ -440,22 +440,26 @@ describe('shifted and unshifted are the same key', () => {
   });
 });
 
-describe('the kind chooser is its own interaction, and the table says what reaches it', () => {
+describe('a control that draws a key is its own interaction, and the table says what reaches it', () => {
   /**
    * The whole reach matrix, as data.
    *
    * ONE TABLE OVER EVERY BINDING × EVERY INTERACTION, because `#152` was a hole
    * in exactly the cell no test named: the digits under a chooser the reader was
-   * standing in. A suite that pins the cells it happens to think of leaves the
-   * next hole in the ones it does not, and this map has 4 × 8 cells with nowhere
-   * for one to hide.
+   * standing in. `#173` was the second hole of the same shape, one column over —
+   * `r` under the `+ add` control that draws `r` as its hint. A suite that pins
+   * the cells it happens to think of leaves the next hole in the ones it does
+   * not, and this map has 5 × 8 cells with nowhere for one to hide.
    *
    * The digits are spread from `KIND_KEYS` rather than written out, for the
    * reason `keys.ts`'s header gives: a sixth field must not need this file
    * edited to stay covered.
    */
   const REACHES: ReadonlyMap<string, readonly CreateInteraction[]> = new Map([
-    ['r', ['canvas', 'kind-chooser']],
+    // `add-control` ADMITS THIS BINDING AND NO OTHER. The column below is the
+    // pin for that half of `#173`: every other row reads `false` there, so a
+    // later `survives` entry cannot widen the state quietly.
+    ['r', ['canvas', 'kind-chooser', 'add-control']],
     ...KIND_KEYS.map((entry): readonly [string, readonly CreateInteraction[]] => [
       entry.key,
       ['canvas', 'kind-chooser'],
@@ -467,7 +471,13 @@ describe('the kind chooser is its own interaction, and the table says what reach
     ['Escape', ['canvas', 'kind-chooser', 'target-search']],
   ] as readonly (readonly [string, readonly CreateInteraction[]])[]);
 
-  const INTERACTIONS: readonly CreateInteraction[] = ['canvas', 'kind-chooser', 'target-search', 'elsewhere'];
+  const INTERACTIONS: readonly CreateInteraction[] = [
+    'canvas',
+    'kind-chooser',
+    'target-search',
+    'add-control',
+    'elsewhere',
+  ];
 
   /**
    * Every guard satisfied at once, so a `none` in the matrix below is always the
@@ -533,5 +543,21 @@ describe('the kind chooser is its own interaction, and the table says what reach
         `${entry.key} did not choose ${entry.edgeKind}`,
       );
     }
+  });
+
+  it('begins from the subject on the add control, and refuses without one', () => {
+    // BOTH HALVES OF `#173` IN ONE PLACE. Reaching the state is the matrix's
+    // job above; what this pins is that the arm behind it still needs a
+    // subject — the host supplies `+ add`'s published one, and a host that
+    // reports the state with nothing focused gets `none` rather than a draft
+    // with a hole in it. Without the second assertion the first could pass
+    // against a `relate` arm that had quietly stopped asking.
+    assert.deepEqual(
+      keyIntent({ key: 'r' }, context({ focused: SUBJECT, interaction: 'add-control' })),
+      { kind: 'create', command: { kind: 'begin', source: SUBJECT } },
+    );
+    assert.deepEqual(keyIntent({ key: 'r' }, context({ interaction: 'add-control' })), {
+      kind: 'none',
+    });
   });
 });

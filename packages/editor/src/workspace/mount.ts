@@ -1155,6 +1155,37 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     return keyed !== null && surface.contains(keyed) ? keyed.getAttribute(KEY_ATTRIBUTE) : null;
   };
 
+  /**
+   * The subject `+ add` publishes, when that control itself owns focus.
+   *
+   * THE SECOND SOURCE FOR `KeyboardContext.focused`, and it exists because the
+   * first one cannot answer here: `focusedKey` reads the rail's roving tab stop,
+   * and a focused button has no keyed ancestor — every command control this
+   * package draws sits in chrome beside the keyed rows rather than inside one.
+   * So `R` on `+ add` reached a `relate` arm whose subject was `null`, which
+   * answers `none` ("nothing focused is nothing to relate FROM"). `#173`.
+   *
+   * IT READS THE CONTROL'S OWN ATTRIBUTE, NOT THE SELECTION, for the reason
+   * `reduceHost`'s `add` arm already reads it: `inspectorView` canonicalizes a
+   * selection naming a together unit's member onto the slot's LEAD, and the
+   * panel is worded from that, so the control publishes the canonical subject
+   * and the selection is only a fallback for a control that names none. Taking
+   * the selection here would begin the keyboard's draft from a different issue
+   * than the pointer's, on one screen, from one control.
+   *
+   * NARROWED TO THE `add` COMMAND, and that is a correctness bound rather than
+   * tidiness: {@link TARGET_ATTRIBUTE} is carried by the row remove control
+   * (an edge id), by a recovery card (a mutation id) and by a hold's subject
+   * button. Reading it off whichever control happens to hold focus would hand
+   * `relate` an edge id as an issue ref.
+   */
+  const focusedAddSubject = (): string | null => {
+    const active = doc.activeElement;
+    if (!isElement(active) || !surface.contains(active)) return null;
+    if (active.getAttribute(COMMAND_ATTRIBUTE) !== 'add') return null;
+    return active.getAttribute(TARGET_ATTRIBUTE);
+  };
+
   const render = (): void => {
     if (destroyed) return;
     const snapshot = store.getSnapshot();
@@ -1939,14 +1970,23 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
    * `elsewhere` as "everything that is not our own search box", and a button is
    * that. The target search keeps its two bindings.
    *
-   * ## The kind chooser is the ONE button group that is not `elsewhere`
+   * ## The TWO controls that are not `elsewhere`, and the test they pass
    *
-   * The rule above is right for every control it names and wrong for this one,
+   * The rule above is right for every control it names and wrong for these two,
    * and the difference is namable rather than a taste: the audit filter and the
-   * delete button share no vocabulary with the key map, while the chooser IS the
-   * key map rendered — its digits are `KIND_KEYS`, the same table `keyIntent`
-   * resolves the press against. A group whose labels tell the reader to press
-   * `2` cannot be a group the reader's `2` is refused by.
+   * delete button share no vocabulary with the key map, while these two ARE the
+   * key map rendered. The kind chooser's digits are `KIND_KEYS`, the same table
+   * `keyIntent` resolves the press against, and `+ add` draws `RELATE_KEY`
+   * itself as its hint. A control whose labels tell the reader to press `2`
+   * cannot be a control the reader's `2` is refused by, and `#173` is the same
+   * sentence about `R`: the hint named a key the reader genuinely has, at the
+   * one focus position where it was inert.
+   *
+   * THE TEST IS "DOES THIS CONTROL DRAW A KEY THIS MAP READS", and it is what
+   * stops the list growing on taste. It admits exactly two controls today; a
+   * host's own widget, a filter, a remove button and every control that draws
+   * no key stay `elsewhere`. `create/keys.ts` carries the matching half — the
+   * new state admits the ONE binding it renders and no other.
    *
    * ## Asked of the DRAFT, not of where focus happens to be
    *
@@ -1963,6 +2003,25 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
    * SHIPPED THE BUG: `closest('<the chooser>')` is false from `clear`, so the
    * digits would still have died while the change typechecked and its own table
    * test passed.
+   *
+   * ## `add-control` reads focus, and that is not a relapse
+   *
+   * `#173`'s arm asks where focus is, which is the shape this section rejects —
+   * so it has to survive the argument rather than repeat what it rejected, and
+   * the difference is WHICH FACT IS MISSING. At the kind step the fact is the
+   * DRAFT: a source with no kind IS the reader at that step, wherever a restore
+   * put them, so reading focus there answers a question the draft had already
+   * answered better. At the begin step there is no draft yet — beginning one is
+   * the act — and the fact is the SUBJECT to begin from. The control publishes
+   * it on `data-ig-target`, so what this arm reads is a control's own claim
+   * about what it is for, and focus is what says the reader is standing on it.
+   *
+   * The `#150` failure mode is therefore absent by construction: it was focus
+   * MOVING AWAY from the control the draft belonged to, and the arm here has no
+   * "away" — it answers about the control still holding focus, and once the
+   * draft begins the panel replaces this control with the kind list, at which
+   * point the draft is the fact again and `kind-chooser` answers. That ordering
+   * is written below rather than left to be inferred.
    *
    * ## `canvas` is asked FIRST, and that ordering is the safety property
    *
@@ -1996,7 +2055,13 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // answers `canvas` above, which is a pre-existing question and not this
     // change's to settle.
     if (isInput(active)) return 'elsewhere';
-    return isChoosingKind(state.draft) ? 'kind-chooser' : 'elsewhere';
+    // THE DRAFT IS ASKED BEFORE THE CONTROL, so the section above stays true of
+    // the state it was written for. The two cannot both be live in practice —
+    // `createStep` withholds `+ add` for the whole of the kind step — but a rule
+    // that depends on another module's rendering condition is one that changes
+    // silently the day that condition does.
+    if (isChoosingKind(state.draft)) return 'kind-chooser';
+    return focusedAddSubject() === null ? 'elsewhere' : 'add-control';
   };
 
   /**
@@ -2194,7 +2259,20 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       // The FOCUSED row, not the selection: on a fresh page a row can own
       // focus while nothing is selected, and after focus moves on, a stale
       // selection must not become the source of a keyboard-started draft.
-      focused: focusedKey(),
+      // AND `+ add`'S OWN SUBJECT WHERE THERE IS NO ROW, which is still that
+      // rule rather than an exception to it — the fallback is a control's
+      // published claim about what it acts on, not the selection this line
+      // refuses. It moves nothing that worked: the second term is consulted
+      // only where the first is `null`, and where it answers, `interaction()`
+      // answers `add-control`, which admits `relate` alone.
+      // AND IT DOES NOT OPEN THE NAVIGATION ARM BELOW, which is the one place a
+      // wider `focused` could have leaked. That arm is guarded on this field,
+      // but `navigateFocus` re-derives the key from a `[data-ig-key]` ANCESTOR
+      // and answers `false` without one — and no command control has one, since
+      // every one this package draws sits in chrome beside the keyed rows. So
+      // the guard now admits a press the arm still declines, rather than
+      // stepping the rail from a focused button.
+      focused: focusedKey() ?? focusedAddSubject(),
       match,
       selectedEdge: selectedEdgeId(state.selection),
       interaction: interaction(),
@@ -2218,11 +2296,13 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // Two facts make it true here rather than merely plausible.
     //
     // `interaction()` answers `elsewhere` for a focused command control that is
-    // neither an input nor the kind step, so `keyIntent` returns `none` for
-    // every key there. At the KIND STEP it answers `kind-chooser` — the
-    // predicate is asked of the DRAFT, not of where focus is — and there
+    // neither an input, nor the kind step, nor `+ add`, so `keyIntent` returns
+    // `none` for every key there. At the KIND STEP it answers `kind-chooser` —
+    // the predicate is asked of the DRAFT, not of where focus is — and there
     // `enter` does not survive and `' '` is unbound, so `keyIntent` is silent
-    // again. So this arm does claim `Enter` and `Space` on the inspector's
+    // again. On `+ add` it answers `add-control`, which admits `RELATE_KEY`
+    // alone (`#173`) and neither of these two, so this arm still owns them
+    // there. So this arm does claim `Enter` and `Space` on the inspector's
     // `clear`, which is where the mount's focus restore lands after `begin`.
     // That is a control doing what a control does, and it is new behaviour on
     // a step the create loop passes through every time — said out loud because
