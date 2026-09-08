@@ -240,6 +240,7 @@ export {
   type KeyboardContext,
   type KindKey,
   KIND_KEYS,
+  RELATE_KEY,
   keyIntent,
 } from './create/keys.ts';
 

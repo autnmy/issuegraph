@@ -137,7 +137,8 @@ export const WORKSPACE_WORDS: MountWords = {
   whyHeld: 'Why held',
   workedAsOneUnit: 'worked as one unit with',
   noRelationships: 'Nothing is related to this issue yet.',
-  addRelationship: '+ add a relationship',
+  addRelationship: '+ add',
+  addRelationshipHeading: 'add relationship',
   cancel: 'cancel',
   // WHOSE DRAFT THE KIND STEP BELONGS TO, when it is not the panel's subject:
   // a draft begun on a together unit's partner, or one the reader selected
@@ -203,6 +204,15 @@ export const WORKSPACE_WORDS: MountWords = {
   chooseKind: 'choose the kind',
   targetLabel: 'Target issue',
   targetPlaceholder: 'find the other issue by number or title',
+  // `R` IS LISTED HERE AS WELL AS ON THE CONTROL, and the duplication is the
+  // lesser fault. Dropping it was tried first, on the reasoning that a hint
+  // beside the control makes the legend's copy redundant — but the two make
+  // DIFFERENT claims. The control's hint says what THAT control's key is, and
+  // the control is conditional: no `+ add` is drawn with an edge selected, with
+  // nothing selected, or at the kind step. `keyIntent` begins a relationship
+  // from the rail's focused row, so `R` keeps working in every one of those
+  // states, and a legend that omits it tells the reader a key they have is a
+  // key they do not.
   keys: 'R relate · 1–5 kind · type to search · ⏎ commit · ⌫ delete · T retype · Esc cancel',
 };
 
