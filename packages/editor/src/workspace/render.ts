@@ -260,7 +260,7 @@ export interface WorkspaceWords {
    * subject — "relating from", read before the reference the package supplies.
    *
    * IT EXISTS BECAUSE THE TWO CAN DIVERGE AND THE DRAFT MUST STILL BE
-   * CANCELLABLE. See {@link addStepSpec}: a draft begun by `R` on a together
+   * CANCELLABLE. See {@link createStep}: a draft begun by `R` on a together
    * unit's non-lead member, or one outlived by a change of selection, leaves
    * the kind step live under a panel headed by a different issue. The step is
    * drawn anyway — it carries the only pointer cancel there is — so it has to
@@ -1176,7 +1176,7 @@ function refusalCapsule(
  * remove and BEGIN a relationship, and must supply its own target picker.
  *
  * `source` NAMES THE DRAFT WHEN IT IS NOT THIS PANEL'S OWN, and is `null` when
- * it is — see {@link addStepSpec} for why the list is drawn either way. Written
+ * it is — see {@link createStep} for why the list is drawn either way. Written
  * as the reference beside the host's phrase, which is `whyRankSpec`'s own shape
  * for the same problem: the package names the issue and the host writes the
  * English around it.
@@ -2160,6 +2160,23 @@ function createStep(context: InspectorContext, subject: string | null): CreateSt
  * publishes the canonical `data-ig-target`; on a together unit's non-lead
  * member those are different issues, which {@link createStep} records. Both
  * begin a draft the reader can see and cancel, so the pairing is kept.
+ *
+ * AND THE KEY DOES NOT WORK WHILE THIS BUTTON ITSELF HOLDS FOCUS. Measured, not
+ * inferred: `mountWorkspace`'s `interaction()` answers `elsewhere` for a focused
+ * command control, and `create/keys.ts`'s `reaches()` refuses every binding
+ * there — and `KeyboardContext.focused` is the rail's tab stop, which is `null`
+ * then, so the `relate` arm would answer `none` even if the interaction did
+ * reach. `R` works from the rail, which is where a reader who has not yet
+ * touched this control is standing, and the button itself answers `Enter` and
+ * `Space`; so the hint names a key the reader has, at the one focus position
+ * where it is inert.
+ *
+ * IT IS NOT REPAIRED HERE, DELIBERATELY. Making it true needs BOTH a new
+ * `interaction()` answer and a second source for `focused` — and `interaction`'s
+ * own header records that conjoining this predicate on where focus happens to
+ * be is what produced three consecutive rounds of defects ("Focus is not the
+ * fact"). That is a keyboard-routing change, and this one moves where controls
+ * sit without changing what any key does. Filed on autnmy/issuegraph#147.
  */
 function addControlSpec(words: WorkspaceWords, subject: string): ElementSpec {
   return element(

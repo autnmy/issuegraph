@@ -493,7 +493,7 @@ describe('mountWorkspace', () => {
       assert.ok(row !== undefined);
       row.focus();
       assert.equal(page.win.document.activeElement, row);
-      row.dispatchEvent(new page.win.KeyboardEvent('keydown', { key: 'r', bubbles: true }));
+      row.dispatchEvent(new page.win.KeyboardEvent('keydown', { key: RELATE_KEY, bubbles: true }));
       await flush();
       assert.equal(page.handle.state.draft.source, '3');
 
@@ -526,7 +526,7 @@ describe('mountWorkspace', () => {
       );
       assert.ok(member !== null, 'the tree canvas draws no node for the unit’s partner');
       member.focus();
-      member.dispatchEvent(new page.win.KeyboardEvent('keydown', { key: 'r', bubbles: true }));
+      member.dispatchEvent(new page.win.KeyboardEvent('keydown', { key: RELATE_KEY, bubbles: true }));
       await flush();
       assert.equal(page.handle.state.draft.source, '2');
 
@@ -1095,7 +1095,7 @@ describe('mountWorkspace', () => {
       const member = page.element.querySelector<HTMLElement>('[data-zone="canvas"] [data-ig-key="2"]');
       assert.ok(member !== null, 'the tree canvas draws no node for the unit\u2019s partner');
       member.focus();
-      member.dispatchEvent(new page.win.KeyboardEvent('keydown', { key: 'r', bubbles: true }));
+      member.dispatchEvent(new page.win.KeyboardEvent('keydown', { key: RELATE_KEY, bubbles: true }));
       await flush();
       assert.equal(page.handle.state.draft.source, '2');
 
@@ -2220,7 +2220,7 @@ describe('the first pass, composed behind §17a’s entry', () => {
       // And the workspace still takes keys.
       page.rows()[0]?.focus();
       page.element.dispatchEvent(
-        new page.win.KeyboardEvent('keydown', { key: 'r', bubbles: true, cancelable: true }),
+        new page.win.KeyboardEvent('keydown', { key: RELATE_KEY, bubbles: true, cancelable: true }),
       );
       await flush();
       assert.equal(page.handle.state.draft.source, '1', 'the workspace was left keyboard-dead');

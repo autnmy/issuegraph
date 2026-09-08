@@ -415,11 +415,61 @@ describe('the workspace stylesheet carries structure, never a value', () => {
     assert.ok(head !== undefined, 'nothing lays out the panel heading row');
     assert.match(head, /align-items:\s*baseline/);
 
+    // BOTH BUTTONS THAT SIT ON A BASELINE ROW, not just the one that was caught.
+    // `+ add` joined them when §17a moved it onto the relationships header, which
+    // is a baseline row for the same reason — and it arrived carrying the very
+    // `align-self` this test exists to keep off such a row, because it was still
+    // in the create step's COLUMN rule. Scanning only the control that was
+    // wrong once leaves the next one to be found by eye.
+    const relationships = css.match(/\.ig-inspector-relationships-head\s*\{([^}]*)\}/)?.[1];
+    assert.ok(relationships !== undefined, 'nothing lays out the relationships header row');
+    assert.match(relationships, /align-items:\s*baseline/);
+
     for (const rule of [...css.matchAll(/([^{}]*)\{([^}]*)\}/g)]) {
       const [, selector = '', body = ''] = rule;
-      if (!selector.includes('.ig-inspector-clear') || !/align-self/.test(body)) continue;
-      assert.fail(`the clear control overrides the head's baseline: ${selector.trim()}`);
+      if (!/align-self/.test(body)) continue;
+      for (const control of ['.ig-inspector-clear', '.ig-inspector-addbutton']) {
+        if (!selector.includes(control)) continue;
+        assert.fail(`${control} overrides its row's baseline: ${selector.trim()}`);
+      }
     }
+  });
+
+  it('lands the kind digit at the row\u2019s end, and keeps the header row apart', () => {
+    // THE SAME CLASS OF DEFECT THE BASELINE TEST ABOVE EXISTS FOR, on the layout
+    // this change reverses. §17a puts the digit in a chip at the row's end, and
+    // three declarations carry that between them: the row is a flex container,
+    // the chip does not grow, and its auto margin is what consumes the slack.
+    // Drop any one and the chip slides back beside the glyph with every markup
+    // test still green — the markup order is unchanged by such an edit.
+    const option = css.match(/\.ig-kind-option\s*\{([^}]*)\}/)?.[1];
+    assert.ok(option !== undefined, 'nothing lays out a kind row');
+    assert.match(option, /display:\s*flex/);
+    // CENTRED RATHER THAN ON A BASELINE, because a bordered chip has padding of
+    // its own and sits low against the glyph and the word on a baseline.
+    assert.match(option, /align-items:\s*center/);
+
+    const digit = css.match(/\.ig-kind-digit\s*\{([^}]*)\}/)?.[1];
+    assert.ok(digit !== undefined, 'nothing draws the digit chip');
+    assert.match(digit, /margin-left:\s*auto/);
+    assert.match(digit, /flex:\s*0 0 auto/);
+    assert.match(digit, /border:/);
+
+    // AND THE HEADER ROW SEPARATES ITS TWO CHILDREN. `+ add` sits opposite the
+    // heading; without this it collapses against it.
+    const head = css.match(/\.ig-inspector-relationships-head\s*\{([^}]*)\}/)?.[1];
+    assert.ok(head !== undefined, 'nothing lays out the relationships header row');
+    assert.match(head, /display:\s*flex/);
+    assert.match(head, /justify-content:\s*space-between/);
+
+    // THE CONTROL KEEPS THE FOCUS RING IT LEFT THE FILL BEHIND FOR. It is out of
+    // the shared quiet-button treatment now, and a control that loses its ring
+    // on the way out is an accessibility regression the fill change would hide.
+    const ring = [...css.matchAll(/([^{}]*)\{([^}]*)\}/g)].some(
+      ([, selector = '', body = '']) =>
+        selector.includes('.ig-inspector-addbutton:focus-visible') && /outline:/.test(body),
+    );
+    assert.ok(ring, 'the add control has no focus ring');
   });
 
   it('rings every control in the relationship row, and rings them alike', () => {

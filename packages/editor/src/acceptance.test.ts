@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+
 import { describe, it } from 'node:test';
 
 import { EDGE_FIELDS, edgeIdentity, isSymmetricEdgeField } from '@issuegraph/core';
@@ -645,7 +646,7 @@ function createdBy(commands: readonly surface.CreateCommand[]): Proposal | null 
 function keyboardCommands(kind: EdgeKind): readonly surface.CreateCommand[] {
   const digit = String(EDGE_FIELDS.indexOf(kind) + 1);
   const presses = [
-    keyIntent({ key: 'r' }, { focused: SUBJECT, match: null, selectedEdge: null, interaction: 'canvas' }),
+    keyIntent({ key: surface.RELATE_KEY }, { focused: SUBJECT, match: null, selectedEdge: null, interaction: 'canvas' }),
     keyIntent({ key: digit }, { focused: null, match: null, selectedEdge: null, interaction: 'canvas' }),
     keyIntent({ key: 'Enter' }, { focused: null, match: OBJECT, selectedEdge: null, interaction: 'canvas' }),
   ];
@@ -1027,6 +1028,11 @@ describe('done when: the package\'s public surface is final and self-sufficient'
       'RAIL_WINDOW',
       'inspectorView',
       'ZONES',
+      // THE KEY THE PANEL DRAWS, which a host reimplementing the control needs
+      // to draw the same hint — and which nothing else in the suite reaches
+      // through the package entry point, so a dropped re-export would have been
+      // invisible here while the direct-import tests stayed green.
+      'RELATE_KEY',
     ]) {
       assert.ok(name in surface, `${name} is not exported`);
     }
