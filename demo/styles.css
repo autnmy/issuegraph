@@ -278,16 +278,6 @@ select {
   border-radius: var(--radius);
 }
 
-.order-status,
-.change {
-  margin: 0 0 var(--gap-tight);
-  font-size: var(--size-small);
-}
-
-.order-status-held {
-  color: var(--state-pending);
-}
-
 .writes-list {
   list-style: none;
   margin: 0;

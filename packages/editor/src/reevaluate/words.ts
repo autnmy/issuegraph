@@ -46,6 +46,13 @@ export interface ChangeWords {
   /**
    * Labels the order while a write is in flight and the rows are the ones from
    * before it. The rail is greyed a step; this says why.
+   *
+   * IN FLIGHT MEANS PENDING, NOT LANDED, and a host wording this should know
+   * which. `OrderStatus` is `held` while `anyPending(records)`, and the store
+   * reserves a record as `pending` and publishes before it drains — so this
+   * word is on screen while the write can still be rejected, throw, or come
+   * back as a conflict. A host promising the edit is saved here would be
+   * followed by a §17b failure card contradicting it.
    */
   readonly computing: string;
   /** The dismiss control. The only thing besides the next edit that clears the summary. */

@@ -965,4 +965,121 @@ export const workspaceStylesheet = `
   font-size: var(--ig-font-size-small);
   color: var(--ig-text-muted);
 }
+
+/* §17c ON THE ROW: the tint, the third column, and the chip in place.
+
+   THE TINT IS DRAWN FROM AN ATTRIBUTE rather than from a class the row is
+   given, which is audit/surface.ts's precedent and its reason: layer 1 owns
+   the row's markup, so layer 2 says WHICH KIND and the stylesheet says what
+   that kind looks like. A row the edit did not touch carries no attribute at
+   all, so none of these rules can reach it, and "unaffected rows are left
+   completely alone" is structural rather than asserted.
+
+   THESE REACH LAYER 1'S OWN CLASSES, and that is a deliberate exception of
+   exactly the shape reevaluate/styles.ts already declares for the greyed rail:
+   only from INSIDE this surface's own root, and only for a state layer 1 does
+   not model. The viewer draws a row; whether the last edit moved that row is a
+   fact only the store knows, so the mark belongs to whoever knows it.
+
+   BOTH ROW SHAPES, because a delta can land on either. A ranked row is an
+   .ig-slot; an excluded one — the shape an issue takes when an edit turns it
+   into a duplicate — is an .ig-footer-row, and it is still navigable, so
+   reevaluateView still places its chip. An earlier revision listed .ig-slot
+   only, so a left row got its chip and its extended name and no ground.
+
+   EVERY VALUE deltaKind CAN EMIT, and that list is readiness, then a
+   movement's direction, then a presence: promoted, newly-held, up, down,
+   entered, left. An earlier revision keyed a rule on 'absent', which is not a
+   value this code has ever produced — presence is 'entered' | 'left' — so that
+   rule matched nothing while looking like the neutral case, and a left row
+   took the READY tint from the bare fallback below. Named exhaustively now
+   rather than defaulted, so a seventh value renders untinted rather than
+   wrong.
+
+   BACKGROUND-COLOR, NEVER THE SHORTHAND. the background shorthand resets background-image
+   to none, and layer 1 draws the HELD row's hatch as a repeating-linear-
+   gradient on exactly that property. These rules are more specific and load
+   after it, so the shorthand silently took the hatch off any row that was both
+   held and changed — which is not a corner: newly-held is the delta that
+   co-occurs with data-held='true' by definition, so the most common overlap
+   lost the held channel entirely. The longhand leaves the gradient alone.
+
+   COLOUR-MIX ON THE TOKEN THE KIND ALREADY NAMES, at the strength layer 1
+   tints its own rows with. Inventing --ig-row-promoted would put a hue in this
+   package that a host retheming the station colours could not move in step,
+   and inventing a percentage would make this tint drift from the unit tint
+   layer 1 draws with --ig-tint-unit. */
+.ig-workspace .ig-slot[data-ig-delta='promoted'],
+.ig-workspace .ig-slot[data-ig-delta='up'],
+.ig-workspace .ig-slot[data-ig-delta='entered'],
+.ig-workspace .ig-footer-row[data-ig-delta='promoted'],
+.ig-workspace .ig-footer-row[data-ig-delta='up'],
+.ig-workspace .ig-footer-row[data-ig-delta='entered'] {
+  background-color: color-mix(in srgb, var(--ig-station-ready) var(--ig-tint-unit), transparent);
+}
+
+.ig-workspace .ig-slot[data-ig-delta='newly-held'],
+.ig-workspace .ig-slot[data-ig-delta='down'],
+.ig-workspace .ig-footer-row[data-ig-delta='newly-held'],
+.ig-workspace .ig-footer-row[data-ig-delta='down'] {
+  background-color: color-mix(in srgb, var(--ig-station-held) var(--ig-tint-unit), transparent);
+}
+
+/* A row the edit took OUT of the order. Neutral rather than held: it is not
+   waiting on anything, it is simply no longer ranked. */
+.ig-workspace .ig-slot[data-ig-delta='left'],
+.ig-workspace .ig-footer-row[data-ig-delta='left'] {
+  background-color: color-mix(in srgb, var(--ig-text-muted) var(--ig-tint-unit), transparent);
+}
+
+/* THE THIRD COLUMN IS WHAT PUTS THE CHIP AT THE ROW'S TRAILING EDGE.
+
+   The frame draws the row as rank, body, chip — three columns, the last
+   sized to its content. Layer 1's own rule is a TWO-column grid, so a chip
+   appended as a third child wrapped onto an implicit second row and sat under
+   the rank. That was visible in the first capture of this pair, and it is why
+   this rule is a column template rather than a margin: in a grid, an auto
+   inline margin cannot move an item that is in the wrong row to begin with.
+
+   ONLY ON A ROW THAT HAS A CHIP, so a row with no delta keeps layer 1's own
+   template untouched. AND ONLY ON .ig-slot: a footer row is not that grid, so
+   naming it here would set a column template on a box that has none. */
+.ig-workspace .ig-slot[data-ig-delta] {
+  grid-template-columns: var(--ig-rank-column) 1fr auto;
+}
+
+/* A FOOTER ROW IS A FLEX BOX, NOT THE THREE-COLUMN GRID.
+
+   A ranked row reaches the trailing edge by the column template above. An
+   excluded or tracker-held row is layer 1's .ig-footer-row — display:flex —
+   so a chip appended to it simply follows the content it was appended after,
+   and the frame puts it at the row's end. An auto inline margin is the flex
+   idiom for that, and it is the right tool HERE for the same reason it was the
+   wrong one on the grid: it moves an item within its line, and on the grid the
+   item was in the wrong line to begin with. */
+.ig-workspace .ig-footer-row > .ig-delta-chip[data-placed] {
+  margin-inline-start: auto;
+}
+
+/* §17c's "write landed · order computing": the PREVIOUS order, held still and
+   greyed one step, with the label saying why.
+
+   THE SAME FILTER, for the reason reevaluate/styles.ts gives where it greys
+   .ig-reevaluate[data-order='held'] .ig-viewer: layer 1 sets color directly on
+   its own descendants, so an inherited colour greys almost nothing, and a list
+   of descendants to override goes stale the first time layer 1 colours
+   something new.
+
+   SCOPED TO THE RAIL ZONE, WHICH THE STANDALONE SURFACE DID NOT HAVE TO BE.
+   There, .ig-viewer is the rail and nothing else. The workspace draws a SECOND
+   viewer in the canvas zone, and greying that one is not a smaller version of
+   the same idea — it is the opposite of what the held state means. What is
+   stale is the ORDER; the canvas is drawing the write states #164 put there,
+   and pending, failed and conflict are told partly in hue. So an in-flight edit
+   would have stripped the colour channel off the very marks that say an edit is
+   in flight. The rail is the only surface whose ranks the store cannot vouch
+   for, so it is the only one greyed. */
+.ig-workspace[data-order='held'] .ig-zone[data-zone='rail'] .ig-viewer {
+  filter: grayscale(1);
+}
 `;
