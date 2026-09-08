@@ -815,6 +815,7 @@ const WORKSPACE_WORDS: surface.WorkspaceWords = {
   workedAsOneUnit: 'worked as one unit with',
   noRelationships: 'nothing is related to this',
   addRelationship: 'begin a relationship',
+  addRelationshipHeading: 'add relationship',
   cancel: 'abandon the draft',
   relatingFrom: 'the draft starts at',
   remove: 'unlink this row',

@@ -137,7 +137,8 @@ export const WORKSPACE_WORDS: MountWords = {
   whyHeld: 'Why held',
   workedAsOneUnit: 'worked as one unit with',
   noRelationships: 'Nothing is related to this issue yet.',
-  addRelationship: '+ add a relationship',
+  addRelationship: '+ add',
+  addRelationshipHeading: 'add relationship',
   cancel: 'cancel',
   // WHOSE DRAFT THE KIND STEP BELONGS TO, when it is not the panel's subject:
   // a draft begun on a together unit's partner, or one the reader selected
@@ -203,7 +204,11 @@ export const WORKSPACE_WORDS: MountWords = {
   chooseKind: 'choose the kind',
   targetLabel: 'Target issue',
   targetPlaceholder: 'find the other issue by number or title',
-  keys: 'R relate · 1–5 kind · type to search · ⏎ commit · ⌫ delete · T retype · Esc cancel',
+  // `R` IS NOT LISTED HERE ANY MORE. It is drawn on the `+ add` control
+  // itself, so a legend repeating it prints the same hint twice a few
+  // elements apart. What is left is exactly the keys with no control of
+  // their own to hang on, which is this legend's remaining job.
+  keys: '1–5 kind · type to search · ⏎ commit · ⌫ delete · T retype · Esc cancel',
 };
 
 /**

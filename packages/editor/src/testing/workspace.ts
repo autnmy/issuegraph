@@ -39,6 +39,10 @@ export const WORKSPACE_WORDS: WorkspaceWords = {
   workedAsOneUnit: 'worked as one unit with',
   noRelationships: 'nothing is related to this',
   addRelationship: 'begin a relationship',
+  // DELIBERATELY UNLIKE THE CONTROL'S LABEL ABOVE. A fixture that spelled the
+  // heading and the control the same way would pass whichever one the panel
+  // drew, which is the pin failing to hold the distinction it exists for.
+  addRelationshipHeading: 'add relationship',
   cancel: 'abandon the draft',
   relatingFrom: 'the draft starts at',
   remove: 'unlink this row',

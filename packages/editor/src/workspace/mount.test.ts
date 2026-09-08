@@ -21,7 +21,7 @@ import { type OrderDeriver, createScriptedSource, createStore, makeEdge } from '
 import { THEME_TOKENS, treatmentFor } from '@issuegraph/viewer';
 import { JSDOM } from 'jsdom';
 
-import { KIND_KEYS } from '../create/keys.ts';
+import { KIND_KEYS, RELATE_KEY } from '../create/keys.ts';
 import type { Candidate } from '../firstpass/candidates.ts';
 import { FIRST_PASS_WORDS } from '../testing/firstpass.ts';
 import { PICKER_WORDS } from '../testing/picker.ts';
@@ -402,7 +402,20 @@ describe('mountWorkspace', () => {
 
       const add = page.control('add');
       assert.ok(add !== null, 'the add control is not drawn for a selected issue');
-      assert.equal(add.textContent, WORDS.addRelationship);
+      // THE NAME A READER HEARS, NOT THE TEXT THE ELEMENT HOLDS. §17a draws the
+      // `R` key inside this control, so `textContent` is now the label plus the
+      // hint and is no longer the accessible name. The hint is `aria-hidden`
+      // precisely so the name stays the host's word — an exposed one would
+      // announce "begin a relationship r", a shortcut read as part of the act.
+      // Both halves are asserted, because either alone passes while the other
+      // is broken.
+      // ASKED OF THE NODES, NOT OF A SUBTRACTED STRING. Stripping the hint with
+      // `replace` takes the FIRST match anywhere, and this key is `r` — so it
+      // ate the `r` in "relationship" and compared two equally wrong strings.
+      const hint = add.querySelector('[aria-hidden="true"]');
+      assert.ok(hint !== null, 'the key hint is exposed to assistive technology');
+      assert.equal(hint.textContent, RELATE_KEY);
+      assert.equal(add.firstChild?.textContent, WORDS.addRelationship);
       page.click(add);
       await flush();
 

@@ -5,6 +5,7 @@ import { buildModel } from '@issuegraph/reader';
 import { EDGE_FIELDS, type EdgeField, edgeIdentity, isSymmetricEdgeField } from '@issuegraph/core';
 import { KEY_ATTRIBUTE, type ViewerHold, labelFrom, treatmentFor } from '@issuegraph/viewer';
 
+import { RELATE_KEY, keyIntent } from '../create/keys.ts';
 import { AUDIT_SEVERITY_ATTRIBUTE } from '../audit/surface.ts';
 import { treatmentForState } from '../overlay/grammar.ts';
 import type { AuditGraph } from '../audit/findings.ts';
@@ -861,7 +862,8 @@ describe('the create path begins in the panel, and its digits are the keyboard\u
     // one issue's panel and began a relationship from another.
     assert.ok(
       inspectorOf(renderWorkspace(document, { ...WORDS, selection }).markup).includes(
-        '<button type="button" class="ig-inspector-addbutton" data-ig-command="add" data-ig-target="i0001">begin a relationship</button>',
+        '<button type="button" class="ig-inspector-addbutton" data-ig-command="add" data-ig-target="i0001">begin a relationship' +
+          '<span class="ig-inspector-addkey" aria-hidden="true">r</span></button>',
       ),
       inspectorOf(renderWorkspace(document, { ...WORDS, selection }).markup),
     );
@@ -896,7 +898,9 @@ describe('the create path begins in the panel, and its digits are the keyboard\u
     // becomes read the same. The picker's `kinds` record is a different
     // register — worded to sit inside a clause — and using it here would put two
     // wordings of one kind on one screen.
-    assert.match(panel, /<span class="ig-kind-digit">1<\/span><span class="ig-glyph" aria-hidden="true">\u2298<\/span><span>blocked by<\/span>/);
+    // AE5: §17a's ORDER, glyph then word then the digit chip. The kind is what
+    // the reader is choosing between, so it is read first and the key follows.
+    assert.match(panel, /<span class="ig-glyph" aria-hidden="true">\u2298<\/span><span>blocked by<\/span><span class="ig-kind-digit">1<\/span>/);
   });
 
   it('shows one step at a time, and none of it while a canvas drop is in flight', () => {
@@ -925,6 +929,120 @@ describe('the create path begins in the panel, and its digits are the keyboard\u
     );
     assert.equal(/ig-kind-list/.test(typed), false);
     assert.equal(/data-ig-command="add"/.test(typed), false);
+  });
+
+  it('draws + add on the relationships header, whatever the list under it holds', () => {
+    // AE1/AE8. §17a's reason for the move is the list BETWEEN the heading and
+    // the control, so the pin is that the control's place does not depend on
+    // it: the same header, with three rows under it and with none.
+    const head = /<div class="ig-inspector-relationships-head">.*?<\/div>/;
+    for (const [key, note] of [
+      ['i0001', 'an issue with relationships'],
+      ['i0004', 'an issue with none'],
+    ] as const) {
+      const panel = inspectorOf(
+        renderWorkspace(document, { ...WORDS, selection: { kind: 'issue', key } }).markup,
+      );
+      const header = head.exec(panel)?.[0] ?? '';
+      assert.match(header, /<h3 class="ig-inspector-heading">relationships<\/h3>/, note);
+      assert.match(header, /class="ig-inspector-addbutton"/, `+ add is outside the header for ${note}`);
+    }
+    // AND THE EMPTY PANEL STILL SAYS SO. The control moving up must not displace
+    // the sentence that states an issue is related to nothing.
+    const empty = inspectorOf(
+      renderWorkspace(document, { ...WORDS, selection: { kind: 'issue', key: 'i0004' } }).markup,
+    );
+    assert.match(empty, /<p class="ig-inspector-none">nothing is related to this<\/p>/);
+  });
+
+  it('draws the key that begins a relationship on the control, hidden from a reader', () => {
+    // AE3. THE PACKAGE DRAWS IT, so a host rendering this markup without
+    // mounting gets the hint — the whole point of moving it off `MountWords.keys`.
+    const panel = inspectorOf(renderWorkspace(document, { ...WORDS, selection }).markup);
+    // ASSERTED AS THE WHOLE ELEMENT, NOT AS `includes(RELATE_KEY)`. The key is
+    // one character and this panel already contains "relationships" — a
+    // containment test over the markup passes with the hint deleted.
+    assert.match(
+      panel,
+      new RegExp(`<span class="ig-inspector-addkey" aria-hidden="true">${RELATE_KEY}</span></button>`),
+    );
+    // AND IT IS THE BINDING'S OWN KEY. Compared against the map rather than
+    // against a literal, so moving the binding fails here instead of leaving a
+    // hint that names a key which no longer does anything.
+    assert.equal(
+      keyIntent({ key: RELATE_KEY }, { focused: 'i0001', match: null, selectedEdge: null, interaction: 'canvas' }).kind,
+      'create',
+    );
+  });
+
+  it('keeps + add where main draws it, on a panel that is not the draft\u2019s source', () => {
+    // AE7. THE `add` ARM ASKS NOTHING ABOUT `drop` OR `draft.kind`, and this
+    // pins that as it stands rather than as it might be. On a panel whose
+    // subject is NOT the draft's source, `+ add` is drawn at the target step and
+    // under a live drop. Whether it SHOULD be is autnmy/issuegraph#147's
+    // question; this change moves where controls sit and must not quietly
+    // change when they appear, so the case is fixed here in both directions.
+    //
+    // THE EXISTING FIXTURES CANNOT SEE IT — they select the draft's own source,
+    // the one subject this arm refuses — which is why it needs its own.
+    const elsewhere = { kind: 'issue', key: 'i0003' } as const;
+    for (const [options, note] of [
+      [{ draft: { source: 'i0001', target: null, kind: 'blocked-by' } }, 'the target step'],
+      [{ draft, drop: { x: 40, y: 50 } }, 'a live drop'],
+    ] as const) {
+      const panel = inspectorOf(
+        renderWorkspace(document, { ...WORDS, selection: elsewhere, ...options }).markup,
+      );
+      assert.match(panel, /data-ig-command="add"/, `+ add stopped being drawn at ${note}`);
+      assert.match(panel, /data-ig-target="i0003"/, `+ add began from the wrong issue at ${note}`);
+      // AND STILL NO LIST BESIDE IT: the kind step is the shell's at both.
+      assert.equal(/ig-kind-list/.test(panel), false, `a panel list appeared at ${note}`);
+    }
+  });
+
+  it('heads the numbered kinds with its own word, not the control\u2019s label', () => {
+    // AE4. §17a HEADS THE LIST, in the caps treatment the stylesheet declared
+    // for three headings while the markup drew two.
+    const panel = inspectorOf(renderWorkspace(document, { ...WORDS, selection, draft }).markup);
+    assert.match(
+      panel,
+      new RegExp(`<h3 class="ig-inspector-heading">${WORKSPACE_WORDS.addRelationshipHeading}</h3><ul class="ig-kind-list">`),
+    );
+    // AND IT IS A SECOND WORD, WHICH IS THE WHOLE REASON THE FIELD EXISTS.
+    // `addRelationship` is the CONTROL's label — the frame writes it `+ add` —
+    // and this is the section name over the five choices. The fixture words them
+    // differently on purpose, so drawing either one where the other belongs
+    // fails here rather than passing on a coincidence.
+    assert.notEqual(WORKSPACE_WORDS.addRelationshipHeading, WORKSPACE_WORDS.addRelationship);
+    assert.equal(
+      new RegExp(`<h3 class="ig-inspector-heading">${WORKSPACE_WORDS.addRelationship}</h3>`).test(panel),
+      false,
+      'the kind list is headed with the control\u2019s label',
+    );
+    // NO DRAFT, NO HEADING: it belongs to the step, not to the panel.
+    const resting = inspectorOf(renderWorkspace(document, { ...WORDS, selection }).markup);
+    assert.equal(/ig-kind-list/.test(resting), false);
+    assert.equal(
+      new RegExp(`<h3 class="ig-inspector-heading">${WORKSPACE_WORDS.addRelationshipHeading}</h3>`).test(resting),
+      false,
+    );
+  });
+
+  it('draws no + add beside a live kind list, on a panel that is not its source', () => {
+    // AE2, THE HALF THE ORDERED RETURNS USED TO MAKE UNREPRESENTABLE. The two
+    // placements now read one derived value from two sites, so nothing in the
+    // types stops a later edit drawing the control on the `kinds` arm. This is
+    // the pin standing where that ordering did, and it is asked of the panel a
+    // diverged draft reaches rather than only of the draft's own.
+    const panel = inspectorOf(
+      renderWorkspace(document, {
+        ...WORDS,
+        selection: { kind: 'issue', key: 'i0003' },
+        draft,
+      }).markup,
+    );
+    assert.match(panel, /ig-kind-list/);
+    assert.equal(/data-ig-command="add"/.test(panel), false, 'add is drawn beside a foreign list');
   });
 
   it('draws the kind step under a panel that is NOT its source, and says whose it is', () => {
