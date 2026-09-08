@@ -258,7 +258,18 @@ export function renderAuditPanel(
 ): ElementSpec | null {
   if (overlay.findings.length === 0) return null;
   const { words } = options;
-  return element('section', { class: 'ig-audit-panel' }, [
+  return element(
+    'section',
+    {
+      class: 'ig-audit-panel',
+      // A `section` WITH NO NAME IS NOT A LANDMARK AT ALL — the implicit `region`
+      // role is conditional on an accessible name, so an unnamed one is exposed
+      // as nothing and a reader navigating by landmark cannot find the panel.
+      // `firstpass/render.ts` already names its own section from its words; this
+      // is the same rule one leaf over.
+      'aria-label': words.heading,
+    },
+    [
     element('div', { class: 'ig-audit-panel-head' }, [
       // THE MARK IS THE FRAME'S, AND IT IS NOT A WORD. `◆` is the same glyph
       // §17a puts before the ambient count, so the panel and the chip that
@@ -266,7 +277,12 @@ export function renderAuditPanel(
       // reader needs said twice — the count and the heading beside it do.
       element('span', { class: 'ig-audit-mark', 'aria-hidden': 'true' }, ['◆']),
       element('span', { class: 'ig-audit-panel-count' }, [String(overlay.count)]),
-      element('span', { class: 'ig-audit-panel-heading' }, [words.heading]),
+      // A REAL HEADING, AT THE INSPECTOR'S OWN LEVEL. The zone's name is an
+      // `h2` and its relationship list an `h3`, so a `span` here left the panel
+      // invisible to heading navigation and put a gap in the column's outline.
+      // The caps are the stylesheet's, as they are for every other heading in
+      // this zone, so the host's word stays a word.
+      element('h3', { class: 'ig-audit-panel-heading' }, [words.heading]),
     ]),
     // ORDERED BY THE CLASS TABLE, WHICH `auditOverlay` ALREADY DID. `findings`
     // arrives in `AUDIT_CLASSES` order because `auditDocument` concatenates its
@@ -277,5 +293,6 @@ export function renderAuditPanel(
       { class: 'ig-audit-list' },
       overlay.findings.map((finding) => cardSpec(finding, options.known, words)),
     ),
-  ]);
+    ],
+  );
 }

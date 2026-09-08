@@ -109,6 +109,8 @@ export const auditStylesheet = `
 
 .ig-audit-panel-heading {
   color: var(--ig-edge-serialize-with);
+  font-weight: inherit;
+  margin: 0;
   font-family: var(--ig-font-mono);
   font-size: var(--ig-font-size-small);
   letter-spacing: var(--ig-tracking-group);

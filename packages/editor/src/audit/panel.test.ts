@@ -279,7 +279,10 @@ describe('the findings panel', () => {
     const markup = markupOf(EVERY_CLASS.issues, EVERY_CLASS.edges, [{ ref: 'f' }]);
     const overlay = overlayOf(EVERY_CLASS.issues, EVERY_CLASS.edges, [{ ref: 'f' }]);
     assert.match(markup, new RegExp(`<span class="ig-audit-panel-count">${overlay.count}</span>`));
-    assert.match(markup, new RegExp(WORDS.heading));
+    assert.match(markup, new RegExp(`<h3 class="ig-audit-panel-heading">${WORDS.heading}</h3>`));
+    // AND THE SECTION IS NAMED. An unnamed `section` carries no landmark role at
+    // all, so a reader navigating by landmark cannot reach the panel.
+    assert.match(markup, new RegExp(`<section class="ig-audit-panel" aria-label="${WORDS.heading}"`));
     // THE MARK IS DECORATION. The count and the heading beside it say the same
     // thing in words, so a reader who cannot see the glyph loses nothing and a
     // reader who hears it twice gains nothing.
