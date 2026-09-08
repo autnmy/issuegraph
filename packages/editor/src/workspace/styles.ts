@@ -173,11 +173,30 @@ export const workspaceStylesheet = `
   overflow: auto;
 }
 
+/* ONE SCROLL TRACK, AND THE PANEL SHARES IT. §17d's findings panel is a sibling
+   of .ig-inspector here rather than a child, so it keeps its own padding and
+   reads as a peer of the selection rather than part of it — but the ZONE still
+   scrolls, exactly as it did before the panel existed.
+
+   A TWO-PANE VERSION WAS TRIED AND REVERTED, and the reason is recorded so it
+   is not tried again the same way. Making the zone a flex column with
+   overflow: hidden did give the audit and the selection independent scroll —
+   and it CLIPPED the mount's chrome, which mountWorkspace appends to this zone
+   as a third sibling: the target search's lower matches, the cancel button and
+   the key legend all lost the scrolling the zone used to give them. Any future
+   attempt has to treat the chrome as a pane too, and how these three share one
+   column is a design question rather than a CSS one. It is filed.
+
+   What that revert gives back is the known cost: a long audit pushes the
+   selection detail down this single track. That is a property this zone already
+   had — a long relationship list does the same — and the panel makes it easier
+   to reach rather than inventing it. */
 .ig-zone[data-zone='inspector'] {
   grid-area: inspector;
   overflow-y: auto;
   border-left: var(--ig-stroke) solid var(--ig-line);
 }
+
 
 /* THE AMBIENT LEFT-BAR. A 2px gold rule on the affected row and nothing else —
    no fill, no icon, no badge. §17a's whole ask is that encoding errors stay
@@ -203,8 +222,12 @@ export const workspaceStylesheet = `
 
    ONE TREATMENT FOR ALL FOUR SEVERITIES, which is also a correction. §17d
    names exactly one ambient mark — "a 2px gold left-bar on the affected rail
-   row" — and puts the severity distinction in the findings list, which is
-   host-side. The misleading variant this replaces gave the LEAST urgent
+   row" — and puts the severity distinction in the findings list, which
+   audit/panel.ts now draws. (It read "which is host-side" until that panel
+   existed; the reasoning is unaffected — the distinction still belongs to the
+   list rather than to this bar — but the list is the package's now.)
+
+   The misleading variant this replaces gave the LEAST urgent
    severity ("clearing is bookkeeping, not urgency") the alarm colour while
    every other finding got cyan, inverting the design it came from. */
 .ig-zone[data-zone='rail'] [data-ig-audit] {

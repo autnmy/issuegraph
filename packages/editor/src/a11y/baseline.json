@@ -1813,5 +1813,154 @@
         "aria-expanded": "false"
       }
     }
+  ],
+  "audit-findings": [
+    {
+      "zone": "header",
+      "channel": "data-ig-audit-filter",
+      "control": "",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-pressed": "false"
+      }
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "first-pass",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "refresh",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "inspector",
+      "channel": "data-ig-command",
+      "control": "add",
+      "target": "3",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "inspector",
+      "channel": "data-ig-command",
+      "control": "clear",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "inspector",
+      "channel": "data-ig-command",
+      "control": "delete",
+      "target": "blocked-by|3|4",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "aria-label",
+      "aria": {}
+    },
+    {
+      "zone": "inspector",
+      "channel": "data-ig-command",
+      "control": "discard",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "inspector",
+      "channel": "data-ig-command",
+      "control": "retry",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "inspector",
+      "channel": "data-ig-command",
+      "control": "reveal-issue",
+      "target": "1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "aria-label",
+      "aria": {}
+    },
+    {
+      "zone": "inspector",
+      "channel": "data-ig-command",
+      "control": "select-edge",
+      "target": "blocked-by|3|4",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "inspector",
+      "channel": "data-ig-command",
+      "control": "view-diff",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-expanded": "false"
+      }
+    }
   ]
 }

@@ -88,6 +88,7 @@ import type {
 } from '@issuegraph/store';
 
 import type { AuditInput, AuditSeverity } from '../audit/findings.ts';
+import { type AuditWords, renderAuditPanel } from '../audit/panel.ts';
 import { auditStylesheet } from '../audit/styles.ts';
 import { type CreateDraft, IDLE_CREATE_DRAFT } from '../create/draft.ts';
 import { KIND_KEYS, RELATE_KEY } from '../create/keys.ts';
@@ -364,6 +365,15 @@ export interface WorkspaceWords {
    * whose consequence most needs stating.
    */
   readonly recovery: RecoveryWords;
+  /**
+   * §17d's findings panel, in the host's own words.
+   *
+   * NESTED, like `recovery` and `refusals` beside it, because it is a record
+   * over a closed class table rather than a loose string — flattening four
+   * chips and four titles into this interface would put eight members here
+   * whose relationship to each other is only legible from their names.
+   */
+  readonly audit: AuditWords;
 }
 
 export interface RecoveryWords {
@@ -1594,6 +1604,14 @@ function headerMarkup(
  */
 interface InspectorContext {
   readonly words: WorkspaceWords;
+  /**
+   * The audit, when the host asked for one, so the zone can carry §17d's list.
+   *
+   * `null` IS "NO AUDIT INPUT", NOT "NOTHING FOUND" — the same distinction
+   * {@link WorkspaceOptions.audit} keeps. A zero count is a fact about a
+   * question that was asked; an absent overlay is the absence of the question.
+   */
+  readonly audit: AuditOverlay | null;
   /** The keys a hold's subject control may name — see {@link holdRow}. */
   readonly known: ReadonlySet<string>;
   /** Which slot a key sits in, by lead. See {@link holdRow}. */
@@ -2616,9 +2634,41 @@ export function renderWorkspace(
     zone('canvas', canvas.markup),
     zone(
       'inspector',
+      // §17d'S LIST IS THE SELECTION'S SIBLING, AND THEY SHARE ONE SCROLL
+      // TRACK. Sibling rather than child so the panel keeps its own padding and
+      // reads as a peer of the selection rather than part of it — its heading
+      // is an `h2` beside the inspector's for the same reason.
+      //
+      // THEY DO NOT GET INDEPENDENT SHARES, and this comment said they did
+      // until a review round caught it still describing a reverted layout. Only
+      // the ZONE scrolls (`workspace/styles.ts`); `audit/styles.ts` declares no
+      // share and no scroll of its own. So a long audit CAN push the selection
+      // detail down the track — a property this zone already had, since a long
+      // relationship list does the same.
+      //
+      // A two-pane version was built and reverted: it clipped `.ig-chrome`,
+      // which `mountWorkspace` appends to this zone as a THIRD sibling. How the
+      // three share one column is a design question and #177 owns it, with the
+      // four attempts and why each failed.
+      //
+      // BOTH SIDES ARE ALREADY-RENDERED MARKUP, which is the rule `zone` exists
+      // under: it writes the only hand-authored tag in this package and takes
+      // no caller value, and everything with a dynamic value in it went through
+      // `renderMarkup`.
+      //
+      // `known` IS THE DRAWN DOCUMENT'S KEYS, the same set `holdRow` withholds
+      // its subject control on, and NOT the audit's: a host audits what it
+      // holds and draws a page of it, so a ref can be audited and still have no
+      // row here. The panel cannot see that difference and is told.
+      (() => {
+        if (overlay === null) return '';
+        const panel = renderAuditPanel(overlay, { words: options.words.audit, known });
+        return panel === null ? '' : renderMarkup(panel);
+      })() +
       renderMarkup(
         inspectorSpec(inspector, {
           words: options.words,
+          audit: overlay,
           known,
           leadOf,
           draft: options.draft ?? IDLE_CREATE_DRAFT,

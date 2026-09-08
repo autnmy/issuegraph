@@ -561,6 +561,30 @@ function pointed(state: HostState, key: string, document: GraphDocument): HostRe
   });
 }
 
+/**
+ * Move the selection onto an issue, taking no other reading of the click.
+ *
+ * The same shape as {@link selectEdge} one function down, and for the same
+ * reason: a navigation that leaves a half-built draft armed behind it would let
+ * the NEXT click land somewhere the reader is no longer looking.
+ *
+ * AND IT DOES NOT TOGGLE. `select-issue` clears when it names what is already
+ * selected — right for a row click, which is ambivalent, and wrong for a
+ * control that says where to arrive: an audit finding whose member is already
+ * inspected would answer "go and look" by emptying the panel.
+ */
+function revealIssue(state: HostState, key: string): HostResult {
+  return settled({
+    ...state,
+    // `reveal-issue`, NOT `select-issue`: the latter TOGGLES, so revealing the
+    // issue already selected would empty the panel the reader was sent to.
+    selection: selectionReducer(state.selection, { kind: 'reveal-issue', key }),
+    draft: IDLE_CREATE_DRAFT,
+    targetQuery: '',
+    drop: null,
+  });
+}
+
 function selectEdge(state: HostState, edgeId: string): HostResult {
   return settled({
     ...state,
@@ -600,6 +624,20 @@ function controlled(
       // the issue holding the one they are looking at. It is a pointer on that
       // issue, with a pointer's rules: a selection, or the target of a draft.
       return target === undefined ? settled(state) : pointed(state, target, document);
+    case 'reveal-issue':
+      // NAVIGATION THAT CANNOT WRITE, which is why it is not `select-issue`.
+      // A pointer's rules are right for the hold deep link and wrong here: with
+      // a draft awaiting its target, `pointed` reads the click as CHOOSING that
+      // target and `drafted` emits the create proposal — so an audit finding's
+      // "go and look" would silently declare a relationship. §17d's whole rule
+      // for this surface is that it "offers navigation and never a remedy", and
+      // a control that can write is a remedy however it is labelled.
+      //
+      // IT ABANDONS THE DRAFT RATHER THAN REFUSING TO MOVE, the discipline
+      // `selectEdge` above already keeps. Nothing is written either way, and a
+      // button that silently did nothing while a draft was open would be the
+      // dead affordance this control exists to avoid.
+      return target === undefined ? settled(state) : revealIssue(state, target);
     case 'clear':
       return settled({
         ...state,

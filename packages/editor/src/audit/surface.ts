@@ -17,10 +17,16 @@
  * ## Why the bar is CSS on an attribute rather than a drawn element
  *
  * The rows belong to `@issuegraph/viewer`, which stamps `KEY_ATTRIBUTE` on
- * them. Layer 2 composes layer 1 through its public surface, and the viewer's
- * markup primitive is deliberately not on it — so an overlay drawn from out
- * here would have to re-implement HTML escaping, which is duplication with an
- * injection shape rather than a mirror that merely drifts.
+ * them. Layer 2 composes layer 1 through its public surface, and rewriting a
+ * row's `class` from out here is reaching past that surface — so a bar drawn as
+ * an element would mean this layer assembling markup for a row it does not own.
+ *
+ * ONE CLAUSE OF THIS USED TO READ "and the viewer's markup primitive is
+ * deliberately not on it", and that was never true after `renderMarkup` was
+ * exported one pull request later. It is public, and five sibling leaves import
+ * it — `scale/render.ts`, `picker/render.ts`, `workspace/render.ts`,
+ * `reevaluate/render.ts`, `firstpass/render.ts`. The escaping was never what
+ * made the bar an attribute; OWNERSHIP OF THE ROW is, and that part stands.
  *
  * An attribute plus a stylesheet needs neither. {@link auditRowAttributes}
  * answers what an affected row carries, `./styles.ts` draws the bar from it,
@@ -30,10 +36,18 @@
  * ## Nothing here renders host text
  *
  * The only value that reaches the markup is a COUNT, and a count is a number.
- * That is a deliberate boundary rather than a happy accident: a finding's
- * `detail` is prose about issues a host supplied, so drawing it here would put
- * an escaper in a package whose seam says it may not have one. Findings travel
- * as data; whatever lists them owns their escaping.
+ * That is what makes {@link renderAuditHeader} safe while it concatenates by
+ * hand, and it is a boundary rather than a happy accident: a finding's `detail`
+ * is prose about issues a host supplied. Findings travel as data; whatever
+ * lists them owns their escaping.
+ *
+ * ## And `./panel.ts` is the lister that rule predicted
+ *
+ * §17d's findings list is drawn there, not here, and it owns its escaping the
+ * way every other leaf does — an `ElementSpec` tree the caller renders through
+ * the viewer's `renderMarkup`. So the rule above is unchanged rather than
+ * relaxed: this module still renders no host text, and the module that does
+ * builds no markup by hand.
  *
  * @see https://github.com/autnmy/issuegraph/blob/main/SPEC.md
  */

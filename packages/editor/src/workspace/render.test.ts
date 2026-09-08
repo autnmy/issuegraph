@@ -268,16 +268,37 @@ describe('the ambient audit marks rail rows without touching the rail', () => {
     const document = backlogOf(3);
     const off = renderWorkspace(document, WORDS);
     const on = renderWorkspace(document, { ...WORDS, audit });
-    // FROM THE RAIL ZONE TO THE END, rather than a lazy match up to the first
-    // `</section>`: the rail NESTS the viewer's own `<section>`, so a
-    // non-greedy slice would compare a truncated prefix and pass on almost
-    // anything. The header is the only zone before the rail, and it is the only
-    // thing this slice drops.
-    const fromRail = (markup: string) => markup.slice(markup.indexOf('data-zone="rail"'));
+    // THE RAIL ZONE, AND ONLY IT — narrowed from "the rail zone to the end of
+    // the markup", which was wider than this test's own claim. §17d's findings
+    // panel is drawn in the INSPECTOR when an audit is supplied, so a slice
+    // running to the end reported that legitimate difference as the rail
+    // changing. Not a lazy match up to the first `</section>` either: the rail
+    // NESTS the viewer's own `<section>`, so a non-greedy slice would compare a
+    // truncated prefix and pass on almost anything.
+    //
+    // A NARROWING NEEDS A CONTROL, or a slice that silently returned nothing
+    // would make this pass on everything. The two below pin both ends: the
+    // slice still reaches the rail's rows, and it stops before the canvas.
+    const railZone = (markup: string) => {
+      const start = markup.indexOf('data-zone="rail"');
+      const end = markup.indexOf('data-zone="canvas"');
+      return markup.slice(start, end);
+    };
     const strip = (markup: string) =>
       markup.replace(new RegExp(` ${AUDIT_SEVERITY_ATTRIBUTE}="[^"]*"`, 'g'), '');
-    assert.ok(fromRail(on.markup).includes(AUDIT_SEVERITY_ATTRIBUTE), 'nothing was marked');
-    assert.equal(strip(fromRail(on.markup)), fromRail(off.markup));
+    assert.ok(railZone(on.markup).includes('class="ig-slot"'), 'the slice missed the rail rows');
+    assert.ok(!railZone(on.markup).includes('data-zone='.concat('"canvas"')), 'the slice overran');
+    assert.ok(railZone(on.markup).includes(AUDIT_SEVERITY_ATTRIBUTE), 'nothing was marked');
+    assert.equal(strip(railZone(on.markup)), railZone(off.markup));
+  });
+
+  it('draws no findings panel outside the rail when no audit was asked for', () => {
+    // THE OTHER HALF OF THE TEST ABOVE, which used to come for free from its
+    // over-wide slice and would otherwise have been lost in narrowing it: the
+    // panel is the audit's, so a workspace with no audit input has none.
+    const document = backlogOf(3);
+    assert.equal(renderWorkspace(document, WORDS).markup.includes('ig-audit-panel'), false);
+    assert.ok(renderWorkspace(document, { ...WORDS, audit }).markup.includes('ig-audit-panel'));
   });
 });
 

@@ -231,6 +231,31 @@ export const WORKSPACE_WORDS: MountWords = {
     retryFailed: 'Could not read the latest version:',
     unplaced: 'Unresolved edits about issues not in this backlog',
   },
+  // §17d's FINDINGS LIST. The chips are the frame's own four words; the titles
+  // say the CONSEQUENCE rather than restating the finding, because the sentence
+  // under each one already names the issues and what is declared between them.
+  //
+  // THE FRAME'S TITLES ARE PER FINDING and these are per class — "#533 is
+  // blocked by an issue closed 4 months ago" needs a date and a reference the
+  // finding does not carry, and this package appends numbers rather than
+  // interpolating them. So the title says what is true of every finding in its
+  // class and the detail beneath it says which issues.
+  audit: {
+    heading: 'encoding problems',
+    classes: {
+      cycle: 'cycle',
+      'stale-blocker': 'stale',
+      'dead-duplicate-ref': 'dead ref',
+      'encoding-refused': 'refused',
+    },
+    titles: {
+      cycle: 'These issues block each other in a loop.',
+      'stale-blocker': 'This waits on an issue that is already closed.',
+      'dead-duplicate-ref': 'This duplicates a closed issue, so nothing is tracking its work.',
+      'encoding-refused': 'This issue declares relationships the reader could not parse.',
+    },
+    show: 'show me',
+  },
   picker: PICKER_WORDS,
   deleteRelationship: 'delete this relationship',
   chooseKind: 'choose the kind',

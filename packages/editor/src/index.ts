@@ -153,6 +153,9 @@ export {
   renderAuditHeader,
 } from './audit/surface.ts';
 
+export type { AuditPanelOptions, AuditWords } from './audit/panel.ts';
+export { AUDIT_KIND_ATTRIBUTE, renderAuditPanel } from './audit/panel.ts';
+
 export { auditStylesheet } from './audit/styles.ts';
 
 export {

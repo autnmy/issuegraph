@@ -195,6 +195,43 @@ describe('the four finding classes', () => {
     assert.deepEqual(found[0]?.members, ['unloaded']);
   });
 
+  it('reports one finding when the same edge is declared twice', () => {
+    // SUPPORTED REDUNDANCY, NOT MALFORMED DATA. `@issuegraph/viewer`'s
+    // `indexEdges` collapses an exact repeated directed edge into one
+    // relationship without a diagnostic, and the audit reads the store document
+    // UNNORMALIZED — so a document carrying one `blocked-by` twice is ordinary
+    // and the per-edge detector duly saw it twice.
+    //
+    // A FINDING IS WHAT IT SAYS, so two with one kind, one member set and one
+    // sentence are one finding found twice. Left as two they inflated the
+    // header count over a list that had fewer rows, and gave two identical
+    // buttons to a reader whose only way to tell them apart is the name.
+    const issues = [issue('a'), issue('shut', 'closed')];
+    const edge = makeEdge('blocked-by', 'a', 'shut');
+    const document: GraphDocument = { issues, edges: [edge, edge] };
+    const found = only(
+      auditDocument({ document, graph: graphOf(document) }),
+      'stale-blocker',
+    );
+    assert.equal(found.length, 1);
+    assert.deepEqual(found[0]?.members, ['a', 'shut']);
+  });
+
+  it('keeps two findings that differ only in which edge they are about', () => {
+    // THE CONTROL BESIDE THE ONE ABOVE, and it is what stops the dedupe going
+    // too far: two closed blockers on one issue are two separate pieces of
+    // bookkeeping, sharing a kind and a target and differing only in the edge —
+    // exactly the shape the key must keep apart.
+    const issues = [issue('a'), issue('y', 'closed'), issue('z', 'closed')];
+    const document: GraphDocument = {
+      issues,
+      edges: [makeEdge('blocked-by', 'a', 'y'), makeEdge('blocked-by', 'a', 'z')],
+    };
+    const found = only(auditDocument({ document, graph: graphOf(document) }), 'stale-blocker');
+    assert.equal(found.length, 2);
+    assert.equal(new Set(found.map((one) => one.detail)).size, 2);
+  });
+
   it('reports one refusal per issue however many times the host states it', () => {
     const document = documentOf([issue('a')], []);
     const found = only(
