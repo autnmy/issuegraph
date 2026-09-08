@@ -563,6 +563,56 @@ describe('mountWorkspace', () => {
       assert.equal(page.win.document.activeElement, search);
     });
 
+    it('R on the focused + add control begins from the subject that control publishes', async () => {
+      // THE MOUNT-LEVEL PIN FOR `#173`, and it has to be mount-level: the
+      // render-layer pin resolves `keyIntent` with `interaction: 'canvas'`, a
+      // context this shell never produces while a button holds focus. What was
+      // wrong is only visible where the shell answers the predicate itself.
+      const row = page.rows()[1];
+      assert.ok(row !== undefined);
+      page.click(row);
+      await flush();
+      const add = page.control('add') ?? assert.fail('no add');
+      add.focus();
+      assert.equal(page.win.document.activeElement, add, 'the control did not take focus');
+      // THE SUBJECT COMES OFF THE CONTROL, so the assertion below is about that
+      // attribute rather than about whatever the selection happens to be.
+      const subject = add.getAttribute('data-ig-target');
+      assert.equal(subject, '2');
+      add.dispatchEvent(new page.win.KeyboardEvent('keydown', { key: RELATE_KEY, bubbles: true }));
+      await flush();
+      assert.equal(page.handle.state.draft.source, subject);
+    });
+
+    it('leaves every other key on the + add control to the control itself', async () => {
+      // THE OTHER HALF OF THE SAME CHANGE. `add-control` admits `RELATE_KEY`
+      // alone, so a digit must not fill a kind slot on a draft that has not
+      // begun and `⌫` must not delete an edge the reader is not looking at.
+      // Asserted through the shell rather than through the table because what
+      // could regress here is the shell reporting a wider state, which the
+      // table cannot see.
+      const row = page.rows()[1];
+      assert.ok(row !== undefined);
+      page.click(row);
+      await flush();
+      const add = page.control('add') ?? assert.fail('no add');
+      add.focus();
+      for (const key of [KIND_KEYS[0]?.key ?? '1', 'Backspace', 't']) {
+        add.dispatchEvent(new page.win.KeyboardEvent('keydown', { key, bubbles: true }));
+        await flush();
+        assert.equal(page.handle.state.draft.kind, null, `${key} reached the draft`);
+        assert.equal(page.handle.state.draft.source, null, `${key} began a draft`);
+      }
+      // AND THE NAVIGATION ARM STAYS SHUT. It is guarded on `KeyboardContext`'s
+      // `focused`, which this change widened — so an arrow here is the press
+      // that would show a leak, by stepping the rail from a focused button.
+      for (const key of ['ArrowDown', 'ArrowUp']) {
+        add.dispatchEvent(new page.win.KeyboardEvent('keydown', { key, bubbles: true }));
+        await flush();
+        assert.equal(page.win.document.activeElement, add, `${key} moved focus off the control`);
+      }
+    });
+
     it('R on a together unit’s non-lead member leaves the draft visible and cancellable', async () => {
       // THE PANEL AND THE DRAFT DIVERGE WITH NO CLICK AT ALL. `R` begins from
       // the FOCUSED key, and the tree canvas draws every issue — including a
