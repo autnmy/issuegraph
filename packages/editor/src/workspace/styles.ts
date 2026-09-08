@@ -175,6 +175,16 @@ export const workspaceStylesheet = `
    fact you have to go back for. .ig-canvas-toolbar below pins itself against
    the other edge for exactly this reason and is the shape copied here.
 
+   IT ANCHORS ON A SHORT RAIL TOO, WITH NO FLEX LAYOUT, and this is recorded
+   because it looks as though it should not. A sticky box is offset within its
+   CONTAINING BLOCK to stay in the scrollport, and this zone's containing block
+   is the grid area — the full track height — not the height of the rows inside
+   it. So content shorter than the track still leaves the footer against the
+   bottom edge. Measured: rows 416px in a 445px track, footer flush, no flex
+   rule present. A review round proposed a column wrapper with an expanding row
+   to "push the footer down"; it was built, measured against this, changed
+   nothing, and was removed.
+
    OPAQUE, BECAUSE IT OCCLUDES. Rows slide under it, so a transparent ground
    would show the order through the count. That is also why the OPEN LIST IS NOT
    IN HERE: an element taller than its scrollport cannot stick — the browser

@@ -170,13 +170,42 @@ describe("§17a's rail footer", () => {
     });
     const rail = railZone(markup);
 
-    // NARROWED TO THE ISOLATED LIST ON PURPOSE: the rail's own rows are an `ol`
-    // too, so a blanket "no list here" assertion fails on layer 1's order.
-    assert.ok(!rail.includes('ig-isolated-list'), 'the isolated list is inside the rail');
+    // NARROWED TO THE ELEMENT, TWICE OVER. The rail's own rows are an `ol` too,
+    // so a blanket "no list here" fails on layer 1's order — and the footer now
+    // carries the list's id in `aria-controls`, so matching the bare class name
+    // fails on the association that is supposed to be there. What must not
+    // appear in this zone is the list ELEMENT.
+    assert.ok(!rail.includes('<ol class="ig-isolated-list"'), 'the isolated list is inside the rail');
     assert.ok(!rail.includes('ig-rail-isolated-list'), 'a rail-owned isolated list came back');
     // AND IT REALLY IS ON THE SURFACE, so this pair cannot pass by the list
     // having been dropped altogether.
     assert.match(markup, /<ol class="ig-isolated-list"/, 'the list is nowhere at all');
+  });
+
+  /**
+   * THE REMOTE DISCLOSURE'S OTHER HALF. The list is drawn by the ladder in the
+   * canvas, so `aria-expanded` on its own tells a screen-reader user that
+   * something opened and nothing about what — and `scrollIntoView` moves the
+   * visual viewport, not accessibility focus. `aria-controls` is the association
+   * that makes the split navigable rather than merely announced.
+   */
+  it('names the list it opens, which is not beside it', () => {
+    const { markup } = renderWorkspace(withIsolated(), {
+      words: WITH_RAIL,
+      scale: { ...INITIAL_SCALE_STATE, isolatedOpen: true },
+    });
+    const rail = railZone(markup);
+
+    const controls = /aria-controls="([^"]+)"/.exec(rail);
+    assert.ok(controls !== null, 'the toggle names nothing');
+    const target = controls[1] ?? '';
+    // THE ID MUST ACTUALLY RESOLVE, which is the whole point: a constant that
+    // drifted from the list's own id would satisfy an attribute check and help
+    // nobody.
+    assert.ok(
+      markup.includes(`<ol class="ig-isolated-list" id="${target}"`),
+      `aria-controls names ${target}, which nothing on the surface carries`,
+    );
   });
 
   /**

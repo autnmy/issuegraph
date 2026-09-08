@@ -254,6 +254,24 @@ function searchSpec(search: ScaleSearch): ElementSpec {
  * re-cuts against a geometry that no longer holds. This zone has no such
  * arithmetic, so the list stays here and only the control moves.
  */
+/**
+ * The id the isolated list carries, so a control that is NOT beside it can name
+ * it with `aria-controls`.
+ *
+ * EXPORTED BECAUSE THE CONTROL MAY NOT BE HERE. `ScaleLadderOptions.isolatedChip`
+ * lets a caller draw the toggle in its own zone — §17a puts it at the foot of
+ * the order rail — and a disclosure whose `aria-expanded` flips while nothing
+ * names what opened leaves a screen-reader user in the rail with no way to
+ * reach the list. A shared constant is the smallest thing that makes the two
+ * halves refer to each other; the alternative is each side inventing a string
+ * and one of them being wrong.
+ *
+ * Fixed rather than minted, on the same reasoning the workspace's own ids use:
+ * one ladder draws one list, and two ladders over one page collide the way
+ * every other fixed id on these surfaces does.
+ */
+export const ISOLATED_LIST_ID = 'ig-isolated-list';
+
 function isolatedSpec(isolated: IsolatedChip, chip: boolean): ElementSpec | null {
   // NOTHING IS DRAWN FOR AN EMPTY SET. A chip reading "0 isolated issues" is a
   // control that opens nothing, and the count IS the information these issues
@@ -271,6 +289,12 @@ function isolatedSpec(isolated: IsolatedChip, chip: boolean): ElementSpec | null
         type: 'button',
         class: 'ig-chip',
         'aria-expanded': isolated.open ? 'true' : 'false',
+        // ONLY WHILE THE LIST EXISTS. A shut disclosure renders no list, so a
+        // constant `aria-controls` would name an id nothing carries — which is
+        // a dangling reference, and `a11y/baseline.test.ts` refuses one. There
+        // is also nothing to point at: the association exists so a reader can
+        // reach what just opened.
+        ...(isolated.open ? { 'aria-controls': ISOLATED_LIST_ID } : {}),
         'data-ig-command': isolated.open ? 'close-isolated' : 'open-isolated',
       },
       [isolated.label],
@@ -280,7 +304,7 @@ function isolatedSpec(isolated: IsolatedChip, chip: boolean): ElementSpec | null
     isolated.open
       ? element(
           'ol',
-          { class: 'ig-isolated-list', 'aria-label': 'isolated issues' },
+          { class: 'ig-isolated-list', id: ISOLATED_LIST_ID, 'aria-label': 'isolated issues' },
           isolated.issues.map((issue) =>
             element('li', {}, [
               element('span', { class: 'ig-id' }, [issue.key]),

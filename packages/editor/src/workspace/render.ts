@@ -109,7 +109,7 @@ import {
 } from '../audit/surface.ts';
 import { type ScaleState, INITIAL_SCALE_STATE } from '../scale/commands.ts';
 import type { IsolatedChip, ScaleLadder } from '../scale/ladder.ts';
-import { renderScaleLadder } from '../scale/render.ts';
+import { ISOLATED_LIST_ID, renderScaleLadder } from '../scale/render.ts';
 import { scaleLadderStylesheet } from '../scale/styles.ts';
 
 import {
@@ -1007,6 +1007,19 @@ function railFooter(isolated: IsolatedChip, words: RailWords | undefined): Eleme
         type: 'button',
         class: 'ig-rail-isolated-toggle',
         'aria-expanded': isolated.open ? 'true' : 'false',
+        // NAMES WHAT IT OPENS, because what it opens is not beside it. This
+        // toggle is in the rail and its list is drawn by the ladder in the
+        // canvas, so `aria-expanded` alone tells a screen-reader user that
+        // something opened and nothing about where — the one thing the adjacent
+        // disclosure it replaced never had to say. `scrollIntoView` moves the
+        // visual viewport and not accessibility focus, so it does not answer
+        // this either.
+        //
+        // ONLY WHILE THE LIST EXISTS, for the reason `isolatedSpec` records at
+        // its own copy: a shut disclosure renders no list, so naming one would
+        // be a dangling reference the a11y baseline refuses — and there would
+        // be nothing to reach.
+        ...(isolated.open ? { 'aria-controls': ISOLATED_LIST_ID } : {}),
         'data-ig-command': isolated.open ? 'close-isolated' : 'open-isolated',
       },
       [isolated.open ? words.hide : words.show],

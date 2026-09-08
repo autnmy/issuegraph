@@ -1,0 +1,2921 @@
+<!doctype html><meta charset="utf-8"><style>
+.ig-viewer {
+  background: var(--ig-bg);
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius-large);
+  color: var(--ig-text-body);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size);
+  line-height: var(--ig-line-height);
+  overflow: hidden;
+  position: relative;
+}
+
+.ig-viewer *,
+.ig-viewer *::before,
+.ig-viewer *::after {
+  box-sizing: border-box;
+}
+
+.ig-viewer :focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: calc(var(--ig-focus-ring) * -1);
+}
+
+.ig-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* ── the panel header ──────────────────────────────────────────────────── */
+
+/* Present only when the host stated a fact; a document with none draws no
+   header at all, which is what keeps the pure-graph markup unchanged. */
+.ig-header {
+  background: var(--ig-surface-2);
+  border-bottom: var(--ig-stroke) solid var(--ig-line);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space);
+  margin: 0;
+  padding: var(--ig-space-loose) var(--ig-space-wide);
+}
+
+.ig-header-lead {
+  align-items: center;
+  display: inline-flex;
+  gap: var(--ig-space-snug);
+}
+
+/* The segmented projection toggle §16a and §16b both draw. One rounded outline
+   around two buttons, the pressed one filled with the accent. */
+.ig-toggle {
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  display: inline-flex;
+  overflow: hidden;
+}
+
+.ig-toggle-option {
+  align-items: center;
+  background: none;
+  border: 0;
+  color: var(--ig-text-body);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: var(--ig-font-size-small);
+  gap: var(--ig-space-tight);
+  padding: var(--ig-space-micro) var(--ig-space-snug);
+}
+
+.ig-toggle-option[aria-pressed='true'] {
+  background: var(--ig-accent);
+  color: var(--ig-bg);
+  font-weight: var(--ig-weight-strong);
+}
+
+.ig-header-top {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ig-space);
+  justify-content: space-between;
+}
+
+/* The panel's own name, at the tracking the frame gives a frame-level label. */
+.ig-header-label {
+  color: var(--ig-accent);
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-small);
+  letter-spacing: var(--ig-tracking-label);
+  text-transform: uppercase;
+}
+
+/* THE COUNTS ARE CHIPS, NOT A SENTENCE. The frame gives each tally its own
+   outline and tints only the one a reader acts on — "how many could run right
+   now, against the cap" — so the accent is spent once instead of on a whole
+   line of muted prose. */
+.ig-counts {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ig-space-snug);
+  margin: 0;
+}
+
+.ig-count-chip {
+  background: var(--ig-bg);
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  color: var(--ig-text-body);
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-small);
+  font-variant-numeric: tabular-nums;
+  padding: var(--ig-space-micro) var(--ig-space-snug);
+}
+
+.ig-count-chip[data-count='ready'] {
+  background: color-mix(in srgb, var(--ig-accent) var(--ig-tint-fill), transparent);
+  border-color: color-mix(in srgb, var(--ig-accent) var(--ig-tint-border), transparent);
+  color: var(--ig-text);
+}
+
+.ig-freshness {
+  align-items: center;
+  color: var(--ig-text-muted);
+  display: inline-flex;
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-small);
+  font-variant-numeric: tabular-nums;
+  gap: var(--ig-space-tight);
+  margin: 0;
+}
+
+/* STALE GOES GOLD, as the design draws it. The gold this palette already holds
+   is the conflict state's — "the document moved upstream" — and a stale mirror
+   is that fact about the whole document, so the state hue is reused rather
+   than a token added for one word. No new token: the theme's token list is
+   the contract every host theme has to fill. */
+.ig-freshness[data-stale='true'] {
+  color: var(--ig-state-conflict);
+}
+
+/* A control the viewer publishes and does not wire: the UA button reset, so it
+   reads as the inline control the frame draws beside the stamp. */
+.ig-refresh,
+.ig-size {
+  background: none;
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  color: var(--ig-text);
+  cursor: pointer;
+  font: inherit;
+  padding: var(--ig-space-micro) var(--ig-space-snug);
+}
+
+.ig-refresh:hover,
+.ig-size:hover {
+  border-color: var(--ig-accent);
+  color: var(--ig-accent);
+}
+
+/* ── the panel-level notice ────────────────────────────────────────────── */
+
+/* WHAT THE HOST SAYS IS TRUE OF THE WHOLE PANEL, drawn between the NOW row and
+   the order it qualifies. Its own surface, so it reads as a statement about the
+   panel rather than as a row that lost its rank. */
+.ig-notice {
+  align-items: flex-start;
+  background: var(--ig-surface-2);
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  display: flex;
+  gap: var(--ig-space-snug);
+  justify-content: space-between;
+  padding: var(--ig-space-snug) var(--ig-space-loose);
+}
+
+.ig-notice-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-micro);
+}
+
+.ig-notice-head {
+  align-items: center;
+  color: var(--ig-text);
+  display: flex;
+  gap: var(--ig-space-tight);
+  margin: 0;
+}
+
+.ig-notice-body {
+  color: var(--ig-text-body);
+  margin: 0;
+}
+
+/* A COUNT, SO IT SITS ON THE FIGURE FACE. A progress figure is read as a number,
+   and the proportional face makes its digits wander the way a rank column's do. */
+.ig-notice-progress {
+  color: var(--ig-text-muted);
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-small);
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+}
+
+/* THE SAME CONTROL RESET THE REFRESH BUTTON TAKES, and for the same reason: it
+   is published and not wired, so it must look like the inline control the frame
+   draws rather than like a UA button. The anchor arm gets it too — a host that
+   routes instead of acting should not get a different-looking affordance. */
+.ig-notice-action {
+  background: none;
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  color: var(--ig-text);
+  cursor: pointer;
+  font: inherit;
+  padding: var(--ig-space-micro) var(--ig-space-snug);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.ig-notice-action:hover {
+  border-color: var(--ig-accent);
+  color: var(--ig-accent);
+}
+
+/* GOLD ON FIRST IMPORT, and gold is the conflict state's hue — the same reuse
+   the stale stamp already makes, for the same reason: the token list is the
+   contract every host theme has to fill, so a token added for one state is a
+   theme every host has to revisit.
+
+   AND NOTHING FOR THE ERROR ARM. The design makes exactly one panel-level outline
+   claim, and it is this one; an error is drawn calm on purpose, because its own
+   sentence is that settings are safe and the pipeline is still running. A
+   failure-hued outline around the whole panel would say the opposite. */
+.ig-viewer[data-ig-condition='importing'] {
+  outline: var(--ig-stroke) solid var(--ig-state-conflict);
+  outline-offset: var(--ig-space-micro);
+}
+
+.ig-notice[data-ig-condition='importing'] .ig-notice-head {
+  color: var(--ig-state-conflict);
+}
+
+.ig-notice[data-ig-condition='error'] .ig-notice-head {
+  color: var(--ig-state-failed);
+}
+
+/* ── the adoption line ─────────────────────────────────────────────────── */
+
+/* ONE QUIET LINE, which is the whole of what the design asks for here: the
+   day-one panel has to read complete and calm, and a block explaining what the
+   reader is missing is the opposite of calm. */
+.ig-adoption {
+  align-items: center;
+  color: var(--ig-text-muted);
+  display: flex;
+  font-size: var(--ig-font-size-small);
+  gap: var(--ig-space-tight);
+  margin: 0;
+}
+
+/* THE SENTENCE IS NOT THE LINK. Underlining the whole line made the quietest
+   element on the panel its loudest; the link is a short label beside it. */
+.ig-adoption-text {
+  color: var(--ig-text-muted);
+}
+
+.ig-adoption-link {
+  color: var(--ig-text-muted);
+  margin-left: auto;
+  text-decoration: underline;
+  white-space: nowrap;
+}
+
+.ig-adoption-link:hover {
+  color: var(--ig-accent);
+}
+
+/* PUBLISHED, NOT PERFORMED. The viewer never removes its own line; the host
+   re-renders without the note. */
+.ig-adoption-dismiss {
+  background: none;
+  border: 0;
+  color: var(--ig-text-muted);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.ig-adoption-dismiss:hover {
+  color: var(--ig-accent);
+}
+
+/* ── working now ───────────────────────────────────────────────────────── */
+
+.ig-now {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* A BAND, NOT A CARD. The frame runs it full-bleed across the panel with a
+   wash and an accent rail down its leading edge — the same treatment the shell
+   gives anything in flight — so it reads as a state of the panel rather than
+   as the first row of the order. */
+.ig-now-row {
+  background: color-mix(in srgb, var(--ig-accent) var(--ig-tint-wash), transparent);
+  border-bottom: var(--ig-stroke) solid var(--ig-line);
+  box-shadow: inset var(--ig-band-rail) 0 0 var(--ig-accent);
+  column-gap: var(--ig-space);
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  padding: var(--ig-space) var(--ig-space-wide);
+}
+
+.ig-now-mark {
+  background: var(--ig-accent);
+  border-radius: var(--ig-radius-small);
+  color: var(--ig-bg);
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-pill);
+  font-weight: var(--ig-weight-strong);
+  letter-spacing: var(--ig-tracking-pill);
+  padding: var(--ig-space-micro) var(--ig-space-tight);
+  text-transform: uppercase;
+}
+
+.ig-now-phase {
+  align-items: center;
+  color: var(--ig-accent);
+  display: inline-flex;
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-small);
+  gap: var(--ig-space-tight);
+  white-space: nowrap;
+}
+
+/* The pulse is the frame's, and it is the one moving thing in the panel. */
+.ig-now-pulse {
+  background: var(--ig-accent);
+  block-size: var(--ig-space-tight);
+  border-radius: 50%;
+  display: inline-block;
+  inline-size: var(--ig-space-tight);
+}
+
+/* ── the order ─────────────────────────────────────────────────────────── */
+
+/* TWO COLUMNS, WHICH IS THE FRAME'S GRID EXACTLY. The rank track holds the
+   figure and the readiness dot stacked, and everything else is one body
+   column, so a row has exactly two children and nothing can auto-place into
+   the rank track and set its width. That was a real defect: a single
+   relationship badge left unplaced widened the rank column for the whole list
+   and squeezed every title to pay for it. */
+.ig-slot {
+  border-bottom: var(--ig-stroke) solid var(--ig-line);
+  column-gap: var(--ig-space);
+  display: grid;
+  grid-template-columns: var(--ig-rank-column) 1fr;
+  min-height: var(--ig-row-min-height);
+  padding: var(--ig-row-padding-block) var(--ig-space-wide);
+}
+
+/* THE ONE ROW GROUND THE FRAME DRAWS, and it is not a stripe. A together unit
+   is the compound station, and the tint says so; the other ranked rows carry
+   no background at all. */
+.ig-slot[data-unit='true'] {
+  background: color-mix(in srgb, var(--ig-accent) var(--ig-tint-unit), transparent);
+}
+
+/* A HELD ROW IS HATCHED, NOT DASHED. It keeps its position in the sequence —
+   "why isn't my P1 running" is answerable in place — so it must read as
+   unavailable without leaving the grid the rows above and below hang off. A
+   dashed border around one row breaks that alignment; a ground does not. */
+.ig-slot[data-held='true'] {
+  background-image: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--ig-text) var(--ig-tint-unit), transparent) 0 var(--ig-space-tight),
+    transparent var(--ig-space-tight) calc(var(--ig-space-tight) * 2)
+  );
+}
+
+.ig-slot[aria-current='true'] {
+  box-shadow: inset var(--ig-band-rail) 0 0 var(--ig-accent);
+}
+
+/* A CANVAS-OWNED NODE IS SELECTABLE TOO, and only the rail rows had a selected
+   look — so clicking a gutter, excluded or tracker-held node set aria-current on
+   the group and changed nothing a reader could see. A pointer does not normally
+   raise :focus-visible either, so those selections had no visible state at all
+   on the channel most likely to make them. Same accent the rail uses, so one
+   selection reads the same whichever surface drew it. */
+.ig-node-group[aria-current='true'] .ig-node {
+  stroke: var(--ig-accent);
+  stroke-width: calc(var(--ig-stroke) * 2);
+}
+
+/* The rank track: figure over dot, centred, so the title column starts at one
+   x on every row whether or not the row has a number to print. */
+.ig-rank-cell {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+}
+
+.ig-rank {
+  color: var(--ig-text);
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-rank);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--ig-weight-strong);
+  line-height: 1;
+}
+
+.ig-rank[data-held='true'] {
+  color: var(--ig-text-muted);
+  font-weight: var(--ig-weight-regular);
+}
+
+.ig-row-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-snug);
+  min-width: 0;
+}
+
+/* The title, the identity and the two-line pair they form: 2px apart, which is
+   what makes them read as one object rather than as two rows of metadata. */
+.ig-row-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-micro);
+  min-width: 0;
+}
+
+/* ── readiness stations ────────────────────────────────────────────────── */
+
+.ig-station {
+  block-size: var(--ig-station-size);
+  border: var(--ig-stroke) solid var(--ig-station-held);
+  border-radius: 50%;
+  display: inline-block;
+  inline-size: var(--ig-station-size);
+}
+
+.ig-station[data-fill='filled'] {
+  background: var(--ig-station-ready);
+  border-color: var(--ig-station-ready);
+}
+
+.ig-station[data-fill='hollow'] {
+  background: transparent;
+  border-color: var(--ig-station-pending);
+}
+
+.ig-station[data-fill='dashed'] {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--ig-station-held);
+}
+
+/* ── titles, identity, provenance ──────────────────────────────────────── */
+
+/* NOTHING TRUNCATES. The ellipsis this rule used to carry, against a FIXED row
+   height, is the direct cause of the frame's titles arriving on screen as
+   "Retype the ca…" — a panel whose job is to say what the work is, declining
+   to say what the work is. A row grows instead; --ig-row-min-height is a
+   floor, not a height. anywhere covers the one case wrapping cannot: an
+   unbroken token wider than the column, which would otherwise overflow the
+   panel rather than the line. */
+.ig-title {
+  color: var(--ig-text);
+  font-size: var(--ig-font-size-row);
+  overflow-wrap: anywhere;
+}
+
+.ig-slot[data-held='true'] .ig-title,
+.ig-footer .ig-title {
+  color: var(--ig-text-body);
+}
+
+/* A held row's CONTENT recedes, not its position. The frame dims the body and
+   leaves the rank track at full strength, so the row still reads as occupying
+   the slot it would have taken. */
+.ig-slot[data-held='true'] .ig-row-body {
+  opacity: 0.72;
+}
+
+/* The isolated-issue tally sits directly on the panel, outside the padded
+   groups, so it carries the panel's own inset rather than none. */
+.ig-count {
+  margin: 0;
+  padding: var(--ig-space) var(--ig-space-wide);
+}
+
+.ig-id,
+.ig-count {
+  color: var(--ig-text-muted);
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.ig-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.ig-link:hover {
+  color: var(--ig-accent);
+  text-decoration: underline;
+}
+
+/* THE PROVENANCE LINE IS NOT MUTED. It is the answer to "why is this here",
+   which is the panel's whole reason to exist, so the frame gives it body text
+   and lifts the named parts to the brightest ink on the page. Muting the whole
+   sentence — which is what shipped — files the explanation under decoration. */
+.ig-provenance,
+.ig-hold,
+.ig-caveat {
+  align-items: baseline;
+  color: var(--ig-text-body);
+  display: flex;
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-small);
+  gap: var(--ig-space-tight);
+  margin: 0;
+}
+
+.ig-provenance .ig-id,
+.ig-hold .ig-id,
+.ig-caveat .ig-id {
+  color: var(--ig-text);
+}
+
+/* The turnstile the frame puts in front of every explanation, so the line reads
+   as subordinate to the row above it without being dimmed. */
+.ig-turn {
+  color: var(--ig-text-muted);
+  font-size: var(--ig-font-size-micro);
+  flex: 0 0 auto;
+}
+
+.ig-strike {
+  text-decoration: line-through;
+}
+
+/* ── edge badges ───────────────────────────────────────────────────────── */
+
+.ig-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ig-space-tight);
+}
+
+/* A TINTED CHIP, NOT A BARE OUTLINE. The frame fills every relationship chip
+   with its own hue at a low alpha inside a heavier border of the same hue;
+   drawn as an outline alone the badge row reads as a row of empty boxes, and
+   the hue channel carries a third of the weight the design gives it. The two
+   alphas are the theme's, so a host retinting a relationship retints its chip. */
+.ig-badge {
+  align-items: center;
+  background: var(--ig-surface-2);
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius-small);
+  color: var(--ig-text);
+  display: inline-flex;
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-micro);
+  gap: var(--ig-space-tight);
+  padding: var(--ig-space-micro) var(--ig-space-tight);
+}
+
+/* THE HUE IS A BORDER AND A FILL HERE, NOT A TEXT COLOUR — the theme holds the
+   edge hues to the 3:1 NON-TEXT bar, and says so where it defines them, so
+   painting badge LABELS with them contradicts the palette's own claim. It was
+   not merely theoretical: at this size duplicate-of measured 3.98:1 on
+   --ig-surface and decomposed-from 4.37:1, both under the 4.5:1 the text test
+   asserts for every text colour. The label takes --ig-text, which that test
+   already proves on all three surfaces, and the hue keeps the non-text use it
+   was measured for. This is a DELIBERATE DEPARTURE from the frame, which tints
+   its chip labels; the frame's own colour-blind-safety clause says hue is one
+   of four redundant channels, and here it is carried by two of them.
+   NO CHANNEL IS LOST. The dash pattern and the glyph are untouched, and the
+   vocabulary test independently proves all five stay distinguishable with hue
+   removed ENTIRELY, which is the stronger claim. */
+/* WRITTEN OUT PER EDGE RATHER THAN THROUGH ONE INTERMEDIATE PROPERTY. A
+   an intermediate --ig-badge-hue set here and read here would be a property no
+   theme and no layout declares, and styles.test.ts refuses those on purpose:
+   the whole point of that guard is that every var() in this file names
+   something a host or the layout actually sets. */
+.ig-badge[data-edge='blocked-by'] {
+  background: color-mix(in srgb, var(--ig-edge-blocked-by) var(--ig-tint-fill), transparent);
+  border-color: color-mix(in srgb, var(--ig-edge-blocked-by) var(--ig-tint-border), transparent);
+  border-style: solid;
+}
+
+.ig-badge[data-edge='serialize-with'] {
+  background: color-mix(in srgb, var(--ig-edge-serialize-with) var(--ig-tint-fill), transparent);
+  border-color: color-mix(in srgb, var(--ig-edge-serialize-with) var(--ig-tint-border), transparent);
+  border-style: double;
+}
+
+.ig-badge[data-edge='together-with'] {
+  background: color-mix(in srgb, var(--ig-edge-together-with) var(--ig-tint-fill), transparent);
+  border-color: color-mix(in srgb, var(--ig-edge-together-with) var(--ig-tint-border), transparent);
+  border-style: solid;
+}
+
+.ig-badge[data-edge='duplicate-of'] {
+  background: color-mix(in srgb, var(--ig-edge-duplicate-of) var(--ig-tint-fill), transparent);
+  border-color: color-mix(in srgb, var(--ig-edge-duplicate-of) var(--ig-tint-border), transparent);
+  border-style: dotted;
+}
+
+.ig-badge[data-edge='decomposed-from'] {
+  background: color-mix(in srgb, var(--ig-edge-decomposed-from) var(--ig-tint-fill), transparent);
+  border-color: color-mix(in srgb, var(--ig-edge-decomposed-from) var(--ig-tint-border), transparent);
+  border-style: dashed;
+}
+
+/* A PROMOTION IS THE ONE CHIP THE FRAME ACCENTS. It is the most interesting
+   event the panel can show — a low tier pulled to the top because it blocks a
+   high one — and the design spends its accent on exactly that. */
+.ig-badge[data-priority='promoted'] {
+  background: color-mix(in srgb, var(--ig-accent) var(--ig-tint-fill), transparent);
+  border-color: color-mix(in srgb, var(--ig-accent) var(--ig-tint-border), transparent);
+}
+
+.ig-badge[data-evidence='verified'] {
+  background: color-mix(in srgb, var(--ig-station-ready) var(--ig-tint-fill), transparent);
+  border-color: color-mix(in srgb, var(--ig-station-ready) var(--ig-tint-border), transparent);
+}
+
+/* A caveat or hold-label chip carries no relationship hue: it is a word, not
+   an edge, so it keeps the line colour the plain badge has. */
+.ig-badge[data-caveat],
+.ig-badge[data-hold] {
+  color: var(--ig-text-body);
+}
+
+.ig-badge[data-caveat='preview-only'] {
+  border-color: color-mix(in srgb, var(--ig-state-conflict) var(--ig-tint-border), transparent);
+}
+
+.ig-badge[data-not-ready='true'] {
+  background: color-mix(in srgb, var(--ig-edge-blocked-by) var(--ig-tint-fill), transparent);
+  border-color: color-mix(in srgb, var(--ig-edge-blocked-by) var(--ig-tint-border), transparent);
+}
+
+.ig-glyph {
+  font-family: var(--ig-font-mono);
+}
+
+/* ── the together unit: one rank, two issues ───────────────────────────── */
+
+.ig-unit-mark {
+  align-items: center;
+  display: flex;
+  gap: var(--ig-space-snug);
+}
+
+.ig-unit-pill {
+  background: var(--ig-accent);
+  border-radius: var(--ig-radius-small);
+  color: var(--ig-bg);
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-pill);
+  font-weight: var(--ig-weight-strong);
+  letter-spacing: var(--ig-tracking-badge);
+  padding: var(--ig-space-micro) var(--ig-space-tight);
+  text-transform: uppercase;
+}
+
+.ig-unit-note {
+  color: var(--ig-text-muted);
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-micro);
+}
+
+/* THE MEMBERS GET ONE LINE EACH. Joining them with a separator — which is what
+   shipped — makes a two-issue unit read as one issue with a long title, and
+   the unit is the one place the design draws an enclosure to say the opposite. */
+/* THE UNIT'S ENCLOSURE IS THE together-with MARK. It is drawn at the
+   connector's hairline width, which is what that token has always meant: finer
+   than an ordinary edge, so the enclosure stays the primary read. */
+.ig-unit {
+  border: var(--ig-stroke-connector) solid color-mix(in srgb, var(--ig-edge-together-with) var(--ig-tint-border), transparent);
+  border-radius: var(--ig-radius);
+  list-style: none;
+  margin: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.ig-unit-member {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-micro);
+  padding: var(--ig-space-snug) var(--ig-space);
+}
+
+.ig-unit-member + .ig-unit-member {
+  border-top: var(--ig-stroke) solid var(--ig-line);
+}
+
+.ig-unit-member .ig-title {
+  font-size: var(--ig-font-size-compact);
+}
+
+.ig-unit-member .ig-id {
+  font-size: var(--ig-font-size-meta);
+}
+
+/* ── the footer group: holds that earn no rank slot ────────────────────── */
+
+.ig-footer {
+  background: var(--ig-surface-2);
+  padding: var(--ig-space) var(--ig-space-wide);
+}
+
+.ig-footer-head {
+  align-items: center;
+  display: flex;
+  gap: var(--ig-space);
+  justify-content: space-between;
+}
+
+.ig-footer-title {
+  color: var(--ig-text-body);
+  font-size: var(--ig-font-size-compact);
+  margin: 0;
+}
+
+.ig-footer-labels {
+  color: var(--ig-text-muted);
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-meta);
+}
+
+/* ONE LINE EACH, and the frame is explicit about why: these are not facts
+   about the work, so they earn no rank slot and no explanation block. A full
+   row here — station, badges, provenance — was claiming the opposite. */
+.ig-footer .ig-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-snug);
+  margin-top: var(--ig-space);
+}
+
+.ig-footer-row {
+  align-items: center;
+  display: flex;
+  gap: var(--ig-space-snug);
+  opacity: 0.72;
+}
+
+.ig-footer-row .ig-title {
+  font-size: var(--ig-font-size-compact);
+}
+
+.ig-footer-row .ig-id {
+  font-size: var(--ig-font-size-meta);
+}
+
+.ig-footer-row[aria-current='true'] {
+  opacity: 1;
+}
+
+/* ── the graph canvas ──────────────────────────────────────────────────── */
+
+/* The stage carries the LAYOUT's own size, so one SVG unit is one CSS pixel
+   and an absolutely-positioned rail row lands on the node it names. A
+   percentage-width canvas would rescale under the rail and drift. It scrolls
+   rather than shrinking, because shrinking would silently break that. */
+.ig-stage {
+  block-size: var(--ig-stage-h);
+  inline-size: var(--ig-stage-w);
+  max-inline-size: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  position: relative;
+}
+
+.ig-canvas {
+  block-size: var(--ig-stage-h);
+  display: block;
+  inline-size: var(--ig-stage-w);
+}
+
+/* The three column headers, which say what each column is FOR. Without them
+   the gutters read as two more piles of issues rather than as the two answers
+   the spine deliberately keeps off itself. */
+.ig-column-head {
+  color: var(--ig-text-muted);
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-pill);
+  letter-spacing: var(--ig-tracking-group);
+  position: absolute;
+  text-transform: uppercase;
+  inset-block-start: var(--ig-space-snug);
+  inset-inline-start: var(--ig-col-x);
+}
+
+.ig-column-head[data-column='spine'] {
+  color: var(--ig-accent);
+}
+
+/* The node cards and the station column, sitting on the coordinates the layout
+   computed. */
+.ig-rail {
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+}
+
+.ig-rail-row {
+  block-size: auto;
+  inline-size: var(--ig-row-w);
+  inset-block-start: var(--ig-row-y);
+  inset-inline-start: var(--ig-row-x);
+  min-block-size: var(--ig-row-h);
+  pointer-events: auto;
+  position: absolute;
+}
+
+/* A CARD, NOT A LABELLED RECTANGLE. Drawing the node's text in SVG is what
+   forced every title through a width fit and out the other side truncated; an
+   HTML card wraps, so the acceptance criterion "nothing truncates" is met by
+   construction rather than by choosing a wider box. */
+.ig-card {
+  background: var(--ig-surface);
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius-large);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+  padding: var(--ig-space) var(--ig-space);
+}
+
+.ig-card .ig-title {
+  font-size: var(--ig-font-size-compact);
+}
+
+.ig-card .ig-id {
+  font-size: var(--ig-font-size-meta);
+}
+
+.ig-card[data-column='left'] {
+  background: var(--ig-surface-2);
+  border-color: color-mix(in srgb, var(--ig-edge-blocked-by) var(--ig-tint-border), transparent);
+}
+
+/* NEVER WORKED READS AS NEVER DRAWN IN. The right gutter's two node states are
+   the design's own: a dashed provenance origin and a dotted duplicate, both on
+   no ground at all, so the eye files them as outside the order before reading
+   a word. */
+.ig-card[data-column='right'] {
+  background: transparent;
+  border-style: dashed;
+  opacity: 0.8;
+}
+
+.ig-card[data-exclusion='true'] {
+  border-style: dotted;
+  border-color: color-mix(in srgb, var(--ig-edge-duplicate-of) var(--ig-tint-border), transparent);
+}
+
+.ig-card[data-held='true'] {
+  background: transparent;
+  border-style: dashed;
+  opacity: 0.75;
+}
+
+.ig-card[data-now='true'] {
+  background: color-mix(in srgb, var(--ig-accent) var(--ig-tint-wash), transparent);
+  border-color: color-mix(in srgb, var(--ig-accent) var(--ig-tint-border), transparent);
+}
+
+.ig-card[data-unit='true'] {
+  background: color-mix(in srgb, var(--ig-accent) var(--ig-tint-unit), transparent);
+  border-color: var(--ig-accent);
+}
+
+.ig-rail-row[aria-current='true'] .ig-card {
+  border-color: var(--ig-accent);
+  box-shadow: 0 0 0 var(--ig-band-rail) color-mix(in srgb, var(--ig-accent) var(--ig-tint-border), transparent);
+}
+
+/* The station column: a disc on the spine, carrying the rank the row would
+   otherwise have to be read for. */
+.ig-spine-station {
+  align-items: center;
+  background: var(--ig-bg);
+  block-size: var(--ig-station-box);
+  border: calc(var(--ig-stroke) * 2) solid var(--ig-station-ready);
+  border-radius: 50%;
+  box-shadow: 0 0 0 var(--ig-station-halo) var(--ig-bg);
+  color: var(--ig-station-pending);
+  display: flex;
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-small);
+  font-weight: var(--ig-weight-heavy);
+  inline-size: var(--ig-station-box);
+  inset-block-start: var(--ig-station-y);
+  inset-inline-start: var(--ig-station-x);
+  justify-content: center;
+  pointer-events: none;
+  position: absolute;
+}
+
+.ig-spine-station[data-fill='filled'] {
+  background: var(--ig-station-ready);
+  color: var(--ig-bg);
+}
+
+.ig-spine-station[data-fill='hollow'] {
+  border-color: var(--ig-station-ready);
+  color: var(--ig-station-ready);
+}
+
+.ig-spine-station[data-fill='dashed'] {
+  border-style: dashed;
+  border-width: var(--ig-stroke);
+  border-color: var(--ig-station-held);
+  color: var(--ig-text-muted);
+}
+
+/* The serialize hold is gold in the frame, on the station as well as the arc:
+   a station that waits for a PEER is a different fact from one that waits for
+   a rank above it. */
+/* THE RING TAKES THE HUE, THE DIGIT DOES NOT. §16b draws both in gold, and the
+   theme holds every edge hue to the 3:1 NON-TEXT bar — so painting the rank
+   figure with it makes a claim the palette does not support, on the one glyph
+   in the station a reader has to actually read. The hue keeps the ring, which
+   is the channel it was measured for; the number keeps the ink every text
+   contrast test already proves. */
+.ig-spine-station[data-wait='serialize'] {
+  border-color: var(--ig-edge-serialize-with);
+  color: var(--ig-text);
+}
+
+.ig-spine {
+  stroke: var(--ig-line);
+  stroke-width: calc(var(--ig-stroke) * 2);
+}
+
+.ig-more {
+  color: var(--ig-text-muted);
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-micro);
+  inline-size: var(--ig-row-w);
+  inset-block-start: var(--ig-row-y);
+  inset-inline-start: var(--ig-row-x);
+  position: absolute;
+  text-align: center;
+}
+
+.ig-node {
+  fill: var(--ig-surface);
+  stroke: var(--ig-line);
+  stroke-width: var(--ig-stroke);
+}
+
+.ig-node[data-held='true'] {
+  fill: var(--ig-surface-2);
+  stroke-dasharray: 4 3;
+}
+
+.ig-node-label {
+  fill: var(--ig-text);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+}
+
+.ig-edge {
+  fill: none;
+  stroke-width: var(--ig-stroke);
+}
+
+.ig-edge[data-edge='blocked-by'] { stroke: var(--ig-edge-blocked-by); }
+.ig-edge[data-edge='serialize-with'] { stroke: var(--ig-edge-serialize-with); }
+.ig-edge[data-edge='together-with'] { stroke: var(--ig-edge-together-with); }
+.ig-edge[data-edge='duplicate-of'] { stroke: var(--ig-edge-duplicate-of); }
+.ig-edge[data-edge='decomposed-from'] { stroke: var(--ig-edge-decomposed-from); }
+
+/* The dash pattern is set per element from the edge vocabulary, never here —
+   one source for the channel the colour-blind-safety claim rests on. Drawn only
+   in the legend now: a together unit is ONE card with its members listed inside
+   it, so the canvas has no pair of boxes to surround. */
+.ig-enclosure {
+  fill: none;
+  stroke: var(--ig-edge-together-with);
+  stroke-width: var(--ig-stroke);
+}
+
+/* currentColor on the marker resolves to the inherited text colour, not to the
+   edge's stroke — so a terminal has to be given the hue explicitly or it renders
+   in body text and the fourth channel silently collapses. */
+.ig-terminal {
+  color: var(--ig-text-body);
+  stroke-width: var(--ig-stroke);
+}
+
+/* A MARK IS HIT-TESTABLE, AND THAT IS THE OPPOSITE OF WHAT IT FIRST SAID.
+
+   It carried a pointer-events none rule, reasoning from the halo: a decoration
+   over a line must not swallow the click aimed at the line. That reasoning does
+   not transfer, because a halo IS the line again and a mark is NOT — every one
+   of these is deliberately offset AWAY from the path, so a click on it does not
+   fall through onto the edge. It falls through onto the canvas, and the viewer's
+   walk climbs to the canvas group and reports a click on nothing, clearing the
+   very selection the reader was making. A conflict's companion is the clearest
+   case: a visibly separate line that could not be pointed at.
+
+   That is a defect this package has already paid for once. The overlay module
+   keeps its pointer identity on the dash clone for exactly this reason, and says
+   so: dropping the identity makes a clone a dead zone over its own edge. Every
+   mark here publishes the same identity, so making it unhittable spent the
+   identity it had just been given.
+
+   Colour is set per element, from the token name the caller supplied, for the
+   reason the edge hues are set per element: one source for a channel. Nothing
+   here paints a state, because nothing here knows what a state is. */
+.ig-edge-mark {
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+}
+
+.ig-edge-companion {
+  stroke-width: var(--ig-stroke);
+}
+
+.ig-terminal[data-edge='blocked-by'] { color: var(--ig-edge-blocked-by); }
+.ig-terminal[data-edge='serialize-with'] { color: var(--ig-edge-serialize-with); }
+.ig-terminal[data-edge='together-with'] { color: var(--ig-edge-together-with); }
+.ig-terminal[data-edge='duplicate-of'] { color: var(--ig-edge-duplicate-of); }
+.ig-terminal[data-edge='decomposed-from'] { color: var(--ig-edge-decomposed-from); }
+
+/* ── refusals and empty states ─────────────────────────────────────────── */
+
+.ig-refusal,
+.ig-empty {
+  background: var(--ig-surface-2);
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  color: var(--ig-text-body);
+  margin: var(--ig-space-wide);
+  padding: var(--ig-space);
+}
+
+.ig-refusal-next {
+  color: var(--ig-text);
+  margin: var(--ig-space-tight) 0 0;
+}
+
+/* The capsule is INFORMATIONAL — a plain list item again. It was briefly a
+   button, to make the refusal's advertised action keyboard-reachable; the
+   action itself has since gone, because this package cannot narrow a document
+   and so could never complete it. With the control removed the UA button reset
+   goes too: there is no button look left to undo. */
+.ig-capsule {
+  align-items: baseline;
+  background: var(--ig-surface);
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  display: flex;
+  gap: var(--ig-space);
+  margin-top: var(--ig-space-tight);
+  padding: var(--ig-space-tight) var(--ig-space);
+}
+
+.ig-refusal-omitted {
+  color: var(--ig-text-muted);
+  font-size: var(--ig-font-size-small);
+  margin: var(--ig-space-tight) 0 0;
+}
+
+/* ── the decomposition tree ────────────────────────────────────────────── */
+
+.ig-tree,
+.ig-tree .ig-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ig-tree {
+  padding: var(--ig-space) var(--ig-space-wide);
+}
+
+.ig-tree .ig-list {
+  border-left: var(--ig-stroke) dashed var(--ig-edge-decomposed-from);
+  margin-left: var(--ig-space);
+  padding-left: var(--ig-space);
+}
+
+.ig-tree-item {
+  padding: var(--ig-space-tight) 0;
+}
+
+/* ── legend ────────────────────────────────────────────────────────────── */
+
+/* A FOOTER BAR, WHERE §16b PUTS IT, and worded rather than glyph-only. It sits
+   under the drawing it explains, carries a drawn sample of each line so the
+   dash and terminal channels are legible cold, and ends with the readiness key
+   the station fills need. */
+.ig-legend {
+  align-items: center;
+  background: var(--ig-surface-2);
+  border: 0;
+  border-top: var(--ig-stroke) solid var(--ig-line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ig-space-wide);
+  margin: 0;
+  padding: var(--ig-space) var(--ig-space-wide);
+}
+
+.ig-legend-caption {
+  color: var(--ig-text-muted);
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-pill);
+  letter-spacing: var(--ig-tracking-group);
+  padding: 0;
+  text-transform: uppercase;
+}
+
+.ig-legend-item {
+  align-items: center;
+  color: var(--ig-text-body);
+  display: inline-flex;
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-meta);
+  gap: var(--ig-space-tight);
+}
+
+.ig-legend-keys {
+  display: inline-flex;
+  gap: var(--ig-space-loose);
+  margin-inline-start: auto;
+}
+
+:root {
+  --ig-bg: #0B0D0F;
+  --ig-surface: #11181C;
+  --ig-surface-2: #0E1519;
+  --ig-line: #232D34;
+  --ig-text: #E8EDF0;
+  --ig-text-body: #AEB9C0;
+  --ig-text-muted: #75848E;
+  --ig-accent: #17BCEE;
+  --ig-focus: #17BCEE;
+  --ig-station-ready: #17BCEE;
+  --ig-station-pending: #AEB9C0;
+  --ig-station-held: #75848E;
+  --ig-edge-blocked-by: #EF6B6B;
+  --ig-edge-serialize-with: #E2B912;
+  --ig-edge-together-with: #17BCEE;
+  --ig-edge-duplicate-of: #B037F1;
+  --ig-edge-decomposed-from: #E7317A;
+  --ig-state-invalid: #FFA8AD;
+  --ig-state-failed: #FFAF8E;
+  --ig-state-conflict: #F5C542;
+  --ig-font-ui: Geist, ui-sans-serif, system-ui, sans-serif;
+  --ig-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  --ig-font-size: 13px;
+  --ig-font-size-small: 11px;
+  --ig-line-height: 1.45;
+  --ig-font-size-micro: 10px;
+  --ig-font-size-pill: 9.5px;
+  --ig-weight-regular: 400;
+  --ig-weight-medium: 500;
+  --ig-weight-strong: 600;
+  --ig-weight-heavy: 700;
+  --ig-tracking-label: 0.14em;
+  --ig-tracking-group: 0.1em;
+  --ig-tracking-pill: 0.08em;
+  --ig-tracking-badge: 0.06em;
+  --ig-font-size-meta: 10.5px;
+  --ig-font-size-compact: 12.5px;
+  --ig-font-size-row: 13.5px;
+  --ig-font-size-rank: 14px;
+  --ig-space: 12px;
+  --ig-space-tight: 6px;
+  --ig-radius: 6px;
+  --ig-row-height: 44px;
+  --ig-station-size: 12px;
+  --ig-station-halo: 4px;
+  --ig-stroke: 1.5px;
+  --ig-stroke-connector: 1.6px;
+  --ig-stroke-audit: 2px;
+  --ig-terminal-length: 9px;
+  --ig-terminal-width: 8px;
+  --ig-gutter-width: 260px;
+  --ig-spine-width: 330px;
+  --ig-char-width: 7.8px;
+  --ig-label-char-width: 6px;
+  --ig-focus-ring: 2px;
+  --ig-space-micro: 2px;
+  --ig-space-snug: 8px;
+  --ig-space-loose: 16px;
+  --ig-space-wide: 20px;
+  --ig-radius-small: 4px;
+  --ig-radius-large: 14px;
+  --ig-row-min-height: 44px;
+  --ig-row-padding-block: 13px;
+  --ig-band-rail: 3px;
+  --ig-rank-column: 34px;
+  --ig-station-box: 26px;
+  --ig-card-line: 18px;
+  --ig-tint-fill: 8%;
+  --ig-tint-border: 30%;
+  --ig-tint-wash: 5%;
+  --ig-tint-unit: 3%;
+  --ig-elevation-raised: 0 16px 40px -16px rgba(0, 0, 0, 0.9);
+  --ig-elevation-overlay: 0 30px 80px -40px rgba(0, 0, 0, 0.8);
+}
+
+
+.ig-ladder {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size);
+  line-height: var(--ig-line-height);
+  color: var(--ig-text-body);
+}
+
+.ig-ladder-routes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+  color: var(--ig-text-muted);
+  font-size: var(--ig-font-size-small);
+}
+
+.ig-ladder-search {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+}
+
+.ig-ladder-search input {
+  background: var(--ig-surface);
+  color: var(--ig-text);
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  padding: var(--ig-space-tight);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size);
+}
+
+.ig-ladder-search input:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-tight);
+}
+
+.ig-ladder-match {
+  display: flex;
+  gap: var(--ig-space-tight);
+  align-items: baseline;
+}
+
+.ig-chip {
+  align-self: flex-start;
+  background: var(--ig-surface-2);
+  color: var(--ig-text-body);
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  padding: var(--ig-space-tight) var(--ig-space);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+  cursor: pointer;
+}
+
+.ig-chip:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-tight);
+}
+
+.ig-chip[aria-expanded='true'] {
+  border-color: var(--ig-accent);
+  color: var(--ig-text);
+}
+
+.ig-isolated-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+}
+
+/* A ROW PER ENTRY, WITH A GAP THE MARKUP DOES NOT SUPPLY. The element helper
+   concatenates its children with no whitespace, so the key and the title
+   rendered as one run of text — #492Audit log pagination. Latent until §17a
+   moved the CONTROL to the rail footer and made this list the thing a reader is
+   sent to, rather than a chip's afterthought. */
+.ig-isolated-list li {
+  display: flex;
+  gap: var(--ig-space-tight);
+  align-items: baseline;
+  min-width: 0;
+}
+
+.ig-isolated-list .ig-id {
+  font-family: var(--ig-font-mono);
+  color: var(--ig-text-muted);
+  flex: none;
+}
+
+
+.ig-overlay {
+  pointer-events: none;
+}
+
+.ig-overlay-halo {
+  fill: none;
+  stroke: var(--ig-focus);
+  stroke-linecap: round;
+}
+
+/* The stroke is set per element from the treatment table — a state's own hue
+   where it has one, the relationship's where it does not — for the same reason
+   the viewer sets its dash per element: one source for a channel. */
+.ig-overlay-dash {
+  fill: none;
+}
+
+.ig-overlay-marching {
+  stroke-dasharray: 4 4;
+  animation: ig-overlay-march 1s linear infinite;
+}
+
+.ig-overlay-dotted {
+  stroke-dasharray: 1 3;
+}
+
+@keyframes ig-overlay-march {
+  to {
+    stroke-dashoffset: -8;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ig-overlay-marching {
+    animation: none;
+  }
+}
+
+/* QUALIFIED, AND THE QUALIFICATION IS THE WHOLE RULE — it is what makes these
+   three declarations apply at all.
+
+   They used to be bare, and the comment here explained why: a together-with was
+   drawn as a CONNECTOR rather than an edge path, so an edge-anchored rule left
+   one of the five relationships unstyled. Both halves of that have since stopped
+   being true, and nothing noticed either.
+
+   The connector is gone — layer 1's section-16 pass draws a together unit as ONE
+   card with its members listed inside, so the relationship's whole drawn form is
+   its badge, and the badge rules below are what reach it.
+
+   And the bare selector never painted an edge. A drawn path carries BOTH the edge
+   class with its kind attribute, which the viewer hues at specificity (0,2,0), and
+   the state attribute, which at (0,1,0) loses to it — and specificity beats source
+   order, so concatenating this sheet last changed nothing. Measured in a browser:
+   a conflicted blocked-by edge computed the relationship's own red, never the
+   state's gold.
+
+   So the bare rules matched exactly two kinds of element and were dead on both.
+   On a path they lost the cascade; on a badge they set a stroke, which a span has
+   no use for.
+
+   invalid was the only state that looked right, and by accident: it is the one
+   settled state carrying a dash, so render.ts builds a CLONE for it, and a clone
+   drops its class — which is precisely why that file sets the stroke inline on
+   one. The states that build no clone had nothing to fall back on, which is why
+   failed rendered identically to invalid, and conflict identically to a settled
+   edge.
+
+   The kind attribute is carried by every drawn path and by nothing else, so adding
+   it reaches (0,3,0) and wins OUTRIGHT rather than by tying and being placed later.
+   A tie would work today and would break the first time a host reordered the
+   sheets — and this rule has already failed silently once.
+
+   (No backticks in here: this is inside a template literal, and one ends it.) */
+.ig-edge[data-edge][data-ig-state~='invalid'] {
+  stroke: var(--ig-state-invalid);
+}
+
+.ig-edge[data-edge][data-ig-state~='failed'] {
+  stroke: var(--ig-state-failed);
+}
+
+.ig-edge[data-edge][data-ig-state~='conflict'] {
+  stroke: var(--ig-state-conflict);
+}
+
+/* A BADGE IS NOT A STROKE, AND SOME RELATIONSHIPS ARE ONLY A BADGE.
+   together-with is drawn as no line at all — it shares a rank rather than
+   ordering anything, and layer 1 draws the unit as one card with its members
+   listed inside — so the chip that names it is its entire representation. The
+   marks this module clones from a stroke cannot be cloned from a span, and the
+   stroke rules above paint a property a span does not have: an in-flight or
+   refused together-edge therefore read exactly like a settled one, with the
+   state visible only to a screen reader.
+
+   So a chip states the state with what a chip HAS: its border and its ink.
+   Every state the drawn edge distinguishes, distinguished here too — including
+   the two that have no hue of their own, where a stroke uses a ghost or a halo
+   and a chip uses a dash and the focus ring. */
+.ig-badge[data-ig-state~='invalid'] {
+  border-color: var(--ig-state-invalid);
+  color: var(--ig-state-invalid);
+}
+
+.ig-badge[data-ig-state~='failed'] {
+  border-color: var(--ig-state-failed);
+  color: var(--ig-state-failed);
+}
+
+.ig-badge[data-ig-state~='conflict'] {
+  border-color: var(--ig-state-conflict);
+  color: var(--ig-state-conflict);
+}
+
+/* Pending is the state with no hue: the drawn edge says it with a dashed ghost,
+   and a chip says it with a dashed border of its own. */
+.ig-badge[data-ig-state~='pending-write'] {
+  border-style: dashed;
+}
+
+/* Selected is the focus ring's meaning, and the theme says so where it declares
+   the token — selected is deliberately not an edit-state hue. */
+.ig-badge[data-ig-state~='selected'] {
+  box-shadow: 0 0 0 var(--ig-stroke) var(--ig-focus);
+}
+
+.ig-overlay-chip {
+  background: var(--ig-surface-2);
+  color: var(--ig-text-muted);
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  padding: var(--ig-space-tight);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+}
+
+.ig-overlay-cross {
+  color: var(--ig-state-failed);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size);
+}
+
+.ig-overlay-reason {
+  color: var(--ig-state-invalid);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+}
+
+.ig-overlay-held {
+  color: var(--ig-state-conflict);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+}
+
+
+.ig-reevaluate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size);
+  line-height: var(--ig-line-height);
+  color: var(--ig-text-body);
+}
+
+/* Greyed one step, and never hidden: a stale order that is labelled is still
+   the most useful thing on the screen.
+
+   A FILTER, NOT A COLOUR, and that is the whole point of this rule. color on
+   the rail greys almost nothing: the viewer's own stylesheet sets color
+   directly on .ig-title, .ig-id and .ig-hold, and carries the stations
+   and badges in background and border-color, none of which inherit at all.
+   A specified value beats an inherited one, so the stale order would have kept
+   its normal palette while this rule looked like it was doing something.
+
+   The enumeration is the trap here, not the oversight: listing the descendants
+   to override is the "a static rule names one spelling of a capability"
+   class this repository has already paid for several times over, and it would
+   go stale the first time layer 1 colours something new. filter applies to
+   an element AND its whole subtree whatever properties that subtree sets, so
+   a descendant added later is covered by construction. styles.test.ts pins
+   both halves: that layer 1 really does colour its own descendants, and that
+   this rule is not a bare color. */
+.ig-reevaluate[data-order='held'] .ig-viewer {
+  filter: grayscale(1);
+}
+
+.ig-order-computing {
+  margin: 0;
+  color: var(--ig-text-muted);
+  font-size: var(--ig-font-size-small);
+}
+
+.ig-change-summary {
+  display: flex;
+  gap: var(--ig-space);
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.ig-change-line {
+  display: flex;
+  align-items: baseline;
+}
+
+.ig-change-parts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  /* The blast radius reads as ONE line. The gap is the separator, so no
+     punctuation glyph is baked into the markup — that would be a second
+     language choice on top of the words themselves. */
+  gap: var(--ig-space);
+}
+
+.ig-change-part {
+  display: flex;
+  gap: var(--ig-space-tight);
+  align-items: baseline;
+}
+
+.ig-change-count {
+  font-family: var(--ig-font-mono);
+  color: var(--ig-text);
+}
+
+.ig-change-word {
+  color: var(--ig-text-body);
+}
+
+.ig-change-unchanged {
+  margin: 0;
+  color: var(--ig-text-body);
+}
+
+.ig-change-dismiss {
+  align-self: flex-start;
+  background: var(--ig-surface-2);
+  color: var(--ig-text-body);
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  padding: var(--ig-space-tight) var(--ig-space);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+  cursor: pointer;
+}
+
+.ig-change-dismiss:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-tight);
+}
+
+.ig-delta-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+}
+
+.ig-delta-chip {
+  display: flex;
+  gap: var(--ig-space-tight);
+  align-items: baseline;
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  padding: var(--ig-space-tight);
+  background: var(--ig-surface-2);
+}
+
+.ig-delta-member {
+  display: flex;
+  gap: var(--ig-space-tight);
+  align-items: baseline;
+}
+
+.ig-delta-key,
+.ig-delta-ref {
+  font-family: var(--ig-font-mono);
+  color: var(--ig-text-muted);
+}
+
+/* The count and its word are adjacent spans with no text between them, so
+   without this they render as 2up. Same reason .ig-change-part has one. */
+.ig-delta-move {
+  display: flex;
+  gap: var(--ig-space-tight);
+  align-items: baseline;
+}
+
+.ig-delta-move[data-direction='up'] .ig-change-count {
+  color: var(--ig-station-ready);
+}
+
+.ig-delta-move[data-direction='down'] .ig-change-count {
+  color: var(--ig-text-muted);
+}
+
+.ig-delta-readiness[data-readiness='promoted'] {
+  color: var(--ig-station-ready);
+}
+
+.ig-delta-readiness[data-readiness='newly-held'] {
+  color: var(--ig-station-held);
+}
+
+.ig-delta-presence {
+  color: var(--ig-text-muted);
+}
+
+/* THE PLACED CHIP IS NOT A LIST ITEM and does not lay out like one: it sits at
+   the end of its row, after whatever the row already drew, and it never grows
+   the row's height on its own.
+
+   WHAT PUTS IT AT THE TRAILING EDGE IS NOT HERE, and this comment claimed it
+   was. It named margin-inline-start: auto, which an earlier revision of this
+   rule did set and this one does not — the ranked row reaches the edge by
+   being given a third grid column in workspace/styles.ts instead, and the
+   footer row, which is a flex box rather than that grid, is pushed there by a
+   rule of its own beside it. Both live with the row shapes they are about;
+   what is left here is only what a placed chip looks like whatever it sits in.
+   The claim survived the change that falsified it, which is this codebase's
+   named failure mode and not a new one. */
+.ig-delta-chip[data-placed] {
+  display: inline-flex;
+  gap: var(--ig-space-tight);
+  align-items: baseline;
+  align-self: center;
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  padding: 0 var(--ig-space-tight);
+  background: var(--ig-surface-2);
+  font-size: var(--ig-font-size-small);
+}
+
+
+
+.ig-workspace {
+  display: grid;
+  /* HEADER SPANS, THE THREE ZONES SIT UNDER IT. The audit count is ambient: it
+     belongs to the whole workspace rather than to one zone, and putting it in a
+     zone's own track would make it move when that zone resized. */
+  grid-template-areas:
+    'header header header'
+    'rail canvas inspector';
+  /* The rail and the inspector are sized in TYPE, not in pixels: a host that
+     scales the type scales the zones with it, which a fixed track would not.
+
+     A LENGTH TIMES A UNITLESS COUNT, which is the viewer's own idiom
+     (styles.ts writes min-width: calc(var(--ig-char-width) * 4)). An earlier
+     version multiplied --ig-char-width by --ig-label-char-width, having read
+     the second as "how many characters wide a label is". It is not: it is the
+     average width OF one character, and themeCss renders every metric with px
+     — so the expression was calc(7.8px * 6px), which is not a length. CSS
+     discards a declaration it cannot parse, so the whole template went with it
+     and all three zones fell back to auto columns: long content could then
+     squeeze the canvas, which is the one thing fixed positions exist to stop.
+     Nothing failed loudly, because an invalid declaration is simply absent.
+
+     40 is a reading measure for a title plus its id, in characters. */
+  grid-template-columns:
+    calc(var(--ig-char-width) * 40)
+    1fr
+    calc(var(--ig-char-width) * 40);
+  grid-template-rows: auto 1fr;
+  gap: var(--ig-space);
+  background: var(--ig-bg);
+  color: var(--ig-text-body);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size);
+  line-height: var(--ig-line-height);
+}
+
+.ig-zone {
+  min-width: 0;
+  /* Without this a long title in any zone sets that track's minimum width and
+     the grid stops honouring its own template. */
+  min-height: 0;
+}
+
+.ig-zone[data-zone='header'] {
+  grid-area: header;
+}
+
+/* SECTION 17a's HEADER: what backlog this is, how much of it is encoded, what
+   is wrong with it, how fresh the read is, and the way into a first pass. One
+   row, baseline-aligned, with the first-pass entry pushed to the far end --
+   the frame's only primary action on this surface.
+
+   NOTHING HERE MOVES, for the reason the whole sheet holds: the audit count
+   lives in this row, and section 17d asks for a count that never does. The
+   guard on that is a literal scan over these bytes, comments included, so the
+   words it looks for must not appear even in prose explaining their absence. */
+.ig-workspace-header {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--ig-space);
+  padding: var(--ig-space-tight) var(--ig-space);
+  border-bottom: var(--ig-stroke) solid var(--ig-line);
+}
+
+.ig-workspace-identity {
+  color: var(--ig-text);
+  font-family: var(--ig-font-mono);
+}
+
+/* The adoption pair and the freshness stamp, hoisted out of layer 1's panel
+   header by #135. Quiet, because the row's only loud element is the entry at
+   its far end -- these are orientation, read once and then ignored. */
+.ig-workspace-counts,
+.ig-workspace-freshness {
+  color: var(--ig-text-muted);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+}
+
+/* THE ONLY TREATMENT STALENESS GETS, and it is why the stamp carries no word
+   for it: the state is on the element, so the sheet says what a stale read
+   looks like and no host has to translate an adjective. */
+.ig-workspace-freshness[data-stale='true'] {
+  color: var(--ig-state-invalid);
+}
+
+/* A CONTROL, NOT A CHIP. It sits inside the stamp because that is what it
+   refreshes, and it takes the button reset the sheet gives every other quiet
+   control on this surface rather than the accent the first-pass entry spends. */
+.ig-workspace-refresh {
+  margin-left: var(--ig-space-tight);
+  font: inherit;
+  color: var(--ig-text);
+  background: var(--ig-surface-2);
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  padding: 0 var(--ig-space-tight);
+  cursor: pointer;
+}
+
+.ig-workspace-refresh:hover {
+  border-color: var(--ig-accent);
+}
+
+.ig-workspace-refresh:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-tight);
+}
+
+/* The one place the accent is spent on this surface, on the only action that
+   starts something. The frame draws it as the header's primary control. */
+.ig-workspace-firstpass {
+  margin-left: auto;
+  background: var(--ig-accent);
+  color: var(--ig-bg);
+  border: none;
+  border-radius: var(--ig-radius);
+  padding: var(--ig-space-tight) var(--ig-space);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+  cursor: pointer;
+}
+
+.ig-zone[data-zone='rail'] {
+  grid-area: rail;
+  /* The rail scrolls; the window slides underneath. */
+  overflow-y: auto;
+  border-right: var(--ig-stroke) solid var(--ig-line);
+  /* A COLUMN, SO THE FOOTER HAS A BOTTOM TO SIT ON. A sticky bottom alone
+     does not put an element at the foot of a track: it constrains one that
+     would otherwise scroll out of view, and leaves it in normal flow when it
+     would not. A backlog shorter than the viewport therefore left §17a's
+     footer floating partway up the rail, directly under the last row.
+
+     The expanding row below is what fills the track. Sticky then still does
+     its own job for a long order, so the two are not alternatives — the flex
+     rule places the footer, and sticky keeps it placed while the rows slide
+     under it. */
+  display: flex;
+  flex-direction: column;
+}
+
+/* THE ORDER TAKES THE SLACK. 1 0 auto grows into an under-filled track and
+   refuses to shrink in an over-filled one, which is the half that matters for
+   virtualization: a shrinking viewer would compress the drawn rows and break
+   the fixed pitch railRowAt maps scroll offsets through. */
+.ig-zone[data-zone='rail'] > .ig-viewer {
+  flex: 1 0 auto;
+}
+
+/* NEITHER SPACER NOR FOOTER FLEXES. The spacers stand in for the undrawn rows
+   at an exact computed height, and the footer is one line; letting either
+   absorb slack would move the rows out from under the same pitch. */
+.ig-zone[data-zone='rail'] > .ig-rail-spacer,
+.ig-zone[data-zone='rail'] > .ig-rail-footer {
+  flex: none;
+}
+
+/* §17a'S RAIL FOOTER, AND IT IS THE ZONE'S LAST ROW. The frame ends the rail
+   with it; that it is PINNED is this sheet's decision, on the reasoning §17c
+   already settled one zone over — the rail is the scroller, mount.ts restores
+   its scrollTop on every redraw, and a fact placed in the scrolled content is a
+   fact you have to go back for. .ig-canvas-toolbar below pins itself against
+   the other edge for exactly this reason and is the shape copied here.
+
+   OPAQUE, BECAUSE IT OCCLUDES. Rows slide under it, so a transparent ground
+   would show the order through the count. That is also why the OPEN LIST IS NOT
+   IN HERE: an element taller than its scrollport cannot stick — the browser
+   clamps it and it scrolls like any other block — so a footer holding 248
+   entries loses the pin exactly when it grows, and covers the whole rail on the
+   way. The deeper reason is the rail's VIRTUALIZATION: railRowAt maps a scroll
+   offset to a row by floor((scrollTop - chrome) / pitch), so content of
+   arbitrary height anywhere in this track makes every offset below it name the
+   wrong row. The list is drawn in the canvas zone, which has no such
+   arithmetic. */
+.ig-rail-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ig-space-tight);
+  padding: var(--ig-space-tight) var(--ig-space);
+  border-top: var(--ig-stroke) solid var(--ig-line);
+  background: var(--ig-bg);
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-small);
+  line-height: var(--ig-line-height);
+  color: var(--ig-text-body);
+}
+
+.ig-rail-count {
+  color: var(--ig-text);
+}
+
+.ig-rail-isolated-toggle {
+  font: inherit;
+  color: var(--ig-accent);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.ig-rail-isolated-toggle:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-tight);
+}
+
+.ig-zone[data-zone='canvas'] {
+  grid-area: canvas;
+  overflow: auto;
+}
+
+/* §17f'S CAPTION, AND IT IS THE ZONE'S FIRST ROW. Frame 17a puts it above the
+   graph with a rule under it, which is the same shape the header row beside it
+   already has — so it takes that row's padding tokens rather than a bespoke
+   pair, and the two read as one band across the surface.
+
+   THE GROUND, NOT THE CARD COLOUR. --ig-surface is what a RAISED element takes
+   here: a bordered card, a button. This row is a full-bleed structural band, and
+   painting it the panel colour made it read as a card floating on the canvas —
+   which is also what the frame does not draw, and what the comment above it
+   claimed it was not. --ig-bg is the ground .ig-workspace itself paints and the
+   header row inherits, so the two really do match. It has to be OPAQUE either
+   way: the row is sticky over a scrolling graph and must occlude it.
+
+   IT DOES NOT SCROLL WITH THE CANVAS, deliberately. The zone scrolls (above),
+   and a caption saying "6 of 312 shown" that scrolls away is a caption you have
+   to go back for. A sticky position keeps it against the zone's top edge
+   without taking the graph out of the zone's own scroll. */
+.ig-canvas-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--ig-space-tight);
+  padding: var(--ig-space-tight) var(--ig-space);
+  border-bottom: var(--ig-stroke) solid var(--ig-line);
+  position: sticky;
+  top: 0;
+  background: var(--ig-bg);
+  z-index: 1;
+}
+
+/* MONO AND MUTED, because it is a read-out rather than a heading: the frame
+   sets it in the same mono face at the same muted hue as the rail's own footer
+   count, and the two are the same kind of fact. */
+.ig-canvas-caption {
+  margin: 0;
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-micro);
+  color: var(--ig-text-muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ITS OWN CLASS, NOT LAYER 1'S .ig-count. They look like the same thing and are
+   not: layer 1's is the isolated-issue tally that "sits directly on the panel,
+   outside the padded groups, so it carries the panel's own inset" — 12px 20px of
+   it. Borrowing the name put that inset around two numbers in the middle of a
+   sentence, which is what the frame comparison caught. */
+.ig-canvas-count {
+  color: var(--ig-text-body);
+  font-variant-numeric: tabular-nums;
+}
+
+/* THE CLAUSES DO NOT BREAK INTERNALLY. The caption is one line that ellipsizes
+   as a whole; what must not happen is a label parting from the key it names, or
+   a count parting from the word that says what it counts. */
+.ig-canvas-focus,
+.ig-canvas-shown {
+  white-space: nowrap;
+}
+
+/* PUSHED RIGHT BY ITS OWN MARGIN, NOT BY THE ROW'S JUSTIFICATION. The row's
+   arity changes: off the direct tier the caption is gone and the pill is the
+   only child, and justify-content: space-between puts a lone item at main
+   START — so the pill jumped to the left edge on exactly the tiers a large
+   backlog is always in, which is the state this surface exists to handle well.
+   margin-left: auto is one declaration that is correct at either arity, and it
+   is also what leaves #181's projection toggle a real slot: a control added
+   ahead of the caption lands in the left group without touching this rule.
+
+   THE TINT PAIR, NOT A BARE OUTLINE. The tint fill and tint border tokens
+   exist for exactly this — "a fill of its own hue inside a heavier border of
+   the same hue" — and the frame draws the pill that way. Reaching for the
+   accent directly would give a solid chip that reads as loud as the selection.
+
+   IT NEVER SHRINKS. The caption beside it is the part that may ellipsize; the
+   pill is three or four characters and losing them would leave a coloured stub
+   saying nothing. */
+.ig-edit-mode {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-pill);
+  letter-spacing: var(--ig-tracking-pill);
+  color: var(--ig-accent);
+  /* THE TINT TOKENS ARE PERCENTAGES, NOT COLOURS — 8% and 30% — so they are only
+     meaningful inside color-mix, which is how every other tinted badge in the
+     package consumes them. Handed straight to background and border-color they
+     are invalid, and an invalid declaration is DROPPED SILENTLY: the pill
+     rendered as bare cyan text with no fill and no border, and no test noticed
+     because nothing here was a hex literal. */
+  background: color-mix(in srgb, var(--ig-accent) var(--ig-tint-fill), transparent);
+  border: var(--ig-stroke) solid
+    color-mix(in srgb, var(--ig-accent) var(--ig-tint-border), transparent);
+  border-radius: var(--ig-radius-small);
+  padding: var(--ig-space-micro) var(--ig-space-snug);
+}
+
+/* ONE SCROLL TRACK, AND THE PANEL SHARES IT. §17d's findings panel is a sibling
+   of .ig-inspector here rather than a child, so it keeps its own padding and
+   reads as a peer of the selection rather than part of it — but the ZONE still
+   scrolls, exactly as it did before the panel existed.
+
+   A TWO-PANE VERSION WAS TRIED AND REVERTED, and the reason is recorded so it
+   is not tried again the same way. Making the zone a flex column with
+   overflow: hidden did give the audit and the selection independent scroll —
+   and it CLIPPED the mount's chrome, which mountWorkspace appends to this zone
+   as a third sibling: the target search's lower matches, the cancel button and
+   the key legend all lost the scrolling the zone used to give them. Any future
+   attempt has to treat the chrome as a pane too, and how these three share one
+   column is a design question rather than a CSS one. It is filed.
+
+   What that revert gives back is the known cost: a long audit pushes the
+   selection detail down this single track. That is a property this zone already
+   had — a long relationship list does the same — and the panel makes it easier
+   to reach rather than inventing it. */
+.ig-zone[data-zone='inspector'] {
+  grid-area: inspector;
+  overflow-y: auto;
+  border-left: var(--ig-stroke) solid var(--ig-line);
+}
+
+
+/* THE AMBIENT LEFT-BAR. A 2px gold rule on the affected row and nothing else —
+   no fill, no icon, no badge. §17a's whole ask is that encoding errors stay
+   visible while you work rather than pulling you out of it.
+
+   An inset box-shadow rather than a border: a border changes the row's box and
+   would shift every marked row against its neighbours, which is a layout jump
+   the eye reads as movement.
+
+   IT DREW A 330px CYAN BLOCK UNTIL #122, and the comment above it — unchanged
+   here because it was right — is how the defect survived. --ig-spine-width is
+   §16b's SPINE CARD WIDTH (330), not a stroke; the sentence "the width is the
+   theme's spine, so the bar scales with the rest of the rail" reads as a
+   scaling argument and is a token mix-up. --ig-accent is the cyan the panel
+   spends once on the number an operator acts on, and it is not the attention
+   colour. This rule is more specific than audit/styles.ts's correct one, so
+   it silently won.
+
+   AND ITS TEST PASSED THROUGHOUT. styles.test.ts matched the rule and
+   asserted it EXISTED; it never asserted what the declaration resolves to, so
+   it was green about a string rather than about a property. The test below it
+   now reads the values.
+
+   ONE TREATMENT FOR ALL FOUR SEVERITIES, which is also a correction. §17d
+   names exactly one ambient mark — "a 2px gold left-bar on the affected rail
+   row" — and puts the severity distinction in the findings list, which
+   audit/panel.ts now draws. (It read "which is host-side" until that panel
+   existed; the reasoning is unaffected — the distinction still belongs to the
+   list rather than to this bar — but the list is the package's now.)
+
+   The misleading variant this replaces gave the LEAST urgent
+   severity ("clearing is bookkeeping, not urgency") the alarm colour while
+   every other finding got cyan, inverting the design it came from. */
+.ig-zone[data-zone='rail'] [data-ig-audit] {
+  box-shadow: inset var(--ig-stroke-audit) 0 0 0 var(--ig-edge-serialize-with);
+}
+
+/* THE ROWS OUTSIDE THE WINDOW, AS HEIGHT. The rail scrolls, so without a spacer
+   at each end the container is exactly as tall as the drawn rows and native
+   scrolling stops at the end of the first window — leaving a host no offset to
+   turn into the next start, and a reader no way to reach rank 287 of 312.
+
+   NO BACKTICKS ANYWHERE IN THIS FILE'S COMMENTS. The stylesheet is a template
+   literal, so a backtick closes it — and the failure is a parse error pages
+   away from the character that caused it.
+
+   THE PITCH IS THE OUTER BOX, NOT THE ROW HEIGHT. A .ig-slot is
+   min-height: --ig-row-height PLUS margin-bottom: --ig-space-tight, so
+   row-to-row is the sum of the two. Sized on --ig-row-height alone, this
+   undercounted EVERY omitted row by the gap — 44 of a 50px pitch on the default
+   theme, so 300 omitted rows left the scroll extent 1,800px short and a host
+   dividing its scroll position by the measured pitch could reach about offset
+   264 of 300. The tail of the order became unreachable by the very mechanism
+   added to make it reachable.
+
+   That is a SYSTEMATIC undercount, not the approximation below, which is why it
+   is corrected exactly rather than tolerated: the gap is constant per row and
+   both terms are theme metrics.
+
+   --ig-rail-rows is the count, set inline by the renderer. What remains
+   approximate is only VARIABLE row height — a row carrying holds is taller than
+   a bare one — so the scrollbar stays proportional rather than exact. Measuring
+   that needs a mount, which this package does not have.
+
+   THE PITCH IS THE FLOOR ALONE NOW. Layer 1's section 16 pass separates its rows
+   with the panel's own hairlines instead of a margin — a row is
+   --ig-row-min-height of content and a hairline, with no gap to add — so the sum
+   this used to take double-counted a gap that is no longer there. The row is
+   content-sized above that floor, which is the same approximation the note above
+   already describes, at a slightly larger typical size. */
+.ig-rail-spacer {
+  height: calc(var(--ig-row-min-height) * var(--ig-rail-rows, 0));
+}
+
+.ig-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space);
+  padding: var(--ig-space);
+}
+
+/* TWO EMPTIES, ONE TREATMENT. "Nothing is selected" and "this issue is related
+   to nothing" are different facts and the panel states each in its own place —
+   but they are the same KIND of statement, a quiet line where content would be,
+   and giving them separate looks would suggest a distinction that is not
+   there. */
+.ig-inspector-empty,
+.ig-inspector-none {
+  margin: 0;
+  color: var(--ig-text-muted);
+  font-size: var(--ig-font-size-small);
+}
+
+/* The panel's heading row: the name at one end, the way out at the other.
+   Baseline-aligned rather than centred, so a heading in caps and a button in
+   sentence case sit on one line rather than on two optical ones. */
+.ig-inspector-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ig-space-tight);
+}
+
+.ig-inspector-issue {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+}
+
+.ig-inspector-title {
+  margin: 0;
+  font-size: var(--ig-font-size);
+  color: var(--ig-text);
+}
+
+.ig-inspector-holds {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+}
+
+/* The two hold families never share a treatment — layer 1's rule, carried
+   across so the inspector cannot contradict the rail it sits beside. */
+.ig-inspector-hold[data-family='graph'] {
+  color: var(--ig-station-held);
+}
+
+.ig-inspector-hold[data-family='tracker'] {
+  color: var(--ig-text-muted);
+}
+
+/* The holder, as a control: inline with the sentence that names it, drawn as
+   the same kind of button the relationship rows use so a reader learns one
+   affordance for "take me to that issue". */
+.ig-inspector-hold-subject {
+  margin-left: var(--ig-space-tight);
+  background: var(--ig-surface-2);
+  color: inherit;
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  padding: 0 var(--ig-space-tight);
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-small);
+  cursor: pointer;
+}
+
+.ig-inspector-hold-subject:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-tight);
+}
+
+.ig-inspector-relationships {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+}
+
+/* §17a PUTS '+ add' ON THE HEADING'S ROW, opposite the heading. The list
+   between them is unbounded, so a control after it drifts down the panel as a
+   subject gains relationships; here its position does not depend on content. */
+.ig-inspector-relationships-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ig-space-tight);
+}
+
+/* SECTION 17a DRAWS EVERY INSPECTOR HEADING IN CAPS -- WHY RANK 2,
+   RELATIONSHIPS, ADD RELATIONSHIP -- so the treatment is shared rather than
+   spelled per heading. Tracking widens with the caps because letterforms at a
+   small size need it; that is what --ig-tracking-label is for. */
+.ig-inspector-heading,
+.ig-inspector-name,
+.ig-why-rank-heading {
+  margin: 0;
+  font-size: var(--ig-font-size-small);
+  color: var(--ig-text-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--ig-tracking-label);
+}
+
+/* THE EXPLANATION, SECTION 17a's WHOLE POINT FOR THIS ZONE. The clauses are
+   inline spans so the block reads as one sentence rather than a list of
+   findings: the reader asked one question. */
+.ig-why-rank {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+}
+
+.ig-why-rank-sentence {
+  margin: 0;
+  color: var(--ig-text-body);
+}
+
+/* Each clause keeps a space after it so the sentence does not run together.
+   A margin rather than a literal space in the markup: the text is host-authored
+   and the package does not add characters to it. */
+.ig-why-rank-sentence > * + * {
+  margin-left: var(--ig-space-micro);
+}
+
+
+/* THE PANEL'S TWO QUIET BUTTONS SHARE ONE TREATMENT — clear and cancel. They
+   are the same affordance at two moments (leave this selection, abandon the
+   draft) and drawing them two ways would invent a hierarchy the design does
+   not state.
+
+   '+ add' WAS THE THIRD AND HAS LEFT THE SET, because frame 17a moved it and
+   redrew it: on the relationships header row it is unbordered accent text with
+   the key beside it, not a filled box. That is a hierarchy the design DOES
+   state — a header affordance reads differently from a control in the panel
+   body — so matching it here is following the frame rather than inventing a
+   difference. Its focus ring is still shared, below. The destructive controls are
+   deliberately NOT in this set: a row's '✕' is a glyph in the row's own slot,
+   and the mount's delete button carries its own danger treatment.
+
+   ALIGNMENT IS NOT PART OF THE TREATMENT, and putting it here was a silent
+   contradiction. 'align-self: flex-start' belongs to the two buttons in
+   '.ig-inspector-add', a COLUMN, where without it they stretch to the panel's
+   full width. The clear button sits in '.ig-inspector-head', a baseline row —
+   and 'align-self' beats the container's 'align-items', so it overrode the
+   baseline that rule's own comment says it is there to get. Declared where each
+   is true instead. */
+.ig-inspector-clear,
+.ig-inspector-cancel {
+  background: var(--ig-surface-2);
+  color: var(--ig-text-body);
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  padding: var(--ig-space-tight) var(--ig-space);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+  cursor: pointer;
+}
+
+.ig-inspector-clear:focus-visible,
+.ig-inspector-addbutton:focus-visible,
+.ig-inspector-cancel:focus-visible {
+  /* '+ add' keeps the shared focus ring though it left the shared fill: a
+     focus indicator is an accessibility guarantee, not a visual register. */
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-tight);
+}
+
+/* §17a's '+ add', AS THE FRAME DRAWS IT: accent text on the header row, no box.
+   It is a header affordance rather than a control in the panel body, and the
+   frame states that difference by removing the border and the fill rather than
+   by moving it alone. */
+.ig-inspector-addbutton {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--ig-space-micro);
+  background: none;
+  border: none;
+  border-radius: var(--ig-radius);
+  padding: 0;
+  color: var(--ig-accent);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+  cursor: pointer;
+}
+
+/* THE KEY, QUIETER THAN THE ACT IT NAMES. It is a hint about how to reach the
+   control, not part of the control's label, so it takes the muted tone the
+   panel gives every line that states a fact rather than offering an act.
+   UPPERCASED HERE, NEVER IN THE MARKUP: the binding table stores the lowercase
+   key a press normalizes to, and drawing 'R' is presentation. A second,
+   uppercase copy in the package would be the drift RELATE_KEY exists to end. */
+.ig-inspector-addkey {
+  color: var(--ig-text-muted);
+  font-family: var(--ig-font-mono);
+  text-transform: uppercase;
+}
+
+.ig-relationship-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+}
+
+/* IT WRAPS RATHER THAN TRUNCATES, which is '.ig-picker-direction''s rule
+   inherited along with §17b's statement. A qualified reference is long —
+   'owner/repo#602' — the inspector is a fixed 40-character track with no
+   horizontal scroll, and a row that cannot wrap pushes its trailing controls
+   out of the zone entirely. A statement whose object is cut off says something
+   other than what the format holds, and a flip a reader cannot reach is the
+   affordance this row exists to offer.
+
+   ON THE ROW AND ON THE STATEMENT BOTH. The row wraps so the slot and the flip
+   drop to a second line rather than overflow; '.ig-relationship-select' below
+   wraps so the reference pair does the same inside it. Wrapping one without the
+   other leaves the other overflowing. */
+.ig-relationship {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ig-space-tight);
+  align-items: baseline;
+  padding: var(--ig-space-tight);
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  background: var(--ig-surface);
+}
+
+/* HUE BY FIELD, ONCE, FOR EVERY ELEMENT THAT CARRIES 'data-edge'. From the
+   theme's own edge tokens — the same channel layer 1 uses — so a relationship
+   reads the same colour in the row and in the kind-list entry it was chosen
+   from as it does on the canvas. The refusal capsule is deliberately NOT in
+   this set: its whole border is the invalid state's dotted stroke, and a hue on
+   its left edge would overwrite the half of that a reader looks for first.
+
+   WRITTEN PER FIELD RATHER THAN FROM A 'data-edge'-KEYED TOKEN, because CSS has
+   no way to build 'var(--ig-edge-' + attr() + ')': 'attr()' is usable in
+   'content' and nowhere a custom property name is read. Five rules is the cost
+   of that, and the alternative the package rejected is a token per hue set
+   inline by the renderer, which moves a theme value into markup.
+
+   ONE SELECTOR LIST PER FIELD, AND THAT IS THE POINT OF THIS BLOCK. The kind
+   list arrived with a verbatim second copy of these five rules under
+   '.ig-kind-option' — same five fields, same five tokens — under a comment
+   claiming the file should not hold two ways of reading the theme while it
+   held the same way twice. A sixth field is now one line here, not two. */
+.ig-relationship[data-edge='blocked-by'],
+.ig-kind-option[data-edge='blocked-by'] {
+  border-left-color: var(--ig-edge-blocked-by);
+}
+
+.ig-relationship[data-edge='duplicate-of'],
+.ig-kind-option[data-edge='duplicate-of'] {
+  border-left-color: var(--ig-edge-duplicate-of);
+}
+
+.ig-relationship[data-edge='serialize-with'],
+.ig-kind-option[data-edge='serialize-with'] {
+  border-left-color: var(--ig-edge-serialize-with);
+}
+
+.ig-relationship[data-edge='together-with'],
+.ig-kind-option[data-edge='together-with'] {
+  border-left-color: var(--ig-edge-together-with);
+}
+
+.ig-relationship[data-edge='decomposed-from'],
+.ig-kind-option[data-edge='decomposed-from'] {
+  border-left-color: var(--ig-edge-decomposed-from);
+}
+
+/* THE DESCRIPTION'S BOX, WHETHER OR NOT A CONTROL IS WRAPPING IT. A row's head
+   is a button and a phantom capsule's is a plain span -- 'render.ts' withholds
+   the selector for an edge the landed document does not carry -- and the two
+   occupy the row identically: they fill it, so the reason wraps under them
+   rather than squeezing the reference out, and their parts sit on one baseline.
+   Declared once, so the capsule cannot come to sit differently from the row it
+   stands in for. */
+.ig-relationship-select,
+.ig-relationship-name {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ig-space-tight);
+  align-items: baseline;
+}
+
+/* The button fills its row, so the whole relationship is the hit target rather
+   than the words inside it. Transparent and borderless: the li already carries
+   the border and the hue, and a second box around it would read as two
+   controls. */
+.ig-relationship-select {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ig-relationship-select:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-tight);
+}
+
+/* The glyph and its word are one phrase, so they get their own gap rather than
+   inheriting the row's — which spaces the phrase from the reference beside it,
+   a wider relationship. NOT a literal space character in the markup: the word
+   is the vocabulary's and this package does not add characters to it, which is
+   the same rule the why-rank sentence's clauses are spaced by. */
+.ig-relationship-kind {
+  display: inline-flex;
+  gap: var(--ig-space-micro);
+  align-items: baseline;
+  color: var(--ig-text-body);
+}
+
+.ig-relationship-ref {
+  font-family: var(--ig-font-mono);
+  color: var(--ig-text-muted);
+}
+
+/* THE RIGHT-HAND SLOT, WHOSE THREE OCCUPANTS ARE EXCLUSIVE. Two of them are
+   statements and one is a control, and they are drawn as such: the state and
+   the inbound marker are quiet label text, the remove is a button.
+   '.ig-relationship-flip' below is NOT one of the three: it sits beside the
+   slot on the selected row, because it is neither a statement about the row nor
+   a destructive act on it. */
+.ig-relationship-state,
+.ig-relationship-inbound {
+  align-self: center;
+  color: var(--ig-text-muted);
+  font-size: var(--ig-font-size-small);
+  text-transform: uppercase;
+  letter-spacing: var(--ig-tracking-label);
+}
+
+/* The selected row names the state the canvas is drawing a halo for, so it
+   takes the focus hue rather than the muted one — one selection, one colour,
+   across the zones. */
+.ig-relationship-state[data-ig-state='selected'] {
+  color: var(--ig-focus);
+}
+
+/* A GLYPH BUTTON, SIZED BY ITS GLYPH. No border and no fill: the row already
+   carries a border, and a second box inside it would read as two controls —
+   the same reasoning '.ig-relationship-select' records. */
+.ig-relationship-remove {
+  align-self: center;
+  background: none;
+  border: none;
+  padding: 0 var(--ig-space-tight);
+  color: var(--ig-text-muted);
+  font-family: inherit;
+  font-size: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ig-relationship-remove:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-tight);
+}
+
+/* §17b's FLIP, AT THE ROW'S END. It is drawn last and needs no margin of its
+   own to get there: '.ig-relationship-select' above carries 'flex: 1', so the
+   statement takes the free space and everything after it is already pushed to
+   the end — which is where frame 17b draws this control. A 'margin-left: auto'
+   here would be inert, and a comment crediting it would be an explanation that
+   outlived the thing it explained.
+
+   A BORDERED CONTROL RATHER THAN THE REMOVE'S BARE GLYPH, which is the frame's
+   own distinction and not decoration: '✕' is a mark a reader recognises without
+   a box, and 'flip' is a word that would otherwise read as part of the sentence
+   it sits beside. The border is what says it is pressable.
+
+   ITS FOCUS RING IS NOT OPTIONAL, and it takes the offset the row's OTHER two
+   controls already use rather than the one it was born with. This rule came
+   from the picker's sheet, where the ring sat a hairline out;
+   '.ig-relationship-select' and '.ig-relationship-remove' share this row and
+   both ring at '--ig-space-tight', and one control ringing tighter than its
+   neighbours reads as a rendering fault rather than as a distinction. This is
+   the control §17b calls the guard against the most common encoding mistake; a
+   keyboard reader who cannot see where they are has it and not its affordance. */
+.ig-relationship-flip {
+  align-self: center;
+  background: var(--ig-surface);
+  color: var(--ig-text-body);
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  padding: 0 var(--ig-space-tight);
+  font-family: inherit;
+  font-size: var(--ig-font-size-small);
+  line-height: inherit;
+  cursor: pointer;
+}
+
+.ig-relationship-flip:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-tight);
+}
+
+/* A REFUSED EDIT, IN THE ROW IT WOULD HAVE BEEN. It borrows the ghost the
+   canvas draws for the same state — a dotted edge in the invalid hue — so the
+   line and the row a reader looks between are recognisably one fact.
+   NO OPACITY HERE. 'overlay/grammar.ts' holds the opacity every write state is
+   drawn at, on the record that a second copy would drift; what this sheet
+   contributes is the structure. */
+.ig-relationship-refused {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ig-space-tight);
+  align-items: baseline;
+  padding: var(--ig-space-tight);
+  border: var(--ig-stroke) dotted var(--ig-state-invalid);
+  border-radius: var(--ig-radius);
+  background: var(--ig-surface);
+}
+
+.ig-relationship-reason {
+  color: var(--ig-state-invalid);
+  font-size: var(--ig-font-size-small);
+}
+
+/* A REFUSAL ON A RELATIONSHIP THAT IS STILL THERE. The row stays — it names a
+   real edge and its remove control still works — so this marks it rather than
+   replacing it: the capsule's dotted stroke, and room for the reason to wrap
+   under the row rather than squeezing the reference out of it.
+   BORDER-STYLE ONLY, NOT BORDER-COLOR: the field's hue is on the left edge from
+   the block above, and a shorthand here would overwrite it and take the row's
+   one colour channel away on exactly the rows carrying the most information. */
+.ig-relationship[data-ig-code] {
+  flex-wrap: wrap;
+  border-style: dotted;
+}
+
+/* THE KIND STEP'S OWN BOX — the heading, the numbered list and the cancel that
+   withdraws from it.
+
+   IT NO LONGER HOLDS '+ add'. This box was once "one place the reader returns
+   to", holding whichever of the two create steps was live; frame 17a splits
+   them by zone, putting '+ add' on the relationships header row and leaving the
+   kinds here under a heading of their own. The two steps are still exclusive —
+   'createStep' answers one of them — but they are no longer drawn in one
+   place, so this rule is about the kind step alone. */
+.ig-inspector-add {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+}
+
+/* Sized by its own word rather than stretched across the column — see the
+   quiet-button rule above, which deliberately does not carry this.
+
+   '+ add' IS NO LONGER LISTED HERE, and dropping it was required rather than
+   tidy. This declaration is scoped to '.ig-inspector-add', a COLUMN; '+ add'
+   now sits in the relationships header, a ROW, where 'align-self' beats the
+   container's 'align-items' and would top-align the control against the
+   heading — the exact bug the '.ig-inspector-clear' comment above records
+   having already been fixed once. */
+.ig-inspector-cancel {
+  align-self: flex-start;
+}
+
+/* WHOSE DRAFT THIS IS, drawn only when it is not the panel's subject. Quiet and
+   small, like every other line that states a fact rather than offering an act:
+   it is a caption on the step below it, not a heading over it. The reference
+   inside keeps layer 1's '.ig-id' treatment, so the issue reads the same here
+   as it does in the why-rank sentence. */
+.ig-inspector-source {
+  margin: 0;
+  color: var(--ig-text-muted);
+  font-size: var(--ig-font-size-small);
+}
+
+.ig-kind-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-micro);
+}
+
+/* Full width, so the whole entry is the hit target.
+
+   THE DIGIT IS A CHIP AT THE ROW'S END, which is frame 17a's device and
+   REVERSES the placement #144 shipped. That decision was made in the same §17a
+   pass and with this frame available, so it is overturned on the merits rather
+   than as an oversight: what made the old left-hand column read as a set of
+   KEYS was vertical alignment, which a label long enough to wrap breaks, while
+   a bordered chip carries the key-cap signal on each row by itself and cannot
+   come apart. Reversing a same-campaign decision is called out on the pull
+   request so autnmy/issuegraph#147 rules rather than the implementer.
+
+   CENTRED, NOT BASELINE-ALIGNED. A chip has its own border and padding, so on a
+   baseline it sits low against the glyph and the label; the frame's row centres
+   all three. */
+.ig-kind-option {
+  width: 100%;
+  display: flex;
+  gap: var(--ig-space-tight);
+  align-items: center;
+  background: var(--ig-surface);
+  color: var(--ig-text-body);
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  padding: var(--ig-space-tight);
+  font-family: inherit;
+  font-size: var(--ig-font-size-small);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ig-kind-option:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-tight);
+}
+
+/* THE CHIP TAKES THE SLACK BEFORE IT, rather than the label being told to grow.
+   The label is drawn by layer 1's shared 'glyphAndLabel' and carries no class of
+   its own, so selecting it from here means selecting by exclusion — a rule that
+   silently stops matching the day that helper adds an element. An auto margin
+   is stated on the element this rule already owns, needs nothing of the label,
+   and puts the chip at the row's end whatever precedes it. */
+.ig-kind-digit {
+  flex: 0 0 auto;
+  margin-left: auto;
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  padding: 0 var(--ig-space-micro);
+  font-family: var(--ig-font-mono);
+  color: var(--ig-text-muted);
+}
+
+/* §17b's RECOVERY CARDS. An unsettled write the reader can still act on, drawn
+   where they made it.
+   THE HUE COMES FROM THE STATE, through the same custom properties the canvas
+   draws the line with — so a card and the edge it is about are recognisably one
+   fact, and a host retheming the palette moves both at once. The tokens are
+   named per state below rather than set once, because '--ig-state-failed' and
+   '--ig-state-conflict' are different channels and a shared variable here would
+   be a third place the pairing could drift.
+   NO OPACITY, for the reason the refusal capsule states: 'overlay/grammar.ts'
+   holds what each write state is drawn at, and this sheet contributes structure. */
+.ig-recovery-region {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+  margin-top: var(--ig-space);
+}
+
+.ig-recovery-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+}
+
+.ig-recovery {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+  padding: var(--ig-space-tight);
+  border-radius: var(--ig-radius);
+  background: var(--ig-surface);
+  border: var(--ig-stroke) solid var(--ig-line);
+}
+
+/* GHOST + THE ✕ THE CANVAS DRAWS. §17b gives a failed write a ghosted line with
+   a cross terminal; the card carries the same hue so the two read together. */
+.ig-recovery[data-ig-state='failed'] {
+  border-color: var(--ig-state-failed);
+  border-style: dashed;
+}
+
+/* THE GOLD DOUBLE RULE. §17b draws a conflict as a doubled line holding two
+   versions. 'border-style: double' is the card's half of that grammar — the
+   LINE's half is the 'second-version' mark, which needs a position this layer
+   does not have and is issue #102's. */
+.ig-recovery[data-ig-state='conflict'] {
+  border-color: var(--ig-state-conflict);
+  border-style: double;
+  border-width: calc(var(--ig-stroke) * 3);
+}
+
+.ig-recovery-name {
+  margin: 0;
+  font-size: var(--ig-font-size-small);
+  font-weight: 600;
+}
+
+.ig-recovery[data-ig-state='failed'] .ig-recovery-name {
+  color: var(--ig-state-failed);
+}
+
+.ig-recovery[data-ig-state='conflict'] .ig-recovery-name {
+  color: var(--ig-state-conflict);
+}
+
+.ig-recovery-reason,
+.ig-recovery-refresh-error {
+  margin: 0;
+  font-size: var(--ig-font-size-small);
+  color: var(--ig-text-muted);
+}
+
+.ig-recovery-refresh-detail {
+  font-family: var(--ig-font-mono);
+}
+
+/* THE THREE RESOLUTIONS, IN A ROW AND NEVER IN A MENU. §17b lists them as
+   peers; nesting one behind a disclosure would rank them, and the one that
+   would end up hidden is 'view diff' — the one that lets a reader decide
+   between the other two. */
+.ig-recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ig-space-tight);
+}
+
+.ig-recovery-action {
+  background: var(--ig-surface);
+  color: var(--ig-text-body);
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  padding: var(--ig-space-tight);
+  font-family: inherit;
+  font-size: var(--ig-font-size-small);
+  cursor: pointer;
+}
+
+.ig-recovery-action:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-tight);
+}
+
+.ig-recovery-action[aria-pressed='true'] {
+  border-color: var(--ig-focus);
+}
+
+/* TWO SIDES, SIDE BY SIDE, AND NOTHING BETWEEN THEM THAT COMBINES THEM. The
+   layout is the design constraint: there is no column for a merged result,
+   because there is no merged result to put in one. */
+.ig-recovery-diff {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+  padding-top: var(--ig-space-tight);
+  border-top: var(--ig-stroke) solid var(--ig-line);
+}
+
+/* ONE SIDE OF THE DIFFERENCE. Stacked rather than columned: at a panel's width
+   two columns give each side about half of an already narrow zone, and a
+   relationship row is a sentence rather than a cell. */
+.ig-recovery-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+}
+
+.ig-recovery-side-name {
+  margin: 0;
+  font-size: var(--ig-font-size-small);
+  color: var(--ig-text-muted);
+  font-weight: 400;
+}
+
+.ig-recovery-edges,
+.ig-recovery-issues {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+}
+
+.ig-recovery-edge,
+.ig-recovery-issue {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ig-space-tight);
+  align-items: baseline;
+  font-size: var(--ig-font-size-small);
+}
+
+/* BOTH TITLES, NEITHER STRUCK THROUGH. A strike-out would say the old one is
+   gone, which is exactly the judgement this card must not make for the reader. */
+.ig-recovery-was,
+.ig-recovery-now {
+  color: var(--ig-text-muted);
+}
+
+.ig-recovery-now {
+  color: var(--ig-state-conflict);
+}
+
+.ig-recovery-diff-empty {
+  margin: 0;
+  padding-top: var(--ig-space-tight);
+  border-top: var(--ig-stroke) solid var(--ig-line);
+  font-size: var(--ig-font-size-small);
+  color: var(--ig-text-muted);
+}
+
+/* §17c ON THE ROW: the tint, the third column, and the chip in place.
+
+   THE TINT IS DRAWN FROM AN ATTRIBUTE rather than from a class the row is
+   given, which is audit/surface.ts's precedent and its reason: layer 1 owns
+   the row's markup, so layer 2 says WHICH KIND and the stylesheet says what
+   that kind looks like. A row the edit did not touch carries no attribute at
+   all, so none of these rules can reach it, and "unaffected rows are left
+   completely alone" is structural rather than asserted.
+
+   THESE REACH LAYER 1'S OWN CLASSES, and that is a deliberate exception of
+   exactly the shape reevaluate/styles.ts already declares for the greyed rail:
+   only from INSIDE this surface's own root, and only for a state layer 1 does
+   not model. The viewer draws a row; whether the last edit moved that row is a
+   fact only the store knows, so the mark belongs to whoever knows it.
+
+   BOTH ROW SHAPES, because a delta can land on either. A ranked row is an
+   .ig-slot; an excluded one — the shape an issue takes when an edit turns it
+   into a duplicate — is an .ig-footer-row, and it is still navigable, so
+   reevaluateView still places its chip. An earlier revision listed .ig-slot
+   only, so a left row got its chip and its extended name and no ground.
+
+   EVERY VALUE deltaKind CAN EMIT, and that list is readiness, then a
+   movement's direction, then a presence: promoted, newly-held, up, down,
+   entered, left. An earlier revision keyed a rule on 'absent', which is not a
+   value this code has ever produced — presence is 'entered' | 'left' — so that
+   rule matched nothing while looking like the neutral case, and a left row
+   took the READY tint from the bare fallback below. Named exhaustively now
+   rather than defaulted, so a seventh value renders untinted rather than
+   wrong.
+
+   BACKGROUND-COLOR, NEVER THE SHORTHAND. the background shorthand resets background-image
+   to none, and layer 1 draws the HELD row's hatch as a repeating-linear-
+   gradient on exactly that property. These rules are more specific and load
+   after it, so the shorthand silently took the hatch off any row that was both
+   held and changed — which is not a corner: newly-held is the delta that
+   co-occurs with data-held='true' by definition, so the most common overlap
+   lost the held channel entirely. The longhand leaves the gradient alone.
+
+   COLOUR-MIX ON THE TOKEN THE KIND ALREADY NAMES, at the strength layer 1
+   tints its own rows with. Inventing --ig-row-promoted would put a hue in this
+   package that a host retheming the station colours could not move in step,
+   and inventing a percentage would make this tint drift from the unit tint
+   layer 1 draws with --ig-tint-unit. */
+.ig-workspace .ig-slot[data-ig-delta='promoted'],
+.ig-workspace .ig-slot[data-ig-delta='up'],
+.ig-workspace .ig-slot[data-ig-delta='entered'],
+.ig-workspace .ig-footer-row[data-ig-delta='promoted'],
+.ig-workspace .ig-footer-row[data-ig-delta='up'],
+.ig-workspace .ig-footer-row[data-ig-delta='entered'] {
+  background-color: color-mix(in srgb, var(--ig-station-ready) var(--ig-tint-unit), transparent);
+}
+
+.ig-workspace .ig-slot[data-ig-delta='newly-held'],
+.ig-workspace .ig-slot[data-ig-delta='down'],
+.ig-workspace .ig-footer-row[data-ig-delta='newly-held'],
+.ig-workspace .ig-footer-row[data-ig-delta='down'] {
+  background-color: color-mix(in srgb, var(--ig-station-held) var(--ig-tint-unit), transparent);
+}
+
+/* A row the edit took OUT of the order. Neutral rather than held: it is not
+   waiting on anything, it is simply no longer ranked. */
+.ig-workspace .ig-slot[data-ig-delta='left'],
+.ig-workspace .ig-footer-row[data-ig-delta='left'] {
+  background-color: color-mix(in srgb, var(--ig-text-muted) var(--ig-tint-unit), transparent);
+}
+
+/* THE THIRD COLUMN IS WHAT PUTS THE CHIP AT THE ROW'S TRAILING EDGE.
+
+   The frame draws the row as rank, body, chip — three columns, the last
+   sized to its content. Layer 1's own rule is a TWO-column grid, so a chip
+   appended as a third child wrapped onto an implicit second row and sat under
+   the rank. That was visible in the first capture of this pair, and it is why
+   this rule is a column template rather than a margin: in a grid, an auto
+   inline margin cannot move an item that is in the wrong row to begin with.
+
+   ONLY ON A ROW THAT HAS A CHIP, so a row with no delta keeps layer 1's own
+   template untouched. AND ONLY ON .ig-slot: a footer row is not that grid, so
+   naming it here would set a column template on a box that has none. */
+.ig-workspace .ig-slot[data-ig-delta] {
+  grid-template-columns: var(--ig-rank-column) 1fr auto;
+}
+
+/* A FOOTER ROW IS A FLEX BOX, NOT THE THREE-COLUMN GRID.
+
+   A ranked row reaches the trailing edge by the column template above. An
+   excluded or tracker-held row is layer 1's .ig-footer-row — display:flex —
+   so a chip appended to it simply follows the content it was appended after,
+   and the frame puts it at the row's end. An auto inline margin is the flex
+   idiom for that, and it is the right tool HERE for the same reason it was the
+   wrong one on the grid: it moves an item within its line, and on the grid the
+   item was in the wrong line to begin with. */
+.ig-workspace .ig-footer-row > .ig-delta-chip[data-placed] {
+  margin-inline-start: auto;
+}
+
+/* §17c's "write landed · order computing": the PREVIOUS order, held still and
+   greyed one step, with the label saying why.
+
+   THE SAME FILTER, for the reason reevaluate/styles.ts gives where it greys
+   .ig-reevaluate[data-order='held'] .ig-viewer: layer 1 sets color directly on
+   its own descendants, so an inherited colour greys almost nothing, and a list
+   of descendants to override goes stale the first time layer 1 colours
+   something new.
+
+   SCOPED TO THE RAIL ZONE, WHICH THE STANDALONE SURFACE DID NOT HAVE TO BE.
+   There, .ig-viewer is the rail and nothing else. The workspace draws a SECOND
+   viewer in the canvas zone, and greying that one is not a smaller version of
+   the same idea — it is the opposite of what the held state means. What is
+   stale is the ORDER; the canvas is drawing the write states #164 put there,
+   and pending, failed and conflict are told partly in hue. So an in-flight edit
+   would have stripped the colour channel off the very marks that say an edit is
+   in flight. The rail is the only surface whose ranks the store cannot vouch
+   for, so it is the only one greyed. */
+.ig-workspace[data-order='held'] .ig-zone[data-zone='rail'] .ig-viewer {
+  filter: grayscale(1);
+}
+
+ body{margin:0;background:#06090c;font-family:system-ui}
+ .cap{--cols:392px 392px;--areas:"rail canvas";--canvas:block;width:786px;width:392px;border:1px solid #1e2a33;margin:14px}
+ .cap{}
+ .lab{color:#7fd8f5;font:10px ui-monospace;padding:7px 12px;letter-spacing:.12em;text-transform:uppercase;border-bottom:1px solid #1e2a33}
+ .ig-workspace{height:500px;grid-template-columns:var(--cols,1fr)!important;grid-template-areas:var(--areas,"rail")!important}
+ .ig-zone[data-zone=inspector],.ig-zone[data-zone=header]{display:none}
+ .ig-zone[data-zone=canvas]{display:var(--canvas,none)}
+</style><div class=cap><div class=lab>shipped — control in the rail, list in the canvas</div><div class="ig-workspace" data-order="settled"><section class="ig-zone" data-zone="header"><div class="ig-workspace-header"></div><div class="ig-change-summary"><div class="ig-change-line" role="status"></div></div></section><section class="ig-zone" data-zone="rail"><section class="ig-viewer ig-linear" data-projection="linear" aria-label="issue order"><ol class="ig-list" aria-label="work order"><li class="ig-slot" data-ig-key="#488" data-held="false" data-unit="false" aria-current="false" aria-label="Extract session store adapter — #488 — rank 1" tabindex="0"><div class="ig-rank-cell" aria-hidden="true"><span class="ig-rank" data-held="false">1</span><span class="ig-station" data-fill="filled" role="img" aria-label="ready now"></span></div><div class="ig-row-body"><div class="ig-row-head"><span class="ig-title">Extract session store adapter</span><span class="ig-id">#488</span></div><div class="ig-badges"><span class="ig-badge" data-edge="blocked-by" data-ig-group="blocked-by|%23488|%23489" title="blocked by #489" aria-label="blocked by #489"><span class="ig-glyph" aria-hidden="true">⊘</span><span>blocked by #489</span></span></div></div></li><li class="ig-slot" data-ig-key="#489" data-held="false" data-unit="false" aria-current="false" aria-label="Token refresh drops the session on 401 — #489 — rank 2" tabindex="-1"><div class="ig-rank-cell" aria-hidden="true"><span class="ig-rank" data-held="false">2</span><span class="ig-station" data-fill="filled" role="img" aria-label="ready now"></span></div><div class="ig-row-body"><div class="ig-row-head"><span class="ig-title">Token refresh drops the session on 401</span><span class="ig-id">#489</span></div><div class="ig-badges"><span class="ig-badge" data-edge="blocked-by" data-ig-group="blocked-by|%23488|%23489" title="blocks #488" aria-label="blocks #488"><span class="ig-glyph" aria-hidden="true">⊘</span><span>blocks #488</span></span></div></div></li><li class="ig-slot" data-ig-key="#490" data-held="false" data-unit="false" aria-current="false" aria-label="Rate-limit backoff on the poller — #490 — rank 3" tabindex="-1"><div class="ig-rank-cell" aria-hidden="true"><span class="ig-rank" data-held="false">3</span><span class="ig-station" data-fill="filled" role="img" aria-label="ready now"></span></div><div class="ig-row-body"><div class="ig-row-head"><span class="ig-title">Rate-limit backoff on the poller</span><span class="ig-id">#490</span></div></div></li></ol><fieldset class="ig-legend"><legend class="ig-legend-caption">relationships</legend><span class="ig-legend-item"><svg width="34" height="10" aria-hidden="true"><line class="ig-edge" data-edge="blocked-by" x1="1" y1="5" x2="27" y2="5" /><path class="ig-terminal" data-edge="blocked-by" fill="currentColor" d="M27,2 L34,5 L27,8 z" /></svg><span class="ig-glyph" aria-hidden="true">⊘</span><span>blocked by</span></span><span class="ig-legend-item"><svg width="34" height="10" aria-hidden="true"><line class="ig-edge" data-edge="decomposed-from" x1="1" y1="5" x2="27" y2="5" stroke-dasharray="6 4" /><line class="ig-terminal" data-edge="decomposed-from" stroke="currentColor" x1="32" y1="1" x2="32" y2="9" /></svg><span class="ig-glyph" aria-hidden="true">⑃</span><span>decomposed from</span></span><span class="ig-legend-item"><svg width="34" height="10" aria-hidden="true"><line class="ig-edge" data-edge="duplicate-of" x1="1" y1="5" x2="27" y2="5" stroke-dasharray="1 3" /><circle class="ig-terminal" data-edge="duplicate-of" fill="none" stroke="currentColor" cx="31" cy="5" r="3" /></svg><span class="ig-glyph" aria-hidden="true">≡</span><span>duplicate of</span></span><span class="ig-legend-item"><svg width="34" height="10" aria-hidden="true"><line class="ig-edge" data-edge="serialize-with" x1="1" y1="3" x2="34" y2="3" /><line class="ig-edge" data-edge="serialize-with" x1="1" y1="7" x2="34" y2="7" /></svg><span class="ig-glyph" aria-hidden="true">⇄</span><span>serialized with</span></span><span class="ig-legend-item"><svg width="34" height="10" aria-hidden="true"><rect class="ig-enclosure" data-edge="together-with" x="1" y="1" width="32" height="8" rx="3" /></svg><span class="ig-glyph" aria-hidden="true">⧉</span><span>together with</span></span><span class="ig-legend-keys"><span class="ig-legend-item"><span class="ig-station" data-fill="filled" role="img" aria-label="ready now"></span><span>ready now</span></span><span class="ig-legend-item"><span class="ig-station" data-fill="hollow" role="img" aria-label="ready after an earlier rank"></span><span>ready after</span></span><span class="ig-legend-item"><span class="ig-station" data-fill="dashed" role="img" aria-label="held"></span><span>held</span></span></span></fieldset></section><div class="ig-rail-footer"><span><span class="ig-rail-count">1</span> <span>with no relationships</span></span><button type="button" class="ig-rail-isolated-toggle" aria-expanded="true" aria-controls="ig-isolated-list" data-ig-command="close-isolated">hide</button></div></section><section class="ig-zone" data-zone="canvas"><div class="ig-canvas-toolbar"><p class="ig-canvas-caption"><span class="ig-canvas-shown"><span class="ig-canvas-count">2</span> <span>of</span> <span class="ig-canvas-count">3</span> <span>drawn</span></span></p><span class="ig-edit-mode">edit mode</span></div><section class="ig-viewer ig-graph" data-projection="graph" aria-label="issue order and relationships"><div class="ig-stage" style="--ig-stage-w:1164px;--ig-stage-h:286px"><svg class="ig-canvas" viewBox="0 0 1164 286" aria-hidden="true"><line class="ig-spine" x1="411" y1="44" x2="411" y2="278" /><path class="ig-edge" data-edge="blocked-by" data-ig-group="blocked-by|%23488|%23489" d="M 436.00 250.75 Q 333.00 161.00 436.00 71.25" role="img" aria-label="#488 blocked by #489" /><path class="ig-terminal" data-edge="blocked-by" data-ig-group="blocked-by|%23488|%23489" transform="translate(436.00 71.25) rotate(-41.07)" d="M 0 0 L -9 -4 L -9 4 Z" fill="currentColor" /></svg><div class="ig-rail"><span class="ig-column-head" data-column="spine" style="--ig-col-x:436px">The work order ↓</span><ol class="ig-list" aria-label="work order"><li class="ig-rail-row" data-ig-key="#488" aria-current="false" aria-label="Extract session store adapter — #488 — rank 1" tabindex="0" style="--ig-row-x:436px;--ig-row-y:44px;--ig-row-w:330px;--ig-row-h:109px"><div class="ig-card" data-column="spine" data-held="false" data-now="false" data-unit="false"><div class="ig-row-head"><span class="ig-title">Extract session store adapter</span><span class="ig-id">#488</span></div><div class="ig-badges"><span class="ig-badge" data-edge="blocked-by" data-ig-group="blocked-by|%23488|%23489" title="blocked by #489" aria-label="blocked by #489"><span class="ig-glyph" aria-hidden="true">⊘</span><span>blocked by #489</span></span></div></div></li><li class="ig-rail-row" data-ig-key="#489" aria-current="false" aria-label="Token refresh drops the session on 401 — #489 — rank 2" tabindex="-1" style="--ig-row-x:436px;--ig-row-y:169px;--ig-row-w:330px;--ig-row-h:109px"><div class="ig-card" data-column="spine" data-held="false" data-now="false" data-unit="false"><div class="ig-row-head"><span class="ig-title">Token refresh drops the session on 401</span><span class="ig-id">#489</span></div><div class="ig-badges"><span class="ig-badge" data-edge="blocked-by" data-ig-group="blocked-by|%23488|%23489" title="blocks #488" aria-label="blocks #488"><span class="ig-glyph" aria-hidden="true">⊘</span><span>blocks #488</span></span></div></div></li></ol><span class="ig-spine-station" data-fill="filled" role="img" aria-label="rank 1" style="--ig-station-x:398px;--ig-station-y:56px">1</span><span class="ig-spine-station" data-fill="filled" role="img" aria-label="rank 2" style="--ig-station-x:398px;--ig-station-y:181px">2</span></div></div><fieldset class="ig-legend"><legend class="ig-legend-caption">relationships</legend><span class="ig-legend-item"><svg width="34" height="10" aria-hidden="true"><line class="ig-edge" data-edge="blocked-by" x1="1" y1="5" x2="27" y2="5" /><path class="ig-terminal" data-edge="blocked-by" fill="currentColor" d="M27,2 L34,5 L27,8 z" /></svg><span class="ig-glyph" aria-hidden="true">⊘</span><span>blocked by</span></span><span class="ig-legend-item"><svg width="34" height="10" aria-hidden="true"><line class="ig-edge" data-edge="decomposed-from" x1="1" y1="5" x2="27" y2="5" stroke-dasharray="6 4" /><line class="ig-terminal" data-edge="decomposed-from" stroke="currentColor" x1="32" y1="1" x2="32" y2="9" /></svg><span class="ig-glyph" aria-hidden="true">⑃</span><span>decomposed from</span></span><span class="ig-legend-item"><svg width="34" height="10" aria-hidden="true"><line class="ig-edge" data-edge="duplicate-of" x1="1" y1="5" x2="27" y2="5" stroke-dasharray="1 3" /><circle class="ig-terminal" data-edge="duplicate-of" fill="none" stroke="currentColor" cx="31" cy="5" r="3" /></svg><span class="ig-glyph" aria-hidden="true">≡</span><span>duplicate of</span></span><span class="ig-legend-item"><svg width="34" height="10" aria-hidden="true"><line class="ig-edge" data-edge="serialize-with" x1="1" y1="3" x2="34" y2="3" /><line class="ig-edge" data-edge="serialize-with" x1="1" y1="7" x2="34" y2="7" /></svg><span class="ig-glyph" aria-hidden="true">⇄</span><span>serialized with</span></span><span class="ig-legend-item"><svg width="34" height="10" aria-hidden="true"><rect class="ig-enclosure" data-edge="together-with" x="1" y="1" width="32" height="8" rx="3" /></svg><span class="ig-glyph" aria-hidden="true">⧉</span><span>together with</span></span><span class="ig-legend-keys"><span class="ig-legend-item"><span class="ig-station" data-fill="filled" role="img" aria-label="ready now"></span><span>ready now</span></span><span class="ig-legend-item"><span class="ig-station" data-fill="hollow" role="img" aria-label="ready after an earlier rank"></span><span>ready after</span></span><span class="ig-legend-item"><span class="ig-station" data-fill="dashed" role="img" aria-label="held"></span><span>held</span></span></span></fieldset></section><section class="ig-ladder" data-tier="direct"><div class="ig-ladder-isolated"><ol class="ig-isolated-list" id="ig-isolated-list" aria-label="isolated issues"><li><span class="ig-id">#490</span><span class="ig-title">Rate-limit backoff on the poller</span></li></ol></div></section></section><section class="ig-zone" data-zone="inspector"><div class="ig-inspector" data-subject="none"><div class="ig-inspector-head"><h2 class="ig-inspector-name">Inspector</h2></div><p class="ig-inspector-empty">Pick a row, a node or an edge to inspect it.</p><div class="ig-inspector-relationships" data-filtered="false"><div class="ig-inspector-relationships-head"><h3 class="ig-inspector-heading">Relationships</h3></div></div></div></section></div></div>
+<script>if(location.pathname.includes('open')){const l=document.querySelector('.ig-isolated-list');if(l)l.scrollIntoView({block:'nearest'});}</script>
