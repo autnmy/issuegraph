@@ -120,6 +120,43 @@ describe('the isolated chip opens a LIST', () => {
     const result = renderScaleLadder(documentOf({ components: [4] }));
     assert.equal(/ig-chip/.test(result.markup), false);
   });
+
+  /**
+   * A CALLER THAT DRAWS THE ROUTE ITSELF TURNS THIS COPY OFF. `searchFor` omits
+   * every isolated issue, so the chip is the only way to reach them FROM THE
+   * LADDER — which is why the option is contracted on the caller drawing the
+   * count, the toggle and the list somewhere else, and not on taste.
+   * `renderWorkspace` is that caller: §17a puts them at the foot of the rail.
+   */
+  it('suppresses its own chip for a caller that draws the route', () => {
+    const result = renderScaleLadder(document, { isolatedChip: false });
+    assert.equal(/ig-ladder-isolated/.test(result.markup), false);
+    assert.equal(/data-ig-command="open-isolated"/.test(result.markup), false);
+  });
+
+  it('is unchanged when the option is omitted or true', () => {
+    const bare = renderScaleLadder(document).markup;
+    assert.equal(renderScaleLadder(document, { isolatedChip: true }).markup, bare);
+  });
+
+  /**
+   * THE CHIP, AND NOTHING ELSE. Stated as a difference rather than as two
+   * separate absences: cutting the chip's own element out of the unsuppressed
+   * markup has to leave exactly the suppressed markup, so an option that also
+   * dropped the search box or the clear-focus button would fail here rather
+   * than pass two narrower assertions.
+   */
+  it('touches the chip and nothing else', () => {
+    const bare = renderScaleLadder(document).markup;
+    const suppressed = renderScaleLadder(document, { isolatedChip: false }).markup;
+    assert.notEqual(bare, suppressed, 'the option changed nothing at all');
+
+    const start = bare.indexOf('<div class="ig-ladder-isolated">');
+    assert.notEqual(start, -1, 'no chip to cut');
+    const end = bare.indexOf('</section>', start);
+    assert.notEqual(end, -1, 'the chip is not inside the chrome section');
+    assert.equal(bare.slice(0, start) + bare.slice(end), suppressed);
+  });
 });
 
 describe('search-to-focus, as a reader sees it', () => {

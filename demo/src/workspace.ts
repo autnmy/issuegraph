@@ -137,6 +137,19 @@ export const WORKSPACE_WORDS: MountWords = {
     shown: 'drawn',
     editMode: 'edit mode',
   },
+  // §17a'S RAIL FOOTER. OPTIONAL IN THE PACKAGE AND SUPPLIED HERE, on `canvas`'s
+  // reasoning: the vocabulary is optional so a host built before the footer
+  // keeps rendering, and the demo is where it is proved real. Supplying it also
+  // moves the isolated route out of the canvas ladder's chip and into the rail,
+  // so this member is what makes the demo draw §17a's rail rather than the
+  // ladder's own chrome — one count, one zone.
+  //
+  // `isolated` reads next to a number and never alone, like the canvas counts.
+  rail: {
+    isolated: 'with no relationships',
+    show: 'show',
+    hide: 'hide',
+  },
   // §17c's re-evaluate loop. OPTIONAL IN THE PACKAGE AND SUPPLIED HERE, which
   // is the whole point: the vocabulary is optional so a host built before §17c
   // keeps rendering, and the demo is the proof the feature is real — without

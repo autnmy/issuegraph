@@ -168,6 +168,92 @@ export const workspaceStylesheet = `
   border-right: var(--ig-stroke) solid var(--ig-line);
 }
 
+/* §17a'S RAIL FOOTER, AND IT IS THE ZONE'S LAST ROW. The frame ends the rail
+   with it; that it is PINNED is this sheet's decision, on the reasoning §17c
+   already settled one zone over — the rail is the scroller, mount.ts restores
+   its scrollTop on every redraw, and a fact placed in the scrolled content is a
+   fact you have to go back for. .ig-canvas-toolbar below pins itself against
+   the other edge for exactly this reason and is the shape copied here.
+
+   OPAQUE, BECAUSE IT OCCLUDES. Rows slide under it, so a transparent ground
+   would show the order through the count. That is also why the OPEN LIST IS NOT
+   IN HERE: an element taller than its scrollport cannot stick — the browser
+   clamps it and it scrolls like any other block — so a footer holding 248
+   entries loses the pin exactly when it grows, and covers the whole rail on the
+   way. .ig-rail-isolated-list is ordinary flow content instead. */
+.ig-rail-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ig-space-tight);
+  padding: var(--ig-space-tight) var(--ig-space);
+  border-top: var(--ig-stroke) solid var(--ig-line);
+  background: var(--ig-bg);
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-small);
+  line-height: var(--ig-line-height);
+  color: var(--ig-text-body);
+}
+
+.ig-rail-count {
+  color: var(--ig-text);
+}
+
+/* NO STICKY, NO MAX-HEIGHT, NO SCROLLER OF ITS OWN. The rail already scrolls,
+   and a second scroll track inside it is a box a reader has to notice before
+   they can reach its end. */
+.ig-rail-isolated-list {
+  margin: 0;
+  padding: 0 var(--ig-space) var(--ig-space-tight);
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-small);
+  line-height: var(--ig-line-height);
+  color: var(--ig-text-body);
+}
+
+/* A ROW PER ENTRY, WITH A GAP THE MARKUP DOES NOT SUPPLY. The element helper
+   concatenates its children with no whitespace between them, so the key and the
+   title render as one run of text unless the layout separates them. The ladder's
+   own list has the same shape and the same need. */
+.ig-rail-isolated-list li {
+  display: flex;
+  gap: var(--ig-space-tight);
+  align-items: baseline;
+  min-width: 0;
+}
+
+.ig-rail-isolated-list .ig-id {
+  color: var(--ig-text-muted);
+  flex: none;
+}
+
+.ig-rail-isolated-list .ig-title {
+  color: var(--ig-text-body);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ig-rail-isolated-toggle {
+  font: inherit;
+  color: var(--ig-accent);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.ig-rail-isolated-toggle:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-tight);
+}
+
 .ig-zone[data-zone='canvas'] {
   grid-area: canvas;
   overflow: auto;

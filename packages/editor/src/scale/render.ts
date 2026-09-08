@@ -115,6 +115,29 @@ export interface ScaleLadderOptions {
    * because `overlayFor` reads a list of states.
    */
   readonly projected?: readonly ProjectedEdge[] | undefined;
+  /**
+   * Whether this ladder draws its own isolated chip. Default `true`.
+   *
+   * SUPPRESS THIS ONLY IF YOU DRAW THE ROUTE YOURSELF — the count, the toggle
+   * AND the list. `searchFor` deliberately omits every issue with no component
+   * (`ladder.ts`, and the reasoning is recorded there), so the chip is the only
+   * way these issues are reachable from the ladder's own surface. What may
+   * never be optional is a route to them; this option says who draws it, not
+   * whether it exists.
+   *
+   * A BOOLEAN AMONG DATA-SHAPED OPTIONS, and it is one deliberately. Its three
+   * siblings hand this renderer a VALUE it could not otherwise know — what is
+   * selected, which edges are in flight. This one answers a different question:
+   * whether a caller has already drawn a control this renderer would otherwise
+   * draw. There is no value that carries that fact, because it is a fact about
+   * the caller's own markup.
+   *
+   * DEFAULT `true`, so a standalone ladder is unchanged. It has no rail to put
+   * a footer at the foot of, which is why the route lives in its chrome by
+   * default rather than by accident; `renderWorkspace` is the caller that has
+   * one, and §17a puts the count there.
+   */
+  readonly isolatedChip?: boolean | undefined;
 }
 
 export interface ScaleLadderResult {
@@ -313,7 +336,10 @@ export function renderScaleLadder(
         ),
     ladder.refusal === null ? null : refusalSpec(ladder.refusal, ladder),
     ladder.search === null ? null : searchSpec(ladder.search),
-    isolatedSpec(ladder.isolated),
+    // THE ROUTE, UNLESS THE CALLER DREW IT. See `ScaleLadderOptions.isolatedChip`
+    // for what a caller takes on by turning this off, and `ladder.ts`'s
+    // `searchFor` for why there has to be a route at all.
+    (options.isolatedChip ?? true) ? isolatedSpec(ladder.isolated) : null,
   ]);
 
   return {
