@@ -83,9 +83,20 @@ export const auditStylesheet = `
    flex: 0 1 auto against a sibling that claims the rest, so a long audit and a
    long selection cannot push each other off screen. workspace/styles.ts makes
    the zone the flex column this sits in; the share is declared here because
-   this sheet owns this class. */
+   this sheet owns this class.
+
+   THE MAX IS A FRACTION OF THE ZONE, AND flex ALONE WAS NOT ENOUGH. Both panes
+   shrink — this one at 0 1 auto, the inspector at 1 1 auto — and flexbox
+   removes negative space in proportion to each item's BASIS, which for auto is
+   its content. So twenty findings simply out-weighed the inspector and squeezed
+   it toward nothing; "the sibling claims the rest" was true of free space and
+   false of a shortfall. A percentage resolves here because the zone's grid row
+   is 1fr against a workspace of definite height, so half the column is a real
+   bound rather than a hopeful one, and the inspector is guaranteed the other
+   half whatever the audit found. */
 .ig-audit-panel {
   flex: 0 1 auto;
+  max-height: 50%;
   border-bottom: var(--ig-stroke) solid var(--ig-line);
   display: flex;
   flex-direction: column;
