@@ -179,4 +179,30 @@ export const reevaluateStylesheet = `
 .ig-delta-presence {
   color: var(--ig-text-muted);
 }
+
+/* THE PLACED CHIP IS NOT A LIST ITEM and does not lay out like one: it sits at
+   the end of its row, after whatever the row already drew, and it never grows
+   the row's height on its own.
+
+   WHAT PUTS IT AT THE TRAILING EDGE IS NOT HERE, and this comment claimed it
+   was. It named margin-inline-start: auto, which an earlier revision of this
+   rule did set and this one does not — the ranked row reaches the edge by
+   being given a third grid column in workspace/styles.ts instead, and the
+   footer row, which is a flex box rather than that grid, is pushed there by a
+   rule of its own beside it. Both live with the row shapes they are about;
+   what is left here is only what a placed chip looks like whatever it sits in.
+   The claim survived the change that falsified it, which is this codebase's
+   named failure mode and not a new one. */
+.ig-delta-chip[data-placed] {
+  display: inline-flex;
+  gap: var(--ig-space-tight);
+  align-items: baseline;
+  align-self: center;
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  padding: 0 var(--ig-space-tight);
+  background: var(--ig-surface-2);
+  font-size: var(--ig-font-size-small);
+}
+
 `;

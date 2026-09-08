@@ -238,6 +238,15 @@ const CHOOSER_SIZE = { width: 280, height: 220 };
 const DRAG_THRESHOLD = 6;
 
 const KEY_ATTRIBUTE = 'data-ig-key';
+
+/**
+ * §17c's change region, which is the one node this surface carries ACROSS a
+ * redraw rather than replacing.
+ *
+ * Matched on the role as well as the class: the class is a styling hook, and
+ * what has to be preserved is the live region specifically.
+ */
+const LIVE_REGION = '.ig-change-line[role="status"]';
 const GROUP_ATTRIBUTE = 'data-ig-group';
 const COMMAND_ATTRIBUTE = 'data-ig-command';
 /**
@@ -1357,6 +1366,20 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
 
     const result = renderWorkspace(viewer, {
       words: current.words,
+      // §17c's CAUSE AND EFFECT, STRAIGHT OFF THE SNAPSHOT. The store is the
+      // single source of truth for both — `lastChange` persists until the next
+      // edit or an explicit dismissal, and `dismissChange()` is already the
+      // only thing besides the next edit that clears it — so nothing about
+      // "has this been dismissed" is held out here. A second copy of that is
+      // exactly the drift the command grammar exists to avoid.
+      //
+      // `orderStatus` is the SAME value stamped on `surface` below. They cannot
+      // disagree because they are one read of one snapshot, and each is for a
+      // different reader: the attribute on `surface` is the host's, on the
+      // element the host holds; the option is the stylesheet's, on the root the
+      // renderer owns, so an unmounted rendering greys the held rail too.
+      change: snapshot.lastChange ?? null,
+      orderStatus: snapshot.order.status,
       selection: state.selection,
       scale: state.scale,
       rail: { start: state.railStart, count: railCount() },
@@ -1421,8 +1444,36 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     const focusedZone = isElement(active) ? (active.closest('.ig-zone')?.getAttribute('data-zone') ?? null) : null;
     drawn = { viewer, rail: result.view.rail };
 
+    // THE LIVE REGION HAS TO SURVIVE THE REDRAW, or it announces nothing.
+    //
+    // `summarySpec` mounts §17c's `role="status"` region ALWAYS and leaves it
+    // EMPTY until there is something to say, precisely because a status node
+    // that is created already carrying its text is not reliably announced —
+    // the region has to exist first and then have its contents change. This
+    // function replaces the whole subtree on every redraw, so rendering that
+    // region into the markup and stopping there would destroy it and insert a
+    // new, already-populated one every time: the affordance present, correct
+    // in the markup, and inert. Worse than absent, because it looks done.
+    //
+    // So the ELEMENT is carried across: re-attached still holding the previous
+    // summary, and only then given the new one. The insertion says nothing and
+    // the mutation is what announces, which is the sequence the region was
+    // designed around.
+    const liveBefore = surface.querySelector<HTMLElement>(LIVE_REGION);
+
     // Package-rendered markup, escaped by the package.
     surface.innerHTML = result.markup;
+
+    const liveAfter = surface.querySelector<HTMLElement>(LIVE_REGION);
+    if (liveBefore !== null && liveAfter !== null) {
+      const next = liveAfter.innerHTML;
+      liveAfter.replaceWith(liveBefore);
+      // GUARDED, so a redraw that did not touch the summary is not a change to
+      // announce. Every keystroke in the ladder's search box redraws this
+      // surface, and re-assigning identical content would re-announce the last
+      // edit's result on each one.
+      if (liveBefore.innerHTML !== next) liveBefore.innerHTML = next;
+    }
     // THE ORDER'S STATUS, PUBLISHED AS DATA. A write in flight holds the order
     // — it does not move until the edit lands — and a host that wants to say
     // so has nowhere to read it once the snapshot is consumed here. The

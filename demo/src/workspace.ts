@@ -37,7 +37,6 @@ import {
   type WorkspaceHandle,
   type WorkspaceProjection,
   mountWorkspace,
-  summaryOf,
 } from '@issuegraph/editor';
 import type { EdgeKind, Store, StoreSnapshot, WriteRecord } from '@issuegraph/store';
 import { type Theme, defaultTheme, extendTheme } from '@issuegraph/viewer';
@@ -119,6 +118,39 @@ const FIRST_PASS_WORDS: FirstPassWords = {
 
 /** The words the packages refuse to invent. */
 export const WORKSPACE_WORDS: MountWords = {
+  // §17c's re-evaluate loop. OPTIONAL IN THE PACKAGE AND SUPPLIED HERE, which
+  // is the whole point: the vocabulary is optional so a host built before §17c
+  // keeps rendering, and the demo is the proof the feature is real — without
+  // these words a landed edit draws no summary, no dismiss control, no row
+  // chips and no held-order label, and the loop would ship dark on the one
+  // surface anyone can actually try.
+  //
+  // Worded for a reader rather than for a log: each facet has to read on its
+  // own AND after a number, because `ChangeWords.facets` words both the summary
+  // line and the per-row chips.
+  change: {
+    facets: {
+      moved: 'moved',
+      promoted: 'promoted',
+      'newly-held': 'newly held',
+      entered: 'entered the order',
+      left: 'left the order',
+    },
+    unchanged: 'That edit landed and moved nothing.',
+    // NOT "your edit is saved", WHICH THIS STATE DOES NOT MEAN. `held` is
+    // `anyPending(records)`, and `dispatch` reserves the record as `pending`
+    // and publishes BEFORE it drains — so this sentence is on screen while the
+    // adapter can still reject, throw or come back with a conflict. Telling a
+    // reader their edit is saved and then showing them a failure card is the
+    // one thing the §17b recovery states exist to avoid.
+    //
+    // The frame's own title reads "write landed · order computing", and that is
+    // the frame being about a state the store does not have: nothing publishes
+    // "landed, still recomputing". So this words what `held` actually is.
+    computing: 'Your edit is on its way. The order below is the previous one until it lands.',
+    dismiss: 'dismiss',
+    direction: { up: 'up', down: 'down' },
+  },
   // §17a's header: `312 open · 64 encoded` and `as of 14:32 ↻`. The numbers are
   // the package's and these are the nouns beside them.
   asOf: 'as of',
@@ -532,17 +564,15 @@ export function mountSandbox(
   const renderWrites = (snapshot: StoreSnapshot): void => {
     writes.replaceChildren();
     const unsettled = snapshot.writes.filter((record) => UNSETTLED.has(record.state));
-    if (snapshot.order.status === 'held') {
-      writes.append(el('p', { class: 'order-status order-status-held' }, ['order held — a write is in flight, and the order does not move until it lands']));
-    }
-    const change = snapshot.lastChange;
-    if (change !== undefined) {
-      const summary = summaryOf(change);
-      const text = summary.unchanged
-        ? 'the last write landed and the order did not change'
-        : `the last write landed: ${summary.parts.map((part) => `${String(part.count)} ${part.facet}`).join(', ')}`;
-      writes.append(el('p', { class: 'change' }, [text, ' ', button('dismiss', 'dismiss-change', { class: 'chrome-button chrome-quiet chrome-inline' })]));
-    }
+    // THE ORDER'S STATUS AND THE LAST CHANGE ARE THE WORKSPACE'S NOW, and they
+    // used to be drawn here as well. Supplying `words.change` gave the mount
+    // §17c, so this panel was restating both: two summaries and two
+    // `dismiss-change` buttons for one edit — and this section is
+    // `aria-live="polite"`, so a screen reader heard the result twice.
+    //
+    // #135's rule, one zone over: each host fact is stated in exactly one
+    // place. This log keeps what the workspace does NOT draw — the unsettled
+    // records with their §17b recovery controls — and nothing else.
     if (unsettled.length === 0) return;
     const list = el('ul', { class: 'writes-list' });
     for (const record of unsettled) {
