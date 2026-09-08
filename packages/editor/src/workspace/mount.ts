@@ -1548,7 +1548,15 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         // Re-inserted rather than re-rendered: the row is already assembled,
         // and rebuilding it here would be a second place that decides what it
         // says.
-        if (toolbar !== null) canvas.prepend(toolbar);
+        //
+        // ONLY IF IT STILL HAS CONTENT, which is `canvasToolbar`'s own rule —
+        // "nothing to say, no row" — and removing the caption above is exactly
+        // what can empty it. A host that words the caption and not the pill
+        // gets a caption-only row on the direct tier, and prepending its
+        // emptied husk here left a sticky padded band with a border and no
+        // content over the tree. Reading the element rather than re-deriving
+        // the condition keeps the rule in one place.
+        if (toolbar !== null && toolbar.childElementCount > 0) canvas.prepend(toolbar);
         const states = new Map(
           overlaysFor(viewer.edges, writeStates, selectedEdgeId(state.selection)).map((edge) => [edge.id, overlayFor(edge).attribute]),
         );

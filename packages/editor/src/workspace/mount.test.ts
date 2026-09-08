@@ -773,6 +773,31 @@ describe('mountWorkspace', () => {
       assert.ok(row()?.querySelector('.ig-canvas-caption') !== null, 'the caption did not come back');
     });
 
+    /**
+     * THE ROW'S OWN RULE, ON THE PATH THAT CAN BREAK IT. `canvasToolbar` refuses
+     * to draw a row with neither half in it; the tree branch removes the caption
+     * after the fact, so a host that worded the caption and not the pill had its
+     * row emptied and then re-inserted — a sticky padded band with a border and
+     * nothing inside. The rule lives in one place and this is the other path to
+     * it.
+     */
+    it('drops the row entirely when the caption was its only content', async () => {
+      const { editMode: _editMode, ...captionOnly } = WORKSPACE_WORDS.canvas ?? {
+        focus: '',
+        of: '',
+        shown: '',
+      };
+      page.handle.destroy();
+      page = await mounted(SEED, { words: { ...WORDS, canvas: captionOnly } });
+      const row = () => page.element.querySelector('[data-zone="canvas"] .ig-canvas-toolbar');
+      assert.ok(row() !== null, 'the caption-only row was never drawn');
+      assert.equal(row()?.querySelector('.ig-edit-mode') ?? null, null, 'the fixture worded a pill');
+
+      page.handle.update({ canvas: 'tree' });
+      await flush();
+      assert.equal(row(), null, 'an empty bordered band was left over the tree');
+    });
+
     it('marks a pending edge and the selected edge on their badges', async () => {
       page.handle.update({ canvas: 'tree' });
       await flush();
