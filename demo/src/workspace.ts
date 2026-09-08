@@ -37,7 +37,6 @@ import {
   type WorkspaceHandle,
   type WorkspaceProjection,
   mountWorkspace,
-  summaryOf,
 } from '@issuegraph/editor';
 import type { EdgeKind, Store, StoreSnapshot, WriteRecord } from '@issuegraph/store';
 import { type Theme, defaultTheme, extendTheme } from '@issuegraph/viewer';
@@ -540,17 +539,15 @@ export function mountSandbox(
   const renderWrites = (snapshot: StoreSnapshot): void => {
     writes.replaceChildren();
     const unsettled = snapshot.writes.filter((record) => UNSETTLED.has(record.state));
-    if (snapshot.order.status === 'held') {
-      writes.append(el('p', { class: 'order-status order-status-held' }, ['order held — a write is in flight, and the order does not move until it lands']));
-    }
-    const change = snapshot.lastChange;
-    if (change !== undefined) {
-      const summary = summaryOf(change);
-      const text = summary.unchanged
-        ? 'the last write landed and the order did not change'
-        : `the last write landed: ${summary.parts.map((part) => `${String(part.count)} ${part.facet}`).join(', ')}`;
-      writes.append(el('p', { class: 'change' }, [text, ' ', button('dismiss', 'dismiss-change', { class: 'chrome-button chrome-quiet chrome-inline' })]));
-    }
+    // THE ORDER'S STATUS AND THE LAST CHANGE ARE THE WORKSPACE'S NOW, and they
+    // used to be drawn here as well. Supplying `words.change` gave the mount
+    // §17c, so this panel was restating both: two summaries and two
+    // `dismiss-change` buttons for one edit — and this section is
+    // `aria-live="polite"`, so a screen reader heard the result twice.
+    //
+    // #135's rule, one zone over: each host fact is stated in exactly one
+    // place. This log keeps what the workspace does NOT draw — the unsettled
+    // records with their §17b recovery controls — and nothing else.
     if (unsettled.length === 0) return;
     const list = el('ul', { class: 'writes-list' });
     for (const record of unsettled) {
