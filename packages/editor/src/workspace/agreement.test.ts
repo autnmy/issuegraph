@@ -291,7 +291,7 @@ describe('the inspector names the subject layer 1 draws as current', () => {
       const { stationOf } = renderViewer(document, { projection: 'linear' }).scene;
       for (const issue of sound.issues) {
         const station = stationOf.get(issue.key) ?? issue.key;
-        const subject = inspectorView(document, { kind: 'issue', key: issue.key }).subject;
+        const subject = inspectorView(document, { kind: 'issue', keys: [issue.key] }).subject;
         assert.equal(subject.kind, 'issue', `selecting ${issue.key} resolved to nothing`);
         if (subject.kind !== 'issue') continue;
         assert.equal(
@@ -317,7 +317,7 @@ describe('the inspector offers no edge layer 1 dropped', () => {
         sound.edges.map((edge) => edgeIdentity(edge.field, edge.from, edge.to)),
       );
       for (const issue of sound.issues) {
-        for (const relationship of inspectorView(document, { kind: 'issue', key: issue.key })
+        for (const relationship of inspectorView(document, { kind: 'issue', keys: [issue.key] })
           .relationships) {
           assert.ok(
             kept.has(relationship.edgeId),
@@ -369,7 +369,7 @@ describe('the workspace zones name one subject', () => {
       for (const issue of sound.issues) {
         const result = renderWorkspace(document, {
           words: WORKSPACE_WORDS,
-          selection: { kind: 'issue', key: issue.key },
+          selection: { kind: 'issue', keys: [issue.key] },
           rail: { start: 0, count: Math.max(total, 1) },
         });
         const current = currentRailKey(result.markup);

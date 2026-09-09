@@ -340,13 +340,37 @@ export { firstPassStylesheet } from './firstpass/styles.ts';
 
 
 export {
+  type SelectedIssues,
   type SelectionCommand,
   type WorkspaceSelection,
   INITIAL_SELECTION,
+  isMultiSelection,
   selectedEdgeId,
   selectedKey,
+  selectedKeys,
   selectionReducer,
 } from './workspace/selection.ts';
+
+// §17e's multi-select bulk path. The batch model was already published; what
+// joins it here is the lifecycle around it and the vocabulary it is worded in.
+export {
+  type AnchorSource,
+  type BulkCommand,
+  type BulkOffer,
+  type BulkPhase,
+  type BulkResult,
+  type BulkState,
+  BULK_OFFERS,
+  INITIAL_BULK,
+  bulkReducer,
+  offerFor,
+  resumeSend,
+  sendBatch,
+} from './workspace/bulk.ts';
+
+export { type BulkCounts, type BulkWords } from './firstpass/bulk-words.ts';
+
+export { type KeyedMark, type MarkLookup, markKeyed, marksOf } from './marks.ts';
 
 export {
   type FirstPassCommand,

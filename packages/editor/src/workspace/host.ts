@@ -28,7 +28,7 @@
  */
 
 import { type EdgeField, edgeIdentityEnd, isEdgeField } from '@issuegraph/core';
-import type { EdgeId, GraphDocument, MutationId, Proposal, StoredEdge, StoredIssue } from '@issuegraph/store';
+import type { EdgeId, GraphDocument, IssueRef, MutationId, Proposal, StoredEdge, StoredIssue } from '@issuegraph/store';
 import { findEdge } from '@issuegraph/store';
 
 import { type CreateDraft, IDLE_CREATE_DRAFT, createReducer } from '../create/draft.ts';
@@ -44,6 +44,16 @@ import {
   INITIAL_FIRST_PASS,
   firstPassReducer,
 } from './firstpass.ts';
+import type { BatchSettlement } from '../firstpass/batch.ts';
+import {
+  type BulkResult,
+  type BulkState,
+  INITIAL_BULK,
+  bulkReducer,
+  offerFor,
+  resumeSend,
+  sendBatch,
+} from './bulk.ts';
 import {
   INITIAL_SELECTION,
   type WorkspaceSelection,
@@ -67,6 +77,8 @@ export interface HostState {
   readonly drop: Point | null;
   /** The first-pass surface: shut, scanning, failed, or holding a queue. */
   readonly firstPass: FirstPassState;
+  /** §17e's multi-select block: idle, offering, planned, refused, writing, partial, landed. */
+  readonly bulk: BulkState;
   /**
    * Which conflicted write has its held document on show, if any.
    *
@@ -96,6 +108,7 @@ export const INITIAL_HOST_STATE: HostState = Object.freeze({
   drag: null,
   drop: null,
   firstPass: INITIAL_FIRST_PASS,
+  bulk: INITIAL_BULK,
   diffOpen: null,
 });
 
@@ -132,13 +145,44 @@ export type HostCommand =
    * back out. The controls that DO arrive as attributes still come through
    * `control`, and both routes end in the same arm below.
    */
-  | { readonly kind: 'first-pass'; readonly command: FirstPassCommand };
+  | { readonly kind: 'first-pass'; readonly command: FirstPassCommand }
+  /**
+   * Every write in a batch has settled.
+   *
+   * A VALUE COMMAND rather than a `control`, for the reason the first-pass arm
+   * beside it gives: a settlement list is a LIST, and flattening it into an
+   * attribute for the shell to parse back out would be a second encoding of a
+   * value that never went near the DOM. The shell holds the proposals against
+   * their mutation ids and reports them here — see `mount.ts`.
+   */
+  | { readonly kind: 'batch-settled'; readonly settlements: readonly BatchSettlement[] }
+  /**
+   * Plan the chosen offer over these members.
+   *
+   * A VALUE COMMAND, AND THE MEMBERS COME FROM THE RENDER. Canonicalizing a
+   * `together-with` partner onto its slot's lead is a fact about the ORDER, and
+   * this reducer is handed the store's `GraphDocument`, which carries issues
+   * and edges and no slots. `WorkspaceView.bulkMembers` is where the one layer
+   * that holds them answers, and `mountWorkspace` passes it through.
+   */
+  | { readonly kind: 'bulk-confirm'; readonly members: readonly IssueRef[] };
 
 /** What the shell performs against the store after reducing. */
 export type HostEffect =
   | {
       readonly kind: 'propose';
       readonly proposal: Proposal;
+      /**
+       * This write is one arm of a §17e batch.
+       *
+       * ON THE EFFECT, NOT INFERRED FROM THE PHASE. A shell that decided
+       * "this result is a batch" by reading `bulk.phase === 'writing'` would
+       * adopt every OTHER write proposed while a batch is in flight — a
+       * first-pass apply, an ordinary `+ add` — into the batch's settlement
+       * set, and the batch would then wait on writes it never sent and count
+       * their failures as its own. Only `dispatchBatch` sets it.
+       */
+      readonly batch?: true | undefined;
       /**
        * The issue this edit is about, answered ONCE — here, and never again.
        *
@@ -456,7 +500,7 @@ function drafted(
     // could never reach its target search. One selection, and it is the
     // draft's subject — the same rule the canvas drop already applies.
     const selection: WorkspaceSelection =
-      command.kind === 'begin' ? { kind: 'issue', key: command.source } : state.selection;
+      command.kind === 'begin' ? { kind: 'issue', keys: [command.source] } : state.selection;
     // A CANCEL CLEARS THE DRAFT'S CHROME TOO — the drop point a canvas chooser
     // was placed at and the query typed into the target search — exactly as
     // the explicit cancel control does. Escape reaches here through the key
@@ -606,6 +650,35 @@ function pickerProposal(
   return view.options.find((option) => option.kind === choice.field && !option.current)?.proposal ?? null;
 }
 
+/**
+ * Send a batch's proposals, and move the block to `writing`.
+ *
+ * ONE `propose` EFFECT PER PROPOSAL, through the list `HostResult.effects`
+ * already is — a batch is N ordinary writes, not a new kind of write, and
+ * giving it its own effect arm would be a second path to the store for the
+ * store to keep consistent with the first.
+ *
+ * THE CARRIER IS THE ISSUE WHOSE BODY THE WRITE EDITS, which for a `create` is
+ * its `from` end. `HostEffect.carrier` is documented as "the issue this edit is
+ * about, answered ONCE" precisely because a refusal arrives long after the act
+ * and the document may no longer hold the answer; a star's arms all touch the
+ * anchor, so reading it from the anchor would name one issue for every write
+ * and put every refusal on one panel.
+ */
+function dispatchBatch(state: HostState, result: BulkResult, document: GraphDocument): HostResult {
+  if (result.proposals.length === 0) return settled({ ...state, bulk: result.state });
+  return {
+    state: { ...state, bulk: result.state },
+    effects: result.proposals.map((proposal) => ({
+      kind: 'propose' as const,
+      proposal,
+      carrier: editCarrier(document, proposal),
+      batch: true as const,
+    })),
+    claimed: true,
+  };
+}
+
 function controlled(
   state: HostState,
   name: string,
@@ -673,6 +746,41 @@ function controlled(
     }
     case 'dismiss-change':
       return { state, effects: [{ kind: 'dismiss-change' }], claimed: true };
+    // --- §17e's multi-select block ---
+    case 'extend-issue':
+      return target === undefined
+        ? settled(state)
+        : settled({
+            ...state,
+            selection: selectionReducer(state.selection, { kind: 'extend-issue', key: target }),
+            // A SET IS NOT A DRAFT'S SUBJECT. `createReducer`'s draft names one
+            // source, so extending the selection past one issue abandons it
+            // rather than leaving a draft pointing at whichever row happened to
+            // be first — the same discipline `selectEdge` keeps one arm up.
+            draft: IDLE_CREATE_DRAFT,
+            targetQuery: '',
+            drop: null,
+          });
+    case 'choose-offer': {
+      const offer = target === undefined ? undefined : offerFor(target);
+      return offer === undefined
+        ? settled(state)
+        : settled({ ...state, bulk: bulkReducer(state.bulk, { kind: 'choose-offer', offer }).state });
+    }
+    case 'bulk-target':
+      return settled({
+        ...state,
+        // AN EMPTY BOX IS `null`, NOT `''`. `bulk.ts` reads a `null` target as
+        // "the reader has not picked yet" and leaves the confirm undrawn; an
+        // empty string would be a target the batch would then try to anchor on.
+        bulk: bulkReducer(state.bulk, { kind: 'set-target', target: value === undefined || value === '' ? null : value }).state,
+      });
+    case 'send-batch':
+      return dispatchBatch(state, sendBatch(state.bulk), document);
+    case 'resume-batch':
+      return dispatchBatch(state, resumeSend(state.bulk), document);
+    case 'bulk-dismiss':
+      return settled({ ...state, bulk: bulkReducer(state.bulk, { kind: 'dismiss' }).state });
     case 'add': {
       // THE CONTROL'S OWN SUBJECT FIRST, AND THE SELECTION AS THE FALLBACK —
       // the same one rule the `delete` arm below states, for the same reason.
@@ -800,6 +908,18 @@ function intended(state: HostState, intent: KeyIntent, document: GraphDocument):
 
 /** The one reducer. `document` is the landed document, for edge lookups. */
 export function reduceHost(state: HostState, command: HostCommand, document: GraphDocument): HostResult {
+  const result = reduceCommand(state, command, document);
+  // ONE CHOKE POINT, NOT ONE GUARD PER ARM. Eight arms replace the selection,
+  // and a rule copied into each of them is a rule that is short by one the day
+  // a ninth is added — `RENDERED_CONTROLS` records this package paying for that
+  // exact failure twice. Asked of the ANSWER instead: whichever arm ran, if the
+  // selection moved, an offer chosen for the old set is stale.
+  return result.state.selection === state.selection
+    ? result
+    : { ...result, state: { ...result.state, bulk: bulkAfterSelectionChange(result.state.bulk) } };
+}
+
+function reduceCommand(state: HostState, command: HostCommand, document: GraphDocument): HostResult {
   switch (command.kind) {
     case 'point':
       return pointed(state, command.key, document);
@@ -818,6 +938,16 @@ export function reduceHost(state: HostState, command: HostCommand, document: Gra
       return controlled(state, command.name, command.target, command.value, document);
     case 'first-pass':
       return firstPassed(state, command.command, document);
+    case 'bulk-confirm':
+      return settled({
+        ...state,
+        bulk: bulkReducer(state.bulk, { kind: 'confirm', members: command.members }).state,
+      });
+    case 'batch-settled':
+      return settled({
+        ...state,
+        bulk: bulkReducer(state.bulk, { kind: 'settle', settlements: command.settlements }).state,
+      });
     case 'intent':
       return intended(state, command.intent, document);
     case 'scroll':
@@ -893,6 +1023,57 @@ export function reduceHost(state: HostState, command: HostCommand, document: Gra
  * capsule already records by publishing no `select-edge` — there is nothing
  * there to select.
  */
+/**
+ * The selection with every name the document no longer holds taken out.
+ *
+ * REBUILT BY NARROWING, never by a cast: `filter` answers a plain array, and
+ * `SelectedIssues` is a non-empty tuple, so the destructure is what proves the
+ * remainder still names an issue. A set that empties falls back to nothing
+ * selected, which is the same answer a single unknown key has always produced.
+ *
+ * An edge selection is returned untouched — its resolution is the caller's
+ * concern above, and this function is only about issue names.
+ */
+function reconcileSelection(
+  selection: WorkspaceSelection,
+  known: ReadonlySet<string>,
+): WorkspaceSelection {
+  if (selection.kind !== 'issue') return selection;
+  const [head, ...rest] = selection.keys.filter((key) => known.has(key));
+  if (head === undefined) return INITIAL_SELECTION;
+  // IDENTITY IS PRESERVED WHEN NOTHING WAS DROPPED, because `reconcileHost`
+  // compares `selection === state.selection` to decide whether to return the
+  // same state object. A fresh tuple on every render would make that check
+  // always false and re-render the workspace on every reconcile.
+  return rest.length + 1 === selection.keys.length ? selection : { kind: 'issue', keys: [head, ...rest] };
+}
+
+/**
+ * A bulk phase that has NOT yet dispatched anything, reset.
+ *
+ * THE SELECTION IS THE BATCH'S SUBJECT, so changing it invalidates an offer
+ * chosen for the old one. Without this a reader could select six issues, plan
+ * the batch, select a seventh — or drop one — and press send: the plan on
+ * screen is the OLD membership, `BatchPlan.count` states the old number, and
+ * the writes that go out are about issues the header no longer names. That is
+ * the confirm lying about what it is doing, which is the one property §17e
+ * asks this surface for.
+ *
+ * `writing`, `partial` and `landed` are left ALONE, and the asymmetry is the
+ * point: those describe writes that already went out. A selection change cannot
+ * un-send them, and dropping a `partial` would silently discard a remainder the
+ * reader is owed — losing a relationship, which `batch.ts` names as the failure
+ * its fail-safe direction exists to prevent.
+ */
+export function bulkAfterSelectionChange(state: BulkState): BulkState {
+  return state.phase.kind === 'idle' ||
+    state.phase.kind === 'offering' ||
+    state.phase.kind === 'planned' ||
+    state.phase.kind === 'refused'
+    ? INITIAL_BULK
+    : state;
+}
+
 export function reconcileHost(
   state: HostState,
   document: GraphDocument,
@@ -908,13 +1089,21 @@ export function reconcileHost(
         : hidden.has(edge.id)
           ? selectionReducer(INITIAL_SELECTION, { kind: 'select-issue', key: carrierOf(edge) })
           : state.selection;
-  const issueKey = selectedKey(resolved);
   const known = new Set(document.issues.map((issue) => issue.ref));
   // ASKED OF `resolved`, NOT OF `state.selection`. The carrier above is read
   // off an edge, and an edge can name an issue the document does not list;
   // asking the question of the selection that came IN would let that one
   // through unchecked, which is the stale name this function exists to refuse.
-  const selection = issueKey !== null && !known.has(issueKey) ? INITIAL_SELECTION : resolved;
+  //
+  // AND ASKED OF EVERY KEY, NOT OF THE ANCHOR. This read `selectedKey` — the
+  // anchor alone — which still typechecks under a selection that names a set
+  // and is silently wrong for it: members 2..N survived after the issues they
+  // name had left the document, so the bulk block counted and wrote against
+  // names nothing resolves. That contradicts `selection.ts`'s own rule, that a
+  // selection which no longer resolves renders as nothing selected. The
+  // compiler cannot find this one, because dropping members is not a type
+  // error.
+  const selection = reconcileSelection(resolved, known);
   const draftStands =
     (state.draft.source === null || known.has(state.draft.source)) &&
     (state.draft.target === null || known.has(state.draft.target));
@@ -922,6 +1111,19 @@ export function reconcileHost(
   return {
     ...state,
     selection,
+    // AND THE SAME INVALIDATION `reduceHost` APPLIES, because this is the OTHER
+    // way a selection moves. That one wraps the command path; reconciliation is
+    // a separate entry point the shell calls on every store notification, so a
+    // guard that reached only the first left the second exposed: a sibling
+    // write or a refresh that removes a selected issue updated the visible
+    // selection here while `bulk.phase` kept the plan built over the old
+    // membership. The block would then count the reconciled set and `send-batch`
+    // would dispatch the old `BatchPlan` — including a write for the issue that
+    // had just left the document.
+    //
+    // ONE RULE, TWO ENTRY POINTS, and the rule itself lives in one function so
+    // the two cannot come to disagree about which phases survive.
+    ...(selection === state.selection ? {} : { bulk: bulkAfterSelectionChange(state.bulk) }),
     ...(draftStands ? {} : { draft: IDLE_CREATE_DRAFT, targetQuery: '', drop: null }),
   };
 }

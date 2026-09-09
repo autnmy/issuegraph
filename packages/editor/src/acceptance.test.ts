@@ -15,9 +15,12 @@ import {
 import { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET, labelFrom, treatmentFor } from '@issuegraph/viewer';
 
 import * as surface from './index.ts';
+import { BULK_OFFERS } from './workspace/bulk.ts';
+import { BULK_WORDS } from './testing/bulk.ts';
 import { componentKey, componentsSumming, documentOf } from './testing/documents.ts';
 import { OBJECT, PICKER_WORDS, SUBJECT, documentWith, onlyEdge } from './testing/picker.ts';
 import { WORDS, editOf, orderOf, railOf, railRow, ranks } from './testing/reevaluate.ts';
+import { backlogOf } from './testing/workspace.ts';
 
 /**
  * The scale ladder's "done when", executable.
@@ -547,6 +550,50 @@ describe('done when: no English sentence is constructed inside the package', () 
       PICKER_WORDS.current,
     ]);
     const readable = [...markup.matchAll(/>([^<>]*)</g)]
+      .map((match) => (match[1] ?? '').trim())
+      .filter((text) => text !== '');
+    assert.ok(readable.length > 0);
+    assert.deepEqual(readable.filter((text) => !allowed.has(text)), []);
+  });
+
+  it('accounts for every readable byte of §17e\'s bulk block', () => {
+    // THE BLOCK GETS ITS OWN CASE BECAUSE NOTHING ELSE COVERS IT. This
+    // assertion is an allowlist written per surface, so a new zone drawing new
+    // text is invisible to every existing one — and `purity.test.ts` and
+    // `agreement.test.ts`, the two suites it would be natural to assume cover
+    // this, read no English at all.
+    const document = backlogOf(12);
+    const { markup } = renderWorkspace(document, {
+      words: {
+        ...WORKSPACE_WORDS,
+        bulk: BULK_WORDS,
+        selectionMember: (position, total) => `marked ${String(position)} of ${String(total)}`,
+        selectionAnchor: (total) => `heads ${String(total)} marked`,
+      },
+      selection: { kind: 'issue', keys: ['i0002', 'i0003', 'i0004'] },
+    });
+
+    const block = markup.slice(markup.indexOf('class="ig-bulk"'));
+    const allowed = new Set([
+      BULK_WORDS.selected(3),
+      BULK_WORDS.gesture,
+      // DRAWN HERE BECAUSE THIS DOCUMENT HAS NO FOCUS, so the canvas narrows to
+      // nothing and marks none of the three. That the line appears at all is
+      // the block reporting a real disagreement rather than hiding it.
+      BULK_WORDS.notShown(3),
+      // THE CLEAR CONTROL IS THE PANEL'S, so its word is `WorkspaceWords`' and
+      // not `BulkWords`' — one control, one word, whichever surface draws it.
+      WORKSPACE_WORDS.clearSelection,
+      // OVER THE OFFERS, NOT OVER EVERY FIELD. §17e offers three of the five,
+      // so an allowlist built from `EDGE_FIELDS` would silently permit words
+      // for the two this surface refuses to put on a bulk path.
+      ...BULK_OFFERS.map((offer) => BULK_WORDS.offer[offer.kind](3)),
+      ...BULK_OFFERS.map((offer) => BULK_WORDS.consequence[offer.kind]),
+      // THE GLYPHS ARE LAYER 1'S, and they are the grammar rather than prose —
+      // `treatmentFor` owns the four redundant channels this borrows one of.
+      ...BULK_OFFERS.map((offer) => treatmentFor(offer.kind).glyph),
+    ]);
+    const readable = [...block.matchAll(/>([^<>]*)</g)]
       .map((match) => (match[1] ?? '').trim())
       .filter((text) => text !== '');
     assert.ok(readable.length > 0);

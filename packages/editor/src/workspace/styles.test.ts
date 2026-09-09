@@ -102,8 +102,8 @@ const RAIL_WORDS = { isolated: 'carrying no edges', show: 'reveal', hide: 'fold 
 
 const RENDERS = [
   renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS }),
-  renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, selection: { kind: 'issue', key: 'i0005' } }),
-  renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, selection: { kind: 'issue', key: 'i0001' } }),
+  renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, selection: { kind: 'issue', keys: ['i0005'] } }),
+  renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, selection: { kind: 'issue', keys: ['i0001'] } }),
   renderWorkspace(DOCUMENT, {
     words: WORKSPACE_WORDS,
     selection: { kind: 'edge', edgeId: 'blocked-by|i0001|i0002' },
@@ -176,20 +176,20 @@ const RENDERS = [
       },
       cycles: [],
     },
-    { words: WORKSPACE_WORDS, selection: { kind: 'issue', key: 'i0005' } },
+    { words: WORKSPACE_WORDS, selection: { kind: 'issue', keys: ['i0005'] } },
   ),
   // AN ISSUE ON THE RECEIVING END OF TWO DIRECTED EDGES. `i0006` is the `to` of
   // the duplicate and the decomposition, so this is the only render that draws
   // the inbound marker — and the inbound row is also the one that draws NO
   // remove control, so without it the slot's two exclusive occupants are never
   // both on screen.
-  renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, selection: { kind: 'issue', key: 'i0006' } }),
+  renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, selection: { kind: 'issue', keys: ['i0006'] } }),
   // THE CREATE PATH'S SECOND STEP. `+ add` is drawn by the render above; the
   // numbered kind list needs a live draft with no kind chosen yet, which no
   // render reaches by selecting alone.
   renderWorkspace(DOCUMENT, {
     words: WORKSPACE_WORDS,
-    selection: { kind: 'issue', key: 'i0001' },
+    selection: { kind: 'issue', keys: ['i0001'] },
     draft: { source: 'i0001', target: null, kind: null },
   }),
   // THE SAME STEP UNDER A PANEL THAT IS NOT ITS SOURCE. A draft can outlive the
@@ -198,7 +198,7 @@ const RENDERS = [
   // reached by no other render here.
   renderWorkspace(DOCUMENT, {
     words: WORKSPACE_WORDS,
-    selection: { kind: 'issue', key: 'i0003' },
+    selection: { kind: 'issue', keys: ['i0003'] },
     draft: { source: 'i0001', target: null, kind: null },
   }),
   // A REFUSED EDIT, IN THE ROW IT WOULD HAVE BEEN. The capsule replaces a row
@@ -207,7 +207,7 @@ const RENDERS = [
   // all rather than a reason attached to the row.
   renderWorkspace(DOCUMENT, {
     words: WORKSPACE_WORDS,
-    selection: { kind: 'issue', key: 'i0001' },
+    selection: { kind: 'issue', keys: ['i0001'] },
     refusals: [{ edgeId: 'blocked-by|i0001|i0002', code: 'would-cycle', carrier: 'i0001', phantom: true }],
   }),
   // AND THE OTHER SHAPE OF THE SAME FACT. A refusal about an edge that EXISTS
@@ -215,7 +215,7 @@ const RENDERS = [
   // (`.ig-relationship[data-ig-code]`) that no other render here reaches.
   renderWorkspace(DOCUMENT, {
     words: WORKSPACE_WORDS,
-    selection: { kind: 'issue', key: 'i0001' },
+    selection: { kind: 'issue', keys: ['i0001'] },
     refusals: [{ edgeId: 'blocked-by|i0001|i0002', code: 'duplicate-edge', carrier: 'i0001', phantom: false }],
   }),
   // §17b's TWO RECOVERY CARDS, WITH THE DIFFERENCE OPEN. Both states at once
@@ -225,7 +225,7 @@ const RENDERS = [
   // which is exactly what this suite refuses.
   renderWorkspace(DOCUMENT, {
     words: WORKSPACE_WORDS,
-    selection: { kind: 'issue', key: 'i0001' },
+    selection: { kind: 'issue', keys: ['i0001'] },
     diffOpen: 'm-conflict',
     recoveries: [
       {
@@ -276,7 +276,7 @@ const RENDERS = [
   // and the card says so rather than opening onto a blank.
   renderWorkspace(DOCUMENT, {
     words: WORKSPACE_WORDS,
-    selection: { kind: 'issue', key: 'i0001' },
+    selection: { kind: 'issue', keys: ['i0001'] },
     diffOpen: 'm-elsewhere',
     recoveries: [
       {
@@ -294,7 +294,7 @@ const RENDERS = [
   // reaches that heading.
   renderWorkspace(DOCUMENT, {
     words: WORKSPACE_WORDS,
-    selection: { kind: 'issue', key: 'i0001' },
+    selection: { kind: 'issue', keys: ['i0001'] },
     recoveries: [
       {
         kind: 'failed',

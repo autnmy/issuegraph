@@ -51,17 +51,14 @@
 
 import {
   type Adoption,
-  type AttrValue,
   type ElementSpec,
   type EdgeTreatment,
   type Freshness,
   type HostFacts,
   type NormalizedHostFacts,
-  type SpecChild,
   type Theme,
   type ViewerDocument,
   type ViewerHold,
-  KEY_ATTRIBUTE,
   element,
   glyphAndLabel,
   hiddenGlyph,
@@ -94,7 +91,12 @@ import { type CreateDraft, IDLE_CREATE_DRAFT } from '../create/draft.ts';
 import { KIND_KEYS, RELATE_KEY } from '../create/keys.ts';
 import type { Point } from '../create/placement.ts';
 import { type OverlayAffordance, OVERLAY_TREATMENTS, treatmentForState } from '../overlay/grammar.ts';
+import { type BulkInput, bulkSpec } from '../firstpass/bulk.ts';
+import { type BulkPhase, phaseMembers, staleAgainst } from './bulk.ts';
+import { bulkStylesheet } from '../firstpass/bulk-styles.ts';
+import type { BulkWords } from '../firstpass/bulk-words.ts';
 import { DELTA_ATTRIBUTE, chipSpec, deltaKind, summarySpec, textOf } from '../reevaluate/parts.ts';
+import { type MarkLookup, markKeyed, marksOf } from '../marks.ts';
 import { reevaluateStylesheet } from '../reevaluate/styles.ts';
 import { type PlacedChip, reevaluateView } from '../reevaluate/view.ts';
 import type { ChangeWords } from '../reevaluate/words.ts';
@@ -123,8 +125,10 @@ import { type ConflictDiff, diffIsEmpty, diffWithin } from './recovery.ts';
 import {
   type WorkspaceSelection,
   INITIAL_SELECTION,
+  isMultiSelection,
   selectedEdgeId,
   selectedKey,
+  selectedKeys,
 } from './selection.ts';
 import { workspaceStylesheet } from './styles.ts';
 
@@ -135,6 +139,28 @@ export const ZONES = Object.freeze(['header', 'rail', 'canvas', 'inspector'] as 
 export type Zone = (typeof ZONES)[number];
 
 export interface WorkspaceWords {
+  /**
+   * §17e's multi-select vocabulary, plus the two clauses a marked row says.
+   *
+   * OPTIONAL, AND ITS ABSENCE DRAWS NO BLOCK — the same contract `change`
+   * holds one field below, for the same reason: the package decides what to
+   * say and the host decides how, so there is no default English to fall back
+   * on. Without it a set still SELECTS (the reducer is unconditional) and the
+   * inspector keeps drawing the anchor's panel.
+   */
+  readonly bulk?: BulkWords | undefined;
+  /**
+   * What a rail row says about being in the set, appended to its own name.
+   *
+   * `WorkspaceWords` RATHER THAN `BulkWords`, because the clause is stamped by
+   * this renderer's own keyed walk onto a row layer 1 drew — it never reaches
+   * the inspector block, and `BulkWords` is that block's vocabulary. Two
+   * clauses rather than one so a reader can hear which row is the anchor: for
+   * the two symmetric offers the anchor is the issue the batch leaves unedited,
+   * which is not a detail a reader should have to infer from click order.
+   */
+  readonly selectionMember?: ((position: number, total: number) => string) | undefined;
+  readonly selectionAnchor?: ((total: number) => string) | undefined;
   /**
    * §17c's vocabulary — the change summary's facets, its dismiss control and
    * its direction words.
@@ -708,6 +734,29 @@ export interface WorkspaceOptions {
    */
   readonly orderStatus?: OrderStatus | undefined;
   readonly selection?: WorkspaceSelection | undefined;
+  /**
+   * The §17e bulk block's phase, when a set is selected.
+   *
+   * HELD BY THE CALLER, like every other lifecycle in this renderer: the
+   * workspace is pure, the phase is `bulkReducer`'s, and `host.ts` is what
+   * composes the two. Absent renders the block at `idle`, which is the three
+   * offers and nothing else.
+   */
+  readonly bulk?: BulkPhase | undefined;
+  /**
+   * The rail row the reader's focus is on, for the roving tab stop.
+   *
+   * SEPARATE FROM THE SELECTION, and threading it is what §17e's `⇧↓` needs.
+   * Layer 1 draws `tabindex="0"` from `focused` and falls back to `selected`
+   * when no caller supplies one (`viewer/src/scene.ts`) — so on a set the tab
+   * stop snapped back to the ANCHOR after every extension, while the reader's
+   * actual focus was three rows further down. One `tabindex="0"` at any
+   * cardinality is what keeps the stop and the focus the same row.
+   *
+   * Absent keeps layer 1's fallback, which is right for a caller that does not
+   * track focus at all.
+   */
+  readonly focused?: string | undefined;
   /** The ladder's reader position — search, focus, opened isolates. */
   readonly scale?: ScaleState | undefined;
   /** Which slice of the order the rail draws. See {@link railWindow}. */
@@ -847,6 +896,22 @@ export interface WorkspaceView {
    * asked for.
    */
   readonly auditFiltered: boolean;
+  /**
+   * §17e's batch members: the selection canonicalized to slot leads.
+   *
+   * PUBLISHED BECAUSE THE SHELL CANNOT DERIVE IT. See the assembly site — the
+   * canonicalization is a fact about the ORDER, and the store's document has no
+   * slots. Empty whenever no block is drawn.
+   */
+  readonly bulkMembers: readonly string[];
+  /**
+   * The mark lookup this render stamped a set with, or `null` for no set.
+   *
+   * FOR A CALLER THAT DRAWS A ZONE ITSELF. `mountWorkspace`'s tree canvas is
+   * its own `renderViewer` call, and a second lookup built out there would be
+   * the second spelling of a decision this function already made.
+   */
+  readonly selectionMarks: MarkLookup | null;
 }
 
 export interface WorkspaceResult {
@@ -1122,83 +1187,82 @@ interface RowDelta {
   readonly kind: string | undefined;
 }
 
-function markRail(
-  root: ElementSpec,
+/**
+ * The attribute a row or node carries while it is one member of a SET.
+ *
+ * STAMPED ONLY WHEN THE SELECTION IS A SET, and absent otherwise — the same
+ * rule `DELTA_ATTRIBUTE` records: an attribute on every row with one value
+ * meaning "nothing" is not leaving the row alone, it is marking it, and a
+ * host stylesheet would then have to know which value means absent. A single
+ * selection is already fully described by layer 1's `aria-current`.
+ *
+ * IT DOES NOT REPLACE `aria-current`, and cannot. `linear.ts` records that the
+ * rows are a plain `ol` of `li` rather than a listbox, deliberately, because an
+ * interactive descendant inside `role="option"` is a pattern violation real
+ * screen readers and axe both flag — so selection is announced with
+ * `aria-current`, which names THE current item and is therefore wrong on six
+ * rows at once. The anchor keeps it; every member says its membership in its
+ * own accessible name instead.
+ */
+export const SELECTED_ATTRIBUTE = 'data-ig-selected';
+
+/**
+ * The rail's decorations, as one lookup over the shared keyed walk.
+ *
+ * THE TRAVERSAL MOVED TO `marks.ts` WHEN §17e ADDED THE THIRD DECORATION, and
+ * the reason is the reason it was already shared between the first two: a
+ * multi-selection marks rows in the RAIL and nodes on the CANVAS, two roots
+ * drawn by two renderers, and a walk written twice is two spellings of one
+ * traversal whose failure mode is the exact thing this workspace is built to
+ * prevent — two zones disagreeing about what is selected.
+ *
+ * What stayed here is what is specific to a rail ROW: which attribute each
+ * decoration stamps, and that the delta chip is also spoken in the row's name.
+ */
+function railMarks(
   severityOf: (key: string) => AuditSeverity | undefined,
   deltaOf: (key: string) => RowDelta | undefined,
-): ElementSpec {
-  // TYPED AS `ElementSpec -> ElementSpec` AT THE BOUNDARY, with the child walk
-  // kept inside. A single function over `SpecChild` would hand `renderMarkup` a
-  // union it does not take, and the obvious repair — casting the result back —
-  // is the one this repository bans outright. The narrowing belongs where the
-  // string case actually lives.
-  const markChild = (child: SpecChild): SpecChild =>
-    typeof child === 'string' ? child : markSpec(child);
-
-  function markSpec(spec: ElementSpec): ElementSpec {
-    const key = spec.attrs?.[KEY_ATTRIBUTE];
-    // A KEY IS A STRING OR IT IS NOT A KEY. `AttrValue` admits numbers and
-    // booleans, and `String(true)` would look up a row named "true" — which
-    // resolves to nothing today and to something the day a host names an issue
-    // that. Narrowed rather than coerced.
-    const severity = typeof key === 'string' ? severityOf(key) : undefined;
-    const delta = typeof key === 'string' ? deltaOf(key) : undefined;
-    const walked = spec.children?.map(markChild);
-    // THE CHIP IS APPENDED TO THE ROW, WHICH IS WHY IT IS DRAWN HERE AND NOT
-    // IN A MOUNT. §17c puts the effect in place — "only affected rows carry a
-    // delta chip · unaffected rows are left completely alone" — and
-    // `reevaluate/render.ts` deferred that to "the change that assembles the
-    // workspace" on the ground that placing a chip needs the row's geometry.
-    // It does not: the row is a SPEC here, keyed and reachable, and this walk
-    // was already composing one decoration onto it. So the chip is composed
-    // like the audit's mark rather than positioned like an overlay, and no
-    // geometry is consulted at all.
-    //
-    // AN UNAFFECTED ROW IS RETURNED WITH ITS OWN `children` ARRAY, not a
-    // rebuilt one carrying an appended `null` — `deltaOf` answering `undefined`
-    // has to leave the row byte-identical, which is the design's rule made
-    // structural rather than asserted.
-    const chip = delta === undefined ? null : chipSpec(delta.chip, delta.words, { placed: true });
-    const children = chip === null ? walked : [...(walked ?? []), chip];
-    const marked: Record<string, AttrValue> = { ...spec.attrs };
-    if (severity !== undefined) marked[AUDIT_SEVERITY_ATTRIBUTE] = severity;
-    // THE CHIP IS IN THE ROW'S NAME, OR IT IS SILENT.
-    //
-    // Layer 1 gives the row an `aria-label`, and an accessible name computed
-    // from `aria-label` WINS over descendant text — so a chip appended here is
-    // seen and not heard. The rail is the surface a reader arrows through, and
-    // "which row moved, and by how much" is exactly what §17c puts on the row;
-    // the summary above carries aggregate counts and cannot recover it.
-    //
-    // APPENDED TO THE NAME rather than hung off `aria-describedby`, and the
-    // reason is that the alternative costs more than it looks. A description
-    // needs an id, this package emits none anywhere, and `a11y/baseline.ts`
-    // records what ids cost here — a host-derived token reaching an attribute
-    // that other code resolves, which is the injection class the mount's focus
-    // token was written to avoid. A name needs no id and is announced as the
-    // reader arrives rather than after it.
-    //
-    // The separator is layer 1's own: `slotLabel` joins its three parts with
-    // the same em dash, so this reads as one more part rather than a second
-    // sentence in a different hand.
-    const label = marked['aria-label'];
-    if (chip !== null && typeof label === 'string') {
-      marked['aria-label'] = `${label} — ${textOf(chip)}`;
-    }
-    // OMITTED WHEN THE CHIP HAS NO DRAWABLE KIND, rather than stamped empty.
-    // `DELTA_ATTRIBUTE` records why: an attribute on every row with one value
-    // meaning "nothing" is marking the row, not leaving it alone.
-    if (delta?.kind !== undefined) marked[DELTA_ATTRIBUTE] = delta.kind;
-    const attrs: Readonly<Record<string, AttrValue>> | undefined =
-      severity === undefined && delta?.kind === undefined ? spec.attrs : marked;
-    return {
-      ...spec,
-      ...(attrs === undefined ? {} : { attrs }),
-      ...(children === undefined ? {} : { children }),
-    };
-  }
-
-  return markSpec(root);
+): MarkLookup {
+  return marksOf(
+    (key) => {
+      const severity = severityOf(key);
+      return severity === undefined ? undefined : { attrs: { [AUDIT_SEVERITY_ATTRIBUTE]: severity } };
+    },
+    (key) => {
+      const delta = deltaOf(key);
+      if (delta === undefined) return undefined;
+      // THE CHIP IS APPENDED TO THE ROW, WHICH IS WHY IT IS DRAWN HERE AND NOT
+      // IN A MOUNT. §17c puts the effect in place — "only affected rows carry a
+      // delta chip · unaffected rows are left completely alone" — and
+      // `reevaluate/render.ts` deferred that to "the change that assembles the
+      // workspace" on the ground that placing a chip needs the row's geometry.
+      // It does not: the row is a SPEC here, keyed and reachable.
+      //
+      // AND THE CHIP IS IN THE ROW'S NAME, OR IT IS SILENT. An accessible name
+      // computed from `aria-label` WINS over descendant text, so a chip
+      // appended here would be seen and not heard. `marks.ts` owns the
+      // appending; this owns the fact that the chip is what gets said.
+      //
+      // AND THE NAME IS EXTENDED WHENEVER A CHIP IS DRAWN, which the walk this
+      // replaced did NOT do. It built the extended label into a record it then
+      // discarded unless the row also carried a severity or a drawable delta
+      // KIND — so a chip whose only fact was a presence or an unclassified
+      // movement was appended to the row and left out of its name. That is the
+      // exact defect the comment above describes, on the rows least likely to
+      // be noticed. Corrected here rather than preserved: `deltaKind` answering
+      // `undefined` is a statement about the row's TINT, not about whether the
+      // chip has anything to say.
+      const chip = chipSpec(delta.chip, delta.words, { placed: true });
+      return {
+        append: chip,
+        nameClause: textOf(chip),
+        // OMITTED WHEN THE CHIP HAS NO DRAWABLE KIND, rather than stamped
+        // empty. `DELTA_ATTRIBUTE` records why: an attribute on every row with
+        // one value meaning "nothing" is marking the row, not leaving it alone.
+        ...(delta.kind === undefined ? {} : { attrs: { [DELTA_ATTRIBUTE]: delta.kind } }),
+      };
+    },
+  );
 }
 
 
@@ -2398,6 +2462,16 @@ function inspectorSpec(view: InspectorView, context: InspectorContext): ElementS
     subject.kind === 'none'
       ? element('p', { class: 'ig-inspector-empty' }, [words.nothingSelected])
       : null,
+    // §17e'S GESTURE, ON THE ONE-ISSUE PANEL AS WELL AS IN THE BLOCK. The
+    // block only exists at N>1, so a hint that lived only inside it would
+    // reach the reader strictly AFTER they had already performed the gesture —
+    // which teaches nobody. This is the one place it is discoverable.
+    //
+    // Drawn only for a host that words the bulk path at all: a hint for a
+    // surface that will never appear is an affordance that does not exist.
+    subject.kind === 'issue' && words.bulk !== undefined
+      ? element('p', { class: 'ig-bulk-gesture' }, [words.bulk.gesture])
+      : null,
     subject.kind === 'issue'
       ? element('div', { class: 'ig-inspector-issue' }, [
           element('h3', { class: 'ig-inspector-title' }, [subject.issue.title]),
@@ -2804,6 +2878,9 @@ export function renderWorkspace(
     // The rail is where a selected ISSUE reads as current. An edge selection
     // resolves to no key, which is `selectedKey`'s whole job.
     selected: selectedKey(selection),
+    // AND THE TAB STOP FOLLOWS FOCUS, NOT THE SELECTION. See
+    // {@link WorkspaceOptions.focused}.
+    ...(options.focused === undefined ? {} : { focused: options.focused }),
   });
   // Built once, over the window's rows, so a rail of 312 costs one pass rather
   // than one scan of `overlay.rows` per drawn row.
@@ -2832,10 +2909,70 @@ export function renderWorkspace(
   const isolatedListId =
     options.surfaceId === undefined ? undefined : `ig-isolated-list-${options.surfaceId}`;
 
+  // §17e'S SET, RESOLVED BEFORE EITHER ZONE DRAWS. Both walks read this one
+  // map, so the rail and the canvas cannot disagree about which issues are in
+  // the selection — the failure `selection.ts`'s header is written against,
+  // arriving through cardinality rather than through kind.
+  //
+  // KEYED BY THE RAW SELECTED KEY, not by the canonicalized batch member. A
+  // reader who clicked a `together-with` partner marked THAT row, and the mark
+  // has to land where the click did; the canonicalization is the BATCH's and it
+  // happens on the way into `planBatch`, not on the way onto a row.
+  const selectionSet = selectedKeys(selection);
+  const multi = isMultiSelection(selection);
+  const memberWords = options.words.selectionMember;
+  const anchorWords = options.words.selectionAnchor;
+  // KEYED BY THE ROW THE PROJECTIONS ACTUALLY DREW, which is a slot's LEAD.
+  //
+  // Keyed by the raw selected key it marked nothing for a selected PARTNER of a
+  // `together-with` unit: the rail and the graph both key that unit by its
+  // lead, so no element carries the partner's own key — while the block
+  // canonicalized the same partner and counted it as selected. One zone
+  // counting a member the others cannot mark is the disagreement this whole
+  // design is built to prevent, arriving through the canonicalization instead
+  // of through the type.
+  //
+  // A partner cannot be reached by clicking the rail — one row per slot — so
+  // this is the host-supplied selection and the order-regrouped-under-you case.
+  // Both are ordinary, and neither should mark nothing.
+  //
+  // DE-DUPLICATED, and the FIRST clause for a lead wins, so two selected
+  // partners of one unit mark their single row once rather than overwriting
+  // each other's position.
+  //
+  // AND THE POSITIONS COUNT CANONICAL ROWS, not raw keys. Indexed over the raw
+  // selection, `[lead, partner, other]` announced an anchor "of 3" and a member
+  // "3 of 3" while the block counted two issues — the row saying one number and
+  // the panel beside it another, about the same selection.
+  const canonicalRows = [...new Set(selectionSet.map((key) => leadOf.get(key) ?? key))];
+  const clauseByKey = new Map<string, string>(
+    !multi || memberWords === undefined || anchorWords === undefined
+      ? []
+      : canonicalRows.map((row, index) => [
+          row,
+          index === 0 ? anchorWords(canonicalRows.length) : memberWords(index + 1, canonicalRows.length),
+        ]),
+  );
+  const selectionMarks: MarkLookup = (key) => {
+    const clause = clauseByKey.get(key);
+    return clause === undefined
+      ? undefined
+      : { attrs: { [SELECTED_ATTRIBUTE]: 'true' }, nameClause: clause };
+  };
+
   const canvas = renderScaleLadder(document, {
     state: options.scale ?? INITIAL_SCALE_STATE,
     theme,
     isolatedListId,
+    // THE SAME LOOKUP THE RAIL USES, so one walk marks both zones. Above §17f's
+    // direct tier it finds nothing to mark, because the capsules drawn there
+    // carry no key — which is a fact the block states rather than one the two
+    // zones quietly disagree about.
+    // ONLY WHEN THERE IS SOMETHING TO MARK. `canvasMarkup`'s fast path reuses
+    // the viewer's own already-rendered string, and handing it a function
+    // unconditionally defeats that on every render — including the two states
+    // where the walk provably marks nothing: no selection, and a singleton.
+    ...(clauseByKey.size === 0 ? {} : { nodeMarks: selectionMarks }),
     // ONE CONTROL, ONE ZONE — and the condition is WHETHER THIS SURFACE DRAWS
     // ONE, which is exactly what `words.rail` says. That is the contract
     // `ScaleLadderOptions.isolatedChip` states: suppress the ladder's chip only
@@ -2921,6 +3058,86 @@ export function renderWorkspace(
         ]),
   );
 
+  const marks = marksOf(
+    railMarks(
+      (key) => severityByKey.get(key),
+      (key) => deltaByKey.get(key),
+    ),
+    selectionMarks,
+  );
+
+  // §17e'S BLOCK, IN THE INSPECTOR ZONE. §17a assigns that zone "detail, the
+  // why, relationships, and the edit affordances", and three offers are edit
+  // affordances. Not the first-pass overlay: that surface sets `inert` on these
+  // zones and owns the keydown path, so the two bulk paths are alternatives by
+  // construction — SPEC calls this one "the OTHER bulk path" — and the frame is
+  // one artboard showing both rather than a claim they are co-active.
+  //
+  // THE MEMBERS ARE CANONICALIZED TO SLOT LEADS AND DE-DUPLICATED. `leadOf` is
+  // the same map the inspector resolves its own subject through, and its
+  // comment records why: a together unit is ONE row, layer 1 has already
+  // decided which member speaks for it, and a batch that named two partners of
+  // one unit would be asking for an edge from that unit to itself.
+  const bulkWords = options.words.bulk;
+  const bulkMembers = [...new Set(selectionSet.map((key) => leadOf.get(key) ?? key))];
+  // THE KEYS THE CANVAS ACTUALLY DREW. `ladder.canvas` is the narrowed
+  // neighbourhood, and only the `direct` tier renders it as nodes — above that
+  // §17f draws capsules with no keys at all, so there is nothing to mark and
+  // the set is empty rather than optimistic.
+  const canvasKeys = new Set(
+    canvas.ladder.tier === 'direct' ? canvas.ladder.canvas.issues.map((issue) => issue.key) : [],
+  );
+  // §17e'S BLOCK, RESOLVED FROM ONE DECISION: which set is it speaking about.
+  //
+  // THREE FIELDS USED TO ANSWER THAT SEPARATELY and could therefore disagree —
+  // the heading took the phase's membership while the off-canvas count took the
+  // live selection, and whether the block was drawn at all took a third answer
+  // (`multi`). Each disagreement was reported as its own finding, which is how a
+  // class gets patched three times instead of removed once. So the question is
+  // asked HERE, exactly once, and every field below is derived from the answer.
+  const declared: BulkPhase = options.bulk ?? { kind: 'idle' };
+  // A STALE PLAN IS NO PLAN, and this is the only place that can say so. The
+  // order can regroup a selected issue into a `together-with` unit between
+  // planning and sending, which leaves the RAW selection untouched while the
+  // effective membership moves under it — so nothing in the reducer's own
+  // vocabulary could have invalidated it, and the reducer has no slots to ask.
+  // Reduced to `idle`, the send control disappears and the reader is back at
+  // the offers over the set that actually exists now.
+  const phase: BulkPhase = staleAgainst(declared, bulkMembers) ? { kind: 'idle' } : declared;
+  // AND THEN: WHICH SET IS IT ABOUT. A dispatched batch speaks for its own
+  // membership — one sent for A/B/C and left `partial` is still owed after the
+  // reader has gone on to select D/E/F — while everything else speaks for what
+  // is selected now.
+  const about = phaseMembers(phase) ?? bulkMembers;
+  // DRAWN FOR A SET, *OR* FOR A BATCH THAT HAS ALREADY GONE OUT.
+  //
+  // Gated on `multi` alone, a `partial` batch's Resume and Dismiss controls
+  // vanished the moment the reader collapsed the selection — the remainder was
+  // still owed, still held, and unreachable until they happened to build
+  // another multi-selection. Keeping the phase through a selection change is
+  // worth nothing if the surface that offers it is gone.
+  const owns = phaseMembers(phase) !== null;
+  const bulk: BulkInput | null =
+    (!multi && !owns) || bulkWords === undefined
+      ? null
+      : {
+          phase,
+          members: about,
+          // WHAT THE CANVAS COULD NOT MARK. Above §17f's direct tier it draws
+          // capsules carrying no `data-ig-key`, and even at that tier a member
+          // outside the drawn neighbourhood has no node — so rather than let
+          // the zones silently disagree, the block states the number.
+          //
+          // ASKED OF THE SET THE BLOCK IS ABOUT, so it cannot report the two
+          // issues currently selected as unshown while the heading above it
+          // speaks for an older three-issue batch. And asked of the ROW, for
+          // the same reason the marks are: a partner has no node of its own,
+          // and the canvas draws its unit's lead.
+          notShown: about.filter((key) => !canvasKeys.has(key)).length,
+          clear: options.words.clearSelection,
+          words: bulkWords,
+        };
+
   const markup = [
     // THE ORDER'S STATUS, ON THE SURFACE ROOT. `mount.ts` already publishes the
     // same value on the mounted element for a host to read; this puts it where
@@ -2981,13 +3198,7 @@ export function renderWorkspace(
       'rail',
       [
         railSpacer(rail.before, 'before'),
-        renderMarkup(
-          markRail(
-            railRender.scene.root,
-            (key) => severityByKey.get(key),
-            (key) => deltaByKey.get(key),
-          ),
-        ),
+        renderMarkup(markKeyed(railRender.scene.root, marks)),
         railSpacer(rail.after, 'after'),
         railFooterSpec === null ? '' : renderMarkup(railFooterSpec),
       ].join(''),
@@ -3036,7 +3247,14 @@ export function renderWorkspace(
         const panel = renderAuditPanel(overlay, { words: options.words.audit, known });
         return panel === null ? '' : renderMarkup(panel);
       })() +
-      renderMarkup(
+      // §17e'S BLOCK REPLACES THE PANEL, IT DOES NOT SIT BESIDE IT. A set has
+      // no single subject, so the detail panel below has nothing to be detail
+      // ABOUT — it would draw the anchor's relationships under a heading saying
+      // six issues are selected, which is the two-zones-disagree failure with
+      // both halves in one zone. The audit panel above is unaffected: it speaks
+      // for the document, not for the selection.
+      (bulk === null
+        ? renderMarkup(
         inspectorSpec(inspector, {
           words: options.words,
           audit: overlay,
@@ -3060,13 +3278,43 @@ export function renderWorkspace(
           recoveries: options.recoveries ?? [],
           diffOpen: options.diffOpen ?? null,
         }),
-      ),
+          )
+        : renderMarkup(bulkSpec(bulk))),
     ),
     `</div>`,
   ].join('');
 
   return {
-    view: { selection, rail, inspector, audit: overlay, auditFiltered: filtered },
+    view: {
+      selection,
+      rail,
+      inspector,
+      audit: overlay,
+      auditFiltered: filtered,
+      // THE BATCH'S MEMBERS, CANONICALIZED ONCE AND PUBLISHED.
+      //
+      // The shell needs them to confirm a batch and it cannot derive them:
+      // canonicalizing a `together-with` partner onto its slot's lead is a fact
+      // about the ORDER, and the store's `GraphDocument` carries issues and
+      // edges but no slots. Rebuilding the grouping out of `together-with`
+      // edges in the shell would be the second spelling of a derivation layer 1
+      // already did — the drift this package family removes wherever it appears.
+      //
+      // So the one layer that holds the slots answers, and `mountWorkspace`
+      // reads it off the render it just performed. Empty when the selection is
+      // not a set, which is the same condition that draws no block.
+      bulkMembers: bulk === null ? [] : bulk.members,
+      // THE SAME LOOKUP BOTH ZONES MARKED WITH, published so a caller that
+      // re-renders a zone ITSELF marks it the same way. `mountWorkspace` draws
+      // the tree canvas with its own `renderViewer` call, outside this
+      // function entirely — so without this the tree was the one surface where
+      // a set was selected and nothing said so, which is the two-zones-disagree
+      // failure arriving through a projection rather than through a type.
+      //
+      // `null` when no set is marked, so a caller can skip the walk on the
+      // path where it provably marks nothing.
+      selectionMarks: clauseByKey.size === 0 ? null : selectionMarks,
+    },
     markup,
     // THE THEME IS WRITTEN ONCE. Both leaves below emit their own copy of the
     // viewer's stylesheet and the theme rule, so taking `canvas.styles`
@@ -3092,6 +3340,11 @@ export function renderWorkspace(
       // so a sheet installed only once something has already changed is missing
       // on exactly the render that first draws one.
       reevaluateStylesheet,
+      // THE BLOCK'S OWN SHEET TRAVELS WITH THE SURFACE THAT DRAWS IT, on the
+      // rule `reevaluate/styles.ts` states about its own: a host installing
+      // this workspace must not also have to remember a second import for a
+      // zone this renderer chose to draw.
+      bulkStylesheet,
       workspaceStylesheet,
     ].join('\n'),
     // CONCATENATED, NOT DEDUPED — and the dedupe that used to sit here is worth

@@ -232,8 +232,14 @@ export function inspectorView(
     // Falls back to the key itself when the order does not place it: an
     // excluded or unplaced issue is its own subject, and there is no lead to
     // defer to.
-    const placement = slotFor(document, selection.key);
-    const subject = placement?.lead ?? selection.key;
+    // THE ANCHOR IS THE PANEL'S SUBJECT. A set of one is the ordinary case and
+    // reads exactly as it did; a larger set never reaches here, because the
+    // workspace draws the §17e bulk block in this zone instead — see
+    // `bulkFor` in `render.ts`. Reading `keys[0]` rather than asserting the
+    // set has one member keeps this function total for both.
+    const anchor = selection.keys[0];
+    const placement = slotFor(document, anchor);
+    const subject = placement?.lead ?? anchor;
     const issue = document.issues.find((candidate) => candidate.key === subject);
     if (issue === undefined) return EMPTY;
     const slot = placement;
