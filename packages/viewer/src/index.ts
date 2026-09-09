@@ -59,7 +59,7 @@ export type {
   ViewerOrder,
   ViewerSlot,
 } from './document.ts';
-export { normalizeDocument } from './document.ts';
+export { isLinkable, normalizeDocument } from './document.ts';
 
 export type { Projection, Scene } from './scene.ts';
 export { KEY_ATTRIBUTE } from './scene.ts';

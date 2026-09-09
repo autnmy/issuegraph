@@ -89,6 +89,7 @@ import type {
 
 import type { AuditInput, AuditSeverity } from '../audit/findings.ts';
 import { type AuditWords, renderAuditPanel } from '../audit/panel.ts';
+import { type EncodingRefusedBlockOptions, renderEncodingRefusedBlock } from '../audit/refused.ts';
 import { auditStylesheet } from '../audit/styles.ts';
 import { type CreateDraft, IDLE_CREATE_DRAFT } from '../create/draft.ts';
 import { KIND_KEYS, RELATE_KEY } from '../create/keys.ts';
@@ -734,6 +735,19 @@ export interface WorkspaceOptions {
    * Ignored with no audit, because there is nothing to filter by.
    */
   readonly auditFiltered?: boolean | undefined;
+  /**
+   * Where an issue lives in the host's own world, for §17d's refused block.
+   *
+   * THE HOST'S ANSWER BECAUSE IT IS THE ONLY PARTY THAT HAS ONE. A store ref is
+   * opaque in here and this package holds no repository identity, so a URL is
+   * supplied rather than derived. Absent, `null`, or a scheme the viewer's
+   * allowlist refuses all mean the same thing — no link is drawn. See
+   * {@link EncodingRefusedBlockOptions.issueUrl}, which owns that rule and the
+   * reason an `href` cannot be trusted to escaping alone.
+   *
+   * Ignored with no audit, because a refusal arrives on the audit's input.
+   */
+  readonly issueUrl?: EncodingRefusedBlockOptions['issueUrl'];
   readonly theme?: Theme | undefined;
   /** The selector the theme's custom properties are written onto. */
   readonly themeSelector?: string | undefined;
@@ -3005,14 +3019,14 @@ export function renderWorkspace(
     ),
     zone(
       'inspector',
-      // §17d'S LIST IS THE SELECTION'S SIBLING, AND THEY SHARE ONE SCROLL
-      // TRACK. Sibling rather than child so the panel keeps its own padding and
-      // reads as a peer of the selection rather than part of it — its heading
-      // is an `h2` beside the inspector's for the same reason.
+      // §17d'S AUDIT IS THE SELECTION'S SIBLING, AND THEY SHARE ONE SCROLL
+      // TRACK. Sibling rather than child so each surface keeps its own padding
+      // and reads as a peer of the selection rather than part of it — their
+      // headings are `h2`s beside the inspector's for the same reason.
       //
-      // THE PANEL TAKES A SHARE; THE OTHER TWO SIBLINGS DO NOT. #177 settled
-      // this. The zone is still ONE scroll track (`workspace/styles.ts`), and
-      // inside it `audit/styles.ts` bounds this panel alone at half the column,
+      // THE AUDIT REGION TAKES A SHARE; THE OTHER TWO SIBLINGS DO NOT. #177
+      // settled this. The zone is still ONE scroll track, and inside it
+      // `workspace/styles.ts` bounds the region alone at half the column,
       // scrolling itself past that. So a long audit can no longer push the
       // selection detail further than half the column down, whatever the
       // finding count — the detail's head is always above the fold, which is
@@ -3020,10 +3034,16 @@ export function renderWorkspace(
       // `.ig-chrome` the mount appends keep the track's own scrolling and
       // cannot be clipped at any height.
       //
-      // WHY THIS ONE. Being drawn FIRST is half the reason — it is what put its
-      // length in front of the detail — and being the zone's only GLOBAL member
-      // is the other. The two below it are about what the reader is doing; this
-      // is about the document.
+      // THE SHARE IS `workspace/styles.ts`', NOT `audit/styles.ts`'. An earlier
+      // revision of this comment said otherwise; that file states in as many
+      // words that its leaves declare no size of their own, and the
+      // misattribution is what nearly let §17d's second surface arrive with no
+      // bound at all.
+      //
+      // WHY THIS ONE. Being drawn FIRST is half the reason — it is what puts
+      // its length in front of the detail — and being the zone's only GLOBAL
+      // member is the other. The two below it are about what the reader is
+      // doing; this is about the document.
       //
       // A two-pane version was built and reverted before that: it clipped
       // `.ig-chrome`, a THIRD sibling. Bounding one member inside the single
@@ -3038,10 +3058,40 @@ export function renderWorkspace(
       // its subject control on, and NOT the audit's: a host audits what it
       // holds and draws a page of it, so a ref can be audited and still have no
       // row here. The panel cannot see that difference and is told.
+      // §17d IS ONE REGION HOLDING TWO SURFACES, AND THAT IS WHY THEY ARE
+      // WRAPPED RATHER THAN CONCATENATED. `audit/refused.ts` draws the fourth
+      // class outside the findings list — SPEC surfaces a refusal "on the issue
+      // itself" — so the zone would otherwise gain a FOURTH sibling, and #177's
+      // answer does not survive that arithmetic: two siblings each bounded at
+      // half the column can take all of it between them and push the selection
+      // detail entirely below the fold, which is worse than the state #177
+      // fixed rather than a smaller version of it.
+      //
+      // SO THE BOUND MOVES UP ONE LEVEL, and #177's rule is kept rather than
+      // restated: exactly one sibling of this zone is bounded, and it is now
+      // the REGION. The block and the panel are unbounded inside it and share
+      // its half between them, which is also what the artboard draws — §17d
+      // puts the findings list and the refusal side by side as one section.
+      // `workspace/styles.ts` carries the share; neither leaf declares a size.
       (() => {
         if (overlay === null) return '';
+        const refused = renderEncodingRefusedBlock(options.audit?.encodingRefused ?? [], {
+          words: options.words.audit,
+          known,
+          issueUrl: options.issueUrl,
+        });
         const panel = renderAuditPanel(overlay, { words: options.words.audit, known });
-        return panel === null ? '' : renderMarkup(panel);
+        // THE REFUSAL LEADS. It is the finding that says the other three cannot
+        // be trusted for that issue — its edges were never read — so a reader
+        // meeting the list first would be reading conclusions drawn from a
+        // declaration nobody could parse.
+        const members = [refused, panel].filter((spec): spec is ElementSpec => spec !== null);
+        // NO EMPTY REGION. A wrapper drawn around nothing is a heading-less box
+        // taking a declared share of a column whose space belongs to the
+        // selection — the same call `renderAuditPanel` makes about a list of
+        // nothing, one level up.
+        if (members.length === 0) return '';
+        return renderMarkup(element('div', { class: 'ig-audit-region' }, members));
       })() +
       renderMarkup(
         inspectorSpec(inspector, {

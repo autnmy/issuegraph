@@ -334,12 +334,26 @@ export const workspaceStylesheet = `
 }
 
 /* ONE SCROLL TRACK, AND EXACTLY ONE SIBLING IS BOUNDED INSIDE IT. This zone
-   holds three: §17d's findings panel, this column's selection detail, and the
+   holds three: §17d's AUDIT REGION, this column's selection detail, and the
    .ig-chrome the mount appends. #177 settled how they share it, and the whole
-   of the answer is that the zone stays ONE track while the panel alone takes a
-   declared share of it (audit/styles.ts, max-height: 50%, scrolling itself past
-   that). .ig-inspector and .ig-chrome keep this track's own scrolling and
-   declare no share, so neither can be clipped by any height.
+   of the answer is that the zone stays ONE track while the region alone takes a
+   declared share of it (max-height: 50%, scrolling itself past that).
+   .ig-inspector and .ig-chrome keep this track's own scrolling and declare no
+   share, so neither can be clipped by any height.
+
+   THE BOUNDED SIBLING IS A REGION NOW, AND THAT IS #177'S RULE KEPT RATHER THAN
+   RESTATED. §17d has two surfaces — the findings panel and, since the fourth
+   class moved out of it, the refused block (audit/refused.ts) — and bounding
+   each at half the column lets the two of them take ALL of it, which is worse
+   than the state #177 fixed rather than a smaller version of it. So
+   workspace/render.ts wraps both in .ig-audit-region and the share is declared
+   once, here, on the thing the zone actually holds. Neither leaf declares a
+   size of its own; audit/styles.ts says so at both.
+
+   AN EARLIER REVISION OF THIS COMMENT CREDITED audit/styles.ts WITH THE SHARE.
+   It never carried it — that file states in as many words that the panel
+   "DECLARES NO SIZE OF ITS OWN" — and the misattribution is why the fourth
+   sibling nearly arrived unbounded.
 
    THAT IS A PROPERTY NOW, NOT A LUCKY DEFAULT, and it is what makes the chrome
    safe. A TWO-PANE VERSION WAS TRIED AND REVERTED: making the zone a flex
@@ -367,11 +381,12 @@ export const workspaceStylesheet = `
 /* THE SHARE ITSELF, DECLARED BY THE COMPOSITION THAT OWNS THE COLUMN. This is
    the other half of issue 177's answer, and it lives here rather than in
    audit/styles.ts because it is a fact about three siblings sharing one track,
-   not a fact about the panel. renderAuditPanel and its stylesheet are both
-   public exports, so a consumer can draw the panel on its own — and capping it
-   there would hide findings behind an inner scrollbar with half the container
-   empty and no selection detail to reserve the space for. The scope is what
-   makes the rule true only where its reason holds.
+   not a fact about either audit surface. renderAuditPanel,
+   renderEncodingRefusedBlock and their stylesheet are all public exports, so a
+   consumer can draw either surface on its own — and capping it there would hide
+   findings behind an inner scrollbar with half the container empty and no
+   selection detail to reserve the space for. The scope is what makes the rule
+   true only where its reason holds.
 
    A PERCENTAGE, NEVER A LENGTH. A fixed cap was tried first and resolved to
    most of a short workspace's column under the default theme: a length cannot
@@ -418,11 +433,32 @@ export const workspaceStylesheet = `
    pinned count buys nothing. And the list has zero horizontal padding, so
    making it the scroll container computes its overflow-x to auto and CLIPS the
    focus ring on every card's control: an outline is ink overflow, so it is cut
-   rather than scrolled to. The panel's own padding gives those rings room. */
-.ig-zone[data-zone='inspector'] .ig-audit-panel {
+   rather than scrolled to. Each leaf's own padding gives those rings room. */
+.ig-zone[data-zone='inspector'] .ig-audit-region {
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
   max-height: 50%;
+  min-height: 0;
   overflow-y: auto;
+}
+
+/* THE REGION SCROLLS; ITS MEMBERS DO NOT SHRINK. Both leaves declare
+   min-height: 0 — correct for each of them, because each was once the scroll
+   container itself — and in a bounded flex column that is exactly the licence
+   to squeeze them below their content. Measured in a browser rather than
+   reasoned about: with a refusal and five findings the block was laid out 54px
+   tall around 131px of content, and since a leaf's own overflow is visible it
+   PAINTED OVER the panel underneath it. Nothing threw, no test failed, and the
+   markup was correct — the two surfaces were simply drawn on top of each other.
+
+   flex-shrink RATHER THAN A HEIGHT ON EITHER LEAF, which is the same layering
+   the share above follows: how the region's members divide it is a fact about
+   the region, and a leaf that sized itself here would be wrong in every other
+   composition. The region's own max-height is what bounds the pair; this is
+   what makes the overflow it declares actually reachable. */
+.ig-zone[data-zone='inspector'] .ig-audit-region > * {
+  flex-shrink: 0;
 }
 
 

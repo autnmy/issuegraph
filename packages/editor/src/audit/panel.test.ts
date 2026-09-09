@@ -36,6 +36,9 @@ const WORDS: AuditWords = {
     'encoding-refused': 'this declaration could not be read',
   },
   show: 'go and look',
+  refusedHeading: 'could not be read',
+  refusedOpen: 'see it upstream',
+  refusedRewrite: 'fix it here',
 };
 
 function issue(ref: IssueRef, state: StoredIssue['state'] = 'open'): StoredIssue {
@@ -130,15 +133,28 @@ const EVERY_CLASS = {
   ],
 } as const;
 
+/**
+ * The classes this panel lists.
+ *
+ * DERIVED FROM `AUDIT_CLASSES`, NEVER TYPED OUT. A fifth class added to the
+ * table must appear here by default and force a decision about it; a hand-written
+ * list would silently keep testing three.
+ */
+const LISTED_CLASSES = AUDIT_CLASSES.filter((kind) => kind !== 'encoding-refused');
+
 describe('the findings panel', () => {
   it('draws one card per finding, in the class table’s order', () => {
     const markup = markupOf(EVERY_CLASS.issues, EVERY_CLASS.edges, [{ ref: 'f' }]);
     const kinds = [...markup.matchAll(/<li class="ig-audit-card" data-ig-audit-kind="([^"]+)"/g)].map(
       (match) => match[1] as AuditClass,
     );
-    // EVERY class, so a class that stopped being drawn is a failure here rather
-    // than a quiet absence in a capture nobody re-reads.
-    assert.deepEqual([...kinds].sort(), [...AUDIT_CLASSES].sort());
+    // EVERY LISTED class, so a class that stopped being drawn is a failure here
+    // rather than a quiet absence in a capture nobody re-reads. `encoding-refused`
+    // is deliberately not among them: §17d draws it OUTSIDE this panel, because
+    // a refusal is surfaced on the issue itself rather than as one entry in a
+    // list of relationship problems. `refused.ts` owns it, and `refused.test.ts`
+    // pins that it is drawn — so the class cannot fall between the two.
+    assert.deepEqual([...kinds].sort(), [...LISTED_CLASSES].sort());
     // THE TABLE'S ORDER, WHICH `auditOverlay` ALREADY FIXED. Re-sorting in the
     // panel would be a second opinion about severity beside `AUDIT_CLASS_SPECS`.
     const rank = (kind: AuditClass) => AUDIT_CLASSES.indexOf(kind);
@@ -302,17 +318,30 @@ describe('the findings panel', () => {
   it('says how many, in the host’s word, beside the ambient mark', () => {
     const markup = markupOf(EVERY_CLASS.issues, EVERY_CLASS.edges, [{ ref: 'f' }]);
     const overlay = overlayOf(EVERY_CLASS.issues, EVERY_CLASS.edges, [{ ref: 'f' }]);
-    assert.match(markup, new RegExp(`<span class="ig-audit-panel-count">${overlay.count}</span>`));
-    // `h2` BECAUSE THE PANEL IS THE INSPECTOR'S PEER, not its child: it is a
-    // sibling in the zone and is drawn FIRST, so an `h3` would announce a level
-    // three ahead of the level two it claimed to sit under.
+    // THIS PANEL'S OWN CARDS, WHICH IS NOT `overlay.count` ANY MORE. The ambient
+    // header in `surface.ts` counts every finding — it is the persistent control
+    // beside both surfaces, and a reader works through all four classes. This
+    // number is enclosed in the same bounded, scrolling section as the list under
+    // it, so once `encoding-refused` moved to `refused.ts` a whole count would
+    // have printed `4` directly above three cards.
+    const drawn = [...markup.matchAll(/<li class="ig-audit-card"/g)].length;
+    assert.match(markup, new RegExp(`<span class="ig-audit-panel-count">${drawn}</span>`));
+    // AND THE FIXTURE ACTUALLY SEPARATES THE TWO. Without a refusal in it the
+    // two numbers agree and this pin is vacuous — which is exactly how the
+    // defect it exists for reached a plan and two reviews unnoticed.
+    assert.equal(overlay.count, drawn + 1, markup);
+    // `h2` BECAUSE THE PANEL IS THE INSPECTOR'S PEER, not its child: it sits in
+    // the audit region above the selection detail, so an `h3` would announce a
+    // level three ahead of the level two it claimed to sit under. The refused
+    // block beside it is an `h2` for the same reason.
     assert.match(markup, new RegExp(`<h2 class="ig-audit-panel-heading">${WORDS.heading}</h2>`));
     // AND THE SECTION IS NAMED. An unnamed `section` carries no landmark role at
     // all, so a reader navigating by landmark cannot reach the panel.
     assert.match(markup, new RegExp(`<section class="ig-audit-panel" aria-label="${WORDS.heading}"`));
-    // THE PANEL IS A TAB STOP, because #177 made it a scroll container that
-    // takes half the inspector column. Its cards cannot be relied on to carry
-    // the keyboard into it: `cardSpec` draws its navigation control only for a
+    // THE PANEL IS A TAB STOP. It was the scroll container while #177's bound
+    // sat on this element; the bound and the scrolling belong to the audit
+    // region now, so what keeps the stop is the second reason alone — its cards
+    // cannot be relied on to carry the keyboard into it: `cardSpec` draws its navigation control only for a
     // member the drawn document holds, so an audit naming only issues outside
     // the loaded page renders no button and leaves the scroller with no
     // focusable descendant at all. Browsers disagree about putting a generic
@@ -348,25 +377,32 @@ describe('the findings panel', () => {
     }
   });
 
-  it('publishes no navigation for a finding naming no loaded issue', () => {
-    // THE PAGING CASE `findings.ts` SUPPORTS ON PURPOSE. A refusal is a fact the
-    // HOST asserted about an issue it read, so a finding may name a ref outside
-    // the loaded document — `findings.test.ts` pins that it is kept rather than
-    // filtered away, "the quiet direction". The FINDING is still worth reading;
-    // a button targeting a ref with no rail row is not, because the mount
-    // reconciles the unknown selection straight back away and the control
-    // advertises a move it cannot make.
-    const markup = markupOf([issue('a')], [], [{ ref: 'unloaded' }]);
-    assert.match(markup, /ig-audit-card/, 'the finding itself was dropped');
-    assert.match(markup, new RegExp(WORDS.classes['encoding-refused']));
-    assert.equal(markup.includes('ig-audit-show'), false, markup);
-    // THE CONTROL, so this cannot pass by drawing no button anywhere: a refusal
-    // on a ref the document DOES carry keeps its way out.
-    const loaded = markupOf([issue('a')], [], [{ ref: 'a' }]);
-    const tag = /<button[^>]*class="ig-audit-show"[^>]*>/.exec(loaded)?.[0];
-    assert.ok(tag !== undefined, loaded);
-    assert.match(tag, /data-ig-command="reveal-issue"/);
-    assert.match(tag, /data-ig-target="a"/);
+  it('draws no refusal at all, whatever the host reported', () => {
+    // §17d'S FOURTH CLASS IS NOT THIS PANEL'S. SPEC surfaces a refusal "on the
+    // issue itself, because until it parses the issue has no edges at all and
+    // would otherwise look simply unencoded" — the other three say something
+    // about a relationship that EXISTS. `refused.ts` draws it.
+    //
+    // BOTH SHAPES, because they fail differently. A refusal on a ref the
+    // document carries would have been an ordinary card; one on a ref outside it
+    // is the paging case `findings.ts` keeps on purpose, and dropping the finding
+    // there would lose it on exactly the issues paging has not reached.
+    const loaded = markupOf([issue('a'), issue('b'), issue('shut', 'closed')],
+      [['blocked-by', 'a', 'shut']], [{ ref: 'b' }]);
+    assert.equal(loaded.includes('data-ig-audit-kind="encoding-refused"'), false, loaded);
+    assert.equal(loaded.includes(WORDS.classes['encoding-refused']), false, loaded);
+    // AND THE FIXTURE IS NOT VACUOUS: the stale blocker beside it still drew.
+    assert.match(loaded, /data-ig-audit-kind="stale-blocker"/);
+
+    // A DOCUMENT WHOSE ONLY FINDINGS ARE REFUSALS DRAWS NO PANEL. Testing
+    // `overlay.findings` instead of the listed ones would have drawn a panel
+    // whose head said `1` over an empty list.
+    const overlay = overlayOf([issue('a')], [], [{ ref: 'a' }]);
+    assert.equal(overlay.count, 1, 'the fixture produced no finding, so this proves nothing');
+    assert.equal(
+      renderAuditPanel(overlay, { words: WORDS, known: new Set(['a']) }),
+      null,
+    );
   });
 
   it('publishes no navigation for a ref the DRAWN surface does not carry', () => {

@@ -11,6 +11,7 @@ import {
 
 import { diffOrder } from '@issuegraph/store';
 
+import { auditStylesheet } from '../audit/styles.ts';
 import { AUDIT_SEVERITY_ATTRIBUTE } from '../audit/surface.ts';
 import { INITIAL_SCALE_STATE } from '../scale/commands.ts';
 import { ZONES, renderWorkspace } from './render.ts';
@@ -344,6 +345,31 @@ const RENDERS = [
       graph: { cycles: [['i0001', 'i0002']], duplicateCanonical: () => null },
     },
   }),
+  // §17d'S FOURTH CLASS, WHICH THE PANEL ABOVE CANNOT REACH. `renderAuditPanel`
+  // lists the three RELATIONSHIP findings; an encoding refusal is drawn outside
+  // it by `audit/refused.ts`, and only a host that REPORTS one makes it appear —
+  // no document shape produces a refusal, because a refusal is a fact about a
+  // raw body this package never sees. Without this render every class the block
+  // emits is styled by a rule nothing draws, which is the orphan the pair of
+  // tests below exists to catch.
+  //
+  // THE RESOLVER IS SUPPLIED SO BOTH CONTROLS DRAW. The link is withheld without
+  // one, so a render that omitted it would leave `.ig-audit-refused-open` and
+  // `.ig-audit-refused-away` looking orphaned in exactly the same way.
+  renderWorkspace(DOCUMENT, {
+    words: WORKSPACE_WORDS,
+    issueUrl: (ref) => `https://example.invalid/${ref}`,
+    audit: {
+      document: {
+        issues: ['i0001'].map((ref) => ({ ref, title: `issue ${ref}`, state: 'open' as const })),
+        edges: [],
+      },
+      graph: { cycles: [], duplicateCanonical: () => null },
+      encodingRefused: [
+        { ref: 'i0001', diagnostic: 'unparseable YAML at line 3', sourceLine: 'blocked-by: [231, 234' },
+      ],
+    },
+  }),
 ];
 
 /** Every class THIS package's workspace emits, across those states. */
@@ -366,34 +392,42 @@ const COMPOSED: ReadonlySet<string> = new Set([
   // virtualized rail cannot hold the list itself.
   'ig-isolated-list',
   'ig-chip',
-  'ig-audit',
-  'ig-audit-toggle',
-  'ig-audit-count',
+  // EVERY CLASS `auditStylesheet` STYLES, DERIVED FROM THAT SHEET rather than
+  // listed here — the idiom `reevaluateStylesheet` below already uses, and for
+  // the reason this file's other direction exists: a hand list goes on passing
+  // after the leaf stops styling a class, and §17d now has two surfaces' worth
+  // of them (the ambient header, the findings panel, and the refused block).
+  //
+  // `.ig-audit-region` IS DELIBERATELY NOT AMONG THEM, and cannot be: it is not
+  // in that sheet at all. It is the wrapper `renderWorkspace` draws around the
+  // two audit surfaces so #177's "exactly one bounded sibling" survives the
+  // second one, so its share is THIS sheet's to declare and the accounting
+  // above should say so.
+  //
+  // COMMENTS STRIPPED FIRST, AND THAT IS NOT TIDINESS. These sheets QUOTE their
+  // own selectors in prose — `audit/styles.ts` names `.ig-inspector` while
+  // explaining what it does NOT style — so a raw scan admits classes the leaf
+  // never styles into the allowlist for "styled by someone else", and
+  // `.ig-inspector` is a class THIS sheet owns. `audit/styles.test.ts` records
+  // paying for the same mistake in the other direction.
+  ...[...withoutComments(auditStylesheet).matchAll(/\.(ig-[a-z0-9-]+)/g)].map(
+    (match) => match[1] ?? '',
+  ),
+  // AND ONE THAT SHEET DELIBERATELY DOES NOT STYLE. `renderAuditHeader` emits
+  // `.ig-audit-label` beside the count as a hook a host can target; its type and
+  // colour come from `.ig-audit-toggle`, the button it sits inside, so a rule of
+  // its own would restate an inherited value. The hand list this derivation
+  // replaced carried it silently — deriving is what asked the question.
   'ig-audit-label',
-  // §17d's findings panel, drawn by `renderAuditPanel` and styled by
-  // `auditStylesheet`, which `renderWorkspace` installs alongside this one —
-  // the same arrangement as the audit header above. `.ig-audit-panel` itself is
-  // deliberately NOT here: this sheet declares the panel's share of the
-  // inspector column, because that is a fact about three siblings sharing one
-  // track rather than about the panel, so the class is this sheet's to style
-  // and the accounting above should say so.
-  'ig-audit-panel-head',
-  'ig-audit-mark',
-  'ig-audit-panel-count',
-  'ig-audit-panel-heading',
-  'ig-audit-list',
-  'ig-audit-card',
-  'ig-audit-chip',
-  'ig-audit-title',
-  'ig-audit-detail',
-  'ig-audit-show',
   // §17c's summary, its dismiss control and its placed chips. Their rules live
   // in `reevaluateStylesheet`, which `renderWorkspace` installs alongside this
   // one — so they are that leaf's to style, exactly like the ladder chrome and
   // the audit header above. DERIVED FROM THAT SHEET rather than listed here,
   // because a hand list is the thing this file's other direction exists to
   // avoid: a class the leaf stops styling would go on passing.
-  ...[...reevaluateStylesheet.matchAll(/\.(ig-[a-z0-9-]+)/g)].map((match) => match[1] ?? ''),
+  ...[...withoutComments(reevaluateStylesheet).matchAll(/\.(ig-[a-z0-9-]+)/g)].map(
+    (match) => match[1] ?? '',
+  ),
   // The canvas's selection halo. `renderScaleLadder` draws it when an edge is
   // selected and ships `edgeOverlayStylesheet` with it, and `renderWorkspace`
   // installs that sheet alongside this one — so these are styled, by the leaf
@@ -798,8 +832,8 @@ describe('the stylesheet and the markup account for each other', () => {
  *
  * `.ig-chrome` is a third sibling `mountWorkspace` appends to this zone, and it
  * was clipped the one time the zone was made a multi-pane layout — a flex
- * column with `overflow: hidden`, each sibling scrolling itself. The audit
- * panel's share is declared on the PANEL (`audit/styles.ts`), which needs no
+ * column with `overflow: hidden`, each sibling scrolling itself. The audit's
+ * share is declared on the REGION that holds §17d's two surfaces, which needs no
  * such layout, so this test is the guard that the layout does not come back:
  * while the zone is a single `overflow-y: auto` track, there is no arrangement
  * in which a sibling that declares no share of its own can be cut off.
@@ -833,36 +867,64 @@ describe("the inspector zone stays one track, so the mount's chrome cannot be cl
     const found: string[] = [];
     for (const match of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
       const selectors = (match[1] ?? '').split(',').map((one) => one.trim());
-      if (selectors.includes(".ig-zone[data-zone='inspector'] .ig-audit-panel")) found.push(match[2] ?? '');
+      if (selectors.includes(".ig-zone[data-zone='inspector'] .ig-audit-region")) found.push(match[2] ?? '');
     }
     return found;
   })();
 
-  it('declares the panel\'s share exactly once, and scoped to this zone', () => {
-    // SCOPED IS THE POINT, not incidental. `renderAuditPanel` and
-    // `auditStylesheet` are both public exports, so a consumer can draw the
-    // panel outside `renderWorkspace` — and an unqualified cap would hide
-    // findings behind an inner scrollbar there, with half the container empty
-    // and no selection detail to reserve the space for. The share is true only
-    // inside this zone, so it is declared only there.
-    assert.deepEqual(shareRules.length, 1, `the sheet has ${shareRules.length} rules for the panel's share`);
+  it('declares the audit region\'s share exactly once, and scoped to this zone', () => {
+    // SCOPED IS THE POINT, not incidental. `renderAuditPanel`,
+    // `renderEncodingRefusedBlock` and `auditStylesheet` are all public exports,
+    // so a consumer can draw either surface outside `renderWorkspace` — and an
+    // unqualified cap would hide findings behind an inner scrollbar there, with
+    // half the container empty and no selection detail to reserve the space for.
+    // The share is true only inside this zone, so it is declared only there.
+    assert.deepEqual(shareRules.length, 1, `the sheet has ${shareRules.length} rules for the region's share`);
     assert.equal(
-      /\n\.ig-audit-panel\s*\{/.test(withoutComments(workspaceStylesheet)),
+      /\n\.ig-audit-region\s*\{/.test(withoutComments(workspaceStylesheet)),
       false,
-      'the share was declared unscoped, so it reaches a standalone panel too',
+      'the share was declared unscoped, so it reaches a standalone region too',
     );
   });
 
-  it('bounds the panel at half the column', () => {
+  it('bounds the audit region at half the column', () => {
     // A PERCENTAGE, because a fixed cap cannot know how tall the column it
     // divides happens to be — that was the first of #175's four attempts. And
     // the VALUE, because a percentage alone is not the ruling: `max-height: 95%`
     // is proportional, passes a shape check, and restores the defect in full.
     const share = shareRules[0];
-    assert.ok(share !== undefined, 'the panel declares no share of the column');
+    assert.ok(share !== undefined, 'the audit region declares no share of the column');
     const bound = /max-height:\s*([^;]+);/.exec(share)?.[1]?.trim();
     assert.ok(bound !== undefined, 'the share rule sets no cap');
-    assert.equal(bound, '50%', `#177 gives the panel half the column; this gives it ${bound}`);
+    assert.equal(bound, '50%', `#177 gives the audit half the column; this gives it ${bound}`);
+  });
+
+  it('bounds the audit ONCE, however many surfaces it holds', () => {
+    // #177's RULE IS "EXACTLY ONE SIBLING OF THIS ZONE IS BOUNDED", AND §17d NOW
+    // HAS TWO SURFACES. `audit/refused.ts` draws the fourth class outside the
+    // findings list, so bounding each of them at half the column would let the
+    // two take ALL of it between them and push the selection detail entirely
+    // below the fold — worse than the state #177 fixed rather than a smaller
+    // version of it. The bound moved up to the region that holds both; neither
+    // leaf may re-declare one, in either stylesheet.
+    const sheets: readonly (readonly [string, string])[] = [
+      ['workspace', withoutComments(workspaceStylesheet)],
+      ['audit', withoutComments(auditStylesheet)],
+    ];
+    for (const [name, css] of sheets) {
+      for (const match of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+        const selectors = (match[1] ?? '').split(',').map((one) => one.trim());
+        const sized = selectors.some(
+          (one) => one.endsWith('.ig-audit-panel') || one.endsWith('.ig-audit-refused'),
+        );
+        if (!sized) continue;
+        assert.equal(
+          /max-height/.test(match[2] ?? ''),
+          false,
+          `${name} sheet sizes a leaf: ${match[1] ?? ''}`,
+        );
+      }
+    }
   });
 
   it('measures that share on the box it actually draws, and scrolls past it', () => {
@@ -872,8 +934,8 @@ describe("the inspector zone stays one track, so the mount's chrome cannot be cl
     // measured on the content box and the padding and border push the drawn box
     // past it — wrong by one padding pair and a stroke, and nothing looks broken.
     //
-    // The scrolling is on the PANEL rather than the list inside it: the list has
-    // no horizontal padding, so a scroll container there computes overflow-x to
+    // The scrolling is on the REGION rather than a list inside it: a list has no
+    // horizontal padding, so a scroll container there computes overflow-x to
     // auto and clips the focus ring on every card control.
     const share = shareRules[0];
     assert.ok(share !== undefined);
@@ -881,9 +943,37 @@ describe("the inspector zone stays one track, so the mount's chrome cannot be cl
     assert.match(share, /overflow(?:-y)?:\s*auto\b/);
   });
 
+  it('lets the region scroll rather than squeezing the surfaces inside it', () => {
+    // MEASURED IN A BROWSER, NOT REASONED ABOUT. Both audit leaves declare
+    // `min-height: 0` — correct for each of them, because each was once the
+    // scroll container itself — and in a bounded flex column that is precisely
+    // the licence to lay them out shorter than their content. With a refusal and
+    // five findings the block was drawn 54px tall around 131px of content, and
+    // because a leaf's own overflow is visible it PAINTED OVER the panel beneath
+    // it. Nothing threw, no test failed, and the markup was correct: the two
+    // surfaces were simply drawn on top of each other.
+    //
+    // So the region's members do not shrink, and the overflow the region already
+    // declares is what absorbs the difference.
+    const css = withoutComments(workspaceStylesheet);
+    const members: string[] = [];
+    for (const match of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+      const selectors = (match[1] ?? '').split(',').map((one) => one.trim());
+      if (selectors.includes(".ig-zone[data-zone='inspector'] .ig-audit-region > *")) {
+        members.push(match[2] ?? '');
+      }
+    }
+    assert.equal(members.length, 1, `the sheet has ${members.length} rules for the region's members`);
+    // THE VALUE, not the property: `flex-shrink: 1` is the default and restores
+    // the defect in full while passing any check that only asks whether the
+    // declaration is present.
+    const shrink = /flex-shrink:\s*([^;]+);/.exec(members[0] ?? '')?.[1]?.trim();
+    assert.equal(shrink, '0', `the region's members shrink again (flex-shrink: ${String(shrink)})`);
+  });
+
   it('gives the selection detail no share to be squeezed out of', () => {
     // `.ig-inspector` and the chrome both stay unbounded members of the track:
-    // only the audit panel declares a share. A cap here would be attempt one
+    // only the audit region declares a share. A cap here would be attempt one
     // arriving on the other sibling.
     const inspector = /\.ig-inspector\s*\{([^}]*)\}/.exec(withoutComments(workspaceStylesheet))?.[1];
     assert.ok(inspector !== undefined, 'the inspector rule is gone');

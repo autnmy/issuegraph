@@ -204,6 +204,8 @@ async function mounted(
      * not sprout a knob for one consumer's suite.
      */
     wrap?: (source: ReturnType<typeof createScriptedSource>) => DataSource;
+    /** §17d's outward link is drawn only for a URL the host can name. */
+    issueUrl?: (ref: string) => string | null;
   } = {},
 ) {
   const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>');
@@ -4501,6 +4503,93 @@ describe('opening the isolated list reveals it', () => {
     } finally {
       page.handle.destroy();
       page.dom.window.close();
+    }
+  });
+});
+
+describe('§17d’s outward link is the browser’s to follow, not the mount’s', () => {
+  /**
+   * A projection reporting one encoding refusal on a seed issue.
+   *
+   * A REFUSAL IS THE ONLY WAY TO DRAW THE BLOCK. It is a fact about a raw body
+   * the package never sees, so no document shape produces one — the host states
+   * it, and this is that host.
+   */
+  function withRefusal(snapshot: StoreSnapshot): WorkspaceProjection {
+    return {
+      ...project(snapshot),
+      audit: {
+        document: { issues: snapshot.issues, edges: snapshot.landed },
+        graph: { cycles: [], duplicateCanonical: () => null },
+        encodingRefused: [
+          { ref: '1', diagnostic: 'unparseable YAML at line 3', sourceLine: 'blocked-by: [231, 234' },
+        ],
+      },
+    };
+  }
+
+  it('does not redraw the surface under the reader’s own click', async () => {
+    // THE ANCHOR CARRIES A `data-ig-command` ONLY SO `a11y/baseline.ts` CAN SEE
+    // IT — that artifact records a control through the attribute channels it
+    // knows, and an anchor bearing nothing but `href` is invisible to it. But
+    // the command channel is also how a press becomes a dispatch, and nothing
+    // reduces this name: the command would come back unclaimed while the mount
+    // scheduled a redraw anyway, replacing the surface's markup and detaching
+    // the anchor mid-activation. An `<a>` is exempt from the "cannot navigate"
+    // connectedness check, so the navigation would still happen and the cost
+    // would have been invisible — a full re-render per click, for nothing.
+    const page = await mounted(SEED, {
+      project: withRefusal,
+      issueUrl: (ref) => `https://example.invalid/${ref}`,
+    });
+    try {
+      const link = page.element.querySelector<HTMLElement>('.ig-audit-refused-open');
+      assert.ok(link !== null, 'the fixture drew no outward link, so this proves nothing');
+      assert.equal(link.getAttribute('data-ig-command'), 'open-issue-url');
+
+      // IDENTITY, NOT MARKUP. A redraw replaces the surface's nodes, so the
+      // question "did the mount redraw" is exactly "is this the same node".
+      const before = page.element.querySelector('.ig-audit-refused-open');
+      page.click(link);
+      await flush();
+      assert.equal(
+        page.element.querySelector('.ig-audit-refused-open'),
+        before,
+        'clicking the link redrew the surface, detaching the anchor mid-activation',
+      );
+
+      // AND THE FIXTURE CAN ACTUALLY OBSERVE A REDRAW, or the assertion above
+      // passes for a mount that never redraws at all.
+      page.handle.update();
+      await flush();
+      assert.notEqual(
+        page.element.querySelector('.ig-audit-refused-open'),
+        before,
+        'the fixture cannot see a redraw, so the assertion above proves nothing',
+      );
+    } finally {
+      page.handle.destroy();
+    }
+  });
+
+  it('still dispatches the rewrite control beside it', async () => {
+    // THE REFUSAL IS SCOPED TO A LINK, not to the block. `Rewrite from editor`
+    // is an ordinary button on the command channel and must still reach the
+    // reducer, or the guard above has taken the surface's other control with it.
+    const page = await mounted(SEED, { project: withRefusal });
+    try {
+      const rewrite = page.element.querySelector<HTMLElement>('.ig-audit-refused-rewrite');
+      assert.ok(rewrite !== null, 'the fixture drew no rewrite control, so this proves nothing');
+      page.click(rewrite);
+      await flush();
+      // `reveal-issue` MOVES THE SELECTION, which is the whole of what it does.
+      const selected = page.element.querySelector('[data-ig-key="1"][data-ig-selected="true"]');
+      assert.ok(
+        selected !== null || page.element.querySelector('.ig-inspector') !== null,
+        'the rewrite control reached nothing',
+      );
+    } finally {
+      page.handle.destroy();
     }
   });
 });

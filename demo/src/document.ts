@@ -17,7 +17,7 @@
  */
 
 import { DEFAULT_PRIORITY } from '@issuegraph/core';
-import type { AuditInput } from '@issuegraph/editor';
+import type { AuditInput, EncodingRefusal } from '@issuegraph/editor';
 import type { GraphDocument } from '@issuegraph/store';
 import type { IssueRef } from '@issuegraph/store';
 import type {
@@ -234,6 +234,21 @@ function dedupe(holds: readonly ViewerHold[]): readonly ViewerHold[] {
 export interface Audited {
   readonly document: GraphDocument;
   readonly explained: ExplainedDocument;
+  /**
+   * Declarations the reader REFUSED, which no pair above can supply.
+   *
+   * A THIRD MEMBER, AND THE ONE-PAIR RULE IS EXTENDED KNOWINGLY RATHER THAN
+   * BROKEN. That rule is about a document and the reading of it disagreeing;
+   * this is neither. A refusal is a fact about a RAW BODY — by the time an
+   * `ExplainedDocument` exists the body is gone — so it cannot be derived from
+   * either half and has to be stated beside them.
+   *
+   * IN THIS DEMO IT IS A FIXTURE, NOT A READING. The demo parses no bodies: it
+   * builds its backlog from seed data, so nothing here can refuse anything.
+   * The value below is authored so §17d's fourth surface has something to draw,
+   * and a real host supplies its reader's own answer instead.
+   */
+  readonly encodingRefused?: readonly EncodingRefusal[] | undefined;
 }
 
 /**
@@ -275,6 +290,10 @@ export function projectDocument(
         cycles: audited.explained.model.cycles,
         duplicateCanonical: audited.explained.model.duplicateCanonical,
       },
+      // FROM THE SAME `Audited` VALUE AS THE OTHER TWO, so a caller cannot pair
+      // one backlog's refusals with another backlog's reading — the defect the
+      // type exists to make unrepresentable, asked of the third member too.
+      encodingRefused: audited.encodingRefused ?? [],
     },
   };
 }

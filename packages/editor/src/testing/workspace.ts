@@ -109,6 +109,9 @@ export const WORKSPACE_WORDS: WorkspaceWords = {
       'encoding-refused': 'this declaration could not be read',
     },
     show: 'go to it',
+    refusedHeading: 'could not be read',
+    refusedOpen: 'see it upstream',
+    refusedRewrite: 'fix it here',
   },
 };
 

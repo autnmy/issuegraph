@@ -93,6 +93,7 @@ import {
 import type { RailWindow } from './rail.ts';
 import { conflictDiff } from './recovery.ts';
 import {
+  type WorkspaceOptions,
   type WorkspaceRecovery,
   type WorkspaceRefusal,
   type WorkspaceWords,
@@ -174,6 +175,17 @@ export interface MountWorkspaceOptions {
   readonly theme?: Theme | undefined;
   /** The selector the theme's custom properties are written onto. */
   readonly themeSelector?: string | undefined;
+  /**
+   * Where an issue lives in the host's own world, for §17d's refused block.
+   *
+   * IT IS DECLARED HERE AS WELL AS ON `WorkspaceOptions` BECAUSE THIS INTERFACE
+   * DOES NOT EXTEND THAT ONE. The render options below are built field by
+   * field, deliberately — this mount decides what a host may steer and what it
+   * owns — so an option added one file over reaches nothing mounted until it is
+   * named here too. See {@link WorkspaceOptions.issueUrl} for what the value
+   * means and why a refused scheme draws no link.
+   */
+  readonly issueUrl?: WorkspaceOptions['issueUrl'];
   readonly canvas?: CanvasMode | undefined;
   /** How many rail rows are drawn per window. Wider than the package default so a scroll rarely lands past the drawn rows. */
   readonly railCount?: number | undefined;
@@ -333,11 +345,13 @@ function isFocusable(node: Element | null | undefined): node is HTMLElement {
  */
 type ControlAnswer =
   | { readonly kind: 'dispatch'; readonly command: HostCommand }
-  | { readonly kind: 'refused'; readonly reason: 'input' | 'inert' };
+  | { readonly kind: 'refused'; readonly reason: 'input' | 'inert' | 'navigation' };
 
-/** The two refusals, allocated once: they carry no per-press data. */
+/** The three refusals, allocated once: they carry no per-press data. */
 const REFUSED_INPUT: ControlAnswer = Object.freeze({ kind: 'refused', reason: 'input' });
 const REFUSED_INERT: ControlAnswer = Object.freeze({ kind: 'refused', reason: 'inert' });
+/** A control whose activation the BROWSER performs. See {@link isNavigating}. */
+const REFUSED_NAVIGATION: ControlAnswer = Object.freeze({ kind: 'refused', reason: 'navigation' });
 
 /**
  * A control's identity across a redraw — every field `controlAnswer` reads
@@ -382,6 +396,17 @@ interface CommandFocus {
    * limit, and it beats the alternative of always restoring the first.
    */
   readonly ordinal: number;
+}
+
+/**
+ * Whether this control is a link the browser will follow by itself.
+ *
+ * THE `href` IS PART OF THE TEST. A bare `<a>` with no `href` is not a link —
+ * it has no activation behaviour of its own — so one carrying a command is an
+ * ordinary control and must still be dispatched.
+ */
+function isNavigating(node: Element | null | undefined): boolean {
+  return node?.tagName.toLowerCase() === 'a' && node.getAttribute('href') !== null;
 }
 
 function isInput(node: Element | null | undefined): node is HTMLInputElement {
@@ -1461,6 +1486,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       surfaceId,
       audit,
       auditFiltered: state.auditFiltered,
+      issueUrl: current.issueUrl,
       theme: resolved,
       themeSelector: current.themeSelector,
       // THE WRITE STATES ONLY. The workspace holds the one selection, and the
@@ -1973,6 +1999,21 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     if (control !== null && surface.contains(control)) {
       const name = control.getAttribute(COMMAND_ATTRIBUTE) ?? '';
       if (isInput(control)) return REFUSED_INPUT; // the `input` listener owns these
+      // AND THE BROWSER OWNS A LINK, which is the same refusal one element over.
+      // §17d's `Open in GitHub` is an ANCHOR — it leaves the document, and a
+      // control that navigates away must not announce itself as a button — and
+      // it carries a command name only so `a11y/baseline.ts` can see it: that
+      // artifact records a control through the attribute channels it knows, and
+      // an anchor bearing nothing but `href` is invisible to it.
+      //
+      // DISPATCHING IT WOULD BE A REDRAW UNDER THE READER'S OWN CLICK. The
+      // reducer has no arm for the name, so the command comes back unclaimed —
+      // but `applyResult` still schedules, and the redraw replaces the surface's
+      // markup, detaching the anchor mid-activation. An `<a>` is exempt from the
+      // "cannot navigate" connectedness check so the navigation still happens,
+      // which is precisely why this would have gone unnoticed: a full re-render
+      // per click, paid for a command nothing handles.
+      if (isNavigating(control)) return REFUSED_NAVIGATION;
       // THE ENTRY IS INERT WITHOUT A BUNDLE, and it is withheld HERE rather
       // than in the reducer. `renderWorkspace` draws §17a's `First pass →`
       // inside this surface, so a host cannot intercept it from outside; and

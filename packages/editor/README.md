@@ -109,9 +109,24 @@ auditRowAttributes(overlay, ref);    // {} for a clean row; the severity mark fo
 
 **"Long-closed" is not available here.** A document carries no timestamp, so every closed blocker is reported — the safe direction for a finding whose whole severity is `misleading`, and one a host can narrow with a date it does have.
 
+**Three classes are a list; the fourth is its own block.** `renderAuditPanel` draws the cycle, the stale blocker and the dead duplicate ref as cards, because each says something about a relationship that exists. `renderEncodingRefusedBlock` draws the refusal separately — SPEC surfaces it *"on the issue itself, because until it parses the issue has no edges at all and would otherwise look simply unencoded"* — with the ref, the reader's diagnostic, the offending source line, and two controls.
+
+```ts
+import { renderAuditPanel, renderEncodingRefusedBlock } from '@issuegraph/editor';
+
+renderAuditPanel(overlay, { words, known });                     // the three relationship findings
+renderEncodingRefusedBlock(encodingRefused, { words, known, issueUrl });
+```
+
+Both return `null` when they have nothing to draw. `renderWorkspace` composes them for you and wraps the pair in one bounded region, so the inspector column keeps its single scroll track.
+
+**Two counts, and they are different numbers.** `renderAuditHeader`'s count is every finding — it is the persistent control, it sits in the workspace chrome beside both surfaces, and a reader works through all four classes. The count in the *panel's own head* is that panel's own cards, because it is enclosed by the list it counts.
+
+**`issueUrl` is yours to answer, and its answer is checked.** The package holds an opaque reference and no repository identity, so the outward link is drawn only for a URL you resolve — and only if it passes `@issuegraph/viewer`'s `isLinkable`. An `href` runs in your origin, so `javascript:` and `data:` are script sinks that escaping does not close; absent, `null` and a refused scheme all draw no link. `Rewrite from editor` publishes `reveal-issue`, never `select-issue`: the latter is a pointer that completes a relationship draft, so it could write from the one surface whose rule is that it never offers a remedy.
+
 **Ambient, and the list of things it is not.** A persistent header count that never moves and never animates, a `--ig-stroke` gold left-bar on affected rail rows, and a filter — not a mode, because *"a mode you must enter is a mode you forget"*. No modals, toasts, red banners, badge animation, or **auto-fix**: every finding is a judgment call, so the surface offers navigation and never a remedy. That prohibition is asserted over the emitted markup and the stylesheet bytes rather than stated here alone.
 
-**The bar is CSS on this package's own attribute, not an element drawn into a viewer row.** Layer 1's markup primitive is deliberately not on its public surface, so an overlay drawn from out here would have to re-implement HTML escaping — duplication with an injection shape rather than a mirror that merely drifts. `auditRowAttributes` answers what a row carries, `auditStylesheet` draws the bar from it, and the exchange is data.
+**The bar is CSS on this package's own attribute, not an element drawn into a viewer row.** The reason is **ownership of the row**, not escaping: the rows belong to `@issuegraph/viewer`, and rewriting a row's `class` from out here reaches past the surface layer 2 composes through. (Layer 1's `renderMarkup` *is* public and five leaves here import it — an earlier revision of this paragraph said otherwise, and `audit/surface.ts` records the same correction.) `auditRowAttributes` answers what a row carries, `auditStylesheet` draws the bar from it, and the exchange is data.
 
 ## The three equivalent create paths
 
