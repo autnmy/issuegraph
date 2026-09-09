@@ -111,12 +111,26 @@ function project(snapshot: StoreSnapshot, held = false, audited = false): Worksp
     // audit reads `AuditGraph.cycles`, which is the reader's answer and not
     // something this fixture should re-derive; naming two seed refs is the
     // whole of what the panel needs to draw a card about them.
+    // AND A REFUSAL ON THE SAME SURFACE RATHER THAN A TWELFTH ONE. §17d's fourth
+    // class is drawn by `audit/refused.ts` outside the findings panel, and only
+    // a host that REPORTS a refusal makes it appear — no document shape produces
+    // one, because a refusal is a fact about a raw body this package never sees.
+    // So without it the block's two controls would be covered by no rule here at
+    // all, which is the ABSENT entry this fixture exists to make impossible.
+    //
+    // FOLDED INTO `audited` BECAUSE MOUNTS ARE THE COST. #185 measured this file
+    // against its budget — eleven full jsdom workspaces, and a per-test rebuild
+    // made it fifty-five — so a new surface for one more state is the expensive
+    // way to ask. "The audit found something" already covers both.
     audit: {
       document: landed,
       graph: {
         cycles: audited ? [['1', '2']] : [],
         duplicateCanonical: () => null,
       },
+      encodingRefused: audited
+        ? [{ ref: '3', diagnostic: 'unparseable YAML at line 3', sourceLine: 'blocked-by: [231, 234' }]
+        : [],
     },
   };
 }
@@ -154,8 +168,9 @@ export async function a11ySurface(
     /** Put a hold on the inspected slot, which is what draws its subject control. */
     readonly held?: boolean;
     /**
-     * Report a cycle, which is the only thing that draws §17d's findings panel
-     * — and therefore the only state where its `select-issue` control exists.
+     * Report a cycle AND a refusal — the only thing that draws either of §17d's
+     * two surfaces, and therefore the only state where the findings panel's
+     * navigation control and the refused block's two controls exist.
      */
     readonly audited?: boolean;
   } = {},
@@ -196,6 +211,11 @@ export async function a11ySurface(
     store,
     project: projectWith(options.held === true, options.audited === true),
     words: WORDS,
+    // SUPPLIED SO §17d's OUTWARD LINK IS DRAWN. `audit/refused.ts` withholds it
+    // when the host can name no URL — never advertise a move that cannot be made
+    // — so a fixture with no resolver would leave that control in no baseline,
+    // which is the same absent-entry failure the first-pass queue above records.
+    issueUrl: (ref) => `https://example.invalid/${ref}`,
     // SUPPLIED SO §17a's ENTRY IS DRAWN, and so the QUEUE can be opened. The
     // entry is a command control in the rail's panel header, and the queue
     // behind it is the only surface publishing `data-ig-answer` — which

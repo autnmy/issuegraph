@@ -204,6 +204,8 @@ async function mounted(
      * not sprout a knob for one consumer's suite.
      */
     wrap?: (source: ReturnType<typeof createScriptedSource>) => DataSource;
+    /** §17d's outward link is drawn only for a URL the host can name. */
+    issueUrl?: (ref: string) => string | null;
   } = {},
 ) {
   const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>');
@@ -231,19 +233,27 @@ type Mounted = Awaited<ReturnType<typeof mounted>>;
 /**
  * The audit panel's scroll offset survives a redraw, as the rail's already does.
  *
- * #177 gave the panel a share of the inspector column, which made it an
- * INDEPENDENT scroll container. Before that the audit grew to its content and
- * only the zone scrolled, so there was one offset to keep and `redraw` kept it.
- * Now there are two, and a store update runs the same redraw — so without this
- * a reader deep in a long audit is returned to the first finding by something
- * happening elsewhere on the surface.
+ * #177 gave the audit a share of the inspector column, which made it an
+ * INDEPENDENT scroll container. Before that it grew to its content and only the
+ * zone scrolled, so there was one offset to keep and `redraw` kept it. Now there
+ * are two, and a store update runs the same redraw — so without this a reader
+ * deep in a long audit is returned to the first finding by something happening
+ * elsewhere on the surface.
+ *
+ * THE SCROLLER IS `.ig-audit-region`, NOT `.ig-audit-panel`. #177 put the bound
+ * on the panel; §17d's second surface moved it up to the region holding both, so
+ * the panel's own offset is now always zero. THIS TEST DID NOT NOTICE — jsdom
+ * lets `scrollTop` be set on any element whatever its overflow, so it was
+ * measuring the mount's bookkeeping rather than anything that scrolls, and it
+ * went on passing against an element that had stopped being the scroll
+ * container. It asks about the region now, which is what a browser scrolls.
  *
  * `surface.innerHTML` replaces the subtree, so the element the offset was read
  * from is gone by the time it is written back: the restore has to RE-QUERY.
  * That is the part this test holds, and the identity assertion below is what
  * proves the subtree really was rebuilt rather than left alone.
  */
-describe("the audit panel's scroll offset survives a redraw", () => {
+describe("the audit region's scroll offset survives a redraw", () => {
   /** The default projection, with a cycle declared so the audit has findings. */
   function withCycle(snapshot: StoreSnapshot): WorkspaceProjection {
     // THE DOCUMENT IS REBUILT RATHER THAN READ OFF `base.audit`, which is
@@ -259,13 +269,13 @@ describe("the audit panel's scroll offset survives a redraw", () => {
     };
   }
 
-  it('restores the offset onto the panel the redraw built', async () => {
+  it('restores the offset onto the region the redraw built', async () => {
     const page = await mounted(SEED, { project: withCycle });
     try {
-      const panel = (): HTMLElement | null =>
-        page.element.querySelector<HTMLElement>('.ig-audit-panel');
-      const before = panel();
-      assert.ok(before !== null, 'the fixture drew no findings panel, so this proves nothing');
+      const region = (): HTMLElement | null =>
+        page.element.querySelector<HTMLElement>('.ig-audit-region');
+      const before = region();
+      assert.ok(before !== null, 'the fixture drew no audit region, so this proves nothing');
 
       before.scrollTop = 120;
       assert.equal(before.scrollTop, 120, 'the fixture cannot hold an offset, so this proves nothing');
@@ -274,8 +284,8 @@ describe("the audit panel's scroll offset survives a redraw", () => {
       page.handle.update();
       await flush();
 
-      const after = panel();
-      assert.ok(after !== null, 'the redraw dropped the panel');
+      const after = region();
+      assert.ok(after !== null, 'the redraw dropped the region');
       // THE REDRAW MUST ACTUALLY HAVE REPLACED IT, or the assertion below is
       // vacuous: an offset on a node nothing touched survives by itself.
       assert.notEqual(after, before, 'no redraw happened, so this test would prove nothing');
@@ -288,11 +298,19 @@ describe("the audit panel's scroll offset survives a redraw", () => {
 
   it('keeps focus on the panel rather than dropping it into the rail', async () => {
     // THE OFFSET AND THE FOCUS ARE TWO FACTS, and keeping one without the other
-    // still moves the reader out of the zone. The panel is the one tab stop on
-    // this surface no token can name — no keyed ancestor, no command attribute
-    // — so `focusedKey()` and `commandFocusToken()` both answer nothing for it
-    // and the last-resort arm, which fires on "nothing inside the surface holds
-    // focus", would send a reader scrolling a long audit to the first rail row.
+    // still moves the reader out of the zone.
+    //
+    // THE STOPS ARE THE PANEL AND THE BLOCK; THE SCROLLER IS THE REGION AROUND
+    // THEM. They came apart when §17d gained its second surface: the tab stops
+    // are in the leaves' own markup and travel with them, while the bound moved
+    // up to the region. So this asks about the panel and the offset test above
+    // asks about the region, and neither answers for the other.
+    //
+    // Neither stop can be named by a token — no keyed ancestor, no command
+    // attribute — so `focusedKey()` and `commandFocusToken()` answer nothing for
+    // them, and the last-resort arm, which fires on "nothing inside the surface
+    // holds focus", would send a reader reading a long audit to the first rail
+    // row in another zone.
     const page = await mounted(SEED, { project: withCycle });
     try {
       const before = page.element.querySelector<HTMLElement>('.ig-audit-panel');
@@ -317,16 +335,66 @@ describe("the audit panel's scroll offset survives a redraw", () => {
     }
   });
 
+  it('keeps focus on the refused block, which is the stop that needs it most', async () => {
+    // THE SECOND STOP, AND THE ONE WITH THE STRONGEST CLAIM. Both of the refused
+    // block's controls are conditional, so a block whose refusals all name
+    // issues outside the drawn page — the case `findings.ts` keeps on purpose —
+    // has NO focusable descendant at all, and the section itself is the only
+    // thing a keyboard reader can hold. Losing it to the rail on an unrelated
+    // redraw is losing the surface.
+    //
+    // AND IT MUST COME BACK TO THE SAME SURFACE. Restoring "whichever audit stop
+    // the redraw drew first" would move a reader from the block to the panel,
+    // which is why the stop is captured by name.
+    function withRefusalOnly(snapshot: StoreSnapshot): WorkspaceProjection {
+      return {
+        ...project(snapshot),
+        audit: {
+          document: { issues: snapshot.issues, edges: snapshot.landed },
+          graph: { cycles: [], duplicateCanonical: () => null },
+          encodingRefused: [{ ref: 'nowhere-near-this-page', diagnostic: 'unparseable YAML' }],
+        },
+      };
+    }
+    const page = await mounted(SEED, { project: withRefusalOnly });
+    try {
+      const before = page.element.querySelector<HTMLElement>('.ig-audit-refused');
+      assert.ok(before !== null, 'the fixture drew no refused block');
+      // THE INERT CASE ITSELF: the ref names nothing the page carries, so the
+      // block draws its card and neither control.
+      assert.equal(before.querySelector('button'), null, 'the fixture drew a control, so this is not the inert case');
+      assert.equal(page.element.querySelector('.ig-audit-panel'), null, 'the fixture drew a panel too');
+
+      before.focus();
+      assert.equal(page.dom.window.document.activeElement, before, 'the fixture cannot hold focus');
+
+      page.handle.update();
+      await flush();
+
+      const after = page.element.querySelector<HTMLElement>('.ig-audit-refused');
+      assert.ok(after !== null, 'the redraw dropped the block');
+      assert.notEqual(after, before, 'no redraw happened, so this test would prove nothing');
+      assert.equal(
+        page.dom.window.document.activeElement,
+        after,
+        'focus left the refused block — the rail fallback claimed it',
+      );
+      page.handle.destroy();
+    } finally {
+      page.dom.window.close();
+    }
+  });
+
   it('restores nothing when the redraw draws no panel', async () => {
     // A CLEAN AUDIT HAS NO PANEL — `renderAuditPanel` returns null on no
     // findings — and the restore must be absent rather than zeroing whatever
     // else the selector might have found.
     const page = await mounted(SEED);
     try {
-      assert.equal(page.element.querySelector('.ig-audit-panel'), null);
+      assert.equal(page.element.querySelector('.ig-audit-region'), null);
       page.handle.update();
       await flush();
-      assert.equal(page.element.querySelector('.ig-audit-panel'), null);
+      assert.equal(page.element.querySelector('.ig-audit-region'), null);
       page.handle.destroy();
     } finally {
       page.dom.window.close();
@@ -4501,6 +4569,128 @@ describe('opening the isolated list reveals it', () => {
     } finally {
       page.handle.destroy();
       page.dom.window.close();
+    }
+  });
+});
+
+describe('§17d’s outward link is the browser’s to follow, not the mount’s', () => {
+  /**
+   * A projection reporting one encoding refusal on a seed issue.
+   *
+   * A REFUSAL IS THE ONLY WAY TO DRAW THE BLOCK. It is a fact about a raw body
+   * the package never sees, so no document shape produces one — the host states
+   * it, and this is that host.
+   */
+  function withRefusal(snapshot: StoreSnapshot): WorkspaceProjection {
+    return {
+      ...project(snapshot),
+      audit: {
+        document: { issues: snapshot.issues, edges: snapshot.landed },
+        graph: { cycles: [], duplicateCanonical: () => null },
+        encodingRefused: [
+          { ref: '1', diagnostic: 'unparseable YAML at line 3', sourceLine: 'blocked-by: [231, 234' },
+        ],
+      },
+    };
+  }
+
+  it('does not redraw the surface under the reader’s own click', async () => {
+    // THE ANCHOR CARRIES A `data-ig-command` ONLY SO `a11y/baseline.ts` CAN SEE
+    // IT — that artifact records a control through the attribute channels it
+    // knows, and an anchor bearing nothing but `href` is invisible to it. But
+    // the command channel is also how a press becomes a dispatch, and nothing
+    // reduces this name: the command would come back unclaimed while the mount
+    // scheduled a redraw anyway, replacing the surface's markup and detaching
+    // the anchor mid-activation. An `<a>` is exempt from the "cannot navigate"
+    // connectedness check, so the navigation would still happen and the cost
+    // would have been invisible — a full re-render per click, for nothing.
+    const page = await mounted(SEED, {
+      project: withRefusal,
+      issueUrl: (ref) => `https://example.invalid/${ref}`,
+    });
+    try {
+      const link = page.element.querySelector<HTMLElement>('.ig-audit-refused-open');
+      assert.ok(link !== null, 'the fixture drew no outward link, so this proves nothing');
+      assert.equal(link.getAttribute('data-ig-command'), 'open-issue-url');
+
+      // IDENTITY, NOT MARKUP. A redraw replaces the surface's nodes, so the
+      // question "did the mount redraw" is exactly "is this the same node".
+      const before = page.element.querySelector('.ig-audit-refused-open');
+      page.click(link);
+      await flush();
+      assert.equal(
+        page.element.querySelector('.ig-audit-refused-open'),
+        before,
+        'clicking the link redrew the surface, detaching the anchor mid-activation',
+      );
+
+      // AND THE FIXTURE CAN ACTUALLY OBSERVE A REDRAW, or the assertion above
+      // passes for a mount that never redraws at all.
+      page.handle.update();
+      await flush();
+      assert.notEqual(
+        page.element.querySelector('.ig-audit-refused-open'),
+        before,
+        'the fixture cannot see a redraw, so the assertion above proves nothing',
+      );
+    } finally {
+      page.handle.destroy();
+    }
+  });
+
+  it('leaves Enter to the browser, so the link is not pointer-only', async () => {
+    // AN ANCHOR'S `Enter` ACTIVATION IS A DEFAULT ACTION. The click path refuses
+    // to DISPATCH this control — nothing reduces the name, and a redraw would
+    // detach the anchor mid-activation — but the keydown path must not answer
+    // the same way: cancelling the press means no click is ever synthesized and
+    // the link works for a pointer and not for a keyboard.
+    //
+    // `input` AND `inert` REFUSALS STILL KEEP THE PRESS, and the difference is
+    // the point: those say "this press does nothing and nothing else wants it",
+    // while `navigation` says something else is waiting for exactly this key.
+    const page = await mounted(SEED, {
+      project: withRefusal,
+      issueUrl: (ref) => `https://example.invalid/${ref}`,
+    });
+    try {
+      const link = page.element.querySelector<HTMLElement>('.ig-audit-refused-open');
+      assert.ok(link !== null, 'the fixture drew no outward link, so this proves nothing');
+      link.focus();
+      const press = new page.win.KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        cancelable: true,
+      });
+      link.dispatchEvent(press);
+      await flush();
+      assert.equal(
+        press.defaultPrevented,
+        false,
+        'the mount cancelled Enter on the link, so its navigation never happens',
+      );
+    } finally {
+      page.handle.destroy();
+    }
+  });
+
+  it('still dispatches the rewrite control beside it', async () => {
+    // THE REFUSAL IS SCOPED TO A LINK, not to the block. `Rewrite from editor`
+    // is an ordinary button on the command channel and must still reach the
+    // reducer, or the guard above has taken the surface's other control with it.
+    const page = await mounted(SEED, { project: withRefusal });
+    try {
+      const rewrite = page.element.querySelector<HTMLElement>('.ig-audit-refused-rewrite');
+      assert.ok(rewrite !== null, 'the fixture drew no rewrite control, so this proves nothing');
+      page.click(rewrite);
+      await flush();
+      // `reveal-issue` MOVES THE SELECTION, which is the whole of what it does.
+      const selected = page.element.querySelector('[data-ig-key="1"][data-ig-selected="true"]');
+      assert.ok(
+        selected !== null || page.element.querySelector('.ig-inspector') !== null,
+        'the rewrite control reached nothing',
+      );
+    } finally {
+      page.handle.destroy();
     }
   });
 });

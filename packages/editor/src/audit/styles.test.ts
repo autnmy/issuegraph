@@ -73,18 +73,21 @@ describe('the structural stylesheet', () => {
 /**
  * What the leaf still owns after #177, and what it deliberately does not.
  *
- * The panel's SHARE of the inspector column — the half-height cap and the
+ * The audit's SHARE of the inspector column — the half-height cap and the
  * scrolling that goes with it — is declared by `workspace/styles.ts`, scoped to
  * the zone, because it is a fact about three siblings sharing one track rather
- * than a fact about the panel. `renderAuditPanel` and this stylesheet are both
- * public exports, so a consumer can draw the panel outside `renderWorkspace`;
- * a cap here would hide findings behind an inner scrollbar with half the
- * container empty and no selection detail to reserve the space for.
+ * than a fact about either audit surface. Since §17d's fourth class moved to
+ * `./refused.ts` that share sits on the REGION holding both, so neither leaf
+ * carries it. `renderAuditPanel`, `renderEncodingRefusedBlock` and this
+ * stylesheet are all public exports, so a consumer can draw either surface
+ * outside `renderWorkspace`; a cap here would hide findings behind an inner
+ * scrollbar with half the container empty and no selection detail to reserve
+ * the space for.
  *
  * These tests hold that boundary from this side: the leaf sizes nothing, and it
  * styles the focus of the tab stop its own markup carries.
  */
-describe('the panel sizes nothing, and rings the stop its markup declares', () => {
+describe('the leaves size nothing, and ring the stops their markup declares', () => {
   /**
    * The sheet with its comments removed.
    *
@@ -113,17 +116,54 @@ describe('the panel sizes nothing, and rings the stop its markup declares', () =
     return found;
   }
 
-  it('declares no height, no cap and no scrolling of its own', () => {
-    // THE BOUNDARY, FROM THIS SIDE. A consumer drawing the panel on its own
-    // gets it at its content height, exactly as before #177 — the share is the
-    // composition's to impose, and only where its reason holds.
-    const panelRules = rulesFor('.ig-audit-panel');
-    assert.deepEqual(panelRules.length, 1, `the sheet has ${panelRules.length} rules for .ig-audit-panel`);
-    const panel = panelRules[0] as string;
-    assert.equal(/max-height\s*:/.test(panel), false, 'the leaf capped itself again');
-    assert.equal(/(^|;)\s*height\s*:/.test(panel), false, 'the leaf sized itself');
-    assert.equal(/overflow(?:-x|-y)?\s*:/.test(panel), false, 'the leaf made itself a scroll container');
-  });
+  /**
+   * BOTH SURFACES, BECAUSE §17d HAS TWO NOW. `./refused.ts` draws the fourth
+   * class outside the findings list, and every rule below is as true of it as of
+   * the panel — a leaf that sized itself would be wrong in every composition but
+   * one, and a leaf that scrolled would nest a second scroller inside the region
+   * that already scrolls. Written as a table so a third surface inherits the
+   * boundary instead of being reviewed into it.
+   */
+  const SURFACES: readonly (readonly [string, string])[] = [
+    ['.ig-audit-panel', '.ig-audit-list'],
+    ['.ig-audit-refused', '.ig-audit-refused-list'],
+  ];
+
+  for (const [surface, list] of SURFACES) {
+    it(`${surface} declares no height, no cap and no scrolling of its own`, () => {
+      // THE BOUNDARY, FROM THIS SIDE. A consumer drawing either surface on its
+      // own gets it at its content height, exactly as before #177 — the share is
+      // the composition's to impose, and only where its reason holds.
+      const rules = rulesFor(surface);
+      assert.deepEqual(rules.length, 1, `the sheet has ${rules.length} rules for ${surface}`);
+      const body = rules[0] as string;
+      assert.equal(/max-height\s*:/.test(body), false, 'the leaf capped itself again');
+      assert.equal(/(^|;)\s*height\s*:/.test(body), false, 'the leaf sized itself');
+      assert.equal(/overflow(?:-x|-y)?\s*:/.test(body), false, 'the leaf made itself a scroll container');
+    });
+
+    it(`${list} stays unbounded, so the cap cannot creep back in here`, () => {
+      const rules = rulesFor(list);
+      assert.deepEqual(rules.length, 1, `${list} is declared more than once`);
+      const body = rules[0] as string;
+      assert.equal(/overflow(?:-x|-y)?\s*:/.test(body), false, 'the list became a scroll container');
+      assert.equal(/max-height\s*:/.test(body), false, 'the cap landed on the list');
+    });
+
+    it(`${surface} draws a focus ring for the tab stop its markup carries`, () => {
+      // UNSCOPED, UNLIKE THE SIZING, because the tabindex is in the leaf's own
+      // markup and travels into every composition. A focusable element that
+      // shows nothing on focus is a stop a keyboard reader lands on blind — and
+      // for the refused block that stop is often the ONLY one it has, since both
+      // of its controls are conditional. Inset, because drawn outward the ring
+      // sits on the border box against the zone's edge where it is the first
+      // thing clipped — the viewer's own reason for the same negative offset.
+      const ring = rulesFor(`${surface}:focus-visible`)[0];
+      assert.ok(ring !== undefined, `${surface} is a tab stop with no focus treatment`);
+      assert.match(ring, /outline:\s*var\(--ig-focus-ring\) solid var\(--ig-focus\)\s*;/);
+      assert.match(ring, /outline-offset:\s*calc\(var\(--ig-focus-ring\) \* -1\)\s*;/);
+    });
+  }
 
   it('leaves the list unbounded too, so the cap cannot creep back in here', () => {
     // Three caps were tried on the LIST before #177 — a fixed length, a share

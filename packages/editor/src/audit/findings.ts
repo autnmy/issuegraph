@@ -144,10 +144,35 @@ export interface AuditFinding {
  *
  * The `diagnostic` is the reader's own words when the host has them — this
  * package never produces one, because it never sees a body.
+ *
+ * BOTH OPTIONAL FIELDS ARE FACTS ABOUT THE RAW BODY, which is the whole reason
+ * they live HERE rather than on {@link AuditFinding}. §17d draws the refusal as
+ * its own block — the ref, the reader's diagnostic, and the source line the
+ * reader stopped on — and none of those is reconstructible from a finding:
+ * `detail` is documented as "what the reader can be told, in one sentence.
+ * Never parsed, never a code", so recovering a source line out of it would make
+ * a sentence a wire format.
+ *
+ * AND A FINDING IS ONE SHAPE OVER FOUR CLASSES. Three of them can never carry
+ * either field, so declaring them there would render an absence as a value in
+ * the one module whose fourth class exists to refuse exactly that — while
+ * re-opening the caller-supplied surface {@link AuditFinding} records six review
+ * rounds closing. `./refused.ts` reads these refusals directly, and the audit
+ * still turns each one into a finding for the count and the rail's bar.
  */
 export interface EncodingRefusal {
   readonly ref: IssueRef;
   readonly diagnostic?: string | undefined;
+  /**
+   * The line of the issue's own body the reader stopped on — the frame's
+   * `blocked-by: [231, 234`, drawn muted and in mono under the diagnostic.
+   *
+   * RAW BODY TEXT, so it can carry anything a body can, markup included.
+   * Nothing in this package writes a tag around it: `./refused.ts` builds an
+   * {@link ElementSpec} and the viewer's `renderMarkup` owns the escaping,
+   * which is the same rule `./panel.ts` follows for `detail`.
+   */
+  readonly sourceLine?: string | undefined;
 }
 
 /**
@@ -696,8 +721,15 @@ export function auditDocument(input: AuditInput): readonly AuditFinding[] {
  * A detector deduplicating its own output would be four copies of one rule, and
  * `encodingRefusedFindings` already carries a fifth for refusals. A renderer
  * doing it would leave the HEADER COUNT wrong — a repeated edge would have said
- * "3 encoding problems" over a list of two — which is the reading the count and
- * the list exist to keep identical.
+ * "3 encoding problems" over a list of two.
+ *
+ * THE COUNT NOW SPANS TWO SURFACES, AND THAT DOES NOT RELAX THIS RULE. §17d's
+ * fourth class is drawn by `./refused.ts` rather than listed by `./panel.ts`,
+ * so the ambient count in `./surface.ts` is a count of the panel's cards PLUS
+ * the refused block's. `./refused.ts` repeats the by-ref rule above for its own
+ * list — one line, stated in its header, and pinned by `./panel.test.ts` —
+ * because a card count that disagreed with the finding count would break the
+ * same arithmetic, one surface over.
  */
 function distinct(findings: readonly AuditFinding[]): AuditFinding[] {
   const seen = new Set<string>();

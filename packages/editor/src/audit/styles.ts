@@ -81,11 +81,12 @@ export const auditStylesheet = `
    it is a sibling of .ig-inspector inside the zone rather than a child, and
    that column's padding does not reach it.
 
-   IT DECLARES NO SIZE OF ITS OWN, AND THAT IS THE LAYERING. The panel takes
-   half the inspector column and scrolls itself past that — issue 177's answer —
-   but that is a fact about SHARING A COLUMN WITH TWO OTHER SIBLINGS, not a fact
-   about the panel, so it is declared by the composition that owns the zone.
-   See workspace/styles.ts.
+   IT DECLARES NO SIZE OF ITS OWN, AND THAT IS THE LAYERING. Issue 177 gave the
+   audit half the inspector column, scrolling itself past that — and since the
+   fourth class moved to ./refused.ts the half belongs to the REGION holding both
+   surfaces rather than to this panel. Either way it is a fact about SHARING A
+   COLUMN, not a fact about the panel, so it is declared by the composition that
+   owns the zone. See workspace/styles.ts.
 
    The difference is reachable rather than theoretical: renderAuditPanel and
    this stylesheet are both public exports, so a consumer can draw the panel
@@ -252,5 +253,150 @@ export const auditStylesheet = `
   background: color-mix(in srgb, var(--ig-edge-blocked-by) var(--ig-tint-fill), transparent);
   border-color: color-mix(in srgb, var(--ig-edge-blocked-by) var(--ig-tint-border), transparent);
   color: var(--ig-edge-blocked-by);
+}
+
+/* ---- §17d's fourth class, drawn outside the panel (./refused.ts) ---- */
+
+/* NO SIZE OF ITS OWN, THE SAME ANSWER .ig-audit-panel GIVES ABOVE. This block
+   and that panel are the two members of .ig-audit-region, which is what the
+   inspector zone actually holds, and how much of the zone's single track that
+   region may take is a fact about SHARING A COLUMN rather than a fact about
+   either leaf. So the share is declared once by the composition that owns the
+   zone — see workspace/styles.ts, which bounds the region alone. */
+.ig-audit-refused {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--ig-font-ui);
+  gap: var(--ig-space-snug);
+  min-height: 0;
+  padding: var(--ig-space);
+}
+
+/* THE RING FOR THIS BLOCK'S TAB STOP, unscoped for the reason the panel's is:
+   the tabindex is in this leaf's MARKUP, so it is carried into every
+   composition, and a focusable element that shows nothing on focus is a stop a
+   keyboard reader lands on blind. Inset, the viewer's idiom, so a ring at the
+   zone's edge is not the first thing the column's scroll clips. */
+.ig-audit-refused:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: calc(var(--ig-focus-ring) * -1);
+}
+
+/* THE SAME HEADING TREATMENT AS THE PANEL'S, because they are peers in one
+   column and §17d draws them as one section. A second treatment would say they
+   were two unrelated things. */
+.ig-audit-refused-heading {
+  color: var(--ig-edge-blocked-by);
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-small);
+  font-weight: inherit;
+  letter-spacing: var(--ig-tracking-group);
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.ig-audit-refused-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-snug);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* THE CARD IS DRAWN, UNLIKE THE PANEL'S. The frame gives this one a surface and
+   a border because it sits alone rather than in a list of like items — it is
+   the one finding that is about an ISSUE rather than a relationship, and the
+   box is what says so. */
+.ig-audit-refused-card {
+  background: var(--ig-surface-2);
+  border: var(--ig-stroke) solid var(--ig-card-line);
+  border-radius: var(--ig-radius);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+  padding: var(--ig-space-tight);
+}
+
+.ig-audit-refused-head {
+  align-items: center;
+  display: flex;
+  gap: var(--ig-space-tight);
+}
+
+.ig-audit-refused-ref {
+  color: var(--ig-text);
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-meta);
+}
+
+/* ONE BLOCK, TWO LINES — the diagnostic and, under it, the line the reader
+   stopped on. pre-wrap because the source line is RAW BODY TEXT: it carries
+   its own leading space and its own length, and collapsing either would show a
+   reader something other than what is in their issue. overflow-wrap keeps a
+   long unbroken line inside the column instead of widening the track. */
+.ig-audit-refused-reason {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-meta);
+  gap: var(--ig-space-micro);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.ig-audit-refused-diagnostic {
+  color: var(--ig-text-body);
+}
+
+/* MUTED IS CORRECT HERE AND NOWHERE NEAR A SENTENCE. SPEC's closing note puts
+   muted under AA for sentence-length copy, which is why .ig-audit-detail
+   takes --ig-text-body — but this is a short mono quotation of the reader's own
+   input, the exact shape muted is reserved for, and the frame draws it a step
+   back from the diagnostic it belongs to. */
+.ig-audit-refused-source {
+  color: var(--ig-text-muted);
+}
+
+.ig-audit-refused-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ig-space-tight);
+}
+
+/* ONE TREATMENT FOR BOTH CONTROLS, THOUGH ONE IS AN ANCHOR AND ONE A BUTTON.
+   The element differs because what they DO differs — the link leaves the
+   document and must say so to assistive technology — but they sit side by side
+   in the frame as one pair of moves, and drawing them differently would imply a
+   difference in weight that §17d does not make. */
+.ig-audit-refused-open,
+.ig-audit-refused-rewrite {
+  align-items: center;
+  background: none;
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius-small);
+  color: var(--ig-text);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: var(--ig-font-size-meta);
+  gap: var(--ig-space-micro);
+  padding: var(--ig-space-micro) var(--ig-space-tight);
+  text-decoration: none;
+}
+
+.ig-audit-refused-open:hover,
+.ig-audit-refused-rewrite:hover {
+  border-color: var(--ig-accent);
+}
+
+.ig-audit-refused-open:focus-visible,
+.ig-audit-refused-rewrite:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-micro);
+}
+
+.ig-audit-refused-away {
+  color: var(--ig-text-muted);
 }
 `;

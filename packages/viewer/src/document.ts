@@ -551,7 +551,20 @@ export interface NormalizeResult {
  */
 const LINKABLE_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:']);
 
-function isLinkable(url: string): boolean {
+/**
+ * Whether a URL may be put in an `href` at all.
+ *
+ * EXPORTED BECAUSE A SIBLING OWES IT. `@issuegraph/editor` draws §17d's
+ * `Open in GitHub` link from a URL its HOST resolves, and an `href` is a
+ * script-execution sink that escaping does not close — `renderMarkup` escapes
+ * attribute TEXT and has no opinion about schemes. The alternative was a second
+ * allowlist out there, which is precisely the "second implementation whose
+ * input space drifts" this package's barrel exists to prevent, and it would
+ * have had to re-derive the canonicalization below rather than the easy part.
+ *
+ * The rule this package already applies to its own document links, unchanged.
+ */
+export function isLinkable(url: string): boolean {
   // CANONICALIZE THE WAY A URL PARSER DOES, THEN READ THE SCHEME. Reading the
   // raw string is not enough: the URL parser REMOVES every ASCII tab, newline
   // and carriage return from ANYWHERE in the input before it reads anything,

@@ -31,6 +31,7 @@
 import {
   CANVAS_MODES,
   type CanvasMode,
+  type EncodingRefusal,
   type FirstPassWords,
   type MountWords,
   type PickerWords,
@@ -38,7 +39,7 @@ import {
   type WorkspaceProjection,
   mountWorkspace,
 } from '@issuegraph/editor';
-import type { EdgeKind, Store, StoreSnapshot, WriteRecord } from '@issuegraph/store';
+import type { EdgeKind, GraphDocument, Store, StoreSnapshot, WriteRecord } from '@issuegraph/store';
 import { type Theme, defaultTheme, extendTheme } from '@issuegraph/viewer';
 
 import { projectDocument } from './document.ts';
@@ -287,6 +288,9 @@ export const WORKSPACE_WORDS: MountWords = {
       'encoding-refused': 'This issue declares relationships the reader could not parse.',
     },
     show: 'show me',
+    refusedHeading: 'encoding refused',
+    refusedOpen: 'open in GitHub',
+    refusedRewrite: 'rewrite from editor',
   },
   picker: PICKER_WORDS,
   deleteRelationship: 'delete this relationship',
@@ -472,7 +476,21 @@ function projectFor(scenario: Scenario, moments: HostMoments): (snapshot: StoreS
     // its own probes over that document. Where the panel draws what it holds
     // these are the same reading and cost nothing; where it does not, auditing
     // one graph with another graph's answers is the failure to avoid.
-    const audited = shown ? { document: held, explained } : { document: held, explained: explainDocument(held, scenario.holds, scenario.ranking) };
+    const audited = {
+      document: held,
+      explained: shown ? explained : explainDocument(held, scenario.holds, scenario.ranking),
+      // §17d'S FOURTH CLASS, AND IT IS A FIXTURE RATHER THAN A READING. The
+      // demo parses no issue bodies — it builds its backlog from seed data — so
+      // nothing here can genuinely refuse a declaration, and without an authored
+      // one the refused block has nothing to draw on any scenario. A real host
+      // passes its reader's own answer.
+      //
+      // ATTACHED TO THE FIRST ISSUE THE BACKLOG ACTUALLY HOLDS, so the block's
+      // rewrite control has a row to reach: the control is withheld for a ref
+      // the drawn document does not carry, which is correct and would have made
+      // the fixture silently draw half a card.
+      encodingRefused: refusalFor(held),
+    };
     // THE HOST FACTS, from the same explained order the slots come from, so the
     // header's tally and the rows beneath it are one derivation. The running
     // job is the scenario's; its start is anchored to the mount, once.
@@ -496,6 +514,31 @@ function projectFor(scenario: Scenario, moments: HostMoments): (snapshot: StoreS
     });
     return projectDocument(explained, landed, host, scenario.caveats, audited);
   };
+}
+
+/**
+ * One authored refusal, on an issue the backlog holds.
+ *
+ * SEPARATE FROM THE SCENARIOS ON PURPOSE. A refusal is not a property of a
+ * backlog's SHAPE — every scenario here is a well-formed seed — so it belongs
+ * beside the projection that needs one rather than in the seed data, where it
+ * would read as something the reader found.
+ *
+ * EMPTY FOR AN EMPTY BACKLOG. The first-import scenario draws no rows at all,
+ * and a refusal naming an issue that is not there would render a card whose
+ * only control is withheld — a dead entry in the one state whose whole point is
+ * that there is nothing yet.
+ */
+function refusalFor(held: GraphDocument): readonly EncodingRefusal[] {
+  const first = held.issues[0];
+  if (first === undefined) return [];
+  return [
+    {
+      ref: first.ref,
+      diagnostic: 'unparseable YAML at line 3',
+      sourceLine: 'blocked-by: [231, 234',
+    },
+  ];
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -662,6 +705,17 @@ export function mountSandbox(
       // THE HOST'S HALF OF THE FIRST PASS: a detector the package refuses to
       // ship, and the five words it refuses to invent. Read against the store's
       // CURRENT document, not the one this closure was built with.
+      // WHERE AN ISSUE LIVES, WHICH ONLY A HOST KNOWS. The package holds an
+      // opaque ref and no repository identity, so §17d's outward link is drawn
+      // only for a URL supplied here — and only if it passes the viewer's
+      // scheme allowlist.
+      //
+      // THE TRACKER RATHER THAN A PER-ISSUE ADDRESS, BECAUSE THE REFS ARE
+      // FICTIONAL. This backlog is seeded, so a composed
+      // `.../issues/<ref>` would be a link to nothing dressed as a real one —
+      // worse in a sandbox than a link that plainly goes to the project's own
+      // issues. A real host composes the per-issue URL it actually has.
+      issueUrl: () => 'https://github.com/autnmy/issuegraph/issues',
       firstPass: {
         source: candidateSource(() => {
           const snapshot = live.store.getSnapshot();

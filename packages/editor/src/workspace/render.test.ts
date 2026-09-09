@@ -2236,16 +2236,77 @@ describe('the inspector zone at the audit sizes §17f produces', () => {
     assert.ok((result.view.audit?.count ?? 0) >= 30, 'the fixture produced too few findings');
 
     const zone = inspectorOf(result.markup);
+    assert.ok(zone.includes('ig-audit-region'), 'the audit region is not in the zone');
     assert.ok(zone.includes('ig-audit-panel'), 'the panel is not in the zone');
     // WHAT THIS HOLDS IS THE ORDER, and it is worth being exact about that.
     // `.ig-inspector` is emitted unconditionally, so its presence cannot fail
-    // from a long audit — the assertion that can is the panel coming FIRST,
-    // which is half of why the panel is the sibling that takes the bound.
+    // from a long audit — the assertion that can is the audit coming FIRST,
+    // which is half of why the region is the sibling that takes the bound.
     assert.ok(zone.includes('class="ig-inspector"'), 'the zone lost the selection detail entirely');
     assert.ok(
-      zone.indexOf('ig-audit-panel') < zone.indexOf('class="ig-inspector"'),
-      'the panel is no longer drawn first, which changes what #177 decided',
+      zone.indexOf('ig-audit-region') < zone.indexOf('class="ig-inspector"'),
+      'the audit is no longer drawn first, which changes what #177 decided',
     );
+    // AND THE PANEL IS INSIDE THE REGION, not a sibling of it. The bound is
+    // declared on the region, so a panel that escaped it would be unbounded
+    // again — green on the ordering above and wrong about the thing it guards.
+    assert.ok(
+      zone.indexOf('ig-audit-region') < zone.indexOf('ig-audit-panel'),
+      'the panel is outside the region that carries the bound',
+    );
+  });
+
+  it('draws the refused block inside the region, ahead of the findings list', () => {
+    // §17d'S FOURTH CLASS IS SPEC'S SEPARATE SURFACE: a refusal is "surfaced on
+    // the issue itself, because until it parses the issue has no edges at all".
+    // It LEADS because it is the finding that says the other three cannot be
+    // trusted for that issue — its edges were never read — so a reader meeting
+    // the list first would be reading conclusions drawn from a declaration
+    // nobody could parse.
+    const audit = auditOf(3);
+    const result = renderWorkspace(backlogOf(312), {
+      ...WORDS,
+      audit: {
+        ...audit,
+        encodingRefused: [{ ref: 'i0007', diagnostic: 'bad YAML', sourceLine: 'blocked-by: [1' }],
+      },
+      issueUrl: (ref) => `https://example.invalid/${ref}`,
+    });
+    const zone = inspectorOf(result.markup);
+    assert.ok(zone.includes('ig-audit-refused'), 'the refused block is not in the zone');
+    assert.ok(
+      zone.indexOf('ig-audit-region') < zone.indexOf('ig-audit-refused'),
+      'the refused block is outside the region that carries the bound',
+    );
+    assert.ok(
+      zone.indexOf('ig-audit-refused') < zone.indexOf('ig-audit-panel'),
+      'the refusal no longer leads the region',
+    );
+    // AND THE HOST'S OWN VALUES REACHED THE LEAF — the words, the drawn keys and
+    // the URL resolver each arrive through a different argument, and a forward
+    // that dropped one would still draw a block.
+    assert.ok(zone.includes(WORDS.words.audit.refusedHeading), 'the words did not reach the block');
+    assert.ok(zone.includes('https://example.invalid/i0007'), 'the resolver did not reach the block');
+    // THE BLOCK'S OWN CLASS, NOT THE COMMAND. `reveal-issue` is published by the
+    // findings panel's cards too, and this fixture draws three of them — so an
+    // assertion on the command alone passes with `known` unwired entirely, which
+    // is the trap `RENDERED_CONTROLS` records one file over. Only `refused.ts`
+    // emits this class, and it emits it only for a ref the drawn document holds.
+    assert.ok(zone.includes('ig-audit-refused-rewrite'), 'the known set did not reach the block');
+  });
+
+  it('draws no region at all when the audit found nothing to show', () => {
+    // THE REGION IS A WRAPPER, so it must not become a bounded empty box in a
+    // column whose space belongs to the selection — the call `renderAuditPanel`
+    // makes about a list of nothing, one level up.
+    const clean = renderWorkspace(backlogOf(12), {
+      ...WORDS,
+      audit: { document: { issues: [], edges: [] }, graph: { cycles: [], duplicateCanonical: () => null } },
+    });
+    assert.equal(clean.markup.includes('ig-audit-region'), false, clean.markup);
+    // AND THE AMBIENT HEADER IS STILL DRAWN AT ZERO: it is the control, and a
+    // control that appears with bad news is one the eye has to re-find.
+    assert.ok(clean.markup.includes('ig-audit-count'), 'the ambient count went away with the list');
   });
 
   it('carries the panel\'s share in the stylesheet, not in the markup', () => {

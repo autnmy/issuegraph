@@ -238,6 +238,15 @@ const RENDERED_CONTROLS: readonly string[] = Object.freeze([
   'data-ig-command:focus',
   'data-ig-command:kind',
   'data-ig-command:open-isolated',
+  // §17d's REFUSED BLOCK, LEAVING THE APPLICATION. It is an ANCHOR rather than a
+  // button — it navigates away, and announcing itself as a button would tell a
+  // reader the wrong thing about what pressing it does — and an anchor carrying
+  // only `href` is on none of `CONTROL_ATTRIBUTES`' three channels, so it would
+  // have been recorded nowhere and covered by no rule. `audit/refused.ts` gives
+  // it a `data-ig-command` for exactly that: the mount does not need one, the
+  // browser follows the href by itself, but a control this package ships and its
+  // own accessibility artifact cannot see is what this artifact exists to refuse.
+  'data-ig-command:open-issue-url',
   'data-ig-command:refresh',
   'data-ig-command:retry',
   'data-ig-command:retype',
@@ -251,6 +260,10 @@ const RENDERED_CONTROLS: readonly string[] = Object.freeze([
   // instructs would leave every rule passing over a control that had silently
   // gone. `refresh` was missing from this list until a review round found it,
   // and this entry was missing until the next one did.
+  //
+  // TWO SURFACES PUBLISH IT NOW — the findings panel's card and the refused
+  // block's rewrite control — and listing it once is still right: this list
+  // asks whether the CONTROL is recorded anywhere, not how many places draw it.
   'data-ig-command:reveal-issue',
   'data-ig-command:target',
   'data-ig-command:target-query',

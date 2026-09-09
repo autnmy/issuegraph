@@ -1,9 +1,24 @@
 /**
- * §17d's findings panel: the list the ambient count is a count OF.
+ * §17d's findings panel: the three RELATIONSHIP findings, as a list.
  *
  * `./surface.ts` draws the ambient half — the persistent header count and the
  * left-bar on an affected rail row. Neither says what was found. This module
- * draws the list, so a reader who sees `3` has somewhere to read the three.
+ * draws the list, so a reader who sees a count has somewhere to read it.
+ *
+ * ## Three classes, not four — the fourth is `./refused.ts`'
+ *
+ * `encoding-refused` is drawn OUTSIDE this panel, and SPEC is why: a refusal is
+ * *"surfaced on the issue itself, because until it parses the issue has no
+ * edges at all and would otherwise look simply unencoded"*. The other three
+ * say something about a relationship that exists; that one says the
+ * relationships cannot be read.
+ *
+ * SO THERE ARE TWO COUNTS NOW, AND THEY ARE DIFFERENT NUMBERS ON PURPOSE.
+ * `./surface.ts`'s ambient count stays every finding — it is the persistent
+ * control, it sits in the workspace chrome beside both surfaces, and a reader
+ * works through all four classes. The count in THIS panel's head is this
+ * panel's own cards, because it is enclosed by the list it counts. See
+ * {@link renderAuditPanel}.
  *
  * ## It is the module `./surface.ts` predicted
  *
@@ -109,6 +124,21 @@ export interface AuditWords {
   readonly titles: Readonly<Record<AuditClass, string>>;
   /** The navigation control on each card — the frame's `Show the loop`. */
   readonly show: string;
+  /**
+   * The refused block's own heading — the frame's `Encoding refused`.
+   *
+   * THE LAST THREE BELONG TO `./refused.ts`, AND THEY LIVE HERE ANYWAY. §17d is
+   * one section and its words are one record: a host wiring the audit supplies
+   * `AuditWords` once, and splitting a second record off for the fourth class
+   * would let a host supply half a section. `classes` and `titles` are already
+   * total over `AuditClass`, which includes `encoding-refused` — so the words
+   * for that class were never going to sit anywhere else.
+   */
+  readonly refusedHeading: string;
+  /** The outward link's label. The package draws the `↗`. */
+  readonly refusedOpen: string;
+  /** The reveal control's label — the frame's `Rewrite from editor`. */
+  readonly refusedRewrite: string;
 }
 
 export interface AuditPanelOptions {
@@ -257,12 +287,19 @@ function cardSpec(
  * re-find"* — because it IS the control. A list of nothing is not a control; it
  * is a heading over an empty region in a column whose space belongs to the
  * selection. So the ambient half stays put at zero and the list goes away.
+ *
+ * IT IS THE LISTED FINDINGS THAT DECIDE, NOT `overlay.findings`. A document
+ * whose only findings are encoding refusals has a non-zero count, a bar on
+ * every affected row, and NOTHING for this panel to list — so it draws the
+ * refused block and no panel at all. Testing the overlay instead would have
+ * drawn a panel whose head said `2` above an empty list.
  */
 export function renderAuditPanel(
   overlay: AuditOverlay,
   options: AuditPanelOptions,
 ): ElementSpec | null {
-  if (overlay.findings.length === 0) return null;
+  const listed = overlay.findings.filter((finding) => finding.kind !== 'encoding-refused');
+  if (listed.length === 0) return null;
   const { words } = options;
   return element(
     'section',
@@ -274,9 +311,12 @@ export function renderAuditPanel(
       // `firstpass/render.ts` already names its own section from its words; this
       // is the same rule one leaf over.
       'aria-label': words.heading,
-      // A TAB STOP, BECAUSE #177 MADE THIS A SCROLL CONTAINER. The panel takes
-      // half the inspector column and scrolls itself past that, so there is
-      // content only scrolling reaches — and a pointer is not the only way in.
+      // A TAB STOP, AND THE REASON IS NOW THE SECOND ONE ALONE. It was the
+      // scroll container itself while #177's half-column bound sat on this
+      // element; since §17d's fourth class moved to `./refused.ts` the bound and
+      // the scrolling belong to the REGION holding both surfaces, and this panel
+      // does not shrink inside it. So "there is content only scrolling reaches"
+      // is no longer a fact about the panel — but the stop stays, because:
       //
       // ITS CARDS CANNOT BE RELIED ON TO CARRY THE KEYBOARD. `cardSpec` draws
       // its navigation control only for a member the drawn document actually
@@ -297,7 +337,18 @@ export function renderAuditPanel(
       // counts it read as one thing. `aria-hidden`, because it says nothing a
       // reader needs said twice — the count and the heading beside it do.
       element('span', { class: 'ig-audit-mark', 'aria-hidden': 'true' }, ['◆']),
-      element('span', { class: 'ig-audit-panel-count' }, [String(overlay.count)]),
+      // THIS PANEL'S OWN CARDS, NOT `overlay.count`, AND THE TWO ARE NOW
+      // DIFFERENT NUMBERS. `./surface.ts`'s header count is the persistent
+      // control §17d gives one job — "always the same click" — and it counts
+      // every finding, because the reader works through all four classes. This
+      // number is ENCLOSED IN THE SAME BOUNDED, SCROLLING SECTION AS THE LIST
+      // UNDER IT, so once `encoding-refused` moved to `./refused.ts` it would
+      // have printed `4` directly above three cards.
+      //
+      // THE FRAME AGREES: §17d's panel head reads `3 encoding problems` over
+      // exactly its own three cards, with the refusal a separate card outside.
+      // A count enclosed by the thing it counts is a count OF that thing.
+      element('span', { class: 'ig-audit-panel-count' }, [String(listed.length)]),
       // A REAL HEADING, AT THE LEVEL ITS PLACE IN THE ZONE EARNS. A `span` left
       // the panel invisible to heading navigation and put a gap in the column's
       // outline; the caps are the stylesheet's, as they are for every other
@@ -318,7 +369,7 @@ export function renderAuditPanel(
     element(
       'ul',
       { class: 'ig-audit-list' },
-      overlay.findings.map((finding) => cardSpec(finding, options.known, words)),
+      listed.map((finding) => cardSpec(finding, options.known, words)),
     ),
     ],
   );

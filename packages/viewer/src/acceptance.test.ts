@@ -217,6 +217,14 @@ describe('the public surface', () => {
       'hiddenGlyph',
       'identity',
       'initialNavigationState',
+      // THE ONE ANSWER TO "may this string go in an href". A consumer left to
+      // write it themselves gets the easy half — an allowlist of schemes — and
+      // misses the half that matters: the URL parser strips every ASCII tab,
+      // newline and carriage return from ANYWHERE in the input before it reads
+      // a scheme, so `java<TAB>script:` reaches the browser as `javascript:`
+      // while a raw scan sees no scheme at all and reads the value as relative.
+      // A second copy of this fails OPEN, in the host's own origin.
+      'isLinkable',
       // The one construction of "which verb, read from which end". The rail
       // badge and the inspector row draw one edge one zone apart, and a
       // consumer left to write the ternary itself has a second copy whose

@@ -132,8 +132,13 @@ const CLASS_ORDER: ReadonlyMap<AuditClass, number> = new Map(
  * Project findings onto the two things the ambient surface draws.
  *
  * Pure, and a function of the findings alone: it neither re-detects anything
- * nor reads the document, so the count on screen and the list behind it can
- * never disagree about what was found.
+ * nor reads the document, so the count on screen and what is drawn behind it
+ * can never disagree about what was found.
+ *
+ * "WHAT IS DRAWN" IS TWO SURFACES, NOT ONE. `./panel.ts` lists the three
+ * relationship classes and `./refused.ts` draws the fourth, so this count is a
+ * count of both together — which is why it stays every finding while the
+ * panel's own head counts only its cards. See {@link renderAuditHeader}.
  */
 export function auditOverlay(input: AuditInput): AuditOverlay {
   // IT RUNS THE AUDIT RATHER THAN ACCEPTING ONE. Taking a finding list made
@@ -274,6 +279,12 @@ export interface AuditHeaderOptions {
  * is why it is neither hidden nor disabled when nothing is found. A control
  * that appears when there is bad news is a control the eye has to re-find, and
  * §17d's whole ask is that the audit never demands attention it has not earned.
+ *
+ * IT COUNTS EVERY FINDING, ACROSS BOTH SURFACES THAT DRAW THEM. `./panel.ts`
+ * lists three classes and `./refused.ts` draws the fourth, and a reader works
+ * through all four — so splitting this number would hand them two to add up
+ * for one question. This one is in the workspace CHROME, beside both; the
+ * panel's own head is enclosed by its list and counts that list alone.
  *
  * A `button` with `aria-pressed`, because a filter toggle is a toggle: it has
  * two states and a screen reader has to be able to say which one is on.
