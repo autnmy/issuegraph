@@ -364,6 +364,68 @@ export const workspaceStylesheet = `
 }
 
 
+/* THE SHARE ITSELF, DECLARED BY THE COMPOSITION THAT OWNS THE COLUMN. This is
+   the other half of issue 177's answer, and it lives here rather than in
+   audit/styles.ts because it is a fact about three siblings sharing one track,
+   not a fact about the panel. renderAuditPanel and its stylesheet are both
+   public exports, so a consumer can draw the panel on its own — and capping it
+   there would hide findings behind an inner scrollbar with half the container
+   empty and no selection detail to reserve the space for. The scope is what
+   makes the rule true only where its reason holds.
+
+   A PERCENTAGE, NEVER A LENGTH. A fixed cap was tried first and resolved to
+   most of a short workspace's column under the default theme: a length cannot
+   know how tall the column it is dividing happens to be.
+
+   IT RESOLVES WHETHER OR NOT THE HOST BOUNDS THE HEIGHT, and two earlier drafts
+   were wrong about why. The first said the percentage went indefinite in an
+   auto-height host and CSS read the max-height as none — that is the block
+   rule, and it does not apply. The second reached for the mount, saying
+   .ig-mount is height: 100% so the track is definite once mounted; that is
+   circular, because 100% of an auto-height parent is itself auto. The reason is
+   neither: the ZONE IS A STRETCH-ALIGNED GRID ITEM, so the row gives it a used
+   height in both cases and a percentage against it always resolves.
+
+   AND THE OBSERVABLE THAT SHOWS THAT IS USED HEIGHT, NOT THE COMPUTED VALUE. A
+   third draft offered getComputedStyle as the evidence; it reports the
+   specified percentage either way, so it cannot tell the two cases apart. What
+   was measured is the drawn box: half the zone, in every host tried.
+
+   WHAT VARIES IS WHETHER IT BINDS. The row is as tall as its tallest zone, and
+   the rail draws the order — so ordinarily the rail sets it, half of that is
+   far more than the panel wants, and the bound is slack. It binds when the
+   PANEL is the tallest thing in the row, which in a height-bounded host is the
+   whole point. In an auto-height one it is a pure loss, and the measurement has
+   to be read carefully because the demo is height-bounded by construction:
+   taking its host height off and the other zones out, the panel still drew at
+   half, half the findings went behind its scroller, an equal amount of column
+   sat empty below the chrome, and the document was exactly as tall as before.
+   Filed as issue 188; CSS has no selector that asks whether an ancestor's
+   height is definite.
+
+   BORDER-BOX, AND IT IS LOAD-BEARING. There IS a universal reset in this
+   codebase and it does not reach here: viewer/src/styles.ts scopes it to
+   .ig-viewer descendants, and this panel is a sibling of the rail's viewer
+   rather than inside it. Without it the half is measured on the CONTENT box and
+   the panel's own padding and border push the drawn box past the share —
+   measured at 56.6% of the column instead of 50, one padding pair plus a
+   stroke. Nothing looks broken.
+
+   THE PANEL SCROLLS, NOT THE LIST INSIDE IT. Scrolling the list would pin the
+   panel's head, which is the wrong trade twice over. The ambient count section
+   17d fixes is the WORKSPACE HEADER's, drawn by headerMarkup in the header grid
+   area and outside this zone entirely — it already never moves, so a second
+   pinned count buys nothing. And the list has zero horizontal padding, so
+   making it the scroll container computes its overflow-x to auto and CLIPS the
+   focus ring on every card's control: an outline is ink overflow, so it is cut
+   rather than scrolled to. The panel's own padding gives those rings room. */
+.ig-zone[data-zone='inspector'] .ig-audit-panel {
+  box-sizing: border-box;
+  max-height: 50%;
+  overflow-y: auto;
+}
+
+
 /* THE AMBIENT LEFT-BAR. A 2px gold rule on the affected row and nothing else —
    no fill, no icon, no badge. §17a's whole ask is that encoding errors stay
    visible while you work rather than pulling you out of it.

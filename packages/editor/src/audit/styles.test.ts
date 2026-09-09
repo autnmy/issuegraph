@@ -71,38 +71,38 @@ describe('the structural stylesheet', () => {
 });
 
 /**
- * #177's ruling, pinned.
+ * What the leaf still owns after #177, and what it deliberately does not.
  *
- * The inspector zone is one scroll track holding three siblings — this panel,
- * the selection detail, and the chrome `mountWorkspace` appends. Four attempts
- * on #175 failed to divide it, and each failure is a property one of these
- * tests holds. They are written against the DECLARATIONS rather than against a
- * measured layout on purpose: `node --test` has no layout engine, so a pixel
- * offset is not observable here, and the mechanism — a bound that is a share of
- * the column and is the same declaration whatever the finding count — is.
+ * The panel's SHARE of the inspector column — the half-height cap and the
+ * scrolling that goes with it — is declared by `workspace/styles.ts`, scoped to
+ * the zone, because it is a fact about three siblings sharing one track rather
+ * than a fact about the panel. `renderAuditPanel` and this stylesheet are both
+ * public exports, so a consumer can draw the panel outside `renderWorkspace`;
+ * a cap here would hide findings behind an inner scrollbar with half the
+ * container empty and no selection detail to reserve the space for.
+ *
+ * These tests hold that boundary from this side: the leaf sizes nothing, and it
+ * styles the focus of the tab stop its own markup carries.
  */
-describe("the panel's share of the inspector column", () => {
+describe('the panel sizes nothing, and rings the stop its markup declares', () => {
   /**
    * The sheet with its comments removed.
    *
    * WITHOUT THIS EVERY TEST BELOW IS A FALSE GREEN, and it is not a theoretical
-   * one — a review round proved it by mutation. The rule bodies are found by
-   * matching a selector and a brace, and this file's own prose QUOTES the three
-   * declarations verbatim while explaining them, so a comment containing
-   * `.ig-audit-panel {` is enough for every assertion here to pass while the
-   * real rule is empty. That is exactly the shape of the defect #122 found
-   * behind a green test, one file over.
+   * one — a review round proved it by mutation. Rule bodies are found by
+   * matching a selector and a brace, and this file's prose QUOTES declarations
+   * verbatim while explaining them, so a comment containing a selector and a
+   * brace is enough for an assertion to pass against a rule that is empty. That
+   * is the shape of the defect #122 found behind a green test, one file over.
    */
   const css = auditStylesheet.replace(/\/\*[\s\S]*?\*\//g, '');
 
   /**
-   * Every rule body whose selector list names exactly this class.
+   * Every rule body whose selector list names exactly this selector.
    *
    * ALL OF THEM, NOT THE FIRST, because the cascade is the other way a green
-   * test can be wrong about a property: a later rule setting `max-height: none`
-   * silently wins and a check that stops at the first match never sees it. The
-   * arity is asserted rather than the last body taken — one rule per class is
-   * this sheet's own shape, and two is a finding either way.
+   * test can be wrong about a property: a later rule silently wins and a check
+   * that stops at the first match never sees it.
    */
   function rulesFor(name: string): string[] {
     const found: string[] = [];
@@ -113,67 +113,42 @@ describe("the panel's share of the inspector column", () => {
     return found;
   }
 
-  const panelRules = rulesFor('.ig-audit-panel');
-  const panel = panelRules[0];
-
-  it('declares the panel exactly once, so nothing later overrides the share', () => {
+  it('declares no height, no cap and no scrolling of its own', () => {
+    // THE BOUNDARY, FROM THIS SIDE. A consumer drawing the panel on its own
+    // gets it at its content height, exactly as before #177 — the share is the
+    // composition's to impose, and only where its reason holds.
+    const panelRules = rulesFor('.ig-audit-panel');
     assert.deepEqual(panelRules.length, 1, `the sheet has ${panelRules.length} rules for .ig-audit-panel`);
+    const panel = panelRules[0] as string;
+    assert.equal(/max-height\s*:/.test(panel), false, 'the leaf capped itself again');
+    assert.equal(/(^|;)\s*height\s*:/.test(panel), false, 'the leaf sized itself');
+    assert.equal(/overflow(?:-x|-y)?\s*:/.test(panel), false, 'the leaf made itself a scroll container');
   });
 
-  it('bounds the panel at half the column', () => {
-    // ATTEMPT 1 RETURNING IS HALF OF WHAT THIS CATCHES. A fixed cap was tried
-    // first and was most of a short workspace's column: a length cannot know
-    // how tall the column it divides happens to be, so the share is a
-    // percentage. The VALUE is pinned too, because a percentage alone is not
-    // the ruling — `max-height: 95%` is proportional, passes a shape check, and
-    // restores the defect in full.
-    assert.ok(panel !== undefined, 'the panel rule is gone');
-    const bound = /max-height:\s*([^;]+);/.exec(panel)?.[1]?.trim();
-    assert.ok(bound !== undefined, 'the panel declares no share of the column');
-    assert.equal(bound, '50%', `#177 gives the panel half the column; this gives it ${bound}`);
+  it('leaves the list unbounded too, so the cap cannot creep back in here', () => {
+    // Three caps were tried on the LIST before #177 — a fixed length, a share
+    // of a flex column, that share measured on the right box — and each was
+    // right about the previous one's defect while the column stayed the thing
+    // that could not be bounded from in here. It still cannot: the list has no
+    // padding, so a scroll container here clips the focus ring on every card
+    // control, an outline being ink overflow rather than scrollable overflow.
+    const listRules = rulesFor('.ig-audit-list');
+    assert.deepEqual(listRules.length, 1, 'the list is declared more than once');
+    const list = listRules[0] as string;
+    assert.equal(/overflow(?:-x|-y)?\s*:/.test(list), false, 'the list became a scroll container');
+    assert.equal(/max-height\s*:/.test(list), false, 'the cap landed on the list');
   });
 
-  it('measures that share on the box it actually draws', () => {
-    // NOT INHERITED, AND SILENT WHEN ABSENT. There IS a universal reset in this
-    // codebase and it does not reach here: `viewer/src/styles.ts` scopes it to
-    // `.ig-viewer` descendants and this panel is a sibling of the rail's viewer
-    // rather than inside it. So without this the share is measured on the
-    // CONTENT box and the panel's own padding and border push the drawn box
-    // past it. Nothing looks broken; the bound is wrong by a padding and a
-    // stroke.
-    assert.ok(panel !== undefined);
-    assert.match(panel, /box-sizing:\s*border-box\s*;/);
-  });
-
-  it('draws a focus ring for the tab stop the panel now carries', () => {
-    // A FOCUSABLE SCROLL CONTAINER WITH NO RING is a stop a keyboard reader
-    // lands on blind. Inset, because drawn outward it sits on the panel's
-    // border box against the zone's edge, where it is the first thing clipped —
-    // which is the viewer's own reason for the same negative offset.
+  it('draws a focus ring for the tab stop its markup carries', () => {
+    // UNSCOPED, UNLIKE THE SIZING, because the tabindex is in this leaf's own
+    // markup and travels into every composition. A focusable element that shows
+    // nothing on focus is a stop a keyboard reader lands on blind, wherever it
+    // is drawn. Inset, because drawn outward the ring sits on the panel's border
+    // box against the zone's edge, where it is the first thing clipped — the
+    // viewer's own reason for the same negative offset.
     const ring = rulesFor('.ig-audit-panel:focus-visible')[0];
     assert.ok(ring !== undefined, 'the panel is a tab stop with no focus treatment');
     assert.match(ring, /outline:\s*var\(--ig-focus-ring\) solid var\(--ig-focus\)\s*;/);
     assert.match(ring, /outline-offset:\s*calc\(var\(--ig-focus-ring\) \* -1\)\s*;/);
-  });
-
-  it('scrolls itself past the share, so no finding is unreachable', () => {
-    // THE PANEL, NOT THE LIST INSIDE IT. Scrolling `.ig-audit-list` instead
-    // would pin this panel's head, and that is the wrong trade twice: §17d's
-    // ambient count is the WORKSPACE HEADER's, which is outside this zone and
-    // already never moves; and the list has no horizontal padding, so making it
-    // the scroll container computes its overflow-x to auto and clips the focus
-    // ring on every card control — an outline is ink overflow, so it is cut
-    // rather than scrolled to.
-    //
-    // The shorthand is accepted beside the longhand: `overflow: auto` sets the
-    // same property, and a test that reds on it would be about spelling.
-    assert.ok(panel !== undefined);
-    assert.match(panel, /overflow(?:-y)?:\s*auto\b/);
-
-    const listRules = rulesFor('.ig-audit-list');
-    assert.deepEqual(listRules.length, 1, 'the list is declared more than once');
-    const list = listRules[0] as string;
-    assert.equal(/overflow(?:-x|-y)?\s*:/.test(list), false, 'the list became a second scroll container');
-    assert.equal(/max-height\s*:/.test(list), false, 'the cap moved back onto the list');
   });
 });

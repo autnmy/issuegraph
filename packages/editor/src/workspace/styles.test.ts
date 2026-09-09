@@ -324,6 +324,26 @@ const RENDERS = [
     words: { ...WORKSPACE_WORDS, rail: RAIL_WORDS },
     scale: { ...INITIAL_SCALE_STATE, isolatedOpen: true },
   }),
+  // §17d'S FINDINGS PANEL. It draws only for an audit that FOUND something, so
+  // without this render the panel's own classes are emitted by nothing here —
+  // and the share this sheet declares over `.ig-audit-panel` would look like a
+  // rule for a class the workspace never draws, which is exactly what the pair
+  // of tests below exists to catch.
+  renderWorkspace(DOCUMENT, {
+    words: WORKSPACE_WORDS,
+    audit: {
+      document: {
+        issues: ['i0001', 'i0002'].map((ref) => ({ ref, title: `issue ${ref}`, state: 'open' as const })),
+        edges: [
+          { id: 'blocked-by|i0001|i0002', kind: 'blocked-by' as const, from: 'i0001', to: 'i0002' },
+          { id: 'blocked-by|i0002|i0001', kind: 'blocked-by' as const, from: 'i0002', to: 'i0001' },
+        ],
+      },
+      // A two-cycle, which is the cheapest finding to declare: the graph port is
+      // the HOST's answer, so it is stated rather than derived here.
+      graph: { cycles: [['i0001', 'i0002']], duplicateCanonical: () => null },
+    },
+  }),
 ];
 
 /** Every class THIS package's workspace emits, across those states. */
@@ -350,6 +370,23 @@ const COMPOSED: ReadonlySet<string> = new Set([
   'ig-audit-toggle',
   'ig-audit-count',
   'ig-audit-label',
+  // §17d's findings panel, drawn by `renderAuditPanel` and styled by
+  // `auditStylesheet`, which `renderWorkspace` installs alongside this one —
+  // the same arrangement as the audit header above. `.ig-audit-panel` itself is
+  // deliberately NOT here: this sheet declares the panel's share of the
+  // inspector column, because that is a fact about three siblings sharing one
+  // track rather than about the panel, so the class is this sheet's to style
+  // and the accounting above should say so.
+  'ig-audit-panel-head',
+  'ig-audit-mark',
+  'ig-audit-panel-count',
+  'ig-audit-panel-heading',
+  'ig-audit-list',
+  'ig-audit-card',
+  'ig-audit-chip',
+  'ig-audit-title',
+  'ig-audit-detail',
+  'ig-audit-show',
   // §17c's summary, its dismiss control and its placed chips. Their rules live
   // in `reevaluateStylesheet`, which `renderWorkspace` installs alongside this
   // one — so they are that leaf's to style, exactly like the ladder chrome and
@@ -786,6 +823,62 @@ describe("the inspector zone stays one track, so the mount's chrome cannot be cl
     assert.equal(/display:\s*flex/.test(zone), false, 'the zone became a flex container again');
     assert.equal(/overflow(?:-y)?:\s*hidden/.test(zone), false, 'the zone stopped scrolling');
     assert.equal(/max-height/.test(zone), false, 'the zone capped itself');
+  });
+
+  const shareRules = ((): string[] => {
+    // ALL OF THEM, NOT THE FIRST. The cascade is how a green test is wrong about
+    // a property: a later rule setting `max-height: none` silently wins and a
+    // check that stops at the first match never sees it.
+    const css = withoutComments(workspaceStylesheet);
+    const found: string[] = [];
+    for (const match of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+      const selectors = (match[1] ?? '').split(',').map((one) => one.trim());
+      if (selectors.includes(".ig-zone[data-zone='inspector'] .ig-audit-panel")) found.push(match[2] ?? '');
+    }
+    return found;
+  })();
+
+  it('declares the panel\'s share exactly once, and scoped to this zone', () => {
+    // SCOPED IS THE POINT, not incidental. `renderAuditPanel` and
+    // `auditStylesheet` are both public exports, so a consumer can draw the
+    // panel outside `renderWorkspace` — and an unqualified cap would hide
+    // findings behind an inner scrollbar there, with half the container empty
+    // and no selection detail to reserve the space for. The share is true only
+    // inside this zone, so it is declared only there.
+    assert.deepEqual(shareRules.length, 1, `the sheet has ${shareRules.length} rules for the panel's share`);
+    assert.equal(
+      /\n\.ig-audit-panel\s*\{/.test(withoutComments(workspaceStylesheet)),
+      false,
+      'the share was declared unscoped, so it reaches a standalone panel too',
+    );
+  });
+
+  it('bounds the panel at half the column', () => {
+    // A PERCENTAGE, because a fixed cap cannot know how tall the column it
+    // divides happens to be — that was the first of #175's four attempts. And
+    // the VALUE, because a percentage alone is not the ruling: `max-height: 95%`
+    // is proportional, passes a shape check, and restores the defect in full.
+    const share = shareRules[0];
+    assert.ok(share !== undefined, 'the panel declares no share of the column');
+    const bound = /max-height:\s*([^;]+);/.exec(share)?.[1]?.trim();
+    assert.ok(bound !== undefined, 'the share rule sets no cap');
+    assert.equal(bound, '50%', `#177 gives the panel half the column; this gives it ${bound}`);
+  });
+
+  it('measures that share on the box it actually draws, and scrolls past it', () => {
+    // BORDER-BOX IS NOT INHERITED AND IS SILENT WHEN ABSENT. The universal reset
+    // in this codebase is scoped to `.ig-viewer` descendants and this panel is a
+    // sibling of the rail's viewer, so without the declaration the half is
+    // measured on the content box and the padding and border push the drawn box
+    // past it — wrong by one padding pair and a stroke, and nothing looks broken.
+    //
+    // The scrolling is on the PANEL rather than the list inside it: the list has
+    // no horizontal padding, so a scroll container there computes overflow-x to
+    // auto and clips the focus ring on every card control.
+    const share = shareRules[0];
+    assert.ok(share !== undefined);
+    assert.match(share, /box-sizing:\s*border-box\s*;/);
+    assert.match(share, /overflow(?:-y)?:\s*auto\b/);
   });
 
   it('gives the selection detail no share to be squeezed out of', () => {
