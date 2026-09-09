@@ -145,6 +145,17 @@ describe("the panel's share of the inspector column", () => {
     assert.match(panel, /box-sizing:\s*border-box\s*;/);
   });
 
+  it('draws a focus ring for the tab stop the panel now carries', () => {
+    // A FOCUSABLE SCROLL CONTAINER WITH NO RING is a stop a keyboard reader
+    // lands on blind. Inset, because drawn outward it sits on the panel's
+    // border box against the zone's edge, where it is the first thing clipped —
+    // which is the viewer's own reason for the same negative offset.
+    const ring = rulesFor('.ig-audit-panel:focus-visible')[0];
+    assert.ok(ring !== undefined, 'the panel is a tab stop with no focus treatment');
+    assert.match(ring, /outline:\s*var\(--ig-focus-ring\) solid var\(--ig-focus\)\s*;/);
+    assert.match(ring, /outline-offset:\s*calc\(var\(--ig-focus-ring\) \* -1\)\s*;/);
+  });
+
   it('scrolls itself past the share, so no finding is unreachable', () => {
     // THE PANEL, NOT THE LIST INSIDE IT. Scrolling `.ig-audit-list` instead
     // would pin this panel's head, and that is the wrong trade twice: §17d's

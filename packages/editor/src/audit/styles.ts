@@ -164,6 +164,18 @@ export const auditStylesheet = `
   padding: var(--ig-space);
 }
 
+/* THE RING FOR THE TAB STOP ABOVE. A focusable scroll container that shows
+   nothing on focus is a stop a keyboard reader lands on blind.
+
+   INSET, WHICH IS THE VIEWER'S OWN IDIOM for exactly this shape — its sheet
+   draws every focus ring at a negative offset. Drawn outward it would sit on
+   the panel's border box against the zone's edge and the column's own scroll,
+   where the top and bottom of the ring are the first thing clipped. */
+.ig-audit-panel:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: calc(var(--ig-focus-ring) * -1);
+}
+
 .ig-audit-panel-head {
   align-items: center;
   display: flex;
