@@ -2179,3 +2179,82 @@ describe("§17b's flip control is published markup, not mount chrome", () => {
     }
   });
 });
+
+/**
+ * #177's scale case: the selection detail survives an audit the size §17f draws.
+ *
+ * The zone puts a GLOBAL findings list above a SELECTION-SCOPED detail and
+ * draws the list first, so an unbounded audit pushed the thing a reader had
+ * just clicked below the fold. §17f's own case is a 312-issue backlog, which
+ * makes a long audit the ordinary size rather than a corner.
+ *
+ * WHAT THIS CAN AND CANNOT ASSERT. `node --test` has no layout engine, so the
+ * offset the defect is measured in is not observable here. What is observable
+ * is the mechanism that bounds it: the panel is drawn with the same share
+ * whatever the finding count, and the detail is still rendered beside it rather
+ * than displaced or dropped. Those two together are what make the offset
+ * count-independent, which is the property #177 asked for.
+ */
+describe('the inspector zone at the audit sizes §17f produces', () => {
+  /** `pairs` two-cycles, which gives one finding per cycle and two marked rows. */
+  function auditOf(pairs: number) {
+    const refs = Array.from({ length: pairs * 2 }, (_, at) => `i${String(at + 1).padStart(4, '0')}`);
+    const blockedBy: Record<string, readonly string[]> = {};
+    const edges = [];
+    for (let pair = 0; pair < pairs; pair += 1) {
+      const [one, two] = [refs[pair * 2] as string, refs[pair * 2 + 1] as string];
+      blockedBy[one] = [two];
+      blockedBy[two] = [one];
+      edges.push(
+        { id: edgeIdentity('blocked-by', one, two), kind: 'blocked-by' as const, from: one, to: two },
+        { id: edgeIdentity('blocked-by', two, one), kind: 'blocked-by' as const, from: two, to: one },
+      );
+    }
+    return {
+      document: {
+        issues: refs.map((ref) => ({ ref, title: `issue ${ref}`, state: 'open' as const })),
+        edges,
+      },
+      graph: graphFor(refs, blockedBy),
+    };
+  }
+
+  it('still draws the selection detail beside a long findings list', () => {
+    const audit = auditOf(30);
+    const result = renderWorkspace(backlogOf(312), {
+      ...WORDS,
+      audit,
+      rail: { start: 0, count: 12 },
+    });
+    assert.ok((result.view.audit?.count ?? 0) >= 30, 'the fixture produced too few findings');
+
+    const zone = inspectorOf(result.markup);
+    assert.ok(zone.includes('ig-audit-panel'), 'the panel is not in the zone');
+    assert.ok(
+      zone.includes('class="ig-inspector"'),
+      'a long audit displaced the selection detail out of the zone',
+    );
+    assert.ok(
+      zone.indexOf('ig-audit-panel') < zone.indexOf('class="ig-inspector"'),
+      'the panel is no longer drawn first, which changes what #177 decided',
+    );
+  });
+
+  it('draws the panel with the same declared share at one finding and at thirty', () => {
+    // THE COUNT-INDEPENDENCE ITSELF. The bound lives in the stylesheet, not in
+    // the markup, so no finding count can widen it — and the panel carries no
+    // inline style that could. This is what makes the detail's offset bounded
+    // rather than a function of how bad the document is.
+    const small = renderWorkspace(backlogOf(312), { ...WORDS, audit: auditOf(1) });
+    const large = renderWorkspace(backlogOf(312), { ...WORDS, audit: auditOf(30) });
+    for (const markup of [small.markup, large.markup]) {
+      assert.match(markup, /<section class="ig-audit-panel"/);
+      assert.equal(
+        /<section class="ig-audit-panel"[^>]*style=/.test(markup),
+        false,
+        'the panel grew an inline style, so its share is no longer the stylesheet\'s alone',
+      );
+    }
+    assert.equal(small.styles, large.styles, 'the stylesheet changed with the finding count');
+  });
+});

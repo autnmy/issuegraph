@@ -3010,17 +3010,24 @@ export function renderWorkspace(
       // reads as a peer of the selection rather than part of it — its heading
       // is an `h2` beside the inspector's for the same reason.
       //
-      // THEY DO NOT GET INDEPENDENT SHARES, and this comment said they did
-      // until a review round caught it still describing a reverted layout. Only
-      // the ZONE scrolls (`workspace/styles.ts`); `audit/styles.ts` declares no
-      // share and no scroll of its own. So a long audit CAN push the selection
-      // detail down the track — a property this zone already had, since a long
-      // relationship list does the same.
+      // THE PANEL TAKES A SHARE; THE OTHER TWO SIBLINGS DO NOT. #177 settled
+      // this. The zone is still ONE scroll track (`workspace/styles.ts`), and
+      // inside it `audit/styles.ts` bounds this panel alone at half the column,
+      // scrolling itself past that. So a long audit can no longer push the
+      // selection detail further than half the column down, whatever the
+      // finding count — the detail's head is always above the fold, which is
+      // the bound, not a promise that all of it fits. `.ig-inspector` and the
+      // `.ig-chrome` the mount appends keep the track's own scrolling and
+      // cannot be clipped at any height.
       //
-      // A two-pane version was built and reverted: it clipped `.ig-chrome`,
-      // which `mountWorkspace` appends to this zone as a THIRD sibling. How the
-      // three share one column is a design question and #177 owns it, with the
-      // four attempts and why each failed.
+      // WHY THIS ONE. Being drawn FIRST is half the reason — it is what put its
+      // length in front of the detail — and being the zone's only GLOBAL member
+      // is the other. The two below it are about what the reader is doing; this
+      // is about the document.
+      //
+      // A two-pane version was built and reverted before that: it clipped
+      // `.ig-chrome`, a THIRD sibling. Bounding one member inside the single
+      // track is what avoids needing panes at all.
       //
       // BOTH SIDES ARE ALREADY-RENDERED MARKUP, which is the rule `zone` exists
       // under: it writes the only hand-authored tag in this package and takes

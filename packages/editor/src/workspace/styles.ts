@@ -333,24 +333,30 @@ export const workspaceStylesheet = `
   padding: var(--ig-space-micro) var(--ig-space-snug);
 }
 
-/* ONE SCROLL TRACK, AND THE PANEL SHARES IT. §17d's findings panel is a sibling
-   of .ig-inspector here rather than a child, so it keeps its own padding and
-   reads as a peer of the selection rather than part of it — but the ZONE still
-   scrolls, exactly as it did before the panel existed.
+/* ONE SCROLL TRACK, AND EXACTLY ONE SIBLING IS BOUNDED INSIDE IT. This zone
+   holds three: §17d's findings panel, this column's selection detail, and the
+   .ig-chrome the mount appends. #177 settled how they share it, and the whole
+   of the answer is that the zone stays ONE track while the panel alone takes a
+   declared share of it (audit/styles.ts, max-height: 50%, scrolling itself past
+   that). .ig-inspector and .ig-chrome keep this track's own scrolling and
+   declare no share, so neither can be clipped by any height.
 
-   A TWO-PANE VERSION WAS TRIED AND REVERTED, and the reason is recorded so it
-   is not tried again the same way. Making the zone a flex column with
-   overflow: hidden did give the audit and the selection independent scroll —
-   and it CLIPPED the mount's chrome, which mountWorkspace appends to this zone
-   as a third sibling: the target search's lower matches, the cancel button and
-   the key legend all lost the scrolling the zone used to give them. Any future
-   attempt has to treat the chrome as a pane too, and how these three share one
-   column is a design question rather than a CSS one. It is filed.
+   THAT IS A PROPERTY NOW, NOT A LUCKY DEFAULT, and it is what makes the chrome
+   safe. A TWO-PANE VERSION WAS TRIED AND REVERTED: making the zone a flex
+   column with overflow: hidden did give the audit and the selection independent
+   scroll — and it CLIPPED the mount's chrome, a third sibling holding the
+   target search's lower matches, the cancel button and the key legend, all of
+   which lost the scrolling the zone used to give them. The lesson was read as
+   "treat the chrome as a third pane"; it is better read as "do not make the
+   zone a multi-pane layout at all". Bounding one sibling needs no panes.
 
-   What that revert gives back is the known cost: a long audit pushes the
-   selection detail down this single track. That is a property this zone already
-   had — a long relationship list does the same — and the panel makes it easier
-   to reach rather than inventing it. */
+   WHY THE PANEL IS THE ONE THAT IS BOUNDED. It is the only GLOBAL member of a
+   selection-scoped zone, and renderWorkspace draws it FIRST — so unbounded, it
+   is the one sibling whose length pushes a detail the reader just asked for
+   below the fold. The selection detail and the chrome are both about what the
+   reader is doing; the audit is about the document. §17a fixes the workspace at
+   three zones plus a header, so there is nowhere else ambient for it to be, and
+   a share is what makes it affordable where it has to live. */
 .ig-zone[data-zone='inspector'] {
   grid-area: inspector;
   overflow-y: auto;

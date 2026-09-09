@@ -755,3 +755,46 @@ describe('the stylesheet and the markup account for each other', () => {
     );
   });
 });
+
+/**
+ * #177's other half: the zone stays ONE scroll track.
+ *
+ * `.ig-chrome` is a third sibling `mountWorkspace` appends to this zone, and it
+ * was clipped the one time the zone was made a multi-pane layout — a flex
+ * column with `overflow: hidden`, each sibling scrolling itself. The audit
+ * panel's share is declared on the PANEL (`audit/styles.ts`), which needs no
+ * such layout, so this test is the guard that the layout does not come back:
+ * while the zone is a single `overflow-y: auto` track, there is no arrangement
+ * in which a sibling that declares no share of its own can be cut off.
+ */
+describe("the inspector zone stays one track, so the mount's chrome cannot be clipped", () => {
+  const zone = /\.ig-zone\[data-zone='inspector'\]\s*\{([^}]*)\}/.exec(
+    withoutComments(workspaceStylesheet),
+  )?.[1];
+
+  it('scrolls as a single track', () => {
+    assert.ok(zone !== undefined, 'the inspector zone rule is gone');
+    assert.match(zone, /overflow-y:\s*auto\s*;/);
+  });
+
+  it('is not a multi-pane layout', () => {
+    // THE THREE DECLARATIONS THAT MADE THE PANES, named individually so the
+    // failure says which one came back. `display: flex` plus a hidden overflow
+    // is what stopped the zone scrolling its own children; a height cap on the
+    // zone would strand them the same way from the other side.
+    assert.ok(zone !== undefined);
+    assert.equal(/display:\s*flex/.test(zone), false, 'the zone became a flex container again');
+    assert.equal(/overflow(?:-y)?:\s*hidden/.test(zone), false, 'the zone stopped scrolling');
+    assert.equal(/max-height/.test(zone), false, 'the zone capped itself');
+  });
+
+  it('gives the selection detail no share to be squeezed out of', () => {
+    // `.ig-inspector` and the chrome both stay unbounded members of the track:
+    // only the audit panel declares a share. A cap here would be attempt one
+    // arriving on the other sibling.
+    const inspector = /\.ig-inspector\s*\{([^}]*)\}/.exec(withoutComments(workspaceStylesheet))?.[1];
+    assert.ok(inspector !== undefined, 'the inspector rule is gone');
+    assert.equal(/max-height/.test(inspector), false);
+    assert.equal(/overflow/.test(inspector), false);
+  });
+});

@@ -69,3 +69,57 @@ describe('the structural stylesheet', () => {
     }
   });
 });
+
+/**
+ * #177's ruling, pinned.
+ *
+ * The inspector zone is one scroll track holding three siblings — this panel,
+ * the selection detail, and the chrome `mountWorkspace` appends. Four attempts
+ * on #175 failed to divide it, and each failure is a property one of these
+ * tests holds. They are written against the DECLARATIONS rather than against a
+ * measured layout on purpose: `node --test` has no layout engine, so a pixel
+ * offset is not observable here, and the mechanism — a bound that is a share of
+ * the column and is the same declaration whatever the finding count — is.
+ */
+describe("the panel's share of the inspector column", () => {
+  const panel = /\.ig-audit-panel\s*\{([^}]*)\}/.exec(auditStylesheet)?.[1];
+
+  it('is bounded, and the bound is proportional rather than a length', () => {
+    // ATTEMPT 1 RETURNING IS WHAT THIS CATCHES. A fixed cap was tried first —
+    // calc(var(--ig-space-wide) * 24), which is 480px under the default theme
+    // and most of a short workspace's column. A length cannot know how tall the
+    // column it divides happens to be; a percentage is measured against it.
+    assert.ok(panel !== undefined, 'the panel rule is gone');
+    const bound = /max-height:\s*([^;]+);/.exec(panel)?.[1];
+    assert.ok(bound !== undefined, 'the panel declares no share of the column');
+    assert.match(bound, /^\d+(?:\.\d+)?%$/, `the share is "${bound}", which is not a percentage`);
+  });
+
+  it('measures that share on the box it actually draws', () => {
+    // NOT INHERITED, AND SILENT WHEN ABSENT. This repository declares
+    // box-sizing per element — viewer/src/styles.ts and workspace/chrome.ts
+    // each do it for themselves and there is no global reset — so without it
+    // here the share is measured on the CONTENT box and the panel's own padding
+    // and border-bottom push the drawn box past it. Nothing looks broken; the
+    // bound is simply wrong by a padding and a stroke.
+    assert.ok(panel !== undefined);
+    assert.match(panel, /box-sizing:\s*border-box\s*;/);
+  });
+
+  it('scrolls itself past the share, so no finding is unreachable', () => {
+    // THE PANEL, NOT THE LIST INSIDE IT. Scrolling `.ig-audit-list` instead
+    // would pin this panel's head, and that is the wrong trade twice: §17d's
+    // ambient count is the WORKSPACE HEADER's, which is outside this zone and
+    // already never moves; and the list has no horizontal padding, so making it
+    // the scroll container computes its overflow-x to auto and clips the focus
+    // ring on every card control — an outline is ink overflow, so it is cut
+    // rather than scrolled to.
+    assert.ok(panel !== undefined);
+    assert.match(panel, /overflow-y:\s*auto\s*;/);
+
+    const list = /\.ig-audit-list\s*\{([^}]*)\}/.exec(auditStylesheet)?.[1];
+    assert.ok(list !== undefined, 'the list rule is gone');
+    assert.equal(/overflow/.test(list), false, 'the list became a second scroll container');
+    assert.equal(/max-height/.test(list), false, 'the cap moved back onto the list');
+  });
+});

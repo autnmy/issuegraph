@@ -81,20 +81,58 @@ export const auditStylesheet = `
    it is a sibling of .ig-inspector inside the zone rather than a child, and
    that column's padding does not reach it.
 
-   IT DECLARES NO SHARE OF THE ZONE, and that is a reversal worth recording. It
-   carried flex: 0 1 auto and max-height: 50% against a zone made a flex column,
-   which gave the audit and the selection independent scrolling — and clipped
-   the mount's chrome, a third sibling this package appends to the same zone.
-   The zone scrolls as one track again; see workspace/styles.ts. How three
-   siblings should share one column is a design question, and it is filed rather
-   than answered in a stylesheet. */
+   HALF THE COLUMN, AND PAST THAT IT SCROLLS ITSELF. This is the audit's share
+   of the inspector zone, and it is the whole of issue 177's answer. The panel is a
+   GLOBAL list sitting above a SELECTION-SCOPED one, and it is drawn first, so
+   unbounded it pushed the detail a reader had just clicked below the fold --
+   at section 17f's own scale case, a 312-issue backlog, that is the ordinary
+   size rather than a corner.
+
+   A PERCENTAGE, NEVER A LENGTH. A fixed cap was tried first and resolved to
+   most of a short workspace's column under the default theme: a length cannot
+   know how tall the column it is dividing happens to be. The share resolves
+   against the zone, which is a grid item on the workspace's 1fr row inside a
+   mount that is height: 100% — so mounted, the track is definite and it applies.
+
+   AND IT GOES INERT EXACTLY WHERE THE DEFECT DOES. Rendered with no
+   height-bounded ancestor the percentage is indefinite, CSS reads the
+   max-height as none, and the panel is unbounded as before. That is right
+   rather than a gap: an auto-height zone grows to its content, so nothing is
+   below any fold and there is nothing to bound.
+
+   BORDER-BOX, AND IT IS LOAD-BEARING. This repository declares box-sizing per
+   element — there is no global reset — so without it the half is measured on
+   the CONTENT box and the panel's own padding and border push the drawn box
+   past the share it was given. Nothing would look broken; it would just be
+   wrong by a padding and a stroke.
+
+   THE PANEL SCROLLS, NOT THE LIST INSIDE IT. Scrolling the list instead would
+   pin this head, which is tempting and is the wrong trade twice over. The
+   ambient count section 17d fixes is the WORKSPACE HEADER's, drawn in the
+   header grid area by headerMarkup and outside this zone entirely — it already
+   never moves, so a second pinned count buys nothing. And the list has zero
+   horizontal padding, so making it the scroll container computes its overflow-x
+   to auto and CLIPS the focus ring on every card's control: an outline is ink
+   overflow, so it is cut rather than scrolled to. The panel's own padding gives
+   those rings room on all four sides.
+
+   THE ZONE IS STILL ONE TRACK, which is the other half of the answer and the
+   reason the mount's chrome is safe. A two-pane version was built and reverted:
+   making the zone a flex column with overflow: hidden gave the audit and the
+   selection independent scrolling and CLIPPED .ig-chrome, a third sibling
+   mountWorkspace appends to this zone. Bounding one sibling inside the single
+   track needs none of that — .ig-inspector and .ig-chrome keep the zone's own
+   scrolling, so there is no layout in which the chrome can be cut. */
 .ig-audit-panel {
   border-bottom: var(--ig-stroke) solid var(--ig-line);
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   font-family: var(--ig-font-ui);
   gap: var(--ig-space-snug);
+  max-height: 50%;
   min-height: 0;
+  overflow-y: auto;
   padding: var(--ig-space);
 }
 
@@ -129,11 +167,14 @@ export const auditStylesheet = `
   text-transform: uppercase;
 }
 
-/* NO CAP ON THE LIST. Three of them were tried — a fixed length, a share of a
-   flex column, that share measured on the right box — and each was correct
-   about the previous one's defect while the column itself stayed the thing that
-   could not be bounded from in here. The zone scrolls as one track, the list
-   scrolls with it, and the sharing question is filed. */
+/* NO CAP ON THE LIST, AND THAT IS STILL RIGHT — the bound belongs to the PANEL
+   above, not here. Three caps were tried on this element (a fixed length, a
+   share of a flex column, that share measured on the right box) and each was
+   correct about the previous one's defect while the column stayed the thing
+   that could not be bounded from in here. It still cannot: the list has no
+   padding, so a scroll container here computes overflow-x to auto and clips the
+   focus ring on every card control. The panel carries the share and the
+   scrolling; see the rule above. */
 .ig-audit-list {
   display: flex;
   flex-direction: column;
