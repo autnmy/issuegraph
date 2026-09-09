@@ -2922,14 +2922,34 @@ export function renderWorkspace(
   const multi = isMultiSelection(selection);
   const memberWords = options.words.selectionMember;
   const anchorWords = options.words.selectionAnchor;
-  const clauseByKey = new Map<string, string>(
-    !multi || memberWords === undefined || anchorWords === undefined
-      ? []
-      : selectionSet.map((key, index) => [
-          key,
-          index === 0 ? anchorWords(selectionSet.length) : memberWords(index + 1, selectionSet.length),
-        ]),
-  );
+  // KEYED BY THE ROW THE PROJECTIONS ACTUALLY DREW, which is a slot's LEAD.
+  //
+  // Keyed by the raw selected key it marked nothing for a selected PARTNER of a
+  // `together-with` unit: the rail and the graph both key that unit by its
+  // lead, so no element carries the partner's own key — while the block
+  // canonicalized the same partner and counted it as selected. One zone
+  // counting a member the others cannot mark is the disagreement this whole
+  // design is built to prevent, arriving through the canonicalization instead
+  // of through the type.
+  //
+  // A partner cannot be reached by clicking the rail — one row per slot — so
+  // this is the host-supplied selection and the order-regrouped-under-you case.
+  // Both are ordinary, and neither should mark nothing.
+  //
+  // DE-DUPLICATED, and the FIRST clause for a lead wins, so two selected
+  // partners of one unit mark their single row once rather than overwriting
+  // each other's position.
+  const clauseByKey = new Map<string, string>();
+  if (multi && memberWords !== undefined && anchorWords !== undefined) {
+    selectionSet.forEach((key, index) => {
+      const row = leadOf.get(key) ?? key;
+      if (clauseByKey.has(row)) return;
+      clauseByKey.set(
+        row,
+        index === 0 ? anchorWords(selectionSet.length) : memberWords(index + 1, selectionSet.length),
+      );
+    });
+  }
   const selectionMarks: MarkLookup = (key) => {
     const clause = clauseByKey.get(key);
     return clause === undefined
@@ -3074,7 +3094,9 @@ export function renderWorkspace(
           // capsules carrying no `data-ig-key`, and even at that tier a member
           // outside the drawn neighbourhood has no node — so rather than let
           // the zones silently disagree, the block states the number.
-          notShown: selectionSet.filter((key) => !canvasKeys.has(key)).length,
+          // ASKED OF THE ROW, for the same reason the marks are: a partner has
+          // no node of its own, and the canvas draws its unit's lead.
+          notShown: bulkMembers.filter((key) => !canvasKeys.has(key)).length,
           clear: options.words.clearSelection,
           words: bulkWords,
         };

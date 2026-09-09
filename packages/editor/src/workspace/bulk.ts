@@ -120,15 +120,70 @@ export type BulkPhase =
   /** An offer is chosen; a directed one is still waiting for its target. */
   | { readonly kind: 'offering'; readonly offer: BulkOffer; readonly target: string | null }
   /** A plan is on screen and the confirm states its count. */
-  | { readonly kind: 'planned'; readonly offer: BulkOffer; readonly plan: BatchPlan }
+  | { readonly kind: 'planned'; readonly offer: BulkOffer; readonly plan: BatchPlan; readonly members: Members }
   /** `planBatch` said no. Drawn, never thrown. */
   | { readonly kind: 'refused'; readonly offer: BulkOffer; readonly refusal: BatchRefusal }
   /** The proposals are out. Nothing may be re-confirmed from here. */
-  | { readonly kind: 'writing'; readonly plan: BatchPlan }
+  | { readonly kind: 'writing'; readonly plan: BatchPlan; readonly members: Members }
   /** Some writes failed. `remainder` is what a resume would send. */
-  | { readonly kind: 'partial'; readonly remainder: BatchPlan }
+  | { readonly kind: 'partial'; readonly remainder: BatchPlan; readonly members: Members }
   /** Every write landed. Its own phase, not a return to `idle`. */
-  | { readonly kind: 'landed'; readonly writes: number };
+  | { readonly kind: 'landed'; readonly writes: number; readonly members: Members };
+
+/**
+ * The issues a phase is ABOUT, carried by every phase that has planned or sent.
+ *
+ * A PHASE SPEAKS FOR THE SET THAT PRODUCED IT, not for whatever is selected
+ * when it is drawn. Two failures made this necessary and they are the same one:
+ *
+ *   * a plan built over six issues stayed sendable after the ORDER regrouped
+ *     one of them into a `together-with` unit — the raw selection never moved,
+ *     so nothing invalidated, while the effective membership the plan was built
+ *     from had changed under it;
+ *   * and a batch sent for A/B/C, left `partial`, was still holding its
+ *     remainder when the reader went on to select D/E/F — so the block drew
+ *     D/E/F's header above a Resume control that would have written A/B/C.
+ *
+ * Both are "the raw selection is not the batch's membership". Carrying the
+ * membership on the phase is what lets a renderer state which set it is talking
+ * about, and lets {@link staleAgainst} answer whether an unsent plan still
+ * stands, without either of them re-deriving a grouping they do not own.
+ */
+export type Members = readonly IssueRef[];
+
+/** The issues a phase is about, or `null` for one that has not planned yet. */
+export function phaseMembers(phase: BulkPhase): Members | null {
+  switch (phase.kind) {
+    case 'idle':
+    case 'offering':
+    case 'refused':
+      return null;
+    case 'planned':
+    case 'writing':
+    case 'partial':
+    case 'landed':
+      return phase.members;
+  }
+}
+
+/**
+ * Whether an UNSENT plan no longer matches the membership on screen.
+ *
+ * ASKED OF THE EFFECTIVE SET, which is why it is asked by the renderer rather
+ * than by the reducer: canonicalizing a selected key onto its slot's lead is a
+ * fact about the ORDER, and the reducer is handed a document that carries
+ * issues and edges and no slots.
+ *
+ * `false` for a phase that has already dispatched — those are not re-sendable,
+ * and they speak for their own membership rather than for the one on screen.
+ */
+export function staleAgainst(phase: BulkPhase, members: Members): boolean {
+  if (phase.kind !== 'planned') return false;
+  return (
+    phase.members.length !== members.length ||
+    phase.members.some((member, index) => member !== members[index])
+  );
+}
 
 export interface BulkState {
   readonly phase: BulkPhase;
@@ -202,7 +257,9 @@ export function bulkReducer(state: BulkState, command: BulkCommand): BulkResult 
     case 'confirm':
       return state.phase.kind === 'offering' ? confirm(state.phase, command.members) : settledAt(state.phase);
     case 'settle':
-      return state.phase.kind === 'writing' ? settle(state.phase.plan, command.settlements) : settledAt(state.phase);
+      return state.phase.kind === 'writing'
+        ? settle(state.phase.plan, state.phase.members, command.settlements)
+        : settledAt(state.phase);
     case 'dismiss':
       return settledAt({ kind: 'idle' });
   }
@@ -242,7 +299,10 @@ function confirm(
     ...(phase.offer.direction === undefined ? {} : { direction: phase.offer.direction }),
   });
   return outcome.ok
-    ? { state: { phase: { kind: 'planned', offer: phase.offer, plan: outcome.plan } }, proposals: NOTHING }
+    ? {
+        state: { phase: { kind: 'planned', offer: phase.offer, plan: outcome.plan, members } },
+        proposals: NOTHING,
+      }
     : settledAt({ kind: 'refused', offer: phase.offer, refusal: outcome.refusal });
 }
 
@@ -263,16 +323,25 @@ function anchorFor(
  */
 export function sendBatch(state: BulkState): BulkResult {
   return state.phase.kind === 'planned'
-    ? { state: { phase: { kind: 'writing', plan: state.phase.plan } }, proposals: state.phase.plan.proposals }
+    ? {
+        state: { phase: { kind: 'writing', plan: state.phase.plan, members: state.phase.members } },
+        proposals: state.phase.plan.proposals,
+      }
     : { state, proposals: NOTHING };
 }
 
-function settle(plan: BatchPlan, settlements: readonly BatchSettlement[]): BulkResult {
+function settle(
+  plan: BatchPlan,
+  members: Members,
+  settlements: readonly BatchSettlement[],
+): BulkResult {
   const remainder = resumeBatch(plan, settlements);
   // `null` MEANS FINISHED, WHICH IS NOT THE SAME AS AN EMPTY PLAN — that
   // distinction is `resumeBatch`'s own, and `landed` is where it lands here.
   return settledAt(
-    remainder === null ? { kind: 'landed', writes: plan.count } : { kind: 'partial', remainder },
+    remainder === null
+      ? { kind: 'landed', writes: plan.count, members }
+      : { kind: 'partial', remainder, members },
   );
 }
 
@@ -285,6 +354,9 @@ function settle(plan: BatchPlan, settlements: readonly BatchSettlement[]): BulkR
  */
 export function resumeSend(state: BulkState): BulkResult {
   return state.phase.kind === 'partial'
-    ? { state: { phase: { kind: 'writing', plan: state.phase.remainder } }, proposals: state.phase.remainder.proposals }
+    ? {
+        state: { phase: { kind: 'writing', plan: state.phase.remainder, members: state.phase.members } },
+        proposals: state.phase.remainder.proposals,
+      }
     : { state, proposals: NOTHING };
 }

@@ -7,6 +7,8 @@ import type { BatchSettlement } from '../firstpass/batch.ts';
 import { bulkAfterSelectionChange } from './host.ts';
 import {
   type BulkOffer,
+  phaseMembers,
+  staleAgainst,
   type BulkState,
   BULK_OFFERS,
   INITIAL_BULK,
@@ -292,5 +294,54 @@ describe('§17e: a target inside the selection is not an arm of its own star', (
       ),
       false,
     );
+  });
+});
+
+describe('§17e: a phase speaks for the set that produced it', () => {
+  it('carries the membership onto every phase that has planned or sent', () => {
+    const plan = planned(SERIALIZE, SIX);
+    assert.deepEqual(phaseMembers(plan.phase), SIX);
+    const sent = sendBatch(plan);
+    assert.deepEqual(phaseMembers(sent.state.phase), SIX);
+    const settled = bulkReducer(sent.state, {
+      kind: 'settle',
+      settlements: [{ proposal: sent.proposals[0] as Proposal, settled: 'landed' }],
+    }).state;
+    assert.equal(settled.phase.kind, 'partial');
+    assert.deepEqual(phaseMembers(settled.phase), SIX);
+    const whole = bulkReducer(sent.state, {
+      kind: 'settle',
+      settlements: sent.proposals.map((proposal) => ({ proposal, settled: 'landed' as const })),
+    }).state;
+    assert.deepEqual(phaseMembers(whole.phase), SIX);
+  });
+
+  it('answers null for a phase that has not planned yet', () => {
+    assert.equal(phaseMembers(INITIAL_BULK.phase), null);
+    assert.equal(phaseMembers(chosen(SERIALIZE).phase), null);
+    assert.equal(phaseMembers(planned(SERIALIZE, ['901']).phase), null, 'a refusal owns no membership');
+  });
+});
+
+describe('§17e: an unsent plan goes stale when its EFFECTIVE membership moves', () => {
+  it('reports a plan whose canonicalized set changed under it', () => {
+    // The ORDER can regroup a selected issue into a `together-with` unit between
+    // planning and sending. The raw selection never moves, so nothing in the
+    // reducer's own vocabulary could invalidate it — the confirm would then be
+    // rendered from the new effective set while `send-batch` dispatched the old
+    // plan, including a write for a member that is no longer its own issue.
+    const plan = planned(SERIALIZE, SIX).phase;
+    assert.equal(staleAgainst(plan, SIX), false);
+    assert.equal(staleAgainst(plan, ['901', '902', '903', '904', '905']), true);
+    assert.equal(staleAgainst(plan, ['906', '905', '904', '903', '902', '901']), true);
+  });
+
+  it('never calls a DISPATCHED phase stale, because it is not re-sendable', () => {
+    // Those phases speak for their own membership rather than for whatever is
+    // selected when they are drawn, so "does it match the screen" is not a
+    // question about them.
+    const sent = sendBatch(planned(SERIALIZE, SIX));
+    assert.equal(staleAgainst(sent.state.phase, ['999']), false);
+    assert.equal(staleAgainst(INITIAL_BULK.phase, ['999']), false);
   });
 });

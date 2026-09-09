@@ -225,6 +225,7 @@ describe('§17e: three counts, and the block says which it means', () => {
           kind: 'serialize-with',
           anchor: 'i0002',
         },
+        members: ['i0002', 'i0003', 'i0004', 'i0005', 'i0006', 'i0007'],
       },
     });
     assert.match(result.markup, /apply to 6 tickets by editing 5 bodies around i0002/);
@@ -300,6 +301,7 @@ describe('§17e: the phases each draw', () => {
         kind: 'blocked-by',
         anchor: 'i0009',
       },
+      members: ['i0002', 'i0003', 'i0004'],
     });
     assert.match(markup, /1 bodies were left untouched/);
     assert.match(markup, /i0004 towards i0009/);
@@ -309,7 +311,7 @@ describe('§17e: the phases each draw', () => {
   });
 
   it('says a whole batch landed, rather than returning silently to the offers', () => {
-    const markup = render({ kind: 'landed', writes: 5 });
+    const markup = render({ kind: 'landed', writes: 5, members: ['i0002', 'i0003', 'i0004'] });
     assert.match(markup, /5 bodies were rewritten/);
     assert.equal(markup.includes('queue all 3 in turn'), false);
   });
@@ -404,5 +406,84 @@ describe('§17e: the set keeps a way out', () => {
     assert.match(inspector, /class="ig-bulk"/);
     assert.match(inspector, /data-ig-command="clear"/);
     assert.match(inspector, new RegExp(WORKSPACE_WORDS.clearSelection));
+  });
+});
+
+describe('§17e: the raw selection is not the batch\'s membership', () => {
+  it('marks a selected PARTNER on the row that actually draws it', () => {
+    // The rail and the graph key a `together-with` unit by its LEAD, so a
+    // selected partner has no element carrying its own key. Keyed raw, the mark
+    // and the accessible-name clause landed nowhere while the block
+    // canonicalized the same partner and counted it as selected — one zone
+    // counting a member the others cannot mark.
+    //
+    // `i0008` is folded into the slot led by `i0007`, and a partner cannot be
+    // reached by clicking the rail — one row per slot — so this is the
+    // host-supplied and regrouped-under-you case.
+    const result = renderWorkspace(GOLDEN_DOCUMENT, {
+      words: WORDS,
+      selection: { kind: 'issue', keys: ['i0003', 'i0008'] },
+    });
+    assert.deepEqual([...new Set(marked(result.markup))].sort(), ['i0003', 'i0007']);
+    assert.deepEqual([...result.view.bulkMembers].sort(), ['i0003', 'i0007']);
+  });
+
+  it('marks a unit ONCE when both its partners are selected', () => {
+    // Two selected partners are one row and one issue. Marking twice would
+    // overwrite the first clause with the second's position.
+    const result = renderWorkspace(GOLDEN_DOCUMENT, {
+      words: WORDS,
+      selection: { kind: 'issue', keys: ['i0007', 'i0008', 'i0003'] },
+    });
+    const rows = marked(result.markup).filter((key) => key === 'i0007');
+    assert.equal(new Set(rows).size, 1);
+  });
+
+  it('draws a plan whose effective membership moved as NO plan', () => {
+    // The send control disappears and the reader is back at the offers, over
+    // the set that actually exists now — rather than a confirm rendered from
+    // the new set above a `send-batch` that would dispatch the old one.
+    const stale = renderWorkspace(GOLDEN_DOCUMENT, {
+      words: WORDS,
+      selection: { kind: 'issue', keys: ['i0002', 'i0003'] },
+      bulk: {
+        kind: 'planned',
+        offer: { kind: 'serialize-with', anchorFrom: 'selection-anchor' },
+        plan: {
+          proposals: [{ op: 'create', kind: 'serialize-with', from: 'i0003', to: 'i0002' }],
+          count: 1,
+          kind: 'serialize-with',
+          anchor: 'i0002',
+        },
+        // NOT what this render's selection canonicalizes to.
+        members: ['i0002', 'i0003', 'i0009'],
+      },
+    });
+    assert.match(stale.markup, /data-phase="idle"/);
+    assert.equal(stale.markup.includes('data-ig-command="send-batch"'), false);
+  });
+
+  it('states a partial batch\'s OWN count, not the set now on screen', () => {
+    // A batch sent for three issues and left `partial` is still owed after the
+    // reader has gone on to select two others. Drawing the new set's count above
+    // a Resume that would write the old one is the block naming one set while
+    // acting on another.
+    const result = renderWorkspace(GOLDEN_DOCUMENT, {
+      words: WORDS,
+      selection: { kind: 'issue', keys: ['i0005', 'i0006'] },
+      bulk: {
+        kind: 'partial',
+        remainder: {
+          proposals: [{ op: 'create', kind: 'blocked-by', from: 'i0004', to: 'i0009' }],
+          count: 1,
+          kind: 'blocked-by',
+          anchor: 'i0009',
+        },
+        members: ['i0002', 'i0003', 'i0004'],
+      },
+    });
+    // THREE, the batch's own membership — not the two now selected.
+    assert.match(result.markup, /3 tickets marked/);
+    assert.match(result.markup, /i0004 towards i0009/);
   });
 });

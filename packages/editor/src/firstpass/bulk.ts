@@ -38,7 +38,7 @@
 import { type ElementSpec, element, glyphAndLabel, treatmentFor } from '@issuegraph/viewer';
 import type { EdgeKind } from '@issuegraph/store';
 
-import { type BulkOffer, type BulkPhase, BULK_OFFERS } from '../workspace/bulk.ts';
+import { type BulkOffer, type BulkPhase, BULK_OFFERS, phaseMembers, staleAgainst } from '../workspace/bulk.ts';
 import type { BulkCounts, BulkWords } from './bulk-words.ts';
 
 /** What the block is drawn from. Everything it needs, and nothing it can derive. */
@@ -72,9 +72,21 @@ export const BULK_CLASS = 'ig-bulk';
 
 export function bulkSpec(input: BulkInput): ElementSpec {
   const { phase, words } = input;
-  return element('section', { class: BULK_CLASS, 'data-phase': phase.kind }, [
+  // A STALE PLAN IS DRAWN AS NO PLAN. The order can regroup a selected issue
+  // into a `together-with` unit between planning and sending, which leaves the
+  // raw selection untouched while the EFFECTIVE membership moves under it — so
+  // nothing in the reducer's own vocabulary could have invalidated it. Answered
+  // here, where the slot leads are known: the send control disappears and the
+  // reader is back at the offers, over the set that actually exists now.
+  const drawn: BulkPhase = staleAgainst(phase, input.members) ? { kind: 'idle' } : phase;
+  // THE HEADER SPEAKS FOR THE PHASE'S OWN SET WHERE IT HAS ONE. A batch sent
+  // for A/B/C and left `partial` is still owed after the reader has gone on to
+  // select D/E/F — and drawing D/E/F's count above a Resume control that would
+  // write A/B/C is the block naming one set while acting on another.
+  const about = phaseMembers(drawn) ?? input.members;
+  return element('section', { class: BULK_CLASS, 'data-phase': drawn.kind }, [
     element('header', { class: 'ig-bulk-head' }, [
-      element('p', { class: 'ig-bulk-count' }, [words.selected(input.members.length)]),
+      element('p', { class: 'ig-bulk-count' }, [words.selected(about.length)]),
       // THE GESTURE HINT IS ALSO ON THE SINGLE-SELECTION PANEL, drawn there by
       // `render.ts`. A hint that lives only inside a block which appears at
       // N>1 is a hint that arrives only after the reader has already performed
@@ -94,7 +106,7 @@ export function bulkSpec(input: BulkInput): ElementSpec {
         [input.clear],
       ),
     ]),
-    ...bodyOf(input, phase),
+    ...bodyOf(input, drawn),
   ]);
 }
 
@@ -177,6 +189,8 @@ function bodyOf(input: BulkInput, phase: BulkPhase): readonly (ElementSpec | nul
  * derivable from the first.
  */
 function offersSpec(input: BulkInput, chosen?: BulkOffer): ElementSpec {
+  // THE OFFERS ARE ABOUT WHAT IS SELECTED NOW, always — they are what the
+  // reader would send next, not what a previous batch was about.
   const { words, members } = input;
   return element(
     'ul',
