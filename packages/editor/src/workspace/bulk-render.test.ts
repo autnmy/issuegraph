@@ -487,3 +487,78 @@ describe('§17e: the raw selection is not the batch\'s membership', () => {
     assert.match(result.markup, /i0004 towards i0009/);
   });
 });
+
+describe('§17e: a batch that has gone out stays reachable', () => {
+  const remainder = {
+    proposals: [{ op: 'create' as const, kind: 'blocked-by' as const, from: 'i0004', to: 'i0009' }],
+    count: 1,
+    kind: 'blocked-by' as const,
+    anchor: 'i0009',
+  };
+
+  for (const [name, selection] of [
+    ['no selection', { kind: 'none' } as const],
+    ['one issue', { kind: 'issue', keys: ['i0005'] } as const],
+  ] as const) {
+    it(`keeps the resume reachable with ${name} selected`, () => {
+      // Gated on "is a set selected", a partial batch's Resume and Dismiss
+      // vanished the moment the reader collapsed the selection — the remainder
+      // still owed, still held, and unreachable until they happened to build
+      // another multi-selection. Keeping the phase through a selection change
+      // buys nothing if the surface that offers it is gone.
+      const result = renderWorkspace(GOLDEN_DOCUMENT, {
+        words: WORDS,
+        selection,
+        bulk: { kind: 'partial', remainder, members: ['i0002', 'i0003', 'i0004'] },
+      });
+      assert.match(result.markup, /data-phase="partial"/);
+      assert.match(result.markup, /data-ig-command="resume-batch"/);
+      assert.match(result.markup, /data-ig-command="bulk-dismiss"/);
+      // AND IT STATES ITS OWN SET, not the one now on screen.
+      assert.match(result.markup, /3 tickets marked/);
+    });
+  }
+
+  it('draws no block at all once the batch is dismissed', () => {
+    const result = renderWorkspace(GOLDEN_DOCUMENT, {
+      words: WORDS,
+      selection: { kind: 'issue', keys: ['i0005'] },
+      bulk: { kind: 'idle' },
+    });
+    assert.equal(result.markup.includes('class="ig-bulk"'), false);
+  });
+
+  it('counts off-canvas issues from the batch it is about', () => {
+    // Counted from the live selection, an old three-issue remainder reported
+    // the TWO currently selected issues as unshown — a number about one set
+    // under a heading about another.
+    //
+    // ABOVE THE DIRECT TIER, so the canvas draws capsules with no keys and
+    // marks nothing at all. That makes the count exactly the size of whichever
+    // set is asked, which is the difference this pins: three, not two.
+    const result = renderWorkspace(backlogOf(120), {
+      words: WORDS,
+      selection: { kind: 'issue', keys: ['i0005', 'i0006'] },
+      bulk: { kind: 'partial', remainder, members: ['i0002', 'i0003', 'i0004'] },
+    });
+    assert.match(result.markup, /3 tickets marked/);
+    assert.match(result.markup, /3 marked tickets are off the picture/);
+  });
+});
+
+describe('§17e: a row\'s spoken position counts canonical rows', () => {
+  it('announces two rows as two when a partner collapses onto its lead', () => {
+    // Indexed over the raw selection, `[lead, partner, other]` announced an
+    // anchor "of 3" and a member "3 of 3" while the block counted two issues —
+    // the row saying one number and the panel beside it another, about one
+    // selection.
+    const result = renderWorkspace(GOLDEN_DOCUMENT, {
+      words: WORDS,
+      selection: { kind: 'issue', keys: ['i0007', 'i0008', 'i0003'] },
+    });
+    assert.match(result.markup, /aria-label="[^"]*heads 2 marked/);
+    assert.match(result.markup, /aria-label="[^"]*marked 2 of 2/);
+    assert.equal(/marked 3 of 3/.test(result.markup), false);
+    assert.match(result.markup, /2 tickets marked/);
+  });
+});

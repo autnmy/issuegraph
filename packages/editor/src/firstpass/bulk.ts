@@ -38,13 +38,20 @@
 import { type ElementSpec, element, glyphAndLabel, treatmentFor } from '@issuegraph/viewer';
 import type { EdgeKind } from '@issuegraph/store';
 
-import { type BulkOffer, type BulkPhase, BULK_OFFERS, phaseMembers, staleAgainst } from '../workspace/bulk.ts';
+import { type BulkOffer, type BulkPhase, BULK_OFFERS } from '../workspace/bulk.ts';
 import type { BulkCounts, BulkWords } from './bulk-words.ts';
 
 /** What the block is drawn from. Everything it needs, and nothing it can derive. */
 export interface BulkInput {
   readonly phase: BulkPhase;
-  /** The batch's members: canonicalized to slot leads and de-duplicated. */
+  /**
+   * The set this block speaks for, already resolved.
+   *
+   * The live selection canonicalized to slot leads, OR a dispatched phase's own
+   * membership — the caller decides which, alongside deciding whether a stale
+   * plan has become `idle`, because those are one decision and answering them
+   * apart is what let a heading and a count disagree.
+   */
   readonly members: readonly string[];
   /**
    * Selected issues the canvas could not mark.
@@ -72,21 +79,15 @@ export const BULK_CLASS = 'ig-bulk';
 
 export function bulkSpec(input: BulkInput): ElementSpec {
   const { phase, words } = input;
-  // A STALE PLAN IS DRAWN AS NO PLAN. The order can regroup a selected issue
-  // into a `together-with` unit between planning and sending, which leaves the
-  // raw selection untouched while the EFFECTIVE membership moves under it — so
-  // nothing in the reducer's own vocabulary could have invalidated it. Answered
-  // here, where the slot leads are known: the send control disappears and the
-  // reader is back at the offers, over the set that actually exists now.
-  const drawn: BulkPhase = staleAgainst(phase, input.members) ? { kind: 'idle' } : phase;
-  // THE HEADER SPEAKS FOR THE PHASE'S OWN SET WHERE IT HAS ONE. A batch sent
-  // for A/B/C and left `partial` is still owed after the reader has gone on to
-  // select D/E/F — and drawing D/E/F's count above a Resume control that would
-  // write A/B/C is the block naming one set while acting on another.
-  const about = phaseMembers(drawn) ?? input.members;
-  return element('section', { class: BULK_CLASS, 'data-phase': drawn.kind }, [
+  // THIS FUNCTION RESOLVES NOTHING. Which phase to draw and which set it speaks
+  // for are ONE decision — a stale plan becomes `idle`, and `idle` then speaks
+  // for the live selection rather than the plan's — so they are taken together,
+  // once, by the caller that holds both sets. Answering half of it here is what
+  // produced a heading and an off-canvas count that disagreed about which batch
+  // they were about.
+  return element('section', { class: BULK_CLASS, 'data-phase': phase.kind }, [
     element('header', { class: 'ig-bulk-head' }, [
-      element('p', { class: 'ig-bulk-count' }, [words.selected(about.length)]),
+      element('p', { class: 'ig-bulk-count' }, [words.selected(input.members.length)]),
       // THE GESTURE HINT IS ALSO ON THE SINGLE-SELECTION PANEL, drawn there by
       // `render.ts`. A hint that lives only inside a block which appears at
       // N>1 is a hint that arrives only after the reader has already performed
@@ -106,7 +107,7 @@ export function bulkSpec(input: BulkInput): ElementSpec {
         [input.clear],
       ),
     ]),
-    ...bodyOf(input, drawn),
+    ...bodyOf(input, phase),
   ]);
 }
 

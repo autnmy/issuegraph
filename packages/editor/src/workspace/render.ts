@@ -92,7 +92,7 @@ import { KIND_KEYS, RELATE_KEY } from '../create/keys.ts';
 import type { Point } from '../create/placement.ts';
 import { type OverlayAffordance, OVERLAY_TREATMENTS, treatmentForState } from '../overlay/grammar.ts';
 import { type BulkInput, bulkSpec } from '../firstpass/bulk.ts';
-import type { BulkPhase } from './bulk.ts';
+import { type BulkPhase, phaseMembers, staleAgainst } from './bulk.ts';
 import { bulkStylesheet } from '../firstpass/bulk-styles.ts';
 import type { BulkWords } from '../firstpass/bulk-words.ts';
 import { DELTA_ATTRIBUTE, chipSpec, deltaKind, summarySpec, textOf } from '../reevaluate/parts.ts';
@@ -2939,17 +2939,20 @@ export function renderWorkspace(
   // DE-DUPLICATED, and the FIRST clause for a lead wins, so two selected
   // partners of one unit mark their single row once rather than overwriting
   // each other's position.
-  const clauseByKey = new Map<string, string>();
-  if (multi && memberWords !== undefined && anchorWords !== undefined) {
-    selectionSet.forEach((key, index) => {
-      const row = leadOf.get(key) ?? key;
-      if (clauseByKey.has(row)) return;
-      clauseByKey.set(
-        row,
-        index === 0 ? anchorWords(selectionSet.length) : memberWords(index + 1, selectionSet.length),
-      );
-    });
-  }
+  //
+  // AND THE POSITIONS COUNT CANONICAL ROWS, not raw keys. Indexed over the raw
+  // selection, `[lead, partner, other]` announced an anchor "of 3" and a member
+  // "3 of 3" while the block counted two issues — the row saying one number and
+  // the panel beside it another, about the same selection.
+  const canonicalRows = [...new Set(selectionSet.map((key) => leadOf.get(key) ?? key))];
+  const clauseByKey = new Map<string, string>(
+    !multi || memberWords === undefined || anchorWords === undefined
+      ? []
+      : canonicalRows.map((row, index) => [
+          row,
+          index === 0 ? anchorWords(canonicalRows.length) : memberWords(index + 1, canonicalRows.length),
+        ]),
+  );
   const selectionMarks: MarkLookup = (key) => {
     const clause = clauseByKey.get(key);
     return clause === undefined
@@ -3084,19 +3087,53 @@ export function renderWorkspace(
   const canvasKeys = new Set(
     canvas.ladder.tier === 'direct' ? canvas.ladder.canvas.issues.map((issue) => issue.key) : [],
   );
+  // §17e'S BLOCK, RESOLVED FROM ONE DECISION: which set is it speaking about.
+  //
+  // THREE FIELDS USED TO ANSWER THAT SEPARATELY and could therefore disagree —
+  // the heading took the phase's membership while the off-canvas count took the
+  // live selection, and whether the block was drawn at all took a third answer
+  // (`multi`). Each disagreement was reported as its own finding, which is how a
+  // class gets patched three times instead of removed once. So the question is
+  // asked HERE, exactly once, and every field below is derived from the answer.
+  const declared: BulkPhase = options.bulk ?? { kind: 'idle' };
+  // A STALE PLAN IS NO PLAN, and this is the only place that can say so. The
+  // order can regroup a selected issue into a `together-with` unit between
+  // planning and sending, which leaves the RAW selection untouched while the
+  // effective membership moves under it — so nothing in the reducer's own
+  // vocabulary could have invalidated it, and the reducer has no slots to ask.
+  // Reduced to `idle`, the send control disappears and the reader is back at
+  // the offers over the set that actually exists now.
+  const phase: BulkPhase = staleAgainst(declared, bulkMembers) ? { kind: 'idle' } : declared;
+  // AND THEN: WHICH SET IS IT ABOUT. A dispatched batch speaks for its own
+  // membership — one sent for A/B/C and left `partial` is still owed after the
+  // reader has gone on to select D/E/F — while everything else speaks for what
+  // is selected now.
+  const about = phaseMembers(phase) ?? bulkMembers;
+  // DRAWN FOR A SET, *OR* FOR A BATCH THAT HAS ALREADY GONE OUT.
+  //
+  // Gated on `multi` alone, a `partial` batch's Resume and Dismiss controls
+  // vanished the moment the reader collapsed the selection — the remainder was
+  // still owed, still held, and unreachable until they happened to build
+  // another multi-selection. Keeping the phase through a selection change is
+  // worth nothing if the surface that offers it is gone.
+  const owns = phaseMembers(phase) !== null;
   const bulk: BulkInput | null =
-    !multi || bulkWords === undefined
+    (!multi && !owns) || bulkWords === undefined
       ? null
       : {
-          phase: options.bulk ?? { kind: 'idle' },
-          members: bulkMembers,
+          phase,
+          members: about,
           // WHAT THE CANVAS COULD NOT MARK. Above §17f's direct tier it draws
           // capsules carrying no `data-ig-key`, and even at that tier a member
           // outside the drawn neighbourhood has no node — so rather than let
           // the zones silently disagree, the block states the number.
-          // ASKED OF THE ROW, for the same reason the marks are: a partner has
-          // no node of its own, and the canvas draws its unit's lead.
-          notShown: bulkMembers.filter((key) => !canvasKeys.has(key)).length,
+          //
+          // ASKED OF THE SET THE BLOCK IS ABOUT, so it cannot report the two
+          // issues currently selected as unshown while the heading above it
+          // speaks for an older three-issue batch. And asked of the ROW, for
+          // the same reason the marks are: a partner has no node of its own,
+          // and the canvas draws its unit's lead.
+          notShown: about.filter((key) => !canvasKeys.has(key)).length,
           clear: options.words.clearSelection,
           words: bulkWords,
         };
