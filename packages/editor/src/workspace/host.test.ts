@@ -19,6 +19,7 @@ import { documentOf } from '../testing/documents.ts';
 import { WORKSPACE_WORDS } from '../testing/workspace.ts';
 import { renderWorkspace } from './render.ts';
 import { INITIAL_SELECTION } from './selection.ts';
+import { type BulkOffer, BULK_OFFERS, INITIAL_BULK, bulkReducer, sendBatch } from './bulk.ts';
 import { candidates } from '../testing/firstpass.ts';
 import {
   type HostCommand,
@@ -933,5 +934,56 @@ describe('§17e: a set survives only as far as the document does', () => {
     };
     const state: HostState = { ...INITIAL_HOST_STATE, selection: { kind: 'issue', keys: ['1', '2'] } };
     assert.equal(reconcileHost(state, document, new Set()), state);
+  });
+});
+
+describe('§17e: reconciliation invalidates a plan the same way a command does', () => {
+  it('drops a planned batch when a refresh removes one of its members', () => {
+    // TWO ENTRY POINTS MOVE THE SELECTION, and `reduceHost`'s guard reaches only
+    // one of them. Reconciliation runs on every store notification, so a sibling
+    // write or a refresh that removes a selected issue updated the visible
+    // selection while `bulk.phase` kept the plan built over the OLD membership:
+    // the block counted the reconciled set and `send-batch` would have
+    // dispatched a write for the issue that had just left the document.
+    const document: GraphDocument = {
+      issues: [
+        { ref: '1', title: 'One', state: 'open' },
+        { ref: '2', title: 'Two', state: 'open' },
+      ],
+      edges: [],
+    };
+    const planned = bulkReducer(
+      bulkReducer(INITIAL_BULK, { kind: 'choose-offer', offer: BULK_OFFERS[1] as BulkOffer }).state,
+      { kind: 'confirm', members: ['1', '2', '3'] },
+    ).state;
+    assert.equal(planned.phase.kind, 'planned');
+
+    const state: HostState = {
+      ...INITIAL_HOST_STATE,
+      selection: { kind: 'issue', keys: ['1', '2', '3'] },
+      bulk: planned,
+    };
+    const next = reconcileHost(state, document, new Set());
+    assert.deepEqual(next.selection, { kind: 'issue', keys: ['1', '2'] });
+    assert.equal(next.bulk.phase.kind, 'idle');
+  });
+
+  it('leaves a batch that already dispatched, on the same asymmetry', () => {
+    // A reconciliation cannot un-send a write, and dropping a `partial` would
+    // discard a remainder the reader is owed.
+    const document: GraphDocument = { issues: [{ ref: '1', title: 'One', state: 'open' }], edges: [] };
+    const sent = sendBatch(
+      bulkReducer(
+        bulkReducer(INITIAL_BULK, { kind: 'choose-offer', offer: BULK_OFFERS[1] as BulkOffer }).state,
+        { kind: 'confirm', members: ['1', '2'] },
+      ).state,
+    ).state;
+    assert.equal(sent.phase.kind, 'writing');
+    const state: HostState = {
+      ...INITIAL_HOST_STATE,
+      selection: { kind: 'issue', keys: ['1', '2'] },
+      bulk: sent,
+    };
+    assert.equal(reconcileHost(state, document, new Set()).bulk.phase.kind, 'writing');
   });
 });

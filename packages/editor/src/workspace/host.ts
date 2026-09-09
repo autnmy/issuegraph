@@ -1111,6 +1111,19 @@ export function reconcileHost(
   return {
     ...state,
     selection,
+    // AND THE SAME INVALIDATION `reduceHost` APPLIES, because this is the OTHER
+    // way a selection moves. That one wraps the command path; reconciliation is
+    // a separate entry point the shell calls on every store notification, so a
+    // guard that reached only the first left the second exposed: a sibling
+    // write or a refresh that removes a selected issue updated the visible
+    // selection here while `bulk.phase` kept the plan built over the old
+    // membership. The block would then count the reconciled set and `send-batch`
+    // would dispatch the old `BatchPlan` — including a write for the issue that
+    // had just left the document.
+    //
+    // ONE RULE, TWO ENTRY POINTS, and the rule itself lives in one function so
+    // the two cannot come to disagree about which phases survive.
+    ...(selection === state.selection ? {} : { bulk: bulkAfterSelectionChange(state.bulk) }),
     ...(draftStands ? {} : { draft: IDLE_CREATE_DRAFT, targetQuery: '', drop: null }),
   };
 }
