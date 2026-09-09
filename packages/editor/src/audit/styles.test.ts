@@ -82,26 +82,65 @@ describe('the structural stylesheet', () => {
  * the column and is the same declaration whatever the finding count — is.
  */
 describe("the panel's share of the inspector column", () => {
-  const panel = /\.ig-audit-panel\s*\{([^}]*)\}/.exec(auditStylesheet)?.[1];
+  /**
+   * The sheet with its comments removed.
+   *
+   * WITHOUT THIS EVERY TEST BELOW IS A FALSE GREEN, and it is not a theoretical
+   * one — a review round proved it by mutation. The rule bodies are found by
+   * matching a selector and a brace, and this file's own prose QUOTES the three
+   * declarations verbatim while explaining them, so a comment containing
+   * `.ig-audit-panel {` is enough for every assertion here to pass while the
+   * real rule is empty. That is exactly the shape of the defect #122 found
+   * behind a green test, one file over.
+   */
+  const css = auditStylesheet.replace(/\/\*[\s\S]*?\*\//g, '');
 
-  it('is bounded, and the bound is proportional rather than a length', () => {
-    // ATTEMPT 1 RETURNING IS WHAT THIS CATCHES. A fixed cap was tried first —
-    // calc(var(--ig-space-wide) * 24), which is 480px under the default theme
-    // and most of a short workspace's column. A length cannot know how tall the
-    // column it divides happens to be; a percentage is measured against it.
+  /**
+   * Every rule body whose selector list names exactly this class.
+   *
+   * ALL OF THEM, NOT THE FIRST, because the cascade is the other way a green
+   * test can be wrong about a property: a later rule setting `max-height: none`
+   * silently wins and a check that stops at the first match never sees it. The
+   * arity is asserted rather than the last body taken — one rule per class is
+   * this sheet's own shape, and two is a finding either way.
+   */
+  function rulesFor(name: string): string[] {
+    const found: string[] = [];
+    for (const match of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+      const selectors = (match[1] ?? '').split(',').map((one) => one.trim());
+      if (selectors.includes(name)) found.push(match[2] ?? '');
+    }
+    return found;
+  }
+
+  const panelRules = rulesFor('.ig-audit-panel');
+  const panel = panelRules[0];
+
+  it('declares the panel exactly once, so nothing later overrides the share', () => {
+    assert.deepEqual(panelRules.length, 1, `the sheet has ${panelRules.length} rules for .ig-audit-panel`);
+  });
+
+  it('bounds the panel at half the column', () => {
+    // ATTEMPT 1 RETURNING IS HALF OF WHAT THIS CATCHES. A fixed cap was tried
+    // first and was most of a short workspace's column: a length cannot know
+    // how tall the column it divides happens to be, so the share is a
+    // percentage. The VALUE is pinned too, because a percentage alone is not
+    // the ruling — `max-height: 95%` is proportional, passes a shape check, and
+    // restores the defect in full.
     assert.ok(panel !== undefined, 'the panel rule is gone');
-    const bound = /max-height:\s*([^;]+);/.exec(panel)?.[1];
+    const bound = /max-height:\s*([^;]+);/.exec(panel)?.[1]?.trim();
     assert.ok(bound !== undefined, 'the panel declares no share of the column');
-    assert.match(bound, /^\d+(?:\.\d+)?%$/, `the share is "${bound}", which is not a percentage`);
+    assert.equal(bound, '50%', `#177 gives the panel half the column; this gives it ${bound}`);
   });
 
   it('measures that share on the box it actually draws', () => {
-    // NOT INHERITED, AND SILENT WHEN ABSENT. This repository declares
-    // box-sizing per element — viewer/src/styles.ts and workspace/chrome.ts
-    // each do it for themselves and there is no global reset — so without it
-    // here the share is measured on the CONTENT box and the panel's own padding
-    // and border-bottom push the drawn box past it. Nothing looks broken; the
-    // bound is simply wrong by a padding and a stroke.
+    // NOT INHERITED, AND SILENT WHEN ABSENT. There IS a universal reset in this
+    // codebase and it does not reach here: `viewer/src/styles.ts` scopes it to
+    // `.ig-viewer` descendants and this panel is a sibling of the rail's viewer
+    // rather than inside it. So without this the share is measured on the
+    // CONTENT box and the panel's own padding and border push the drawn box
+    // past it. Nothing looks broken; the bound is wrong by a padding and a
+    // stroke.
     assert.ok(panel !== undefined);
     assert.match(panel, /box-sizing:\s*border-box\s*;/);
   });
@@ -114,12 +153,16 @@ describe("the panel's share of the inspector column", () => {
     // the scroll container computes its overflow-x to auto and clips the focus
     // ring on every card control — an outline is ink overflow, so it is cut
     // rather than scrolled to.
+    //
+    // The shorthand is accepted beside the longhand: `overflow: auto` sets the
+    // same property, and a test that reds on it would be about spelling.
     assert.ok(panel !== undefined);
-    assert.match(panel, /overflow-y:\s*auto\s*;/);
+    assert.match(panel, /overflow(?:-y)?:\s*auto\b/);
 
-    const list = /\.ig-audit-list\s*\{([^}]*)\}/.exec(auditStylesheet)?.[1];
-    assert.ok(list !== undefined, 'the list rule is gone');
-    assert.equal(/overflow/.test(list), false, 'the list became a second scroll container');
-    assert.equal(/max-height/.test(list), false, 'the cap moved back onto the list');
+    const listRules = rulesFor('.ig-audit-list');
+    assert.deepEqual(listRules.length, 1, 'the list is declared more than once');
+    const list = listRules[0] as string;
+    assert.equal(/overflow(?:-x|-y)?\s*:/.test(list), false, 'the list became a second scroll container');
+    assert.equal(/max-height\s*:/.test(list), false, 'the cap moved back onto the list');
   });
 });

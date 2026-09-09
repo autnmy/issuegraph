@@ -1488,9 +1488,17 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     if (styles.textContent !== sheet) styles.textContent = sheet;
 
     // What the reader was doing survives the redraw: the rail's scroll offset,
-    // and the caret in whichever search box they were typing into.
+    // the audit panel's, and the caret in whichever search box they were typing
+    // into.
     const railBefore = zone('rail');
     const scrollTop = railBefore?.scrollTop ?? 0;
+    // THE PANEL SCROLLS TOO, SINCE IT TOOK A SHARE OF ITS COLUMN. Before the
+    // audit had a bound it grew to its content and only the ZONE scrolled, so
+    // there was no second offset to keep. Now a long audit is read inside the
+    // panel, and every store update and unrelated command runs this redraw —
+    // so without this a reader deep in the findings is returned to the first
+    // one by something they did somewhere else entirely.
+    const auditScrollTop = surface.querySelector('.ig-audit-panel')?.scrollTop ?? 0;
     const active = doc.activeElement;
     const activeInput = isElement(active) && isInput(active) && surface.contains(active) ? active : null;
     const activeCommand = activeInput?.getAttribute(COMMAND_ATTRIBUTE) ?? null;
@@ -1648,6 +1656,12 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
 
     const rail = zone('rail');
     if (rail !== null) rail.scrollTop = scrollTop;
+    // RE-QUERIED, NEVER REUSED: `surface.innerHTML` above replaced the subtree,
+    // so the element captured from is gone. A panel that shrank clamps this on
+    // assignment, and one the redraw removed — the audit going clean — is
+    // simply absent, which is why nothing is restored rather than zeroed.
+    const auditPanel = surface.querySelector('.ig-audit-panel');
+    if (auditPanel !== null) auditPanel.scrollTop = auditScrollTop;
     // THE LIST THE READER JUST OPENED IS BROUGHT INTO VIEW. See
     // `revealIsolated` for why the control and the list are in different zones.
     // `block: 'nearest'` so a list already visible is not scrolled at all, and

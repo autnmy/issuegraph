@@ -90,25 +90,34 @@ export const auditStylesheet = `
 
    A PERCENTAGE, NEVER A LENGTH. A fixed cap was tried first and resolved to
    most of a short workspace's column under the default theme: a length cannot
-   know how tall the column it is dividing happens to be. The share resolves
-   against the zone, which is a grid item on the workspace's 1fr row inside a
-   mount that is height: 100% — so mounted, the track is definite and it applies.
+   know how tall the column it is dividing happens to be.
 
-   IT RESOLVES WHETHER OR NOT THE HOST BOUNDS THE HEIGHT, and an earlier draft
-   of this comment claimed the opposite. It said the percentage went indefinite
-   in an auto-height host and CSS read the max-height as none. That is the block
-   rule; the zone is a STRETCH-ALIGNED GRID ITEM, so its used height is definite
-   either way and the share always resolves. Measured, not reasoned: the
-   computed value stayed 50% in every configuration tried.
+   IT RESOLVES WHETHER OR NOT THE HOST BOUNDS THE HEIGHT, and two earlier drafts
+   of this comment were wrong about why. The first said the percentage went
+   indefinite in an auto-height host and CSS read the max-height as none — that
+   is the block rule, and it does not apply. The second reached for the mount,
+   saying .ig-mount is height: 100% so the track is definite once mounted; that
+   is circular, because 100% of an auto-height parent is itself auto. The reason
+   is neither: the ZONE IS A STRETCH-ALIGNED GRID ITEM, so the row gives it a
+   used height in both cases and a percentage against it always resolves.
 
-   WHAT ACTUALLY VARIES IS WHETHER IT BINDS, and it is worth knowing which case
-   you are in. The row is as tall as its tallest zone, and the rail draws the
-   order — so ordinarily the rail sets it, the half is far larger than the
-   panel, and the bound is slack. It binds when the PANEL is the tallest thing
-   in the row. In a height-bounded host that is the whole point. In an
-   auto-height one it is a cost: measured on the demo with the other zones out,
-   the column capped the panel at half and put the rest of the findings behind a
-   scroller on a page that had room to simply be taller.
+   AND THE OBSERVABLE THAT SHOWS THAT IS USED HEIGHT, NOT THE COMPUTED VALUE. A
+   third draft offered getComputedStyle as the evidence; it reports the
+   specified percentage either way, so it cannot tell the two cases apart. What
+   was actually measured is the drawn box: half the zone, in every host tried.
+
+   WHAT VARIES IS WHETHER IT BINDS, and it is worth knowing which case you are
+   in. The row is as tall as its tallest zone, and the rail draws the order — so
+   ordinarily the rail sets it, half of that is far more than the panel wants,
+   and the bound is slack. It binds when the PANEL is the tallest thing in the
+   row. In a height-bounded host that is the whole point.
+
+   IN AN AUTO-HEIGHT HOST IT IS A PURE LOSS, and the measurement has to be read
+   carefully because the demo is height-bounded by construction. Taking its host
+   height off and the other zones out, so the row is the panel's own: the panel
+   still drew at half, half the findings went behind its scroller, an equal
+   amount of column sat empty below the chrome, and the document was exactly as
+   tall as before. Nothing was gained and the audit got harder to read.
 
    THAT COST IS ACCEPTED HERE RATHER THAN HIDDEN. The workspace asks a host for
    a bounded height already — .ig-mount is height: 100% — and the surface is a

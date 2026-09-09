@@ -2196,6 +2196,13 @@ describe("§17b's flip control is published markup, not mount chrome", () => {
  * count-independent, which is the property #177 asked for.
  */
 describe('the inspector zone at the audit sizes §17f produces', () => {
+  // NO LAYOUT HERE, AND THE ISSUE'S OWN DONE-WHEN ASKS FOR ONE. #177 wants the
+  // selection detail pinned as REACHABLE at scale, which is a measured offset,
+  // and `node --test` has no layout engine. What these two hold instead is the
+  // structure that offset follows from: the panel is drawn first, the detail is
+  // still drawn, and neither the draw order nor the share moves with the
+  // finding count. The measurement itself is in the commit message.
+
   /** `pairs` two-cycles, which gives one finding per cycle and two marked rows. */
   function auditOf(pairs: number) {
     const refs = Array.from({ length: pairs * 2 }, (_, at) => `i${String(at + 1).padStart(4, '0')}`);
@@ -2219,7 +2226,7 @@ describe('the inspector zone at the audit sizes §17f produces', () => {
     };
   }
 
-  it('still draws the selection detail beside a long findings list', () => {
+  it('draws the panel first and the selection detail after it, at any finding count', () => {
     const audit = auditOf(30);
     const result = renderWorkspace(backlogOf(312), {
       ...WORDS,
@@ -2230,10 +2237,11 @@ describe('the inspector zone at the audit sizes §17f produces', () => {
 
     const zone = inspectorOf(result.markup);
     assert.ok(zone.includes('ig-audit-panel'), 'the panel is not in the zone');
-    assert.ok(
-      zone.includes('class="ig-inspector"'),
-      'a long audit displaced the selection detail out of the zone',
-    );
+    // WHAT THIS HOLDS IS THE ORDER, and it is worth being exact about that.
+    // `.ig-inspector` is emitted unconditionally, so its presence cannot fail
+    // from a long audit — the assertion that can is the panel coming FIRST,
+    // which is half of why the panel is the sibling that takes the bound.
+    assert.ok(zone.includes('class="ig-inspector"'), 'the zone lost the selection detail entirely');
     assert.ok(
       zone.indexOf('ig-audit-panel') < zone.indexOf('class="ig-inspector"'),
       'the panel is no longer drawn first, which changes what #177 decided',
