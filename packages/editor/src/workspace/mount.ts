@@ -47,13 +47,14 @@
  */
 
 import { edgeIdentity } from '@issuegraph/core';
-import type { EdgeId, EdgeKind, GraphDocument, MutationId, Store, StoreSnapshot } from '@issuegraph/store';
+import type { EdgeId, EdgeKind, GraphDocument, MutationId, Proposal, Store, StoreSnapshot } from '@issuegraph/store';
 import { nextDocument } from '@issuegraph/store';
 import {
   type Scene,
   type Theme,
   type ViewerDocument,
   navigate,
+  renderMarkup,
   renderViewer,
   resolveTheme,
 } from '@issuegraph/viewer';
@@ -63,6 +64,8 @@ import type { AuditInput } from '../audit/findings.ts';
 import { isChoosingKind } from '../create/draft.ts';
 import { type CreateInteraction, type KeyboardContext, KIND_KEYS, keyIntent } from '../create/keys.ts';
 import { pickerPlacement } from '../create/placement.ts';
+import type { BatchSettlement } from '../firstpass/batch.ts';
+import { type MarkLookup, markKeyed } from '../marks.ts';
 import type { CandidateSource } from '../firstpass/candidates.ts';
 import { type FirstPassContext, firstPassIntent } from '../firstpass/keys.ts';
 import { ANSWER_ATTRIBUTE, renderFirstPass } from '../firstpass/render.ts';
@@ -98,7 +101,7 @@ import {
   type WorkspaceWords,
   renderWorkspace,
 } from './render.ts';
-import { selectedEdgeId, selectedKey } from './selection.ts';
+import { selectedEdgeId, selectedKey, selectedKeys } from './selection.ts';
 
 /** What the canvas zone draws: the editor's scale ladder, or the viewer's tree projection. */
 export const CANVAS_MODES = Object.freeze(['neighbourhood', 'tree'] as const);
@@ -454,7 +457,14 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   let destroyed = false;
   // What the last redraw drew, kept so a key press can ask the viewer's own
   // navigation reducer about the scene the reader is looking at.
-  let drawn: { readonly viewer: ViewerDocument; readonly rail: RailWindow } | null = null;
+  let drawn: {
+    readonly viewer: ViewerDocument;
+    readonly rail: RailWindow;
+    /** §17e's batch members, canonicalized by the render that just happened. */
+    readonly bulkMembers: readonly string[];
+    /** The set's mark lookup, for a zone this shell re-renders itself. */
+    readonly selectionMarks: MarkLookup | null;
+  } | null = null;
   // A rail row to focus once the window has been re-cut around it.
   let pendingFocus: { readonly kind: 'after' | 'before' | 'first' | 'last'; readonly key: string | null } | null = null;
   /**
@@ -549,6 +559,33 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   const writeCarriers = new Map<MutationId, string | null>();
 
   /**
+   * A batch's proposals, against the mutation ids the store minted for them.
+   *
+   * §17e'S RESUMABILITY IS UNREACHABLE WITHOUT THIS. `resumeBatch` compares
+   * proposals STRUCTURALLY, so nothing has to be minted to correlate a write
+   * with the proposal that caused it — but something has to PRODUCE the
+   * settlement list, and `writeCarriers` beside it keeps the carrier string
+   * rather than the `Proposal`. Only the mount is at the seam where a proposal
+   * and its `MutationId` are both in hand.
+   *
+   * NON-EMPTY ONLY WHILE A BATCH IS IN FLIGHT. It is filled when a batch is
+   * dispatched and cleared the moment every one of its writes has settled, so
+   * a second batch never inherits the first one's answers.
+   */
+  const batchWrites = new Map<MutationId, Proposal>();
+
+  /**
+   * Writes the reader took back, so their absence is not read as success.
+   *
+   * `batchSettlements` answers `landed` for a mutation the ledger no longer
+   * holds, because a landed write leaves it — and a DISCARDED write leaves it
+   * the same way, for the opposite reason. Only the shell saw which happened.
+   *
+   * Cleared with `batchWrites`, so it never outlives the batch it is about.
+   */
+  const discardedWrites = new Set<MutationId>();
+
+  /**
    * The conflict whose `retry on latest` is the last one the reader pressed.
    *
    * WITHOUT IT, `hydrationError` IS THE WRONG FACT TO DRAW. The store sets that
@@ -594,23 +631,73 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   // the same way but never fires while the tab is hidden, which stalls every
   // store notification until the reader returns — and makes the surface
   // impossible to drive headlessly, which is how it is verified.
+  /**
+   * A batch's settlements, once every one of its writes has settled.
+   *
+   * `null` while any is still `pending`, which is the whole of the wait:
+   * `BatchSettlement` admits `landed` and `failed` and deliberately no third
+   * value, because resuming with writes outstanding would re-send them — the
+   * duplicate-write failure the store's closed operation set exists to prevent.
+   *
+   * LANDED IS READ AS ABSENCE FROM THE LEDGER, which is the store's own shape
+   * rather than a state this mount invents: `WriteRecord` has no `landed` arm,
+   * because a write that lands leaves the ledger and its edge appears in
+   * `snapshot.landed`. Everything still recorded is `pending`, `invalid`,
+   * `failed` or `conflict`, and the last three are all "did not land" as far as
+   * a resume is concerned — a conflict is unresolved until a person acts on it,
+   * so counting it as landed would drop a write nothing would ever surface.
+   */
+  const batchSettlements = (): readonly BatchSettlement[] | null => {
+    if (batchWrites.size === 0) return null;
+    const records = new Map(store.getSnapshot().writes.map((record) => [record.mutationId, record]));
+    const settlements: BatchSettlement[] = [];
+    for (const [mutationId, proposal] of batchWrites) {
+      const record = records.get(mutationId);
+      if (record?.state === 'pending') return null;
+      // ABSENT MEANS LANDED ONLY IF NOBODY TOOK IT BACK. See `discardedWrites`:
+      // a discard empties the ledger entry exactly as a landing does, and the
+      // two are opposite outcomes.
+      const landed = record === undefined && !discardedWrites.has(mutationId);
+      settlements.push({ proposal, settled: landed ? 'landed' : 'failed' });
+    }
+    return settlements;
+  };
+
   const schedule = (): void => {
     if (pending || destroyed) return;
     pending = true;
     queueMicrotask(() => {
       pending = false;
+      // ASKED BEFORE THE DRAW, AND ONLY HERE. This is the microtask the store's
+      // own subscription lands in, so it is the one place a settlement can be
+      // noticed without a render observing its own dispatch. `dispatch` below
+      // schedules another pass, which is why the map is cleared FIRST — a
+      // second reading of the same batch would re-report every settlement.
+      const settlements = batchSettlements();
+      if (settlements !== null) {
+        batchWrites.clear();
+        discardedWrites.clear();
+        dispatch({ kind: 'batch-settled', settlements });
+        return;
+      }
       render();
     });
   };
 
-  const perform = (effect: HostEffect): void => {
+  const perform = (effect: HostEffect): MutationId | null => {
     switch (effect.kind) {
-      case 'propose':
+      case 'propose': {
         // THE CARRIER IS RECORDED, NOT RE-DERIVED. See `writeCarriers`: the
         // reducer decided it from the document the reader acted on, and the
         // `MutationId` that binds the two exists only here.
-        writeCarriers.set(store.propose(effect.proposal).mutationId, effect.carrier);
-        return;
+        //
+        // AND THE ID IS HANDED BACK, because it exists only here too — see
+        // `batchWrites`, which is the other thing that needs the pairing this
+        // one line is the sole witness to.
+        const { mutationId } = store.propose(effect.proposal);
+        writeCarriers.set(mutationId, effect.carrier);
+        return mutationId;
+      }
       case 'retry': {
         // A conflict retries against the LATEST document. The store owns that
         // resolution: it reserves the edit, re-reads, then re-dispatches as one
@@ -625,14 +712,20 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         } else {
           void store.retry(effect.mutationId);
         }
-        return;
+        return null;
       }
       case 'discard':
+        // A DISCARD TAKES THE RECORD OUT OF THE LEDGER, and `batchSettlements`
+        // reads absence as LANDED — so an arm of a batch the reader discards
+        // from its failure card would be reported as written and dropped from
+        // the remainder, losing the relationship silently. Recorded explicitly
+        // instead, which is the fail-safe direction `batch.ts` states.
+        discardedWrites.add(effect.mutationId);
         store.discardMine(effect.mutationId);
-        return;
+        return null;
       case 'dismiss-change':
         store.dismissChange();
-        return;
+        return null;
       case 'find-candidates': {
         const option = current.firstPass;
         // UNREACHABLE WITHOUT A BUNDLE, because the command is withheld at the
@@ -646,7 +739,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
           // withholds this command, but `handle.dispatch` is public and reaches
           // the reducer directly, so the shell answers for that route too.
           dispatch({ kind: 'first-pass', command: { kind: 'close' } });
-          return;
+          return null;
         }
         // THE OPEN IS REAL, SO THE DRAFT GOES NOW. Only the shell knows a scan
         // will actually run — the reducer cannot tell this open from one about
@@ -672,7 +765,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
             // else's tracker.
             dispatch({ kind: 'first-pass', command: { kind: 'scan-failed', scan } });
           });
-        return;
+        return null;
       }
       case 'first-pass-apply': {
         // THIS CANDIDATE'S WRITE MAY ALREADY BE OUT THERE. `⌫` on an answer whose
@@ -682,7 +775,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         // lands the second turns `invalid` and shows the reader an error about a
         // relationship that now exists. One consent, one write: the handle is
         // kept and nothing new is proposed.
-        if (pendingWriteFor(effect.candidateId) !== undefined) return;
+        if (pendingWriteFor(effect.candidateId) !== undefined) return null;
         // AND THE RELATIONSHIP ITSELF MAY ALREADY BE THERE. The check above is
         // per candidate, and a candidate is not a relationship: two findings
         // with different ids may propose the same pair (`candidates.ts` keeps
@@ -736,7 +829,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
           // lose, so their consent goes to the store and is adjudicated there —
           // visible either way, which is the difference this guard exists to
           // preserve.
-          if ((already && !going) || coming) return;
+          if ((already && !going) || coming) return null;
         }
         const handle = store.propose(effect.proposal);
         appliedWrites.set(effect.candidateId, handle.mutationId);
@@ -746,7 +839,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         // the reducer's emit funnel at all, so a refused first-pass answer had
         // no panel to be stated on.
         writeCarriers.set(handle.mutationId, effect.carrier);
-        return;
+        return null;
       }
       case 'first-pass-withdraw': {
         // THE STORE'S OWN UNDO, AND NOTHING ELSE. `discardMine` is the whole of
@@ -767,7 +860,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         // the create's fields cannot tell this answer's write from another
         // candidate proposing the same pair, or from an older failed one.
         const mutationId = appliedWrites.get(effect.candidateId);
-        if (mutationId === undefined) return;
+        if (mutationId === undefined) return null;
         store.discardMine(mutationId);
         // THE HANDLE OUTLIVES A REFUSED DISCARD. `discardMine` leaves a `pending`
         // record exactly where it was, so forgetting the id here would lose the
@@ -775,7 +868,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         if (!recordedWriteFor(effect.candidateId)) {
           appliedWrites.delete(effect.candidateId);
         }
-        return;
+        return null;
       }
     }
   };
@@ -793,7 +886,35 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
    */
   const applyResult = (result: HostResult): void => {
     state = result.state;
-    for (const effect of result.effects) perform(effect);
+    // A BATCH'S WRITES ARE RECORDED AS THEY GO OUT, AND THE EFFECT IS WHAT SAYS
+    // WHICH THEY ARE. Reading the block's phase instead would adopt every other
+    // write proposed while a batch is in flight — a first-pass apply, an
+    // ordinary `+ add` — so the batch would wait on writes it never sent and
+    // count their failures as its own.
+    for (const effect of result.effects) {
+      const handle = perform(effect);
+      if (handle !== null && effect.kind === 'propose' && effect.batch === true) {
+        // A RESUME SUPERSEDES ITS OWN FAILED RECORD, and takes it out of the
+        // ledger. `resumeBatch` re-sends what did not land, so a second attempt
+        // mints a NEW mutation for a write the ledger still holds a `failed`
+        // one for — leaving the reader a recovery card offering `retry` on a
+        // write that is already being retried, and a second one behind it. The
+        // old record is the shell's to drop, because only the shell knows the
+        // new write is the same one.
+        for (const record of store.getSnapshot().writes) {
+          if (record.mutationId === handle || record.state === 'pending') continue;
+          if (record.mutation.op !== 'create' || effect.proposal.op !== 'create') continue;
+          if (
+            record.mutation.kind === effect.proposal.kind &&
+            record.mutation.from === effect.proposal.from &&
+            record.mutation.to === effect.proposal.to
+          ) {
+            store.discardMine(record.mutationId);
+          }
+        }
+        batchWrites.set(handle, effect.proposal);
+      }
+    }
     schedule();
   };
 
@@ -1437,6 +1558,17 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
 
     const result = renderWorkspace(viewer, {
       words: current.words,
+      // §17e'S BLOCK DRAWS THE PHASE THE REDUCER HOLDS. One value, one reader —
+      // the same discipline the draft and the scale state keep here.
+      bulk: state.bulk.phase,
+      // THE ROVING TAB STOP, READ OFF THE DOM THIS REDRAW IS REPLACING. Layer
+      // 1 falls back to the SELECTION when no caller supplies a focus, which
+      // on a set is the anchor — so every `⇧↓` handed the stop back to the row
+      // the reader had just walked away from. Read here rather than after the
+      // assignment because `doc.activeElement` still names the pre-redraw row
+      // at this point; the imperative restore further down then lands DOM
+      // focus on the same key the attribute names.
+      ...(focusedKey() === null ? {} : { focused: focusedKey() ?? undefined }),
       // §17c's CAUSE AND EFFECT, STRAIGHT OFF THE SNAPSHOT. The store is the
       // single source of truth for both — `lastChange` persists until the next
       // edit or an explicit dismissal, and `dismissChange()` is already the
@@ -1518,7 +1650,12 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // and restoring "the first element with this key" would move focus from
     // a canvas node into the rail on every redraw.
     const focusedZone = isElement(active) ? (active.closest('.ig-zone')?.getAttribute('data-zone') ?? null) : null;
-    drawn = { viewer, rail: result.view.rail };
+    drawn = {
+      viewer,
+      rail: result.view.rail,
+      bulkMembers: result.view.bulkMembers,
+      selectionMarks: result.view.selectionMarks,
+    };
 
     // THE LIVE REGION HAS TO SURVIVE THE REDRAW, or it announces nothing.
     //
@@ -1602,13 +1739,21 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         // element is not assembled from optional parts: `isolatedSpec` returns
         // null rather than an empty husk, so anything found here has content.
         const isolated = canvas.querySelector('.ig-ladder-isolated');
-        canvas.innerHTML = renderViewer(withoutChrome(viewer), {
+        // §17e'S SET IS MARKED HERE TOO, with the lookup the render published
+        // rather than one built out here. This branch is its own `renderViewer`
+        // call, so without it the tree was the one projection where a set was
+        // selected and nothing said so.
+        const treeScene = renderViewer(withoutChrome(viewer), {
           projection: 'tree',
           theme: resolved,
           selected: selectedKey(state.selection),
           // The rail beside this canvas draws the panel's one header.
           chrome: false,
-        }).markup;
+        });
+        canvas.innerHTML =
+          drawn?.selectionMarks == null
+            ? treeScene.markup
+            : renderMarkup(markKeyed(treeScene.scene.root, drawn.selectionMarks));
         // Re-inserted rather than re-rendered: the row is already assembled,
         // and rebuilding it here would be a second place that decides what it
         // says.
@@ -1946,6 +2091,17 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       // the reducer's `first-pass` arm would move to `scanning` with no source
       // to call and no way back. See `MountWorkspaceOptions.firstPass`.
       if (name === 'first-pass' && current.firstPass === undefined) return REFUSED_INERT;
+      // §17e'S CONFIRM CARRIES ITS MEMBERS, AND THEY COME FROM THE RENDER.
+      // Canonicalizing a `together-with` partner onto its slot's lead is a fact
+      // about the ORDER, and the reducer is handed the store's document, which
+      // has issues and edges and no slots. `WorkspaceView.bulkMembers` is the
+      // one layer that holds them answering; this passes it through rather than
+      // encoding a list into an attribute for the reducer to parse back out.
+      if (name === 'bulk-confirm') {
+        return drawn === null
+          ? REFUSED_INERT
+          : { kind: 'dispatch', command: { kind: 'bulk-confirm', members: drawn.bulkMembers } };
+      }
       return {
         kind: 'dispatch',
         command: {
@@ -2016,14 +2172,25 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       return;
     }
     const key = named.getAttribute(KEY_ATTRIBUTE);
-    if (key !== null) dispatch({ kind: 'point', key });
+    if (key === null) return;
+    // §17e'S `shift-click`. SHIFT ONLY, AND NOT META: the frame names one
+    // gesture, and `extend-issue` is one uniform toggle — a second gesture
+    // bound to the same act would be indistinguishable from the first, which
+    // is the two-spellings-of-one-thing this package removes everywhere else.
+    if (event.shiftKey) {
+      dispatch({ kind: 'control', name: 'extend-issue', target: key });
+      return;
+    }
+    dispatch({ kind: 'point', key });
   };
 
   const readInput = (event: Event): void => {
     const target = isElement(event.target) && isInput(event.target) ? event.target : null;
     if (target === null || !surface.contains(target)) return;
     const name = target.getAttribute(COMMAND_ATTRIBUTE);
-    if (name === 'search' || name === 'target-query') dispatch({ kind: 'control', name, value: target.value });
+    if (name === 'search' || name === 'target-query' || name === 'bulk-target') {
+      dispatch({ kind: 'control', name, value: target.value });
+    }
   };
 
   // NOT WHILE AN INPUT METHOD IS COMPOSING. Every keystroke of a composition
@@ -2180,6 +2347,29 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
    * exclusions; on the first, ArrowUp and Home re-cut it upward. Anything
    * inside the window, and every other key, is the viewer's to answer.
    */
+  /**
+   * The rail row one step from `key`, for §17e's `⇧↓`.
+   *
+   * WITHIN THE DRAWN WINDOW ONLY, and that is the deliberate bound rather than
+   * an omission. Extending a selection past the window's edge would have to
+   * re-cut the window, focus the newly drawn row, and extend — three acts
+   * across a redraw, where `advanceRail` gets to be one. §17e's gesture is for
+   * picking out a handful of adjacent rows a reader can see; a set that runs
+   * off the visible order is what the click path is for. Returns `null` at the
+   * edge, which leaves the press to `advanceRail`.
+   *
+   * ANSWERS A ROW'S LEAD, because that is what the rail keys its rows by and
+   * what a selection names — a `together-with` unit is one row, and stepping
+   * onto it means selecting the unit.
+   */
+  const neighbourKey = (rail: RailWindow, key: string, pressedKey: string): string | null => {
+    const step = pressedKey === 'ArrowDown' ? 1 : pressedKey === 'ArrowUp' ? -1 : 0;
+    if (step === 0) return null;
+    const index = rail.rows.findIndex((row) => row.members.includes(key));
+    if (index === -1) return null;
+    return rail.rows[index + step]?.lead ?? null;
+  };
+
   const advanceRail = (rail: RailWindow, key: string, pressedKey: string): boolean => {
     const first = rail.rows[0];
     const last = rail.rows[rail.rows.length - 1];
@@ -2243,6 +2433,31 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     const zoneName = owner?.getAttribute('data-zone') ?? null;
     const key = active.closest<HTMLElement>(`[${KEY_ATTRIBUTE}]`)?.getAttribute(KEY_ATTRIBUTE) ?? null;
     if (owner === null || zoneName === null || key === null || !surface.contains(owner)) return false;
+    // §17e'S `⇧↓`: THE SET GROWS BEHIND THE MOVING FOCUS, and this sits AHEAD
+    // of `advanceRail` deliberately. That call claims the rail's arrow keys for
+    // windowing before `navigate` is ever consulted, so an extension placed
+    // after it would never fire on the one zone §17e names.
+    //
+    // FOCUS STAYS SINGLE-VALUED, which is what keeps exactly one `tabindex="0"`
+    // at any cardinality: layer 1 draws the tab stop from `focused`, and only
+    // the SELECTION is a set.
+    if (event.shiftKey && zoneName === 'rail' && drawn !== null) {
+      const next = neighbourKey(drawn.rail, key, event.key);
+      if (next !== null) {
+        // A REVERSAL CONTRACTS THE RANGE FROM ITS TIP; IT DOES NOT PUNCH A HOLE
+        // IN IT. `extend-issue` is a uniform toggle, which is right for a
+        // click — the reader points at one row and means that row — and wrong
+        // for a walk: after ⇧↓⇧↓⇧↓, one ⇧↑ steps back onto a row that is
+        // ALREADY in the set, so toggling it removes an INTERIOR member and
+        // leaves the reader's focus parked on the hole they just made. What a
+        // reversal means is "I went one too far", so the row that leaves is
+        // the one being LEFT, not the one being entered.
+        const leaving = selectedKeys(state.selection).includes(next);
+        dispatch({ kind: 'control', name: 'extend-issue', target: leaving ? key : next });
+        focusIn('rail', next);
+        return true;
+      }
+    }
     if (zoneName === 'rail' && drawn !== null && advanceRail(drawn.rail, key, event.key)) return true;
     const scene = sceneFor(zoneName);
     if (scene === null) return false;
@@ -2531,6 +2746,18 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     activating.delete(event.key);
   };
 
+  const onMouseDown = (event: MouseEvent): void => {
+    // A SHIFT-CLICK ON A ROW IS AN EXTENSION, NOT A TEXT RANGE. The browser's
+    // own shift+mousedown extends the document's text selection from the last
+    // caret, so §17e's gesture painted the rail blue over the rows it was
+    // selecting. Refused only over a keyed row, so shift-selecting text
+    // anywhere else in the surface still works.
+    if (!event.shiftKey) return;
+    const target = isElement(event.target) ? event.target : null;
+    const keyed = target?.closest<HTMLElement>(`[${KEY_ATTRIBUTE}]`) ?? null;
+    if (keyed !== null && surface.contains(keyed)) event.preventDefault();
+  };
+
   const onPointerDown = (event: PointerEvent): void => {
     // ONE PRIMARY MAIN-BUTTON PRESS AT A TIME. A second pointer during a drag
     // would replace the press and strand the first drag's release; a
@@ -2612,6 +2839,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   };
 
   element.addEventListener('click', onClick);
+  element.addEventListener('mousedown', onMouseDown);
   element.addEventListener('input', onInput);
   element.addEventListener('compositionend', onCompositionEnd);
   element.addEventListener('scroll', onScroll, true);
@@ -2631,6 +2859,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   const teardown = (): void => {
     unsubscribe();
     element.removeEventListener('click', onClick);
+    element.removeEventListener('mousedown', onMouseDown);
     element.removeEventListener('input', onInput);
     element.removeEventListener('compositionend', onCompositionEnd);
     element.removeEventListener('scroll', onScroll, true);

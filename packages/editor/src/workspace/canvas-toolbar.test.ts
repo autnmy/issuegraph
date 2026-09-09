@@ -298,7 +298,7 @@ describe('§17f’s row is drawn from what the host said, and nothing else', () 
       renderWorkspace(FRAME, {
         words: WORKSPACE_WORDS,
         scale: { ...INITIAL_SCALE_STATE, focus: 'i0002' },
-        selection: { kind: 'issue', key: 'i0005' },
+        selection: { kind: 'issue', keys: ['i0005'] },
       }).markup,
     );
 

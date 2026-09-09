@@ -83,6 +83,10 @@ async function surfaces(): Promise<Record<string, readonly ControlEntry[]>> {
     ['isolated-open', { isolated: true, openIsolated: true }],
     ['held-slot', { held: true }],
     ['audit-findings', { audited: true }],
+    ['multi-select', { multiSelect: 'offers' }],
+    ['multi-select-offering', { multiSelect: 'offering' }],
+    ['multi-select-target', { multiSelect: 'target' }],
+    ['multi-select-planned', { multiSelect: 'planned' }],
   ] as const) {
     const page = await a11ySurface(options);
     try {
@@ -202,6 +206,13 @@ const RENDERED_CONTROLS: readonly string[] = Object.freeze([
   // tidied away: the audit toggle's channel carries no value at all.
   'data-ig-audit-filter:',
   'data-ig-command:add',
+  // §17e's MULTI-SELECT BLOCK. `extend-issue` is deliberately absent: it is a
+  // gesture rather than a control — a shift-click on a rail row, synthesized by
+  // the mount — so it has no element to name, no tab stop of its own, and
+  // nothing for a baseline to record. The six below are elements.
+  'data-ig-command:bulk-confirm',
+  'data-ig-command:bulk-dismiss',
+  'data-ig-command:bulk-target',
   'data-ig-command:cancel',
   'data-ig-command:clear',
   'data-ig-command:clear-focus',
@@ -216,7 +227,9 @@ const RENDERED_CONTROLS: readonly string[] = Object.freeze([
   'data-ig-command:open-isolated',
   'data-ig-command:refresh',
   'data-ig-command:retry',
+  'data-ig-command:resume-batch',
   'data-ig-command:retype',
+  'data-ig-command:send-batch',
   'data-ig-command:search',
   'data-ig-command:select-edge',
   'data-ig-command:select-issue',
@@ -247,6 +260,12 @@ const UNREACHABLE: Readonly<Record<string, string>> = Object.freeze({
   // the recovery cards are what it exists to record. A landed-and-moved state
   // is a different fixture, not another step in this one.
   'data-ig-command:dismiss-change': 'needs a landed edit that moved the order',
+  // §17e's RESUME. It is drawn only from `partial`, which needs a batch whose
+  // writes SETTLED with at least one failure — this fixture stages one
+  // conflicted write on purpose and never settles a batch at all. Reached and
+  // pinned end to end in `workspace/mount.test.ts` instead, where the scripted
+  // source can land one arm of a batch and reject the other.
+  'data-ig-command:resume-batch': 'needs a batch that settled with a failure',
 });
 
 describe('the recorded states cover what the package renders', () => {

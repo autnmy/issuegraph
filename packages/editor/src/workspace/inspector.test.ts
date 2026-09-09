@@ -25,7 +25,7 @@ describe('the inspector is a projection of the one selection', () => {
   });
 
   it('shows an issue with its position, and only the edges that touch it', () => {
-    const view = inspectorView(DOCUMENT, { kind: 'issue', key: 'i0001' });
+    const view = inspectorView(DOCUMENT, { kind: 'issue', keys: ['i0001'] });
     assert.equal(view.subject.kind, 'issue');
     if (view.subject.kind !== 'issue') throw new Error('expected an issue subject');
     assert.equal(view.subject.issue.key, 'i0001');
@@ -44,7 +44,7 @@ describe('the inspector is a projection of the one selection', () => {
   });
 
   it('carries a held slot\'s rank as null rather than a number', () => {
-    const view = inspectorView(DOCUMENT, { kind: 'issue', key: 'i0005' });
+    const view = inspectorView(DOCUMENT, { kind: 'issue', keys: ['i0005'] });
     if (view.subject.kind !== 'issue') throw new Error('expected an issue subject');
     assert.equal(view.subject.position?.rank, null);
     assert.equal(view.subject.position?.ready, false);
@@ -85,7 +85,7 @@ describe('an edge selection FILTERS the list rather than opening another panel',
         field === 'together-with'
           ? backlogOf(2, { unitOf: { i0002: 'i0001' }, edges: [[field, 'i0001', 'i0002']] })
           : backlogOf(2, { edges: [[field, 'i0001', 'i0002']] });
-      const view = inspectorView(document, { kind: 'issue', key: 'i0001' });
+      const view = inspectorView(document, { kind: 'issue', keys: ['i0001'] });
       assert.equal(view.relationships[0]?.edgeId, edgeIdentity(field, 'i0001', 'i0002'), field);
     }
   });
@@ -116,7 +116,7 @@ describe('an edge selection FILTERS the list rather than opening another panel',
         ['i0001', 'outgoing'],
         ['i0002', 'incoming'],
       ] as const) {
-        const view = inspectorView(document, { kind: 'issue', key });
+        const view = inspectorView(document, { kind: 'issue', keys: [key] });
         assert.equal(view.relationships.length, 1, `${field} was dropped from ${key}'s list`);
         assert.equal(
           view.relationships[0]?.direction,
@@ -140,7 +140,7 @@ describe('an edge selection FILTERS the list rather than opening another panel',
         { field: 'blocked-by' as const, from: 'i0001', to: 'i0002' },
       ],
     };
-    const view = inspectorView(document, { kind: 'issue', key: 'i0001' });
+    const view = inspectorView(document, { kind: 'issue', keys: ['i0001'] });
     assert.deepEqual(
       view.relationships.map((one) => [one.from, one.to]),
       [['i0001', 'i0002']],
@@ -160,15 +160,15 @@ describe('a selection naming a unit MEMBER resolves to the row that speaks for i
   });
 
   it('inspects the lead when the partner is selected', () => {
-    const partner = inspectorView(unit, { kind: 'issue', key: 'i0002' });
-    const lead = inspectorView(unit, { kind: 'issue', key: 'i0001' });
+    const partner = inspectorView(unit, { kind: 'issue', keys: ['i0002'] });
+    const lead = inspectorView(unit, { kind: 'issue', keys: ['i0001'] });
     if (partner.subject.kind !== 'issue') throw new Error('expected an issue subject');
     assert.equal(partner.subject.issue.key, 'i0001');
     assert.deepEqual(partner, lead, 'the two selections disagree about the unit');
   });
 
   it('lists the LEAD\'s relationships, not the partner\'s', () => {
-    const partner = inspectorView(unit, { kind: 'issue', key: 'i0002' });
+    const partner = inspectorView(unit, { kind: 'issue', keys: ['i0002'] });
     assert.deepEqual(
       partner.relationships.map((one) => [one.from, one.to]),
       [['i0001', 'i0003']],
@@ -179,7 +179,7 @@ describe('a selection naming a unit MEMBER resolves to the row that speaks for i
     // No slot means no lead to defer to. An excluded or unplaced issue speaks
     // for itself.
     const loose = { ...unit, order: { slots: [], excluded: [] } };
-    const view = inspectorView(loose, { kind: 'issue', key: 'i0002' });
+    const view = inspectorView(loose, { kind: 'issue', keys: ['i0002'] });
     if (view.subject.kind !== 'issue') throw new Error('expected an issue subject');
     assert.equal(view.subject.issue.key, 'i0002');
   });
@@ -190,7 +190,7 @@ describe('an unresolvable selection renders as nothing, never as last render\'s 
     // A write lands and the order recomputes; a selection naming a row that has
     // gone is ordinary, not an error a reader can act on. Holding a resolved
     // issue ON the selection is what would make this render stale detail.
-    assert.deepEqual(inspectorView(DOCUMENT, { kind: 'issue', key: 'gone' }).subject, {
+    assert.deepEqual(inspectorView(DOCUMENT, { kind: 'issue', keys: ['gone'] }).subject, {
       kind: 'none',
     });
   });
@@ -211,7 +211,7 @@ describe('an unresolvable selection renders as nothing, never as last render\'s 
       order: { slots: [], excluded: [] },
       cycles: [],
     };
-    const view = inspectorView(document, { kind: 'issue', key: 'i0001' });
+    const view = inspectorView(document, { kind: 'issue', keys: ['i0001'] });
     if (view.subject.kind !== 'issue') throw new Error('expected an issue subject');
     assert.equal(view.subject.position, null);
   });

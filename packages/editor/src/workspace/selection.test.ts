@@ -17,13 +17,13 @@ describe('the workspace holds one selection, and cannot hold two', () => {
     // be free to disagree about which was current.
     const states: readonly WorkspaceSelection[] = [
       INITIAL_SELECTION,
-      { kind: 'issue', key: 'a' },
+      { kind: 'issue', keys: ['a'] },
       { kind: 'edge', edgeId: 'blocked-by|a|b' },
     ];
     for (const state of states) {
       assert.deepEqual(selectionReducer(state, { kind: 'select-issue', key: 'z' }), {
         kind: 'issue',
-        key: 'z',
+        keys: ['z'],
       });
       assert.deepEqual(selectionReducer(state, { kind: 'select-edge', edgeId: 'e' }), {
         kind: 'edge',
@@ -45,7 +45,7 @@ describe('the workspace holds one selection, and cannot hold two', () => {
     // An edge id and an issue key are different name spaces, so an edge
     // selection whose id equals the selected key must REPLACE rather than clear.
     // A toggle written against the payload alone would clear here.
-    const onIssue: WorkspaceSelection = { kind: 'issue', key: 'x' };
+    const onIssue: WorkspaceSelection = { kind: 'issue', keys: ['x'] };
     assert.deepEqual(selectionReducer(onIssue, { kind: 'select-edge', edgeId: 'x' }), {
       kind: 'edge',
       edgeId: 'x',
@@ -62,7 +62,7 @@ describe('the workspace holds one selection, and cannot hold two', () => {
 
 describe('only an issue selection reaches the viewer as a selected key', () => {
   it('resolves an issue, and refuses to hand an edge id to a node lookup', () => {
-    assert.equal(selectedKey({ kind: 'issue', key: 'a' }), 'a');
+    assert.equal(selectedKey({ kind: 'issue', keys: ['a'] }), 'a');
     // The viewer's `selected` renders `aria-current` on a NODE. An edge id sent
     // there either matches nothing — quietly — or matches an issue whose key
     // collides with it, which is worse.
@@ -77,7 +77,7 @@ describe('reveal-issue is the directed move, and does not toggle', () => {
     // correct for a row click, which is ambivalent — and a control that says
     // "go and look at this finding" is not ambivalent. Under the toggle it
     // answered by emptying the panel it had sent the reader to.
-    const on = { kind: 'issue', key: 'a' } as const;
+    const on = { kind: 'issue', keys: ['a'] } as const;
     assert.deepEqual(selectionReducer(on, { kind: 'select-issue', key: 'a' }), INITIAL_SELECTION);
     assert.deepEqual(selectionReducer(on, { kind: 'reveal-issue', key: 'a' }), on);
   });
@@ -85,15 +85,15 @@ describe('reveal-issue is the directed move, and does not toggle', () => {
   it('replaces any other selection, exactly as select-issue does', () => {
     assert.deepEqual(selectionReducer(INITIAL_SELECTION, { kind: 'reveal-issue', key: 'b' }), {
       kind: 'issue',
-      key: 'b',
+      keys: ['b'],
     });
     assert.deepEqual(
-      selectionReducer({ kind: 'issue', key: 'a' }, { kind: 'reveal-issue', key: 'b' }),
-      { kind: 'issue', key: 'b' },
+      selectionReducer({ kind: 'issue', keys: ['a'] }, { kind: 'reveal-issue', key: 'b' }),
+      { kind: 'issue', keys: ['b'] },
     );
     assert.deepEqual(
       selectionReducer({ kind: 'edge', edgeId: 'e' }, { kind: 'reveal-issue', key: 'b' }),
-      { kind: 'issue', key: 'b' },
+      { kind: 'issue', keys: ['b'] },
     );
   });
 });

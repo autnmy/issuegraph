@@ -34,7 +34,7 @@ function withProvenance(document: ViewerDocument, key: string): ViewerDocument {
 function inspectorMarkupFor(document: ViewerDocument, key: string): string {
   const result = renderWorkspace(document, {
     words: WORKSPACE_WORDS,
-    selection: { kind: 'issue', key },
+    selection: { kind: 'issue', keys: [key] },
   });
   const zone = /<section class="ig-zone" data-zone="inspector">([\s\S]*)$/.exec(result.markup);
   assert.ok(zone !== null, 'no inspector zone');
@@ -85,7 +85,7 @@ describe('the inspector states why the issue sits where it does', () => {
   });
 
   it('renders the hold’s own reason verbatim, with its cause on the markup', () => {
-    const view = inspectorView(HELD_IN_A_UNIT, { kind: 'issue', key: 'i0002' });
+    const view = inspectorView(HELD_IN_A_UNIT, { kind: 'issue', keys: ['i0002'] });
     assert.equal(view.subject.kind, 'issue');
     if (view.subject.kind !== 'issue') throw new Error('expected an issue subject');
     const holds = view.subject.whyRank?.holds ?? [];
@@ -131,7 +131,7 @@ describe('the inspector states why the issue sits where it does', () => {
         excluded: [{ key: 'i0003', reason: 'duplicate-of', canonical: 'i0001' }],
       },
     };
-    const view = inspectorView(excluded, { kind: 'issue', key: 'i0003' });
+    const view = inspectorView(excluded, { kind: 'issue', keys: ['i0003'] });
     assert.equal(view.subject.kind, 'issue');
     if (view.subject.kind !== 'issue') throw new Error('expected an issue subject');
     assert.equal(view.subject.whyRank, null);

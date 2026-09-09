@@ -23,6 +23,7 @@ import { JSDOM } from 'jsdom';
 
 import { KIND_KEYS, RELATE_KEY } from '../create/keys.ts';
 import type { Candidate } from '../firstpass/candidates.ts';
+import { BULK_WORDS } from '../testing/bulk.ts';
 import { FIRST_PASS_WORDS } from '../testing/firstpass.ts';
 import { PICKER_WORDS } from '../testing/picker.ts';
 import { WORDS as CHANGE_WORDS } from '../testing/reevaluate.ts';
@@ -453,7 +454,7 @@ describe('mountWorkspace', () => {
       assert.ok(row !== undefined);
       page.click(row);
       await flush();
-      assert.deepEqual(page.handle.state.selection, { kind: 'issue', key: '2' });
+      assert.deepEqual(page.handle.state.selection, { kind: 'issue', keys: ['2'] });
 
       const add = page.control('add');
       assert.ok(add !== null, 'the add control is not drawn for a selected issue');
@@ -1088,7 +1089,7 @@ describe('mountWorkspace', () => {
       const capsule = after.querySelector<HTMLElement>('.ig-relationship-refused');
       assert.ok(capsule !== null, 'the refusal is stated nowhere on the panel the reader is on');
       assert.equal(capsule.getAttribute('data-ig-code'), 'unknown-edge');
-      assert.deepEqual(page.handle.state.selection, { kind: 'issue', key: '3' });
+      assert.deepEqual(page.handle.state.selection, { kind: 'issue', keys: ['3'] });
 
       // AND NOT ON THE END THE IDENTITY LEADS WITH — the same render asked a
       // second question, which is where the reconstructed answer put it.
@@ -1182,7 +1183,7 @@ describe('mountWorkspace', () => {
       // AND THE PANEL IS THE CARRIER'S, which is what makes the row reachable:
       // the edge the reader was inspecting is not drawn any more, so a panel
       // still filtered to it can state nothing.
-      assert.deepEqual(page.handle.state.selection, { kind: 'issue', key: '1' });
+      assert.deepEqual(page.handle.state.selection, { kind: 'issue', keys: ['1'] });
       // THE WHOLE PANEL AGREES, chrome included. The empty sentence used to be
       // drawn with the vanished edge's picker still open beneath it — one zone
       // saying nothing is selected and the next offering to retype something.
@@ -1234,7 +1235,7 @@ describe('mountWorkspace', () => {
       );
       // AND THE PANEL IS THE CREATE'S OWN SOURCE, which is what makes it
       // readable: the reader is returned to the issue they were relating FROM.
-      assert.deepEqual(page.handle.state.selection, { kind: 'issue', key: '1' });
+      assert.deepEqual(page.handle.state.selection, { kind: 'issue', keys: ['1'] });
     });
 
     it('states a refusal a together unit\u2019s PARTNER caused, on the unit\u2019s panel', async () => {
@@ -1355,7 +1356,7 @@ describe('mountWorkspace', () => {
       const capsule = inspector.querySelector<HTMLElement>('.ig-relationship-refused');
       assert.ok(capsule !== null, 'the refusal is stated nowhere at the moment it happened');
       assert.equal(capsule.getAttribute('data-ig-code'), 'cardinality');
-      assert.deepEqual(page.handle.state.selection, { kind: 'issue', key: '1' });
+      assert.deepEqual(page.handle.state.selection, { kind: 'issue', keys: ['1'] });
       // AND THE PICKER WENT WITH THE EDGE. The chrome is drawn from the same
       // one selection, so an edge the workspace has stopped drawing leaves no
       // picker behind offering to retype it again.
@@ -1386,7 +1387,7 @@ describe('mountWorkspace', () => {
     it('dispatch hands the reducer a command from the host’s own chrome', async () => {
       page.handle.dispatch({ kind: 'point', key: '4' });
       await flush();
-      assert.deepEqual(page.handle.state.selection, { kind: 'issue', key: '4' });
+      assert.deepEqual(page.handle.state.selection, { kind: 'issue', keys: ['4'] });
       assert.ok(page.control('add') !== null);
     });
 
@@ -1396,7 +1397,7 @@ describe('mountWorkspace', () => {
       page.handle.update({ canvas: 'tree' });
       await flush();
       assert.ok(page.element.querySelector('[data-zone="canvas"] .ig-tree') !== null, 'the tree was not drawn');
-      assert.deepEqual(page.handle.state.selection, { kind: 'issue', key: '2' });
+      assert.deepEqual(page.handle.state.selection, { kind: 'issue', keys: ['2'] });
       assert.ok(page.control('add') !== null);
     });
 
@@ -2075,7 +2076,7 @@ describe('the first pass, composed behind §17a’s entry', () => {
       );
       // AND THE PANEL IS THE CREATE'S OWN CARRIER — the issue whose block would
       // have declared the relationship the reader consented to.
-      assert.deepEqual(page.handle.state.selection, { kind: 'issue', key: '1' });
+      assert.deepEqual(page.handle.state.selection, { kind: 'issue', keys: ['1'] });
     } finally {
       page.handle.destroy();
       page.dom.window.close();
@@ -4396,5 +4397,186 @@ describe('opening the isolated list reveals it', () => {
       page.handle.destroy();
       page.dom.window.close();
     }
+  });
+});
+
+describe('§17e: the shell produces the settlements a resume is built from', () => {
+  /**
+   * The vocabulary the block needs, on top of the suite's default.
+   *
+   * Its own constant rather than a change to `WORDS`, for the reason that
+   * constant already states about `change`: a fixture that supplied every
+   * optional vocabulary everywhere would draw surfaces the other tests are not
+   * about.
+   */
+  const BULK: MountWords = {
+    ...WORDS,
+    bulk: BULK_WORDS,
+    selectionMember: (position, total) => `marked ${String(position)} of ${String(total)}`,
+    selectionAnchor: (total) => `heads ${String(total)} marked`,
+  };
+
+  /** Shift-click a rail row, which is §17e's own gesture. */
+  function extend(app: Mounted, key: string): void {
+    const row = app.element.querySelector<HTMLElement>(`[data-zone="rail"] [data-ig-key="${key}"]`);
+    assert.ok(row !== null, `no rail row for ${key}`);
+    row.dispatchEvent(new app.win.MouseEvent('click', { bubbles: true, shiftKey: true }));
+  }
+
+  it('builds a set from shift-clicks, and draws the block for it', async () => {
+    const app = await mounted(SEED, { words: BULK });
+    extend(app, '1');
+    extend(app, '2');
+    extend(app, '3');
+    await flush();
+    assert.match(app.element.innerHTML, /3 tickets marked/);
+    // AND A PLAIN CLICK COLLAPSES IT, which is how a reader leaves a set
+    // without hunting for a control.
+    const row = app.element.querySelector<HTMLElement>('[data-zone="rail"] [data-ig-key="2"]');
+    assert.ok(row !== null);
+    app.click(row);
+    await flush();
+    assert.equal(app.element.innerHTML.includes('3 tickets marked'), false);
+    app.handle.destroy();
+  });
+
+  /** Drive a three-issue set through the together-with offer to `writing`. */
+  async function sendBatchOf(app: Mounted): Promise<void> {
+    extend(app, '1');
+    extend(app, '2');
+    extend(app, '3');
+    await flush();
+    const offer = app.element.querySelector<HTMLElement>(
+      '[data-ig-command="choose-offer"][data-ig-target="together-with"]',
+    );
+    assert.ok(offer !== null, 'the together-with offer was not drawn');
+    app.click(offer);
+    await flush();
+    const review = app.control('bulk-confirm');
+    assert.ok(review !== null, 'the review control was not drawn');
+    app.click(review);
+    await flush();
+    const send = app.control('send-batch');
+    assert.ok(send !== null, 'the send control was not drawn');
+    app.click(send);
+    await flush();
+  }
+
+  it('waits for the WHOLE batch, then reports it landed', async () => {
+    // WITHOUT THIS THE `partial` PHASE IS A REDUCER ARM NOTHING CAN ENTER.
+    // `resumeBatch` compares proposals structurally, so nothing has to be
+    // minted to correlate — but the mount is the only place a `Proposal` and
+    // the `MutationId` the store answered with are both in hand.
+    const app = await mounted(SEED, { words: BULK });
+    await sendBatchOf(app);
+
+    // ONE SETTLEMENT IS NOT A SETTLED BATCH. `BatchSettlement` admits no
+    // in-flight value on purpose: resuming with writes outstanding would
+    // re-send them.
+    await app.source.whenPending();
+    app.source.settleNext('applied');
+    await flush();
+    assert.match(app.element.innerHTML, /sending 2 now/);
+
+    await app.source.whenPending();
+    app.source.settleNext('applied');
+    await flush();
+    await flush();
+    assert.match(app.element.innerHTML, /2 bodies were rewritten/);
+    app.handle.destroy();
+  });
+
+  it('offers the remainder when one write of the batch fails', async () => {
+    // §17e's "resumable if some fail", driven end to end: the shell pairs each
+    // proposal with its mutation id, the reducer hands the failed one to
+    // `resumeBatch`, and what comes back is what a resume would send.
+    const app = await mounted(SEED, { words: BULK });
+    await sendBatchOf(app);
+
+    await app.source.whenPending();
+    app.source.settleNext('applied');
+    await flush();
+    await app.source.whenPending();
+    app.source.settleNext({ outcome: 'rejected', reason: 'the tracker said no' });
+    await flush();
+    await flush();
+
+    const block = app.element.querySelector('.ig-bulk');
+    assert.equal(block?.getAttribute('data-phase'), 'partial');
+    assert.match(app.element.innerHTML, /1 bodies were left untouched/);
+    // AND THE REMAINDER IS LISTED, because a resume the reader cannot inspect
+    // is a resume they will not trust.
+    assert.match(app.element.innerHTML, /towards/);
+    app.handle.destroy();
+  });
+
+  /** Press a key on the currently focused element. */
+  function press(app: Mounted, key: string, shiftKey = false): void {
+    const active = app.win.document.activeElement;
+    assert.ok(active !== null, 'nothing is focused');
+    active.dispatchEvent(new app.win.KeyboardEvent('keydown', { key, shiftKey, bubbles: true }));
+  }
+
+  it('grows the set behind a ⇧↓ walk, and CONTRACTS on a reversal', async () => {
+    // `extend-issue` is a uniform toggle, which is right for a click and wrong
+    // for a walk: stepping back onto a row already in the set would remove an
+    // INTERIOR member and park the reader's focus on the hole they just made.
+    // A reversal means "I went one too far", so the row that leaves is the one
+    // being LEFT.
+    const app = await mounted(SEED, { words: BULK });
+    const first = app.element.querySelector<HTMLElement>('[data-zone="rail"] [data-ig-key="1"]');
+    assert.ok(first !== null);
+    app.click(first);
+    await flush();
+    // RE-QUERIED AFTER THE REDRAW. The click replaced the surface's subtree, so
+    // the node captured above is detached and focusing it puts focus nowhere.
+    const again = app.element.querySelector<HTMLElement>('[data-zone="rail"] [data-ig-key="1"]');
+    assert.ok(again !== null);
+    again.focus();
+
+    press(app, 'ArrowDown', true);
+    await flush();
+    press(app, 'ArrowDown', true);
+    await flush();
+    assert.match(app.element.innerHTML, /3 tickets marked/);
+
+    press(app, 'ArrowUp', true);
+    await flush();
+    // BACK TO TWO, and the two are 1 and 2 — the tip left, not the middle.
+    assert.match(app.element.innerHTML, /2 tickets marked/);
+    const marked = [
+      ...app.element.innerHTML.matchAll(/data-ig-key="([^"]+)"[^>]*data-ig-selected="true"/g),
+    ].map((match) => match[1]);
+    assert.deepEqual([...new Set(marked)].sort(), ['1', '2']);
+    app.handle.destroy();
+  });
+
+  it('leaves a partial batch on screen while its set is still selected', async () => {
+    // AND THE RECOVERY CARDS ARE NOT BESIDE IT, which is a consequence of the
+    // block replacing the one-issue panel rather than an oversight: a set has
+    // no single subject, so there is no panel, and the cards that would offer
+    // `retry` and `discard` on the failed arm live in that panel. The block
+    // reports the failure and offers the resume; the per-write cards become
+    // reachable when the reader collapses the selection.
+    //
+    // The shell still records a discard as a FAILURE rather than reading its
+    // absence from the ledger as a landing — see `discardedWrites`. That guard
+    // is not reachable from this surface today, and is kept because the moment
+    // a card is drawn beside the block it would be.
+    const app = await mounted(SEED, { words: BULK });
+    await sendBatchOf(app);
+
+    await app.source.whenPending();
+    app.source.settleNext('applied');
+    await flush();
+    await app.source.whenPending();
+    app.source.settleNext({ outcome: 'rejected', reason: 'the tracker said no' });
+    await flush();
+    await flush();
+
+    const block = app.element.querySelector('.ig-bulk');
+    assert.equal(block?.getAttribute('data-phase'), 'partial');
+    assert.equal(app.control('discard'), null, 'a recovery card was drawn beside the block');
+    app.handle.destroy();
   });
 });

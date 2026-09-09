@@ -406,7 +406,7 @@ describe('selection crosses the zones from one value', () => {
   it('marks the selected issue current in the rail and details it in the inspector', () => {
     const result = renderWorkspace(document, {
       ...WORDS,
-      selection: { kind: 'issue', key: 'i0002' },
+      selection: { kind: 'issue', keys: ['i0002'] },
     });
     // ON THE VALUE, not the attribute: layer 1 writes `aria-current` on every
     // row and answers `false` for the ones that are not current, so matching the
@@ -471,7 +471,7 @@ describe('selection crosses the zones from one value', () => {
     // this surface advertises disagreeing with itself between two zones.
     const result = renderWorkspace(document, {
       ...WORDS,
-      selection: { kind: 'issue', key: 'i0002' },
+      selection: { kind: 'issue', keys: ['i0002'] },
     });
     const canvas = result.markup.slice(
       result.markup.indexOf('data-zone="canvas"'),
@@ -493,7 +493,7 @@ describe('selection crosses the zones from one value', () => {
   it('publishes what a control does as data, and wires nothing', () => {
     const result = renderWorkspace(document, {
       ...WORDS,
-      selection: { kind: 'issue', key: 'i0001' },
+      selection: { kind: 'issue', keys: ['i0001'] },
     });
     // COMPARED AS A STRING, NOT AS A PATTERN, for the reason the remove
     // control's own assertion records further down: `edgeIdentity` joins with
@@ -547,7 +547,7 @@ describe('the workspace derives from the normalized document, like the zones do'
     };
     const result = renderWorkspace(document, {
       ...WORDS,
-      selection: { kind: 'issue', key: 'i0001' },
+      selection: { kind: 'issue', keys: ['i0001'] },
     });
     assert.equal(result.view.inspector.relationships.length, 1);
     assert.equal(/ghost/.test(result.markup), false);
@@ -632,7 +632,7 @@ describe('every published command is operable by keyboard', () => {
       ],
     });
     const markups = [
-      renderWorkspace(document, { ...WORDS, selection: { kind: 'issue', key: 'i0001' } }).markup,
+      renderWorkspace(document, { ...WORDS, selection: { kind: 'issue', keys: ['i0001'] } }).markup,
       renderWorkspace(document, {
         ...WORDS,
         selection: { kind: 'edge', edgeId: edgeIdentity('blocked-by', 'i0001', 'i0002') },
@@ -686,7 +686,7 @@ describe('the surface renders words it was given and invents none', () => {
       ...WORDS,
       selection: { kind: 'edge', edgeId: edgeIdentity('blocked-by', 'i0001', 'i0002') },
     });
-    const issue = renderWorkspace(document, { ...WORDS, selection: { kind: 'issue', key: 'i0001' } });
+    const issue = renderWorkspace(document, { ...WORDS, selection: { kind: 'issue', keys: ['i0001'] } });
     assert.match(filtered.markup, /clear the selection/);
     assert.match(issue.markup, /clear the selection/);
     // And absent where pressing it would do nothing: `INITIAL_SELECTION` is
@@ -702,7 +702,7 @@ describe('the surface renders words it was given and invents none', () => {
     const document = backlogOf(3, { edges: [['blocked-by', 'i0001', 'i0002']] });
     for (const selection of [
       undefined,
-      { kind: 'issue', key: 'i0001' } as const,
+      { kind: 'issue', keys: ['i0001'] } as const,
       { kind: 'edge', edgeId: edgeIdentity('blocked-by', 'i0001', 'i0002') } as const,
     ]) {
       // READ OFF THE FIXTURE, NEVER SPELLED HERE. The words object is the
@@ -734,7 +734,7 @@ describe('a relationship row says what it is, and which way round', () => {
     ],
   });
   const panel = inspectorOf(
-    renderWorkspace(document, { ...WORDS, selection: { kind: 'issue', key: 'i0001' } }).markup,
+    renderWorkspace(document, { ...WORDS, selection: { kind: 'issue', keys: ['i0001'] } }).markup,
   );
 
   it('words an outgoing edge from the subject\u2019s end, and draws the other end', () => {
@@ -780,7 +780,7 @@ describe('a relationship row says what it is, and which way round', () => {
     const pair = backlogOf(4, { edges: [['serialize-with', 'i0001', 'i0002']] });
     const ends = ['i0001', 'i0002'].map((key) =>
       rowFor(
-        inspectorOf(renderWorkspace(pair, { ...WORDS, selection: { kind: 'issue', key } }).markup),
+        inspectorOf(renderWorkspace(pair, { ...WORDS, selection: { kind: 'issue', keys: [key] } }).markup),
         'serialize-with',
       ),
     );
@@ -865,7 +865,7 @@ describe('a relationship row says what it is, and which way round', () => {
     // AE5. The heading with nothing under it reads as a list that failed to
     // load, rather than as an issue that is genuinely related to nothing.
     const alone = inspectorOf(
-      renderWorkspace(backlogOf(3), { ...WORDS, selection: { kind: 'issue', key: 'i0002' } }).markup,
+      renderWorkspace(backlogOf(3), { ...WORDS, selection: { kind: 'issue', keys: ['i0002'] } }).markup,
     );
     assert.match(alone, /<p class="ig-inspector-none">nothing is related to this<\/p>/);
     assert.equal(/ig-relationship-list/.test(alone), false, 'an empty list was still drawn');
@@ -880,7 +880,7 @@ describe('a relationship row says what it is, and which way round', () => {
 
 describe('the create path begins in the panel, and its digits are the keyboard\u2019s', () => {
   const document = backlogOf(4, { edges: [['blocked-by', 'i0001', 'i0002']] });
-  const selection = { kind: 'issue', key: 'i0001' } as const;
+  const selection = { kind: 'issue', keys: ['i0001'] } as const;
   const draft = { source: 'i0001', target: null, kind: null } as const;
 
   it('draws + add for an issue, and nothing to add from with no subject', () => {
@@ -969,7 +969,7 @@ describe('the create path begins in the panel, and its digits are the keyboard\u
       ['i0004', 'an issue with none'],
     ] as const) {
       const panel = inspectorOf(
-        renderWorkspace(document, { ...WORDS, selection: { kind: 'issue', key } }).markup,
+        renderWorkspace(document, { ...WORDS, selection: { kind: 'issue', keys: [key] } }).markup,
       );
       const header = head.exec(panel)?.[0] ?? '';
       assert.match(header, /<h3 class="ig-inspector-heading">relationships<\/h3>/, note);
@@ -978,7 +978,7 @@ describe('the create path begins in the panel, and its digits are the keyboard\u
     // AND THE EMPTY PANEL STILL SAYS SO. The control moving up must not displace
     // the sentence that states an issue is related to nothing.
     const empty = inspectorOf(
-      renderWorkspace(document, { ...WORDS, selection: { kind: 'issue', key: 'i0004' } }).markup,
+      renderWorkspace(document, { ...WORDS, selection: { kind: 'issue', keys: ['i0004'] } }).markup,
     );
     assert.match(empty, /<p class="ig-inspector-none">nothing is related to this<\/p>/);
   });
@@ -1013,7 +1013,7 @@ describe('the create path begins in the panel, and its digits are the keyboard\u
     //
     // THE EXISTING FIXTURES CANNOT SEE IT — they select the draft's own source,
     // the one subject this arm refuses — which is why it needs its own.
-    const elsewhere = { kind: 'issue', key: 'i0003' } as const;
+    const elsewhere = { kind: 'issue', keys: ['i0003'] } as const;
     for (const [options, note] of [
       [{ draft: { source: 'i0001', target: null, kind: 'blocked-by' } }, 'the target step'],
       [{ draft, drop: { x: 40, y: 50 } }, 'a live drop'],
@@ -1065,7 +1065,7 @@ describe('the create path begins in the panel, and its digits are the keyboard\u
     const panel = inspectorOf(
       renderWorkspace(document, {
         ...WORDS,
-        selection: { kind: 'issue', key: 'i0003' },
+        selection: { kind: 'issue', keys: ['i0003'] },
         draft,
       }).markup,
     );
@@ -1088,7 +1088,7 @@ describe('the create path begins in the panel, and its digits are the keyboard\u
     const diverged = inspectorOf(
       renderWorkspace(document, {
         ...WORDS,
-        selection: { kind: 'issue', key: 'i0004' },
+        selection: { kind: 'issue', keys: ['i0004'] },
         draft,
       }).markup,
     );
@@ -1167,7 +1167,7 @@ describe('a refused relationship is drawn where the reader was building it', () 
     const panel = inspectorOf(
       renderWorkspace(document, {
         ...WORDS,
-        selection: { kind: 'issue', key: 'i0001' },
+        selection: { kind: 'issue', keys: ['i0001'] },
         refusals: [{ edgeId: refused, code: 'would-cycle', carrier: 'i0001', phantom: true }],
       }).markup,
     );
@@ -1209,7 +1209,7 @@ describe('a refused relationship is drawn where the reader was building it', () 
 
   it('draws no capsule when nothing was refused', () => {
     const panel = inspectorOf(
-      renderWorkspace(document, { ...WORDS, selection: { kind: 'issue', key: 'i0001' } }).markup,
+      renderWorkspace(document, { ...WORDS, selection: { kind: 'issue', keys: ['i0001'] } }).markup,
     );
     assert.equal(/ig-relationship-refused/.test(panel), false);
     assert.equal(/data-ig-code/.test(panel), false);
@@ -1224,7 +1224,7 @@ describe('a refused relationship is drawn where the reader was building it', () 
     const panel = inspectorOf(
       renderWorkspace(backlogOf(4), {
         ...WORDS,
-        selection: { kind: 'issue', key: 'i0001' },
+        selection: { kind: 'issue', keys: ['i0001'] },
         refusals: [{ edgeId: edgeIdentity('blocked-by', 'i0001', 'i0009'), code: 'unknown-issue', carrier: 'i0001', phantom: true }],
       }).markup,
     );
@@ -1255,7 +1255,7 @@ describe('a refused relationship is drawn where the reader was building it', () 
         }),
         {
           ...WORDS,
-          selection: { kind: 'issue', key: 'i0001' },
+          selection: { kind: 'issue', keys: ['i0001'] },
           refusals: [{ edgeId: elsewhere, code: 'would-cycle', carrier: 'i0005', phantom: true }],
         },
       ).markup,
@@ -1295,7 +1295,7 @@ describe('a refused relationship is drawn where the reader was building it', () 
       // selected the partner and the reader who selected the lead are looking
       // at one panel, and the refusal belongs on it whichever way they got there.
       const panel = inspectorOf(
-        renderWorkspace(unit, { ...options, selection: { kind: 'issue', key } }).markup,
+        renderWorkspace(unit, { ...options, selection: { kind: 'issue', keys: [key] } }).markup,
       );
       assert.match(panel, /<li class="ig-relationship-refused" data-ig-code="would-cycle"/, key);
       assert.match(panel, /that would close a loop/, key);
@@ -1304,7 +1304,7 @@ describe('a refused relationship is drawn where the reader was building it', () 
     // relationship, so its panel lists a row and is not empty for a reason
     // unrelated to the filter.
     const elsewhere = inspectorOf(
-      renderWorkspace(unit, { ...options, selection: { kind: 'issue', key: 'i0004' } }).markup,
+      renderWorkspace(unit, { ...options, selection: { kind: 'issue', keys: ['i0004'] } }).markup,
     );
     assert.equal(/ig-relationship-refused/.test(elsewhere), false, 'a partner\u2019s refusal on another panel');
     assert.ok(rowFor(elsewhere, 'blocked-by').includes(edgeIdentity('blocked-by', 'i0001', 'i0004')));
@@ -1325,7 +1325,7 @@ describe('a refused relationship is drawn where the reader was building it', () 
     const panel = inspectorOf(
       renderWorkspace(document_, {
         ...WORDS,
-        selection: { kind: 'issue', key: 'i0001' },
+        selection: { kind: 'issue', keys: ['i0001'] },
         refusals: both,
       }).markup,
     );
@@ -1338,7 +1338,7 @@ describe('a refused relationship is drawn where the reader was building it', () 
     const reversed = inspectorOf(
       renderWorkspace(document_, {
         ...WORDS,
-        selection: { kind: 'issue', key: 'i0001' },
+        selection: { kind: 'issue', keys: ['i0001'] },
         refusals: [...both].reverse(),
       }).markup,
     );
@@ -1390,7 +1390,7 @@ describe('a refusal about a relationship that EXISTS keeps the relationship', ()
   const panel = inspectorOf(
     renderWorkspace(document, {
       ...WORDS,
-      selection: { kind: 'issue', key: 'i0001' },
+      selection: { kind: 'issue', keys: ['i0001'] },
       refusals: [{ edgeId: landed, code: 'duplicate-edge', carrier: 'i0001', phantom: false }],
     }).markup,
   );
@@ -1421,7 +1421,7 @@ describe('a refusal about a relationship that EXISTS keeps the relationship', ()
     const phantom = inspectorOf(
       renderWorkspace(document, {
         ...WORDS,
-        selection: { kind: 'issue', key: 'i0001' },
+        selection: { kind: 'issue', keys: ['i0001'] },
         refusals: [{ edgeId: landed, code: 'would-cycle', carrier: 'i0001', phantom: true }],
       }).markup,
     );
@@ -1447,7 +1447,7 @@ describe('a refusal about a relationship that EXISTS keeps the relationship', ()
     const phantom = inspectorOf(
       renderWorkspace(document, {
         ...WORDS,
-        selection: { kind: 'issue', key: 'i0001' },
+        selection: { kind: 'issue', keys: ['i0001'] },
         refusals: [{ edgeId: landed, code: 'would-cycle', carrier: 'i0001', phantom: true }],
       }).markup,
     );
@@ -1671,7 +1671,7 @@ describe('a hold in the inspector carries its cause, and its subject is a contro
   it('the control reduces to the subject being selected, through the shared reducer', () => {
     assert.deepEqual(selectionReducer(select, { kind: 'select-issue', key: 'i0001' }), {
       kind: 'issue',
-      key: 'i0001',
+      keys: ['i0001'],
     });
   });
 });
@@ -1882,7 +1882,7 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
     // true of a NARROWED difference.
     const markup = drawn({
       words: WORKSPACE_WORDS,
-      selection: { kind: 'issue', key: 'i0001' },
+      selection: { kind: 'issue', keys: ['i0001'] },
       diffOpen: 'm1',
       recoveries: [CONFLICT],
     });
@@ -1905,7 +1905,7 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
     // that names what it opened.
     const shut = drawn({
       words: WORKSPACE_WORDS,
-      selection: { kind: 'issue', key: 'i0001' },
+      selection: { kind: 'issue', keys: ['i0001'] },
       recoveries: [CONFLICT],
     });
     assert.match(shut, /data-ig-command="view-diff"[^>]*aria-expanded="false"/);
@@ -1913,7 +1913,7 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
 
     const open = drawn({
       words: WORKSPACE_WORDS,
-      selection: { kind: 'issue', key: 'i0001' },
+      selection: { kind: 'issue', keys: ['i0001'] },
       diffOpen: 'm1',
       recoveries: [CONFLICT],
     });
@@ -1951,7 +1951,7 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
     // is the one the code calls Done-when 1 failing where it matters most.
     const markup = drawn({
       words: WORKSPACE_WORDS,
-      selection: { kind: 'issue', key: 'i0001' },
+      selection: { kind: 'issue', keys: ['i0001'] },
       recoveries: [
         {
           kind: 'failed',
@@ -1971,7 +1971,7 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
   it('says a conflicted delete removes something, rather than that nothing differs', () => {
     const markup = drawn({
       words: WORKSPACE_WORDS,
-      selection: { kind: 'issue', key: 'i0001' },
+      selection: { kind: 'issue', keys: ['i0001'] },
       diffOpen: 'm4',
       recoveries: [
         {
@@ -2123,7 +2123,7 @@ describe("§17b's flip control is published markup, not mount chrome", () => {
     const panel = inspectorOf(
       renderWorkspace(edgeOf('blocked-by'), {
         ...WORDS,
-        selection: { kind: 'issue', key: 'i0001' },
+        selection: { kind: 'issue', keys: ['i0001'] },
       }).markup,
     );
     assert.equal(/data-ig-command="flip"/.test(panel), false);

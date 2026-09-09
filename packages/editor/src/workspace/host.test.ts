@@ -18,6 +18,7 @@ import { keyIntent } from '../create/keys.ts';
 import { documentOf } from '../testing/documents.ts';
 import { WORKSPACE_WORDS } from '../testing/workspace.ts';
 import { renderWorkspace } from './render.ts';
+import { INITIAL_SELECTION } from './selection.ts';
 import { candidates } from '../testing/firstpass.ts';
 import {
   type HostCommand,
@@ -72,7 +73,7 @@ const CREATED: HostEffect = {
 describe('selection is one value the zones share', () => {
   it('selects an issue on a point, and toggles it off on the same point', () => {
     const once = drive([{ kind: 'point', key: '2' }]);
-    assert.deepEqual(once.state.selection, { kind: 'issue', key: '2' });
+    assert.deepEqual(once.state.selection, { kind: 'issue', keys: ['2'] });
     const twice = drive([{ kind: 'point', key: '2' }], once.state);
     assert.deepEqual(twice.state.selection, { kind: 'none' });
   });
@@ -82,12 +83,12 @@ describe('selection is one value the zones share', () => {
       kind: 'edge',
       edgeId: blockedBy.id,
     });
-    assert.deepEqual(drive([{ kind: 'group', id: '3' }]).state.selection, { kind: 'issue', key: '3' });
+    assert.deepEqual(drive([{ kind: 'group', id: '3' }]).state.selection, { kind: 'issue', keys: ['3'] });
   });
 
   it('routes the inspector’s select-issue control — a hold’s holder — through the pointer path', () => {
     const { state } = drive([{ kind: 'control', name: 'select-issue', target: '3' }]);
-    assert.deepEqual(state.selection, { kind: 'issue', key: '3' });
+    assert.deepEqual(state.selection, { kind: 'issue', keys: ['3'] });
     const { effects } = drive([
       { kind: 'point', key: '2' },
       { kind: 'control', name: 'add' },
@@ -120,7 +121,7 @@ describe('selection is one value the zones share', () => {
       { kind: 'control', name: 'reveal-issue', target: '3' },
     ]);
     assert.deepEqual(effects, [], 'reveal-issue wrote something');
-    assert.deepEqual(state.selection, { kind: 'issue', key: '3' });
+    assert.deepEqual(state.selection, { kind: 'issue', keys: ['3'] });
     assert.equal(state.draft.kind, null, 'the draft was left armed behind the navigation');
     assert.deepEqual(drive([{ kind: 'control', name: 'reveal-issue' }]).state, INITIAL_HOST_STATE);
   });
@@ -138,7 +139,7 @@ describe('selection is one value the zones share', () => {
     );
     assert.deepEqual(
       drive([...on, { kind: 'control', name: 'reveal-issue', target: '3' }]).state.selection,
-      { kind: 'issue', key: '3' },
+      { kind: 'issue', keys: ['3'] },
     );
   });
 
@@ -207,7 +208,7 @@ describe('the three create paths reach one proposal', () => {
     assert.deepEqual(dropped.state.drop, { x: 40, y: 50 });
     assert.equal(dropped.state.draft.source, '2');
     assert.equal(dropped.state.draft.target, '3');
-    assert.deepEqual(dropped.state.selection, { kind: 'issue', key: '2' });
+    assert.deepEqual(dropped.state.selection, { kind: 'issue', keys: ['2'] });
     const chosen = drive([{ kind: 'control', name: 'kind', value: 'blocked-by' }], dropped.state);
     assert.deepEqual(chosen.effects, [CREATED]);
     assert.equal(chosen.state.drop, null, 'the chooser is dismissed with the proposal');
@@ -218,7 +219,7 @@ describe('the three create paths reach one proposal', () => {
     const relate = keyIntent({ key: 'r' }, { focused: '2', match: null, selectedEdge: blockedBy.id, interaction: 'canvas' });
     const { state } = drive([{ kind: 'intent', intent: relate }], edgeSelected);
     assert.equal(state.draft.source, '2');
-    assert.deepEqual(state.selection, { kind: 'issue', key: '2' });
+    assert.deepEqual(state.selection, { kind: 'issue', keys: ['2'] });
   });
 
   it('a pointer on a row while a target is wanted IS the target', () => {
@@ -464,7 +465,7 @@ describe('an edit names the issue it is about, and the panel goes there', () => 
       { kind: 'control', name: 'target', target: '3' },
     ]);
     assert.deepEqual(effects, [CREATED], 'the write still goes out from the draft\u2019s source');
-    assert.deepEqual(state.selection, { kind: 'issue', key: '2' });
+    assert.deepEqual(state.selection, { kind: 'issue', keys: ['2'] });
   });
 
   it('leaves the panel where it was on the routes that already agreed', () => {
@@ -478,13 +479,13 @@ describe('an edit names the issue it is about, and the panel goes there', () => 
       { kind: 'control', name: 'kind', value: 'blocked-by' },
       { kind: 'control', name: 'target', target: '3' },
     ]);
-    assert.deepEqual(inspector.state.selection, { kind: 'issue', key: '2' });
+    assert.deepEqual(inspector.state.selection, { kind: 'issue', keys: ['2'] });
     const canvas = drive([
       { kind: 'drag-start', key: '2' },
       { kind: 'drop', key: '3', at: { x: 0, y: 0 } },
       { kind: 'control', name: 'kind', value: 'blocked-by' },
     ]);
-    assert.deepEqual(canvas.state.selection, { kind: 'issue', key: '2' });
+    assert.deepEqual(canvas.state.selection, { kind: 'issue', keys: ['2'] });
   });
 
   it('puts the panel on the carrier for every edit made on a selected edge', () => {
@@ -500,7 +501,7 @@ describe('an edit names the issue it is about, and the panel goes there', () => 
     ]) {
       const { state, effects } = drive([command], selected);
       assert.equal(effects.length, 1, command.name);
-      assert.deepEqual(state.selection, { kind: 'issue', key: '1' }, command.name);
+      assert.deepEqual(state.selection, { kind: 'issue', keys: ['1'] }, command.name);
     }
     // A CONTROL THAT PROPOSES NOTHING MOVES NOTHING — the picker refuses a
     // retype to the kind the edge already has, and the panel stays on the edge.
@@ -517,7 +518,7 @@ describe('an edit names the issue it is about, and the panel goes there', () => 
       [{ kind: 'control', name: 'delete', target: blockedBy.id }],
       drive([{ kind: 'point', key: '1' }]).state,
     );
-    assert.deepEqual(onIssue.state.selection, { kind: 'issue', key: '1' });
+    assert.deepEqual(onIssue.state.selection, { kind: 'issue', keys: ['1'] });
   });
 });
 
@@ -609,7 +610,7 @@ describe('reconcileHost agrees with a document that moved', () => {
     // panel, the produced edge is one of the relationships listed.
     const selected = drive([{ kind: 'group', id: blockedBy.id }]).state;
     const reconciled = reconcileHost(selected, document, new Set([blockedBy.id]));
-    assert.deepEqual(reconciled.selection, { kind: 'issue', key: blockedBy.from });
+    assert.deepEqual(reconciled.selection, { kind: 'issue', keys: [blockedBy.from] });
     // AND ONLY THE SELECTED ONE. Hiding some other edge is not about the panel.
     assert.equal(reconcileHost(selected, document, new Set([serialize.id])), selected);
   });
@@ -775,7 +776,7 @@ describe('the first pass reaches the store only through consent', () => {
         carrier: '2',
       },
     ]);
-    assert.deepEqual(applied.state.selection, { kind: 'issue', key: '2' });
+    assert.deepEqual(applied.state.selection, { kind: 'issue', keys: ['2'] });
     // A REJECTION MOVES NOTHING, which is what keeps the move a property of
     // emitting rather than of answering: only a write has a panel.
     const rejected = drive([{ kind: 'control', name: 'first-pass-answer', value: 'reject' }], queue.state);
@@ -890,5 +891,47 @@ describe('the first pass reaches the store only through consent', () => {
     const settled = renderWorkspace(drawn, { words: WORKSPACE_WORDS });
     assert.equal(/data-ig-mark=/.test(settled.markup), false);
     assert.equal(/data-ig-state=/.test(settled.markup), false);
+  });
+});
+
+describe('§17e: a set survives only as far as the document does', () => {
+  it('drops the members the document no longer holds, and keeps the rest', () => {
+    // `reconcileHost` used to read `selectedKey` — the ANCHOR alone — which
+    // still typechecks under a set and is silently wrong for it: members 2..N
+    // survived after the issues they name had left the document, so the block
+    // counted and wrote against names nothing resolves. The compiler cannot
+    // find this one, because dropping members is not a type error.
+    const document: GraphDocument = { issues: [{ ref: '1', title: 'One', state: 'open' }], edges: [] };
+    const state: HostState = {
+      ...INITIAL_HOST_STATE,
+      selection: { kind: 'issue', keys: ['1', '2', '3'] },
+    };
+    const next = reconcileHost(state, document, new Set());
+    assert.deepEqual(next.selection, { kind: 'issue', keys: ['1'] });
+  });
+
+  it('falls back to nothing selected when the set empties', () => {
+    const document: GraphDocument = { issues: [{ ref: '9', title: 'Nine', state: 'open' }], edges: [] };
+    const state: HostState = {
+      ...INITIAL_HOST_STATE,
+      selection: { kind: 'issue', keys: ['1', '2'] },
+    };
+    assert.deepEqual(reconcileHost(state, document, new Set()).selection, INITIAL_SELECTION);
+  });
+
+  it('returns the SAME state object when nothing was dropped', () => {
+    // `reconcileHost` compares `selection === state.selection` to decide
+    // whether to answer with the state it was given. A fresh tuple on every
+    // render would make that check always false and redraw the workspace on
+    // every reconcile.
+    const document: GraphDocument = {
+      issues: [
+        { ref: '1', title: 'One', state: 'open' },
+        { ref: '2', title: 'Two', state: 'open' },
+      ],
+      edges: [],
+    };
+    const state: HostState = { ...INITIAL_HOST_STATE, selection: { kind: 'issue', keys: ['1', '2'] } };
+    assert.equal(reconcileHost(state, document, new Set()), state);
   });
 });

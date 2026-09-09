@@ -17,6 +17,7 @@ import { JSDOM } from 'jsdom';
 import { type MountWords, type WorkspaceProjection, mountWorkspace } from '../workspace/mount.ts';
 import { FIRST_PASS_WORDS, candidates } from './firstpass.ts';
 import { PICKER_WORDS } from './picker.ts';
+import { BULK_WORDS } from './bulk.ts';
 import { WORKSPACE_WORDS } from './workspace.ts';
 
 const WORDS: MountWords = {
@@ -29,6 +30,12 @@ const WORDS: MountWords = {
   targetLabel: 'target issue',
   targetPlaceholder: 'find the other issue',
   keys: 'R relate · Esc cancel',
+  // §17e'S BLOCK DRAWS ONLY FOR A HOST THAT WORDS IT, so the baseline's
+  // vocabulary carries these or the multi-select surface records nothing and
+  // passes vacuously.
+  bulk: BULK_WORDS,
+  selectionMember: (position, total) => `in the selection, ${String(position)} of ${String(total)}`,
+  selectionAnchor: (total) => `heads a selection of ${String(total)}`,
 };
 
 const SEED: GraphDocument = {
@@ -158,6 +165,15 @@ export async function a11ySurface(
      * — and therefore the only state where its `select-issue` control exists.
      */
     readonly audited?: boolean;
+    /**
+     * Shift-click a second and third row, which is the only state that draws
+     * §17e's multi-select block and therefore the only one its controls exist
+     * in. Without it `choose-offer`, `bulk-confirm`, `send-batch`,
+     * `resume-batch`, `bulk-dismiss` and `bulk-target` were in no recorded
+     * state at all, while the baseline read as though it covered what this
+     * package renders.
+     */
+    readonly multiSelect?: 'offers' | 'offering' | 'target' | 'planned';
   } = {},
 ): Promise<{ root: Element; close: () => void }> {
   const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>');
@@ -233,6 +249,39 @@ export async function a11ySurface(
   assert.ok(row !== undefined, 'no rail row for 3');
   row.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
   await flush();
+
+  // §17e'S SET, when asked for. The gesture is the product's own — a
+  // shift-click on a rail row — rather than a state pushed in from outside, so
+  // the baseline records the block as a reader actually reaches it.
+  if (options.multiSelect !== undefined) {
+    for (const key of ['1', '2']) {
+      const other = [...host.querySelectorAll<HTMLElement>('[data-zone="rail"] [data-ig-key][tabindex]')].find(
+        (each) => each.getAttribute('data-ig-key') === key,
+      );
+      assert.ok(other !== undefined, `no rail row for ${key}`);
+      other.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, shiftKey: true }));
+      await flush();
+    }
+    // ONE STEP FURTHER FOR THE LATER PHASES. `choose-offer` is all `idle`
+    // draws; the target search belongs to the directed offer and the send
+    // control to a plan, so each is reached by taking the step that produces
+    // it rather than by handing the block a phase from outside.
+    if (options.multiSelect !== 'offers') {
+      const kind = options.multiSelect === 'target' ? 'blocked-by' : 'serialize-with';
+      const offer = host.querySelector<HTMLElement>(
+        `[data-ig-command="choose-offer"][data-ig-target="${kind}"]`,
+      );
+      assert.ok(offer !== null, `no ${kind} offer to choose`);
+      offer.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+      await flush();
+    }
+    if (options.multiSelect === 'planned') {
+      const review = host.querySelector<HTMLElement>('[data-ig-command="bulk-confirm"]');
+      assert.ok(review !== null, 'no review control to plan the batch with');
+      review.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+      await flush();
+    }
+  }
 
   // THE ISOLATED CHIP'S OTHER STATE, when asked for. One button, two commands
   // — the same toggle the focus token had to learn to follow — so recording it

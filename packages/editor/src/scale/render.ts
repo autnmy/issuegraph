@@ -44,6 +44,8 @@ import {
 
 import type { ProjectedEdge } from '@issuegraph/store';
 
+import { type MarkLookup, markKeyed } from '../marks.ts';
+
 import { overlaysFor } from '../overlay/projected.ts';
 import { attachEdgeOverlays } from '../overlay/render.ts';
 import { edgeMarkRequests } from '../overlay/request.ts';
@@ -159,6 +161,23 @@ export interface ScaleLadderOptions {
    * for the adjacent chip, whose list is already its next sibling.
    */
   readonly isolatedListId?: string | undefined;
+  /**
+   * Decorations for the canvas's keyed NODES, applied before it is rendered.
+   *
+   * TAKEN IN RATHER THAN HANDING THE SCENE OUT. §17e needs a multi-selection
+   * marked on the canvas as well as in the rail, and the rail's decorations are
+   * already a keyed walk over a spec tree. Publishing this canvas's scene so a
+   * caller could walk it would mean the caller also reassembling the markup —
+   * the canvas and this ladder's own chrome are concatenated here — which is a
+   * second assembly point for a string this module is the single source of. So
+   * the walk comes in and the assembly stays put.
+   *
+   * ONLY THE `direct` TIER HAS NODES TO MARK. Above it §17f draws cluster
+   * capsules, which carry `data-ig-command` and no `KEY_ATTRIBUTE`, so the walk
+   * finds nothing — correctly, and silently. A caller that needs to know how
+   * many of its keys went unmarked reads `ladder.tier` and `ladder.canvas`.
+   */
+  readonly nodeMarks?: MarkLookup | undefined;
 }
 
 export interface ScaleLadderResult {
@@ -168,6 +187,25 @@ export interface ScaleLadderResult {
   /** The viewer's stylesheet, the theme, and the chrome's own. Install all. */
   readonly styles: string;
   readonly diagnostics: readonly string[];
+}
+
+/**
+ * The canvas half of this ladder's markup.
+ *
+ * THREE INPUTS AND ONE ANSWER, so the "which root do I render" question is
+ * settled once. Without marks the expression is exactly what it was — the
+ * pre-rendered `canvas.markup`, or the overlaid scene when there is one — which
+ * is what keeps an unmarked ladder byte-identical rather than merely equivalent.
+ */
+function canvasMarkup(
+  canvas: { readonly markup: string; readonly scene: { readonly root: ElementSpec } } | null,
+  overlaid: { readonly scene: { readonly root: ElementSpec } } | null,
+  nodeMarks: MarkLookup | undefined,
+): string {
+  const root = overlaid === null ? (canvas?.scene.root ?? null) : overlaid.scene.root;
+  if (root === null) return '';
+  if (nodeMarks === undefined) return overlaid === null ? (canvas?.markup ?? '') : renderMarkup(root);
+  return renderMarkup(markKeyed(root, nodeMarks));
 }
 
 function refusalSpec(refusal: ScaleRefusal, ladder: ScaleLadder): ElementSpec {
@@ -414,7 +452,7 @@ export function renderScaleLadder(
     // `renderMarkup`, so no attribute value in this package is ever
     // concatenated into markup by hand — which is the escaping surface a
     // second, hand-rolled renderer would have introduced.
-    markup: `${overlaid === null ? (canvas?.markup ?? '') : renderMarkup(overlaid.scene.root)}${renderMarkup(chrome)}`,
+    markup: `${canvasMarkup(canvas, overlaid, options.nodeMarks)}${renderMarkup(chrome)}`,
     // THE OVERLAY'S OWN SHEET TRAVELS WITH THE MARKUP THAT NEEDS IT. The halo
     // is a class this package styles, so a canvas that can draw one and a
     // stylesheet a caller has to remember separately is a mark that renders

@@ -28,10 +28,37 @@
  * as nothing selected rather than as last render's answer.
  */
 
-/** What the reader has selected. Exactly one thing, or nothing. */
+/**
+ * The issues one selection names: at least one, ordered, and the first is the
+ * ANCHOR.
+ *
+ * A NON-EMPTY TUPLE RATHER THAN AN ARRAY, so `{ kind: 'issue' }` naming no
+ * issue cannot be constructed. That is the same guarantee the union below is
+ * chosen for — the impossible combination stops existing at the type — and it
+ * is what lets {@link selectedKey} answer a `string` for an issue selection
+ * without a length check standing behind it.
+ *
+ * THE ANCHOR IS POSITIONAL rather than a field of its own. The obvious shape is
+ * `{ anchor: string; members: readonly string[] }`, and it is wrong the same way
+ * the two-nullable-fields shape below is wrong: it can represent an anchor that
+ * is not in its own members, so every reader needs a rule for that cell and the
+ * three zones are free to pick different ones. `keys[0]` has no such cell.
+ */
+export type SelectedIssues = readonly [string, ...(readonly string[])];
+
+/**
+ * What the reader has selected. Exactly one KIND of thing, or nothing.
+ *
+ * CARDINALITY IS NOT AMBIGUITY, which is why the issue arm holds a list without
+ * reopening the failure the module header describes. That failure is a shape
+ * admitting an issue AND an edge at once — two different kinds, so "what is
+ * selected?" has two answers and each zone may pick a different one. A list of
+ * issues admits no second kind: there is still one answer and one payload, and
+ * the only thing that varies is how many issues that one answer names.
+ */
 export type WorkspaceSelection =
   | { readonly kind: 'none' }
-  | { readonly kind: 'issue'; readonly key: string }
+  | { readonly kind: 'issue'; readonly keys: SelectedIssues }
   | { readonly kind: 'edge'; readonly edgeId: string };
 
 /** Nothing selected. The state a freshly-loaded workspace is in. */
@@ -47,6 +74,22 @@ export const INITIAL_SELECTION: WorkspaceSelection = { kind: 'none' };
 export type SelectionCommand =
   | { readonly kind: 'select-issue'; readonly key: string }
   | { readonly kind: 'reveal-issue'; readonly key: string }
+  /**
+   * §17e's `shift-click or ⇧↓`: add this issue to the set, or take it out.
+   *
+   * THE ONLY COMMAND THAT DOES NOT REPLACE, and the exception is exactly what
+   * the set is for. It is still not a second selection: it edits the ONE issue
+   * selection's key list, so no reader gains a state where two kinds are
+   * selected at once.
+   *
+   * A TOGGLE RATHER THAN AN ADD, because a reader who over-shoots a set of six
+   * has no other way back — and a separate `unextend` would be two commands for
+   * one act with no way for a caller to know which it wants without first
+   * reading the state. Extending from `none` or from an EDGE starts a set of
+   * one: an edge and an issue are different kinds, and extending an edge
+   * selection with an issue means the reader has left the edge behind.
+   */
+  | { readonly kind: 'extend-issue'; readonly key: string }
   | { readonly kind: 'select-edge'; readonly edgeId: string }
   | { readonly kind: 'clear' };
 
@@ -73,11 +116,20 @@ export function selectionReducer(
 ): WorkspaceSelection {
   switch (command.kind) {
     case 'select-issue':
-      return selection.kind === 'issue' && selection.key === command.key
+      // COMPARED AGAINST THE WHOLE SET, not against its anchor. A plain click
+      // on a member of a set of six REPLACES it with that one issue — which is
+      // how a reader leaves a set without hunting for a control — and only a
+      // click on an already-singleton selection of that key clears it. Reading
+      // `keys[0]` here instead would clear the set whenever the anchor was
+      // re-clicked, losing five selections to a gesture that means "just this
+      // one".
+      return isOnly(selection, command.key)
         ? INITIAL_SELECTION
-        : { kind: 'issue', key: command.key };
+        : { kind: 'issue', keys: [command.key] };
     case 'reveal-issue':
-      return { kind: 'issue', key: command.key };
+      return { kind: 'issue', keys: [command.key] };
+    case 'extend-issue':
+      return extend(selection, command.key);
     case 'select-edge':
       return selection.kind === 'edge' && selection.edgeId === command.edgeId
         ? INITIAL_SELECTION
@@ -85,6 +137,34 @@ export function selectionReducer(
     case 'clear':
       return INITIAL_SELECTION;
   }
+}
+
+/** Whether this selection is exactly this one issue and nothing else. */
+function isOnly(selection: WorkspaceSelection, key: string): boolean {
+  return selection.kind === 'issue' && selection.keys.length === 1 && selection.keys[0] === key;
+}
+
+/**
+ * The set with `key` added, or removed if it was already there.
+ *
+ * THE REMOVAL ARM REBUILDS THE TUPLE BY NARROWING, NEVER BY A CAST. `filter`
+ * answers a plain `readonly string[]`, which is not assignable to
+ * {@link SelectedIssues}, and the obvious repair — asserting it back — is the
+ * one this repository bans outright (`markRail` records the same rule for the
+ * same reason). Destructuring asks the compiler the question instead: `head`
+ * is `string | undefined`, and narrowing it is what proves the tuple non-empty.
+ * The "removing the last member empties the selection" case then FALLS OUT of
+ * that narrowing rather than being a length check someone could forget.
+ *
+ * Removing the anchor promotes the next member, which is the only answer
+ * consistent with the anchor being positional: the set is still a set, and
+ * something has to lead it.
+ */
+function extend(selection: WorkspaceSelection, key: string): WorkspaceSelection {
+  if (selection.kind !== 'issue') return { kind: 'issue', keys: [key] };
+  if (!selection.keys.includes(key)) return { kind: 'issue', keys: [...selection.keys, key] };
+  const [head, ...rest] = selection.keys.filter((member) => member !== key);
+  return head === undefined ? INITIAL_SELECTION : { kind: 'issue', keys: [head, ...rest] };
 }
 
 /**
@@ -96,7 +176,35 @@ export function selectionReducer(
  * issue whose key happened to collide with an edge id.
  */
 export function selectedKey(selection: WorkspaceSelection): string | null {
-  return selection.kind === 'issue' ? selection.key : null;
+  // THE ANCHOR, AND THE SIGNATURE IS UNCHANGED ON PURPOSE. `aria-current` names
+  // THE current item in a container, so a set still has exactly one — and every
+  // reader that goes through this accessor keeps behaving identically at N=1,
+  // which is what makes the widening above a widening rather than a rewrite.
+  // A reader that needs the whole set asks {@link selectedKeys}.
+  return selection.kind === 'issue' ? selection.keys[0] : null;
+}
+
+/**
+ * Every issue the selection names, in the order the reader built it.
+ *
+ * Empty for `none` AND for an edge, for the reason {@link selectedKey} gives
+ * about the other direction: an edge id is a different name space, and handing
+ * it back here would let a caller count it as an issue.
+ */
+export function selectedKeys(selection: WorkspaceSelection): readonly string[] {
+  return selection.kind === 'issue' ? selection.keys : [];
+}
+
+/**
+ * Whether the selection names more than one issue.
+ *
+ * Its own function rather than `selectedKeys(...).length > 1` at each call
+ * site, because it is the condition that decides which surface the inspector
+ * draws and which rows the rail marks — one spelling, so the zones cannot
+ * disagree about whether a set exists.
+ */
+export function isMultiSelection(selection: WorkspaceSelection): boolean {
+  return selection.kind === 'issue' && selection.keys.length > 1;
 }
 
 /**
