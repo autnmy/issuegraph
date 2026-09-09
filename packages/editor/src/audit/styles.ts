@@ -94,17 +94,36 @@ export const auditStylesheet = `
    against the zone, which is a grid item on the workspace's 1fr row inside a
    mount that is height: 100% — so mounted, the track is definite and it applies.
 
-   AND IT GOES INERT EXACTLY WHERE THE DEFECT DOES. Rendered with no
-   height-bounded ancestor the percentage is indefinite, CSS reads the
-   max-height as none, and the panel is unbounded as before. That is right
-   rather than a gap: an auto-height zone grows to its content, so nothing is
-   below any fold and there is nothing to bound.
+   IT RESOLVES WHETHER OR NOT THE HOST BOUNDS THE HEIGHT, and an earlier draft
+   of this comment claimed the opposite. It said the percentage went indefinite
+   in an auto-height host and CSS read the max-height as none. That is the block
+   rule; the zone is a STRETCH-ALIGNED GRID ITEM, so its used height is definite
+   either way and the share always resolves. Measured, not reasoned: the
+   computed value stayed 50% in every configuration tried.
 
-   BORDER-BOX, AND IT IS LOAD-BEARING. This repository declares box-sizing per
-   element — there is no global reset — so without it the half is measured on
-   the CONTENT box and the panel's own padding and border push the drawn box
-   past the share it was given. Nothing would look broken; it would just be
-   wrong by a padding and a stroke.
+   WHAT ACTUALLY VARIES IS WHETHER IT BINDS, and it is worth knowing which case
+   you are in. The row is as tall as its tallest zone, and the rail draws the
+   order — so ordinarily the rail sets it, the half is far larger than the
+   panel, and the bound is slack. It binds when the PANEL is the tallest thing
+   in the row. In a height-bounded host that is the whole point. In an
+   auto-height one it is a cost: measured on the demo with the other zones out,
+   the column capped the panel at half and put the rest of the findings behind a
+   scroller on a page that had room to simply be taller.
+
+   THAT COST IS ACCEPTED HERE RATHER THAN HIDDEN. The workspace asks a host for
+   a bounded height already — .ig-mount is height: 100% — and the surface is a
+   three-zone application layout, not a document flow. The alternative is a
+   selector that can ask whether an ancestor's height is definite, and CSS has
+   none. Scoping the bound to a host requirement is issue 188, filed rather than
+   guessed at here.
+
+   BORDER-BOX, AND IT IS LOAD-BEARING. There IS a universal reset in this
+   codebase and it does not reach here: viewer/src/styles.ts scopes it to
+   .ig-viewer descendants, and this panel is a sibling of the rail's viewer
+   rather than inside it. So without the declaration the half is measured on the
+   CONTENT box and the panel's own padding and border push the drawn box past
+   the share it was given — measured at 56.6% of the column instead of 50, which
+   is exactly one padding pair plus a stroke. Nothing would look broken.
 
    THE PANEL SCROLLS, NOT THE LIST INSIDE IT. Scrolling the list instead would
    pin this head, which is tempting and is the wrong trade twice over. The

@@ -2240,13 +2240,18 @@ describe('the inspector zone at the audit sizes §17f produces', () => {
     );
   });
 
-  it('draws the panel with the same declared share at one finding and at thirty', () => {
-    // THE COUNT-INDEPENDENCE ITSELF. The bound lives in the stylesheet, not in
-    // the markup, so no finding count can widen it — and the panel carries no
-    // inline style that could. This is what makes the detail's offset bounded
-    // rather than a function of how bad the document is.
+  it('carries the panel\'s share in the stylesheet, not in the markup', () => {
+    // THE COUNT-INDEPENDENCE ITSELF, AND THE ONE PART OF IT THAT IS OBSERVABLE
+    // HERE. The bound is a stylesheet rule, so the only way a finding count
+    // could widen it is an inline style on the panel — which is what this reads
+    // for at both ends of the range. It is a narrow assertion and that is the
+    // honest size of it: a review round caught an earlier version also
+    // comparing the two stylesheets, which are the same string for every input
+    // because nothing interpolates a count into them, so it was green by
+    // construction rather than about this change.
     const small = renderWorkspace(backlogOf(312), { ...WORDS, audit: auditOf(1) });
     const large = renderWorkspace(backlogOf(312), { ...WORDS, audit: auditOf(30) });
+    assert.ok((large.view.audit?.count ?? 0) > (small.view.audit?.count ?? 0), 'the two fixtures did not differ');
     for (const markup of [small.markup, large.markup]) {
       assert.match(markup, /<section class="ig-audit-panel"/);
       assert.equal(
@@ -2255,6 +2260,5 @@ describe('the inspector zone at the audit sizes §17f produces', () => {
         'the panel grew an inline style, so its share is no longer the stylesheet\'s alone',
       );
     }
-    assert.equal(small.styles, large.styles, 'the stylesheet changed with the finding count');
   });
 });
