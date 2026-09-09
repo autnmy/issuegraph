@@ -1518,13 +1518,18 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // into.
     const railBefore = zone('rail');
     const scrollTop = railBefore?.scrollTop ?? 0;
-    // THE PANEL SCROLLS TOO, SINCE IT TOOK A SHARE OF ITS COLUMN. Before the
-    // audit had a bound it grew to its content and only the ZONE scrolled, so
-    // there was no second offset to keep. Now a long audit is read inside the
-    // panel, and every store update and unrelated command runs this redraw —
-    // so without this a reader deep in the findings is returned to the first
-    // one by something they did somewhere else entirely.
-    const auditBefore = surface.querySelector<HTMLElement>('.ig-audit-panel');
+    // THE AUDIT SCROLLS TOO, SINCE IT TOOK A SHARE OF ITS COLUMN. Before it had
+    // a bound it grew to its content and only the ZONE scrolled, so there was no
+    // second offset to keep. Now a long audit is read inside its own scroller,
+    // and every store update and unrelated command runs this redraw — so without
+    // this a reader deep in the findings is returned to the first one by
+    // something they did somewhere else entirely.
+    //
+    // THE REGION, NOT THE PANEL. #177 put the bound on `.ig-audit-panel`, and
+    // §17d's second surface moved it up to the region holding both — so reading
+    // the panel's offset now reads a number that is always zero, and restoring
+    // it is a no-op a reader feels as the audit jumping back on every redraw.
+    const auditBefore = surface.querySelector<HTMLElement>('.ig-audit-region');
     const auditScrollTop = auditBefore?.scrollTop ?? 0;
     const active = doc.activeElement;
     const activeInput = isElement(active) && isInput(active) && surface.contains(active) ? active : null;
@@ -1549,14 +1554,26 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // redraw that destroyed the focused control and of a reader who simply is
     // not here.
     const heldFocus = isElement(active) && surface.contains(active);
-    // AND WHETHER IT WAS THE PANEL ITSELF, which is the one tab stop on this
-    // surface no token can name. It has no keyed ancestor and no command
-    // attribute, so `focusedKey()` and `commandFocusToken()` both answer
-    // nothing for it — and the last-resort arm below fires on exactly that,
-    // sending a reader who was scrolling a long audit to the first rail row,
-    // in another zone. Identity against the node captured above, rather than a
-    // class test, because that is the node the offset was read from.
-    const auditHadFocus = auditBefore !== null && active === auditBefore;
+    // AND WHETHER IT WAS ONE OF THE AUDIT'S OWN TAB STOPS, which are the stops
+    // on this surface no token can name. Neither has a keyed ancestor or a
+    // command attribute, so `focusedKey()` and `commandFocusToken()` both answer
+    // nothing for them — and the last-resort arm below fires on exactly that,
+    // sending a reader who was reading a long audit to the first rail row, in
+    // another zone.
+    //
+    // TWO OF THEM SINCE §17d GAINED ITS SECOND SURFACE, and the refused block is
+    // the one that needs this MOST: both of its controls are conditional, so a
+    // block whose refusals all name unloaded issues has no focusable descendant
+    // at all and the section itself is the only stop a reader can hold.
+    //
+    // A CLASS RATHER THAN THE NODE THE OFFSET CAME FROM. That identity test was
+    // right while the scrolling element and the tab stop were one element; they
+    // are not any more — the region scrolls and its members carry the stops —
+    // so the answer has to name which stop, and it is restored by the same name.
+    const AUDIT_STOPS = ['.ig-audit-refused', '.ig-audit-panel'] as const;
+    const auditStop = isElement(active)
+      ? (AUDIT_STOPS.find((one) => active.matches(one)) ?? null)
+      : null;
     // The ZONE too: an issue is commonly drawn in the rail and on the canvas,
     // and restoring "the first element with this key" would move focus from
     // a canvas node into the rail on every redraw.
@@ -1692,11 +1709,11 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     const rail = zone('rail');
     if (rail !== null) rail.scrollTop = scrollTop;
     // RE-QUERIED, NEVER REUSED: `surface.innerHTML` above replaced the subtree,
-    // so the element captured from is gone. A panel that shrank clamps this on
+    // so the element captured from is gone. A region that shrank clamps this on
     // assignment, and one the redraw removed — the audit going clean — is
     // simply absent, which is why nothing is restored rather than zeroed.
-    const auditPanel = surface.querySelector<HTMLElement>('.ig-audit-panel');
-    if (auditPanel !== null) auditPanel.scrollTop = auditScrollTop;
+    const auditRegion = surface.querySelector<HTMLElement>('.ig-audit-region');
+    if (auditRegion !== null) auditRegion.scrollTop = auditScrollTop;
     // THE LIST THE READER JUST OPENED IS BROUGHT INTO VIEW. See
     // `revealIsolated` for why the control and the list are in different zones.
     // `block: 'nearest'` so a list already visible is not scrolled at all, and
@@ -1735,16 +1752,20 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       // first control is `apply`, and landing focus there would put the one
       // irreversible answer under the reader's next Space.
       (again ?? overlay).focus({ preventScroll: true });
-    } else if (auditHadFocus && auditPanel !== null) {
-      // THE READER WAS IN THE FINDINGS, SO THEY STAY THERE. Beside the offset
-      // restored above rather than instead of it: the offset says where the
-      // panel is scrolled to and this says who is reading it, and a redraw that
-      // kept one without the other still moves the reader out of the zone.
+    } else if (auditStop !== null && surface.querySelector<HTMLElement>(auditStop) !== null) {
+      // THE READER WAS IN THE AUDIT, SO THEY STAY THERE — and on the same one of
+      // its two surfaces, which is why the stop is restored by the name it was
+      // captured under rather than by whichever the redraw drew first.
+      //
+      // Beside the offset restored above rather than instead of it: the offset
+      // says where the region is scrolled to and this says who is reading it,
+      // and a redraw that kept one without the other still moves the reader out
+      // of the zone.
       //
       // `preventScroll`, because the offset was already put back — focusing
-      // normally would scroll the column to bring the panel into view and
+      // normally would scroll the column to bring the element into view and
       // undo it.
-      auditPanel.focus({ preventScroll: true });
+      surface.querySelector<HTMLElement>(auditStop)?.focus({ preventScroll: true });
     } else if (activeCommand !== null) {
       const again = surface.querySelector<HTMLInputElement>(`input[${COMMAND_ATTRIBUTE}="${activeCommand}"]`);
       if (again !== null) {
@@ -2559,8 +2580,17 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // A REFUSAL IS THIS PACKAGE'S OWN ANSWER, so it keeps the press: `Space`
     // would otherwise scroll the page under a reader who has just pressed
     // something, and there is nothing else waiting for this key.
+    //
+    // EXCEPT A NAVIGATION REFUSAL, WHICH MEANS THE OPPOSITE. `input` and `inert`
+    // say "this press does nothing, and nothing else wants it"; `navigation`
+    // says the BROWSER performs this control's activation, so there is something
+    // else waiting for the key and cancelling is how it never arrives. An
+    // anchor's `Enter` activation is a DEFAULT ACTION — cancel the keydown and
+    // no click is synthesized and the link never opens, which would leave §17d's
+    // outward link working for a pointer and dead for a keyboard. The click path
+    // still refuses to DISPATCH it; the two answers differ because the acts do.
     if (answer.kind === 'refused') {
-      event.preventDefault();
+      if (answer.reason !== 'navigation') event.preventDefault();
       return;
     }
     // DISPATCH FIRST, THEN DECIDE WHETHER THE PRESS WAS OURS TO KEEP — and that
