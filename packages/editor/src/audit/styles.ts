@@ -81,13 +81,18 @@ export const auditStylesheet = `
    it is a sibling of .ig-inspector inside the zone rather than a child, and
    that column's padding does not reach it.
 
-   IT DECLARES NO SHARE OF THE ZONE, and that is a reversal worth recording. It
-   carried flex: 0 1 auto and max-height: 50% against a zone made a flex column,
-   which gave the audit and the selection independent scrolling — and clipped
-   the mount's chrome, a third sibling this package appends to the same zone.
-   The zone scrolls as one track again; see workspace/styles.ts. How three
-   siblings should share one column is a design question, and it is filed rather
-   than answered in a stylesheet. */
+   IT DECLARES NO SIZE OF ITS OWN, AND THAT IS THE LAYERING. The panel takes
+   half the inspector column and scrolls itself past that — issue 177's answer —
+   but that is a fact about SHARING A COLUMN WITH TWO OTHER SIBLINGS, not a fact
+   about the panel, so it is declared by the composition that owns the zone.
+   See workspace/styles.ts.
+
+   The difference is reachable rather than theoretical: renderAuditPanel and
+   this stylesheet are both public exports, so a consumer can draw the panel
+   outside renderWorkspace. Capping it there would hide findings behind an inner
+   scrollbar with half the container left empty and no selection detail to
+   reserve the space for. A leaf that sized itself would be wrong in every
+   composition but one. */
 .ig-audit-panel {
   border-bottom: var(--ig-stroke) solid var(--ig-line);
   display: flex;
@@ -96,6 +101,20 @@ export const auditStylesheet = `
   gap: var(--ig-space-snug);
   min-height: 0;
   padding: var(--ig-space);
+}
+
+/* THE RING FOR THE PANEL'S OWN TAB STOP. Unscoped, unlike the sizing above,
+   because the tabindex is in this leaf's MARKUP and is therefore carried into
+   every composition: a focusable element that shows nothing on focus is a stop
+   a keyboard reader lands on blind, wherever it is drawn.
+
+   INSET, WHICH IS THE VIEWER'S OWN IDIOM for exactly this shape — its sheet
+   draws every focus ring at a negative offset. Drawn outward it would sit on
+   the panel's border box against the zone's edge and the column's own scroll,
+   where the top and bottom of the ring are the first thing clipped. */
+.ig-audit-panel:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: calc(var(--ig-focus-ring) * -1);
 }
 
 .ig-audit-panel-head {
@@ -129,11 +148,14 @@ export const auditStylesheet = `
   text-transform: uppercase;
 }
 
-/* NO CAP ON THE LIST. Three of them were tried — a fixed length, a share of a
-   flex column, that share measured on the right box — and each was correct
-   about the previous one's defect while the column itself stayed the thing that
-   could not be bounded from in here. The zone scrolls as one track, the list
-   scrolls with it, and the sharing question is filed. */
+/* NO CAP ON THE LIST, AND THAT IS STILL RIGHT — the bound belongs to the PANEL
+   above, not here. Three caps were tried on this element (a fixed length, a
+   share of a flex column, that share measured on the right box) and each was
+   correct about the previous one's defect while the column stayed the thing
+   that could not be bounded from in here. It still cannot: the list has no
+   padding, so a scroll container here computes overflow-x to auto and clips the
+   focus ring on every card control. The panel carries the share and the
+   scrolling; see the rule above. */
 .ig-audit-list {
   display: flex;
   flex-direction: column;

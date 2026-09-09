@@ -274,6 +274,21 @@ export function renderAuditPanel(
       // `firstpass/render.ts` already names its own section from its words; this
       // is the same rule one leaf over.
       'aria-label': words.heading,
+      // A TAB STOP, BECAUSE #177 MADE THIS A SCROLL CONTAINER. The panel takes
+      // half the inspector column and scrolls itself past that, so there is
+      // content only scrolling reaches — and a pointer is not the only way in.
+      //
+      // ITS CARDS CANNOT BE RELIED ON TO CARRY THE KEYBOARD. `cardSpec` draws
+      // its navigation control only for a member the drawn document actually
+      // holds, so an audit whose findings all name issues outside the loaded
+      // page renders no button at all. That panel has no focusable descendant,
+      // and browsers disagree about putting a generic scroll container in the
+      // tab order — some do, some never have. Declaring it removes the
+      // disagreement rather than depending on which engine is running.
+      //
+      // It is already named, so this makes a NAMED region focusable rather than
+      // adding an anonymous stop. `styles.ts` draws the ring it now needs.
+      tabindex: '0',
     },
     [
     element('div', { class: 'ig-audit-panel-head' }, [

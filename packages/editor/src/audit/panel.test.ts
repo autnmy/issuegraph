@@ -310,6 +310,14 @@ describe('the findings panel', () => {
     // AND THE SECTION IS NAMED. An unnamed `section` carries no landmark role at
     // all, so a reader navigating by landmark cannot reach the panel.
     assert.match(markup, new RegExp(`<section class="ig-audit-panel" aria-label="${WORDS.heading}"`));
+    // THE PANEL IS A TAB STOP, because #177 made it a scroll container that
+    // takes half the inspector column. Its cards cannot be relied on to carry
+    // the keyboard into it: `cardSpec` draws its navigation control only for a
+    // member the drawn document holds, so an audit naming only issues outside
+    // the loaded page renders no button and leaves the scroller with no
+    // focusable descendant at all. Browsers disagree about putting a generic
+    // scroll container in the tab order, so it is declared rather than assumed.
+    assert.match(markup, /<section class="ig-audit-panel"[^>]*\stabindex="0"/);
     // THE MARK IS DECORATION. The count and the heading beside it say the same
     // thing in words, so a reader who cannot see the glyph loses nothing and a
     // reader who hears it twice gains nothing.

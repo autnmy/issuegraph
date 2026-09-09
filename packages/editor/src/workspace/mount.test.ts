@@ -228,6 +228,112 @@ async function mounted(
 
 type Mounted = Awaited<ReturnType<typeof mounted>>;
 
+/**
+ * The audit panel's scroll offset survives a redraw, as the rail's already does.
+ *
+ * #177 gave the panel a share of the inspector column, which made it an
+ * INDEPENDENT scroll container. Before that the audit grew to its content and
+ * only the zone scrolled, so there was one offset to keep and `redraw` kept it.
+ * Now there are two, and a store update runs the same redraw — so without this
+ * a reader deep in a long audit is returned to the first finding by something
+ * happening elsewhere on the surface.
+ *
+ * `surface.innerHTML` replaces the subtree, so the element the offset was read
+ * from is gone by the time it is written back: the restore has to RE-QUERY.
+ * That is the part this test holds, and the identity assertion below is what
+ * proves the subtree really was rebuilt rather than left alone.
+ */
+describe("the audit panel's scroll offset survives a redraw", () => {
+  /** The default projection, with a cycle declared so the audit has findings. */
+  function withCycle(snapshot: StoreSnapshot): WorkspaceProjection {
+    // THE DOCUMENT IS REBUILT RATHER THAN READ OFF `base.audit`, which is
+    // optional on the projection — an absent `audit` means "not run" — so
+    // reaching through it would need a cast this repository does not allow.
+    // `project` composes it from exactly these two fields.
+    return {
+      ...project(snapshot),
+      audit: {
+        document: { issues: snapshot.issues, edges: snapshot.landed },
+        graph: { cycles: [['1', '2']], duplicateCanonical: () => null },
+      },
+    };
+  }
+
+  it('restores the offset onto the panel the redraw built', async () => {
+    const page = await mounted(SEED, { project: withCycle });
+    try {
+      const panel = (): HTMLElement | null =>
+        page.element.querySelector<HTMLElement>('.ig-audit-panel');
+      const before = panel();
+      assert.ok(before !== null, 'the fixture drew no findings panel, so this proves nothing');
+
+      before.scrollTop = 120;
+      assert.equal(before.scrollTop, 120, 'the fixture cannot hold an offset, so this proves nothing');
+
+      // The plain redraw, which is the one every other redraw reduces to.
+      page.handle.update();
+      await flush();
+
+      const after = panel();
+      assert.ok(after !== null, 'the redraw dropped the panel');
+      // THE REDRAW MUST ACTUALLY HAVE REPLACED IT, or the assertion below is
+      // vacuous: an offset on a node nothing touched survives by itself.
+      assert.notEqual(after, before, 'no redraw happened, so this test would prove nothing');
+      assert.equal(after.scrollTop, 120);
+      page.handle.destroy();
+    } finally {
+      page.dom.window.close();
+    }
+  });
+
+  it('keeps focus on the panel rather than dropping it into the rail', async () => {
+    // THE OFFSET AND THE FOCUS ARE TWO FACTS, and keeping one without the other
+    // still moves the reader out of the zone. The panel is the one tab stop on
+    // this surface no token can name — no keyed ancestor, no command attribute
+    // — so `focusedKey()` and `commandFocusToken()` both answer nothing for it
+    // and the last-resort arm, which fires on "nothing inside the surface holds
+    // focus", would send a reader scrolling a long audit to the first rail row.
+    const page = await mounted(SEED, { project: withCycle });
+    try {
+      const before = page.element.querySelector<HTMLElement>('.ig-audit-panel');
+      assert.ok(before !== null, 'the fixture drew no findings panel');
+      before.focus();
+      assert.equal(page.dom.window.document.activeElement, before, 'the fixture cannot hold focus');
+
+      page.handle.update();
+      await flush();
+
+      const after = page.element.querySelector<HTMLElement>('.ig-audit-panel');
+      assert.ok(after !== null, 'the redraw dropped the panel');
+      assert.notEqual(after, before, 'no redraw happened, so this test would prove nothing');
+      assert.equal(
+        page.dom.window.document.activeElement,
+        after,
+        'focus left the panel — the rail fallback claimed it',
+      );
+      page.handle.destroy();
+    } finally {
+      page.dom.window.close();
+    }
+  });
+
+  it('restores nothing when the redraw draws no panel', async () => {
+    // A CLEAN AUDIT HAS NO PANEL — `renderAuditPanel` returns null on no
+    // findings — and the restore must be absent rather than zeroing whatever
+    // else the selector might have found.
+    const page = await mounted(SEED);
+    try {
+      assert.equal(page.element.querySelector('.ig-audit-panel'), null);
+      page.handle.update();
+      await flush();
+      assert.equal(page.element.querySelector('.ig-audit-panel'), null);
+      page.handle.destroy();
+    } finally {
+      page.dom.window.close();
+    }
+  });
+});
+
 describe('§17c\u2019s live region survives the redraw that would destroy it', () => {
   /**
    * The region is the ONE node this shell carries across a redraw.

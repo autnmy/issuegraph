@@ -2179,3 +2179,94 @@ describe("§17b's flip control is published markup, not mount chrome", () => {
     }
   });
 });
+
+/**
+ * #177's scale case: the selection detail survives an audit the size §17f draws.
+ *
+ * The zone puts a GLOBAL findings list above a SELECTION-SCOPED detail and
+ * draws the list first, so an unbounded audit pushed the thing a reader had
+ * just clicked below the fold. §17f's own case is a 312-issue backlog, which
+ * makes a long audit the ordinary size rather than a corner.
+ *
+ * WHAT THIS CAN AND CANNOT ASSERT. `node --test` has no layout engine, so the
+ * offset the defect is measured in is not observable here. What is observable
+ * is the mechanism that bounds it: the panel is drawn with the same share
+ * whatever the finding count, and the detail is still rendered beside it rather
+ * than displaced or dropped. Those two together are what make the offset
+ * count-independent, which is the property #177 asked for.
+ */
+describe('the inspector zone at the audit sizes §17f produces', () => {
+  // NO LAYOUT HERE, AND THE ISSUE'S OWN DONE-WHEN ASKS FOR ONE. #177 wants the
+  // selection detail pinned as REACHABLE at scale, which is a measured offset,
+  // and `node --test` has no layout engine. What these two hold instead is the
+  // structure that offset follows from: the panel is drawn first, the detail is
+  // still drawn, and neither the draw order nor the share moves with the
+  // finding count. The measurement itself is in the commit message.
+
+  /** `pairs` two-cycles, which gives one finding per cycle and two marked rows. */
+  function auditOf(pairs: number) {
+    const refs = Array.from({ length: pairs * 2 }, (_, at) => `i${String(at + 1).padStart(4, '0')}`);
+    const blockedBy: Record<string, readonly string[]> = {};
+    const edges = [];
+    for (let pair = 0; pair < pairs; pair += 1) {
+      const [one, two] = [refs[pair * 2] as string, refs[pair * 2 + 1] as string];
+      blockedBy[one] = [two];
+      blockedBy[two] = [one];
+      edges.push(
+        { id: edgeIdentity('blocked-by', one, two), kind: 'blocked-by' as const, from: one, to: two },
+        { id: edgeIdentity('blocked-by', two, one), kind: 'blocked-by' as const, from: two, to: one },
+      );
+    }
+    return {
+      document: {
+        issues: refs.map((ref) => ({ ref, title: `issue ${ref}`, state: 'open' as const })),
+        edges,
+      },
+      graph: graphFor(refs, blockedBy),
+    };
+  }
+
+  it('draws the panel first and the selection detail after it, at any finding count', () => {
+    const audit = auditOf(30);
+    const result = renderWorkspace(backlogOf(312), {
+      ...WORDS,
+      audit,
+      rail: { start: 0, count: 12 },
+    });
+    assert.ok((result.view.audit?.count ?? 0) >= 30, 'the fixture produced too few findings');
+
+    const zone = inspectorOf(result.markup);
+    assert.ok(zone.includes('ig-audit-panel'), 'the panel is not in the zone');
+    // WHAT THIS HOLDS IS THE ORDER, and it is worth being exact about that.
+    // `.ig-inspector` is emitted unconditionally, so its presence cannot fail
+    // from a long audit — the assertion that can is the panel coming FIRST,
+    // which is half of why the panel is the sibling that takes the bound.
+    assert.ok(zone.includes('class="ig-inspector"'), 'the zone lost the selection detail entirely');
+    assert.ok(
+      zone.indexOf('ig-audit-panel') < zone.indexOf('class="ig-inspector"'),
+      'the panel is no longer drawn first, which changes what #177 decided',
+    );
+  });
+
+  it('carries the panel\'s share in the stylesheet, not in the markup', () => {
+    // THE COUNT-INDEPENDENCE ITSELF, AND THE ONE PART OF IT THAT IS OBSERVABLE
+    // HERE. The bound is a stylesheet rule, so the only way a finding count
+    // could widen it is an inline style on the panel — which is what this reads
+    // for at both ends of the range. It is a narrow assertion and that is the
+    // honest size of it: a review round caught an earlier version also
+    // comparing the two stylesheets, which are the same string for every input
+    // because nothing interpolates a count into them, so it was green by
+    // construction rather than about this change.
+    const small = renderWorkspace(backlogOf(312), { ...WORDS, audit: auditOf(1) });
+    const large = renderWorkspace(backlogOf(312), { ...WORDS, audit: auditOf(30) });
+    assert.ok((large.view.audit?.count ?? 0) > (small.view.audit?.count ?? 0), 'the two fixtures did not differ');
+    for (const markup of [small.markup, large.markup]) {
+      assert.match(markup, /<section class="ig-audit-panel"/);
+      assert.equal(
+        /<section class="ig-audit-panel"[^>]*style=/.test(markup),
+        false,
+        'the panel grew an inline style, so its share is no longer the stylesheet\'s alone',
+      );
+    }
+  });
+});

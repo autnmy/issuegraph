@@ -94,15 +94,39 @@ async function surfaces(): Promise<Record<string, readonly ControlEntry[]>> {
   return out;
 }
 
+/**
+ * The surfaces, built once for the whole file.
+ *
+ * BUILDING THEM PER TEST IS WHAT MADE THIS FILE TIME OUT (#185). `surfaces`
+ * mounts ELEVEN full workspaces in jsdom, and five call sites each asked for a
+ * fresh set — fifty-five mounts to answer questions about eleven surfaces. On a
+ * CI runner that ran up against the suite's 20s per-file budget intermittently,
+ * which reads as a flake and is arithmetic.
+ *
+ * SHARING THE RESULT IS SAFE BECAUSE IT IS NOT A DOM. `surfaces` closes every
+ * page before it returns and hands back `ControlEntry` values — plain data
+ * already extracted by `controlSurface`. There is no live document for one test
+ * to disturb for the next, which is the only thing a per-test rebuild was
+ * buying.
+ *
+ * The promise is memoized rather than the value, so concurrent callers await
+ * one build instead of racing to start several.
+ */
+let built: Promise<Record<string, readonly ControlEntry[]>> | null = null;
+function allSurfaces(): Promise<Record<string, readonly ControlEntry[]>> {
+  built ??= surfaces();
+  return built;
+}
+
 /** Every entry across every surface, for a rule that holds of all of them. */
 async function everyEntry(): Promise<readonly ControlEntry[]> {
-  return Object.values(await surfaces()).flat();
+  return Object.values(await allSurfaces()).flat();
 }
 
 describe('the control surface matches its committed baseline', () => {
   it('records the same controls, roles, tab stops, names and ARIA states', async () => {
     {
-      const actual = await surfaces();
+      const actual = await allSurfaces();
       const committed: Record<string, readonly ControlEntry[]> = JSON.parse(
         readFileSync(BASELINE_PATH, 'utf8'),
       );
@@ -117,7 +141,7 @@ describe('the control surface matches its committed baseline', () => {
   // A DENOMINATOR, so a surface that rendered nothing cannot pass every rule
   // below vacuously — the same pin `render.test.ts` puts on its command sweep.
   it('draws a surface worth checking, in both of the disclosure\'s states', async () => {
-    const drawn = await surfaces();
+    const drawn = await allSurfaces();
     for (const [name, entries] of Object.entries(drawn)) {
       assert.ok(entries.length >= 5, `${name} drew only ${String(entries.length)} controls`);
     }
