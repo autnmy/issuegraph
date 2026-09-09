@@ -286,6 +286,37 @@ describe("the audit panel's scroll offset survives a redraw", () => {
     }
   });
 
+  it('keeps focus on the panel rather than dropping it into the rail', async () => {
+    // THE OFFSET AND THE FOCUS ARE TWO FACTS, and keeping one without the other
+    // still moves the reader out of the zone. The panel is the one tab stop on
+    // this surface no token can name — no keyed ancestor, no command attribute
+    // — so `focusedKey()` and `commandFocusToken()` both answer nothing for it
+    // and the last-resort arm, which fires on "nothing inside the surface holds
+    // focus", would send a reader scrolling a long audit to the first rail row.
+    const page = await mounted(SEED, { project: withCycle });
+    try {
+      const before = page.element.querySelector<HTMLElement>('.ig-audit-panel');
+      assert.ok(before !== null, 'the fixture drew no findings panel');
+      before.focus();
+      assert.equal(page.dom.window.document.activeElement, before, 'the fixture cannot hold focus');
+
+      page.handle.update();
+      await flush();
+
+      const after = page.element.querySelector<HTMLElement>('.ig-audit-panel');
+      assert.ok(after !== null, 'the redraw dropped the panel');
+      assert.notEqual(after, before, 'no redraw happened, so this test would prove nothing');
+      assert.equal(
+        page.dom.window.document.activeElement,
+        after,
+        'focus left the panel — the rail fallback claimed it',
+      );
+      page.handle.destroy();
+    } finally {
+      page.dom.window.close();
+    }
+  });
+
   it('restores nothing when the redraw draws no panel', async () => {
     // A CLEAN AUDIT HAS NO PANEL — `renderAuditPanel` returns null on no
     // findings — and the restore must be absent rather than zeroing whatever

@@ -1498,7 +1498,8 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // panel, and every store update and unrelated command runs this redraw —
     // so without this a reader deep in the findings is returned to the first
     // one by something they did somewhere else entirely.
-    const auditScrollTop = surface.querySelector('.ig-audit-panel')?.scrollTop ?? 0;
+    const auditBefore = surface.querySelector<HTMLElement>('.ig-audit-panel');
+    const auditScrollTop = auditBefore?.scrollTop ?? 0;
     const active = doc.activeElement;
     const activeInput = isElement(active) && isInput(active) && surface.contains(active) ? active : null;
     const activeCommand = activeInput?.getAttribute(COMMAND_ATTRIBUTE) ?? null;
@@ -1522,6 +1523,14 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // redraw that destroyed the focused control and of a reader who simply is
     // not here.
     const heldFocus = isElement(active) && surface.contains(active);
+    // AND WHETHER IT WAS THE PANEL ITSELF, which is the one tab stop on this
+    // surface no token can name. It has no keyed ancestor and no command
+    // attribute, so `focusedKey()` and `commandFocusToken()` both answer
+    // nothing for it — and the last-resort arm below fires on exactly that,
+    // sending a reader who was scrolling a long audit to the first rail row,
+    // in another zone. Identity against the node captured above, rather than a
+    // class test, because that is the node the offset was read from.
+    const auditHadFocus = auditBefore !== null && active === auditBefore;
     // The ZONE too: an issue is commonly drawn in the rail and on the canvas,
     // and restoring "the first element with this key" would move focus from
     // a canvas node into the rail on every redraw.
@@ -1660,7 +1669,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // so the element captured from is gone. A panel that shrank clamps this on
     // assignment, and one the redraw removed — the audit going clean — is
     // simply absent, which is why nothing is restored rather than zeroed.
-    const auditPanel = surface.querySelector('.ig-audit-panel');
+    const auditPanel = surface.querySelector<HTMLElement>('.ig-audit-panel');
     if (auditPanel !== null) auditPanel.scrollTop = auditScrollTop;
     // THE LIST THE READER JUST OPENED IS BROUGHT INTO VIEW. See
     // `revealIsolated` for why the control and the list are in different zones.
@@ -1700,6 +1709,16 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       // first control is `apply`, and landing focus there would put the one
       // irreversible answer under the reader's next Space.
       (again ?? overlay).focus({ preventScroll: true });
+    } else if (auditHadFocus && auditPanel !== null) {
+      // THE READER WAS IN THE FINDINGS, SO THEY STAY THERE. Beside the offset
+      // restored above rather than instead of it: the offset says where the
+      // panel is scrolled to and this says who is reading it, and a redraw that
+      // kept one without the other still moves the reader out of the zone.
+      //
+      // `preventScroll`, because the offset was already put back — focusing
+      // normally would scroll the column to bring the panel into view and
+      // undo it.
+      auditPanel.focus({ preventScroll: true });
     } else if (activeCommand !== null) {
       const again = surface.querySelector<HTMLInputElement>(`input[${COMMAND_ATTRIBUTE}="${activeCommand}"]`);
       if (again !== null) {
