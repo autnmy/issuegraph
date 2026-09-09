@@ -69,7 +69,33 @@ const BASELINE_PATH = new URL('./baseline.json', import.meta.url);
  * three had no members in any surface, so a regression in an answer's
  * accessible name or keyboard reachability passed every rule here.
  */
-async function surfaces(): Promise<Record<string, readonly ControlEntry[]>> {
+/**
+ * The built surfaces, kept across the tests in this file.
+ *
+ * SIX CALL SITES BUILT THE WHOLE SET SIX TIMES — three here and three through
+ * {@link everyEntry} — so the file mounted a full jsdom workspace ninety times
+ * to answer questions about fifteen. That is what put it within noise of the
+ * package's 20s bound on the node 22.18 runner, where it timed out
+ * intermittently (autnmy/issuegraph#185) and where THIS change made it worse by
+ * adding §17e's four states to the set.
+ *
+ * SAFE TO CACHE BECAUSE THE ANSWER IS DATA, NOT A LIVE DOM. Each surface is
+ * mounted, snapshotted through `controlSurface` into plain entries, and CLOSED
+ * before the next one starts — nothing a later test could mutate, and nothing
+ * holding a window open. The build is also deterministic: same fixtures, same
+ * options, no clock and no network.
+ *
+ * ONE PROMISE, NOT ONE RESULT, so concurrent callers share the single build
+ * rather than racing to start their own.
+ */
+let built: Promise<Record<string, readonly ControlEntry[]>> | null = null;
+
+function surfaces(): Promise<Record<string, readonly ControlEntry[]>> {
+  built ??= buildSurfaces();
+  return built;
+}
+
+async function buildSurfaces(): Promise<Record<string, readonly ControlEntry[]>> {
   const out: Record<string, readonly ControlEntry[]> = {};
   for (const [name, options] of [
     ['disclosure-shut', {}],
