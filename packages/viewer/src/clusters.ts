@@ -71,11 +71,18 @@ export type ClusterReach =
   /**
    * The host reports a cycle through this component.
    *
-   * BOTH NUMBERS, because "how much of this is stuck" is the question and the
+   * BOTH NUMBERS, because "how much of this is a loop" is the question and the
    * two answers read completely differently: `held === of` is a component that
    * is entirely a loop and can never produce anything, while `held < of` is a
-   * loop sitting inside work that is otherwise fine. Saying the first about the
-   * second is the exact overreach SPEC §6.6 rules out.
+   * loop sitting inside a larger component. Saying the first about the second is
+   * the overreach SPEC §6.6 rules out.
+   *
+   * NEITHER NUMBER IS A READINESS COUNT, and `held` in particular is not "how
+   * many cannot start". An issue blocked by a cycle member never becomes ready
+   * either, so the stuck set is the cycle plus everything transitively behind
+   * it — and deriving that here would be deriving readiness inside a package
+   * that takes the host's answer for it. `clusterReachLabel` words the
+   * `held < of` arm accordingly: what the component contains, not what can run.
    */
   | { readonly kind: 'stuck'; readonly held: number; readonly of: number }
   /** The longest `blocked-by` chain, in edges. At least one. */
@@ -132,21 +139,30 @@ export function clusterReach(cluster: Cluster): ClusterReach {
  */
 export function clusterReachLabel(reach: ClusterReach): string {
   switch (reach.kind) {
-    // THE CONSEQUENCE, NOT THE COUNT — the frame draws this where the other
-    // cases draw a number, because it is what changes what the reader does. Its
-    // own capsule is a three-issue component that is entirely a loop, which is
-    // the `held === of` arm; the other arm is the same fact scoped to the part
-    // of the component it is true of.
+    // ONE ARM MAKES A READINESS CLAIM, AND ONLY BECAUSE IT CANNOT BE WRONG.
     //
-    // NEITHER ARM PRINTS A DEPTH, and that is the slot's one job rather than an
-    // omission. A partly-stuck component does have a meaningful chain among its
-    // reachable members, but this slot answers "how does the work in here run",
-    // and "some of it cannot run at all" outranks how deep the rest goes. The
-    // depth is still on the model for a surface with room for both.
+    // `held === of` is a component that is entirely a loop: SPEC §6.6 says
+    // issues in a cycle are not ready, so "nothing can start" follows for every
+    // member with nothing to derive. That is the frame's own capsule — three
+    // issues, all of them the loop — and its words are kept.
+    //
+    // `held < of` says what the component CONTAINS and stops there. The obvious
+    // reading, "the other members are fine", is false: an issue blocked by a
+    // cycle member never becomes ready either, so the truly-stuck set is the
+    // cycle plus everything transitively behind it. Computing that here would
+    // mean deriving READINESS inside the viewer — the one thing this package
+    // refuses, because the host's model already answers it and two answers to
+    // one question on one screen is the defect the cycle badge itself was
+    // rewritten to remove. The rail beside this canvas is the surface that
+    // holds that answer, and it is complete at any size.
+    //
+    // NEITHER ARM PRINTS A DEPTH. A partly-stuck component has a real chain
+    // among its reachable members, but this slot answers "what is in here that
+    // changes how it runs", and a loop outranks how deep the rest goes.
     case 'stuck':
       return reach.held === reach.of
         ? 'nothing can start'
-        : `${String(reach.held)} of ${String(reach.of)} cannot start`;
+        : `${String(reach.held)} of ${String(reach.of)} in a cycle`;
     case 'chain':
       return `deepest chain ${String(reach.depth)}`;
     // NAMES THE EDGES, so the sentence cannot contradict the count drawn beside

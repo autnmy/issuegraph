@@ -223,7 +223,7 @@ describe('a component says one thing about how its work runs', () => {
     const members = Array.from({ length: 52 }, (_, index) => `m${String(index)}`);
     const reach = clusterReach(of({ members, hasCycle: true, stuckMembers: 2, chainDepth: 9 }));
     assert.deepEqual(reach, { kind: 'stuck', held: 2, of: 52 });
-    assert.equal(clusterReachLabel(reach), '2 of 52 cannot start');
+    assert.equal(clusterReachLabel(reach), '2 of 52 in a cycle');
   });
 
   it('reads the depth when there is one, and unblocked when there is none', () => {
@@ -288,7 +288,7 @@ describe('a component says one thing about how its work runs', () => {
 
   it('words each case once, so two capsules cannot describe one component differently', () => {
     assert.equal(clusterReachLabel({ kind: 'stuck', held: 3, of: 3 }), 'nothing can start');
-    assert.equal(clusterReachLabel({ kind: 'stuck', held: 2, of: 9 }), '2 of 9 cannot start');
+    assert.equal(clusterReachLabel({ kind: 'stuck', held: 2, of: 9 }), '2 of 9 in a cycle');
     assert.equal(clusterReachLabel({ kind: 'chain', depth: 4 }), 'deepest chain 4');
     assert.equal(clusterReachLabel({ kind: 'unblocked' }), 'no blocking chain');
   });
@@ -318,6 +318,10 @@ describe('a component says one thing about how its work runs', () => {
     assert.equal(cluster.members.length, 4);
     assert.equal(cluster.hasCycle, true);
     assert.equal(cluster.stuckMembers, 2);
-    assert.equal(clusterReachLabel(clusterReach(cluster)), '2 of 4 cannot start');
+    // CONTAINS, NOT CANNOT-START. `c` is blocked by cyclic `a` and `d` by `c`,
+    // so under the readiness rule none of the four can start — "2 of 4 cannot
+    // start" would imply the other two can. The partial arm reports what the
+    // component HOLDS; readiness is the host's answer and the rail's to draw.
+    assert.equal(clusterReachLabel(clusterReach(cluster)), '2 of 4 in a cycle');
   });
 });

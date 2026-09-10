@@ -1161,7 +1161,7 @@ describe('the graph projection', () => {
     // 58 merely touch it and are perfectly workable. SPEC §6.6 says "issues in
     // a cycle are not ready", the issues; "nothing can start" here would be a
     // claim about 58 issues nobody made.
-    assert.match(stuck, />3 of 61 cannot start</);
+    assert.match(stuck, />3 of 61 in a cycle</);
     assert.doesNotMatch(stuck, />nothing can start</);
     assert.doesNotMatch(stuck, /deepest chain/);
     // THE BLOCKING COUNT STAYS — this capsule is a flex row with room for both,
