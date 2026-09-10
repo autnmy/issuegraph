@@ -88,19 +88,28 @@ export type ClusterReach =
   /** The longest `blocked-by` chain, in edges. At least one. */
   | { readonly kind: 'chain'; readonly depth: number }
   /**
-   * It carries `blocked-by` edges, and none of them orders anything: every one
-   * closes a loop the host did not report, so the chain walk steps over all of
-   * them and finds no chain at all.
+   * It carries `blocked-by` edges, and none of them orders anything: the chain
+   * walk stepped over every one, so there is no chain to report.
+   *
+   * NAMED AFTER ITS PREDICATE, NOT AFTER WHAT THE PREDICATE IMPLIES. An earlier
+   * revision called this `looped`, and the inference behind that name is sound
+   * — a skipped edge is a back-edge, and a back-edge closes a directed loop. It
+   * was still the wrong name, for the reason this module's header already
+   * gives: **the cycle question is not asked here at all**, it is the host's
+   * answer relayed through `stuck`. A discriminant reading `looped` is one an
+   * exhaustive consumer can reasonably take as evidence of a cycle, which would
+   * make this package assert from a local walk exactly what it refuses to
+   * derive. So it says only what it saw: blocking edges, no ordering.
    *
    * UNREACHABLE THROUGH `normalizeDocument`, WHICH DROPS A SELF-EDGE, and
    * encoded anyway. A loop of two or more always leaves at least one edge the
-   * walk can follow, so the only way every edge is a back-edge is a self-loop —
-   * and `clustersOf` is a public export taking a plain `NormalizedDocument` a
+   * walk can follow, so the only way every edge is skipped is a self-loop — and
+   * `clustersOf` is a public export taking a plain `NormalizedDocument` a
    * consumer can build by hand. The case is here because the alternative was
    * `unblocked` covering it, which is a claim about a component with a blocking
    * count printed beside it.
    */
-  | { readonly kind: 'looped'; readonly edges: number }
+  | { readonly kind: 'no-chain'; readonly edges: number }
   /** No `blocked-by` edge at all, so nothing in the component waits on anything. */
   | { readonly kind: 'unblocked' };
 
@@ -122,7 +131,7 @@ export function clusterReach(cluster: Cluster): ClusterReach {
   // exact shape of contradiction `ClusterReach` exists to make unrepresentable,
   // rebuilt one predicate down.
   if (cluster.blockedByEdges === 0) return { kind: 'unblocked' };
-  if (cluster.chainDepth === 0) return { kind: 'looped', edges: cluster.blockedByEdges };
+  if (cluster.chainDepth === 0) return { kind: 'no-chain', edges: cluster.blockedByEdges };
   return { kind: 'chain', depth: cluster.chainDepth };
 }
 
@@ -166,8 +175,9 @@ export function clusterReachLabel(reach: ClusterReach): string {
     case 'chain':
       return `deepest chain ${String(reach.depth)}`;
     // NAMES THE EDGES, so the sentence cannot contradict the count drawn beside
-    // it: something blocks, and none of it puts the work in an order.
-    case 'looped':
+    // it: something blocks, and none of it puts the work in an order. It does
+    // not name a loop either, for the reason the arm's own note gives.
+    case 'no-chain':
       return `${String(reach.edges)} blocking ${reach.edges === 1 ? 'edge' : 'edges'}, none ordering`;
     case 'unblocked':
       return 'no blocking chain';
