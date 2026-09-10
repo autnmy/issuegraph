@@ -16,7 +16,7 @@
 
 import { type EdgeField, edgeIdentity } from '@issuegraph/core';
 
-import { clustersOf } from '../clusters.ts';
+import { type Cluster, clusterReach, clusterReachLabel, clustersOf } from '../clusters.ts';
 import type {
   NormalizedDocument,
   ViewerEdge,
@@ -481,6 +481,36 @@ function refusalOrder(
 }
 
 /**
+ * One component, as §16's refusal presents it.
+ *
+ * NOT A CONTROL, and that is settled rather than pending — `refusal`'s own
+ * note below records why: this package does not narrow, so a control here can
+ * never complete the action it advertises. Frame `17f`'s "click to enter one"
+ * is layer 2's to draw, on the layer that can.
+ *
+ * What it does carry is the same reach the editor's capsule carries, from the
+ * same function, so one component is never described two ways on one screen.
+ */
+function capsuleSpec(cluster: Cluster): ElementSpec {
+  const reach = clusterReach(cluster);
+  return element('li', { class: 'ig-capsule' }, [
+    element('span', { class: 'ig-count' }, [`${String(cluster.members.length)} issues`]),
+    // THE BLOCKING COUNT STAYS, unlike on §17f's card. That rule is the frame's,
+    // and the frame's constraint is a two-column card with ONE slot beside the
+    // count; this capsule is a flex row with room for both, and dropping the
+    // number would leave a §16 reader unable to tell a two-edge cycle component
+    // from a two-hundred-edge one. "§16 ships unchanged" is the standing rule;
+    // the only thing that changes here is the depth, which was untrue.
+    element('span', { class: 'ig-count' }, [`${String(cluster.blockedByEdges)} blocking`]),
+    reach.kind === 'stuck'
+      ? element('span', { class: 'ig-badge', 'data-edge': 'blocked-by' }, ['cycle'])
+      : null,
+    element('span', { class: 'ig-count' }, [clusterReachLabel(reach)]),
+    element('span', { class: 'ig-id' }, [cluster.members.slice(0, 3).join(', ')]),
+  ]);
+}
+
+/**
  * The refusal.
  *
  * A refusal with a route forward reads as competence — but only if the route is
@@ -540,15 +570,7 @@ function refusal(
       'ol',
       { class: 'ig-list', 'aria-label': 'connected components' },
       shown.map((cluster) =>
-        element('li', { class: 'ig-capsule' }, [
-          element('span', { class: 'ig-count' }, [`${String(cluster.members.length)} issues`]),
-          element('span', { class: 'ig-count' }, [`${String(cluster.blockedByEdges)} blocking`]),
-          element('span', { class: 'ig-count' }, [`depth ${String(cluster.chainDepth)}`]),
-          cluster.hasCycle
-            ? element('span', { class: 'ig-badge', 'data-edge': 'blocked-by' }, ['cycle'])
-            : null,
-          element('span', { class: 'ig-id' }, [cluster.members.slice(0, 3).join(', ')]),
-        ]),
+        capsuleSpec(cluster),
       ),
     ),
     omitted > 0

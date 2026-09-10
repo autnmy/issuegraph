@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { clustersOf } from './clusters.ts';
+import { type Cluster, clusterReach, clusterReachLabel, clustersOf } from './clusters.ts';
 import { type NormalizedDocument, normalizeDocument } from './document.ts';
 
 function pairs(count: number): NormalizedDocument {
@@ -192,5 +192,136 @@ describe('clustersOf', () => {
       clusters.reduce((total, cluster) => total + cluster.blockedByEdges, 0),
       50,
     );
+  });
+});
+
+describe('a component says one thing about how its work runs', () => {
+  const of = (over: Partial<Cluster>): Cluster => ({
+    members: ['a', 'b'],
+    blockedByEdges: 1,
+    hasCycle: false,
+    stuckMembers: 0,
+    chainDepth: 1,
+    ...over,
+  });
+
+  it('reads stuck for a cycle, and the stuck case carries no depth to print', () => {
+    // THE WHOLE POINT OF THE UNION. `chainDepth` is the longest ACYCLIC chain,
+    // so it is a real number on a stuck component — and printed beside a cycle
+    // it reads as a work estimate for work that can never start. There is no
+    // field to print rather than a rule each renderer has to remember.
+    const reach = clusterReach(of({ hasCycle: true, stuckMembers: 2, chainDepth: 4 }));
+    assert.deepEqual(reach, { kind: 'stuck', held: 2, of: 2 });
+    assert.equal('depth' in reach, false);
+  });
+
+  it('scopes the stuck claim to the members the cycle actually holds', () => {
+    // A COMPONENT IS UNDIRECTED AND A CYCLE IS NOT: a two-issue loop can sit
+    // inside a fifty-two-issue component, and SPEC §6.6 says "issues in a cycle
+    // are not ready" — the issues, not the component. Saying "nothing can
+    // start" about the other fifty is the overreach the numbers exist to stop.
+    const members = Array.from({ length: 52 }, (_, index) => `m${String(index)}`);
+    const reach = clusterReach(of({ members, hasCycle: true, stuckMembers: 2, chainDepth: 9 }));
+    assert.deepEqual(reach, { kind: 'stuck', held: 2, of: 52 });
+    assert.equal(clusterReachLabel(reach), '2 of 52 in a cycle');
+  });
+
+  it('reads the depth when there is one, and unblocked when there is none', () => {
+    assert.deepEqual(clusterReach(of({ chainDepth: 4 })), { kind: 'chain', depth: 4 });
+    assert.deepEqual(clusterReach(of({ chainDepth: 0, blockedByEdges: 0 })), { kind: 'unblocked' });
+  });
+
+  it('asks the EDGES whether it is unblocked, never the walk', () => {
+    // `chainDepth` is what the walk could FOLLOW, and it steps over a back-edge
+    // — so a component whose every blocking edge loops has depth 0 with a
+    // non-zero count, and reading `unblocked` off the depth would print "no
+    // blocking chain" beside that count on the same card. Unreachable through
+    // `normalizeDocument`, which drops the self-edge that is the only way to
+    // reach it; `clustersOf` is a public export taking a value a consumer can
+    // build by hand, and the predicate was wrong either way.
+    assert.deepEqual(clusterReach(of({ blockedByEdges: 1, chainDepth: 0 })), {
+      kind: 'looped',
+      edges: 1,
+    });
+    assert.equal(
+      clusterReachLabel({ kind: 'looped', edges: 1 }),
+      '1 blocking edge, none ordering',
+    );
+    assert.equal(
+      clusterReachLabel({ kind: 'looped', edges: 3 }),
+      '3 blocking edges, none ordering',
+    );
+  });
+
+  it('a real loop of two or more still has a chain, so only a self-loop reaches looped', () => {
+    // The reason the case above is unreachable, pinned rather than asserted: a
+    // cycle of k>1 always leaves at least one edge the walk can follow, so its
+    // depth is k-1 and never 0.
+    for (const size of [2, 3, 5]) {
+      const keys = Array.from({ length: size }, (_, index) => `n${String(index)}`);
+      const document = normalizeDocument({
+        issues: keys.map((key) => ({ key, title: key, open: true, priority: 2 as const })),
+        edges: keys.map((key, index) => ({
+          field: 'blocked-by' as const,
+          from: key,
+          to: keys[(index + 1) % size] as string,
+        })),
+        order: { slots: [], excluded: [] },
+        cycles: [],
+      }).document;
+      const cluster = clustersOf(document)[0];
+      assert.ok(cluster !== undefined);
+      assert.equal(cluster.blockedByEdges, size);
+      assert.equal(cluster.chainDepth, size - 1);
+      assert.equal(clusterReach(cluster).kind, 'chain');
+    }
+  });
+
+  it('the cycle wins over the depth, whatever the depth is', () => {
+    for (const chainDepth of [0, 1, 39]) {
+      assert.equal(
+        clusterReach(of({ hasCycle: true, stuckMembers: 2, chainDepth })).kind,
+        'stuck',
+      );
+    }
+  });
+
+  it('words each case once, so two capsules cannot describe one component differently', () => {
+    assert.equal(clusterReachLabel({ kind: 'stuck', held: 3, of: 3 }), 'nothing can start');
+    assert.equal(clusterReachLabel({ kind: 'stuck', held: 2, of: 9 }), '2 of 9 in a cycle');
+    assert.equal(clusterReachLabel({ kind: 'chain', depth: 4 }), 'deepest chain 4');
+    assert.equal(clusterReachLabel({ kind: 'unblocked' }), 'no blocking chain');
+  });
+
+  it('counts the stuck members off the host answer, over a real document', () => {
+    // End to end rather than against a hand-built `Cluster`: the count has to
+    // come out of `clustersOf`'s own pass, and only the members the host names.
+    const document = normalizeDocument({
+      issues: ['a', 'b', 'c', 'd'].map((key) => ({
+        key,
+        title: `Issue ${key}`,
+        open: true,
+        priority: 2 as const,
+      })),
+      // a ⇄ b is the loop; c and d hang off it and are perfectly workable.
+      edges: [
+        { field: 'blocked-by' as const, from: 'a', to: 'b' },
+        { field: 'blocked-by' as const, from: 'b', to: 'a' },
+        { field: 'blocked-by' as const, from: 'c', to: 'a' },
+        { field: 'blocked-by' as const, from: 'd', to: 'c' },
+      ],
+      order: { slots: [], excluded: [] },
+      cycles: [['a', 'b']],
+    }).document;
+    const cluster = clustersOf(document)[0];
+    assert.ok(cluster !== undefined);
+    assert.equal(cluster.members.length, 4);
+    assert.equal(cluster.hasCycle, true);
+    assert.equal(cluster.stuckMembers, 2);
+    // CONTAINS, NOT CANNOT-START. `c` is blocked by cyclic `a` and `d` by `c`,
+    // so under the readiness rule none of the four can start — "2 of 4 cannot
+    // start" would imply the other two can. The partial arm reports what the
+    // component HOLDS; readiness is the host's answer and the rail's to draw.
+    assert.equal(clusterReachLabel(clusterReach(cluster)), '2 of 4 in a cycle');
   });
 });

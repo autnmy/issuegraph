@@ -17,6 +17,16 @@ export interface DocumentShape {
   readonly isolated?: number;
   /** Close a `blocked-by` cycle in the component at this index. */
   readonly cycleIn?: number;
+  /**
+   * The field each component's chain is built from. `blocked-by` by default,
+   * because that is the only one that orders anything and so the only one a
+   * depth assertion can be written against.
+   *
+   * A NON-ORDERING FIELD IS NOT A DEGENERATE CASE, it is the ordinary one for a
+   * component held together by `serialize-with` or `together-with`: connected,
+   * and with no blocking chain to report at all.
+   */
+  readonly edge?: ViewerEdge['field'];
   /** Titles for the first members, so a search has something to match. */
   readonly titles?: Readonly<Record<string, string>>;
 }
@@ -66,7 +76,7 @@ export function documentOf(shape: DocumentShape): ViewerDocument {
     for (let member = 1; member <= size; member += 1) add(componentKey(component, member));
     for (let member = 1; member < size; member += 1) {
       edges.push({
-        field: 'blocked-by',
+        field: shape.edge ?? 'blocked-by',
         from: componentKey(component, member),
         to: componentKey(component, member + 1),
       });

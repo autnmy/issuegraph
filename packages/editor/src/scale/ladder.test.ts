@@ -64,6 +64,39 @@ describe('the capsules describe the components', () => {
     assert.equal(second.chainDepth, 29);
   });
 
+  it('resolves a reach, and a stuck component carries no depth to print', () => {
+    // FRAME 17f's RULE, AS A TYPE. `chainDepth` stays on the capsule for a
+    // caller asking that question, but `reach` is what a surface prints — and a
+    // stuck component's reach has no `depth` field at all, so no renderer can
+    // put a work estimate beside a cycle by forgetting to check a flag.
+    const document = documentOf({ components: [40, 30], cycleIn: 1 });
+    const [largest, second] = scaleLadder(document).capsules;
+    assert.ok(largest !== undefined && second !== undefined);
+    assert.deepEqual(largest.reach, { kind: 'chain', depth: 39 });
+    // `cycleIn` closes the loop over EVERY member of that component, so all 30
+    // are held — the `held === of` arm, which is the frame's own capsule.
+    assert.deepEqual(second.reach, { kind: 'stuck', held: 30, of: 30 });
+    assert.equal('depth' in second.reach, false);
+  });
+
+  it('reads unblocked when the component is joined by no blocked-by edge', () => {
+    const document = documentOf({ components: [40, 30], edge: 'serialize-with' });
+    for (const capsule of scaleLadder(document).capsules) {
+      assert.equal(capsule.blockedByEdges, 0);
+      assert.deepEqual(capsule.reach, { kind: 'unblocked' });
+    }
+  });
+
+  it('names each capsule with its lead issue title', () => {
+    const document = documentOf({ components: [40, 30] });
+    const capsule = scaleLadder(document).capsules[0];
+    assert.ok(capsule !== undefined);
+    const lead = document.issues.find((issue) => issue.key === capsule.lead);
+    assert.ok(lead !== undefined);
+    assert.equal(capsule.name, lead.title);
+    assert.notEqual(capsule.name, '');
+  });
+
   it('offers a lead that focuses that component', () => {
     const document = documentOf({ components: [40, 30] });
     const ladder = scaleLadder(document);
@@ -79,7 +112,18 @@ describe('the capsules describe the components', () => {
     const ladder = scaleLadder(document);
     assert.equal(ladder.tier, 'clusters');
     assert.equal(ladder.capsules.length, 12);
-    assert.ok(ladder.capsulesOmitted > 0);
+    const omitted = ladder.capsulesOmitted;
+    assert.ok(omitted !== null);
+    assert.ok(omitted.count > 0);
+    const range = omitted.range;
+    assert.ok(range !== null, 'every omitted component here has members');
+    // THE RANGE IS MEASURED AGAINST THE COMPONENTS THAT WERE ACTUALLY LEFT OUT,
+    // never against the whole set: the list is sorted largest first, so an
+    // omitted tail can never be as big as what was shown.
+    assert.ok(range.smallest >= 2, 'a component of one is not a component');
+    assert.ok(range.largest >= range.smallest);
+    const shownSmallest = Math.min(...ladder.capsules.map((capsule) => capsule.size));
+    assert.ok(range.largest <= shownSmallest);
   });
 
   it('lists every component on the capsules tier, and none while one is focused', () => {
@@ -87,7 +131,9 @@ describe('the capsules describe the components', () => {
     assert.equal(scaleLadder(document).capsules.length, 2);
     const focused = scaleLadder(document, { ...INITIAL_SCALE_STATE, focus: componentKey(0, 1) });
     assert.deepEqual([...focused.capsules], []);
-    assert.equal(focused.capsulesOmitted, 0);
+    // NULL, NOT ZERO. Nothing was omitted, so there is no size range — and a
+    // zeroed one would report a component of no issues.
+    assert.equal(focused.capsulesOmitted, null);
   });
 });
 

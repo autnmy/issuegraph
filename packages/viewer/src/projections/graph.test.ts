@@ -1112,11 +1112,11 @@ describe('the graph projection', () => {
     assert.match(refused.diagnostics[0] as string, /graph refused: 61 nodes/);
   });
 
-  it('states each component size, blocking count and chain depth in a capsule', () => {
+  it('states each component size, blocking count and reach in a capsule', () => {
     const markup = render(crowdedDocument(GRAPH_NODE_BUDGET + 1));
     assert.match(markup, /61 issues/);
     assert.match(markup, /60 blocking/);
-    assert.match(markup, /depth 60/);
+    assert.match(markup, /deepest chain 60/);
   });
 
   it('flags the host’s cycle in a capsule rather than deriving one, and does not hang on the loop', () => {
@@ -1149,6 +1149,31 @@ describe('the graph projection', () => {
       /<span class="ig-badge" data-edge="blocked-by">cycle<\/span>/,
       'badged a loop the host did not report',
     );
+
+    // AND IT PRINTS NO DEPTH BESIDE THE BADGE. `chainDepthOf` returns the
+    // longest ACYCLIC chain, so the number is real — and read beside a cycle it
+    // is a work estimate for work that can never start. §17d calls a cycle the
+    // only finding that stops work outright, and frame `17f` draws the
+    // consequence where every other capsule draws its depth.
+    const stuck = render(cyclic);
+    // SCOPED TO THE CYCLE, NOT THE COMPONENT. This fixture is a three-issue
+    // loop inside a component of 61 — the component is undirected, so the other
+    // 58 merely touch it and are perfectly workable. SPEC §6.6 says "issues in
+    // a cycle are not ready", the issues; "nothing can start" here would be a
+    // claim about 58 issues nobody made.
+    assert.match(stuck, />3 of 61 in a cycle</);
+    assert.doesNotMatch(stuck, />nothing can start</);
+    assert.doesNotMatch(stuck, /deepest chain/);
+    // THE BLOCKING COUNT STAYS — this capsule is a flex row with room for both,
+    // unlike §17f's two-column card, and the number is true. Only the depth was
+    // not, so only the depth goes.
+    assert.match(stuck, /\d+ blocking/);
+    // The acyclic control still says a depth, so the assertion above is about
+    // the cycle and not about the fixture.
+    const acyclic = render({ ...cyclic, cycles: [] });
+    assert.match(acyclic, /deepest chain \d+/);
+    assert.match(acyclic, /\d+ blocking/);
+    assert.doesNotMatch(acyclic, />nothing can start</);
   });
 
   it('counts isolated issues instead of drawing them', () => {
@@ -1164,7 +1189,7 @@ describe('the graph projection', () => {
 
     assert.match(markup, /showing clusters only/);
     assert.match(markup, /20000 issues/);
-    assert.match(markup, /depth 19999/);
+    assert.match(markup, /deepest chain 19999/);
   });
 
   it('is deterministic — two renders of one document agree byte for byte', () => {

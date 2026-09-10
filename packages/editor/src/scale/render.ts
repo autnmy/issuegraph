@@ -31,9 +31,11 @@
  */
 
 import {
+  EDGE_TREATMENTS,
   type ElementSpec,
   type Theme,
   type ViewerDocument,
+  clusterReachLabel,
   element,
   renderMarkup,
   renderViewer,
@@ -51,6 +53,8 @@ import { edgeOverlayStylesheet } from '../overlay/styles.ts';
 import { INITIAL_SCALE_STATE, type ScaleState } from './commands.ts';
 import {
   type IsolatedChip,
+  type OmittedComponents,
+  type ScaleCapsule,
   type ScaleLadder,
   type ScaleRefusal,
   type ScaleSearch,
@@ -170,6 +174,126 @@ export interface ScaleLadderResult {
   readonly diagnostics: readonly string[];
 }
 
+/**
+ * What the capsule list left out, with the size range frame `17f` draws under
+ * it — "+ 5 more" over "2-7 issues each".
+ *
+ * THE RANGE IS THE HALF THAT SAYS WHETHER THE TAIL MATTERS. A bare count leaves
+ * the reader unable to tell five components of two from five of ninety, and
+ * only one of those is safe to leave alone. A single omitted size, or several
+ * of one size, states that size once rather than as a range against itself.
+ */
+function omittedSpec(omitted: OmittedComponents | null): ElementSpec | null {
+  if (omitted === null) return null;
+  const { range } = omitted;
+  const span =
+    range === null
+      ? ''
+      : range.smallest === range.largest
+        ? ` \u00b7 ${String(range.smallest)} ${range.smallest === 1 ? 'issue' : 'issues'} each`
+        : ` \u00b7 ${String(range.smallest)}\u2013${String(range.largest)} issues each`;
+  return element('p', { class: 'ig-refusal-omitted' }, [
+    `${String(omitted.count)} further ${omitted.count === 1 ? 'component is' : 'components are'} not listed${span}.`,
+  ]);
+}
+
+/**
+ * The capsule's accessible name — the same facts as a sentence.
+ *
+ * ONE FACT, ONE WORDING still holds: the reach comes from `clusterReachLabel`
+ * exactly as the visible text does, so the two can never describe a component
+ * differently. What differs is only what a glyph cannot carry.
+ *
+ * THE LEAD IS IN IT BECAUSE THE TITLE IS NOT UNIQUE. A component has no name of
+ * its own, so `name` is the LEAD ISSUE'S TITLE — and two components whose leads
+ * share a title and agree on size, blocking count and reach would otherwise
+ * carry the same accessible name, with no key drawn on the card to tell them
+ * apart either. The lead key is unique by construction, because components
+ * partition the document's keys; naming it keeps the guarantee the old
+ * `Focus <lead>` label had by accident.
+ */
+function capsuleLabel(capsule: ScaleCapsule): string {
+  const blocking =
+    capsule.reach.kind === 'stuck'
+      ? 'holds a cycle'
+      : `${String(capsule.blockedByEdges)} blocked-by ${capsule.blockedByEdges === 1 ? 'edge' : 'edges'}`;
+  return `Focus ${capsule.name} (${capsule.lead}) \u2014 ${String(capsule.size)} issues, ${blocking}, ${clusterReachLabel(capsule.reach)}`;
+}
+
+/**
+ * One component, as frame `17f` draws it: a card whose whole surface enters it.
+ *
+ * THE CAPSULE IS THE CONTROL, not a row with a button in it. The frame says
+ * "click to enter one; the spine renders inside it", and a `Focus #101` button
+ * beside four static spans makes the pointer target a fraction of what is drawn
+ * as one surface — while putting the LEAST informative thing, a raw key, first
+ * in the reading order.
+ *
+ * THIS IS LAYER 2 AND ONLY LAYER 2. `graph.ts` deliberately draws its §16
+ * capsule as an inert `li`, because that package does not narrow and a control
+ * there could never complete the action it advertises. Layer 2 narrows, so here
+ * the control is real — the same reasoning, landing on the opposite answer.
+ *
+ * ORDERED BY WHAT CHANGES BEHAVIOUR, which is the frame's own annotation:
+ * count, then the blocking count or the cycle that voids it, then the name,
+ * then the reach. The accessible name is written rather than left to the
+ * contents, and carries the lead key so two capsules are told apart by their
+ * own identity rather than by position.
+ */
+function capsuleSpec(capsule: ScaleCapsule): ElementSpec {
+  // A CELL, NOT A CAPSULE. `.ig-capsule` is layer 1's own CARD — background,
+  // border, radius, padding and a top margin (`viewer/src/styles.ts`) — so
+  // keeping it here drew a bordered box inside a bordered box, put the stuck
+  // tint and the hover on the INNER border only, and made the row gutter wider
+  // than the column gutter by that margin. Resetting it from layer 2 would be
+  // redefining a layer 1 class, which this package's stylesheet opens by
+  // refusing to do; the list item simply stops claiming to be one.
+  return element('li', { class: 'ig-capsule-cell' }, [
+    element(
+      'button',
+      {
+        type: 'button',
+        class: 'ig-capsule-enter',
+        'data-ig-command': 'focus',
+        'data-ig-target': capsule.lead,
+        // THE REACH AS AN ATTRIBUTE, so the frame's tint on a stuck card is a
+        // rule rather than a second branch in the markup, and a host styling
+        // the board can reach the same distinction.
+        'data-reach': capsule.reach.kind,
+        // WRITTEN, NOT LEFT TO THE CONTENTS. `element` concatenates children
+        // with no whitespace — the trap `.ig-isolated-list` already records —
+        // so the four parts below would reach a screen reader as one run:
+        // "20\u2298 19Issue c0-1deepest chain 19". The gap that separates them
+        // is CSS, which the accessibility tree does not read. This also spells
+        // out the glyph, which is a shape with no name of its own.
+        'aria-label': capsuleLabel(capsule),
+      },
+      [
+        element('span', { class: 'ig-capsule-size' }, [String(capsule.size)]),
+        // THE CYCLE STANDS WHERE THE BLOCKING COUNT STANDS. On a stuck
+        // component the number of blocking edges is not the fact that changes
+        // what the reader does: none of the members is reachable however few
+        // there are.
+        //
+        // NEITHER SLOT TAKES `.ig-count`, and that is not a style preference:
+        // layer 1 gives that class a cell's padding (`styles.ts`), which inside
+        // a card indents the text off the grid line the count above it sits on.
+        // The `ig-capsule-*` classes are this card's own, so it can place its
+        // four parts without editing a class §16's capsule also draws.
+        capsule.reach.kind === 'stuck'
+          ? element('span', { class: 'ig-capsule-load ig-badge', 'data-edge': 'blocked-by' }, [
+              'cycle',
+            ])
+          : element('span', { class: 'ig-capsule-load' }, [
+              `${EDGE_TREATMENTS['blocked-by'].glyph} ${String(capsule.blockedByEdges)}`,
+            ]),
+        element('span', { class: 'ig-capsule-name' }, [capsule.name]),
+        element('span', { class: 'ig-capsule-reach' }, [clusterReachLabel(capsule.reach)]),
+      ],
+    ),
+  ]);
+}
+
 function refusalSpec(refusal: ScaleRefusal, ladder: ScaleLadder): ElementSpec {
   return element('section', { class: 'ig-refusal', role: 'note' }, [
     element('p', {}, [refusal.reason]),
@@ -178,34 +302,9 @@ function refusalSpec(refusal: ScaleRefusal, ladder: ScaleLadder): ElementSpec {
       : element(
           'ol',
           { class: 'ig-list', 'aria-label': 'connected components' },
-          ladder.capsules.map((capsule) =>
-            element('li', { class: 'ig-capsule' }, [
-              element(
-                'button',
-                {
-                  type: 'button',
-                  'data-ig-command': 'focus',
-                  'data-ig-target': capsule.lead,
-                },
-                [`Focus ${capsule.lead}`],
-              ),
-              element('span', { class: 'ig-count' }, [`${String(capsule.size)} issues`]),
-              element('span', { class: 'ig-count' }, [
-                `${String(capsule.blockedByEdges)} blocking`,
-              ]),
-              element('span', { class: 'ig-count' }, [`depth ${String(capsule.chainDepth)}`]),
-              capsule.hasCycle
-                ? element('span', { class: 'ig-badge', 'data-edge': 'blocked-by' }, ['cycle'])
-                : null,
-              element('span', { class: 'ig-id' }, [capsule.members.slice(0, 3).join(', ')]),
-            ]),
-          ),
+          ladder.capsules.map((capsule) => capsuleSpec(capsule)),
         ),
-    ladder.capsulesOmitted > 0
-      ? element('p', { class: 'ig-refusal-omitted' }, [
-          `${String(ladder.capsulesOmitted)} further ${ladder.capsulesOmitted === 1 ? 'component is' : 'components are'} not listed.`,
-        ])
-      : null,
+    omittedSpec(ladder.capsulesOmitted),
     element(
       'ul',
       { class: 'ig-ladder-routes', 'aria-label': 'what to do next' },
