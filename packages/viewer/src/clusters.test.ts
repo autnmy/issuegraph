@@ -200,6 +200,7 @@ describe('a component says one thing about how its work runs', () => {
     members: ['a', 'b'],
     blockedByEdges: 1,
     hasCycle: false,
+    stuckMembers: 0,
     chainDepth: 1,
     ...over,
   });
@@ -209,9 +210,20 @@ describe('a component says one thing about how its work runs', () => {
     // so it is a real number on a stuck component — and printed beside a cycle
     // it reads as a work estimate for work that can never start. There is no
     // field to print rather than a rule each renderer has to remember.
-    const reach = clusterReach(of({ hasCycle: true, chainDepth: 4 }));
-    assert.deepEqual(reach, { kind: 'stuck' });
+    const reach = clusterReach(of({ hasCycle: true, stuckMembers: 2, chainDepth: 4 }));
+    assert.deepEqual(reach, { kind: 'stuck', held: 2, of: 2 });
     assert.equal('depth' in reach, false);
+  });
+
+  it('scopes the stuck claim to the members the cycle actually holds', () => {
+    // A COMPONENT IS UNDIRECTED AND A CYCLE IS NOT: a two-issue loop can sit
+    // inside a fifty-two-issue component, and SPEC §6.6 says "issues in a cycle
+    // are not ready" — the issues, not the component. Saying "nothing can
+    // start" about the other fifty is the overreach the numbers exist to stop.
+    const members = Array.from({ length: 52 }, (_, index) => `m${String(index)}`);
+    const reach = clusterReach(of({ members, hasCycle: true, stuckMembers: 2, chainDepth: 9 }));
+    assert.deepEqual(reach, { kind: 'stuck', held: 2, of: 52 });
+    assert.equal(clusterReachLabel(reach), '2 of 52 cannot start');
   });
 
   it('reads the depth when there is one, and unblocked when there is none', () => {
@@ -221,13 +233,45 @@ describe('a component says one thing about how its work runs', () => {
 
   it('the cycle wins over the depth, whatever the depth is', () => {
     for (const chainDepth of [0, 1, 39]) {
-      assert.deepEqual(clusterReach(of({ hasCycle: true, chainDepth })), { kind: 'stuck' });
+      assert.equal(
+        clusterReach(of({ hasCycle: true, stuckMembers: 2, chainDepth })).kind,
+        'stuck',
+      );
     }
   });
 
   it('words each case once, so two capsules cannot describe one component differently', () => {
-    assert.equal(clusterReachLabel({ kind: 'stuck' }), 'nothing can start');
+    assert.equal(clusterReachLabel({ kind: 'stuck', held: 3, of: 3 }), 'nothing can start');
+    assert.equal(clusterReachLabel({ kind: 'stuck', held: 2, of: 9 }), '2 of 9 cannot start');
     assert.equal(clusterReachLabel({ kind: 'chain', depth: 4 }), 'deepest chain 4');
     assert.equal(clusterReachLabel({ kind: 'unblocked' }), 'no blocking chain');
+  });
+
+  it('counts the stuck members off the host answer, over a real document', () => {
+    // End to end rather than against a hand-built `Cluster`: the count has to
+    // come out of `clustersOf`'s own pass, and only the members the host names.
+    const document = normalizeDocument({
+      issues: ['a', 'b', 'c', 'd'].map((key) => ({
+        key,
+        title: `Issue ${key}`,
+        open: true,
+        priority: 2 as const,
+      })),
+      // a ⇄ b is the loop; c and d hang off it and are perfectly workable.
+      edges: [
+        { field: 'blocked-by' as const, from: 'a', to: 'b' },
+        { field: 'blocked-by' as const, from: 'b', to: 'a' },
+        { field: 'blocked-by' as const, from: 'c', to: 'a' },
+        { field: 'blocked-by' as const, from: 'd', to: 'c' },
+      ],
+      order: { slots: [], excluded: [] },
+      cycles: [['a', 'b']],
+    }).document;
+    const cluster = clustersOf(document)[0];
+    assert.ok(cluster !== undefined);
+    assert.equal(cluster.members.length, 4);
+    assert.equal(cluster.hasCycle, true);
+    assert.equal(cluster.stuckMembers, 2);
+    assert.equal(clusterReachLabel(clusterReach(cluster)), '2 of 4 cannot start');
   });
 });

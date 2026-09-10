@@ -32,6 +32,18 @@ export interface Cluster {
    * answer, relayed — never derived from the edges here.
    */
   readonly hasCycle: boolean;
+  /**
+   * How many members the host names in a cycle — never the whole component.
+   *
+   * A COMPONENT IS UNDIRECTED AND A CYCLE IS NOT. `connectedComponents` joins
+   * members across EVERY relationship, so a component holding a two-issue cycle
+   * can also hold fifty issues that merely touch it, and SPEC §6.6 is narrow
+   * about the consequence: "Issues in a cycle are not ready" — the issues, not
+   * the component. `hasCycle` alone cannot tell "three of three are stuck" from
+   * "two of fifty-two are", and a surface reading it as the former says
+   * something false about the other fifty.
+   */
+  readonly stuckMembers: number;
   /** The longest `blocked-by` chain, in edges. `0` when nothing blocks. */
   readonly chainDepth: number;
 }
@@ -56,8 +68,16 @@ export interface Cluster {
  * component has no `depth` field to print.
  */
 export type ClusterReach =
-  /** The host reports a cycle through this component. Nothing in it can start. */
-  | { readonly kind: 'stuck' }
+  /**
+   * The host reports a cycle through this component.
+   *
+   * BOTH NUMBERS, because "how much of this is stuck" is the question and the
+   * two answers read completely differently: `held === of` is a component that
+   * is entirely a loop and can never produce anything, while `held < of` is a
+   * loop sitting inside work that is otherwise fine. Saying the first about the
+   * second is the exact overreach SPEC §6.6 rules out.
+   */
+  | { readonly kind: 'stuck'; readonly held: number; readonly of: number }
   /** The longest `blocked-by` chain, in edges. At least one. */
   | { readonly kind: 'chain'; readonly depth: number }
   /** No `blocked-by` edge at all, so nothing in the component waits on anything. */
@@ -70,7 +90,9 @@ export type ClusterReach =
  * caller asking a different question, and the two cannot disagree.
  */
 export function clusterReach(cluster: Cluster): ClusterReach {
-  if (cluster.hasCycle) return { kind: 'stuck' };
+  if (cluster.stuckMembers > 0) {
+    return { kind: 'stuck', held: cluster.stuckMembers, of: cluster.members.length };
+  }
   if (cluster.chainDepth === 0) return { kind: 'unblocked' };
   return { kind: 'chain', depth: cluster.chainDepth };
 }
@@ -88,10 +110,21 @@ export function clusterReach(cluster: Cluster): ClusterReach {
  */
 export function clusterReachLabel(reach: ClusterReach): string {
   switch (reach.kind) {
-    // The consequence, not the count. The frame draws this where the other
-    // cases draw a number, because it is what changes what the reader does.
+    // THE CONSEQUENCE, NOT THE COUNT — the frame draws this where the other
+    // cases draw a number, because it is what changes what the reader does. Its
+    // own capsule is a three-issue component that is entirely a loop, which is
+    // the `held === of` arm; the other arm is the same fact scoped to the part
+    // of the component it is true of.
+    //
+    // NEITHER ARM PRINTS A DEPTH, and that is the slot's one job rather than an
+    // omission. A partly-stuck component does have a meaningful chain among its
+    // reachable members, but this slot answers "how does the work in here run",
+    // and "some of it cannot run at all" outranks how deep the rest goes. The
+    // depth is still on the model for a surface with room for both.
     case 'stuck':
-      return 'nothing can start';
+      return reach.held === reach.of
+        ? 'nothing can start'
+        : `${String(reach.held)} of ${String(reach.of)} cannot start`;
     case 'chain':
       return `deepest chain ${String(reach.depth)}`;
     case 'unblocked':
@@ -276,8 +309,18 @@ export function clustersOf(
     // THE HOST'S ANSWER, LOOKED UP — never re-derived. A cycle the reader
     // found touches this component when any member of it is a member here; the
     // set is built once above, so the whole pass stays linear.
-    const hasCycle = members.some((member) => stuck.has(member));
-    return { members, blockedByEdges, hasCycle, chainDepth: chainDepthOf(members, blockedBy) };
+    // COUNTED, NOT JUST TESTED. `some` answers whether the component touches a
+    // cycle; how MUCH of it the cycle holds is a different question, and the
+    // one a reader acts on. Same single pass over the members either way.
+    let stuckMembers = 0;
+    for (const member of members) if (stuck.has(member)) stuckMembers += 1;
+    return {
+      members,
+      blockedByEdges,
+      hasCycle: stuckMembers > 0,
+      stuckMembers,
+      chainDepth: chainDepthOf(members, blockedBy),
+    };
   });
 
   // CODE UNITS, NOT `localeCompare`. This package promises deterministic
