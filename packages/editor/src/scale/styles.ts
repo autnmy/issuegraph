@@ -151,11 +151,11 @@ export const scaleLadderStylesheet = `
    the one finding that stops work outright at the size of every other chip on
    the board. Same hue as the badge inside it, which is blocked-by's, because
    that is the edge the cycle is made of. */
-.ig-capsule-enter[data-reach='stuck'] {
+.ig-capsule-enter[data-reach='cyclic'] {
   border-color: var(--ig-edge-blocked-by);
 }
 
-.ig-capsule-enter[data-reach='stuck'] .ig-capsule-reach {
+.ig-capsule-enter[data-reach='cyclic'] .ig-capsule-reach {
   color: var(--ig-edge-blocked-by);
 }
 

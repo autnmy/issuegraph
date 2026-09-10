@@ -214,7 +214,7 @@ function omittedSpec(omitted: OmittedComponents | null): ElementSpec | null {
  */
 function capsuleLabel(capsule: ScaleCapsule): string {
   const blocking =
-    capsule.reach.kind === 'stuck'
+    capsule.reach.kind === 'cyclic'
       ? 'holds a cycle'
       : `${String(capsule.blockedByEdges)} blocked-by ${capsule.blockedByEdges === 1 ? 'edge' : 'edges'}`;
   return `Focus ${capsule.name} (${capsule.lead}) \u2014 ${String(capsule.size)} issues, ${blocking}, ${clusterReachLabel(capsule.reach)}`;
@@ -280,7 +280,7 @@ function capsuleSpec(capsule: ScaleCapsule): ElementSpec {
         // a card indents the text off the grid line the count above it sits on.
         // The `ig-capsule-*` classes are this card's own, so it can place its
         // four parts without editing a class §16's capsule also draws.
-        capsule.reach.kind === 'stuck'
+        capsule.reach.kind === 'cyclic'
           ? element('span', { class: 'ig-capsule-load ig-badge', 'data-edge': 'blocked-by' }, [
               'cycle',
             ])
