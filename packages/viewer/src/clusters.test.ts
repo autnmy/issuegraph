@@ -211,7 +211,7 @@ describe('a component says one thing about how its work runs', () => {
     // it reads as a work estimate for work that can never start. There is no
     // field to print rather than a rule each renderer has to remember.
     const reach = clusterReach(of({ hasCycle: true, stuckMembers: 2, chainDepth: 4 }));
-    assert.deepEqual(reach, { kind: 'stuck', held: 2, of: 2 });
+    assert.deepEqual(reach, { kind: 'cyclic', held: 2, of: 2 });
     assert.equal('depth' in reach, false);
   });
 
@@ -222,7 +222,7 @@ describe('a component says one thing about how its work runs', () => {
     // start" about the other fifty is the overreach the numbers exist to stop.
     const members = Array.from({ length: 52 }, (_, index) => `m${String(index)}`);
     const reach = clusterReach(of({ members, hasCycle: true, stuckMembers: 2, chainDepth: 9 }));
-    assert.deepEqual(reach, { kind: 'stuck', held: 2, of: 52 });
+    assert.deepEqual(reach, { kind: 'cyclic', held: 2, of: 52 });
     assert.equal(clusterReachLabel(reach), '2 of 52 in a cycle');
   });
 
@@ -281,14 +281,14 @@ describe('a component says one thing about how its work runs', () => {
     for (const chainDepth of [0, 1, 39]) {
       assert.equal(
         clusterReach(of({ hasCycle: true, stuckMembers: 2, chainDepth })).kind,
-        'stuck',
+        'cyclic',
       );
     }
   });
 
   it('words each case once, so two capsules cannot describe one component differently', () => {
-    assert.equal(clusterReachLabel({ kind: 'stuck', held: 3, of: 3 }), 'nothing can start');
-    assert.equal(clusterReachLabel({ kind: 'stuck', held: 2, of: 9 }), '2 of 9 in a cycle');
+    assert.equal(clusterReachLabel({ kind: 'cyclic', held: 3, of: 3 }), 'nothing can start');
+    assert.equal(clusterReachLabel({ kind: 'cyclic', held: 2, of: 9 }), '2 of 9 in a cycle');
     assert.equal(clusterReachLabel({ kind: 'chain', depth: 4 }), 'deepest chain 4');
     assert.equal(clusterReachLabel({ kind: 'unblocked' }), 'no blocking chain');
   });

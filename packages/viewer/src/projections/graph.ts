@@ -502,7 +502,7 @@ function capsuleSpec(cluster: Cluster): ElementSpec {
     // from a two-hundred-edge one. "§16 ships unchanged" is the standing rule;
     // the only thing that changes here is the depth, which was untrue.
     element('span', { class: 'ig-count' }, [`${String(cluster.blockedByEdges)} blocking`]),
-    reach.kind === 'stuck'
+    reach.kind === 'cyclic'
       ? element('span', { class: 'ig-badge', 'data-edge': 'blocked-by' }, ['cycle'])
       : null,
     element('span', { class: 'ig-count' }, [clusterReachLabel(reach)]),

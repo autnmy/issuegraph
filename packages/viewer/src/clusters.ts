@@ -71,6 +71,15 @@ export type ClusterReach =
   /**
    * The host reports a cycle through this component.
    *
+   * NAMED FOR WHAT IT CONTAINS, NOT FOR A CONSEQUENCE. This arm was `stuck`,
+   * and that name is only true on the `held === of` leg — a two-issue loop
+   * inside a fifty-two-issue component makes the component cyclic, not stuck,
+   * which is the whole reason the two counts are here and the label stops
+   * short of a readiness claim. A discriminant an exhaustive consumer reads as
+   * "none of this can be worked" then contradicts the sentence rendered
+   * beside it. Same correction as `no-chain` below, on the arm that prompted
+   * it.
+   *
    * BOTH NUMBERS, because "how much of this is a loop" is the question and the
    * two answers read completely differently: `held === of` is a component that
    * is entirely a loop and can never produce anything, while `held < of` is a
@@ -84,7 +93,7 @@ export type ClusterReach =
    * that takes the host's answer for it. `clusterReachLabel` words the
    * `held < of` arm accordingly: what the component contains, not what can run.
    */
-  | { readonly kind: 'stuck'; readonly held: number; readonly of: number }
+  | { readonly kind: 'cyclic'; readonly held: number; readonly of: number }
   /** The longest `blocked-by` chain, in edges. At least one. */
   | { readonly kind: 'chain'; readonly depth: number }
   /**
@@ -121,7 +130,7 @@ export type ClusterReach =
  */
 export function clusterReach(cluster: Cluster): ClusterReach {
   if (cluster.stuckMembers > 0) {
-    return { kind: 'stuck', held: cluster.stuckMembers, of: cluster.members.length };
+    return { kind: 'cyclic', held: cluster.stuckMembers, of: cluster.members.length };
   }
   // ASKED OF THE EDGES, NOT OF THE WALK'S ANSWER. `chainDepth === 0` and "has
   // no blocking edge" agree on every document `normalizeDocument` can produce,
@@ -168,7 +177,7 @@ export function clusterReachLabel(reach: ClusterReach): string {
     // NEITHER ARM PRINTS A DEPTH. A partly-stuck component has a real chain
     // among its reachable members, but this slot answers "what is in here that
     // changes how it runs", and a loop outranks how deep the rest goes.
-    case 'stuck':
+    case 'cyclic':
       return reach.held === reach.of
         ? 'nothing can start'
         : `${String(reach.held)} of ${String(reach.of)} in a cycle`;

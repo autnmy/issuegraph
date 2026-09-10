@@ -75,7 +75,7 @@ describe('the capsules describe the components', () => {
     assert.deepEqual(largest.reach, { kind: 'chain', depth: 39 });
     // `cycleIn` closes the loop over EVERY member of that component, so all 30
     // are held — the `held === of` arm, which is the frame's own capsule.
-    assert.deepEqual(second.reach, { kind: 'stuck', held: 30, of: 30 });
+    assert.deepEqual(second.reach, { kind: 'cyclic', held: 30, of: 30 });
     assert.equal('depth' in second.reach, false);
   });
 

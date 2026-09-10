@@ -142,7 +142,7 @@ describe('the refusal, as a reader sees it', () => {
     // beside a `cycle` badge it reads as a work estimate for work that can never
     // start. Frame 17f draws the consequence in that slot instead.
     const cyclic = renderScaleLadder(documentOf({ components: [40, 30], cycleIn: 1 }));
-    const stuck = cyclic.ladder.capsules.find((capsule) => capsule.reach.kind === 'stuck');
+    const stuck = cyclic.ladder.capsules.find((capsule) => capsule.reach.kind === 'cyclic');
     assert.ok(stuck !== undefined, 'the fixture declares a cycle');
     assert.ok(stuck.chainDepth > 0, 'the depth is a real number, which is why this matters');
     // The whole capsule, so the assertion cannot pass on a sibling's markup.
@@ -153,7 +153,7 @@ describe('the refusal, as a reader sees it', () => {
     assert.match(card, />cycle</);
     assert.match(card, />nothing can start</);
     // The tint the frame puts on the whole stuck card is a rule on this hook.
-    assert.match(card, /data-reach="stuck"/);
+    assert.match(card, /data-reach="cyclic"/);
     assert.equal(/deepest chain/.test(card), false);
     // THE REACH SLOT, not a bare digit probe over the whole card: the size, the
     // edge count and the title all carry digits, so a substring test would
