@@ -127,6 +127,12 @@ function project(snapshot: StoreSnapshot, held = false, audited = false): Worksp
       graph: {
         cycles: audited ? [['1', '2']] : [],
         duplicateCanonical: () => null,
+        // WIRED, NOT LEFT OFF. The field is optional, so omitting it compiles
+        // and the walk line silently never renders — and then the baseline
+        // below is taken over a card that is missing the very element it is
+        // supposed to be checking. That is this fixture's own failure mode: a
+        // gap in the list is the one thing the list cannot catch about itself.
+        cycleWalk: (ref) => (audited && (ref === '1' || ref === '2') ? ['1', '2'] : null),
       },
       encodingRefused: audited
         ? [{ ref: '3', diagnostic: 'unparseable YAML at line 3', sourceLine: 'blocked-by: [231, 234' }]

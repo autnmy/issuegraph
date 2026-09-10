@@ -137,6 +137,27 @@ export interface AuditFinding {
   readonly members: readonly IssueRef[];
   /** What the reader can be told, in one sentence. Never parsed, never a code. */
   readonly detail: string;
+  /**
+   * A cycle's ordered `blocked-by` walk — `a -> b` reads "a waits on b" — with
+   * each member named ONCE and the return edge to the head implied.
+   *
+   * Only ever on a `cycle` finding — this module builds it nowhere else, and
+   * `./panel.ts` gates the line it draws on the class as well as on the field,
+   * so a host that hand-builds a finding cannot put a walk on a stale-blocker
+   * card. Absent whenever §6.6 declines to name a walk for the component, or the
+   * host wired no reader answer for it. See {@link AuditGraph.cycleWalk}.
+   *
+   * NOT FOLDED INTO {@link AuditFinding.members}, which is documented one field
+   * up as a sorted SET: sorting is exactly what destroys the ORDER, and the
+   * order is the only thing a walk carries that `members` does not. (A
+   * conforming walk names no ref twice either, so the set's other rule is not
+   * what keeps them apart.)
+   *
+   * NOT FOLDED INTO `detail` either, which is left byte-identical by this
+   * field's arrival. `./panel.ts` records why the card draws the walk as its own
+   * line rather than composing it into the sentence.
+   */
+  readonly walk?: readonly IssueRef[] | undefined;
 }
 
 /**
@@ -225,6 +246,32 @@ export interface AuditGraph {
    * as naming its canonical.
    */
   readonly duplicateCanonical: (ref: IssueRef) => IssueRef | null;
+  /**
+   * `Model.cycleWalk` — the ordered `blocked-by` walk of the stuck group a ref
+   * belongs to, or `null` where §6.6 declines to name one.
+   *
+   * A FUNCTION, the same shape as `duplicateCanonical` one field up, and for the
+   * same reason: the host owns the translation between a store reference and a
+   * model key, so the question is asked in the STORE's own spelling. An array
+   * running alongside `cycles` would have been the alternative and it does not
+   * survive this file — `cycleFindings` below opens by FILTERING components out,
+   * which shifts every index after the first drop — let alone a host that cannot
+   * translate one component and drops it.
+   *
+   * OPTIONAL, UNLIKE THE TWO FIELDS ABOVE, and the ground for the difference is
+   * SPEC's rather than a judgement about severity. §6.6 says a reader that omits
+   * the walk is still conforming, so this port has to be able to express one.
+   * The paragraph above refuses a thinner AUDIT read as a complete one; an
+   * absent walk removes no finding, changes no count and weakens no class — the
+   * card simply draws no arrow, which is what shipped before this field existed.
+   *
+   * WHAT ABSENCE CANNOT SAY, stated because it is a real shortfall rather than a
+   * detail. Not wired by the host, refused by §6.6, and answered `null` for a
+   * ref the reader does not hold are three different facts, and they arrive here
+   * as one. Nothing downstream can tell them apart, so nothing downstream can
+   * explain to a reader why one cycle card has an arrow and the next does not.
+   */
+  readonly cycleWalk?: ((ref: IssueRef) => readonly IssueRef[] | null) | undefined;
 }
 
 export interface AuditInput {
@@ -339,19 +386,43 @@ function compareMembers(a: readonly IssueRef[], b: readonly IssueRef[]): number 
  * and no detector can produce one, so silence would hide a defect rather than
  * tolerate an input.
  */
-function finding(kind: AuditClass, members: readonly IssueRef[], detail: string): AuditFinding {
+function finding(
+  kind: AuditClass,
+  members: readonly IssueRef[],
+  detail: string,
+  walk?: readonly IssueRef[] | null,
+): AuditFinding {
   const spec = AUDIT_CLASS_SPECS[kind];
   // A SORTED SET. Sorting is what makes two runs over one document produce
   // equal findings; deduplication matters because the row grammar counts one
   // entry per member, and a self-blocking edge hands this the same ref twice.
   const named = Object.freeze([...new Set(members)].sort());
   if (named.length === 0) throw new Error(`unreachable: a ${kind} finding names no issues`);
+  // COPIED AND FROZEN LIKE `named`, AND FOR THE SAME REASON ONE LINE UP: this
+  // one comes straight off a HOST's function, so without the copy the finding
+  // holds an array its caller can still reach and reorder. Not sorted and not
+  // deduplicated, though — the order IS the value here, and a walk that repeats
+  // a ref would be a defect in the reader rather than an input to normalize.
+  // AN EMPTY WALK IS AN ABSENT ONE. No conforming reader answers `[]` — a
+  // component it declines to order answers `null` — but the two would otherwise
+  // be different values that draw identically and key differently in `distinct`
+  // below, which is the absence-rendered-as-a-value shape this module refuses
+  // elsewhere.
+  const walked =
+    walk === null || walk === undefined || walk.length === 0
+      ? undefined
+      : Object.freeze([...walk]);
   return Object.freeze({
     kind,
     severity: spec.severity,
     keepAsHistory: spec.keepAsHistory,
     members: named,
     detail,
+    // SPREAD RATHER THAN ASSIGNED `undefined`, because an explicitly-undefined
+    // property is not the same value as an absent one to a caller enumerating
+    // keys — `distinct` below is one such caller. (`exactOptionalPropertyTypes`
+    // would permit the plain assignment: the field is declared `| undefined`.)
+    ...(walked === undefined ? {} : { walk: walked }),
   });
 }
 
@@ -510,6 +581,22 @@ function verdictFor(
  * An empty group is skipped rather than drawn: a finding naming nobody would
  * add to the header count while giving a reader nothing to navigate to.
  */
+/**
+ * The first walk any member of `members` names, or `null`.
+ *
+ * See the call site for why it asks more than one.
+ */
+function walkOfComponent(
+  graph: AuditGraph,
+  members: readonly IssueRef[],
+): readonly IssueRef[] | null {
+  for (const ref of members) {
+    const walk = graph.cycleWalk?.(ref);
+    if (walk !== null && walk !== undefined) return walk;
+  }
+  return null;
+}
+
 function cycleFindings(graph: AuditGraph): AuditFinding[] {
   return graph.cycles
     .filter((members) => members.length > 0)
@@ -520,6 +607,17 @@ function cycleFindings(graph: AuditGraph): AuditFinding[] {
         'cycle',
         members,
         `${members.join(' · ')} form a blocked-by cycle; no member can ever become ready`,
+        // ASKED PER COMPONENT AND STILL A PASS-THROUGH. The reader decides
+        // whether there IS a walk; this module neither computes nor
+        // second-guesses that. Asking by KEY rather than by position is what
+        // lets the filter and the two sorts above stay exactly as they were —
+        // there is no index left to keep in step.
+        //
+        // EVERY MEMBER, NOT JUST THE FIRST. Within the READER's group they all
+        // answer the same walk, so one would do — but `members` is the HOST's
+        // array, and a single ref the reader does not hold would drop the walk
+        // for the whole component if it happened to sort first.
+        walkOfComponent(graph, members),
       ),
     );
 }
@@ -739,7 +837,13 @@ function distinct(findings: readonly AuditFinding[]): AuditFinding[] {
     // them today for every detector, but the key should not rest on a property
     // of the prose: a class that ever states two member sets in one sentence
     // would silently drop a finding rather than fail a test.
-    const key = `${found.kind}\u0000${found.members.join('\u0001')}\u0000${found.detail}`;
+    // AND THE WALK, by the same argument the paragraph above makes about the
+    // sentence: two findings that agree on class, members and prose but name
+    // different orderings are two findings, and a key that cannot see the
+    // difference would drop one silently. No conforming reader produces that
+    // pair — a component has one walk — which is precisely why the key should
+    // not be the thing that depends on it staying true.
+    const key = `${found.kind}\u0000${found.members.join('\u0001')}\u0000${found.detail}\u0000${(found.walk ?? []).join('\u0001')}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(found);

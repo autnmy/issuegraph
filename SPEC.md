@@ -315,6 +315,10 @@ Without the contraction a real deadlock has no surface at all. `#1 blocked-by #2
 
 A stuck group is reported as **issue keys**, every open member of every unit in it. A groomer needs issues it can open.
 
+**A reader MAY also carry the group's ordered walk**, in `blocked-by` direction — `a → b` reads *a waits on b* — with each member named **once** and the return edge to the head implied. It starts at the lexicographically smallest member key, so two reads of one backlog agree. The walk is presentational: it changes no readiness, and **a reader that omits it is still conforming**.
+
+It is emitted only where the component **is** exactly one simple cycle over units **and** every unit on it holds exactly one open member. Both limits exist because the alternative is asserting an ordering that is not there. A component carrying several simple cycles has no canonical representative and one is not invented. A multi-member unit cannot go on an issue-level `blocked-by` arrow at all: in the worked example above the unit cycle is `{1} → {2,3} → {1}`, carried by *1 waits on 2* and *3 waits on 1*, so an issue-level line would have to hop from `#2` to `#3` across the group's own `together-with` — which is not a dependency, and drawing it as one asserts an edge that does not exist. The cost is worth stating: that example is this section's own flagship deadlock, and it is exactly the case that gets no walk.
+
 ### 6.7 Unresolvable references
 
 A `blocked-by` reference that cannot be resolved MUST be treated as **blocking** (fail-safe: unknown state is not "closed") and MUST be surfaced for grooming. Unresolvable `serialize-with` references contribute no linkage but are likewise surfaced.

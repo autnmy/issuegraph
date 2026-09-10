@@ -289,6 +289,11 @@ export function projectDocument(
       graph: {
         cycles: audited.explained.model.cycles,
         duplicateCanonical: audited.explained.model.duplicateCanonical,
+        // THE AUDIT SEAM ONLY. `viewer` above deliberately gains nothing: its
+        // `cycles` is `ViewerDocument`'s, that package draws components rather
+        // than orderings, and the two consumers that narrow `input.cycles`
+        // positionally would not keep an ordering in step with it anyway.
+        cycleWalk: (ref) => audited.explained.model.cycleWalk(ref),
       },
       // FROM THE SAME `Audited` VALUE AS THE OTHER TWO, so a caller cannot pair
       // one backlog's refusals with another backlog's reading — the defect the

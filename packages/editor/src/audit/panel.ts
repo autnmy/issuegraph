@@ -30,13 +30,45 @@
  * this package does: it builds an {@link ElementSpec} tree and the caller renders
  * it through the viewer's `renderMarkup`. Nothing here writes a tag.
  *
- * ## The card is THREE lines, not the frame's four
+ * ## The card is THREE lines, or FOUR when the finding carries a walk
  *
  * The frame draws a chip, a title, a mono line of the refs, and a prose
- * paragraph. `AuditFinding.detail` ALREADY OPENS WITH THE MEMBERS — `${members
- * .join(' · ')} form a blocked-by cycle; …` — so drawing a members line beside
- * it prints every reference twice. The refs are in the prose, and the card is
- * chip + title + prose.
+ * paragraph. This module long drew three, on this argument: `AuditFinding.detail`
+ * ALREADY OPENS WITH THE MEMBERS — `${members.join(' · ')} form a blocked-by
+ * cycle; …` — so *"drawing a members line beside it prints every reference
+ * twice"*.
+ *
+ * THAT ARGUMENT WAS RIGHT ABOUT A LINE THE FRAME DOES NOT DRAW. The frame's
+ * third line is `#544 → #551 → #560 → #544` — a WALK, not the `·`-joined set
+ * the sentence opens with. Calling it "a mono line of the refs" was the slip:
+ * the line that was declined and the line drawn below are not the same line, and
+ * the refs are the only thing they have in common.
+ *
+ * SO THE COST IS CONCEDED RATHER THAN ARGUED AWAY. On a card that carries a
+ * walk the refs really do appear twice, and the head three times. What buys it
+ * is the one thing the sentence cannot say: `#544 · #551 · #560` does not say
+ * who waits on whom, and a stuck group's ordering is the first thing a groomer
+ * needs in order to pick an edge to cut. Direction appears nowhere else on the
+ * card.
+ *
+ * `detail` IS LEFT BYTE-IDENTICAL, and composing the walk INTO it was the
+ * alternative. It is rejected on §17d rather than on the accessible name — a
+ * walk-composed sentence would be collision-free by the same construction the
+ * current one is, so that cost is not real. The reason is that the frame draws a
+ * SEPARATE line and this section is delivered as a frame/implementation pair, so
+ * folding it into the sentence deviates from the artifact the work is measured
+ * against; and it would give `detail` two shapes, since a component §6.6
+ * declines to order has no walk to compose.
+ *
+ * THE ARROW GLYPH IS `aria-hidden`, AND THAT IS A GAP RATHER THAN A WIN. The
+ * only thing the line adds is direction, and the glyph does not carry it: `→`
+ * announces as "right arrow", not "waits on". Announcing the line anyway would
+ * repeat three refs `detail` has just named, in a form that has lost the reason
+ * it was drawn — the same trade `renderAuditPanel`'s `◆` makes below. The
+ * remaining options were a visually-hidden utility this package does not have,
+ * or an `aria-label` on a `p` with no role, which is not reliably announced. So
+ * a screen reader hears exactly what it heard before this line existed, and the
+ * ordering is genuinely lost to it. Filed, not resolved here.
  *
  * THE TITLE IS PER CLASS, AND THE FRAME'S ARE PER FINDING. `AuditFinding` has no
  * title field, and this package appends numbers rather than interpolating them
@@ -221,6 +253,27 @@ function cardSpec(
         words.classes[finding.kind],
       ]),
       element('p', { class: 'ig-audit-title' }, [words.titles[finding.kind]]),
+      // THE FRAME'S THIRD LINE, and only where the reader named an ordering —
+      // see this module's header for the amendment that admits it, the cost it
+      // concedes, and why it is hidden from the accessibility tree.
+      //
+      // THE HEAD REPEATS HERE AND NOWHERE ELSE. `AuditFinding.walk` names each
+      // member once and implies the return edge, because closing the loop is a
+      // drawing decision — this is the drawing.
+      //
+      // NO `AuditWords` ENTRY. The arrow is a glyph the package draws, the same
+      // call `refusedOpen`'s `↗` makes; a host supplies words, not punctuation.
+      // GATED ON THE CLASS AS WELL AS THE FIELD. `AuditFinding` is a public
+      // export and so is this renderer, so a host can hand it a hand-built
+      // finding — and a walk drawn under a `stale blocker` chip would be an
+      // ordering of an edge that has none. The field's own doc says "only ever
+      // on a cycle finding"; this is what makes that a fact here rather than a
+      // hope about callers.
+      finding.kind !== 'cycle' || finding.walk === undefined || finding.walk.length === 0
+        ? null
+        : element('p', { class: 'ig-audit-walk', 'aria-hidden': 'true' }, [
+            [...finding.walk, finding.walk[0] as IssueRef].join(' → '),
+          ]),
       element('p', { class: 'ig-audit-detail' }, [finding.detail]),
       target === undefined
         ? null

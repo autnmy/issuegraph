@@ -7,7 +7,7 @@ import { makeEdge } from '@issuegraph/store';
 import type { EdgeKind, GraphDocument, IssueRef, StoredIssue } from '@issuegraph/store';
 import { renderMarkup } from '@issuegraph/viewer';
 
-import { AUDIT_CLASSES } from './findings.ts';
+import { AUDIT_CLASSES, AUDIT_CLASS_SPECS } from './findings.ts';
 import type { AuditClass, AuditGraph } from './findings.ts';
 import { AUDIT_KIND_ATTRIBUTE, renderAuditPanel } from './panel.ts';
 import type { AuditWords } from './panel.ts';
@@ -76,7 +76,14 @@ function graphOf(document: GraphDocument): AuditGraph {
     declarationRead: 'read' as const,
   }));
   const model = buildModel(nodes);
-  return { cycles: model.cycles, duplicateCanonical: model.duplicateCanonical };
+  // THE READER'S OWN ANSWER, not a hand-written walk. The panel's whole claim
+  // is that it draws what §6.6 decided, so a fixture that invented the ordering
+  // would pass while the port was wrong.
+  return {
+    cycles: model.cycles,
+    duplicateCanonical: model.duplicateCanonical,
+    cycleWalk: model.cycleWalk,
+  };
 }
 
 function overlayOf(
@@ -372,6 +379,17 @@ describe('the findings panel', () => {
     // it is package-owned prose by decision — recorded in `panel.ts` rather than
     // left as a gap. So it is allowed here explicitly rather than by accident.
     for (const finding of overlay.findings) supplied.add(finding.detail);
+    // A WALK LINE IS ALLOWED ON A STRONGER FOOTING THAN `detail`, and it is
+    // listed rather than pattern-matched away. `detail` is a real sentence and
+    // is admitted above by decision; a walk contains NO WORD AT ALL — it is the
+    // host's own refs joined by a separator glyph, the same category as the `◆`
+    // and the digits this test already skips. The composition still belongs to
+    // the package, so it is named here explicitly rather than falling through a
+    // widened filter that would admit the next real sentence too.
+    for (const finding of overlay.findings) {
+      if (finding.walk === undefined) continue;
+      supplied.add([...finding.walk, finding.walk[0] as IssueRef].join(' → '));
+    }
     for (const text of drawn) {
       assert.ok(supplied.has(text), `the package wrote "${text}"`);
     }
@@ -448,5 +466,151 @@ describe('the findings panel', () => {
     for (const source of [markup, auditStylesheet]) {
       assert.equal(/@keyframes|animation:|transition:/.test(source), false);
     }
+  });
+});
+
+describe('§17d — the cycle card draws its walk', () => {
+  it('draws the walk as a mono line, closing the loop on the head', () => {
+    // `10 waits on 9`, `9 waits on 100`, `100 waits on 10`.
+    //
+    // THE REFS ARE CHOSEN SO THE RING ORDER IS NOT THE SORTED ORDER — "10" <
+    // "100" < "9" as strings, while the ring runs 10 → 9 → 100. On a fixture
+    // like `a → b → c` the two coincide, and every assertion here would pass
+    // against a renderer that simply listed the members. The one thing this
+    // line exists to carry is the ordering, so the fixture has to be able to
+    // tell the difference.
+    const markup = markupOf(
+      [issue('10'), issue('9'), issue('100')],
+      [
+        ['blocked-by', '10', '9'],
+        ['blocked-by', '9', '100'],
+        ['blocked-by', '100', '10'],
+      ],
+    );
+    assert.equal(markup.match(/class="ig-audit-walk"/g)?.length, 1);
+    // The closing `→ 10` is drawn HERE and nowhere else: the reader names each
+    // member once and implies the return edge.
+    assert.ok(markup.includes('>10 → 9 → 100 → 10<'), markup);
+    // And explicitly NOT the sorted form, so the pin cannot rot into one.
+    assert.ok(!markup.includes('>10 → 100 → 9'), markup);
+  });
+
+  it('draws no walk line on a finding that is not a cycle', () => {
+    // `AuditFinding` and this renderer are both public, so a host can hand it a
+    // hand-built finding. An ordering under a `stale blocker` chip would be an
+    // ordering of an edge that has none.
+    const spec = renderAuditPanel(
+      {
+        count: 1,
+        rows: [],
+        rowFor: () => undefined,
+        findings: [
+          {
+            kind: 'stale-blocker',
+            severity: AUDIT_CLASS_SPECS['stale-blocker'].severity,
+            keepAsHistory: AUDIT_CLASS_SPECS['stale-blocker'].keepAsHistory,
+            members: ['a', 'b'],
+            detail: 'a waits on b, which is closed',
+            walk: ['a', 'b'],
+          },
+        ],
+      },
+      { words: WORDS, known: new Set(['a', 'b']) },
+    );
+    assert.ok(spec !== null);
+    assert.ok(!renderMarkup(spec).includes('ig-audit-walk'));
+  });
+
+  it('hides the walk from the accessibility tree, glyph and all', () => {
+    // The line's only new information is direction, and `→` announces as "right
+    // arrow" rather than "waits on" — so announcing it would repeat three refs
+    // the detail has just named, minus the reason they were drawn.
+    const markup = markupOf(
+      [issue('10'), issue('9'), issue('100')],
+      [
+        ['blocked-by', '10', '9'],
+        ['blocked-by', '9', '100'],
+        ['blocked-by', '100', '10'],
+      ],
+    );
+    assert.ok(/<p class="ig-audit-walk" aria-hidden="true">/.test(markup), markup);
+  });
+
+  it('draws NO walk line where §6.6 declined to name one', () => {
+    // Two simple cycles overlapping at `b`: one SCC, no canonical walk. The
+    // card still lists the finding — only the ordering is withheld.
+    const markup = markupOf(
+      [issue('a'), issue('b'), issue('c')],
+      [
+        ['blocked-by', 'a', 'b'],
+        ['blocked-by', 'b', 'a'],
+        ['blocked-by', 'b', 'c'],
+        ['blocked-by', 'c', 'b'],
+      ],
+    );
+    assert.ok(!markup.includes('ig-audit-walk'), markup);
+    assert.ok(markup.includes(`${WORDS.titles.cycle}`), markup);
+  });
+
+  it('draws no walk line for a host that wired no reader answer', () => {
+    // `cycleWalk` is optional, because SPEC §6.6 says a reader that omits the
+    // walk still conforms. Omitting it must render exactly what shipped before
+    // the field existed, not throw and not draw an empty line.
+    const document = documentOf(
+      [issue('a'), issue('b'), issue('c')],
+      [
+        ['blocked-by', 'a', 'b'],
+        ['blocked-by', 'b', 'c'],
+        ['blocked-by', 'c', 'a'],
+      ],
+    );
+    const { cycleWalk: _omitted, ...withoutWalk } = graphOf(document);
+    const spec = renderAuditPanel(
+      auditOverlay({ document, graph: withoutWalk, encodingRefused: [] }),
+      { words: WORDS, known: new Set(['a', 'b', 'c']) },
+    );
+    assert.ok(spec !== null);
+    const markup = renderMarkup(spec);
+    assert.ok(!markup.includes('ig-audit-walk'), markup);
+    assert.ok(markup.includes(`${WORDS.titles.cycle}`), markup);
+  });
+
+  it('escapes a ref that looks like markup, in the walk as everywhere else', () => {
+    // `ElementSpec` owns the escaping — the module writes no tag — and the walk
+    // is the one line built by joining host values with a string.
+    const nasty = '<img src=x>' as IssueRef;
+    const markup = markupOf(
+      [issue(nasty), issue('b')],
+      [
+        ['blocked-by', nasty, 'b'],
+        ['blocked-by', 'b', nasty],
+      ],
+    );
+    assert.ok(markup.includes('ig-audit-walk'), markup);
+    assert.ok(!markup.includes('<img src=x>'), markup);
+    assert.ok(markup.includes('&lt;img src=x&gt;'), markup);
+  });
+
+  it('leaves the reveal control\'s accessible name alone', () => {
+    // `detail` is unchanged by this field's arrival, and the name is built from
+    // `detail`. A walk that had been composed into the sentence would move it.
+    const markup = markupOf(
+      [issue('a'), issue('b'), issue('c')],
+      [
+        ['blocked-by', 'a', 'b'],
+        ['blocked-by', 'b', 'c'],
+        ['blocked-by', 'c', 'a'],
+      ],
+    );
+    assert.ok(
+      markup.includes(
+        `aria-label="${WORDS.show} a · b · c form a blocked-by cycle; no member can ever become ready"`,
+      ),
+      markup,
+    );
+  });
+
+  it('gives the walk a stylesheet rule', () => {
+    assert.ok(auditStylesheet.includes('.ig-audit-walk'));
   });
 });

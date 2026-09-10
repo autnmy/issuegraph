@@ -198,6 +198,26 @@ export const auditStylesheet = `
   margin: 0;
 }
 
+/* MUTED IS CORRECT HERE, ON THE SAME RULE .ig-audit-refused-source ends this
+   file with: the note above reserves muted for SHORT MONO LABELS, and a cycle's
+   walk is one — refs and separators, no prose. Length is not the test and could
+   not be: a large ring draws a long line, which is what the wrap below is for.
+   What muted is reserved AGAINST is sentence-length COPY. The detail rule one block up takes --ig-text-body because it IS a
+   sentence, so it is the wrong neighbour to copy.
+
+   break-word, NOT anywhere. A ref is a token worth keeping whole; the refused
+   block accepts mid-token breaks because it quotes arbitrary body text, and a
+   walk is a list of identifiers a reader has to be able to match against the
+   rail. */
+.ig-audit-walk {
+  color: var(--ig-text-muted);
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-compact);
+  line-height: var(--ig-line-height);
+  margin: 0;
+  overflow-wrap: break-word;
+}
+
 .ig-audit-show {
   align-self: flex-start;
   background: none;
