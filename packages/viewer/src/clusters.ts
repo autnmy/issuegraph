@@ -80,6 +80,20 @@ export type ClusterReach =
   | { readonly kind: 'stuck'; readonly held: number; readonly of: number }
   /** The longest `blocked-by` chain, in edges. At least one. */
   | { readonly kind: 'chain'; readonly depth: number }
+  /**
+   * It carries `blocked-by` edges, and none of them orders anything: every one
+   * closes a loop the host did not report, so the chain walk steps over all of
+   * them and finds no chain at all.
+   *
+   * UNREACHABLE THROUGH `normalizeDocument`, WHICH DROPS A SELF-EDGE, and
+   * encoded anyway. A loop of two or more always leaves at least one edge the
+   * walk can follow, so the only way every edge is a back-edge is a self-loop —
+   * and `clustersOf` is a public export taking a plain `NormalizedDocument` a
+   * consumer can build by hand. The case is here because the alternative was
+   * `unblocked` covering it, which is a claim about a component with a blocking
+   * count printed beside it.
+   */
+  | { readonly kind: 'looped'; readonly edges: number }
   /** No `blocked-by` edge at all, so nothing in the component waits on anything. */
   | { readonly kind: 'unblocked' };
 
@@ -93,7 +107,15 @@ export function clusterReach(cluster: Cluster): ClusterReach {
   if (cluster.stuckMembers > 0) {
     return { kind: 'stuck', held: cluster.stuckMembers, of: cluster.members.length };
   }
-  if (cluster.chainDepth === 0) return { kind: 'unblocked' };
+  // ASKED OF THE EDGES, NOT OF THE WALK'S ANSWER. `chainDepth === 0` and "has
+  // no blocking edge" agree on every document `normalizeDocument` can produce,
+  // and they are not the same claim: the depth is what the walk COULD FOLLOW,
+  // and it skips a back-edge. Reading `unblocked` off it would render "no
+  // blocking chain" beside a non-zero blocking count on the same card — the
+  // exact shape of contradiction `ClusterReach` exists to make unrepresentable,
+  // rebuilt one predicate down.
+  if (cluster.blockedByEdges === 0) return { kind: 'unblocked' };
+  if (cluster.chainDepth === 0) return { kind: 'looped', edges: cluster.blockedByEdges };
   return { kind: 'chain', depth: cluster.chainDepth };
 }
 
@@ -127,6 +149,10 @@ export function clusterReachLabel(reach: ClusterReach): string {
         : `${String(reach.held)} of ${String(reach.of)} cannot start`;
     case 'chain':
       return `deepest chain ${String(reach.depth)}`;
+    // NAMES THE EDGES, so the sentence cannot contradict the count drawn beside
+    // it: something blocks, and none of it puts the work in an order.
+    case 'looped':
+      return `${String(reach.edges)} blocking ${reach.edges === 1 ? 'edge' : 'edges'}, none ordering`;
     case 'unblocked':
       return 'no blocking chain';
   }

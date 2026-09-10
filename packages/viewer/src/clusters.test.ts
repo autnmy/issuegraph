@@ -231,6 +231,52 @@ describe('a component says one thing about how its work runs', () => {
     assert.deepEqual(clusterReach(of({ chainDepth: 0, blockedByEdges: 0 })), { kind: 'unblocked' });
   });
 
+  it('asks the EDGES whether it is unblocked, never the walk', () => {
+    // `chainDepth` is what the walk could FOLLOW, and it steps over a back-edge
+    // — so a component whose every blocking edge loops has depth 0 with a
+    // non-zero count, and reading `unblocked` off the depth would print "no
+    // blocking chain" beside that count on the same card. Unreachable through
+    // `normalizeDocument`, which drops the self-edge that is the only way to
+    // reach it; `clustersOf` is a public export taking a value a consumer can
+    // build by hand, and the predicate was wrong either way.
+    assert.deepEqual(clusterReach(of({ blockedByEdges: 1, chainDepth: 0 })), {
+      kind: 'looped',
+      edges: 1,
+    });
+    assert.equal(
+      clusterReachLabel({ kind: 'looped', edges: 1 }),
+      '1 blocking edge, none ordering',
+    );
+    assert.equal(
+      clusterReachLabel({ kind: 'looped', edges: 3 }),
+      '3 blocking edges, none ordering',
+    );
+  });
+
+  it('a real loop of two or more still has a chain, so only a self-loop reaches looped', () => {
+    // The reason the case above is unreachable, pinned rather than asserted: a
+    // cycle of k>1 always leaves at least one edge the walk can follow, so its
+    // depth is k-1 and never 0.
+    for (const size of [2, 3, 5]) {
+      const keys = Array.from({ length: size }, (_, index) => `n${String(index)}`);
+      const document = normalizeDocument({
+        issues: keys.map((key) => ({ key, title: key, open: true, priority: 2 as const })),
+        edges: keys.map((key, index) => ({
+          field: 'blocked-by' as const,
+          from: key,
+          to: keys[(index + 1) % size] as string,
+        })),
+        order: { slots: [], excluded: [] },
+        cycles: [],
+      }).document;
+      const cluster = clustersOf(document)[0];
+      assert.ok(cluster !== undefined);
+      assert.equal(cluster.blockedByEdges, size);
+      assert.equal(cluster.chainDepth, size - 1);
+      assert.equal(clusterReach(cluster).kind, 'chain');
+    }
+  });
+
   it('the cycle wins over the depth, whatever the depth is', () => {
     for (const chainDepth of [0, 1, 39]) {
       assert.equal(
