@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { clustersOf } from './clusters.ts';
+import { type Cluster, clusterReach, clusterReachLabel, clustersOf } from './clusters.ts';
 import { type NormalizedDocument, normalizeDocument } from './document.ts';
 
 function pairs(count: number): NormalizedDocument {
@@ -192,5 +192,42 @@ describe('clustersOf', () => {
       clusters.reduce((total, cluster) => total + cluster.blockedByEdges, 0),
       50,
     );
+  });
+});
+
+describe('a component says one thing about how its work runs', () => {
+  const of = (over: Partial<Cluster>): Cluster => ({
+    members: ['a', 'b'],
+    blockedByEdges: 1,
+    hasCycle: false,
+    chainDepth: 1,
+    ...over,
+  });
+
+  it('reads stuck for a cycle, and the stuck case carries no depth to print', () => {
+    // THE WHOLE POINT OF THE UNION. `chainDepth` is the longest ACYCLIC chain,
+    // so it is a real number on a stuck component — and printed beside a cycle
+    // it reads as a work estimate for work that can never start. There is no
+    // field to print rather than a rule each renderer has to remember.
+    const reach = clusterReach(of({ hasCycle: true, chainDepth: 4 }));
+    assert.deepEqual(reach, { kind: 'stuck' });
+    assert.equal('depth' in reach, false);
+  });
+
+  it('reads the depth when there is one, and unblocked when there is none', () => {
+    assert.deepEqual(clusterReach(of({ chainDepth: 4 })), { kind: 'chain', depth: 4 });
+    assert.deepEqual(clusterReach(of({ chainDepth: 0, blockedByEdges: 0 })), { kind: 'unblocked' });
+  });
+
+  it('the cycle wins over the depth, whatever the depth is', () => {
+    for (const chainDepth of [0, 1, 39]) {
+      assert.deepEqual(clusterReach(of({ hasCycle: true, chainDepth })), { kind: 'stuck' });
+    }
+  });
+
+  it('words each case once, so two capsules cannot describe one component differently', () => {
+    assert.equal(clusterReachLabel({ kind: 'stuck' }), 'nothing can start');
+    assert.equal(clusterReachLabel({ kind: 'chain', depth: 4 }), 'deepest chain 4');
+    assert.equal(clusterReachLabel({ kind: 'unblocked' }), 'no blocking chain');
   });
 });

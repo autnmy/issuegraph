@@ -170,6 +170,7 @@ export {
 
 export {
   type IsolatedChip,
+  type OmittedComponents,
   type ScaleCapsule,
   type ScaleLadder,
   type ScaleMatch,
@@ -178,6 +179,7 @@ export {
   type ScaleRouteKind,
   type ScaleSearch,
   type ScaleTier,
+  type SizeRange,
   scaleLadder,
 } from './scale/ladder.ts';
 

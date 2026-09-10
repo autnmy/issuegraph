@@ -37,10 +37,12 @@
 import {
   CLUSTER_ONLY_BUDGET,
   type Cluster,
+  type ClusterReach,
   GRAPH_NODE_BUDGET,
   type NormalizedDocument,
   type ViewerDocument,
   type ViewerIssue,
+  clusterReach,
   clustersOf,
   normalizeDocument,
 } from '@issuegraph/viewer';
@@ -64,10 +66,29 @@ export interface ScaleCapsule {
    * one document always offer the same handle.
    */
   readonly lead: string;
+  /**
+   * The lead issue's title, so the capsule has a name a reader recognises.
+   *
+   * FRAME `17f` NAMES EVERY CAPSULE — "auth & session", "replay guards" — and
+   * the shipped one listed three raw keys instead. A component has no name of
+   * its own to read anywhere; the lead's title is the closest true one, and it
+   * is already the handle the focus control names, so the label and the action
+   * cannot come apart.
+   */
+  readonly name: string;
   readonly size: number;
   readonly blockedByEdges: number;
   readonly chainDepth: number;
   readonly hasCycle: boolean;
+  /**
+   * The one fact printed under the name, resolved by layer 1.
+   *
+   * IT IS NOT A THIRD COPY of the two fields above; it is what stops a capsule
+   * printing both of them at once. See `clusterReach`: a stuck component has no
+   * depth to print, because a depth beside a cycle reads as a work estimate for
+   * work that can never start.
+   */
+  readonly reach: ClusterReach;
   readonly members: readonly string[];
 }
 
@@ -128,6 +149,26 @@ export interface ScaleSearch {
   readonly omitted: number;
 }
 
+/** The size range of a set of components. Both bounds are at least one. */
+export interface SizeRange {
+  readonly smallest: number;
+  readonly largest: number;
+}
+
+/** What the capsule list left out, and the size range it spans. */
+export interface OmittedComponents {
+  readonly count: number;
+  /**
+   * The range, or `null` when nothing omitted has a member to measure.
+   *
+   * NULLABLE RATHER THAN ZEROED, for the reason `capsulesOmitted` is itself
+   * nullable: `0` here would report a component of no issues, and the count is
+   * still true when the range is not. Unreachable while `clustersOf` emits no
+   * memberless component; it is the shape that keeps it unreachable.
+   */
+  readonly range: SizeRange | null;
+}
+
 export interface ScaleLadder {
   readonly tier: ScaleTier;
   /** The nodes the canvas would draw: the focused component, or all of them. */
@@ -137,8 +178,16 @@ export interface ScaleLadder {
   readonly focus: string | null;
   readonly refusal: ScaleRefusal | null;
   readonly capsules: readonly ScaleCapsule[];
-  /** Components found beyond the capsules listed. */
-  readonly capsulesOmitted: number;
+  /**
+   * The components beyond the capsules listed, and how big they are.
+   *
+   * A BARE COUNT DOES NOT SAY WHETHER THE TAIL MATTERS. Frame `17f` draws
+   * "+ 5 more" over "2-7 issues each" for exactly that reason: five components
+   * of two to seven is noise a reader can leave alone, and five of forty to
+   * ninety is most of the backlog. `null` when nothing was omitted, so the
+   * absent case has no zeroed sizes to misread.
+   */
+  readonly capsulesOmitted: OmittedComponents | null;
   readonly isolated: IsolatedChip;
   /** The affordance, present exactly when the canvas refuses. */
   readonly search: ScaleSearch | null;
@@ -250,19 +299,65 @@ function narrow(input: ViewerDocument, keep: ReadonlySet<string>): ViewerDocumen
  * `clustersOf` never returns one today; this is what keeps that from becoming a
  * silent contract.
  */
-function capsuleOf(cluster: Cluster): ScaleCapsule | null {
+function capsuleOf(cluster: Cluster, titleOf: ReadonlyMap<string, string>): ScaleCapsule | null {
   // `members` is already in the viewer's deterministic order, so the first is a
   // stable handle rather than whichever member the walk happened to reach first.
   const lead = cluster.members[0];
   if (lead === undefined) return null;
   return {
     lead,
+    // THE KEY IS THE FALLBACK, NOT AN EMPTY NAME. Every member came out of the
+    // normalized document so a title is always there; the `??` keeps a capsule
+    // named rather than blank if that ever stops being true.
+    name: titleOf.get(lead) ?? lead,
     size: cluster.members.length,
     blockedByEdges: cluster.blockedByEdges,
     chainDepth: cluster.chainDepth,
     hasCycle: cluster.hasCycle,
+    reach: clusterReach(cluster),
     members: cluster.members,
   };
+}
+
+/**
+ * The omitted components, summarised.
+ *
+ * COMPUTED FROM THE COMPONENTS THEMSELVES rather than from the two list
+ * lengths, because the omitted set is not only the slice past the limit: a
+ * component `capsuleOf` refuses also leaves the list, and a count derived by
+ * subtraction cannot say how big either kind was.
+ */
+function omittedFrom(listable: readonly Cluster[], shown: readonly ScaleCapsule[]): OmittedComponents | null {
+  const drawn = new Set(shown.map((capsule) => capsule.lead));
+  // A COMPONENT OF NO ISSUES IS NOT A SIZE. `capsuleOf` refuses exactly the
+  // memberless cluster, so the very components this function exists to count
+  // separately are the ones that would contribute `0` — and "2 further
+  // components are not listed · 0–7 issues each" reports a component of no
+  // issues, which is the state `capsulesOmitted`'s own `null` exists to refuse.
+  // They are still counted; they just do not stretch the range.
+  const omitted = listable.filter((cluster) => {
+    const lead = cluster.members[0];
+    return lead === undefined || !drawn.has(lead);
+  });
+  // FOLDED, NOT SPREAD. `Math.min(...sizes)` passes one argument per component,
+  // and this runs on the refusal path — reached BECAUSE the document is large,
+  // whose worst case `clustersOf` names as "10,000 disconnected pairs". Node
+  // throws `RangeError: Maximum call stack size exceeded` somewhere past
+  // ~100,000 arguments, so a spread turns the surface that exists to survive a
+  // huge backlog into the one that crashes on it.
+  let count = 0;
+  let smallest = Number.POSITIVE_INFINITY;
+  let largest = 0;
+  for (const cluster of omitted) {
+    count += 1;
+    const size = cluster.members.length;
+    if (size === 0) continue;
+    if (size < smallest) smallest = size;
+    if (size > largest) largest = size;
+  }
+  if (count === 0) return null;
+  // Every omitted component was memberless: counted, with no range to state.
+  return { count, range: largest === 0 ? null : { smallest, largest } };
 }
 
 /** Why the canvas declined, in the reader's terms. One sentence, three cases. */
@@ -397,10 +492,13 @@ export function scaleLadder(
   // read as an offer to focus what is already focused.
   const listable = focusedCluster === null ? clusters : [];
   const shown = tier === 'clusters' ? listable.slice(0, CAPSULE_LIMIT) : listable;
+  const titleOf = new Map(document.issues.map((issue) => [issue.key, issue.title]));
   const capsules =
     tier === 'direct'
       ? []
-      : shown.map(capsuleOf).filter((capsule): capsule is ScaleCapsule => capsule !== null);
+      : shown
+          .map((cluster) => capsuleOf(cluster, titleOf))
+          .filter((capsule): capsule is ScaleCapsule => capsule !== null);
 
   const isolatedIssues = document.issues.filter((issue) => !related.has(issue.key));
   const isolated: IsolatedChip = {
@@ -420,7 +518,7 @@ export function scaleLadder(
     // COUNTED AGAINST WHAT WAS LISTED, not against what was sliced. A component
     // dropped for having no members is as absent from the list as one past the
     // limit, and reporting only the slice would under-count it.
-    capsulesOmitted: tier === 'direct' ? 0 : listable.length - capsules.length,
+    capsulesOmitted: tier === 'direct' ? null : omittedFrom(listable, capsules),
     isolated,
     search: tier === 'direct' ? null : searchFor(state.query, document, leadOf),
     canvas,

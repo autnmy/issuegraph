@@ -150,8 +150,8 @@ export {
   provenanceClause,
 } from './parts.ts';
 
-export type { Cluster } from './clusters.ts';
-export { clustersOf } from './clusters.ts';
+export type { Cluster, ClusterReach } from './clusters.ts';
+export { clusterReach, clusterReachLabel, clustersOf } from './clusters.ts';
 
 export type { AttrValue, ElementSpec, SpecChild } from './element.ts';
 export { element, renderMarkup } from './element.ts';

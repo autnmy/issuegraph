@@ -195,6 +195,14 @@ describe('the public surface', () => {
       'ROW_BADGE_BUDGET',
       'THEME_TOKENS',
       'TYPE_TOKENS',
+      // ONE ANSWER FOR TWO CAPSULES. `clusterReach` resolves the single fact a
+      // capsule prints under its name, and `clusterReachLabel` words it, so
+      // §16's capsule here and §17f's in the editor cannot describe one
+      // component differently on the same screen. The union is what stops a
+      // stuck component printing a chain depth beside its cycle at all — see
+      // `ClusterReach`.
+      'clusterReach',
+      'clusterReachLabel',
       'clustersOf',
       'dashArrayFor',
       'defaultTheme',

@@ -23,7 +23,7 @@ describe('the three tiers render', () => {
   it('draws capsules and NO canvas past the node budget', () => {
     const result = renderScaleLadder(relatedDocument(GRAPH_NODE_BUDGET + 1));
     assert.match(result.markup, /data-tier="capsules"/);
-    assert.match(result.markup, /class="ig-capsule"/);
+    assert.match(result.markup, /class="ig-capsule-cell"/);
     // ONE REFUSAL, NOT TWO. Handing the over-budget document to the viewer would
     // make it draw its own — routeless — refusal beside this one.
     assert.equal(/data-projection="graph"/.test(result.markup), false);
@@ -65,18 +65,68 @@ describe('the refusal, as a reader sees it', () => {
     }
   });
 
-  it('publishes each capsule as an actionable focus target', () => {
+  it('makes the WHOLE capsule the control that enters it', () => {
+    // FRAME 17f: "click to enter one". The command lives on the element that
+    // draws the card, so the pointer target is the whole surface rather than a
+    // button beside it — and every part of the card is inside that control.
+    const result = renderScaleLadder(relatedDocument(GRAPH_NODE_BUDGET + 1));
+    const capsule = result.ladder.capsules[0];
+    assert.ok(capsule !== undefined);
+    const card = new RegExp(
+      `<li class="ig-capsule-cell"><button [^>]*data-ig-command="focus" data-ig-target="${capsule.lead}"[^>]*>.*?</button></li>`,
+    );
+    assert.match(result.markup, card);
+    // Nothing outside the control inside the capsule: no text a pointer could
+    // land on without hitting the action.
+    assert.equal(/<li class="ig-capsule-cell">(?!<button)/.test(result.markup), false);
+  });
+
+  it('leads with the count, then the blocking count, then the name and the reach', () => {
+    const result = renderScaleLadder(relatedDocument(GRAPH_NODE_BUDGET + 1));
+    const capsule = result.ladder.capsules[0];
+    assert.ok(capsule !== undefined);
+    assert.equal(capsule.reach.kind, 'chain');
+    // ORDER, NOT PRESENCE. The frame's rule is that a capsule leads with what
+    // changes behaviour, so asserting the four parts exist would pass on the
+    // arrangement this issue exists to replace.
+    assert.match(
+      result.markup,
+      new RegExp(
+        `<span class="ig-capsule-size">${String(capsule.size)}</span>` +
+          `<span class="ig-capsule-load">\u2298 ${String(capsule.blockedByEdges)}</span>` +
+          `<span class="ig-capsule-name">${capsule.name}</span>` +
+          `<span class="ig-capsule-reach">deepest chain ${String(capsule.chainDepth)}</span>`,
+      ),
+    );
+  });
+
+  it('names each capsule for a reader who cannot see the card', () => {
+    // `element` concatenates children with no whitespace and the gap between
+    // them is CSS, which the accessibility tree does not read — so the name is
+    // written rather than left to the contents, and it spells out the glyph.
     const result = renderScaleLadder(relatedDocument(GRAPH_NODE_BUDGET + 1));
     const capsule = result.ladder.capsules[0];
     assert.ok(capsule !== undefined);
     assert.match(
       result.markup,
-      new RegExp(`data-ig-command="focus" data-ig-target="${capsule.lead}"`),
+      new RegExp(
+        `aria-label="Focus ${capsule.name} \\(${capsule.lead}\\) \u2014 ${String(capsule.size)} issues, ` +
+          `${String(capsule.blockedByEdges)} blocked-by edges, deepest chain ${String(capsule.chainDepth)}"`,
+      ),
     );
-    // The counts the design asks a capsule to carry.
-    assert.match(result.markup, new RegExp(`${String(capsule.size)} issues`));
-    assert.match(result.markup, new RegExp(`${String(capsule.blockedByEdges)} blocking`));
-    assert.match(result.markup, new RegExp(`depth ${String(capsule.chainDepth)}`));
+    // DISTINCT BY CONSTRUCTION, not by this fixture's titles happening to
+    // differ. `name` is the lead's TITLE, which two components can share; the
+    // lead KEY cannot be, because components partition the document's keys — so
+    // every name carries one.
+    const labels = [...result.markup.matchAll(/aria-label="(Focus [^"]+)"/g)].map((m) => m[1]);
+    assert.ok(labels.length > 1);
+    assert.equal(new Set(labels).size, labels.length);
+    for (const each of result.ladder.capsules) {
+      assert.ok(
+        labels.some((label) => label?.includes(`(${each.lead})`)),
+        `no accessible name carries the lead ${each.lead}`,
+      );
+    }
   });
 
   it('shows the cycle badge only for a component that has one', () => {
@@ -84,6 +134,56 @@ describe('the refusal, as a reader sees it', () => {
     assert.equal(/>cycle</.test(clean.markup), false);
     const cyclic = renderScaleLadder(documentOf({ components: [40, 30], cycleIn: 1 }));
     assert.match(cyclic.markup, />cycle</);
+  });
+
+  it('never prints a chain depth on a component that holds a cycle', () => {
+    // THE DEFECT THIS TILE'S PASS EXISTS TO REMOVE. `chainDepth` is the longest
+    // ACYCLIC chain, so it is a real number on a stuck component — and printed
+    // beside a `cycle` badge it reads as a work estimate for work that can never
+    // start. Frame 17f draws the consequence in that slot instead.
+    const cyclic = renderScaleLadder(documentOf({ components: [40, 30], cycleIn: 1 }));
+    const stuck = cyclic.ladder.capsules.find((capsule) => capsule.reach.kind === 'stuck');
+    assert.ok(stuck !== undefined, 'the fixture declares a cycle');
+    assert.ok(stuck.chainDepth > 0, 'the depth is a real number, which is why this matters');
+    // The whole capsule, so the assertion cannot pass on a sibling's markup.
+    const card = cyclic.markup.match(
+      new RegExp(`<li class="ig-capsule-cell"><button [^>]*data-ig-target="${stuck.lead}".*?</button></li>`),
+    )?.[0];
+    assert.ok(card !== undefined);
+    assert.match(card, />cycle</);
+    assert.match(card, />nothing can start</);
+    // The tint the frame puts on the whole stuck card is a rule on this hook.
+    assert.match(card, /data-reach="stuck"/);
+    assert.equal(/deepest chain/.test(card), false);
+    // THE REACH SLOT, not a bare digit probe over the whole card: the size, the
+    // edge count and the title all carry digits, so a substring test would
+    // false-fail wherever those share one, and pass for the wrong reason on a
+    // fixture whose depth is a digit nothing else uses.
+    const reach = card.match(/<span class="ig-capsule-reach">([^<]*)<\/span>/)?.[1];
+    assert.equal(reach, 'nothing can start');
+    // And the blocking count gives way to the cycle, because on a stuck
+    // component it is not the fact that changes what the reader does.
+    assert.equal(/\u2298/.test(card), false);
+  });
+
+  it('says the size range of the components it left out', () => {
+    const result = renderScaleLadder(
+      documentOf({ components: componentsSumming(CLUSTER_ONLY_BUDGET + 1, 5) }),
+    );
+    // THE FIXTURE'S OWN ARITHMETIC, not the value the renderer was handed.
+    // `componentsSumming(301, 5)` is 59 components of five, one of four and one
+    // of two; the board lists the twelve largest, so what is left out is 47
+    // fives plus the four and the two — 49 components spanning two to five.
+    // Deriving the expected span from `capsulesOmitted` would pin the wording
+    // template and nothing at all about the computation.
+    const omitted = result.ladder.capsulesOmitted;
+    assert.ok(omitted !== null);
+    assert.equal(omitted.count, 49);
+    assert.deepEqual(omitted.range, { smallest: 2, largest: 5 });
+    assert.ok(
+      result.markup.includes('49 further components are not listed \u00b7 2\u20135 issues each.'),
+      'the omitted line does not carry the count and the range',
+    );
   });
 
   it('offers a way back out of a focused component', () => {

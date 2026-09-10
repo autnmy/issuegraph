@@ -36,6 +36,69 @@ export interface Cluster {
   readonly chainDepth: number;
 }
 
+/**
+ * What a component says about how the work inside it runs — the ONE fact a
+ * capsule prints under its name, resolved here so every surface prints the
+ * same one.
+ *
+ * IT IS A UNION BECAUSE THE THREE CASES ARE NOT VARIANTS OF ONE SENTENCE, and
+ * a capsule that could hold two of them printed something untrue. `chainDepth`
+ * is the longest ACYCLIC chain (`chainDepthOf` says so, and a prior round fixed
+ * it to be exactly that), so on a component the host reports as stuck the
+ * number is right about its own question and wrong about the reader's: a small
+ * finite depth beside a `cycle` badge reads as a work estimate — *four issues,
+ * two deep, get going* — when none of the members can ever be ready at all.
+ * §17d calls a cycle "the only finding that stops work outright", and frame
+ * `17f` draws the consequence where every other capsule draws its depth.
+ *
+ * So the depth is not suppressed at the point of drawing, which would leave two
+ * renderers each remembering to. There is no value to suppress: a stuck
+ * component has no `depth` field to print.
+ */
+export type ClusterReach =
+  /** The host reports a cycle through this component. Nothing in it can start. */
+  | { readonly kind: 'stuck' }
+  /** The longest `blocked-by` chain, in edges. At least one. */
+  | { readonly kind: 'chain'; readonly depth: number }
+  /** No `blocked-by` edge at all, so nothing in the component waits on anything. */
+  | { readonly kind: 'unblocked' };
+
+/**
+ * The reach of one component.
+ *
+ * Derived rather than stored, so `Cluster` keeps carrying both raw facts for a
+ * caller asking a different question, and the two cannot disagree.
+ */
+export function clusterReach(cluster: Cluster): ClusterReach {
+  if (cluster.hasCycle) return { kind: 'stuck' };
+  if (cluster.chainDepth === 0) return { kind: 'unblocked' };
+  return { kind: 'chain', depth: cluster.chainDepth };
+}
+
+/**
+ * The reach as the capsule prints it — frame `17f`'s own words.
+ *
+ * THE WORDING LIVES BESIDE THE FACT, for the reason `why-rank` already
+ * establishes on this surface: two renderers drawing one fact must not each
+ * hold their own sentence for it, or the §16 capsule and the §17f capsule
+ * describe the same component differently on one screen.
+ *
+ * Total over the union, so a fourth case cannot be added without a compiler
+ * error here.
+ */
+export function clusterReachLabel(reach: ClusterReach): string {
+  switch (reach.kind) {
+    // The consequence, not the count. The frame draws this where the other
+    // cases draw a number, because it is what changes what the reader does.
+    case 'stuck':
+      return 'nothing can start';
+    case 'chain':
+      return `deepest chain ${String(reach.depth)}`;
+    case 'unblocked':
+      return 'no blocking chain';
+  }
+}
+
 function connectedComponents(
   document: NormalizedDocument,
   drawn: ReadonlySet<string> | undefined,
