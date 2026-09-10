@@ -240,20 +240,20 @@ describe('a component says one thing about how its work runs', () => {
     // reach it; `clustersOf` is a public export taking a value a consumer can
     // build by hand, and the predicate was wrong either way.
     assert.deepEqual(clusterReach(of({ blockedByEdges: 1, chainDepth: 0 })), {
-      kind: 'looped',
+      kind: 'no-chain',
       edges: 1,
     });
     assert.equal(
-      clusterReachLabel({ kind: 'looped', edges: 1 }),
+      clusterReachLabel({ kind: 'no-chain', edges: 1 }),
       '1 blocking edge, none ordering',
     );
     assert.equal(
-      clusterReachLabel({ kind: 'looped', edges: 3 }),
+      clusterReachLabel({ kind: 'no-chain', edges: 3 }),
       '3 blocking edges, none ordering',
     );
   });
 
-  it('a real loop of two or more still has a chain, so only a self-loop reaches looped', () => {
+  it('a real loop of two or more still has a chain, so only a self-loop reaches no-chain', () => {
     // The reason the case above is unreachable, pinned rather than asserted: a
     // cycle of k>1 always leaves at least one edge the walk can follow, so its
     // depth is k-1 and never 0.
