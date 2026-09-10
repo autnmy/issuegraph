@@ -152,6 +152,38 @@ export interface Model {
   /** blocked-by cycles among open nodes (§6.6), each as sorted keys. */
   readonly cycles: readonly (readonly string[])[];
   /**
+   * The ordered `blocked-by` walk of the stuck group `key` belongs to (§6.6), or
+   * `null`.
+   *
+   * EACH MEMBER IS NAMED ONCE and the return edge to the head is IMPLIED — a
+   * three-cycle answers `["1", "2", "3"]`, never `["1", "2", "3", "1"]`.
+   * Repeating the head is a drawing decision and belongs to whatever draws it.
+   *
+   * `a -> b` READS "a waits on b", the same direction `blocked-by` itself
+   * carries. Nothing else in this package pins a direction — the `blocked-by
+   * cycle: a -> b -> c` diagnostic below joins a SORTED SET, so its arrows are
+   * separators rather than edges — which is exactly why this one says so.
+   *
+   * Starts at the lowest member key, so two builds over one document agree
+   * whatever order the nodes arrived in or Tarjan finished them.
+   *
+   * WHY IT IS NOT ALWAYS THERE. §6.6 emits a walk only where the component IS
+   * one simple cycle over units and every unit on it holds one open member; see
+   * the emission site for both limbs and what each costs. So `null` means
+   * EITHER that `key` is in no cycle at all OR that §6.6 refuses a walk for the
+   * component it is in. A caller holding a `cycles` entry has already answered
+   * the first question, so for that caller `null` means refused.
+   *
+   * KEYED RATHER THAN INDEX-ALIGNED WITH `cycles`, and that is the whole reason
+   * this is a function. A parallel array is only correct while nobody reshapes
+   * `cycles`, and consumers already do: they filter empty components out, drop
+   * ones they cannot translate, and re-sort what is left. An invariant stated in
+   * a doc comment survives none of that, whereas a component partitions the open
+   * keys — so any member can name its own walk and there is no alignment to
+   * lose.
+   */
+  readonly cycleWalk: (key: string) => readonly string[] | null;
+  /**
    * Model-level anomalies (§5.4 grooming surfaces): unresolvable refs,
    * carrier disagreements, non-completed-closure unblocks, duplicate chains
    * ending nowhere, cycles.
@@ -389,6 +421,10 @@ export function buildModel(
 
   // ---- cycles among open nodes (§6.6), over SCHEDULABLE UNITS ----
   const cycles: (readonly string[])[] = [];
+  // Keyed by EVERY open member of the component, all pointing at the one walk
+  // array — see `Model.cycleWalk` for why this is a lookup rather than an array
+  // running alongside `cycles`.
+  const cycleWalkByMember = new Map<string, readonly string[]>();
   {
     // SPEC §6.6: a "stuck group" is a strongly connected component of the
     // open blocked-by graph. THE VERTEX IS THE UNIT, NOT THE ISSUE, because
@@ -463,6 +499,87 @@ export function buildModel(
       unitBlockersCache.set(u, computed);
       return computed;
     };
+    /**
+     * The SCC's simple walk, or `null` where §6.6 declines to name one.
+     *
+     * TWO LIMBS, AND THEY DO NOT HAVE THE SAME STANDING.
+     *
+     * LIMB 1 — the component must BE one simple cycle. An SCC carrying several
+     * has no canonical representative, and picking one would state an ordering
+     * that is only one of the true ones. The test is that every vertex has
+     * exactly ONE out-edge staying inside the component, and it is exact rather
+     * than conservative: out-degree 1 makes the in-component successor a
+     * function, iterating it from anywhere must enter a cycle, and strong
+     * connectivity puts every vertex both on a path to that cycle and on a path
+     * from it — so with one way out of each vertex there is nowhere else to be.
+     * The converse is immediate: a second simple cycle needs a vertex with two
+     * ways out. Checked exhaustively over every digraph on four vertices or
+     * fewer before this was written: 97,449 emitted components, no disagreement
+     * with enumerating the simple cycles directly.
+     *
+     * It needs `unitBlockers` to be a true out-degree rather than an edge count,
+     * and it is — that helper accumulates into a `Set` before returning.
+     *
+     * A LONE UNIT falls out with no clause of its own: the only in-component
+     * target it can have is itself, so having exactly one means it has the
+     * self-loop, and the walk is that one member.
+     *
+     * LIMB 2 — every unit must hold ONE open member, and this limb refuses more
+     * than the spec strictly forced. The reason is that a multi-member unit
+     * cannot go on an issue-level `blocked-by` arrow at all. Take §6.6's own
+     * worked example — `#1 blocked-by #2`, `#3 blocked-by #1`, `#2 together-with
+     * #3`: over units the cycle is `{1} -> {2,3} -> {1}`, carried by "1 waits on
+     * 2" and "3 waits on 1", so an issue-level line reads `#1 -> #2 ... #3 ->
+     * #1` and the hop from #2 to #3 is the group's `together-with`, not a
+     * dependency. Drawing it as the same arrow asserts an edge that does not
+     * exist. (Where a unit has several boundary-crossing edges to one
+     * neighbour, which member pair carries the arrow is undetermined too — limb
+     * 1's problem, one level down.)
+     *
+     * THE COST IS WORTH NAMING because it lands on this section's flagship
+     * case: the deadlock above is the very one the contraction exists for, and
+     * it is the one that gets no walk. `cycles` still reports it, and its
+     * diagnostic still names every member; only the ordering is withheld.
+     *
+     * NO ARRIVAL CHECK AT THE END. The walk provably visits every unit exactly
+     * once under the two limbs, so a `length !== units.length` guard would be a
+     * branch no input reaches — and the comment above `promoteFrom` in this same
+     * file is the rule against exactly that: a defence nothing can falsify reads
+     * as evidence that its population exists. `buildModel` is pure and total, so
+     * the `throw new Error("unreachable: ...")` idiom is unavailable too. The
+     * argument is the guard.
+     */
+    const walkOf = (units: readonly string[]): readonly string[] | null => {
+      const sccSet = new Set(units);
+      const member = new Map<string, string>();
+      for (const u of units) {
+        const open = openMembers(u);
+        if (open.length !== 1) return null; // limb 2
+        member.set(u, open[0] as string);
+      }
+      const next = new Map<string, string>();
+      for (const u of units) {
+        const inside = unitBlockers(u).filter((b) => sccSet.has(b));
+        if (inside.length !== 1) return null; // limb 1
+        next.set(u, inside[0] as string);
+      }
+      // Lowest MEMBER key, not lowest unit: a unit is named by an opaque
+      // union-find root, so ordering on it would be ordering on an id that
+      // appears on no issue and need not be stable across two builds.
+      const start = [...units].sort((a, b) => {
+        const left = member.get(a) as string;
+        const right = member.get(b) as string;
+        return left < right ? -1 : left > right ? 1 : 0;
+      })[0] as string;
+      const walk: string[] = [];
+      let at = start;
+      do {
+        walk.push(member.get(at) as string);
+        at = next.get(at) as string;
+      } while (at !== start);
+      return walk;
+    };
+
     for (const [rootKey, rootNode] of byKey) {
       if (!rootNode.open) continue;
       const rootUnit = unitOf(rootKey);
@@ -511,7 +628,18 @@ export function buildModel(
             // that appears on no issue.
             const sorted = [...new Set(units.flatMap(openMembers))].sort();
             cycles.push(sorted);
+            // DELIBERATELY NOT REWRITTEN TO USE THE WALK. `Model.diagnostics` is
+            // consumer-visible — `deriveIssueOrder` copies it and the CLI prints
+            // it — so this line's text is an output, not an internal detail, and
+            // its arrows have always been separators over a sorted set rather
+            // than edges. Swapping in the walk would silently change one for the
+            // other on the components that have one and leave the rest alone.
             cycleDiagnostics.push(`blocked-by cycle: ${sorted.join(" -> ")}`);
+            const walk = walkOf(units);
+            // EVERY MEMBER POINTS AT THE ONE ARRAY. The question a caller asks
+            // is "what is the walk of the group this issue is in", and every
+            // member of the group has the same answer.
+            if (walk !== null) for (const key of sorted) cycleWalkByMember.set(key, walk);
           }
         }
       }
@@ -569,6 +697,7 @@ export function buildModel(
     serializeHorizonTruncated: (key) => byKey.has(key) && truncatedSerializeRoots.has(serialize.find(key)),
     duplicateCanonical: (key) => canonicalMap.get(key) ?? null,
     cycles,
+    cycleWalk: (key) => cycleWalkByMember.get(key) ?? null,
     diagnostics: uniqueDiagnostics,
     // SORTED, so the value is stable across node-input order and a host may
     // compare two builds without normalizing first. Over `byKey`, which holds

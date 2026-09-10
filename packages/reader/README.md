@@ -100,6 +100,7 @@ model.serializeComponent('231'); // the computed group — groups are never writ
 model.serializeHorizonTruncated('231'); // a member's serialize-with left the node set, so the group's extent is unknown
 model.duplicateCanonical('240'); // where a duplicate-of chain lands
 model.cycles;                    // blocked-by cycles among open nodes
+model.cycleWalk('544');          // that stuck group's order — #544 waits on #551 waits on … — or null
 model.diagnostics;               // unresolvable refs, carrier disagreements, dead chains
 ```
 

@@ -65,7 +65,11 @@ function asNodes(document: GraphDocument): readonly NodeInput[] {
  */
 function graphOf(document: GraphDocument): AuditGraph {
   const model = buildModel(asNodes(document));
-  return { cycles: model.cycles, duplicateCanonical: model.duplicateCanonical };
+  return {
+    cycles: model.cycles,
+    duplicateCanonical: model.duplicateCanonical,
+    cycleWalk: model.cycleWalk,
+  };
 }
 
 function kindsOf(findings: readonly AuditFinding[]): readonly AuditClass[] {
@@ -823,5 +827,123 @@ describe('the detector is pure and total', () => {
     const document = documentOf([issue('a')], []);
     const empty: AuditGraph = { cycles: [[]], duplicateCanonical: () => null };
     assert.deepEqual(auditDocument({ document, graph: empty }), []);
+  });
+});
+
+describe('the cycle walk, composed rather than derived', () => {
+  it('carries the reader\'s walk onto the finding it belongs to', () => {
+    // TWO components, and the assertion is that each finding gets its OWN.
+    // `cycleFindings` filters and sorts before it builds, so a walk paired by
+    // POSITION would have been silently mismatched here — which is why the port
+    // is keyed by ref rather than index-aligned with `cycles`.
+    const document = documentOf(
+      [issue('m'), issue('n'), issue('a'), issue('b')],
+      [
+        ['blocked-by', 'm', 'n'],
+        ['blocked-by', 'n', 'm'],
+        ['blocked-by', 'a', 'b'],
+        ['blocked-by', 'b', 'a'],
+      ],
+    );
+    const cycles = only(auditDocument({ document, graph: graphOf(document) }), 'cycle');
+    assert.equal(cycles.length, 2);
+    for (const found of cycles) {
+      assert.deepEqual([...(found.walk ?? [])].sort(), [...found.members]);
+    }
+  });
+
+  it('carries no walk when the host wired no reader answer', () => {
+    // SPEC §6.6 makes the walk optional for a conforming reader, so a graph
+    // without it must produce exactly the findings that shipped before the
+    // field existed — not a throw, and not an empty array.
+    const document = documentOf(
+      [issue('a'), issue('b')],
+      [
+        ['blocked-by', 'a', 'b'],
+        ['blocked-by', 'b', 'a'],
+      ],
+    );
+    const { cycleWalk: _omitted, ...withoutWalk } = graphOf(document);
+    const found = only(auditDocument({ document, graph: withoutWalk }), 'cycle');
+    assert.equal(found.length, 1);
+    assert.equal(found[0]?.walk, undefined);
+    // The rest of the finding is untouched by the absence.
+    assert.deepEqual(found[0]?.members, ['a', 'b']);
+  });
+
+  it('carries no walk where the reader answered null', () => {
+    const document = documentOf(
+      [issue('a'), issue('b')],
+      [
+        ['blocked-by', 'a', 'b'],
+        ['blocked-by', 'b', 'a'],
+      ],
+    );
+    const found = only(
+      auditDocument({ document, graph: { ...graphOf(document), cycleWalk: () => null } }),
+      'cycle',
+    );
+    assert.equal(found[0]?.walk, undefined);
+  });
+
+  it('leaves detail and members byte-identical to a walk-free reading', () => {
+    // The walk is drawn as its own line, so nothing about the sentence or the
+    // member set may move when one arrives. `panel.ts` records why.
+    const document = documentOf(
+      [issue('a'), issue('b'), issue('c')],
+      [
+        ['blocked-by', 'a', 'b'],
+        ['blocked-by', 'b', 'c'],
+        ['blocked-by', 'c', 'a'],
+      ],
+    );
+    const graph = graphOf(document);
+    const { cycleWalk: _omitted, ...withoutWalk } = graph;
+    const withWalk = only(auditDocument({ document, graph }), 'cycle')[0];
+    const without = only(auditDocument({ document, graph: withoutWalk }), 'cycle')[0];
+    assert.ok(withWalk?.walk !== undefined);
+    assert.equal(withWalk?.detail, without?.detail);
+    assert.deepEqual(withWalk?.members, without?.members);
+  });
+
+  it('holds a copy the host can no longer reach', () => {
+    // `cycleWalk` is a HOST function, so without a copy the finding would hold
+    // an array its caller still owns — the same argument `members` is frozen
+    // on, one field over.
+    const document = documentOf(
+      [issue('a'), issue('b')],
+      [
+        ['blocked-by', 'a', 'b'],
+        ['blocked-by', 'b', 'a'],
+      ],
+    );
+    const mutable: IssueRef[] = ['a', 'b'];
+    const found = only(
+      auditDocument({ document, graph: { ...graphOf(document), cycleWalk: () => mutable } }),
+      'cycle',
+    )[0];
+    mutable.reverse();
+    mutable.push('zzz');
+    assert.deepEqual(found?.walk, ['a', 'b']);
+    assert.ok(Object.isFrozen(found?.walk));
+  });
+
+  it('does NOT sort or deduplicate the walk — the order is the value', () => {
+    const document = documentOf(
+      [issue('a'), issue('b'), issue('c')],
+      [
+        ['blocked-by', 'a', 'b'],
+        ['blocked-by', 'b', 'c'],
+        ['blocked-by', 'c', 'a'],
+      ],
+    );
+    const found = only(
+      auditDocument({
+        document,
+        graph: { ...graphOf(document), cycleWalk: () => ['c', 'a', 'b'] },
+      }),
+      'cycle',
+    )[0];
+    assert.deepEqual(found?.walk, ['c', 'a', 'b']);
   });
 });

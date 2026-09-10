@@ -330,6 +330,157 @@ describe("overlapping cycles (SPEC 6.6 stuck groups)", () => {
     assert.deepEqual(m.cycles, [["9"]]);
   });
 
+  test("names the walk of a plain 3-ring, from its lowest member", () => {
+    // The frame's own shape: three issues, no together-with. `1 waits on 2`,
+    // `2 waits on 3`, `3 waits on 1` — so the walk reads in blocked-by
+    // direction and every member answers with the same one.
+    const m = buildModel([
+      node(1, { data: { blockedBy: [ref(2)] } }),
+      node(2, { data: { blockedBy: [ref(3)] } }),
+      node(3, { data: { blockedBy: [ref(1)] } }),
+    ]);
+    assert.deepEqual(m.cycleWalk("1"), ["1", "2", "3"]);
+    // THE HEAD IS NAMED ONCE. Repeating it is a drawing decision, and a reader
+    // that encoded `["1","2","3","1"]` would hand every consumer the choice
+    // this field exists to have already made.
+    assert.equal(m.cycleWalk("1")?.length, 3);
+    assert.deepEqual(m.cycleWalk("2"), ["1", "2", "3"]);
+    assert.deepEqual(m.cycleWalk("3"), ["1", "2", "3"]);
+  });
+
+  test("names the same walk whatever order the nodes arrived in", () => {
+    // Determinism is the whole reason the walk starts at the lowest MEMBER key
+    // rather than wherever Tarjan finished. Node order moves `byKey` insertion
+    // order, which moves the DFS, which moves the emission order.
+    //
+    // ON A RING WHOSE ORDER IS NOT THE SORTED ORDER, so "both agree" is a claim
+    // about the walk rather than a claim about `sort` being deterministic.
+    const forward = buildModel([
+      node(10, { data: { blockedBy: [ref(9)] } }),
+      node(9, { data: { blockedBy: [ref(100)] } }),
+      node(100, { data: { blockedBy: [ref(10)] } }),
+    ]);
+    const reversed = buildModel([
+      node(100, { data: { blockedBy: [ref(10)] } }),
+      node(9, { data: { blockedBy: [ref(100)] } }),
+      node(10, { data: { blockedBy: [ref(9)] } }),
+    ]);
+    assert.deepEqual(forward.cycleWalk("9"), reversed.cycleWalk("9"));
+    assert.deepEqual(reversed.cycleWalk("9"), ["10", "9", "100"]);
+  });
+
+  test("names NO walk for a component carrying several simple cycles", () => {
+    // Limb 1, on the same fixture the SCC test above uses: 1 -> 2 -> 1 and
+    // 2 -> 3 -> 2 overlap at 2. Two simple cycles, no canonical representative,
+    // and §17d draws one line — so the reader declines rather than picking.
+    // `cycles` is unaffected: the stuck group is still reported in full.
+    const m = buildModel([
+      node(1, { data: { blockedBy: [ref(2)] } }),
+      node(2, { data: { blockedBy: [ref(1), ref(3)] } }),
+      node(3, { data: { blockedBy: [ref(2)] } }),
+    ]);
+    assert.deepEqual(m.cycles, [["1", "2", "3"]]);
+    assert.equal(m.cycleWalk("1"), null);
+    assert.equal(m.cycleWalk("2"), null);
+  });
+
+  test("names NO walk when one member of a ring carries a second inside blocker", () => {
+    // The chord case, and the reason the test is out-degree rather than "is
+    // there a cycle": 1 -> 2 -> 3 -> 1 is a ring, and 1 -> 3 turns it into two.
+    const m = buildModel([
+      node(1, { data: { blockedBy: [ref(2), ref(3)] } }),
+      node(2, { data: { blockedBy: [ref(3)] } }),
+      node(3, { data: { blockedBy: [ref(1)] } }),
+    ]);
+    assert.equal(m.cycles.length, 1);
+    assert.equal(m.cycleWalk("1"), null);
+  });
+
+  test("names a self-loop's walk as its one member", () => {
+    // A lone unit needs no clause of its own: the only in-component target it
+    // can have is itself, so exactly one means the self-loop.
+    const m = buildModel([node(9, { data: { blockedBy: [ref(9)] } })]);
+    assert.deepEqual(m.cycleWalk("9"), ["9"]);
+  });
+
+  test("names NO walk for a cycle running THROUGH a together unit", () => {
+    // Limb 2, on §6.6's own worked example — and this is the case the whole
+    // contraction argument rests on, so the cost is worth stating where it can
+    // be read: the flagship stuck group is the one that gets no arrow.
+    //
+    // Over units the cycle is {1} -> {2,3} -> {1}, carried by "1 waits on 2"
+    // and "3 waits on 1". An issue-level line would have to hop from #2 to #3
+    // across the group's own together-with, which is not a dependency — so the
+    // arrow would assert an edge that does not exist.
+    const m = buildModel([
+      node(1, { data: { blockedBy: [ref(2)] } }),
+      node(2, { data: { togetherWith: ref(3) } }),
+      node(3, { data: { blockedBy: [ref(1)] } }),
+    ]);
+    // The group is still REPORTED in full. Only the ordering is withheld.
+    assert.deepEqual(m.cycles, [["1", "2", "3"]]);
+    assert.equal(m.cycleWalk("1"), null);
+    assert.equal(m.cycleWalk("2"), null);
+    assert.equal(m.cycleWalk("3"), null);
+  });
+
+  test("still names a walk when a ring member is blocked from OUTSIDE the ring", () => {
+    // The out-degree test counts in-component edges only. A ring whose member
+    // also waits on an unrelated open issue is still exactly one simple cycle,
+    // and refusing it would lose the common case to an irrelevant edge.
+    const m = buildModel([
+      node(1, { data: { blockedBy: [ref(2)] } }),
+      node(2, { data: { blockedBy: [ref(3)] } }),
+      node(3, { data: { blockedBy: [ref(1), ref(4)] } }),
+      node(4),
+    ]);
+    assert.deepEqual(m.cycleWalk("1"), ["1", "2", "3"]);
+  });
+
+  test("answers null for a key in no cycle and for a key it does not hold", () => {
+    const m = buildModel([node(1, { data: { blockedBy: [ref(2)] } }), node(2)]);
+    assert.deepEqual(m.cycles, []);
+    assert.equal(m.cycleWalk("1"), null);
+    assert.equal(m.cycleWalk("404"), null);
+  });
+
+  test("names the RING order, which is not the sorted order", () => {
+    // THE FIXTURE THAT ACTUALLY PINS THIS FEATURE, and it has to be chosen
+    // deliberately: on `1 -> 2 -> 3` the walk and the sorted member list are the
+    // same array, so every assertion about ordering passes against an
+    // implementation that simply sorts. Keys "10", "100", "9" sort as
+    // 10 < 100 < 9 while the ring runs 10 -> 9 -> 100, so the two answers
+    // disagree and only the real walk satisfies this.
+    const m = buildModel([
+      node(10, { data: { blockedBy: [ref(9)] } }),
+      node(9, { data: { blockedBy: [ref(100)] } }),
+      node(100, { data: { blockedBy: [ref(10)] } }),
+    ]);
+    assert.deepEqual(m.cycles, [["10", "100", "9"]]);
+    assert.deepEqual(m.cycleWalk("10"), ["10", "9", "100"]);
+    // Same walk from every member: the group's answer, not the asker's.
+    assert.deepEqual(m.cycleWalk("9"), ["10", "9", "100"]);
+    assert.deepEqual(m.cycleWalk("100"), ["10", "9", "100"]);
+  });
+
+  test("leaves the cycle diagnostic's text alone", () => {
+    // `Model.diagnostics` is consumer-visible, so the diagnostic is an output
+    // and not an internal detail. Its arrows join a SORTED SET and always have;
+    // the walk is a different answer and does not get to redefine them.
+    //
+    // ON THE DISCRIMINATING RING, or this test defends nothing: where the ring
+    // order IS the sorted order the two strings are identical and the assertion
+    // passes whichever one the code emitted.
+    const m = buildModel([
+      node(10, { data: { blockedBy: [ref(9)] } }),
+      node(9, { data: { blockedBy: [ref(100)] } }),
+      node(100, { data: { blockedBy: [ref(10)] } }),
+    ]);
+    assert.deepEqual(m.cycleWalk("10"), ["10", "9", "100"]);
+    assert.ok(m.diagnostics.includes("blocked-by cycle: 10 -> 100 -> 9"));
+    assert.ok(!m.diagnostics.includes("blocked-by cycle: 10 -> 9 -> 100"));
+  });
+
   test("reports a plain 3-ring whose middle nodes have no direct back-edge", () => {
     const m = buildModel([
       node(1, { data: { blockedBy: [ref(2)] } }),
