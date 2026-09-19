@@ -390,7 +390,57 @@ one removes.
 
 ---
 
+## 5b. Which of those wait on Design, and which do not
+
+**Status 2026-09-19: the owner has taken section 4's questions to Design and the
+sweep is on hold until they answer.** That is the right call and it is what this
+document was for. This section exists so the sweep can be *ordered* the moment the
+answers land, instead of re-read from the top.
+
+Of the ~40 actionable items in section 5, **eleven are at risk** from one of the four
+questions and the rest are not. A question's answer can only move the items under it.
+
+| Question | Items it can move | Why |
+|---|---|---|
+| **Q1** — held rank, together-unit row | **1, 2, 51, 52**, and the heading in **13** | These *are* the rail row shape. Do not touch row geometry until Q1 lands, or the row gets rebuilt twice. |
+| **Q2** — the audit filter's effect on the rail | **33**, and the control in **5** | If Design says the filter refuses to engage rather than emptying the rail, the control itself changes. |
+| **Q3** — audit zone, remedies, card line order | **19, 34, 35, 36, 38**, and possibly **8** | Q3 decides whether the audit keeps a share of the inspector zone, which is an input to the zone proportions. |
+| **Q4** — capsule name, the `NOW` block | **7, 42** | Both are elements Design has not ruled on at all; one may be deleted outright. |
+
+**Everything else can be swept on Design's existing frames, today, with no risk of
+rework.** That includes the whole of Tier 2 except the `WHY HELD` heading, and all of
+Tier 3 except the audit-card items. Named, so nobody has to re-derive it:
+
+> **3** provenance off the rail row · **4** `WORK ORDER` heading · **6** the doubled
+> legend · **9** header counts · **10** the missing space before `refresh` · **11** the
+> solid-cyan budget · **12** the `WHY RANK` sentence · **14** the deep-link chip ·
+> **15** standing `ADD RELATIONSHIP` · **16** the key numbers · **17** the field-name
+> labels · **18** `✕` · **21** `⇅ flip` · **24c** `view diff` in the writes strip ·
+> **25–28** the change summary's cause, total and `undo` · **29** `▲n`/`▼n` chips ·
+> **30** the `◆` glyph · **32** `aria-pressed` · **37** the cycle walk · **39–41**,
+> **44–46** the scale surface · **47–50** the canvas projection.
+
+Two of those deserve a flag even inside the safe set. **16** — the kind key numbers —
+is the one item here that actively trains the wrong reflex every day it ships, and it
+is a four-line change. **12** is two lines of CSS plus a words change, and it is the
+single most visible defect in the product: two clauses colliding mid-word in the
+inspector's headline sentence.
+
+**47** is the one item in the safe set that is a build rather than a fix — the canvas
+draws §16's column spine where §17a wants a focused neighbourhood. Size it separately
+from the sweep.
+
+---
+
 ## 6. Recommendation
+
+> **Decided 2026-09-19, after this was written.** The owner took section 4's
+> questions to Claude Design and put the sweep on hold until they answer. The
+> recommendation below is left as written, because its reasoning is still the input
+> to what gets ordered when the answers land — and because a recommendation edited
+> to agree with the decision that followed it is worth nothing to the next reader.
+> [Section 5b](#5b-which-of-those-wait-on-design-and-which-do-not) says which items
+> the hold actually binds: eleven of about forty.
 
 **Order the sweep now. Send design the four questions in parallel. Do not wait on
 design to start.**
