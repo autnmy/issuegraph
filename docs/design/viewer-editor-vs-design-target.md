@@ -19,27 +19,28 @@ second sweep can be correct. Both lists are here.
 | Implementation | `demo/` on this branch, built from `packages/viewer@0.8.2` and `packages/editor@0.21.0` |
 | Design frames | `Descant Dashboard.dc.html`, tiles `17a`–`17h` and `16a`–`16i` |
 | Reference prototype | `Relationship Editor Prototype.dc.html` |
-| Written spec | the kit's own `SPEC.md` and `START_HERE.md` |
+| Written spec | the kit's `SPEC.md` and `START_HERE.md`, **including the 2026-08-22 amendment** |
+| Kit | `~/GitHub/autnmy/descant-design-kits/` (canonical); §16/§17 tiles verified identical to the 2026-08-18 copy |
 | Viewport | 1440 × 900 for every capture, both sides |
 
-### A caveat that has to go first
+### Which kit, and why it stopped mattering
 
-Issue [#122](https://github.com/autnmy/issuegraph/issues/122) names the source of
-truth as
-`/Users/timlayton/GitHub/autnmy/descant-design-kits/design_handoff_issue_relationships/`.
-**That directory does not exist on this machine, and neither does
-`descant-design-kits`.** The only copy here is
-`/Users/timlayton/Downloads/design_handoff_issue_relationships/`, dated
-**2026-08-18** — and #122 says in as many words that a copy under `~/Downloads/`
-is stale, and tells the reader to use "`START_HERE.md` and its **2026-08-22
-amendment**". No file in that folder carries a 2026-08-22 amendment.
+This was measured first against the only copy then on the machine —
+`~/Downloads/design_handoff_issue_relationships/`, dated **2026-08-18** — because
+the path issue [#122](https://github.com/autnmy/issuegraph/issues/122) names as the
+source of truth, `~/GitHub/autnmy/descant-design-kits/`, did not exist. #122 calls
+any `~/Downloads/` copy stale and points at a "2026-08-22 amendment" that appeared
+in no file in it. The owner ruled: use it, carry on.
 
-So this report is measured against a kit the tracking issue itself calls stale. An
-ask is open with the owner to confirm. Most of what follows is structural — row
-density, zone balance, key bindings, missing controls — and a later amendment is
-unlikely to move it, but **anything below could be overturned by a kit I have not
-seen.** Say so to design when you hand this over; "your own tracking issue points
-at a folder that isn't there" is a finding in its own right.
+**The canonical repo was then cloned, and the two were compared. Every `§16` and
+`§17` tile is identical, character for character** — all seventeen, by normalised
+text diff of the extracted tile markup. `Relationship Editor Prototype.dc.html` is
+byte-identical. So **nothing in section 3 below moves.** The frames this report
+measures are the frames design shipped.
+
+What the canonical kit does add is the **2026-08-22 amendment**, in `START_HERE.md`
+and `SPEC.md` §17g. It is architecture, not visuals — and the implementation
+already meets it. That is [section 2b](#2b-the-2026-08-22-amendment-already-met).
 
 ### Reproducing it
 
@@ -82,6 +83,40 @@ implementation has turned the rail into a stack of explanations and left the
 inspector to repeat them. That is what "confusing as hell" is measuring. It is not
 a missing-features problem. It is a **hierarchy** problem, and hierarchy is the one
 thing the frames encode that prose cannot.
+
+---
+
+## 2b. The 2026-08-22 amendment — already met
+
+The canonical kit carries an owner amendment the 2026-08-18 copy does not. It
+retires the premise that these were features inside Descant's dashboard: **layers 1
+*and* 2 — viewer core and editor — ship as OSS packages in `autnmy/issuegraph`**,
+and only layer 3 (shell, nav, brand) stays Descant's. It names two contracts the
+original kit did not, and restates one rule as load-bearing.
+
+**Every one of them is already satisfied.** Recorded here because it is the half of
+this report that is good news, and because it changes what the gaps in section 3
+mean.
+
+| Amendment requirement | Status | Evidence |
+|---|---|---|
+| **Don't target `apps/dashboard`'s stack** — "cannot assume a consumer runs shadcn, Tailwind v4, Next 15 or the App Router" | **met** | the packages are framework-free TypeScript emitting HTML strings; `check:isolation` and the ESLint import rules enforce it mechanically |
+| **BYO-Theme** — the package *ships* a theme, it does not *have* one; all values exposed as CSS custom properties, editor included | **met** | `packages/viewer/src/theme.ts`; the demo retimes the whole workspace, editor and all, with its `default` / `paper` toggle |
+| **BYO-DataSource** — client store, host pipes a source in through an adapter; no fetching, no auth, no mutation of its own | **met** | `@issuegraph/store` takes the deriver and the source as ports; the demo runs on an in-memory backlog |
+| **The demo is the proof the port is real** — "no GitHub App, no auth, no backend" | **met** | `node demo/serve.mjs` from a clean checkout, no credentials |
+| **A failure does not silently revert the UI** — it is *marked*, per §17b | **met** | armed a reject: the edge stays, marked `✕ This edit was refused` with `retry` / `discard mine` |
+| **Conflict offers view diff / retry on latest / discard mine, never auto-merge** | **met** | armed a conflict: all three offered, no merge |
+| **Optimistic rendering yes, optimistic re-ordering no** | **met** | through pending, refused and conflicted writes the subject held `WHY RANK 4` — the order never moved on an unlanded edit |
+
+One small inconsistency found while testing: the in-flight writes strip offers
+`retry on latest` and `discard mine` on a conflict but omits `view diff`, which the
+inspector does show. One missing control, `packages/editor/src/overlay/render.ts`.
+
+**Why this matters to the recommendation.** The architecture design asked for in
+August is built and provably working, including the parts that are easiest to fake
+and hardest to retrofit. What is wrong is downstream of all of it. That is the
+difference between a sweep and a rebuild, and it is now measured rather than
+assumed.
 
 ---
 
@@ -129,7 +164,9 @@ undefined (the state exists at runtime and design never said what it does).
 | 21 | Flip control | `⇅ flip` beside the sentence, because *"which way round" is the single most common encoding mistake* | **no flip control anywhere in the create flow** | **SI** |
 | 22 | Canvas create path | select source → drag from edge port → picker at drop point | not reachable in the demo; the canvas draws §16's three-column spine, which has no edge ports | **SI** |
 | 23 | Keyboard `R` | opens the picker from a selected issue | did not open the picker from a focused rail row in this run; `+ add` works. (CHANGELOG records one fix in this area already) | **SI** |
-| 24 | Edge mutation states | five overlays — selected / pending-write / invalid / failed / conflict | all five exist in `overlay/`; none reachable in the demo's rail or column canvas, only on a drawn graph edge | **BU** — see Q4 |
+| 24 | Edge mutation states, on a graph edge | five overlays — selected / pending-write / invalid / failed / conflict | all five exist in `overlay/`; not reachable as *edge* overlays in the demo, because its canvas draws §16's column spine and not a graph with edges to overlay | **BU** — see Q4 |
+| 24b | The same states in the rail and inspector | design does not draw them outside the canvas | **implemented and correct** — pending, refused and conflicted all render with their controls, and the order does not move. See [2b](#2b-the-2026-08-22-amendment-already-met) | — ok |
+| 24c | Conflict controls in the writes strip | `view diff` · `retry on latest` · `discard mine` | the strip offers two; `view diff` appears only in the inspector | **SI** |
 
 ### 3.4 The re-evaluate loop (§17c)
 
@@ -292,12 +329,19 @@ being worked right now" may be worse — but the answer is design's, and right n
 the implementation has answered it unilaterally and put it in the best seat on the
 page.
 
-**One more, smaller:** §17b's five mutation states are built
-(`packages/editor/src/overlay/`) and unreachable, because the demo's canvas draws
-the §16 spine rather than a graph with edges to overlay. Design does not need to
-re-specify them. Design does need to say what a pending, failed or conflicted edge
-looks like **in the rail and the inspector**, which is where a user without a graph
-canvas will meet it.
+**One more, smaller.** §17b draws the five mutation states as overlays **on a graph
+edge**. They are built (`packages/editor/src/overlay/`), and as edge overlays they
+are unreachable today because the demo's canvas draws the §16 spine rather than a
+graph — that resolves itself when gap 47 does.
+
+But the implementation already had to answer a question design never asked: **what a
+pending, failed or conflicted edit looks like in the rail and the inspector**, which
+is where a user meets it when no graph is on screen. It answered well — the tests in
+[2b](#2b-the-2026-08-22-amendment-already-met) pass — so this is not a gap. It is an
+undrawn surface that now has a de-facto design. Design should look at it and either
+bless it or draw it, because the 2026-08-22 amendment made failure and conflict
+feedback explicitly load-bearing, and right now the only spec for two thirds of it is
+the running code.
 
 ---
 
@@ -339,6 +383,7 @@ one removes.
 | 32 | Make `aria-pressed` track the audit toggle. | `packages/editor/src/audit/surface.ts` |
 | 11 | Take solid cyan off the `NOW` badge and the count chips; leave it to `First pass →` and the active toggle. | `packages/editor/src/workspace/styles.ts` |
 | 21 | Add the `⇅ flip` control beside the direction sentence. | `packages/editor/src/picker/render.ts` |
+| 24c | Add `view diff` to the conflict controls in the writes strip; the inspector already has it. | `packages/editor/src/overlay/render.ts` |
 | 34, 35, 37 | Finding cards lead with the specific fact; add the rationale paragraph; draw the cycle as a walk on every card, not a set on some. | `packages/editor/src/audit/panel.ts` |
 | 41, 44, 45, 49 | Collapse the capsule tail to `+ n more`; move the isolated chip onto the canvas; add the canvas filter chips; state `focus: #N · 1 hop · n of m shown`. | `packages/editor/src/scale/render.ts` |
 | 47, 48 | The larger one: the canvas draws §16's three-column spine where §17a wants a focused neighbourhood with a `Graph / List` toggle. This is a projection change, not a restyle — size it before scheduling it. | `packages/viewer/src/projections/graph.ts`, `packages/editor/src/workspace/render.ts` |
@@ -365,6 +410,13 @@ the parts and lost the hierarchy. That is a sweep, not a rebuild, and it is why 
 design detail on *what* to build would not have helped: design's error, where it
 made one, was not under-specifying the parts.
 
+**Section 2b is the strongest evidence for that.** The 2026-08-22 amendment's
+contracts — BYO-Theme, BYO-DataSource, a demo that runs with no backend, a failed
+write that is marked and never silently reverted, a conflict that never auto-merges,
+an order that does not move on an unlanded edit — are the expensive, structural,
+easy-to-fake half of this build, and all of them hold under test. Nobody should
+re-open the architecture on the strength of how the rail looks.
+
 **But the four questions are real, and three have already been answered
 unilaterally.** The held-rank rule, the together-unit row, the audit's zone, the
 `NOW` block — an implementer hit each one, found the frame and the prose disagreeing,
@@ -389,5 +441,5 @@ of it.
 ---
 
 *Measured by side-issuegraph-ux-1 against `viewer@0.8.2` / `editor@0.21.0` and the
-2026-08-18 design kit. Screenshots: [`evidence/2026-09-19/`](./evidence/2026-09-19/).
-No implementation change was made.*
+`descant-design-kits` kit including its 2026-08-22 amendment. Screenshots:
+[`evidence/2026-09-19/`](./evidence/2026-09-19/). No implementation change was made.*
