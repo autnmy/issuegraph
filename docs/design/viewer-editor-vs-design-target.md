@@ -1,0 +1,393 @@
+# The viewer and the editor against their design target
+
+**Measured 2026-09-19 · side-issuegraph-ux-1 · no code changed**
+
+This is a read of what ships against what design drew. It answers one question the
+owner asked: why does the running thing look so little like the target, and what
+would most help — another implementation sweep, or more from design first.
+
+The short answer is at the bottom. It is **neither one alone**: one sweep would fix
+most of what is wrong, and four questions must come back from design before a
+second sweep can be correct. Both lists are here.
+
+---
+
+## 1. What was measured, and against what
+
+| | |
+|---|---|
+| Implementation | `demo/` on this branch, built from `packages/viewer@0.8.2` and `packages/editor@0.21.0` |
+| Design frames | `Descant Dashboard.dc.html`, tiles `17a`–`17h` and `16a`–`16i` |
+| Reference prototype | `Relationship Editor Prototype.dc.html` |
+| Written spec | the kit's own `SPEC.md` and `START_HERE.md` |
+| Viewport | 1440 × 900 for every capture, both sides |
+
+### A caveat that has to go first
+
+Issue [#122](https://github.com/autnmy/issuegraph/issues/122) names the source of
+truth as
+`/Users/timlayton/GitHub/autnmy/descant-design-kits/design_handoff_issue_relationships/`.
+**That directory does not exist on this machine, and neither does
+`descant-design-kits`.** The only copy here is
+`/Users/timlayton/Downloads/design_handoff_issue_relationships/`, dated
+**2026-08-18** — and #122 says in as many words that a copy under `~/Downloads/`
+is stale, and tells the reader to use "`START_HERE.md` and its **2026-08-22
+amendment**". No file in that folder carries a 2026-08-22 amendment.
+
+So this report is measured against a kit the tracking issue itself calls stale. An
+ask is open with the owner to confirm. Most of what follows is structural — row
+density, zone balance, key bindings, missing controls — and a later amendment is
+unlikely to move it, but **anything below could be overturned by a kit I have not
+seen.** Say so to design when you hand this over; "your own tracking issue points
+at a folder that isn't there" is a finding in its own right.
+
+### Reproducing it
+
+```bash
+pnpm install && pnpm run build && node demo/serve.mjs
+```
+
+Then open `http://127.0.0.1:8000/demo/` and, in a second tab, the two `.dc.html`
+files from the kit over any static server. Screenshots at 1440 × 900 are in
+[`evidence/2026-09-19/`](./evidence/2026-09-19/).
+
+---
+
+## 2. The headline, before the table
+
+Three numbers carry most of the owner's complaint.
+
+**A rail row is 53 pixels in the frame and 134–408 pixels in the implementation.**
+Every frame row is exactly 53px and exactly four lines: rank · title · one
+metadata line · one delta chip. Implementation rows run 8 to 22 lines and average
+**217px — 4.1× the frame, and 7.7× on the worst row.** Six frame rows occupy
+318px. Eight implementation rows occupy **1,733px inside a 570px zone**, so three
+rows are visible at a time.
+
+**The rail carries a 229px legend.** There are two identical relationship legends
+on one screen — one in the rail zone, one in the canvas zone. The rail's eats 40%
+of that zone's visible height. The frame has no legend in the workspace at all.
+
+**The product starts 518 pixels down the page.** The demo's own sandbox chrome —
+theme, canvas, state, document and outcome controls with four explanatory
+paragraphs — is 478px, and the workspace header is another 40. At 900px that
+leaves 382px, so what a visitor actually sees is one and a half rail rows and the
+word "Pick a row". The frame fits the entire workspace — header, three zones, all
+six rows, the graph, and the full inspector — in 900px with room left over.
+
+Put together: **the implementation renders every fact the design asked for, and
+renders all of them at once, at full length, everywhere.** Design's layout is a
+scannable index (rail) pointing at one explanation (inspector). The
+implementation has turned the rail into a stack of explanations and left the
+inspector to repeat them. That is what "confusing as hell" is measuring. It is not
+a missing-features problem. It is a **hierarchy** problem, and hierarchy is the one
+thing the frames encode that prose cannot.
+
+---
+
+## 3. The gap table
+
+Class key — **MS** missing spec (design never drew or described it) · **SI** spec
+ignored (design is clear, implementation differs) · **SA** spec ambiguous (frame
+and prose disagree, or the frame is internally inconsistent) · **BU** behaviour
+undefined (the state exists at runtime and design never said what it does).
+
+### 3.1 Workspace shell (§17a)
+
+| # | Element | Design target | Implementation | Class |
+|---|---|---|---|---|
+| 1 | Rail row height | 53px, uniform, 4 lines | 134–408px, variable, 8–22 lines | **SI** |
+| 2 | Rail row content | rank · title · **one** metadata line · delta chip | rank · title · id · priority · every badge on its own line · one `↳` provenance sentence per applicable rule | **SI** |
+| 3 | Provenance placement | in the inspector, under `WHY RANK n`; §16f makes it `→ expand` on a row | always expanded on every rail row, up to 3 `↳` lines each | **SI** |
+| 4 | Rail heading | `WORK ORDER` | `ORDER PREVIEW` — which is §16's name for the read-only surface | **SI** |
+| 5 | Rail header controls | `filter` control + total count `312` | three count chips (`8 ranked`, `6 ready now · cap 2`, `6 held`), no filter control | **SI** |
+| 6 | Relationship legend | not present in the workspace | present **twice** — 229px in the rail, 88px in the canvas | **MS** |
+| 7 | `NOW` block | not present | a cyan `NOW` banner at the top of the rail showing the in-flight issue and its runner state | **MS** |
+| 8 | Zone proportions | ≈ 390 / 575 / 330 (30 / 45 / 25) | 312 / 758 / 312 (22 / 54 / 22) — narrowest rail carrying the most content | **SI** |
+| 9 | Header counts | `312 open` · `64 encoded` · `◆ 3 encoding problems` | `297 open · 126 encoded` present at scale; audit chip reads `6 audit` with no `◆` | **SI** |
+| 10 | Freshness + refresh | `as of 14:32` then a separate `↻` control | `as of 22:26 · 59s agorefresh` — **no space before the control** | **SI** |
+| 11 | Solid-cyan budget | one primary action (`First pass →`) plus the active view toggle | also spent on the `NOW` badge and the `ready now · cap 2` count chip, so the primary action no longer leads | **SI** |
+
+### 3.2 Inspector (§17a) — the largest single gap
+
+| # | Element | Design target | Implementation | Class |
+|---|---|---|---|---|
+| 12 | The `WHY RANK` sentence | one punctuated sentence: *"Matched query 1 (`label:P0`). Held until #488 closes, then worked with #514 as one unit."* | three unpunctuated fragments separated by a **2px margin**, so they collide on screen: `…ranked in tier P0worked as one unit with 514` | **SI** |
+| 13 | Heading when held | frame always says `WHY RANK n` | says `WHY HELD`, because derive gives a held slot no rank | **SA** — see Q1 |
+| 14 | Deep-link chip | `descant-web #512 ↗` pill, described in §16f as *the only external link* and *one predictable target in both views* | absent; the inspector prints a bare `512`. The only `open in GitHub` on screen belongs to the encoding-refused block | **SI** |
+| 15 | `ADD RELATIONSHIP` list | standing, always visible under the relationship list | hidden behind `+ add`; at rest the zone shows one hint string instead | **SI** |
+| 16 | Kind key numbers | `blocked-by 1 · serialize-with 2 · together-with 3 · duplicate-of 4 · decomposed-from 5` | `blocked by 1 · decomposed from 2 · duplicate of 3 · serialized with 4 · together with 5` — **four of five keys bound to a different type** | **SI** |
+| 17 | Kind labels | the spec's own field names (`blocked-by`, `serialize-with`) | prose forms (`blocked by`, `serialized with`), which no longer match the YAML the user is editing | **SI** |
+| 18 | Close control | `✕` | a text button reading `clear the selection` | **SI** |
+| 19 | Encoding-refused block | §17d draws it inside the audit panel | permanently pinned above the inspector, in red, at the top of the right column — the loudest thing on screen before anything is selected | **SA** — see Q3 |
+
+### 3.3 Edit interactions (§17b)
+
+| # | Element | Design target | Implementation | Class |
+|---|---|---|---|---|
+| 20 | Direction sentence | `#530` `is blocked by` `#602` | present and correct — `#520 is blocked by …` | — ok |
+| 21 | Flip control | `⇅ flip` beside the sentence, because *"which way round" is the single most common encoding mistake* | **no flip control anywhere in the create flow** | **SI** |
+| 22 | Canvas create path | select source → drag from edge port → picker at drop point | not reachable in the demo; the canvas draws §16's three-column spine, which has no edge ports | **SI** |
+| 23 | Keyboard `R` | opens the picker from a selected issue | did not open the picker from a focused rail row in this run; `+ add` works. (CHANGELOG records one fix in this area already) | **SI** |
+| 24 | Edge mutation states | five overlays — selected / pending-write / invalid / failed / conflict | all five exist in `overlay/`; none reachable in the demo's rail or column canvas, only on a drawn graph edge | **BU** — see Q4 |
+
+### 3.4 The re-evaluate loop (§17c)
+
+| # | Element | Design target | Implementation | Class |
+|---|---|---|---|---|
+| 25 | Change summary, line 1 | **the cause**: *"You added `#488 blocks #512` — 3 rows moved"* | no cause, no total; reads only `1 newly held` | **SI** |
+| 26 | Change summary, line 2 | the breakdown: *"1 newly promoted · 1 newly held · 1 pushed down"* | the breakdown is the whole summary | **SI** |
+| 27 | `undo` | beside `dismiss` | `dismiss` only | **SI** |
+| 28 | Summary placement | a full-width band above the rail | appended to the far right of the workspace header, after `First pass →` | **SI** |
+| 29 | Delta chips | `▲5` `▼2` `→ held` `→ ready` | `newly held` as text; the `▲n` / `▼n` rank-delta forms were not produced | **SI** |
+
+### 3.5 Audit (§17d)
+
+| # | Element | Design target | Implementation | Class |
+|---|---|---|---|---|
+| 30 | Header count | persistent, quiet, `◆ 3 encoding problems` | present; reads `6 audit`, no `◆` glyph | **SI** |
+| 31 | Gold 2px left-bar on flagged rail rows | required | **implemented and correct** — `#E2B912`, 2px inset. But it reached only 2 of 6 findings: the cycle members carry no bar | **SI** (partial) |
+| 32 | Audit toggle state | a toggle | `aria-pressed` did not track across clicks in this run | **SI** |
+| 33 | Filtered rail | §17a: the rail *"must never refuse or paginate away from an answer"* | with the filter on, the rail reads **"Nothing is in the order right now"** while 8 issues are ranked | **SA** — see Q2 |
+| 34 | Finding card headline | specific per finding — *"#533 is blocked by an issue closed 4 months ago"* | generic per class — *"This waits on an issue that is already closed."* — so every card of a class is identical at a glance | **SI** |
+| 35 | Finding card rationale | a paragraph explaining why it matters | absent | **SI** |
+| 36 | Finding card remedies | `Remove the edge` · `Keep as history` · `Repoint or clear` | `show me` only. CHANGELOG records this as deliberate, citing §17d's *"navigation and never a remedy"* — **but the frame draws the remedies** | **SA** — see Q3 |
+| 37 | Cycle walk line | `#544 → #551 → #560 → #544` | one card shows the walk, another shows a `·`-joined set — inconsistent between cards | **SI** |
+| 38 | Panel placement | its own panel | inside the inspector zone, above the inspector | **SA** — see Q3 |
+
+### 3.6 Scale (§17f)
+
+| # | Element | Design target | Implementation | Class |
+|---|---|---|---|---|
+| 39 | Refusal above budget | refuse and say so | **correct** — *"141 related issues is past this canvas's budget of 60, so it is not drawing them."* | — ok |
+| 40 | Search-to-focus | `⌕ focus an issue` | **present** | — ok |
+| 41 | Capsule tail | 4 capsules + `+ 5 more · 2–7 issues each` | all 13 drawn | **SI** |
+| 42 | Capsule name | a semantic group name — `auth & session`, `poller & webhooks` | the title of one member issue — `Wire the cadence tick` | **SA** — see Q4 |
+| 43 | `nothing can start` on a cyclic capsule | required | **correct** | — ok |
+| 44 | Isolated count chip | `248 isolated · open as list` on the canvas | in the rail footer (`5 with no relationships · show`), not on the canvas | **SI** |
+| 45 | Canvas filter chips | `has relationships · held only · problems only · label…` | absent | **SI** |
+| 46 | Refusal copy | one sentence with the next move | three sentences, two of them explaining the rail's behaviour rather than offering a move | **SI** |
+
+### 3.7 Canvas projection (§17a / §17f)
+
+| # | Element | Design target | Implementation | Class |
+|---|---|---|---|---|
+| 47 | What the canvas draws below budget | a **focused neighbourhood** — free-positioned node cards with SVG edges, `focus: #512 · 1 hop · 6 of 312 shown` | §16b's three-column ordered spine, labelled `EXPLAINS THE ORDER` / `THE WORK ORDER ↓` / `NOT WORKED` | **SI** |
+| 48 | Graph / List toggle | `⛓ Graph  ☰ List` on the canvas toolbar | absent from the workspace; the demo host offers `neighbourhood` / `tree` in its own chrome instead | **SI** |
+| 49 | Focus statement | `focus: #512 · 1 hop · 6 of 312 shown` | `10 of 15 drawn` — the count without the focus or the hop radius | **SI** |
+| 50 | Isolated-issues chip on canvas | `248 isolated issues hidden · list them` | absent from the canvas | **SI** |
+
+### 3.8 Together-with
+
+| # | Element | Design target | Implementation | Class |
+|---|---|---|---|---|
+| 51 | A together unit in the rail | frame `17a` draws `#512` as **one ordinary 53px row at rank 2**; the unit is stated only in the inspector sentence. `START_HERE.md` says a together-group occupies **one rank as a compound station** | a 408px boxed enclosure containing two nested full issue cards, rank `—` | **SA** — see Q1 |
+| 52 | Cyan hairline connector | the kit's one amendment: a 1.6px cyan hairline between members, so a together-edge is individually clickable | the enclosure is drawn; no separate connector hit target | **SI** |
+
+---
+
+## 4. What design must answer
+
+Four questions. Each one blocks a decision an implementer cannot make alone, and
+three of them the implementer has already had to guess at — the guesses are in the
+code with comments explaining them, which is why they are worth resolving rather
+than re-litigating.
+
+### Q1 — Does a held issue keep a rank number, and is a together unit one row or a box?
+
+**The frame contradicts itself and contradicts the prose.** In frame `17a`:
+
+- `#512` is `⊘ blocked` and the rank column shows **`2`**.
+- `#530` is `blocked-by #602` and the rank column shows **`—`** with a `→ held` chip.
+
+Both are blocked by an open issue. Both are equally not-ready by the reader rules.
+One has a number and one does not. Meanwhile §16d says a graph-derived hold renders
+*"inline at would-be rank, dashed station, **rank shows `—`**"*.
+
+The implementation chose `—` for both, and its own source says why
+(`packages/editor/src/workspace/inspector.ts`): derive assigns `ready ? rank : null`,
+so a held slot has no rank to print, and frame `17a`'s state is *unrepresentable* in
+the model. That is a reasonable call. It is still a call design should be making.
+
+The same question decides item 51. `START_HERE.md` says a together-group is "one
+rank as a compound station"; frame `17a` draws `#512` as a plain row and mentions
+`#514` only in the inspector sentence. The implementation followed the prose and
+built a 408px enclosure — **7.7× the frame's row height, the single largest row on
+screen.**
+
+**What design needs to say:**
+1. Does a held row print its would-be rank as a number, or an em dash? If a number,
+   what is it a number *of*, given it is not a position in the ready order?
+2. Draw a together unit in the rail at 53px. If it cannot be done at 53px, say what
+   the rail shows and where the second member's title goes.
+3. Is `→ held` a delta chip (it only appears when readiness *changed*) or a
+   permanent state badge? The frame shows it on one held row and not the other,
+   which reads like a delta — but then `#512` should have one too.
+
+### Q2 — What does the audit filter do to the rail?
+
+§17a is absolute: the order rail is *"always present, always complete"* and
+*"must never refuse or paginate away from an answer"*. §17d says an audit **filter**
+exists for focus.
+
+Those two collide, and the implementation lands on the wrong side of it: turn the
+filter on and the rail reads **"Nothing is in the order right now"** while eight
+issues are ranked. The sentence is false, and it is the one surface the design says
+must always be true.
+
+**What design needs to say:** when the filter is on and no flagged issue is in the
+order, what does the rail show? Three candidates, and design should pick one:
+the full rail with flagged rows marked and others dimmed; the rail filtered but
+headed "3 of 312 shown — filtered to audit findings" so the absence is explained;
+or the filter refuses to engage and says why. Also: does the filter apply to the
+footer group (claimed / parked / duplicate) as well as the ranked rows? Two of the
+six findings in the demo are footer rows, which is the only reason any gold bar
+appears at all.
+
+### Q3 — Where does the audit live, and does it offer remedies?
+
+Three sub-questions that have to be answered together.
+
+**(a) Which zone?** §17a fixes three zones — rail, canvas, inspector. §17d draws
+the findings panel as its own surface with no workspace header around it. So the
+panel has no home. The implementation put it in the inspector zone, above the
+inspector, which means at six findings the inspector is pushed below the fold — and
+the encoding-refused block sits there *permanently*, in red, dominating the right
+column before the reader has selected anything.
+
+**(b) Remedies or navigation only?** §17d's prose says the surface *"offers
+navigation and never a remedy"* and forbids auto-fix. The frame draws three
+remedies: `Remove the edge`, `Keep as history`, `Repoint or clear`. The
+implementation shipped `Show the loop` and filed the other three, citing the prose.
+The frame and the prose cannot both be followed.
+
+**(c) What does a finding card lead with?** The frame's headline is the specific
+fact — *"#533 is blocked by an issue closed 4 months ago"*. The implementation
+leads with a generic class sentence and demotes the specifics to line two, so six
+findings read as six copies of three sentences.
+
+**What design needs to say:** which zone owns the audit panel and what it does to
+the other zones' heights; whether remedies ship; and the card's line order, with an
+example of six findings stacked so the repetition is visible.
+
+### Q4 — Two things the running system does that design never described
+
+**(a) A cluster capsule's name.** Frame `17f` names capsules semantically —
+`auth & session`, `poller & webhooks`, `replay guards`, `billing surfaces`. Those
+names are not derivable from the graph. The implementation substitutes one member
+issue's title, which reads as if that issue is the group. Design should say where a
+group name comes from: a derivable rule (largest member, the blocking root), an
+owner-supplied label, or no name at all and the capsule leads with its counts.
+
+**(b) The `NOW` block, and runner state generally.** The implementation opens the
+rail with a cyan `NOW` banner showing the in-flight issue, its status and elapsed
+time. Nothing like it is in any frame. §16d is the nearest rule and it points the
+other way: runner-derived state goes to a *"collapsed footer group, no rank slot"*,
+because *"they aren't facts about the work, so they don't earn one"*. A `NOW` banner
+at the top of the rail is the most prominent slot on the surface.
+
+Design should say whether the workspace shows what is running at all, and if so
+where. It is a real question — a grooming surface that cannot say "this one is
+being worked right now" may be worse — but the answer is design's, and right now
+the implementation has answered it unilaterally and put it in the best seat on the
+page.
+
+**One more, smaller:** §17b's five mutation states are built
+(`packages/editor/src/overlay/`) and unreachable, because the demo's canvas draws
+the §16 spine rather than a graph with edges to overlay. Design does not need to
+re-specify them. Design does need to say what a pending, failed or conflicted edge
+looks like **in the rail and the inspector**, which is where a user without a graph
+canvas will meet it.
+
+---
+
+## 5. What a sweep would fix, with files
+
+Everything here is unambiguous: design is clear and the implementation differs.
+None of it waits on section 4. Ordered by how much of the owner's complaint each
+one removes.
+
+### Tier 1 — the hierarchy. This is most of the complaint.
+
+| Gap | Change | File |
+|---|---|---|
+| 1, 2, 3 | Collapse the rail row to the frame's four lines: rank · title · one metadata line · delta chip. Every badge after the first folds into that one line or drops. The `↳` provenance lines come off the row entirely — §16f makes provenance `→ expand`, and the inspector already renders it under `WHY RANK n`. Target: **53px, uniform.** | `packages/editor/src/workspace/rail.ts`, `packages/viewer/src/projections/linear.ts` |
+| 6 | Remove the legend from both the rail and the canvas zones, or move one copy to a disclosure. Two legends on one screen is 317px spent twice on the same nine symbols. | `packages/viewer/src/styles.ts`, `packages/viewer/src/render.ts` (`.ig-legend`) |
+| 8 | Re-proportion the zones toward the frame's 30 / 45 / 25. The rail is currently the narrowest zone and carries the most text. | `packages/editor/src/workspace/styles.ts` (`.ig-workspace` `grid-template-columns`) |
+| — | Collapse the demo's own sandbox chrome behind a disclosure so the workspace is above the fold. **This is the demo host's, not the packages'** — but it is what a visitor to the demo actually sees, so it belongs in the same sweep. | `demo/index.html`, `demo/styles.css` |
+
+### Tier 2 — the inspector
+
+| Gap | Change | File |
+|---|---|---|
+| 12 | Two parts. First, the clause separator: `.ig-why-rank-sentence > * + *` sets `margin-left: var(--ig-space-micro)` = **2px**, narrower than a word space, so clauses collide. Second, and the real fix: the frame's version is punctuated prose with connectives, which no margin can supply. Compose the sentence with its connectives in `WorkspaceWords`. | `packages/editor/src/workspace/styles.ts:665`, `packages/editor/src/workspace/render.ts:1714` (`whyRankSpec`) |
+| 14 | Add the `owner/repo#N ↗` deep-link chip to the inspector head. §16f calls it *the only external link* and *one predictable target*; `viewer/src/parts.ts` already has the pieces. | `packages/editor/src/workspace/render.ts` |
+| 15 | Render `ADD RELATIONSHIP` standing, not behind `+ add`. | `packages/editor/src/workspace/render.ts` |
+| 16 | **Rebind the kind keys to the frame's order**: `1 blocked-by · 2 serialize-with · 3 together-with · 4 duplicate-of · 5 decomposed-from`. Four of five are currently wrong, so anyone trained on the design picks the wrong type. | `packages/editor/src/picker/words.ts`, `packages/editor/src/create/keys.ts` |
+| 17 | Use the spec's field names as labels, not prose forms — the user is editing YAML that says `serialize-with`. | `packages/editor/src/picker/words.ts` |
+| 18 | `✕` for close. | `packages/editor/src/workspace/render.ts` |
+
+### Tier 3 — the loop and the chrome
+
+| Gap | Change | File |
+|---|---|---|
+| 25, 26, 27 | Give the change summary its first line — the cause and the total: *"You added `#488 blocks #512` — 3 rows moved"* — with the breakdown beneath and an `undo` beside `dismiss`. Cause-in-the-summary is §17c's stated whole point. | `packages/editor/src/reevaluate/words.ts`, `packages/editor/src/reevaluate/render.ts` |
+| 29 | Emit `▲n` / `▼n` rank-delta chips, not only the categorical ones. | `packages/editor/src/reevaluate/parts.ts` |
+| 4, 5 | Rail heading `WORK ORDER`; add the `filter` control §17a requires. (The count chips can stay — they are better than the frame's bare `312`.) | `packages/editor/src/workspace/rail.ts` |
+| 10 | Put a space between the freshness stamp and `refresh`. Currently renders `59s agorefresh`. | `packages/editor/src/workspace/styles.ts` |
+| 9, 30 | `◆` glyph on the audit count; word it `N encoding problems`. | `packages/editor/src/audit/surface.ts` |
+| 32 | Make `aria-pressed` track the audit toggle. | `packages/editor/src/audit/surface.ts` |
+| 11 | Take solid cyan off the `NOW` badge and the count chips; leave it to `First pass →` and the active toggle. | `packages/editor/src/workspace/styles.ts` |
+| 21 | Add the `⇅ flip` control beside the direction sentence. | `packages/editor/src/picker/render.ts` |
+| 34, 35, 37 | Finding cards lead with the specific fact; add the rationale paragraph; draw the cycle as a walk on every card, not a set on some. | `packages/editor/src/audit/panel.ts` |
+| 41, 44, 45, 49 | Collapse the capsule tail to `+ n more`; move the isolated chip onto the canvas; add the canvas filter chips; state `focus: #N · 1 hop · n of m shown`. | `packages/editor/src/scale/render.ts` |
+| 47, 48 | The larger one: the canvas draws §16's three-column spine where §17a wants a focused neighbourhood with a `Graph / List` toggle. This is a projection change, not a restyle — size it before scheduling it. | `packages/viewer/src/projections/graph.ts`, `packages/editor/src/workspace/render.ts` |
+
+---
+
+## 6. Recommendation
+
+**Order the sweep now. Send design the four questions in parallel. Do not wait on
+design to start.**
+
+Reasons, in order.
+
+**The complaint is mostly Tier 1, and Tier 1 needs nothing from design.** Row
+height, the doubled legend, zone proportions and the demo's chrome are four changes
+against a frame that is already unambiguous. They are the difference between three
+visible rows and sixteen. Nothing in section 4 touches them, and a second kit
+revision will not change a 53px row.
+
+**The gaps are not missing features.** Almost everything design asked for exists in
+the source — the five mutation states, the gold audit bar (correct to the hex), the
+scale refusal, search-to-focus, the direction sentence, `WHY RANK n`. The team built
+the parts and lost the hierarchy. That is a sweep, not a rebuild, and it is why more
+design detail on *what* to build would not have helped: design's error, where it
+made one, was not under-specifying the parts.
+
+**But the four questions are real, and three have already been answered
+unilaterally.** The held-rank rule, the together-unit row, the audit's zone, the
+`NOW` block — an implementer hit each one, found the frame and the prose disagreeing,
+picked one, and wrote a paragraph in the source explaining the choice. Those
+paragraphs are good engineering and bad process: the product now has four design
+decisions made by whoever was nearest. They should go back to design, and they
+should go now, because Q1 and Q3 change the rail row and the right-hand column —
+exactly what Tier 1 is about to touch.
+
+**So: sweep Tier 1 and 2 immediately; hold Q1's row shape and Q3's audit placement
+open, and land them in a second, much smaller pass when design answers.** Tier 3 can
+ride either. Gap 47 — the canvas projection — should be sized separately; it is the
+one item in this document that is a build rather than a fix.
+
+**What would most help from design, in one line:** not more parts, but a **density
+and placement pass** — the frames drawn at three backlog sizes (6 rows, 60, 312)
+with the row shape held to 53px, so the implementation can see what design expects
+to give up when the content does not fit. Every gap in section 3.1 is a place where
+the implementation had content design's frame never showed it, and chose to show all
+of it.
+
+---
+
+*Measured by side-issuegraph-ux-1 against `viewer@0.8.2` / `editor@0.21.0` and the
+2026-08-18 design kit. Screenshots: [`evidence/2026-09-19/`](./evidence/2026-09-19/).
+No implementation change was made.*
