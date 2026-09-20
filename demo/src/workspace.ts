@@ -200,6 +200,16 @@ export const WORKSPACE_WORDS: MountWords = {
   // words here read as words.
   whyRank: 'Why rank',
   whyHeld: 'Why held',
+  // §17's filtered empty state, and the two strings are doing different jobs.
+  // The first says what did not match. The second says what still EXISTS, and
+  // it is the one that stops a reader concluding the backlog is empty when a
+  // filter is merely narrow — RULINGS.md §2: the denominator is always present
+  // "so 'nothing matched' can never be misread as 'nothing exists'."
+  filteredEmpty: 'No flagged rows match.',
+  filteredDenominator: (ranked) =>
+    // The plural is why the package hands over a count instead of a template.
+    ranked === 1 ? '1 issue is ranked' : `${String(ranked)} issues are ranked`,
+  filteredClear: 'clear the filter',
   workedAsOneUnit: 'worked as one unit with',
   noRelationships: 'Nothing is related to this issue yet.',
   addRelationship: '+ add',
