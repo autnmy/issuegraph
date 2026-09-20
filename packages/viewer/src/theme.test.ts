@@ -299,6 +299,7 @@ const EXPANSION: readonly string[] = Object.freeze([
   '--ig-row-padding-block-dense',
   '--ig-rank-column-dense',
   '--ig-row-title-line',
+  '--ig-row-meta-line',
   '--ig-row-line-gap',
   '--ig-band-rail',
   '--ig-tint-fill',

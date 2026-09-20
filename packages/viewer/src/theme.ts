@@ -181,6 +181,7 @@ export const METRIC_TOKENS = Object.freeze([
   '--ig-row-padding-block-dense',
   '--ig-rank-column-dense',
   '--ig-row-title-line',
+  '--ig-row-meta-line',
   '--ig-row-line-gap',
   // §16b's spine furniture: the station disc that sits ON the spine line, and
   // the line height a card's own height is counted in.
@@ -448,11 +449,13 @@ export const defaultTheme: Theme = Object.freeze({
     '--ig-row-height-dense': 53,
     '--ig-row-padding-block-dense': 9,
     '--ig-rank-column-dense': 30,
-    // The title line of the 53px, so the height is composed from its parts
-    // rather than asserted as one number a later edit can drift from. The META
-    // line's own token arrives with the markup that reads it: a token declared
-    // before its use fails this package's own guard, and rightly.
+    // The two text lines the 53px is composed of, so the height is built from
+    // its parts rather than asserted as one number a later edit can drift from.
+    // The meta token was added, removed when nothing read it — this package
+    // fails a token with no use, and rightly — and is back now that the meta
+    // line exists to read it.
     '--ig-row-title-line': 17,
+    '--ig-row-meta-line': 15,
     // The 3 in 9 + 17 + 3 + 15 + 9. Its own token because the anatomy is a
     // SUM: a gap borrowed from the spacing scale would drift the height the
     // moment that scale moved, and the height is the thing 17j fixes.

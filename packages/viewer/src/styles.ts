@@ -458,6 +458,65 @@ export const viewerStylesheet = `
     min-width: 0;
   }
 
+  /* LINE 2, AND IT DOES NOT WRAP. '17j' draws it as one mono run —
+     '#512 . P0 . blocked-by #488' — so the chips sit ON the identity's line
+     rather than under it. 'nowrap' is what makes the 53px a property of the
+     ROW: one long title or one extra badge would otherwise buy a second line
+     and double the height, which is exactly how this rail reached 408px. */
+  .ig-slot .ig-row-meta {
+    align-items: center;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: var(--ig-space-tight);
+    line-height: var(--ig-row-meta-line);
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  /* The chips keep their own row semantics and stop wrapping, so what does not
+     fit is clipped rather than stacked. The drop order above decides WHICH
+     chips are there to clip; this only decides they stay on the line. */
+  .ig-slot .ig-row-meta .ig-badges {
+    flex-wrap: nowrap;
+    min-width: 0;
+  }
+
+  /* The issue number never shrinks away — '17j' lists it among the five things
+     never dropped at any width. The title truncates first and the chips clip;
+     the number holds its ground. */
+  .ig-slot .ig-row-meta .ig-id {
+    flex: none;
+  }
+
+  /* AT RAIL DENSITY LINE 2 IS TEXT, NOT PILLS — and this is read off the frame
+     rather than inferred from the height. '17j' draws the meta line as a single
+     mono run, '#512 . P0 . blocked-by #488': no outlines, no fills, just the
+     glyph and the words. §16a's wider panel is where they are chips.
+
+     IT IS ALSO WHAT MAKES 53px REACHABLE. A bordered chip is its padding plus
+     its stroke plus its line box, so a line of them cannot be 15px however the
+     line-height is set — the flex row grows to its tallest item and the row
+     followed it to 74px. Removing the chrome removes the reason.
+
+     THE FOUR REDUNDANT CHANNELS SURVIVE THIS, which is the thing worth
+     checking before doing it: dash, terminal and glyph are untouched, and hue
+     moves from the border to the text it was outlining. '17j' names the hold
+     GLYPH among the five things never dropped, and it is still drawn. */
+  .ig-slot .ig-row-meta .ig-badge {
+    background: none;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    /* AND THE TEXT INSIDE A CHIP DOES NOT WRAP EITHER. Stopping the ROW from
+       wrapping is not enough: a chip squeezed by its neighbours wraps its own
+       label instead, and 'signals disagree' at 84px became two 15px lines and
+       took the row to 67px while every sibling sat at 53. One row in seven,
+       which is exactly the kind of thing that survives a review and does not
+       survive a measurement. What does not fit is clipped, per the drop
+       order. */
+    white-space: nowrap;
+  }
+
   /* EXPAND-ON-DEMAND, NOT DELETED. §17j: *"The provenance line never renders
      inline here. In the rail it is expand-on-demand; in §16a's wider panel it
      is inline. Same row, two densities."* The markup stays whole so the wider
@@ -580,6 +639,18 @@ export const viewerStylesheet = `
   display: flex;
   flex-direction: column;
   gap: var(--ig-space-micro);
+  min-width: 0;
+}
+
+/* LINE 2 AT THE WIDE DENSITY. §16a's panel draws the same sequence — identity
+   then chips — and simply has room, so here it WRAPS rather than clipping and
+   the provenance turnstile stays inline beneath it. Same markup, two
+   densities; the rail's rules are in the container query above. */
+.ig-row-meta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ig-space-tight);
   min-width: 0;
 }
 

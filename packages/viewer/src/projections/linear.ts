@@ -174,15 +174,6 @@ export function slotRow(
 
   // A UNIT'S HEAD IS ITS ENCLOSURE, not a joined title. Every other row keeps
   // the frame's two-line pair: the title, and the identity 2px beneath it.
-  const head = unit
-    ? [unitMark(slot), unitBlock(document, slot)]
-    : [
-        element('div', { class: 'ig-row-head' }, [
-          element('span', { class: 'ig-title' }, [slotTitle(document, slot)]),
-          lead === undefined ? null : identity(lead),
-        ]),
-      ];
-
   const badges = [
     priorityBadge(lead?.provenance),
     evidenceBadge(lead),
@@ -196,9 +187,47 @@ export function slotRow(
   // sentence beneath.
   const badgeRow = [...badges, ...edgeBadgeList(document, slot.members)];
 
+  // THE IDENTITY AND THE BADGES ARE ONE LINE, NOT TWO BLOCKS — which is what
+  // §17j's row anatomy asks for and what the old markup could not express.
+  //
+  // `17j` draws line 2 as a single mono run: `#512 · P0 · ⊘ #488`. The identity
+  // used to sit inside the head and the chips in a sibling block beneath it, so
+  // the two could never share a line however they were styled, and a row that
+  // should be 53px stacked to 5-11 lines. Nesting them in one `.ig-row-meta`
+  // makes the frame's line a property of the markup rather than of a CSS trick.
+  //
+  // IT SERVES BOTH DENSITIES, which is why this is a restructure and not a
+  // rail-only branch. §16a's row is the same sequence — title, identity, chips,
+  // then the provenance turnstile — and at that panel's width the line simply
+  // wraps and the provenance stays inline. `17j`: *"Same row, two densities."*
+  const meta =
+    lead === undefined && badgeRow.length === 0
+      ? null
+      : element('div', { class: 'ig-row-meta' }, [
+          lead === undefined ? null : identity(lead),
+          badgeRow.length === 0 ? null : element('div', { class: 'ig-badges' }, badgeRow),
+        ]);
+
+  // A UNIT'S HEAD IS ITS ENCLOSURE, not a joined title. Every other row keeps
+  // the frame's two-line pair: the title, and the meta line beneath it.
+  //
+  // THE UNIT BRANCH IS DELIBERATELY UNTOUCHED HERE. §17j draws a together unit
+  // in the rail as a `⧉ 2` marker inline with an ordinary title, not as the
+  // enclosure this still draws — but that is `RULINGS.md` §1's ruling on the
+  // unit's SHAPE, which is its own piece of work, and folding it in here would
+  // mix two rulings in one change.
+  const head = unit
+    ? [unitMark(slot), unitBlock(document, slot)]
+    : [
+        element('div', { class: 'ig-row-head' }, [
+          element('span', { class: 'ig-title' }, [slotTitle(document, slot)]),
+          meta,
+        ]),
+      ];
+
   const body = element('div', { class: 'ig-row-body' }, [
     ...head,
-    badgeRow.length === 0 ? null : element('div', { class: 'ig-badges' }, badgeRow),
+    unit && meta !== null ? meta : null,
     provenanceLine(lead?.provenance),
     // THE LEAD'S CAVEATS, like the lead's provenance: a together unit is one
     // row and one rank, and the host facts about that rank ride on its lead.
