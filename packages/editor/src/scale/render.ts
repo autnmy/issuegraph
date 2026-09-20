@@ -217,7 +217,11 @@ function capsuleLabel(capsule: ScaleCapsule): string {
     capsule.reach.kind === 'cyclic'
       ? 'holds a cycle'
       : `${String(capsule.blockedByEdges)} blocked-by ${capsule.blockedByEdges === 1 ? 'edge' : 'edges'}`;
-  return `Focus ${capsule.name} (${capsule.lead}) \u2014 ${String(capsule.size)} issues, ${blocking}, ${clusterReachLabel(capsule.reach)}`;
+  // THE ACCESSIBLE NAME SAYS "around" TOO, so what is heard and what is drawn
+  // make the same claim. It used to read "Focus <title> (<key>)", which names
+  // the component after one issue in the one channel that cannot show the
+  // layout making it an anchor.
+  return `Focus the component around ${capsule.lead}, ${capsule.name} \u2014 ${String(capsule.size)} issues, ${blocking}, ${clusterReachLabel(capsule.reach)}`;
 }
 
 /**
@@ -287,7 +291,24 @@ function capsuleSpec(capsule: ScaleCapsule): ElementSpec {
           : element('span', { class: 'ig-capsule-load' }, [
               `${EDGE_TREATMENTS['blocked-by'].glyph} ${String(capsule.blockedByEdges)}`,
             ]),
-        element('span', { class: 'ig-capsule-name' }, [capsule.name]),
+        // THE ANCHOR, WORDED AS ONE. `RULINGS.md` §4: a capsule is identified
+        // by "around #488 · Extract session store adapter", never by a name —
+        // because a connected component HAS no name and one must not be
+        // invented. The title alone read as the component's name, which is a
+        // claim about a seventy-two issue group made from one member's title.
+        //
+        // ONE HARDCODED WORD, AND IT IS FLAGGED RATHER THAN HIDDEN. This
+        // surface takes no words port — `capsuleLabel` above already spells
+        // "Focus" in English — so "around" joins it. That is a gap in this
+        // module, not a decision: the rest of this package hands every sentence
+        // to the host, and a scale surface that cannot be translated is worth
+        // fixing when the port is added.
+        element('span', { class: 'ig-capsule-name' }, [
+          element('span', { class: 'ig-capsule-anchor' }, ['around ']),
+          element('span', { class: 'ig-id' }, [capsule.lead]),
+          ' \u00b7 ',
+          capsule.name,
+        ]),
         element('span', { class: 'ig-capsule-reach' }, [clusterReachLabel(capsule.reach)]),
       ],
     ),

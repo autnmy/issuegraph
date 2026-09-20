@@ -61,19 +61,30 @@ export type ScaleTier =
 /** One connected component, as the refusal presents it. */
 export interface ScaleCapsule {
   /**
-   * The member a `focus` command should name to draw this component. It is the
-   * component's first member in the viewer's own ordering, so two renders of
-   * one document always offer the same handle.
+   * The ANCHOR: the highest-ranked member, which is the member a `focus`
+   * command names to draw this component.
+   *
+   * `RULINGS.md` §4 settles what this is. It was the component's first member
+   * in key order, which is deterministic and means nothing — a seventy-two
+   * issue component was fronted by whichever key sorted first. The anchor is
+   * the member a reader would reach the component THROUGH, so a component with
+   * any ready work is entered at that work.
    */
   readonly lead: string;
   /**
-   * The lead issue's title, so the capsule has a name a reader recognises.
+   * The anchor's title. Rendered as `around #488 · Extract session store
+   * adapter` — never alone.
    *
    * FRAME `17f` NAMES EVERY CAPSULE — "auth & session", "replay guards" — and
-   * the shipped one listed three raw keys instead. A component has no name of
-   * its own to read anywhere; the lead's title is the closest true one, and it
-   * is already the handle the focus control names, so the label and the action
-   * cannot come apart.
+   * the shipped one listed raw keys. This package's earlier reading was right
+   * that a component has no name of its own to read anywhere, and Design
+   * confirmed it: *"A connected component has no name and one must not be
+   * invented. `auth & session` is placeholder copy, not a field."*
+   *
+   * WHAT CHANGED IS THE FORM, AND IT IS THE HALF THAT WAS WRONG. A bare title
+   * reads as the component's NAME — as though that issue were the group — and
+   * the anchor wording says what it actually is: the issue this component is
+   * entered around. Same string, a claim it can support.
    */
   readonly name: string;
   readonly size: number;
@@ -299,10 +310,39 @@ function narrow(input: ViewerDocument, keep: ReadonlySet<string>): ViewerDocumen
  * `clustersOf` never returns one today; this is what keeps that from becoming a
  * silent contract.
  */
-function capsuleOf(cluster: Cluster, titleOf: ReadonlyMap<string, string>): ScaleCapsule | null {
-  // `members` is already in the viewer's deterministic order, so the first is a
-  // stable handle rather than whichever member the walk happened to reach first.
-  const lead = cluster.members[0];
+function capsuleOf(
+  cluster: Cluster,
+  titleOf: ReadonlyMap<string, string>,
+  rankOf: ReadonlyMap<string, number>,
+): ScaleCapsule | null {
+  // THE ANCHOR IS THE HIGHEST-RANKED MEMBER, WHICH IS NOT WHAT THIS PICKED.
+  //
+  // `clustersOf` ends with `members.sort()` — a plain lexicographic sort of
+  // KEYS — so `members[0]` was the alphabetically first key and nothing else.
+  // The old comment called that "the viewer's deterministic order", which is
+  // true and irrelevant: deterministic is not the same as meaningful, and on
+  // the demo it fronted a seventy-two issue component with whichever key sorted
+  // first.
+  //
+  // `RULINGS.md` §4: a capsule is identified by its ANCHOR, *"the
+  // highest-ranked member"*. That is the member a reader would reach this
+  // component through, and it is the one the focus control should name.
+  //
+  // TIES AND UNRANKED MEMBERS FALL BACK TO THE OLD HANDLE, deliberately: a
+  // component can be entirely held, in which case no member has a rank and the
+  // sorted key is as good an answer as exists. What matters is that a RANKED
+  // member always wins over an unranked one, so a component with any ready work
+  // is entered through that work.
+  let lead = cluster.members[0];
+  let best = Number.POSITIVE_INFINITY;
+  for (const member of cluster.members) {
+    const rank = rankOf.get(member);
+    if (rank === undefined) continue;
+    if (rank < best) {
+      best = rank;
+      lead = member;
+    }
+  }
   if (lead === undefined) return null;
   return {
     lead,
@@ -493,11 +533,20 @@ export function scaleLadder(
   const listable = focusedCluster === null ? clusters : [];
   const shown = tier === 'clusters' ? listable.slice(0, CAPSULE_LIMIT) : listable;
   const titleOf = new Map(document.issues.map((issue) => [issue.key, issue.title]));
+  // THE RANK OF EVERY MEMBER THAT HAS ONE, for the anchor. Built from the
+  // order's own slots rather than from the issues, because rank is a fact about
+  // a SLOT: a together unit is one rank over several members, and each of them
+  // is equally the rank the component would be entered at.
+  const rankOf = new Map<string, number>();
+  for (const slot of document.order.slots) {
+    if (slot.rank === null) continue;
+    for (const member of slot.members) rankOf.set(member, slot.rank);
+  }
   const capsules =
     tier === 'direct'
       ? []
       : shown
-          .map((cluster) => capsuleOf(cluster, titleOf))
+          .map((cluster) => capsuleOf(cluster, titleOf, rankOf))
           .filter((capsule): capsule is ScaleCapsule => capsule !== null);
 
   const isolatedIssues = document.issues.filter((issue) => !related.has(issue.key));
