@@ -218,7 +218,18 @@ describe('the structural stylesheet', () => {
     // `.ig-unit`. It is still drawn at `--ig-stroke-connector`, which is what
     // that token has always meant: the hairline the together mark takes, finer
     // than an ordinary edge.
-    const rule = /\.ig-unit\s*\{([^}]*)\}/.exec(css);
+    // ANCHORED TO THE DEFINING RULE, NOT TO ANY SELECTOR THAT ENDS IN IT.
+    // `\.ig-unit\s*\{` matched the FIRST rule whose selector happens to end
+    // `.ig-unit` — and once a density rule existed that hides the enclosure in
+    // a narrow rail, that was `… [data-unit='true'] .ig-unit { display: none }`
+    // and this test read `display: none` as the together mark's definition.
+    //
+    // It is the substring-for-exact defect one more time: the string that means
+    // "the together mark" is contained in the string that means "hide the
+    // together mark". Anchoring to a selector that BEGINS a line and is exactly
+    // `.ig-unit` is the whole fix, and it makes this test stricter rather than
+    // more permissive — a rule that stops defining the border still fails.
+    const rule = /(?:^|\n)\.ig-unit\s*\{([^}]*)\}/.exec(css);
     assert.ok(rule !== null, 'the stylesheet draws no together mark');
 
     const body = rule[1] ?? '';

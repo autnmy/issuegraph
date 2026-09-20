@@ -517,6 +517,37 @@ export const viewerStylesheet = `
     white-space: nowrap;
   }
 
+  /* AND THE SWAP, AT RAIL DENSITY. '17j' draws a together unit here as a
+     marker inline with an ordinary title at the ordinary 53px, so the head
+     comes back and the enclosure stands down. One row, one rank, in both
+     densities - RULINGS.md section 1 - drawn the way each width can afford. */
+  /* SCOPED WITH '.ig-viewer' SO ORDER CANNOT DECIDE THIS. A container query
+     adds no specificity, so this rule and the wide-density one it overrides
+     were an even 0,3,0 and the LATER of the two won — which put the base rule,
+     written further down the file, in charge of both densities and left the
+     unit row showing nothing but its em dash. Measured, not spotted: every row
+     was 53px and one of them was empty. The extra class makes the override win
+     on specificity, where it does not depend on where anyone adds a rule
+     later. */
+  .ig-viewer .ig-slot[data-unit='true'] > .ig-row-body > .ig-row-head {
+    display: flex;
+  }
+
+  .ig-viewer .ig-slot[data-unit='true'] .ig-unit-mark,
+  .ig-viewer .ig-slot[data-unit='true'] .ig-unit {
+    display: none;
+  }
+
+  /* The marker itself: the glyph and the count, on the title's line. It is a
+     COUNT and not a pill here because 53px has no room for one, and because
+     the pill's words are already the accessible name's. */
+  .ig-viewer .ig-unit-count {
+    color: var(--ig-edge-together-with);
+    display: inline;
+    font-family: var(--ig-font-mono);
+    margin-right: var(--ig-space-tight);
+  }
+
   /* EXPAND-ON-DEMAND, NOT DELETED. §17j: *"The provenance line never renders
      inline here. In the rail it is expand-on-demand; in §16a's wider panel it
      is inline. Same row, two densities."* The markup stays whole so the wider
@@ -640,6 +671,18 @@ export const viewerStylesheet = `
   flex-direction: column;
   gap: var(--ig-space-micro);
   min-width: 0;
+}
+
+/* A UNIT AT THE WIDE DENSITY IS ITS ENCLOSURE, which is what §16a draws: the
+   pill, the note, and a member list. The ordinary head the row also carries is
+   the RAIL's way of drawing the same unit, so it stands down here rather than
+   printing the lead's title above a box that already opens with it. */
+.ig-slot[data-unit='true'] > .ig-row-body > .ig-row-head {
+  display: none;
+}
+
+.ig-unit-count {
+  display: none;
 }
 
 /* LINE 2 AT THE WIDE DENSITY. §16a's panel draws the same sequence — identity

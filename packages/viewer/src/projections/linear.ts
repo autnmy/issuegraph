@@ -208,26 +208,37 @@ export function slotRow(
           badgeRow.length === 0 ? null : element('div', { class: 'ig-badges' }, badgeRow),
         ]);
 
-  // A UNIT'S HEAD IS ITS ENCLOSURE, not a joined title. Every other row keeps
-  // the frame's two-line pair: the title, and the meta line beneath it.
+  // A TOGETHER UNIT IS ONE ROW AND ONE RANK, IN BOTH DENSITIES — and the two
+  // densities draw it differently, so the markup carries both and the container
+  // query picks.
   //
-  // THE UNIT BRANCH IS DELIBERATELY UNTOUCHED HERE. §17j draws a together unit
-  // in the rail as a `⧉ 2` marker inline with an ordinary title, not as the
-  // enclosure this still draws — but that is `RULINGS.md` §1's ruling on the
-  // unit's SHAPE, which is its own piece of work, and folding it in here would
-  // mix two rulings in one change.
-  const head = unit
-    ? [unitMark(slot), unitBlock(document, slot)]
-    : [
-        element('div', { class: 'ig-row-head' }, [
-          element('span', { class: 'ig-title' }, [slotTitle(document, slot)]),
-          meta,
-        ]),
-      ];
+  // `RULINGS.md` §1: *"A together-unit is one row, one rank, containing a box.
+  // Not two rows, not a box spanning ranks."* §16a's wide panel IS that box —
+  // the `⧉ ONE UNIT · 2 ISSUES` pill, the note, and a member list. But `17j`
+  // draws the same unit in the 390px rail as `⧉ 2` inline with an ORDINARY
+  // title and an ordinary meta line, at the same 53px as every other row,
+  // because a box of member cards cannot be 53px and the rail's row height is
+  // not negotiable.
+  //
+  // So a unit row now carries an ordinary head as well as its enclosure, and
+  // each density hides the other's. The lead's title is what the rail shows;
+  // `slotTitle` joins every member and stays the ACCESSIBLE name through
+  // `slotLabel`, so what a screen reader hears still names both issues while
+  // the 53px row shows the one it has room for.
+  const unitCount = unit
+    ? element('span', { class: 'ig-unit-count' }, [`⧉ ${String(slot.members.length)}`])
+    : null;
+  const railTitle = unit ? (lead?.title ?? slot.lead) : slotTitle(document, slot);
+  const head = [
+    element('div', { class: 'ig-row-head' }, [
+      element('span', { class: 'ig-title' }, [unitCount, railTitle]),
+      meta,
+    ]),
+    ...(unit ? [unitMark(slot), unitBlock(document, slot)] : []),
+  ];
 
   const body = element('div', { class: 'ig-row-body' }, [
     ...head,
-    unit && meta !== null ? meta : null,
     provenanceLine(lead?.provenance),
     // THE LEAD'S CAVEATS, like the lead's provenance: a together unit is one
     // row and one rank, and the host facts about that rank ride on its lead.
