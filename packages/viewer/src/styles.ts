@@ -339,6 +339,13 @@ export const viewerStylesheet = `
 /* ── working now ───────────────────────────────────────────────────────── */
 
 .ig-now {
+  /* THE NOW STRIP IS PART OF THE RAIL'S RHYTHM, so it reads the same container
+     the rows do. It is its own list element, so without this the density rules
+     scoped to 'ig-rail' simply did not reach it and the strip stood 83px tall
+     beside 53px rows - 57% taller than everything under it, in the one slot
+     17j gives the top of the rail. */
+  container-name: ig-rail;
+  container-type: inline-size;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -546,6 +553,38 @@ export const viewerStylesheet = `
     display: inline;
     font-family: var(--ig-font-mono);
     margin-right: var(--ig-space-tight);
+  }
+
+  /* THE NOW STRIP AT RAIL DENSITY. '17j' draws it as the first row of the rail
+     at all three backlog sizes, in the same rhythm as the rows beneath it -
+     RULINGS.md section 4: "a single now strip as the first row of the rail,
+     above rank 1, on a raised surface, carrying no rank number".
+
+     THE RANK SLOT IS ALREADY RIGHT AND IS NOT TOUCHED HERE: the strip carries a
+     'now' mark where a rank would be, never a number, which is the half of
+     section 4 the build already had. What was wrong was only its height. */
+  .ig-viewer .ig-now-row {
+    min-height: var(--ig-row-height-dense);
+    padding-block: var(--ig-row-padding-block-dense);
+  }
+
+  .ig-viewer .ig-now-row .ig-row-head {
+    gap: 0;
+    min-width: 0;
+  }
+
+  .ig-viewer .ig-now-row .ig-title {
+    line-height: var(--ig-row-title-line);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ig-viewer .ig-now-row .ig-id {
+    line-height: var(--ig-row-meta-line);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   /* EXPAND-ON-DEMAND, NOT DELETED. §17j: *"The provenance line never renders
