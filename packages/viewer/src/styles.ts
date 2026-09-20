@@ -555,6 +555,63 @@ export const viewerStylesheet = `
     margin-right: var(--ig-space-tight);
   }
 
+  /* THE FOOTER ROWS TOO, AND THIS IS THE POPULATION THE ROW FIX MISSED.
+     A footer entry is deliberately ONE LINE and shorter than a ranked row -
+     16a gives it no rank, no station and no explanation block, because it is
+     not a fact about the work. That part was right. What was not governed is
+     its TITLE: it wrapped, and the excluded row carrying a canonical reference
+     ran to 73px while its siblings sat at 36. A footer row taller than a
+     ranked row inverts the whole point of the group.
+
+     THE DEFECT IS THE ONE ALREADY FIXED ON .ig-slot, ONE ROW KIND OVER: a
+     title with nothing stopping it wrapping takes the row with it. Fixed at
+     the class this time rather than at the site - the rail renders three row
+     kinds and the first pass governed two. */
+  .ig-viewer .ig-footer-row .ig-title {
+    line-height: var(--ig-row-title-line);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ig-viewer .ig-footer-row .ig-badges {
+    flex-wrap: nowrap;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  /* AND THE CHIPS LOSE THEIR CHROME HERE TOO, which is what actually makes a
+     footer entry ONE LINE. 16a draws it as "a label chip, a title and an
+     identity, on one line"; a bordered chip is padding plus stroke plus line
+     box, so a row carrying any relationship badge stood at 36px against 22px
+     for one carrying none - and the badge block, not the title, was the last
+     thing driving it.
+
+     MEASURED IN TWO PASSES, WHICH IS THE POINT. Stopping after the title fix
+     left the footer group at two heights and looked finished: the row that had
+     been 73px was down to 36 and matched its siblings, so the obvious check
+     passed. It was the SECOND measurement - why 22 and why 36 - that found the
+     badges. A class is not fixed until nothing in it varies for a reason you
+     have not named. */
+  .ig-viewer .ig-footer-row .ig-badge {
+    background: none;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    white-space: nowrap;
+  }
+
+  /* THE THIRD AND LAST MEMBER OF THE CLASS: the identity. An excluded row
+     carries TWO - its own, and the canonical it defers to ('455 -> 512') - and
+     the second wrapped, which is why that row alone stood at 30px when the
+     others reached 17. Same defect as the title and the chips, third element,
+     found by asking the same question a third time rather than by stopping at
+     the first uniform-looking answer. */
+  .ig-viewer .ig-footer-row .ig-id {
+    white-space: nowrap;
+  }
+
   /* THE NOW STRIP AT RAIL DENSITY. '17j' draws it as the first row of the rail
      at all three backlog sizes, in the same rhythm as the rows beneath it -
      RULINGS.md section 4: "a single now strip as the first row of the rail,
