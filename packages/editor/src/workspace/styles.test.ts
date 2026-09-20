@@ -583,14 +583,23 @@ describe('the workspace stylesheet carries structure, never a value', () => {
     // margin left to add: the pitch is the floor. Kept as an assertion with a
     // POSITIVE CONTROL on layer 1 below, so a row that grows a gap again fails
     // here rather than silently reintroducing the undercount.
-    const rule = css.match(/\.ig-rail-spacer\s*\{([^}]*)\}/)?.[1];
+    const rule = css.match(/(?:^|\n)\.ig-rail-spacer\s*\{([^}]*)\}/)?.[1];
     assert.ok(rule !== undefined, 'nothing sizes the spacer');
     assert.ok(rule.includes('--ig-row-min-height'), 'the pitch omits the row floor');
     // The count is a factor, or the spacer is one row tall whatever it omits.
     assert.match(rule, /\*\s*var\(--ig-rail-rows/);
 
     const viewerCss = withoutComments(viewerStylesheet);
-    const slot = viewerCss.match(/\.ig-slot\s*\{([^}]*)\}/)?.[1];
+    // A RULE-FINDING REGEX IS ANCHORED TO A LINE START, and that is a class fix
+  // rather than a style preference. An unanchored `/\.ig-X\s*\{/` matches the
+  // first selector ENDING in `.ig-X`, so a later `… [data-unit='true'] .ig-X {}`
+  // or an indented rule inside an `@container` block reads as the definition.
+  // It already bit once, in the viewer's contrast test, where the rule that
+  // HIDES the together mark was read as the rule that draws it. `.ig-slot` here
+  // is the same exposure and passes today only because the base rule happens to
+  // sit above the container query — file order, not a property. This makes it a
+  // property.
+  const slot = viewerCss.match(/(?:^|\n)\.ig-slot\s*\{([^}]*)\}/)?.[1];
     assert.ok(slot !== undefined, 'layer 1 no longer styles .ig-slot');
     assert.match(slot, /min-height:\s*var\(--ig-row-min-height\)/);
     assert.equal(
@@ -608,7 +617,7 @@ describe('the workspace stylesheet carries structure, never a value', () => {
     // the container's `align-items` and left it top-aligned. The alignment
     // belongs to the two buttons in the create step, a COLUMN, where without it
     // they stretch to the panel's full width.
-    const head = css.match(/\.ig-inspector-head\s*\{([^}]*)\}/)?.[1];
+    const head = css.match(/(?:^|\n)\.ig-inspector-head\s*\{([^}]*)\}/)?.[1];
     assert.ok(head !== undefined, 'nothing lays out the panel heading row');
     assert.match(head, /align-items:\s*baseline/);
 
@@ -618,7 +627,7 @@ describe('the workspace stylesheet carries structure, never a value', () => {
     // `align-self` this test exists to keep off such a row, because it was still
     // in the create step's COLUMN rule. Scanning only the control that was
     // wrong once leaves the next one to be found by eye.
-    const relationships = css.match(/\.ig-inspector-relationships-head\s*\{([^}]*)\}/)?.[1];
+    const relationships = css.match(/(?:^|\n)\.ig-inspector-relationships-head\s*\{([^}]*)\}/)?.[1];
     assert.ok(relationships !== undefined, 'nothing lays out the relationships header row');
     assert.match(relationships, /align-items:\s*baseline/);
 
@@ -639,14 +648,14 @@ describe('the workspace stylesheet carries structure, never a value', () => {
     // the chip does not grow, and its auto margin is what consumes the slack.
     // Drop any one and the chip slides back beside the glyph with every markup
     // test still green — the markup order is unchanged by such an edit.
-    const option = css.match(/\.ig-kind-option\s*\{([^}]*)\}/)?.[1];
+    const option = css.match(/(?:^|\n)\.ig-kind-option\s*\{([^}]*)\}/)?.[1];
     assert.ok(option !== undefined, 'nothing lays out a kind row');
     assert.match(option, /display:\s*flex/);
     // CENTRED RATHER THAN ON A BASELINE, because a bordered chip has padding of
     // its own and sits low against the glyph and the word on a baseline.
     assert.match(option, /align-items:\s*center/);
 
-    const digit = css.match(/\.ig-kind-digit\s*\{([^}]*)\}/)?.[1];
+    const digit = css.match(/(?:^|\n)\.ig-kind-digit\s*\{([^}]*)\}/)?.[1];
     assert.ok(digit !== undefined, 'nothing draws the digit chip');
     assert.match(digit, /margin-left:\s*auto/);
     assert.match(digit, /flex:\s*0 0 auto/);
@@ -654,7 +663,7 @@ describe('the workspace stylesheet carries structure, never a value', () => {
 
     // AND THE HEADER ROW SEPARATES ITS TWO CHILDREN. `+ add` sits opposite the
     // heading; without this it collapses against it.
-    const head = css.match(/\.ig-inspector-relationships-head\s*\{([^}]*)\}/)?.[1];
+    const head = css.match(/(?:^|\n)\.ig-inspector-relationships-head\s*\{([^}]*)\}/)?.[1];
     assert.ok(head !== undefined, 'nothing lays out the relationships header row');
     assert.match(head, /display:\s*flex/);
     assert.match(head, /justify-content:\s*space-between/);
