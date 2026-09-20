@@ -122,22 +122,47 @@ assumed.
 
 ## 3. The gap table
 
+> **Status 2026-09-20, after `28a83a5` merged to `main`.** Rows **1, 2, 7, 33,
+> 42 and 51** are **CLOSED** and say so in place; row **3** is **PARTIAL**. Every
+> other row is **unchanged** — the sweep touched the rail, the audit filter, the
+> capsules and the zone tracks, and nothing else. The inspector, the edit flow,
+> the re-evaluate surface and the audit cards are untouched code.
+>
+> The closed rows were re-verified against the source rather than against the
+> commit messages, and that re-read is what caught row 3: the provenance line is
+> *hidden* at rail density, not *expandable*. §17j asks for expand-on-demand and
+> only the inline half is done. A commit comment of mine claimed otherwise and
+> has been corrected.
+
 Class key — **MS** missing spec (design never drew or described it) · **SI** spec
 ignored (design is clear, implementation differs) · **SA** spec ambiguous (frame
 and prose disagree, or the frame is internally inconsistent) · **BU** behaviour
 undefined (the state exists at runtime and design never said what it does).
+A struck class (`~~SI~~`) means the gap is closed; the class records what it was.
+
+**Two cells I could not settle from the source and have not rewritten:**
+
+- **Row 10** (`as of … agorefresh`, no space). The markup emits no whitespace
+  text node, but `.ig-workspace-refresh` carries `margin-left:
+  var(--ig-space-tight)`. Whether the gap is real needs a rendered measurement,
+  not a read — the original observation came from extracted text, which drops
+  CSS gaps. Left standing, marked here as **unconfirmed**.
+- **Row 12** (`WHY RANK` clauses, "three fragments"). Today's `whyRankSpec`
+  emits at most two spans, the holds having become a `<ul>`. Whether the third
+  fragment ever existed would need the original capture. The 2px separator is
+  still real and still the defect; the count may not be.
 
 ### 3.1 Workspace shell (§17a)
 
 | # | Element | Design target | Implementation | Class |
 |---|---|---|---|---|
-| 1 | Rail row height | 53px, uniform, 4 lines | 134–408px, variable, 8–22 lines | **SI** |
-| 2 | Rail row content | rank · title · **one** metadata line · delta chip | rank · title · id · priority · every badge on its own line · one `↳` provenance sentence per applicable rule | **SI** |
-| 3 | Provenance placement | in the inspector, under `WHY RANK n`; §16f makes it `→ expand` on a row | always expanded on every rail row, up to 3 `↳` lines each | **SI** |
+| 1 | Rail row height | 53px, uniform, 4 lines | **CLOSED `28a83a5`** — 53px, every row, now strip included. Was 134–408px, variable, 8–22 lines | ~~SI~~ |
+| 2 | Rail row content | rank · title · **one** metadata line · delta chip | **CLOSED `28a83a5`** — line 2 is one `.ig-row-meta` run (`488 · P3 → 0 · ⊘ blocks 512`). Was every badge on its own line plus a `↳` sentence per rule | ~~SI~~ |
+| 3 | Provenance placement | in the inspector, under `WHY RANK n`; §16f makes it `→ expand` on a row | **PARTIAL `28a83a5`** — no longer inline on the row (`display: none` at rail density), but **there is no expand affordance**, so a rail reader reaches it only through the inspector. §16f's `→ expand` does not exist | **SI** |
 | 4 | Rail heading | `WORK ORDER` | `ORDER PREVIEW` — which is §16's name for the read-only surface | **SI** |
 | 5 | Rail header controls | `filter` control + total count `312` | three count chips (`8 ranked`, `6 ready now · cap 2`, `6 held`), no filter control | **SI** |
 | 6 | Relationship legend | not present in the workspace | present **twice** — 229px in the rail, 88px in the canvas | **MS** |
-| 7 | `NOW` block | not present | a cyan `NOW` banner at the top of the rail showing the in-flight issue and its runner state | **MS** |
+| 7 | `NOW` block | ~~not present~~ **`16a` draws it** — my original cell was wrong, see [3b](#3b-design-answered--and-two-of-my-four-questions-were-my-own-misreading) | **CLOSED `28a83a5`** — a 53px first row of the rail carrying a `now` mark and no rank number. It never printed a rank; what was wrong was its 83px height | ~~MS~~ |
 | 8 | Zone proportions | ≈ 390 / 575 / 330 (30 / 45 / 25) | 312 / 758 / 312 (22 / 54 / 22) — narrowest rail carrying the most content | **SI** |
 | 9 | Header counts | `312 open` · `64 encoded` · `◆ 3 encoding problems` | `297 open · 126 encoded` present at scale; audit chip reads `6 audit` with no `◆` | **SI** |
 | 10 | Freshness + refresh | `as of 14:32` then a separate `↻` control | `as of 22:26 · 59s agorefresh` — **no space before the control** | **SI** |
@@ -185,7 +210,7 @@ undefined (the state exists at runtime and design never said what it does).
 | 30 | Header count | persistent, quiet, `◆ 3 encoding problems` | present; reads `6 audit`, no `◆` glyph | **SI** |
 | 31 | Gold 2px left-bar on flagged rail rows | required | **implemented and correct** — `#E2B912`, 2px inset. But it reached only 2 of 6 findings: the cycle members carry no bar | **SI** (partial) |
 | 32 | Audit toggle state | a toggle | `aria-pressed` did not track across clicks in this run | **SI** |
-| 33 | Filtered rail | §17a: the rail *"must never refuse or paginate away from an answer"* | with the filter on, the rail reads **"Nothing is in the order right now"** while 8 issues are ranked | **SA** — see Q2 |
+| 33 | Filtered rail | §17a: the rail *"must never refuse or paginate away from an answer"* | **CLOSED `28a83a5`** — reads `No flagged rows match. / 8 issues are ranked / clear the filter`, the denominator from `host.counts.ranked`. Was the §16i zero | ~~SA~~ |
 | 34 | Finding card headline | specific per finding — *"#533 is blocked by an issue closed 4 months ago"* | generic per class — *"This waits on an issue that is already closed."* — so every card of a class is identical at a glance | **SI** |
 | 35 | Finding card rationale | a paragraph explaining why it matters | absent | **SI** |
 | 36 | Finding card remedies | `Remove the edge` · `Keep as history` · `Repoint or clear` | `show me` only. CHANGELOG records this as deliberate, citing §17d's *"navigation and never a remedy"* — **but the frame draws the remedies** | **SA** — see Q3 |
@@ -199,7 +224,7 @@ undefined (the state exists at runtime and design never said what it does).
 | 39 | Refusal above budget | refuse and say so | **correct** — *"141 related issues is past this canvas's budget of 60, so it is not drawing them."* | — ok |
 | 40 | Search-to-focus | `⌕ focus an issue` | **present** | — ok |
 | 41 | Capsule tail | 4 capsules + `+ 5 more · 2–7 issues each` | all 13 drawn | **SI** |
-| 42 | Capsule name | a semantic group name — `auth & session`, `poller & webhooks` | the title of one member issue — `Wire the cadence tick` | **SA** — see Q4 |
+| 42 | Capsule name | identify by **anchor** — `around #488 · Extract session store adapter`; never a generated phrase (`RULINGS.md` §4) | **CLOSED `28a83a5`** — renders `around 315 · Backfill the audit count`, and the anchor is now the **highest-ranked member**. Was one member's bare title, picked by `members.sort()` — the alphabetically first key | ~~SA~~ |
 | 43 | `nothing can start` on a cyclic capsule | required | **correct** | — ok |
 | 44 | Isolated count chip | `248 isolated · open as list` on the canvas | in the rail footer (`5 with no relationships · show`), not on the canvas | **SI** |
 | 45 | Canvas filter chips | `has relationships · held only · problems only · label…` | absent | **SI** |
@@ -218,7 +243,7 @@ undefined (the state exists at runtime and design never said what it does).
 
 | # | Element | Design target | Implementation | Class |
 |---|---|---|---|---|
-| 51 | A together unit in the rail | frame `17a` draws `#512` as **one ordinary 53px row at rank 2**; the unit is stated only in the inspector sentence. `START_HERE.md` says a together-group occupies **one rank as a compound station** | a 408px boxed enclosure containing two nested full issue cards, rank `—` | **SA** — see Q1 |
+| 51 | A together unit in the rail | one row, one rank, containing a box; at 390px a `⧉ n` marker inline with the lead's title (`RULINGS.md` §1, `17j`) | **CLOSED `28a83a5`** — 53px, `⧉ 2` marker with the lead's title; the enclosure survives only above 430px. Was a 408px boxed enclosure | ~~SA~~ |
 | 52 | Cyan hairline connector | the kit's one amendment: a 1.6px cyan hairline between members, so a together-edge is individually clickable | the enclosure is drawn; no separate connector hit target | **SI** |
 
 ---
@@ -458,6 +483,35 @@ one removes.
 **Status 2026-09-20: the hold is lifted. Design answered all four and added the
 density pass.** Section 5b below is superseded and kept as the record of what was
 blocked. The authority for every row here is `RULINGS.md`, cited per item.
+
+### Held rank — the shape of the one ruling still unbuilt
+
+I said in an earlier report that this was blocked on a question about `16a`'s own
+figures: the tile shows `#503` at rank **4** and `#530` as *"would be rank 4"*,
+which read as two rows claiming one position. **It is not a collision and there
+is no question to ask.** A would-be rank is the position the slot *would take*
+if it became ready — `#530` is P1, and arriving among the P1s it would land at 4
+and push `#503` to 5. Self-consistent, and I misread it. Recorded because I
+raised it as a blocker and it is not one.
+
+What remains is genuinely larger than the sweeps above, and it is not a
+rendering change:
+
+1. **A held slot must sometimes carry a real rank.** `RULINGS.md` §1 keeps
+   `#512` at rank 2 because its blocker `#488` is rank 1 — *inside* the previewed
+   order. `@issuegraph/derive` assigns `ready ? (rank += 1) : null`, so the
+   number does not exist to render. Producing it means ranking held-but-locally-
+   blocked slots, which is a change to a published package whose ordering is
+   SPEC-governed.
+2. **A would-be rank for the other case.** When the blocker is *outside* the
+   order, the slot shows `—` plus `would be rank N` beside the id — a second,
+   different number the host must also compute.
+3. Only then is there anything for the viewer to draw, behind a new optional
+   field on `ViewerSlot`.
+
+So it is one ruling and three changes, the first two in the host's derivation.
+Sized here rather than started, because folding a derive-semantics change into a
+presentation sweep is how the two get reviewed as one thing.
 
 ### Re-classed — these were not gaps in the implementation
 
