@@ -223,6 +223,69 @@ undefined (the state exists at runtime and design never said what it does).
 
 ---
 
+## 3b. Design answered — and two of my four questions were my own misreading
+
+**Claude Design ruled on all four on 2026-09-20, and added the density pass.** The
+authority is `RULINGS.md` on branch `design/issuegraph-rulings-density` (commit
+`e6ce0e9`) in `descant-design-kits`, with frames `17i`, `17j`, `17k`. Captures:
+[`evidence/2026-09-20/`](./evidence/2026-09-20/).
+
+**Section 4 below is left standing as it was asked, and it is wrong in two places.
+Those two are corrected here rather than quietly edited, because the owner
+forwarded that section to Design and a question that turned out to be a reading
+failure should not be silently converted into a question that was always sound.**
+
+### Q1 was not a contradiction in the frames. I misread the rail's third track.
+
+I wrote *"The frame contradicts itself"* because `#512` showed rank `2` while
+`#530` showed `—`. **The rail has three tracks — `30px` rank · `1fr` issue · `auto`
+delta — and the `—` I read as `#512`'s rank is its delta chip**, meaning *unchanged
+this re-evaluate*. Its rank is `2`, in track one. There was no contradiction to
+find.
+
+The rule, which `16a` already drew: **a held issue keeps its rank when its blocker
+is inside the previewed order, and loses it when the blocker is outside** — and
+when it loses it, the would-be rank prints beside the id. `#512` keeps rank 2
+because `#488` is rank 1. `#530` shows `—` and `#530 · would be rank 4`, because
+`#602` is *"still open, and not in this order"*.
+
+Same for the together-unit. `16a` rank 2 is **one ranked row** holding
+`⧉ ONE UNIT · 2 ISSUES` with `#512` and `#514` inside it. I had extracted `16a`'s
+text on the first pass and used it only to prove the tiles matched — I never read
+it as the answer to §17's rail, because I had filed it as "the read-only preview,
+a different surface".
+
+### Q4b was not an undrawn element. `16a` draws the now strip.
+
+I wrote that the `NOW` block was *"not present"* in any frame and that the
+implementation had *"invented"* it. **`16a`'s first row is
+`NOW · Fix flaky auth integration test · autnmy/descant-web#499 · Review · 12m ·
+working`.** Showing it is correct. Design's ruling is about its *shape*: a raised
+first row of the rail, above rank 1, **carrying no rank number** — because run
+state appears exactly twice and never earns a rank slot.
+
+### What stands
+
+**Q2, Q3 and Q4a were real.** Design confirmed the audit-filter empty state is a
+genuine defect of mine, ruled the audit panel's zone and kept the remedies, and
+called the capsule-name catch *"correct — `auth & session` is placeholder copy,
+not a field"*. Every measurement in section 3 stands; the re-classed rows are
+marked in [section 5c](#5c-what-the-rulings-changed--the-current-work-order).
+
+### The pattern, named because it is the point
+
+Three of my four questions were answered in a kit I had open. Design put it
+plainly: *"not a criticism of the calls you made — the reasoning in those code
+comments was sound. It is a note that the kit was not being read as the authority
+before decisions got made."*
+
+That is the same shape as the defect I documented in the code: **the confirming
+evidence was already on screen and was not re-examined, because it had been filed
+under the wrong question.** Read the kit as the authority before deciding, and
+cite it when you do.
+
+---
+
 ## 4. What design must answer
 
 Four questions. Each one blocks a decision an implementer cannot make alone, and
@@ -390,7 +453,78 @@ one removes.
 
 ---
 
-## 5b. Which of those wait on Design, and which do not
+## 5c. What the rulings changed — the current work order
+
+**Status 2026-09-20: the hold is lifted. Design answered all four and added the
+density pass.** Section 5b below is superseded and kept as the record of what was
+blocked. The authority for every row here is `RULINGS.md`, cited per item.
+
+### Re-classed — these were not gaps in the implementation
+
+| # | Was | Now | Authority |
+|---|---|---|---|
+| 7 | `MS` — "the `NOW` block is in no frame" | **not a gap.** Showing it is correct; `16a` draws it. The real defect is narrower: it must be a raised **first row of the rail carrying no rank number**, not a cyan banner | `RULINGS.md` §4, `16a` |
+| 13 | `SA` — heading when held | **not a gap.** A held row keeps `WHY RANK n` when its blocker is inside the order; `WHY HELD` is right only in the rankless case | `RULINGS.md` §1 |
+| 51 | `SA` — together unit, row or box | **resolved: one row, one rank.** The implementation's shape is right; its **408px height** is the defect. At `390px` the unit is a `⧉ 2` marker inline with the title | `RULINGS.md` §1, `17j` |
+| 42 | `SA` — capsule name | **confirmed a real gap** — the only one of the four. Identify by **anchor**: `around #488 · Extract session store adapter`. Never a generated phrase | `RULINGS.md` §4 |
+| 33 | `SA` — audit filter empties the rail | **confirmed my defect.** No collision in the spec: the filter hides rows, never the order | `RULINGS.md` §2 |
+| 19, 38 | `SA` — audit panel's zone | **decided: not a fourth zone.** A transient `520px` overlay anchored to the header count, over the **canvas**, Escape to dismiss, never over the rail | `RULINGS.md` §3 |
+| 36 | `SA` — remedies or navigation only | **remedies are required**; only auto-fix is forbidden. Keep all three | `RULINGS.md` §3 |
+| 1, 2, 3 | `SI` — rail row density | **unchanged, and now fully specified** — see the row contract | `RULINGS.md`, `17j` |
+
+### The row contract — `17j`, and the whole of Tier 1
+
+```
+390px rail · 53px row · identical at 6, 60 and 312 issues
+tracks:  30px rank+dot  ·  1fr issue  ·  auto delta
+height:  9 pad + 17 title + 3 gap + 15 meta + 9 pad = 53px, divider inclusive
+line 1:  title, 17px, truncates, never wraps
+line 2:  mono meta, 15px — #512 · P0 · ⊘ #488
+```
+
+**Provenance never renders inline in the rail.** It is expand-on-demand here, and
+inline only in `16a`'s wider panel. *"Same row, two densities."*
+
+**Drop order** as the `1fr` track narrows — §18's settings rail is `330px`, so
+steps 1–3 apply there by default:
+
+1. evidence / verification chips (`✓ verified`)
+2. relationship badges past the first → `+n`; the first is the one causing the hold
+3. the priority token `P0` — but a promotion `P3 → 0` **stays**, it is not
+   recoverable from the rank
+4. the delta chip's *number* (`▲5` → `▲`); the slot never collapses
+5. the title truncates — always last, never dropped
+
+**Never dropped at any width:** rank number · readiness dot · issue number · hold
+glyph (`⊘ ⇄ ⧉ ≡ ⑃`) · gold audit left-bar. *The glyph is one of the four redundant
+channels the colour-blind-safety claim rests on.*
+
+### Placement — `17k`
+
+> **The rail never yields. The canvas yields first. The inspector yields in between.**
+
+| Width | Layout |
+|---|---|
+| ≥ 1360 | `390 / 1fr / 330` |
+| 1120–1359 | rail unchanged; inspector becomes a `330` overlay over the canvas |
+| < 1120 | rail unchanged; canvas collapses to a strip; inspector returns inline |
+
+**The one implementation consequence:** the same row renders at `390` in the
+workspace and `330` in §18's settings rail, so **it must take its width from its
+container** — not a viewport media query, not a host prop. A package that reads the
+window cannot be dropped into someone else's settings page, which is the whole
+BYO-Theme / BYO-DataSource premise.
+
+### The finding to carry
+
+> At 6, 60 and 312 issues **the rail is identical**. What changes is *around* it —
+> virtualisation appears, the runner-hold footer grows, filter chips stop being
+> optional, the canvas starts refusing. *"If you are making the rail denser as the
+> backlog grows, you are compressing the surface that was never the problem."*
+
+---
+
+## 5b. Which of those waited on Design *(superseded by 5c; kept as the record)*
 
 **Status 2026-09-19: the owner has taken section 4's questions to Design and the
 sweep is on hold until they answer.** That is the right call and it is what this
@@ -439,7 +573,7 @@ from the sweep.
 > recommendation below is left as written, because its reasoning is still the input
 > to what gets ordered when the answers land — and because a recommendation edited
 > to agree with the decision that followed it is worth nothing to the next reader.
-> [Section 5b](#5b-which-of-those-wait-on-design-and-which-do-not) says which items
+> [Section 5c](#5c-what-the-rulings-changed--the-current-work-order) says which items
 > the hold actually binds: eleven of about forty.
 
 **Order the sweep now. Send design the four questions in parallel. Do not wait on
