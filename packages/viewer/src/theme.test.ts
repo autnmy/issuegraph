@@ -293,6 +293,13 @@ const EXPANSION: readonly string[] = Object.freeze([
   '--ig-radius-large',
   '--ig-row-min-height',
   '--ig-row-padding-block',
+  // §17j's rail density, beside §16a's above it. Both are in the contract
+  // because there are two densities and the tile says so.
+  '--ig-row-height-dense',
+  '--ig-row-padding-block-dense',
+  '--ig-rank-column-dense',
+  '--ig-row-title-line',
+  '--ig-row-line-gap',
   '--ig-band-rail',
   '--ig-tint-fill',
   '--ig-tint-border',

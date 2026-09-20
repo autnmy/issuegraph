@@ -47,7 +47,22 @@ export const viewerStylesheet = `
   outline-offset: calc(var(--ig-focus-ring) * -1);
 }
 
+/* THE ROW'S DENSITY IS READ FROM THIS BOX, AND THAT IS §17j's CLOSING RULE
+   RATHER THAN A PREFERENCE. The same row renders at 390px in the workspace
+   rail and at 330px in §18's settings rail, so it *"must take its width from
+   its container and pick its drop step from that — not from a viewport media
+   query, and not from a prop the host sets. A package that reads the window
+   cannot be dropped into someone else's settings page, which is the whole BYO
+   premise."*
+
+   A viewport query would have been the obvious reach and it is precisely
+   wrong: it answers a question about the WINDOW when the row's question is
+   about the COLUMN it was given. Two rails of different widths on one screen
+   is not an edge case here — §17a's rail and §18's settings rail are that
+   screen. */
 .ig-list {
+  container-name: ig-rail;
+  container-type: inline-size;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -390,6 +405,109 @@ export const viewerStylesheet = `
   grid-template-columns: var(--ig-rank-column) 1fr;
   min-height: var(--ig-row-min-height);
   padding: var(--ig-row-padding-block) var(--ig-space-wide);
+}
+
+/* ── §17j's RAIL DENSITY ───────────────────────────────────────────────────
+
+   THE 53px ROW, AND THE ORDER THINGS LEAVE IT. '17j' fixes both, and the
+   reason it fixes the second is that the build *"showed everything because
+   nothing told it what to give up"*. This is that instruction.
+
+       9 pad + 17 title + 3 gap + 15 meta + 9 pad = 53px, divider inclusive
+       tracks: 30px rank · 1fr issue · auto delta
+
+   THE FINDING THIS ENCODES, which is the one to keep: at 6, 60 and 312 issues
+   the rail is IDENTICAL. What changes is around it — virtualisation appears,
+   the runner-hold footer grows, filter chips stop being optional, the canvas
+   starts refusing. *"If you are making the rail denser as the backlog grows,
+   you are compressing the surface that was never the problem."* So nothing
+   here keys off the backlog size, and nothing ever should.
+
+   WHY 430px AND NOT A NUMBER '17j' GIVES: it does not give one. It gives two
+   anchors — the rail is 390 and §18's settings rail is 330, where steps 1-3
+   apply "by default" — and §16a's panel, which keeps provenance inline, is
+   wider than either. 430 is chosen to sit above the rail and below that panel;
+   it is THIS PACKAGE'S CHOICE, not the design's, and it is the one number in
+   this block a frame does not back. Flagged rather than presented as ruled. */
+@container ig-rail (max-width: 430px) {
+  .ig-slot {
+    align-items: center;
+    grid-template-columns: var(--ig-rank-column-dense) 1fr auto;
+    min-height: var(--ig-row-height-dense);
+    padding-block: var(--ig-row-padding-block-dense);
+  }
+
+  /* TWO LINES, AND NEITHER WRAPS. A wrapping title is what turns a 53px row
+     into a 106px one, so the truncation is not cosmetic — it is what makes the
+     height a property of the row rather than of its longest title. */
+  .ig-slot .ig-row-head {
+    gap: 0;
+  }
+
+  .ig-slot .ig-title {
+    line-height: var(--ig-row-title-line);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* STEP 5 OF THE DROP ORDER, AND IT IS LAST FOR A REASON '17j' STATES:
+     *"A row without a title is not a row."* Everything above leaves first. */
+  .ig-slot .ig-row-body {
+    gap: var(--ig-row-line-gap);
+    min-width: 0;
+  }
+
+  /* EXPAND-ON-DEMAND, NOT DELETED. §17j: *"The provenance line never renders
+     inline here. In the rail it is expand-on-demand; in §16a's wider panel it
+     is inline. Same row, two densities."* The markup stays whole so the wider
+     container still draws it and so the accessible name is unchanged; what
+     the rail does is decline to spend 53px of every row on it. */
+  .ig-slot .ig-provenance,
+  .ig-slot .ig-hold,
+  .ig-slot .ig-caveat {
+    display: none;
+  }
+}
+
+/* STEPS 1-3 OF THE DROP ORDER, AT §18's 330px SETTINGS RAIL, which '17j'
+   names as the width where they apply by default.
+
+   THE SELECTORS ARE THE MARKUP'S OWN ATTRIBUTES, not class guesses: evidence
+   is 'data-evidence', a relationship is 'data-edge', a priority is
+   'data-priority' with 'query' / 'tier' / 'promoted'. Three of these were
+   written from memory first and two were wrong — the parts publish
+   'data-evidence="verified"', never a 'data-ig-badge'. */
+
+/* STEP 1 — evidence and verification chips. '17j': *"Reassurance, not an
+   answer to any question the rail is asked."* */
+@container ig-rail (max-width: 360px) {
+  .ig-slot .ig-badge[data-evidence] {
+    display: none;
+  }
+}
+
+/* STEP 2 — relationship badges past the FIRST, which is kept because it is
+   the one causing the hold. Scoped to 'data-edge' so it counts relationships
+   and not the priority, evidence and readiness chips that share '.ig-badge';
+   a positional 'nth-of-type' would have hidden whichever chip happened to sit
+   second, which is not what the rule says at all. The '+n more' chip carries
+   what left, and it already exists — 'data-omitted'. */
+@container ig-rail (max-width: 345px) {
+  .ig-slot .ig-badge[data-edge] ~ .ig-badge[data-edge] {
+    display: none;
+  }
+}
+
+/* STEP 3 — the priority token. A DECLARED TIER goes, because '17j' says it is
+   *"recoverable from the rank itself"*. A PROMOTION stays: 'P3 → 0' is the
+   one form the rank cannot give back, and it is rank provenance rather than a
+   restatement. A matched query stays for the same reason — it names WHICH
+   query, which no rank encodes. */
+@container ig-rail (max-width: 335px) {
+  .ig-slot .ig-badge[data-priority='tier'] {
+    display: none;
+  }
 }
 
 /* THE ONE ROW GROUND THE FRAME DRAWS, and it is not a stripe. A together unit
