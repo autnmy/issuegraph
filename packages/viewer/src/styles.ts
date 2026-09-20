@@ -587,11 +587,22 @@ export const viewerStylesheet = `
     white-space: nowrap;
   }
 
-  /* EXPAND-ON-DEMAND, NOT DELETED. §17j: *"The provenance line never renders
-     inline here. In the rail it is expand-on-demand; in §16a's wider panel it
-     is inline. Same row, two densities."* The markup stays whole so the wider
-     container still draws it and so the accessible name is unchanged; what
-     the rail does is decline to spend 53px of every row on it. */
+  /* HIDDEN HERE, AND NOT YET EXPANDABLE — WHICH IS HALF OF WHAT 17j ASKS FOR.
+     The tile says: "The provenance line never renders inline here. In the rail
+     it is expand-on-demand; in 16a's wider panel it is inline. Same row, two
+     densities."
+
+     THE INLINE HALF IS DONE AND THE ON-DEMAND HALF IS NOT. There is no
+     row-level expand affordance at this density — 16f's right-arrow "expand
+     provenance" does not exist — so a rail reader reaches the explanation
+     through the inspector's WHY RANK block rather than through the row. The
+     information is one selection away, not lost, but this comment previously
+     claimed "expand-on-demand" and that was an overclaim about a control
+     nothing draws.
+
+     The markup stays whole so the wider container still renders it inline and
+     so the accessible name is unchanged; what the rail declines is spending
+     53px of every row on it. The missing affordance is filed, not forgotten. */
   .ig-slot .ig-provenance,
   .ig-slot .ig-hold,
   .ig-slot .ig-caveat {

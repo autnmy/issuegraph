@@ -59,7 +59,17 @@ export const workspaceStylesheet = `
      squeeze the canvas, which is the one thing fixed positions exist to stop.
      Nothing failed loudly, because an invalid declaration is simply absent.
 
-     40 is a reading measure for a title plus its id, in characters. */
+     40 is a reading measure for a title plus its id, in characters.
+
+     THIS IS THE PRE-17k FALLBACK, and it is deliberately the OLD equal measure. 17k
+     gives 390 / 1fr / 330 for widths at or above 1360 and something else
+     entirely below it: the inspector lifts to an overlay from 1120, and under
+     that the canvas collapses to a strip. Neither of those exists yet, so
+     applying the wide proportions at every width squeezes the canvas instead
+     of collapsing it — measured at 990px, where the canvas fell to 248px. That
+     is the one rule 17k states outright inverted: "the rail never yields, the
+     canvas yields first." Below the breakpoint the old equal tracks are the
+     honest placeholder. */
   grid-template-columns:
     calc(var(--ig-char-width) * 40)
     1fr
@@ -71,6 +81,53 @@ export const workspaceStylesheet = `
   font-family: var(--ig-font-ui);
   font-size: var(--ig-font-size);
   line-height: var(--ig-line-height);
+}
+
+/* THE CONTAINER IS THE MOUNT, NOT THE WORKSPACE, AND THAT IS NOT A DETAIL.
+   A container query CANNOT style the element that establishes the container:
+   put container-type on .ig-workspace and a rule inside @container matching
+   .ig-workspace never fires. It looked right, built clean, and did nothing —
+   measured at 1500px, where the rail and inspector sat at 312/312 while only
+   the canvas 1fr grew. A rule that can never fire is the same class as a guard
+   that can never fail, and the only reason this was caught is that the check
+   compared the TRACKS either side of the breakpoint rather than asking whether
+   the layout "changed".
+
+   .ig-mount is this package's own wrapper around the workspace, so the query
+   has a box to measure that is not the box it restyles. */
+.ig-mount {
+  container-name: ig-workspace;
+  container-type: inline-size;
+}
+
+/* 17k's WIDE LAYOUT, AT THE WIDTH 17k GIVES IT FOR. A container query, not a
+   viewport one, for the reason layer 1's row already answers to: the workspace
+   is a box a host places, and a package that reads the window cannot be
+   dropped into someone else's page.
+
+   1360 IS 17k's OWN NUMBER, not a chosen one — the table's first row reads
+   "at or above 1360: 390 / 1fr / 330, three zones, as 17a".
+
+   THE TWO ZONES ARE NOT THE SAME WIDTH, AND THAT IS THE POINT OF THIS RULE.
+   Both tracks were 40 characters, which is one reading measure applied twice;
+   17a draws 1292 = 390 + 572 + 330, a rail WIDER than the inspector. The rail
+   carries a rank, a title, a meta line and a delta chip on one row while the
+   inspector carries a column of stacked blocks — not the same problem, and
+   sizing them alike shortchanged the surface 17k says must never yield.
+
+   50 AND 42 CHARACTERS, NOT 390px AND 330px, because this file sizes zones in
+   TYPE on purpose: a host that scales its type scales the zones with it, and a
+   fixed track would not. At the shipped --ig-char-width of 7.8 that is 390 and
+   327.6 — the rail exact, the inspector 2.4px under 17k's figure. Stated
+   rather than rounded away; the type-relative property is worth more than the
+   2.4px, and it is the same BYO argument layer 1's row query rests on. */
+@container ig-workspace (min-width: 1360px) {
+  .ig-workspace {
+    grid-template-columns:
+      calc(var(--ig-char-width) * 50)
+      1fr
+      calc(var(--ig-char-width) * 42);
+  }
 }
 
 .ig-zone {
