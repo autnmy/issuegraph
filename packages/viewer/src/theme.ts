@@ -172,6 +172,17 @@ export const METRIC_TOKENS = Object.freeze([
   // would make the alignment grid move whenever either did, which is the one
   // thing this column exists to prevent.
   '--ig-rank-column',
+  // §17j's RAIL density, beside §16a's above rather than replacing it, because
+  // there are two densities and the tile says so: the provenance line is
+  // inline in §16a's wider panel and expand-on-demand in the rail. A host
+  // retheming one must be able to reach the other, so both are in the
+  // contract.
+  '--ig-row-height-dense',
+  '--ig-row-padding-block-dense',
+  '--ig-rank-column-dense',
+  '--ig-row-title-line',
+  '--ig-row-meta-line',
+  '--ig-row-line-gap',
   // §16b's spine furniture: the station disc that sits ON the spine line, and
   // the line height a card's own height is counted in.
   '--ig-station-box',
@@ -413,6 +424,42 @@ export const defaultTheme: Theme = Object.freeze({
     '--ig-band-rail': 3,
     // §16a's rank track, read straight off `grid-template-columns: 34px 1fr`.
     '--ig-rank-column': 34,
+    // ── §17j's RAIL density ────────────────────────────────────────────────
+    //
+    // THE THREE ABOVE ARE §16a's, AND §16a IS THE WIDE PANEL. Their comments
+    // say so — `34px 1fr` and `padding: 13px 20px` were read off that tile —
+    // and applying them to §17's rail is what made one density serve two
+    // surfaces. `RULINGS.md`'s §17j is explicit that there are two: *"The
+    // provenance line never renders inline here. In the rail it is
+    // expand-on-demand; in §16a's wider panel it is inline. Same row, two
+    // densities."*
+    //
+    // So these are the rail's own, read off `17j`'s stated anatomy rather than
+    // derived from §16a's:
+    //
+    //     9 pad + 17 title + 3 gap + 15 meta + 9 pad = 53px, divider inclusive
+    //     tracks: 30px rank · 1fr issue · auto delta
+    //
+    // They are applied by a CONTAINER query, never a viewport one — `17j`'s
+    // closing consequence is that the same row renders at 390 in the workspace
+    // and 330 in §18's settings rail, so it *"must take its width from its
+    // container and pick its drop step from that"*. A package that reads the
+    // window cannot be dropped into someone else's settings page, which is the
+    // whole BYO premise.
+    '--ig-row-height-dense': 53,
+    '--ig-row-padding-block-dense': 9,
+    '--ig-rank-column-dense': 30,
+    // The two text lines the 53px is composed of, so the height is built from
+    // its parts rather than asserted as one number a later edit can drift from.
+    // The meta token was added, removed when nothing read it — this package
+    // fails a token with no use, and rightly — and is back now that the meta
+    // line exists to read it.
+    '--ig-row-title-line': 17,
+    '--ig-row-meta-line': 15,
+    // The 3 in 9 + 17 + 3 + 15 + 9. Its own token because the anatomy is a
+    // SUM: a gap borrowed from the spacing scale would drift the height the
+    // moment that scale moved, and the height is the thing 17j fixes.
+    '--ig-row-line-gap': 3,
     // §16b's station disc, 26px across on the spine.
     '--ig-station-box': 26,
     // One line of text inside a §16b node card, which is what lets the layout

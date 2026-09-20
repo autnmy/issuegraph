@@ -560,6 +560,29 @@ function noticeParts(condition: ViewerCondition): NoticeParts {
           ? {}
           : { control: { label: condition.retry, command: 'retry:index' } }),
       };
+    // THE DENOMINATOR IS THE BODY, so it sits under the headline as the
+    // sentence that contradicts the wrong reading rather than beside it as a
+    // count. `No flagged rows match.` / `8 issues are ranked`.
+    //
+    // THE CONTROL REUSES THE AUDIT FILTER'S OWN COMMAND NAME rather than
+    // inventing a second one. §17d gives the count one job and "always the same
+    // click"; a clear-the-filter control that published a different command
+    // would be a second toggle for one boolean, which is the defect the audit
+    // surface already refused once.
+    case 'filtered':
+      return {
+        headline: condition.headline,
+        body: [condition.denominator],
+        ...(condition.action === undefined
+          ? {}
+          : {
+              control: {
+                label: condition.action.label,
+                command: 'audit-filter',
+                ...(condition.action.href === undefined ? {} : { href: condition.action.href }),
+              },
+            }),
+      };
   }
 }
 

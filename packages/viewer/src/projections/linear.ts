@@ -174,15 +174,6 @@ export function slotRow(
 
   // A UNIT'S HEAD IS ITS ENCLOSURE, not a joined title. Every other row keeps
   // the frame's two-line pair: the title, and the identity 2px beneath it.
-  const head = unit
-    ? [unitMark(slot), unitBlock(document, slot)]
-    : [
-        element('div', { class: 'ig-row-head' }, [
-          element('span', { class: 'ig-title' }, [slotTitle(document, slot)]),
-          lead === undefined ? null : identity(lead),
-        ]),
-      ];
-
   const badges = [
     priorityBadge(lead?.provenance),
     evidenceBadge(lead),
@@ -196,9 +187,58 @@ export function slotRow(
   // sentence beneath.
   const badgeRow = [...badges, ...edgeBadgeList(document, slot.members)];
 
+  // THE IDENTITY AND THE BADGES ARE ONE LINE, NOT TWO BLOCKS — which is what
+  // §17j's row anatomy asks for and what the old markup could not express.
+  //
+  // `17j` draws line 2 as a single mono run: `#512 · P0 · ⊘ #488`. The identity
+  // used to sit inside the head and the chips in a sibling block beneath it, so
+  // the two could never share a line however they were styled, and a row that
+  // should be 53px stacked to 5-11 lines. Nesting them in one `.ig-row-meta`
+  // makes the frame's line a property of the markup rather than of a CSS trick.
+  //
+  // IT SERVES BOTH DENSITIES, which is why this is a restructure and not a
+  // rail-only branch. §16a's row is the same sequence — title, identity, chips,
+  // then the provenance turnstile — and at that panel's width the line simply
+  // wraps and the provenance stays inline. `17j`: *"Same row, two densities."*
+  const meta =
+    lead === undefined && badgeRow.length === 0
+      ? null
+      : element('div', { class: 'ig-row-meta' }, [
+          lead === undefined ? null : identity(lead),
+          badgeRow.length === 0 ? null : element('div', { class: 'ig-badges' }, badgeRow),
+        ]);
+
+  // A TOGETHER UNIT IS ONE ROW AND ONE RANK, IN BOTH DENSITIES — and the two
+  // densities draw it differently, so the markup carries both and the container
+  // query picks.
+  //
+  // `RULINGS.md` §1: *"A together-unit is one row, one rank, containing a box.
+  // Not two rows, not a box spanning ranks."* §16a's wide panel IS that box —
+  // the `⧉ ONE UNIT · 2 ISSUES` pill, the note, and a member list. But `17j`
+  // draws the same unit in the 390px rail as `⧉ 2` inline with an ORDINARY
+  // title and an ordinary meta line, at the same 53px as every other row,
+  // because a box of member cards cannot be 53px and the rail's row height is
+  // not negotiable.
+  //
+  // So a unit row now carries an ordinary head as well as its enclosure, and
+  // each density hides the other's. The lead's title is what the rail shows;
+  // `slotTitle` joins every member and stays the ACCESSIBLE name through
+  // `slotLabel`, so what a screen reader hears still names both issues while
+  // the 53px row shows the one it has room for.
+  const unitCount = unit
+    ? element('span', { class: 'ig-unit-count' }, [`⧉ ${String(slot.members.length)}`])
+    : null;
+  const railTitle = unit ? (lead?.title ?? slot.lead) : slotTitle(document, slot);
+  const head = [
+    element('div', { class: 'ig-row-head' }, [
+      element('span', { class: 'ig-title' }, [unitCount, railTitle]),
+      meta,
+    ]),
+    ...(unit ? [unitMark(slot), unitBlock(document, slot)] : []),
+  ];
+
   const body = element('div', { class: 'ig-row-body' }, [
     ...head,
-    badgeRow.length === 0 ? null : element('div', { class: 'ig-badges' }, badgeRow),
     provenanceLine(lead?.provenance),
     // THE LEAD'S CAVEATS, like the lead's provenance: a together unit is one
     // row and one rank, and the host facts about that rank ride on its lead.

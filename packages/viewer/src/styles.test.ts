@@ -128,8 +128,49 @@ describe('the structural stylesheet', () => {
   it('contains no fixed pixel length', () => {
     // Spacing is the theme's too. `0` is unitless and carries no scale, which
     // is why it is the one length allowed to appear literally.
-    const css = withoutComments(viewerStylesheet);
+    //
+    // ONE EXEMPTION, AND IT IS THE NARROWEST ONE CSS LEAVES AVAILABLE: the
+    // CONDITION of an `@container` query. This rule's intent is that every
+    // VALUE is the theme's, so a host can retheme without forking — and a
+    // query threshold is not a value a theme sets. It is the width at which a
+    // different set of themed values starts applying.
+    //
+    // It is exempted because CSS gives no alternative. `@container (max-width:
+    // var(--x))` is not valid: a container condition cannot read a custom
+    // property, so the threshold has to be a literal or the query cannot exist.
+    // The three ways out were measured against §17j's ruling before this was
+    // widened:
+    //   - a host-set density prop — forbidden in as many words, *"not a prop
+    //     the host sets"*;
+    //   - a viewport media query — forbidden in the same sentence, and wrong,
+    //     because the row's question is about its COLUMN and not the window;
+    //   - `cqw` sizing with no breakpoint — cannot express "stop drawing this
+    //     below a width", which is the whole of the drop order.
+    //
+    // So the exemption is scoped to the parenthesised condition ONLY. A px in
+    // any DECLARATION still fails, which is the half of the rule that protects
+    // the theme contract.
+    const css = withoutComments(viewerStylesheet).replaceAll(
+      /@container[^{]*\{/g,
+      '@container {',
+    );
     assert.equal(/\d+(?:\.\d+)?px/.exec(css), null, 'a px length');
+  });
+
+  it('puts a px length only in a container condition, never in a declaration', () => {
+    // THE OTHER HALF OF THE EXEMPTION ABOVE, asserted rather than trusted.
+    // Stripping the conditions makes the first test blind to what is inside
+    // them, so this one looks at exactly that text and holds it to the shape
+    // the exemption was granted for: a container query, on an inline size.
+    const css = withoutComments(viewerStylesheet);
+    for (const match of css.matchAll(/@container([^{]*)\{/g)) {
+      const condition = (match[1] ?? '').trim();
+      assert.match(
+        condition,
+        /^[a-z-]*\s*\((?:max|min)-width:\s*\d+(?:\.\d+)?px\)$/,
+        `"${condition}" is not a plain inline-size container condition`,
+      );
+    }
   });
 
   it('names no font family outside the type tokens', () => {
@@ -146,6 +187,14 @@ describe('the structural stylesheet', () => {
       .filter((selector) => selector !== '');
 
     for (const selector of selectors) {
+      // AN AT-RULE IS NOT A SELECTOR, and this split cannot tell them apart on
+      // its own: `@container ig-rail (max-width: 430px) {` arrives here as if
+      // it were one, and it carries no class because it selects nothing. The
+      // rules INSIDE it are still checked — they are their own entries in this
+      // same list — so the scoping guarantee is unchanged. What is skipped is
+      // the wrapper, which cannot leak to a host page because it matches no
+      // element.
+      if (selector.startsWith('@')) continue;
       assert.match(
         selector,
         /(^|[\s,])\.ig-/,
@@ -169,7 +218,18 @@ describe('the structural stylesheet', () => {
     // `.ig-unit`. It is still drawn at `--ig-stroke-connector`, which is what
     // that token has always meant: the hairline the together mark takes, finer
     // than an ordinary edge.
-    const rule = /\.ig-unit\s*\{([^}]*)\}/.exec(css);
+    // ANCHORED TO THE DEFINING RULE, NOT TO ANY SELECTOR THAT ENDS IN IT.
+    // `\.ig-unit\s*\{` matched the FIRST rule whose selector happens to end
+    // `.ig-unit` — and once a density rule existed that hides the enclosure in
+    // a narrow rail, that was `… [data-unit='true'] .ig-unit { display: none }`
+    // and this test read `display: none` as the together mark's definition.
+    //
+    // It is the substring-for-exact defect one more time: the string that means
+    // "the together mark" is contained in the string that means "hide the
+    // together mark". Anchoring to a selector that BEGINS a line and is exactly
+    // `.ig-unit` is the whole fix, and it makes this test stricter rather than
+    // more permissive — a rule that stops defining the border still fails.
+    const rule = /(?:^|\n)\.ig-unit\s*\{([^}]*)\}/.exec(css);
     assert.ok(rule !== null, 'the stylesheet draws no together mark');
 
     const body = rule[1] ?? '';

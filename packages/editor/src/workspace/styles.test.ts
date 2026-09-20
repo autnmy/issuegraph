@@ -372,8 +372,23 @@ const RENDERS = [
   }),
 ];
 
-/** Every class THIS package's workspace emits, across those states. */
-const EMITTED: ReadonlySet<string> = new Set(RENDERS.flatMap((result) => classesIn(result.markup)));
+/**
+ * Every class THIS package's workspace emits, across those states.
+ *
+ * PLUS THE ONE IT EMITS IMPERATIVELY. `RENDERS` is markup, and `mountWorkspace`
+ * sets `surface.className = 'ig-mount'` in `mount.ts` — outside any markup
+ * string, so no amount of rendering produces it. The guard's intent is that no
+ * rule survives for a class nothing emits; `ig-mount` IS emitted, by a code
+ * path this derivation cannot see, and leaving it out made the guard's input
+ * wrong rather than its rule.
+ *
+ * Named here rather than loosening the assertion, so a class added to the mount
+ * still has to be declared in one place a reader can check against `mount.ts`.
+ */
+const EMITTED: ReadonlySet<string> = new Set([
+  ...RENDERS.flatMap((result) => classesIn(result.markup)),
+  'ig-mount',
+]);
 
 /** The classes the COMPOSED leaves emit over the same document, from those leaves. */
 const COMPOSED: ReadonlySet<string> = new Set([
@@ -469,7 +484,36 @@ describe('the workspace stylesheet carries structure, never a value', () => {
   it('writes no literal colour and no fixed length', () => {
     assert.equal(/#[0-9a-fA-F]{3,8}\b/.test(css), false, 'a literal colour');
     assert.equal(/\brgba?\(/.test(css), false, 'a literal colour function');
-    assert.equal(/\b\d+(\.\d+)?(px|rem|em|pt)\b/.test(css), false, 'a fixed length');
+    // ONE EXEMPTION, THE SAME ONE THE VIEWER'S SHEET TAKES, and for the same
+    // reason: CSS cannot read a custom property in a container condition.
+    // `@container (min-width: var(--x))` is not valid, so a breakpoint is a
+    // literal or the query cannot exist. This rule's intent is that every VALUE
+    // is the theme's; a query threshold is not a value a theme sets, it is the
+    // width at which a different set of themed values applies.
+    //
+    // Scoped to the parenthesised CONDITION only. A px in any declaration still
+    // fails, which is the half that protects the theme contract.
+    const declarations = css.replaceAll(/@container[^{]*\{/g, '@container {');
+    assert.equal(
+      /\b\d+(\.\d+)?(px|rem|em|pt)\b/.test(declarations),
+      false,
+      'a fixed length',
+    );
+  });
+
+  it('puts a fixed length only in a container condition, never in a declaration', () => {
+    // THE OTHER HALF OF THAT EXEMPTION, asserted rather than trusted. Stripping
+    // the conditions makes the test above blind to what is inside them, so this
+    // one reads exactly that text and holds it to the shape the exemption was
+    // granted for: a container query, on an inline size.
+    for (const match of css.matchAll(/@container([^{]*)\{/g)) {
+      const condition = (match[1] ?? '').trim();
+      assert.match(
+        condition,
+        /^[a-z-]*\s*\((?:max|min)-width:\s*\d+(?:\.\d+)?px\)$/,
+        `"${condition}" is not a plain inline-size container condition`,
+      );
+    }
   });
 
   it('declares no animation and no transition', () => {

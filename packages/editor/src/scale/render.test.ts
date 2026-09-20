@@ -94,7 +94,13 @@ describe('the refusal, as a reader sees it', () => {
       new RegExp(
         `<span class="ig-capsule-size">${String(capsule.size)}</span>` +
           `<span class="ig-capsule-load">\u2298 ${String(capsule.blockedByEdges)}</span>` +
-          `<span class="ig-capsule-name">${capsule.name}</span>` +
+          // THE NAME SLOT NOW HOLDS THE ANCHOR, not a bare title: RULINGS.md
+          // §4 identifies a capsule by "around #488 · <title>" because a
+          // connected component has no name to invent. The ORDER this test
+          // exists for is unchanged, so the assertion keeps its shape and only
+          // widens the one slot whose contents moved.
+          `<span class="ig-capsule-name"><span class="ig-capsule-anchor">around </span>` +
+          `<span class="ig-id">${capsule.lead}</span> \u00b7 ${capsule.name}</span>` +
           `<span class="ig-capsule-reach">deepest chain ${String(capsule.chainDepth)}</span>`,
       ),
     );
@@ -110,7 +116,7 @@ describe('the refusal, as a reader sees it', () => {
     assert.match(
       result.markup,
       new RegExp(
-        `aria-label="Focus ${capsule.name} \\(${capsule.lead}\\) \u2014 ${String(capsule.size)} issues, ` +
+        `aria-label="Focus the component around ${capsule.lead}, ${capsule.name} \u2014 ${String(capsule.size)} issues, ` +
           `${String(capsule.blockedByEdges)} blocked-by edges, deepest chain ${String(capsule.chainDepth)}"`,
       ),
     );
@@ -122,8 +128,13 @@ describe('the refusal, as a reader sees it', () => {
     assert.ok(labels.length > 1);
     assert.equal(new Set(labels).size, labels.length);
     for (const each of result.ladder.capsules) {
+      // THE KEY MOVED OUT OF PARENTHESES AND THE PROPERTY DID NOT. It used to
+      // read `Focus <title> (<key>)` and now reads `Focus the component around
+      // <key>, <title>`, per `RULINGS.md` §4's anchor form — so what is
+      // asserted is still "every accessible name carries its lead key", which
+      // is what makes two components with the same title tell apart.
       assert.ok(
-        labels.some((label) => label?.includes(`(${each.lead})`)),
+        labels.some((label) => label?.includes(`around ${each.lead},`)),
         `no accessible name carries the lead ${each.lead}`,
       );
     }

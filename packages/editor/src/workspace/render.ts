@@ -59,6 +59,7 @@ import {
   type NormalizedHostFacts,
   type SpecChild,
   type Theme,
+  type ViewerCondition,
   type ViewerDocument,
   type ViewerHold,
   KEY_ATTRIBUTE,
@@ -229,6 +230,31 @@ export interface WorkspaceWords {
    * a held unit prints the em dash rather than a number.
    */
   readonly whyHeld: string;
+  /**
+   * What the rail says when the audit filter is on and NOTHING matched it:
+   * §17's *"No flagged rows match."*
+   *
+   * A SEPARATE STRING FROM EVERY OTHER EMPTY SENTENCE, because it is about a
+   * different world. The others say the order is short; this one says the order
+   * is intact and the view is narrow.
+   */
+  readonly filteredEmpty: string;
+  /**
+   * The count that makes the sentence above unmisreadable: *"8 issues are
+   * ranked"*.
+   *
+   * A FUNCTION, WHICH IS THE ONE PLACE THIS FILE TAKES ONE, and the reason is
+   * the reason `whyRank` refuses to: there the number is APPENDED to a fixed
+   * phrase and a host can write the phrase; here the number sits INSIDE the
+   * sentence and its grammar moves with it — *"1 issue is ranked"* against
+   * *"8 issues are ranked"*. A fixed string plus a number cannot say both, and
+   * a `{n}` placeholder would make every host implement the substitution. So
+   * the host is handed the count and writes its own sentence, in its own
+   * language, with its own plural rule.
+   */
+  readonly filteredDenominator: (ranked: number) => string;
+  /** The way back out, which §17d requires be one click: *"clear the filter"*. */
+  readonly filteredClear: string;
   /**
    * Joins the rest of a together unit: §17a ends *"then worked with #514 as one
    * unit"*, and this is that phrase minus the members, which the package names.
@@ -2793,23 +2819,64 @@ export function renderWorkspace(
   // place they are: see `railHostFacts` for why a subtraction rather than
   // `SceneOptions.chrome`.
   const railHost = railHostFacts(document.host);
+  const narrowedSlots = filtered
+    ? document.order.slots.filter((slot) =>
+        slot.members.some((member) => auditFilterKeeps(overlay, member)),
+      )
+    : document.order.slots;
+  const narrowedExcluded = filtered
+    ? document.order.excluded.filter((exclusion) => auditFilterKeeps(overlay, exclusion.key))
+    : document.order.excluded;
+  // A FILTER THAT MATCHES NOTHING IS NOT A ZERO, AND THE PROJECTION CANNOT KNOW
+  // THAT FROM WHAT IT IS HANDED. It receives a document with no slots and says
+  // the true thing about it — "Nothing is in the order right now" — which is a
+  // FALSE thing about the backlog, because every rank the filter hid is still
+  // there. `RULINGS.md` §2 names it: *"a false statement about the data, and it
+  // is the one thing this panel exists not to make."*
+  //
+  // It is the defect `statesItsOwnCause` already describes one input over —
+  // *"its own derived sentence is not a fallback explanation but a false one"* —
+  // arrived at by narrowing instead of by a condition, so it takes the same
+  // remedy: the host RECORDS what it did and the projection stops deriving.
+  // Recording it here rather than teaching the viewer about filters keeps the
+  // seam where it is: narrowing is the editor's act, and only the editor knows
+  // the denominator, because only it still holds the unnarrowed order.
+  const emptiedByFilter = filtered && narrowedSlots.length === 0 && narrowedExcluded.length === 0;
+  const railCondition: ViewerCondition | undefined = emptiedByFilter
+    ? {
+        kind: 'filtered',
+        headline: options.words.filteredEmpty,
+        // THE HOST'S OWN RECORDED COUNT, NOT A SECOND DERIVATION OF IT. The
+        // rail header already prints `8 ranked` from `counts.ranked`, and the
+        // first version of this line counted `order.slots.length` instead —
+        // which is 11 on the demo, because it includes the footer slots the
+        // header does not call ranked. Two numbers for one fact, on one screen,
+        // eight pixels apart.
+        //
+        // That is the defect this repository has already ruled on twice: two
+        // capsules drawing one fact must not each hold their own sentence, or
+        // they describe one document differently in one view. A denominator
+        // that disagrees with the header is worse than the lie it replaced,
+        // because it is a lie the reader can SEE is a lie and cannot resolve.
+        //
+        // Falls back to the unnarrowed slot count only when the host recorded
+        // no counts at all — a number that may over-count is still better than
+        // an empty sentence here, and the field is optional in the port.
+        denominator: options.words.filteredDenominator(
+          document.host.counts?.ranked ?? document.order.slots.length,
+        ),
+        action: { label: options.words.filteredClear },
+      }
+    : undefined;
+  const railHostWithCause =
+    railCondition === undefined ? railHost : { ...railHost, condition: railCondition };
   const railInput: ViewerDocument = filtered
     ? {
         ...document,
-        host: railHost,
-        order: {
-          // EXCLUSIONS ARE ROWS TOO, and filtering only the slots left the clean
-          // ones on screen while the header said the filter was on — the toggle
-          // narrowing part of the rail and claiming to have narrowed it.
-          slots: document.order.slots.filter((slot) =>
-            slot.members.some((member) => auditFilterKeeps(overlay, member)),
-          ),
-          excluded: document.order.excluded.filter((exclusion) =>
-            auditFilterKeeps(overlay, exclusion.key),
-          ),
-        },
+        host: railHostWithCause,
+        order: { slots: narrowedSlots, excluded: narrowedExcluded },
       }
-    : { ...document, host: railHost };
+    : { ...document, host: railHostWithCause };
 
   const rail = railWindow(railInput, options.rail ?? {});
   const railRender = renderViewer(rail.document, {

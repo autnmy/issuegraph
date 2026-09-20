@@ -367,6 +367,39 @@ export type ViewerCondition =
        */
       readonly retry?: string | undefined;
       readonly glyph?: string | undefined;
+    }
+  /**
+   * A FILTER IS ON AND NOTHING MATCHED IT. The order is intact; the host is
+   * only declining to draw part of it.
+   *
+   * THIS IS NOT A ZERO, AND THAT IS THE WHOLE REASON THE KIND EXISTS. §16i
+   * enumerates four zeros and **none of them is "a filter is on"** — so a
+   * narrowed document with no rows left was falling through to the projection's
+   * own derived sentence, *"Nothing is in the order right now"*, while the
+   * order it describes still held every one of its ranks. `RULINGS.md` §2:
+   * that is *"a false statement about the data, and it is the one thing this
+   * panel exists not to make."*
+   *
+   * It is the same defect {@link statesItsOwnCause} already names one input
+   * over — *"its own derived sentence is not a fallback explanation but a false
+   * one"* — reached by narrowing rather than by a host condition, which is why
+   * the remedy is the same: the host RECORDS what it did, and the projection
+   * stops deriving.
+   *
+   * THE DENOMINATOR IS REQUIRED, not optional, because it is the half that
+   * does the work. *"No flagged rows match"* alone still reads as absence;
+   * *"8 issues are ranked"* beside it cannot. A kind that let a host omit it
+   * would let the lie back in through a missing field.
+   */
+  | {
+      readonly kind: 'filtered';
+      /** What did not match: `No flagged rows match.` */
+      readonly headline: string;
+      /** What still exists regardless: `8 issues are ranked`. */
+      readonly denominator: string;
+      /** The way back, which §17d requires be one click: `clear the filter`. */
+      readonly action?: ConditionAction | undefined;
+      readonly glyph?: string | undefined;
     };
 
 /**
@@ -877,6 +910,11 @@ function requiredTextOf(condition: ViewerCondition): readonly string[] {
       return [condition.headline, condition.reason, condition.assurance];
     case 'error':
       return [condition.headline, condition.assurance];
+    // BOTH ARE REQUIRED. The denominator is what stops "no rows matched" being
+    // read as "no rows exist", so it is validated like a headline and not like
+    // an optional garnish.
+    case 'filtered':
+      return [condition.headline, condition.denominator];
   }
 }
 
