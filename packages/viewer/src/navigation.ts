@@ -154,6 +154,37 @@ export function navigate(scene: Scene, state: NavigationState, key: string): Nav
     case 'ArrowLeft':
     case 'ArrowRight': {
       if (state.focused === null) return moveTo(state, first);
+      // §16f GIVES THESE TWO KEYS DIFFERENT JOBS IN THE TWO PROJECTIONS, and
+      // the shipped binding gave the graph's job to both.
+      //
+      //   List:  `↑↓` rows, `→` EXPANDS PROVENANCE, `⏎` opens detail, `g` toggles
+      //   Graph: `Tab` walks stations in rank order, `↑↓` follows the spine,
+      //          `←→` traverses to gutter neighbours
+      //
+      // A lateral move is a graph idea: it reaches a gutter node, something the
+      // spine has beside it. The list has no gutters — `scene.lateral` is empty
+      // for it — so `→` there did nothing at all, which is why this read as a
+      // missing feature rather than as a misrouted key.
+      //
+      // THE VIEWER CANNOT EXPAND ANYTHING ITSELF. It is a pure renderer, so the
+      // expansion is published as a command the host reduces and re-renders
+      // with, exactly as `g` publishes a projection change rather than
+      // switching one. The host owns which rows are open; this only says which
+      // row the reader asked about.
+      //
+      // `←` COLLAPSES, AND THAT PAIRING IS MINE RATHER THAN §16f's. The tile
+      // names `→` and is silent on `←` for the list. Collapse is the
+      // conventional partner and leaves the key doing nothing new elsewhere,
+      // but it is a choice and not a ruling.
+      if (scene.projection === 'linear') {
+        return {
+          state,
+          command: {
+            kind: 'command',
+            command: `${key === 'ArrowRight' ? 'expand' : 'collapse'}:${state.focused}`,
+          },
+        };
+      }
       const neighbours = scene.lateral.get(state.focused);
       const target = key === 'ArrowLeft' ? neighbours?.left : neighbours?.right;
       return target === undefined ? stay(state) : moveTo(state, target);

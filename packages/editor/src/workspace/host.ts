@@ -56,6 +56,17 @@ export interface HostState {
   readonly selection: WorkspaceSelection;
   readonly scale: ScaleState;
   readonly auditFiltered: boolean;
+  /**
+   * The rail rows whose provenance line the reader has opened, per §16f's
+   * `→ expand provenance`.
+   *
+   * THE HOST HOLDS IT BECAUSE THE VIEWER CANNOT. `@issuegraph/viewer` renders
+   * what it is given and keeps nothing across a redraw, so it publishes
+   * `expand:<key>` / `collapse:<key>` and this state is the answer it is handed
+   * back. Same shape as `auditFiltered` one field up: a reader's view
+   * preference, not a fact about the document.
+   */
+  readonly expanded: readonly string[];
   /** The rail window's first slot — a scroll offset in rows, never a rank. */
   readonly railStart: number;
   readonly draft: CreateDraft;
@@ -90,6 +101,7 @@ export const INITIAL_HOST_STATE: HostState = Object.freeze({
   selection: INITIAL_SELECTION,
   scale: INITIAL_SCALE_STATE,
   auditFiltered: false,
+  expanded: [],
   railStart: 0,
   draft: IDLE_CREATE_DRAFT,
   targetQuery: '',
@@ -731,6 +743,34 @@ function controlled(
     // failed record.
     case 'audit-filter':
       return settled({ ...state, auditFiltered: !state.auditFiltered });
+    // §16f's `→` / `←` on a rail row.
+    //
+    // A BARE `expand` IS SOMEBODY ELSE'S COMMAND, and this is the whole reason
+    // the arms are shaped this way. `@issuegraph/viewer`'s own panel-size
+    // button publishes exactly `expand` / `collapse` with NO target (see
+    // `parts.ts`, `class="ig-size"`), so one name carries two meanings and only
+    // the target tells them apart.
+    //
+    // UNCLAIMED, NOT MERELY UNCHANGED, when no row is named. The two are
+    // indistinguishable in the state and completely different at the keyboard:
+    // `claimed` is what cancels the press, so settling here would swallow the
+    // size button for every host that draws one — taking a working control away
+    // as a side effect of adding an unrelated one. The `default` arm a few
+    // cases down says this in its own words; these two arms defer to it rather
+    // than restate it.
+    case 'expand':
+      if (target === undefined || target === '') return unclaimed(state);
+      return settled(
+        state.expanded.includes(target)
+          ? state
+          : { ...state, expanded: [...state.expanded, target] },
+      );
+    case 'collapse':
+      if (target === undefined || target === '') return unclaimed(state);
+      return settled({
+        ...state,
+        expanded: state.expanded.filter((key) => key !== target),
+      });
     case 'target-query':
       return settled({ ...state, targetQuery: value ?? '' });
     case 'target':
@@ -918,10 +958,27 @@ export function reconcileHost(
   const draftStands =
     (state.draft.source === null || known.has(state.draft.source)) &&
     (state.draft.target === null || known.has(state.draft.target));
-  if (selection === state.selection && draftStands) return state;
+  // §16f's OPEN ROWS ARE STALE NAMES TOO, and for the same reason the selection
+  // above is: a row the reader opened can be retired by a later write, and the
+  // key would otherwise sit in this set for the life of the session.
+  //
+  // THE HARM IS NOT THE MISS, IT IS THE RETURN. A key matching no drawn row
+  // costs one `includes` and nothing else — the rail is windowed, so most open
+  // keys are undrawn most of the time and that is normal. What is not normal is
+  // an issue being retired and a LATER one arriving under the same ref: it
+  // would render already open, having never been asked to. That is precisely
+  // the class this function exists to refuse.
+  //
+  // FILTERED AGAINST THE WHOLE DOCUMENT, never the rail window. `known` is
+  // every issue the document lists, so scrolling a row out of view cannot close
+  // it — a reader who opens a row, scrolls past and comes back finds it open.
+  const expanded = state.expanded.filter((key) => known.has(key));
+  const expandedStands = expanded.length === state.expanded.length;
+  if (selection === state.selection && draftStands && expandedStands) return state;
   return {
     ...state,
     selection,
+    ...(expandedStands ? {} : { expanded }),
     ...(draftStands ? {} : { draft: IDLE_CREATE_DRAFT, targetQuery: '', drop: null }),
   };
 }

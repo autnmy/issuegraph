@@ -832,6 +832,38 @@ describe('mountWorkspace', () => {
       assert.equal(page.source.pending().length, 0);
     });
 
+    it('§16f: ArrowRight opens the focused row, ArrowLeft closes it', async () => {
+      // THE SEAM THIS EXISTS FOR. The viewer publishes `expand:<key>` because
+      // it cannot expand anything itself, and the reducer holds the set — both
+      // are driven elsewhere with no DOM. What is only true HERE is that the
+      // shell carries one to the other: before this, `navigateFocus` returned
+      // false for a published command and the key reached nothing at all.
+      //
+      // FOCUS MUST NOT MOVE. A row that opens under a reader who then finds
+      // themselves on a different row is worse than a row that does not open.
+      const first = page.rows()[0];
+      assert.ok(first !== undefined);
+      first.focus();
+      const key = first.getAttribute('data-ig-key');
+
+      first.dispatchEvent(
+        new page.win.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }),
+      );
+      await flush();
+      assert.deepEqual(page.handle.state.expanded, [key]);
+      assert.equal(
+        page.win.document.activeElement?.getAttribute('data-ig-key'),
+        key,
+        'expanding is not a move',
+      );
+
+      page.win.document.activeElement?.dispatchEvent(
+        new page.win.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }),
+      );
+      await flush();
+      assert.deepEqual(page.handle.state.expanded, []);
+    });
+
     it('ArrowDown moves focus along the rail, through the viewer’s navigation', async () => {
       const first = page.rows()[0];
       assert.ok(first !== undefined);

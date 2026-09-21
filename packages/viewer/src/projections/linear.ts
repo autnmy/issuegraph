@@ -81,6 +81,19 @@ export interface SceneOptions {
    * own capsules.
    */
   readonly switchable?: boolean | undefined;
+  /**
+   * The keys whose provenance line is open, per §16f's `→ expand provenance`.
+   *
+   * THE HOST HOLDS THIS, NOT THE VIEWER, for the reason every other piece of
+   * state here is the host's: this package renders what it is given and owns
+   * nothing across a redraw. `navigate` publishes `expand:<key>` /
+   * `collapse:<key>` and the host re-renders with the key added or removed.
+   *
+   * ABSENT MEANS NONE OPEN, which is the §17j default — in the rail the line is
+   * expand-on-demand. It changes nothing for §16a's wider panel, where the
+   * container query never hides the line in the first place.
+   */
+  readonly expanded?: readonly string[] | undefined;
 }
 
 /**
@@ -157,6 +170,7 @@ export function slotRow(
   const selected = options.selected === slot.lead;
   const focused = options.focused === slot.lead;
   const unit = slot.members.length > 1;
+  const expanded = options.expanded?.includes(slot.lead) ?? false;
 
   const rankCell = element('div', { class: 'ig-rank-cell', 'aria-hidden': 'true' }, [
     showRank
@@ -255,6 +269,14 @@ export function slotRow(
       'data-unit': unit ? 'true' : 'false',
       'aria-current': selected ? 'true' : 'false',
       'aria-label': slotLabel(document, slot),
+      // ONLY WHEN THERE IS SOMETHING TO EXPAND. `aria-expanded` on a row with
+      // no provenance line would advertise a disclosure that cannot open, which
+      // is the "control that cannot complete its own action" class this package
+      // refuses elsewhere. A row whose host stated no provenance carries no
+      // attribute at all.
+      ...(lead?.provenance === undefined
+        ? {}
+        : { 'aria-expanded': expanded ? 'true' : 'false' }),
       tabindex: focused ? 0 : -1,
     },
     [rankCell, body],

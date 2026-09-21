@@ -2331,3 +2331,53 @@ describe('the inspector zone at the audit sizes §17f produces', () => {
     }
   });
 });
+
+describe('\u00a716f \u2014 the rail passes the host\u2019s open rows to the viewer', () => {
+  // THE EDITOR DERIVES NO PROVENANCE. The host supplies it on the document, as
+  // `mount.ts` says of the order and the holds too \u2014 so `backlogOf` carries
+  // none, and a rail built from it draws no `aria-expanded` at all. That is
+  // correct (there is nothing to expand), and it is also why the seam has to be
+  // driven with a document that DOES state provenance: a test over the plain
+  // fixture would pass while the option went nowhere.
+  const withProvenance = (): ViewerDocument => {
+    const base = backlogOf(6);
+    return {
+      ...base,
+      issues: base.issues.map((issue) => ({
+        ...issue,
+        provenance: { kind: 'declared-tier', priority: 2 } as const,
+      })),
+    };
+  };
+
+  const openRows = (markup: string): string[] =>
+    [...markup.matchAll(/<li class="ig-slot" data-ig-key="([^"]+)"([^>]*)>/g)]
+      .filter((row) => /aria-expanded="true"/.test(row[2] as string))
+      .map((row) => row[1] as string);
+
+  it('opens the row the host named, and only that row', () => {
+    const document = withProvenance();
+    const key = drawnKeys(renderWorkspace(document, WORDS).markup)[1] as string;
+    assert.ok(key !== undefined, 'the premise: the rail draws rows');
+
+    assert.deepEqual(openRows(renderWorkspace(document, WORDS).markup), []);
+    assert.deepEqual(
+      openRows(renderWorkspace(document, { ...WORDS, expanded: [key] }).markup),
+      [key],
+    );
+  });
+
+  it('a rail with no provenance publishes no expand affordance at all', () => {
+    // A control for something that does not exist is worse than none: the key
+    // would report success and open an empty region.
+    //
+    // SCOPED TO THE ROWS, and the first spelling of this was not. The workspace
+    // already carries an `aria-expanded` on the isolated-list chip, so a test
+    // over the whole markup answered about a button instead of about the rail
+    // and failed against correct code. An attribute name is not an address.
+    const markup = renderWorkspace(backlogOf(6), { ...WORDS, expanded: ['i0002'] }).markup;
+    const rows = markup.match(/<li class="ig-slot"[^>]*>/g) ?? [];
+    assert.ok(rows.length > 0, 'the premise: the rail drew rows to check');
+    assert.deepEqual(rows.filter((row) => /aria-expanded/.test(row)), []);
+  });
+});
