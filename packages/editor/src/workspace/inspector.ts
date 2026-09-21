@@ -85,7 +85,11 @@ export interface InspectorRelationship {
 
 /** What the inspector knows about the selected issue's position. */
 export interface InspectorPosition {
-  /** 1-based, or `null` for a held slot — the viewer's own convention. */
+  /**
+   * 1-based, or `null` when the order places the slot nowhere — the viewer's
+   * own convention, which since `RULINGS.md` §1 is narrower than "held": a
+   * held slot whose blocker is inside the previewed order carries a number.
+   */
   readonly rank: number | null;
   readonly ready: boolean;
   readonly holds: readonly ViewerHold[];
@@ -108,15 +112,37 @@ export interface InspectorPosition {
  * connectives are this package's, and they arrive through `WorkspaceWords` like
  * every other word here.
  *
- * A RANK AND A HOLD ARE EXCLUSIVE, and the type says so only by convention —
- * `@issuegraph/derive` assigns `ready ? (rank += 1) : null`, so a held slot has
- * no rank to explain and the heading states the hold instead. Frame 17a draws
- * `#512` at rank 2 while saying "Held until #488 closes"; the model cannot
- * represent that, and PR #126 already ruled for §16 that the em dash wins.
+ * A RANK AND A HOLD ARE NOT EXCLUSIVE — and the earlier reading of that, which
+ * lived here, is the reasoning `RULINGS.md` exists to retire. This comment used
+ * to say the pair was unrepresentable because `@issuegraph/derive` assigned
+ * `ready ? (rank += 1) : null`, so frame 17a's `#512` at rank 2 saying "Held
+ * until #488 closes" could not be drawn and the em dash won. That was a
+ * property of the model, not a design decision, and Design has since ruled the
+ * other way (`RULINGS.md` §1, 2026-09-20):
+ *
+ *   *"A held issue keeps its rank when its blocker is inside the previewed
+ *   order, and loses it when the blocker is outside."*
+ *
+ * So the panel now explains both at once for the first arm — a number in the
+ * heading and the hold beneath it — and only the second arm reaches the em
+ * dash. PR #126's ruling stands where it always applied: a slot the order
+ * cannot place prints no number.
  */
 export interface InspectorWhyRank {
-  /** 1-based, or `null` when the slot is held. */
+  /**
+   * 1-based, or `null` when the order cannot place the slot.
+   *
+   * NOT A READINESS SIGNAL. A held slot carries a number whenever the thing it
+   * waits on is in the order too; `holds` is what says work cannot start.
+   */
   readonly rank: number | null;
+  /**
+   * Whether anything may start this slot — the slot's own verdict, carried so
+   * the panel never has to infer it from a missing {@link rank}. The two are
+   * independent since `RULINGS.md` §1: a held slot can carry a number, and a
+   * host composing a `ViewerDocument` by hand can state a rank-less ready one.
+   */
+  readonly ready: boolean;
   /** Absent when the host stated no provenance. */
   readonly provenance?: RankProvenance | undefined;
   readonly holds: readonly ViewerHold[];
@@ -246,6 +272,21 @@ export function inspectorView(
             ? null
             : {
                 rank: slot.rank,
+                // THE VERDICT TRAVELS WITH THE NUMBER, because the panel needs
+                // both and cannot recover this one from the other. This field
+                // was simply OMITTED, and `whyRankSpec` stood an inference up
+                // in its place: with only `rank === null` to read, it called
+                // every unplaced slot held — the one-field inference
+                // `RULINGS.md` §1 retired.
+                //
+                // `InspectorPosition` below has carried `ready` all along, so
+                // the fact was available on the slot the whole time and simply
+                // was not forwarded here. That is evidence the field was to
+                // hand, NOT evidence the two shapes were in conflict: the
+                // renderer consumes `whyRank` and never reads `position` for a
+                // readiness verdict, so nothing was ever reading both and
+                // getting two answers.
+                ready: slot.ready,
                 provenance: issue.provenance,
                 holds: slot.holds,
                 // THE OTHER MEMBERS, not every member: the subject is already

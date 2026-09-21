@@ -195,9 +195,14 @@ export interface ViewerEdge {
  */
 export interface ViewerSlot {
   /**
-   * The 1-based rank, or `null` when the slot is held. A held slot renders `—`
-   * rather than a number: it has no position in the sequence, and printing one
-   * would claim work is queued that nothing can start.
+   * The 1-based rank, or `null` when the host's order cannot place the slot.
+   *
+   * NOT THE SAME AS "HELD". `RULINGS.md` §1 (Claude Design, 2026-09-20) draws
+   * both arms: a held slot whose blocker is *inside* the previewed order keeps
+   * its rank — `#512 ⊘ blocked-by #488` sits at rank 2 while #488 sits at 1 —
+   * and one whose blocker is outside it renders `—` and names a
+   * {@link wouldBeRank} instead. `ready` is the field that answers whether
+   * anything may start; this one answers where the row sits.
    */
   readonly rank: number | null;
   /** The member that placed the slot — the detail surface's subject. */
@@ -213,6 +218,25 @@ export interface ViewerSlot {
    * dashed one when held.
    */
   readonly readyAfterRank?: number | null | undefined;
+  /**
+   * The position this slot WOULD take, for a slot the order could not place.
+   *
+   * §16a prints it beside the id — `#530 · would be rank 4` — so a row that
+   * shows `—` still answers *where would this have been*. Absent or `null`
+   * whenever {@link rank} carries a number, and a host that does not compute
+   * one omits it: the slot then reads exactly as it did before this field.
+   *
+   * NOT A COLLISION with the rank of the same number. §16a draws `#503` at
+   * rank 4 and `#530` as *would be rank 4* at once, because a would-be rank is
+   * the position the slot would TAKE — #530 arriving among the P1s lands at 4
+   * and pushes #503 to 5. It consumes nothing, so the numbers below it are
+   * unchanged, which is the whole reason the two can read alike.
+   *
+   * THE VIEWER NEVER COMPUTES IT. The order is the host's, and counting a
+   * position here would state the reader's slice as a fact about the order —
+   * the same rule that keeps {@link OrderCounts} supplied.
+   */
+  readonly wouldBeRank?: number | null | undefined;
 }
 
 /** An issue the order deliberately never works. */
@@ -227,8 +251,8 @@ export interface ViewerExclusion {
 export interface ViewerOrder {
   /**
    * Every slot in derivation order. A HELD slot keeps its position — it is
-   * never moved to the end — so its rank column reads `—` exactly where the
-   * work would have sat.
+   * never moved to the end — so the row that explains why the work is not
+   * running sits exactly where the work would have sat.
    */
   readonly slots: readonly ViewerSlot[];
   readonly excluded: readonly ViewerExclusion[];

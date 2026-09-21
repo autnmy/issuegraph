@@ -115,6 +115,15 @@ export interface SceneOptions {
    * the whole density block off that attribute's presence: set to anything,
    * the container query stops deciding; set to `dense`, the dense block applies
    * at any width; set to `wide`, the base density does.
+   *
+   * IT GOVERNS ONE BLOCK, AND `wide` IS NARROWER THAN IT SOUNDS. §17j's drop
+   * order has further steps of its own — evidence chips at 360, relationship
+   * badges past the first at 345, the declared priority tier at 335 — and those
+   * stay keyed to the container, because they are about what fits on a line
+   * rather than about which density the row is drawn at. So `wide` on a rail
+   * that is genuinely 330 wide still drops those chips. That is deliberate;
+   * said out loud because "wide" reads like a claim over the whole drop order
+   * and is not one.
    */
   readonly density?: 'dense' | 'wide' | undefined;
 }
@@ -200,9 +209,10 @@ export function slotRow(
       ? element(
           'span',
           { class: 'ig-rank', 'data-held': held ? 'true' : 'false' },
-          // A held slot never prints a number: it has no position in the
-          // sequence, and printing one would claim work is queued that nothing
-          // can start.
+          // The em dash is for a slot the host could not PLACE, which since
+          // `RULINGS.md` §1 is narrower than "held": a held slot whose blocker
+          // is inside the previewed order carries a number, and the `data-held`
+          // channel beside it is what says the work cannot start.
           [slot.rank === null ? '—' : String(slot.rank)],
         )
       : null,

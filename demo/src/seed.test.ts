@@ -77,38 +77,69 @@ describe('the landing state is the §16a comp', () => {
   });
 
   it('runs the spine top to bottom as §16a draws it', () => {
-    // The frame, top to bottom: #488 · the unit · #501 · #503 · #530 · #520 ·
+    // The frame, top to bottom: #488 · the unit · #501 · #530 · #503 · #520 ·
     // #487 — then the serialize group's third member, which the frame says
     // exists ("group of 3") and places below the drawn rows ("19 more ranked").
+    //
+    // #530 SITS ABOVE #503 HERE AND BELOW IT IN THE FRAME, which is the one
+    // place this host departs from §16a's drawing — deliberately, and to
+    // reproduce §16a's NUMBERS. See the note on #530 in `seed.ts`: the frame
+    // draws the row below rank 4 and prints "would be rank 4" on it, and those
+    // two cannot both hold. The number is the frame's specified output and the
+    // draw order is this host's input, so the input moved. Every printed
+    // number below is now the frame's.
     const spine = comp.explained.rows.filter((row) => row.placement === 'spine');
     assert.deepEqual(
       spine.map((row) => row.issue.ref),
-      ['488', '512', '514', '501', '503', '530', '520', '487', '505'],
+      ['488', '512', '514', '501', '530', '503', '520', '487', '505'],
     );
-    // The viewer numbers READY slots only, so where the frame prints `2` on
-    // the blocked unit the viewer prints `—` and the numbering closes up. That
-    // is the viewer's own rule — "printing one would claim work is queued that
-    // nothing can start" — and the spec's `ready` (§6.2) agrees with it; the
-    // frame's hollow station on a blocked unit is the one place the two read
-    // differently, and the comp is what makes that a glance rather than an
-    // argument. Pinned as the viewer draws it.
+    // THE FRAME'S `2` ON THE BLOCKED UNIT, drawn at last. `RULINGS.md` §1
+    // keeps a held slot's rank when the thing it waits on is inside the
+    // previewed order: #512 waits on #488, two rows above it, so the unit
+    // holds rank 2 and nothing below it closes up. #530 waits on #602, which
+    // this host holds ineligible (§6.8) and collects into the footer — outside
+    // the previewed order — so it alone prints `—` and names a would-be rank.
     assert.deepEqual(
       comp.viewer.order.slots.map((slot) => [slot.rank, slot.members.join('+')]),
       [
         [1, '488'],
-        [null, '512+514'],
-        [2, '501'],
-        [3, '503'],
+        [2, '512+514'],
+        [3, '501'],
         [null, '530'],
-        [4, '520'],
-        [5, '487'],
-        [6, '505'],
+        [4, '503'],
+        [5, '520'],
+        [6, '487'],
+        [7, '505'],
         // The footer, in the derivation's order: #602 first, promoted to P1
         // by the #530 it blocks; the rest on the default tier.
         [null, '602'],
         [null, '499'],
         [null, '533'],
         [null, '541'],
+      ],
+    );
+    // ONE WOULD-BE RANK, AND ONLY ON THE SPINE. A footer row is not in the
+    // order at all, so it names no position it would have taken; #530 is, and
+    // names 4 — THE FRAME'S OWN NUMBER, and the same number #503 goes on to
+    // take one row below it. That is the reading #208 records so it is not
+    // re-litigated: not a collision, because a would-be rank is the position
+    // the slot WOULD take and consumes nothing, so #503 keeps 4 rather than
+    // being pushed to 5 by a row that took no number.
+    assert.deepEqual(
+      comp.viewer.order.slots.flatMap((slot) =>
+        slot.wouldBeRank == null ? [] : [[slot.wouldBeRank, slot.members.join('+')]],
+      ),
+      [[4, '530']],
+    );
+    // The pair §16a prints side by side, asserted as the pair: `— · would be
+    // rank 4` immediately above `4`.
+    assert.deepEqual(
+      comp.viewer.order.slots
+        .filter((slot) => ['530', '503'].includes(slot.lead))
+        .map((slot) => [slot.lead, slot.rank, slot.wouldBeRank]),
+      [
+        ['530', null, 4],
+        ['503', 4, null],
       ],
     );
   });

@@ -1834,21 +1834,45 @@ function kindListSpec(words: WorkspaceWords, source: string | null): ElementSpec
  * this package in the business of explaining a hold whose vocabulary belongs to
  * the reader that produced it.
  *
- * WHAT DOES NOT APPEAR: a rank on a held slot. `@issuegraph/derive` assigns
- * `ready ? (rank += 1) : null`, so the two are exclusive and the heading says
- * which one it is. Frame 17a draws `#512` at rank 2 *and* "Held until #488
- * closes"; that state is unrepresentable, and PR #126 already ruled for §16
- * that the model wins and the em dash stands.
+ * A RANK AND A HOLD ARE NO LONGER EXCLUSIVE, which is what frame 17a always
+ * asked for: `#512` at rank 2 *and* "Held until #488 closes". `RULINGS.md` §1
+ * (Claude Design, 2026-09-20) settled it and `@issuegraph/derive` now ranks a
+ * held slot whose blocker is inside the previewed order, so the state the
+ * frame draws is representable and PR #126's em dash applies only to the other
+ * arm — a slot whose blocker is outside the order, which still has no number.
+ *
+ * SO THE TWO CHANNELS ARE READ FROM DIFFERENT FIELDS, AND NEITHER IS `rank`.
+ * `data-held` is READINESS — `ready` is the slot's own verdict and the only
+ * field that answers "may this start", exactly as layer 1's `slotPosition`
+ * now reads it for the row's accessible name. The HEADING is the rank: a
+ * number when the order stated a position, and otherwise a word for what is
+ * missing.
+ *
+ * THREE HEADINGS, NOT TWO, because `rank === null` and "held" came apart. A
+ * placed slot names its number, held or not. An unplaced HELD slot says so —
+ * PR #126's em dash, in words. An unplaced READY slot is the case the old
+ * one-field expression got flatly wrong: it was told "why held" while having
+ * no hold to show. `@issuegraph/derive` cannot emit one, but `ViewerDocument`
+ * is a public port and a host composes one by hand, so it is reachable from
+ * outside this repo — and leaving the inference here would ship the defect
+ * this change exists to retire in the package next door. It reuses the rank
+ * word with the rail's own em dash rather than taking a new `WorkspaceWords`
+ * entry: the fact is "there is no number", which is what the rank cell says
+ * with the same character, and a required word would break every host.
  */
 function whyRankSpec(
   why: InspectorWhyRank,
   words: WorkspaceWords,
   holds: readonly ElementSpec[],
 ): ElementSpec {
-  const held = why.rank === null;
+  const held = !why.ready;
   return element('div', { class: 'ig-why-rank', 'data-held': held ? 'true' : 'false' }, [
     element('h3', { class: 'ig-why-rank-heading' }, [
-      held ? words.whyHeld : `${words.whyRank} ${String(why.rank)}`,
+      why.rank !== null
+        ? `${words.whyRank} ${String(why.rank)}`
+        : held
+          ? words.whyHeld
+          : `${words.whyRank} —`,
     ]),
     element('p', { class: 'ig-why-rank-sentence' }, [
       provenanceClause(why.provenance),

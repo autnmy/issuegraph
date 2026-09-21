@@ -1419,10 +1419,47 @@ export function slotTitle(document: NormalizedDocument, slot: ViewerSlot): strin
     .join(' · ');
 }
 
+/**
+ * Where a slot sits and whether anything may start it, as one spoken phrase.
+ *
+ * TWO FACTS, READ FROM TWO FIELDS, and that is the whole point of this
+ * function existing. It used to be one expression — `rank === null ? 'held, no
+ * rank' : 'rank N'` — which inferred HELD from the ABSENCE OF A RANK. That
+ * inference was sound while `@issuegraph/derive` assigned `ready ? rank : null`
+ * and is wrong since `RULINGS.md` §1: a held slot whose blocker is inside the
+ * previewed order carries a number, so the old expression announced it as
+ * plain `rank 2` and DROPPED the word held. A sighted reader still saw the
+ * hatched row and the `⊘ blocked-by #488` chip; a screen-reader user lost the
+ * single most important fact about the row, silently, on the exact case the
+ * ruling exists to draw.
+ *
+ * So `ready` is read on its own, never through `rank`. §16a's row says both
+ * things at once — `⊘ blocked-by #488` beside `rank 2` — and the accessible
+ * name says both too.
+ *
+ * ONE FUNCTION FOR EVERY SURFACE. The linear row's `aria-label`, the graph
+ * node's and the graph station's all phrase this, and three copies of a
+ * two-field rule is three chances to reintroduce the one-field one.
+ */
+export function slotPosition(slot: ViewerSlot): string {
+  const parts: string[] = [];
+  // HELD LEADS, because it is the fact that decides whether the rest matters.
+  if (!slot.ready) parts.push('held');
+  if (slot.rank === null) {
+    parts.push('no rank');
+    // The other arm of §1: no position to state, but the row still answers
+    // "where would this have been" when the host worked it out.
+    const would = slot.wouldBeRank;
+    if (would !== null && would !== undefined) parts.push(`would be rank ${String(would)}`);
+  } else {
+    parts.push(`rank ${String(slot.rank)}`);
+  }
+  return parts.join(', ');
+}
+
 /** A slot's accessible name: what it is, where it sits, and whether it is held. */
 export function slotLabel(document: NormalizedDocument, slot: ViewerSlot): string {
-  const position = slot.rank === null ? 'held, no rank' : `rank ${String(slot.rank)}`;
-  return `${slotTitle(document, slot)} — ${slot.members.join(', ')} — ${position}`;
+  return `${slotTitle(document, slot)} — ${slot.members.join(', ')} — ${slotPosition(slot)}`;
 }
 
 /** The empty state. A container with nothing in it reads as a bug. */

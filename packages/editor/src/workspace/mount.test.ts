@@ -5092,10 +5092,11 @@ describe('§17d and §17k share Escape, audit first', () => {
       await flush();
       assert.equal(root().dataset['inspector'], 'dismissed', 'the second press did not dismiss the panel');
 
-      // AND THE THIRD IS HANDED BACK. Both reducers answer `unclaimed` with
-      // nothing open, and the shell asks the same questions before cancelling —
-      // so a press with nothing left to dismiss reaches whatever the host has
-      // listening rather than being swallowed on this surface's behalf.
+      // AND THE THIRD CHANGES NOTHING, which is all this asserts. Both reducers
+      // answer `unclaimed` with nothing open — but the press does NOT reach the
+      // host: it falls to `keyIntent`, which binds Escape to a cancel that is
+      // "ALWAYS AVAILABLE" and cancels it there. That predates this branch and
+      // is stated so the assertion below is not read as more than it is.
       press();
       await flush();
       assert.equal(overlay(), null);

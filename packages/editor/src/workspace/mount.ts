@@ -2279,6 +2279,36 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
    * to clear, and taking the press for a panel would leave their query sitting
    * there. `cancel` clears all five, which is why all five are asked.
    */
+  /**
+   * Whether §17k's lifted inspector is actually ON SCREEN.
+   *
+   * `narrowOverlayOpen` answers about STATE, and state is not visibility here:
+   * the panel is lifted between `1120` and `1359` and is an ordinary column
+   * either side of that, so at the wide layout a selection makes the reducer's
+   * predicate true with nothing overlaid for Escape to dismiss. The press was
+   * being spent on a change the reader could not see.
+   *
+   * THE STYLESHEET KNOWS AND THE DOM SHOWS ITS ANSWER, which is why this is a
+   * measurement rather than a width. The lifted panel is placed in the CANVAS's
+   * grid area, so it overlaps the canvas's box; as a column it sits beside it
+   * and cannot. That is the same fact the sheet encodes, read back rather than
+   * re-derived — and it is not the window, which §17k rules out.
+   *
+   * A SURFACE WITH NO LAYOUT CANNOT ANSWER, and says so by yielding to the
+   * state. Every box is zero-sized before layout, and under `node --test` there
+   * is no layout at all; a strict reading would disable the key there and take
+   * a tested behaviour away from every consumer that renders without a browser.
+   */
+  const inspectorIsLifted = (): boolean => {
+    const inspector = surface.querySelector('.ig-zone[data-zone="inspector"]');
+    const canvas = surface.querySelector('.ig-zone[data-zone="canvas"]');
+    if (inspector === null || canvas === null) return false;
+    const panel = inspector.getBoundingClientRect();
+    const zone = canvas.getBoundingClientRect();
+    if (panel.width === 0 && zone.width === 0) return true;
+    return panel.left < zone.right && panel.right > zone.left;
+  };
+
   const nothingToCancel = (): boolean =>
     !isDraftLive(state.draft) && state.targetQuery === '' && state.drop === null;
 
@@ -2568,20 +2598,28 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // cancelling an idle draft is a no-op.
     //
     // GUARDED ALSO ON `narrowOverlayOpen`, WHICH IS THE REDUCER'S OWN PREDICATE
-    // rather than a second reading of the same two fields. A press with nothing
-    // to dismiss is handed back rather than swallowed; `reduceHost` answers
-    // `unclaimed` for exactly the same case, and both ask one function so they
-    // cannot drift apart. See `HostResult.claimed` for what a wrongly cancelled
-    // press costs a host.
+    // rather than a second reading of the same two fields, so the two cannot
+    // drift apart — `reduceHost` answers `unclaimed` for exactly the same case.
     //
-    // IT CANNOT ASK WHICH OF THE TWO THE READER CAN SEE, and that is by design
-    // rather than by omission: the width is the stylesheet's to know, per
-    // §17k's note that a package reading the window cannot be dropped into
-    // someone else's page. The reducer closes both and the sheet draws the one
-    // that was on screen. The cost is a press spent invisibly at the WIDE
-    // layout, where a selection makes `narrowOverlayOpen` true and neither
-    // surface is lifted — one press, not repeatable, and the alternative is
-    // measuring a box inside a keydown handler.
+    // WHAT THAT DOES NOT DO IS LET THE PRESS THROUGH. A press this arm declines
+    // falls to `keyIntent`, which binds Escape to a cancel that is "ALWAYS
+    // AVAILABLE" and cancels it there — so on a focused rail row Escape is
+    // consumed by this surface whether or not anything was dismissed. That
+    // predates this branch and is not changed here; it is written down because
+    // the obvious reading of `unclaimed` is that the key reaches the host, and
+    // on this surface it does not.
+    //
+    // THE REDUCER CANNOT ASK WHICH OF THE TWO THE READER CAN SEE, and it must
+    // not: the width is the stylesheet's to know, per §17k's note that a
+    // package reading the window cannot be dropped into someone else's page.
+    // So it closes both and the sheet draws whichever was on screen.
+    //
+    // THE SHELL CAN ASK, THOUGH, AND HAS TO. An earlier revision left the guard
+    // at the reducer's predicate alone and accepted "a press spent invisibly at
+    // the wide layout" as a cost. It is not a cost worth taking: a key consumed
+    // for a surface nobody can see is indistinguishable from a broken key. See
+    // `inspectorIsLifted`, which reads the sheet's own answer off the DOM
+    // rather than re-deriving it from a width.
     //
     // TWO TRANSIENTS SHARE THIS KEY NOW, AND §17d'S GOES FIRST. The audit
     // overlay is the one the reader pressed a control to open, and it is drawn
@@ -2596,7 +2634,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         dispatch({ kind: 'control', name: 'audit-close' });
         return;
       }
-      if (narrowOverlayOpen(state)) {
+      if (narrowOverlayOpen(state) && (state.canvasOpen || inspectorIsLifted())) {
         event.preventDefault();
         dispatch({ kind: 'control', name: 'narrow-dismiss' });
         return;

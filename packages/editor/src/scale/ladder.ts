@@ -329,10 +329,20 @@ function capsuleOf(
   // component through, and it is the one the focus control should name.
   //
   // TIES AND UNRANKED MEMBERS FALL BACK TO THE OLD HANDLE, deliberately: a
-  // component can be entirely held, in which case no member has a rank and the
-  // sorted key is as good an answer as exists. What matters is that a RANKED
-  // member always wins over an unranked one, so a component with any ready work
-  // is entered through that work.
+  // component can be entirely unplaced, in which case no member has a rank and
+  // the sorted key is as good an answer as exists. What matters is that a
+  // RANKED member always wins over an unranked one, so a component is entered
+  // through the earliest position the order states for it.
+  //
+  // THAT POSITION NEED NOT BE READY WORK, and since `RULINGS.md` §1 it often
+  // is not: a held slot whose blocker is inside the order carries a rank, so a
+  // held issue can be the anchor. This comment used to promise ready work and
+  // that promise is now false. The anchor is still right, and deliberately
+  // unchanged — §4 defines it as the highest-RANKED member, not the highest
+  // ready one, and nothing downstream needs readiness: selection minimises
+  // rank, activation moves the focus key, focus keeps the whole component, and
+  // no consumer here starts work. An anchor is where you ENTER a component,
+  // not a claim that the component can run.
   let lead = cluster.members[0];
   let best = Number.POSITIVE_INFINITY;
   for (const member of cluster.members) {

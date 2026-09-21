@@ -121,7 +121,7 @@ export const workspaceStylesheet = `
    327.6 — the rail exact, the inspector 2.4px under 17k's figure. Stated
    rather than rounded away; the type-relative property is worth more than the
    2.4px, and it is the same BYO argument layer 1's row query rests on. */
-@container ig-workspace (min-width: 1360px) {
+@container ig-workspace (width >= 1360px) {
   .ig-workspace {
     grid-template-columns:
       calc(var(--ig-char-width) * 50)
@@ -1464,15 +1464,20 @@ export const workspaceStylesheet = `
    at 1280 — the rail giving up 78 of its 390 to keep a three-column template
    alive, which is the rule upside down.
 
-   WHY THESE ARE max-width QUERIES WHEN THE ONE ABOVE IS A min-width. Two
-   constraints meet here. The sheet's own guard admits a container condition
-   only in the shape (min-width: Npx) or (max-width: Npx) — one side, no 'and' —
-   so a band is made from cascade order rather than from a bounded condition.
-   And the BASE has to stay the three-zone template, because a surface rendered
-   WITHOUT a mount has no container at all and no query fires: base-is-narrow
-   would hand a static page a collapsed canvas with a control nothing is
-   listening to. So the wide layout is the floor and the narrow ones are carved
-   off it, widest first. 1359 is 1360's complement, not a second number.
+   WHY THESE ARE RANGE CONDITIONS AND NOT max-width/min-width PAIRS. A
+   container's inline size is NOT AN INTEGER. Written as (min-width: 1360px)
+   and (max-width: 1359px), a box measured at 1359.5 satisfies NEITHER — so the
+   base fallback comes back, the rail drops to its 40-character measure, and
+   the one rule 17k states outright is broken at exactly the widths a resize
+   drags through. The same hole sits at 1119.5. 'width < 1360' and
+   'width >= 1360' are complements with nothing between them, which is the
+   property the layouts need and the only reason the syntax changed.
+
+   THE BASE STAYS THE THREE-ZONE TEMPLATE, because a surface rendered WITHOUT a
+   mount has no container at all and no query fires: base-is-narrow would hand
+   a static page a collapsed canvas with a control nothing is listening to. So
+   the wide layout is the floor and the narrow ones are carved off it, widest
+   first.
 
    THESE SIT AT THE FOOT OF THE SHEET, WHICH IS LOAD-BEARING TWICE. The narrow
    block must come after the middle one to win where both match; and the zones'
@@ -1529,7 +1534,7 @@ export const workspaceStylesheet = `
    border between them. --ig-elevation-overlay is the token for exactly this
    and --ig-surface is the raised ground; the zone keeps its own border-left
    from the base rule, which reads as the panel's leading edge. */
-@container ig-workspace (max-width: 1359px) {
+@container ig-workspace (width < 1360px) {
   .ig-workspace {
     grid-template-areas:
       'header header'
@@ -1571,7 +1576,7 @@ export const workspaceStylesheet = `
    inspector takes 1fr, which at 1000 is 550 and at 860 is 418 — both above the
    330 the wide layout gives it, so the zone that yields in between is not
    yielding here at all. That is the order the rule names. */
-@container ig-workspace (max-width: 1119px) {
+@container ig-workspace (width < 1120px) {
   .ig-workspace {
     grid-template-areas:
       'header header header'
@@ -1652,6 +1657,16 @@ export const workspaceStylesheet = `
     right: auto;
     width: calc(var(--ig-char-width) * 66.67);
     max-height: 100%;
+    /* THE SHADOW GOES WITH THE CLIPPING, and that pairing is the whole point.
+       Section 3 forbids this panel reaching the rail ABSOLUTELY, and it is a
+       rule about what a reader SEES — a soft edge falling across the order
+       breaks it exactly as a border would. Everywhere else the zone's own
+       overflow is what guarantees that; here the zone is deliberately not
+       clipping, so the one thing that could paint outside the border box is
+       removed instead. The panel still reads as raised: it keeps its ground
+       and its border, over a canvas that is four characters wide and drawing
+       nothing. */
+    box-shadow: none;
   }
 
   /* OPENED FULL-WIDTH ON DEMAND — 17k's words — and full-width is measured

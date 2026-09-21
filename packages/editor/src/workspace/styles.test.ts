@@ -82,7 +82,7 @@ function containerBlock(css: string, condition: string): string {
  * layout.
  */
 function layoutBands(css: string): { condition: string; tracks: string[] }[] {
-  return ['min-width: 1360px', 'max-width: 1359px', 'max-width: 1119px'].map((condition) => {
+  return ['width >= 1360px', 'width < 1360px', 'width < 1120px'].map((condition) => {
     const block = containerBlock(css, condition);
     const template = block.match(/(?:^|\n)\s*\.ig-workspace\s*\{[^}]*grid-template-columns:([^;]*);/);
     assert.ok(template !== null, `(${condition}) sets no column template`);
@@ -608,7 +608,7 @@ describe('the workspace stylesheet carries structure, never a value', () => {
       const condition = (match[1] ?? '').trim();
       assert.match(
         condition,
-        /^[a-z-]*\s*\((?:max|min)-width:\s*\d+(?:\.\d+)?px\)$/,
+        /^[a-z-]*\s*\((?:(?:max|min)-width:\s*\d+(?:\.\d+)?px|width\s*(?:<|>)=?\s*\d+(?:\.\d+)?px)\)$/,
         `"${condition}" is not a plain inline-size container condition`,
       );
     }
@@ -860,6 +860,19 @@ describe('the workspace stylesheet carries structure, never a value', () => {
   it('never lets the rail yield, at any of §17k’s three widths', () => {
     const bands = layoutBands(css);
     assert.equal(bands.length, 3, 'the sheet no longer declares three §17k layouts');
+    // AND THE BANDS MEET, WITH NOTHING BETWEEN THEM. A container's inline size
+    // is not an integer: written as (min-width: 1360px) and (max-width: 1359px)
+    // a box measured at 1359.5 matches NEITHER, the base fallback comes back,
+    // and the rail drops to its 40-character measure at exactly the widths a
+    // resize drags through. Asserted as the SYNTAX rather than by measuring a
+    // fractional box, because the syntax is what makes the gap impossible.
+    for (const band of bands) {
+      assert.match(
+        band.condition,
+        /^width\s*(?:<|>=)\s*\d+px$/,
+        `"${band.condition}" leaves a gap a fractional width can fall through`,
+      );
+    }
     const rails = bands.map((band) => band.tracks[0]);
     assert.deepEqual(
       [...new Set(rails)],
@@ -936,7 +949,7 @@ describe('the workspace stylesheet carries structure, never a value', () => {
     // anchors the remainder leftwards across the rail, and the zone's
     // `overflow: auto` clips whatever is left. Three ways to lose the same
     // surface, none of which either change could have seen on its own.
-    const narrow = containerBlock(css, 'max-width: 1119px');
+    const narrow = containerBlock(css, 'width < 1120px');
 
     // IT IS NOT HIDDEN WITH THE GRAPH. The strip takes every sibling down with
     // it, and the overlay is anchored to the HEADER COUNT, which is drawn at
@@ -964,6 +977,11 @@ describe('the workspace stylesheet carries structure, never a value', () => {
       false,
       'the width is still clamped to the strip it is escaping',
     );
+    // AND THE SHADOW GOES WITH THE CLIPPING. §3's prohibition is about what a
+    // reader SEES, and a soft edge falling across the order breaks it as surely
+    // as a border would. The zone stops clipping here on purpose, so the one
+    // thing that could paint outside the border box is removed.
+    assert.match(overlay, /box-shadow:\s*none/);
   });
 
   it('undoes every overlay declaration when the inspector comes back inline', () => {
@@ -978,8 +996,8 @@ describe('the workspace stylesheet carries structure, never a value', () => {
       const rule = block.match(/\.ig-workspace \.ig-zone\[data-zone='inspector'\]\s*\{([^}]*)\}/);
       return [...(rule?.[1] ?? '').matchAll(/([a-z-]+)\s*:/g)].map((match) => match[1] ?? '');
     };
-    const middle = properties(containerBlock(css, 'max-width: 1359px'));
-    const narrow = properties(containerBlock(css, 'max-width: 1119px'));
+    const middle = properties(containerBlock(css, 'width < 1360px'));
+    const narrow = properties(containerBlock(css, 'width < 1120px'));
     assert.ok(middle.length > 0, 'the middle layout no longer lifts the inspector');
     assert.deepEqual(
       middle.filter((name) => !narrow.includes(name)),

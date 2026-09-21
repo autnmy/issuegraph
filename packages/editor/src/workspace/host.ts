@@ -852,9 +852,11 @@ function controlled(
     // records: a toggle bound to a dismissal key REOPENS on a second press,
     // which is the opposite of "Escape to dismiss".
     //
-    // AND IT IS `unclaimed` WITH NOTHING OPEN, so a press with nothing to
-    // dismiss is handed back rather than swallowed. `narrowOverlayOpen` is the
-    // shell's guard too — one rule, asked in two places, not two opinions.
+    // AND IT IS `unclaimed` WITH NOTHING OPEN, which is this reducer's answer
+    // about THIS command and not a promise about the key: `mount.ts` asks
+    // `narrowOverlayOpen` before dispatching — one rule, two places, not two
+    // opinions — and an Escape it declines is still cancelled further down by
+    // the create map's always-available `cancel`.
     case 'narrow-dismiss':
       return narrowOverlayOpen(state)
         ? settled({ ...state, canvasOpen: false, inspectorDismissed: true })
