@@ -77,13 +77,21 @@ describe('the landing state is the §16a comp', () => {
   });
 
   it('runs the spine top to bottom as §16a draws it', () => {
-    // The frame, top to bottom: #488 · the unit · #501 · #503 · #530 · #520 ·
+    // The frame, top to bottom: #488 · the unit · #501 · #530 · #503 · #520 ·
     // #487 — then the serialize group's third member, which the frame says
     // exists ("group of 3") and places below the drawn rows ("19 more ranked").
+    //
+    // #530 SITS ABOVE #503 HERE AND BELOW IT IN THE FRAME, which is the one
+    // place this host departs from §16a's drawing — deliberately, and to
+    // reproduce §16a's NUMBERS. See the note on #530 in `seed.ts`: the frame
+    // draws the row below rank 4 and prints "would be rank 4" on it, and those
+    // two cannot both hold. The number is the frame's specified output and the
+    // draw order is this host's input, so the input moved. Every printed
+    // number below is now the frame's.
     const spine = comp.explained.rows.filter((row) => row.placement === 'spine');
     assert.deepEqual(
       spine.map((row) => row.issue.ref),
-      ['488', '512', '514', '501', '503', '530', '520', '487', '505'],
+      ['488', '512', '514', '501', '530', '503', '520', '487', '505'],
     );
     // THE FRAME'S `2` ON THE BLOCKED UNIT, drawn at last. `RULINGS.md` §1
     // keeps a held slot's rank when the thing it waits on is inside the
@@ -97,8 +105,8 @@ describe('the landing state is the §16a comp', () => {
         [1, '488'],
         [2, '512+514'],
         [3, '501'],
-        [4, '503'],
         [null, '530'],
+        [4, '503'],
         [5, '520'],
         [6, '487'],
         [7, '505'],
@@ -112,13 +120,27 @@ describe('the landing state is the §16a comp', () => {
     );
     // ONE WOULD-BE RANK, AND ONLY ON THE SPINE. A footer row is not in the
     // order at all, so it names no position it would have taken; #530 is, and
-    // names the number the row beneath it goes on to take — which is the
-    // reading #208 records: a would-be rank consumes nothing.
+    // names 4 — THE FRAME'S OWN NUMBER, and the same number #503 goes on to
+    // take one row below it. That is the reading #208 records so it is not
+    // re-litigated: not a collision, because a would-be rank is the position
+    // the slot WOULD take and consumes nothing, so #503 keeps 4 rather than
+    // being pushed to 5 by a row that took no number.
     assert.deepEqual(
       comp.viewer.order.slots.flatMap((slot) =>
         slot.wouldBeRank == null ? [] : [[slot.wouldBeRank, slot.members.join('+')]],
       ),
-      [[5, '530']],
+      [[4, '530']],
+    );
+    // The pair §16a prints side by side, asserted as the pair: `— · would be
+    // rank 4` immediately above `4`.
+    assert.deepEqual(
+      comp.viewer.order.slots
+        .filter((slot) => ['530', '503'].includes(slot.lead))
+        .map((slot) => [slot.lead, slot.rank, slot.wouldBeRank]),
+      [
+        ['530', null, 4],
+        ['503', 4, null],
+      ],
     );
   });
 

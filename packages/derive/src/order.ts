@@ -171,6 +171,11 @@ export interface IssueOrderSlot {
    * The test reads the hold's SUBJECT, never its `code` — "is the thing this
    * row waits on drawn here" is a membership question, and a code allowlist
    * would be this layer inventing policy the ruling does not state.
+   *
+   * INSIDE IS MEMBERSHIP, NOT PRECEDENCE, so a held slot can rank ABOVE the
+   * in-order blocker it waits on: rank is the sort, not a topological walk.
+   * Decided on #208 and settled; the four reasons are at the test site in
+   * `deriveIssueOrder`, so they are read by anyone about to change it.
    */
   readonly rank: number | null;
   /**
@@ -417,6 +422,35 @@ export function deriveIssueOrder(input: DeriveIssueOrderInput): DerivedIssueOrde
     // drawn in this order, and loses it when any of them is not. `holds` is
     // already the deduplicated union over the unit's members, so a unit is
     // judged on the same set a reader of the row sees.
+    //
+    // ── "INSIDE" IS MEMBERSHIP, NOT PRECEDENCE — SETTLED, DO NOT REOPEN ──────
+    //
+    // The alternative was raised on #208 and DECIDED AGAINST (owner, 2026-09-21):
+    // "inside" could have meant "the blocker already holds a rank", i.e. sits
+    // strictly above this slot. It does not. It means the blocker is a
+    // candidate — a row on this page — whatever position it ended up in.
+    //
+    // The consequence is visible and is accepted: because the sort is
+    // (effectivePriority, baseRankingPosition, issueNumber) and never was a
+    // topological walk, a held slot CAN rank above the in-order blocker it
+    // waits on. This package's own seed does it — #530 at rank 4 holding
+    // `blocked-by #602`, with #602 at rank 5. Four reasons that is the right
+    // answer rather than a defect to patch:
+    //
+    //  1. It is the literal ruling text. The precedence reading adds a
+    //     condition Design did not write, and a tidier invariant is not a
+    //     licence to add conditions to a ruling.
+    //  2. Precedence would make ranking ORDER-DEPENDENT: whether a slot ranks
+    //     would depend on whether another slot had already ranked, cascading
+    //     through a chain (A waits on B waits on C). The answer would be a fact
+    //     about this loop's iteration rather than about the document.
+    //  3. Membership is explainable in one sentence a reader of the rail can
+    //     check — "your blocker is a row on this page". Precedence's sentence,
+    //     "your blocker already has a number", is a fact about this module's
+    //     internals.
+    //  4. §16a's worked example (#512 keeps rank 2 because #488 is rank 1)
+    //     satisfies precedence INCIDENTALLY — #488 happens to sort first. An
+    //     example satisfying a stronger rule is not the same as requiring it.
     //
     // `holds.length > 0` is belt-and-braces rather than a case: an unready slot
     // always carries at least one hold, and `every` on an empty list would
