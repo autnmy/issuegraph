@@ -36,10 +36,10 @@
  *   |                | selector (claim time)        | here (preview)              |
  *   |----------------|------------------------------|-----------------------------|
  *   | question       | what may be CLAIMED this tick| what the ORDER is           |
- *   | held issues    | dropped from the result      | kept at `rank: null`, w/ why|
+ *   | held issues    | dropped from the result      | kept in place, with why     |
  *   | together unit  | may refuse the unit          | ONE rank slot for the unit  |
  *   | serialize comp | one survivor per batch       | every member ranked         |
- *   | rank numbers   | none — an ordered array      | explicit; `null` when held  |
+ *   | rank numbers   | none — an ordered array      | explicit; see the rule below|
  *
  * Held-vs-dropped is the load-bearing difference: "why isn't my P1 running"
  * must be answerable IN PLACE, and a claim-time evaluator deletes exactly that
@@ -146,11 +146,50 @@ export interface DeriveIssueOrderInput {
 /** One position in the order. A together unit is ONE slot, not one per member. */
 export interface IssueOrderSlot {
   /**
-   * The 1-based rank, or `null` when the slot is HELD. A held slot never
-   * carries a number: it has no position in the sequence, and rendering one
-   * would claim work is queued that nothing can start.
+   * The 1-based rank, or `null` when this order cannot say where the slot sits.
+   *
+   * A HELD SLOT MAY STILL CARRY A NUMBER, and which held slots do is the rule
+   * `RULINGS.md` §1 (Claude Design, 2026-09-20) settles:
+   *
+   *   *"A held issue keeps its rank when its blocker is inside the previewed
+   *   order, and loses it when the blocker is outside."*
+   *
+   * INSIDE means the hold's `subject` is a CANDIDATE of this derivation — an
+   * open, non-duplicate issue that has a row here — so the reader can follow
+   * "ready once #488 closes" to a row it is already looking at. The slot's
+   * position is then a fact the order can state, and withholding it said less
+   * than the model knew: the rank track read `—` for a row whose whole story
+   * was "second, once the first one lands".
+   *
+   * OUTSIDE is every other cause: a blocker that is not in this node set, one
+   * that resolves to nothing, a closed-but-under-read redirect, or a hold that
+   * names no issue at all (`weak-source`, `under-read-self`). This order has
+   * nothing to point at, so it declines to state a position and reports
+   * {@link wouldBeRank} instead. The test is over EVERY hold on the slot: one
+   * blocker outside is enough, because the row cannot answer "when" through it.
+   *
+   * The test reads the hold's SUBJECT, never its `code` — "is the thing this
+   * row waits on drawn here" is a membership question, and a code allowlist
+   * would be this layer inventing policy the ruling does not state.
    */
   readonly rank: number | null;
+  /**
+   * The position this slot WOULD take, when it has no rank; `null` when it has.
+   *
+   * NOT A SECOND SEQUENCE, and not a collision with the rank of the same
+   * number. It is the counterfactual: the rank this slot would hold if it were
+   * rank-eligible, which is one past the last rank actually issued. §16a draws
+   * both at once — `#530 · would be rank 4` sits above `#503` at rank 4 —
+   * because #530 arriving among the P1s would land at 4 and push #503 to 5.
+   *
+   * IT DOES NOT CONSUME A RANK, which is what keeps the two numbers coherent:
+   * the ranks below a would-be rank close up exactly as they always have, and
+   * §16a's `#503` reads 4 rather than 5 precisely because #530 took nothing.
+   * The cost of that is stated rather than hidden — two unranked slots in a
+   * row both report the same would-be number, since each names the position
+   * the order would give IT, not a position the two would share out.
+   */
+  readonly wouldBeRank: number | null;
   /** The member that placed the slot; the detail surface's subject. */
   readonly lead: string;
   /** Every candidate member, in the model's canonical component order. */
@@ -240,7 +279,14 @@ export interface DerivedIssueOrder {
    * the work would have taken.
    */
   readonly slots: readonly IssueOrderSlot[];
-  /** Candidate key -> its slot's rank. Held members map to `null`. */
+  /**
+   * Candidate key -> its slot's rank.
+   *
+   * `null` for a member whose slot has no rank, which is NOT the same set as
+   * "held" — a held slot whose blockers are all in this order carries a number
+   * here. See {@link IssueOrderSlot.rank}; readiness is `IssueOrderSlot.ready`
+   * and is the only thing that answers "may this start".
+   */
   readonly rankOf: ReadonlyMap<string, number | null>;
   readonly priority: ReadonlyMap<string, IssuePriorityView>;
   readonly excluded: readonly ExcludedIssue[];
@@ -367,9 +413,26 @@ export function deriveIssueOrder(input: DeriveIssueOrderInput): DerivedIssueOrde
     const holdReasons = holds.map((h) => h.text);
     // The unit is ONE piece of work: it advances only when every member can.
     const ready = members.every((member) => model.readiness(member).ready);
-    const slotRank = ready ? (rank += 1) : null;
+    // RULINGS.md §1: a held slot keeps its rank when every thing it waits on is
+    // drawn in this order, and loses it when any of them is not. `holds` is
+    // already the deduplicated union over the unit's members, so a unit is
+    // judged on the same set a reader of the row sees.
+    //
+    // `holds.length > 0` is belt-and-braces rather than a case: an unready slot
+    // always carries at least one hold, and `every` on an empty list would
+    // otherwise rank a slot on the strength of causes nobody stated.
+    const blockedInsideOrder =
+      !ready &&
+      holds.length > 0 &&
+      holds.every((h) => h.subject !== undefined && candidateSet.has(h.subject));
+    const ranked = ready || blockedInsideOrder;
+    const slotRank = ranked ? (rank += 1) : null;
     slots.push({
       rank: slotRank,
+      // One past the last rank ISSUED — see the field's doc. Reading `rank + 1`
+      // after the assignment above is the whole definition: a would-be rank
+      // takes nothing, so the next ranked slot gets the number this one names.
+      wouldBeRank: ranked ? null : rank + 1,
       lead: key,
       members,
       ready,

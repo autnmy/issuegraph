@@ -160,22 +160,30 @@ export function withBlockedByEdge(
 }
 
 /**
- * The golden ranks for the seed. `null` is a HELD slot; a key absent from the
- * map is not in the order at all (excluded, or closed).
+ * The golden ranks for the seed. `null` is a slot this order cannot place; a
+ * key absent from the map is not in the order at all (excluded, or closed).
  *
- * #530 is held behind open #602, so it takes no number and the ranks below it
- * close up — a held slot does not reserve a position.
+ * #530 IS HELD AND STILL RANKED, per `RULINGS.md` §1: its blocker #602 is in
+ * this node set, so the order can say where it sits and does. The numbers
+ * below it therefore do NOT close up — a held slot whose blocker is drawn here
+ * occupies its position like any other.
+ *
+ * AGAINST THE REFERENCE PROTOTYPE, THIS IS THE ONE DELIBERATE DIVERGENCE. The
+ * prototype assigned `ready ? (rank += 1) : null` and produced `#530 => null`
+ * with #602..#488 at 4..7; Design overturned that rule on 2026-09-20 and this
+ * vector is what the ruling asks for. Everything else — the sort, the unit
+ * collapse, the duplicate exclusion — still reproduces the prototype exactly.
  */
 export const SEED_GOLDEN_RANKS: ReadonlyMap<string, number | null> = new Map([
   ['512', 1],
   ['514', 1],
   ['501', 2],
   ['503', 3],
-  ['530', null],
-  ['602', 4],
-  ['520', 5],
-  ['487', 6],
-  ['488', 7],
+  ['530', 4],
+  ['602', 5],
+  ['520', 6],
+  ['487', 7],
+  ['488', 8],
 ]);
 
 /**
@@ -184,15 +192,20 @@ export const SEED_GOLDEN_RANKS: ReadonlyMap<string, number | null> = new Map([
  * #488 inherits effective priority 0 from the P0 issue it now blocks, which
  * lifts it from last to first; the `{512, 514}` unit goes held because one of
  * its two members is blocked, and a unit advances only as a whole.
+ *
+ * THE HELD UNIT KEEPS RANK 2, which is `RULINGS.md` §1's own worked example:
+ * *"#512 is `⊘ blocked-by #488` and keeps rank 2, because #488 is rank 1."*
+ * Both held slots here are blocked by issues this order carries, so both are
+ * placed and nothing closes up.
  */
 export const PROMOTED_GOLDEN_RANKS: ReadonlyMap<string, number | null> = new Map([
   ['488', 1],
-  ['512', null],
-  ['514', null],
-  ['501', 2],
-  ['503', 3],
-  ['530', null],
-  ['602', 4],
-  ['520', 5],
-  ['487', 6],
+  ['512', 2],
+  ['514', 2],
+  ['501', 3],
+  ['503', 4],
+  ['530', 5],
+  ['602', 6],
+  ['520', 7],
+  ['487', 8],
 ]);

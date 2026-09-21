@@ -389,8 +389,13 @@ test('both hold families are reachable, and they are drawn in different places',
   assert.deepEqual([...families].sort(), ['executor', 'graph']);
 
   // The distinction the demo states it never blurs: a graph-derived hold sits
-  // INLINE at its would-be rank showing no number; an executor-derived one
-  // collapses into the footer group, which earns no rank slot at all.
+  // INLINE, keeping its place in the order; an executor-derived one collapses
+  // into the footer group, which earns no rank slot at all.
+  //
+  // WHETHER THE INLINE ROW SHOWS A NUMBER IS A SEPARATE QUESTION, and this is
+  // not the test that answers it — `RULINGS.md` §1 answers it per row, from
+  // where the row's blocker sits. What is asserted here is the PLACEMENT,
+  // which is the thing the two families actually differ on.
   //
   // OVER CANDIDATES ONLY, and that qualification is the rule rather than a
   // convenience. The spine is the ORDER, and a closed issue is not in it — it
@@ -408,8 +413,18 @@ test('both hold families are reachable, and they are drawn in different places',
   assert.ok(graphHeld.length > 0, 'no graph-derived hold on a candidate in the seed');
   for (const row of graphHeld) {
     assert.equal(row.placement, 'spine', `#${row.issue.ref} left the spine`);
-    assert.equal(row.showRank, false, `#${row.issue.ref} showed a rank it cannot occupy`);
   }
+  // BOTH ARMS OF THE RULING ARE REACHABLE IN THE SEED, which is what stops a
+  // future edit collapsing it back to one: #512 waits on a spine row and keeps
+  // its number, #530 waits on a footer row and loses it.
+  assert.deepEqual(
+    graphHeld.map((row) => [row.issue.ref, row.showRank]).sort(),
+    [
+      ['512', true],
+      ['514', true],
+      ['530', false],
+    ],
+  );
   for (const row of rows) {
     if (candidate(row)) continue;
     assert.equal(row.placement, 'footer', `#${row.issue.ref} stayed in the spine`);

@@ -93,7 +93,11 @@ describe('deriveIssueOrder composes the relation layer (#83 DW3)', () => {
     assert.ok(unit !== undefined, 'expected a slot carrying 900');
     assert.deepEqual(unit.members, ['900', '901']);
     assert.equal(unit.ready, false, 'a unit with a held member is held');
-    assert.equal(unit.rank, null, 'a held slot carries no rank');
+    // RULINGS.md §1: #902 is a candidate of this very order, so the held unit
+    // keeps its position rather than surrendering it. The rank is the fact
+    // "this sits first"; `ready` is the fact "nothing may start it".
+    assert.equal(unit.rank, 1, 'a held slot whose blocker is in the order keeps its rank');
+    assert.equal(unit.wouldBeRank, null);
     // The reasons are the relation layer's, deduplicated — not the derivation's
     // own sentences. This is the assertion the sweep below generalises.
     assert.deepEqual(

@@ -66,13 +66,13 @@ describe('the inspector states why the issue sits where it does', () => {
   });
 
   /**
-   * A RANK AND A HOLD ARE EXCLUSIVE, so the heading has to say which it is.
-   * `@issuegraph/derive` assigns `ready ? (rank += 1) : null`, and PR #126
-   * already ruled for §16 that a held unit prints the em dash rather than a
-   * number — frame 17a draws `#512` at rank 2 AND "Held until #488 closes",
-   * which the model cannot represent.
+   * THE EM DASH IS FOR A SLOT THE ORDER CANNOT PLACE, not for every held one.
+   * `RULINGS.md` §1 keeps the rank when the blocker is inside the previewed
+   * order, so PR #126's ruling now applies to the other arm — a host that
+   * states `rank: null` has said the position is unknown, and the heading is
+   * the only place a reader learns that.
    */
-  it('states the hold instead of a rank when the slot is held', () => {
+  it('states the hold instead of a rank when the order placed the slot nowhere', () => {
     const markup = inspectorMarkupFor(HELD_IN_A_UNIT, 'i0002');
 
     assert.match(markup, /class="ig-why-rank-heading">why held</);
@@ -80,8 +80,35 @@ describe('the inspector states why the issue sits where it does', () => {
     assert.equal(
       /class="ig-why-rank-heading">why rank/.test(markup),
       false,
-      'a held slot was given a rank it does not have',
+      'an unplaced slot was given a rank it does not have',
     );
+  });
+
+  /**
+   * FRAME 17a's OWN PAIR, drawable for the first time: `#512` at rank 2 AND
+   * "Held until #488 closes". `RULINGS.md` §1 (2026-09-20) ranks a held slot
+   * whose blocker is inside the previewed order, so the host can state both —
+   * the heading reads the rank, `data-held` reads the holds, and the list
+   * beneath still carries the blocker as a control.
+   */
+  it('names the rank AND the hold when the order still placed the held slot', () => {
+    const document = withProvenance(HELD_IN_A_UNIT, 'i0002');
+    // The same document with #512's slot placed: the host has decided its
+    // blocker is one of these rows, so the slot keeps the position it sits at
+    // and everything below it moves down by one.
+    let rank = 0;
+    const placed: ViewerDocument = {
+      ...document,
+      order: {
+        ...document.order,
+        slots: document.order.slots.map((slot) => ({ ...slot, rank: (rank += 1) })),
+      },
+    };
+
+    const markup = inspectorMarkupFor(placed, 'i0002');
+    assert.match(markup, /class="ig-why-rank-heading">why rank 2</, 'the heading names no rank');
+    assert.match(markup, /data-held="true"/, 'a held slot was drawn as unheld');
+    assert.match(markup, /class="ig-inspector-holds"/, 'the hold went missing with the em dash');
   });
 
   it('renders the hold’s own reason verbatim, with its cause on the markup', () => {

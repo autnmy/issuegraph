@@ -71,8 +71,20 @@ const compIssues: readonly StoredIssue[] = [
   // ready and the concurrency cap decides who goes first.
   { ref: '501', title: 'Rate-limit backoff on the poller', state: 'open', priority: 1 },
   { ref: '503', title: 'Poller: jittered retry window', state: 'open', priority: 1 },
-  // `—`, would be rank 4: a graph-derived hold, inline, blocked by an open
-  // issue the order never reaches.
+  // `—`, WOULD BE RANK 5 HERE, where the frame prints 4: a graph-derived hold,
+  // inline, blocked by an open issue this order never reaches (#602, which the
+  // host holds ineligible, so it is not in the previewed order and #530's own
+  // rank is withheld — `RULINGS.md` §1).
+  //
+  // THE FRAME'S 4 IS NOT REACHABLE FROM THE ROW SEQUENCE THE FRAME DRAWS, and
+  // the seed reproduces the sequence rather than the number. §16a draws this
+  // row BELOW #503 at rank 4 and ABOVE #520 at rank 5, and #208 defines a
+  // would-be rank as "the position the slot would take" — from that position
+  // it is 5, and #520 keeps 5 because a would-be rank consumes nothing. The
+  // frame's own explanation ("it lands at 4 and pushes #503 to 5") describes a
+  // row drawn ABOVE #503 instead. One or the other has to give, and choosing
+  // for Design by reordering the seed is exactly what RULINGS.md exists to
+  // stop — so this sits on #208 as a question and the sequence stands.
   { ref: '530', title: 'Session cookie SameSite fix', state: 'open', priority: 1 },
   // Rank 5: no declared priority, so the spec's default tier (§4.3.5).
   { ref: '520', title: 'Audit log pagination', state: 'open' },

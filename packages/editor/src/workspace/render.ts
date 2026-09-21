@@ -1744,21 +1744,29 @@ function kindListSpec(words: WorkspaceWords, source: string | null): ElementSpec
  * this package in the business of explaining a hold whose vocabulary belongs to
  * the reader that produced it.
  *
- * WHAT DOES NOT APPEAR: a rank on a held slot. `@issuegraph/derive` assigns
- * `ready ? (rank += 1) : null`, so the two are exclusive and the heading says
- * which one it is. Frame 17a draws `#512` at rank 2 *and* "Held until #488
- * closes"; that state is unrepresentable, and PR #126 already ruled for §16
- * that the model wins and the em dash stands.
+ * A RANK AND A HOLD ARE NO LONGER EXCLUSIVE, which is what frame 17a always
+ * asked for: `#512` at rank 2 *and* "Held until #488 closes". `RULINGS.md` §1
+ * (Claude Design, 2026-09-20) settled it and `@issuegraph/derive` now ranks a
+ * held slot whose blocker is inside the previewed order, so the state the
+ * frame draws is representable and PR #126's em dash applies only to the other
+ * arm — a slot whose blocker is outside the order, which still has no number.
+ *
+ * SO THE TWO CHANNELS ARE READ FROM DIFFERENT FIELDS. `data-held` is the
+ * HOLDS: the block is styled as held whenever something is holding the work,
+ * whatever number the slot occupies. The HEADING is the rank: a number when
+ * the order can state a position, and the held word when it cannot — because
+ * the heading is the one place a reader learns that the position is missing
+ * rather than merely unread. The hold list beneath says why, either way.
  */
 function whyRankSpec(
   why: InspectorWhyRank,
   words: WorkspaceWords,
   holds: readonly ElementSpec[],
 ): ElementSpec {
-  const held = why.rank === null;
+  const held = why.holds.length > 0 || why.rank === null;
   return element('div', { class: 'ig-why-rank', 'data-held': held ? 'true' : 'false' }, [
     element('h3', { class: 'ig-why-rank-heading' }, [
-      held ? words.whyHeld : `${words.whyRank} ${String(why.rank)}`,
+      why.rank === null ? words.whyHeld : `${words.whyRank} ${String(why.rank)}`,
     ]),
     element('p', { class: 'ig-why-rank-sentence' }, [
       provenanceClause(why.provenance),

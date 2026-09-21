@@ -85,24 +85,23 @@ describe('the landing state is the §16a comp', () => {
       spine.map((row) => row.issue.ref),
       ['488', '512', '514', '501', '503', '530', '520', '487', '505'],
     );
-    // The viewer numbers READY slots only, so where the frame prints `2` on
-    // the blocked unit the viewer prints `—` and the numbering closes up. That
-    // is the viewer's own rule — "printing one would claim work is queued that
-    // nothing can start" — and the spec's `ready` (§6.2) agrees with it; the
-    // frame's hollow station on a blocked unit is the one place the two read
-    // differently, and the comp is what makes that a glance rather than an
-    // argument. Pinned as the viewer draws it.
+    // THE FRAME'S `2` ON THE BLOCKED UNIT, drawn at last. `RULINGS.md` §1
+    // keeps a held slot's rank when the thing it waits on is inside the
+    // previewed order: #512 waits on #488, two rows above it, so the unit
+    // holds rank 2 and nothing below it closes up. #530 waits on #602, which
+    // this host holds ineligible (§6.8) and collects into the footer — outside
+    // the previewed order — so it alone prints `—` and names a would-be rank.
     assert.deepEqual(
       comp.viewer.order.slots.map((slot) => [slot.rank, slot.members.join('+')]),
       [
         [1, '488'],
-        [null, '512+514'],
-        [2, '501'],
-        [3, '503'],
+        [2, '512+514'],
+        [3, '501'],
+        [4, '503'],
         [null, '530'],
-        [4, '520'],
-        [5, '487'],
-        [6, '505'],
+        [5, '520'],
+        [6, '487'],
+        [7, '505'],
         // The footer, in the derivation's order: #602 first, promoted to P1
         // by the #530 it blocks; the rest on the default tier.
         [null, '602'],
@@ -110,6 +109,16 @@ describe('the landing state is the §16a comp', () => {
         [null, '533'],
         [null, '541'],
       ],
+    );
+    // ONE WOULD-BE RANK, AND ONLY ON THE SPINE. A footer row is not in the
+    // order at all, so it names no position it would have taken; #530 is, and
+    // names the number the row beneath it goes on to take — which is the
+    // reading #208 records: a would-be rank consumes nothing.
+    assert.deepEqual(
+      comp.viewer.order.slots.flatMap((slot) =>
+        slot.wouldBeRank == null ? [] : [[slot.wouldBeRank, slot.members.join('+')]],
+      ),
+      [[5, '530']],
     );
   });
 
