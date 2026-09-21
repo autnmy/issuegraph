@@ -56,6 +56,17 @@ export interface HostState {
   readonly selection: WorkspaceSelection;
   readonly scale: ScaleState;
   readonly auditFiltered: boolean;
+  /**
+   * The rail rows whose provenance line the reader has opened, per §16f's
+   * `→ expand provenance`.
+   *
+   * THE HOST HOLDS IT BECAUSE THE VIEWER CANNOT. `@issuegraph/viewer` renders
+   * what it is given and keeps nothing across a redraw, so it publishes
+   * `expand:<key>` / `collapse:<key>` and this state is the answer it is handed
+   * back. Same shape as `auditFiltered` one field up: a reader's view
+   * preference, not a fact about the document.
+   */
+  readonly expanded: readonly string[];
   /** The rail window's first slot — a scroll offset in rows, never a rank. */
   readonly railStart: number;
   readonly draft: CreateDraft;
@@ -90,6 +101,7 @@ export const INITIAL_HOST_STATE: HostState = Object.freeze({
   selection: INITIAL_SELECTION,
   scale: INITIAL_SCALE_STATE,
   auditFiltered: false,
+  expanded: [],
   railStart: 0,
   draft: IDLE_CREATE_DRAFT,
   targetQuery: '',
@@ -731,6 +743,34 @@ function controlled(
     // failed record.
     case 'audit-filter':
       return settled({ ...state, auditFiltered: !state.auditFiltered });
+    // §16f's `→` / `←` on a rail row.
+    //
+    // A BARE `expand` IS SOMEBODY ELSE'S COMMAND, and this is the whole reason
+    // the arms are shaped this way. `@issuegraph/viewer`'s own panel-size
+    // button publishes exactly `expand` / `collapse` with NO target (see
+    // `parts.ts`, `class="ig-size"`), so one name carries two meanings and only
+    // the target tells them apart.
+    //
+    // UNCLAIMED, NOT MERELY UNCHANGED, when no row is named. The two are
+    // indistinguishable in the state and completely different at the keyboard:
+    // `claimed` is what cancels the press, so settling here would swallow the
+    // size button for every host that draws one — taking a working control away
+    // as a side effect of adding an unrelated one. The `default` arm a few
+    // cases down says this in its own words; these two arms defer to it rather
+    // than restate it.
+    case 'expand':
+      if (target === undefined || target === '') return unclaimed(state);
+      return settled(
+        state.expanded.includes(target)
+          ? state
+          : { ...state, expanded: [...state.expanded, target] },
+      );
+    case 'collapse':
+      if (target === undefined || target === '') return unclaimed(state);
+      return settled({
+        ...state,
+        expanded: state.expanded.filter((key) => key !== target),
+      });
     case 'target-query':
       return settled({ ...state, targetQuery: value ?? '' });
     case 'target':

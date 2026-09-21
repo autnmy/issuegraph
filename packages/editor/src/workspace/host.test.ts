@@ -892,3 +892,64 @@ describe('the first pass reaches the store only through consent', () => {
     assert.equal(/data-ig-state=/.test(settled.markup), false);
   });
 });
+
+describe('§16f — the host owns which rows are open', () => {
+  // THE VIEWER CANNOT HOLD THIS STATE. It is a pure renderer, re-run from
+  // scratch on every change, so `→` publishes a command and the set lives
+  // here. These tests drive the reducer half; the key that produces the
+  // command is pinned in the viewer's `navigation.test.ts`, and the two meet
+  // at `navigateFocus` in `mount.ts`.
+
+  it('expand adds the named row and collapse removes it', () => {
+    const { state } = drive([
+      { kind: 'control', name: 'expand', target: '2' },
+      { kind: 'control', name: 'expand', target: '3' },
+    ]);
+    assert.deepEqual(state.expanded, ['2', '3']);
+    assert.deepEqual(
+      drive([{ kind: 'control', name: 'collapse', target: '2' }], { ...state }).state.expanded,
+      ['3'],
+      'collapse removes only the row it names',
+    );
+  });
+
+  it('expanding a row twice does not list it twice', () => {
+    // NOT COSMETIC. `expanded` is read with `includes`, so a duplicate is
+    // invisible in the markup — but one `collapse` would then leave the second
+    // copy behind and the row would refuse to close. Held-down keys repeat.
+    const { state } = drive([
+      { kind: 'control', name: 'expand', target: '2' },
+      { kind: 'control', name: 'expand', target: '2' },
+    ]);
+    assert.deepEqual(state.expanded, ['2']);
+    assert.deepEqual(
+      drive([{ kind: 'control', name: 'collapse', target: '2' }], state).state.expanded,
+      [],
+      'one collapse closes it, because one expand opened it',
+    );
+  });
+
+  it('leaves a bare expand UNCLAIMED — it is the panel-size button', () => {
+    // THE COLLISION THIS PAIR EXISTS FOR. `@issuegraph/viewer` publishes a bare
+    // `expand` / `collapse` from its panel-size button, with no target. Before
+    // these arms it fell to `default` and went back to the host unclaimed.
+    //
+    // ASSERTING `claimed` AND NOT ONLY THE STATE, because a settled no-op and
+    // an unclaimed one look identical in `expanded` and behave completely
+    // differently at the keyboard: `claimed` cancels the press. A state-only
+    // test here would have passed while the size button stopped working.
+    for (const name of ['expand', 'collapse']) {
+      const result = reduceHost(
+        { ...INITIAL_HOST_STATE, expanded: ['2'] },
+        { kind: 'control', name },
+        document,
+      );
+      assert.equal(result.claimed, false, `a bare ${name} is not this reducer's`);
+      assert.deepEqual(result.state.expanded, ['2'], 'and it is not a collapse-all either');
+    }
+  });
+
+  it('collapsing a row that was never open is not an error', () => {
+    assert.deepEqual(drive([{ kind: 'control', name: 'collapse', target: '9' }]).state.expanded, []);
+  });
+});

@@ -1479,6 +1479,9 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       selection: state.selection,
       scale: state.scale,
       rail: { start: state.railStart, count: railCount() },
+      // §16f's open rows. Host state, because the viewer is re-rendered from
+      // scratch and cannot keep any of its own.
+      expanded: state.expanded,
       // UNIQUE TO THIS MOUNT, so §17a's rail footer can name the isolated list
       // the canvas draws without two mounted workspaces on one page naming the
       // same element. See `WorkspaceOptions.surfaceId`; the counter is why a
@@ -2349,6 +2352,26 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     if (result.command.kind === 'focus') {
       focusIn(zoneName, result.command.key);
       return true;
+    }
+    // §16f's `→ expands provenance` on a list row. The viewer cannot expand
+    // anything itself, so it publishes `expand:<key>` and this is where the
+    // host takes it — split into the name/target shape every other control
+    // here already uses, rather than teaching the reducer a second spelling.
+    //
+    // THE COLON IS LOAD-BEARING. `expand` with no key is §16a's panel-size
+    // control and means something else entirely; only the qualified form is a
+    // row. A press that names no key is handed back rather than swallowed.
+    if (result.command.kind === 'command') {
+      const [name, ...rest] = result.command.command.split(':');
+      // REJOINED, NOT `rest[0]`. A qualified key is `owner/repo#12`, which
+      // carries no colon today — but the split is over the whole command and
+      // taking only the first segment would silently truncate any key that
+      // ever does.
+      const row = rest.join(':');
+      if ((name === 'expand' || name === 'collapse') && row !== '') {
+        dispatch({ kind: 'control', name, target: row });
+        return true;
+      }
     }
     return false;
   };

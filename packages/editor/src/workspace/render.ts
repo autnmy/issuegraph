@@ -740,6 +740,19 @@ export interface WorkspaceOptions {
   /** Which slice of the order the rail draws. See {@link railWindow}. */
   readonly rail?: RailWindowOptions | undefined;
   /**
+   * The rail rows whose provenance is open, by lead key.
+   *
+   * §16f's `→ expands provenance` names a per-row state, and the VIEWER CANNOT
+   * HOLD ONE: it is a pure renderer, re-run from scratch on every change. So
+   * the host owns the set and hands it back in, exactly as `selection` is.
+   *
+   * ONLY THE RAIL READS IT. The canvas draws stations rather than rows and has
+   * no provenance to open, and §17j already shows provenance inline on the wide
+   * panel — where the expand affordance would be a control for something
+   * already visible.
+   */
+  readonly expanded?: readonly string[] | undefined;
+  /**
    * The audit's input, when the host has one.
    *
    * ABSENT MEANS "NOT RUN", NOT "CLEAN", and the two render differently: with
@@ -2885,6 +2898,10 @@ export function renderWorkspace(
     // The rail is where a selected ISSUE reads as current. An edge selection
     // resolves to no key, which is `selectedKey`'s whole job.
     selected: selectedKey(selection),
+    // §16f. Passed WHOLE rather than windowed: the window moves, and a reader
+    // who opened a row, scrolled past it and came back should find it open.
+    // A key the window does not draw costs one `includes` miss and nothing else.
+    ...(options.expanded === undefined ? {} : { expanded: options.expanded }),
   });
   // Built once, over the window's rows, so a rail of 312 costs one pass rather
   // than one scan of `overlay.rows` per drawn row.

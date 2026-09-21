@@ -282,3 +282,89 @@ describe('a hold publishes its cause and subject when the host supplied them', (
     assert.doesNotMatch(markup, /data-subject=/);
   });
 });
+
+describe('\u00a716f \u2014 the expand affordance', () => {
+  // The state lives in the HOST, so what this package owns is exactly two
+  // things: it reports which rows are open, and its stylesheet draws an open
+  // one. Both are pinned here; the key that asks is in `navigation.test.ts`
+  // and the reducer that answers is in the editor's `host.test.ts`.
+
+  const slots = (markup: string): Map<string, string | null> =>
+    new Map(
+      [...markup.matchAll(/<li class="ig-slot"([^>]*)>/g)].map((tag) => {
+        const body = tag[1] as string;
+        const key = /data-ig-key="([^"]+)"/.exec(body)?.[1] as string;
+        return [key, /aria-expanded="([a-z]+)"/.exec(body)?.[1] ?? null];
+      }),
+    );
+
+  it('reports open on exactly the rows the host named', () => {
+    const closed = slots(renderViewer(fixtureDocument, { projection: 'linear' }).markup);
+    assert.ok(closed.size > 1);
+    assert.deepEqual(
+      [...closed.values()].filter((value) => value === 'true'),
+      [],
+      'nothing is open until the host says so',
+    );
+
+    const open = slots(
+      renderViewer(fixtureDocument, { projection: 'linear', expanded: ['102'] }).markup,
+    );
+    assert.equal(open.get('102'), 'true');
+    assert.deepEqual(
+      [...open].filter(([, value]) => value === 'true').map(([key]) => key),
+      ['102'],
+      'one named row opens one row',
+    );
+  });
+
+  it('keeps the provenance markup whole whether the row is open or not', () => {
+    // WHAT CHANGES IS THE ATTRIBUTE, NOT THE MARKUP. The rail hides provenance
+    // with `display: none` and the accessible name is built from the same
+    // parts, so removing it when closed would change the row's name as a side
+    // effect of a display choice \u2014 and the wide panel, which shows it inline,
+    // renders through this very path.
+    const both = ['expand-nothing', '102'].map(
+      (key) =>
+        (
+          renderViewer(fixtureDocument, {
+            projection: 'linear',
+            expanded: key === '102' ? ['102'] : [],
+          }).markup.match(/ig-provenance/g) ?? []
+        ).length,
+    );
+    assert.ok((both[0] as number) > 0, 'the premise: the fixture has provenance to draw');
+    assert.equal(both[0], both[1]);
+  });
+
+  it('names an unknown key without opening anything', () => {
+    // The rail is WINDOWED, so a key the host holds open may not be drawn at
+    // all. That must cost a miss, never a throw or a stray open row.
+    const drawn = slots(
+      renderViewer(fixtureDocument, { projection: 'linear', expanded: ['not-a-row'] }).markup,
+    );
+    assert.deepEqual([...drawn.values()].filter((value) => value === 'true'), []);
+  });
+
+  it('draws an open row\u2019s provenance back, out-specifying the rule that hid it', () => {
+    // THE TRAP THIS EXISTS FOR: two rules that both match and a winner decided
+    // by file order. A previous sweep shipped a row that rendered EMPTY while
+    // measuring a perfect height, because two selectors tied at the same
+    // specificity. So this compares the two rules rather than asserting that
+    // the override is merely present.
+    const css = viewerStylesheet;
+    const hide = css.indexOf('.ig-slot .ig-provenance');
+    const show = css.indexOf(".ig-slot[aria-expanded='true'] .ig-provenance");
+    assert.ok(hide !== -1 && show !== -1, 'both rules are in the sheet');
+    // The attribute adds a component the bare descendant selector does not
+    // have, so the override wins on specificity and does not depend on order.
+    // It is nonetheless AFTER the rule it overrides, which is what keeps this
+    // readable to anyone editing the block.
+    assert.ok(show > hide, 'the override follows the rule it overrides');
+    assert.match(
+      css.slice(show, show + 120),
+      /\.ig-slot\[aria-expanded='true'\]\s+\.ig-provenance\s*\{[^}]*display:\s*block/,
+      'and it restores display rather than something adjacent',
+    );
+  });
+});

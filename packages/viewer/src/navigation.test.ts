@@ -78,9 +78,47 @@ describe('navigate', () => {
     assert.deepEqual(navigate(scene, at('102'), 'ArrowLeft').command, { kind: 'none' });
   });
 
-  it('has no lateral axis in the linear or tree projections', () => {
-    assert.deepEqual(navigate(linear(), at('102'), 'ArrowRight').command, { kind: 'none' });
+  it('has no lateral axis in the tree projection', () => {
     assert.deepEqual(navigate(tree(), at('101'), 'ArrowLeft').command, { kind: 'none' });
+  });
+
+  it('gives the linear projection §16f\u2019s expand instead of a lateral move', () => {
+    // THIS TEST USED TO ASSERT `none` FOR THE LIST, and that assertion was the
+    // shipped defect written down. §16f gives the two keys DIFFERENT jobs in
+    // the two projections:
+    //
+    //   List:  `\u2191\u2193` rows, `\u2192` EXPANDS PROVENANCE, `\u23ce` opens detail, `g` toggles
+    //   Graph: `\u2190\u2192` traverses to gutter neighbours
+    //
+    // The graph's binding had been applied to both. A lateral move is a graph
+    // idea — it reaches a gutter node — and the list has no gutters, so
+    // `scene.lateral` is empty for it and `\u2192` did nothing at all. That is why
+    // this read as a missing feature rather than as a misrouted key, and why
+    // the old test passed while the affordance was absent.
+    const scene = linear();
+    assert.equal(scene.lateral.size, 0, 'the premise: the list has no lateral axis to take');
+    assert.deepEqual(navigate(scene, at('102'), 'ArrowRight').command, {
+      kind: 'command',
+      command: 'expand:102',
+    });
+    assert.deepEqual(navigate(scene, at('102'), 'ArrowLeft').command, {
+      kind: 'command',
+      command: 'collapse:102',
+    });
+  });
+
+  it('expanding does not move focus, and reaches a row from nothing focused', () => {
+    // A row that expands must stay under the reader. Moving focus here would
+    // open one row and read another.
+    const scene = linear();
+    const opened = navigate(scene, at('102'), 'ArrowRight');
+    assert.equal(opened.state.focused, '102');
+    // With nothing focused there is no row to name, so the key takes focus
+    // first — the same rule every other key here follows.
+    assert.deepEqual(navigate(scene, at(null), 'ArrowRight').command, {
+      kind: 'focus',
+      key: scene.focusOrder[0],
+    });
   });
 
   it('selects the focused key on Enter and on Space', () => {

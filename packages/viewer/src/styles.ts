@@ -665,6 +665,26 @@ export const viewerStylesheet = `
   .ig-slot .ig-caveat {
     display: none;
   }
+
+  /* AND THE ON-DEMAND HALF, WHICH IS WHAT 17j ACTUALLY ASKED FOR. A row the
+     reader opened with 16f's right-arrow draws its provenance again.
+
+     THE 53px IS NOT BROKEN BY THIS, it is spent deliberately: an open row is
+     taller because the reader asked it to be, and closing it returns the row to
+     the rhythm. That is the difference between a row that grows because nothing
+     governs it - the defect this sweep removed - and one that grows because
+     somebody pressed a key.
+
+     ONLY THE PROVENANCE COMES BACK. Holds and caveats stay down: 17j names the
+     provenance line and nothing else, and the holds are already in the
+     inspector's WHY RANK block as controls rather than prose. */
+  .ig-slot[aria-expanded='true'] {
+    min-height: var(--ig-row-height-dense);
+  }
+
+  .ig-slot[aria-expanded='true'] .ig-provenance {
+    display: block;
+  }
 }
 
 /* STEPS 1-3 OF THE DROP ORDER, AT §18's 330px SETTINGS RAIL, which '17j'
