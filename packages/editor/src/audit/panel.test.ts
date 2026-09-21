@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { edgeIdentity } from '@issuegraph/core';
 import { buildModel } from '@issuegraph/reader';
 import type { NodeInput } from '@issuegraph/reader';
 import { makeEdge } from '@issuegraph/store';
@@ -115,6 +116,7 @@ function markupOf(
   const spec = renderAuditPanel(overlayOf(issues, edges, encodingRefused), {
     words: WORDS,
     known,
+    edges: new Set(edges.map(([field, from, to]) => edgeIdentity(field, from, to))),
   });
   assert.ok(spec !== null, 'the fixture produced no findings, so this proves nothing');
   return renderMarkup(spec);
@@ -146,6 +148,16 @@ const EVERY_CLASS = {
     ['duplicate-of', 'e', 'canon'],
   ],
 } as const;
+
+/**
+ * The ids of every edge `EVERY_CLASS` declares, as a drawn surface would hold
+ * them — minted with `edgeIdentity`, which is what the finding carries and what
+ * the host looks one up by. A second spelling here would agree with itself and
+ * disagree with both.
+ */
+const EVERY_EDGE_IDS: ReadonlySet<string> = new Set(
+  EVERY_CLASS.edges.map(([field, from, to]) => edgeIdentity(field, from, to)),
+);
 
 /**
  * The classes this panel lists.
@@ -432,7 +444,7 @@ describe('the findings panel', () => {
     const overlay = overlayOf([issue('a')], [], [{ ref: 'a' }]);
     assert.equal(overlay.count, 1, 'the fixture produced no finding, so this proves nothing');
     assert.equal(
-      renderAuditPanel(overlay, { words: WORDS, known: new Set(['a']) }),
+      renderAuditPanel(overlay, { words: WORDS, known: new Set(['a']), edges: new Set<string>() }),
       null,
     );
   });
@@ -466,7 +478,14 @@ describe('the findings panel', () => {
     // space belongs to the selection.
     const overlay = overlayOf([issue('a'), issue('b')], [['blocked-by', 'a', 'b']]);
     assert.equal(overlay.count, 0);
-    assert.equal(renderAuditPanel(overlay, { words: WORDS, known: new Set(['a', 'b']) }), null);
+    assert.equal(
+      renderAuditPanel(overlay, {
+        words: WORDS,
+        known: new Set(['a', 'b']),
+        edges: new Set<string>(),
+      }),
+      null,
+    );
   });
 
   it('carries no script, no inline handler and nothing that animates', () => {
@@ -529,7 +548,7 @@ describe('§17d — the cycle card draws its walk', () => {
           },
         ],
       },
-      { words: WORDS, known: new Set(['a', 'b']) },
+      { words: WORDS, known: new Set(['a', 'b']), edges: new Set<string>() },
     );
     assert.ok(spec !== null);
     assert.ok(!renderMarkup(spec).includes('ig-audit-walk'));
@@ -581,7 +600,7 @@ describe('§17d — the cycle card draws its walk', () => {
     const { cycleWalk: _omitted, ...withoutWalk } = graphOf(document);
     const spec = renderAuditPanel(
       auditOverlay({ document, graph: withoutWalk, encodingRefused: [] }),
-      { words: WORDS, known: new Set(['a', 'b', 'c']) },
+      { words: WORDS, known: new Set(['a', 'b', 'c']), edges: new Set<string>() },
     );
     assert.ok(spec !== null);
     const markup = renderMarkup(spec);
@@ -710,7 +729,11 @@ describe('§17d — the remedies, which select and never write', () => {
           finding.kind === 'cycle' ? { ...finding, walk: undefined } : finding,
         ),
       },
-      { words: WORDS, known: new Set(EVERY_CLASS.issues.map((held) => held.ref)) },
+      {
+        words: WORDS,
+        known: new Set(EVERY_CLASS.issues.map((held) => held.ref)),
+        edges: EVERY_EDGE_IDS,
+      },
     );
     assert.ok(spec !== null);
     const markup = renderMarkup(spec);
@@ -735,6 +758,7 @@ describe('§17d — a remedy is withheld when its subject is off the drawn page'
     const spec = renderAuditPanel(overlayOf(EVERY_CLASS.issues, EVERY_CLASS.edges), {
       words: WORDS,
       known: new Set<string>(),
+      edges: new Set<string>(),
     });
     assert.ok(spec !== null, 'the fixture produced no findings, so this proves nothing');
     const markup = renderMarkup(spec);
@@ -745,19 +769,34 @@ describe('§17d — a remedy is withheld when its subject is off the drawn page'
     assert.ok(/ig-audit-card/.test(markup), 'the findings went away with their controls');
   });
 
-  it('withholds an edge remedy when only ONE end is drawn', () => {
-    // An edge with one end off the page is not drawn either, so selecting it
-    // fails the same way. Half-known is not known.
+  it('asks about the EDGE, not about its ends — the ends no longer gate it', () => {
+    // THIS TEST USED TO ASSERT THE ENDPOINT RULE, and the rule was wrong. It
+    // read: with only one end drawn, withhold the remedy. True, but it was true
+    // by accident of a proxy — see the suite below, where both ends are drawn
+    // and the edge still is not.
+    //
+    // The gate is edge-id membership now, and that SUBSUMES the endpoint
+    // question: an edge the surface draws necessarily joins two issues the
+    // surface holds. So a `known` that omits an end cannot, by itself, withhold
+    // anything — and asserting that it does would be pinning the old proxy.
     const spec = renderAuditPanel(overlayOf(EVERY_CLASS.issues, EVERY_CLASS.edges), {
       words: WORDS,
       known: new Set(['d']),
+      edges: EVERY_EDGE_IDS,
     });
     assert.ok(spec !== null);
     const markup = renderMarkup(spec);
-    assert.equal(
+    assert.ok(
       /data-ig-remedy="remove-edge"/.test(markup),
+      'the edge is drawn, so its remedy can complete',
+    );
+    // AND `known` STILL GOVERNS THE CONTROLS THAT SELECT AN ISSUE. The cycle's
+    // remedy names the walk's head, which is not `d`, so it is withheld — the
+    // two gates ask different questions because they publish different commands.
+    assert.equal(
+      /data-ig-remedy="pick-edge"/.test(markup),
       false,
-      'the stale blocker offered a remedy for an edge whose other end is off the page',
+      'an issue-selecting remedy named a ref the surface does not carry',
     );
   });
 
@@ -767,6 +806,7 @@ describe('§17d — a remedy is withheld when its subject is off the drawn page'
     const spec = renderAuditPanel(overlayOf(EVERY_CLASS.issues, EVERY_CLASS.edges), {
       words: WORDS,
       known: new Set(EVERY_CLASS.issues.map((held) => held.ref)),
+      edges: EVERY_EDGE_IDS,
     });
     assert.ok(spec !== null);
     const tags = [...renderMarkup(spec).matchAll(/data-ig-remedy="([^"]+)"/g)].map((m) => m[1]);
@@ -774,5 +814,61 @@ describe('§17d — a remedy is withheld when its subject is off the drawn page'
       tags.sort(),
       ['keep-as-history', 'pick-edge', 'remove-edge', 'repoint'],
     );
+  });
+});
+
+describe('§17d — endpoint presence is not edge presence', () => {
+  // THE COUNTEREXAMPLE A SECOND REVIEW ROUND REPRODUCED, and the reason this
+  // guard is about the edge rather than about its ends.
+  //
+  // The first version of the reachability gate asked whether BOTH ENDS were on
+  // the drawn page, reasoning that an edge between two drawn issues must itself
+  // be drawn. It need not be: `workspace/mount.ts` deliberately preserves a
+  // projection that omits edges, so a surface can carry two issues and nothing
+  // between them. The remedy then published `select-edge` for an id the host
+  // cannot resolve — the selection is cleared and the inspector opens with no
+  // subject, which is a button that undoes the reader's place.
+  //
+  // "Both ends drawn" is a PROXY for "the edge is drawn". They come apart
+  // exactly where it matters.
+
+  it('withholds the remedy when both ends are drawn but the edge is not', () => {
+    const spec = renderAuditPanel(overlayOf(EVERY_CLASS.issues, EVERY_CLASS.edges), {
+      words: WORDS,
+      // Every issue is on the page …
+      known: new Set(EVERY_CLASS.issues.map((held) => held.ref)),
+      // … and the surface draws no relationships at all.
+      edges: new Set<string>(),
+    });
+    assert.ok(spec !== null, 'the fixture produced no findings, so this proves nothing');
+    const markup = renderMarkup(spec);
+    assert.equal(
+      /data-ig-remedy="remove-edge"/.test(markup),
+      false,
+      'a remedy named an edge the surface does not draw',
+    );
+    assert.equal(/data-ig-remedy="repoint"/.test(markup), false);
+    // THE CYCLE'S REMEDY IS UNAFFECTED, and that is correct rather than an
+    // oversight: it selects an ISSUE, which is on the page, so it can complete.
+    // The two gates ask different questions because they publish different
+    // commands.
+    assert.ok(
+      /data-ig-remedy="pick-edge"/.test(markup),
+      'the cycle remedy selects an issue and should survive',
+    );
+  });
+
+  it('draws the edge remedies once the surface holds those edges', () => {
+    // The control case, or the test above passes against a panel that stopped
+    // drawing edge remedies entirely.
+    const spec = renderAuditPanel(overlayOf(EVERY_CLASS.issues, EVERY_CLASS.edges), {
+      words: WORDS,
+      known: new Set(EVERY_CLASS.issues.map((held) => held.ref)),
+      edges: EVERY_EDGE_IDS,
+    });
+    assert.ok(spec !== null);
+    const markup = renderMarkup(spec);
+    assert.ok(/data-ig-remedy="remove-edge"/.test(markup));
+    assert.ok(/data-ig-remedy="repoint"/.test(markup));
   });
 });

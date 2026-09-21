@@ -89,6 +89,7 @@ import type {
 } from '@issuegraph/store';
 
 import type { AuditInput, AuditSeverity } from '../audit/findings.ts';
+import { edgeIdentity } from '@issuegraph/core';
 import { type AuditWords, renderAuditPanel } from '../audit/panel.ts';
 import { type EncodingRefusedBlockOptions, renderEncodingRefusedBlock } from '../audit/refused.ts';
 import { auditStylesheet } from '../audit/styles.ts';
@@ -2832,6 +2833,19 @@ export function renderWorkspace(
   const document = sound.document;
   // The keys a hold's subject control may name — see `holdRow`.
   const known: ReadonlySet<string> = new Set(document.issues.map((issue) => issue.key));
+  // THE EDGE IDS THIS SURFACE ACTUALLY DRAWS, for §17d's remedies to gate on.
+  //
+  // BUILT FROM THE DRAWN DOCUMENT, not from the audit's. The audit reads a
+  // document that is not always the one on screen, and the two disagreeing is
+  // the normal case rather than the exceptional one — a host audits everything
+  // it holds and renders a page of it.
+  //
+  // `edgeIdentity` RATHER THAN A HAND-SPELLED KEY, because that function is
+  // what mints the ids a finding carries and what the host looks one up by. A
+  // second spelling here would agree with itself and disagree with both.
+  const drawnEdges: ReadonlySet<string> = new Set(
+    document.edges.map((edge) => edgeIdentity(edge.field, edge.from, edge.to)),
+  );
   // Which slot a key sits in, by lead — so a hold's subject that resolves to the
   // inspected slot gets no control. The same canonicalization `inspectorView`
   // applies, read off the same normalized slots.
@@ -3089,6 +3103,7 @@ export function renderWorkspace(
         const panel = renderAuditPanel(overlay, {
           words: options.words.audit,
           known,
+          edges: drawnEdges,
           filtered,
         });
         // THE REFUSAL LEADS. It is the finding that says the other three cannot

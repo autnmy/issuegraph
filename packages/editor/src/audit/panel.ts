@@ -225,6 +225,21 @@ export interface AuditRemedyWords {
 export interface AuditPanelOptions {
   readonly words: AuditWords;
   /**
+   * The edge ids the drawn surface actually holds.
+   *
+   * THE SAME ARGUMENT `known` MAKES ONE FIELD UP, and it needs its own field
+   * for the reason a review round proved: the endpoints do not answer it. Two
+   * issues can both be on the drawn page while the edge between them is NOT —
+   * `mount.ts` deliberately preserves such omissions — and a remedy gated on
+   * the ends alone then publishes `select-edge` for an edge the host cannot
+   * resolve, leaving the reader with a button that clears their selection and
+   * opens an inspector with no subject.
+   *
+   * That was the first fix's mistake: "both ends drawn" is a PROXY for "the
+   * edge is drawn", and this is the thing itself.
+   */
+  readonly edges: ReadonlySet<string>;
+  /**
    * Whether the rail is currently narrowed to these findings.
    *
    * The panel DRAWS the state and never holds it: §2's ruling makes the filter
@@ -291,6 +306,7 @@ function navigableMember(
 function cardSpec(
   finding: AuditFinding,
   known: ReadonlySet<string>,
+  edges: ReadonlySet<string>,
   words: AuditWords,
 ): ElementSpec {
   const target = navigableMember(finding, known);
@@ -386,7 +402,7 @@ function cardSpec(
           ),
       // §17d's REMEDIES. Drawn after the navigation control, which is the
       // frame's order: `Show the loop` then `pick one edge to drop`.
-      remedySpec(finding, known, words),
+      remedySpec(finding, known, edges, words),
     ],
   );
 }
@@ -414,22 +430,29 @@ function cardSpec(
 function remedySpec(
   finding: AuditFinding,
   known: ReadonlySet<string>,
+  edges: ReadonlySet<string>,
   words: AuditWords,
 ): ElementSpec | null {
   const { remedies } = words;
   // A SELECT-EDGE BUTTON, BUILT ONCE. The two edge classes differ only in their
   // label, so the shape is written once and the difference stays a word.
-  // BOTH ENDS MUST BE ON THE DRAWN PAGE. A remedy publishes `select-edge`, and
-  // the host resolves that against the document IT is drawing — which is not
-  // always the one the audit read. `reconcileHost` refuses a selection naming
-  // an issue the document does not list, so a remedy for an off-page edge is a
-  // button that silently clears the selection and opens nothing.
+  // THE EDGE ITSELF MUST BE DRAWN — not merely its two ends.
   //
-  // THE SAME RULE `Show the loop` ALREADY FOLLOWS one function up, where
-  // `navigableMember` withholds navigation to a ref the surface does not carry.
-  // This is that rule applied to the edge instead of to a member: both ends,
-  // because an edge with one end off the page is not drawn either.
-  const reachable = (edge: AuditEdge): boolean => known.has(edge.from) && known.has(edge.to);
+  // A remedy publishes `select-edge`, and the host resolves that against the
+  // document IT is drawing, which is not always the one the audit read. A
+  // remedy naming an edge that document does not hold is a button that clears
+  // the reader's selection and opens an inspector with no subject.
+  //
+  // THE FIRST VERSION OF THIS GUARD ASKED WHETHER BOTH ENDS WERE KNOWN, and a
+  // review round reproduced the hole: two issues drawn, the edge between them
+  // omitted — which `mount.ts` does on purpose — and both remedies rendered
+  // anyway. Endpoint presence is a PROXY for edge presence and they come apart
+  // exactly where it matters.
+  //
+  // `Show the loop` follows the same rule one function up, asking `known` about
+  // the ref it will actually navigate to. This asks `edges` about the id it
+  // will actually select.
+  const reachable = (edge: AuditEdge): boolean => edges.has(edge.id);
   const onEdge = (label: string, tag: string): ElementSpec | null =>
     finding.edge === undefined || !reachable(finding.edge)
       ? null
@@ -615,7 +638,7 @@ export function renderAuditPanel(
     element(
       'ul',
       { class: 'ig-audit-list' },
-      listed.map((finding) => cardSpec(finding, options.known, words)),
+      listed.map((finding) => cardSpec(finding, options.known, options.edges, words)),
     ),
     ],
   );
