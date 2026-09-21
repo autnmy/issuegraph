@@ -10,6 +10,7 @@ import type { AuditGraph } from './findings.ts';
 import {
   AUDIT_COUNT_ATTRIBUTE,
   AUDIT_FILTER_ATTRIBUTE,
+  AUDIT_PANEL_ATTRIBUTE,
   AUDIT_SEVERITY_ATTRIBUTE,
   auditFilterKeeps,
   auditOverlay,
@@ -274,12 +275,18 @@ describe('the header count', () => {
 
   it('is still drawn, and still clickable, at zero', () => {
     // "Always the same click" (§17d). A control that appears only when there is
-    // bad news is a control the eye has to re-find, and audit is a FILTER, not
-    // a mode you enter (§17a).
+    // bad news is a control the eye has to re-find.
+    //
+    // THE CLICK CHANGED AND THE RULE DID NOT. This button used to toggle the
+    // rail filter; `RULINGS.md` §3 makes it the anchor of §17d's overlay, and
+    // the filter moved into the panel head where the frame draws it. So the
+    // attribute asserted here is the PANEL's — a header still carrying
+    // `AUDIT_FILTER_ATTRIBUTE` would be the old two-meanings control.
     const markup = renderAuditHeader(overlayOf([issue('a')], []));
     assert.match(markup, new RegExp(`${AUDIT_COUNT_ATTRIBUTE}="0"`));
     assert.match(markup, /<button type="button"/);
-    assert.match(markup, new RegExp(AUDIT_FILTER_ATTRIBUTE));
+    assert.match(markup, new RegExp(AUDIT_PANEL_ATTRIBUTE));
+    assert.equal(new RegExp(AUDIT_FILTER_ATTRIBUTE).test(markup), false);
     assert.equal(/disabled/.test(markup), false);
     assert.equal(/hidden/.test(markup), false);
   });
@@ -291,10 +298,16 @@ describe('the header count', () => {
     assert.equal(Object.isFrozen(overlay.rows[0]?.kinds), true);
   });
 
-  it('says whether the filter is on, so a screen reader can too', () => {
+  it('says whether the panel is open, so a screen reader can too', () => {
+    // `aria-expanded`, NOT `aria-pressed`, AND THE SWAP IS THE POINT. The two
+    // say different things: `pressed` is a toggle that is ON — what this button
+    // was when it filtered — and `expanded` is a control that DISCLOSES
+    // something, which is what an anchor for an overlay is. A reader told
+    // "pressed" would be waiting for a state rather than for a panel.
     const overlay = overlayOf(CYCLE.issues, CYCLE.edges);
-    assert.match(renderAuditHeader(overlay), /aria-pressed="false"/);
-    assert.match(renderAuditHeader(overlay, { filtered: true }), /aria-pressed="true"/);
+    assert.match(renderAuditHeader(overlay), /aria-expanded="false"/);
+    assert.match(renderAuditHeader(overlay, { open: true }), /aria-expanded="true"/);
+    assert.equal(/aria-pressed/.test(renderAuditHeader(overlay)), false);
   });
 
   it('renders no host-supplied text at all', () => {

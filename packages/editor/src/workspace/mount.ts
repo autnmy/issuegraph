@@ -1489,6 +1489,9 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       surfaceId,
       audit,
       auditFiltered: state.auditFiltered,
+      // §17d's overlay. Host state, for the same reason the filter beside it
+      // is: the renderer keeps nothing across a redraw.
+      auditOpen: state.auditOpen,
       issueUrl: current.issueUrl,
       theme: resolved,
       themeSelector: current.themeSelector,
@@ -1532,7 +1535,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // §17d's second surface moved it up to the region holding both — so reading
     // the panel's offset now reads a number that is always zero, and restoring
     // it is a no-op a reader feels as the audit jumping back on every redraw.
-    const auditBefore = surface.querySelector<HTMLElement>('.ig-audit-region');
+    const auditBefore = surface.querySelector<HTMLElement>('.ig-audit-overlay');
     const auditScrollTop = auditBefore?.scrollTop ?? 0;
     const active = doc.activeElement;
     const activeInput = isElement(active) && isInput(active) && surface.contains(active) ? active : null;
@@ -1715,7 +1718,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // so the element captured from is gone. A region that shrank clamps this on
     // assignment, and one the redraw removed — the audit going clean — is
     // simply absent, which is why nothing is restored rather than zeroed.
-    const auditRegion = surface.querySelector<HTMLElement>('.ig-audit-region');
+    const auditRegion = surface.querySelector<HTMLElement>('.ig-audit-overlay');
     if (auditRegion !== null) auditRegion.scrollTop = auditScrollTop;
     // THE LIST THE READER JUST OPENED IS BROUGHT INTO VIEW. See
     // `revealIsolated` for why the control and the list are in different zones.
@@ -2086,6 +2089,13 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     }
     if (target.closest('[data-ig-audit-filter]') !== null) {
       return { kind: 'dispatch', command: { kind: 'control', name: 'audit-filter' } };
+    }
+    // §17d's HEADER COUNT. Checked AFTER the filter, and the order is not
+    // arbitrary: the filter chip lives inside the panel the count opens, so a
+    // click on it is inside neither the other's subtree today — but if the two
+    // ever nest, the inner control is the one the reader aimed at.
+    if (target.closest('[data-ig-audit-panel]') !== null) {
+      return { kind: 'dispatch', command: { kind: 'control', name: 'audit-panel' } };
     }
     return null;
   };
@@ -2502,8 +2512,53 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     };
     const intent = keyIntent(event, context);
     if (intent.kind !== 'none') {
+      // §17d'S ESCAPE, AND IT HAS TO BE TESTED HERE RATHER THAN BELOW.
+      //
+      // `create/keys.ts` binds `escape` to `cancel` for ANY focused row, so
+      // this branch claims every Escape on the surface and returns — the audit
+      // arm further down never ran with focus on a rail row. The reducer now
+      // answers `unclaimed` for a cancel with nothing to cancel, but `dispatch`
+      // returns void and this early return does not consult it, so the reducer
+      // alone could not fix it.
+      //
+      // THE DRAFT STILL WINS WHEN THERE IS ONE. A reader mid-relationship means
+      // "not this edge", not "close the panel behind it" — so this asks the
+      // same question the reducer's arm does, and only takes the press when the
+      // answer is that there is nothing to cancel.
+      // `cancel` IS A CREATE COMMAND, not a top-level intent kind — the type
+      // says so, and the first spelling of this line assumed otherwise and did
+      // not compile.
+      const cancellingNothing =
+        intent.kind === 'create' &&
+        intent.command.kind === 'cancel' &&
+        state.draft.source === null &&
+        state.draft.target === null &&
+        state.draft.kind === null &&
+        state.targetQuery === '' &&
+        state.drop === null;
+      if (cancellingNothing && state.auditOpen) {
+        event.preventDefault();
+        dispatch({ kind: 'control', name: 'audit-close' });
+        return;
+      }
       event.preventDefault();
       dispatch({ kind: 'intent', intent });
+      return;
+    }
+    // §17d'S OVERLAY IS DISMISSED ON ESCAPE — `RULINGS.md` §3, in those words.
+    //
+    // AFTER `keyIntent`, WHICH IS THE ORDER THAT MATTERS. `create/keys.ts`
+    // binds `escape` to `cancel` for a live draft, and a draft is the more
+    // local thing: a reader mid-relationship pressing Escape means "not this
+    // edge", not "close the panel behind it". `keyIntent` returns early when it
+    // claims the press, so this arm only ever sees an Escape nobody else wanted.
+    //
+    // GUARDED ON THE PANEL BEING OPEN, so a press with nothing to dismiss is
+    // handed back rather than swallowed. The reducer answers `unclaimed` for
+    // the same case; this is the shell half of one rule, not a second opinion.
+    if (event.key === 'Escape' && state.auditOpen) {
+      event.preventDefault();
+      dispatch({ kind: 'control', name: 'audit-close' });
       return;
     }
     if (context.focused !== null && navigateFocus(event)) {

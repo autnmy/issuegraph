@@ -27,7 +27,7 @@
  * @see https://github.com/autnmy/issuegraph/blob/main/SPEC.md
  */
 
-import type { GraphDocument, IssueRef, StoredEdge } from '@issuegraph/store';
+import type { EdgeId, GraphDocument, IssueRef, StoredEdge } from '@issuegraph/store';
 
 /**
  * The four classes, in the order §17d states them — which is also the order
@@ -118,6 +118,24 @@ export const AUDIT_CLASS_SPECS = Object.freeze({
  * four-row builder table, and it still could not reach a value deserialized
  * from a wire. Removing the boundary was cheaper than either.
  */
+/**
+ * The edge a finding's remedy acts on, with the ends it joins.
+ *
+ * THE ENDS ARE CARRIED, NOT JUST THE ID, and that is what lets `./panel.ts`
+ * withhold a remedy the reader could not complete. A remedy publishes
+ * `select-edge`, which the host resolves against the DRAWN document — and the
+ * audit reads a document that is not always the one on screen, so an edge
+ * whose ends are off the page selects nothing and the reader presses a button
+ * that silently does nothing. `known` answers for issues; these are the issues
+ * to ask about. The id alone would have to be parsed to recover them, and its
+ * spelling is `@issuegraph/core`'s business rather than this module's.
+ */
+export interface AuditEdge {
+  readonly id: EdgeId;
+  readonly from: IssueRef;
+  readonly to: IssueRef;
+}
+
 export interface AuditFinding {
   readonly kind: AuditClass;
   readonly severity: AuditSeverity;
@@ -158,6 +176,23 @@ export interface AuditFinding {
    * line rather than composing it into the sentence.
    */
   readonly walk?: readonly IssueRef[] | undefined;
+  /**
+   * The ONE edge this finding is about, when it is about an edge at all.
+   *
+   * §3 of `RULINGS.md` says a remedy *"selects the finding's issue or edge and
+   * hands the work to the inspector"*. `members` cannot answer that: it is
+   * documented one field up as a SORTED SET, and sorting is exactly what
+   * destroys the direction — `['#201', '#533']` cannot say which end declared
+   * the `blocked-by`. The edge is in hand where the finding is built, so it is
+   * carried rather than reconstructed.
+   *
+   * PRESENT ON THE TWO EDGE CLASSES ONLY. A cycle is about a COMPONENT and
+   * names no single edge — picking one here would be this module choosing which
+   * edge a reader should drop, which is the judgment §17d keeps with the owner.
+   * An encoding refusal is about an issue whose edges were never read, so there
+   * is no edge to name.
+   */
+  readonly edge?: AuditEdge | undefined;
 }
 
 /**
@@ -391,6 +426,7 @@ function finding(
   members: readonly IssueRef[],
   detail: string,
   walk?: readonly IssueRef[] | null,
+  edge?: AuditEdge | null,
 ): AuditFinding {
   const spec = AUDIT_CLASS_SPECS[kind];
   // A SORTED SET. Sorting is what makes two runs over one document produce
@@ -423,6 +459,10 @@ function finding(
     // keys — `distinct` below is one such caller. (`exactOptionalPropertyTypes`
     // would permit the plain assignment: the field is declared `| undefined`.)
     ...(walked === undefined ? {} : { walk: walked }),
+    // SPREAD FOR THE REASON THE LINE ABOVE IS, and the same reason again: an
+    // explicitly-undefined property is not an absent one to `distinct`, which
+    // enumerates.
+    ...(edge === undefined || edge === null ? {} : { edge }),
   });
 }
 
@@ -675,6 +715,11 @@ function staleBlockerFindings(
         'stale-blocker',
         [edge.from, edge.to].sort(),
         `${edge.from} is blocked-by ${effective}${via}, which is closed; readiness is already satisfied`,
+        null,
+        // THE DECLARER'S EDGE, which is what the paragraph above already says
+        // this finding's remedy sits on. Now it is carried rather than only
+        // described, so `Remove the edge` can name it.
+        { id: edge.id, from: edge.from, to: edge.to },
       ),
     );
   }
@@ -740,6 +785,11 @@ function deadDuplicateFindings(
         'dead-duplicate-ref',
         [edge.from, edge.to, canonical].sort(),
         `${edge.from} is duplicate-of ${canonical}${via}, which is closed; its work is excluded from the order and tracked nowhere`,
+        null,
+        // THE DECLARED `duplicate-of`, NOT the chain's end. `Repoint or clear`
+        // acts on the edge the reader wrote; `canonical` may be several hops
+        // away and is named in the sentence instead.
+        { id: edge.id, from: edge.from, to: edge.to },
       ),
     );
   }
@@ -843,7 +893,11 @@ function distinct(findings: readonly AuditFinding[]): AuditFinding[] {
     // difference would drop one silently. No conforming reader produces that
     // pair — a component has one walk — which is precisely why the key should
     // not be the thing that depends on it staying true.
-    const key = `${found.kind}\u0000${found.members.join('\u0001')}\u0000${found.detail}\u0000${(found.walk ?? []).join('\u0001')}`;
+    // AND THE EDGE, by the argument the two paragraphs above make about the
+    // sentence and the walk: two findings agreeing on class, members and prose
+    // while naming different edges are two findings, and a key that cannot see
+    // the difference drops one silently.
+    const key = `${found.kind}\u0000${found.members.join('\u0001')}\u0000${found.detail}\u0000${(found.walk ?? []).join('\u0001')}\u0000${found.edge?.id ?? ''}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(found);

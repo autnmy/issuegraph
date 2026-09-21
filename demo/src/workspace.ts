@@ -206,6 +206,7 @@ export const WORKSPACE_WORDS: MountWords = {
   // filter is merely narrow — RULINGS.md §2: the denominator is always present
   // "so 'nothing matched' can never be misread as 'nothing exists'."
   filteredEmpty: 'No flagged rows match.',
+  filteredActive: 'Showing flagged rows only.',
   filteredDenominator: (ranked) =>
     // The plural is why the package hands over a count instead of a template.
     ranked === 1 ? '1 issue is ranked' : `${String(ranked)} issues are ranked`,
@@ -298,6 +299,20 @@ export const WORKSPACE_WORDS: MountWords = {
       'encoding-refused': 'This issue declares relationships the reader could not parse.',
     },
     show: 'show me',
+    // §17d's own entry point, drawn in the panel head: `filter the rail to
+    // these`. It used to ride the header count; §3 gave that count one job.
+    filter: 'filter the rail to these',
+    // §17d's REMEDY LABELS, and these ARE the frame's own words rather than a
+    // paraphrase: the frame draws `pick one edge to drop`, `Remove the edge`,
+    // `Keep as history` and `Repoint or clear`. Unlike the titles above, they
+    // need no per-finding detail to make sense, so there is nothing to
+    // generalise away.
+    remedies: {
+      pickEdge: 'pick one edge to drop',
+      removeEdge: 'Remove the edge',
+      keepAsHistory: 'Keep as history',
+      repoint: 'Repoint or clear',
+    },
     refusedHeading: 'encoding refused',
     refusedOpen: 'open in GitHub',
     refusedRewrite: 'rewrite from editor',

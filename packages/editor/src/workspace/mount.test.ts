@@ -225,7 +225,17 @@ async function mounted(
   const rows = (): HTMLElement[] => [...element.querySelectorAll<HTMLElement>('[data-zone="rail"] [data-ig-key][tabindex]')];
   const control = (command: string): HTMLElement | null =>
     element.querySelector<HTMLElement>(`[data-ig-command="${command}"]`);
-  return { dom, win, element, source, store, handle, click, zone, rows, control };
+  // §17d'S PANEL IS TRANSIENT NOW, so a test that wants to look at it has to
+  // OPEN it first — which is the real path a reader takes, and a better fixture
+  // than an option would have been. `RULINGS.md` §3 anchors it to the header
+  // count, so this is that click.
+  const openAudit = async (): Promise<void> => {
+    const toggle = element.querySelector<HTMLElement>('.ig-audit-toggle');
+    assert.ok(toggle !== null, 'no audit header to open the panel from');
+    click(toggle);
+    await flush();
+  };
+  return { dom, win, element, source, store, handle, click, zone, rows, control, openAudit };
 }
 
 type Mounted = Awaited<ReturnType<typeof mounted>>;
@@ -240,7 +250,7 @@ type Mounted = Awaited<ReturnType<typeof mounted>>;
  * deep in a long audit is returned to the first finding by something happening
  * elsewhere on the surface.
  *
- * THE SCROLLER IS `.ig-audit-region`, NOT `.ig-audit-panel`. #177 put the bound
+ * THE SCROLLER IS `.ig-audit-overlay`, NOT `.ig-audit-panel`. #177 put the bound
  * on the panel; §17d's second surface moved it up to the region holding both, so
  * the panel's own offset is now always zero. THIS TEST DID NOT NOTICE — jsdom
  * lets `scrollTop` be set on any element whatever its overflow, so it was
@@ -272,8 +282,9 @@ describe("the audit region's scroll offset survives a redraw", () => {
   it('restores the offset onto the region the redraw built', async () => {
     const page = await mounted(SEED, { project: withCycle });
     try {
+      await page.openAudit();
       const region = (): HTMLElement | null =>
-        page.element.querySelector<HTMLElement>('.ig-audit-region');
+        page.element.querySelector<HTMLElement>('.ig-audit-overlay');
       const before = region();
       assert.ok(before !== null, 'the fixture drew no audit region, so this proves nothing');
 
@@ -290,6 +301,94 @@ describe("the audit region's scroll offset survives a redraw", () => {
       // vacuous: an offset on a node nothing touched survives by itself.
       assert.notEqual(after, before, 'no redraw happened, so this test would prove nothing');
       assert.equal(after.scrollTop, 120);
+      page.handle.destroy();
+    } finally {
+      page.dom.window.close();
+    }
+  });
+
+  it('§17d: the header count opens the overlay and Escape dismisses it', async () => {
+    // `RULINGS.md` §3, in its own words: *"a transient overlay anchored to the
+    // header count ... dismissed on Escape."* Three facts, and the middle one
+    // is the reason this is a MOUNT test rather than a reducer test: the panel
+    // is not rendered at all while shut, so "dismissed" has to be observed as
+    // the element going away, not as a flag changing.
+    //
+    // THE ESCAPE IS DISPATCHED FROM THE FOCUSED CONTROL, which is where a
+    // reader's press comes from. Driving this in a browser first, a scripted
+    // `.click()` left focus on `body` and the press reached nothing — the
+    // mount's listener is on its own element, as every other key here is. That
+    // was the fixture being wrong rather than the wiring, and it is worth the
+    // sentence because the same mistake would read as a broken feature.
+    const page = await mounted(SEED, { project: withCycle });
+    try {
+      const overlay = (): Element | null => page.element.querySelector('.ig-audit-overlay');
+      assert.equal(overlay(), null, 'the panel is drawn before anything opened it');
+
+      const toggle = page.element.querySelector<HTMLElement>('[data-ig-audit-panel]');
+      assert.ok(toggle !== null, 'no header count to open the panel from');
+      assert.equal(toggle.getAttribute('aria-expanded'), 'false');
+
+      toggle.focus();
+      page.click(toggle);
+      await flush();
+      assert.ok(overlay() !== null, 'the header count did not open the panel');
+      assert.equal(
+        page.element.querySelector('[data-ig-audit-panel]')?.getAttribute('aria-expanded'),
+        'true',
+      );
+
+      const active = page.win.document.activeElement;
+      assert.ok(active !== null);
+      active.dispatchEvent(
+        new page.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+      );
+      await flush();
+      assert.equal(overlay(), null, 'Escape did not dismiss the overlay');
+      assert.equal(
+        page.element.querySelector('[data-ig-audit-panel]')?.getAttribute('aria-expanded'),
+        'false',
+      );
+      page.handle.destroy();
+    } finally {
+      page.dom.window.close();
+    }
+  });
+
+  it('§17d: Escape dismisses the overlay from a RAIL ROW, not just from the count', async () => {
+    // THE CASE MY OWN BROWSER CHECK MISSED. I drove the dismissal with focus on
+    // the header count, which is where a click leaves it — and it worked. A
+    // reader who opens the panel, looks back at the order to judge a finding
+    // and then presses Escape has focus on a ROW, and there the press was
+    // swallowed: `create/keys.ts` binds `escape` to `cancel`, and `cancel`
+    // settled unconditionally, claiming the press to reset an already-idle
+    // draft to idle. The audit arm below it never ran.
+    //
+    // §3 says "dismissed on Escape" without qualifying where focus is, and
+    // the row is the likeliest place for it to be.
+    const page = await mounted(SEED, { project: withCycle });
+    try {
+      const toggle = page.element.querySelector<HTMLElement>('[data-ig-audit-panel]');
+      assert.ok(toggle !== null);
+      toggle.focus();
+      page.click(toggle);
+      await flush();
+      assert.ok(page.element.querySelector('.ig-audit-overlay') !== null, 'the panel did not open');
+
+      const row = page.rows()[0];
+      assert.ok(row !== undefined, 'no rail row to stand on');
+      row.focus();
+      assert.equal(page.win.document.activeElement, row, 'the fixture cannot focus a row');
+
+      row.dispatchEvent(
+        new page.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+      );
+      await flush();
+      assert.equal(
+        page.element.querySelector('.ig-audit-overlay'),
+        null,
+        'Escape from a rail row did not dismiss the overlay',
+      );
       page.handle.destroy();
     } finally {
       page.dom.window.close();
@@ -313,6 +412,7 @@ describe("the audit region's scroll offset survives a redraw", () => {
     // row in another zone.
     const page = await mounted(SEED, { project: withCycle });
     try {
+      await page.openAudit();
       const before = page.element.querySelector<HTMLElement>('.ig-audit-panel');
       assert.ok(before !== null, 'the fixture drew no findings panel');
       before.focus();
@@ -358,6 +458,7 @@ describe("the audit region's scroll offset survives a redraw", () => {
     }
     const page = await mounted(SEED, { project: withRefusalOnly });
     try {
+      await page.openAudit();
       const before = page.element.querySelector<HTMLElement>('.ig-audit-refused');
       assert.ok(before !== null, 'the fixture drew no refused block');
       // THE INERT CASE ITSELF: the ref names nothing the page carries, so the
@@ -391,10 +492,10 @@ describe("the audit region's scroll offset survives a redraw", () => {
     // else the selector might have found.
     const page = await mounted(SEED);
     try {
-      assert.equal(page.element.querySelector('.ig-audit-region'), null);
+      assert.equal(page.element.querySelector('.ig-audit-overlay'), null);
       page.handle.update();
       await flush();
-      assert.equal(page.element.querySelector('.ig-audit-region'), null);
+      assert.equal(page.element.querySelector('.ig-audit-overlay'), null);
       page.handle.destroy();
     } finally {
       page.dom.window.close();
@@ -3385,6 +3486,43 @@ describe('a failed or conflicted write cannot change a rank either', () => {
  * pretending otherwise would be the kind of claim this suite exists to replace.
  * What the assertions cover is everything after the disclosure has focus.
  */
+
+/**
+ * A projection whose audit flags issues the RAIL does not draw.
+ *
+ * WHY THIS SHAPE EXISTS. Two tests below need a rail with no rows while the
+ * rest of the surface stays usable, and they used to get it by turning the
+ * audit filter on with nothing flagged — filtering to zero findings emptied it.
+ * `RULINGS.md` §3 moved the filter into the panel, and the panel draws only
+ * when there are findings to list, so "the filter is on and nothing is flagged"
+ * is no longer a state the interface can reach. That is a consequence worth
+ * keeping rather than a defect: a control that narrows to nothing, available
+ * only when there is nothing to narrow to, was never a useful pairing.
+ *
+ * So the rail is emptied the way a reader actually could: a real finding, whose
+ * affected rows are simply not in the drawn page. The panel and its filter
+ * exist, the filter genuinely narrows, and nothing survives the narrowing.
+ */
+function withOffPageCycle(snapshot: StoreSnapshot): WorkspaceProjection {
+  const offPage = [
+    { ref: 'off-page-a', title: 'off page a', state: 'open' as const },
+    { ref: 'off-page-b', title: 'off page b', state: 'open' as const },
+  ];
+  return {
+    ...project(snapshot),
+    audit: {
+      document: {
+        issues: offPage,
+        edges: [
+          { id: 'blocked-by|off-page-a|off-page-b', kind: 'blocked-by' as const, from: 'off-page-a', to: 'off-page-b' },
+          { id: 'blocked-by|off-page-b|off-page-a', kind: 'blocked-by' as const, from: 'off-page-b', to: 'off-page-a' },
+        ],
+      },
+      graph: { cycles: [['off-page-a', 'off-page-b']], duplicateCanonical: () => null },
+    },
+  };
+}
+
 describe('a command control keeps focus across the redraw it causes', () => {
   const conflicted = async (page: Mounted): Promise<HTMLElement> => {
     void page.store.propose({ op: 'create', kind: 'blocked-by', from: '3', to: '4' });
@@ -3619,17 +3757,22 @@ describe('a command control keeps focus across the redraw it causes', () => {
     // returned `none` for the chooser's OWN digits.
     //
     // THE RAIL IS EMPTIED DELIBERATELY, because that is the case with no repair
-    // available from focus: with the audit filter on and nothing flagged there
-    // is no row for the mount to fall back to, while the inspector stays
-    // perfectly usable. The selection is made FIRST, while rows still exist, so
-    // the inspector keeps a subject and draws `+ add` after the rail empties.
-    const page = await mounted();
+    // available from focus: with the audit filter on and only OFF-PAGE rows
+    // flagged there is no row for the mount to fall back to, while the
+    // inspector stays perfectly usable. The selection is made FIRST, while rows
+    // still exist, so the inspector keeps a subject and draws `+ add` after the
+    // rail empties. See `withOffPageCycle` for why the emptying changed shape.
+    const page = await mounted(SEED, { project: withOffPageCycle });
     try {
       const row = page.rows().find((each) => each.getAttribute('data-ig-key') === '1');
       assert.ok(row !== undefined, 'no rail row for 1');
       page.click(row);
       await flush();
 
+      // THE FILTER LIVES IN THE PANEL NOW, so the panel has to be open before
+      // there is a control to press. `RULINGS.md` §3 moved it off the header
+      // count, which became the panel's anchor instead.
+      await page.openAudit();
       const filter = page.element.querySelector<HTMLElement>('[data-ig-audit-filter]');
       assert.ok(filter !== null, 'no audit filter control');
       page.click(filter);
@@ -3750,17 +3893,21 @@ describe('a command control keeps focus across the redraw it causes', () => {
 
   it('keeps a press reaching the mount even when the rail has no rows to fall back to', async () => {
     // A FALLBACK WITH A PRECONDITION IS NOT A LAST RESORT. The rail is not
-    // always there: with the audit filter on and nothing flagged it draws no
-    // rows, while the inspector stays perfectly usable. Pressing a
+    // always there: with the audit filter on and only OFF-PAGE rows flagged it
+    // draws none, while the inspector stays perfectly usable. Pressing a
     // self-removing control there found no row, and focus fell to the body —
     // the original defect, still reachable through the repair for it.
-    const page = await mounted();
+    const page = await mounted(SEED, { project: withOffPageCycle });
     try {
       const row = page.rows().find((each) => each.getAttribute('data-ig-key') === '1');
       assert.ok(row !== undefined, 'no rail row for 1');
       page.click(row);
       await flush();
 
+      // THE FILTER LIVES IN THE PANEL NOW, so the panel has to be open before
+      // there is a control to press. `RULINGS.md` §3 moved it off the header
+      // count, which became the panel's anchor instead.
+      await page.openAudit();
       const filter = page.element.querySelector<HTMLElement>('[data-ig-audit-filter]');
       assert.ok(filter !== null, 'no audit filter control');
       page.click(filter);
@@ -4641,6 +4788,7 @@ describe('§17d’s outward link is the browser’s to follow, not the mount’s
       issueUrl: (ref) => `https://example.invalid/${ref}`,
     });
     try {
+      await page.openAudit();
       const link = page.element.querySelector<HTMLElement>('.ig-audit-refused-open');
       assert.ok(link !== null, 'the fixture drew no outward link, so this proves nothing');
       assert.equal(link.getAttribute('data-ig-command'), 'open-issue-url');
@@ -4685,6 +4833,7 @@ describe('§17d’s outward link is the browser’s to follow, not the mount’s
       issueUrl: (ref) => `https://example.invalid/${ref}`,
     });
     try {
+      await page.openAudit();
       const link = page.element.querySelector<HTMLElement>('.ig-audit-refused-open');
       assert.ok(link !== null, 'the fixture drew no outward link, so this proves nothing');
       link.focus();
@@ -4711,6 +4860,7 @@ describe('§17d’s outward link is the browser’s to follow, not the mount’s
     // reducer, or the guard above has taken the surface's other control with it.
     const page = await mounted(SEED, { project: withRefusal });
     try {
+      await page.openAudit();
       const rewrite = page.element.querySelector<HTMLElement>('.ig-audit-refused-rewrite');
       assert.ok(rewrite !== null, 'the fixture drew no rewrite control, so this proves nothing');
       page.click(rewrite);
