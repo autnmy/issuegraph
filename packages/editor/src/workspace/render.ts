@@ -1751,22 +1751,38 @@ function kindListSpec(words: WorkspaceWords, source: string | null): ElementSpec
  * frame draws is representable and PR #126's em dash applies only to the other
  * arm — a slot whose blocker is outside the order, which still has no number.
  *
- * SO THE TWO CHANNELS ARE READ FROM DIFFERENT FIELDS. `data-held` is the
- * HOLDS: the block is styled as held whenever something is holding the work,
- * whatever number the slot occupies. The HEADING is the rank: a number when
- * the order can state a position, and the held word when it cannot — because
- * the heading is the one place a reader learns that the position is missing
- * rather than merely unread. The hold list beneath says why, either way.
+ * SO THE TWO CHANNELS ARE READ FROM DIFFERENT FIELDS, AND NEITHER IS `rank`.
+ * `data-held` is READINESS — `ready` is the slot's own verdict and the only
+ * field that answers "may this start", exactly as layer 1's `slotPosition`
+ * now reads it for the row's accessible name. The HEADING is the rank: a
+ * number when the order stated a position, and otherwise a word for what is
+ * missing.
+ *
+ * THREE HEADINGS, NOT TWO, because `rank === null` and "held" came apart. A
+ * placed slot names its number, held or not. An unplaced HELD slot says so —
+ * PR #126's em dash, in words. An unplaced READY slot is the case the old
+ * one-field expression got flatly wrong: it was told "why held" while having
+ * no hold to show. `@issuegraph/derive` cannot emit one, but `ViewerDocument`
+ * is a public port and a host composes one by hand, so it is reachable from
+ * outside this repo — and leaving the inference here would ship the defect
+ * this change exists to retire in the package next door. It reuses the rank
+ * word with the rail's own em dash rather than taking a new `WorkspaceWords`
+ * entry: the fact is "there is no number", which is what the rank cell says
+ * with the same character, and a required word would break every host.
  */
 function whyRankSpec(
   why: InspectorWhyRank,
   words: WorkspaceWords,
   holds: readonly ElementSpec[],
 ): ElementSpec {
-  const held = why.holds.length > 0 || why.rank === null;
+  const held = !why.ready;
   return element('div', { class: 'ig-why-rank', 'data-held': held ? 'true' : 'false' }, [
     element('h3', { class: 'ig-why-rank-heading' }, [
-      why.rank === null ? words.whyHeld : `${words.whyRank} ${String(why.rank)}`,
+      why.rank !== null
+        ? `${words.whyRank} ${String(why.rank)}`
+        : held
+          ? words.whyHeld
+          : `${words.whyRank} —`,
     ]),
     element('p', { class: 'ig-why-rank-sentence' }, [
       provenanceClause(why.provenance),

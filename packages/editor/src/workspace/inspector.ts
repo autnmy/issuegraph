@@ -136,6 +136,13 @@ export interface InspectorWhyRank {
    * waits on is in the order too; `holds` is what says work cannot start.
    */
   readonly rank: number | null;
+  /**
+   * Whether anything may start this slot — the slot's own verdict, carried so
+   * the panel never has to infer it from a missing {@link rank}. The two are
+   * independent since `RULINGS.md` §1: a held slot can carry a number, and a
+   * host composing a `ViewerDocument` by hand can state a rank-less ready one.
+   */
+  readonly ready: boolean;
   /** Absent when the host stated no provenance. */
   readonly provenance?: RankProvenance | undefined;
   readonly holds: readonly ViewerHold[];
@@ -265,6 +272,14 @@ export function inspectorView(
             ? null
             : {
                 rank: slot.rank,
+                // THE VERDICT TRAVELS WITH THE NUMBER, because the panel needs
+                // both and cannot recover this one from the other. Without it
+                // `whyRankSpec` had only `rank === null` to read held from,
+                // which is the one-field inference `RULINGS.md` §1 retired —
+                // and `InspectorPosition` beside it has carried `ready` all
+                // along, so the panel was reading two shapes that disagreed
+                // about how to answer the same question.
+                ready: slot.ready,
                 provenance: issue.provenance,
                 holds: slot.holds,
                 // THE OTHER MEMBERS, not every member: the subject is already

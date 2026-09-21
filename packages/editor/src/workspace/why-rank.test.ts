@@ -111,6 +111,43 @@ describe('the inspector states why the issue sits where it does', () => {
     assert.match(markup, /class="ig-inspector-holds"/, 'the hold went missing with the em dash');
   });
 
+  /**
+   * THE CASE A ONE-FIELD PREDICATE GETS FLATLY WRONG. The heading read
+   * `rank === null ? whyHeld : ...`, so a slot with no rank was told "why
+   * held" — with no hold to show, because it has none. `@issuegraph/derive`
+   * cannot emit `ready: true, rank: null`, but `ViewerDocument` is a public
+   * port and a host composes one by hand, so it is reachable from outside this
+   * repo. Held is read from `ready` now, and the heading says what is actually
+   * missing: a number.
+   */
+  it('never says held for a slot that is READY but placed nowhere', () => {
+    const document = withProvenance(backlogOf(3), 'i0002');
+    const unplaced: ViewerDocument = {
+      ...document,
+      order: {
+        ...document.order,
+        // Ready, with no hold, and no position stated for it.
+        slots: document.order.slots.map((slot) =>
+          slot.lead === 'i0002' ? { ...slot, rank: null, ready: true, holds: [] } : slot,
+        ),
+      },
+    };
+
+    const markup = inspectorMarkupFor(unplaced, 'i0002');
+    assert.match(markup, /data-held="false"/, 'a ready slot was drawn as held');
+    assert.equal(
+      /class="ig-why-rank-heading">why held</.test(markup),
+      false,
+      'a ready slot was told it is held, with no hold to show for it',
+    );
+    assert.match(markup, /class="ig-why-rank-heading">why rank —</);
+    assert.equal(
+      /class="ig-inspector-holds"/.test(markup),
+      false,
+      'a hold list was drawn for a slot holding nothing',
+    );
+  });
+
   it('renders the hold’s own reason verbatim, with its cause on the markup', () => {
     const view = inspectorView(HELD_IN_A_UNIT, { kind: 'issue', key: 'i0002' });
     assert.equal(view.subject.kind, 'issue');
