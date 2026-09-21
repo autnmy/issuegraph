@@ -187,6 +187,17 @@ export interface MountWorkspaceOptions {
    * means and why a refused scheme draws no link.
    */
   readonly issueUrl?: WorkspaceOptions['issueUrl'];
+  /**
+   * §17j's density escape hatch for the rail. See
+   * {@link WorkspaceOptions.railDensity}, and `ViewerOptions.density` under it
+   * for the rule and the default.
+   *
+   * NAMED HERE FOR THE REASON `issueUrl` ABOVE STATES: this interface does not
+   * extend `WorkspaceOptions`, and the render options are built field by field,
+   * so an option added one file over reaches nothing mounted until it is named
+   * here too.
+   */
+  readonly railDensity?: WorkspaceOptions['railDensity'];
   readonly canvas?: CanvasMode | undefined;
   /** How many rail rows are drawn per window. Wider than the package default so a scroll rarely lands past the drawn rows. */
   readonly railCount?: number | undefined;
@@ -1496,6 +1507,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       canvasOpen: state.canvasOpen,
       inspectorDismissed: state.inspectorDismissed,
       issueUrl: current.issueUrl,
+      railDensity: current.railDensity,
       theme: resolved,
       themeSelector: current.themeSelector,
       // THE WRITE STATES ONLY. The workspace holds the one selection, and the

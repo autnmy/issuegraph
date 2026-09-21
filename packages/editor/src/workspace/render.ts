@@ -813,6 +813,21 @@ export interface WorkspaceOptions {
    *
    * Absent means shut, which is §17k's resting state for the strip.
    */
+  /**
+   * Take over §17j's rail density, instead of letting the rail's own box decide.
+   *
+   * FORWARDED, NOT INVENTED. `@issuegraph/viewer` owns the rule and the
+   * default: the rail reads its density off the column it was given, and the
+   * crossover it uses — `430px` — is that package's default rather than a
+   * figure Design published. This exists so a consumer of the EDITOR can reach
+   * the same escape hatch without rendering the rail themselves.
+   *
+   * THE WORKSPACE ITSELF NEEDS IT FOR NOTHING. §17k holds the rail at one
+   * measure now — 390 at every width, which is the rule §17k states outright —
+   * so this surface never crosses the threshold and never has an opinion. It is
+   * threaded for the host's sake, and absent it changes nothing.
+   */
+  readonly railDensity?: 'dense' | 'wide' | undefined;
   readonly canvasOpen?: boolean | undefined;
   /**
    * Whether the reader has dismissed §17k's lifted inspector —
@@ -2956,6 +2971,11 @@ export function renderWorkspace(
     // who opened a row, scrolled past it and came back should find it open.
     // A key the window does not draw costs one `includes` miss and nothing else.
     ...(options.expanded === undefined ? {} : { expanded: options.expanded }),
+    // §17j'S DENSITY ESCAPE HATCH, FORWARDED TO THE RAIL AND ONLY THE RAIL.
+    // The canvas draws a second viewer in this surface, and the density block
+    // is about the ORDER's rows — so handing both the same value would change a
+    // projection the option says nothing about. See `ViewerOptions.density`.
+    ...(options.railDensity === undefined ? {} : { density: options.railDensity }),
   });
   // Built once, over the window's rows, so a rail of 312 costs one pass rather
   // than one scan of `overlay.rows` per drawn row.

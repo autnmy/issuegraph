@@ -965,6 +965,11 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
     {
       class: 'ig-viewer ig-graph',
       'data-projection': 'graph',
+      // Stamped on all three roots rather than on the one that draws rows.
+      // A projection toggle must not silently drop a host's decision, and
+      // the graph carries a footer group of rows of its own. See
+      // `SceneOptions.density`.
+      'data-density': options.density,
       'data-ig-condition': conditionKind(document, options.chrome),
       'aria-label': 'issue order and relationships',
     },

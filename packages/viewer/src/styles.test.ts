@@ -302,3 +302,174 @@ describe('the stylesheet keeps text on text-grade colours', () => {
     assert.match(body, /background:[^;]*var\(--ig-edge-duplicate-of\)/);
   });
 });
+
+/**
+ * §17j's density crossover is a DEFAULT, and the escape hatch has to beat it.
+ *
+ * `430px` is this package's own number — §17j gives two anchors and no
+ * crossover — so a consumer must be able to disagree without patching the
+ * sheet. `data-density` on the viewer root is that hatch, and these are the two
+ * properties it rests on: the declarations exist exactly once in the source,
+ * and the attribute's copy WINS over the base density it overrides.
+ *
+ * THE SECOND ONE IS NOT THEORETICAL HERE. One rule in this block already had to
+ * be hand-scoped with `.ig-viewer` after a container query, which adds no
+ * specificity, tied with the base rule it was overriding at an even `0,3,0` and
+ * lost on file order — the together-unit row drew as an empty em dash, and it
+ * was found by measuring rather than by reading. So this asserts the win rather
+ * than trusting the arithmetic.
+ */
+describe('the density escape hatch overrides the crossover it is an escape from', () => {
+  const css = withoutComments(viewerStylesheet);
+  const CONTAINER_SCOPE = '.ig-viewer:not([data-density])';
+  const ATTRIBUTE_SCOPE = ".ig-viewer[data-density='dense']";
+
+  /**
+   * Every rule in the sheet, in source order, as `{ selector, body, at }`.
+   *
+   * A HAND-ROLLED SPLIT RATHER THAN ONE REGEX OVER THE WHOLE FILE, because the
+   * sheet nests rules inside `@container` blocks: this pairs each innermost
+   * brace group with the text before it and drops the `@` headers, which is all
+   * this sheet's one level of nesting needs.
+   */
+  const rules = (): { selector: string; body: string; at: number }[] => {
+    const found: { selector: string; body: string; at: number }[] = [];
+    for (const match of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const selector = (match[1] ?? '').trim();
+      if (selector === '' || selector.startsWith('@')) continue;
+      found.push({ selector, body: (match[2] ?? '').trim(), at: match.index });
+    }
+    return found;
+  };
+
+  /**
+   * A selector's specificity, folded to one comparable number.
+   *
+   * ENOUGH FOR THIS SHEET AND NO MORE: ids, then classes plus attribute
+   * selectors, then element names. `:not(…)` takes the specificity of its
+   * argument, which is the one subtlety that matters here — the container scope
+   * is `:not([data-density])` and would read as zero without it.
+   */
+  const specificity = (selector: string): number => {
+    const inner = [...selector.matchAll(/:not\(([^)]*)\)/g)].map((match) => match[1] ?? '').join(' ');
+    const bare = selector.replace(/:not\([^)]*\)/g, ' ');
+    const count = (text: string): [number, number, number] => [
+      (text.match(/#[\w-]+/g) ?? []).length,
+      (text.match(/\.[\w-]+/g) ?? []).length + (text.match(/\[[^\]]*\]/g) ?? []).length,
+      (text.match(/(?:^|[\s>+~])([a-z][\w-]*)/g) ?? []).length,
+    ];
+    const [a1, b1, c1] = count(bare);
+    const [a2, b2, c2] = count(inner);
+    return (a1 + a2) * 10000 + (b1 + b2) * 100 + (c1 + c2);
+  };
+
+  it('writes the density block once, and emits it under both keys', () => {
+    // ONE SOURCE, TWO KEYS. CSS cannot say "this container condition OR that
+    // selector", so the declarations would otherwise be written twice — and two
+    // copies of three hundred lines are two copies that drift. `railDensity`
+    // interpolates one block under two scopes, and this is what says so from
+    // the outside, by matching the bodies rather than by trusting the function.
+    // EVERY OCCURRENCE OF THE SCOPE COMES OUT, not just the leading one. Two
+    // rules here carry a selector LIST, and the interpolation puts the scope in
+    // front of each member — so slicing only the prefix left the second member
+    // still wearing it and reported two identical blocks as drifted.
+    const bodies = (scope: string): string[] =>
+      rules()
+        .filter((rule) => rule.selector.includes(scope))
+        .map((rule) => `${rule.selector.split(scope).join('').replace(/\s+/g, ' ').trim()} { ${rule.body} }`);
+
+    const container = bodies(CONTAINER_SCOPE);
+    const attribute = bodies(ATTRIBUTE_SCOPE);
+    assert.ok(container.length > 10, 'the container-scoped density block vanished');
+    assert.deepEqual(attribute, container, 'the two emissions have drifted apart');
+  });
+
+  it('wins on specificity, not on where anyone put the rule', () => {
+    // THE PROPERTY, ASSERTED AGAINST EVERY RULE THE HATCH OVERRIDES. For each
+    // density rule the base rule it answers is the one whose selector is that
+    // rule's own tail — `.ig-slot`, `.ig-footer-row .ig-title`, and so on. The
+    // hatch has to beat it on specificity, so a rule added further down the
+    // file later cannot take the density back by position.
+    const all = rules();
+    const dense = all.filter((rule) => rule.selector.startsWith(ATTRIBUTE_SCOPE));
+    assert.ok(dense.length > 10, 'the attribute-scoped density block vanished');
+
+    // ONE SELECTOR AT A TIME, because two of these rules carry a selector LIST
+    // and a base rule may spell the same target on its own.
+    const members = (selector: string): string[] =>
+      selector.split(',').map((one) => one.replace(/\s+/g, ' ').trim());
+
+    let compared = 0;
+    for (const rule of dense) {
+      for (const member of members(rule.selector)) {
+        const tail = member.slice(ATTRIBUTE_SCOPE.length).trim();
+        const base = all.find(
+          (other) => other !== rule && members(other.selector).includes(tail),
+        );
+        if (base === undefined) continue;
+        compared += 1;
+        assert.ok(
+          specificity(member) > specificity(tail),
+          `${member} does not outrank ${tail} on specificity`,
+        );
+      }
+    }
+    assert.ok(compared > 0, 'no density rule shares a tail with a base rule, so this proved nothing');
+
+    // AND POSITION IS DELIBERATELY NOT ASSERTED. At least one base rule — the
+    // together-unit row — is written BELOW this block, which is exactly the
+    // arrangement that broke once: at equal specificity the later rule won and
+    // the unit row drew empty. The fix then was to raise specificity, and the
+    // fix now is the same one applied to the whole block, so a test demanding
+    // source order would be pinning the thing that did not work.
+    const unitBase = all.find(
+      (rule) => rule.selector === ".ig-slot[data-unit='true'] > .ig-row-body > .ig-row-head",
+    );
+    const unitDense = dense.find((rule) => rule.selector.includes("[data-unit='true'] >"));
+    assert.ok(unitBase !== undefined && unitDense !== undefined, 'the unit row rules moved');
+    assert.ok(unitBase.at > unitDense.at, 'the arrangement this note is about no longer exists');
+  });
+
+  it('leaves the crossover deciding only while the host has not', () => {
+    // THE DEFAULT SURVIVES THE HATCH, which is the half that keeps this a
+    // drop-in: a consumer who passes nothing still gets a density chosen from
+    // the box it was given, per §17j. The container block is scoped to the
+    // attribute being ABSENT, so any value takes the decision away from the
+    // width — and `wide` needs no rules of its own, because it matches neither
+    // scope and falls through to the base density.
+    assert.match(css, /@container ig-rail \(max-width: \d+px\)/);
+    for (const rule of rules().filter((one) => one.selector.startsWith('.ig-viewer:not('))) {
+      assert.ok(
+        rule.selector.startsWith(CONTAINER_SCOPE),
+        `${rule.selector} is scoped to some other absence`,
+      );
+    }
+    assert.equal(
+      css.includes("[data-density='wide']"),
+      false,
+      'the wide direction grew rules of its own, so it can now disagree with the base density',
+    );
+  });
+});
+
+describe('the density escape hatch reaches the markup the sheet keys off', () => {
+  it('stamps the host’s decision on the viewer root, and nothing when absent', () => {
+    // THE SHEET KEYS OFF THE ATTRIBUTE'S PRESENCE, so "absent" has to mean the
+    // attribute is not written at all rather than written empty — an empty one
+    // would take the decision away from the container and give it to nobody.
+    const plain = renderViewer(fixtureDocument, {}).markup;
+    assert.equal(/data-density/.test(plain), false, 'an unasked-for density reached the markup');
+
+    for (const density of ['dense', 'wide'] as const) {
+      const markup = renderViewer(fixtureDocument, { density }).markup;
+      assert.match(markup, new RegExp(`<section class="ig-viewer[^"]*"[^>]*data-density="${density}"`));
+    }
+  });
+
+  it('stamps it on every projection, so a toggle cannot drop it', () => {
+    for (const projection of ['linear', 'graph', 'tree'] as const) {
+      const markup = renderViewer(fixtureDocument, { projection, density: 'dense' }).markup;
+      assert.match(markup, /data-density="dense"/, projection);
+    }
+  });
+});

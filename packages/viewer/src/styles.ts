@@ -23,6 +23,286 @@
  * properties on `.ig-viewer`.
  */
 
+/**
+ * §17j's rail density, written once and emitted under two keys.
+ *
+ * ## Why this is a function and not a block
+ *
+ * The density has to be reachable two ways — by the container's width, which is
+ * §17j's own rule, and by a consumer who disagrees with the crossover this
+ * package picked. CSS cannot express "this condition OR that selector" across
+ * an `@container` boundary: a rule inside the query cannot also be a rule
+ * outside it, so the declarations would have to be written twice. The
+ * stylesheet is already a template literal, so they are written once here and
+ * interpolated twice instead.
+ *
+ * `scope` is a selector the whole block hangs off, and every rule below is
+ * RELATIVE to it. The original block carried its own `.ig-viewer` prefixes on
+ * about half its rules; those are gone, because the scope supplies one and two
+ * would never match.
+ *
+ * ## What it does to specificity, which is a gain rather than a risk
+ *
+ * Every selector here gains the scope's two compound units, so each dense rule
+ * beats the base rule it overrides by SPECIFICITY rather than by source order.
+ * One of these already had to be hand-scoped for exactly that reason — the
+ * together-unit row, where a container query adds no specificity and the base
+ * rule further down the file won, leaving the unit row drawn with nothing in
+ * it. That hazard is now closed for the whole block rather than at one site.
+ */
+function railDensity(scope: string): string {
+  return `
+${scope} .ig-slot {
+  align-items: center;
+  grid-template-columns: var(--ig-rank-column-dense) 1fr auto;
+  min-height: var(--ig-row-height-dense);
+  padding-block: var(--ig-row-padding-block-dense);
+}
+
+/* TWO LINES, AND NEITHER WRAPS. A wrapping title is what turns a 53px row
+   into a 106px one, so the truncation is not cosmetic — it is what makes the
+   height a property of the row rather than of its longest title. */
+${scope} .ig-slot .ig-row-head {
+  gap: 0;
+}
+
+${scope} .ig-slot .ig-title {
+  line-height: var(--ig-row-title-line);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* STEP 5 OF THE DROP ORDER, AND IT IS LAST FOR A REASON '17j' STATES:
+   *"A row without a title is not a row."* Everything above leaves first. */
+${scope} .ig-slot .ig-row-body {
+  gap: var(--ig-row-line-gap);
+  min-width: 0;
+}
+
+/* LINE 2, AND IT DOES NOT WRAP. '17j' draws it as one mono run —
+   '#512 . P0 . blocked-by #488' — so the chips sit ON the identity's line
+   rather than under it. 'nowrap' is what makes the 53px a property of the
+   ROW: one long title or one extra badge would otherwise buy a second line
+   and double the height, which is exactly how this rail reached 408px. */
+${scope} .ig-slot .ig-row-meta {
+  align-items: center;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--ig-space-tight);
+  line-height: var(--ig-row-meta-line);
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* The chips keep their own row semantics and stop wrapping, so what does not
+   fit is clipped rather than stacked. The drop order above decides WHICH
+   chips are there to clip; this only decides they stay on the line. */
+${scope} .ig-slot .ig-row-meta .ig-badges {
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+/* The issue number never shrinks away — '17j' lists it among the five things
+   never dropped at any width. The title truncates first and the chips clip;
+   the number holds its ground. */
+${scope} .ig-slot .ig-row-meta .ig-id {
+  flex: none;
+}
+
+/* AT RAIL DENSITY LINE 2 IS TEXT, NOT PILLS — and this is read off the frame
+   rather than inferred from the height. '17j' draws the meta line as a single
+   mono run, '#512 . P0 . blocked-by #488': no outlines, no fills, just the
+   glyph and the words. §16a's wider panel is where they are chips.
+
+   IT IS ALSO WHAT MAKES 53px REACHABLE. A bordered chip is its padding plus
+   its stroke plus its line box, so a line of them cannot be 15px however the
+   line-height is set — the flex row grows to its tallest item and the row
+   followed it to 74px. Removing the chrome removes the reason.
+
+   THE FOUR REDUNDANT CHANNELS SURVIVE THIS, which is the thing worth
+   checking before doing it: dash, terminal and glyph are untouched, and hue
+   moves from the border to the text it was outlining. '17j' names the hold
+   GLYPH among the five things never dropped, and it is still drawn. */
+${scope} .ig-slot .ig-row-meta .ig-badge {
+  background: none;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  /* AND THE TEXT INSIDE A CHIP DOES NOT WRAP EITHER. Stopping the ROW from
+     wrapping is not enough: a chip squeezed by its neighbours wraps its own
+     label instead, and 'signals disagree' at 84px became two 15px lines and
+     took the row to 67px while every sibling sat at 53. One row in seven,
+     which is exactly the kind of thing that survives a review and does not
+     survive a measurement. What does not fit is clipped, per the drop
+     order. */
+  white-space: nowrap;
+}
+
+/* AND THE SWAP, AT RAIL DENSITY. '17j' draws a together unit here as a
+   marker inline with an ordinary title at the ordinary 53px, so the head
+   comes back and the enclosure stands down. One row, one rank, in both
+   densities - RULINGS.md section 1 - drawn the way each width can afford. */
+/* SCOPED WITH '.ig-viewer' SO ORDER CANNOT DECIDE THIS. A container query
+   adds no specificity, so this rule and the wide-density one it overrides
+   were an even 0,3,0 and the LATER of the two won — which put the base rule,
+   written further down the file, in charge of both densities and left the
+   unit row showing nothing but its em dash. Measured, not spotted: every row
+   was 53px and one of them was empty. The extra class makes the override win
+   on specificity, where it does not depend on where anyone adds a rule
+   later. */
+${scope} .ig-slot[data-unit='true'] > .ig-row-body > .ig-row-head {
+  display: flex;
+}
+
+${scope} .ig-slot[data-unit='true'] .ig-unit-mark,
+${scope} .ig-slot[data-unit='true'] .ig-unit {
+  display: none;
+}
+
+/* The marker itself: the glyph and the count, on the title's line. It is a
+   COUNT and not a pill here because 53px has no room for one, and because
+   the pill's words are already the accessible name's. */
+${scope} .ig-unit-count {
+  color: var(--ig-edge-together-with);
+  display: inline;
+  font-family: var(--ig-font-mono);
+  margin-right: var(--ig-space-tight);
+}
+
+/* THE FOOTER ROWS TOO, AND THIS IS THE POPULATION THE ROW FIX MISSED.
+   A footer entry is deliberately ONE LINE and shorter than a ranked row -
+   16a gives it no rank, no station and no explanation block, because it is
+   not a fact about the work. That part was right. What was not governed is
+   its TITLE: it wrapped, and the excluded row carrying a canonical reference
+   ran to 73px while its siblings sat at 36. A footer row taller than a
+   ranked row inverts the whole point of the group.
+
+   THE DEFECT IS THE ONE ALREADY FIXED ON .ig-slot, ONE ROW KIND OVER: a
+   title with nothing stopping it wrapping takes the row with it. Fixed at
+   the class this time rather than at the site - the rail renders three row
+   kinds and the first pass governed two. */
+${scope} .ig-footer-row .ig-title {
+  line-height: var(--ig-row-title-line);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+${scope} .ig-footer-row .ig-badges {
+  flex-wrap: nowrap;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* AND THE CHIPS LOSE THEIR CHROME HERE TOO, which is what actually makes a
+   footer entry ONE LINE. 16a draws it as "a label chip, a title and an
+   identity, on one line"; a bordered chip is padding plus stroke plus line
+   box, so a row carrying any relationship badge stood at 36px against 22px
+   for one carrying none - and the badge block, not the title, was the last
+   thing driving it.
+
+   MEASURED IN TWO PASSES, WHICH IS THE POINT. Stopping after the title fix
+   left the footer group at two heights and looked finished: the row that had
+   been 73px was down to 36 and matched its siblings, so the obvious check
+   passed. It was the SECOND measurement - why 22 and why 36 - that found the
+   badges. A class is not fixed until nothing in it varies for a reason you
+   have not named. */
+${scope} .ig-footer-row .ig-badge {
+  background: none;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  white-space: nowrap;
+}
+
+/* THE THIRD AND LAST MEMBER OF THE CLASS: the identity. An excluded row
+   carries TWO - its own, and the canonical it defers to ('455 -> 512') - and
+   the second wrapped, which is why that row alone stood at 30px when the
+   others reached 17. Same defect as the title and the chips, third element,
+   found by asking the same question a third time rather than by stopping at
+   the first uniform-looking answer. */
+${scope} .ig-footer-row .ig-id {
+  white-space: nowrap;
+}
+
+/* THE NOW STRIP AT RAIL DENSITY. '17j' draws it as the first row of the rail
+   at all three backlog sizes, in the same rhythm as the rows beneath it -
+   RULINGS.md section 4: "a single now strip as the first row of the rail,
+   above rank 1, on a raised surface, carrying no rank number".
+
+   THE RANK SLOT IS ALREADY RIGHT AND IS NOT TOUCHED HERE: the strip carries a
+   'now' mark where a rank would be, never a number, which is the half of
+   section 4 the build already had. What was wrong was only its height. */
+${scope} .ig-now-row {
+  min-height: var(--ig-row-height-dense);
+  padding-block: var(--ig-row-padding-block-dense);
+}
+
+${scope} .ig-now-row .ig-row-head {
+  gap: 0;
+  min-width: 0;
+}
+
+${scope} .ig-now-row .ig-title {
+  line-height: var(--ig-row-title-line);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+${scope} .ig-now-row .ig-id {
+  line-height: var(--ig-row-meta-line);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* HIDDEN HERE, AND NOT YET EXPANDABLE — WHICH IS HALF OF WHAT 17j ASKS FOR.
+   The tile says: "The provenance line never renders inline here. In the rail
+   it is expand-on-demand; in 16a's wider panel it is inline. Same row, two
+   densities."
+
+   THE INLINE HALF IS DONE AND THE ON-DEMAND HALF IS NOT. There is no
+   row-level expand affordance at this density — 16f's right-arrow "expand
+   provenance" does not exist — so a rail reader reaches the explanation
+   through the inspector's WHY RANK block rather than through the row. The
+   information is one selection away, not lost, but this comment previously
+   claimed "expand-on-demand" and that was an overclaim about a control
+   nothing draws.
+
+   The markup stays whole so the wider container still renders it inline and
+   so the accessible name is unchanged; what the rail declines is spending
+   53px of every row on it. The missing affordance is filed, not forgotten. */
+${scope} .ig-slot .ig-provenance,
+${scope} .ig-slot .ig-hold,
+${scope} .ig-slot .ig-caveat {
+  display: none;
+}
+
+/* AND THE ON-DEMAND HALF, WHICH IS WHAT 17j ACTUALLY ASKED FOR. A row the
+   reader opened with 16f's right-arrow draws its provenance again.
+
+   THE 53px IS NOT BROKEN BY THIS, it is spent deliberately: an open row is
+   taller because the reader asked it to be, and closing it returns the row to
+   the rhythm. That is the difference between a row that grows because nothing
+   governs it - the defect this sweep removed - and one that grows because
+   somebody pressed a key.
+
+   ONLY THE PROVENANCE COMES BACK. Holds and caveats stay down: 17j names the
+   provenance line and nothing else, and the holds are already in the
+   inspector's WHY RANK block as controls rather than prose. */
+${scope} .ig-slot[aria-expanded='true'] {
+  min-height: var(--ig-row-height-dense);
+}
+
+${scope} .ig-slot[aria-expanded='true'] .ig-provenance {
+  display: block;
+}
+`;
+}
+
 export const viewerStylesheet = `
 .ig-viewer {
   background: var(--ig-bg);
@@ -59,7 +339,18 @@ export const viewerStylesheet = `
    wrong: it answers a question about the WINDOW when the row's question is
    about the COLUMN it was given. Two rails of different widths on one screen
    is not an edge case here — §17a's rail and §18's settings rail are that
-   screen. */
+   screen.
+
+   "NOT FROM A PROP THE HOST SETS" IS ABOUT THE DEFAULT, AND data-density DOES
+   NOT BREAK IT. What §17j refuses is a package that CANNOT work out its own
+   density — one that draws a wrong row until a host wires something up, which
+   is how a drop-in stops being a drop-in. This box still answers that question
+   on its own and nothing has to be passed for it to be right. What the
+   attribute adds is the ability to DISAGREE, which is a different thing: the
+   crossover this package picked is a default, the host is the only party that
+   knows about print, a user preference or its own breakpoints, and an override
+   nobody uses costs the drop-in case nothing. See the crossover comment below
+   for why the number needs no ruling once it is a default. */
 .ig-list {
   container-name: ig-rail;
   container-type: inline-size;
@@ -430,282 +721,56 @@ export const viewerStylesheet = `
    you are compressing the surface that was never the problem."* So nothing
    here keys off the backlog size, and nothing ever should.
 
-   WHY 430px AND NOT A NUMBER '17j' GIVES: it does not give one. It gives two
-   anchors — the rail is 390 and §18's settings rail is 330, where steps 1-3
-   apply "by default" — and §16a's panel, which keeps provenance inline, is
-   wider than either. 430 is chosen to sit above the rail and below that panel;
-   it is THIS PACKAGE'S CHOICE, not the design's, and it is the one number in
-   this block a frame does not back. Flagged rather than presented as ruled.
+   430 IS THIS PACKAGE'S DEFAULT, NOT A CLAIM ABOUT THE DESIGN, AND A CONSUMER
+   CAN TAKE IT OVER. That is the whole posture of this package — sensible
+   defaults, everything overridable — and it is why this number needed no
+   ruling in the end. '17j' gives two anchors and no crossover: the workspace
+   rail is 390, §18's settings rail is 330 where steps 1-3 apply "by default",
+   and §16a's panel, which keeps provenance inline, is wider than either and
+   carries no published figure anywhere. 430 sits above the rail and below that
+   panel. A host that does nothing gets it and gets correct behaviour; a host
+   that disagrees sets data-density on the viewer root and this condition stops
+   deciding for them.
 
-   '17k' WAS ASKED TO SETTLE IT AND SETTLES HALF OF IT, which is worth writing
-   down because the other half is still open and the temptation is to read the
-   flag as cleared. '17k' fixes the three workspace layouts under one rule —
-   "the rail never yields" — so the LOWER anchor is now exact rather than a
-   range: the workspace draws its rail at 390 at every width it supports, and
-   no amount of resizing moves it across this threshold. Before that it fell to
-   312 below 1360, so 430 had to clear two numbers and only one of them was
-   '17j's. The editor's own sheet now pins that relationship rather than
-   restating it — see its test "keeps the workspace rail on the dense side of
-   layer 1's crossover", which reads this condition and the workspace's rail
-   track and asserts the one is inside the other.
+   SO THE OPEN QUESTION IS CLOSED RATHER THAN WAITING. An earlier revision of
+   this comment filed the distance between 390 and 430 as needing a width for
+   §16a's panel. It does not: a DEFAULT only has to be reasonable, and the
+   figure would only have mattered if this were the single crossover every
+   consumer had to live with. It is not, so it is not blocking.
 
-   WHAT IS STILL UNBACKED IS THE UPPER END. '16a' draws a wider panel and gives
-   it no figure, in the rulings or anywhere in this repository, so the distance
-   between 390 and this threshold remains a judgement rather than a measure.
-   Naming a second unbacked number in its place would be churn, so the number
-   stands and the gap is stated: this needs a width for '16a's panel, and until
-   there is one, 430 is the same choice it always was with one of its two
-   reasons now checked. */
+   IT CANNOT BE A TOKEN, AND THE NEXT PERSON WILL TRY. Making the threshold a
+   theme property is the obvious reach, and it does not work: a container
+   condition takes a length and only a length. Measured in a browser — a
+   max-width condition written as a literal applies, and the same condition
+   naming a custom property PARSES INTO A RULE THAT MATCHES AT NO WIDTH AT ALL,
+   while CSS.supports() reports that same condition as supported. It fails
+   silently in both directions: the rule is not dropped, it is simply never
+   satisfied, and the one API that could have warned agrees it is fine. That is
+   a CSS limitation rather than a decision, and it is why the escape hatch below
+   is a selector rather than a property.
+
+   '17k' MAKES THE LOWER ANCHOR EXACT, which is worth keeping. It fixes the
+   three workspace layouts under one rule — "the rail never yields" — so the
+   workspace draws its rail at 390 at every width it supports and no amount of
+   resizing moves it across this threshold. Before that it fell to 312 below
+   1360, so 430 had to clear two numbers and only one was '17j's. The editor's
+   sheet pins that relationship rather than restating it: see its test "keeps
+   the workspace rail on the dense side of layer 1's crossover". */
 @container ig-rail (max-width: 430px) {
-  .ig-slot {
-    align-items: center;
-    grid-template-columns: var(--ig-rank-column-dense) 1fr auto;
-    min-height: var(--ig-row-height-dense);
-    padding-block: var(--ig-row-padding-block-dense);
-  }
-
-  /* TWO LINES, AND NEITHER WRAPS. A wrapping title is what turns a 53px row
-     into a 106px one, so the truncation is not cosmetic — it is what makes the
-     height a property of the row rather than of its longest title. */
-  .ig-slot .ig-row-head {
-    gap: 0;
-  }
-
-  .ig-slot .ig-title {
-    line-height: var(--ig-row-title-line);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  /* STEP 5 OF THE DROP ORDER, AND IT IS LAST FOR A REASON '17j' STATES:
-     *"A row without a title is not a row."* Everything above leaves first. */
-  .ig-slot .ig-row-body {
-    gap: var(--ig-row-line-gap);
-    min-width: 0;
-  }
-
-  /* LINE 2, AND IT DOES NOT WRAP. '17j' draws it as one mono run —
-     '#512 . P0 . blocked-by #488' — so the chips sit ON the identity's line
-     rather than under it. 'nowrap' is what makes the 53px a property of the
-     ROW: one long title or one extra badge would otherwise buy a second line
-     and double the height, which is exactly how this rail reached 408px. */
-  .ig-slot .ig-row-meta {
-    align-items: center;
-    display: flex;
-    flex-wrap: nowrap;
-    gap: var(--ig-space-tight);
-    line-height: var(--ig-row-meta-line);
-    min-width: 0;
-    overflow: hidden;
-  }
-
-  /* The chips keep their own row semantics and stop wrapping, so what does not
-     fit is clipped rather than stacked. The drop order above decides WHICH
-     chips are there to clip; this only decides they stay on the line. */
-  .ig-slot .ig-row-meta .ig-badges {
-    flex-wrap: nowrap;
-    min-width: 0;
-  }
-
-  /* The issue number never shrinks away — '17j' lists it among the five things
-     never dropped at any width. The title truncates first and the chips clip;
-     the number holds its ground. */
-  .ig-slot .ig-row-meta .ig-id {
-    flex: none;
-  }
-
-  /* AT RAIL DENSITY LINE 2 IS TEXT, NOT PILLS — and this is read off the frame
-     rather than inferred from the height. '17j' draws the meta line as a single
-     mono run, '#512 . P0 . blocked-by #488': no outlines, no fills, just the
-     glyph and the words. §16a's wider panel is where they are chips.
-
-     IT IS ALSO WHAT MAKES 53px REACHABLE. A bordered chip is its padding plus
-     its stroke plus its line box, so a line of them cannot be 15px however the
-     line-height is set — the flex row grows to its tallest item and the row
-     followed it to 74px. Removing the chrome removes the reason.
-
-     THE FOUR REDUNDANT CHANNELS SURVIVE THIS, which is the thing worth
-     checking before doing it: dash, terminal and glyph are untouched, and hue
-     moves from the border to the text it was outlining. '17j' names the hold
-     GLYPH among the five things never dropped, and it is still drawn. */
-  .ig-slot .ig-row-meta .ig-badge {
-    background: none;
-    border: 0;
-    border-radius: 0;
-    padding: 0;
-    /* AND THE TEXT INSIDE A CHIP DOES NOT WRAP EITHER. Stopping the ROW from
-       wrapping is not enough: a chip squeezed by its neighbours wraps its own
-       label instead, and 'signals disagree' at 84px became two 15px lines and
-       took the row to 67px while every sibling sat at 53. One row in seven,
-       which is exactly the kind of thing that survives a review and does not
-       survive a measurement. What does not fit is clipped, per the drop
-       order. */
-    white-space: nowrap;
-  }
-
-  /* AND THE SWAP, AT RAIL DENSITY. '17j' draws a together unit here as a
-     marker inline with an ordinary title at the ordinary 53px, so the head
-     comes back and the enclosure stands down. One row, one rank, in both
-     densities - RULINGS.md section 1 - drawn the way each width can afford. */
-  /* SCOPED WITH '.ig-viewer' SO ORDER CANNOT DECIDE THIS. A container query
-     adds no specificity, so this rule and the wide-density one it overrides
-     were an even 0,3,0 and the LATER of the two won — which put the base rule,
-     written further down the file, in charge of both densities and left the
-     unit row showing nothing but its em dash. Measured, not spotted: every row
-     was 53px and one of them was empty. The extra class makes the override win
-     on specificity, where it does not depend on where anyone adds a rule
-     later. */
-  .ig-viewer .ig-slot[data-unit='true'] > .ig-row-body > .ig-row-head {
-    display: flex;
-  }
-
-  .ig-viewer .ig-slot[data-unit='true'] .ig-unit-mark,
-  .ig-viewer .ig-slot[data-unit='true'] .ig-unit {
-    display: none;
-  }
-
-  /* The marker itself: the glyph and the count, on the title's line. It is a
-     COUNT and not a pill here because 53px has no room for one, and because
-     the pill's words are already the accessible name's. */
-  .ig-viewer .ig-unit-count {
-    color: var(--ig-edge-together-with);
-    display: inline;
-    font-family: var(--ig-font-mono);
-    margin-right: var(--ig-space-tight);
-  }
-
-  /* THE FOOTER ROWS TOO, AND THIS IS THE POPULATION THE ROW FIX MISSED.
-     A footer entry is deliberately ONE LINE and shorter than a ranked row -
-     16a gives it no rank, no station and no explanation block, because it is
-     not a fact about the work. That part was right. What was not governed is
-     its TITLE: it wrapped, and the excluded row carrying a canonical reference
-     ran to 73px while its siblings sat at 36. A footer row taller than a
-     ranked row inverts the whole point of the group.
-
-     THE DEFECT IS THE ONE ALREADY FIXED ON .ig-slot, ONE ROW KIND OVER: a
-     title with nothing stopping it wrapping takes the row with it. Fixed at
-     the class this time rather than at the site - the rail renders three row
-     kinds and the first pass governed two. */
-  .ig-viewer .ig-footer-row .ig-title {
-    line-height: var(--ig-row-title-line);
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .ig-viewer .ig-footer-row .ig-badges {
-    flex-wrap: nowrap;
-    min-width: 0;
-    overflow: hidden;
-  }
-
-  /* AND THE CHIPS LOSE THEIR CHROME HERE TOO, which is what actually makes a
-     footer entry ONE LINE. 16a draws it as "a label chip, a title and an
-     identity, on one line"; a bordered chip is padding plus stroke plus line
-     box, so a row carrying any relationship badge stood at 36px against 22px
-     for one carrying none - and the badge block, not the title, was the last
-     thing driving it.
-
-     MEASURED IN TWO PASSES, WHICH IS THE POINT. Stopping after the title fix
-     left the footer group at two heights and looked finished: the row that had
-     been 73px was down to 36 and matched its siblings, so the obvious check
-     passed. It was the SECOND measurement - why 22 and why 36 - that found the
-     badges. A class is not fixed until nothing in it varies for a reason you
-     have not named. */
-  .ig-viewer .ig-footer-row .ig-badge {
-    background: none;
-    border: 0;
-    border-radius: 0;
-    padding: 0;
-    white-space: nowrap;
-  }
-
-  /* THE THIRD AND LAST MEMBER OF THE CLASS: the identity. An excluded row
-     carries TWO - its own, and the canonical it defers to ('455 -> 512') - and
-     the second wrapped, which is why that row alone stood at 30px when the
-     others reached 17. Same defect as the title and the chips, third element,
-     found by asking the same question a third time rather than by stopping at
-     the first uniform-looking answer. */
-  .ig-viewer .ig-footer-row .ig-id {
-    white-space: nowrap;
-  }
-
-  /* THE NOW STRIP AT RAIL DENSITY. '17j' draws it as the first row of the rail
-     at all three backlog sizes, in the same rhythm as the rows beneath it -
-     RULINGS.md section 4: "a single now strip as the first row of the rail,
-     above rank 1, on a raised surface, carrying no rank number".
-
-     THE RANK SLOT IS ALREADY RIGHT AND IS NOT TOUCHED HERE: the strip carries a
-     'now' mark where a rank would be, never a number, which is the half of
-     section 4 the build already had. What was wrong was only its height. */
-  .ig-viewer .ig-now-row {
-    min-height: var(--ig-row-height-dense);
-    padding-block: var(--ig-row-padding-block-dense);
-  }
-
-  .ig-viewer .ig-now-row .ig-row-head {
-    gap: 0;
-    min-width: 0;
-  }
-
-  .ig-viewer .ig-now-row .ig-title {
-    line-height: var(--ig-row-title-line);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .ig-viewer .ig-now-row .ig-id {
-    line-height: var(--ig-row-meta-line);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  /* HIDDEN HERE, AND NOT YET EXPANDABLE — WHICH IS HALF OF WHAT 17j ASKS FOR.
-     The tile says: "The provenance line never renders inline here. In the rail
-     it is expand-on-demand; in 16a's wider panel it is inline. Same row, two
-     densities."
-
-     THE INLINE HALF IS DONE AND THE ON-DEMAND HALF IS NOT. There is no
-     row-level expand affordance at this density — 16f's right-arrow "expand
-     provenance" does not exist — so a rail reader reaches the explanation
-     through the inspector's WHY RANK block rather than through the row. The
-     information is one selection away, not lost, but this comment previously
-     claimed "expand-on-demand" and that was an overclaim about a control
-     nothing draws.
-
-     The markup stays whole so the wider container still renders it inline and
-     so the accessible name is unchanged; what the rail declines is spending
-     53px of every row on it. The missing affordance is filed, not forgotten. */
-  .ig-slot .ig-provenance,
-  .ig-slot .ig-hold,
-  .ig-slot .ig-caveat {
-    display: none;
-  }
-
-  /* AND THE ON-DEMAND HALF, WHICH IS WHAT 17j ACTUALLY ASKED FOR. A row the
-     reader opened with 16f's right-arrow draws its provenance again.
-
-     THE 53px IS NOT BROKEN BY THIS, it is spent deliberately: an open row is
-     taller because the reader asked it to be, and closing it returns the row to
-     the rhythm. That is the difference between a row that grows because nothing
-     governs it - the defect this sweep removed - and one that grows because
-     somebody pressed a key.
-
-     ONLY THE PROVENANCE COMES BACK. Holds and caveats stay down: 17j names the
-     provenance line and nothing else, and the holds are already in the
-     inspector's WHY RANK block as controls rather than prose. */
-  .ig-slot[aria-expanded='true'] {
-    min-height: var(--ig-row-height-dense);
-  }
-
-  .ig-slot[aria-expanded='true'] .ig-provenance {
-    display: block;
-  }
+${railDensity('.ig-viewer:not([data-density])')}
 }
+
+/* THE ESCAPE HATCH ITSELF, AND IT IS THE SAME BLOCK WITH A DIFFERENT KEY.
+   Emitted a second time under an attribute that carries no width at all, so
+   a consumer who sets it gets the dense row wherever they want it. The
+   scopes above and below are mutually exclusive by construction — one is
+   :not([data-density]) and the other names a value — so nothing here
+   depends on which of them a browser reads first.
+
+   THE OTHER DIRECTION NEEDS NO RULES. data-density='wide' matches neither
+   scope, so the row falls back to the base density this sheet declares
+   above, at any container width. */
+${railDensity(".ig-viewer[data-density='dense']")}
 
 /* STEPS 1-3 OF THE DROP ORDER, AT §18's 330px SETTINGS RAIL, which '17j'
    names as the width where they apply by default.

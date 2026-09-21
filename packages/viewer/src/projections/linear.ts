@@ -94,6 +94,29 @@ export interface SceneOptions {
    * container query never hides the line in the first place.
    */
   readonly expanded?: readonly string[] | undefined;
+  /**
+   * Take over §17j's density crossover, instead of letting the container decide.
+   *
+   * ABSENT IS THE POINT OF IT. With nothing supplied the rail reads its density
+   * off the box it was given — §17j's own rule, and the reason a host that
+   * wires nothing still gets a correct row at any width. This is the escape
+   * hatch for a host that disagrees with the crossover this package picked,
+   * which is `430px` and is a DEFAULT rather than a figure Design published.
+   *
+   * IT IS A DECISION THE HOST CAN MAKE FROM ANYTHING, which is why it is a
+   * value rather than a second breakpoint. A consumer can drive it from their
+   * own media query, a user preference, `beforeprint`, or simply from knowing
+   * they built a `330` settings rail. None of those is a width this package
+   * could have read, and a custom property cannot carry it — CSS parses
+   * `@container (max-width: var(--bp))` and then never matches it, silently,
+   * with `CSS.supports` reporting it fine.
+   *
+   * It renders as `data-density` on the viewer root, and the stylesheet keys
+   * the whole density block off that attribute's presence: set to anything,
+   * the container query stops deciding; set to `dense`, the dense block applies
+   * at any width; set to `wide`, the base density does.
+   */
+  readonly density?: 'dense' | 'wide' | undefined;
 }
 
 /**
@@ -522,6 +545,11 @@ export function linearScene(
     {
       class: 'ig-viewer ig-linear',
       'data-projection': 'linear',
+      // §17j'S DENSITY, WHERE THE HOST TOOK IT OVER. Absent is the whole
+      // default: the stylesheet keys the density block off this attribute's
+      // PRESENCE, so a viewer that renders none is decided by the container
+      // exactly as §17j asks. See `SceneOptions.density`.
+      'data-density': options.density,
       'data-ig-condition': conditionKind(document, options.chrome),
       'aria-label': 'issue order',
     },
