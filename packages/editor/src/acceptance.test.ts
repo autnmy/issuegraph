@@ -814,6 +814,7 @@ const WORKSPACE_WORDS: surface.WorkspaceWords = {
   whyRank: 'why rank',
   whyHeld: 'why held',
   filteredEmpty: 'no flagged rows match',
+  filteredActive: 'narrowed to flagged rows',
   filteredDenominator: (ranked) => `${String(ranked)} issues are ranked`,
   filteredClear: 'clear the filter',
   workedAsOneUnit: 'worked as one unit with',
