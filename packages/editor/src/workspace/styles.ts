@@ -521,7 +521,7 @@ export const workspaceStylesheet = `
   z-index: 3;
   top: var(--ig-space-tight);
   right: var(--ig-space-tight);
-  width: min(calc(var(--ig-char-width) * 65), calc(100% - var(--ig-space-tight) * 2));
+  width: min(calc(var(--ig-char-width) * 66.67), calc(100% - var(--ig-space-tight) * 2));
   max-height: calc(100% - var(--ig-space-tight) * 2);
   /* --ig-surface IS THE RAISED ONE. The first draft wrote --ig-raised, which
      does not exist; the sheet's own guard listed it as a property nothing

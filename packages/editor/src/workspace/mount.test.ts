@@ -307,6 +307,54 @@ describe("the audit region's scroll offset survives a redraw", () => {
     }
   });
 
+  it('§17d: the header count opens the overlay and Escape dismisses it', async () => {
+    // `RULINGS.md` §3, in its own words: *"a transient overlay anchored to the
+    // header count ... dismissed on Escape."* Three facts, and the middle one
+    // is the reason this is a MOUNT test rather than a reducer test: the panel
+    // is not rendered at all while shut, so "dismissed" has to be observed as
+    // the element going away, not as a flag changing.
+    //
+    // THE ESCAPE IS DISPATCHED FROM THE FOCUSED CONTROL, which is where a
+    // reader's press comes from. Driving this in a browser first, a scripted
+    // `.click()` left focus on `body` and the press reached nothing — the
+    // mount's listener is on its own element, as every other key here is. That
+    // was the fixture being wrong rather than the wiring, and it is worth the
+    // sentence because the same mistake would read as a broken feature.
+    const page = await mounted(SEED, { project: withCycle });
+    try {
+      const overlay = (): Element | null => page.element.querySelector('.ig-audit-overlay');
+      assert.equal(overlay(), null, 'the panel is drawn before anything opened it');
+
+      const toggle = page.element.querySelector<HTMLElement>('[data-ig-audit-panel]');
+      assert.ok(toggle !== null, 'no header count to open the panel from');
+      assert.equal(toggle.getAttribute('aria-expanded'), 'false');
+
+      toggle.focus();
+      page.click(toggle);
+      await flush();
+      assert.ok(overlay() !== null, 'the header count did not open the panel');
+      assert.equal(
+        page.element.querySelector('[data-ig-audit-panel]')?.getAttribute('aria-expanded'),
+        'true',
+      );
+
+      const active = page.win.document.activeElement;
+      assert.ok(active !== null);
+      active.dispatchEvent(
+        new page.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+      );
+      await flush();
+      assert.equal(overlay(), null, 'Escape did not dismiss the overlay');
+      assert.equal(
+        page.element.querySelector('[data-ig-audit-panel]')?.getAttribute('aria-expanded'),
+        'false',
+      );
+      page.handle.destroy();
+    } finally {
+      page.dom.window.close();
+    }
+  });
+
   it('keeps focus on the panel rather than dropping it into the rail', async () => {
     // THE OFFSET AND THE FOCUS ARE TWO FACTS, and keeping one without the other
     // still moves the reader out of the zone.
