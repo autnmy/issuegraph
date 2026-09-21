@@ -19,7 +19,7 @@ const derived = deriveIssueOrder({
 });
 
 derived.slots;        // every position, in order
-derived.rankOf;       // key -> rank, or null when held
+derived.rankOf;       // key -> rank, or null when this order cannot place it
 derived.priority;     // key -> declared/effective/promoted-by, in the spec's notation
 derived.excluded;     // duplicates, and the canonical each defers to
 derived.provenance;   // decomposed-from edges, which order nothing
@@ -41,7 +41,17 @@ At zero adoption every effective priority equals its declared priority, so the p
 
 A **together unit occupies one slot**, not one per member (§4.3.7) — the group is one piece of work, and it advances only when every member can.
 
-A **held slot keeps its position and carries `rank: null`.** It is not moved to the end, and it never carries a number: *"why isn't my P1 running"* has to be answerable at the rank the work would have taken, and a claim-time selector that simply drops held work deletes exactly that. `holdReasons` names each failed condition, and `holds` carries the same conditions as the reader's `{ code, subject?, text }` — `holdReasons` is its text projection — so a host groups on `code` and links `subject` without matching a sentence.
+A **held slot keeps its position**, and whether it keeps a *number* depends on where the thing it waits on is:
+
+- **Blocker inside this order** — every hold names an issue that has a row here — the slot **keeps its rank**. `#512 ⊘ blocked-by #488` sits at rank 2 while #488 sits at rank 1, because the reader can follow the hold to a row in front of them.
+- **Blocker outside it** — not in the node set, unresolvable, or a hold that names no issue at all — the slot carries `rank: null` and a **`wouldBeRank`**: the position it *would* take, which is one past the last rank issued. It consumes nothing, so the next ranked slot takes that number instead.
+
+`ready` is the only field that answers *may this start*; a rank answers *where does it sit*. `holdReasons` names each failed condition, and `holds` carries the same conditions as the reader's `{ code, subject?, text }` — `holdReasons` is its text projection — so a host groups on `code` and links `subject` without matching a sentence.
+
+> **Changed in 0.2.0.** Before it, every held slot carried `rank: null`.
+>
+> - A consumer that read `rank !== null` as *ready* must read `ready` instead. That inference was sound and is not any more.
+> - **Every rank below a held-but-in-order slot shifts by one**, because such a slot now consumes a number. Only the held-**outside** arm leaves the numbering alone. `[A held-inside, B held-outside, C ready, D ready]` gave `[null, null, 1, 2]` and now gives `[1, null, 2, 3]`.
 
 `promotedBy` names the neighbour the urgency arrived through — along **both** paths §6.3 relaxes, `blocked-by` *and* `together-with`, since a P3 grouped with a P0 is genuinely promoted and a blocked-by-only index would report that with nothing to show for it. The together half is the **adjacent peer**, not the component: relaxation puts every member at the same effective priority, so enumerating the component makes a stranger three hops away read as a cause. It reads **exactly** the edges the model read — an edge naming a duplicate is attributed to its canonical, and a duplicate's own edges are ignored. Over-refusing is safe for a pre-write guard and wrong for provenance: it would name a cause that did not act.
 

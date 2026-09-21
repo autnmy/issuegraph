@@ -174,9 +174,21 @@ export interface ExplainedRow {
   readonly issue: StoredIssue;
   readonly rank: number;
   /**
-   * Whether the rank is shown. Graph-derived holds sit inline at their would-be
-   * rank and show `—`; the executor-held and duplicates sit in a collapsed
-   * footer group and earn no rank slot at all.
+   * Whether the rank is shown — whether THIS PREVIEW can say where the row sits.
+   *
+   * `RULINGS.md` §1: a held row keeps its rank when the thing it waits on is
+   * inside the previewed order, and loses it when that thing is outside. The
+   * executor-held and the duplicates sit in a collapsed footer group and earn
+   * no rank slot at all, so they are outside it too — which is exactly why
+   * #530, blocked by a #602 this host holds ineligible (§6.8), shows `—` while
+   * #512, blocked by a #488 two rows above it, shows `2`.
+   *
+   * THE TEST IS THE HOST'S, NOT THE DERIVATION'S, and it has to be: derive's
+   * candidate set contains #602 — it is open, and the format never learns why
+   * an executor declines ready work — so `IssueOrderSlot.rank` answers for the
+   * whole candidate set and this answers for the SPINE, which is the order a
+   * visitor is actually looking at. Every other host that hides candidate rows
+   * owes the same second pass.
    */
   readonly showRank: boolean;
   /** Whether the row belongs to the spine or the collapsed footer group. */
@@ -723,10 +735,9 @@ function explainRows(
   //
   // A HELD SPINE SLOT KEEPS ITS POSITION rather than moving to the end, which is
   // the derivation's own contract: "why isn't my P1 running" is answerable at
-  // the rank the work would have taken. The derivation numbers only READY slots
-  // (a held one carries `rank: null`, because it has no position in the
-  // sequence), so the demo draws every spine slot at its index and shows `—`
-  // where there is no number to show.
+  // the rank the work would have taken. Whether it also keeps a NUMBER is
+  // `showRank`'s doc — the spine is the previewed order RULINGS.md §1 tests
+  // against, and it is narrower than the derivation's candidate set.
   const placements: Placement[] = [];
   const seen = new Set<IssueRef>();
   let next = 0;
@@ -759,6 +770,14 @@ function explainRows(
     place([issue.ref], 'footer', null);
   }
 
+  // THE PREVIEWED ORDER, as RULINGS.md §1 tests membership against it: the refs
+  // drawn on the spine. A candidate the footer collects — held by the executor
+  // (§6.8), a duplicate, closed — is not in it, so a hold naming one cannot be
+  // followed to a row and the holder's own rank is withheld.
+  const spine = new Set(
+    placements.filter((each) => each.placement === 'spine').map((each) => each.ref),
+  );
+
   // The ranks a READY spine slot occupies, ascending because that is the order
   // they were assigned in. This is what the concurrency cap is counted against:
   // a together unit is one candidate, so it consumes one entry rather than one
@@ -787,10 +806,19 @@ function explainRows(
     const position = ready ? readySlots.indexOf(rank) : -1;
     const beyondCap = position >= concurrencyCap;
     const readyAfter = beyondCap ? readySlots[position - concurrencyCap] : undefined;
+    // `holds.length > 0` guards the vacuous arm: `every` on an empty list is
+    // true, and an unready slot with no stated cause must not earn a number on
+    // the strength of reasons nobody gave.
+    const placeable =
+      placement === 'spine' &&
+      slot !== null &&
+      (slot.ready ||
+        (slot.holds.length > 0 &&
+          slot.holds.every((hold) => hold.subject !== undefined && spine.has(hold.subject))));
     rows.push({
       issue,
       rank,
-      showRank: ready,
+      showRank: placeable,
       placement,
       ready,
       station: !ready ? 'dashed' : beyondCap ? 'hollow' : 'filled',

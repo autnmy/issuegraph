@@ -123,10 +123,14 @@ function isDuplicate(row: ExplainedRow): boolean {
  * together unit is ONE slot — and it decides the footer itself, from the hold
  * family, so what crosses here is the rank grouping and the holds.
  *
- * Viewer ranks are 1-based over READY slots only, with a held slot keeping
- * its position at `null`: "printing one would claim work is queued that
- * nothing can start". `readyAfterRank` names one of those ready ranks, so the
- * placement rank it was expressed in is translated through the same table.
+ * Viewer ranks are 1-based over the slots this preview can PLACE — `showRank`,
+ * which is `RULINGS.md` §1 applied to the spine — so a held row whose blocker
+ * is two rows above it is numbered like any other and one whose blocker the
+ * footer collected is not. An unplaced spine row reports `wouldBeRank`
+ * instead: one past the last number issued, consuming nothing, so the row
+ * below it takes that number and the two read alike without colliding.
+ * `readyAfterRank` names one of these ranks, so the placement rank it was
+ * expressed in is translated through the same table.
  */
 function slotsOf(
   explained: ExplainedDocument,
@@ -158,15 +162,22 @@ function slotsOf(
     else members.push(row);
   }
 
-  // The rank table: placement rank -> viewer rank, for the ready slots.
+  // The rank table: placement rank -> viewer rank, for the slots this preview
+  // can place — and, beside it, the would-be rank of a spine slot it cannot.
+  // A would-be rank takes nothing from `next`, which is what lets it read the
+  // same as the number the row below it goes on to take.
   const ranks = [...byRank.keys()].sort((a, b) => a - b);
   const viewerRank = new Map<number, number>();
+  const wouldBeRank = new Map<number, number>();
   let next = 1;
   for (const rank of ranks) {
     const lead = byRank.get(rank)?.[0];
-    if (lead?.ready === true) {
+    if (lead === undefined) continue;
+    if (lead.showRank) {
       viewerRank.set(rank, next);
       next += 1;
+    } else if (lead.placement === 'spine') {
+      wouldBeRank.set(rank, next);
     }
   }
 
@@ -191,6 +202,7 @@ function slotsOf(
         ready,
         holds: dedupe(holds),
         readyAfterRank: readyAfter,
+        wouldBeRank: wouldBeRank.get(rank) ?? null,
       },
     ];
   });

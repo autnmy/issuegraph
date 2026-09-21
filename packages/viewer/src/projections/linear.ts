@@ -177,9 +177,10 @@ export function slotRow(
       ? element(
           'span',
           { class: 'ig-rank', 'data-held': held ? 'true' : 'false' },
-          // A held slot never prints a number: it has no position in the
-          // sequence, and printing one would claim work is queued that nothing
-          // can start.
+          // The em dash is for a slot the host could not PLACE, which since
+          // `RULINGS.md` §1 is narrower than "held": a held slot whose blocker
+          // is inside the previewed order carries a number, and the `data-held`
+          // channel beside it is what says the work cannot start.
           [slot.rank === null ? '—' : String(slot.rank)],
         )
       : null,

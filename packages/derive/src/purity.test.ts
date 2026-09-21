@@ -218,8 +218,14 @@ describe('the derivation package is pure', () => {
     );
     const after = deriveIssueOrder({ issues: unblocked, config });
 
-    assert.equal(before.rankOf.get('530'), null);
-    assert.notEqual(after.rankOf.get('530'), null);
+    // NOT A RANK COMPARISON any more: #530 keeps its place either way, because
+    // its blocker is in this order before the edit and gone from it after
+    // (RULINGS.md §1). Readiness is what the closure changes, and #602 leaving
+    // the candidate set is what a stale model would still be carrying.
+    assert.equal(before.slots.find((slot) => slot.lead === '530')?.ready, false);
+    assert.equal(after.slots.find((slot) => slot.lead === '530')?.ready, true);
+    assert.equal(before.rankOf.has('602'), true);
+    assert.equal(after.rankOf.has('602'), false);
   });
 
   test('does not mutate either half of its input', () => {

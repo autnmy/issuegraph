@@ -72,7 +72,25 @@ const compIssues: readonly StoredIssue[] = [
   { ref: '501', title: 'Rate-limit backoff on the poller', state: 'open', priority: 1 },
   { ref: '503', title: 'Poller: jittered retry window', state: 'open', priority: 1 },
   // `—`, would be rank 4: a graph-derived hold, inline, blocked by an open
-  // issue the order never reaches.
+  // issue this order never reaches — #602, which the host holds ineligible, so
+  // it is outside the previewed order and #530's own rank is withheld
+  // (`RULINGS.md` §1).
+  //
+  // §16a SAYS TWO THINGS ABOUT THIS ROW THAT CANNOT BOTH HOLD, and this seed
+  // follows the number. The frame DRAWS the row below #503 at rank 4 and above
+  // #520 at rank 5; from that position the rank it would take is 5, because a
+  // would-be rank is one past the last rank issued and consumes nothing. The
+  // frame PRINTS 4, and #208 explains it as "#530 is P1, and arriving among the
+  // P1s it lands at 4 and pushes #503 to 5" — which describes the row sitting
+  // ABOVE #503.
+  //
+  // THE NUMBER IS THE SPECIFIED OUTPUT; THE DRAW ORDER IS AN INPUT WE CHOOSE.
+  // A would-be rank is DERIVED, so the arithmetic is not ours to bend — 5 is
+  // the right answer for the frame's row position, and 4 is the right answer
+  // for the position #208 describes. What is adjustable is which position this
+  // host puts the row in, and that is `COMP_ORDER`, where #530 is now listed
+  // above #503. The derivation is unchanged either way; this moves the seed,
+  // not the rule.
   { ref: '530', title: 'Session cookie SameSite fix', state: 'open', priority: 1 },
   // Rank 5: no declared priority, so the spec's default tier (§4.3.5).
   { ref: '520', title: 'Audit log pagination', state: 'open' },
@@ -132,9 +150,17 @@ const compEdges: readonly StoredEdge[] = [
  * tier. The derivation still decides everything a base ranking cannot: the
  * promotion itself, the unit's single slot, and the two holds. `seed.test.ts`
  * pins that it lands on the frames' ranks.
+ *
+ * #530 IS LISTED ABOVE #503, WHERE THE FRAME DRAWS IT BELOW. §16a prints two
+ * things about that row that cannot both hold — see the note on #530 itself —
+ * and the NUMBER is the one this host follows, because the number is the frame's
+ * specified OUTPUT and the draw order is an input we get to choose. Listed here
+ * rather than anywhere else for that reason: a base ranking is the host's own
+ * `ORDER BY`, so moving a row inside its tier is an ordinary host decision that
+ * asks nothing of the derivation.
  */
 export const COMP_ORDER: readonly IssueRef[] = Object.freeze([
-  '488', '512', '514', '501', '503', '530', '520', '487', '505',
+  '488', '512', '514', '501', '530', '503', '520', '487', '505',
   '499', '533', '541', '602', '455', '470',
 ]);
 

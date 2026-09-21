@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import type { NodeInput } from '@issuegraph/reader';
+import type { Frontmatter, NodeInput } from '@issuegraph/reader';
 
 import {
   type ConfigRankedIssue,
@@ -96,14 +96,16 @@ describe("deriveIssueOrder — the seed's baseline order", () => {
     assert.equal(derived.slots.filter((slot) => slot.members.includes('514')).length, 1);
   });
 
-  test('holds #530 behind open #602 with rank null and a reason naming the blocker', () => {
+  test('holds #530 behind open #602, in place, with a reason naming the blocker', () => {
     const derived = deriveSeed();
     const held = slotLed(derived, '530');
-    assert.equal(held.rank, null);
     assert.equal(held.ready, false);
     assertIncludes(held.holdReasons.join(' '), '602');
-    // A held slot carries `null`, never a number — not 0, not a string.
-    assert.equal(derived.rankOf.get('530'), null);
+    // RULINGS.md §1: #602 is in this order, so #530's position is a fact this
+    // order can state. Held is `ready`, not a missing number.
+    assert.equal(held.rank, 4);
+    assert.equal(held.wouldBeRank, null);
+    assert.equal(derived.rankOf.get('530'), 4);
   });
 
   test('excludes #455 as a duplicate and keeps #512 canonical', () => {
@@ -130,7 +132,7 @@ describe("deriveIssueOrder — the seed's baseline order", () => {
     );
     // #488's position is set by its own priority, not by its split origin:
     // last in the baseline, exactly where a P3 with no dependents belongs.
-    assert.equal(derived.rankOf.get('488'), 7);
+    assert.equal(derived.rankOf.get('488'), 8);
   });
 
   test("promotes the open blocker #602 to its dependent's priority", () => {
@@ -189,8 +191,11 @@ describe('deriveIssueOrder — adding #512 blocked-by #488', () => {
     const derived = promoted();
     const unit = slotWith(derived, '512');
     assert.deepStrictEqual(unit.members, ['512', '514']);
-    assert.equal(unit.rank, null);
-    assert.equal(derived.rankOf.get('514'), null);
+    assert.equal(unit.ready, false);
+    // HELD, AND STILL AT RANK 2 — RULINGS.md §1's own worked example. The unit
+    // waits on #488, which this order draws at rank 1.
+    assert.equal(unit.rank, 2);
+    assert.equal(derived.rankOf.get('514'), 2);
     assertIncludes(unit.holdReasons.join(' '), '488');
   });
 
@@ -204,7 +209,16 @@ describe('deriveIssueOrder — adding #512 blocked-by #488', () => {
     assert.equal(view.notation, 'P2 -> 0');
     // The promoter named is the adjacent dependent, not the distant origin.
     assert.deepStrictEqual(view.promotedBy, ['488']);
-    assert.equal(derived.rankOf.get('487'), 1);
+    // RANK IS THE ORDER'S SORT, NOT A TOPOLOGICAL WALK — and this chain is the
+    // clearest case of it. All three are effective 0, so the base ranking's
+    // own positions decide, and the seed created #487 last. Now that a held
+    // slot whose blockers are in the order keeps its place (RULINGS.md §1),
+    // #488 and the unit hold ranks 1 and 2 while the issue they both wait on
+    // sits at 3. The row still says why: each of them is `ready: false` and
+    // names its blocker.
+    assert.equal(derived.rankOf.get('487'), 3);
+    assert.equal(derived.rankOf.get('488'), 1);
+    assert.equal(derived.rankOf.get('512'), 2);
   });
 });
 
@@ -238,13 +252,19 @@ describe('deriveIssueOrder — the base ranking is an input', () => {
 
   test("lets the relationship layer OVERRIDE the base ranking's position", () => {
     // The base ranking puts #488 last; the blocking edge must still lift it to
-    // rank 1. Frontmatter modifies the base order, it does not defer.
+    // the front. Frontmatter modifies the base order, it does not defer.
     const lastPlace = [...seedOrder.filter((key) => key !== '488'), '488'];
     const derived = deriveIssueOrder({
       issues: withBlockedByEdge(issuegraphOrderSeed(), 512, 488),
       config: { baseRanking: { source: 'config', order: configOrder(lastPlace) } },
     });
-    assert.equal(derived.rankOf.get('488'), 1);
+    // THE LIFT IS THE ASSERTION, NOT THE LITERAL `1`. Both #488 and the unit
+    // that waits on it are effective 0, and within that band this base ranking
+    // puts the unit first — so the unit takes rank 1 and #488 rank 2, which is
+    // the band collapsing exactly as the module's own sort documents. What the
+    // edge had to buy is the band: last place to second, above every P1.
+    assert.equal(derived.rankOf.get('488'), 2);
+    assert.deepStrictEqual(derived.slots.slice(0, 2).map((slot) => slot.lead), ['512', '488']);
   });
 
   test('sorts an issue the base ranking omits last within its band, with a diagnostic', () => {
@@ -255,8 +275,8 @@ describe('deriveIssueOrder — the base ranking is an input', () => {
     });
     // #520 and #487 are both effective 2; #487 is unranked by the base ranking
     // so it sorts behind #520 rather than by its issue number.
-    assert.equal(derived.rankOf.get('520'), 5);
-    assert.equal(derived.rankOf.get('487'), 6);
+    assert.equal(derived.rankOf.get('520'), 6);
+    assert.equal(derived.rankOf.get('487'), 7);
     assertIncludes(derived.diagnostics.join(' '), '487');
   });
 
@@ -298,8 +318,8 @@ describe('deriveIssueOrder — the base ranking is an input', () => {
       baseRanking: { source: 'fixture-parity', createdAt },
     });
     // Both fall to the back of their shared band, then order by issue number.
-    assert.equal(derived.rankOf.get('487'), 5);
-    assert.equal(derived.rankOf.get('520'), 6);
+    assert.equal(derived.rankOf.get('487'), 6);
+    assert.equal(derived.rankOf.get('520'), 7);
     assertIncludes(derived.diagnostics.join(' '), '520: no usable position');
   });
 
@@ -314,8 +334,8 @@ describe('deriveIssueOrder — the base ranking is an input', () => {
       issues: issuegraphOrderSeed(),
       config: { baseRanking: { source: 'config', order: configOrder(withoutBoth) } },
     });
-    assert.equal(derived.rankOf.get('487'), 5);
-    assert.equal(derived.rankOf.get('520'), 6);
+    assert.equal(derived.rankOf.get('487'), 6);
+    assert.equal(derived.rankOf.get('520'), 7);
   });
 });
 
@@ -335,7 +355,7 @@ describe('deriveIssueOrder — priority carrier precedence', () => {
     assert.equal(signals.disagreement, true);
     assert.equal(signals.losingCarrier, 'frontmatter');
     assert.equal(signals.losingValue, 0);
-    assert.equal(derived.rankOf.get('520'), 5);
+    assert.equal(derived.rankOf.get('520'), 6);
   });
 
   test('lets the frontmatter win under the parameter, keeping the label readable', () => {
@@ -417,7 +437,14 @@ describe('deriveIssueOrder — readiness', () => {
       issue.id === '503' ? { ...issue, assigneeCount: 1 } : issue,
     );
     const slot = slotLed(deriveSeed(claimed), '501');
-    assert.equal(slot.rank, null);
+    assert.equal(slot.ready, false);
+    // #503 is the claimed peer AND a row in this order, so the hold names
+    // something the reader can see and #501 keeps its place (RULINGS.md §1).
+    // The ruling is stated over "its blocker" and applied over every hold that
+    // names an issue, which is the only reading that does not need a per-code
+    // allowlist this layer was not given.
+    assert.equal(slot.rank, 2);
+    assert.equal(slot.wouldBeRank, null);
     assertIncludes(slot.holdReasons.join(' '), '503');
   });
 
@@ -452,9 +479,17 @@ describe('deriveIssueOrder — structural invariants', () => {
       derived.slots.map((slot) => slot.lead),
       ['512', '501', '503', '530', '602', '520', '487', '488'],
     );
+    // Every slot is placed: #530's blocker #602 is one of these rows, so the
+    // order can say where #530 sits and no number is withheld (RULINGS.md §1).
     assert.deepStrictEqual(
       derived.slots.map((slot) => slot.rank),
-      [1, 2, 3, null, 4, 5, 6, 7],
+      [1, 2, 3, 4, 5, 6, 7, 8],
+    );
+    // The held slot is still the fourth row, and still says it is held — the
+    // position is the assertion, `ready` is the hold.
+    assert.deepStrictEqual(
+      derived.slots.map((slot) => slot.ready),
+      [true, true, true, false, true, true, true, true],
     );
   });
 
@@ -537,7 +572,7 @@ describe('deriveIssueOrder — structural invariants', () => {
     const derived = deriveSeed([...seed, stale]);
     // The seed's own #488 governs: still P3, still last, still split from #470.
     assert.equal(priorityView(derived, '488').declared, 3);
-    assert.equal(derived.rankOf.get('488'), 7);
+    assert.equal(derived.rankOf.get('488'), 8);
     assert.deepStrictEqual(
       derived.provenance.filter((entry) => entry.key === '488'),
       [{ key: '488', origin: '470', originOpen: false }],
@@ -608,7 +643,10 @@ describe('deriveIssueOrder — cross-repo keys', () => {
     assert.equal(derived.rankOf.get('488'), 1);
     assert.equal(priorityView(derived, '488').effective, 0);
     assert.deepStrictEqual(priorityView(derived, '488').promotedBy, ['512']);
-    assert.equal(derived.rankOf.get('512'), null);
+    // Held behind #488, which is rank 1 in this same order, so #512 keeps its
+    // own position — the cross-repo spelling changes nothing about that.
+    assert.equal(derived.rankOf.get('512'), 2);
+    assert.equal(slotLed(derived, '512').ready, false);
     // Provenance resolves through the same normalization.
     assert.deepStrictEqual(derived.provenance, [
       { key: '488', origin: '470', originOpen: null },
@@ -953,5 +991,131 @@ describe('deriveIssueOrder — the ordering is TOTAL over opaque ids', () => {
       config: { baseRanking: { source: 'config', order: [] } },
     });
     assert.deepEqual(derived.slots.map((slot) => slot.lead), ['9', '10', '100']);
+  });
+});
+
+/**
+ * `RULINGS.md` §1 (Claude Design, 2026-09-20):
+ *
+ *   *"A held issue keeps its rank when its blocker is inside the previewed
+ *   order, and loses it when the blocker is outside. When it loses the rank the
+ *   slot shows `—` and the would-be rank is printed beside the id."*
+ *
+ * The two arms are asserted against the SAME seed, one node apart: #530 blocked
+ * by #602 keeps a rank while #602 is in the node set, and loses it the moment
+ * #602 is not — which is the only difference between "held, and here is where
+ * it sits" and "held, and this order cannot say when".
+ */
+describe('deriveIssueOrder — a held slot and the side its blocker is on', () => {
+  /** The seed with #602 withheld: #530's blocker is no longer in this order. */
+  const withoutBlocker = (): NodeInput[] =>
+    issuegraphOrderSeed().filter((issue) => issue.id !== '602');
+
+  test('KEEPS the rank when every hold names an issue this order carries', () => {
+    const derived = deriveSeed(withBlockedByEdge(issuegraphOrderSeed(), 512, 488));
+    const unit = slotWith(derived, '512');
+    assert.equal(unit.ready, false);
+    // #488 is rank 1 and is in this order, so the unit's own position stands.
+    assert.equal(unit.rank, 2);
+    assert.equal(unit.wouldBeRank, null);
+    assert.equal(derived.rankOf.get('512'), 2);
+    assert.equal(derived.rankOf.get('514'), 2);
+  });
+
+  test('LOSES the rank and reports a would-be rank when the blocker is outside', () => {
+    const derived = deriveSeed(withoutBlocker());
+    const held = slotLed(derived, '530');
+    assert.equal(held.ready, false);
+    assert.equal(held.rank, null);
+    assert.equal(derived.rankOf.get('530'), null);
+    // The position it WOULD take: three ranks precede it, so it would be 4 —
+    // and the slot that follows takes 4 instead, exactly as §16a describes.
+    assert.equal(held.wouldBeRank, 4);
+    assert.equal(derived.rankOf.get('520'), 4);
+  });
+
+  test('a would-be rank is the position, not a second sequence', () => {
+    const derived = deriveSeed(withoutBlocker());
+    assert.deepStrictEqual(
+      derived.slots.map((slot) => [slot.lead, slot.rank, slot.wouldBeRank]),
+      [
+        ['512', 1, null],
+        ['501', 2, null],
+        ['503', 3, null],
+        ['530', null, 4],
+        ['520', 4, null],
+        ['487', 5, null],
+        ['488', 6, null],
+      ],
+    );
+  });
+
+  test('a RANKED slot never carries a would-be rank', () => {
+    for (const slot of deriveSeed().slots) {
+      if (slot.rank !== null) assert.equal(slot.wouldBeRank, null, `#${slot.lead}`);
+    }
+  });
+});
+
+/**
+ * THE MIGRATION NOTE, EXECUTABLE. A held-INSIDE slot consumes a rank and a
+ * held-OUTSIDE one does not, so "a held slot takes no number and the ranks
+ * below it close up" is now true of exactly one of the two arms. Stated as
+ * prose in the CHANGELOG and the README, and pinned here so the prose cannot
+ * drift from the arithmetic it describes.
+ *
+ * The shape is the review's own counterexample: `[held-inside, held-outside,
+ * ready, ready]` gave `[null, null, 1, 2]` before #208 and gives
+ * `[1, null, 2, 3]` now. The second slot still takes nothing; the first is
+ * what pushes the two ready slots down by one.
+ */
+describe('deriveIssueOrder — which held arm moves the numbers below it', () => {
+  /** `a` waits on `c`, which is in this order; `b` waits on a ref that is not. */
+  function mixedArms(): NodeInput[] {
+    const node = (id: string, data: Frontmatter | null = null): NodeInput => ({
+      id,
+      open: true,
+      labels: [],
+      assigneeCount: 0,
+      declarationRead: 'read',
+      data,
+    });
+    return [
+      node('a', frontmatter({ blockedBy: [ref('c')] })),
+      node('b', frontmatter({ blockedBy: [ref('nowhere')] })),
+      node('c'),
+      node('d'),
+    ];
+  }
+
+  test('a held-INSIDE slot consumes a rank; a held-OUTSIDE slot does not', () => {
+    const derived = deriveIssueOrder({
+      issues: mixedArms(),
+      config: {
+        baseRanking: {
+          source: 'config',
+          order: ['a', 'b', 'c', 'd'].map((key, index) => ({ key, matchedOrderIndex: index })),
+        },
+      },
+    });
+
+    assert.deepStrictEqual(
+      derived.slots.map((slot) => [slot.lead, slot.rank, slot.wouldBeRank, slot.ready]),
+      [
+        // Waits on `c`, which is rank 2 below — inside the order, so placed.
+        ['a', 1, null, false],
+        // Waits on a ref this order cannot resolve: no rank, names where it
+        // would have sat, and takes nothing from the slots beneath it.
+        ['b', null, 2, false],
+        ['c', 2, null, true],
+        ['d', 3, null, true],
+      ],
+    );
+    // The whole vector, against what the old rule produced for the same graph.
+    assert.deepStrictEqual(
+      derived.slots.map((slot) => slot.rank),
+      [1, null, 2, 3],
+      'before #208 this was [null, null, 1, 2]; only the held-INSIDE arm moved it',
+    );
   });
 });

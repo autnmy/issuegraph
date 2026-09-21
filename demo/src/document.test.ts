@@ -62,9 +62,18 @@ describe('the comp projects onto the viewer without loss', () => {
       if (slot.ready) {
         assert.deepEqual(slot.holds, [], `#${slot.lead} is ready and says it is held`);
         assert.ok(slot.rank !== null, `#${slot.lead} is ready with no rank`);
+        assert.equal(slot.wouldBeRank, null, `#${slot.lead} is ranked and also would-be ranked`);
       } else {
         assert.ok(slot.holds.length > 0, `#${slot.lead} is held and says why nowhere`);
-        assert.equal(slot.rank, null, `#${slot.lead} is held with a rank`);
+        // A HELD SLOT MAY CARRY EITHER NUMBER, NEVER BOTH (RULINGS.md §1):
+        // the rank when the thing it waits on is in this preview, the would-be
+        // rank when it is not. `showRank` decides, and this is the pin that
+        // the two sides of that branch stay exclusive.
+        assert.equal(
+          slot.rank === null || slot.wouldBeRank == null,
+          true,
+          `#${slot.lead} carries a rank and a would-be rank at once`,
+        );
       }
     }
   });
