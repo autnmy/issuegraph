@@ -2562,9 +2562,10 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     //
     // THE DRAFT STILL WINS, WHICH IS WHAT THE OTHER ORDER WAS FOR. A reader
     // mid-relationship pressing Escape means "not this edge", not "close the
-    // panel behind it" — so the guard is the draft being live rather than the
-    // position in this function. An idle draft is the only state `keyIntent`
-    // would have spent the press on, and cancelling an idle draft is a no-op.
+    // panel behind it" — so the guard is `nothingToCancel`, which asks about
+    // the create path rather than about the position in this function. An idle
+    // one is the only state `keyIntent` would have spent the press on, and
+    // cancelling an idle draft is a no-op.
     //
     // GUARDED ALSO ON `narrowOverlayOpen`, WHICH IS THE REDUCER'S OWN PREDICATE
     // rather than a second reading of the same two fields. A press with nothing
