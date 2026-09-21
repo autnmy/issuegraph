@@ -256,6 +256,15 @@ export interface WorkspaceWords {
   /** The way back out, which §17d requires be one click: *"clear the filter"*. */
   readonly filteredClear: string;
   /**
+   * What the rail says while the filter is on AND some rows still match.
+   *
+   * A SECOND HEADLINE RATHER THAN A REUSE OF `filteredEmpty`, because they are
+   * opposite statements: that one says nothing matched, this one says the list
+   * is narrowed. Saying "no flagged rows match" above three flagged rows is the
+   * false statement §2 wrote its ruling about.
+   */
+  readonly filteredActive: string;
+  /**
    * Joins the rest of a together unit: §17a ends *"then worked with #514 as one
    * unit"*, and this is that phrase minus the members, which the package names.
    */
@@ -774,6 +783,17 @@ export interface WorkspaceOptions {
    * Ignored with no audit, because there is nothing to filter by.
    */
   readonly auditFiltered?: boolean | undefined;
+  /**
+   * Whether §17d's audit overlay is open.
+   *
+   * SEPARATE FROM `auditFiltered`, and they used to be one thing. The header
+   * count was the filter toggle; `RULINGS.md` §3 makes it this overlay's anchor
+   * and moves the filter into the panel head, so the two states are now two
+   * questions: which rows the rail shows, and whether the panel is on screen.
+   *
+   * Ignored with no audit, because there is no panel to open.
+   */
+  readonly auditOpen?: boolean | undefined;
   /**
    * Where an issue lives in the host's own world, for §17d's refused block.
    *
@@ -2828,6 +2848,11 @@ export function renderWorkspace(
   // members rather than the lead, for the reason the bar is: a finding can name
   // a member that does not lead its unit.
   const filtered = overlay !== null && options.auditFiltered === true;
+  // AN OVERLAY WITH NOTHING BEHIND IT IS NOT OPEN. `overlay === null` means the
+  // host wired no audit at all, and a host that leaves `auditOpen` true across
+  // that change would otherwise ask for a panel over an audit that does not
+  // exist.
+  const auditOpen = overlay !== null && options.auditOpen === true;
   // THE HEADER'S TWO FACTS ARE WITHHELD FROM THE RAIL HERE, and this is the one
   // place they are: see `railHostFacts` for why a subtraction rather than
   // `SceneOptions.chrome`.
@@ -2855,10 +2880,21 @@ export function renderWorkspace(
   // seam where it is: narrowing is the editor's act, and only the editor knows
   // the denominator, because only it still holds the unnarrowed order.
   const emptiedByFilter = filtered && narrowedSlots.length === 0 && narrowedExcluded.length === 0;
-  const railCondition: ViewerCondition | undefined = emptiedByFilter
+  // STATED WHENEVER THE FILTER IS ON, not only when it empties the rail — and
+  // that is a consequence of §17d's entry point moving into the overlay.
+  //
+  // While the filter lived on the header count it was always on screen and
+  // always clearable. `RULINGS.md` §3 makes that count the overlay's anchor and
+  // puts the filter in the panel head, so the ONLY control for it now closes
+  // with the panel — and a reader who narrowed the rail, shut the panel and
+  // scrolled away would be left looking at a short list with nothing saying why
+  // and nothing to press. §2 forbids exactly that: *"A filter that is visibly
+  // on, states what it is hiding, and clears in one click is not a refusal."*
+  // All three halves have to stay true with the panel shut.
+  const railCondition: ViewerCondition | undefined = filtered
     ? {
         kind: 'filtered',
-        headline: options.words.filteredEmpty,
+        headline: emptiedByFilter ? options.words.filteredEmpty : options.words.filteredActive,
         // THE HOST'S OWN RECORDED COUNT, NOT A SECOND DERIVATION OF IT. The
         // rail header already prints `8 ranked` from `counts.ranked`, and the
         // first version of this line counted `order.slots.length` instead —
@@ -3019,6 +3055,55 @@ export function renderWorkspace(
         ]),
   );
 
+  // §17d'S PANEL IS AN OVERLAY OVER THE CANVAS, NOT A FOURTH ZONE.
+  //
+  // `RULINGS.md` §3: *"It is a transient overlay anchored to the header count,
+  // floating over the canvas, 520px wide, dismissed on Escape."* It used to be
+  // concatenated into the INSPECTOR zone, above the selection — §17a fixes
+  // three zones and none of them is the audit's, so it had nowhere to go and
+  // took a share of the one next to it. At six findings the inspector went
+  // below the fold.
+  //
+  // OVER THE CANVAS AND NEVER THE RAIL, and the ruling gives the reason rather
+  // than a preference: *"judging a finding is largely a question of what it
+  // would do to the order, so the order has to stay readable while you
+  // judge."* The canvas is also the zone §17f already designed to refuse.
+  //
+  // BUILT ONLY WHEN OPEN. "Transient" is the word, and a panel rendered hidden
+  // is still in the accessibility tree and still in the tab order — a reader
+  // on the keyboard would walk a list of findings they never opened.
+  const auditPanel = !auditOpen
+    ? ''
+    : (() => {
+
+        if (overlay === null) return '';
+        const refused = renderEncodingRefusedBlock(options.audit?.encodingRefused ?? [], {
+          words: options.words.audit,
+          known,
+          issueUrl: options.issueUrl,
+        });
+        // `filtered` REACHES THE PANEL, and the first draft forgot it. The chip drew
+        // `aria-pressed="false"` while the rail beside it was visibly narrowed —
+        // a control lying about its own state, which is the exact shape §2 wrote
+        // its ruling against.
+        const panel = renderAuditPanel(overlay, {
+          words: options.words.audit,
+          known,
+          filtered,
+        });
+        // THE REFUSAL LEADS. It is the finding that says the other three cannot
+        // be trusted for that issue — its edges were never read — so a reader
+        // meeting the list first would be reading conclusions drawn from a
+        // declaration nobody could parse.
+        const members = [refused, panel].filter((spec): spec is ElementSpec => spec !== null);
+        // NO EMPTY REGION. A wrapper drawn around nothing is a heading-less box
+        // taking a declared share of a column whose space belongs to the
+        // selection — the same call `renderAuditPanel` makes about a list of
+        // nothing, one level up.
+        if (members.length === 0) return '';
+        return renderMarkup(element('div', { class: 'ig-audit-overlay' }, members));
+      })();
+
   const markup = [
     // THE ORDER'S STATUS, ON THE SURFACE ROOT. `mount.ts` already publishes the
     // same value on the mounted element for a host to read; this puts it where
@@ -3046,7 +3131,7 @@ export function renderWorkspace(
       [
         headerMarkup(
           document.host,
-          overlay === null ? '' : renderAuditHeader(overlay, { filtered }),
+          overlay === null ? '' : renderAuditHeader(overlay, { open: auditOpen }),
           options.words,
         ),
         // §17c'S SUMMARY LIVES IN THE HEADER, NOT AT THE TOP OF THE RAIL, and
@@ -3099,7 +3184,11 @@ export function renderWorkspace(
       // workspace's. Both halves are already-rendered markup, which is the
       // rule `zone` exists under: it writes the only hand-authored tag in this
       // package and takes no caller value.
-      [toolbar === null ? '' : renderMarkup(toolbar), canvas.markup].join(''),
+      // THE PANEL IS LAST so it paints over the graph rather than under it,
+      // and it is INSIDE the canvas zone so `workspace/styles.ts` can position
+      // it against that zone's box — which is what keeps it off the rail
+      // without a magic number.
+      [toolbar === null ? '' : renderMarkup(toolbar), canvas.markup, auditPanel].join(''),
     ),
     zone(
       'inspector',
@@ -3157,26 +3246,6 @@ export function renderWorkspace(
       // its half between them, which is also what the artboard draws — §17d
       // puts the findings list and the refusal side by side as one section.
       // `workspace/styles.ts` carries the share; neither leaf declares a size.
-      (() => {
-        if (overlay === null) return '';
-        const refused = renderEncodingRefusedBlock(options.audit?.encodingRefused ?? [], {
-          words: options.words.audit,
-          known,
-          issueUrl: options.issueUrl,
-        });
-        const panel = renderAuditPanel(overlay, { words: options.words.audit, known });
-        // THE REFUSAL LEADS. It is the finding that says the other three cannot
-        // be trusted for that issue — its edges were never read — so a reader
-        // meeting the list first would be reading conclusions drawn from a
-        // declaration nobody could parse.
-        const members = [refused, panel].filter((spec): spec is ElementSpec => spec !== null);
-        // NO EMPTY REGION. A wrapper drawn around nothing is a heading-less box
-        // taking a declared share of a column whose space belongs to the
-        // selection — the same call `renderAuditPanel` makes about a list of
-        // nothing, one level up.
-        if (members.length === 0) return '';
-        return renderMarkup(element('div', { class: 'ig-audit-region' }, members));
-      })() +
       renderMarkup(
         inspectorSpec(inspector, {
           words: options.words,

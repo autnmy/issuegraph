@@ -270,6 +270,27 @@ export async function a11ySurface(
     await flush();
   }
 
+  // §17d'S PANEL, OPENED, AND IT IS PART OF `audited` RATHER THAN ITS OWN FLAG.
+  //
+  // `RULINGS.md` §3 made the panel a TRANSIENT overlay anchored to the header
+  // count, so every control it holds — the findings' `reveal-issue`, the
+  // refused block's outward link and rewrite, and the filter chip that moved
+  // into its head — is drawn only while it is open. Recording `audited` with
+  // the panel shut put all four in NO baseline state, which is exactly the
+  // absent-entry failure the state list at the top of `baseline.test.ts` exists
+  // to make impossible.
+  //
+  // FOLDED IN rather than added as a twelfth surface, for the reason `audited`
+  // itself folds the cycle and the refusal together: #185 measured mounts as
+  // this file's cost, and there is no question a shut-panel audit state answers
+  // that the open one does not.
+  if (options.audited === true) {
+    const toggle = host.querySelector<HTMLElement>('[data-ig-audit-panel]');
+    assert.ok(toggle !== null, 'no audit header to open §17d\u2019s panel from');
+    toggle.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    await flush();
+  }
+
   // AN EDGE SELECTION, when asked for. `inspectorChrome` renders the mounted
   // retype picker only while an edge is selected, so `retype` and `flip` — two
   // controls this package draws — were in no recorded state at all.

@@ -57,6 +57,17 @@ export interface HostState {
   readonly scale: ScaleState;
   readonly auditFiltered: boolean;
   /**
+   * Whether §17d's audit overlay is on screen.
+   *
+   * A SECOND FIELD RATHER THAN A REUSE OF `auditFiltered`, because the header
+   * count stopped being the filter. `RULINGS.md` §3 makes it this overlay's
+   * anchor and puts the filter in the panel head, so "which rows the rail
+   * shows" and "is the panel open" are two questions now. One boolean answering
+   * both is how a reader ended up unable to open the panel without narrowing
+   * the rail underneath it.
+   */
+  readonly auditOpen: boolean;
+  /**
    * The rail rows whose provenance line the reader has opened, per §16f's
    * `→ expand provenance`.
    *
@@ -101,6 +112,7 @@ export const INITIAL_HOST_STATE: HostState = Object.freeze({
   selection: INITIAL_SELECTION,
   scale: INITIAL_SCALE_STATE,
   auditFiltered: false,
+  auditOpen: false,
   expanded: [],
   railStart: 0,
   draft: IDLE_CREATE_DRAFT,
@@ -743,6 +755,18 @@ function controlled(
     // failed record.
     case 'audit-filter':
       return settled({ ...state, auditFiltered: !state.auditFiltered });
+    // §17d's HEADER COUNT, which now opens the overlay instead of filtering.
+    // *"A persistent, quiet count in the workspace header. It never moves,
+    // never animates, and is always the same click."*
+    case 'audit-panel':
+      return settled({ ...state, auditOpen: !state.auditOpen });
+    // ESCAPE'S ARM, AND IT IS NOT THE TOGGLE. A toggle bound to a dismissal
+    // key REOPENS the panel on a second press, which is the opposite of
+    // "dismissed on Escape" — and the shell cannot know whether the first
+    // press was swallowed by something else. Closing is idempotent; toggling
+    // is not.
+    case 'audit-close':
+      return state.auditOpen ? settled({ ...state, auditOpen: false }) : unclaimed(state);
     // §16f's `→` / `←` on a rail row.
     //
     // A BARE `expand` IS SOMEBODY ELSE'S COMMAND, and this is the whole reason

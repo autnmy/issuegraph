@@ -36,8 +36,15 @@ const WORDS: AuditWords = {
     'encoding-refused': 'this declaration could not be read',
   },
   show: 'go and look',
+  filter: 'narrow the list',
   refusedHeading: 'could not be read',
   refusedOpen: 'see it upstream',
+  remedies: {
+    pickEdge: 'choose an edge',
+    removeEdge: 'drop it',
+    keepAsHistory: 'leave it be',
+    repoint: 'point it somewhere',
+  },
   refusedRewrite: 'fix it here',
 };
 
@@ -370,6 +377,13 @@ describe('the findings panel', () => {
       WORDS.show,
       ...Object.values(WORDS.classes),
       ...Object.values(WORDS.titles),
+      // §17d's REMEDY LABELS ARE THE HOST'S TOO. This guard caught them the
+      // moment they shipped, which is the guard working: the labels are real
+      // sentences and the frame's own copy is tempting to hard-code.
+      ...Object.values(WORDS.remedies),
+      // §17d's filter entry point moved into the panel head, so its word is
+      // the panel's to draw now too.
+      WORDS.filter,
     ]);
     const drawn = [...markup.matchAll(/>([^<>]+)</g)]
       .map((match) => (match[1] as string).trim())
@@ -612,5 +626,93 @@ describe('§17d — the cycle card draws its walk', () => {
 
   it('gives the walk a stylesheet rule', () => {
     assert.ok(auditStylesheet.includes('.ig-audit-walk'));
+  });
+});
+
+describe('§17d — the remedies, which select and never write', () => {
+  // `RULINGS.md` §3: remedies are REQUIRED and auto-fix is FORBIDDEN, in one
+  // breath. The mechanism it names reconciles them — *"Taking a remedy selects
+  // the finding's issue or edge and hands the work to the inspector"* — so
+  // these tests are mostly about what the buttons are NOT allowed to be.
+
+  const remediesIn = (markup: string): { tag: string; command: string; target: string }[] =>
+    [...markup.matchAll(/<button[^>]*class="ig-audit-remedy"[^>]*>/g)].map((match) => {
+      const tag = match[0];
+      return {
+        tag: /data-ig-remedy="([^"]+)"/.exec(tag)?.[1] ?? '',
+        command: /data-ig-command="([^"]+)"/.exec(tag)?.[1] ?? '',
+        target: /data-ig-target="([^"]+)"/.exec(tag)?.[1] ?? '',
+      };
+    });
+
+  it('draws the frame’s four remedies, one per class as §17d draws them', () => {
+    const found = remediesIn(markupOf(EVERY_CLASS.issues, EVERY_CLASS.edges));
+    assert.deepEqual(
+      found.map((remedy) => remedy.tag).sort(),
+      ['keep-as-history', 'pick-edge', 'remove-edge', 'repoint'],
+      'the cycle gets one, the stale blocker two, the dead ref one',
+    );
+  });
+
+  it('NEVER publishes a writing command — auto-fix is forbidden', () => {
+    // THE LOAD-BEARING TEST OF THE THREE. A remedy that could write would make
+    // the panel an auto-fix surface whatever its labels said, and the two
+    // commands below are the only two that cannot: one selects an edge, the
+    // other reveals an issue without the pointer semantics that complete a
+    // draft. This asserts the WHOLE set rather than spot-checking, so a fifth
+    // remedy added later cannot quietly introduce a third command.
+    const found = remediesIn(markupOf(EVERY_CLASS.issues, EVERY_CLASS.edges));
+    assert.ok(found.length > 0, 'the premise: remedies were drawn');
+    assert.deepEqual(
+      [...new Set(found.map((remedy) => remedy.command))].sort(),
+      ['reveal-issue', 'select-edge'],
+    );
+    // `select-issue` IS THE ONE THAT WOULD BITE. With a draft awaiting its
+    // target the host reads it as a POINTER and emits a create proposal — so a
+    // button meant to remove a relationship would declare one.
+    assert.equal(/data-ig-command="select-issue"/.test(markupOf(EVERY_CLASS.issues, EVERY_CLASS.edges)), false);
+  });
+
+  it('points each edge remedy at the finding’s own edge', () => {
+    const overlay = overlayOf(EVERY_CLASS.issues, EVERY_CLASS.edges);
+    const edges = new Set(
+      overlay.findings.filter((finding) => finding.edge !== undefined).map((finding) => finding.edge),
+    );
+    assert.ok(edges.size > 0, 'the premise: findings named edges');
+    for (const remedy of remediesIn(markupOf(EVERY_CLASS.issues, EVERY_CLASS.edges))) {
+      if (remedy.command !== 'select-edge') continue;
+      assert.ok(edges.has(remedy.target), `${remedy.tag} names an edge no finding has`);
+    }
+  });
+
+  it('offers Keep as history on the stale blocker alone', () => {
+    // Gated on `keepAsHistory`, which the class table sets for that class only.
+    // Asserted through the MARKUP rather than the table, so the gate is proven
+    // where a reader meets it.
+    const markup = markupOf(EVERY_CLASS.issues, EVERY_CLASS.edges);
+    const cards = markup.split('<li class="ig-audit-card"');
+    for (const card of cards.slice(1)) {
+      const kind = /data-ig-audit-kind="([^"]+)"/.exec(card)?.[1];
+      const keeps = /data-ig-remedy="keep-as-history"/.test(card);
+      assert.equal(keeps, kind === 'stale-blocker', `${String(kind)} drew the wrong answer`);
+    }
+  });
+
+  it('withholds a cycle’s remedy where the reader named no walk', () => {
+    // No walk means no defensible head to select, and §17d will not have this
+    // package choose which edge a reader should drop.
+    const spec = renderAuditPanel(
+      {
+        ...overlayOf(EVERY_CLASS.issues, EVERY_CLASS.edges),
+        findings: overlayOf(EVERY_CLASS.issues, EVERY_CLASS.edges).findings.map((finding) =>
+          finding.kind === 'cycle' ? { ...finding, walk: undefined } : finding,
+        ),
+      },
+      { words: WORDS, known: new Set(EVERY_CLASS.issues.map((held) => held.ref)) },
+    );
+    assert.ok(spec !== null);
+    const markup = renderMarkup(spec);
+    assert.equal(/data-ig-remedy="pick-edge"/.test(markup), false);
+    assert.ok(/data-ig-remedy="remove-edge"/.test(markup), 'the other cards are untouched');
   });
 });

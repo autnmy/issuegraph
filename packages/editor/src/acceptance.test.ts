@@ -867,8 +867,15 @@ const WORKSPACE_WORDS: surface.WorkspaceWords = {
       'encoding-refused': 'this declaration could not be read',
     },
     show: 'go to it',
+    filter: 'narrow the list',
     refusedHeading: 'could not be read',
     refusedOpen: 'see it upstream',
+    remedies: {
+      pickEdge: 'choose an edge',
+      removeEdge: 'drop it',
+      keepAsHistory: 'leave it be',
+      repoint: 'point it somewhere',
+    },
     refusedRewrite: 'fix it here',
   },
 };

@@ -947,3 +947,77 @@ describe('the cycle walk, composed rather than derived', () => {
     assert.deepEqual(found?.walk, ['c', 'a', 'b']);
   });
 });
+
+describe('§17d — a finding names the edge its remedy acts on', () => {
+  // `RULINGS.md` §3: a remedy *"selects the finding's issue or edge and hands
+  // the work to the inspector"*. `members` cannot answer that — it is a SORTED
+  // SET, and sorting destroys the direction — so the edge is carried.
+
+  it('carries the declarer’s edge on a stale blocker, matching the document', () => {
+    const document = documentOf([issue('a'), issue('b', 'closed')], [['blocked-by', 'a', 'b']]);
+    const found = only(audit(document), 'stale-blocker');
+    assert.equal(found.length, 1);
+    // ASSERTED AGAINST THE DOCUMENT'S OWN EDGE, not against a rebuilt id. A
+    // test that recomputes `edgeIdentity` here would agree with itself while
+    // disagreeing with the thing `select-edge` looks up.
+    assert.equal(found[0]?.edge, document.edges[0]?.id);
+    assert.equal(found[0]?.keepAsHistory, true, 'and it is the one class that offers it');
+  });
+
+  it('carries the declared duplicate-of edge, not the chain’s end', () => {
+    // `a` duplicates `b`, `b` duplicates `c`, `c` is closed. The remedy acts on
+    // the edge the reader WROTE, which is `a -> b`.
+    const document = documentOf(
+      [issue('a'), issue('b'), issue('c', 'closed')],
+      [
+        ['duplicate-of', 'a', 'b'],
+        ['duplicate-of', 'b', 'c'],
+      ],
+    );
+    const found = only(audit(document), 'dead-duplicate-ref');
+    assert.ok(found.length > 0);
+    const declared = document.edges.find((edge) => edge.from === 'a');
+    assert.equal(found[0]?.edge, declared?.id);
+  });
+
+  it('names no edge on a cycle or an encoding refusal', () => {
+    // A cycle is about a COMPONENT. Naming one edge here would be this module
+    // choosing which edge to drop — the judgment §17d keeps with the owner.
+    const cyclic = documentOf(
+      [issue('a'), issue('b')],
+      [
+        ['blocked-by', 'a', 'b'],
+        ['blocked-by', 'b', 'a'],
+      ],
+    );
+    for (const found of only(audit(cyclic), 'cycle')) {
+      assert.equal(found.edge, undefined);
+      assert.equal('edge' in found, false, 'absent, not explicitly undefined');
+    }
+
+    const refused = auditDocument({
+      document: documentOf([issue('a')], []),
+      graph: graphOf(documentOf([issue('a')], [])),
+      encodingRefused: [{ ref: 'a' }],
+    });
+    for (const found of refused.filter((f) => f.kind === 'encoding-refused')) {
+      assert.equal(found.edge, undefined);
+    }
+  });
+
+  it('keeps two findings that differ only by edge', () => {
+    // The dedupe key has to see the edge, or one of a pair is dropped silently.
+    // Two closed blockers on one declarer: same class, same prose shape, two
+    // different edges.
+    const document = documentOf(
+      [issue('a'), issue('b', 'closed'), issue('c', 'closed')],
+      [
+        ['blocked-by', 'a', 'b'],
+        ['blocked-by', 'a', 'c'],
+      ],
+    );
+    const found = only(audit(document), 'stale-blocker');
+    assert.equal(found.length, 2, 'both survive the dedupe');
+    assert.equal(new Set(found.map((f) => f.edge)).size, 2, 'and they name different edges');
+  });
+});

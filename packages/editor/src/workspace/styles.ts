@@ -290,6 +290,14 @@ export const workspaceStylesheet = `
 .ig-zone[data-zone='canvas'] {
   grid-area: canvas;
   overflow: auto;
+  /* THE OVERLAY'S CONTAINING BLOCK. §17d's panel is positioned against THIS
+     zone rather than the workspace, and that is what keeps it off the rail
+     without a magic offset: the rail is a different grid area, so an absolutely
+     positioned child of the canvas cannot reach it however wide it gets.
+     RULINGS.md §3 states the constraint and gives the reason — "judging a
+     finding is largely a question of what it would do to the order, so the
+     order has to stay readable while you judge." */
+  position: relative;
 }
 
 /* §17f'S CAPTION, AND IT IS THE ZONE'S FIRST ROW. Frame 17a puts it above the
@@ -403,7 +411,7 @@ export const workspaceStylesheet = `
    class moved out of it, the refused block (audit/refused.ts) — and bounding
    each at half the column lets the two of them take ALL of it, which is worse
    than the state #177 fixed rather than a smaller version of it. So
-   workspace/render.ts wraps both in .ig-audit-region and the share is declared
+   workspace/render.ts wraps both in .ig-audit-overlay and the share is declared
    once, here, on the thing the zone actually holds. Neither leaf declares a
    size of its own; audit/styles.ts says so at both.
 
@@ -435,70 +443,6 @@ export const workspaceStylesheet = `
 }
 
 
-/* THE SHARE ITSELF, DECLARED BY THE COMPOSITION THAT OWNS THE COLUMN. This is
-   the other half of issue 177's answer, and it lives here rather than in
-   audit/styles.ts because it is a fact about three siblings sharing one track,
-   not a fact about either audit surface. renderAuditPanel,
-   renderEncodingRefusedBlock and their stylesheet are all public exports, so a
-   consumer can draw either surface on its own — and capping it there would hide
-   findings behind an inner scrollbar with half the container empty and no
-   selection detail to reserve the space for. The scope is what makes the rule
-   true only where its reason holds.
-
-   A PERCENTAGE, NEVER A LENGTH. A fixed cap was tried first and resolved to
-   most of a short workspace's column under the default theme: a length cannot
-   know how tall the column it is dividing happens to be.
-
-   IT RESOLVES WHETHER OR NOT THE HOST BOUNDS THE HEIGHT, and two earlier drafts
-   were wrong about why. The first said the percentage went indefinite in an
-   auto-height host and CSS read the max-height as none — that is the block
-   rule, and it does not apply. The second reached for the mount, saying
-   .ig-mount is height: 100% so the track is definite once mounted; that is
-   circular, because 100% of an auto-height parent is itself auto. The reason is
-   neither: the ZONE IS A STRETCH-ALIGNED GRID ITEM, so the row gives it a used
-   height in both cases and a percentage against it always resolves.
-
-   AND THE OBSERVABLE THAT SHOWS THAT IS USED HEIGHT, NOT THE COMPUTED VALUE. A
-   third draft offered getComputedStyle as the evidence; it reports the
-   specified percentage either way, so it cannot tell the two cases apart. What
-   was measured is the drawn box: half the zone, in every host tried.
-
-   WHAT VARIES IS WHETHER IT BINDS. The row is as tall as its tallest zone, and
-   the rail draws the order — so ordinarily the rail sets it, half of that is
-   far more than the panel wants, and the bound is slack. It binds when the
-   PANEL is the tallest thing in the row, which in a height-bounded host is the
-   whole point. In an auto-height one it is a pure loss, and the measurement has
-   to be read carefully because the demo is height-bounded by construction:
-   taking its host height off and the other zones out, the panel still drew at
-   half, half the findings went behind its scroller, an equal amount of column
-   sat empty below the chrome, and the document was exactly as tall as before.
-   Filed as issue 188; CSS has no selector that asks whether an ancestor's
-   height is definite.
-
-   BORDER-BOX, AND IT IS LOAD-BEARING. There IS a universal reset in this
-   codebase and it does not reach here: viewer/src/styles.ts scopes it to
-   .ig-viewer descendants, and this panel is a sibling of the rail's viewer
-   rather than inside it. Without it the half is measured on the CONTENT box and
-   the panel's own padding and border push the drawn box past the share —
-   measured at 56.6% of the column instead of 50, one padding pair plus a
-   stroke. Nothing looks broken.
-
-   THE PANEL SCROLLS, NOT THE LIST INSIDE IT. Scrolling the list would pin the
-   panel's head, which is the wrong trade twice over. The ambient count section
-   17d fixes is the WORKSPACE HEADER's, drawn by headerMarkup in the header grid
-   area and outside this zone entirely — it already never moves, so a second
-   pinned count buys nothing. And the list has zero horizontal padding, so
-   making it the scroll container computes its overflow-x to auto and CLIPS the
-   focus ring on every card's control: an outline is ink overflow, so it is cut
-   rather than scrolled to. Each leaf's own padding gives those rings room. */
-.ig-zone[data-zone='inspector'] .ig-audit-region {
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  max-height: 50%;
-  min-height: 0;
-  overflow-y: auto;
-}
 
 /* THE REGION SCROLLS; ITS MEMBERS DO NOT SHRINK. Both leaves declare
    min-height: 0 — correct for each of them, because each was once the scroll
@@ -514,10 +458,81 @@ export const workspaceStylesheet = `
    the region, and a leaf that sized itself here would be wrong in every other
    composition. The region's own max-height is what bounds the pair; this is
    what makes the overflow it declares actually reachable. */
-.ig-zone[data-zone='inspector'] .ig-audit-region > * {
+.ig-zone[data-zone='canvas'] .ig-audit-overlay > * {
   flex-shrink: 0;
 }
 
+
+/* §17d'S PANEL, AS AN OVERLAY OVER THE CANVAS.
+
+   RULINGS.md §3: "a transient overlay anchored to the header count, floating
+   over the canvas, 520px wide, dismissed on Escape." It was a child of the
+   INSPECTOR zone until now, sharing that column's height with the selection —
+   §17a fixes three zones and none of them is the audit's, so it had nowhere to
+   go and took a share of the one next to it. At six findings the inspector was
+   pushed below the fold.
+
+   520px IS DESIGN'S NUMBER, not this package's, which is why it is written as
+   one rather than derived from a token. It is expressed in ch units against the
+   type scale so it survives a theme that changes the font size, and clamped to
+   the zone so a narrow canvas cannot push it over the rail — the constraint §3
+   states outright.
+
+   ANCHORED TOP-RIGHT, under the header count it belongs to. The count sits at
+   the right end of the header band, so the panel hangs from that corner and the
+   eye travels the shortest distance from the control to what it opened.
+
+   IT PAINTS OVER THE GRAPH, which is what an overlay is: z-index above the
+   canvas content, and its own raised surface and shadow so the graph beneath
+   reads as behind rather than as a background it is part of.
+
+   --ig-elevation-overlay IS THE TOKEN FOR EXACTLY THIS, and the first draft
+   wrote a literal rgb() instead. The package's own guard caught it, correctly:
+   the theme's two shadows are deliberately the only values carrying a colour,
+   so a host retheming owns them and a literal here would be invisible to that.
+
+   SCOPED TO THE ZONE, and every declaration is in this one rule. Two reasons,
+   and the second is the sheet's own standing rule: an absolutely positioned
+   .ig-audit-overlay outside this zone has no containing block to hang from and
+   would anchor to the page, and the panel is a public export a consumer can
+   render standalone. The same argument the inspector's old share rule made. */
+/* BORDER-BOX, AND IT IS LOAD-BEARING. There IS a universal reset in this
+   codebase and it does not reach here: viewer/src/styles.ts scopes it to
+   .ig-viewer descendants, and this panel is a sibling of the rail's viewer
+   rather than inside it. Without it the cap is measured on the CONTENT box and
+   the panel's own padding and border push the drawn box past it. Nothing looks
+   broken.
+
+   THE PANEL SCROLLS, NOT THE LIST INSIDE IT. Scrolling the list would pin the
+   panel's head, which is the wrong trade twice over. The ambient count 17d
+   fixes is the WORKSPACE HEADER's, drawn in the header grid area and outside
+   this zone entirely - it already never moves, so a second pinned count buys
+   nothing. And the list has zero horizontal padding, so making it the scroll
+   container computes its overflow-x to auto and CLIPS the focus ring on every
+   card's control: an outline is ink overflow, so it is cut rather than
+   scrolled to. Each leaf's own padding gives those rings room. */
+.ig-zone[data-zone='canvas'] .ig-audit-overlay {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  position: absolute;
+  z-index: 3;
+  top: var(--ig-space-tight);
+  right: var(--ig-space-tight);
+  width: min(calc(var(--ig-char-width) * 65), calc(100% - var(--ig-space-tight) * 2));
+  max-height: calc(100% - var(--ig-space-tight) * 2);
+  /* --ig-surface IS THE RAISED ONE. The first draft wrote --ig-raised, which
+     does not exist; the sheet's own guard listed it as a property nothing
+     resolves, and an unresolved custom property is not an error in CSS — it
+     computes to nothing and the panel would have been transparent over the
+     graph. */
+  background: var(--ig-surface);
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  box-shadow: var(--ig-elevation-overlay);
+}
 
 /* THE AMBIENT LEFT-BAR. A 2px gold rule on the affected row and nothing else —
    no fill, no icon, no badge. §17a's whole ask is that encoding errors stay

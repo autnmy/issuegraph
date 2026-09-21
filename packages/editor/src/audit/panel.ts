@@ -124,6 +124,7 @@ import type { IssueRef } from '@issuegraph/store';
 import { type ElementSpec, element } from '@issuegraph/viewer';
 
 import type { AuditClass, AuditFinding } from './findings.ts';
+import { AUDIT_FILTER_ATTRIBUTE } from './surface.ts';
 import type { AuditOverlay } from './surface.ts';
 
 /**
@@ -157,6 +158,28 @@ export interface AuditWords {
   /** The navigation control on each card — the frame's `Show the loop`. */
   readonly show: string;
   /**
+   * The panel head's filter control — the frame's `filter the rail to these`.
+   *
+   * IT LIVES HERE NOW RATHER THAN IN THE HEADER. §17d draws it in the panel
+   * head, and `RULINGS.md` §3 gives the header count one job instead: anchoring
+   * this overlay. One control, one meaning, each.
+   */
+  readonly filter: string;
+  /**
+   * §17d's REMEDIES, one label per control the frame draws.
+   *
+   * `RULINGS.md` §3 makes these required and forbids auto-fix in the same
+   * breath: *"Every button it draws costs one deliberate human keystroke."*
+   * None of them writes. Each selects the finding's subject and hands the work
+   * to the inspector, which already owns every edit affordance — so the label
+   * names the reader's INTENT and the inspector performs it.
+   *
+   * ONE RECORD, NOT ONE PER CLASS, because the frame gives each class its own
+   * wording rather than a shared verb: a `blocked-by` is removed, a
+   * `duplicate-of` is repointed, and a cycle is neither.
+   */
+  readonly remedies: AuditRemedyWords;
+  /**
    * The refused block's own heading — the frame's `Encoding refused`.
    *
    * THE LAST THREE BELONG TO `./refused.ts`, AND THEY LIVE HERE ANYWAY. §17d is
@@ -173,8 +196,42 @@ export interface AuditWords {
   readonly refusedRewrite: string;
 }
 
+/**
+ * The four remedy labels §17d draws, and no others.
+ *
+ * NOT TOTAL OVER `AuditClass`, unlike `classes` and `titles`. The frame gives
+ * `cycle` one remedy, `stale-blocker` two, `dead-duplicate-ref` one and
+ * `encoding-refused` none — the refusal's own controls are `refusedOpen` and
+ * `refusedRewrite`, which already exist. A record keyed by class would make a
+ * host supply a label for a button nothing draws.
+ */
+export interface AuditRemedyWords {
+  /** The frame's `pick one edge to drop`, on a cycle. */
+  readonly pickEdge: string;
+  /** The frame's `Remove the edge`, on a stale blocker. */
+  readonly removeEdge: string;
+  /**
+   * The frame's `Keep as history`, on a stale blocker and nowhere else.
+   *
+   * Drawn from {@link AuditFinding.keepAsHistory}, which the class table
+   * already sets — `true` for `stale-blocker` alone. The field predates this
+   * control and was waiting for it.
+   */
+  readonly keepAsHistory: string;
+  /** The frame's `Repoint or clear`, on a dead duplicate ref. */
+  readonly repoint: string;
+}
+
 export interface AuditPanelOptions {
   readonly words: AuditWords;
+  /**
+   * Whether the rail is currently narrowed to these findings.
+   *
+   * The panel DRAWS the state and never holds it: §2's ruling makes the filter
+   * a thing the reader can see is on and clear in one click, and the host owns
+   * which rows the rail is showing.
+   */
+  readonly filtered?: boolean | undefined;
   /**
    * The keys the surface being drawn actually carries, so navigation can only
    * name somewhere the reader can arrive.
@@ -327,8 +384,108 @@ function cardSpec(
             },
             [words.show],
           ),
+      // §17d's REMEDIES. Drawn after the navigation control, which is the
+      // frame's order: `Show the loop` then `pick one edge to drop`.
+      remedySpec(finding, words),
     ],
   );
+}
+
+/**
+ * The remedy controls for one finding, or `null` where the frame draws none.
+ *
+ * NOT ONE OF THEM WRITES. `RULINGS.md` §3 requires remedies and forbids
+ * auto-fix in one breath, and the mechanism it names is the same for all of
+ * them: *"Taking a remedy selects the finding's issue or edge and hands the
+ * work to the inspector, which already owns every edit affordance."* So every
+ * button here publishes a SELECTION, and the label says what the reader has
+ * decided to do once they are there.
+ *
+ * THE SUBJECT IS THE FINDING'S EDGE WHERE IT HAS ONE. {@link AuditFinding.edge}
+ * carries it for the two edge classes; a cycle names no single edge on purpose
+ * — choosing which to drop is the judgment §17d keeps with the owner — so its
+ * remedy selects the walk's head instead and the reader picks from there.
+ *
+ * WITHHELD RATHER THAN DRAWN INERT when the subject is missing. A finding whose
+ * edge the drawn document does not carry would give a button that selects
+ * nothing: §17d's own `Show the loop` already declines for exactly that reason
+ * one function up, and this follows it rather than inventing a second rule.
+ */
+function remedySpec(finding: AuditFinding, words: AuditWords): ElementSpec | null {
+  const { remedies } = words;
+  // A SELECT-EDGE BUTTON, BUILT ONCE. The two edge classes differ only in their
+  // label, so the shape is written once and the difference stays a word.
+  const onEdge = (label: string, tag: string): ElementSpec | null =>
+    finding.edge === undefined
+      ? null
+      : element(
+          'button',
+          {
+            type: 'button',
+            class: 'ig-audit-remedy',
+            'data-ig-remedy': tag,
+            // `select-edge`, WHICH SELECTS AND DOES NOT WRITE. The inspector
+            // draws the edge's own controls once it is selected; this only
+            // says which edge the reader is judging.
+            'data-ig-command': 'select-edge',
+            'data-ig-target': finding.edge,
+            // THE FINDING'S OWN SENTENCE, for the reason `Show the loop`
+            // records above: in a screen reader's button list the name is all
+            // a reader has, and any hand-picked subset of a finding's
+            // attributes has two findings that agree on it.
+            'aria-label': `${label} ${finding.detail}`,
+          },
+          [label],
+        );
+
+  switch (finding.kind) {
+    case 'stale-blocker': {
+      // TWO CONTROLS, AND THE SECOND IS GATED ON THE FINDING'S OWN FIELD rather
+      // than on the class. `keepAsHistory` is read from `AUDIT_CLASS_SPECS` and
+      // is `true` for this class alone — it predates this control and was
+      // waiting for it — so asking the finding keeps the two in step instead of
+      // restating the table here.
+      const remove = onEdge(remedies.removeEdge, 'remove-edge');
+      const keep = finding.keepAsHistory ? onEdge(remedies.keepAsHistory, 'keep-as-history') : null;
+      const both = [remove, keep].filter((spec): spec is ElementSpec => spec !== null);
+      return both.length === 0 ? null : element('div', { class: 'ig-audit-remedies' }, both);
+    }
+    case 'dead-duplicate-ref': {
+      const repoint = onEdge(remedies.repoint, 'repoint');
+      return repoint === null ? null : element('div', { class: 'ig-audit-remedies' }, [repoint]);
+    }
+    case 'cycle': {
+      // THE WALK'S HEAD, NOT AN EDGE. See this function's header: the cycle is
+      // about a component, and the reader chooses the edge in the inspector.
+      // `walk` is absent whenever the reader declined to order the component,
+      // and then there is no defensible head to name — so no button.
+      const head = finding.walk?.[0];
+      if (head === undefined) return null;
+      return element('div', { class: 'ig-audit-remedies' }, [
+        element(
+          'button',
+          {
+            type: 'button',
+            class: 'ig-audit-remedy',
+            'data-ig-remedy': 'pick-edge',
+            // `reveal-issue`, NEVER `select-issue`, for the reason the
+            // navigation control above records: with a draft awaiting its
+            // target, `workspace/host.ts` reads a POINTER as choosing that
+            // target and emits a create proposal — so `select-issue` here
+            // would declare a relationship while claiming to remove one.
+            'data-ig-command': 'reveal-issue',
+            'data-ig-target': head,
+            'aria-label': `${remedies.pickEdge} ${finding.detail}`,
+          },
+          [remedies.pickEdge],
+        ),
+      ]);
+    }
+    // NO REMEDY. The refusal's controls are `refusedOpen` and `refusedRewrite`
+    // in `./refused.ts`, and this panel does not list that class at all.
+    default:
+      return null;
+  }
 }
 
 /**
@@ -414,6 +571,26 @@ export function renderAuditPanel(
       // before the level two it claimed to sit under, describing a nesting the
       // markup does not have. Two peers, two `h2`s.
       element('h2', { class: 'ig-audit-panel-heading' }, [words.heading]),
+      // §17d's OWN ENTRY POINT, drawn where the frame draws it. `RULINGS.md` §2
+      // already settled what it does — *"The filter hides ROWS. It never
+      // touches the ORDER"* — and §3 moved it here from the header count so
+      // that count could become this panel's anchor.
+      //
+      // `aria-pressed` IS RIGHT HERE AND WRONG ON THE HEADER. This one really
+      // is a toggle with an ON state; the header's is a disclosure.
+      element(
+        'button',
+        {
+          type: 'button',
+          class: 'ig-audit-filter',
+          'aria-pressed': options.filtered === true ? 'true' : 'false',
+          // ONE CHANNEL, NOT TWO. The mount routes this on the published
+          // attribute alone, and a control carrying `data-ig-command` as well
+          // would be two entries in the a11y baseline for one button.
+          [AUDIT_FILTER_ATTRIBUTE]: '',
+        },
+        [words.filter],
+      ),
     ]),
     // ORDERED BY THE CLASS TABLE, WHICH `auditOverlay` ALREADY DID. `findings`
     // arrives in `AUDIT_CLASSES` order because `auditDocument` concatenates its
