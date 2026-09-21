@@ -949,6 +949,25 @@ describe('§16f — the host owns which rows are open', () => {
     }
   });
 
+  it('drops an open row the document no longer lists, and keeps the rest', () => {
+    // THE SAME STALE-NAME RULE THE SELECTION FOLLOWS. A row the reader opened
+    // can be retired by a later write. The miss itself is harmless — the rail
+    // is windowed, so an open key is undrawn most of the time — but a LATER
+    // issue arriving under the same ref would render already open, having never
+    // been asked to.
+    const open = { ...INITIAL_HOST_STATE, expanded: ['2', 'gone', '3'] };
+    assert.deepEqual(reconcileHost(open, document, new Set()).expanded, ['2', '3']);
+
+    // AND IT IS NOT A WINDOW TEST. `known` is the whole document, so scrolling
+    // a row out of the rail cannot close it.
+    const stands = { ...INITIAL_HOST_STATE, expanded: ['2', '3'] };
+    assert.equal(
+      reconcileHost(stands, document, new Set()),
+      stands,
+      'nothing stale means the same object back, as the selection arm does',
+    );
+  });
+
   it('collapsing a row that was never open is not an error', () => {
     assert.deepEqual(drive([{ kind: 'control', name: 'collapse', target: '9' }]).state.expanded, []);
   });

@@ -958,10 +958,27 @@ export function reconcileHost(
   const draftStands =
     (state.draft.source === null || known.has(state.draft.source)) &&
     (state.draft.target === null || known.has(state.draft.target));
-  if (selection === state.selection && draftStands) return state;
+  // §16f's OPEN ROWS ARE STALE NAMES TOO, and for the same reason the selection
+  // above is: a row the reader opened can be retired by a later write, and the
+  // key would otherwise sit in this set for the life of the session.
+  //
+  // THE HARM IS NOT THE MISS, IT IS THE RETURN. A key matching no drawn row
+  // costs one `includes` and nothing else — the rail is windowed, so most open
+  // keys are undrawn most of the time and that is normal. What is not normal is
+  // an issue being retired and a LATER one arriving under the same ref: it
+  // would render already open, having never been asked to. That is precisely
+  // the class this function exists to refuse.
+  //
+  // FILTERED AGAINST THE WHOLE DOCUMENT, never the rail window. `known` is
+  // every issue the document lists, so scrolling a row out of view cannot close
+  // it — a reader who opens a row, scrolls past and comes back finds it open.
+  const expanded = state.expanded.filter((key) => known.has(key));
+  const expandedStands = expanded.length === state.expanded.length;
+  if (selection === state.selection && draftStands && expandedStands) return state;
   return {
     ...state,
     selection,
+    ...(expandedStands ? {} : { expanded }),
     ...(draftStands ? {} : { draft: IDLE_CREATE_DRAFT, targetQuery: '', drop: null }),
   };
 }
