@@ -43,6 +43,12 @@ function graphFor(
 
 const WORDS = { words: WORKSPACE_WORDS } as const;
 
+/** The canvas zone alone — from its marker to the inspector's, which follows it. */
+function canvasOf(markup: string): string {
+  const at = markup.indexOf('data-zone="canvas"');
+  return at === -1 ? '' : markup.slice(at, markup.indexOf('data-zone="inspector"'));
+}
+
 /** The inspector zone alone — it is the last of the four, so it runs to the end. */
 function inspectorOf(markup: string): string {
   return markup.slice(markup.indexOf('data-zone="inspector"'));
@@ -381,7 +387,10 @@ describe('the audit filter is state the workspace holds, not a dead toggle', () 
   };
 
   it('narrows the rail to the affected rows and presses the toggle', () => {
-    const on = renderWorkspace(backlogOf(4), { ...WORDS, audit, auditFiltered: true });
+    // OPEN, BECAUSE THE TOGGLE MOVED. `RULINGS.md` §3 puts the filter in the
+    // panel head and gives the header count the panel instead, so the pressed
+    // state this asserts is only drawn when the panel is.
+    const on = renderWorkspace(backlogOf(4), { ...WORDS, audit, auditFiltered: true, auditOpen: true });
     assert.deepEqual(drawnKeys(on.markup), ['i0001', 'i0002']);
     assert.match(on.markup, /aria-pressed="true"/);
     assert.equal(on.view.auditFiltered, true);
@@ -389,7 +398,7 @@ describe('the audit filter is state the workspace holds, not a dead toggle', () 
   });
 
   it('leaves every row and an unpressed toggle when it is off', () => {
-    const off = renderWorkspace(backlogOf(4), { ...WORDS, audit });
+    const off = renderWorkspace(backlogOf(4), { ...WORDS, audit, auditOpen: true });
     assert.deepEqual(drawnKeys(off.markup), refs);
     assert.match(off.markup, /aria-pressed="false"/);
     assert.equal(off.view.auditFiltered, false);
@@ -2242,37 +2251,52 @@ describe('the inspector zone at the audit sizes §17f produces', () => {
     };
   }
 
-  it('draws the panel first and the selection detail after it, at any finding count', () => {
+  it('draws the panel over the CANVAS, leaving the inspector its whole column', () => {
+    // THIS TEST USED TO ASSERT THE OPPOSITE, and that assertion was the defect
+    // #209 reports. The audit was concatenated into the INSPECTOR zone ahead of
+    // the selection, and #177 then had to bound it at half that column to stop
+    // it pushing the selection below the fold — a bound for a problem that
+    // should not have existed.
+    //
+    // `RULINGS.md` §3: *"The panel is not a fourth zone. It is a transient
+    // overlay ... floating over the canvas."* So there is nothing to share and
+    // nothing to bound against a sibling: the inspector keeps its column at any
+    // finding count, which is what the old test could only approximate.
     const audit = auditOf(30);
     const result = renderWorkspace(backlogOf(312), {
       ...WORDS,
       audit,
+      auditOpen: true,
       rail: { start: 0, count: 12 },
     });
     assert.ok((result.view.audit?.count ?? 0) >= 30, 'the fixture produced too few findings');
 
-    const zone = inspectorOf(result.markup);
-    assert.ok(zone.includes('ig-audit-region'), 'the audit region is not in the zone');
-    assert.ok(zone.includes('ig-audit-panel'), 'the panel is not in the zone');
-    // WHAT THIS HOLDS IS THE ORDER, and it is worth being exact about that.
-    // `.ig-inspector` is emitted unconditionally, so its presence cannot fail
-    // from a long audit — the assertion that can is the audit coming FIRST,
-    // which is half of why the region is the sibling that takes the bound.
-    assert.ok(zone.includes('class="ig-inspector"'), 'the zone lost the selection detail entirely');
+    const canvas = canvasOf(result.markup);
+    assert.ok(canvas.includes('ig-audit-overlay'), 'the overlay is not in the canvas zone');
+    assert.ok(canvas.includes('ig-audit-panel'), 'the panel is not in the canvas zone');
+    // AND THE PANEL IS INSIDE THE OVERLAY, not a sibling of it: the bound and
+    // the scrolling are declared on the overlay, so a panel that escaped it
+    // would be unbounded again.
     assert.ok(
-      zone.indexOf('ig-audit-region') < zone.indexOf('class="ig-inspector"'),
-      'the audit is no longer drawn first, which changes what #177 decided',
+      canvas.indexOf('ig-audit-overlay') < canvas.indexOf('ig-audit-panel'),
+      'the panel is outside the overlay that carries the bound',
     );
-    // AND THE PANEL IS INSIDE THE REGION, not a sibling of it. The bound is
-    // declared on the region, so a panel that escaped it would be unbounded
-    // again — green on the ordering above and wrong about the thing it guards.
+
+    const zone = inspectorOf(result.markup);
+    assert.ok(zone.includes('class="ig-inspector"'), 'the zone lost the selection detail entirely');
+    assert.equal(
+      zone.includes('ig-audit-overlay'),
+      false,
+      'the audit is back in the inspector column, which is the defect #209 reports',
+    );
+    // THE OVERLAY PAINTS OVER THE GRAPH, so it comes after it in the zone.
     assert.ok(
-      zone.indexOf('ig-audit-region') < zone.indexOf('ig-audit-panel'),
-      'the panel is outside the region that carries the bound',
+      canvas.indexOf('ig-audit-overlay') > canvas.indexOf('data-zone="canvas"'),
+      'the overlay is not inside the canvas zone at all',
     );
   });
 
-  it('draws the refused block inside the region, ahead of the findings list', () => {
+  it('draws the refused block inside the overlay, ahead of the findings list', () => {
     // §17d'S FOURTH CLASS IS SPEC'S SEPARATE SURFACE: a refusal is "surfaced on
     // the issue itself, because until it parses the issue has no edges at all".
     // It LEADS because it is the finding that says the other three cannot be
@@ -2282,17 +2306,21 @@ describe('the inspector zone at the audit sizes §17f produces', () => {
     const audit = auditOf(3);
     const result = renderWorkspace(backlogOf(312), {
       ...WORDS,
+      auditOpen: true,
       audit: {
         ...audit,
         encodingRefused: [{ ref: 'i0007', diagnostic: 'bad YAML', sourceLine: 'blocked-by: [1' }],
       },
       issueUrl: (ref) => `https://example.invalid/${ref}`,
     });
-    const zone = inspectorOf(result.markup);
+    // THE CANVAS ZONE NOW, not the inspector: §3 moved both audit surfaces out
+    // of the selection's column and into an overlay over the graph. The ORDER
+    // between them is unchanged, which is what this test is actually about.
+    const zone = canvasOf(result.markup);
     assert.ok(zone.includes('ig-audit-refused'), 'the refused block is not in the zone');
     assert.ok(
-      zone.indexOf('ig-audit-region') < zone.indexOf('ig-audit-refused'),
-      'the refused block is outside the region that carries the bound',
+      zone.indexOf('ig-audit-overlay') < zone.indexOf('ig-audit-refused'),
+      'the refused block is outside the overlay that carries the bound',
     );
     assert.ok(
       zone.indexOf('ig-audit-refused') < zone.indexOf('ig-audit-panel'),
@@ -2319,7 +2347,7 @@ describe('the inspector zone at the audit sizes §17f produces', () => {
       ...WORDS,
       audit: { document: { issues: [], edges: [] }, graph: { cycles: [], duplicateCanonical: () => null } },
     });
-    assert.equal(clean.markup.includes('ig-audit-region'), false, clean.markup);
+    assert.equal(clean.markup.includes('ig-audit-overlay'), false, clean.markup);
     // AND THE AMBIENT HEADER IS STILL DRAWN AT ZERO: it is the control, and a
     // control that appears with bad news is one the eye has to re-find.
     assert.ok(clean.markup.includes('ig-audit-count'), 'the ambient count went away with the list');
@@ -2334,8 +2362,8 @@ describe('the inspector zone at the audit sizes §17f produces', () => {
     // comparing the two stylesheets, which are the same string for every input
     // because nothing interpolates a count into them, so it was green by
     // construction rather than about this change.
-    const small = renderWorkspace(backlogOf(312), { ...WORDS, audit: auditOf(1) });
-    const large = renderWorkspace(backlogOf(312), { ...WORDS, audit: auditOf(30) });
+    const small = renderWorkspace(backlogOf(312), { ...WORDS, audit: auditOf(1), auditOpen: true });
+    const large = renderWorkspace(backlogOf(312), { ...WORDS, audit: auditOf(30), auditOpen: true });
     assert.ok((large.view.audit?.count ?? 0) > (small.view.audit?.count ?? 0), 'the two fixtures did not differ');
     for (const markup of [small.markup, large.markup]) {
       assert.match(markup, /<section class="ig-audit-panel"/);

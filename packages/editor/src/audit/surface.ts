@@ -73,6 +73,17 @@ export const AUDIT_COUNT_ATTRIBUTE = 'data-ig-audit-count';
  */
 export const AUDIT_FILTER_ATTRIBUTE = 'data-ig-audit-filter';
 
+/**
+ * The attribute marking the header's panel control.
+ *
+ * SEPARATE FROM THE FILTER, because §17d gives the header count exactly one
+ * job — *"always the same click"* — and `RULINGS.md` §3 says what that click
+ * does: the panel is *"a transient overlay anchored to the header count"*. The
+ * filter is drawn INSIDE the panel, where §17d draws it (*"filter the rail to
+ * these"*), so one control no longer carries two meanings.
+ */
+export const AUDIT_PANEL_ATTRIBUTE = 'data-ig-audit-panel';
+
 /** What one affected row is told about itself. */
 export interface AuditRow {
   readonly ref: IssueRef;
@@ -268,8 +279,15 @@ export function heaviestRow(
 }
 
 export interface AuditHeaderOptions {
-  /** Whether the filter is currently narrowing the rail. Defaults to `false`. */
-  readonly filtered?: boolean | undefined;
+  /**
+   * Whether §17d's overlay is open. Defaults to `false`.
+   *
+   * WAS `filtered`, AND THE SWAP IS THE RULING. This button used to toggle the
+   * rail filter; §3 makes it the panel's anchor instead, and the filter moves
+   * into the panel head. A host that bound to the old meaning gets a compile
+   * error rather than a control that silently does something else.
+   */
+  readonly open?: boolean | undefined;
 }
 
 /**
@@ -291,11 +309,16 @@ export interface AuditHeaderOptions {
  */
 export function renderAuditHeader(overlay: AuditOverlay, options: AuditHeaderOptions = {}): string {
   const count = String(overlay.count);
-  const pressed = options.filtered === true;
+  const open = options.open === true;
   return [
     `<div class="ig-audit" ${AUDIT_COUNT_ATTRIBUTE}="${count}">`,
-    `<button type="button" class="ig-audit-toggle" aria-pressed="${String(pressed)}"`,
-    ` ${AUDIT_FILTER_ATTRIBUTE}>`,
+    // `aria-expanded`, NOT `aria-pressed`. The two say different things and the
+    // button's job changed underneath it: `pressed` describes a toggle that is
+    // ON — the old filter — while `expanded` describes a control that DISCLOSES
+    // something, which is what an overlay anchored here is. A reader told
+    // "pressed" would be waiting for a state, not for a panel.
+    `<button type="button" class="ig-audit-toggle" aria-expanded="${String(open)}"`,
+    ` ${AUDIT_PANEL_ATTRIBUTE}>`,
     `<span class="ig-audit-count">${count}</span>`,
     `<span class="ig-audit-label">audit</span>`,
     `</button>`,

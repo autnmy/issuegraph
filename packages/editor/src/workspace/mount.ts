@@ -1506,6 +1506,9 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       // that reopened itself on every landed write would be unusable.
       canvasOpen: state.canvasOpen,
       inspectorDismissed: state.inspectorDismissed,
+      // §17d's overlay. Host state, for the same reason the filter beside it
+      // is: the renderer keeps nothing across a redraw.
+      auditOpen: state.auditOpen,
       issueUrl: current.issueUrl,
       railDensity: current.railDensity,
       theme: resolved,
@@ -1550,7 +1553,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // §17d's second surface moved it up to the region holding both — so reading
     // the panel's offset now reads a number that is always zero, and restoring
     // it is a no-op a reader feels as the audit jumping back on every redraw.
-    const auditBefore = surface.querySelector<HTMLElement>('.ig-audit-region');
+    const auditBefore = surface.querySelector<HTMLElement>('.ig-audit-overlay');
     const auditScrollTop = auditBefore?.scrollTop ?? 0;
     const active = doc.activeElement;
     const activeInput = isElement(active) && isInput(active) && surface.contains(active) ? active : null;
@@ -1733,7 +1736,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // so the element captured from is gone. A region that shrank clamps this on
     // assignment, and one the redraw removed — the audit going clean — is
     // simply absent, which is why nothing is restored rather than zeroed.
-    const auditRegion = surface.querySelector<HTMLElement>('.ig-audit-region');
+    const auditRegion = surface.querySelector<HTMLElement>('.ig-audit-overlay');
     if (auditRegion !== null) auditRegion.scrollTop = auditScrollTop;
     // THE LIST THE READER JUST OPENED IS BROUGHT INTO VIEW. See
     // `revealIsolated` for why the control and the list are in different zones.
@@ -2105,6 +2108,13 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     if (target.closest('[data-ig-audit-filter]') !== null) {
       return { kind: 'dispatch', command: { kind: 'control', name: 'audit-filter' } };
     }
+    // §17d's HEADER COUNT. Checked AFTER the filter, and the order is not
+    // arbitrary: the filter chip lives inside the panel the count opens, so a
+    // click on it is inside neither the other's subtree today — but if the two
+    // ever nest, the inner control is the one the reader aimed at.
+    if (target.closest('[data-ig-audit-panel]') !== null) {
+      return { kind: 'dispatch', command: { kind: 'control', name: 'audit-panel' } };
+    }
     return null;
   };
 
@@ -2255,6 +2265,23 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
    * list sits in an inspector that carries no key — so it answers null from
    * inside either one however this is ordered.
    */
+  /**
+   * Whether Escape has nothing of the CREATE PATH's to cancel.
+   *
+   * ONE PREDICATE FOR WHAT WAS TWO. §17d's overlay and §17k's transients both
+   * take Escape, and both must yield to a live draft — a reader mid-relationship
+   * means "not this edge", not "close the panel behind it". Written out at each
+   * site, that rule is one a later edit can move at one of them.
+   *
+   * FIVE FIELDS, NOT THREE. `isDraftLive` answers for the draft itself, and the
+   * target search and the drop point are the create path's too: a reader who
+   * typed into the target box with no draft open still has something for Escape
+   * to clear, and taking the press for a panel would leave their query sitting
+   * there. `cancel` clears all five, which is why all five are asked.
+   */
+  const nothingToCancel = (): boolean =>
+    !isDraftLive(state.draft) && state.targetQuery === '' && state.drop === null;
+
   const interaction = (): CreateInteraction => {
     const active = doc.activeElement;
     if (isElement(active) && isInput(active) && active.getAttribute(COMMAND_ATTRIBUTE) === 'target-query') {
@@ -2554,10 +2581,25 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // layout, where a selection makes `narrowOverlayOpen` true and neither
     // surface is lifted — one press, not repeatable, and the alternative is
     // measuring a box inside a keydown handler.
-    if (event.key === 'Escape' && !isDraftLive(state.draft) && narrowOverlayOpen(state)) {
-      event.preventDefault();
-      dispatch({ kind: 'control', name: 'narrow-dismiss' });
-      return;
+    //
+    // TWO TRANSIENTS SHARE THIS KEY NOW, AND §17d'S GOES FIRST. The audit
+    // overlay is the one the reader pressed a control to open, and it is drawn
+    // at EVERY width; §17k's lifted inspector is opened implicitly by a
+    // selection and exists only between `1120` and `1359`. So a press with the
+    // audit panel up closes the audit panel, at any width — without this order
+    // a reader at the wide layout, where nothing of §17k's is drawn, would
+    // press Escape and watch the panel stay put.
+    if (event.key === 'Escape' && nothingToCancel()) {
+      if (state.auditOpen) {
+        event.preventDefault();
+        dispatch({ kind: 'control', name: 'audit-close' });
+        return;
+      }
+      if (narrowOverlayOpen(state)) {
+        event.preventDefault();
+        dispatch({ kind: 'control', name: 'narrow-dismiss' });
+        return;
+      }
     }
     const intent = keyIntent(event, context);
     if (intent.kind !== 'none') {

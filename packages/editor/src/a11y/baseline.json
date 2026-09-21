@@ -17,7 +17,7 @@
     },
     {
       "zone": "header",
-      "channel": "data-ig-audit-filter",
+      "channel": "data-ig-audit-panel",
       "control": "",
       "target": null,
       "value": null,
@@ -27,7 +27,7 @@
       "inert": false,
       "name": "text",
       "aria": {
-        "aria-pressed": "false"
+        "aria-expanded": "false"
       }
     },
     {
@@ -168,7 +168,7 @@
     },
     {
       "zone": "header",
-      "channel": "data-ig-audit-filter",
+      "channel": "data-ig-audit-panel",
       "control": "",
       "target": null,
       "value": null,
@@ -178,7 +178,7 @@
       "inert": false,
       "name": "text",
       "aria": {
-        "aria-pressed": "false"
+        "aria-expanded": "false"
       }
     },
     {
@@ -320,7 +320,7 @@
     },
     {
       "zone": "header",
-      "channel": "data-ig-audit-filter",
+      "channel": "data-ig-audit-panel",
       "control": "",
       "target": null,
       "value": null,
@@ -330,7 +330,7 @@
       "inert": false,
       "name": "text",
       "aria": {
-        "aria-pressed": "false"
+        "aria-expanded": "false"
       }
     },
     {
@@ -536,7 +536,7 @@
     },
     {
       "zone": "header",
-      "channel": "data-ig-audit-filter",
+      "channel": "data-ig-audit-panel",
       "control": "",
       "target": null,
       "value": null,
@@ -546,7 +546,7 @@
       "inert": false,
       "name": "text",
       "aria": {
-        "aria-pressed": "false"
+        "aria-expanded": "false"
       }
     },
     {
@@ -791,7 +791,7 @@
     },
     {
       "zone": "header",
-      "channel": "data-ig-audit-filter",
+      "channel": "data-ig-audit-panel",
       "control": "",
       "target": null,
       "value": null,
@@ -801,7 +801,7 @@
       "inert": true,
       "name": "text",
       "aria": {
-        "aria-pressed": "false"
+        "aria-expanded": "false"
       }
     },
     {
@@ -1111,7 +1111,7 @@
     },
     {
       "zone": "header",
-      "channel": "data-ig-audit-filter",
+      "channel": "data-ig-audit-panel",
       "control": "",
       "target": null,
       "value": null,
@@ -1121,7 +1121,7 @@
       "inert": false,
       "name": "text",
       "aria": {
-        "aria-pressed": "false"
+        "aria-expanded": "false"
       }
     },
     {
@@ -1301,7 +1301,7 @@
     },
     {
       "zone": "header",
-      "channel": "data-ig-audit-filter",
+      "channel": "data-ig-audit-panel",
       "control": "",
       "target": null,
       "value": null,
@@ -1311,7 +1311,7 @@
       "inert": false,
       "name": "text",
       "aria": {
-        "aria-pressed": "false"
+        "aria-expanded": "false"
       }
     },
     {
@@ -1501,7 +1501,7 @@
     },
     {
       "zone": "header",
-      "channel": "data-ig-audit-filter",
+      "channel": "data-ig-audit-panel",
       "control": "",
       "target": null,
       "value": null,
@@ -1511,7 +1511,7 @@
       "inert": false,
       "name": "text",
       "aria": {
-        "aria-pressed": "false"
+        "aria-expanded": "false"
       }
     },
     {
@@ -1668,7 +1668,7 @@
     },
     {
       "zone": "header",
-      "channel": "data-ig-audit-filter",
+      "channel": "data-ig-audit-panel",
       "control": "",
       "target": null,
       "value": null,
@@ -1678,7 +1678,7 @@
       "inert": false,
       "name": "text",
       "aria": {
-        "aria-pressed": "false"
+        "aria-expanded": "false"
       }
     },
     {
@@ -1819,7 +1819,7 @@
     },
     {
       "zone": "header",
-      "channel": "data-ig-audit-filter",
+      "channel": "data-ig-audit-panel",
       "control": "",
       "target": null,
       "value": null,
@@ -1829,7 +1829,7 @@
       "inert": false,
       "name": "text",
       "aria": {
-        "aria-pressed": "false"
+        "aria-expanded": "false"
       }
     },
     {
@@ -1968,6 +1968,21 @@
   "audit-findings": [
     {
       "zone": "canvas",
+      "channel": "data-ig-audit-filter",
+      "control": "",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-pressed": "false"
+      }
+    },
+    {
+      "zone": "canvas",
       "channel": "data-ig-command",
       "control": "canvas-strip",
       "target": null,
@@ -1982,8 +1997,60 @@
       }
     },
     {
+      "zone": "canvas",
+      "channel": "data-ig-command",
+      "control": "open-issue-url",
+      "target": "3",
+      "value": null,
+      "tag": "a",
+      "role": "link",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "aria-label",
+      "aria": {}
+    },
+    {
+      "zone": "canvas",
+      "channel": "data-ig-command",
+      "control": "reveal-issue",
+      "target": "1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "aria-label",
+      "aria": {}
+    },
+    {
+      "zone": "canvas",
+      "channel": "data-ig-command",
+      "control": "reveal-issue",
+      "target": "1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "aria-label",
+      "aria": {}
+    },
+    {
+      "zone": "canvas",
+      "channel": "data-ig-command",
+      "control": "reveal-issue",
+      "target": "3",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "aria-label",
+      "aria": {}
+    },
+    {
       "zone": "header",
-      "channel": "data-ig-audit-filter",
+      "channel": "data-ig-audit-panel",
       "control": "",
       "target": null,
       "value": null,
@@ -1993,7 +2060,7 @@
       "inert": false,
       "name": "text",
       "aria": {
-        "aria-pressed": "false"
+        "aria-expanded": "true"
       }
     },
     {
@@ -2077,19 +2144,6 @@
     {
       "zone": "inspector",
       "channel": "data-ig-command",
-      "control": "open-issue-url",
-      "target": "3",
-      "value": null,
-      "tag": "a",
-      "role": "link",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "aria-label",
-      "aria": {}
-    },
-    {
-      "zone": "inspector",
-      "channel": "data-ig-command",
       "control": "retry",
       "target": "m1",
       "value": null,
@@ -2098,32 +2152,6 @@
       "tabStop": "tab",
       "inert": false,
       "name": "text",
-      "aria": {}
-    },
-    {
-      "zone": "inspector",
-      "channel": "data-ig-command",
-      "control": "reveal-issue",
-      "target": "1",
-      "value": null,
-      "tag": "button",
-      "role": "button",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "aria-label",
-      "aria": {}
-    },
-    {
-      "zone": "inspector",
-      "channel": "data-ig-command",
-      "control": "reveal-issue",
-      "target": "3",
-      "value": null,
-      "tag": "button",
-      "role": "button",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "aria-label",
       "aria": {}
     },
     {

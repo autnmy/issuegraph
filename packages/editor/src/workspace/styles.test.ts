@@ -379,6 +379,12 @@ const RENDERS = [
   // of tests below exists to catch.
   renderWorkspace(DOCUMENT, {
     words: WORKSPACE_WORDS,
+    // OPEN, OR THE PANEL IS NOT DRAWN AT ALL. §17d's surface is a TRANSIENT
+    // overlay now — `RULINGS.md` §3 — so it renders only when the host says it
+    // is open, and a render that left this out would leave every rule in this
+    // sheet for it looking orphaned. The guard's INPUT has to change with the
+    // thing it guards.
+    auditOpen: true,
     audit: {
       document: {
         issues: ['i0001', 'i0002'].map((ref) => ({ ref, title: `issue ${ref}`, state: 'open' as const })),
@@ -405,6 +411,7 @@ const RENDERS = [
   // `.ig-audit-refused-away` looking orphaned in exactly the same way.
   renderWorkspace(DOCUMENT, {
     words: WORKSPACE_WORDS,
+    auditOpen: true,
     issueUrl: (ref) => `https://example.invalid/${ref}`,
     audit: {
       document: {
@@ -415,6 +422,27 @@ const RENDERS = [
       encodingRefused: [
         { ref: 'i0001', diagnostic: 'unparseable YAML at line 3', sourceLine: 'blocked-by: [231, 234' },
       ],
+    },
+  }),
+  // §17d'S REMEDIES, which need a finding that NAMES AN EDGE. The two-cycle
+  // above names none on purpose — a cycle is about a component — so without a
+  // stale blocker here every remedy rule reads as orphaned. A closed blocker is
+  // the cheapest finding that carries one.
+  renderWorkspace(DOCUMENT, {
+    words: WORKSPACE_WORDS,
+    auditOpen: true,
+    auditFiltered: true,
+    audit: {
+      document: {
+        issues: [
+          { ref: 'i0001', title: 'issue i0001', state: 'open' as const },
+          { ref: 'i0002', title: 'issue i0002', state: 'closed' as const },
+        ],
+        edges: [
+          { id: 'blocked-by|i0001|i0002', kind: 'blocked-by' as const, from: 'i0001', to: 'i0002' },
+        ],
+      },
+      graph: { cycles: [], duplicateCanonical: () => null },
     },
   }),
 ];
@@ -444,6 +472,29 @@ const COMPOSED: ReadonlySet<string> = new Set([
   // The footer group and its rows are layer 1's, drawn only for a document that
   // excludes something — so they are COMPOSED rather than this sheet's to style.
   ...classesIn(renderViewer(WITH_AN_EXCLUSION, { projection: 'linear' }).markup),
+  // THE NOTICE, WHICH IS LAYER 1's. `renderWorkspace` states a `filtered`
+  // condition whenever the audit filter is on — it has to, now that §17d's
+  // filter control lives inside a panel that closes — and the viewer draws it.
+  // Without a render that carries a condition, every `.ig-notice*` class the
+  // workspace causes reads as unstyled here, though the viewer's own sheet
+  // styles them.
+  ...classesIn(
+    renderViewer(
+      {
+        ...DOCUMENT,
+        host: {
+          ...DOCUMENT.host,
+          condition: {
+            kind: 'filtered',
+            headline: 'narrowed to flagged rows',
+            denominator: '8 issues are ranked',
+            action: { label: 'clear the filter' },
+          },
+        },
+      },
+      { projection: 'linear' },
+    ).markup,
+  ),
   // The ladder's chrome and the audit header ship their own stylesheets, which
   // `renderWorkspace` installs alongside this one.
   'ig-ladder',
@@ -877,6 +928,44 @@ describe('the workspace stylesheet carries structure, never a value', () => {
     }
   });
 
+  it('lets §17d’s overlay out of §17k’s strip, without letting it reach the rail', () => {
+    // THE ONE PLACE #209 AND #210 COLLIDE. §17d positions the audit overlay
+    // against the canvas ZONE — which is what keeps it off the rail without a
+    // magic offset — and §17k collapses that zone to four characters. Left
+    // alone the panel's own `min(…, 100% - gap)` resolves to the strip, `right`
+    // anchors the remainder leftwards across the rail, and the zone's
+    // `overflow: auto` clips whatever is left. Three ways to lose the same
+    // surface, none of which either change could have seen on its own.
+    const narrow = containerBlock(css, 'max-width: 1119px');
+
+    // IT IS NOT HIDDEN WITH THE GRAPH. The strip takes every sibling down with
+    // it, and the overlay is anchored to the HEADER COUNT, which is drawn at
+    // every width — so a control that is still there would open a panel that
+    // is not.
+    const hidden = narrow.match(/> :not\(([^{]*)\)\s*\{[^}]*display:\s*none/);
+    assert.ok(hidden !== null, 'the collapsed canvas no longer hides its contents');
+    assert.match(
+      narrow,
+      /:not\(\.ig-canvas-strip\):not\(\.ig-audit-overlay\)/,
+      '§17d’s overlay goes down with the collapsed canvas',
+    );
+
+    // AND THE ANCHOR FLIPS, which is the half that keeps §17k's rule. `right`
+    // on a four-character containing block pushes a 520-wide panel over the
+    // rail; `left` opens it the other way, into the room the inspector holds.
+    const overlay = narrow.match(
+      /\.ig-workspace\[data-canvas='strip'\] \.ig-zone\[data-zone='canvas'\] \.ig-audit-overlay\s*\{([^}]*)\}/,
+    )?.[1];
+    assert.ok(overlay !== undefined, 'nothing re-anchors the overlay over a collapsed canvas');
+    assert.match(overlay, /left:\s*0/);
+    assert.match(overlay, /right:\s*auto/);
+    assert.equal(
+      /width:\s*min\(/.test(overlay),
+      false,
+      'the width is still clamped to the strip it is escaping',
+    );
+  });
+
   it('undoes every overlay declaration when the inspector comes back inline', () => {
     // THE PRICE OF SINGLE-SIDED CONDITIONS, PINNED. The sheet's own guard
     // admits only `(min-width: Npx)` or `(max-width: Npx)`, so the middle
@@ -1071,36 +1160,55 @@ describe("the inspector zone stays one track, so the mount's chrome cannot be cl
     const found: string[] = [];
     for (const match of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
       const selectors = (match[1] ?? '').split(',').map((one) => one.trim());
-      if (selectors.includes(".ig-zone[data-zone='inspector'] .ig-audit-region")) found.push(match[2] ?? '');
+      if (selectors.includes(".ig-zone[data-zone='canvas'] .ig-audit-overlay")) found.push(match[2] ?? '');
     }
     return found;
   })();
 
-  it('declares the audit region\'s share exactly once, and scoped to this zone', () => {
-    // SCOPED IS THE POINT, not incidental. `renderAuditPanel`,
-    // `renderEncodingRefusedBlock` and `auditStylesheet` are all public exports,
-    // so a consumer can draw either surface outside `renderWorkspace` — and an
-    // unqualified cap would hide findings behind an inner scrollbar there, with
-    // half the container empty and no selection detail to reserve the space for.
-    // The share is true only inside this zone, so it is declared only there.
-    assert.deepEqual(shareRules.length, 1, `the sheet has ${shareRules.length} rules for the region's share`);
+  it('declares the overlay exactly once, and scoped to the canvas zone', () => {
+    // SCOPED IS THE POINT, not incidental, and the argument survived the move
+    // from the inspector intact. `renderAuditPanel`, `renderEncodingRefusedBlock`
+    // and `auditStylesheet` are all public exports, so a consumer can draw
+    // either surface outside `renderWorkspace` — and an absolutely positioned
+    // rule reaching one there would anchor it to the PAGE, which is a worse
+    // failure than the inner scrollbar the old unscoped cap would have caused.
+    assert.deepEqual(shareRules.length, 1, `the sheet has ${shareRules.length} rules for the overlay`);
     assert.equal(
-      /\n\.ig-audit-region\s*\{/.test(withoutComments(workspaceStylesheet)),
+      /\n\.ig-audit-overlay\s*\{/.test(withoutComments(workspaceStylesheet)),
       false,
-      'the share was declared unscoped, so it reaches a standalone region too',
+      'the overlay was declared unscoped, so it reaches a standalone panel too',
     );
   });
 
-  it('bounds the audit region at half the column', () => {
-    // A PERCENTAGE, because a fixed cap cannot know how tall the column it
-    // divides happens to be — that was the first of #175's four attempts. And
-    // the VALUE, because a percentage alone is not the ruling: `max-height: 95%`
-    // is proportional, passes a shape check, and restores the defect in full.
+  it('bounds the overlay by the canvas, which is what keeps it off the rail', () => {
+    // #177's "HALF THE COLUMN" IS GONE, AND NOT BECAUSE IT WAS RELAXED. That
+    // bound existed because the audit SHARED the inspector column with the
+    // selection; `RULINGS.md` §3 took it out of that column entirely — *"The
+    // panel is not a fourth zone"* — so there is no longer a sibling for it to
+    // take space from, and a 50% cap would now just be an arbitrary half of a
+    // zone it floats over.
+    //
+    // WHAT REPLACES IT IS THE CONSTRAINT §3 ACTUALLY STATES: the overlay never
+    // covers the rail. That is enforced structurally — the rail is a different
+    // grid area and this is positioned against the canvas — and the cap here is
+    // what stops it overflowing the zone it is anchored in.
     const share = shareRules[0];
-    assert.ok(share !== undefined, 'the audit region declares no share of the column');
+    assert.ok(share !== undefined, 'the overlay declares no bound at all');
     const bound = /max-height:\s*([^;]+);/.exec(share)?.[1]?.trim();
-    assert.ok(bound !== undefined, 'the share rule sets no cap');
-    assert.equal(bound, '50%', `#177 gives the audit half the column; this gives it ${bound}`);
+    assert.ok(bound !== undefined, 'the overlay rule sets no cap');
+    assert.match(bound, /100%/, `bounded by its zone, not by a guess; this says ${bound}`);
+    // POSITIONED AGAINST THE ZONE, which is the half that keeps it off the
+    // rail. Without this the cap above is measured against the page.
+    assert.match(share, /position:\s*absolute\s*;/);
+    const canvasZone = /\.ig-zone\[data-zone='canvas'\]\s*\{([^}]*)\}/.exec(
+      withoutComments(workspaceStylesheet),
+    )?.[1];
+    assert.ok(canvasZone !== undefined, 'the canvas zone rule is gone');
+    assert.match(
+      canvasZone,
+      /position:\s*relative\s*;/,
+      'the canvas is not a containing block, so the overlay anchors to the page and can cross the rail',
+    );
   });
 
   it('bounds the audit ONCE, however many surfaces it holds', () => {
@@ -1131,7 +1239,7 @@ describe("the inspector zone stays one track, so the mount's chrome cannot be cl
     }
   });
 
-  it('measures that share on the box it actually draws, and scrolls past it', () => {
+  it('measures the overlay on the box it actually draws, and scrolls past it', () => {
     // BORDER-BOX IS NOT INHERITED AND IS SILENT WHEN ABSENT. The universal reset
     // in this codebase is scoped to `.ig-viewer` descendants and this panel is a
     // sibling of the rail's viewer, so without the declaration the half is
@@ -1147,7 +1255,7 @@ describe("the inspector zone stays one track, so the mount's chrome cannot be cl
     assert.match(share, /overflow(?:-y)?:\s*auto\b/);
   });
 
-  it('lets the region scroll rather than squeezing the surfaces inside it', () => {
+  it('lets the overlay scroll rather than squeezing the surfaces inside it', () => {
     // MEASURED IN A BROWSER, NOT REASONED ABOUT. Both audit leaves declare
     // `min-height: 0` — correct for each of them, because each was once the
     // scroll container itself — and in a bounded flex column that is precisely
@@ -1157,22 +1265,26 @@ describe("the inspector zone stays one track, so the mount's chrome cannot be cl
     // it. Nothing threw, no test failed, and the markup was correct: the two
     // surfaces were simply drawn on top of each other.
     //
-    // So the region's members do not shrink, and the overflow the region already
+    // So the members do not shrink, and the overflow the overlay already
     // declares is what absorbs the difference.
+    //
+    // THE MOVE TO THE CANVAS DID NOT RETIRE THIS. The overlay is still a
+    // bounded flex column holding the same two leaves, so the squeeze is still
+    // available to it — only the box doing the bounding changed.
     const css = withoutComments(workspaceStylesheet);
     const members: string[] = [];
     for (const match of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
       const selectors = (match[1] ?? '').split(',').map((one) => one.trim());
-      if (selectors.includes(".ig-zone[data-zone='inspector'] .ig-audit-region > *")) {
+      if (selectors.includes(".ig-zone[data-zone='canvas'] .ig-audit-overlay > *")) {
         members.push(match[2] ?? '');
       }
     }
-    assert.equal(members.length, 1, `the sheet has ${members.length} rules for the region's members`);
+    assert.equal(members.length, 1, `the sheet has ${members.length} rules for the overlay's members`);
     // THE VALUE, not the property: `flex-shrink: 1` is the default and restores
     // the defect in full while passing any check that only asks whether the
     // declaration is present.
     const shrink = /flex-shrink:\s*([^;]+);/.exec(members[0] ?? '')?.[1]?.trim();
-    assert.equal(shrink, '0', `the region's members shrink again (flex-shrink: ${String(shrink)})`);
+    assert.equal(shrink, '0', `the overlay's members shrink again (flex-shrink: ${String(shrink)})`);
   });
 
   it('gives the selection detail no share to be squeezed out of', () => {

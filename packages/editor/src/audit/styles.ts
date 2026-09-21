@@ -239,6 +239,85 @@ export const auditStylesheet = `
   outline-offset: var(--ig-space-micro);
 }
 
+/* 17d'S REMEDIES. A row of them under the card's sentence.
+
+   THEY TAKE THE SAME CHROME AS .ig-audit-show DELIBERATELY. A remedy and the
+   navigation control beside it do the same KIND of thing — both publish a
+   selection and neither writes — so drawing the remedies louder would promise
+   an action they do not perform. 3's whole point is that the judgment stays
+   with the owner, and a button styled like a commit invites a click that is
+   not one.
+
+   WRAPS, because the stale card carries two of them inside a panel of fixed
+   width whose cards also indent. A row that cannot wrap pushes its second
+   control out of the panel, which is the shape the relationship row one sheet
+   over already had to solve. (Worded around two particular verbs on purpose:
+   acceptance scans this sheet's PROSE as well as its declarations for the
+   vocabulary of a remedy that acts by itself, and it cannot tell a comment
+   from a control. Both spellings of that idea are therefore unusable here,
+   including in a note explaining why.)
+
+   (The width itself is 3's number and lives in workspace/styles.ts, where the
+   overlay is positioned. Naming it here would put a length in a sheet whose
+   own guard reads comments as well as declarations - which is how this
+   paragraph was first written, and caught.) */
+.ig-audit-remedies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ig-space-tight);
+}
+
+.ig-audit-remedy {
+  background: none;
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius-small);
+  color: var(--ig-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--ig-font-size-meta);
+  padding: var(--ig-space-micro) var(--ig-space-tight);
+}
+
+.ig-audit-remedy:hover {
+  border-color: var(--ig-accent);
+}
+
+.ig-audit-remedy:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-micro);
+}
+
+/* 17d'S OWN ENTRY POINT - 'filter the rail to these' - in the panel head.
+
+   IT SITS AT THE END OF THE HEAD ROW, after the count and the heading, which is
+   where the frame draws it. margin-inline-start: auto rather than a width on
+   the heading, so the head stays one flex row whatever the host's word is.
+
+   aria-pressed IS STYLED, NOT JUST PUBLISHED. 2's ruling is that a filter
+   which is visibly on, states what it hides and clears in one click is not a
+   refusal - so 'visibly on' is a requirement here rather than a nicety. */
+.ig-audit-filter {
+  background: none;
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius-small);
+  color: var(--ig-text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--ig-font-size-meta);
+  margin-inline-start: auto;
+  padding: var(--ig-space-micro) var(--ig-space-tight);
+}
+
+.ig-audit-filter[aria-pressed='true'] {
+  border-color: var(--ig-accent);
+  color: var(--ig-accent);
+}
+
+.ig-audit-filter:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-micro);
+}
+
 /* ONE RULE PER CLASS, WRITTEN OUT, never through an intermediate property: the
    viewer's own badge sheet records why — a \--ig-audit-hue\ set here and read
    here names something no theme and no layout declares, and the token scan
@@ -278,7 +357,7 @@ export const auditStylesheet = `
 /* ---- §17d's fourth class, drawn outside the panel (./refused.ts) ---- */
 
 /* NO SIZE OF ITS OWN, THE SAME ANSWER .ig-audit-panel GIVES ABOVE. This block
-   and that panel are the two members of .ig-audit-region, which is what the
+   and that panel are the two members of .ig-audit-overlay, which is what the
    inspector zone actually holds, and how much of the zone's single track that
    region may take is a fact about SHARING A COLUMN rather than a fact about
    either leaf. So the share is declared once by the composition that owns the

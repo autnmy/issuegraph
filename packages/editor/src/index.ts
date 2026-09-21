@@ -146,6 +146,7 @@ export type { AuditHeaderOptions, AuditOverlay, AuditRow } from './audit/surface
 export {
   AUDIT_COUNT_ATTRIBUTE,
   AUDIT_FILTER_ATTRIBUTE,
+  AUDIT_PANEL_ATTRIBUTE,
   AUDIT_SEVERITY_ATTRIBUTE,
   auditFilterKeeps,
   auditOverlay,

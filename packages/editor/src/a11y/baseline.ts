@@ -175,6 +175,10 @@ export const CONTROL_ATTRIBUTES: readonly string[] = Object.freeze([
   'data-ig-command',
   'data-ig-answer',
   'data-ig-audit-filter',
+  // §17d's header count, which opens the overlay. A SEPARATE CHANNEL from the
+  // filter beside it because it is a separate control now — `RULINGS.md` §3
+  // split one button that carried two meanings into two that carry one each.
+  'data-ig-audit-panel',
 ]);
 
 /**
