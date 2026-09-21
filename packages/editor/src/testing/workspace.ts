@@ -43,6 +43,12 @@ export const WORKSPACE_WORDS: WorkspaceWords = {
   inspector: 'the detail panel',
   nothingSelected: 'pick a row to inspect it',
   clearSelection: 'clear the selection',
+  // §17k's STRIP CONTROL, AND THE TWO LABELS SHARE NO SUBSTRING — this
+  // constant's standing rule, and it has a second edge here: the control
+  // carries `aria-expanded`, so a test that found the wrong label would be
+  // reading a button that offers to open what is already open.
+  showCanvas: 'unfold the graph',
+  hideCanvas: 'put the graph away',
   relationships: 'relationships',
   whyRank: 'why rank',
   whyHeld: 'why held',

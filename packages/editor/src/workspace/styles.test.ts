@@ -49,6 +49,53 @@ function calcExpressions(css: string): string[] {
   return found;
 }
 
+/**
+ * One `@container` block's body, found by its condition text.
+ *
+ * MATCHED ON BALANCED BRACES rather than `[^}]*`, because a container block
+ * holds whole rules and the first `}` inside it ends the first of them. A
+ * depth-unaware pattern here would silently read one rule and report the rest
+ * as absent, which is the shape of guard that passes by looking away.
+ */
+function containerBlock(css: string, condition: string): string {
+  const at = css.indexOf(`@container ig-workspace (${condition})`);
+  assert.notEqual(at, -1, `no container block for (${condition})`);
+  const open = css.indexOf('{', at);
+  let depth = 0;
+  for (let cursor = open; cursor < css.length; cursor += 1) {
+    if (css[cursor] === '{') depth += 1;
+    else if (css[cursor] === '}') {
+      depth -= 1;
+      if (depth === 0) return css.slice(open + 1, cursor);
+    }
+  }
+  throw new Error(`unterminated container block for (${condition})`);
+}
+
+/**
+ * §17k's three layouts, widest first, as their column tracks.
+ *
+ * READ OFF THE THREE CONDITIONS BY NAME, so a band that stops existing fails
+ * here rather than quietly folding into the one beside it. The BASE
+ * `.ig-workspace` rule is deliberately not one of them: it is the no-container
+ * fallback a surface rendered without a mount gets, and it is not a §17k
+ * layout.
+ */
+function layoutBands(css: string): { condition: string; tracks: string[] }[] {
+  return ['min-width: 1360px', 'max-width: 1359px', 'max-width: 1119px'].map((condition) => {
+    const block = containerBlock(css, condition);
+    const template = block.match(/(?:^|\n)\s*\.ig-workspace\s*\{[^}]*grid-template-columns:([^;]*);/);
+    assert.ok(template !== null, `(${condition}) sets no column template`);
+    return {
+      condition,
+      tracks: (template[1] ?? '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line !== ''),
+    };
+  });
+}
+
 /** The stylesheet with its comments removed — a comment is not a declaration. */
 function withoutComments(css: string): string {
   return css.replace(/\/\*[\s\S]*?\*\//g, '');
@@ -746,6 +793,110 @@ describe('the workspace stylesheet carries structure, never a value', () => {
     for (const zone of ZONES) {
       assert.match(css, new RegExp(`\\[data-zone='${zone}'\\]`), zone);
     }
+  });
+
+  /**
+   * §17k's ONE RULE, ASSERTED ON THE TRACKS THEMSELVES.
+   *
+   * *"The rail never yields. The canvas yields first. The inspector yields in
+   * between."* Every other claim about these three layouts can be satisfied by
+   * a layout that merely CHANGED; this one cannot, and it is the only reading
+   * that would have caught the container query that could never fire. That
+   * defect shipped once — `container-type` on the element the rule matched —
+   * built clean, looked right, and was found only by comparing the tracks
+   * either side of a breakpoint. So the comparison is the test.
+   */
+  it('never lets the rail yield, at any of §17k’s three widths', () => {
+    const bands = layoutBands(css);
+    assert.equal(bands.length, 3, 'the sheet no longer declares three §17k layouts');
+    const rails = bands.map((band) => band.tracks[0]);
+    assert.deepEqual(
+      [...new Set(rails)],
+      [rails[0]],
+      `the rail is not one measure across the three layouts: ${rails.join(' | ')}`,
+    );
+    // AND THE OTHER TWO DO MOVE, which is the positive control on the line
+    // above: three identical templates would satisfy it and would mean the
+    // narrow layouts do not exist.
+    assert.equal(
+      new Set(bands.map((band) => band.tracks.join(' '))).size,
+      3,
+      'two of the three layouts are the same template',
+    );
+    // THE ORDER OF YIELDING, read off the tracks. The middle layout drops the
+    // inspector's track entirely — it is lifted into the canvas's area — and
+    // the narrow one brings it back with the CANVAS reduced to a handle.
+    const [wide, middle, narrow] = bands;
+    assert.equal(middle?.tracks.length, 2, 'the middle layout still draws three tracks');
+    assert.equal(narrow?.tracks.length, 3, 'the narrow layout lost the inspector’s track');
+    assert.equal(wide?.tracks.length, 3);
+    // The strip is the smallest track in the sheet, and smaller than the
+    // measure the wide layout gives the inspector.
+    assert.match(narrow?.tracks[1] ?? '', /\*\s*4\b/, 'the collapsed canvas is not a strip');
+  });
+
+  /**
+   * §17k'S LOWER ANCHOR FOR LAYER 1'S DENSITY CROSSOVER, WHICH IS WHAT §17k
+   * SETTLES ABOUT IT AND ALL IT SETTLES.
+   *
+   * `viewer/styles.ts` steps the rail row down to §17j's 53px at
+   * `@container ig-rail (max-width: 430px)`, and says in as many words that 430
+   * is THIS PACKAGE'S CHOICE: §17j gives two anchors — the workspace rail at
+   * 390 and §18's settings rail at 330 — and §16a's wider panel, which keeps
+   * provenance inline, with no figure. The gap in the middle is unbacked.
+   *
+   * §17k DOES NOT SUPPLY THE MISSING FIGURE. What it supplies is the certainty
+   * that the lower anchor is EXACT: *"the rail never yields"*, so the
+   * workspace's rail track is one measure at every width the package draws, and
+   * the crossover is not something a reader can reach by resizing the
+   * workspace. BEFORE this it was reachable in the other direction — the rail
+   * fell to 312 below 1360 — so the threshold had to clear two numbers, and
+   * only one of them was §17j's.
+   *
+   * SO THE NUMBER STAYS AND THE RELATIONSHIP BECOMES CHECKED. This is the half
+   * of the reconciliation that is available without a ruling on §16a's panel:
+   * the workspace rail must stay on the dense side of layer 1's threshold, or
+   * the one surface §17j draws at 390 would quietly render at the wide density
+   * §16a's panel is for.
+   */
+  it('keeps the workspace rail on the dense side of layer 1’s crossover', () => {
+    const crossover = Number(
+      viewerStylesheet.match(/@container ig-rail \(max-width:\s*(\d+)px\)/)?.[1] ?? Number.NaN,
+    );
+    assert.ok(Number.isFinite(crossover), 'layer 1 no longer steps the rail down at a threshold');
+
+    const charWidth = defaultTheme.metrics['--ig-char-width'];
+    assert.equal(typeof charWidth, 'number');
+    for (const band of layoutBands(css)) {
+      const characters = Number(band.tracks[0]?.match(/\*\s*(\d+(?:\.\d+)?)\s*\)/)?.[1] ?? Number.NaN);
+      assert.ok(Number.isFinite(characters), `(${band.condition}) sizes the rail in something else`);
+      assert.ok(
+        characters * charWidth <= crossover,
+        `(${band.condition}) draws the rail at ${String(characters * charWidth)}, past layer 1's ${String(crossover)} crossover`,
+      );
+    }
+  });
+
+  it('undoes every overlay declaration when the inspector comes back inline', () => {
+    // THE PRICE OF SINGLE-SIDED CONDITIONS, PINNED. The sheet's own guard
+    // admits only `(min-width: Npx)` or `(max-width: Npx)`, so the middle
+    // layout cannot be scoped to a band: its rules also match below 1120 and
+    // the narrow block has to answer each one. A declaration added to the
+    // overlay with no answer here would leak into the inline inspector, where
+    // it would read as a panel that is somehow raised and 42 characters wide
+    // inside its own column — and nothing else in this file would notice.
+    const properties = (block: string): string[] => {
+      const rule = block.match(/\.ig-workspace \.ig-zone\[data-zone='inspector'\]\s*\{([^}]*)\}/);
+      return [...(rule?.[1] ?? '').matchAll(/([a-z-]+)\s*:/g)].map((match) => match[1] ?? '');
+    };
+    const middle = properties(containerBlock(css, 'max-width: 1359px'));
+    const narrow = properties(containerBlock(css, 'max-width: 1119px'));
+    assert.ok(middle.length > 0, 'the middle layout no longer lifts the inspector');
+    assert.deepEqual(
+      middle.filter((name) => !narrow.includes(name)),
+      [],
+      'the narrow layout leaves an overlay declaration standing',
+    );
   });
 
   it('draws the audit bar from the mark, and only inside the rail', () => {

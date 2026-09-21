@@ -194,6 +194,12 @@ export const WORKSPACE_WORDS: MountWords = {
   inspector: 'Inspector',
   nothingSelected: 'Pick a row, a node or an edge to inspect it.',
   clearSelection: 'clear the selection',
+  // §17k's strip. Below 1120 the canvas collapses to a handle and this is the
+  // handle's label, so it names the ZONE rather than a direction: the button is
+  // a few characters wide, turned on its side, with nothing beside it to say
+  // what it would open.
+  showCanvas: 'show the canvas',
+  hideCanvas: 'hide the canvas',
   relationships: 'Relationships',
   // §17a's inspector explains the position before it lists the relationships.
   // The frame draws the heading in caps; the caps are the stylesheet's, so the

@@ -1426,4 +1426,203 @@ export const workspaceStylesheet = `
 .ig-workspace[data-order='held'] .ig-zone[data-zone='rail'] .ig-viewer {
   filter: grayscale(1);
 }
+
+/* ── 17k's OTHER TWO LAYOUTS ───────────────────────────────────────────────
+
+   ONE RULE GENERATES ALL THREE, and it is the sentence 17k states outright:
+   THE RAIL NEVER YIELDS. THE CANVAS YIELDS FIRST. THE INSPECTOR YIELDS IN
+   BETWEEN. Because the canvas is already the zone designed to refuse (17f) and
+   the inspector is the edit path that survives without it (17b).
+
+       at or above 1360   390 / 1fr / 330, three zones, as 17a
+       1120 - 1359        rail unchanged; the inspector lifts to a 330 overlay
+                          over the canvas, opened by selection, Escape to dismiss
+       below 1120         rail unchanged; the canvas collapses to a strip that
+                          opens full-width on demand; the inspector returns inline
+
+   Below roughly 860 is section 9 territory and out of scope for the package.
+
+   THE RAIL IS THE SAME 50 CHARACTERS IN ALL THREE. That is the whole rule, and
+   it is the one thing to check when touching this block: measured on the demo
+   at 1440, 1280 and 1000 the rail track reads 390 at every one of them. The
+   layout before this shipped read 390 / 698 / 328 at 1440 and 312 / 632 / 312
+   at 1280 — the rail giving up 78 of its 390 to keep a three-column template
+   alive, which is the rule upside down.
+
+   WHY THESE ARE max-width QUERIES WHEN THE ONE ABOVE IS A min-width. Two
+   constraints meet here. The sheet's own guard admits a container condition
+   only in the shape (min-width: Npx) or (max-width: Npx) — one side, no 'and' —
+   so a band is made from cascade order rather than from a bounded condition.
+   And the BASE has to stay the three-zone template, because a surface rendered
+   WITHOUT a mount has no container at all and no query fires: base-is-narrow
+   would hand a static page a collapsed canvas with a control nothing is
+   listening to. So the wide layout is the floor and the narrow ones are carved
+   off it, widest first. 1359 is 1360's complement, not a second number.
+
+   THESE SIT AT THE FOOT OF THE SHEET, WHICH IS LOAD-BEARING TWICE. The narrow
+   block must come after the middle one to win where both match; and the zones'
+   own rules have to come first, or a regex looking for the rule that defines
+   .ig-zone[data-zone='inspector'] finds an override instead. That hazard is
+   recorded further up this sheet and has already bitten once in layer 1.
+
+   NEITHER LAYOUT IS THE STYLESHEET'S ALONE. The lifted inspector opens on
+   selection and dismisses on Escape, and the strip opens on a press — so
+   host.ts holds two fields and render.ts publishes them on the surface
+   root as data-canvas and data-inspector. What is NOT in the host is the
+   width: nothing in the package asks how wide it is, per 17k's own note that
+   a package which reads the window cannot be dropped into someone else's
+   settings page. Each attribute is read only by the block that has a use for
+   it, and means nothing at the other widths. */
+
+/* 17k's STRIP CONTROL, RENDERED ALWAYS AND DRAWN ONLY WHEN NARROW.
+   render.ts cannot know its own width, so the button is always in the
+   markup and this is what keeps it off the other two layouts — display:none
+   rather than visibility, so it is not a tab stop where it has nothing to do.
+   The two narrow states size it themselves, below. */
+.ig-workspace .ig-canvas-strip {
+  display: none;
+  box-sizing: border-box;
+  border: var(--ig-stroke) solid var(--ig-line);
+  background: var(--ig-surface);
+  color: var(--ig-text-body);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+  padding: var(--ig-space-tight);
+  cursor: pointer;
+}
+
+.ig-workspace .ig-canvas-strip:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-tight);
+}
+
+/* THE MIDDLE LAYOUT: the inspector lifts, and the rail does not move.
+
+   IT IS PLACED IN THE CANVAS'S GRID AREA, NOT POSITIONED OVER IT. An absolute
+   overlay would need an offset chosen so it clears the rail, and an offset is
+   a number that is right until someone changes a track. A grid area is not:
+   the rail is a DIFFERENT area, so an item placed in the canvas's cannot reach
+   it however wide it gets. Section 17d's audit overlay is positioned on the
+   same argument one surface over, and this is that argument without the
+   position.
+
+   42 CHARACTERS, THE SAME MEASURE THE WIDE LAYOUT GIVES THE INSPECTOR — 17k
+   lifts the panel, it does not resize it. At the shipped --ig-char-width that
+   is 327.6 against 17k's 330, the 2.4 the wide block already accounts for.
+
+   OPAQUE AND RAISED, because it now has the canvas underneath it rather than a
+   border between them. --ig-elevation-overlay is the token for exactly this
+   and --ig-surface is the raised ground; the zone keeps its own border-left
+   from the base rule, which reads as the panel's leading edge. */
+@container ig-workspace (max-width: 1359px) {
+  .ig-workspace {
+    grid-template-areas:
+      'header header'
+      'rail canvas';
+    grid-template-columns:
+      calc(var(--ig-char-width) * 50)
+      1fr;
+  }
+
+  .ig-workspace .ig-zone[data-zone='inspector'] {
+    grid-area: canvas;
+    justify-self: end;
+    inline-size: calc(var(--ig-char-width) * 42);
+    z-index: 1;
+    background: var(--ig-surface);
+    box-shadow: var(--ig-elevation-overlay);
+  }
+
+  /* OPENED BY SELECTION, DISMISSED ON ESCAPE — 17k's own words, and both
+     halves arrive as this one attribute. render.ts writes 'lifted' only when
+     something is SELECTED and the reader has not dismissed it since, so an
+     empty "nothing selected" card never floats over the canvas. */
+  .ig-workspace[data-inspector='dismissed'] .ig-zone[data-zone='inspector'] {
+    display: none;
+  }
+}
+
+/* THE NARROW LAYOUT: the canvas collapses, the inspector comes back inline,
+   and the rail still does not move.
+
+   THE INSPECTOR IS RESTORED DECLARATION BY DECLARATION rather than by scoping
+   the block above to a band, because the sheet's guard has no band to scope to.
+   Each line here answers one line there, on the same selector so source order
+   settles it — that is the price of single-sided conditions, paid in full and
+   in one place.
+
+   THE STRIP IS 4 CHARACTERS. The canvas is the zone designed to refuse (17f),
+   so what it yields is everything except the handle that brings it back; the
+   inspector takes 1fr, which at 1000 is 550 and at 860 is 418 — both above the
+   330 the wide layout gives it, so the zone that yields in between is not
+   yielding here at all. That is the order the rule names. */
+@container ig-workspace (max-width: 1119px) {
+  .ig-workspace {
+    grid-template-areas:
+      'header header header'
+      'rail canvas inspector';
+    grid-template-columns:
+      calc(var(--ig-char-width) * 50)
+      calc(var(--ig-char-width) * 4)
+      1fr;
+  }
+
+  .ig-workspace .ig-zone[data-zone='inspector'] {
+    grid-area: inspector;
+    justify-self: stretch;
+    inline-size: auto;
+    z-index: auto;
+    background: none;
+    box-shadow: none;
+  }
+
+  /* THE DISMISSAL MEANS NOTHING HERE, and saying so is the undo of the middle
+     block's only conditional rule. The inspector is a zone again, so there is
+     no overlay to have dismissed. */
+  .ig-workspace[data-inspector='dismissed'] .ig-zone[data-zone='inspector'] {
+    display: block;
+  }
+
+  .ig-workspace[data-canvas='strip'] .ig-canvas-strip {
+    display: block;
+    writing-mode: vertical-rl;
+    inline-size: 100%;
+    block-size: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  /* COLLAPSED MEANS GONE, NOT CLIPPED. The zone is overflow:auto, so leaving
+     the graph in a 31-wide track would keep every node in the tab order behind
+     a scrollbar the reader cannot use — and a keyboard reader would walk a
+     canvas nobody can see. display:none is what takes them out of the tree,
+     and it is reversible in one attribute. */
+  .ig-workspace[data-canvas='strip'] .ig-zone[data-zone='canvas'] > :not(.ig-canvas-strip) {
+    display: none;
+  }
+
+  /* OPENED FULL-WIDTH ON DEMAND — 17k's words — and full-width is measured
+     from the rail, which still does not yield. The inspector stands down while
+     it is open, which is the one place this layout borrows from the middle
+     one: the canvas is transient here in the way the panel is there. */
+  .ig-workspace[data-canvas='open'] {
+    grid-template-areas:
+      'header header'
+      'rail canvas';
+    grid-template-columns:
+      calc(var(--ig-char-width) * 50)
+      1fr;
+  }
+
+  .ig-workspace[data-canvas='open'] .ig-zone[data-zone='inspector'] {
+    display: none;
+  }
+
+  /* The same control closes it, so it stops being a strip and reads as a
+     button above the canvas it opened. */
+  .ig-workspace[data-canvas='open'] .ig-canvas-strip {
+    display: block;
+    justify-self: start;
+  }
+}
 `;

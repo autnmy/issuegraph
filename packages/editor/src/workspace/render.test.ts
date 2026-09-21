@@ -81,9 +81,25 @@ describe('the three zones render at their fixed positions', () => {
     // the stylesheet's hook for a held order — which must not grey a rail this
     // workspace cannot also label. `reevaluate.test.ts` pins both arms.
     //
-    // Asserted as an exact opening tag rather than a prefix, so an attribute
-    // added here later has to be considered rather than absorbed.
-    assert.match(result.markup, /^<div class="ig-workspace">/);
+    // THIS USED TO ASSERT THE EXACT OPENING TAG `<div class="ig-workspace">`,
+    // with nothing after the class — deliberately, "so an attribute added here
+    // later has to be considered rather than absorbed". It was, and this is the
+    // consideration. §17k gives the surface two more layouts, and both of them
+    // are chosen by a container query reading state the host holds: whether the
+    // collapsed canvas has been opened, and whether the lifted inspector has
+    // been dismissed. Neither can be a class, because both flip on a redraw and
+    // the sheet needs to select on the pair; neither can be derived inside the
+    // sheet, because CSS cannot read a reducer.
+    //
+    // SO THE SHAPE OF THE PIN CHANGES RATHER THAN THE PIN GOING AWAY. The
+    // exhaustive list below is still exact — a third attribute added later
+    // still fails here — and the two `data-order` arms are still asserted, one
+    // per branch. What is no longer claimed is that the root carries NOTHING.
+    assert.match(
+      result.markup,
+      /^<div class="ig-workspace" data-canvas="strip" data-inspector="dismissed">/,
+    );
+    assert.equal(/^<div class="ig-workspace"[^>]*data-order=/.test(result.markup), false);
     assert.match(result.markup, /<\/div>$/);
   });
 

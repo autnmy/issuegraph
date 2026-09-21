@@ -435,7 +435,27 @@ export const viewerStylesheet = `
    apply "by default" — and §16a's panel, which keeps provenance inline, is
    wider than either. 430 is chosen to sit above the rail and below that panel;
    it is THIS PACKAGE'S CHOICE, not the design's, and it is the one number in
-   this block a frame does not back. Flagged rather than presented as ruled. */
+   this block a frame does not back. Flagged rather than presented as ruled.
+
+   '17k' WAS ASKED TO SETTLE IT AND SETTLES HALF OF IT, which is worth writing
+   down because the other half is still open and the temptation is to read the
+   flag as cleared. '17k' fixes the three workspace layouts under one rule —
+   "the rail never yields" — so the LOWER anchor is now exact rather than a
+   range: the workspace draws its rail at 390 at every width it supports, and
+   no amount of resizing moves it across this threshold. Before that it fell to
+   312 below 1360, so 430 had to clear two numbers and only one of them was
+   '17j's. The editor's own sheet now pins that relationship rather than
+   restating it — see its test "keeps the workspace rail on the dense side of
+   layer 1's crossover", which reads this condition and the workspace's rail
+   track and asserts the one is inside the other.
+
+   WHAT IS STILL UNBACKED IS THE UPPER END. '16a' draws a wider panel and gives
+   it no figure, in the rulings or anywhere in this repository, so the distance
+   between 390 and this threshold remains a judgement rather than a measure.
+   Naming a second unbacked number in its place would be churn, so the number
+   stands and the gap is stated: this needs a width for '16a's panel, and until
+   there is one, 430 is the same choice it always was with one of its two
+   reasons now checked. */
 @container ig-rail (max-width: 430px) {
   .ig-slot {
     align-items: center;

@@ -29,6 +29,7 @@ import {
   railSlackFor,
   railWindowTarget,
   editCarrier,
+  narrowOverlayOpen,
   reconcileHost,
   reduceHost,
   targetMatches,
@@ -970,5 +971,157 @@ describe('§16f — the host owns which rows are open', () => {
 
   it('collapsing a row that was never open is not an error', () => {
     assert.deepEqual(drive([{ kind: 'control', name: 'collapse', target: '9' }]).state.expanded, []);
+  });
+});
+
+/**
+ * §17k's two narrow layouts, driven with no DOM and no width.
+ *
+ * THE WIDTH IS NOWHERE IN HERE, AND THAT IS THE POINT. §17k's implementation
+ * note forbids the package reading a window, so the three layouts are the
+ * stylesheet's and this reducer holds only the two reader decisions they need.
+ * Every assertion below is about state a container query then chooses to draw
+ * or to ignore.
+ */
+describe("§17k's narrow layouts are two reader decisions, never a measurement", () => {
+  it('opens the lifted inspector on a selection and closes it on Escape', () => {
+    // *"Opened by selection, Escape to dismiss."* The openness is not stored —
+    // it is the selection plus the absence of a dismissal — so this drives the
+    // pair and reads both.
+    const selected = drive([{ kind: 'point', key: '1' }]);
+    assert.equal(selected.state.selection.kind, 'issue');
+    assert.equal(selected.state.inspectorDismissed, false, 'a selection did not lift the panel');
+
+    const dismissed = drive([{ kind: 'control', name: 'narrow-dismiss' }], selected.state);
+    assert.equal(dismissed.state.inspectorDismissed, true);
+    // AND THE SELECTION SURVIVES IT. Escape dismisses the PANEL; a dismissal
+    // that also cleared the selection would drop the canvas halo and the rail's
+    // current row with it, which is three surfaces answering one key.
+    assert.deepEqual(dismissed.state.selection, selected.state.selection);
+  });
+
+  it('re-opens on the next selection, without the arms knowing about it', () => {
+    // THE RULE LIVES IN `reduceHost`, NOT IN THE ARMS. Eight commands can move
+    // the selection; clearing the dismissal in each is eight chances to forget.
+    // Two of them are driven here — a pointer and an audit finding's
+    // `reveal-issue` — because they reach the selection by different routes.
+    const start = drive([
+      { kind: 'point', key: '1' },
+      { kind: 'control', name: 'narrow-dismiss' },
+    ]);
+    assert.equal(start.state.inspectorDismissed, true);
+
+    const pointed = drive([{ kind: 'point', key: '2' }], start.state);
+    assert.equal(pointed.state.inspectorDismissed, false, 'a pointer did not re-lift the panel');
+
+    const revealed = drive(
+      [{ kind: 'control', name: 'reveal-issue', target: '3' }],
+      start.state,
+    );
+    assert.equal(revealed.state.inspectorDismissed, false, 'a reveal did not re-lift the panel');
+  });
+
+  it('leaves the panel dismissed while the selection stands still', () => {
+    // THE POSITIVE CONTROL ON THE RULE ABOVE. Comparing selections rather than
+    // listing commands means any command that does not move one must leave the
+    // dismissal alone — otherwise scrolling the rail, or toggling the audit
+    // filter, would re-open a panel the reader just shut.
+    const dismissed = drive([
+      { kind: 'point', key: '1' },
+      { kind: 'control', name: 'narrow-dismiss' },
+    ]).state;
+    for (const command of [
+      { kind: 'scroll', start: 4 },
+      { kind: 'control', name: 'audit-filter' },
+      { kind: 'control', name: 'expand', target: '2' },
+    ] satisfies HostCommand[]) {
+      assert.equal(
+        drive([command], dismissed).state.inspectorDismissed,
+        true,
+        `${command.kind} re-opened a dismissed panel`,
+      );
+    }
+  });
+
+  it('clearing the selection closes the panel without a dismissal', () => {
+    // NOTHING SELECTED IS NOTHING LIFTED, whatever the reader last pressed —
+    // which is the reason the DISMISSAL is stored rather than the openness. A
+    // stored `open` flag would survive `clear` and float an empty card over the
+    // canvas.
+    const cleared = drive([
+      { kind: 'point', key: '1' },
+      { kind: 'control', name: 'clear' },
+    ]).state;
+    assert.equal(cleared.selection.kind, 'none');
+    assert.equal(narrowOverlayOpen(cleared), false, 'an empty selection still reads as lifted');
+    // AND ESCAPE IS HANDED BACK THERE, which is the observable half: with
+    // nothing lifted there is nothing for the key to close, so the shell must
+    // not cancel the press on this surface's behalf.
+    assert.equal(
+      reduceHost(cleared, { kind: 'control', name: 'narrow-dismiss' }, document).claimed,
+      false,
+    );
+  });
+
+  it('hands Escape back when there is nothing to dismiss', () => {
+    // {@link HostResult.claimed} IS THE WHOLE POINT OF THIS ONE. The shell
+    // cancels a press this reducer claims, and cancelling one it never owned
+    // takes Escape away from whatever the host had listening. `mountWorkspace`
+    // asks the same predicate before dispatching, so the two cannot drift.
+    const idle = reduceHost(INITIAL_HOST_STATE, { kind: 'control', name: 'narrow-dismiss' }, document);
+    assert.equal(idle.claimed, false, 'an Escape with nothing open was swallowed');
+    assert.equal(idle.state, INITIAL_HOST_STATE, 'and it changed something anyway');
+
+    const open = reduceHost(
+      { ...INITIAL_HOST_STATE, canvasOpen: true },
+      { kind: 'control', name: 'narrow-dismiss' },
+      document,
+    );
+    assert.equal(open.claimed, true);
+    assert.equal(open.state.canvasOpen, false);
+  });
+
+  it('closes both of §17k’s transients on one press, because it cannot ask which is drawn', () => {
+    // EXACTLY ONE OF THEM IS ON SCREEN AT ANY WIDTH — the lifted inspector only
+    // between 1120 and 1359, the opened canvas only below 1120 — and the
+    // stylesheet is the party that knows which. So the press closes both and
+    // the sheet draws the one that was there. The alternative is measuring a
+    // box in a keydown handler, which is the window-reading §17k rules out.
+    const both = drive([
+      { kind: 'point', key: '1' },
+      { kind: 'control', name: 'canvas-strip' },
+    ]).state;
+    assert.equal(both.canvasOpen, true);
+    assert.equal(both.inspectorDismissed, false);
+
+    const after = drive([{ kind: 'control', name: 'narrow-dismiss' }], both).state;
+    assert.equal(after.canvasOpen, false);
+    assert.equal(after.inspectorDismissed, true);
+  });
+
+  it('the strip toggles and the dismissal does not', () => {
+    // A TOGGLE BOUND TO A DISMISSAL KEY REOPENS ON THE SECOND PRESS, which is
+    // the opposite of "Escape to dismiss". The control the reader aims at is a
+    // toggle — the same button closes what it opened, which is what its
+    // `aria-expanded` promises — and the KEY is not.
+    const opened = drive([{ kind: 'control', name: 'canvas-strip' }]).state;
+    assert.equal(opened.canvasOpen, true);
+    assert.equal(drive([{ kind: 'control', name: 'canvas-strip' }], opened).state.canvasOpen, false);
+
+    const shut = drive([{ kind: 'control', name: 'narrow-dismiss' }], opened).state;
+    assert.equal(shut.canvasOpen, false);
+    assert.equal(
+      reduceHost(shut, { kind: 'control', name: 'narrow-dismiss' }, document).state.canvasOpen,
+      false,
+      'a second Escape reopened the canvas',
+    );
+  });
+
+  it('starts with the strip shut and the panel unlifted', () => {
+    // §17k's resting states, and they are not symmetrical: the canvas is
+    // collapsed until asked for, and the inspector is lifted until dismissed —
+    // so `false` means "shut" for one and "not dismissed" for the other.
+    assert.equal(INITIAL_HOST_STATE.canvasOpen, false);
+    assert.equal(INITIAL_HOST_STATE.inspectorDismissed, false);
   });
 });

@@ -4726,3 +4726,143 @@ describe('§17d’s outward link is the browser’s to follow, not the mount’s
     }
   });
 });
+
+/**
+ * §17k's two narrow layouts, wired end to end.
+ *
+ * WHAT IS PROVEN HERE IS THE WIRING, not the layout: the stylesheet decides
+ * which of the three layouts is drawn, jsdom applies no stylesheet, and the
+ * package is forbidden from reading a width. So these read the two attributes
+ * the sheet selects on, which is exactly the surface between the two halves.
+ * The tracks themselves are pinned in `styles.test.ts` and were measured in a
+ * browser at 1440, 1280 and 1000.
+ */
+describe("§17k's narrow layouts open and dismiss", () => {
+  const root = (page: Mounted): HTMLElement => {
+    const found = page.element.querySelector<HTMLElement>('.ig-workspace');
+    assert.ok(found !== null, 'no workspace root');
+    return found;
+  };
+
+  const press = (page: Mounted, key: string): void => {
+    // DISPATCHED FROM THE FOCUSED ELEMENT, which is where a reader's press comes
+    // from — the mount's listener is on its own element, as every other key here
+    // is. A scripted `.click()` leaves focus on `body`, so a press dispatched
+    // from there reaches nothing and the feature reads as broken. That mistake
+    // cost a round in a browser before it was recognised.
+    const active = page.win.document.activeElement;
+    assert.ok(active !== null);
+    active.dispatchEvent(new page.win.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+  };
+
+  it('lifts the inspector on a selection and dismisses it on Escape', async () => {
+    const page = await mounted();
+    try {
+      assert.equal(root(page).dataset['inspector'], 'dismissed', 'lifted with nothing selected');
+
+      const row = page.rows()[0];
+      assert.ok(row !== undefined);
+      page.click(row);
+      await flush();
+      assert.equal(root(page).dataset['inspector'], 'lifted', 'a selection did not lift the panel');
+
+      // FOCUS ON THE RAIL ROW, AND THAT IS THE WHOLE POINT OF THIS TEST.
+      // `interaction()` answers `canvas` for any focused `[data-ig-key]`, and
+      // `create/keys.ts` binds Escape to `cancel` as "ALWAYS AVAILABLE" — so an
+      // Escape arm placed after `keyIntent` is claimed by a draft that does not
+      // exist and never runs. Measured in a browser first: the panel stayed
+      // open and the attribute stayed `lifted`. Driving this from a focused
+      // BUTTON would pass either way, because `interaction()` answers
+      // `elsewhere` there and Escape does not reach the create map at all.
+      page.rows()[0]?.focus();
+      assert.ok(page.win.document.activeElement?.closest('[data-ig-key]') !== null);
+      press(page, 'Escape');
+      await flush();
+      assert.equal(root(page).dataset['inspector'], 'dismissed', 'Escape did not dismiss the panel');
+
+      // AND THE SELECTION SURVIVED IT. Escape closes the panel; the rail's
+      // current row and the canvas halo are not the panel.
+      assert.equal(
+        page.element.querySelector('[data-zone="rail"] [aria-current="true"]') !== null,
+        true,
+        'the dismissal cleared the selection as well',
+      );
+
+      // THE NEXT SELECTION RE-OPENS IT — §17k's "opened by selection", which is
+      // a rule about every selection rather than about the first one.
+      const next = page.rows()[1];
+      assert.ok(next !== undefined);
+      page.click(next);
+      await flush();
+      assert.equal(root(page).dataset['inspector'], 'lifted', 'the panel stayed shut after a new selection');
+    } finally {
+      page.handle.destroy();
+    }
+  });
+
+  it('opens the collapsed canvas from its strip, and shuts it on Escape', async () => {
+    const page = await mounted();
+    try {
+      assert.equal(root(page).dataset['canvas'], 'strip');
+      const strip = page.control('canvas-strip');
+      assert.ok(strip !== null, 'no control opens §17k’s collapsed canvas');
+      assert.equal(strip.getAttribute('aria-expanded'), 'false');
+      // IT IS IN THE CANVAS ZONE, which is what keeps it off the rail without
+      // an offset: the zones are grid areas, so a control in one cannot be
+      // drawn in another however the tracks resize.
+      assert.equal(strip.closest('.ig-zone')?.getAttribute('data-zone'), 'canvas');
+
+      strip.focus();
+      page.click(strip);
+      await flush();
+      assert.equal(root(page).dataset['canvas'], 'open', 'the strip did not open the canvas');
+      const opened = page.control('canvas-strip');
+      assert.equal(opened?.getAttribute('aria-expanded'), 'true');
+      // THE LABEL FLIPS WITH THE STATE. A control carrying `aria-expanded`
+      // whose word did not flip would tell a screen-reader user the canvas is
+      // open and offer to open it in one breath.
+      assert.equal(opened?.textContent, WORDS.hideCanvas);
+      assert.notEqual(WORDS.hideCanvas, WORDS.showCanvas);
+
+      opened?.focus();
+      press(page, 'Escape');
+      await flush();
+      assert.equal(root(page).dataset['canvas'], 'strip', 'Escape did not shut the canvas');
+      assert.equal(page.control('canvas-strip')?.textContent, WORDS.showCanvas);
+    } finally {
+      page.handle.destroy();
+    }
+  });
+
+  it('gives Escape back to the create draft, which is the more local thing', async () => {
+    // A READER MID-RELATIONSHIP PRESSING ESCAPE MEANS "NOT THIS EDGE", not
+    // "close the panel behind it". The §17k arm runs BEFORE `keyIntent` — it
+    // has to, see the first test — so the draft is protected by a guard on the
+    // draft rather than by the order of the two arms.
+    const page = await mounted();
+    try {
+      const row = page.rows()[0];
+      assert.ok(row !== undefined);
+      page.click(row);
+      await flush();
+      const add = page.control('add');
+      assert.ok(add !== null);
+      page.click(add);
+      await flush();
+      assert.equal(page.control('cancel') !== null, true, 'no draft is open, so this proves nothing');
+      assert.equal(root(page).dataset['inspector'], 'lifted');
+
+      page.rows()[0]?.focus();
+      press(page, 'Escape');
+      await flush();
+      assert.equal(page.control('cancel'), null, 'Escape did not abandon the draft');
+      assert.equal(
+        root(page).dataset['inspector'],
+        'lifted',
+        'the draft’s Escape also dismissed the panel, so one press did two things',
+      );
+    } finally {
+      page.handle.destroy();
+    }
+  });
+});

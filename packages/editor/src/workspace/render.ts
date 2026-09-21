@@ -209,6 +209,32 @@ export interface WorkspaceWords {
    * command it publishes is `clear`, and that is the whole of its behaviour.
    */
   readonly clearSelection: string;
+  /**
+   * §17k's strip control while the canvas is collapsed — "open the canvas".
+   *
+   * REQUIRED, UNLIKE {@link CanvasWords}, AND THAT IS THE WHOLE REASON IT IS
+   * NOT IN IT. The canvas caption is optional because a surface without it
+   * still draws every fact; this control is the only way back out of §17k's
+   * strip, and a host that omitted it would ship a layout with a zone the
+   * reader cannot reach below `1120`. An unreachable zone is not a degraded
+   * caption.
+   *
+   * IT NAMES THE ZONE, NOT A DIRECTION. The strip is drawn at the canvas's own
+   * track, so "open" and "show" both read as acting on what is beside the word;
+   * the fixture and the demo both say which zone out loud, because a strip four
+   * characters wide, turned on its side, carries no other label.
+   */
+  readonly showCanvas: string;
+  /**
+   * The same control while the canvas is open.
+   *
+   * ITS OWN MEMBER RATHER THAN REUSING {@link showCanvas}, on
+   * {@link RailWords.hide}'s reasoning exactly: the control carries
+   * `aria-expanded`, which flips, and a label that did not flip with it would
+   * tell a screen-reader user the canvas is open and offer to open it in one
+   * breath.
+   */
+  readonly hideCanvas: string;
   /** Names the relationships list. */
   readonly relationships: string;
   /**
@@ -774,6 +800,34 @@ export interface WorkspaceOptions {
    * Ignored with no audit, because there is nothing to filter by.
    */
   readonly auditFiltered?: boolean | undefined;
+  /**
+   * Whether §17k's collapsed canvas has been opened — `HostState.canvasOpen`.
+   *
+   * PUBLISHED AS AN ATTRIBUTE ON THE SURFACE ROOT, and read only by the
+   * stylesheet's narrow block. Nothing here decides whether the canvas IS a
+   * strip: that is a question about the box the surface was given, the
+   * container query is the only party that can answer it, and §17k's
+   * implementation note is explicit that the package must not ask the window
+   * instead. So this says what the reader asked for and the sheet says whether
+   * it is currently drawn.
+   *
+   * Absent means shut, which is §17k's resting state for the strip.
+   */
+  readonly canvasOpen?: boolean | undefined;
+  /**
+   * Whether the reader has dismissed §17k's lifted inspector —
+   * `HostState.inspectorDismissed`.
+   *
+   * COMBINED WITH THE SELECTION, NEVER READ ALONE. §17k opens the lifted panel
+   * "by selection", so the attribute this becomes is `lifted` only when
+   * something is selected AND the reader has not pressed Escape since. A render
+   * with nothing selected draws the panel dismissed however this is set, which
+   * is what keeps an empty "nothing selected" card from floating over the
+   * canvas at the middle width.
+   *
+   * Ignored at the two other widths, where the inspector is a zone.
+   */
+  readonly inspectorDismissed?: boolean | undefined;
   /**
    * Where an issue lives in the host's own world, for §17d's refused block.
    *
@@ -2967,6 +3021,41 @@ export function renderWorkspace(
 
   const toolbar = canvasToolbar(canvas.ladder, document, options.words.canvas);
 
+  // §17k'S STRIP CONTROL — the way out of the collapsed canvas below `1120`.
+  //
+  // ALWAYS RENDERED, HIDDEN BY THE SHEET AT THE OTHER TWO WIDTHS, and that
+  // order matters: the alternative is rendering it only when narrow, which
+  // would mean this function knowing how wide it is. It does not and must not —
+  // §17k's implementation note — so the control is emitted once and the
+  // container query decides where it is drawn. `display: none` is also what
+  // keeps it out of the tab order where it has nothing to do, so a reader at
+  // the wide layout never meets a button for a strip that is not there.
+  //
+  // `aria-expanded` RATHER THAN `aria-pressed`, on §17d's own distinction: this
+  // discloses a region that is already in the markup rather than toggling a
+  // mode. The label flips with it — see `WorkspaceWords.hideCanvas`.
+  const canvasOpen = options.canvasOpen === true;
+  const strip = element(
+    'button',
+    {
+      type: 'button',
+      class: 'ig-canvas-strip',
+      'data-ig-command': 'canvas-strip',
+      'aria-expanded': canvasOpen ? 'true' : 'false',
+    },
+    [canvasOpen ? options.words.hideCanvas : options.words.showCanvas],
+  );
+
+  // §17k'S MIDDLE ROW IS TWO RULES AND ONLY ONE OF THEM IS A STATE. *"Opened by
+  // selection, Escape to dismiss"*: the first is a question about `selection`,
+  // which this function already has, so the panel is lifted when something is
+  // selected and the reader has not dismissed it since. Storing the openness
+  // instead would be a second copy of the selection, free to disagree with it.
+  const lifted = selection.kind !== 'none' && options.inspectorDismissed !== true;
+  const narrowState =
+    ` data-canvas="${canvasOpen ? 'open' : 'strip'}"` +
+    ` data-inspector="${lifted ? 'lifted' : 'dismissed'}"`;
+
   // §17a'S RAIL FOOTER, FROM THE LADDER THE CANVAS ALREADY DERIVED. `isolated`
   // is a property of the whole document rather than of the tier the canvas
   // settled on, so the rail and the canvas cannot disagree about it: there is
@@ -3038,9 +3127,21 @@ export function renderWorkspace(
     // the element the host holds, which is the reader this attribute was never
     // for: this one is the stylesheet's hook, so it is absent exactly when the
     // stylesheet must not act.
+    //
+    // §17k'S TWO READER DECISIONS RIDE THE SAME ROOT, and for the same reason
+    // `data-order` does: the stylesheet is the only party that knows which of
+    // the three layouts is drawn, so the surface publishes what the reader
+    // asked for and each container block reads the one it has a use for.
+    // Neither attribute means anything at the width where its zone is a zone.
+    //
+    // BOTH ARE ALWAYS STAMPED, unlike `data-order`. That one is withheld where
+    // its label cannot be drawn — a greyed rail with no word is worse than
+    // neither — and these two have no such pair: the value is the full state,
+    // and an absent attribute would read as the strip being open and the
+    // inspector being lifted, which is the opposite of both defaults.
     changeWords === undefined
-      ? `<div class="ig-workspace">`
-      : `<div class="ig-workspace" data-order="${orderStatus}">`,
+      ? `<div class="ig-workspace"${narrowState}>`
+      : `<div class="ig-workspace" data-order="${orderStatus}"${narrowState}>`,
     zone(
       'header',
       [
@@ -3099,7 +3200,14 @@ export function renderWorkspace(
       // workspace's. Both halves are already-rendered markup, which is the
       // rule `zone` exists under: it writes the only hand-authored tag in this
       // package and takes no caller value.
-      [toolbar === null ? '' : renderMarkup(toolbar), canvas.markup].join(''),
+      //
+      // THE STRIP CONTROL LEADS THE ZONE, above the caption, because below
+      // `1120` it is the ONLY thing in the zone the reader can reach: the
+      // sheet hides every sibling while the canvas is collapsed. Drawn last it
+      // would be the last stop in the zone's tab order at the wide layout,
+      // where it is `display: none` and therefore no stop at all — so the
+      // position is chosen for the width where it is drawn.
+      [strip, toolbar].map((spec) => (spec === null ? '' : renderMarkup(spec))).join('') + canvas.markup,
     ),
     zone(
       'inspector',

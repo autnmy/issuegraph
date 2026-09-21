@@ -60,7 +60,7 @@ import {
 
 import { CONTROL_ATTRIBUTES } from '../a11y/baseline.ts';
 import type { AuditInput } from '../audit/findings.ts';
-import { isChoosingKind } from '../create/draft.ts';
+import { isChoosingKind, isDraftLive } from '../create/draft.ts';
 import { type CreateInteraction, type KeyboardContext, KIND_KEYS, keyIntent } from '../create/keys.ts';
 import { pickerPlacement } from '../create/placement.ts';
 import type { CandidateSource } from '../firstpass/candidates.ts';
@@ -83,6 +83,7 @@ import {
   type HostState,
   INITIAL_HOST_STATE,
   editCarrier,
+  narrowOverlayOpen,
   railRowAt,
   railSlackFor,
   railWindowTarget,
@@ -1489,6 +1490,11 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       surfaceId,
       audit,
       auditFiltered: state.auditFiltered,
+      // §17k's two reader decisions. Host state, for the reason the filter
+      // beside it is: the renderer keeps nothing across a redraw, and a strip
+      // that reopened itself on every landed write would be unusable.
+      canvasOpen: state.canvasOpen,
+      inspectorDismissed: state.inspectorDismissed,
       issueUrl: current.issueUrl,
       theme: resolved,
       themeSelector: current.themeSelector,
@@ -2500,6 +2506,47 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       selectedEdge: selectedEdgeId(state.selection),
       interaction: interaction(),
     };
+    // §17k'S TRANSIENT SURFACES ARE DISMISSED ON ESCAPE — the ruling's own
+    // words for the lifted inspector, and the strip takes the same key because
+    // a canvas opened over the inspector is the same kind of thing.
+    //
+    // BEFORE `keyIntent`, AND THE OBVIOUS PLACEMENT IS THE WRONG ONE. Putting
+    // it after reads as the safe order — let the create loop have the press
+    // first — and it makes this arm DEAD. `create/keys.ts` binds `escape` to
+    // `cancel` with the comment "ALWAYS AVAILABLE", and `reaches` admits it
+    // whenever the interaction is `canvas`, which `interaction()` answers for
+    // any focused `[data-ig-key]`. So with focus on a rail row — where it sits
+    // after almost every click on this surface — `keyIntent` claims Escape for
+    // a draft that does not exist and returns, and nothing below it is reached.
+    // MEASURED IN A BROWSER, not reasoned about: the panel stayed open, and the
+    // `dataInspector` attribute stayed `lifted` across the press.
+    //
+    // THE DRAFT STILL WINS, WHICH IS WHAT THE OTHER ORDER WAS FOR. A reader
+    // mid-relationship pressing Escape means "not this edge", not "close the
+    // panel behind it" — so the guard is the draft being live rather than the
+    // position in this function. An idle draft is the only state `keyIntent`
+    // would have spent the press on, and cancelling an idle draft is a no-op.
+    //
+    // GUARDED ALSO ON `narrowOverlayOpen`, WHICH IS THE REDUCER'S OWN PREDICATE
+    // rather than a second reading of the same two fields. A press with nothing
+    // to dismiss is handed back rather than swallowed; `reduceHost` answers
+    // `unclaimed` for exactly the same case, and both ask one function so they
+    // cannot drift apart. See `HostResult.claimed` for what a wrongly cancelled
+    // press costs a host.
+    //
+    // IT CANNOT ASK WHICH OF THE TWO THE READER CAN SEE, and that is by design
+    // rather than by omission: the width is the stylesheet's to know, per
+    // §17k's note that a package reading the window cannot be dropped into
+    // someone else's page. The reducer closes both and the sheet draws the one
+    // that was on screen. The cost is a press spent invisibly at the WIDE
+    // layout, where a selection makes `narrowOverlayOpen` true and neither
+    // surface is lifted — one press, not repeatable, and the alternative is
+    // measuring a box inside a keydown handler.
+    if (event.key === 'Escape' && !isDraftLive(state.draft) && narrowOverlayOpen(state)) {
+      event.preventDefault();
+      dispatch({ kind: 'control', name: 'narrow-dismiss' });
+      return;
+    }
     const intent = keyIntent(event, context);
     if (intent.kind !== 'none') {
       event.preventDefault();
