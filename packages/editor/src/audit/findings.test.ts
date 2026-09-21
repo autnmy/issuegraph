@@ -960,7 +960,12 @@ describe('§17d — a finding names the edge its remedy acts on', () => {
     // ASSERTED AGAINST THE DOCUMENT'S OWN EDGE, not against a rebuilt id. A
     // test that recomputes `edgeIdentity` here would agree with itself while
     // disagreeing with the thing `select-edge` looks up.
-    assert.equal(found[0]?.edge, document.edges[0]?.id);
+    assert.equal(found[0]?.edge?.id, document.edges[0]?.id);
+    // THE ENDS TOO — `./panel.ts` gates a remedy on both being on the drawn
+    // page, and cannot recover them from the id without parsing a spelling
+    // that belongs to `@issuegraph/core`.
+    assert.equal(found[0]?.edge?.from, 'a');
+    assert.equal(found[0]?.edge?.to, 'b');
     assert.equal(found[0]?.keepAsHistory, true, 'and it is the one class that offers it');
   });
 
@@ -977,7 +982,7 @@ describe('§17d — a finding names the edge its remedy acts on', () => {
     const found = only(audit(document), 'dead-duplicate-ref');
     assert.ok(found.length > 0);
     const declared = document.edges.find((edge) => edge.from === 'a');
-    assert.equal(found[0]?.edge, declared?.id);
+    assert.equal(found[0]?.edge?.id, declared?.id);
   });
 
   it('names no edge on a cycle or an encoding refusal', () => {
@@ -1018,6 +1023,6 @@ describe('§17d — a finding names the edge its remedy acts on', () => {
     );
     const found = only(audit(document), 'stale-blocker');
     assert.equal(found.length, 2, 'both survive the dedupe');
-    assert.equal(new Set(found.map((f) => f.edge)).size, 2, 'and they name different edges');
+    assert.equal(new Set(found.map((f) => f.edge?.id)).size, 2, 'and they name different edges');
   });
 });

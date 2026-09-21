@@ -123,7 +123,7 @@
 import type { IssueRef } from '@issuegraph/store';
 import { type ElementSpec, element } from '@issuegraph/viewer';
 
-import type { AuditClass, AuditFinding } from './findings.ts';
+import type { AuditClass, AuditEdge, AuditFinding } from './findings.ts';
 import { AUDIT_FILTER_ATTRIBUTE } from './surface.ts';
 import type { AuditOverlay } from './surface.ts';
 
@@ -386,7 +386,7 @@ function cardSpec(
           ),
       // §17d's REMEDIES. Drawn after the navigation control, which is the
       // frame's order: `Show the loop` then `pick one edge to drop`.
-      remedySpec(finding, words),
+      remedySpec(finding, known, words),
     ],
   );
 }
@@ -411,12 +411,27 @@ function cardSpec(
  * nothing: §17d's own `Show the loop` already declines for exactly that reason
  * one function up, and this follows it rather than inventing a second rule.
  */
-function remedySpec(finding: AuditFinding, words: AuditWords): ElementSpec | null {
+function remedySpec(
+  finding: AuditFinding,
+  known: ReadonlySet<string>,
+  words: AuditWords,
+): ElementSpec | null {
   const { remedies } = words;
   // A SELECT-EDGE BUTTON, BUILT ONCE. The two edge classes differ only in their
   // label, so the shape is written once and the difference stays a word.
+  // BOTH ENDS MUST BE ON THE DRAWN PAGE. A remedy publishes `select-edge`, and
+  // the host resolves that against the document IT is drawing — which is not
+  // always the one the audit read. `reconcileHost` refuses a selection naming
+  // an issue the document does not list, so a remedy for an off-page edge is a
+  // button that silently clears the selection and opens nothing.
+  //
+  // THE SAME RULE `Show the loop` ALREADY FOLLOWS one function up, where
+  // `navigableMember` withholds navigation to a ref the surface does not carry.
+  // This is that rule applied to the edge instead of to a member: both ends,
+  // because an edge with one end off the page is not drawn either.
+  const reachable = (edge: AuditEdge): boolean => known.has(edge.from) && known.has(edge.to);
   const onEdge = (label: string, tag: string): ElementSpec | null =>
-    finding.edge === undefined
+    finding.edge === undefined || !reachable(finding.edge)
       ? null
       : element(
           'button',
@@ -428,7 +443,7 @@ function remedySpec(finding: AuditFinding, words: AuditWords): ElementSpec | nul
             // draws the edge's own controls once it is selected; this only
             // says which edge the reader is judging.
             'data-ig-command': 'select-edge',
-            'data-ig-target': finding.edge,
+            'data-ig-target': finding.edge.id,
             // THE FINDING'S OWN SENTENCE, for the reason `Show the loop`
             // records above: in a screen reader's button list the name is all
             // a reader has, and any hand-picked subset of a finding's
@@ -460,7 +475,8 @@ function remedySpec(finding: AuditFinding, words: AuditWords): ElementSpec | nul
       // `walk` is absent whenever the reader declined to order the component,
       // and then there is no defensible head to name — so no button.
       const head = finding.walk?.[0];
-      if (head === undefined) return null;
+      // AND THE HEAD HAS TO BE DRAWN, for the reason `reachable` records above.
+      if (head === undefined || !known.has(head)) return null;
       return element('div', { class: 'ig-audit-remedies' }, [
         element(
           'button',

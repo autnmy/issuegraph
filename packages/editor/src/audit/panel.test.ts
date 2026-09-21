@@ -676,7 +676,9 @@ describe('§17d — the remedies, which select and never write', () => {
   it('points each edge remedy at the finding’s own edge', () => {
     const overlay = overlayOf(EVERY_CLASS.issues, EVERY_CLASS.edges);
     const edges = new Set(
-      overlay.findings.filter((finding) => finding.edge !== undefined).map((finding) => finding.edge),
+      overlay.findings
+        .filter((finding) => finding.edge !== undefined)
+        .map((finding) => finding.edge?.id),
     );
     assert.ok(edges.size > 0, 'the premise: findings named edges');
     for (const remedy of remediesIn(markupOf(EVERY_CLASS.issues, EVERY_CLASS.edges))) {
@@ -714,5 +716,63 @@ describe('§17d — the remedies, which select and never write', () => {
     const markup = renderMarkup(spec);
     assert.equal(/data-ig-remedy="pick-edge"/.test(markup), false);
     assert.ok(/data-ig-remedy="remove-edge"/.test(markup), 'the other cards are untouched');
+  });
+});
+
+describe('§17d — a remedy is withheld when its subject is off the drawn page', () => {
+  // CODEX FOUND THIS, AND IT IS THE SAME CLASS `Show the loop` WAS BUILT FOR.
+  // The audit reads a document that is not always the one on screen — a host
+  // audits the whole repository and renders a page of it — so a remedy can name
+  // an edge the drawn document does not hold. `select-edge` then resolves to
+  // nothing, `reconcileHost` refuses the stale name, and the reader has pressed
+  // a button that silently cleared their selection.
+  //
+  // The navigation control already declined for exactly this reason. The
+  // remedies did not, because they were gated on the finding HAVING an edge
+  // rather than on the edge being reachable.
+
+  it('draws no remedy at all when the surface carries none of the issues', () => {
+    const spec = renderAuditPanel(overlayOf(EVERY_CLASS.issues, EVERY_CLASS.edges), {
+      words: WORDS,
+      known: new Set<string>(),
+    });
+    assert.ok(spec !== null, 'the fixture produced no findings, so this proves nothing');
+    const markup = renderMarkup(spec);
+    assert.equal(/data-ig-remedy=/.test(markup), false, 'a remedy points off the page');
+    // THE CARDS THEMSELVES STILL DRAW. A finding about issues the reader cannot
+    // reach is still a finding they need told about — it is the CONTROL that is
+    // withheld, never the information.
+    assert.ok(/ig-audit-card/.test(markup), 'the findings went away with their controls');
+  });
+
+  it('withholds an edge remedy when only ONE end is drawn', () => {
+    // An edge with one end off the page is not drawn either, so selecting it
+    // fails the same way. Half-known is not known.
+    const spec = renderAuditPanel(overlayOf(EVERY_CLASS.issues, EVERY_CLASS.edges), {
+      words: WORDS,
+      known: new Set(['d']),
+    });
+    assert.ok(spec !== null);
+    const markup = renderMarkup(spec);
+    assert.equal(
+      /data-ig-remedy="remove-edge"/.test(markup),
+      false,
+      'the stale blocker offered a remedy for an edge whose other end is off the page',
+    );
+  });
+
+  it('still draws every remedy when the whole page is there', () => {
+    // THE CONTROL CASE, or the two tests above pass against a panel that simply
+    // stopped drawing remedies.
+    const spec = renderAuditPanel(overlayOf(EVERY_CLASS.issues, EVERY_CLASS.edges), {
+      words: WORDS,
+      known: new Set(EVERY_CLASS.issues.map((held) => held.ref)),
+    });
+    assert.ok(spec !== null);
+    const tags = [...renderMarkup(spec).matchAll(/data-ig-remedy="([^"]+)"/g)].map((m) => m[1]);
+    assert.deepEqual(
+      tags.sort(),
+      ['keep-as-history', 'pick-edge', 'remove-edge', 'repoint'],
+    );
   });
 });

@@ -716,8 +716,34 @@ function controlled(
       return value === undefined || !isEdgeField(value)
         ? settled(state)
         : drafted(state, { kind: 'type', edgeKind: value }, document);
-    case 'cancel':
-      return settled({ ...state, draft: IDLE_CREATE_DRAFT, targetQuery: '', drop: null });
+    case 'cancel': {
+      // A CANCEL WITH NOTHING TO CANCEL IS NOT THIS REDUCER'S PRESS.
+      //
+      // This settled unconditionally, which looks harmless — resetting an idle
+      // draft to idle changes no state — and is not, because `claimed` is what
+      // CANCELS THE KEY PRESS. `create/keys.ts` binds `escape` to `cancel` for
+      // any focused row, so with no draft in flight an idle reset was silently
+      // eating every Escape on the surface. §17d's overlay is dismissed on
+      // Escape and its arm sits below this one: a reader who opened the panel,
+      // looked back at the order to judge a finding, and pressed Escape got
+      // nothing, while the same press from the header count worked.
+      //
+      // THE SAME RULE THE `expand` ARMS FOLLOW, and the `default` arm states in
+      // its own words: a settled no-op and an unclaimed one are identical in
+      // the state and completely different at the keyboard.
+      // BY VALUE, NOT BY IDENTITY. `state.draft` is rebuilt by the draft
+      // reducer, so `=== IDLE_CREATE_DRAFT` is false for a structurally idle
+      // draft that went somewhere and came back.
+      const idle =
+        state.draft.source === null &&
+        state.draft.target === null &&
+        state.draft.kind === null &&
+        state.targetQuery === '' &&
+        state.drop === null;
+      return idle
+        ? unclaimed(state)
+        : settled({ ...state, draft: IDLE_CREATE_DRAFT, targetQuery: '', drop: null });
+    }
     case 'delete': {
       // THE CONTROL'S OWN EDGE FIRST, AND THE SELECTION AS THE FALLBACK.
       //

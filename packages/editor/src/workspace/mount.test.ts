@@ -355,6 +355,46 @@ describe("the audit region's scroll offset survives a redraw", () => {
     }
   });
 
+  it('§17d: Escape dismisses the overlay from a RAIL ROW, not just from the count', async () => {
+    // THE CASE MY OWN BROWSER CHECK MISSED. I drove the dismissal with focus on
+    // the header count, which is where a click leaves it — and it worked. A
+    // reader who opens the panel, looks back at the order to judge a finding
+    // and then presses Escape has focus on a ROW, and there the press was
+    // swallowed: `create/keys.ts` binds `escape` to `cancel`, and `cancel`
+    // settled unconditionally, claiming the press to reset an already-idle
+    // draft to idle. The audit arm below it never ran.
+    //
+    // §3 says "dismissed on Escape" without qualifying where focus is, and
+    // the row is the likeliest place for it to be.
+    const page = await mounted(SEED, { project: withCycle });
+    try {
+      const toggle = page.element.querySelector<HTMLElement>('[data-ig-audit-panel]');
+      assert.ok(toggle !== null);
+      toggle.focus();
+      page.click(toggle);
+      await flush();
+      assert.ok(page.element.querySelector('.ig-audit-overlay') !== null, 'the panel did not open');
+
+      const row = page.rows()[0];
+      assert.ok(row !== undefined, 'no rail row to stand on');
+      row.focus();
+      assert.equal(page.win.document.activeElement, row, 'the fixture cannot focus a row');
+
+      row.dispatchEvent(
+        new page.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+      );
+      await flush();
+      assert.equal(
+        page.element.querySelector('.ig-audit-overlay'),
+        null,
+        'Escape from a rail row did not dismiss the overlay',
+      );
+      page.handle.destroy();
+    } finally {
+      page.dom.window.close();
+    }
+  });
+
   it('keeps focus on the panel rather than dropping it into the rail', async () => {
     // THE OFFSET AND THE FOCUS ARE TWO FACTS, and keeping one without the other
     // still moves the reader out of the zone.

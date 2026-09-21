@@ -2512,6 +2512,35 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     };
     const intent = keyIntent(event, context);
     if (intent.kind !== 'none') {
+      // §17d'S ESCAPE, AND IT HAS TO BE TESTED HERE RATHER THAN BELOW.
+      //
+      // `create/keys.ts` binds `escape` to `cancel` for ANY focused row, so
+      // this branch claims every Escape on the surface and returns — the audit
+      // arm further down never ran with focus on a rail row. The reducer now
+      // answers `unclaimed` for a cancel with nothing to cancel, but `dispatch`
+      // returns void and this early return does not consult it, so the reducer
+      // alone could not fix it.
+      //
+      // THE DRAFT STILL WINS WHEN THERE IS ONE. A reader mid-relationship means
+      // "not this edge", not "close the panel behind it" — so this asks the
+      // same question the reducer's arm does, and only takes the press when the
+      // answer is that there is nothing to cancel.
+      // `cancel` IS A CREATE COMMAND, not a top-level intent kind — the type
+      // says so, and the first spelling of this line assumed otherwise and did
+      // not compile.
+      const cancellingNothing =
+        intent.kind === 'create' &&
+        intent.command.kind === 'cancel' &&
+        state.draft.source === null &&
+        state.draft.target === null &&
+        state.draft.kind === null &&
+        state.targetQuery === '' &&
+        state.drop === null;
+      if (cancellingNothing && state.auditOpen) {
+        event.preventDefault();
+        dispatch({ kind: 'control', name: 'audit-close' });
+        return;
+      }
       event.preventDefault();
       dispatch({ kind: 'intent', intent });
       return;
