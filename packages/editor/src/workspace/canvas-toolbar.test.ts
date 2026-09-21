@@ -269,21 +269,47 @@ describe('§17f’s row is drawn from what the host said, and nothing else', () 
     assert.equal(/class="ig-canvas-toolbar"/.test(without), false, 'a row nobody worded');
     assert.equal(/class="ig-edit-mode"/.test(without), false, 'a pill nobody worded');
 
-    // AND THE ZONE STILL LEADS WITH THE LADDER, which is the claim a host built
-    // against the current version relies on: not merely that the row is absent,
-    // but that nothing was inserted ahead of the canvas it already had.
+    // AND NOTHING WAS INSERTED BETWEEN THE ZONE'S CONTROL AND ITS CANVAS.
+    //
+    // THIS USED TO ASSERT THAT THE LADDER LED THE ZONE OUTRIGHT, and §17k
+    // changed what leads it: below `1120` the canvas collapses to a strip, and
+    // the control that opens it is drawn first because at that width the sheet
+    // hides every sibling and the strip is the only thing in the zone a reader
+    // can reach. The claim the old assertion was FOR — that a host which worded
+    // no caption gets nothing extra ahead of the canvas it already had — is
+    // unchanged and is what this now says, with the strip named as the one
+    // thing that is unconditionally there.
     assert.ok(
-      without.startsWith('<section class="ig-zone" data-zone="canvas"><section class="ig-viewer'),
-      'something other than the ladder now leads the zone',
+      without.startsWith('<section class="ig-zone" data-zone="canvas"><button type="button" class="ig-canvas-strip"'),
+      'something other than §17k’s strip now leads the zone',
+    );
+    assert.match(
+      without,
+      /<\/button><section class="ig-viewer/,
+      'something was inserted between the strip and the canvas',
     );
   });
 
-  /** The row leads the zone, above the graph, exactly as frame 17a draws it. */
-  it('is the canvas zone’s first child', () => {
+  /**
+   * The row sits above the graph, exactly as frame 17a draws it — behind §17k's
+   * strip, which is the zone's only unconditional member.
+   */
+  it('is the canvas zone’s first drawn row, behind §17k’s strip', () => {
     const zone = canvasZone(renderWorkspace(FRAME, { words: WORKSPACE_WORDS }).markup);
+    // THIS USED TO ASSERT THE TOOLBAR WAS THE ZONE'S FIRST CHILD. §17k's strip
+    // now precedes it, and that is not a demotion of the caption: the strip is
+    // `display: none` at the two wider layouts, so at every width where the
+    // caption is drawn at all it is still the first thing in the zone. The pin
+    // that matters is the pair's ORDER — caption above the graph — and that is
+    // what is asserted, rather than an index into the children.
     assert.ok(
-      zone.startsWith('<section class="ig-zone" data-zone="canvas"><div class="ig-canvas-toolbar">'),
-      'the row does not lead the zone',
+      zone.startsWith('<section class="ig-zone" data-zone="canvas"><button type="button" class="ig-canvas-strip"'),
+      '§17k’s strip does not lead the zone',
+    );
+    assert.match(
+      zone,
+      /<\/button><div class="ig-canvas-toolbar">/,
+      'the row does not sit between the strip and the graph',
     );
   });
 

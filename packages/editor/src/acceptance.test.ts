@@ -810,6 +810,8 @@ const WORKSPACE_WORDS: surface.WorkspaceWords = {
   inspector: 'the detail panel',
   nothingSelected: 'pick a row to inspect it',
   clearSelection: 'clear the selection',
+  showCanvas: 'unfold the graph',
+  hideCanvas: 'put the graph away',
   relationships: 'relationships',
   whyRank: 'why rank',
   whyHeld: 'why held',

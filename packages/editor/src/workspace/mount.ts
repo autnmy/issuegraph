@@ -60,7 +60,7 @@ import {
 
 import { CONTROL_ATTRIBUTES } from '../a11y/baseline.ts';
 import type { AuditInput } from '../audit/findings.ts';
-import { isChoosingKind } from '../create/draft.ts';
+import { isChoosingKind, isDraftLive } from '../create/draft.ts';
 import { type CreateInteraction, type KeyboardContext, KIND_KEYS, keyIntent } from '../create/keys.ts';
 import { pickerPlacement } from '../create/placement.ts';
 import type { CandidateSource } from '../firstpass/candidates.ts';
@@ -83,6 +83,7 @@ import {
   type HostState,
   INITIAL_HOST_STATE,
   editCarrier,
+  narrowOverlayOpen,
   railRowAt,
   railSlackFor,
   railWindowTarget,
@@ -186,6 +187,17 @@ export interface MountWorkspaceOptions {
    * means and why a refused scheme draws no link.
    */
   readonly issueUrl?: WorkspaceOptions['issueUrl'];
+  /**
+   * §17j's density escape hatch for the rail. See
+   * {@link WorkspaceOptions.railDensity}, and `ViewerOptions.density` under it
+   * for the rule and the default.
+   *
+   * NAMED HERE FOR THE REASON `issueUrl` ABOVE STATES: this interface does not
+   * extend `WorkspaceOptions`, and the render options are built field by field,
+   * so an option added one file over reaches nothing mounted until it is named
+   * here too.
+   */
+  readonly railDensity?: WorkspaceOptions['railDensity'];
   readonly canvas?: CanvasMode | undefined;
   /** How many rail rows are drawn per window. Wider than the package default so a scroll rarely lands past the drawn rows. */
   readonly railCount?: number | undefined;
@@ -1489,10 +1501,16 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       surfaceId,
       audit,
       auditFiltered: state.auditFiltered,
+      // §17k's two reader decisions. Host state, for the reason the filter
+      // beside it is: the renderer keeps nothing across a redraw, and a strip
+      // that reopened itself on every landed write would be unusable.
+      canvasOpen: state.canvasOpen,
+      inspectorDismissed: state.inspectorDismissed,
       // §17d's overlay. Host state, for the same reason the filter beside it
       // is: the renderer keeps nothing across a redraw.
       auditOpen: state.auditOpen,
       issueUrl: current.issueUrl,
+      railDensity: current.railDensity,
       theme: resolved,
       themeSelector: current.themeSelector,
       // THE WRITE STATES ONLY. The workspace holds the one selection, and the
@@ -2247,6 +2265,53 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
    * list sits in an inspector that carries no key — so it answers null from
    * inside either one however this is ordered.
    */
+  /**
+   * Whether Escape has nothing of the CREATE PATH's to cancel.
+   *
+   * ONE PREDICATE FOR WHAT WAS TWO. §17d's overlay and §17k's transients both
+   * take Escape, and both must yield to a live draft — a reader mid-relationship
+   * means "not this edge", not "close the panel behind it". Written out at each
+   * site, that rule is one a later edit can move at one of them.
+   *
+   * FIVE FIELDS, NOT THREE. `isDraftLive` answers for the draft itself, and the
+   * target search and the drop point are the create path's too: a reader who
+   * typed into the target box with no draft open still has something for Escape
+   * to clear, and taking the press for a panel would leave their query sitting
+   * there. `cancel` clears all five, which is why all five are asked.
+   */
+  /**
+   * Whether §17k's lifted inspector is actually ON SCREEN.
+   *
+   * `narrowOverlayOpen` answers about STATE, and state is not visibility here:
+   * the panel is lifted between `1120` and `1359` and is an ordinary column
+   * either side of that, so at the wide layout a selection makes the reducer's
+   * predicate true with nothing overlaid for Escape to dismiss. The press was
+   * being spent on a change the reader could not see.
+   *
+   * THE STYLESHEET KNOWS AND THE DOM SHOWS ITS ANSWER, which is why this is a
+   * measurement rather than a width. The lifted panel is placed in the CANVAS's
+   * grid area, so it overlaps the canvas's box; as a column it sits beside it
+   * and cannot. That is the same fact the sheet encodes, read back rather than
+   * re-derived — and it is not the window, which §17k rules out.
+   *
+   * A SURFACE WITH NO LAYOUT CANNOT ANSWER, and says so by yielding to the
+   * state. Every box is zero-sized before layout, and under `node --test` there
+   * is no layout at all; a strict reading would disable the key there and take
+   * a tested behaviour away from every consumer that renders without a browser.
+   */
+  const inspectorIsLifted = (): boolean => {
+    const inspector = surface.querySelector('.ig-zone[data-zone="inspector"]');
+    const canvas = surface.querySelector('.ig-zone[data-zone="canvas"]');
+    if (inspector === null || canvas === null) return false;
+    const panel = inspector.getBoundingClientRect();
+    const zone = canvas.getBoundingClientRect();
+    if (panel.width === 0 && zone.width === 0) return true;
+    return panel.left < zone.right && panel.right > zone.left;
+  };
+
+  const nothingToCancel = (): boolean =>
+    !isDraftLive(state.draft) && state.targetQuery === '' && state.drop === null;
+
   const interaction = (): CreateInteraction => {
     const active = doc.activeElement;
     if (isElement(active) && isInput(active) && active.getAttribute(COMMAND_ATTRIBUTE) === 'target-query') {
@@ -2510,55 +2575,75 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       selectedEdge: selectedEdgeId(state.selection),
       interaction: interaction(),
     };
-    const intent = keyIntent(event, context);
-    if (intent.kind !== 'none') {
-      // §17d'S ESCAPE, AND IT HAS TO BE TESTED HERE RATHER THAN BELOW.
-      //
-      // `create/keys.ts` binds `escape` to `cancel` for ANY focused row, so
-      // this branch claims every Escape on the surface and returns — the audit
-      // arm further down never ran with focus on a rail row. The reducer now
-      // answers `unclaimed` for a cancel with nothing to cancel, but `dispatch`
-      // returns void and this early return does not consult it, so the reducer
-      // alone could not fix it.
-      //
-      // THE DRAFT STILL WINS WHEN THERE IS ONE. A reader mid-relationship means
-      // "not this edge", not "close the panel behind it" — so this asks the
-      // same question the reducer's arm does, and only takes the press when the
-      // answer is that there is nothing to cancel.
-      // `cancel` IS A CREATE COMMAND, not a top-level intent kind — the type
-      // says so, and the first spelling of this line assumed otherwise and did
-      // not compile.
-      const cancellingNothing =
-        intent.kind === 'create' &&
-        intent.command.kind === 'cancel' &&
-        state.draft.source === null &&
-        state.draft.target === null &&
-        state.draft.kind === null &&
-        state.targetQuery === '' &&
-        state.drop === null;
-      if (cancellingNothing && state.auditOpen) {
+    // §17k'S TRANSIENT SURFACES ARE DISMISSED ON ESCAPE — the ruling's own
+    // words for the lifted inspector, and the strip takes the same key because
+    // a canvas opened over the inspector is the same kind of thing.
+    //
+    // BEFORE `keyIntent`, AND THE OBVIOUS PLACEMENT IS THE WRONG ONE. Putting
+    // it after reads as the safe order — let the create loop have the press
+    // first — and it makes this arm DEAD. `create/keys.ts` binds `escape` to
+    // `cancel` with the comment "ALWAYS AVAILABLE", and `reaches` admits it
+    // whenever the interaction is `canvas`, which `interaction()` answers for
+    // any focused `[data-ig-key]`. So with focus on a rail row — where it sits
+    // after almost every click on this surface — `keyIntent` claims Escape for
+    // a draft that does not exist and returns, and nothing below it is reached.
+    // MEASURED IN A BROWSER, not reasoned about: the panel stayed open, and the
+    // `dataInspector` attribute stayed `lifted` across the press.
+    //
+    // THE DRAFT STILL WINS, WHICH IS WHAT THE OTHER ORDER WAS FOR. A reader
+    // mid-relationship pressing Escape means "not this edge", not "close the
+    // panel behind it" — so the guard is `nothingToCancel`, which asks about
+    // the create path rather than about the position in this function. An idle
+    // one is the only state `keyIntent` would have spent the press on, and
+    // cancelling an idle draft is a no-op.
+    //
+    // GUARDED ALSO ON `narrowOverlayOpen`, WHICH IS THE REDUCER'S OWN PREDICATE
+    // rather than a second reading of the same two fields, so the two cannot
+    // drift apart — `reduceHost` answers `unclaimed` for exactly the same case.
+    //
+    // WHAT THAT DOES NOT DO IS LET THE PRESS THROUGH. A press this arm declines
+    // falls to `keyIntent`, which binds Escape to a cancel that is "ALWAYS
+    // AVAILABLE" and cancels it there — so on a focused rail row Escape is
+    // consumed by this surface whether or not anything was dismissed. That
+    // predates this branch and is not changed here; it is written down because
+    // the obvious reading of `unclaimed` is that the key reaches the host, and
+    // on this surface it does not.
+    //
+    // THE REDUCER CANNOT ASK WHICH OF THE TWO THE READER CAN SEE, and it must
+    // not: the width is the stylesheet's to know, per §17k's note that a
+    // package reading the window cannot be dropped into someone else's page.
+    // So it closes both and the sheet draws whichever was on screen.
+    //
+    // THE SHELL CAN ASK, THOUGH, AND HAS TO. An earlier revision left the guard
+    // at the reducer's predicate alone and accepted "a press spent invisibly at
+    // the wide layout" as a cost. It is not a cost worth taking: a key consumed
+    // for a surface nobody can see is indistinguishable from a broken key. See
+    // `inspectorIsLifted`, which reads the sheet's own answer off the DOM
+    // rather than re-deriving it from a width.
+    //
+    // TWO TRANSIENTS SHARE THIS KEY NOW, AND §17d'S GOES FIRST. The audit
+    // overlay is the one the reader pressed a control to open, and it is drawn
+    // at EVERY width; §17k's lifted inspector is opened implicitly by a
+    // selection and exists only between `1120` and `1359`. So a press with the
+    // audit panel up closes the audit panel, at any width — without this order
+    // a reader at the wide layout, where nothing of §17k's is drawn, would
+    // press Escape and watch the panel stay put.
+    if (event.key === 'Escape' && nothingToCancel()) {
+      if (state.auditOpen) {
         event.preventDefault();
         dispatch({ kind: 'control', name: 'audit-close' });
         return;
       }
+      if (narrowOverlayOpen(state) && (state.canvasOpen || inspectorIsLifted())) {
+        event.preventDefault();
+        dispatch({ kind: 'control', name: 'narrow-dismiss' });
+        return;
+      }
+    }
+    const intent = keyIntent(event, context);
+    if (intent.kind !== 'none') {
       event.preventDefault();
       dispatch({ kind: 'intent', intent });
-      return;
-    }
-    // §17d'S OVERLAY IS DISMISSED ON ESCAPE — `RULINGS.md` §3, in those words.
-    //
-    // AFTER `keyIntent`, WHICH IS THE ORDER THAT MATTERS. `create/keys.ts`
-    // binds `escape` to `cancel` for a live draft, and a draft is the more
-    // local thing: a reader mid-relationship pressing Escape means "not this
-    // edge", not "close the panel behind it". `keyIntent` returns early when it
-    // claims the press, so this arm only ever sees an Escape nobody else wanted.
-    //
-    // GUARDED ON THE PANEL BEING OPEN, so a press with nothing to dismiss is
-    // handed back rather than swallowed. The reducer answers `unclaimed` for
-    // the same case; this is the shell half of one rule, not a second opinion.
-    if (event.key === 'Escape' && state.auditOpen) {
-      event.preventDefault();
-      dispatch({ kind: 'control', name: 'audit-close' });
       return;
     }
     if (context.focused !== null && navigateFocus(event)) {

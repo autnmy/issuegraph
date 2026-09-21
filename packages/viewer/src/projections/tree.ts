@@ -258,6 +258,9 @@ export function treeScene(document: NormalizedDocument, options: SceneOptions = 
     {
       class: 'ig-viewer ig-tree-view',
       'data-projection': 'tree',
+      // See `SceneOptions.density`; stamped on all three roots so a
+      // projection toggle cannot drop the host's decision.
+      'data-density': options.density,
       'data-ig-condition': conditionKind(document, options.chrome),
       'aria-label': 'issue decomposition',
     },

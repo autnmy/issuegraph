@@ -1,6 +1,21 @@
 {
   "disclosure-shut": [
     {
+      "zone": "canvas",
+      "channel": "data-ig-command",
+      "control": "canvas-strip",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-expanded": "false"
+      }
+    },
+    {
       "zone": "header",
       "channel": "data-ig-audit-panel",
       "control": "",
@@ -136,6 +151,21 @@
     }
   ],
   "disclosure-open": [
+    {
+      "zone": "canvas",
+      "channel": "data-ig-command",
+      "control": "canvas-strip",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-expanded": "false"
+      }
+    },
     {
       "zone": "header",
       "channel": "data-ig-audit-panel",
@@ -273,6 +303,21 @@
     }
   ],
   "draft-open": [
+    {
+      "zone": "canvas",
+      "channel": "data-ig-command",
+      "control": "canvas-strip",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-expanded": "false"
+      }
+    },
     {
       "zone": "header",
       "channel": "data-ig-audit-panel",
@@ -474,6 +519,21 @@
     }
   ],
   "search-open": [
+    {
+      "zone": "canvas",
+      "channel": "data-ig-command",
+      "control": "canvas-strip",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-expanded": "false"
+      }
+    },
     {
       "zone": "header",
       "channel": "data-ig-audit-panel",
@@ -715,6 +775,21 @@
       "aria": {}
     },
     {
+      "zone": "canvas",
+      "channel": "data-ig-command",
+      "control": "canvas-strip",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "none",
+      "inert": true,
+      "name": "text",
+      "aria": {
+        "aria-expanded": "false"
+      }
+    },
+    {
       "zone": "header",
       "channel": "data-ig-audit-panel",
       "control": "",
@@ -850,6 +925,21 @@
     }
   ],
   "refusal-tier": [
+    {
+      "zone": "canvas",
+      "channel": "data-ig-command",
+      "control": "canvas-strip",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-expanded": "false"
+      }
+    },
     {
       "zone": "canvas",
       "channel": "data-ig-command",
@@ -1195,6 +1285,21 @@
   ],
   "edge-selected": [
     {
+      "zone": "canvas",
+      "channel": "data-ig-command",
+      "control": "canvas-strip",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-expanded": "false"
+      }
+    },
+    {
       "zone": "header",
       "channel": "data-ig-audit-panel",
       "control": "",
@@ -1367,6 +1472,21 @@
     {
       "zone": "canvas",
       "channel": "data-ig-command",
+      "control": "canvas-strip",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-expanded": "false"
+      }
+    },
+    {
+      "zone": "canvas",
+      "channel": "data-ig-command",
       "control": "open-isolated",
       "target": null,
       "value": null,
@@ -1515,6 +1635,21 @@
     }
   ],
   "isolated-open": [
+    {
+      "zone": "canvas",
+      "channel": "data-ig-command",
+      "control": "canvas-strip",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-expanded": "false"
+      }
+    },
     {
       "zone": "canvas",
       "channel": "data-ig-command",
@@ -1667,6 +1802,21 @@
     }
   ],
   "held-slot": [
+    {
+      "zone": "canvas",
+      "channel": "data-ig-command",
+      "control": "canvas-strip",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-expanded": "false"
+      }
+    },
     {
       "zone": "header",
       "channel": "data-ig-audit-panel",
@@ -1829,6 +1979,21 @@
       "name": "text",
       "aria": {
         "aria-pressed": "false"
+      }
+    },
+    {
+      "zone": "canvas",
+      "channel": "data-ig-command",
+      "control": "canvas-strip",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-expanded": "false"
       }
     },
     {

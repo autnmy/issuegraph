@@ -323,7 +323,15 @@ describe('a write in flight labels the order and never re-ranks it', () => {
       words: WORDS,
       orderStatus: 'held',
     });
-    assert.match(result.markup, /^<div class="ig-workspace" data-order="held">/);
+    // THE PIN IS `data-order`, AND IT IS STILL EXACT ABOUT ITS OWN POSITION.
+    // §17k added two more root attributes — the collapsed canvas and the lifted
+    // inspector, both of which the stylesheet selects on — so what used to be
+    // the whole opening tag is now its first half. `data-order` still comes
+    // first and still carries `held`, which is the claim this test makes.
+    assert.match(
+      result.markup,
+      /^<div class="ig-workspace" data-order="held" data-canvas="strip" data-inspector="dismissed">/,
+    );
   });
 
   it('draws the SAME ranks held as settled — optimistic rendering, never optimistic re-ordering', () => {
@@ -373,7 +381,13 @@ describe('a held order is LABELLED, not merely greyed', () => {
       words: WORKSPACE_WORDS,
       orderStatus: 'held',
     });
-    assert.match(result.markup, /^<div class="ig-workspace">/);
+    // ASSERTED AS `data-order`'S ABSENCE RATHER THAN AS A BARE ROOT. §17k gives
+    // the root two more attributes and they are unconditional — the sheet reads
+    // a value, not a presence, so withholding one would read as the opposite
+    // state. The claim here was never "the root is bare": it is that the
+    // greying hook is withheld where its label cannot be drawn, and the second
+    // line below has always been the one that says so.
+    assert.match(result.markup, /^<div class="ig-workspace" data-canvas=/);
     assert.equal(/data-order/.test(result.markup), false);
   });
 

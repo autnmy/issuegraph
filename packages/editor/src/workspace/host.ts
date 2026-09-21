@@ -57,6 +57,36 @@ export interface HostState {
   readonly scale: ScaleState;
   readonly auditFiltered: boolean;
   /**
+   * Whether §17k's collapsed canvas has been opened.
+   *
+   * §17k's third row: below `1120` the canvas *"collapses to a strip that opens
+   * full-width on demand"*. This field is the demand.
+   *
+   * IT IS NOT A WIDTH, AND NOTHING HERE KNOWS ONE. §17k's implementation note
+   * forbids the package reading a viewport — *"a package that reads the window
+   * cannot be dropped into someone else's settings page"* — so the three
+   * layouts are the stylesheet's, chosen by a container query on the mount's
+   * own box, and this reducer holds only the two reader decisions those layouts
+   * need. At the two wider layouts the canvas is a zone rather than a strip and
+   * the stylesheet never reads this, so the state is simply not drawn.
+   */
+  readonly canvasOpen: boolean;
+  /**
+   * Whether the reader has dismissed §17k's lifted inspector since selecting.
+   *
+   * §17k's middle row: between `1120` and `1359` the inspector *"lifts to a
+   * `330` overlay over the canvas, opened by selection, Escape to dismiss"*.
+   * Those are two rules, and this field is the second: the first is not a state
+   * at all, because "opened by selection" is answerable from `selection` and
+   * needs no second copy that could disagree with it.
+   *
+   * STATED AS THE DISMISSAL, NOT AS THE OPENNESS, so that a new selection
+   * re-opens the panel without any arm having to remember to say so. `reduceHost`
+   * clears it wherever the selection moves — one place, rather than in each of
+   * the eight arms that can move it.
+   */
+  readonly inspectorDismissed: boolean;
+  /**
    * Whether §17d's audit overlay is on screen.
    *
    * A SECOND FIELD RATHER THAN A REUSE OF `auditFiltered`, because the header
@@ -112,6 +142,8 @@ export const INITIAL_HOST_STATE: HostState = Object.freeze({
   selection: INITIAL_SELECTION,
   scale: INITIAL_SCALE_STATE,
   auditFiltered: false,
+  canvasOpen: false,
+  inspectorDismissed: false,
   auditOpen: false,
   expanded: [],
   railStart: 0,
@@ -630,6 +662,25 @@ function pickerProposal(
   return view.options.find((option) => option.kind === choice.field && !option.current)?.proposal ?? null;
 }
 
+/**
+ * Whether either of §17k's two transient surfaces is currently open.
+ *
+ * ONE PREDICATE, TWO CALLERS. `reduceHost`'s `narrow-dismiss` arm decides
+ * whether the press changed anything, and `mountWorkspace` decides whether to
+ * cancel it; those have to agree, and a shell that cancelled a press this
+ * reducer answered `unclaimed` to would take Escape away from whatever was
+ * listening outside. See {@link HostResult.claimed}.
+ *
+ * THE INSPECTOR HALF IS DERIVED FROM THE SELECTION, which is the point of
+ * storing the DISMISSAL rather than the openness: §17k opens the panel "by
+ * selection", so with nothing selected there is nothing lifted, whatever the
+ * reader last pressed.
+ */
+export function narrowOverlayOpen(state: HostState): boolean {
+  if (state.canvasOpen) return true;
+  return state.selection.kind !== 'none' && !state.inspectorDismissed;
+}
+
 function controlled(
   state: HostState,
   name: string,
@@ -781,6 +832,35 @@ function controlled(
     // failed record.
     case 'audit-filter':
       return settled({ ...state, auditFiltered: !state.auditFiltered });
+    // §17k's STRIP CONTROL, and it really is a toggle: the same control closes
+    // the canvas it opened, which is what `aria-expanded` on it promises. The
+    // dismissal arm below is the one that must not toggle.
+    case 'canvas-strip':
+      return settled({ ...state, canvasOpen: !state.canvasOpen });
+    // ESCAPE'S ARM, AND IT CLOSES BOTH OF §17k'S TRANSIENTS AT ONCE.
+    //
+    // THE REASON IS THAT NOTHING HERE MAY ASK HOW WIDE THE SURFACE IS. Exactly
+    // one of the two is on screen at any width — the lifted inspector only
+    // between `1120` and `1359`, the opened canvas only below `1120` — and the
+    // stylesheet, which does know, is the thing that decides which. So one
+    // press closes whichever of them the reader can see, and the other change
+    // is to a state that is not being drawn. The alternative is this reducer or
+    // the shell measuring a box in a keydown handler to pick an arm, which is
+    // the window-reading §17k's implementation note rules out.
+    //
+    // CLOSING, NEVER TOGGLING, for the reason §17d's own dismissal already
+    // records: a toggle bound to a dismissal key REOPENS on a second press,
+    // which is the opposite of "Escape to dismiss".
+    //
+    // AND IT IS `unclaimed` WITH NOTHING OPEN, which is this reducer's answer
+    // about THIS command and not a promise about the key: `mount.ts` asks
+    // `narrowOverlayOpen` before dispatching — one rule, two places, not two
+    // opinions — and an Escape it declines is still cancelled further down by
+    // the create map's always-available `cancel`.
+    case 'narrow-dismiss':
+      return narrowOverlayOpen(state)
+        ? settled({ ...state, canvasOpen: false, inspectorDismissed: true })
+        : unclaimed(state);
     // §17d's HEADER COUNT, which now opens the overlay instead of filtering.
     // *"A persistent, quiet count in the workspace header. It never moves,
     // never animates, and is always the same click."*
@@ -888,8 +968,30 @@ function intended(state: HostState, intent: KeyIntent, document: GraphDocument):
   }
 }
 
-/** The one reducer. `document` is the landed document, for edge lookups. */
+/**
+ * The one reducer. `document` is the landed document, for edge lookups.
+ *
+ * ## The one rule this wrapper adds
+ *
+ * §17k's lifted inspector is *"opened by selection"*, and a selection moves
+ * from eight different arms below — a rail row, a canvas node, a mark, an audit
+ * remedy's `reveal-issue`, a hold's deep link, a drop, a create that settles,
+ * and reconciliation dropping a stale one. Clearing the dismissal in each of
+ * them is eight chances to forget, and forgetting reads as a panel that opens
+ * for some selections and not others.
+ *
+ * SO IT IS ASKED OF THE RESULT, ONCE: if the selection MOVED and now names
+ * something, the panel is open again. Comparing the two selections rather than
+ * listing the commands that change one is what makes a ninth arm free.
+ */
 export function reduceHost(state: HostState, command: HostCommand, document: GraphDocument): HostResult {
+  const result = reduceCommand(state, command, document);
+  const moved = result.state.selection !== state.selection;
+  if (!moved || result.state.selection.kind === 'none' || !result.state.inspectorDismissed) return result;
+  return { ...result, state: { ...result.state, inspectorDismissed: false } };
+}
+
+function reduceCommand(state: HostState, command: HostCommand, document: GraphDocument): HostResult {
   switch (command.kind) {
     case 'point':
       return pointed(state, command.key, document);

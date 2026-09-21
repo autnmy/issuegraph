@@ -94,6 +94,28 @@ export function isChoosingKind(draft: CreateDraft): boolean {
 }
 
 /**
+ * Whether anything has been gathered at all — the opposite of idle.
+ *
+ * IT IS NOT `isChoosingKind`'S COMPLEMENT, AND THAT IS THE WHOLE REASON IT
+ * EXISTS. The kind can be chosen before the source on the keyboard path, so
+ * `{ kind: 'blocked-by' }` with no source is a draft the reader is in the
+ * middle of and one `isChoosingKind` answers `false` for. A shell asking
+ * "is a draft live" through that predicate would treat a half-built
+ * keyboard draft as no draft at all.
+ *
+ * WHAT ASKS IT, and why the question is worth a name: `mount.ts` decides
+ * whether Escape belongs to the draft or to §17k's transient surfaces. The
+ * wrong answer either abandons a relationship the reader was building or
+ * leaves a panel that will not close, and both are silent.
+ *
+ * THREE FIELDS, NOT TWO, on this file's own standing rule: a definition
+ * written out at each call site is one a later edit can move at one of them.
+ */
+export function isDraftLive(draft: CreateDraft): boolean {
+  return draft.source !== null || draft.target !== null || draft.kind !== null;
+}
+
+/**
  * One fact arriving, from whichever path gathered it.
  *
  * `begin` is deliberately not "set source": it starts a NEW relationship, so it
