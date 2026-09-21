@@ -273,12 +273,19 @@ export function inspectorView(
             : {
                 rank: slot.rank,
                 // THE VERDICT TRAVELS WITH THE NUMBER, because the panel needs
-                // both and cannot recover this one from the other. Without it
-                // `whyRankSpec` had only `rank === null` to read held from,
-                // which is the one-field inference `RULINGS.md` §1 retired —
-                // and `InspectorPosition` beside it has carried `ready` all
-                // along, so the panel was reading two shapes that disagreed
-                // about how to answer the same question.
+                // both and cannot recover this one from the other. This field
+                // was simply OMITTED, and `whyRankSpec` stood an inference up
+                // in its place: with only `rank === null` to read, it called
+                // every unplaced slot held — the one-field inference
+                // `RULINGS.md` §1 retired.
+                //
+                // `InspectorPosition` below has carried `ready` all along, so
+                // the fact was available on the slot the whole time and simply
+                // was not forwarded here. That is evidence the field was to
+                // hand, NOT evidence the two shapes were in conflict: the
+                // renderer consumes `whyRank` and never reads `position` for a
+                // readiness verdict, so nothing was ever reading both and
+                // getting two answers.
                 ready: slot.ready,
                 provenance: issue.provenance,
                 holds: slot.holds,

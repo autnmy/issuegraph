@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import type { RankProvenance, ViewerSlot } from './document.ts';
+import type { RankProvenance, ViewerHold, ViewerSlot } from './document.ts';
 import { provenanceClause, provenanceLine, slotPosition } from './parts.ts';
 import { renderMarkup } from './element.ts';
 
@@ -89,19 +89,39 @@ describe('provenanceLine', () => {
  * a public port, so the table below is the whole cross-product of the two
  * fields rather than the corner `@issuegraph/derive` happens to emit.
  *
- * TWO CASES HERE EXIST TO FAIL A PLAUSIBLE WRONG FIX, which is the point of a
- * regression test:
+ * FOUR CASES HERE EXIST TO FAIL A PLAUSIBLE WRONG FIX, which is the point of a
+ * regression test — it has to fail for the next person, not pass for the one
+ * who wrote it. Each names the spelling it is here to kill:
  *
- *  - `ready: true, rank: null`. A predicate spelled `!ready || rank === null`
- *    reads this as held and passes every projection test, because neither
- *    fixture contains it. `@issuegraph/derive` cannot emit it; a host composing
- *    a document by hand can, and it is not held — it is placed nowhere.
+ *  - `ready: true, rank: null` kills `rank === null` and `!ready || rank ===
+ *    null`. Both read it as held, and both pass every projection test, because
+ *    no projection fixture contains it. `@issuegraph/derive` cannot emit it; a
+ *    host composing a `ViewerDocument` by hand can, and it is not held — it is
+ *    placed nowhere.
+ *  - `ready: false, holds: []` and `ready: true, holds: [hold]` kill
+ *    `holds.length > 0`. That spelling ignores the authoritative field
+ *    altogether and agreed with every other case in this table, because the
+ *    convenience fixture moves `holds` with `ready`. See `slot` below.
  *  - a numeric rank beside a `wouldBeRank`. The two are exclusive by
  *    construction upstream, so nothing downstream proves the phrase drops the
  *    would-be number when a real one exists. A host that supplies both must
  *    hear the rank it actually has, once.
  */
 describe('slotPosition', () => {
+  const HOLD: ViewerHold = { family: 'graph', reason: 'blocked by b, which is open' };
+
+  /**
+   * A slot whose `holds` FOLLOW its `ready`, for convenience — which is the
+   * ordinary case and a coupling this table has to break on purpose.
+   *
+   * WHILE THE TWO MOVE TOGETHER, NO CASE HERE CAN TELL THEM APART, and a
+   * predicate spelled `holds.length > 0` passes every one of them while
+   * ignoring the authoritative field entirely. `ViewerSlot` is explicit about
+   * which is which: `ready` is the VERDICT and `holds` are the EXPLANATION, so
+   * a host may legally state a held slot that explains nothing. `decoupled`
+   * below builds exactly that, and the two cases using it are the only inputs
+   * that separate "held" from "has holds" — do not fold them back into `slot`.
+   */
   const slot = (
     ready: boolean,
     rank: number | null,
@@ -111,8 +131,17 @@ describe('slotPosition', () => {
     lead: 'a',
     members: ['a'],
     ready,
-    holds: ready ? [] : [{ family: 'graph', reason: 'blocked by b, which is open' }],
+    holds: ready ? [] : [HOLD],
     ...(wouldBeRank === undefined ? {} : { wouldBeRank }),
+  });
+
+  /** A slot whose `holds` CONTRADICT its `ready`. Only `ready` may decide. */
+  const decoupled = (ready: boolean, rank: number | null, holds: readonly ViewerHold[]): ViewerSlot => ({
+    rank,
+    lead: 'a',
+    members: ['a'],
+    ready,
+    holds,
   });
 
   const CASES: readonly (readonly [string, ViewerSlot, string])[] = [
@@ -128,6 +157,19 @@ describe('slotPosition', () => {
     ['held, placed, would-be also supplied', slot(false, 2, 9), 'held, rank 2'],
     // An explicit null would-be is the same as none at all.
     ['held and unplaced, would-be explicitly null', slot(false, null, null), 'held, no rank'],
+    // ── THE TWO THAT BREAK THE FIXTURE'S OWN COUPLING ───────────────────────
+    //
+    // Everything above moves `holds` with `ready`, so `holds.length > 0` is
+    // indistinguishable from `!ready` across all of it — and that spelling is
+    // the defect this whole change removed, reachable again with nothing to
+    // object. These two are the separating inputs, one per direction.
+    //
+    // A HELD SLOT THAT EXPLAINS NOTHING. `holds.length > 0` returns `rank 2`
+    // here and drops the word held, which is precisely the bug.
+    ['held with an EMPTY holds array', decoupled(false, 2, []), 'held, rank 2'],
+    // And the inverse: a hold listed on a slot its host says is ready. The
+    // explanation does not get to overrule the verdict either.
+    ['ready despite a hold being listed', decoupled(true, 2, [HOLD]), 'rank 2'],
   ];
 
   for (const [name, value, expected] of CASES) {
