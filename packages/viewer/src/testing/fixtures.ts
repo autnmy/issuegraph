@@ -167,6 +167,54 @@ export const hostedFixtureDocument: ViewerDocument = {
 };
 
 /**
+ * §16a, both of `RULINGS.md` §1's arms, in one document.
+ *
+ * `#3` is rank 1. The unit `{1, 2}` waits on it and is **held at rank 2** —
+ * the arm where the blocker is inside the previewed order, which the model
+ * could not express before #208. `#4` waits on something this order does not
+ * carry, so it has no rank and names the position it WOULD have taken.
+ *
+ * ITS JOB IS THE ACCESSIBLE NAMES. Every surface that phrases "where does this
+ * sit" used to read held from `rank === null`, which this document is the
+ * counterexample to: slot two has a rank AND is held, and any label that
+ * infers one from the other gets it wrong here and nowhere else.
+ */
+export const heldButRankedDocument: ViewerDocument = {
+  issues: [
+    { key: '1', title: 'Lead', open: true, priority: 2 },
+    { key: '2', title: 'Partner', open: true, priority: 2 },
+    { key: '3', title: 'Blocker', open: true, priority: 2 },
+    { key: '4', title: 'Waiting on elsewhere', open: true, priority: 2 },
+  ],
+  edges: [
+    { field: 'together-with', from: '1', to: '2' },
+    { field: 'blocked-by', from: '2', to: '3' },
+  ],
+  order: {
+    slots: [
+      { rank: 1, lead: '3', members: ['3'], ready: true, holds: [] },
+      {
+        rank: 2,
+        lead: '1',
+        members: ['1', '2'],
+        ready: false,
+        holds: [{ family: 'graph', reason: 'blocked by 3, which is open' }],
+      },
+      {
+        rank: null,
+        wouldBeRank: 3,
+        lead: '4',
+        members: ['4'],
+        ready: false,
+        holds: [{ family: 'graph', reason: 'blocked by 99, which is not in this order' }],
+      },
+    ],
+    excluded: [],
+  },
+  cycles: [],
+};
+
+/**
  * A together unit that the tracker holds — so its lead gets no rail row and the
  * canvas owns its tab stop, which is the one shape where the enclosure and the
  * node group compete for the same key.

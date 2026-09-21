@@ -4,7 +4,13 @@ import { describe, it } from 'node:test';
 import { normalizeDocument } from '../document.ts';
 import { renderMarkup } from '../element.ts';
 import { ROW_BADGE_BUDGET } from '../parts.ts';
-import { denseRowDocument, denseUnitDocument, fixtureDocument, heldTogetherDocument } from '../testing/fixtures.ts';
+import {
+  denseRowDocument,
+  denseUnitDocument,
+  fixtureDocument,
+  heldButRankedDocument,
+  heldTogetherDocument,
+} from '../testing/fixtures.ts';
 import { linearScene } from './linear.ts';
 
 function render(input = fixtureDocument, options = {}): string {
@@ -262,6 +268,33 @@ describe('the linear projection', () => {
       assert.match(row(markup, key), /aria-label="[^"]+"/);
     }
     assert.match(row(markup, '102'), /aria-label="Backfill the ledger — 102 — rank 1"/);
+  });
+
+  /**
+   * THE FACT A SCREEN READER CANNOT AFFORD TO LOSE. `slotLabel` read the
+   * position as `rank === null ? 'held, no rank' : 'rank N'`, which inferred
+   * HELD from the ABSENCE OF A RANK. Sound while `@issuegraph/derive` assigned
+   * `ready ? rank : null`; wrong since `RULINGS.md` §1, which is the case this
+   * fixture is. The old expression announced the held unit as plain `rank 2`
+   * and dropped the word held — silently, and only on the row the whole
+   * feature exists to draw. §16a's row says both at once and so must the name.
+   */
+  it('announces a held slot as held EVEN WHEN it now carries a rank', () => {
+    const markup = render(heldButRankedDocument);
+
+    // The unit is held AND placed: both facts, from `ready` and `rank`.
+    assert.match(row(markup, '1'), /aria-label="Lead · Partner — 1, 2 — held, rank 2"/);
+    // The station agrees with the name rather than with the number beside it.
+    assert.match(row(markup, '1'), /data-fill="dashed"/);
+    assert.match(row(markup, '1'), /class="ig-rank"[^>]*>2</);
+    // A ready slot says nothing about holds.
+    assert.match(row(markup, '3'), /aria-label="Blocker — 3 — rank 1"/);
+    // The other arm keeps the phrase it always had, and adds the position it
+    // would have taken when the host worked one out.
+    assert.match(
+      row(markup, '4'),
+      /aria-label="Waiting on elsewhere — 4 — held, no rank, would be rank 3"/,
+    );
   });
 
   it('marks the readiness station filled, hollow and dashed as the slot demands', () => {

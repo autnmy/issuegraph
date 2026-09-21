@@ -53,6 +53,7 @@ import {
   notReadyBadge,
   priorityBadge,
   slotLabel,
+  slotPosition,
   stationFill,
   stationsOf,
   unitBlock,
@@ -392,12 +393,16 @@ function spineStations(
           'data-fill': box.now === true ? 'filled' : fill,
           'data-wait': waiting ? 'serialize' : null,
           role: 'img',
+          // THE SAME TWO-FIELD PHRASE THE ROW SPEAKS — `slotPosition`, not a
+          // second reading of `rank`. Inferring held from a missing rank here
+          // dropped the word held from a held-but-ranked station exactly as it
+          // did from the row's own name; see `slotPosition`.
           'aria-label':
             box.now === true
               ? 'working now'
-              : slot === undefined || slot.rank === null
+              : slot === undefined
                 ? 'held, no rank'
-                : `rank ${String(slot.rank)}`,
+                : slotPosition(slot),
           style: `--ig-station-x:${String(box.x - theme.metrics['--ig-space'] - size)}px;--ig-station-y:${String(box.y + theme.metrics['--ig-space'])}px`,
         },
         [box.now === true ? '▸' : slot?.rank === null || slot === undefined ? '—' : String(slot.rank)],

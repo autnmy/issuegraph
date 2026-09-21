@@ -69,8 +69,11 @@ export interface RailWindowOptions {
   /**
    * The first row to draw, as a 0-BASED offset into the order's slots.
    *
-   * An offset, deliberately, and not a rank: a held slot has `rank === null`,
-   * so ranks are not a coordinate you can slice on. Out-of-range values are
+   * An offset, deliberately, and not a rank: a slot the order could not place
+   * has `rank === null` — since `RULINGS.md` §1 that is narrower than "held",
+   * but either way the ranks have gaps, so they are not a coordinate you can
+   * slice on. Reading them as one would skip a row rather than fail. Out-of-
+   * range values are
    * clamped rather than refused — a host that scrolls past the end gets the
    * last window, which is what a scroll container does anyway.
    */

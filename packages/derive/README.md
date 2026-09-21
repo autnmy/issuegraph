@@ -48,7 +48,10 @@ A **held slot keeps its position**, and whether it keeps a *number* depends on w
 
 `ready` is the only field that answers *may this start*; a rank answers *where does it sit*. `holdReasons` names each failed condition, and `holds` carries the same conditions as the reader's `{ code, subject?, text }` — `holdReasons` is its text projection — so a host groups on `code` and links `subject` without matching a sentence.
 
-> **Changed in 0.2.0.** Before it, every held slot carried `rank: null`. A consumer that read `rank !== null` as *ready* must read `ready` instead.
+> **Changed in 0.2.0.** Before it, every held slot carried `rank: null`.
+>
+> - A consumer that read `rank !== null` as *ready* must read `ready` instead. That inference was sound and is not any more.
+> - **Every rank below a held-but-in-order slot shifts by one**, because such a slot now consumes a number. Only the held-**outside** arm leaves the numbering alone. `[A held-inside, B held-outside, C ready, D ready]` gave `[null, null, 1, 2]` and now gives `[1, null, 2, 3]`.
 
 `promotedBy` names the neighbour the urgency arrived through — along **both** paths §6.3 relaxes, `blocked-by` *and* `together-with`, since a P3 grouped with a P0 is genuinely promoted and a blocked-by-only index would report that with nothing to show for it. The together half is the **adjacent peer**, not the component: relaxation puts every member at the same effective priority, so enumerating the component makes a stranger three hops away read as a cause. It reads **exactly** the edges the model read — an edge naming a duplicate is attributed to its canonical, and a duplicate's own edges are ignored. Over-refusing is safe for a pre-write guard and wrong for provenance: it would name a cause that did not act.
 

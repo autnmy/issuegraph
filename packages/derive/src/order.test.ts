@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import type { NodeInput } from '@issuegraph/reader';
+import type { Frontmatter, NodeInput } from '@issuegraph/reader';
 
 import {
   type ConfigRankedIssue,
@@ -1054,5 +1054,68 @@ describe('deriveIssueOrder — a held slot and the side its blocker is on', () =
     for (const slot of deriveSeed().slots) {
       if (slot.rank !== null) assert.equal(slot.wouldBeRank, null, `#${slot.lead}`);
     }
+  });
+});
+
+/**
+ * THE MIGRATION NOTE, EXECUTABLE. A held-INSIDE slot consumes a rank and a
+ * held-OUTSIDE one does not, so "a held slot takes no number and the ranks
+ * below it close up" is now true of exactly one of the two arms. Stated as
+ * prose in the CHANGELOG and the README, and pinned here so the prose cannot
+ * drift from the arithmetic it describes.
+ *
+ * The shape is the review's own counterexample: `[held-inside, held-outside,
+ * ready, ready]` gave `[null, null, 1, 2]` before #208 and gives
+ * `[1, null, 2, 3]` now. The second slot still takes nothing; the first is
+ * what pushes the two ready slots down by one.
+ */
+describe('deriveIssueOrder — which held arm moves the numbers below it', () => {
+  /** `a` waits on `c`, which is in this order; `b` waits on a ref that is not. */
+  function mixedArms(): NodeInput[] {
+    const node = (id: string, data: Frontmatter | null = null): NodeInput => ({
+      id,
+      open: true,
+      labels: [],
+      assigneeCount: 0,
+      declarationRead: 'read',
+      data,
+    });
+    return [
+      node('a', frontmatter({ blockedBy: [ref('c')] })),
+      node('b', frontmatter({ blockedBy: [ref('nowhere')] })),
+      node('c'),
+      node('d'),
+    ];
+  }
+
+  test('a held-INSIDE slot consumes a rank; a held-OUTSIDE slot does not', () => {
+    const derived = deriveIssueOrder({
+      issues: mixedArms(),
+      config: {
+        baseRanking: {
+          source: 'config',
+          order: ['a', 'b', 'c', 'd'].map((key, index) => ({ key, matchedOrderIndex: index })),
+        },
+      },
+    });
+
+    assert.deepStrictEqual(
+      derived.slots.map((slot) => [slot.lead, slot.rank, slot.wouldBeRank, slot.ready]),
+      [
+        // Waits on `c`, which is rank 2 below — inside the order, so placed.
+        ['a', 1, null, false],
+        // Waits on a ref this order cannot resolve: no rank, names where it
+        // would have sat, and takes nothing from the slots beneath it.
+        ['b', null, 2, false],
+        ['c', 2, null, true],
+        ['d', 3, null, true],
+      ],
+    );
+    // The whole vector, against what the old rule produced for the same graph.
+    assert.deepStrictEqual(
+      derived.slots.map((slot) => slot.rank),
+      [1, null, 2, 3],
+      'before #208 this was [null, null, 1, 2]; only the held-INSIDE arm moved it',
+    );
   });
 });

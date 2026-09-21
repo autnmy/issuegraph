@@ -188,11 +188,19 @@ export interface IssueOrderSlot {
    * because #530 arriving among the P1s would land at 4 and push #503 to 5.
    *
    * IT DOES NOT CONSUME A RANK, which is what keeps the two numbers coherent:
-   * the ranks below a would-be rank close up exactly as they always have, and
+   * the ranks below a WOULD-BE rank close up exactly as they always have, and
    * §16a's `#503` reads 4 rather than 5 precisely because #530 took nothing.
    * The cost of that is stated rather than hidden — two unranked slots in a
    * row both report the same would-be number, since each names the position
    * the order would give IT, not a position the two would share out.
+   *
+   * THE OTHER ARM DOES CONSUME ONE, AND THAT IS WHERE THE NUMBERS MOVED. Only
+   * the unranked arm leaves the numbering alone; a held slot that KEEPS its
+   * rank takes a number it did not take before, so everything below it shifts.
+   * `[A held-inside, B held-outside, C ready, D ready]` gave `[null, null, 1,
+   * 2]` and now gives `[1, null, 2, 3]` — B still takes nothing, A now takes
+   * 1, and C and D are pushed by A alone. That is the ruling working, not a
+   * defect, but it is the migration a consumer of {@link rank} has to plan.
    */
   readonly wouldBeRank: number | null;
   /** The member that placed the slot; the detail surface's subject. */

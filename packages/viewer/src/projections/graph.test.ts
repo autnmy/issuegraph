@@ -10,6 +10,7 @@ import { type ElementSpec, renderMarkup } from '../element.ts';
 import {
   crowdedDocument,
   fixtureDocument,
+  heldButRankedDocument,
   heldTogetherDocument,
   hostedFixtureDocument,
 } from '../testing/fixtures.ts';
@@ -243,6 +244,31 @@ describe('the graph projection', () => {
     assert.match(markup, /--ig-station-x:[-\d.]+px;--ig-station-y:[-\d.]+px/);
     // And the line itself, spanning the stations.
     assert.match(markup, /<line class="ig-spine"/);
+  });
+
+  /**
+   * THE SAME DEFECT THE ROW'S NAME HAD, one projection over. This station
+   * phrased its own `aria-label` from `rank === null`, so a held-but-ranked
+   * slot was announced as plain `rank 2` with the word held dropped — the one
+   * fact a reader of this station needs, missing on the one case
+   * `RULINGS.md` §1 added. Both now phrase through `slotPosition`.
+   */
+  it('announces a station as held even when the slot now carries a rank', () => {
+    const markup = render(heldButRankedDocument);
+
+    assert.match(
+      markup,
+      /<span class="ig-spine-station" data-fill="dashed"[^>]*aria-label="held, rank 2"[^>]*>2</,
+    );
+    assert.match(
+      markup,
+      /<span class="ig-spine-station" data-fill="filled"[^>]*aria-label="rank 1"[^>]*>1</,
+    );
+    // The unranked arm keeps the em dash, and names where it would have sat.
+    assert.match(
+      markup,
+      /<span class="ig-spine-station" data-fill="dashed"[^>]*aria-label="held, no rank, would be rank 3"[^>]*>—</,
+    );
   });
 
   it('heads each column with what it is for', () => {
