@@ -28,7 +28,7 @@ describe('the loading placeholder', () => {
 
   it('draws spine cards for the graph, with no header of its own', () => {
     const markup = renderViewerSkeleton({ projection: 'graph', rows: 2 }).markup;
-    assert.equal(markup.match(/class="ig-skeleton-card"/g)?.length, 2);
+    assert.equal(markup.match(/data-shape="card"/g)?.length, 2);
     assert.equal(/class="ig-header"/.test(markup), false);
   });
 

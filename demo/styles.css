@@ -98,8 +98,11 @@
   --icon: 16px;
   --guide-num: 20px;
   --chevron-shut: rotate(-90deg);
-  --pulse-time: 1.6s;
-  --pulse-dim: 0.45;
+  /* The pulse descant's own skeletons use (Tailwind's animate-pulse), so the
+     demo's placeholder looks like the product's. */
+  --pulse-time: 2s;
+  --pulse-ease: cubic-bezier(0.4, 0, 0.6, 1);
+  --pulse-dim: 0.5;
 
   /* THE EDITOR'S ZONE TRACKS, RESTATED SO THE GUIDE CAN LINE UP WITH THEM.
      The workspace sizes its rail and inspector in characters of the viewer's
@@ -590,7 +593,7 @@ select {
    skeletons. */
 @media (prefers-reduced-motion: no-preference) {
   .ig-skeleton-block {
-    animation: skeleton-pulse var(--pulse-time) ease-in-out infinite;
+    animation: skeleton-pulse var(--pulse-time) var(--pulse-ease) infinite;
   }
 }
 

@@ -1614,7 +1614,7 @@ ${railDensity(".ig-viewer[data-density='dense']")}
    pulse animates this class under its own reduced-motion rule. */
 .ig-skeleton-block {
   background: var(--ig-surface-2);
-  border-radius: var(--ig-radius-small);
+  border-radius: var(--ig-radius);
   display: block;
 }
 
@@ -1687,23 +1687,11 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 }
 
 /* THE SPINE CARD'S OWN WIDTH, so the graph's placeholder sits where its cards
-   will. */
-.ig-skeleton-card {
-  align-items: flex-start;
-  border: var(--ig-stroke) solid var(--ig-line);
-  border-radius: var(--ig-radius);
-  box-sizing: border-box;
-  display: flex;
-  gap: var(--ig-space);
+   will, as one solid block with the large radius the panel's cards use. */
+.ig-skeleton-block[data-shape='card'] {
+  block-size: calc(var(--ig-station-box) * 4);
+  border-radius: var(--ig-radius-large);
   inline-size: min(100%, var(--ig-spine-width));
-  padding: var(--ig-space);
-}
-
-.ig-skeleton-card-body {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-width: 0;
 }
 
 /* ── legend ────────────────────────────────────────────────────────────── */

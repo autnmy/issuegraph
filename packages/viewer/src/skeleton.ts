@@ -92,11 +92,14 @@ function rowSkeleton(index: number): ElementSpec {
   ]);
 }
 
+/**
+ * A spine card's placeholder: ONE filled block at the card's width and height,
+ * not an outlined card with bars inside. Solid rounded blocks are how a
+ * skeleton reads at a glance — the same shape host dashboards draw for their
+ * own cards — and it keeps every placeholder on the one hook a host styles.
+ */
 function cardSkeleton(): ElementSpec {
-  return element('div', { class: 'ig-skeleton-card' }, [
-    block('station'),
-    element('div', { class: 'ig-skeleton-card-body' }, [block('title', { 'data-width': '1' }), block('meta')]),
-  ]);
+  return block('card');
 }
 
 /**
