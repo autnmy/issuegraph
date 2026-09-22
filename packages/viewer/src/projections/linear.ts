@@ -484,10 +484,15 @@ function footerEntry(
 ): readonly ElementSpec[] {
   return [
     element('div', { class: 'ig-rank-cell' }, [station('dashed')]),
+    // ONE `.ig-row-head`, AS A RANKED ROW HAS: its lines sit 2px apart, which is
+    // what makes a title, its identity line and its reason read as one object
+    // rather than three rows of text a body's wider gap would space apart.
     element('div', { class: 'ig-row-body' }, [
-      element('span', { class: 'ig-title' }, [title]),
-      element('div', { class: 'ig-row-meta' }, [id, status, relationships]),
-      why === null ? null : element('p', { class: 'ig-footer-why' }, [why]),
+      element('div', { class: 'ig-row-head' }, [
+        element('span', { class: 'ig-title' }, [title]),
+        element('div', { class: 'ig-row-meta' }, [id, status, relationships]),
+        why === null ? null : element('p', { class: 'ig-footer-why' }, [why]),
+      ]),
     ]),
   ];
 }

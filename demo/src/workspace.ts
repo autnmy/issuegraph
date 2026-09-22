@@ -298,7 +298,7 @@ export const WORKSPACE_WORDS: MountWords = {
   // WHOSE DRAFT THE KIND STEP BELONGS TO, when it is not the panel's subject:
   // a draft begun on a together unit's partner, or one the reader selected
   // away from. The panel appends the reference itself.
-  relatingFrom: 'Relating from',
+  relatingFrom: 'Adding a relationship to',
   // NAMES THE ACT, NOT THE ROW. The `✕` is repeated once per relationship and
   // the markup already says which one it is about, so a word naming a
   // particular reference would be wrong on every other row.

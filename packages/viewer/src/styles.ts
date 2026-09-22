@@ -1195,18 +1195,16 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 
 /* ── the footer group: holds that earn no rank slot ────────────────────── */
 
-.ig-footer {
-  border-top: var(--ig-stroke) solid var(--ig-line);
-}
-
+/* NO RULE OF ITS OWN ON TOP. The last ranked row above already draws its
+   bottom rule, and a second one here stacked on it as a doubled line. */
 /* THE PANEL HEADER'S LAYOUT, ONE LEVEL DOWN: a kicker and a count chip on one
    line, a sentence under them. The kicker and the chip are the header's own
    classes (see footerHead), so this rule only places them. */
 .ig-footer-head {
   display: flex;
   flex-direction: column;
-  gap: var(--ig-space-snug);
-  padding: var(--ig-space-loose) var(--ig-space-wide) var(--ig-space);
+  gap: var(--ig-space-tight);
+  padding: var(--ig-row-padding-block-dense) var(--ig-space-wide);
 }
 
 .ig-footer-title-row {
@@ -1221,7 +1219,8 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 
 .ig-footer-note {
   color: var(--ig-text-muted);
-  font-size: var(--ig-font-size);
+  font-size: var(--ig-font-size-compact);
+  line-height: var(--ig-row-meta-line);
   margin: 0;
 }
 
@@ -1243,7 +1242,10 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   cursor: pointer;
   display: grid;
   grid-template-columns: var(--ig-rank-column) 1fr;
-  padding: var(--ig-row-padding-block) var(--ig-space-wide);
+  /* THE DENSE RANKED ROW'S PADDING, at every width: these rows carry three
+     lines where a ranked row carries two, and the wider padding on top of that
+     made each one twice the height of its neighbours above. */
+  padding: var(--ig-row-padding-block-dense) var(--ig-space-wide);
 }
 
 .ig-footer-row:hover {
@@ -1267,7 +1269,8 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 
 .ig-footer-why {
   color: var(--ig-text-muted);
-  font-size: var(--ig-font-size);
+  font-size: var(--ig-font-size-compact);
+  line-height: var(--ig-row-meta-line);
   margin: 0;
 }
 

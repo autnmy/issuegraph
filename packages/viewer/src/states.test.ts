@@ -421,7 +421,7 @@ describe('the §16 states', () => {
         { ...populated, host: { freshness: FRESHNESS, adoption: { counts: { declaring: 12, total: 48 } } } },
         { projection },
       ).markup;
-      const occurrences = markup.split('12 of 48 declare relationships').length - 1;
+      const occurrences = markup.split('12 of 48 have relationships').length - 1;
       assert.equal(occurrences, 1, `${projection} did not state the adoption count exactly once`);
       assert.ok(!markup.includes('ig-adoption'), `${projection} drew a footer line for a count-only host`);
     }

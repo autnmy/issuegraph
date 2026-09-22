@@ -244,7 +244,7 @@ export function evidenceBadge(issue: ViewerIssue | undefined): ElementSpec | nul
   if (issue?.evidence !== 'verified') return null;
   return element(
     'span',
-    { class: 'ig-badge', 'data-evidence': 'verified', title: 'evidence: verified' },
+    { class: 'ig-badge', 'data-evidence': 'verified', title: 'verified' },
     glyphAndLabel('✓', 'verified'),
   );
 }
@@ -404,7 +404,7 @@ export function hostHeader(
   if (adoption?.counts !== undefined) {
     chips.push(
       element('span', { class: 'ig-count-chip', 'data-count': 'adoption' }, [
-        `${String(adoption.counts.declaring)} of ${String(adoption.counts.total)} declare relationships`,
+        `${String(adoption.counts.declaring)} of ${String(adoption.counts.total)} have relationships`,
       ]),
     );
   }
