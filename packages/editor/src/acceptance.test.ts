@@ -1052,6 +1052,8 @@ describe('done when: the package\'s public surface is final and self-sufficient'
     // would have to re-derive, which is the drift the seam exists to prevent.
     for (const name of [
       'renderWorkspace',
+      // The workspace's loading placeholder, pure for a host's server-side loading state.
+      'renderWorkspaceSkeleton',
       'workspaceStylesheet',
       'selectionReducer',
       'INITIAL_SELECTION',

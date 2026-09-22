@@ -263,6 +263,7 @@ export const WORKSPACE_WORDS: MountWords = {
   encoded: 'with relationships',
   // The frame draws the panel's name in caps; the caps are the stylesheet's, as
   // they are for every other heading in this zone, so the word reads as a word.
+  loading: 'Loading your issues',
   inspector: 'Inspector',
   nothingSelected: 'Select an issue or a relationship to see its details.',
   clearSelection: 'Clear selection',

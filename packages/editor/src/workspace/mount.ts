@@ -75,6 +75,7 @@ import { pickerStylesheet } from '../picker/styles.ts';
 import type { PickerWords } from '../picker/words.ts';
 import { scaleLadder } from '../scale/ladder.ts';
 import { mountStylesheet } from './chrome.ts';
+import { renderWorkspaceSkeleton } from './skeleton.ts';
 import type { FirstPassPhase } from './firstpass.ts';
 import {
   type HostCommand,
@@ -1271,6 +1272,28 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   const render = (): void => {
     if (destroyed) return;
     const snapshot = store.getSnapshot();
+    // THE FIRST READ IS IN FLIGHT, SO THERE IS NOTHING TO SAY YET. Drawn over
+    // the store's empty document, the workspace announced an empty backlog —
+    // "no relationships yet", no rows — about issues nobody had read. The
+    // placeholder holds the three zones' shape instead, and the first render
+    // after the load replaces it.
+    //
+    // `hydrating` ONLY, NEVER `idle`. A store nobody has asked to load is not
+    // loading, and a host that fills its store another way (or a test that
+    // never hydrates) must still get the document it has. A REHYDRATE is not
+    // this state either: the store keeps its last good document and stays
+    // `ready`, so a refresh never blanks the surface.
+    if (snapshot.status === 'hydrating') {
+      const skeleton = renderWorkspaceSkeleton({
+        label: current.words.loading,
+        theme: current.theme === undefined ? undefined : theme(),
+        themeSelector: current.themeSelector,
+      });
+      const skeletonSheet = [skeleton.styles, mountStylesheet].join('\n');
+      if (styles.textContent !== skeletonSheet) styles.textContent = skeletonSheet;
+      surface.innerHTML = skeleton.markup;
+      return;
+    }
     const document_ = landed();
     // WHAT THE STORE IS NOT SHOWING, computed before the reconcile rather than
     // beside the edges below, because the reconcile is the first reader of it:

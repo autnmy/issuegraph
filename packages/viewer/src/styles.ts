@@ -1676,6 +1676,106 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   padding: var(--ig-space-tight) 0;
 }
 
+/* ── loading placeholder ───────────────────────────────────────────────── */
+
+/* THE HOST'S HOOK, AND THE ONLY ONE. Every placeholder shape is one of these,
+   filled with the second surface and holding still: this package ships no
+   motion, and the fill already follows the host's theme. A host that wants a
+   pulse animates this class under its own reduced-motion rule. */
+.ig-skeleton-block {
+  background: var(--ig-surface-2);
+  border-radius: var(--ig-radius-small);
+  display: block;
+}
+
+/* ON THE HEADER'S OWN GROUND the second surface is the ground, so the shapes
+   there take the hairline colour instead, or they vanish into it. */
+.ig-header .ig-skeleton-block {
+  background: var(--ig-line);
+}
+
+.ig-skeleton-block[data-shape='label'] {
+  block-size: var(--ig-space);
+  inline-size: calc(var(--ig-char-width) * 14);
+}
+
+.ig-skeleton-chips {
+  display: flex;
+  gap: var(--ig-space-snug);
+}
+
+.ig-skeleton-block[data-shape='chip'] {
+  block-size: calc(var(--ig-space) * 2);
+  border-radius: var(--ig-radius);
+  inline-size: calc(var(--ig-char-width) * 9);
+}
+
+.ig-skeleton-block[data-shape='station'] {
+  block-size: var(--ig-space);
+  border-radius: 50%;
+  inline-size: var(--ig-space);
+}
+
+/* THE ROW'S OWN LINE HEIGHTS, so a placeholder row and a real row are the same
+   height at every density the container picks. */
+.ig-skeleton-block[data-shape='title'] {
+  block-size: var(--ig-row-title-line);
+  inline-size: 68%;
+}
+
+.ig-skeleton-block[data-shape='title'][data-width='1'] {
+  inline-size: 54%;
+}
+
+.ig-skeleton-block[data-shape='title'][data-width='2'] {
+  inline-size: 82%;
+}
+
+.ig-skeleton-block[data-shape='meta'] {
+  block-size: var(--ig-row-meta-line);
+  inline-size: 36%;
+}
+
+/* THE TWO LINES OF A ROW, stacked with no gap of their own: each block is its
+   line's full height, which already carries the leading a real line has. */
+.ig-skeleton-lines {
+  display: flex;
+  flex-direction: column;
+}
+
+/* A placeholder row points at nothing, so it takes no pointer and no hover. */
+.ig-skeleton-row {
+  pointer-events: none;
+}
+
+.ig-skeleton-stage {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-wide);
+  padding: var(--ig-space-wide);
+}
+
+/* THE SPINE CARD'S OWN WIDTH, so the graph's placeholder sits where its cards
+   will. */
+.ig-skeleton-card {
+  align-items: flex-start;
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  box-sizing: border-box;
+  display: flex;
+  gap: var(--ig-space);
+  inline-size: min(100%, var(--ig-spine-width));
+  padding: var(--ig-space);
+}
+
+.ig-skeleton-card-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
 /* ── legend ────────────────────────────────────────────────────────────── */
 
 /* A FOOTER BAR, WHERE §16b PUTS IT, and worded rather than glyph-only. It sits

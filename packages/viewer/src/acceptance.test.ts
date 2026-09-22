@@ -246,7 +246,12 @@ describe('the public surface', () => {
       'reconcile',
       'renderMarkup',
       'renderViewer',
+      // THE LOADING PLACEHOLDER, pure so a host can render it server-side in a
+      // route's loading state, and its spec so the editor can place it inside
+      // its own zones without a second copy of the row geometry.
+      'renderViewerSkeleton',
       'resolveTheme',
+      'skeletonSpec',
       'themeCss',
       'treatmentFor',
       'viewerStylesheet',

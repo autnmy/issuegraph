@@ -417,6 +417,9 @@ export {
 
 export { workspaceStylesheet } from './workspace/styles.ts';
 
+export type { WorkspaceSkeletonOptions, WorkspaceSkeletonResult } from './workspace/skeleton.ts';
+export { renderWorkspaceSkeleton } from './workspace/skeleton.ts';
+
 export {
   type HostCommand,
   type HostEffect,

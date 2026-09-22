@@ -154,6 +154,17 @@ export interface WorkspaceWords {
    */
   readonly change?: ChangeWords | undefined;
   /**
+   * What the workspace says, to assistive technology, while its first read is
+   * in flight — "Loading your issues". The placeholder itself has no words;
+   * see `renderWorkspaceSkeleton`.
+   *
+   * OPTIONAL, AND ITS ABSENCE STILL DRAWS THE PLACEHOLDER. Unlike the words
+   * whose absence withholds a control, this one only names a region: without
+   * it the surface is marked busy and says nothing, which is honest, rather
+   * than saying an English sentence a host cannot translate.
+   */
+  readonly loading?: string | undefined;
+  /**
    * Reads the freshness stamp in §17a's header — the frame's `as of 14:32 ↻`,
    * minus the clock.
    *

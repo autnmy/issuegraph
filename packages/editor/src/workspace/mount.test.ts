@@ -5106,3 +5106,62 @@ describe('§17d and §17k share Escape, audit first', () => {
     }
   });
 });
+
+describe('the first read draws a placeholder, never an empty backlog', () => {
+  it('holds the three zones while the store is hydrating, then draws the document', async () => {
+    // THE DEFECT: the mount never read the store's hydration status, so a
+    // workspace mounted before its data arrived rendered the store's empty
+    // document — no rows, "no relationships yet" — about a backlog nobody had
+    // read. A host could only avoid that by not mounting, and then drew its own
+    // guess at this layout.
+    const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>');
+    const element = dom.window.document.getElementById('host');
+    assert.ok(element !== null);
+    const source = createScriptedSource(SEED, applyAny);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const slow: DataSource = { ...source, hydrate: async () => { await gate; return source.hydrate(); } };
+    const store = createStore({ source: slow, derive: flatDeriver });
+    const loading = store.hydrate();
+    const handle = mountWorkspace(element, {
+      store,
+      project,
+      words: { ...WORDS, loading: 'Loading your issues' },
+    });
+    await flush();
+
+    const surface = element.querySelector('.ig-workspace');
+    assert.equal(surface?.getAttribute('data-ig-loading'), 'true', 'no placeholder while the read is in flight');
+    assert.equal(surface?.getAttribute('aria-busy'), 'true');
+    assert.equal(surface?.getAttribute('aria-label'), 'Loading your issues', 'the host word is not the region name');
+    assert.deepEqual(
+      [...element.querySelectorAll('.ig-zone')].map((zone) => zone.getAttribute('data-zone')),
+      ['header', 'rail', 'canvas', 'inspector'],
+      'the placeholder does not hold the real zones',
+    );
+    assert.equal(element.querySelectorAll('[data-ig-key]').length, 0, 'a placeholder drew issue rows');
+    assert.ok(element.querySelectorAll('.ig-skeleton-block').length > 0);
+
+    release();
+    await loading;
+    await flush();
+    assert.equal(element.querySelector('[data-ig-loading]'), null, 'the placeholder outlived the read');
+    assert.ok(element.querySelectorAll('[data-zone="rail"] [data-ig-key]').length > 0, 'the document never drew');
+    handle.destroy();
+  });
+
+  it('never shows the placeholder for a store nobody asked to load', async () => {
+    // `idle` is not loading. A host that fills its store another way, or a test
+    // that never hydrates, must get the surface it has — not a spinner forever.
+    const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>');
+    const element = dom.window.document.getElementById('host');
+    assert.ok(element !== null);
+    const store = createStore({ source: createScriptedSource(SEED, applyAny), derive: flatDeriver });
+    const handle = mountWorkspace(element, { store, project, words: WORDS });
+    await flush();
+    assert.equal(element.querySelector('[data-ig-loading]'), null);
+    handle.destroy();
+  });
+});
