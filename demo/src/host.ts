@@ -162,13 +162,22 @@ export function runningJobs(running: RunningSince | undefined, now: Date): reado
 export const DEMO_STATE_NAMES = Object.freeze(['live', 'importing', 'empty', 'error', 'stale'] as const);
 export type DemoStateName = (typeof DEMO_STATE_NAMES)[number];
 
-/** The control's label for each state — host chrome, so the page's own words. */
+/**
+ * The control's label for each state — host chrome, so the page's own words.
+ *
+ * PLAIN ENGLISH, NOT THE INTERNAL NAME. These read as a sentence a first-time
+ * visitor can act on rather than as the condition's identifier: the page is the
+ * front door, and a label like "index unreadable" asks the reader to already
+ * know what the index is. The VALUE is unchanged and is what every test and
+ * every `data-ig-value` still keys off, so the wording can move without moving
+ * the state machine.
+ */
 export const DEMO_STATE_LABELS: Readonly<Record<DemoStateName, string>> = Object.freeze({
-  live: 'live',
-  importing: 'first import',
-  empty: 'nothing eligible',
-  error: 'index unreadable',
-  stale: 'stale mirror',
+  live: 'Working',
+  importing: 'Still importing',
+  empty: 'Nothing to work',
+  error: "Can't read the backlog",
+  stale: 'Out of date',
 });
 
 /**

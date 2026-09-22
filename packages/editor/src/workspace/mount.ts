@@ -1215,13 +1215,17 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
    */
   const sceneFor = (zoneName: string): Scene | null => {
     if (drawn === null) return null;
-    if (zoneName === 'rail') return renderViewer(drawn.rail.document, { projection: 'linear', theme: theme() }).scene;
+    // `frame: false` MIRRORS WHAT IS DRAWN. These rebuild a scene to answer a
+    // navigation question, and a scene built from different options than the
+    // markup is a second opinion about the surface. See `SceneOptions.frame`.
+    if (zoneName === 'rail')
+      return renderViewer(drawn.rail.document, { projection: 'linear', theme: theme(), frame: false }).scene;
     if (zoneName !== 'canvas') return null;
     if (current.canvas === 'tree')
-      return renderViewer(withoutChrome(drawn.viewer), { projection: 'tree', theme: theme(), chrome: false }).scene;
+      return renderViewer(withoutChrome(drawn.viewer), { projection: 'tree', theme: theme(), chrome: false, frame: false }).scene;
     const ladder = scaleLadder(drawn.viewer, state.scale);
     return ladder.tier === 'direct'
-      ? renderViewer(ladder.canvas, { projection: 'graph', theme: theme(), chrome: false }).scene
+      ? renderViewer(ladder.canvas, { projection: 'graph', theme: theme(), chrome: false, frame: false }).scene
       : null;
   };
 
@@ -1692,6 +1696,11 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
           selected: selectedKey(state.selection),
           // The rail beside this canvas draws the panel's one header.
           chrome: false,
+          // THE WORKSPACE RULES ITS OWN ZONES OFF, so the viewer draws no
+          // frame of its own here: the rail track carries `border-right`, the
+          // canvas toolbar carries `border-bottom`, and a second edge one
+          // pixel away reads as a doubled hairline. See `SceneOptions.frame`.
+          frame: false,
         }).markup;
         // Re-inserted rather than re-rendered: the row is already assembled,
         // and rebuilding it here would be a second place that decides what it

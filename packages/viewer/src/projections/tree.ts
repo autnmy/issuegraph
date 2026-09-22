@@ -258,6 +258,10 @@ export function treeScene(document: NormalizedDocument, options: SceneOptions = 
     {
       class: 'ig-viewer ig-tree-view',
       'data-projection': 'tree',
+      // See `SceneOptions.frame`; stamped on all three roots, because the
+      // container that declines the frame does not know which projection it
+      // was handed.
+      'data-frame': options.frame === false ? 'none' : undefined,
       // See `SceneOptions.density`; stamped on all three roots so a
       // projection toggle cannot drop the host's decision.
       'data-density': options.density,

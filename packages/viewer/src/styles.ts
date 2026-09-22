@@ -316,6 +316,18 @@ export const viewerStylesheet = `
   position: relative;
 }
 
+/* THE FRAME IS THE STANDALONE CASE'S, AND A CONTAINER CAN DECLINE IT.
+   Alone in a host's page the viewer is a card and draws its own edge. Composed
+   into a surface that already rules its own zones off, that edge lands beside
+   the container's and the seam reads as a doubled hairline — so the container
+   passes frame: false and takes responsibility for every line on the
+   surface. See SceneOptions.frame for why this is an option rather than a
+   host stylesheet unsetting the properties above. */
+.ig-viewer[data-frame='none'] {
+  border: 0;
+  border-radius: 0;
+}
+
 .ig-viewer *,
 .ig-viewer *::before,
 .ig-viewer *::after {

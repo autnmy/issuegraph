@@ -584,7 +584,7 @@ function refusal(
         ])
       : null,
     element('p', { class: 'ig-refusal-next' }, [
-      'Narrow the document to one neighbourhood and render again — narrowing is the host\'s, because this package draws exactly what it is given. The order list is complete at any size.',
+      'Narrow the document to one neighborhood and render again — narrowing is the host\'s, because this package draws exactly what it is given. The order list is complete at any size.',
     ]),
   ]);
 }
@@ -970,6 +970,10 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
     {
       class: 'ig-viewer ig-graph',
       'data-projection': 'graph',
+      // See `SceneOptions.frame`; stamped on all three roots, because the
+      // container that declines the frame does not know which projection it
+      // was handed.
+      'data-frame': options.frame === false ? 'none' : undefined,
       // Stamped on all three roots rather than on the one that draws rows.
       // A projection toggle must not silently drop a host's decision, and
       // the graph carries a footer group of rows of its own. See

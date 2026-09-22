@@ -149,6 +149,29 @@ describe('the three zones render at their fixed positions', () => {
   });
 });
 
+describe('the workspace rules its own seams, so no edge is drawn twice', () => {
+  it('draws every composed viewer with the frame declined', () => {
+    // THE DEFECT: `.ig-viewer` carries a border and a radius of its own, which
+    // is right for a viewer standing alone in a host's page and wrong here.
+    // This surface already rules its zones off — the rail track has
+    // `border-right`, the canvas toolbar has `border-bottom`, and the host's
+    // own container has an outer border — so the viewer's edge landed beside
+    // each of those and every seam read as a doubled hairline.
+    //
+    // ASSERTED AS "EVERY ONE", NOT AS TWO NAMED ZONES. The count is derived
+    // from the markup, so a third composed viewer added later has to decline
+    // the frame too rather than quietly reintroducing the defect in one zone.
+    const markup = renderWorkspace(backlogOf(8), WORDS).markup;
+    const roots = [...markup.matchAll(/<section class="ig-viewer [^"]*"[^>]*>/g)].map(
+      (match) => match[0],
+    );
+    assert.ok(roots.length > 0, 'no viewer is composed here, so this proves nothing');
+    for (const root of roots) {
+      assert.match(root, /data-frame="none"/, `a composed viewer draws its own frame: ${root}`);
+    }
+  });
+});
+
 describe('the rail is windowed and the canvas is not', () => {
   it('draws the window it was asked for while the model stays complete', () => {
     const result = renderWorkspace(backlogOf(312), { ...WORDS, rail: { start: 0, count: 12 } });

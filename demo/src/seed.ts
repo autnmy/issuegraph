@@ -565,7 +565,15 @@ export type ScenarioName = (typeof SCENARIO_NAMES)[number];
  * nothing writes to either.
  */
 export interface Scenario {
-  /** The control's label — host chrome, so the page's own words. */
+  /**
+   * The control's label — host chrome, so the page's own words.
+   *
+   * PLAIN ENGLISH, NOT THE DESIGN'S FILING REFERENCE. The page is the front
+   * door; a button reading "the §16 comp" asks a first-time visitor to know
+   * which section of a specification they have not read. The KEY is unchanged
+   * (`comp`, `backlog`, `adoption`) and is what the tests and every
+   * `data-ig-value` key off, so the wording moves without the table moving.
+   */
   readonly label: string;
   readonly document: () => GraphDocument;
   readonly holds: readonly ExecutorHold[];
@@ -640,7 +648,7 @@ const compCaveats: ReadonlyMap<IssueRef, IssueCaveats> = new Map<IssueRef, Issue
 
 export const SCENARIOS: Readonly<Record<ScenarioName, Scenario>> = Object.freeze({
   comp: {
-    label: 'the §16 comp',
+    label: 'Small sample',
     document: compSeed,
     holds: compHolds(),
     ranking: compRanking,
@@ -652,7 +660,7 @@ export const SCENARIOS: Readonly<Record<ScenarioName, Scenario>> = Object.freeze
     // surface disagree with the thing it exists to be compared against.
   },
   backlog: {
-    label: 'the big backlog',
+    label: 'Big backlog',
     document: backlogSeed,
     holds: compHolds(),
     ranking: compRanking,
@@ -665,7 +673,7 @@ export const SCENARIOS: Readonly<Record<ScenarioName, Scenario>> = Object.freeze
     adoption: { counted: true },
   },
   adoption: {
-    label: 'day one — no adoption',
+    label: 'Fresh repo',
     document: adoptionSeed,
     // NO HOLDS AND NO RUNNING JOB. The state must read complete and calm, and
     // every affordance it draws has to be a real one — a footer group with

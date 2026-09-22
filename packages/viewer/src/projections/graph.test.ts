@@ -1125,7 +1125,7 @@ describe('the graph projection', () => {
   it('refuses with clusters only past the second threshold', () => {
     const markup = render(crowdedDocument(CLUSTER_ONLY_BUDGET + 1));
     assert.match(markup, /showing clusters only/);
-    assert.match(markup, /Narrow the document to one neighbourhood and render again/);
+    assert.match(markup, /Narrow the document to one neighborhood and render again/);
   });
 
   it('offers a next move with every refusal, not just a count', () => {

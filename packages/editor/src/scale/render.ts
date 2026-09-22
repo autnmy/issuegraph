@@ -482,6 +482,11 @@ export function renderScaleLadder(
           // drawing it. Two would mean two projection toggles disagreeing
           // about which projection is current.
           chrome: false,
+          // THE WORKSPACE RULES ITS OWN ZONES OFF, so the viewer draws no
+          // frame of its own here: the rail track carries `border-right`, the
+          // canvas toolbar carries `border-bottom`, and a second edge one
+          // pixel away reads as a doubled hairline. See `SceneOptions.frame`.
+          frame: false,
           edgeMarks: edgeMarkRequests(requestedOverlays),
         })
       : null;

@@ -64,6 +64,32 @@ export interface SceneOptions {
    */
   readonly chrome?: boolean | undefined;
   /**
+   * Draw the panel's own outer frame — the border and the corner radius.
+   * Defaults to `true`.
+   *
+   * THE CONTAINER OWNS ITS SEAMS, AND ONLY THE CONTAINER KNOWS IT HAS ANY.
+   * Standing alone in a host's page the viewer is a card and has to draw its
+   * own edge, which is why the frame is on by default. Composed into a
+   * surface that already rules its zones off — the grooming workspace draws
+   * `border-right` on the rail track and `border-bottom` under the canvas
+   * toolbar — that same edge lands one pixel from the container's, and the
+   * two read as a single doubled hairline down every seam. Measured in the
+   * workspace: the rail's right edge carried the zone's rule and the viewer's
+   * border with nothing between them, and the canvas graph's top border sat
+   * directly under the toolbar's.
+   *
+   * IT IS AN OPTION RATHER THAN THE CONTAINER OVERRIDING THE BORDER AWAY. A
+   * host reaching into `.ig-viewer` to unset a property this package set is a
+   * second stylesheet with an opinion about this one's internals, and it
+   * breaks the first time the frame is expressed differently. Declining the
+   * frame is a statement about COMPOSITION, so it belongs in the composition
+   * API.
+   *
+   * It renders as `data-frame="none"` on the viewer root; absent is the
+   * framed default.
+   */
+  readonly frame?: boolean | undefined;
+  /**
    * Draw the header's own view controls — the List/Graph toggle, and the
    * graph's expand/collapse affordance. Defaults to `false`.
    *
@@ -555,6 +581,10 @@ export function linearScene(
     {
       class: 'ig-viewer ig-linear',
       'data-projection': 'linear',
+      // See `SceneOptions.frame`; stamped on all three roots, because the
+      // container that declines the frame does not know which projection it
+      // was handed.
+      'data-frame': options.frame === false ? 'none' : undefined,
       // §17j'S DENSITY, WHERE THE HOST TOOK IT OVER. Absent is the whole
       // default: the stylesheet keys the density block off this attribute's
       // PRESENCE, so a viewer that renders none is decided by the container

@@ -69,6 +69,33 @@ import { STAMPED_PACKAGES, VERSIONS } from './versions.ts';
 export const THEMES = Object.freeze(['default', 'paper'] as const);
 export type ThemeName = (typeof THEMES)[number];
 
+/**
+ * What each toggle SAYS, as distinct from what it is called.
+ *
+ * THE BUTTONS USED TO PRINT THE ENUM VALUE ITSELF — `default`, `paper`,
+ * `neighbourhood`, `tree` — which is an identifier leaking onto the front door.
+ * A first-time visitor reads "neighbourhood" and has no way to know it means
+ * the relationship map; worse, it is one of the few British spellings on a
+ * surface that is otherwise US English, and it is visible precisely because it
+ * was never meant to be read.
+ *
+ * SEPARATE MAPS RATHER THAN A RENAMED VALUE. `CanvasMode` is
+ * `@issuegraph/editor`'s published API and `ThemeName` is what `themeCss`
+ * resolves; renaming either to fix a label would be a breaking change to a
+ * package in service of a word on a page. The label is the host's, which is
+ * exactly where the specification already puts the wording.
+ */
+export const THEME_LABELS: Readonly<Record<ThemeName, string>> = Object.freeze({
+  default: 'Dark',
+  paper: 'Light',
+});
+
+/** See `THEME_LABELS`. `neighbourhood` is the editor's value; "Order map" is what it draws. */
+export const CANVAS_LABELS: Readonly<Record<CanvasMode, string>> = Object.freeze({
+  neighbourhood: 'Order map',
+  tree: 'Sub-issue tree',
+});
+
 /** Each relationship as a phrase, so a picker reads as a sentence. */
 export const KIND_PHRASE: Readonly<Record<EdgeKind, string>> = {
   'blocked-by': 'is blocked by',
@@ -911,12 +938,16 @@ export function mountSandbox(
   // The masthead's own controls publish commands too, so the one listener covers them.
   for (const control of root.querySelectorAll<HTMLElement>('[data-chrome="theme"]')) {
     control.replaceChildren(
-      ...THEMES.map((name) => button(name, 'theme', { 'data-ig-value': name, class: 'chrome-button chrome-toggle' })),
+      ...THEMES.map((name) =>
+        button(THEME_LABELS[name], 'theme', { 'data-ig-value': name, class: 'chrome-button chrome-toggle' }),
+      ),
     );
   }
   for (const control of root.querySelectorAll<HTMLElement>('[data-chrome="canvas"]')) {
     control.replaceChildren(
-      ...CANVAS_MODES.map((name) => button(name, 'canvas', { 'data-ig-value': name, class: 'chrome-button chrome-toggle' })),
+      ...CANVAS_MODES.map((name) =>
+        button(CANVAS_LABELS[name], 'canvas', { 'data-ig-value': name, class: 'chrome-button chrome-toggle' }),
+      ),
     );
   }
   for (const control of root.querySelectorAll<HTMLElement>('[data-chrome="scenario"]')) {

@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Issuegraph — the demo sandbox</title>
-<meta name="description" content="The Issuegraph viewer and editor running on an in-memory backlog: the design's own §16 scenario first, a few hundred generated issues on demand. No tracker, no credentials, no backend. Every edit path works client-side, and a reload restores the seed.">
+<title>Issuegraph — try it in your browser</title>
+<meta name="description" content="A fake issue tracker that runs in your browser tab. It shows you what to work next and why. No sign-in, no server, nothing saved — change anything you like and reload to put it back.">
 <meta name="theme-color" content="#0B0D0F">
 <link rel="stylesheet" href="./styles.css">
 <!--
@@ -47,14 +47,20 @@
 <main id="sandbox">
 <header class="masthead">
   <div>
-    <h1>The demo sandbox</h1>
+    <h1>Try Issuegraph</h1>
     <p class="lede">
+      A pretend issue tracker, running in this browser tab. It works out
+      <strong>what to work on next, and why</strong>, from the way the issues
+      depend on each other.
+    </p>
+    <p class="lede">
+      Nothing here is real. <strong>No sign-in, no server, nothing saved.</strong>
+      Change whatever you like &mdash; reload the page and it all comes back.
+      Under the hood it runs the real
       <a href="https://github.com/autnmy/issuegraph/tree/main/packages/viewer"><code>@issuegraph/viewer</code></a>
       and
       <a href="https://github.com/autnmy/issuegraph/tree/main/packages/editor"><code>@issuegraph/editor</code></a>
-      on an in-memory backlog.
-      <strong>No tracker, no credentials, no backend.</strong>
-      Every edit is client-side and saved nowhere; reload to get the seed back.
+      packages, unchanged.
     </p>
     <p class="versions" id="versions" aria-label="Package versions"></p>
   </div>
@@ -62,66 +68,105 @@
 </header>
 
 <section class="controls" aria-label="Sandbox controls">
+  <p class="controls-lede">
+    <strong>Set up a situation.</strong>
+    Each row below fakes something a real tracker would decide for you.
+    Change one, then look at the panel underneath to see how it copes.
+  </p>
+
   <div class="control">
-    <span class="control-label" id="theme-label">Theme</span>
+    <span class="control-label" id="theme-label">Colors</span>
     <div class="control-row" data-chrome="theme" role="group" aria-labelledby="theme-label"></div>
+    <p class="hint">
+      The two color sets the viewer ships with. Switching them changes color only.
+      Nothing moves, and nothing is redrawn.
+    </p>
   </div>
+
   <div class="control">
-    <span class="control-label" id="canvas-label">Canvas</span>
+    <span class="control-label" id="canvas-label">Middle panel</span>
     <div class="control-row" data-chrome="canvas" role="group" aria-labelledby="canvas-label"></div>
+    <p class="hint">
+      What the big panel in the middle draws.
+      <strong>Order map</strong> runs the work order down the center, with the issues
+      that explain that order on the left and the ones nobody will work on the right.
+      <strong>Sub-issue tree</strong> drops all that and stacks big issues with
+      their parts underneath them.
+    </p>
   </div>
+
   <div class="control">
-    <span class="control-label" id="state-label">State</span>
+    <span class="control-label" id="state-label">Connection</span>
     <div class="control-row" data-chrome="state" role="group" aria-labelledby="state-label"></div>
     <p class="hint">
-      §16g's panel states, over whichever document is loaded. They are host facts, not document ones —
-      a repository can be importing or unreadable whatever its backlog holds.
-      <strong>Retry</strong> and <strong>Review pick order</strong> return the panel to <em>live</em>:
-      this sandbox has no index to re-read and no pick-order screen to open, so that is the one honest thing they can do.
+      Fakes a problem between the tracker and this page, so you can see how the panel
+      says so. It does not change the issues &mdash; a repo can be mid-import or
+      unreadable whatever its backlog holds.
+      <strong>Retry</strong> and <strong>Review pick order</strong> only put it back to
+      <em>Working</em>: there is no real tracker here to re-read, so that is the one
+      honest thing they can do.
     </p>
   </div>
+
   <div class="control">
-    <span class="control-label" id="scenario-label">Document</span>
+    <span class="control-label" id="scenario-label">Backlog</span>
     <div class="control-row" data-chrome="scenario" role="group" aria-labelledby="scenario-label"></div>
     <p class="hint">
-      The page lands on the design's §16 scenario. The big backlog is a few hundred generated issues:
-      the canvas refuses, the rail windows, and the audit has findings.
-      <strong>Day one</strong> is §16h: forty-eight issues, no <code>issuegraph:</code> block between them,
-      and an order that is still fully determined by the pick order alone.
+      Which pretend backlog is loaded.
+      <strong>Small sample</strong> is the hand-built one the page starts on: fifteen
+      issues, one of every kind of link, so you can see the whole idea at a glance.
+      <strong>Big backlog</strong> is a few hundred generated issues &mdash; the map
+      gives up and draws groups instead, the list scrolls, and the audit finds real
+      problems.
+      <strong>Fresh repo</strong> is day one: forty-eight issues and not one link
+      declared between them yet, so the order comes from your priority labels alone.
     </p>
   </div>
+
   <div class="control">
-    <label for="next-outcome">What the tracker answers next</label>
+    <label for="next-outcome">Next reply from the tracker</label>
     <div class="control-row">
-      <select id="next-outcome" aria-label="Next dispatch outcome">
-        <option value="apply">apply — the write lands</option>
-        <option value="reject">reject — the write is refused</option>
-        <option value="conflict">conflict — the document moved upstream</option>
+      <select id="next-outcome" aria-label="Next reply from the tracker">
+        <option value="apply">Accept — the edit saves</option>
+        <option value="reject">Refuse — the tracker says no</option>
+        <option value="conflict">Conflict — someone else edited first</option>
       </select>
-      <button class="chrome-button chrome-quiet" type="button" data-ig-command="reset">reset</button>
+      <button class="chrome-button chrome-quiet" type="button" data-ig-command="reset">Start over</button>
     </div>
     <p class="hint">
-      An armed outcome fires once and disarms itself, so the retry it offers can actually land.
+      Choose what the pretend tracker says to your <em>next</em> edit, then make one.
+      It only happens once and then goes back to accepting, so the retry it offers
+      can actually work.
     </p>
   </div>
 </section>
 
 <section id="writes" class="writes" aria-live="polite" aria-label="Writes in flight"></section>
 
+<p class="reading-guide">
+  <strong>What you are looking at.</strong>
+  On the left, the order to work in &mdash; top one first.
+  In the middle, why that order: the lines between issues are the links that set it.
+  On the right, the details of whatever you click.
+</p>
+
 <section id="workspace" class="workspace" aria-label="Grooming workspace"></section>
 
 <footer class="colophon">
   <p>
-    The order is <a href="https://github.com/autnmy/issuegraph/tree/main/packages/derive"><code>@issuegraph/derive</code></a>&rsquo;s,
-    not this page&rsquo;s: the store takes the deriver as a port with no default, and this page fills it with the
-    published derivation rather than a second reading of the ordering rules. The rail, the canvas and the
-    inspector are the editor&rsquo;s; the page reads the commands they publish, reduces, and renders again.
-    What is still the host&rsquo;s is what the specification puts there &mdash; the executor holds (&sect;6.8),
-    the concurrency cap (&sect;6.5), the words, and the theme. Both themes are the viewer&rsquo;s own custom
-    properties redeclared, and nothing else.
+    <strong>How much of this page is the packages.</strong> The order is worked out by
+    <a href="https://github.com/autnmy/issuegraph/tree/main/packages/derive"><code>@issuegraph/derive</code></a>,
+    not by this page: the store takes the ordering code as a plug-in part with no
+    fallback, and this page plugs in the published one rather than writing its own second
+    version of the rules. The list, the map and the details panel are all
+    <code>@issuegraph/editor</code>&rsquo;s; this page just listens for what they report
+    and draws them again. What is left for a host to supply is what the spec says a host
+    supplies &mdash; which issues a worker already has, how many can run at once, the
+    wording, and the colors. Both color sets are the viewer&rsquo;s own, redeclared, and
+    nothing more.
   </p>
   <p>
-    <a href="/">The specification</a> ·
+    <a href="/">Read the spec</a> ·
     <a href="https://github.com/autnmy/issuegraph/tree/main/demo">How this page is built</a> ·
     <a href="https://github.com/autnmy/issuegraph">Source</a>
   </p>

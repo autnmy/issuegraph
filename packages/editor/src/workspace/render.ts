@@ -3038,6 +3038,10 @@ export function renderWorkspace(
   const railRender = renderViewer(rail.document, {
     projection: 'linear',
     theme,
+    // THE WORKSPACE RULES ITS OWN ZONES OFF. The rail track already carries
+    // `border-right`, so a frame here doubles that seam and the host's outer
+    // border on the other edge. See `SceneOptions.frame`.
+    frame: false,
     // The rail is where a selected ISSUE reads as current. An edge selection
     // resolves to no key, which is `selectedKey`'s whole job.
     selected: selectedKey(selection),

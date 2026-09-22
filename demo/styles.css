@@ -77,6 +77,8 @@
   --page-max: 1600px;
   --measure-lede: 70ch;
   --measure-colophon: 90ch;
+  --measure-hint: 88ch;
+  --label-col: 15ch;
   --workspace-height: 72vh;
 }
 
@@ -175,26 +177,45 @@ code {
 
 /* --- controls --- */
 
+/* ONE ROW PER SETTING, NOT A WRAPPING SHELF. These five controls used to sit
+   in a wrapping flex row: two fitted side by side, the other three did not, and
+   each one's explanation ran the full width of the panel underneath a button
+   group it was no longer beside. A reader had to work out which sentence went
+   with which control, which is the opposite of what the sentences are for.
+
+   A LABEL COLUMN AND A CONTENT COLUMN. The buttons and the sentence that
+   explains them share the second track, so they are visibly one thing; the
+   label sits in the first, so the five rows scan as a settings list. */
 .controls {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: var(--gap);
-  padding: var(--pad-panel-y) var(--pad);
+  padding: var(--pad) var(--pad);
   margin-bottom: var(--gap);
   background: var(--canvas-2);
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius);
 }
 
+/* The one sentence that says what the whole panel is for. Body colour, not the
+   muted hint colour: it is the first thing to read, not an aside. */
+.controls-lede {
+  margin: 0;
+  max-width: var(--measure-lede);
+  color: var(--fg-2);
+}
+
 .control {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-micro);
+  display: grid;
+  grid-template-columns: var(--label-col) minmax(0, 1fr);
+  gap: var(--gap-tight) var(--gap);
+  align-items: baseline;
   min-width: 0;
 }
 
 .control > label,
 .control-label {
+  grid-column: 1;
   font-size: var(--size-micro);
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
@@ -202,6 +223,7 @@ code {
 }
 
 .control-row {
+  grid-column: 2;
   display: flex;
   flex-wrap: wrap;
   gap: var(--gap-tight);
@@ -209,9 +231,18 @@ code {
 }
 
 .hint {
+  grid-column: 2;
   margin: 0;
+  max-width: var(--measure-hint);
   font-size: var(--size-small);
   color: var(--fg-3);
+}
+
+/* A hint's bold runs name the option they describe, so they have to be
+   findable at a glance against the muted body of the sentence. */
+.hint strong {
+  color: var(--fg-2);
+  font-weight: var(--weight-strong);
 }
 
 select {
@@ -320,6 +351,23 @@ select {
 
 .write-reason {
   color: var(--fg-2);
+}
+
+/* --- the reading guide --- */
+
+/* ONE SENTENCE PER ZONE, DIRECTLY ABOVE THE ZONES. The three-zone workspace is
+   self-evident once you know the grammar and opaque before then, and the page
+   had nowhere that said what the three panels are. It sits between the controls
+   and the surface because that is where the reader's eye is about to land. */
+.reading-guide {
+  margin: 0 0 var(--gap-tight);
+  max-width: var(--measure-colophon);
+  color: var(--fg-2);
+}
+
+.reading-guide strong {
+  color: var(--fg);
+  font-weight: var(--weight-strong);
 }
 
 /* --- the workspace --- */

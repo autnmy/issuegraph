@@ -209,6 +209,48 @@ describe('renderViewer', () => {
   });
 });
 
+describe('the outer frame, and the container that declines it', () => {
+  it('frames every projection by default, because standing alone it is a card', () => {
+    for (const projection of ['linear', 'graph', 'tree'] as const) {
+      const markup = renderViewer(fixtureDocument, { projection }).markup;
+      assert.equal(
+        /data-frame=/.test(markup),
+        false,
+        `${projection} stamps the attribute unasked, so the default is no longer the absence`,
+      );
+    }
+  });
+
+  it('stamps data-frame on all three roots when a container declines it', () => {
+    // ALL THREE, not just the one the workspace happens to draw today. A
+    // projection toggle must not put the frame back: the container's seams do
+    // not change because the reader switched to the tree.
+    for (const projection of ['linear', 'graph', 'tree'] as const) {
+      const markup = renderViewer(fixtureDocument, { projection, frame: false }).markup;
+      assert.match(
+        markup,
+        /^<section class="ig-viewer [a-z-]+" data-projection="[a-z]+" data-frame="none"/,
+        `${projection} did not decline the frame`,
+      );
+    }
+  });
+
+  it('unsets the border and the radius, and nothing else', () => {
+    // THE DEFECT THIS EXISTS FOR: composed into the workspace, the viewer's own
+    // border landed one pixel from the rail track's `border-right` and from the
+    // canvas toolbar's `border-bottom`, so every seam on the surface read as a
+    // doubled hairline. Asserted against the bytes, because the attribute is
+    // inert without the rule and nothing would fail.
+    const rule = /\.ig-viewer\[data-frame='none'\] \{([^}]*)\}/.exec(viewerStylesheet);
+    assert.ok(rule, 'the stylesheet no longer answers the attribute, so declining it draws the frame anyway');
+    const declarations = (rule[1] as string)
+      .split(';')
+      .map((text) => text.trim())
+      .filter((text) => text !== '');
+    assert.deepEqual(declarations.sort(), ['border-radius: 0', 'border: 0']);
+  });
+});
+
 describe('a document whose keys are not encodable', () => {
   it('renders a together unit with a lone surrogate key instead of throwing', () => {
     // THE CONTRACT THIS FILE ALREADY STATES: a malformed document produces
