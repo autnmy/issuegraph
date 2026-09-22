@@ -213,37 +213,46 @@ function capitalise(text: string): string {
   return `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
 }
 
-export function footerHeading(count: number): string {
-  return `${String(count)} not in the order`;
+export function footerHeading(): string {
+  return 'Not in the order';
 }
 
 export function footerReason(kinds: FooterKinds): string | null {
   const reasons = [
-    kinds.runner ? 'held back by the worker' : null,
-    kinds.neverWorked ? 'duplicates of another issue' : null,
-    kinds.undrawn ? 'related, but not drawn at this width' : null,
+    kinds.runner ? 'held back' : null,
+    kinds.neverWorked ? 'a copy of another issue' : null,
+    kinds.undrawn ? 'related but not drawn here' : null,
   ].filter((reason): reason is string => reason !== null);
   if (reasons.length === 0) return null;
   const joined =
     reasons.length === 1
       ? (reasons[0] as string)
       : `${reasons.slice(0, -1).join(', ')}, or ${reasons[reasons.length - 1] as string}`;
-  return `${capitalise(joined)}. Pick one to see it in full.`;
+  return `${capitalise(joined)}. Pick one to see why.`;
 }
 
 /**
- * The group's head, for either projection.
+ * The group's head, for either projection, in the panel header's own voice.
  *
- * THE LEGEND OF HOLD LABELS THAT USED TO SIT BESIDE IT IS GONE. "not eligible ·
- * claimed · parked", floated to the right of the count, restated the chip every
- * row already carries and read as a second heading nobody could act on. Each
- * row now says its own reason in full, which is the fact the legend was a
- * poor abbreviation of.
+ * THE SAME TWO PIECES THE PANEL HEADER USES, NOT A THIRD STYLE. The name is an
+ * `.ig-header-label` — the accent mono kicker that reads "ORDER PREVIEW" at the
+ * top of the panel — and the count is an `.ig-count-chip`, the outlined tally
+ * beside it. A group that invented its own heading treatment was one more thing
+ * a reader had to learn, on the part of the panel they reach last.
+ *
+ * "HELD" ONLY WHEN SOMETHING IS. The chip reads `4 held` the way the header's
+ * `6 held` does, but a group of duplicates alone is not held by anyone — §16d
+ * keeps the two facts apart — so it then states the bare count.
  */
 export function footerHead(count: number, kinds: FooterKinds): ElementSpec {
   const reason = footerReason(kinds);
   return element('div', { class: 'ig-footer-head' }, [
-    element('p', { class: 'ig-footer-title' }, [footerHeading(count)]),
+    element('div', { class: 'ig-footer-title-row' }, [
+      element('p', { class: 'ig-header-label ig-footer-title' }, [footerHeading()]),
+      element('span', { class: 'ig-count-chip', 'data-count': 'footer' }, [
+        kinds.runner ? `${String(count)} held` : String(count),
+      ]),
+    ]),
     reason === null ? null : element('p', { class: 'ig-footer-note' }, [reason]),
   ]);
 }
@@ -443,38 +452,44 @@ export function footerRow(
         because === '' ? slotLabel(document, slot) : `${slotLabel(document, slot)} — ${because}`,
       tabindex: options.focused === slot.lead ? 0 : -1,
     },
-    [
+    footerEntry(
+      slotTitle(document, slot),
+      lead === undefined ? null : identity(lead),
       labelled === undefined
         ? null
         : element('span', { class: 'ig-badge', 'data-hold': labelled.label }, [labelled.label]),
-      footerBody(
-        [element('span', { class: 'ig-title' }, [slotTitle(document, slot)]), lead === undefined ? null : identity(lead)],
-        because === '' ? null : because,
-        footerRelationships(document, slot.members),
-      ),
-    ],
+      because === '' ? null : because,
+      footerRelationships(document, slot.members),
+    ),
   );
 }
 
 /**
- * The part of a footer row to the right of its chip: the name, then WHY.
+ * One footer row's content, laid out as a ranked row is laid out.
  *
- * THE REASON IS DRAWN, NOT HIDDEN IN A TOOLTIP. It rode the row's `title` so the
- * row stayed one line — and the result was a group of issues a reader could see
- * but not account for: nothing on screen said that one is taken by another
- * worker and another is waiting on a person. The reason is the only thing
- * these rows exist to tell you, so it is the second line of every one.
+ * THE ORDER'S OWN ROW PARTS, SO THE GROUP READS AS MORE OF THE SAME LIST. The
+ * station sits in `.ig-rank-cell`, so it lines up under the ranked stations
+ * above it and is the held station the legend already explains; the name is an
+ * `.ig-title`; the identity, the status chip and any relationship chips share
+ * one `.ig-row-meta` line, as a ranked row's badges do. What a ranked row has
+ * and these do not is a number — they have no place in the order — and in its
+ * stead each says why, on its own line, in full.
  */
-function footerBody(
-  name: readonly (ElementSpec | null)[],
+function footerEntry(
+  title: string,
+  id: ElementSpec | null,
+  status: ElementSpec | null,
   why: string | null,
   relationships: ElementSpec | null,
-): ElementSpec {
-  return element('div', { class: 'ig-footer-body' }, [
-    element('div', { class: 'ig-footer-line' }, name),
-    why === null ? null : element('p', { class: 'ig-footer-why' }, [why]),
-    relationships,
-  ]);
+): readonly ElementSpec[] {
+  return [
+    element('div', { class: 'ig-rank-cell' }, [station('dashed')]),
+    element('div', { class: 'ig-row-body' }, [
+      element('span', { class: 'ig-title' }, [title]),
+      element('div', { class: 'ig-row-meta' }, [id, status, relationships]),
+      why === null ? null : element('p', { class: 'ig-footer-why' }, [why]),
+    ]),
+  ];
 }
 
 /**
@@ -524,20 +539,16 @@ export function excludedRow(
       // viewer at all. Every row that can hold focus renders the roving stop.
       tabindex: options.focused === key ? 0 : -1,
     },
-    [
-      element('span', { class: 'ig-badge', 'data-edge': 'duplicate-of' }, ['duplicate']),
-      footerBody(
-        [element('span', { class: 'ig-title' }, [issue?.title ?? key]), issue === undefined ? null : identity(issue)],
-        // THE CANONICAL IS NAMED IN THE SENTENCE, SO THE `→ 512` CHIP THAT
-        // USED TO CARRY IT IS GONE: two marks for one fact, and the arrow read
-        // as a relationship of its own.
-        // THE CONSEQUENCE, NOT THE RELATIONSHIP. The row's own badge already
-        // says "duplicate of 512" in the vocabulary's words; the sentence says
-        // what that means for the work, so the one fact is not printed twice.
-        `The original, ${canonical}, gets worked instead.`,
-        footerRelationships(document, [key]),
-      ),
-    ],
+    footerEntry(
+      issue?.title ?? key,
+      issue === undefined ? null : identity(issue),
+      element('span', { class: 'ig-badge', 'data-hold': 'duplicate' }, ['duplicate']),
+      // THE CONSEQUENCE, NOT THE RELATIONSHIP. The relationship chip beside the
+      // status says "duplicate of 512" in the vocabulary's words; the sentence
+      // says what that means for the work, so the one fact is not printed twice.
+      'The original gets worked instead.',
+      footerRelationships(document, [key]),
+    ),
   );
 }
 
@@ -567,14 +578,13 @@ export function asideRow(
       'aria-label': `${issue?.title ?? key} — ${key} — related, not drawn here`,
       tabindex: options.focused === key ? 0 : -1,
     },
-    [
-      element('span', { class: 'ig-badge' }, ['related']),
-      footerBody(
-        [element('span', { class: 'ig-title' }, [issue?.title ?? key]), issue === undefined ? null : identity(issue)],
-        null,
-        footerRelationships(document, [key]),
-      ),
-    ],
+    footerEntry(
+      issue?.title ?? key,
+      issue === undefined ? null : identity(issue),
+      element('span', { class: 'ig-badge', 'data-hold': 'related' }, ['related']),
+      'Not drawn at this width.',
+      footerRelationships(document, [key]),
+    ),
   );
 }
 

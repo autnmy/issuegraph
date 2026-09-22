@@ -170,18 +170,10 @@ ${scope} .ig-unit-count {
   margin-right: var(--ig-space-tight);
 }
 
-/* THE FOOTER ROWS TOO, AND THIS IS THE POPULATION THE ROW FIX MISSED.
-   A footer entry is deliberately ONE LINE and shorter than a ranked row -
-   16a gives it no rank, no station and no explanation block, because it is
-   not a fact about the work. That part was right. What was not governed is
-   its TITLE: it wrapped, and the excluded row carrying a canonical reference
-   ran to 73px while its siblings sat at 36. A footer row taller than a
-   ranked row inverts the whole point of the group.
-
-   THE DEFECT IS THE ONE ALREADY FIXED ON .ig-slot, ONE ROW KIND OVER: a
-   title with nothing stopping it wrapping takes the row with it. Fixed at
-   the class this time rather than at the site - the rail renders three row
-   kinds and the first pass governed two. */
+/* THE FOOTER ROW'S TITLE STAYS ON ONE LINE, as a ranked row's does. The row
+   is taller than a ranked row now by design — its status and its reason are
+   what it exists to show — but a title that wraps still takes the row with it,
+   so the name ellipsizes and the reason below it carries the length. */
 ${scope} .ig-footer-row .ig-title {
   line-height: var(--ig-row-title-line);
   min-width: 0;
@@ -190,39 +182,7 @@ ${scope} .ig-footer-row .ig-title {
   white-space: nowrap;
 }
 
-${scope} .ig-footer-row .ig-badges {
-  flex-wrap: nowrap;
-  min-width: 0;
-  overflow: hidden;
-}
-
-/* AND THE CHIPS LOSE THEIR CHROME HERE TOO, which is what actually makes a
-   footer entry ONE LINE. 16a draws it as "a label chip, a title and an
-   identity, on one line"; a bordered chip is padding plus stroke plus line
-   box, so a row carrying any relationship badge stood at 36px against 22px
-   for one carrying none - and the badge block, not the title, was the last
-   thing driving it.
-
-   MEASURED IN TWO PASSES, WHICH IS THE POINT. Stopping after the title fix
-   left the footer group at two heights and looked finished: the row that had
-   been 73px was down to 36 and matched its siblings, so the obvious check
-   passed. It was the SECOND measurement - why 22 and why 36 - that found the
-   badges. A class is not fixed until nothing in it varies for a reason you
-   have not named. */
-${scope} .ig-footer-row .ig-badge {
-  background: none;
-  border: 0;
-  border-radius: 0;
-  padding: 0;
-  white-space: nowrap;
-}
-
-/* THE THIRD AND LAST MEMBER OF THE CLASS: the identity. An excluded row
-   carries TWO - its own, and the canonical it defers to ('455 -> 512') - and
-   the second wrapped, which is why that row alone stood at 30px when the
-   others reached 17. Same defect as the title and the chips, third element,
-   found by asking the same question a third time rather than by stopping at
-   the first uniform-looking answer. */
+/* The identity never wraps mid-reference. */
 ${scope} .ig-footer-row .ig-id {
   white-space: nowrap;
 }
@@ -1236,111 +1196,78 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 /* ── the footer group: holds that earn no rank slot ────────────────────── */
 
 .ig-footer {
-  background: var(--ig-surface-2);
-  padding: var(--ig-space) var(--ig-space-wide);
+  border-top: var(--ig-stroke) solid var(--ig-line);
 }
 
+/* THE PANEL HEADER'S LAYOUT, ONE LEVEL DOWN: a kicker and a count chip on one
+   line, a sentence under them. The kicker and the chip are the header's own
+   classes (see footerHead), so this rule only places them. */
 .ig-footer-head {
   display: flex;
   flex-direction: column;
-  gap: var(--ig-space-micro);
+  gap: var(--ig-space-snug);
+  padding: var(--ig-space-loose) var(--ig-space-wide) var(--ig-space);
+}
+
+.ig-footer-title-row {
+  align-items: center;
+  display: flex;
+  gap: var(--ig-space);
 }
 
 .ig-footer-title {
-  color: var(--ig-text);
-  font-size: var(--ig-font-size-compact);
   margin: 0;
 }
 
 .ig-footer-note {
   color: var(--ig-text-muted);
-  font-size: var(--ig-font-size-meta);
+  font-size: var(--ig-font-size);
   margin: 0;
 }
 
-/* ROWS THAT LOOK LIKE WHAT THEY ARE: THINGS YOU CAN OPEN. Every entry here is
-   selectable — it opens in the details panel like any ranked row — and nothing
-   said so. They were drawn at 0.72 opacity, which reads as DISABLED, with no
-   hover, no pointer and no mark at the end, so the one group whose whole
-   purpose is "look at why" gave no sign you could look.
-
-   STILL LIGHTER THAN THE ORDER, BY GROUND AND TYPE RATHER THAN BY FADING. The
-   group sits on the second surface in the compact type; that is enough to say
-   "not a fact about the work" without also saying "unavailable". */
 .ig-footer .ig-list {
   display: flex;
   flex-direction: column;
-  margin: var(--ig-space) calc(var(--ig-space-tight) * -1) 0;
 }
 
+/* A RANKED ROW'S GRID, PADDING AND RULE, so the group is the rest of the same
+   list rather than a panel of its own: the rank track holds the held station,
+   and it lines up under the stations above because it is the same track.
+
+   ON THE PANEL'S OWN GROUND, NOT A SECOND SURFACE, and at full strength. The
+   group used to sit on --ig-surface-2 with every row at 0.72 opacity, which
+   read as disabled — on the rows whose whole purpose is "open me to see why". */
 .ig-footer-row {
-  align-items: baseline;
-  border-radius: var(--ig-radius);
-  column-gap: var(--ig-space-snug);
+  border-top: var(--ig-stroke) solid var(--ig-line);
+  column-gap: var(--ig-space);
   cursor: pointer;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  padding: var(--ig-space-tight);
-}
-
-/* A DRILL-IN MARK, and hidden from assistive technology with the alternative
-   text slot: the row's own accessible name already says what it is, and a
-   screen reader announcing "single right-pointing angle quotation mark" after
-   every entry is noise, not information. */
-.ig-footer-row::after {
-  color: var(--ig-text-muted);
-  content: '›' / '';
-  grid-column: 3;
-  grid-row: 1;
+  grid-template-columns: var(--ig-rank-column) 1fr;
+  padding: var(--ig-row-padding-block) var(--ig-space-wide);
 }
 
 .ig-footer-row:hover {
   background: color-mix(in srgb, var(--ig-text) var(--ig-tint-unit), transparent);
 }
 
-.ig-footer-row:hover::after {
-  color: var(--ig-text);
-}
-
-/* THE SAME SELECTED MARK THE RANKED ROWS CARRY, so an issue opened from down
-   here reads as the current subject the way one opened from the order does. */
+/* THE RANKED ROW'S SELECTED BAND, and its fill: one selection, one look,
+   whichever part of the list it was made in. */
 .ig-footer-row[aria-current='true'] {
+  background: color-mix(in srgb, var(--ig-accent) var(--ig-tint-fill), transparent);
   box-shadow: inset var(--ig-band-rail) 0 0 var(--ig-accent);
-}
-
-.ig-footer-row > .ig-badge {
-  grid-column: 1;
-  grid-row: 1;
-}
-
-.ig-footer-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ig-space-micro);
-  grid-column: 2;
-  grid-row: 1;
-  min-width: 0;
-}
-
-.ig-footer-line {
-  align-items: baseline;
-  display: flex;
-  gap: var(--ig-space-snug);
-  min-width: 0;
 }
 
 .ig-footer-row .ig-title {
   color: var(--ig-text-body);
-  font-size: var(--ig-font-size-compact);
 }
 
-.ig-footer-row .ig-id {
-  font-size: var(--ig-font-size-meta);
+.ig-footer-row[aria-current='true'] .ig-title {
+  color: var(--ig-text);
 }
 
 .ig-footer-why {
   color: var(--ig-text-muted);
-  font-size: var(--ig-font-size-meta);
+  font-size: var(--ig-font-size);
   margin: 0;
 }
 

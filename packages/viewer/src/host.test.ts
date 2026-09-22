@@ -188,15 +188,15 @@ describe('the host-facts port', () => {
     assert.match(markup, /<p class="ig-footer-why">[^<]+<\/p>/, 'the reason is not drawn');
     // THE HEADING COVERS BOTH FAMILIES. §16d's table is explicit that a
     // duplicate is a different fact from a hold, so the sentence names both.
-    assert.match(markup, /<p class="ig-footer-title">2 not in the order<\/p>/);
+    assert.match(markup, /<p class="ig-header-label ig-footer-title">Not in the order<\/p><span class="ig-count-chip" data-count="footer">2 held<\/span>/);
     assert.match(
       markup,
-      /<p class="ig-footer-note">Held back by the worker, or duplicates of another issue\. Pick one to see it in full\.<\/p>/,
+      /<p class="ig-footer-note">Held back, or a copy of another issue\. Pick one to see why\.<\/p>/,
     );
     // THE FLOATING LEGEND OF HOLD LABELS IS GONE: every row carries its own.
     assert.equal(markup.includes('ig-footer-labels'), false);
     const bare = renderViewer(fixtureDocument).markup;
-    assert.match(bare, /<p class="ig-footer-title">2 not in the order<\/p>/);
+    assert.match(bare, /<p class="ig-header-label ig-footer-title">Not in the order<\/p>/);
     assert.equal(bare.includes('ig-footer-labels'), false);
   });
 
@@ -204,7 +204,7 @@ describe('the host-facts port', () => {
     // The `→ 512` chip and the sentence said the same thing twice, and the
     // arrow read as a relationship of its own.
     const markup = renderViewer(fixtureDocument).markup;
-    assert.match(markup, /<p class="ig-footer-why">The original, [^<]+, gets worked instead\.<\/p>/);
+    assert.match(markup, /<p class="ig-footer-why">The original gets worked instead\.<\/p>/);
     assert.equal(/<span class="ig-id">→ /.test(markup), false);
   });
 

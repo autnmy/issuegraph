@@ -92,8 +92,8 @@ describe('the linear projection', () => {
   it('renders a duplicate in the footer naming its canonical', () => {
     const markup = render();
     assert.ok(markup.indexOf('data-ig-key="106"') > markup.indexOf('ig-footer'));
-    assert.match(row(markup, '106'), /<span class="ig-badge" data-edge="duplicate-of">duplicate<\/span>/);
-    assert.match(row(markup, '106'), /<p class="ig-footer-why">The original, 105, gets worked instead\.<\/p>/);
+    assert.match(row(markup, '106'), /<span class="ig-badge" data-hold="duplicate">duplicate<\/span>/);
+    assert.match(row(markup, '106'), /<p class="ig-footer-why">The original gets worked instead\.<\/p>/);
     assert.match(row(markup, '106'), /aria-label="[^"]*duplicate of 105, which gets worked instead"/);
   });
 
