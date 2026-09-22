@@ -146,7 +146,7 @@ export function provenanceClause(provenance: RankProvenance | undefined): Elemen
   switch (provenance.kind) {
     case 'matched-query':
       return element('span', {}, [
-        `matched ordered query ${String(provenance.index)} · `,
+        `Picked by query ${String(provenance.index)} · `,
         element('span', { class: 'ig-id' }, [provenance.label]),
       ]);
     case 'declared-tier':
@@ -157,7 +157,7 @@ export function provenanceClause(provenance: RankProvenance | undefined): Elemen
       // explicitly-declared P0 had no declared priority. A panel whose job is
       // explaining the order cannot invent the reason.
       return element('span', {}, [
-        'no ordered query matched — ranked in tier ',
+        'No query matched, so it goes by its priority, ',
         element('span', { class: 'ig-id' }, [`P${String(provenance.priority)}`]),
       ]);
     case 'promotion': {
@@ -165,12 +165,11 @@ export function provenanceClause(provenance: RankProvenance | undefined): Elemen
         provenance.promotedBy.length === 0
           ? null
           : element('span', {}, [
-              ' — inherited from ',
+              ' because it blocks ',
               element('span', { class: 'ig-id' }, [provenance.promotedBy.join(', ')]),
-              ', which it blocks',
             ]);
       return element('span', {}, [
-        'effective priority ',
+        'Priority raised ',
         element('span', { class: 'ig-id' }, [provenance.notation]),
         via,
       ]);
@@ -225,7 +224,7 @@ export function priorityBadge(provenance: RankProvenance | undefined): ElementSp
       // `· tier`, NOT `· default`. The chip says which tier ranked the row; it
       // cannot say the tier was a default, because this arm does not know that.
       return element('span', { class: 'ig-badge', 'data-priority': 'tier' }, [
-        `P${String(provenance.priority)} · tier`,
+        `P${String(provenance.priority)}`,
       ]);
     case 'promotion':
       return element('span', { class: 'ig-badge', 'data-priority': 'promoted' }, [
@@ -332,7 +331,7 @@ function headerControls(controls: HeaderControls | undefined): ElementSpec | nul
       },
       [element('span', { class: 'ig-glyph', 'aria-hidden': 'true' }, [glyph]), label],
     );
-  return element('span', { class: 'ig-toggle', role: 'group', 'aria-label': 'projection' }, [
+  return element('span', { class: 'ig-toggle', role: 'group', 'aria-label': 'view' }, [
     toggle('linear', '☰', 'List'),
     toggle('graph', '⛓', 'Graph'),
   ]);
@@ -384,7 +383,7 @@ export function hostHeader(
       element('span', { class: 'ig-count-chip', 'data-count': 'ready' }, [
         concurrencyCap === undefined
           ? `${String(counts.readyNow)} ready now`
-          : `${String(counts.readyNow)} ready now · cap ${String(concurrencyCap)}`,
+          : `${String(counts.readyNow)} ready now · ${String(concurrencyCap)} at a time`,
       ]),
       element('span', { class: 'ig-count-chip', 'data-count': 'held' }, [
         `${String(counts.held)} held`,
@@ -393,7 +392,7 @@ export function hostHeader(
   } else if (concurrencyCap !== undefined) {
     chips.push(
       element('span', { class: 'ig-count-chip', 'data-count': 'ready' }, [
-        `cap ${String(concurrencyCap)}`,
+        `${String(concurrencyCap)} at a time`,
       ]),
     );
   }
@@ -789,7 +788,7 @@ export function caveatLines(issue: ViewerIssue | undefined): ElementSpec[] {
       element('p', { class: 'ig-caveat', 'data-caveat': 'disagree' }, [
         turn(),
         element('span', {}, [
-          `ranked by ${used} · ${ignored.carrier} declares `,
+          `Using ${used} · ${ignored.carrier} says `,
           element('s', { class: 'ig-strike' }, [ignored.value]),
         ]),
       ]),
@@ -811,12 +810,12 @@ export function caveatBadges(issue: ViewerIssue | undefined): readonly ElementSp
   const chips: ElementSpec[] = [];
   if (issue.previewOnly !== undefined) {
     chips.push(
-      element('span', { class: 'ig-badge', 'data-caveat': 'preview-only' }, glyphAndLabel('◐', 'preview-only')),
+      element('span', { class: 'ig-badge', 'data-caveat': 'preview-only' }, glyphAndLabel('◐', 'estimated')),
     );
   }
   if (issue.disagreement !== undefined) {
     chips.push(
-      element('span', { class: 'ig-badge', 'data-caveat': 'disagree' }, glyphAndLabel('◆', 'signals disagree')),
+      element('span', { class: 'ig-badge', 'data-caveat': 'disagree' }, glyphAndLabel('◆', 'priorities disagree')),
     );
   }
   return chips;
@@ -847,10 +846,10 @@ export function notReadyBadge(slot: ViewerSlot): ElementSpec | null {
 export function caveatText(issue: ViewerIssue | undefined): string {
   if (issue === undefined) return '';
   const parts: string[] = [];
-  if (issue.previewOnly !== undefined) parts.push(`preview-only: ${issue.previewOnly.note}`);
+  if (issue.previewOnly !== undefined) parts.push(`estimated: ${issue.previewOnly.note}`);
   if (issue.disagreement !== undefined) {
     const { used, ignored } = issue.disagreement;
-    parts.push(`signals disagree: ranked by ${used}, ${ignored.carrier} declares ${ignored.value}`);
+    parts.push(`priorities disagree: using ${used}, ${ignored.carrier} says ${ignored.value}`);
   }
   return parts.join(' · ');
 }
@@ -1172,7 +1171,7 @@ export function noteText(document: NormalizedDocument, key: string): readonly st
   for (const exclusion of document.order.excluded) {
     // THE BADGE ALREADY NAMES THE CANONICAL, so the sentence says only what the
     // badge cannot: that this issue is never worked at all.
-    if (exclusion.key === key) lines.push('never worked — the canonical is worked instead');
+    if (exclusion.key === key) lines.push('The original gets worked instead.');
   }
   return lines;
 }

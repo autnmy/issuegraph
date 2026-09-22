@@ -198,18 +198,22 @@ export const DENSE_ISOLATED_COUNT = 150;
  */
 export const DENSE_LARGEST_COMPONENT = 72;
 
+// PLAIN PRODUCT WORK, NOT THIS CODEBASE'S OWN JARGON. The titles are fake
+// issues a visitor reads on screen, and "Refuse the provenance walk" read as
+// more spec leakage rather than as a backlog. Same counts as before, so the
+// generator's sequence and every size it derives are unchanged.
 const VERBS = [
-  'Retire', 'Backfill', 'Measure', 'Publish', 'Refuse', 'Pin', 'Wire', 'Split',
-  'Record', 'Bound', 'Name', 'Derive', 'Extract', 'Verify', 'Arm', 'Retype',
+  'Fix', 'Add', 'Update', 'Remove', 'Speed up', 'Clean up', 'Test', 'Document',
+  'Rename', 'Log', 'Cache', 'Retry', 'Split', 'Move', 'Check', 'Improve',
 ] as const;
 
 const OBJECTS = [
-  'the reconcile watermark', 'the claim reservation', 'the cadence tick',
-  'the shadow compare', 'the write fence', 'the audit count', 'the rail window',
-  'the deploy refresh', 'the spend ceiling', 'the mirror ingest', 'the order preview',
-  'the label mapper', 'the session lease', 'the beacon push', 'the queue verdict',
-  'the release stamp', 'the provenance walk', 'the capsule route', 'the search lead',
-  'the theme tokens',
+  'the login form', 'the signup email', 'the search box',
+  'the billing page', 'the file upload', 'the audit log', 'the settings page',
+  'the deploy script', 'the rate limiter', 'the webhook handler', 'the export button',
+  'the invite flow', 'the session timeout', 'the push alerts', 'the job queue',
+  'the release notes', 'the error page', 'the sidebar menu', 'the help center',
+  'the color theme',
 ] as const;
 
 /**
@@ -469,9 +473,9 @@ function adoptionCaveats(): ReadonlyMap<IssueRef, IssueCaveats> {
  * design asks for one line rather than a block, so one line is what it is.
  */
 const adoptionNote = Object.freeze({
-  text: 'No issue in this repository declares Issuegraph relationships, so ordering is entirely your pick order.',
-  link: Object.freeze({ text: 'what relationships add ↗', href: 'https://issuegraph.org/' }),
-  dismiss: '✕',
+  text: 'No issue has relationships yet, so the order comes from your queries alone.',
+  link: Object.freeze({ text: 'What relationships add ↗', href: 'https://issuegraph.org/' }),
+  dismiss: 'Dismiss',
 });
 
 /**
@@ -631,7 +635,7 @@ const compCaveats: ReadonlyMap<IssueRef, IssueCaveats> = new Map<IssueRef, Issue
     '487',
     {
       previewOnly: {
-        note: "query 5 (involves:@me) can't be evaluated locally yet — ranked by the unlabeled tail instead",
+        note: 'Query 5 (involves:@me) cannot run here yet, so this is placed with the unlabeled issues for now.',
       },
     },
   ],
@@ -639,8 +643,8 @@ const compCaveats: ReadonlyMap<IssueRef, IssueCaveats> = new Map<IssueRef, Issue
     '501',
     {
       disagreement: {
-        used: 'label:P1 (your mapping)',
-        ignored: { carrier: 'frontmatter', value: 'priority: 3' },
+        used: 'the P1 label',
+        ignored: { carrier: 'the issue body', value: 'priority: 3' },
       },
     },
   ],

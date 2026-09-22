@@ -405,7 +405,7 @@ describe('the §16 states', () => {
     for (const projection of ['linear', 'tree'] as const) {
       const markup = renderViewer({ ...disagreeDocument, host: { freshness: FRESHNESS } }, { projection }).markup;
       assert.ok(
-        markup.includes('ranked by label:P1 (your mapping) · frontmatter declares '),
+        markup.includes('Using label:P1 (your mapping) · frontmatter says '),
         `${projection} lost the provenance line naming both signals`,
       );
       assert.ok(

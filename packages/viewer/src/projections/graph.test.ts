@@ -619,7 +619,7 @@ describe('the graph projection', () => {
     const markup = renderMarkup(built.root);
 
     assert.equal(
-      markup.includes('No issue in this document declares a relationship'),
+      markup.includes('No relationships yet, so there is nothing to draw'),
       false,
       'a document full of relationships was told it has none',
     );
@@ -631,7 +631,7 @@ describe('the graph projection', () => {
     const nothing = renderMarkup(
       scene({ issues: [], edges: [], order: { slots: [], excluded: [] }, cycles: [] }).root,
     );
-    assert.match(nothing, /No issue in this document declares a relationship/);
+    assert.match(nothing, /No relationships yet, so there is nothing to draw/);
   });
 
   it('announces each column as what its own heading says, not all as the work order', () => {
@@ -1003,13 +1003,13 @@ describe('the graph projection', () => {
 
     const listed = [...markup.matchAll(/class="ig-capsule"/g)].length;
     assert.equal(listed, 12, `listed ${String(listed)} capsules, expected the cluster cap of 12`);
-    assert.match(markup, /further components are not listed/);
+    assert.match(markup, /more groups are not listed/);
     // The total is stated, so the reader can size what they are not seeing.
-    assert.match(markup, /were found in total/);
+    assert.match(markup, /in all\)/);
   });
 
   it('keeps the footer and excluded rows when it refuses, which is what makes the claim true', () => {
-    // The refusal tells the reader "The order list is complete at any size", and
+    // The refusal tells the reader "The list always shows the full order", and
     // in refusal mode the rail is the ONLY order UI — but it filtered out every
     // footer slot and never carried `order.excluded`. Measured before the fix: a
     // refused document lost the tracker-held slot's title, its hold reason and
@@ -1017,7 +1017,7 @@ describe('the graph projection', () => {
     const built = scene(refusedWithFooterAndExclusion());
     const markup = renderMarkup(built.root);
 
-    assert.match(markup, /complete at any size/, 'this fixture no longer refuses');
+    assert.match(markup, /always shows the full order/, 'this fixture no longer refuses');
     assert.ok(markup.includes('Title n60'), 'the footer slot is missing from the refusal');
     assert.ok(markup.includes('claimed by another run'), 'its hold reason is missing');
     assert.match(markup, /data-ig-key="exc1"/, 'the excluded row is missing');
@@ -1074,7 +1074,7 @@ describe('the graph projection', () => {
       'a refusal capsule carries a dispatch identity nothing can complete',
     );
     assert.equal(/Choose a component above/.test(refusal), false);
-    assert.match(refusal, /The order list is complete at any size/);
+    assert.match(refusal, /The list always shows the full order/);
   });
   it('returns the rail to ordinary flow when it refuses to draw', () => {
     // A refusal draws no nodes, so there is nothing to sit on — and a
@@ -1124,8 +1124,8 @@ describe('the graph projection', () => {
 
   it('refuses with clusters only past the second threshold', () => {
     const markup = render(crowdedDocument(CLUSTER_ONLY_BUDGET + 1));
-    assert.match(markup, /showing clusters only/);
-    assert.match(markup, /Narrow the document to one neighborhood and render again/);
+    assert.match(markup, /shown as groups/);
+    assert.match(markup, /The list always shows the full order, however many issues there are\./);
   });
 
   it('offers a next move with every refusal, not just a count', () => {
@@ -1142,7 +1142,7 @@ describe('the graph projection', () => {
     const markup = render(crowdedDocument(GRAPH_NODE_BUDGET + 1));
     assert.match(markup, /61 issues/);
     assert.match(markup, /60 blocking/);
-    assert.match(markup, /deepest chain 60/);
+    assert.match(markup, /longest chain 60/);
   });
 
   it('flags the host’s cycle in a capsule rather than deriving one, and does not hang on the loop', () => {
@@ -1187,9 +1187,9 @@ describe('the graph projection', () => {
     // 58 merely touch it and are perfectly workable. SPEC §6.6 says "issues in
     // a cycle are not ready", the issues; "nothing can start" here would be a
     // claim about 58 issues nobody made.
-    assert.match(stuck, />3 of 61 in a cycle</);
+    assert.match(stuck, />3 of 61 stuck in a loop</);
     assert.doesNotMatch(stuck, />nothing can start</);
-    assert.doesNotMatch(stuck, /deepest chain/);
+    assert.doesNotMatch(stuck, /longest chain/);
     // THE BLOCKING COUNT STAYS — this capsule is a flex row with room for both,
     // unlike §17f's two-column card, and the number is true. Only the depth was
     // not, so only the depth goes.
@@ -1197,13 +1197,13 @@ describe('the graph projection', () => {
     // The acyclic control still says a depth, so the assertion above is about
     // the cycle and not about the fixture.
     const acyclic = render({ ...cyclic, cycles: [] });
-    assert.match(acyclic, /deepest chain \d+/);
+    assert.match(acyclic, /longest chain \d+/);
     assert.match(acyclic, /\d+ blocking/);
     assert.doesNotMatch(acyclic, />nothing can start</);
   });
 
   it('counts isolated issues instead of drawing them', () => {
-    assert.match(render(), /1 isolated issue not drawn/);
+    assert.match(render(), /1 issue has no relationships, so it is not drawn/);
   });
 
   it('survives a chain far longer than any call stack would hold', () => {
@@ -1213,9 +1213,9 @@ describe('the graph projection', () => {
     // a big backlog, not a pathology.
     const markup = render(crowdedDocument(20_000));
 
-    assert.match(markup, /showing clusters only/);
+    assert.match(markup, /shown as groups/);
     assert.match(markup, /20000 issues/);
-    assert.match(markup, /deepest chain 19999/);
+    assert.match(markup, /longest chain 19999/);
   });
 
   it('is deterministic — two renders of one document agree byte for byte', () => {

@@ -180,9 +180,9 @@ const SANDBOX_IDENTITY = 'issuegraph/sandbox';
  */
 const FIRST_PASS_WORDS: FirstPassWords = {
   label: 'Suggested relationships',
-  answers: { apply: 'Yes — record it', reject: 'No', skip: 'Skip for now' },
+  answers: { apply: 'Yes, add it', reject: 'No', skip: 'Skip for now' },
   answersLabel: 'Your answer',
-  undo: '⌫ undo last',
+  undo: '⌫ Undo last answer',
   evidence: 'Why we’re asking',
   progress: (answered, found) => `${String(answered)} of ${String(found)} answered`,
   finished: 'That’s every suggestion. Nothing else is waiting.',
@@ -205,9 +205,9 @@ export const WORKSPACE_WORDS: MountWords = {
   // own. Each word has to read on its own AND next to a number, because the two
   // counts sit between them.
   canvas: {
-    focus: 'focused on',
+    focus: 'centered on',
     of: 'of',
-    shown: 'drawn',
+    shown: 'shown',
     editMode: 'edit mode',
   },
   // §17a'S RAIL FOOTER. OPTIONAL IN THE PACKAGE AND SUPPLIED HERE, on `canvas`'s
@@ -241,7 +241,7 @@ export const WORKSPACE_WORDS: MountWords = {
       entered: 'entered the order',
       left: 'left the order',
     },
-    unchanged: 'That edit landed and moved nothing.',
+    unchanged: 'Saved. The order did not change.',
     // NOT "your edit is saved", WHICH THIS STATE DOES NOT MEAN. `held` is
     // `anyPending(records)`, and `dispatch` reserves the record as `pending`
     // and publishes BEFORE it drains — so this sentence is on screen while the
@@ -252,32 +252,32 @@ export const WORKSPACE_WORDS: MountWords = {
     // The frame's own title reads "write landed · order computing", and that is
     // the frame being about a state the store does not have: nothing publishes
     // "landed, still recomputing". So this words what `held` actually is.
-    computing: 'Your edit is on its way. The order below is the previous one until it lands.',
-    dismiss: 'dismiss',
+    computing: 'Saving. The order below updates when the save is done.',
+    dismiss: 'Dismiss',
     direction: { up: 'up', down: 'down' },
   },
   // §17a's header: `312 open · 64 encoded` and `as of 14:32 ↻`. The numbers are
   // the package's and these are the nouns beside them.
   asOf: 'as of',
   open: 'open',
-  encoded: 'encoded',
+  encoded: 'with relationships',
   // The frame draws the panel's name in caps; the caps are the stylesheet's, as
   // they are for every other heading in this zone, so the word reads as a word.
   inspector: 'Inspector',
-  nothingSelected: 'Pick a row, a node or an edge to inspect it.',
-  clearSelection: 'clear the selection',
+  nothingSelected: 'Select an issue or a relationship to see its details.',
+  clearSelection: 'Clear selection',
   // §17k's strip. Below 1120 the canvas collapses to a handle and this is the
   // handle's label, so it names the ZONE rather than a direction: the button is
   // a few characters wide, turned on its side, with nothing beside it to say
   // what it would open.
-  showCanvas: 'show the canvas',
-  hideCanvas: 'hide the canvas',
+  showCanvas: 'Show the graph',
+  hideCanvas: 'Hide the graph',
   relationships: 'Relationships',
   // §17a's inspector explains the position before it lists the relationships.
   // The frame draws the heading in caps; the caps are the stylesheet's, so the
   // words here read as words.
-  whyRank: 'Why rank',
-  whyHeld: 'Why held',
+  whyRank: 'Position',
+  whyHeld: 'Why it is held',
   // §17's filtered empty state, and the two strings are doing different jobs.
   // The first says what did not match. The second says what still EXISTS, and
   // it is the one that stops a reader concluding the backlog is empty when a
@@ -288,12 +288,12 @@ export const WORKSPACE_WORDS: MountWords = {
   filteredDenominator: (ranked) =>
     // The plural is why the package hands over a count instead of a template.
     ranked === 1 ? '1 issue is ranked' : `${String(ranked)} issues are ranked`,
-  filteredClear: 'clear the filter',
-  workedAsOneUnit: 'worked as one unit with',
+  filteredClear: 'Clear filter',
+  workedAsOneUnit: 'worked together with',
   noRelationships: 'Nothing is related to this issue yet.',
   addRelationship: '+ add',
-  addRelationshipHeading: 'add relationship',
-  cancel: 'cancel',
+  addRelationshipHeading: 'Add relationship',
+  cancel: 'Cancel',
   // WHOSE DRAFT THE KIND STEP BELONGS TO, when it is not the panel's subject:
   // a draft begun on a together unit's partner, or one the reader selected
   // away from. The panel appends the reference itself.
@@ -301,15 +301,15 @@ export const WORKSPACE_WORDS: MountWords = {
   // NAMES THE ACT, NOT THE ROW. The `✕` is repeated once per relationship and
   // the markup already says which one it is about, so a word naming a
   // particular reference would be wrong on every other row.
-  remove: 'remove this relationship',
+  remove: 'Remove this relationship',
   // WHY THERE IS NO CONTROL BESIDE IT, said plainly rather than left as a gap.
   // An inbound relationship is declared in the other issue's body, so it cannot
   // be removed from this panel.
-  inbound: 'inbound',
+  inbound: 'set on the other issue',
   // §17b's flip, on the selected relationship's row. A VERB PHRASE rather than
   // the frame's bare "flip", because the row it sits in is a sentence and a
   // one-word control there reads as part of it.
-  flip: 'flip the direction',
+  flip: 'Flip direction',
   // The store's codes, worded for someone grooming a backlog rather than for
   // someone reading the store. `would-cycle` is the one this host's guard
   // actually produces; the rest are refused before dispatch.
@@ -320,9 +320,9 @@ export const WORKSPACE_WORDS: MountWords = {
     'duplicate-edge': 'That relationship is already declared.',
     'unchanged-kind': 'It is already that kind of relationship.',
     'symmetric-edge': 'That kind of relationship reads the same both ways.',
-    'cardinality': 'That field holds one reference, and it already has one.',
+    'cardinality': 'This issue can only have one of those, and it already has one.',
     'would-cycle': 'That would make the two issues block each other.',
-    'guard-failed': 'The cycle check could not be run, so nothing was written.',
+    'guard-failed': 'Could not check for a loop, so nothing was saved.',
   },
   // §17b's RECOVERY CARDS, worded for someone grooming a backlog. Both of these
   // states are reachable from the page's own controls: the writes panel arms
@@ -333,25 +333,25 @@ export const WORKSPACE_WORDS: MountWords = {
   // A visitor who reads it as "try again" would be surprised by the order
   // moving, which it can — the base really did change.
   recovery: {
-    failed: 'This edit was refused.',
+    failed: 'This edit was not saved.',
     conflict: 'This issue changed while you were editing it.',
-    viewDiff: 'view diff',
-    retry: 'retry',
-    retryOnLatest: 'retry on latest',
-    discardMine: 'discard mine',
-    upstreamOnly: 'Only upstream',
+    viewDiff: 'Compare',
+    retry: 'Retry',
+    retryOnLatest: 'Redo on the latest version',
+    discardMine: 'Discard my edit',
+    upstreamOnly: 'Only theirs',
     mineOnly: 'Only yours',
-    mineRemoved: 'Yours removes',
+    mineRemoved: 'You removed',
     // WHICH END DECLARES IT. Both documents hold the relationship; they
     // disagree about whose body it is written in, which the identity hides.
-    carrierReversed: 'Declared from the other end upstream',
+    carrierReversed: 'They set it from the other issue',
     issuesChanged: 'Issues that changed',
     // NOT "no changes". The difference is narrowed to the panel you are on, so
     // an empty one means the upstream edit was somewhere else in the backlog —
     // which is a different fact, and the one a groomer needs.
-    diffEmpty: 'Nothing on this issue differs; the change upstream was elsewhere.',
+    diffEmpty: 'Nothing on this issue is different. Their change was somewhere else.',
     retryFailed: 'Could not read the latest version:',
-    unplaced: 'Unresolved edits about issues not in this backlog',
+    unplaced: 'Unsaved edits to issues that are no longer here',
   },
   // §17d's FINDINGS LIST. The chips are the frame's own four words; the titles
   // say the CONSEQUENCE rather than restating the finding, because the sentence
@@ -363,43 +363,43 @@ export const WORKSPACE_WORDS: MountWords = {
   // interpolating them. So the title says what is true of every finding in its
   // class and the detail beneath it says which issues.
   audit: {
-    heading: 'encoding problems',
+    heading: 'problems to fix',
     classes: {
-      cycle: 'cycle',
-      'stale-blocker': 'stale',
-      'dead-duplicate-ref': 'dead ref',
-      'encoding-refused': 'refused',
+      cycle: 'loop',
+      'stale-blocker': 'closed blocker',
+      'dead-duplicate-ref': 'closed original',
+      'encoding-refused': 'unreadable',
     },
     titles: {
       cycle: 'These issues block each other in a loop.',
       'stale-blocker': 'This waits on an issue that is already closed.',
-      'dead-duplicate-ref': 'This duplicates a closed issue, so nothing is tracking its work.',
-      'encoding-refused': 'This issue declares relationships the reader could not parse.',
+      'dead-duplicate-ref': 'This is a duplicate of a closed issue, so nothing tracks its work.',
+      'encoding-refused': 'Some of this issue\u2019s relationships could not be read.',
     },
-    show: 'show me',
+    show: 'Show',
     // §17d's own entry point, drawn in the panel head: `filter the rail to
     // these`. It used to ride the header count; §3 gave that count one job.
-    filter: 'filter the rail to these',
+    filter: 'Show only these in the list',
     // §17d's REMEDY LABELS, and these ARE the frame's own words rather than a
     // paraphrase: the frame draws `pick one edge to drop`, `Remove the edge`,
     // `Keep as history` and `Repoint or clear`. Unlike the titles above, they
     // need no per-finding detail to make sense, so there is nothing to
     // generalise away.
     remedies: {
-      pickEdge: 'pick one edge to drop',
-      removeEdge: 'Remove the edge',
+      pickEdge: 'Pick one to remove',
+      removeEdge: 'Remove the relationship',
       keepAsHistory: 'Keep as history',
-      repoint: 'Repoint or clear',
+      repoint: 'Change or remove',
     },
-    refusedHeading: 'encoding refused',
-    refusedOpen: 'open in GitHub',
-    refusedRewrite: 'rewrite from editor',
+    refusedHeading: 'Could not be read',
+    refusedOpen: 'Open in GitHub',
+    refusedRewrite: 'Rewrite here',
   },
   picker: PICKER_WORDS,
-  deleteRelationship: 'delete this relationship',
-  chooseKind: 'choose the kind',
+  deleteRelationship: 'Delete this relationship',
+  chooseKind: 'Choose the kind',
   targetLabel: 'Target issue',
-  targetPlaceholder: 'find the other issue by number or title',
+  targetPlaceholder: 'Issue number or title',
   // `R` IS LISTED HERE AS WELL AS ON THE CONTROL, and the duplication is the
   // lesser fault. Dropping it was tried first, on the reasoning that a hint
   // beside the control makes the legend's copy redundant — but the two make
@@ -409,7 +409,7 @@ export const WORKSPACE_WORDS: MountWords = {
   // from the rail's focused row, so `R` keeps working in every one of those
   // states, and a legend that omits it tells the reader a key they have is a
   // key they do not.
-  keys: 'R relate · 1–5 kind · type to search · ⏎ commit · ⌫ delete · T retype · Esc cancel',
+  keys: 'R add · 1–5 pick kind · type to search · ⏎ save · ⌫ delete · T change kind · Esc cancel',
 };
 
 /**
@@ -448,10 +448,10 @@ export function themeFor(name: ThemeName): Theme {
 const UNSETTLED: ReadonlySet<WriteRecord['state']> = new Set(['pending', 'invalid', 'failed', 'conflict']);
 
 const STATE_LABEL: Readonly<Record<WriteRecord['state'], string>> = {
-  pending: 'writing',
-  invalid: 'refused before dispatch',
-  failed: 'the tracker refused it',
-  conflict: 'the document moved upstream',
+  pending: 'saving',
+  invalid: 'not saved: the change is not allowed',
+  failed: 'not saved: the tracker refused it',
+  conflict: 'not saved: someone else changed it first',
 };
 
 /** The commands the mount's reducer owns that the writes log publishes outside the mount. */
@@ -638,7 +638,7 @@ function refusalFor(held: GraphDocument): readonly EncodingRefusal[] {
   return [
     {
       ref: first.ref,
-      diagnostic: 'unparseable YAML at line 3',
+      diagnostic: 'line 3 could not be read',
       sourceLine: 'blocked-by: [231, 234',
     },
   ];
@@ -659,18 +659,32 @@ function button(label: string, command: string, attributes: Readonly<Record<stri
   return el('button', { type: 'button', class: 'chrome-button', 'data-ig-command': command, ...attributes }, [label]);
 }
 
+/**
+ * A relationship's identity, read back as the sentence it stands for.
+ *
+ * THE LOG PRINTED THE RAW IDENTITY — `blocked-by|512|488` — which is a storage
+ * key, not something a reader can check against the screen. The identity is
+ * `@issuegraph/core`'s own three-part form, so it is split rather than looked
+ * up; anything that does not parse is printed as it came, never dropped.
+ */
+function edgeSentence(edgeId: string): string {
+  const [kind, from, to] = edgeId.split('|');
+  if (kind === undefined || from === undefined || to === undefined || !(kind in KIND_PHRASE)) return edgeId;
+  return `#${decodeURIComponent(from)} ${KIND_PHRASE[kind as EdgeKind]} #${decodeURIComponent(to)}`;
+}
+
 /** One write, as a sentence. Exhaustive over `Proposal['op']`, so a sixth op fails here. */
 function describe(record: WriteRecord): string {
   const mutation = record.mutation;
   switch (mutation.op) {
     case 'create':
-      return `create: #${mutation.from} ${KIND_PHRASE[mutation.kind]} #${mutation.to}`;
+      return `Add: #${mutation.from} ${KIND_PHRASE[mutation.kind]} #${mutation.to}`;
     case 'delete':
-      return `delete: ${mutation.edgeId}`;
+      return `Delete: ${edgeSentence(mutation.edgeId)}`;
     case 'retype':
-      return `retype: ${mutation.edgeId} → ${mutation.nextKind}`;
+      return `Change: ${edgeSentence(mutation.edgeId)}, now ${KIND_PHRASE[mutation.nextKind]}`;
     case 'flip':
-      return `flip: ${mutation.edgeId}`;
+      return `Flip: ${edgeSentence(mutation.edgeId)}`;
   }
 }
 
@@ -762,10 +776,10 @@ export function mountSandbox(
       if (record.state === 'invalid') row.append(el('span', { class: 'write-reason' }, [record.reason.message]));
       if (record.state === 'failed') row.append(el('span', { class: 'write-reason' }, [record.reason]));
       if (record.state === 'failed' || record.state === 'conflict') {
-        row.append(button(record.state === 'conflict' ? 'retry on latest' : 'retry', 'retry', { 'data-ig-target': record.mutationId, class: 'chrome-button chrome-inline' }));
+        row.append(button(record.state === 'conflict' ? 'Redo on the latest version' : 'Retry', 'retry', { 'data-ig-target': record.mutationId, class: 'chrome-button chrome-inline' }));
       }
       if (record.state !== 'pending') {
-        row.append(button('discard mine', 'discard', { 'data-ig-target': record.mutationId, class: 'chrome-button chrome-quiet chrome-inline' }));
+        row.append(button('Discard my edit', 'discard', { 'data-ig-target': record.mutationId, class: 'chrome-button chrome-quiet chrome-inline' }));
       }
       list.append(row);
     }
@@ -829,9 +843,9 @@ export function mountSandbox(
           return { issues: snapshot.issues, edges: snapshot.landed };
         }),
         words: FIRST_PASS_WORDS,
-        exit: 'exit anytime',
+        exit: 'Stop anytime',
         scanning: 'Scanning your issues for relationships…',
-        scanFailed: 'The scan did not answer. Leave and try again.',
+        scanFailed: 'The scan failed. Close this and try again.',
       },
     });
     // ONE RENDER, once the store has answered: `read` schedules it.

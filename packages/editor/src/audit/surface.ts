@@ -320,7 +320,7 @@ export function renderAuditHeader(overlay: AuditOverlay, options: AuditHeaderOpt
     `<button type="button" class="ig-audit-toggle" aria-expanded="${String(open)}"`,
     ` ${AUDIT_PANEL_ATTRIBUTE}>`,
     `<span class="ig-audit-count">${count}</span>`,
-    `<span class="ig-audit-label">audit</span>`,
+    `<span class="ig-audit-label">${overlay.count === 1 ? 'problem' : 'problems'}</span>`,
     `</button>`,
     `</div>`,
   ].join('');

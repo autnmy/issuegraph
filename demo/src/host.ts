@@ -208,9 +208,9 @@ const DEMO_CONDITIONS: Readonly<Record<DemoStateName, ViewerCondition | undefine
   live: undefined,
   importing: Object.freeze({
     kind: 'importing',
-    headline: 'Building the local index',
-    caution: 'The order below is real but incomplete — ranks will change as the rest arrive.',
-    progress: '412 of ~1,200 issues · relationships resolve last',
+    headline: 'Still loading your issues',
+    caution: 'The order below is real but not complete. It will change as more issues arrive.',
+    progress: '412 of about 1,200 issues loaded',
     // ◔ RATHER THAN THE FRAME'S ◐, and the reason is a collision the frame does
     // not have: ◐ already means `preview-only` in this package's badge
     // vocabulary, and a glyph that means two things is a glyph that means
@@ -219,15 +219,15 @@ const DEMO_CONDITIONS: Readonly<Record<DemoStateName, ViewerCondition | undefine
   }),
   empty: Object.freeze({
     kind: 'empty',
-    headline: 'Nothing is eligible right now',
-    reason: 'No open issue matches your pick order.',
-    assurance: 'The pipeline stays armed and will take the first one that does.',
-    action: Object.freeze({ label: 'Review pick order' }),
+    headline: 'Nothing to work on right now',
+    reason: 'No open issue matches your queries.',
+    assurance: 'The first issue that matches will be picked up.',
+    action: Object.freeze({ label: 'Check your queries' }),
   }),
   error: Object.freeze({
     kind: 'error',
-    headline: 'The index could not be read',
-    assurance: 'Your settings are safe, and the pipeline continues on its last known order.',
+    headline: 'Could not load your issues',
+    assurance: 'Your settings are safe. Work continues in the last order that loaded.',
     retry: 'Retry',
     glyph: '▲',
   }),

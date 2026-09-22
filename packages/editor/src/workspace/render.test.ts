@@ -1817,7 +1817,7 @@ describe('the workspace splits the host facts between the header and the rail', 
 
   it('keeps the order’s own tally and the NOW row in the rail', () => {
     const { rail } = zones(renderWorkspace(HOSTED, WORDS).markup);
-    assert.match(rail, /<span class="ig-count-chip" data-count="ready">8 ready now · cap 2<\/span>/);
+    assert.match(rail, /<span class="ig-count-chip" data-count="ready">8 ready now · 2 at a time<\/span>/);
     assert.match(rail, /<li class="ig-now-row" data-ig-group="i0003"/);
   });
 

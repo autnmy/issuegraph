@@ -375,7 +375,7 @@ describe('duplicate chains resolve transitively', () => {
         ['b', 'c'],
       ],
     );
-    assert.match(found[0]?.detail ?? '', /duplicate-of c \(through b\)/);
+    assert.match(found[0]?.detail ?? '', /a duplicate of c \(through b\)/);
   });
 
   it('calls a blocker that duplicates a closed issue stale', () => {
@@ -395,7 +395,7 @@ describe('duplicate chains resolve transitively', () => {
     // not, because its remedy sits on the declarer's edge and a `misleading`
     // bar on the closed canonical would mark a row with nothing to do there.
     assert.deepEqual(found[0]?.members, ['a', 'b']);
-    assert.match(found[0]?.detail ?? '', /blocked-by c \(via b, which duplicates it\)/);
+    assert.match(found[0]?.detail ?? '', /blocked by c \(via b, which duplicates it\)/);
   });
 });
 
@@ -459,7 +459,7 @@ describe('a dead duplicate ref names the closed canonical it is about', () => {
     // it is the ref the author wrote. Without `2` the only carried member was
     // `a`, and the closed target's own row went unmarked.
     assert.deepEqual(found[0]?.members, ['2', 'a', 'acme/app#2']);
-    assert.match(found[0]?.detail ?? '', /a is duplicate-of 2 \(through acme\/app#2\)/);
+    assert.match(found[0]?.detail ?? '', /a is a duplicate of 2 \(through acme\/app#2\)/);
   });
 
   it('leaves the ordinary same-spelling case at two members — the control', () => {
@@ -516,7 +516,7 @@ describe('a refused declaration is not a discharged blocker', () => {
       'encoding-refused',
     );
     assert.equal(/has no edges/.test(found[0]?.detail ?? ''), false);
-    assert.match(found[0]?.detail ?? '', /incomplete and cannot be trusted/);
+    assert.match(found[0]?.detail ?? '', /could not be read/);
   });
 });
 
@@ -716,7 +716,7 @@ describe('a weak target may add a constraint and never satisfy one', () => {
       (one) => one.kind === 'dead-duplicate-ref',
     );
     assert.equal(found.length, 1);
-    assert.match(found[0]?.detail ?? '', /duplicate-of c \(through b\)/);
+    assert.match(found[0]?.detail ?? '', /a duplicate of c \(through b\)/);
   });
 
   it('still resolves through a target the document DOES carry — the control', () => {
@@ -731,7 +731,7 @@ describe('a weak target may add a constraint and never satisfy one', () => {
     );
     const found = audit(document).filter((one) => one.kind === 'stale-blocker');
     assert.equal(found.length, 1);
-    assert.match(found[0]?.detail ?? '', /blocked-by done \(via dup, which duplicates it\)/);
+    assert.match(found[0]?.detail ?? '', /blocked by done \(via dup, which duplicates it\)/);
   });
 });
 

@@ -534,7 +534,7 @@ function ownHolds(ref: IssueRef, at: Index): Hold[] {
     found.push({
       family: 'graph',
       label: 'cycle',
-      detail: 'in a blocked-by cycle, which is stuck until a groomer breaks it',
+      detail: 'Stuck in a loop of issues that block each other. Remove one of the relationships to free it.',
     });
   }
 
@@ -554,13 +554,13 @@ function ownHolds(ref: IssueRef, at: Index): Hold[] {
         found.push({
           family: 'graph',
           label: 'unresolvable',
-          detail: `blocked-by ${target}, which this document cannot resolve — treated as blocking`,
+          detail: `Blocked by ${target}, which is not in this backlog, so it is treated as blocking.`,
         });
         continue;
       }
       if (target !== ref && unit.has(target)) continue;
       if (blocker.state === 'open') {
-        found.push({ family: 'graph', label: 'blocked', detail: `blocked by ${target}` });
+        found.push({ family: 'graph', label: 'blocked', detail: `Blocked by ${target}.` });
       }
       continue;
     }
@@ -590,8 +590,8 @@ function ownHolds(ref: IssueRef, at: Index): Hold[] {
         family: 'graph',
         label: 'unresolvable',
         detail: linksNothing
-          ? `serialize-with ${edge.to}, which this document cannot resolve — it links nothing`
-          : `together-with ${edge.to}, which this document cannot resolve — the unit cannot be claimed atomically without it`,
+          ? `Serialized with ${edge.to}, which is not in this backlog, so it has no effect.`
+          : `Goes together with ${edge.to}, which is not in this backlog, so the pair cannot start.`,
         ...(linksNothing ? { blocking: false as const } : {}),
       });
     }
@@ -611,7 +611,7 @@ function ownHolds(ref: IssueRef, at: Index): Hold[] {
     found.push({
       family: 'graph',
       label: 'serialized',
-      detail: `serialize group member ${member} is actively claimed`,
+      detail: `Waits for ${member}, which is serialized with it and already being worked.`,
     });
   }
 
@@ -645,7 +645,7 @@ function holdsFor(ref: IssueRef, at: Index): readonly Hold[] {
   for (const member of unit) {
     if (member === ref) continue;
     for (const hold of ownHolds(member, at)) {
-      shared.push({ ...hold, detail: `${member}, in this together group, is held: ${hold.detail}` });
+      shared.push({ ...hold, detail: `${member}, which goes together with it, is held. ${hold.detail}` });
     }
   }
   return shared;

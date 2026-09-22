@@ -59,15 +59,15 @@ describe('the §16 comparison page', () => {
   it('prints the first-import frame’s own three sentences', () => {
     const markup = markupOf('s16g-importing');
     assert.ok(markup.includes('data-ig-condition="importing"'));
-    assert.ok(markup.includes('Building the local index'));
-    assert.ok(markup.includes('ranks will change as the rest arrive'));
-    assert.ok(markup.includes('412 of ~1,200 issues · relationships resolve last'));
+    assert.ok(markup.includes('Still loading your issues'));
+    assert.ok(markup.includes('It will change as more issues arrive'));
+    assert.ok(markup.includes('412 of about 1,200 issues loaded'));
   });
 
   it('prints the empty frame’s sentence over an order that really is empty', () => {
     const markup = markupOf('s16g-empty');
-    assert.ok(markup.includes('Nothing is eligible right now'));
-    assert.ok(markup.includes('The pipeline stays armed'));
+    assert.ok(markup.includes('Nothing to work on right now'));
+    assert.ok(markup.includes('The first issue that matches will be picked up'));
     // The SENTENCES survive; only the affordance this page cannot perform goes.
     assert.ok(!markup.includes('data-ig-command="review-pick-order"'));
     // THE FRAME DRAWS AN EMPTY CARD. `empty` is the one state that contradicts a
@@ -81,8 +81,8 @@ describe('the §16 comparison page', () => {
 
   it('prints the error frame’s assurance, without a Retry this page cannot perform', () => {
     const markup = markupOf('s16g-error');
-    assert.ok(markup.includes('The index could not be read'));
-    assert.ok(markup.includes('continues on its last known order'));
+    assert.ok(markup.includes('Could not load your issues'));
+    assert.ok(markup.includes('Work continues in the last order that loaded'));
     assert.ok(!markup.includes('data-ig-command="retry:index"'));
   });
 
@@ -132,18 +132,18 @@ describe('the §16 comparison page', () => {
     for (const label of ['label:P0', 'label:P1', 'label:P2', 'label:P3']) {
       assert.ok(markup.includes(label), `§16h never names ${label}`);
     }
-    assert.ok(markup.includes('matched ordered query 1'), '§16h lost its ordered-query provenance');
-    assert.ok(!markup.includes('ranked in tier'), '§16h fell back to a tier read');
+    assert.ok(markup.includes('Picked by query 1'), '§16h lost its ordered-query provenance');
+    assert.ok(!markup.includes('goes by its priority'), '§16h fell back to a tier read');
     // Complete: no empty slot, no missing affordance, no relationship badge.
     assert.ok(!markup.includes('ig-empty'), '§16h drew an empty state');
     assert.ok(markup.includes('ig-toggle'), '§16h hid the projection toggle');
     assert.deepEqual(markup.match(/class="ig-badge" data-edge="/g) ?? [], [], '§16h drew a relationship badge');
     // One quiet line, with its link and its dismiss — and exactly one.
     assert.equal(markup.split('class="ig-adoption"').length - 1, 1, '§16h drew more than one adoption line');
-    assert.ok(markup.includes('so ordering is entirely your pick order.'));
+    assert.ok(markup.includes('so the order comes from your queries alone.'));
     // A SHORT LINK BESIDE THE SENTENCE, not the sentence wearing an underline.
     assert.ok(markup.includes('<a class="ig-adoption-link" href="https://issuegraph.org/" rel="noreferrer">'));
-    assert.ok(!markup.includes('<a class="ig-adoption-link" href="https://issuegraph.org/" rel="noreferrer">No issue'));
+    assert.ok(!markup.includes('<a class="ig-adoption-link" href="https://issuegraph.org/" rel="noreferrer">No issue has'));
     assert.ok(!markup.includes('data-ig-command="dismiss:adoption"'), '§16h drew a dismiss this page cannot perform');
     // At the design's own scale, and under the graph's node budget.
     assert.equal(panelDocument('s16h-adoption').order.slots.length, ADOPTION_SIZE);

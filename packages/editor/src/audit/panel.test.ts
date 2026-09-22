@@ -637,7 +637,7 @@ describe('§17d — the cycle card draws its walk', () => {
     );
     assert.ok(
       markup.includes(
-        `aria-label="${WORDS.show} a · b · c form a blocked-by cycle; no member can ever become ready"`,
+        `aria-label="${WORDS.show} a, b, c block each other in a loop, so none of them can start."`,
       ),
       markup,
     );

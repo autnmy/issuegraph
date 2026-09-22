@@ -239,7 +239,7 @@ describe('the linear projection', () => {
     // text.
     assert.match(
       row(render(), '102'),
-      /effective priority <span class="ig-id">P3 -&gt; 0<\/span><span> — inherited from <span class="ig-id">101<\/span>, which it blocks/,
+      /Priority raised <span class=\"ig-id\">P3 -&gt; 0<\/span><span> because it blocks <span class=\"ig-id\">101<\/span>/,
     );
     // And the same fact as a chip on the badge row, which is where a reader
     // scanning a column of rows meets it.
@@ -248,13 +248,13 @@ describe('the linear projection', () => {
 
   it('renders the other two provenance forms', () => {
     const markup = render();
-    assert.match(row(markup, '101'), /matched ordered query 1 · <span class="ig-id">label:P1<\/span>/);
+    assert.match(row(markup, '101'), /Picked by query 1 · <span class="ig-id">label:P1<\/span>/);
     // NEUTRAL. This arm means only that no ordering query matched and the issue
     // stayed in its tier; it does NOT mean the priority was absent, and §16a's
     // own row — which happens to be one where it was — is not a licence to say
     // so about every row that reaches this arm.
-    assert.match(row(markup, '103'), /no ordered query matched — ranked in tier <span class="ig-id">P2<\/span>/);
-    assert.match(row(markup, '103'), /<span class="ig-badge" data-priority="tier">P2 · tier<\/span>/);
+    assert.match(row(markup, '103'), /No query matched, so it goes by its priority, <span class="ig-id">P2<\/span>/);
+    assert.match(row(markup, '103'), /<span class="ig-badge" data-priority="tier">P2<\/span>/);
   });
 
   it('links an issue only when the host supplied a URL', () => {
@@ -314,7 +314,7 @@ describe('the linear projection', () => {
   it('counts isolated issues into one chip instead of rendering them', () => {
     // 110 is in no slot and on no edge: 248 such dots carry no information, so
     // the design collapses them to a count.
-    assert.match(render(), /1 issue is in no slot and declare/);
+    assert.match(render(), /1 more issue has no relationships and no place/);
   });
 
   it('is deterministic — two renders of one document agree byte for byte', () => {

@@ -184,7 +184,7 @@ function cardinalityRefusal(
   if (held === undefined) return undefined;
   return {
     outcome: 'rejected',
-    reason: `${held.from} already has ${held.kind} → ${held.to}, and ${held.kind} holds one reference`,
+    reason: `${held.from} already has a ${held.kind} relationship (to ${held.to}), and it can only have one.`,
   };
 }
 
@@ -253,7 +253,7 @@ export function createDemoSource(
       if (armed === 'reject') {
         return settle({
           outcome: 'rejected',
-          reason: 'the tracker refused this write (armed by the demo controls)',
+          reason: 'The tracker refused this save. You set this up in Try a scenario.',
         });
       }
       if (armed === 'conflict') {
@@ -266,7 +266,7 @@ export function createDemoSource(
           return settle({
             outcome: 'rejected',
             reason:
-              'the demo could not fabricate an upstream change distinct from this edit: every other edge this document could hold already exists',
+              'The demo could not fake a clashing edit, because every other relationship already exists.',
           });
         }
         // INSTALL IT, do not merely describe it. "The document moved upstream"

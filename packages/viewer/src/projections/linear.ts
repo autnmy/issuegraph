@@ -582,7 +582,7 @@ export function asideRow(
 function isolatedChip(count: number): ElementSpec | null {
   if (count === 0) return null;
   return element('p', { class: 'ig-count' }, [
-    `${String(count)} ${count === 1 ? 'issue is' : 'issues are'} in no slot and declare no relationships`,
+    `${String(count)} more ${count === 1 ? 'issue has' : 'issues have'} no relationships and no place in the order`,
   ]);
 }
 

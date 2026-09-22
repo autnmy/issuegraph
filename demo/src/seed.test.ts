@@ -166,7 +166,7 @@ describe('the landing state is the §16a comp', () => {
     assert.ok(unit.holds.length > 0);
     for (const hold of unit.holds) {
       assert.equal(hold.family, 'graph');
-      assert.match(hold.reason, /blocked by 488/);
+      assert.match(hold.reason, /Blocked by 488\./);
     }
     for (const ref of ['512', '514']) {
       assert.equal(rowFor(comp.explained.rows, ref).togetherGroupSize, 2);
@@ -444,7 +444,7 @@ describe('the adoption count is measured, never remembered', () => {
     const document = adoptionSeed();
     const stated = adoptionFor(SCENARIOS.adoption, document, false);
     assert.equal(stated?.counts, undefined, 'the day-one panel double-stated its adoption');
-    assert.ok(stated?.note?.text.includes('pick order'));
+    assert.ok(stated?.note?.text.includes('your queries'));
     assert.equal(adoptionFor(SCENARIOS.adoption, document, true), undefined);
   });
 

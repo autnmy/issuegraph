@@ -54,8 +54,10 @@ import {
   renderMarkup,
   resolveTheme,
   themeCss,
+  treatmentFor,
 } from '@issuegraph/viewer';
 
+import { isEdgeField } from '@issuegraph/core';
 import { type FirstPassQuestion, type FirstPassView, firstPassView } from './view.ts';
 import type { QueueProgress, QueueState } from './queue.ts';
 import { firstPassStylesheet } from './styles.ts';
@@ -128,19 +130,19 @@ function evidenceSpec(item: { readonly token: string; readonly text: string }): 
  * stylesheet lays it out as a flex row, which is what makes that bypass a
  * restyle rather than a re-implementation.
  *
- * The kind is drawn as its FORMAT SPELLING (`blocked-by`), not as a phrase.
- * `PickerWords` words the kinds for the picker, and asking a host to word them
- * a second time here would be two vocabularies free to disagree about one
- * relationship — while reusing `PickerWords` would couple this surface to a
- * flow it is not part of. The spelling is the document's own token, so it is
- * the document's word rather than ours, and it is what the owner will see in
- * the issue body afterwards.
+ * The kind is drawn in the viewer's own words (`blocked by`), not as the
+ * format's token. It was drawn as the token (`blocked-by`) on the grounds that
+ * a host wording it again would be a second vocabulary — true, but the answer
+ * to that is the ONE vocabulary every other surface already reads: the badge,
+ * the legend and the relationship rows all say "blocked by", and a question
+ * that asks "512 blocked-by 488?" in machine spelling was the only place a
+ * reader met the hyphen. `data-ig-kind` still carries the token.
  */
 function questionSpec(question: FirstPassQuestion, words: FirstPassWords): ElementSpec {
   return element('div', { class: 'ig-firstpass-question' }, [
     element('p', { class: 'ig-firstpass-statement', 'data-ig-kind': question.kind }, [
       element('span', { class: 'ig-firstpass-ref', 'data-ig-role': 'from' }, [question.subject]),
-      element('span', { class: 'ig-firstpass-kind' }, [question.kind]),
+      element('span', { class: 'ig-firstpass-kind' }, [isEdgeField(question.kind) ? treatmentFor(question.kind).label : question.kind]),
       element('span', { class: 'ig-firstpass-ref', 'data-ig-role': 'to' }, [question.object]),
     ]),
     // NO EVIDENCE IS NO BLOCK, rather than an empty list with a heading. A host

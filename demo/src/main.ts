@@ -60,7 +60,7 @@ function boot(scenario: Scenario, onChange: () => void): Live {
       if (!introducesCycle(current, next)) return undefined;
       return {
         code: 'would-cycle',
-        message: 'that edit would close a dependency cycle, so nothing was written',
+        message: 'That would make issues block each other in a loop, so nothing was saved.',
       };
     },
   });

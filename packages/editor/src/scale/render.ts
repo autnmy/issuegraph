@@ -193,7 +193,7 @@ function omittedSpec(omitted: OmittedComponents | null): ElementSpec | null {
         ? ` \u00b7 ${String(range.smallest)} ${range.smallest === 1 ? 'issue' : 'issues'} each`
         : ` \u00b7 ${String(range.smallest)}\u2013${String(range.largest)} issues each`;
   return element('p', { class: 'ig-refusal-omitted' }, [
-    `${String(omitted.count)} further ${omitted.count === 1 ? 'component is' : 'components are'} not listed${span}.`,
+    `${String(omitted.count)} more ${omitted.count === 1 ? 'group is' : 'groups are'} not listed${span}.`,
   ]);
 }
 
@@ -215,13 +215,13 @@ function omittedSpec(omitted: OmittedComponents | null): ElementSpec | null {
 function capsuleLabel(capsule: ScaleCapsule): string {
   const blocking =
     capsule.reach.kind === 'cyclic'
-      ? 'holds a cycle'
-      : `${String(capsule.blockedByEdges)} blocked-by ${capsule.blockedByEdges === 1 ? 'edge' : 'edges'}`;
+      ? 'has a loop'
+      : `${String(capsule.blockedByEdges)} blocking`;
   // THE ACCESSIBLE NAME SAYS "around" TOO, so what is heard and what is drawn
   // make the same claim. It used to read "Focus <title> (<key>)", which names
   // the component after one issue in the one channel that cannot show the
   // layout making it an anchor.
-  return `Focus the component around ${capsule.lead}, ${capsule.name} \u2014 ${String(capsule.size)} issues, ${blocking}, ${clusterReachLabel(capsule.reach)}`;
+  return `Draw the group around ${capsule.lead}, ${capsule.name}: ${String(capsule.size)} issues, ${blocking}, ${clusterReachLabel(capsule.reach)}`;
 }
 
 /**
@@ -322,7 +322,7 @@ function refusalSpec(refusal: ScaleRefusal, ladder: ScaleLadder): ElementSpec {
       ? null
       : element(
           'ol',
-          { class: 'ig-list', 'aria-label': 'connected components' },
+          { class: 'ig-list', 'aria-label': 'groups of related issues' },
           ladder.capsules.map((capsule) => capsuleSpec(capsule)),
         ),
     omittedSpec(ladder.capsulesOmitted),
@@ -344,7 +344,7 @@ function searchSpec(search: ScaleSearch): ElementSpec {
     // resolve to whichever came first — so one of the two search boxes would
     // silently lose its label.
     element('label', {}, [
-      'Search to focus a component',
+      'Search for an issue',
       element('input', {
         type: 'search',
         'data-ig-command': 'search',
@@ -362,7 +362,7 @@ function searchSpec(search: ScaleSearch): ElementSpec {
               element(
                 'button',
                 { type: 'button', 'data-ig-command': 'focus', 'data-ig-target': match.lead },
-                [`Focus ${match.key}`],
+                [`Show ${match.key}`],
               ),
               element('span', { class: 'ig-title' }, [match.title]),
             ]),
@@ -541,7 +541,7 @@ export function renderScaleLadder(
       : element(
           'button',
           { type: 'button', class: 'ig-chip', 'data-ig-command': 'clear-focus' },
-          ['Return to every component'],
+          ['Go back to all groups'],
         ),
     ladder.refusal === null ? null : refusalSpec(ladder.refusal, ladder),
     ladder.search === null ? null : searchSpec(ladder.search),

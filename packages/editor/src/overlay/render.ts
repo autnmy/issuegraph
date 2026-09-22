@@ -599,7 +599,8 @@ export function renderOverlayMark(
         class: `${OVERLAY_CLASS} ig-overlay-held`,
         'data-ig-overlay': 'conflict',
         'data-ig-slot': 'held-version',
-        'aria-label': overlayLabel('', overlay).trim(),
+        // No subject here, so the label has no text before its separator.
+        'aria-label': overlayLabel('', overlay).replace(/^[\s\u2014]+/, ''),
       });
   }
 }

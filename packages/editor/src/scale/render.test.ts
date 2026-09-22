@@ -101,7 +101,7 @@ describe('the refusal, as a reader sees it', () => {
           // widens the one slot whose contents moved.
           `<span class="ig-capsule-name"><span class="ig-capsule-anchor">around </span>` +
           `<span class="ig-id">${capsule.lead}</span> \u00b7 ${capsule.name}</span>` +
-          `<span class="ig-capsule-reach">deepest chain ${String(capsule.chainDepth)}</span>`,
+          `<span class="ig-capsule-reach">longest chain ${String(capsule.chainDepth)}</span>`,
       ),
     );
   });
@@ -116,15 +116,15 @@ describe('the refusal, as a reader sees it', () => {
     assert.match(
       result.markup,
       new RegExp(
-        `aria-label="Focus the component around ${capsule.lead}, ${capsule.name} \u2014 ${String(capsule.size)} issues, ` +
-          `${String(capsule.blockedByEdges)} blocked-by edges, deepest chain ${String(capsule.chainDepth)}"`,
+        `aria-label="Draw the group around ${capsule.lead}, ${capsule.name}: ${String(capsule.size)} issues, ` +
+          `${String(capsule.blockedByEdges)} blocking, longest chain ${String(capsule.chainDepth)}"`,
       ),
     );
     // DISTINCT BY CONSTRUCTION, not by this fixture's titles happening to
     // differ. `name` is the lead's TITLE, which two components can share; the
     // lead KEY cannot be, because components partition the document's keys — so
     // every name carries one.
-    const labels = [...result.markup.matchAll(/aria-label="(Focus [^"]+)"/g)].map((m) => m[1]);
+    const labels = [...result.markup.matchAll(/aria-label="(Draw the group [^"]+)"/g)].map((m) => m[1]);
     assert.ok(labels.length > 1);
     assert.equal(new Set(labels).size, labels.length);
     for (const each of result.ladder.capsules) {
@@ -165,7 +165,7 @@ describe('the refusal, as a reader sees it', () => {
     assert.match(card, />nothing can start</);
     // The tint the frame puts on the whole stuck card is a rule on this hook.
     assert.match(card, /data-reach="cyclic"/);
-    assert.equal(/deepest chain/.test(card), false);
+    assert.equal(/longest chain/.test(card), false);
     // THE REACH SLOT, not a bare digit probe over the whole card: the size, the
     // edge count and the title all carry digits, so a substring test would
     // false-fail wherever those share one, and pass for the wrong reason on a
@@ -192,7 +192,7 @@ describe('the refusal, as a reader sees it', () => {
     assert.equal(omitted.count, 49);
     assert.deepEqual(omitted.range, { smallest: 2, largest: 5 });
     assert.ok(
-      result.markup.includes('49 further components are not listed \u00b7 2\u20135 issues each.'),
+      result.markup.includes('49 more groups are not listed \u00b7 2\u20135 issues each.'),
       'the omitted line does not carry the count and the range',
     );
   });
