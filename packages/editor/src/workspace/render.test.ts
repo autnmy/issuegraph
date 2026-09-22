@@ -103,7 +103,7 @@ describe('the three zones render at their fixed positions', () => {
     // per branch. What is no longer claimed is that the root carries NOTHING.
     assert.match(
       result.markup,
-      /^<div class="ig-workspace" data-canvas="strip" data-inspector="dismissed">/,
+      /^<div class="ig-workspace" data-canvas="strip" data-canvas-legend="[a-z]+" data-inspector="dismissed">/,
     );
     assert.equal(/^<div class="ig-workspace"[^>]*data-order=/.test(result.markup), false);
     assert.match(result.markup, /<\/div>$/);

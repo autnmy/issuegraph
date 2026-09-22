@@ -1718,6 +1718,13 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         // emptied husk here left a sticky padded band with a border and no
         // content over the tree. Reading the element rather than re-deriving
         // the condition keeps the rule in one place.
+        // THE TREE ALWAYS DRAWS A KEY, WHATEVER THE GRAPH'S TIER SAID. render.ts
+        // set `data-canvas-legend` from the scale ladder, which is a fact about
+        // the GRAPH — and this branch has just replaced the graph with a
+        // projection that has no budget and no refusal. Left as it was, a tree
+        // over a backlog past the node budget reported no key in this zone and
+        // the rail drew a second one beside the one on screen.
+        surface.firstElementChild?.setAttribute('data-canvas-legend', 'drawn');
         if (isolated !== null) canvas.append(isolated);
         if (toolbar !== null && toolbar.childElementCount > 0) canvas.prepend(toolbar);
         const states = new Map(

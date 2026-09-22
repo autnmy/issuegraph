@@ -1532,6 +1532,28 @@ export const workspaceStylesheet = `
   outline-offset: var(--ig-space-tight);
 }
 
+/* ONE KEY PER SURFACE, AND THE CANVAS KEEPS IT.
+
+   Both zones hold a viewer, so both draw the grammar legend, and this surface
+   showed the same five line styles twice side by side at the same moment. It is
+   the defect chrome: false already answers one line higher — §16's panel has
+   ONE header — and render.ts records the reasoning for which zone yields:
+   four of the five entries are LINE styles and the rail draws no lines, only
+   badges, so the key belongs beside the strokes it is about. It is the cheaper
+   zone to spend it in, too: one or two wrapped rows of a wide column against
+   four rows of a 390 rail the order needs.
+
+   REACHING A VIEWER CLASS, FROM INSIDE THIS SURFACE'S OWN ROOT, FOR A STATE
+   THAT PACKAGE DOES NOT MODEL — which is the exemption reevaluate/styles.ts
+   already states and uses for the greyed rail. The viewer cannot answer this:
+   each instance is correct on its own and the duplication only exists in the
+   composition, which is this package's. Nothing here changes how a legend looks
+   anywhere else, and the markup is untouched — the rail still RENDERS its key,
+   so the two rules below can hand it back without re-rendering anything. */
+.ig-workspace[data-canvas-legend='drawn'] .ig-zone[data-zone='rail'] .ig-legend {
+  display: none;
+}
+
 /* THE MIDDLE LAYOUT: the inspector lifts, and the rail does not move.
 
    IT IS PLACED IN THE CANVAS'S GRID AREA, NOT POSITIONED OVER IT. An absolute
@@ -1593,6 +1615,16 @@ export const workspaceStylesheet = `
    330 the wide layout gives it, so the zone that yields in between is not
    yielding here at all. That is the order the rule names. */
 @container ig-workspace (width < 1120px) {
+  /* THE RAIL TAKES THE KEY BACK, BECAUSE THERE IS NO CANVAS TO CARRY IT. Below
+     this width §17k collapses the canvas to a four-character strip, so the zone
+     the rule above defers to is not on screen — and the station fills the rail
+     draws itself would have no key at all. display: flex rather than revert
+     because that is what .ig-legend is; the value has to be restated, which is
+     the price of a single-sided condition and is paid here in one place. */
+  .ig-workspace[data-canvas-legend='drawn'] .ig-zone[data-zone='rail'] .ig-legend {
+    display: flex;
+  }
+
   .ig-workspace {
     grid-template-areas:
       'header header header'

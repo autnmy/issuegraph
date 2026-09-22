@@ -3154,8 +3154,31 @@ export function renderWorkspace(
   // selected and the reader has not dismissed it since. Storing the openness
   // instead would be a second copy of the selection, free to disagree with it.
   const lifted = selection.kind !== 'none' && options.inspectorDismissed !== true;
+  // WHETHER THE CANVAS DREW A KEY, SO THE SURFACE DRAWS ONE AND NOT TWO. The
+  // rail and the canvas are both viewers, so both draw the grammar legend, and
+  // the workspace showed the same five line styles twice, side by side, at the
+  // same moment. It is the same defect `chrome: false` already answers one line
+  // higher — §16's panel has ONE header — and the answer is the same shape.
+  //
+  // THE CANVAS KEEPS IT AND THE RAIL YIELDS, which is the way round the content
+  // decides: four of the five entries are LINE styles, and the rail draws no
+  // lines at all — it draws badges. The key belongs beside the strokes it is
+  // about. It is also the cheaper zone to spend it in, at one or two wrapped
+  // rows of a wide column rather than four rows of a 390 rail the order needs.
+  //
+  // AN ATTRIBUTE RATHER THAN AN OPTION, because the rail must get the key BACK
+  // in the two states where the canvas has none, and only one of those is
+  // knowable here. The refusal is: above its node budget the canvas draws
+  // capsules and no viewer, so there is no legend in that zone to defer to.
+  // The other is §17k's collapsed canvas, which is a question about the box
+  // this surface was given — the container query is the only party that can
+  // answer it, so the restore is a rule in the sheet rather than a branch here.
+  // Suppressing the markup with an option would put the key out of reach of
+  // both.
+  const canvasLegend = canvas.ladder.tier === 'direct' ? 'drawn' : 'absent';
   const narrowState =
     ` data-canvas="${canvasOpen ? 'open' : 'strip'}"` +
+    ` data-canvas-legend="${canvasLegend}"` +
     ` data-inspector="${lifted ? 'lifted' : 'dismissed'}"`;
 
   // §17a'S RAIL FOOTER, FROM THE LADDER THE CANVAS ALREADY DERIVED. `isolated`

@@ -403,6 +403,20 @@ function isolatedSpec(
   // carrying no fact that the count-zero rule above already refuses.
   if (!chip && !isolated.open) return null;
   return element('div', { class: 'ig-ladder-isolated' }, [
+    // A CAPTION WHEN THE CONTROL IS SOMEWHERE ELSE, AND THE HOST'S OWN WORD FOR
+    // IT. With the chip drawn here the button says what the list is and a
+    // caption above it would say it twice. §17a moves the control to the rail
+    // footer, and what was left in this zone was an unlabelled column of issues
+    // in a canvas that had been drawing a graph a moment earlier — a reader who
+    // scrolled to it met a list with nothing saying what it was a list OF.
+    //
+    // NO NEW WORD IS INVENTED: this is `isolated.label`, the same string the
+    // chip would have carried, and exactly one of the two is ever drawn. That
+    // keeps the surface's rule — it renders words it was given — with no
+    // addition to the vocabulary a host has to supply.
+    chip || !isolated.open
+      ? null
+      : element('p', { class: 'ig-isolated-caption' }, [isolated.label]),
     !chip ? null : element(
       'button',
       {

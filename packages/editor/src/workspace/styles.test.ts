@@ -16,6 +16,7 @@ import { AUDIT_SEVERITY_ATTRIBUTE } from '../audit/surface.ts';
 import { INITIAL_SCALE_STATE } from '../scale/commands.ts';
 import { ZONES, renderWorkspace } from './render.ts';
 import { reevaluateStylesheet } from '../reevaluate/styles.ts';
+import { scaleLadderStylesheet } from '../scale/styles.ts';
 import { workspaceStylesheet } from './styles.ts';
 import { WORKSPACE_WORDS, backlogOf } from '../testing/workspace.ts';
 import { WORDS as CHANGE_WORDS, editOf, orderOf } from '../testing/reevaluate.ts';
@@ -495,16 +496,22 @@ const COMPOSED: ReadonlySet<string> = new Set([
       { projection: 'linear' },
     ).markup,
   ),
-  // The ladder's chrome and the audit header ship their own stylesheets, which
-  // `renderWorkspace` installs alongside this one.
+  // EVERY CLASS `scaleLadderStylesheet` STYLES, DERIVED FROM THAT SHEET rather
+  // than listed here — the same idiom `auditStylesheet` and `reevaluateStylesheet`
+  // already use below, and adopted here for the reason a hand list always earns:
+  // this was four names, and the ladder gaining a fifth (`.ig-isolated-caption`,
+  // the caption the list grew once §17a moved its control to the rail footer)
+  // failed this guard for a class that was styled all along — by the sheet whose
+  // job it is, which `renderWorkspace` installs alongside this one.
+  //
+  // COMMENTS STRIPPED FIRST, for the reason spelled out at the audit sheet
+  // below: these sheets quote their own and each other's selectors in prose.
+  ...[...withoutComments(scaleLadderStylesheet).matchAll(/\.(ig-[a-z0-9-]+)/g)].map(
+    (match) => match[1] ?? '',
+  ),
+  // The ladder's own root, which that sheet does not style: it is a grid area
+  // this surface places, so its share is THIS sheet's to declare.
   'ig-ladder',
-  'ig-ladder-isolated',
-  // The list that chip opens. It appears here now that a render above opens it,
-  // and it is the LADDER's to style (`scaleLadderStylesheet`) even though the
-  // control that opens it has moved to the rail — see `railFooter` for why the
-  // virtualized rail cannot hold the list itself.
-  'ig-isolated-list',
-  'ig-chip',
   // EVERY CLASS `auditStylesheet` STYLES, DERIVED FROM THAT SHEET rather than
   // listed here — the idiom `reevaluateStylesheet` below already uses, and for
   // the reason this file's other direction exists: a hand list goes on passing
