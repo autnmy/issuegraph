@@ -173,11 +173,11 @@ export type DemoStateName = (typeof DEMO_STATE_NAMES)[number];
  * the state machine.
  */
 export const DEMO_STATE_LABELS: Readonly<Record<DemoStateName, string>> = Object.freeze({
-  live: 'Working',
-  importing: 'Still importing',
-  empty: 'Nothing to work',
-  error: "Can't read the backlog",
-  stale: 'Out of date',
+  live: 'Loads fine',
+  importing: 'Still loading',
+  empty: 'Nothing to do',
+  error: 'Won\u2019t load',
+  stale: 'Old data',
 });
 
 /**

@@ -90,11 +90,56 @@ export const THEME_LABELS: Readonly<Record<ThemeName, string>> = Object.freeze({
   paper: 'Light',
 });
 
-/** See `THEME_LABELS`. `neighbourhood` is the editor's value; "Order map" is what it draws. */
+/** See `THEME_LABELS`. `neighbourhood` is the editor's value; "Work order" is what it draws. */
 export const CANVAS_LABELS: Readonly<Record<CanvasMode, string>> = Object.freeze({
-  neighbourhood: 'Order map',
-  tree: 'Sub-issue tree',
+  neighbourhood: 'Work order',
+  tree: 'Sub-issues',
 });
+
+/**
+ * The scenario panel's one-line summary, one phrase per setting.
+ *
+ * THE PANEL STARTS SHUT, SO THIS IS WHAT MOST VISITORS READ OF IT. A collapsed
+ * control that hides which backlog is loaded, or that the load is being faked,
+ * leaves the reader looking at a broken-seeming demo with no clue why. So the
+ * summary restates what is in force, in the same words as the buttons.
+ *
+ * THE SAVE OUTCOME APPEARS ONLY WHEN ARMED. "Saves" is the normal case and
+ * saying so on every visit is noise; a refusal or a conflict waiting on the
+ * next edit is exactly the thing a reader would otherwise walk into blind.
+ */
+const SUMMARY_SCENARIO: Readonly<Record<ScenarioName, string>> = Object.freeze({
+  comp: 'Sample backlog',
+  backlog: 'Big backlog',
+  adoption: 'New repo',
+});
+const SUMMARY_STATE: Readonly<Record<DemoStateName, string>> = Object.freeze({
+  live: 'load: fine',
+  importing: 'load: still loading',
+  empty: 'load: nothing to do',
+  error: 'load: won\u2019t load',
+  stale: 'load: old data',
+});
+const SUMMARY_CANVAS: Readonly<Record<CanvasMode, string>> = Object.freeze({
+  neighbourhood: 'work order',
+  tree: 'sub-issues',
+});
+const SUMMARY_OUTCOME: Readonly<Record<NextOutcome, string | null>> = Object.freeze({
+  apply: null,
+  reject: 'next save: refused',
+  conflict: 'next save: conflict',
+});
+
+/** The shut panel's line, from the four settings in force. */
+export function scenarioSummary(
+  scenario: ScenarioName,
+  state: DemoStateName,
+  canvas: CanvasMode,
+  outcome: NextOutcome,
+): string {
+  const parts = [SUMMARY_SCENARIO[scenario], SUMMARY_STATE[state], SUMMARY_CANVAS[canvas], SUMMARY_OUTCOME[outcome]];
+  return parts.filter((part): part is string => part !== null).join(' \u00b7 ');
+}
 
 /** Each relationship as a phrase, so a picker reads as a sentence. */
 export const KIND_PHRASE: Readonly<Record<EdgeKind, string>> = {
@@ -745,6 +790,10 @@ export function mountSandbox(
     for (const toggle of root.querySelectorAll<HTMLElement>('[data-chrome="state"] [data-ig-value]')) {
       toggle.setAttribute('aria-pressed', String(toggle.getAttribute('data-ig-value') === panelState));
     }
+    // OPTIONAL, like every other chrome hook here: a host page without the
+    // scenario panel has nothing to summarise, and the sandbox runs regardless.
+    const summary = root.querySelector('[data-chrome="summary"]');
+    if (summary !== null) summary.textContent = scenarioSummary(scenario, panelState, canvas, live.source.armed());
   };
 
   /** Build a fresh store over the current scenario and mount the workspace over it. Called at start, on reset, and when the scenario changes. */
@@ -918,6 +967,9 @@ export function mountSandbox(
   const onChange = (event: Event): void => {
     if (event.target !== outcome || !isOutcome(outcome.value)) return;
     live.source.arm(outcome.value);
+    // Arming writes nothing, so the store will not ask for a redraw — but the
+    // shut panel's summary names an armed outcome, and has to say so now.
+    renderChrome();
   };
 
   root.addEventListener('click', onClick);
@@ -931,7 +983,10 @@ export function mountSandbox(
 
   versions.replaceChildren(
     ...STAMPED_PACKAGES.map((name) =>
-      el('span', { class: 'version' }, [`@issuegraph/${name} `, el('strong', {}, [VERSIONS[name]])]),
+      // THE SHORT NAME, WITH THE SCOPE IN THE TITLE. Six rows of the same
+      // `@issuegraph/` prefix is the prefix read six times; the full name is
+      // still one hover away for anyone matching it against a lockfile.
+      el('span', { class: 'version', title: `@issuegraph/${name}` }, [`${name} `, el('strong', {}, [VERSIONS[name]])]),
     ),
   );
 

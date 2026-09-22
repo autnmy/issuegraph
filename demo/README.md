@@ -6,7 +6,7 @@ installation, no auth, no backend.** Every edit is client-side and saved
 nowhere; reload and the seed comes back.
 
 **The page lands on the design's own scenario** — the §16a frame of
-`Descant Dashboard.dc.html` in the design kit, labelled **Small sample** on the
+`Descant Dashboard.dc.html` in the design kit, labelled **Sample** on the
 page — and loads the dense backlog only when asked. See
 [The seed](#the-seed) for what that means and why.
 
@@ -186,8 +186,8 @@ the compact spine-only preview §16b calls for, and the graph expanded (1180) �
 against a fixed clock, so a screenshot of it is a reproduction rather than a
 moment.
 
-**The dense layer** (#100 onward) loads from the **Backlog** control — "Big
-backlog" — and is generated deterministically: the same document on every
+**The dense layer** (#100 onward) loads from the **Backlog** control — "Big",
+inside the collapsed **Try a scenario** panel — and is generated deterministically: the same document on every
 load, so a screenshot is a reproduction. `seed.test.ts` pins what it has to
 contain, against the package constants that decide it: a component past
 `GRAPH_NODE_BUDGET` on its own, a component small enough to draw, a capsule

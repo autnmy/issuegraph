@@ -85,8 +85,6 @@ function start(): void {
     },
     boot,
   );
-  const asOf = document.getElementById('as-of');
-  if (asOf !== null) asOf.textContent = `as of ${new Date().toLocaleTimeString()}`;
 }
 
 start();

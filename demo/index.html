@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Issuegraph — try it in your browser</title>
-<meta name="description" content="A fake issue tracker that runs in your browser tab. It shows you what to work next and why. No sign-in, no server, nothing saved — change anything you like and reload to put it back.">
+<title>Issuegraph — live demo</title>
+<meta name="description" content="Issuegraph shows what to work on next, and why. A fake backlog that runs in your browser — click around, break things, reload to start over.">
 <meta name="theme-color" content="#0B0D0F">
 <link rel="stylesheet" href="./styles.css">
 <!--
@@ -46,130 +46,84 @@
 <body>
 <main id="sandbox">
 <header class="masthead">
-  <div>
-    <h1>Try Issuegraph</h1>
+  <div class="masthead-main">
+    <p class="brand"><span class="brand-name">Issuegraph</span> <span class="pill">live demo</span></p>
+    <h1>Shows what to work on next &mdash; and why.</h1>
     <p class="lede">
-      A pretend issue tracker, running in this browser tab. It works out
-      <strong>what to work on next, and why</strong>, from the way the issues
-      depend on each other.
+      It reads how your issues block each other and puts them in order.
+      Everything below is fake and runs in your browser. Click around, break
+      things &mdash; reload to start over.
     </p>
-    <p class="lede">
-      Nothing here is real. <strong>No sign-in, no server, nothing saved.</strong>
-      Change whatever you like &mdash; reload the page and it all comes back.
-      Under the hood it runs the real
-      <a href="https://github.com/autnmy/issuegraph/tree/main/packages/viewer"><code>@issuegraph/viewer</code></a>
-      and
-      <a href="https://github.com/autnmy/issuegraph/tree/main/packages/editor"><code>@issuegraph/editor</code></a>
-      packages, unchanged.
-    </p>
-    <p class="versions" id="versions" aria-label="Package versions"></p>
   </div>
-  <span class="as-of" id="as-of"></span>
+  <div class="masthead-side">
+    <div class="segmented" data-chrome="theme" role="group" aria-label="Color theme"></div>
+    <nav class="masthead-links" aria-label="Project">
+      <a href="/">Spec <span aria-hidden="true">&#8599;</span></a>
+      <a href="https://github.com/autnmy/issuegraph">Source <span aria-hidden="true">&#8599;</span></a>
+    </nav>
+  </div>
 </header>
 
-<section class="controls" aria-label="Sandbox controls">
-  <p class="controls-lede">
-    <strong>Set up a situation.</strong>
-    Each row below fakes something a real tracker would decide for you.
-    Change one, then look at the panel underneath to see how it copes.
-  </p>
-
-  <div class="control">
-    <span class="control-label" id="theme-label">Colors</span>
-    <div class="control-row" data-chrome="theme" role="group" aria-labelledby="theme-label"></div>
-    <p class="hint">
-      The two color sets the viewer ships with. Switching them changes color only.
-      Nothing moves, and nothing is redrawn.
-    </p>
-  </div>
-
-  <div class="control">
-    <span class="control-label" id="canvas-label">Middle panel</span>
-    <div class="control-row" data-chrome="canvas" role="group" aria-labelledby="canvas-label"></div>
-    <p class="hint">
-      What the big panel in the middle draws.
-      <strong>Order map</strong> runs the work order down the center, with the issues
-      that explain that order on the left and the ones nobody will work on the right.
-      <strong>Sub-issue tree</strong> drops all that and stacks big issues with
-      their parts underneath them.
-    </p>
-  </div>
-
-  <div class="control">
-    <span class="control-label" id="state-label">Connection</span>
-    <div class="control-row" data-chrome="state" role="group" aria-labelledby="state-label"></div>
-    <p class="hint">
-      Fakes a problem between the tracker and this page, so you can see how the panel
-      says so. It does not change the issues &mdash; a repo can be mid-import or
-      unreadable whatever its backlog holds.
-      <strong>Retry</strong> and <strong>Review pick order</strong> only put it back to
-      <em>Working</em>: there is no real tracker here to re-read, so that is the one
-      honest thing they can do.
-    </p>
-  </div>
-
-  <div class="control">
-    <span class="control-label" id="scenario-label">Backlog</span>
-    <div class="control-row" data-chrome="scenario" role="group" aria-labelledby="scenario-label"></div>
-    <p class="hint">
-      Which pretend backlog is loaded.
-      <strong>Small sample</strong> is the hand-built one the page starts on: fifteen
-      issues, one of every kind of link, so you can see the whole idea at a glance.
-      <strong>Big backlog</strong> is a few hundred generated issues &mdash; the map
-      gives up and draws groups instead, the list scrolls, and the audit finds real
-      problems.
-      <strong>Fresh repo</strong> is day one: forty-eight issues and not one link
-      declared between them yet, so the order comes from your priority labels alone.
-    </p>
-  </div>
-
-  <div class="control">
-    <label for="next-outcome">Next reply from the tracker</label>
-    <div class="control-row">
-      <select id="next-outcome" aria-label="Next reply from the tracker">
-        <option value="apply">Accept — the edit saves</option>
-        <option value="reject">Refuse — the tracker says no</option>
-        <option value="conflict">Conflict — someone else edited first</option>
-      </select>
-      <button class="chrome-button chrome-quiet" type="button" data-ig-command="reset">Start over</button>
+<details class="scenario">
+  <summary>
+    <svg class="scenario-chevron" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span class="scenario-title">Try a scenario</span>
+    <span class="scenario-summary" data-chrome="summary"></span>
+  </summary>
+  <div class="scenario-body">
+    <div class="control">
+      <span class="control-label" id="scenario-label">Backlog</span>
+      <div class="segmented" data-chrome="scenario" role="group" aria-labelledby="scenario-label"></div>
     </div>
-    <p class="hint">
-      Choose what the pretend tracker says to your <em>next</em> edit, then make one.
-      It only happens once and then goes back to accepting, so the retry it offers
-      can actually work.
-    </p>
+    <div class="control">
+      <span class="control-label" id="state-label">Simulate loading</span>
+      <div class="segmented" data-chrome="state" role="group" aria-labelledby="state-label"></div>
+    </div>
+    <div class="control">
+      <span class="control-label" id="canvas-label">Middle panel</span>
+      <div class="segmented" data-chrome="canvas" role="group" aria-labelledby="canvas-label"></div>
+    </div>
+    <div class="control">
+      <label class="control-label" for="next-outcome">Simulate next save</label>
+      <select id="next-outcome">
+        <option value="apply">Saves</option>
+        <option value="reject">Gets refused</option>
+        <option value="conflict">Someone else saved first</option>
+      </select>
+    </div>
   </div>
-</section>
+  <p class="scenario-note">
+    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 7.25v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="4.9" r="0.9" fill="currentColor"/></svg>
+    Pretend something goes wrong, then watch how the demo handles it.
+  </p>
+</details>
 
-<section id="writes" class="writes" aria-live="polite" aria-label="Writes in flight"></section>
+<section id="writes" class="writes" aria-live="polite" aria-label="Saves in progress"></section>
 
-<p class="reading-guide">
-  <strong>What you are looking at.</strong>
-  On the left, the order to work in &mdash; top one first.
-  In the middle, why that order: the lines between issues are the links that set it.
-  On the right, the details of whatever you click.
-</p>
-
-<section id="workspace" class="workspace" aria-label="Grooming workspace"></section>
+<div class="stage">
+  <ol class="guide" aria-label="How to read the demo">
+    <li><span class="guide-num" aria-hidden="true">1</span><span><strong>Do these</strong>, top one first</span></li>
+    <li><span class="guide-num" aria-hidden="true">2</span><span><strong>Why this order</strong> &mdash; each line is a link between two issues</span></li>
+    <li><span class="guide-num" aria-hidden="true">3</span><span><strong>Details</strong> of whatever you click</span></li>
+  </ol>
+  <section id="workspace" class="workspace" aria-label="Issuegraph demo"></section>
+</div>
 
 <footer class="colophon">
-  <p>
-    <strong>How much of this page is the packages.</strong> The order is worked out by
-    <a href="https://github.com/autnmy/issuegraph/tree/main/packages/derive"><code>@issuegraph/derive</code></a>,
-    not by this page: the store takes the ordering code as a plug-in part with no
-    fallback, and this page plugs in the published one rather than writing its own second
-    version of the rules. The list, the map and the details panel are all
-    <code>@issuegraph/editor</code>&rsquo;s; this page just listens for what they report
-    and draws them again. What is left for a host to supply is what the spec says a host
-    supplies &mdash; which issues a worker already has, how many can run at once, the
-    wording, and the colors. Both color sets are the viewer&rsquo;s own, redeclared, and
-    nothing more.
-  </p>
-  <p>
-    <a href="/">Read the spec</a> ·
-    <a href="https://github.com/autnmy/issuegraph/tree/main/demo">How this page is built</a> ·
-    <a href="https://github.com/autnmy/issuegraph">Source</a>
-  </p>
+  <div class="colophon-main">
+    <h2>What&rsquo;s real here</h2>
+    <p>
+      The ordering, list, map and details panel are the published Issuegraph
+      packages, unchanged. This page only adds the fake issues, the wording and
+      the colors.
+    </p>
+    <p class="colophon-links">
+      <a href="/">Read the spec</a>
+      <a href="https://github.com/autnmy/issuegraph/tree/main/demo">How this page is built</a>
+      <a href="https://github.com/autnmy/issuegraph">Source</a>
+    </p>
+  </div>
+  <p class="versions" id="versions" aria-label="Package versions"></p>
 </footer>
 </main>
 

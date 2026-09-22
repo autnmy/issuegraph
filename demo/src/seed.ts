@@ -648,7 +648,7 @@ const compCaveats: ReadonlyMap<IssueRef, IssueCaveats> = new Map<IssueRef, Issue
 
 export const SCENARIOS: Readonly<Record<ScenarioName, Scenario>> = Object.freeze({
   comp: {
-    label: 'Small sample',
+    label: 'Sample',
     document: compSeed,
     holds: compHolds(),
     ranking: compRanking,
@@ -660,7 +660,7 @@ export const SCENARIOS: Readonly<Record<ScenarioName, Scenario>> = Object.freeze
     // surface disagree with the thing it exists to be compared against.
   },
   backlog: {
-    label: 'Big backlog',
+    label: 'Big',
     document: backlogSeed,
     holds: compHolds(),
     ranking: compRanking,
@@ -673,7 +673,7 @@ export const SCENARIOS: Readonly<Record<ScenarioName, Scenario>> = Object.freeze
     adoption: { counted: true },
   },
   adoption: {
-    label: 'Fresh repo',
+    label: 'New repo',
     document: adoptionSeed,
     // NO HOLDS AND NO RUNNING JOB. The state must read complete and calm, and
     // every affordance it draws has to be a real one — a footer group with
