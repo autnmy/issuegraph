@@ -179,14 +179,14 @@ const SANDBOX_IDENTITY = 'issuegraph/sandbox';
  * "12 of 64 answered" reads as an activity. This host chooses the activity.
  */
 const FIRST_PASS_WORDS: FirstPassWords = {
-  label: 'Suggested links',
+  label: 'Suggested relationships',
   answers: { apply: 'Yes — record it', reject: 'No', skip: 'Skip for now' },
   answersLabel: 'Your answer',
   undo: '⌫ undo last',
   evidence: 'Why we’re asking',
   progress: (answered, found) => `${String(answered)} of ${String(found)} answered`,
   finished: 'That’s every suggestion. Nothing else is waiting.',
-  noCandidates: 'No suggestions right now.',
+  noCandidates: 'The scan found no relationships to suggest.',
 };
 
 /** The words the packages refuse to invent. */
@@ -613,7 +613,7 @@ function projectFor(scenario: Scenario, moments: HostMoments): (snapshot: StoreS
       // "the make-or-break adoption moment", and a way in that opens on
       // "nothing to encode" is the opposite of that promise. The detector is
       // asked here rather than guessed at, over the document on screen.
-      firstPass: candidatesIn(held).length === 0 ? undefined : 'Review suggested links →',
+      firstPass: candidatesIn(held).length === 0 ? undefined : 'Scan for relationships →',
     });
     return projectDocument(explained, landed, host, scenario.caveats, audited);
   };
@@ -830,7 +830,7 @@ export function mountSandbox(
         }),
         words: FIRST_PASS_WORDS,
         exit: 'exit anytime',
-        scanning: 'Looking for likely links…',
+        scanning: 'Scanning your issues for relationships…',
         scanFailed: 'The scan did not answer. Leave and try again.',
       },
     });

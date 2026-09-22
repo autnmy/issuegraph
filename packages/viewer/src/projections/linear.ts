@@ -221,7 +221,7 @@ export function footerReason(kinds: FooterKinds): string | null {
   const reasons = [
     kinds.runner ? 'held back by the worker' : null,
     kinds.neverWorked ? 'duplicates of another issue' : null,
-    kinds.undrawn ? 'linked, but not drawn at this width' : null,
+    kinds.undrawn ? 'related, but not drawn at this width' : null,
   ].filter((reason): reason is string => reason !== null);
   if (reasons.length === 0) return null;
   const joined =
@@ -564,11 +564,11 @@ export function asideRow(
       class: 'ig-footer-row',
       'data-ig-key': key,
       'aria-current': options.selected === key ? 'true' : 'false',
-      'aria-label': `${issue?.title ?? key} — ${key} — linked, not drawn here`,
+      'aria-label': `${issue?.title ?? key} — ${key} — related, not drawn here`,
       tabindex: options.focused === key ? 0 : -1,
     },
     [
-      element('span', { class: 'ig-badge' }, ['linked']),
+      element('span', { class: 'ig-badge' }, ['related']),
       footerBody(
         [element('span', { class: 'ig-title' }, [issue?.title ?? key]), issue === undefined ? null : identity(issue)],
         null,
