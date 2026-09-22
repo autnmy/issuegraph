@@ -181,7 +181,7 @@ function treeRow(
       outOfSet === undefined
         ? null
         : element('p', { class: 'ig-provenance' }, [
-            `decomposed from ${outOfSet}, which is outside this document`,
+            `decomposed from ${outOfSet}, which is not in this backlog`,
           ]),
       // A SPEC LITERAL, not `element()`. That helper FILTERS its children, which
       // copies the array — so the list this row hands back would no longer be
@@ -246,10 +246,10 @@ export function treeScene(document: NormalizedDocument, options: SceneOptions = 
       ? // THE HOST'S NOTICE IS THE PANEL'S ONE CAUSE STATEMENT — see `linear.ts`.
         statesItsOwnCause(document)
         ? null
-        : emptyState('This document declares no issues, so there is nothing to trace.')
+        : emptyState('No issues yet, so there is nothing to show.')
       : element(
           'ul',
-          { class: 'ig-tree ig-list', 'aria-label': 'decomposition' },
+          { class: 'ig-tree ig-list', 'aria-label': 'sub-issues' },
           buildForestElements(document, forest, options, focused),
         );
 
@@ -258,11 +258,19 @@ export function treeScene(document: NormalizedDocument, options: SceneOptions = 
     {
       class: 'ig-viewer ig-tree-view',
       'data-projection': 'tree',
+      // See `SceneOptions.frame`; stamped on all three roots, because the
+      // container that declines the frame does not know which projection it
+      // was handed.
+      'data-frame': options.frame === false ? 'none' : undefined,
+      // See `SceneOptions.dockLegend`; stamped on all three roots, because every
+      // projection draws the same legend and the container's scrollport does not
+      // change with the projection.
+      'data-legend': options.dockLegend === true ? 'docked' : undefined,
       // See `SceneOptions.density`; stamped on all three roots so a
       // projection toggle cannot drop the host's decision.
       'data-density': options.density,
       'data-ig-condition': conditionKind(document, options.chrome),
-      'aria-label': 'issue decomposition',
+      'aria-label': 'issues and their sub-issues',
     },
     // The legend last, as a footer bar, the way §16b draws it — one placement
     // for all three projections, so a reader meets the grammar in one place.

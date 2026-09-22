@@ -170,18 +170,10 @@ ${scope} .ig-unit-count {
   margin-right: var(--ig-space-tight);
 }
 
-/* THE FOOTER ROWS TOO, AND THIS IS THE POPULATION THE ROW FIX MISSED.
-   A footer entry is deliberately ONE LINE and shorter than a ranked row -
-   16a gives it no rank, no station and no explanation block, because it is
-   not a fact about the work. That part was right. What was not governed is
-   its TITLE: it wrapped, and the excluded row carrying a canonical reference
-   ran to 73px while its siblings sat at 36. A footer row taller than a
-   ranked row inverts the whole point of the group.
-
-   THE DEFECT IS THE ONE ALREADY FIXED ON .ig-slot, ONE ROW KIND OVER: a
-   title with nothing stopping it wrapping takes the row with it. Fixed at
-   the class this time rather than at the site - the rail renders three row
-   kinds and the first pass governed two. */
+/* THE FOOTER ROW'S TITLE STAYS ON ONE LINE, as a ranked row's does. The row
+   is taller than a ranked row now by design — its status and its reason are
+   what it exists to show — but a title that wraps still takes the row with it,
+   so the name ellipsizes and the reason below it carries the length. */
 ${scope} .ig-footer-row .ig-title {
   line-height: var(--ig-row-title-line);
   min-width: 0;
@@ -190,39 +182,7 @@ ${scope} .ig-footer-row .ig-title {
   white-space: nowrap;
 }
 
-${scope} .ig-footer-row .ig-badges {
-  flex-wrap: nowrap;
-  min-width: 0;
-  overflow: hidden;
-}
-
-/* AND THE CHIPS LOSE THEIR CHROME HERE TOO, which is what actually makes a
-   footer entry ONE LINE. 16a draws it as "a label chip, a title and an
-   identity, on one line"; a bordered chip is padding plus stroke plus line
-   box, so a row carrying any relationship badge stood at 36px against 22px
-   for one carrying none - and the badge block, not the title, was the last
-   thing driving it.
-
-   MEASURED IN TWO PASSES, WHICH IS THE POINT. Stopping after the title fix
-   left the footer group at two heights and looked finished: the row that had
-   been 73px was down to 36 and matched its siblings, so the obvious check
-   passed. It was the SECOND measurement - why 22 and why 36 - that found the
-   badges. A class is not fixed until nothing in it varies for a reason you
-   have not named. */
-${scope} .ig-footer-row .ig-badge {
-  background: none;
-  border: 0;
-  border-radius: 0;
-  padding: 0;
-  white-space: nowrap;
-}
-
-/* THE THIRD AND LAST MEMBER OF THE CLASS: the identity. An excluded row
-   carries TWO - its own, and the canonical it defers to ('455 -> 512') - and
-   the second wrapped, which is why that row alone stood at 30px when the
-   others reached 17. Same defect as the title and the chips, third element,
-   found by asking the same question a third time rather than by stopping at
-   the first uniform-looking answer. */
+/* The identity never wraps mid-reference. */
 ${scope} .ig-footer-row .ig-id {
   white-space: nowrap;
 }
@@ -314,6 +274,51 @@ export const viewerStylesheet = `
   line-height: var(--ig-line-height);
   overflow: hidden;
   position: relative;
+}
+
+/* THE FRAME IS THE STANDALONE CASE'S, AND A CONTAINER CAN DECLINE IT.
+   Alone in a host's page the viewer is a card and draws its own edge. Composed
+   into a surface that already rules its own zones off, that edge lands beside
+   the container's and the seam reads as a doubled hairline — so the container
+   passes frame: false and takes responsibility for every line on the
+   surface. See SceneOptions.frame for why this is an option rather than a
+   host stylesheet unsetting the properties above. */
+.ig-viewer[data-frame='none'] {
+  border: 0;
+  border-radius: 0;
+}
+
+/* THE LEGEND DOCKS AGAINST THE CONTAINER'S SCROLLPORT, NOT THIS ROOT'S.
+   See SceneOptions.dockLegend for why only a container can ask for this.
+
+   THE overflow LINE IS THE WHOLE MECHANISM AND LOOKS LIKE A TIDY-UP. A sticky
+   element positions against its nearest SCROLLPORT, and an ancestor with
+   overflow: hidden is one — so with the root left as it is above, the legend
+   sticks to a box that never scrolls, which is the box it already sat at the
+   bottom of. Nothing moves, nothing errors, and the declaration below reads as
+   though it works. Lifting the clip hands the legend the container's scroller
+   instead, which is the only one that scrolls.
+
+   WHICH IS ALSO WHY THIS IS SAFE ONLY WITH THE FRAME DECLINED. The clip exists
+   so a drawn radius cuts its own corners; a root that has stopped clipping must
+   not be drawing one. The rule above and this one are written to be passed
+   together, and the workspace passes both.
+
+   NO z-index, DELIBERATELY. The legend is the root's last child, so it already
+   paints over the order it overlaps; a layer number here would be a claim about
+   a stacking order this package does not own. */
+.ig-viewer[data-legend='docked'] {
+  overflow: visible;
+}
+
+/* bottom: 0 IS A DEFAULT THE CONTAINER OVERRIDES, not a fixed position. A
+   container with something of its own already pinned to that edge — the
+   grooming workspace's rail footer — sets this element's bottom to clear it,
+   from a height it measures rather than from a number either package wrote
+   down and both would have to keep true. */
+.ig-viewer[data-legend='docked'] > .ig-legend {
+  position: sticky;
+  bottom: 0;
 }
 
 .ig-viewer *,
@@ -1190,57 +1195,83 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 
 /* ── the footer group: holds that earn no rank slot ────────────────────── */
 
-.ig-footer {
-  background: var(--ig-surface-2);
-  padding: var(--ig-space) var(--ig-space-wide);
+/* NO RULE OF ITS OWN ON TOP. The last ranked row above already draws its
+   bottom rule, and a second one here stacked on it as a doubled line. */
+/* THE PANEL HEADER'S LAYOUT, ONE LEVEL DOWN: a kicker and a count chip on one
+   line, a sentence under them. The kicker and the chip are the header's own
+   classes (see footerHead), so this rule only places them. */
+.ig-footer-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+  padding: var(--ig-row-padding-block-dense) var(--ig-space-wide);
 }
 
-.ig-footer-head {
+.ig-footer-title-row {
   align-items: center;
   display: flex;
   gap: var(--ig-space);
-  justify-content: space-between;
 }
 
 .ig-footer-title {
-  color: var(--ig-text-body);
-  font-size: var(--ig-font-size-compact);
   margin: 0;
 }
 
-.ig-footer-labels {
+.ig-footer-note {
   color: var(--ig-text-muted);
-  font-family: var(--ig-font-mono);
-  font-size: var(--ig-font-size-meta);
+  font-size: var(--ig-font-size-compact);
+  line-height: var(--ig-row-meta-line);
+  margin: 0;
 }
 
-/* ONE LINE EACH, and the frame is explicit about why: these are not facts
-   about the work, so they earn no rank slot and no explanation block. A full
-   row here — station, badges, provenance — was claiming the opposite. */
 .ig-footer .ig-list {
   display: flex;
   flex-direction: column;
-  gap: var(--ig-space-snug);
-  margin-top: var(--ig-space);
 }
 
+/* A RANKED ROW'S GRID, PADDING AND RULE, so the group is the rest of the same
+   list rather than a panel of its own: the rank track holds the held station,
+   and it lines up under the stations above because it is the same track.
+
+   ON THE PANEL'S OWN GROUND, NOT A SECOND SURFACE, and at full strength. The
+   group used to sit on --ig-surface-2 with every row at 0.72 opacity, which
+   read as disabled — on the rows whose whole purpose is "open me to see why". */
 .ig-footer-row {
-  align-items: center;
-  display: flex;
-  gap: var(--ig-space-snug);
-  opacity: 0.72;
+  border-top: var(--ig-stroke) solid var(--ig-line);
+  column-gap: var(--ig-space);
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: var(--ig-rank-column) 1fr;
+  /* THE DENSE RANKED ROW'S PADDING, at every width: these rows carry three
+     lines where a ranked row carries two, and the wider padding on top of that
+     made each one twice the height of its neighbours above. */
+  padding: var(--ig-row-padding-block-dense) var(--ig-space-wide);
+}
+
+.ig-footer-row:hover {
+  background: color-mix(in srgb, var(--ig-text) var(--ig-tint-unit), transparent);
+}
+
+/* THE RANKED ROW'S SELECTED BAND, and its fill: one selection, one look,
+   whichever part of the list it was made in. */
+.ig-footer-row[aria-current='true'] {
+  background: color-mix(in srgb, var(--ig-accent) var(--ig-tint-fill), transparent);
+  box-shadow: inset var(--ig-band-rail) 0 0 var(--ig-accent);
 }
 
 .ig-footer-row .ig-title {
+  color: var(--ig-text-body);
+}
+
+.ig-footer-row[aria-current='true'] .ig-title {
+  color: var(--ig-text);
+}
+
+.ig-footer-why {
+  color: var(--ig-text-muted);
   font-size: var(--ig-font-size-compact);
-}
-
-.ig-footer-row .ig-id {
-  font-size: var(--ig-font-size-meta);
-}
-
-.ig-footer-row[aria-current='true'] {
-  opacity: 1;
+  line-height: var(--ig-row-meta-line);
+  margin: 0;
 }
 
 /* ── the graph canvas ──────────────────────────────────────────────────── */
@@ -1575,6 +1606,94 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   padding: var(--ig-space-tight) 0;
 }
 
+/* ── loading placeholder ───────────────────────────────────────────────── */
+
+/* THE HOST'S HOOK, AND THE ONLY ONE. Every placeholder shape is one of these,
+   filled with the second surface and holding still: this package ships no
+   motion, and the fill already follows the host's theme. A host that wants a
+   pulse animates this class under its own reduced-motion rule. */
+.ig-skeleton-block {
+  background: var(--ig-surface-2);
+  border-radius: var(--ig-radius);
+  display: block;
+}
+
+/* ON THE HEADER'S OWN GROUND the second surface is the ground, so the shapes
+   there take the hairline colour instead, or they vanish into it. */
+.ig-header .ig-skeleton-block {
+  background: var(--ig-line);
+}
+
+.ig-skeleton-block[data-shape='label'] {
+  block-size: var(--ig-space);
+  inline-size: calc(var(--ig-char-width) * 14);
+}
+
+.ig-skeleton-chips {
+  display: flex;
+  gap: var(--ig-space-snug);
+}
+
+.ig-skeleton-block[data-shape='chip'] {
+  block-size: calc(var(--ig-space) * 2);
+  border-radius: var(--ig-radius);
+  inline-size: calc(var(--ig-char-width) * 9);
+}
+
+.ig-skeleton-block[data-shape='station'] {
+  block-size: var(--ig-space);
+  border-radius: 50%;
+  inline-size: var(--ig-space);
+}
+
+/* THE ROW'S OWN LINE HEIGHTS, so a placeholder row and a real row are the same
+   height at every density the container picks. */
+.ig-skeleton-block[data-shape='title'] {
+  block-size: var(--ig-row-title-line);
+  inline-size: 68%;
+}
+
+.ig-skeleton-block[data-shape='title'][data-width='1'] {
+  inline-size: 54%;
+}
+
+.ig-skeleton-block[data-shape='title'][data-width='2'] {
+  inline-size: 82%;
+}
+
+.ig-skeleton-block[data-shape='meta'] {
+  block-size: var(--ig-row-meta-line);
+  inline-size: 36%;
+}
+
+/* THE TWO LINES OF A ROW, stacked with no gap of their own: each block is its
+   line's full height, which already carries the leading a real line has. */
+.ig-skeleton-lines {
+  display: flex;
+  flex-direction: column;
+}
+
+/* A placeholder row points at nothing, so it takes no pointer and no hover. */
+.ig-skeleton-row {
+  pointer-events: none;
+}
+
+.ig-skeleton-stage {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-wide);
+  padding: var(--ig-space-wide);
+}
+
+/* THE SPINE CARD'S OWN WIDTH, so the graph's placeholder sits where its cards
+   will, as one solid block with the large radius the panel's cards use. */
+.ig-skeleton-block[data-shape='card'] {
+  block-size: calc(var(--ig-station-box) * 4);
+  border-radius: var(--ig-radius-large);
+  inline-size: min(100%, var(--ig-spine-width));
+}
+
 /* ── legend ────────────────────────────────────────────────────────────── */
 
 /* A FOOTER BAR, WHERE §16b PUTS IT, and worded rather than glyph-only. It sits
@@ -1593,8 +1712,29 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   padding: var(--ig-space) var(--ig-space-wide);
 }
 
+/* FLOATED SO THE BROWSER STOPS TREATING IT AS A RENDERED LEGEND, which is the
+   only reason this declaration exists. HTML gives the first in-flow legend of a
+   fieldset a layout nothing else in CSS has: it is lifted OUT of the fieldset's
+   content box, painted across the top border with a notch cut through the rule
+   either side of it, and the content box then starts below it. On this bar that
+   drew the caption sitting on the rule, a gap of bare ground under the caption
+   where the fieldset's own surface should have been, and a top rule broken in
+   the middle — all three of which looked like a styling bug and none of which
+   any rule here asked for.
+
+   The spec's own escape hatch is the float: a legend whose computed float is
+   not none is not the rendered legend, and becomes an ordinary child. This bar
+   is a flex container, where float does not apply to an item at all, so the
+   caption simply lays out as the first item on the row — which is what the
+   flex rule above, its muted uppercase micro type and its centred alignment
+   were always written for.
+
+   IT IS LOAD-BEARING AND LOOKS DECORATIVE, which is why it is recorded here at
+   this length: delete it and the notch, the gap and the broken rule all come
+   back, with nothing else in this file changed. */
 .ig-legend-caption {
   color: var(--ig-text-muted);
+  float: left;
   font-family: var(--ig-font-mono);
   font-size: var(--ig-font-size-pill);
   letter-spacing: var(--ig-tracking-group);

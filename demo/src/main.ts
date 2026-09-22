@@ -46,6 +46,33 @@ import { type Live, mountSandbox } from './workspace.ts';
  * `introducesCycle` compares which EDGES lie on one, so only what this edit adds
  * is refused, and the seed can ship a cycle to be looked at.
  */
+/**
+ * How long the page's first read of a backlog takes. An in-memory source answers
+ * in the same tick, so without this the loading placeholder the workspace draws
+ * during its first read would never be seen here — and this page is where
+ * anyone judging it would look. Only the FIRST read waits: a refresh keeps the
+ * last document on screen and must stay instant.
+ */
+const FIRST_READ_MS = 900;
+
+function slowFirstRead(source: DemoSource): DemoSource {
+  let first = true;
+  return {
+    ...source,
+    current: () => source.current(),
+    arm: (outcome) => source.arm(outcome),
+    armed: () => source.armed(),
+    dispatch: (mutation) => source.dispatch(mutation),
+    hydrate: async () => {
+      if (first) {
+        first = false;
+        await new Promise((resolve) => setTimeout(resolve, FIRST_READ_MS));
+      }
+      return source.hydrate();
+    },
+  };
+}
+
 function boot(scenario: Scenario, onChange: () => void): Live {
   const source: DemoSource = createDemoSource(scenario.document(), {
     // The adapter disarms itself inside `dispatch`, which happens AFTER the
@@ -54,13 +81,13 @@ function boot(scenario: Scenario, onChange: () => void): Live {
     onArmedChange: onChange,
   });
   const store: Store = createStore({
-    source,
+    source: slowFirstRead(source),
     derive: createDeriver(scenario.holds, scenario.ranking),
     guard: ({ current, next }) => {
       if (!introducesCycle(current, next)) return undefined;
       return {
         code: 'would-cycle',
-        message: 'that edit would close a dependency cycle, so nothing was written',
+        message: 'That would make issues block each other in a loop, so nothing was saved.',
       };
     },
   });
@@ -85,8 +112,6 @@ function start(): void {
     },
     boot,
   );
-  const asOf = document.getElementById('as-of');
-  if (asOf !== null) asOf.textContent = `as of ${new Date().toLocaleTimeString()}`;
 }
 
 start();

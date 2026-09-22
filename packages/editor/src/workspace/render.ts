@@ -154,6 +154,17 @@ export interface WorkspaceWords {
    */
   readonly change?: ChangeWords | undefined;
   /**
+   * What the workspace says, to assistive technology, while its first read is
+   * in flight — "Loading your issues". The placeholder itself has no words;
+   * see `renderWorkspaceSkeleton`.
+   *
+   * OPTIONAL, AND ITS ABSENCE STILL DRAWS THE PLACEHOLDER. Unlike the words
+   * whose absence withholds a control, this one only names a region: without
+   * it the surface is marked busy and says nothing, which is honest, rather
+   * than saying an English sentence a host cannot translate.
+   */
+  readonly loading?: string | undefined;
+  /**
    * Reads the freshness stamp in §17a's header — the frame's `as of 14:32 ↻`,
    * minus the clock.
    *
@@ -3038,6 +3049,14 @@ export function renderWorkspace(
   const railRender = renderViewer(rail.document, {
     projection: 'linear',
     theme,
+    // THE WORKSPACE RULES ITS OWN ZONES OFF. The rail track already carries
+    // `border-right`, so a frame here doubles that seam and the host's outer
+    // border on the other edge. See `SceneOptions.frame`.
+    frame: false,
+    // §16b's KEY, KEPT IN VIEW while the order scrolls under it. See
+    // `SceneOptions.dockLegend`; `dockRailLegend` in mount.ts moves it clear of
+    // this zone's own footer.
+    dockLegend: true,
     // The rail is where a selected ISSUE reads as current. An edge selection
     // resolves to no key, which is `selectedKey`'s whole job.
     selected: selectedKey(selection),
@@ -3146,8 +3165,31 @@ export function renderWorkspace(
   // selected and the reader has not dismissed it since. Storing the openness
   // instead would be a second copy of the selection, free to disagree with it.
   const lifted = selection.kind !== 'none' && options.inspectorDismissed !== true;
+  // WHETHER THE CANVAS DREW A KEY, SO THE SURFACE DRAWS ONE AND NOT TWO. The
+  // rail and the canvas are both viewers, so both draw the grammar legend, and
+  // the workspace showed the same five line styles twice, side by side, at the
+  // same moment. It is the same defect `chrome: false` already answers one line
+  // higher — §16's panel has ONE header — and the answer is the same shape.
+  //
+  // THE CANVAS KEEPS IT AND THE RAIL YIELDS, which is the way round the content
+  // decides: four of the five entries are LINE styles, and the rail draws no
+  // lines at all — it draws badges. The key belongs beside the strokes it is
+  // about. It is also the cheaper zone to spend it in, at one or two wrapped
+  // rows of a wide column rather than four rows of a 390 rail the order needs.
+  //
+  // AN ATTRIBUTE RATHER THAN AN OPTION, because the rail must get the key BACK
+  // in the two states where the canvas has none, and only one of those is
+  // knowable here. The refusal is: above its node budget the canvas draws
+  // capsules and no viewer, so there is no legend in that zone to defer to.
+  // The other is §17k's collapsed canvas, which is a question about the box
+  // this surface was given — the container query is the only party that can
+  // answer it, so the restore is a rule in the sheet rather than a branch here.
+  // Suppressing the markup with an option would put the key out of reach of
+  // both.
+  const canvasLegend = canvas.ladder.tier === 'direct' ? 'drawn' : 'absent';
   const narrowState =
     ` data-canvas="${canvasOpen ? 'open' : 'strip'}"` +
+    ` data-canvas-legend="${canvasLegend}"` +
     ` data-inspector="${lifted ? 'lifted' : 'dismissed'}"`;
 
   // §17a'S RAIL FOOTER, FROM THE LADDER THE CANVAS ALREADY DERIVED. `isolated`

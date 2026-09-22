@@ -67,6 +67,9 @@ export { KEY_ATTRIBUTE } from './scene.ts';
 export type { RenderOptions, RenderResult } from './render.ts';
 export { renderViewer } from './render.ts';
 
+export type { SkeletonOptions, SkeletonResult } from './skeleton.ts';
+export { renderViewerSkeleton, skeletonSpec } from './skeleton.ts';
+
 export type {
   MountElement,
   MountEvent,

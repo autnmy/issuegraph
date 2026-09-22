@@ -40,7 +40,6 @@ import {
   caveatBadges,
   conditionKind,
   conditionNotice,
-  footerLabels,
   nowRows,
   caveatText,
   edgeBadgeList,
@@ -65,7 +64,7 @@ import {
   type SceneOptions,
   asideRow,
   excludedRow,
-  footerHeading,
+  footerHead,
   footerRow,
   isFooterSlot,
   slotRow,
@@ -251,7 +250,7 @@ function nodeCard(
     ...(caveats === '' ? [] : [caveats]),
     ...(exclusion === undefined
       ? []
-      : [`${treatmentFor('duplicate-of').label} ${exclusion.canonical} — never worked`]),
+      : [`${treatmentFor('duplicate-of').label} ${exclusion.canonical}, which gets worked instead`]),
   ].join(' · ');
 
   // RENDERED FROM THE CARD'S OWN DESCRIPTION, which is also what the layout
@@ -541,8 +540,8 @@ function refusal(
   const clusters = clustersOf(document, new Set(layout.nodes.keys()));
   const heading =
     mode === 'capsules'
-      ? `${String(nodeCount)} related issues is past this canvas's budget of ${String(GRAPH_NODE_BUDGET)}, so it is not drawing them.`
-      : `${String(nodeCount)} related issues is far past this canvas's budget, so it is showing clusters only.`;
+      ? `${String(nodeCount)} related issues are too many to draw here. The limit is ${String(GRAPH_NODE_BUDGET)}.`
+      : `${String(nodeCount)} related issues are far too many to draw, so they are shown as groups.`;
 
   // THE REFUSAL IS INFORMATIONAL. IT PUBLISHES NO CONTROL — and that is a
   // RESTRUCTURE, not a regression of the round-five finding it answers.
@@ -573,18 +572,18 @@ function refusal(
     element('p', {}, [heading]),
     element(
       'ol',
-      { class: 'ig-list', 'aria-label': 'connected components' },
+      { class: 'ig-list', 'aria-label': 'groups of related issues' },
       shown.map((cluster) =>
         capsuleSpec(cluster),
       ),
     ),
     omitted > 0
       ? element('p', { class: 'ig-refusal-omitted' }, [
-          `${String(omitted)} further ${omitted === 1 ? 'component is' : 'components are'} not listed; ${String(clusters.length)} were found in total.`,
+          `${String(omitted)} more ${omitted === 1 ? 'group is' : 'groups are'} not listed (${String(clusters.length)} in all).`,
         ])
       : null,
     element('p', { class: 'ig-refusal-next' }, [
-      'Narrow the document to one neighbourhood and render again — narrowing is the host\'s, because this package draws exactly what it is given. The order list is complete at any size.',
+      'The list always shows the full order, however many issues there are.',
     ]),
   ]);
 }
@@ -615,19 +614,13 @@ function footerGroup(
   // that named only the runner and the never-worked said something untrue about
   // them.
   const undrawn = entries.length > slots.length + excluded.length;
-  const labels = footerLabels(slots);
   return element('section', { class: 'ig-footer' }, [
-    element('div', { class: 'ig-footer-head' }, [
-      element('p', { class: 'ig-footer-title' }, [
-        footerHeading(entries.length, {
-          runner: slots.length > 0,
-          neverWorked: excluded.length > 0,
-          undrawn,
-        }),
-      ]),
-      labels === '' ? null : element('span', { class: 'ig-footer-labels' }, [labels]),
-    ]),
-    element('ol', { class: 'ig-list', 'aria-label': 'outside the order' }, entries),
+    footerHead(entries.length, {
+      runner: slots.length > 0,
+      neverWorked: excluded.length > 0,
+      undrawn,
+    }),
+    element('ol', { class: 'ig-list', 'aria-label': 'not in the order' }, entries),
   ]);
 }
 
@@ -841,11 +834,11 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
     // claim about something else entirely and may simply be untrue.
     canvas = null;
   } else if (drawsNothing) {
-    canvas = emptyState('No issue in this document declares a relationship, so the canvas is empty.');
+    canvas = emptyState('No relationships yet, so there is nothing to draw.');
   } else if (nodeCount === 0) {
     // Nothing to draw ON the canvas, and a footer group beneath it that is the
     // whole panel. No stage, no refusal: the group renders in ordinary flow.
-    canvas = emptyState('Nothing in this document is in the order, so the spine is empty.');
+    canvas = emptyState('Nothing is in the order yet, so there is nothing to draw.');
   } else if (nodeCount > CLUSTER_ONLY_BUDGET) {
     diagnostics.push(`graph refused: ${String(nodeCount)} nodes is past the cluster-only budget of ${String(CLUSTER_ONLY_BUDGET)}`);
     canvas = refusal(document, layout, nodeCount, 'clusters');
@@ -970,6 +963,14 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
     {
       class: 'ig-viewer ig-graph',
       'data-projection': 'graph',
+      // See `SceneOptions.frame`; stamped on all three roots, because the
+      // container that declines the frame does not know which projection it
+      // was handed.
+      'data-frame': options.frame === false ? 'none' : undefined,
+      // See `SceneOptions.dockLegend`; stamped on all three roots, because every
+      // projection draws the same legend and the container's scrollport does not
+      // change with the projection.
+      'data-legend': options.dockLegend === true ? 'docked' : undefined,
       // Stamped on all three roots rather than on the one that draws rows.
       // A projection toggle must not silently drop a host's decision, and
       // the graph carries a footer group of rows of its own. See
@@ -1038,7 +1039,7 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
       document.isolated.length === 0
         ? null
         : element('p', { class: 'ig-count' }, [
-            `${String(document.isolated.length)} isolated ${document.isolated.length === 1 ? 'issue' : 'issues'} not drawn`,
+            `${String(document.isolated.length)} ${document.isolated.length === 1 ? 'issue has' : 'issues have'} no relationships, so ${document.isolated.length === 1 ? 'it is' : 'they are'} not drawn`,
           ]),
       legend(),
       // LAST, because §16h calls it the panel FOOTER and the legend is a footer

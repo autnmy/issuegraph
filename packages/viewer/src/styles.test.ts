@@ -115,6 +115,28 @@ describe('the structural stylesheet', () => {
     }
   });
 
+  it('keeps the legend caption out of the rendered-legend slot', () => {
+    // A LOAD-BEARING DECLARATION THAT READS AS DECORATION. HTML lifts the first
+    // in-flow `legend` of a `fieldset` out of the content box, paints it across
+    // the top border with the rule notched either side, and starts the content
+    // below it. That drew the caption on the rule, a band of bare ground under
+    // it, and a broken top rule. `float` is the spec's own opt-out: a legend
+    // whose computed float is not `none` is an ordinary child, and in this flex
+    // bar the float itself is then ignored, so it lays out as the first item.
+    //
+    // ASSERTED HERE BECAUSE NOTHING ELSE WOULD FAIL. Removing the line changes
+    // no markup, no token and no other rule — the defect returns silently, and
+    // the next reader tidying an "unused float" has no signal at all.
+    const css = withoutComments(viewerStylesheet);
+    const block = /\.ig-legend-caption \{([^}]*)\}/.exec(css);
+    assert.ok(block, 'the legend caption no longer has a rule of its own');
+    assert.match(
+      block[1] as string,
+      /float:\s*left/,
+      'the caption is back in the rendered-legend slot, so the top rule is notched again',
+    );
+  });
+
   it('contains no literal colour', () => {
     // R5 asserted against the bytes: every colour is the theme's to decide, so
     // finding one here means a value escaped the custom properties.

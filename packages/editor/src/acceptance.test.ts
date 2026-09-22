@@ -75,7 +75,7 @@ describe('done when: isolated issues collapse to one count chip that opens a LIS
     const result = renderScaleLadder(document);
     assert.equal(result.ladder.isolated.count, 248);
     assert.equal(result.markup.match(/class="ig-chip"/g)?.length, 1);
-    assert.match(result.markup, /248 isolated issues/);
+    assert.match(result.markup, /248 issues with no relationships/);
   });
 
   it('opens them as a list, and the canvas is untouched', () => {
@@ -93,7 +93,7 @@ describe('done when: every refusal names its reason and offers a route forward',
       const result = renderScaleLadder(document);
       const refusal = result.ladder.refusal;
       assert.ok(refusal !== null);
-      assert.match(refusal.reason, /budget/);
+      assert.match(refusal.reason, /too many to draw/);
       assert.ok(refusal.routes.length > 0);
       for (const route of refusal.routes) assert.ok(result.markup.includes(route.label));
     }
@@ -1052,6 +1052,8 @@ describe('done when: the package\'s public surface is final and self-sufficient'
     // would have to re-derive, which is the drift the seam exists to prevent.
     for (const name of [
       'renderWorkspace',
+      // The workspace's loading placeholder, pure for a host's server-side loading state.
+      'renderWorkspaceSkeleton',
       'workspaceStylesheet',
       'selectionReducer',
       'INITIAL_SELECTION',

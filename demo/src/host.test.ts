@@ -139,7 +139,7 @@ describe('the demo supplies every host fact the port carries', () => {
     );
     assert.match(
       markup,
-      new RegExp(`<span class="ig-count-chip" data-count="ready">${String(host.counts?.readyNow)} ready now · cap 2</span>`),
+      new RegExp(`<span class="ig-count-chip" data-count="ready">${String(host.counts?.readyNow)} ready now · 2 at a time</span>`),
     );
     assert.match(
       markup,
@@ -151,11 +151,18 @@ describe('the demo supplies every host fact the port carries', () => {
     assert.match(markup, /<span class="ig-badge" data-hold="claimed">claimed<\/span>/);
     assert.match(markup, /<span class="ig-badge" data-hold="parked">parked<\/span>/);
     assert.match(markup, /data-ig-key="487"[^]*?data-caveat="preview-only"/);
-    assert.match(markup, /data-ig-key="501"[^]*?data-caveat="disagree"[^]*?ranked by label:P1 \(your mapping\) · frontmatter declares <s class="ig-strike">priority: 3<\/s>/);
-    // In footer order — the first-stated word first — which is how the rows
-    // beneath read. §16a puts them beside the count rather than inside the
-    // heading, so the heading says what the group IS and the words say why.
-    assert.match(markup, /<span class="ig-footer-labels">not eligible · claimed · parked<\/span>/);
+    assert.match(markup, /data-ig-key="501"[^]*?data-caveat="disagree"[^]*?Using the P1 label · the issue body says <s class="ig-strike">priority: 3<\/s>/);
+    // EACH ROW SAYS ITS OWN REASON, in this host's words, on screen. The
+    // legend of labels that used to float beside the count is gone: it restated
+    // the chips and explained nothing.
+    for (const [label, why] of [
+      ['claimed', 'Another worker already has it.'],
+      ['parked', 'Waiting on a decision from a person.'],
+      ['not eligible', 'No priority search matches it, so it never comes up.'],
+    ] as const) {
+      assert.match(markup, new RegExp(`data-hold="${label}">${label}</span>.*?<p class="ig-footer-why">${why.replace('.', '\\.')}</p>`));
+    }
+    assert.equal(markup.includes('ig-footer-labels'), false);
   });
 
   it('draws the pure-graph view when no host is handed across', () => {
@@ -395,10 +402,10 @@ describe('the §16g states are reachable from the sandbox, with their affordance
       assert.equal(conditionNow(), null, 'the sandbox did not land on the live state');
       await chooseState('importing');
       assert.equal(conditionNow(), 'importing', 'the importing state is unreachable');
-      assert.ok(noticeText().includes('Building the local index'), 'the importing notice lost its headline');
+      assert.ok(noticeText().includes('Still loading your issues'), 'the importing notice lost its headline');
       await chooseState('empty');
       assert.equal(conditionNow(), 'empty', 'the empty state is unreachable');
-      assert.ok(noticeText().includes('Nothing is eligible right now'), 'the empty notice lost its headline');
+      assert.ok(noticeText().includes('Nothing to work on right now'), 'the empty notice lost its headline');
       assert.ok(has('[data-ig-command="review-pick-order"]'), 'the empty state drew no action');
       await chooseState('stale');
       assert.equal(
@@ -408,7 +415,7 @@ describe('the §16g states are reachable from the sandbox, with their affordance
       );
       await chooseState('error');
       assert.equal(conditionNow(), 'error', 'the error state is unreachable');
-      assert.ok(noticeText().includes('The index could not be read'), 'the error notice lost its headline');
+      assert.ok(noticeText().includes('Could not load your issues'), 'the error notice lost its headline');
 
       // AND THE AFFORDANCE PERFORMS. A Retry the host never hears is the "control
       // nobody wired" failure wearing a different coat, and it would pass every

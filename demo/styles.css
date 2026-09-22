@@ -76,7 +76,44 @@
   --bar-w: 3px;
   --page-max: 1600px;
   --measure-lede: 70ch;
-  --measure-colophon: 90ch;
+  --measure-colophon: 72ch;
+
+  /* The page's own scale, above the chrome's */
+  --size-lede: 16px;
+  --size-hero: 32px;
+  --size-brand: 20px;
+  --line-tight: 1.2;
+  --tracking-tight: -0.01em;
+  --page-pad-x: clamp(16px, 4vw, 64px);
+  --page-pad-y: clamp(24px, 4vw, 56px);
+  --gap-loose: 24px;
+  --gap-section: 32px;
+  --radius-panel: 10px;
+  --radius-pill: 999px;
+  --pad-pill-x: 8px;
+  --pad-pill-y: 1px;
+  --pad-seg: 3px;
+  --pad-seg-x: 14px;
+  --pad-seg-y: 6px;
+  --icon: 16px;
+  --guide-num: 20px;
+  --chevron-shut: rotate(-90deg);
+  /* The pulse descant's own skeletons use (Tailwind's animate-pulse), so the
+     demo's placeholder looks like the product's. */
+  --pulse-time: 2s;
+  --pulse-ease: cubic-bezier(0.4, 0, 0.6, 1);
+  --pulse-dim: 0.5;
+
+  /* THE EDITOR'S ZONE TRACKS, RESTATED SO THE GUIDE CAN LINE UP WITH THEM.
+     The workspace sizes its rail and inspector in characters of the viewer's
+     --ig-char-width (7.8px at the shipped theme): 50 and 42 at or above 1360,
+     which is 17k's wide layout. The guide above it is page chrome, so it cannot
+     read the viewer's token without this sheet depending on a property it does
+     not declare — the numbers are copied here instead, and a drift costs a few
+     pixels of label alignment, never a broken layout. */
+  --zone-char: 7.8px;
+  --rail-chars: 50;
+  --inspector-chars: 42;
   --workspace-height: 72vh;
 }
 
@@ -110,7 +147,7 @@
 
 body {
   margin: 0;
-  padding: var(--pad);
+  padding: var(--page-pad-y) var(--page-pad-x);
   background: var(--canvas);
   color: var(--fg-2);
   font-family: var(--font);
@@ -123,13 +160,6 @@ main {
   margin: 0 auto;
 }
 
-h1 {
-  margin: 0;
-  font-size: var(--size-h1);
-  font-weight: var(--weight-strong);
-  color: var(--fg);
-}
-
 a {
   color: var(--accent);
 }
@@ -139,78 +169,182 @@ code {
   font-size: var(--size-small);
 }
 
+/* --- masthead --- */
+
 .masthead {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: flex-start;
-  gap: var(--gap);
-  margin-bottom: var(--gap);
+  gap: var(--gap-loose);
+  margin-bottom: var(--gap-section);
 }
 
-.lede {
-  margin: var(--gap-tight) 0 0;
+.masthead-main {
+  min-width: 0;
   max-width: var(--measure-lede);
 }
 
-.versions {
-  margin: var(--gap-tight) 0 0;
+.brand {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: var(--gap);
-  font-family: var(--mono);
-  font-size: var(--size-micro);
-  color: var(--fg-3);
+  margin: 0 0 var(--gap-tight);
 }
 
-.version strong {
-  color: var(--fg);
+.brand-name {
+  font-size: var(--size-brand);
   font-weight: var(--weight-strong);
+  color: var(--fg);
 }
 
-.as-of {
-  font-size: var(--size-micro);
-  color: var(--fg-3);
-  white-space: nowrap;
+.pill {
+  font-family: var(--mono);
+  font-size: var(--size-small);
+  color: var(--fg-2);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: var(--pad-pill-y) var(--pad-pill-x);
 }
 
-/* --- controls --- */
+h1 {
+  margin: 0;
+  font-size: var(--size-hero);
+  line-height: var(--line-tight);
+  letter-spacing: var(--tracking-tight);
+  font-weight: var(--weight-strong);
+  color: var(--fg);
+}
 
-.controls {
+.lede {
+  margin: var(--gap) 0 0;
+  font-size: var(--size-lede);
+  color: var(--fg-2);
+}
+
+.masthead-side {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-end;
   gap: var(--gap);
-  padding: var(--pad-panel-y) var(--pad);
-  margin-bottom: var(--gap);
+}
+
+.masthead-links {
+  display: flex;
+  gap: var(--gap-loose);
+}
+
+/* --- segmented controls --- */
+
+/* ONE OUTLINE AROUND A SET OF CHOICES, THE PRESSED ONE FILLED. Each group on
+   this page is one question with one answer in force, and separate bordered
+   buttons read as separate actions. This is the shape the viewer's own
+   projection toggle already draws, restated for the page chrome. */
+.segmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--gap-micro);
+  padding: var(--pad-seg);
   background: var(--canvas-2);
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius);
 }
 
-.control {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-micro);
-  min-width: 0;
+.segmented .chrome-button {
+  font-size: var(--size-body);
+  color: var(--fg-2);
+  background: none;
+  border: 0;
+  padding: var(--pad-seg-y) var(--pad-seg-x);
 }
 
-.control > label,
-.control-label {
-  font-size: var(--size-micro);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
+.segmented .chrome-button:hover {
+  color: var(--fg);
+}
+
+.segmented .chrome-button[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* --- the scenario panel --- */
+
+/* COLLAPSED BY DEFAULT, BECAUSE MOST VISITORS NEVER NEED IT. The demo works as
+   it lands; the panel is for someone who wants to break it on purpose. A
+   native details element, so the open and shut state needs no script and a
+   keyboard or screen reader gets the disclosure for free. The summary line
+   restates what is in force, so a shut panel still says what you are looking
+   at. */
+.scenario {
+  margin-bottom: var(--gap-section);
+  background: var(--canvas-2);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-panel);
+}
+
+.scenario summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap);
+  padding: var(--gap) var(--pad);
+  cursor: pointer;
+  list-style: none;
+}
+
+.scenario summary::-webkit-details-marker {
+  display: none;
+}
+
+.scenario summary:focus-visible {
+  outline: var(--border-w) solid var(--accent);
+  outline-offset: calc(var(--gap-micro) * -1);
+  border-radius: var(--radius-panel);
+}
+
+.scenario-chevron {
+  width: var(--icon);
+  height: var(--icon);
+  color: var(--accent);
+  transform: var(--chevron-shut);
+}
+
+.scenario[open] .scenario-chevron {
+  transform: none;
+}
+
+.scenario-title {
+  font-weight: var(--weight-strong);
+  color: var(--fg);
+}
+
+.scenario-summary {
+  font-family: var(--mono);
+  font-size: var(--size-small);
   color: var(--fg-3);
 }
 
-.control-row {
+.scenario-body {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--gap-tight);
-  align-items: center;
+  gap: var(--gap-loose) var(--gap-section);
+  padding: var(--pad);
+  border-top: var(--border-w) solid var(--border);
 }
 
-.hint {
-  margin: 0;
-  font-size: var(--size-small);
+.control {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--gap-tight);
+  min-width: 0;
+}
+
+.control-label {
+  font-family: var(--mono);
+  font-size: var(--size-micro);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
   color: var(--fg-3);
 }
 
@@ -220,8 +354,27 @@ select {
   background: var(--canvas-3);
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius);
-  padding: var(--pad-button-y) var(--pad-button-x);
+  padding: var(--pad-seg-y) var(--pad-button-x);
 }
+
+.scenario-note {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-tight);
+  margin: 0;
+  padding: var(--gap) var(--pad);
+  border-top: var(--border-w) solid var(--border);
+  color: var(--fg-2);
+}
+
+.scenario-note svg {
+  flex: none;
+  width: var(--icon);
+  height: var(--icon);
+  color: var(--accent);
+}
+
+/* --- buttons (the saves log's retry and discard) --- */
 
 .chrome-button {
   font: inherit;
@@ -242,17 +395,6 @@ select {
 .chrome-button:focus-visible {
   outline: var(--border-w) solid var(--accent);
   outline-offset: var(--gap-micro);
-}
-
-.chrome-button[aria-pressed='true'] {
-  background: var(--accent);
-  color: var(--on-accent);
-  border-color: var(--accent);
-}
-
-.chrome-quiet {
-  background: none;
-  color: var(--fg-2);
 }
 
 .chrome-danger {
@@ -322,26 +464,141 @@ select {
   color: var(--fg-2);
 }
 
-/* --- the workspace --- */
+/* --- the guide and the workspace --- */
+
+/* ONE LABEL PER ZONE, OVER THE ZONE IT NAMES. The workspace is self-evident once
+   you know its three parts and opaque before then. Below the editor's wide
+   layout the zones rearrange — the details panel lifts over the middle, then
+   the middle folds to a strip — so the labels simply wrap as a row there; above
+   it they take the same tracks the zones do and sit over their own column. */
+.stage {
+  container-name: stage;
+  container-type: inline-size;
+}
+
+.guide {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap) var(--gap-loose);
+  list-style: none;
+  margin: 0 0 var(--gap);
+  padding: 0;
+  color: var(--fg-2);
+}
+
+.guide li {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-tight);
+  min-width: 0;
+}
+
+.guide strong {
+  color: var(--fg);
+  font-weight: var(--weight-strong);
+}
+
+.guide-num {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: var(--guide-num);
+  height: var(--guide-num);
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: var(--size-micro);
+  font-weight: var(--weight-strong);
+}
+
+@container stage (width >= 1360px) {
+  .guide {
+    display: grid;
+    grid-template-columns:
+      calc(var(--zone-char) * var(--rail-chars))
+      1fr
+      calc(var(--zone-char) * var(--inspector-chars));
+    gap: 0;
+    padding: 0 var(--border-w);
+  }
+
+  .guide li {
+    padding: 0 var(--pad);
+  }
+}
 
 .workspace {
   position: relative;
   height: var(--workspace-height);
   min-height: 0;
   border: var(--border-w) solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-panel);
   overflow: hidden;
 }
 
-/* --- colophon --- */
+/* --- footer --- */
 
 .colophon {
-  margin-top: var(--gap);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--gap-loose);
+  margin-top: var(--gap-section);
+  color: var(--fg-2);
+}
+
+.colophon-main {
+  max-width: var(--measure-colophon);
+}
+
+.colophon h2 {
+  margin: 0 0 var(--gap-tight);
+  font-size: var(--size-body);
+  font-weight: var(--weight-strong);
+  color: var(--fg);
+}
+
+.colophon p {
+  margin: 0 0 var(--gap);
+}
+
+.colophon-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-loose);
+}
+
+.versions {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: var(--gap-micro) var(--gap-loose);
+  margin: 0;
+  font-family: var(--mono);
   font-size: var(--size-small);
   color: var(--fg-3);
 }
 
-.colophon p {
-  margin: var(--gap-tight) 0;
-  max-width: var(--measure-colophon);
+.version strong {
+  color: var(--fg);
+  font-weight: var(--weight-strong);
+}
+
+/* --- the loading placeholder's look --- */
+
+/* THE HOST'S HALF OF THE SPLIT. The packages draw the placeholder's shape and
+   hold it still; the pulse is this page's, on the one class they document for
+   it, and it stops for anyone who asked for less motion. The same few lines
+   are what a product embedding the packages writes to match its own
+   skeletons. */
+@media (prefers-reduced-motion: no-preference) {
+  .ig-skeleton-block {
+    animation: skeleton-pulse var(--pulse-time) var(--pulse-ease) infinite;
+  }
+}
+
+@keyframes skeleton-pulse {
+  50% {
+    opacity: var(--pulse-dim);
+  }
 }

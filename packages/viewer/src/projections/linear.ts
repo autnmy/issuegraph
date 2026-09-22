@@ -25,7 +25,6 @@ import {
   edgeBadges,
   emptyState,
   evidenceBadge,
-  footerLabels,
   holdLine,
   hostHeader,
   identity,
@@ -63,6 +62,65 @@ export interface SceneOptions {
    * rather than this package guessing which of its instances is the panel.
    */
   readonly chrome?: boolean | undefined;
+  /**
+   * Draw the panel's own outer frame — the border and the corner radius.
+   * Defaults to `true`.
+   *
+   * THE CONTAINER OWNS ITS SEAMS, AND ONLY THE CONTAINER KNOWS IT HAS ANY.
+   * Standing alone in a host's page the viewer is a card and has to draw its
+   * own edge, which is why the frame is on by default. Composed into a
+   * surface that already rules its zones off — the grooming workspace draws
+   * `border-right` on the rail track and `border-bottom` under the canvas
+   * toolbar — that same edge lands one pixel from the container's, and the
+   * two read as a single doubled hairline down every seam. Measured in the
+   * workspace: the rail's right edge carried the zone's rule and the viewer's
+   * border with nothing between them, and the canvas graph's top border sat
+   * directly under the toolbar's.
+   *
+   * IT IS AN OPTION RATHER THAN THE CONTAINER OVERRIDING THE BORDER AWAY. A
+   * host reaching into `.ig-viewer` to unset a property this package set is a
+   * second stylesheet with an opinion about this one's internals, and it
+   * breaks the first time the frame is expressed differently. Declining the
+   * frame is a statement about COMPOSITION, so it belongs in the composition
+   * API.
+   *
+   * It renders as `data-frame="none"` on the viewer root; absent is the
+   * framed default.
+   */
+  readonly frame?: boolean | undefined;
+  /**
+   * Dock the legend against the bottom of the container's scrollport instead
+   * of letting it scroll away with the order. Defaults to `false`.
+   *
+   * IT IS THE KEY TO THE GRAMMAR, AND IT WAS AT THE BOTTOM OF THE SCROLL. Five
+   * line styles and three station fills are what make every row and every edge
+   * on the surface legible, and in a container tall enough to scroll they sat
+   * below everything they explain — so the one thing a reader consults WHILE
+   * reading was the one thing they had to leave the reading to reach.
+   *
+   * ONLY A CONTAINER CAN ANSWER THIS, which is why it is an option and not the
+   * default. Sticky positions against the nearest scrollport: dropped into a
+   * host's page at its natural height the viewer has no scrollport of its own,
+   * so the nearest one is the PAGE, and a legend docked there would float over
+   * the host's own content for the whole of their document. A container that
+   * has given this viewer a bounded, scrolling box is the only party that knows
+   * the dock has somewhere to sit.
+   *
+   * IT IMPLIES `frame: false`, AND THE STYLESHEET ENFORCES THAT BY CONSTRUCTION.
+   * A sticky child cannot escape an ancestor that is itself a scroll container,
+   * and this root is `overflow: hidden` precisely so a drawn frame clips its
+   * own corners — so the docked rule has to lift that, and a root that no
+   * longer clips must not be drawing a radius to clip to. The workspace passes
+   * both; a caller that passes only this one gets a docked legend and an
+   * unclipped frame, which is why they are documented together.
+   *
+   * WHERE the dock sits is still the container's: it renders as
+   * `data-legend="docked"` with `bottom: 0`, and a container with something
+   * else already pinned to that edge moves it. The grooming workspace does —
+   * its rail footer holds the bottom of that zone — and sets the offset from
+   * the footer it measures rather than from a number either package wrote down.
+   */
+  readonly dockLegend?: boolean | undefined;
   /**
    * Draw the header's own view controls — the List/Graph toggle, and the
    * graph's expand/collapse affordance. Defaults to `false`.
@@ -137,26 +195,66 @@ export interface SceneOptions {
  * claim work is queued that nothing can start.
  */
 /**
- * What the footer group calls itself.
+ * What the footer group calls itself, and the one sentence that says why.
  *
- * IT COVERS TWO FAMILIES, AND SAYING "held by the runner" COVERED ONE. §16a's
- * own group lists a duplicate under that heading, but §16d's table is explicit
- * that a duplicate is a different fact — "canonical elsewhere, never worked" —
- * from a claim or a park. A document with one duplicate and no tracker hold
- * therefore read "1 held by the runner" about an issue no runner has touched.
+ * TWO LINES, NOT ONE RUN-ON HEADING. It read "4 outside the order — held by the
+ * runner, or never worked", which asked a reader to already know what a runner
+ * is and what "never worked" means for an issue that is plainly open. The count
+ * is the heading; the reason is a sentence under it, in words that need no
+ * glossary.
+ *
+ * IT COVERS SEVERAL FAMILIES, AND NAMING ONE WAS A LIE ABOUT THE OTHERS. §16d's
+ * table is explicit that a duplicate is a different fact from a claim or a
+ * park, so a document with one duplicate and no hold must not be told it is
+ * "held back". The sentence is assembled from what the group actually holds.
  * Shared by both projections, so the two cannot word one group two ways.
  */
-export function footerHeading(count: number, kinds: FooterKinds): string {
+function capitalise(text: string): string {
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
+}
+
+export function footerHeading(): string {
+  return 'Not in the order';
+}
+
+export function footerReason(kinds: FooterKinds): string | null {
   const reasons = [
-    kinds.runner ? 'held by the runner' : null,
-    kinds.neverWorked ? 'never worked' : null,
-    kinds.undrawn ? 'not drawn at this width' : null,
+    kinds.runner ? 'held back' : null,
+    kinds.neverWorked ? 'a copy of another issue' : null,
+    kinds.undrawn ? 'related but not drawn here' : null,
   ].filter((reason): reason is string => reason !== null);
-  const tail =
-    reasons.length === 0
-      ? ''
-      : ` — ${reasons.slice(0, -1).join(', ')}${reasons.length > 1 ? ', or ' : ''}${reasons[reasons.length - 1] ?? ''}`;
-  return `${String(count)} outside the order${tail}`;
+  if (reasons.length === 0) return null;
+  const joined =
+    reasons.length === 1
+      ? (reasons[0] as string)
+      : `${reasons.slice(0, -1).join(', ')}, or ${reasons[reasons.length - 1] as string}`;
+  return `${capitalise(joined)}. Pick one to see why.`;
+}
+
+/**
+ * The group's head, for either projection, in the panel header's own voice.
+ *
+ * THE SAME TWO PIECES THE PANEL HEADER USES, NOT A THIRD STYLE. The name is an
+ * `.ig-header-label` — the accent mono kicker that reads "ORDER PREVIEW" at the
+ * top of the panel — and the count is an `.ig-count-chip`, the outlined tally
+ * beside it. A group that invented its own heading treatment was one more thing
+ * a reader had to learn, on the part of the panel they reach last.
+ *
+ * "HELD" ONLY WHEN SOMETHING IS. The chip reads `4 held` the way the header's
+ * `6 held` does, but a group of duplicates alone is not held by anyone — §16d
+ * keeps the two facts apart — so it then states the bare count.
+ */
+export function footerHead(count: number, kinds: FooterKinds): ElementSpec {
+  const reason = footerReason(kinds);
+  return element('div', { class: 'ig-footer-head' }, [
+    element('div', { class: 'ig-footer-title-row' }, [
+      element('p', { class: 'ig-header-label ig-footer-title' }, [footerHeading()]),
+      element('span', { class: 'ig-count-chip', 'data-count': 'footer' }, [
+        kinds.runner ? `${String(count)} held` : String(count),
+      ]),
+    ]),
+    reason === null ? null : element('p', { class: 'ig-footer-note' }, [reason]),
+  ]);
 }
 
 /**
@@ -352,18 +450,51 @@ export function footerRow(
       'aria-current': options.selected === slot.lead ? 'true' : 'false',
       'aria-label':
         because === '' ? slotLabel(document, slot) : `${slotLabel(document, slot)} — ${because}`,
-      title: because === '' ? null : because,
       tabindex: options.focused === slot.lead ? 0 : -1,
     },
-    [
+    footerEntry(
+      slotTitle(document, slot),
+      lead === undefined ? null : identity(lead),
       labelled === undefined
         ? null
         : element('span', { class: 'ig-badge', 'data-hold': labelled.label }, [labelled.label]),
-      element('span', { class: 'ig-title' }, [slotTitle(document, slot)]),
-      lead === undefined ? null : identity(lead),
+      because === '' ? null : because,
       footerRelationships(document, slot.members),
-    ],
+    ),
   );
+}
+
+/**
+ * One footer row's content, laid out as a ranked row is laid out.
+ *
+ * THE ORDER'S OWN ROW PARTS, SO THE GROUP READS AS MORE OF THE SAME LIST. The
+ * station sits in `.ig-rank-cell`, so it lines up under the ranked stations
+ * above it and is the held station the legend already explains; the name is an
+ * `.ig-title`; the identity, the status chip and any relationship chips share
+ * one `.ig-row-meta` line, as a ranked row's badges do. What a ranked row has
+ * and these do not is a number — they have no place in the order — and in its
+ * stead each says why, on its own line, in full.
+ */
+function footerEntry(
+  title: string,
+  id: ElementSpec | null,
+  status: ElementSpec | null,
+  why: string | null,
+  relationships: ElementSpec | null,
+): readonly ElementSpec[] {
+  return [
+    element('div', { class: 'ig-rank-cell' }, [station('dashed')]),
+    // ONE `.ig-row-head`, AS A RANKED ROW HAS: its lines sit 2px apart, which is
+    // what makes a title, its identity line and its reason read as one object
+    // rather than three rows of text a body's wider gap would space apart.
+    element('div', { class: 'ig-row-body' }, [
+      element('div', { class: 'ig-row-head' }, [
+        element('span', { class: 'ig-title' }, [title]),
+        element('div', { class: 'ig-row-meta' }, [id, status, relationships]),
+        why === null ? null : element('p', { class: 'ig-footer-why' }, [why]),
+      ]),
+    ]),
+  ];
 }
 
 /**
@@ -406,20 +537,23 @@ export function excludedRow(
       class: 'ig-footer-row',
       'data-ig-key': key,
       'aria-current': options.selected === key ? 'true' : 'false',
-      'aria-label': `${issue?.title ?? key} — ${treatmentFor('duplicate-of').label} ${canonical}, never worked`,
+      'aria-label': `${issue?.title ?? key} — ${treatmentFor('duplicate-of').label} ${canonical}, which gets worked instead`,
       // A HARDCODED -1 HERE MEANT THE VIEWER LOST ITS TAB STOP ENTIRELY. An
       // exclusion is in `focusOrder`, so focus can resolve to one — and when it
       // did, no element carried `tabindex="0"` and Tab could not enter the
       // viewer at all. Every row that can hold focus renders the roving stop.
       tabindex: options.focused === key ? 0 : -1,
     },
-    [
-      element('span', { class: 'ig-badge', 'data-edge': 'duplicate-of' }, ['duplicate']),
-      element('span', { class: 'ig-title' }, [issue?.title ?? key]),
+    footerEntry(
+      issue?.title ?? key,
       issue === undefined ? null : identity(issue),
-      element('span', { class: 'ig-id' }, [`→ ${canonical}`]),
+      element('span', { class: 'ig-badge', 'data-hold': 'duplicate' }, ['duplicate']),
+      // THE CONSEQUENCE, NOT THE RELATIONSHIP. The relationship chip beside the
+      // status says "duplicate of 512" in the vocabulary's words; the sentence
+      // says what that means for the work, so the one fact is not printed twice.
+      'The original gets worked instead.',
       footerRelationships(document, [key]),
-    ],
+    ),
   );
 }
 
@@ -446,15 +580,16 @@ export function asideRow(
       class: 'ig-footer-row',
       'data-ig-key': key,
       'aria-current': options.selected === key ? 'true' : 'false',
-      'aria-label': `${issue?.title ?? key} — ${key} — outside the order`,
+      'aria-label': `${issue?.title ?? key} — ${key} — related, not drawn here`,
       tabindex: options.focused === key ? 0 : -1,
     },
-    [
-      element('span', { class: 'ig-badge' }, ['outside the order']),
-      element('span', { class: 'ig-title' }, [issue?.title ?? key]),
+    footerEntry(
+      issue?.title ?? key,
       issue === undefined ? null : identity(issue),
+      element('span', { class: 'ig-badge', 'data-hold': 'related' }, ['related']),
+      'Not drawn at this width.',
       footerRelationships(document, [key]),
-    ],
+    ),
   );
 }
 
@@ -462,7 +597,7 @@ export function asideRow(
 function isolatedChip(count: number): ElementSpec | null {
   if (count === 0) return null;
   return element('p', { class: 'ig-count' }, [
-    `${String(count)} ${count === 1 ? 'issue is' : 'issues are'} in no slot and declare no relationships`,
+    `${String(count)} more ${count === 1 ? 'issue has' : 'issues have'} no relationships and no place in the order`,
   ]);
 }
 
@@ -523,29 +658,19 @@ export function linearScene(
     ),
   ];
 
-  // The runner's own words, when the host supplied them, to the RIGHT of the
-  // count — which is where §16a puts them, and it is the difference between a
-  // heading that says what this group is and one that also has to list the
-  // reasons inside it.
-  const labels = footerLabels(footerSlots);
   const footer =
     footerEntries.length === 0
       ? null
       : element('section', { class: 'ig-footer' }, [
-          element('div', { class: 'ig-footer-head' }, [
-            element('p', { class: 'ig-footer-title' }, [
-              footerHeading(footerEntries.length, {
-                runner: footerSlots.length > 0,
-                neverWorked: document.order.excluded.length > 0,
-                // The list draws every column it has, so it never withholds one.
-                undrawn: false,
-              }),
-            ]),
-            labels === '' ? null : element('span', { class: 'ig-footer-labels' }, [labels]),
-          ]),
+          footerHead(footerEntries.length, {
+            runner: footerSlots.length > 0,
+            neverWorked: document.order.excluded.length > 0,
+            // The list draws every column it has, so it never withholds one.
+            undrawn: false,
+          }),
           element(
             'ol',
-            { class: 'ig-list', 'aria-label': 'held outside the order' },
+            { class: 'ig-list', 'aria-label': 'not in the order' },
             footerEntries,
           ),
         ]);
@@ -555,6 +680,14 @@ export function linearScene(
     {
       class: 'ig-viewer ig-linear',
       'data-projection': 'linear',
+      // See `SceneOptions.frame`; stamped on all three roots, because the
+      // container that declines the frame does not know which projection it
+      // was handed.
+      'data-frame': options.frame === false ? 'none' : undefined,
+      // See `SceneOptions.dockLegend`; stamped on all three roots, because every
+      // projection draws the same legend and the container's scrollport does not
+      // change with the projection.
+      'data-legend': options.dockLegend === true ? 'docked' : undefined,
       // §17j'S DENSITY, WHERE THE HOST TOOK IT OVER. Absent is the whole
       // default: the stylesheet keys the density block off this attribute's
       // PRESENCE, so a viewer that renders none is decided by the container

@@ -103,7 +103,7 @@ describe('the three zones render at their fixed positions', () => {
     // per branch. What is no longer claimed is that the root carries NOTHING.
     assert.match(
       result.markup,
-      /^<div class="ig-workspace" data-canvas="strip" data-inspector="dismissed">/,
+      /^<div class="ig-workspace" data-canvas="strip" data-canvas-legend="[a-z]+" data-inspector="dismissed">/,
     );
     assert.equal(/^<div class="ig-workspace"[^>]*data-order=/.test(result.markup), false);
     assert.match(result.markup, /<\/div>$/);
@@ -146,6 +146,47 @@ describe('the three zones render at their fixed positions', () => {
     // thing it is checking for — a zone name that is NOT in the union.
     const known: ReadonlySet<string> = new Set(ZONES);
     assert.deepEqual([...drawn].filter((name) => !known.has(name)), []);
+  });
+});
+
+describe('the workspace rules its own seams, so no edge is drawn twice', () => {
+  it('draws every composed viewer with the frame declined', () => {
+    // THE DEFECT: `.ig-viewer` carries a border and a radius of its own, which
+    // is right for a viewer standing alone in a host's page and wrong here.
+    // This surface already rules its zones off — the rail track has
+    // `border-right`, the canvas toolbar has `border-bottom`, and the host's
+    // own container has an outer border — so the viewer's edge landed beside
+    // each of those and every seam read as a doubled hairline.
+    //
+    // ASSERTED AS "EVERY ONE", NOT AS TWO NAMED ZONES. The count is derived
+    // from the markup, so a third composed viewer added later has to decline
+    // the frame too rather than quietly reintroducing the defect in one zone.
+    const markup = renderWorkspace(backlogOf(8), WORDS).markup;
+    const roots = [...markup.matchAll(/<section class="ig-viewer [^"]*"[^>]*>/g)].map(
+      (match) => match[0],
+    );
+    assert.ok(roots.length > 0, 'no viewer is composed here, so this proves nothing');
+    for (const root of roots) {
+      assert.match(root, /data-frame="none"/, `a composed viewer draws its own frame: ${root}`);
+    }
+  });
+
+  it('docks every composed viewer\u2019s legend, so the key survives the scroll', () => {
+    // The key to five line styles and three station fills is what makes every
+    // row and every edge on this surface legible, and it sat below everything
+    // it explains — so the one thing a reader consults WHILE reading was the
+    // one thing they had to leave the reading to reach.
+    //
+    // DERIVED FROM THE MARKUP, like the frame above: a zone added later has to
+    // answer the same question rather than inherit an answer by omission.
+    const markup = renderWorkspace(backlogOf(8), WORDS).markup;
+    const roots = [...markup.matchAll(/<section class="ig-viewer [^"]*"[^>]*>/g)].map(
+      (match) => match[0],
+    );
+    assert.ok(roots.length > 0, 'no viewer is composed here, so this proves nothing');
+    for (const root of roots) {
+      assert.match(root, /data-legend="docked"/, `a composed viewer lets its legend scroll away: ${root}`);
+    }
   });
 });
 
@@ -1776,7 +1817,7 @@ describe('the workspace splits the host facts between the header and the rail', 
 
   it('keeps the order’s own tally and the NOW row in the rail', () => {
     const { rail } = zones(renderWorkspace(HOSTED, WORDS).markup);
-    assert.match(rail, /<span class="ig-count-chip" data-count="ready">8 ready now · cap 2<\/span>/);
+    assert.match(rail, /<span class="ig-count-chip" data-count="ready">8 ready now · 2 at a time<\/span>/);
     assert.match(rail, /<li class="ig-now-row" data-ig-group="i0003"/);
   });
 

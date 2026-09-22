@@ -193,7 +193,7 @@ function omittedSpec(omitted: OmittedComponents | null): ElementSpec | null {
         ? ` \u00b7 ${String(range.smallest)} ${range.smallest === 1 ? 'issue' : 'issues'} each`
         : ` \u00b7 ${String(range.smallest)}\u2013${String(range.largest)} issues each`;
   return element('p', { class: 'ig-refusal-omitted' }, [
-    `${String(omitted.count)} further ${omitted.count === 1 ? 'component is' : 'components are'} not listed${span}.`,
+    `${String(omitted.count)} more ${omitted.count === 1 ? 'group is' : 'groups are'} not listed${span}.`,
   ]);
 }
 
@@ -215,13 +215,13 @@ function omittedSpec(omitted: OmittedComponents | null): ElementSpec | null {
 function capsuleLabel(capsule: ScaleCapsule): string {
   const blocking =
     capsule.reach.kind === 'cyclic'
-      ? 'holds a cycle'
-      : `${String(capsule.blockedByEdges)} blocked-by ${capsule.blockedByEdges === 1 ? 'edge' : 'edges'}`;
+      ? 'has a loop'
+      : `${String(capsule.blockedByEdges)} blocking`;
   // THE ACCESSIBLE NAME SAYS "around" TOO, so what is heard and what is drawn
   // make the same claim. It used to read "Focus <title> (<key>)", which names
   // the component after one issue in the one channel that cannot show the
   // layout making it an anchor.
-  return `Focus the component around ${capsule.lead}, ${capsule.name} \u2014 ${String(capsule.size)} issues, ${blocking}, ${clusterReachLabel(capsule.reach)}`;
+  return `Draw the group around ${capsule.lead}, ${capsule.name}: ${String(capsule.size)} issues, ${blocking}, ${clusterReachLabel(capsule.reach)}`;
 }
 
 /**
@@ -322,7 +322,7 @@ function refusalSpec(refusal: ScaleRefusal, ladder: ScaleLadder): ElementSpec {
       ? null
       : element(
           'ol',
-          { class: 'ig-list', 'aria-label': 'connected components' },
+          { class: 'ig-list', 'aria-label': 'groups of related issues' },
           ladder.capsules.map((capsule) => capsuleSpec(capsule)),
         ),
     omittedSpec(ladder.capsulesOmitted),
@@ -344,7 +344,7 @@ function searchSpec(search: ScaleSearch): ElementSpec {
     // resolve to whichever came first — so one of the two search boxes would
     // silently lose its label.
     element('label', {}, [
-      'Search to focus a component',
+      'Search for an issue',
       element('input', {
         type: 'search',
         'data-ig-command': 'search',
@@ -362,7 +362,7 @@ function searchSpec(search: ScaleSearch): ElementSpec {
               element(
                 'button',
                 { type: 'button', 'data-ig-command': 'focus', 'data-ig-target': match.lead },
-                [`Focus ${match.key}`],
+                [`Show ${match.key}`],
               ),
               element('span', { class: 'ig-title' }, [match.title]),
             ]),
@@ -403,6 +403,20 @@ function isolatedSpec(
   // carrying no fact that the count-zero rule above already refuses.
   if (!chip && !isolated.open) return null;
   return element('div', { class: 'ig-ladder-isolated' }, [
+    // A CAPTION WHEN THE CONTROL IS SOMEWHERE ELSE, AND THE HOST'S OWN WORD FOR
+    // IT. With the chip drawn here the button says what the list is and a
+    // caption above it would say it twice. §17a moves the control to the rail
+    // footer, and what was left in this zone was an unlabelled column of issues
+    // in a canvas that had been drawing a graph a moment earlier — a reader who
+    // scrolled to it met a list with nothing saying what it was a list OF.
+    //
+    // NO NEW WORD IS INVENTED: this is `isolated.label`, the same string the
+    // chip would have carried, and exactly one of the two is ever drawn. That
+    // keeps the surface's rule — it renders words it was given — with no
+    // addition to the vocabulary a host has to supply.
+    chip || !isolated.open
+      ? null
+      : element('p', { class: 'ig-isolated-caption' }, [isolated.label]),
     !chip ? null : element(
       'button',
       {
@@ -482,6 +496,15 @@ export function renderScaleLadder(
           // drawing it. Two would mean two projection toggles disagreeing
           // about which projection is current.
           chrome: false,
+          // THE WORKSPACE RULES ITS OWN ZONES OFF, so the viewer draws no
+          // frame of its own here: the rail track carries `border-right`, the
+          // canvas toolbar carries `border-bottom`, and a second edge one
+          // pixel away reads as a doubled hairline. See `SceneOptions.frame`.
+          frame: false,
+          // §16b's KEY, KEPT IN VIEW. It explains every line and station on this
+          // zone, and below a scroll it was the one thing a reader had to leave the
+          // reading to reach. See `SceneOptions.dockLegend`.
+          dockLegend: true,
           edgeMarks: edgeMarkRequests(requestedOverlays),
         })
       : null;
@@ -518,7 +541,7 @@ export function renderScaleLadder(
       : element(
           'button',
           { type: 'button', class: 'ig-chip', 'data-ig-command': 'clear-focus' },
-          ['Return to every component'],
+          ['Go back to all groups'],
         ),
     ladder.refusal === null ? null : refusalSpec(ladder.refusal, ladder),
     ladder.search === null ? null : searchSpec(ladder.search),

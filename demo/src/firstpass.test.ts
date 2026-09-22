@@ -41,7 +41,7 @@ describe('the sandbox finds candidates in what it can actually see', () => {
       only?.evidence.map((item) => item.text),
       // The shared words in the OTHER issue's own order, which is the order a
       // reader scanning the two titles meets them in.
-      ['both titles use the word “session”', 'both titles use the word “refresh”'],
+      ['Both titles use the word “session”.', 'Both titles use the word “refresh”.'],
     );
     assert.ok(only?.evidence.every((item) => item.token === 'shared-title-word'));
   });

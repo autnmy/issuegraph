@@ -198,18 +198,22 @@ export const DENSE_ISOLATED_COUNT = 150;
  */
 export const DENSE_LARGEST_COMPONENT = 72;
 
+// PLAIN PRODUCT WORK, NOT THIS CODEBASE'S OWN JARGON. The titles are fake
+// issues a visitor reads on screen, and "Refuse the provenance walk" read as
+// more spec leakage rather than as a backlog. Same counts as before, so the
+// generator's sequence and every size it derives are unchanged.
 const VERBS = [
-  'Retire', 'Backfill', 'Measure', 'Publish', 'Refuse', 'Pin', 'Wire', 'Split',
-  'Record', 'Bound', 'Name', 'Derive', 'Extract', 'Verify', 'Arm', 'Retype',
+  'Fix', 'Add', 'Update', 'Remove', 'Speed up', 'Clean up', 'Test', 'Document',
+  'Rename', 'Log', 'Cache', 'Retry', 'Split', 'Move', 'Check', 'Improve',
 ] as const;
 
 const OBJECTS = [
-  'the reconcile watermark', 'the claim reservation', 'the cadence tick',
-  'the shadow compare', 'the write fence', 'the audit count', 'the rail window',
-  'the deploy refresh', 'the spend ceiling', 'the mirror ingest', 'the order preview',
-  'the label mapper', 'the session lease', 'the beacon push', 'the queue verdict',
-  'the release stamp', 'the provenance walk', 'the capsule route', 'the search lead',
-  'the theme tokens',
+  'the login form', 'the signup email', 'the search box',
+  'the billing page', 'the file upload', 'the audit log', 'the settings page',
+  'the deploy script', 'the rate limiter', 'the webhook handler', 'the export button',
+  'the invite flow', 'the session timeout', 'the push alerts', 'the job queue',
+  'the release notes', 'the error page', 'the sidebar menu', 'the help center',
+  'the color theme',
 ] as const;
 
 /**
@@ -469,9 +473,9 @@ function adoptionCaveats(): ReadonlyMap<IssueRef, IssueCaveats> {
  * design asks for one line rather than a block, so one line is what it is.
  */
 const adoptionNote = Object.freeze({
-  text: 'No issue in this repository declares Issuegraph relationships, so ordering is entirely your pick order.',
-  link: Object.freeze({ text: 'what relationships add ↗', href: 'https://issuegraph.org/' }),
-  dismiss: '✕',
+  text: 'No issue has relationships yet, so the order comes from your queries alone.',
+  link: Object.freeze({ text: 'What relationships add ↗', href: 'https://issuegraph.org/' }),
+  dismiss: 'Dismiss',
 });
 
 /**
@@ -540,15 +544,15 @@ export function compHolds(): readonly ExecutorHold[] {
     // ACTIVE: a worker is running these right now, so a serialize group of
     // theirs would be excluded (§6.2 rule 4). Neither is in one.
     { ref: '499', label: 'working', detail: 'a worker has this issue: Review · 12m', active: true },
-    { ref: '533', label: 'claimed', detail: 'another worker holds this issue', active: true },
+    { ref: '533', label: 'claimed', detail: 'Another worker already has it.', active: true },
     // NOT active: parked work is not running, so it excludes nobody. Reading
     // every hold as a claim is what held a serialize group over an issue that
     // nothing was working.
-    { ref: '541', label: 'parked', detail: 'parked for a decision a person has to make · needs-human' },
+    { ref: '541', label: 'parked', detail: 'Waiting on a decision from a person.' },
     // Not a runner hold but the host's own knowledge all the same: the frame's
     // "open · not eligible" is an issue no pick-order query reaches, so it is
     // outside the order while its blocked-by still holds #530 in place.
-    { ref: '602', label: 'not eligible', detail: 'matches none of the ordered queries, so the pick order never reaches it' },
+    { ref: '602', label: 'not eligible', detail: 'No priority search matches it, so it never comes up.' },
   ];
 }
 
@@ -565,7 +569,15 @@ export type ScenarioName = (typeof SCENARIO_NAMES)[number];
  * nothing writes to either.
  */
 export interface Scenario {
-  /** The control's label — host chrome, so the page's own words. */
+  /**
+   * The control's label — host chrome, so the page's own words.
+   *
+   * PLAIN ENGLISH, NOT THE DESIGN'S FILING REFERENCE. The page is the front
+   * door; a button reading "the §16 comp" asks a first-time visitor to know
+   * which section of a specification they have not read. The KEY is unchanged
+   * (`comp`, `backlog`, `adoption`) and is what the tests and every
+   * `data-ig-value` key off, so the wording moves without the table moving.
+   */
   readonly label: string;
   readonly document: () => GraphDocument;
   readonly holds: readonly ExecutorHold[];
@@ -623,7 +635,7 @@ const compCaveats: ReadonlyMap<IssueRef, IssueCaveats> = new Map<IssueRef, Issue
     '487',
     {
       previewOnly: {
-        note: "query 5 (involves:@me) can't be evaluated locally yet — ranked by the unlabeled tail instead",
+        note: 'Query 5 (involves:@me) cannot run here yet, so this is placed with the unlabeled issues for now.',
       },
     },
   ],
@@ -631,8 +643,8 @@ const compCaveats: ReadonlyMap<IssueRef, IssueCaveats> = new Map<IssueRef, Issue
     '501',
     {
       disagreement: {
-        used: 'label:P1 (your mapping)',
-        ignored: { carrier: 'frontmatter', value: 'priority: 3' },
+        used: 'the P1 label',
+        ignored: { carrier: 'the issue body', value: 'priority: 3' },
       },
     },
   ],
@@ -640,7 +652,7 @@ const compCaveats: ReadonlyMap<IssueRef, IssueCaveats> = new Map<IssueRef, Issue
 
 export const SCENARIOS: Readonly<Record<ScenarioName, Scenario>> = Object.freeze({
   comp: {
-    label: 'the §16 comp',
+    label: 'Sample',
     document: compSeed,
     holds: compHolds(),
     ranking: compRanking,
@@ -652,7 +664,7 @@ export const SCENARIOS: Readonly<Record<ScenarioName, Scenario>> = Object.freeze
     // surface disagree with the thing it exists to be compared against.
   },
   backlog: {
-    label: 'the big backlog',
+    label: 'Big',
     document: backlogSeed,
     holds: compHolds(),
     ranking: compRanking,
@@ -665,7 +677,7 @@ export const SCENARIOS: Readonly<Record<ScenarioName, Scenario>> = Object.freeze
     adoption: { counted: true },
   },
   adoption: {
-    label: 'day one — no adoption',
+    label: 'New repo',
     document: adoptionSeed,
     // NO HOLDS AND NO RUNNING JOB. The state must read complete and calm, and
     // every affordance it draws has to be a real one — a footer group with

@@ -405,7 +405,7 @@ describe('the §16 states', () => {
     for (const projection of ['linear', 'tree'] as const) {
       const markup = renderViewer({ ...disagreeDocument, host: { freshness: FRESHNESS } }, { projection }).markup;
       assert.ok(
-        markup.includes('ranked by label:P1 (your mapping) · frontmatter declares '),
+        markup.includes('Using label:P1 (your mapping) · frontmatter says '),
         `${projection} lost the provenance line naming both signals`,
       );
       assert.ok(
@@ -421,7 +421,7 @@ describe('the §16 states', () => {
         { ...populated, host: { freshness: FRESHNESS, adoption: { counts: { declaring: 12, total: 48 } } } },
         { projection },
       ).markup;
-      const occurrences = markup.split('12 of 48 declare relationships').length - 1;
+      const occurrences = markup.split('12 of 48 have relationships').length - 1;
       assert.equal(occurrences, 1, `${projection} did not state the adoption count exactly once`);
       assert.ok(!markup.includes('ig-adoption'), `${projection} drew a footer line for a count-only host`);
     }

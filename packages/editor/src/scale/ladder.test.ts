@@ -153,7 +153,7 @@ describe('every refusal names its reason and offers a route', () => {
     for (const { name, ladder } of cases) {
       const refusal = ladder.refusal;
       assert.ok(refusal !== null, `${name} did not refuse`);
-      assert.match(refusal.reason, /budget/, name);
+      assert.match(refusal.reason, /too many to draw/, name);
       assert.match(refusal.reason, new RegExp(String(refusal.nodeCount)), name);
       assert.ok(refusal.routes.length > 0, `${name} refused with no route forward`);
       assert.ok(
@@ -193,13 +193,13 @@ describe('the isolated chip', () => {
     const document = documentOf({ components: [4], isolated: 30 });
     const ladder = scaleLadder(document);
     assert.equal(ladder.isolated.count, 30);
-    assert.match(ladder.isolated.label, /30 isolated issues/);
+    assert.match(ladder.isolated.label, /30 issues with no relationships/);
   });
 
   it('is singular for one, and carries nothing until it is opened', () => {
     const document = documentOf({ components: [4], isolated: 1 });
     const closed = scaleLadder(document);
-    assert.match(closed.isolated.label, /1 isolated issue,/);
+    assert.match(closed.isolated.label, /1 issue with no relationships/);
     assert.equal(closed.isolated.open, false);
     assert.deepEqual([...closed.isolated.issues], []);
 

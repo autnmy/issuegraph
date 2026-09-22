@@ -75,6 +75,7 @@ import { pickerStylesheet } from '../picker/styles.ts';
 import type { PickerWords } from '../picker/words.ts';
 import { scaleLadder } from '../scale/ladder.ts';
 import { mountStylesheet } from './chrome.ts';
+import { renderWorkspaceSkeleton } from './skeleton.ts';
 import type { FirstPassPhase } from './firstpass.ts';
 import {
   type HostCommand,
@@ -1215,13 +1216,18 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
    */
   const sceneFor = (zoneName: string): Scene | null => {
     if (drawn === null) return null;
-    if (zoneName === 'rail') return renderViewer(drawn.rail.document, { projection: 'linear', theme: theme() }).scene;
+    // `frame: false` MIRRORS WHAT IS DRAWN. These rebuild a scene to answer a
+    // navigation question, and a scene built from different options than the
+    // markup is a second opinion about the surface. See `SceneOptions.frame`.
+    if (zoneName === 'rail')
+      return renderViewer(drawn.rail.document, { projection: 'linear', theme: theme(), frame: false, dockLegend: true })
+        .scene;
     if (zoneName !== 'canvas') return null;
     if (current.canvas === 'tree')
-      return renderViewer(withoutChrome(drawn.viewer), { projection: 'tree', theme: theme(), chrome: false }).scene;
+      return renderViewer(withoutChrome(drawn.viewer), { projection: 'tree', theme: theme(), chrome: false, frame: false, dockLegend: true }).scene;
     const ladder = scaleLadder(drawn.viewer, state.scale);
     return ladder.tier === 'direct'
-      ? renderViewer(ladder.canvas, { projection: 'graph', theme: theme(), chrome: false }).scene
+      ? renderViewer(ladder.canvas, { projection: 'graph', theme: theme(), chrome: false, frame: false, dockLegend: true }).scene
       : null;
   };
 
@@ -1266,6 +1272,28 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   const render = (): void => {
     if (destroyed) return;
     const snapshot = store.getSnapshot();
+    // THE FIRST READ IS IN FLIGHT, SO THERE IS NOTHING TO SAY YET. Drawn over
+    // the store's empty document, the workspace announced an empty backlog —
+    // "no relationships yet", no rows — about issues nobody had read. The
+    // placeholder holds the three zones' shape instead, and the first render
+    // after the load replaces it.
+    //
+    // `hydrating` ONLY, NEVER `idle`. A store nobody has asked to load is not
+    // loading, and a host that fills its store another way (or a test that
+    // never hydrates) must still get the document it has. A REHYDRATE is not
+    // this state either: the store keeps its last good document and stays
+    // `ready`, so a refresh never blanks the surface.
+    if (snapshot.status === 'hydrating') {
+      const skeleton = renderWorkspaceSkeleton({
+        label: current.words.loading,
+        theme: current.theme === undefined ? undefined : theme(),
+        themeSelector: current.themeSelector,
+      });
+      const skeletonSheet = [skeleton.styles, mountStylesheet].join('\n');
+      if (styles.textContent !== skeletonSheet) styles.textContent = skeletonSheet;
+      surface.innerHTML = skeleton.markup;
+      return;
+    }
     const document_ = landed();
     // WHAT THE STORE IS NOT SHOWING, computed before the reconcile rather than
     // beside the edges below, because the reconcile is the first reader of it:
@@ -1692,6 +1720,15 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
           selected: selectedKey(state.selection),
           // The rail beside this canvas draws the panel's one header.
           chrome: false,
+          // THE WORKSPACE RULES ITS OWN ZONES OFF, so the viewer draws no
+          // frame of its own here: the rail track carries `border-right`, the
+          // canvas toolbar carries `border-bottom`, and a second edge one
+          // pixel away reads as a doubled hairline. See `SceneOptions.frame`.
+          frame: false,
+          // §16b's KEY, KEPT IN VIEW. It explains every line and station on this
+          // zone, and below a scroll it was the one thing a reader had to leave the
+          // reading to reach. See `SceneOptions.dockLegend`.
+          dockLegend: true,
         }).markup;
         // Re-inserted rather than re-rendered: the row is already assembled,
         // and rebuilding it here would be a second place that decides what it
@@ -1704,6 +1741,13 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         // emptied husk here left a sticky padded band with a border and no
         // content over the tree. Reading the element rather than re-deriving
         // the condition keeps the rule in one place.
+        // THE TREE ALWAYS DRAWS A KEY, WHATEVER THE GRAPH'S TIER SAID. render.ts
+        // set `data-canvas-legend` from the scale ladder, which is a fact about
+        // the GRAPH — and this branch has just replaced the graph with a
+        // projection that has no budget and no refusal. Left as it was, a tree
+        // over a backlog past the node budget reported no key in this zone and
+        // the rail drew a second one beside the one on screen.
+        surface.firstElementChild?.setAttribute('data-canvas-legend', 'drawn');
         if (isolated !== null) canvas.append(isolated);
         if (toolbar !== null && toolbar.childElementCount > 0) canvas.prepend(toolbar);
         const states = new Map(
@@ -1732,6 +1776,8 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
 
     const rail = zone('rail');
     if (rail !== null) rail.scrollTop = scrollTop;
+    // AFTER the subtree is in place, because it measures what was just drawn.
+    dockRailLegend();
     // RE-QUERIED, NEVER REUSED: `surface.innerHTML` above replaced the subtree,
     // so the element captured from is gone. A region that shrank clamps this on
     // assignment, and one the redraw removed — the audit going clean — is
@@ -2163,6 +2209,49 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
 
   const onCompositionEnd = (event: Event): void => {
     readInput(event);
+  };
+
+  /**
+   * Move the rail's docked legend clear of this zone's own footer.
+   *
+   * TWO THINGS ARE PINNED TO ONE EDGE, AND ONLY THIS PACKAGE KNOWS BOTH. The
+   * viewer docks its legend against the bottom of whatever scrollport it was
+   * given (`SceneOptions.dockLegend`), with `bottom: 0` as the default; this
+   * zone already holds `.ig-rail-footer` there. Left at the default the two
+   * stack in the same place, and the footer — later in the subtree and carrying
+   * its own layer — paints over the bottom of the key. The viewer cannot fix
+   * that: it has never been told the footer exists.
+   *
+   * MEASURED, NOT DERIVED FROM THE TOKENS. The footer is one line of type at a
+   * known size inside known padding, so its height looks like something the
+   * stylesheet could state — and then the rail narrows, `5 with no
+   * relationships` and its control wrap to two lines, and the written-down
+   * number is quietly wrong by a line. The same argument `onScroll` makes about
+   * the header it measures rather than derives.
+   *
+   * ON EVERY REDRAW AND ON EVERY RESIZE, because the wrap depends on the width
+   * and a resize alone redraws nothing. The observer is guarded on the
+   * constructor rather than assumed: this module renders into whatever document
+   * a host hands it, and a host rendering server-side or in a minimal DOM has
+   * no need of the correction — the default is simply left in place.
+   */
+  const dockRailLegend = (): void => {
+    const rail = zone('rail');
+    const legend = rail?.querySelector<HTMLElement>('.ig-viewer > .ig-legend');
+    if (rail === null || legend == null) return;
+    const footer = rail.querySelector('.ig-rail-footer');
+    // RE-OBSERVED EVERY REDRAW, because `surface.innerHTML` replaced the zone and
+    // the element the last call watched is gone. `disconnect` first so the
+    // observer never accumulates dead targets.
+    if (railResize !== null) {
+      railResize.disconnect();
+      railResize.observe(rail);
+    }
+    const clearance = footer === null ? 0 : Math.ceil(footer.getBoundingClientRect().height);
+    // AN INLINE STYLE, because it is a measurement rather than a rule: it is
+    // true of this rail at this width and of nothing else, which is exactly what
+    // a stylesheet cannot say.
+    legend.style.bottom = `${String(clearance)}px`;
   };
 
   const onScroll = (event: Event): void => {
@@ -2892,11 +2981,26 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   doc.addEventListener('pointerup', onDocumentPointerUp);
   doc.addEventListener('pointercancel', onDocumentPointerUp);
 
+  /**
+   * The rail's own width, watched only so the docked legend's clearance stays
+   * true. See `dockRailLegend` for why a resize and not just a redraw.
+   *
+   * THE ELEMENT, NOT THE WINDOW. A package that reads the window cannot be
+   * dropped into someone else's page — the same rule §17j states about the
+   * density crossover and the workspace's own container query rests on. The
+   * rail can narrow because the host resized, because a sibling grew, or
+   * because a container query re-tracked the grid, and only the box itself sees
+   * all three.
+   */
+  const railResize =
+    typeof ResizeObserver === 'function' ? new ResizeObserver(() => { dockRailLegend(); }) : null;
+
   const unsubscribe = store.subscribe(schedule);
 
   /** Every listener off and every node this mount built removed. Shared by `destroy` and a failed first render. */
   const teardown = (): void => {
     unsubscribe();
+    railResize?.disconnect();
     element.removeEventListener('click', onClick);
     element.removeEventListener('input', onInput);
     element.removeEventListener('compositionend', onCompositionEnd);

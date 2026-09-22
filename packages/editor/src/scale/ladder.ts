@@ -413,12 +413,12 @@ function omittedFrom(listable: readonly Cluster[], shown: readonly ScaleCapsule[
 /** Why the canvas declined, in the reader's terms. One sentence, three cases. */
 function reasonFor(tier: ScaleTier, nodeCount: number, focused: boolean): string {
   if (focused) {
-    return `The component you focused is ${String(nodeCount)} issues, itself past this canvas's budget of ${String(GRAPH_NODE_BUDGET)}, so it is not drawing them.`;
+    return `This group has ${String(nodeCount)} issues, too many to draw here. The limit is ${String(GRAPH_NODE_BUDGET)}.`;
   }
   if (tier === 'clusters') {
-    return `${String(nodeCount)} related issues is far past this canvas's budget of ${String(GRAPH_NODE_BUDGET)} — past the cluster-only budget of ${String(CLUSTER_ONLY_BUDGET)} as well — so it is listing components and leading with search.`;
+    return `${String(nodeCount)} related issues are far too many to draw, so they are listed as groups. Search to find one.`;
   }
-  return `${String(nodeCount)} related issues is past this canvas's budget of ${String(GRAPH_NODE_BUDGET)}, so it is not drawing them.`;
+  return `${String(nodeCount)} related issues are too many to draw here. The limit is ${String(GRAPH_NODE_BUDGET)}.`;
 }
 
 function refusalFor(
@@ -434,18 +434,18 @@ function refusalFor(
   // the emptiness of this list is not something a caller has to defend against.
   const routes: ScaleRoute[] = [];
   if (hasCapsules) {
-    routes.push({ kind: 'focus-cluster', label: 'Focus one component to draw it on its own.' });
+    routes.push({ kind: 'focus-cluster', label: 'Pick a group to draw just that group.' });
   }
   if (focused) {
-    routes.push({ kind: 'clear-focus', label: 'Return to every component.' });
+    routes.push({ kind: 'clear-focus', label: 'Go back to all groups.' });
   }
   routes.push({
     kind: 'search',
-    label: 'Search for an issue to focus the component around it.',
+    label: 'Search for an issue to draw its group.',
   });
   routes.push({
     kind: 'order-rail',
-    label: 'The order list is complete at any size — nothing about the sequence is refused here.',
+    label: 'The list always shows the full order.',
   });
   return {
     reason: reasonFor(tier, nodeCount, focused),
@@ -562,7 +562,7 @@ export function scaleLadder(
   const isolatedIssues = document.issues.filter((issue) => !related.has(issue.key));
   const isolated: IsolatedChip = {
     count: isolatedIssues.length,
-    label: `${String(isolatedIssues.length)} isolated ${isolatedIssues.length === 1 ? 'issue' : 'issues'}, with no relationship to draw`,
+    label: `${String(isolatedIssues.length)} ${isolatedIssues.length === 1 ? 'issue' : 'issues'} with no relationships`,
     open: state.isolatedOpen,
     issues: state.isolatedOpen ? isolatedIssues : [],
   };

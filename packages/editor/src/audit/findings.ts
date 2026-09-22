@@ -646,7 +646,7 @@ function cycleFindings(graph: AuditGraph): AuditFinding[] {
       finding(
         'cycle',
         members,
-        `${members.join(' · ')} form a blocked-by cycle; no member can ever become ready`,
+        `${members.join(', ')} block each other in a loop, so none of them can start.`,
         // ASKED PER COMPONENT AND STILL A PASS-THROUGH. The reader decides
         // whether there IS a walk; this module neither computes nor
         // second-guesses that. Asking by KEY rather than by position is what
@@ -714,7 +714,7 @@ function staleBlockerFindings(
       finding(
         'stale-blocker',
         [edge.from, edge.to].sort(),
-        `${edge.from} is blocked-by ${effective}${via}, which is closed; readiness is already satisfied`,
+        `${edge.from} is blocked by ${effective}${via}, which is closed, so it no longer blocks anything.`,
         null,
         // THE DECLARER'S EDGE, which is what the paragraph above already says
         // this finding's remedy sits on. Now it is carried rather than only
@@ -784,7 +784,7 @@ function deadDuplicateFindings(
       finding(
         'dead-duplicate-ref',
         [edge.from, edge.to, canonical].sort(),
-        `${edge.from} is duplicate-of ${canonical}${via}, which is closed; its work is excluded from the order and tracked nowhere`,
+        `${edge.from} is a duplicate of ${canonical}${via}, which is closed. Nothing tracks this work now.`,
         null,
         // THE DECLARED `duplicate-of`, NOT the chain's end. `Repoint or clear`
         // acts on the edge the reader wrote; `canonical` may be several hops
@@ -823,7 +823,7 @@ function encodingRefusedFindings(refusals: readonly EncodingRefusal[]): AuditFin
       finding(
         'encoding-refused',
         [refusal.ref],
-        `${refusal.ref} declares relationships the reader refused${because}; the edges it declares are incomplete and cannot be trusted until it parses`,
+        `${refusal.ref} has relationships that could not be read${because}. Fix them so they count.`,
       ),
     );
   }

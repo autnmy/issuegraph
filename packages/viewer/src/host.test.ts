@@ -77,10 +77,10 @@ describe('the host-facts port', () => {
     // reading and the accent was spent nowhere.
     const markup = renderViewer(hostedFixtureDocument).markup;
     assert.match(markup, /<span class="ig-count-chip" data-count="ranked">2 ranked<\/span>/);
-    assert.match(markup, /<span class="ig-count-chip" data-count="ready">2 ready now · cap 2<\/span>/);
+    assert.match(markup, /<span class="ig-count-chip" data-count="ready">2 ready now · 2 at a time<\/span>/);
     assert.match(markup, /<span class="ig-count-chip" data-count="held">2 held<\/span>/);
     const capOnly = renderViewer({ ...fixtureDocument, host: { concurrencyCap: 3 } }).markup;
-    assert.match(capOnly, /<span class="ig-count-chip" data-count="ready">cap 3<\/span>/);
+    assert.match(capOnly, /<span class="ig-count-chip" data-count="ready">3 at a time<\/span>/);
     // THE COUNT CHIP, not the word. A provenance sentence says "ranked in tier"
     // now, so a bare substring search reads the explanation as a tally.
     assert.equal(capOnly.includes('data-count="ranked"'), false);
@@ -143,7 +143,7 @@ describe('the host-facts port', () => {
     const markup = renderViewer(hostedFixtureDocument).markup;
     assert.match(
       markup,
-      /<span class="ig-badge" data-caveat="preview-only"><span class="ig-glyph" aria-hidden="true">◐<\/span><span>preview-only<\/span><\/span>/,
+      /<span class="ig-badge" data-caveat="preview-only"><span class="ig-glyph" aria-hidden="true">◐<\/span><span>estimated<\/span><\/span>/,
     );
     assert.match(
       markup,
@@ -154,15 +154,15 @@ describe('the host-facts port', () => {
     const tree = renderViewer(hostedFixtureDocument, { projection: 'tree' }).markup;
     assert.match(
       tree,
-      /<p class="ig-caveat" data-caveat="disagree"><span class="ig-turn" aria-hidden="true">↳<\/span><span>ranked by label:P3 \(your mapping\) · frontmatter declares <s class="ig-strike">priority: 1<\/s><\/span><\/p>/,
+      /<p class="ig-caveat" data-caveat="disagree"><span class="ig-turn" aria-hidden="true">↳<\/span><span>Using label:P3 \(your mapping\) · frontmatter says <s class="ig-strike">priority: 1<\/s><\/span><\/p>/,
     );
     // A GRAPH CARD DRAWS THE CHIP AND CARRIES THE SENTENCE ON ITS NAME. The
     // card grows with its contents now, so the chip fits; the sentence stays on
     // the label and the tooltip, because the list projection prints it and
     // §16b's spine card draws a chip.
     const graph = renderViewer(hostedFixtureDocument, { projection: 'graph' }).markup;
-    assert.match(graph, /data-ig-key="103"[^>]*aria-label="[^"]*preview-only: query 5/);
-    assert.match(graph, /data-ig-key="103"[^>]*title="preview-only: query 5/);
+    assert.match(graph, /data-ig-key="103"[^>]*aria-label="[^"]*estimated: query 5/);
+    assert.match(graph, /data-ig-key="103"[^>]*title="estimated: query 5/);
     // AND A NODE THE RAIL DOES NOT LABEL carries it too: a footer (tracker-held)
     // issue has no rail row, so its canvas node is the only mark the graph draws
     // for it — the caveat rides that node's name beside the hold reason.
@@ -174,35 +174,38 @@ describe('the host-facts port', () => {
     };
     const canvas = renderViewer(footerCaveat, { projection: 'graph' }).markup;
     const node = canvas.match(/<li class="ig-rail-row" data-ig-key="105"[^>]*>/)?.[0] ?? '';
-    assert.match(node, /aria-label="[^"]*claimed by another run · preview-only: query 2 fell back/);
+    assert.match(node, /aria-label="[^"]*claimed by another run · estimated: query 2 fell back/);
     assert.equal(canvas.indexOf('data-ig-key="105"') === canvas.lastIndexOf('data-ig-key="105"'), true, 'the footer issue was drawn twice');
   });
 
-  it('labels a footer entry with the runner word and names the words beside the count', () => {
-    // §16a's footer entries are ONE LINE EACH — a label chip, a title and an
-    // identity — because they are not facts about the work and so earn neither
-    // a rank nor an explanation block. The heading counts them and the runner's
-    // own words sit to its right, rather than the heading having to list the
-    // reasons inside it.
+  it('labels a footer entry with the runner word and says why, on screen', () => {
+    // A LABEL CHIP, THE NAME, AND THE HOST'S REASON AS A VISIBLE LINE. The
+    // reason used to ride only the row's `title`, so the group showed issues a
+    // reader could not account for — nothing on screen said one was taken and
+    // another waiting on a person.
     const markup = renderViewer(hostedFixtureDocument).markup;
     assert.match(markup, /<span class="ig-badge" data-hold="claimed">claimed<\/span>/);
-    // THE HEADING COVERS BOTH FAMILIES. §16a's own group lists a duplicate
-    // under "held by the runner", but §16d's table is explicit that a duplicate
-    // is a different fact — canonical elsewhere, never worked — so that wording
-    // said something untrue about half the rows beneath it.
+    assert.match(markup, /<p class="ig-footer-why">[^<]+<\/p>/, 'the reason is not drawn');
+    // THE HEADING COVERS BOTH FAMILIES. §16d's table is explicit that a
+    // duplicate is a different fact from a hold, so the sentence names both.
+    assert.match(markup, /<p class="ig-header-label ig-footer-title">Not in the order<\/p><span class="ig-count-chip" data-count="footer">2 held<\/span>/);
     assert.match(
       markup,
-      /<p class="ig-footer-title">2 outside the order — held by the runner, or never worked<\/p>/,
+      /<p class="ig-footer-note">Held back, or a copy of another issue\. Pick one to see why\.<\/p>/,
     );
-    assert.match(markup, /<span class="ig-footer-labels">claimed<\/span>/);
-    // With no host words the labels are simply absent, and the heading is what
-    // it always was.
+    // THE FLOATING LEGEND OF HOLD LABELS IS GONE: every row carries its own.
+    assert.equal(markup.includes('ig-footer-labels'), false);
     const bare = renderViewer(fixtureDocument).markup;
-    assert.match(
-      bare,
-      /<p class="ig-footer-title">2 outside the order — held by the runner, or never worked<\/p>/,
-    );
+    assert.match(bare, /<p class="ig-header-label ig-footer-title">Not in the order<\/p>/);
     assert.equal(bare.includes('ig-footer-labels'), false);
+  });
+
+  it('names a duplicate\u2019s canonical once, in words', () => {
+    // The `→ 512` chip and the sentence said the same thing twice, and the
+    // arrow read as a relationship of its own.
+    const markup = renderViewer(fixtureDocument).markup;
+    assert.match(markup, /<p class="ig-footer-why">The original gets worked instead\.<\/p>/);
+    assert.equal(/<span class="ig-id">→ /.test(markup), false);
   });
 
   it('selects the running issue on a NOW row click and leaves the refresh control alone', () => {

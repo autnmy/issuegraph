@@ -81,19 +81,20 @@ describe('the linear projection', () => {
     assert.notEqual(footerAt, -1);
     assert.ok(trackerHeld > footerAt, 'a tracker-held slot stayed in the ranked list');
     assert.equal(/class="ig-rank"/.test(row(markup, '105')), false);
-    // §16a's footer entries are ONE LINE — a chip, a title, an identity — so the
-    // reason rides the name rather than taking a paragraph in a group whose
-    // whole point is that these are not facts about the work.
+    // THE REASON IS ON SCREEN, not in a tooltip: it is the one thing a footer
+    // entry exists to say, and a `title` is invisible until hovered and never
+    // reached on touch. It stays in the accessible name too.
     assert.match(row(markup, '105'), /aria-label="[^"]*claimed by another run"/);
-    assert.match(row(markup, '105'), /title="claimed by another run"/);
+    assert.match(row(markup, '105'), /<p class="ig-footer-why">claimed by another run<\/p>/);
+    assert.equal(/ title="claimed by another run"/.test(row(markup, '105')), false, 'the reason is drawn twice');
   });
 
   it('renders a duplicate in the footer naming its canonical', () => {
     const markup = render();
     assert.ok(markup.indexOf('data-ig-key="106"') > markup.indexOf('ig-footer'));
-    assert.match(row(markup, '106'), /<span class="ig-badge" data-edge="duplicate-of">duplicate<\/span>/);
-    assert.match(row(markup, '106'), /<span class="ig-id">→ 105<\/span>/);
-    assert.match(row(markup, '106'), /aria-label="[^"]*duplicate of 105, never worked"/);
+    assert.match(row(markup, '106'), /<span class="ig-badge" data-hold="duplicate">duplicate<\/span>/);
+    assert.match(row(markup, '106'), /<p class="ig-footer-why">The original gets worked instead\.<\/p>/);
+    assert.match(row(markup, '106'), /aria-label="[^"]*duplicate of 105, which gets worked instead"/);
   });
 
   it('renders a together unit as one row naming both members', () => {
@@ -238,7 +239,7 @@ describe('the linear projection', () => {
     // text.
     assert.match(
       row(render(), '102'),
-      /effective priority <span class="ig-id">P3 -&gt; 0<\/span><span> — inherited from <span class="ig-id">101<\/span>, which it blocks/,
+      /Priority raised <span class=\"ig-id\">P3 -&gt; 0<\/span><span> because it blocks <span class=\"ig-id\">101<\/span>/,
     );
     // And the same fact as a chip on the badge row, which is where a reader
     // scanning a column of rows meets it.
@@ -247,13 +248,13 @@ describe('the linear projection', () => {
 
   it('renders the other two provenance forms', () => {
     const markup = render();
-    assert.match(row(markup, '101'), /matched ordered query 1 · <span class="ig-id">label:P1<\/span>/);
+    assert.match(row(markup, '101'), /Picked by query 1 · <span class="ig-id">label:P1<\/span>/);
     // NEUTRAL. This arm means only that no ordering query matched and the issue
     // stayed in its tier; it does NOT mean the priority was absent, and §16a's
     // own row — which happens to be one where it was — is not a licence to say
     // so about every row that reaches this arm.
-    assert.match(row(markup, '103'), /no ordered query matched — ranked in tier <span class="ig-id">P2<\/span>/);
-    assert.match(row(markup, '103'), /<span class="ig-badge" data-priority="tier">P2 · tier<\/span>/);
+    assert.match(row(markup, '103'), /No query matched, so it goes by its priority, <span class="ig-id">P2<\/span>/);
+    assert.match(row(markup, '103'), /<span class="ig-badge" data-priority="tier">P2<\/span>/);
   });
 
   it('links an issue only when the host supplied a URL', () => {
@@ -313,7 +314,7 @@ describe('the linear projection', () => {
   it('counts isolated issues into one chip instead of rendering them', () => {
     // 110 is in no slot and on no edge: 248 such dots carry no information, so
     // the design collapses them to a count.
-    assert.match(render(), /1 issue is in no slot and declare/);
+    assert.match(render(), /1 more issue has no relationships and no place/);
   });
 
   it('is deterministic — two renders of one document agree byte for byte', () => {
@@ -337,7 +338,7 @@ describe('the linear projection', () => {
   });
 
   it('names a duplicate with the vocabulary label rather than a second spelling', () => {
-    assert.match(row(render(), '106'), /aria-label="[^"]*duplicate of 105, never worked"/);
+    assert.match(row(render(), '106'), /aria-label="[^"]*duplicate of 105, which gets worked instead"/);
   });
 
   it('marks the selected row and gives the focused row the tab stop', () => {

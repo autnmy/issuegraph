@@ -75,7 +75,23 @@ export const workspaceStylesheet = `
     1fr
     calc(var(--ig-char-width) * 40);
   grid-template-rows: auto 1fr;
-  gap: var(--ig-space);
+  /* NO GAP, BECAUSE THE SEAMS ARE DRAWN RULES AND A RULE HAS TO REACH ITS
+     CORNER. The tracks used to be separated by --ig-space, and every rule on
+     this surface stopped short of the one it should have met: the header's
+     border-bottom ran the full width, then a 12px band of ground, and only
+     then did the rail's border-right and the inspector's border-left begin —
+     three lines that never touched. The canvas toolbar's border-bottom had the
+     same defect on the other axis, ending 12px shy of the rail rule at one end
+     and the inspector rule at the other, so the zone it captions read as a
+     floating band rather than as the top row of a column.
+
+     THE BREATHING ROOM DID NOT GO ANYWHERE; IT MOVED INSIDE. A gap puts the
+     space OUTSIDE the zone, where it separates the rule from its corner. Each
+     zone's own content already carries its inset — the rail's rows and footer
+     take --ig-space-wide, the canvas toolbar and the inspector take
+     --ig-space — so the measured gutter between a rule and the nearest text is
+     unchanged in kind, and what is gone is only the dead band the rules were
+     stopping at. */
   background: var(--ig-bg);
   color: var(--ig-text-body);
   font-family: var(--ig-font-ui);
@@ -223,6 +239,18 @@ export const workspaceStylesheet = `
   /* The rail scrolls; the window slides underneath. */
   overflow-y: auto;
   border-right: var(--ig-stroke) solid var(--ig-line);
+  /* A COLUMN, SO THE FOOTER CAN TAKE THE SPACE A SHORT ORDER LEAVES. See
+     .ig-rail-footer for why sticky alone never did. */
+  display: flex;
+  flex-direction: column;
+}
+
+/* NOTHING IN THE RAIL SHRINKS. A scrolling flex column will squeeze its
+   children to fit before it scrolls them, and the rail's virtualization reads
+   row positions off a fixed pitch — a squeezed viewer would put every offset on
+   the wrong row. Every child keeps its natural height and the zone scrolls. */
+.ig-zone[data-zone='rail'] > * {
+  flex: none;
 }
 
 /* §17a'S RAIL FOOTER, AND IT IS THE ZONE'S LAST ROW. The frame ends the rail
@@ -232,15 +260,16 @@ export const workspaceStylesheet = `
    fact you have to go back for. .ig-canvas-toolbar below pins itself against
    the other edge for exactly this reason and is the shape copied here.
 
-   IT ANCHORS ON A SHORT RAIL TOO, WITH NO FLEX LAYOUT, and this is recorded
-   because it looks as though it should not. A sticky box is offset within its
-   CONTAINING BLOCK to stay in the scrollport, and this zone's containing block
-   is the grid area — the full track height — not the height of the rows inside
-   it. So content shorter than the track still leaves the footer against the
-   bottom edge. Measured: rows 416px in a 445px track, footer flush, no flex
-   rule present. A review round proposed a column wrapper with an expanding row
-   to "push the footer down"; it was built, measured against this, changed
-   nothing, and was removed.
+   ON A SHORT RAIL IT IS PUSHED DOWN, NOT STUCK DOWN. margin-top: auto in the
+   zone's column takes whatever height the order leaves, so the footer sits on
+   the bottom edge whether the rail scrolls or not. An earlier note here said
+   sticky alone anchored a short rail and that a column wrapper "changed
+   nothing" — that was measured with the rows at 416px in a 445px track, where
+   the gap left was about one footer high and flush and not-flush look alike.
+   Sticky only moves a box that would otherwise leave the scrollport, so on a
+   short rail it never moved at all: the footer sat directly under the last
+   row with the rest of the zone empty beneath it. Sticky still does the work
+   once the rail overflows; the margin does it before.
 
    OPAQUE, BECAUSE IT OCCLUDES. Rows slide under it, so a transparent ground
    would show the order through the count. That is also why the OPEN LIST IS NOT
@@ -253,6 +282,7 @@ export const workspaceStylesheet = `
    wrong row. The list is drawn in the canvas zone, which has no such
    arithmetic. */
 .ig-rail-footer {
+  margin-top: auto;
   position: sticky;
   bottom: 0;
   z-index: 1;
@@ -1516,6 +1546,28 @@ export const workspaceStylesheet = `
   outline-offset: var(--ig-space-tight);
 }
 
+/* ONE KEY PER SURFACE, AND THE CANVAS KEEPS IT.
+
+   Both zones hold a viewer, so both draw the grammar legend, and this surface
+   showed the same five line styles twice side by side at the same moment. It is
+   the defect chrome: false already answers one line higher — §16's panel has
+   ONE header — and render.ts records the reasoning for which zone yields:
+   four of the five entries are LINE styles and the rail draws no lines, only
+   badges, so the key belongs beside the strokes it is about. It is the cheaper
+   zone to spend it in, too: one or two wrapped rows of a wide column against
+   four rows of a 390 rail the order needs.
+
+   REACHING A VIEWER CLASS, FROM INSIDE THIS SURFACE'S OWN ROOT, FOR A STATE
+   THAT PACKAGE DOES NOT MODEL — which is the exemption reevaluate/styles.ts
+   already states and uses for the greyed rail. The viewer cannot answer this:
+   each instance is correct on its own and the duplication only exists in the
+   composition, which is this package's. Nothing here changes how a legend looks
+   anywhere else, and the markup is untouched — the rail still RENDERS its key,
+   so the two rules below can hand it back without re-rendering anything. */
+.ig-workspace[data-canvas-legend='drawn'] .ig-zone[data-zone='rail'] .ig-legend {
+  display: none;
+}
+
 /* THE MIDDLE LAYOUT: the inspector lifts, and the rail does not move.
 
    IT IS PLACED IN THE CANVAS'S GRID AREA, NOT POSITIONED OVER IT. An absolute
@@ -1577,6 +1629,16 @@ export const workspaceStylesheet = `
    330 the wide layout gives it, so the zone that yields in between is not
    yielding here at all. That is the order the rule names. */
 @container ig-workspace (width < 1120px) {
+  /* THE RAIL TAKES THE KEY BACK, BECAUSE THERE IS NO CANVAS TO CARRY IT. Below
+     this width §17k collapses the canvas to a four-character strip, so the zone
+     the rule above defers to is not on screen — and the station fills the rail
+     draws itself would have no key at all. display: flex rather than revert
+     because that is what .ig-legend is; the value has to be restated, which is
+     the price of a single-sided condition and is paid here in one place. */
+  .ig-workspace[data-canvas-legend='drawn'] .ig-zone[data-zone='rail'] .ig-legend {
+    display: flex;
+  }
+
   .ig-workspace {
     grid-template-areas:
       'header header header'

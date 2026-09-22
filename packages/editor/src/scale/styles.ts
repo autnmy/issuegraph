@@ -205,13 +205,40 @@ export const scaleLadderStylesheet = `
   font-variant-numeric: tabular-nums;
 }
 
+/* A PANEL, NOT A LOOSE COLUMN OF TEXT. With the control moved to the rail
+   footer (§17a) this wrapper was left holding an unstyled ol at zero inset:
+   it began hard against the zone's own rule, ran on from the graph above it
+   with nothing between them, and read as content that had escaped a container
+   rather than as the thing the reader had just asked to see.
+
+   THE TOP RULE AND THE PADDING ARE THE CANVAS TOOLBAR'S, because this is the
+   same kind of band one row lower — a full-bleed section of the canvas zone,
+   not a card floating on it. --ig-bg for the same reason the toolbar takes
+   it: the ground this zone already paints, so the two read as one surface. */
+.ig-ladder-isolated {
+  border-top: var(--ig-stroke) solid var(--ig-line);
+  padding: var(--ig-space) var(--ig-space-wide);
+}
+
+/* A SECTION HEAD IN THE READ-OUT VOICE the canvas caption and the rail footer
+   count already use on this surface — mono, micro, muted, tracked — because it
+   carries the same kind of fact and a heavier treatment would make a list of
+   issues nobody has to act on the loudest thing in the zone. */
+.ig-isolated-caption {
+  margin: 0 0 var(--ig-space-tight);
+  color: var(--ig-text-muted);
+  font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-micro);
+  letter-spacing: var(--ig-tracking-group);
+  text-transform: uppercase;
+}
+
 .ig-isolated-list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--ig-space-tight);
 }
 
 /* A ROW PER ENTRY, WITH A GAP THE MARKUP DOES NOT SUPPLY. The element helper
@@ -219,16 +246,41 @@ export const scaleLadderStylesheet = `
    rendered as one run of text — #492Audit log pagination. Latent until §17a
    moved the CONTROL to the rail footer and made this list the thing a reader is
    sent to, rather than a chip's afterthought. */
+/* SEPARATED THE WAY EVERY OTHER LIST OF ISSUES ON THIS SURFACE IS, with a
+   hairline between rows rather than a gap between them. A gap left five lines
+   of text floating in a column; the rule is what makes them read as rows, and
+   it is the treatment the viewer's own order rows already carry. Last row
+   included would double the zone's next edge, so it stops one short. */
 .ig-isolated-list li {
   display: flex;
   gap: var(--ig-space-tight);
   align-items: baseline;
   min-width: 0;
+  padding: var(--ig-space-tight) 0;
 }
 
+.ig-isolated-list li + li {
+  border-top: var(--ig-stroke) solid var(--ig-line);
+}
+
+/* THE KEY IN ITS OWN COLUMN, so five titles start on one edge rather than
+   wherever their number happened to end. tabular-nums and a measure in
+   characters are what the capsule's own count line already uses for the same
+   reason: a ragged left edge on a column of ids reads as a mistake. */
 .ig-isolated-list .ig-id {
   font-family: var(--ig-font-mono);
+  font-size: var(--ig-font-size-small);
+  font-variant-numeric: tabular-nums;
   color: var(--ig-text-muted);
   flex: none;
+  min-inline-size: calc(var(--ig-char-width) * 5);
+}
+
+/* The title carries the row, so it takes the body colour and wraps rather than
+   setting the row's width — the rule .ig-capsule-name states one file up. */
+.ig-isolated-list .ig-title {
+  color: var(--ig-text);
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 `;

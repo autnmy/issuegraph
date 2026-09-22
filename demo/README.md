@@ -6,8 +6,15 @@ installation, no auth, no backend.** Every edit is client-side and saved
 nowhere; reload and the seed comes back.
 
 **The page lands on the design's own scenario** — the §16a frame of
-`Descant Dashboard.dc.html` in the design kit — and loads the dense backlog
-only when asked. See [The seed](#the-seed) for what that means and why.
+`Descant Dashboard.dc.html` in the design kit, labelled **Sample** on the
+page — and loads the dense backlog only when asked. See
+[The seed](#the-seed) for what that means and why.
+
+**The page's own copy names none of that.** The controls are worded for a
+first-time visitor who has read no specification: plain US English, the internal
+key never printed, and every section reference left in this file where it is
+useful. The scenario KEYS (`comp`, `backlog`, `adoption`) are unchanged and are
+what the tests and every `data-ig-value` still address.
 
 ```sh
 pnpm install
@@ -101,7 +108,8 @@ output, escaped by `renderMarkup` — is the mount's now, not this page's.
 - **The change summary** after a write lands — `diffOrder`'s facets, through the
   editor's `summaryOf` — and the order reading **held** while a write is in
   flight. Optimistic rendering is allowed; optimistic re-ordering is not.
-- **Two themes and a version stamp**, below.
+- **Two themes and a version stamp**, below. The page labels them **Dark** and
+  **Light**; the values are still `default` and `paper`.
 
 ## The seed
 
@@ -178,8 +186,8 @@ the compact spine-only preview §16b calls for, and the graph expanded (1180) �
 against a fixed clock, so a screenshot of it is a reproduction rather than a
 moment.
 
-**The dense layer** (#100 onward) loads from the **Document** control — "the
-big backlog" — and is generated deterministically: the same document on every
+**The dense layer** (#100 onward) loads from the **Backlog** control — "Big",
+inside the collapsed **Try a scenario** panel — and is generated deterministically: the same document on every
 load, so a screenshot is a reproduction. `seed.test.ts` pins what it has to
 contain, against the package constants that decide it: a component past
 `GRAPH_NODE_BUDGET` on its own, a component small enough to draw, a capsule

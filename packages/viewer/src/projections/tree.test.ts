@@ -85,7 +85,7 @@ describe('the tree projection', () => {
     });
 
     assert.equal(levelOf(markup, '1'), '1');
-    assert.match(markup, /decomposed from 900, which is outside this document/);
+    assert.match(markup, /decomposed from 900, which is not in this backlog/);
   });
 
   it('draws every member once and diagnoses a malformed cycle rather than recursing', () => {
@@ -173,7 +173,7 @@ describe('the tree projection', () => {
     // that says where it came from — and is not also nested under `1`.
     assert.equal(missingFirst.document.outOfSetOrigins.get('3'), '900');
     assert.equal(levelOf(markup, '3'), '1');
-    assert.match(markup, /decomposed from 900, which is outside this document/);
+    assert.match(markup, /decomposed from 900, which is not in this backlog/);
 
     // And the reverse order resolves the other way, with no out-of-set claim.
     const presentFirst = normalizeDocument({

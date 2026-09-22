@@ -72,7 +72,9 @@ describe('every readable byte comes from the host or from the document', () => {
       'both bodies reference file 1',
       '200',
       '201',
-      'blocked-by',
+      // The viewer's vocabulary label for the kind — the same words every badge
+      // and legend on the surface use, so it is not a word of this surface's own.
+      'blocked by',
     ]);
     assert.deepEqual(
       texts.filter((text) => !allowed.has(text)),
