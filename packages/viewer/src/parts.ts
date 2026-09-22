@@ -278,23 +278,6 @@ export function holdLine(hold: ViewerHold): ElementSpec {
 }
 
 /**
- * The runner's own words for the holds a footer collects — `claimed · parked` —
- * so the footer title can name them the way the design does. Empty when no
- * hold carries a label, which keeps the title exactly as it was before labels
- * existed.
- */
-export function footerLabels(slots: readonly ViewerSlot[]): string {
-  const labels: string[] = [];
-  for (const slot of slots) {
-    for (const hold of slot.holds) {
-      if (hold.family !== 'tracker' || hold.label === undefined || hold.label === '') continue;
-      if (!labels.includes(hold.label)) labels.push(hold.label);
-    }
-  }
-  return labels.join(' · ');
-}
-
-/**
  * The summary line and the freshness stamp — the host's numbers and the host's
  * clock, printed verbatim.
  *

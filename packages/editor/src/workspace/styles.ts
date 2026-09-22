@@ -239,6 +239,18 @@ export const workspaceStylesheet = `
   /* The rail scrolls; the window slides underneath. */
   overflow-y: auto;
   border-right: var(--ig-stroke) solid var(--ig-line);
+  /* A COLUMN, SO THE FOOTER CAN TAKE THE SPACE A SHORT ORDER LEAVES. See
+     .ig-rail-footer for why sticky alone never did. */
+  display: flex;
+  flex-direction: column;
+}
+
+/* NOTHING IN THE RAIL SHRINKS. A scrolling flex column will squeeze its
+   children to fit before it scrolls them, and the rail's virtualization reads
+   row positions off a fixed pitch — a squeezed viewer would put every offset on
+   the wrong row. Every child keeps its natural height and the zone scrolls. */
+.ig-zone[data-zone='rail'] > * {
+  flex: none;
 }
 
 /* §17a'S RAIL FOOTER, AND IT IS THE ZONE'S LAST ROW. The frame ends the rail
@@ -248,15 +260,16 @@ export const workspaceStylesheet = `
    fact you have to go back for. .ig-canvas-toolbar below pins itself against
    the other edge for exactly this reason and is the shape copied here.
 
-   IT ANCHORS ON A SHORT RAIL TOO, WITH NO FLEX LAYOUT, and this is recorded
-   because it looks as though it should not. A sticky box is offset within its
-   CONTAINING BLOCK to stay in the scrollport, and this zone's containing block
-   is the grid area — the full track height — not the height of the rows inside
-   it. So content shorter than the track still leaves the footer against the
-   bottom edge. Measured: rows 416px in a 445px track, footer flush, no flex
-   rule present. A review round proposed a column wrapper with an expanding row
-   to "push the footer down"; it was built, measured against this, changed
-   nothing, and was removed.
+   ON A SHORT RAIL IT IS PUSHED DOWN, NOT STUCK DOWN. margin-top: auto in the
+   zone's column takes whatever height the order leaves, so the footer sits on
+   the bottom edge whether the rail scrolls or not. An earlier note here said
+   sticky alone anchored a short rail and that a column wrapper "changed
+   nothing" — that was measured with the rows at 416px in a 445px track, where
+   the gap left was about one footer high and flush and not-flush look alike.
+   Sticky only moves a box that would otherwise leave the scrollport, so on a
+   short rail it never moved at all: the footer sat directly under the last
+   row with the rest of the zone empty beneath it. Sticky still does the work
+   once the rail overflows; the margin does it before.
 
    OPAQUE, BECAUSE IT OCCLUDES. Rows slide under it, so a transparent ground
    would show the order through the count. That is also why the OPEN LIST IS NOT
@@ -269,6 +282,7 @@ export const workspaceStylesheet = `
    wrong row. The list is drawn in the canvas zone, which has no such
    arithmetic. */
 .ig-rail-footer {
+  margin-top: auto;
   position: sticky;
   bottom: 0;
   z-index: 1;

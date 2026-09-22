@@ -152,10 +152,17 @@ describe('the demo supplies every host fact the port carries', () => {
     assert.match(markup, /<span class="ig-badge" data-hold="parked">parked<\/span>/);
     assert.match(markup, /data-ig-key="487"[^]*?data-caveat="preview-only"/);
     assert.match(markup, /data-ig-key="501"[^]*?data-caveat="disagree"[^]*?ranked by label:P1 \(your mapping\) · frontmatter declares <s class="ig-strike">priority: 3<\/s>/);
-    // In footer order — the first-stated word first — which is how the rows
-    // beneath read. §16a puts them beside the count rather than inside the
-    // heading, so the heading says what the group IS and the words say why.
-    assert.match(markup, /<span class="ig-footer-labels">not eligible · claimed · parked<\/span>/);
+    // EACH ROW SAYS ITS OWN REASON, in this host's words, on screen. The
+    // legend of labels that used to float beside the count is gone: it restated
+    // the chips and explained nothing.
+    for (const [label, why] of [
+      ['claimed', 'Another worker already has it.'],
+      ['parked', 'Waiting on a decision from a person.'],
+      ['not eligible', 'No priority search matches it, so it never comes up.'],
+    ] as const) {
+      assert.match(markup, new RegExp(`data-hold="${label}">${label}</span>.*?<p class="ig-footer-why">${why.replace('.', '\\.')}</p>`));
+    }
+    assert.equal(markup.includes('ig-footer-labels'), false);
   });
 
   it('draws the pure-graph view when no host is handed across', () => {

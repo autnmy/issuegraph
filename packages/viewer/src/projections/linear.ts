@@ -25,7 +25,6 @@ import {
   edgeBadges,
   emptyState,
   evidenceBadge,
-  footerLabels,
   holdLine,
   hostHeader,
   identity,
@@ -196,26 +195,57 @@ export interface SceneOptions {
  * claim work is queued that nothing can start.
  */
 /**
- * What the footer group calls itself.
+ * What the footer group calls itself, and the one sentence that says why.
  *
- * IT COVERS TWO FAMILIES, AND SAYING "held by the runner" COVERED ONE. §16a's
- * own group lists a duplicate under that heading, but §16d's table is explicit
- * that a duplicate is a different fact — "canonical elsewhere, never worked" —
- * from a claim or a park. A document with one duplicate and no tracker hold
- * therefore read "1 held by the runner" about an issue no runner has touched.
+ * TWO LINES, NOT ONE RUN-ON HEADING. It read "4 outside the order — held by the
+ * runner, or never worked", which asked a reader to already know what a runner
+ * is and what "never worked" means for an issue that is plainly open. The count
+ * is the heading; the reason is a sentence under it, in words that need no
+ * glossary.
+ *
+ * IT COVERS SEVERAL FAMILIES, AND NAMING ONE WAS A LIE ABOUT THE OTHERS. §16d's
+ * table is explicit that a duplicate is a different fact from a claim or a
+ * park, so a document with one duplicate and no hold must not be told it is
+ * "held back". The sentence is assembled from what the group actually holds.
  * Shared by both projections, so the two cannot word one group two ways.
  */
-export function footerHeading(count: number, kinds: FooterKinds): string {
+function capitalise(text: string): string {
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
+}
+
+export function footerHeading(count: number): string {
+  return `${String(count)} not in the order`;
+}
+
+export function footerReason(kinds: FooterKinds): string | null {
   const reasons = [
-    kinds.runner ? 'held by the runner' : null,
-    kinds.neverWorked ? 'never worked' : null,
-    kinds.undrawn ? 'not drawn at this width' : null,
+    kinds.runner ? 'held back by the worker' : null,
+    kinds.neverWorked ? 'duplicates of another issue' : null,
+    kinds.undrawn ? 'linked, but not drawn at this width' : null,
   ].filter((reason): reason is string => reason !== null);
-  const tail =
-    reasons.length === 0
-      ? ''
-      : ` — ${reasons.slice(0, -1).join(', ')}${reasons.length > 1 ? ', or ' : ''}${reasons[reasons.length - 1] ?? ''}`;
-  return `${String(count)} outside the order${tail}`;
+  if (reasons.length === 0) return null;
+  const joined =
+    reasons.length === 1
+      ? (reasons[0] as string)
+      : `${reasons.slice(0, -1).join(', ')}, or ${reasons[reasons.length - 1] as string}`;
+  return `${capitalise(joined)}. Pick one to see it in full.`;
+}
+
+/**
+ * The group's head, for either projection.
+ *
+ * THE LEGEND OF HOLD LABELS THAT USED TO SIT BESIDE IT IS GONE. "not eligible ·
+ * claimed · parked", floated to the right of the count, restated the chip every
+ * row already carries and read as a second heading nobody could act on. Each
+ * row now says its own reason in full, which is the fact the legend was a
+ * poor abbreviation of.
+ */
+export function footerHead(count: number, kinds: FooterKinds): ElementSpec {
+  const reason = footerReason(kinds);
+  return element('div', { class: 'ig-footer-head' }, [
+    element('p', { class: 'ig-footer-title' }, [footerHeading(count)]),
+    reason === null ? null : element('p', { class: 'ig-footer-note' }, [reason]),
+  ]);
 }
 
 /**
@@ -411,18 +441,40 @@ export function footerRow(
       'aria-current': options.selected === slot.lead ? 'true' : 'false',
       'aria-label':
         because === '' ? slotLabel(document, slot) : `${slotLabel(document, slot)} — ${because}`,
-      title: because === '' ? null : because,
       tabindex: options.focused === slot.lead ? 0 : -1,
     },
     [
       labelled === undefined
         ? null
         : element('span', { class: 'ig-badge', 'data-hold': labelled.label }, [labelled.label]),
-      element('span', { class: 'ig-title' }, [slotTitle(document, slot)]),
-      lead === undefined ? null : identity(lead),
-      footerRelationships(document, slot.members),
+      footerBody(
+        [element('span', { class: 'ig-title' }, [slotTitle(document, slot)]), lead === undefined ? null : identity(lead)],
+        because === '' ? null : because,
+        footerRelationships(document, slot.members),
+      ),
     ],
   );
+}
+
+/**
+ * The part of a footer row to the right of its chip: the name, then WHY.
+ *
+ * THE REASON IS DRAWN, NOT HIDDEN IN A TOOLTIP. It rode the row's `title` so the
+ * row stayed one line — and the result was a group of issues a reader could see
+ * but not account for: nothing on screen said that one is taken by another
+ * worker and another is waiting on a person. The reason is the only thing
+ * these rows exist to tell you, so it is the second line of every one.
+ */
+function footerBody(
+  name: readonly (ElementSpec | null)[],
+  why: string | null,
+  relationships: ElementSpec | null,
+): ElementSpec {
+  return element('div', { class: 'ig-footer-body' }, [
+    element('div', { class: 'ig-footer-line' }, name),
+    why === null ? null : element('p', { class: 'ig-footer-why' }, [why]),
+    relationships,
+  ]);
 }
 
 /**
@@ -465,7 +517,7 @@ export function excludedRow(
       class: 'ig-footer-row',
       'data-ig-key': key,
       'aria-current': options.selected === key ? 'true' : 'false',
-      'aria-label': `${issue?.title ?? key} — ${treatmentFor('duplicate-of').label} ${canonical}, never worked`,
+      'aria-label': `${issue?.title ?? key} — ${treatmentFor('duplicate-of').label} ${canonical}, which gets worked instead`,
       // A HARDCODED -1 HERE MEANT THE VIEWER LOST ITS TAB STOP ENTIRELY. An
       // exclusion is in `focusOrder`, so focus can resolve to one — and when it
       // did, no element carried `tabindex="0"` and Tab could not enter the
@@ -474,10 +526,17 @@ export function excludedRow(
     },
     [
       element('span', { class: 'ig-badge', 'data-edge': 'duplicate-of' }, ['duplicate']),
-      element('span', { class: 'ig-title' }, [issue?.title ?? key]),
-      issue === undefined ? null : identity(issue),
-      element('span', { class: 'ig-id' }, [`→ ${canonical}`]),
-      footerRelationships(document, [key]),
+      footerBody(
+        [element('span', { class: 'ig-title' }, [issue?.title ?? key]), issue === undefined ? null : identity(issue)],
+        // THE CANONICAL IS NAMED IN THE SENTENCE, SO THE `→ 512` CHIP THAT
+        // USED TO CARRY IT IS GONE: two marks for one fact, and the arrow read
+        // as a relationship of its own.
+        // THE CONSEQUENCE, NOT THE RELATIONSHIP. The row's own badge already
+        // says "duplicate of 512" in the vocabulary's words; the sentence says
+        // what that means for the work, so the one fact is not printed twice.
+        `The original, ${canonical}, gets worked instead.`,
+        footerRelationships(document, [key]),
+      ),
     ],
   );
 }
@@ -505,14 +564,16 @@ export function asideRow(
       class: 'ig-footer-row',
       'data-ig-key': key,
       'aria-current': options.selected === key ? 'true' : 'false',
-      'aria-label': `${issue?.title ?? key} — ${key} — outside the order`,
+      'aria-label': `${issue?.title ?? key} — ${key} — linked, not drawn here`,
       tabindex: options.focused === key ? 0 : -1,
     },
     [
-      element('span', { class: 'ig-badge' }, ['outside the order']),
-      element('span', { class: 'ig-title' }, [issue?.title ?? key]),
-      issue === undefined ? null : identity(issue),
-      footerRelationships(document, [key]),
+      element('span', { class: 'ig-badge' }, ['linked']),
+      footerBody(
+        [element('span', { class: 'ig-title' }, [issue?.title ?? key]), issue === undefined ? null : identity(issue)],
+        null,
+        footerRelationships(document, [key]),
+      ),
     ],
   );
 }
@@ -582,29 +643,19 @@ export function linearScene(
     ),
   ];
 
-  // The runner's own words, when the host supplied them, to the RIGHT of the
-  // count — which is where §16a puts them, and it is the difference between a
-  // heading that says what this group is and one that also has to list the
-  // reasons inside it.
-  const labels = footerLabels(footerSlots);
   const footer =
     footerEntries.length === 0
       ? null
       : element('section', { class: 'ig-footer' }, [
-          element('div', { class: 'ig-footer-head' }, [
-            element('p', { class: 'ig-footer-title' }, [
-              footerHeading(footerEntries.length, {
-                runner: footerSlots.length > 0,
-                neverWorked: document.order.excluded.length > 0,
-                // The list draws every column it has, so it never withholds one.
-                undrawn: false,
-              }),
-            ]),
-            labels === '' ? null : element('span', { class: 'ig-footer-labels' }, [labels]),
-          ]),
+          footerHead(footerEntries.length, {
+            runner: footerSlots.length > 0,
+            neverWorked: document.order.excluded.length > 0,
+            // The list draws every column it has, so it never withholds one.
+            undrawn: false,
+          }),
           element(
             'ol',
-            { class: 'ig-list', 'aria-label': 'held outside the order' },
+            { class: 'ig-list', 'aria-label': 'not in the order' },
             footerEntries,
           ),
         ]);

@@ -40,7 +40,6 @@ import {
   caveatBadges,
   conditionKind,
   conditionNotice,
-  footerLabels,
   nowRows,
   caveatText,
   edgeBadgeList,
@@ -65,7 +64,7 @@ import {
   type SceneOptions,
   asideRow,
   excludedRow,
-  footerHeading,
+  footerHead,
   footerRow,
   isFooterSlot,
   slotRow,
@@ -615,19 +614,13 @@ function footerGroup(
   // that named only the runner and the never-worked said something untrue about
   // them.
   const undrawn = entries.length > slots.length + excluded.length;
-  const labels = footerLabels(slots);
   return element('section', { class: 'ig-footer' }, [
-    element('div', { class: 'ig-footer-head' }, [
-      element('p', { class: 'ig-footer-title' }, [
-        footerHeading(entries.length, {
-          runner: slots.length > 0,
-          neverWorked: excluded.length > 0,
-          undrawn,
-        }),
-      ]),
-      labels === '' ? null : element('span', { class: 'ig-footer-labels' }, [labels]),
-    ]),
-    element('ol', { class: 'ig-list', 'aria-label': 'outside the order' }, entries),
+    footerHead(entries.length, {
+      runner: slots.length > 0,
+      neverWorked: excluded.length > 0,
+      undrawn,
+    }),
+    element('ol', { class: 'ig-list', 'aria-label': 'not in the order' }, entries),
   ]);
 }
 

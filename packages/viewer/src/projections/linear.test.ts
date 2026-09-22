@@ -81,19 +81,20 @@ describe('the linear projection', () => {
     assert.notEqual(footerAt, -1);
     assert.ok(trackerHeld > footerAt, 'a tracker-held slot stayed in the ranked list');
     assert.equal(/class="ig-rank"/.test(row(markup, '105')), false);
-    // §16a's footer entries are ONE LINE — a chip, a title, an identity — so the
-    // reason rides the name rather than taking a paragraph in a group whose
-    // whole point is that these are not facts about the work.
+    // THE REASON IS ON SCREEN, not in a tooltip: it is the one thing a footer
+    // entry exists to say, and a `title` is invisible until hovered and never
+    // reached on touch. It stays in the accessible name too.
     assert.match(row(markup, '105'), /aria-label="[^"]*claimed by another run"/);
-    assert.match(row(markup, '105'), /title="claimed by another run"/);
+    assert.match(row(markup, '105'), /<p class="ig-footer-why">claimed by another run<\/p>/);
+    assert.equal(/ title="claimed by another run"/.test(row(markup, '105')), false, 'the reason is drawn twice');
   });
 
   it('renders a duplicate in the footer naming its canonical', () => {
     const markup = render();
     assert.ok(markup.indexOf('data-ig-key="106"') > markup.indexOf('ig-footer'));
     assert.match(row(markup, '106'), /<span class="ig-badge" data-edge="duplicate-of">duplicate<\/span>/);
-    assert.match(row(markup, '106'), /<span class="ig-id">→ 105<\/span>/);
-    assert.match(row(markup, '106'), /aria-label="[^"]*duplicate of 105, never worked"/);
+    assert.match(row(markup, '106'), /<p class="ig-footer-why">The original, 105, gets worked instead\.<\/p>/);
+    assert.match(row(markup, '106'), /aria-label="[^"]*duplicate of 105, which gets worked instead"/);
   });
 
   it('renders a together unit as one row naming both members', () => {
@@ -337,7 +338,7 @@ describe('the linear projection', () => {
   });
 
   it('names a duplicate with the vocabulary label rather than a second spelling', () => {
-    assert.match(row(render(), '106'), /aria-label="[^"]*duplicate of 105, never worked"/);
+    assert.match(row(render(), '106'), /aria-label="[^"]*duplicate of 105, which gets worked instead"/);
   });
 
   it('marks the selected row and gives the focused row the tab stop', () => {

@@ -178,31 +178,34 @@ describe('the host-facts port', () => {
     assert.equal(canvas.indexOf('data-ig-key="105"') === canvas.lastIndexOf('data-ig-key="105"'), true, 'the footer issue was drawn twice');
   });
 
-  it('labels a footer entry with the runner word and names the words beside the count', () => {
-    // §16a's footer entries are ONE LINE EACH — a label chip, a title and an
-    // identity — because they are not facts about the work and so earn neither
-    // a rank nor an explanation block. The heading counts them and the runner's
-    // own words sit to its right, rather than the heading having to list the
-    // reasons inside it.
+  it('labels a footer entry with the runner word and says why, on screen', () => {
+    // A LABEL CHIP, THE NAME, AND THE HOST'S REASON AS A VISIBLE LINE. The
+    // reason used to ride only the row's `title`, so the group showed issues a
+    // reader could not account for — nothing on screen said one was taken and
+    // another waiting on a person.
     const markup = renderViewer(hostedFixtureDocument).markup;
     assert.match(markup, /<span class="ig-badge" data-hold="claimed">claimed<\/span>/);
-    // THE HEADING COVERS BOTH FAMILIES. §16a's own group lists a duplicate
-    // under "held by the runner", but §16d's table is explicit that a duplicate
-    // is a different fact — canonical elsewhere, never worked — so that wording
-    // said something untrue about half the rows beneath it.
+    assert.match(markup, /<p class="ig-footer-why">[^<]+<\/p>/, 'the reason is not drawn');
+    // THE HEADING COVERS BOTH FAMILIES. §16d's table is explicit that a
+    // duplicate is a different fact from a hold, so the sentence names both.
+    assert.match(markup, /<p class="ig-footer-title">2 not in the order<\/p>/);
     assert.match(
       markup,
-      /<p class="ig-footer-title">2 outside the order — held by the runner, or never worked<\/p>/,
+      /<p class="ig-footer-note">Held back by the worker, or duplicates of another issue\. Pick one to see it in full\.<\/p>/,
     );
-    assert.match(markup, /<span class="ig-footer-labels">claimed<\/span>/);
-    // With no host words the labels are simply absent, and the heading is what
-    // it always was.
+    // THE FLOATING LEGEND OF HOLD LABELS IS GONE: every row carries its own.
+    assert.equal(markup.includes('ig-footer-labels'), false);
     const bare = renderViewer(fixtureDocument).markup;
-    assert.match(
-      bare,
-      /<p class="ig-footer-title">2 outside the order — held by the runner, or never worked<\/p>/,
-    );
+    assert.match(bare, /<p class="ig-footer-title">2 not in the order<\/p>/);
     assert.equal(bare.includes('ig-footer-labels'), false);
+  });
+
+  it('names a duplicate\u2019s canonical once, in words', () => {
+    // The `→ 512` chip and the sentence said the same thing twice, and the
+    // arrow read as a relationship of its own.
+    const markup = renderViewer(fixtureDocument).markup;
+    assert.match(markup, /<p class="ig-footer-why">The original, [^<]+, gets worked instead\.<\/p>/);
+    assert.equal(/<span class="ig-id">→ /.test(markup), false);
   });
 
   it('selects the running issue on a NOW row click and leaves the refresh control alone', () => {

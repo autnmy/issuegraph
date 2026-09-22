@@ -1241,42 +1241,96 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 }
 
 .ig-footer-head {
-  align-items: center;
   display: flex;
-  gap: var(--ig-space);
-  justify-content: space-between;
+  flex-direction: column;
+  gap: var(--ig-space-micro);
 }
 
 .ig-footer-title {
-  color: var(--ig-text-body);
+  color: var(--ig-text);
   font-size: var(--ig-font-size-compact);
   margin: 0;
 }
 
-.ig-footer-labels {
+.ig-footer-note {
   color: var(--ig-text-muted);
-  font-family: var(--ig-font-mono);
   font-size: var(--ig-font-size-meta);
+  margin: 0;
 }
 
-/* ONE LINE EACH, and the frame is explicit about why: these are not facts
-   about the work, so they earn no rank slot and no explanation block. A full
-   row here — station, badges, provenance — was claiming the opposite. */
+/* ROWS THAT LOOK LIKE WHAT THEY ARE: THINGS YOU CAN OPEN. Every entry here is
+   selectable — it opens in the details panel like any ranked row — and nothing
+   said so. They were drawn at 0.72 opacity, which reads as DISABLED, with no
+   hover, no pointer and no mark at the end, so the one group whose whole
+   purpose is "look at why" gave no sign you could look.
+
+   STILL LIGHTER THAN THE ORDER, BY GROUND AND TYPE RATHER THAN BY FADING. The
+   group sits on the second surface in the compact type; that is enough to say
+   "not a fact about the work" without also saying "unavailable". */
 .ig-footer .ig-list {
   display: flex;
   flex-direction: column;
-  gap: var(--ig-space-snug);
-  margin-top: var(--ig-space);
+  margin: var(--ig-space) calc(var(--ig-space-tight) * -1) 0;
 }
 
 .ig-footer-row {
-  align-items: center;
+  align-items: baseline;
+  border-radius: var(--ig-radius);
+  column-gap: var(--ig-space-snug);
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: var(--ig-space-tight);
+}
+
+/* A DRILL-IN MARK, and hidden from assistive technology with the alternative
+   text slot: the row's own accessible name already says what it is, and a
+   screen reader announcing "single right-pointing angle quotation mark" after
+   every entry is noise, not information. */
+.ig-footer-row::after {
+  color: var(--ig-text-muted);
+  content: '›' / '';
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.ig-footer-row:hover {
+  background: color-mix(in srgb, var(--ig-text) var(--ig-tint-unit), transparent);
+}
+
+.ig-footer-row:hover::after {
+  color: var(--ig-text);
+}
+
+/* THE SAME SELECTED MARK THE RANKED ROWS CARRY, so an issue opened from down
+   here reads as the current subject the way one opened from the order does. */
+.ig-footer-row[aria-current='true'] {
+  box-shadow: inset var(--ig-band-rail) 0 0 var(--ig-accent);
+}
+
+.ig-footer-row > .ig-badge {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.ig-footer-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-micro);
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+}
+
+.ig-footer-line {
+  align-items: baseline;
   display: flex;
   gap: var(--ig-space-snug);
-  opacity: 0.72;
+  min-width: 0;
 }
 
 .ig-footer-row .ig-title {
+  color: var(--ig-text-body);
   font-size: var(--ig-font-size-compact);
 }
 
@@ -1284,8 +1338,10 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   font-size: var(--ig-font-size-meta);
 }
 
-.ig-footer-row[aria-current='true'] {
-  opacity: 1;
+.ig-footer-why {
+  color: var(--ig-text-muted);
+  font-size: var(--ig-font-size-meta);
+  margin: 0;
 }
 
 /* ── the graph canvas ──────────────────────────────────────────────────── */
