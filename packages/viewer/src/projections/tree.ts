@@ -262,6 +262,10 @@ export function treeScene(document: NormalizedDocument, options: SceneOptions = 
       // container that declines the frame does not know which projection it
       // was handed.
       'data-frame': options.frame === false ? 'none' : undefined,
+      // See `SceneOptions.dockLegend`; stamped on all three roots, because every
+      // projection draws the same legend and the container's scrollport does not
+      // change with the projection.
+      'data-legend': options.dockLegend === true ? 'docked' : undefined,
       // See `SceneOptions.density`; stamped on all three roots so a
       // projection toggle cannot drop the host's decision.
       'data-density': options.density,

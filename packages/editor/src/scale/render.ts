@@ -487,6 +487,10 @@ export function renderScaleLadder(
           // canvas toolbar carries `border-bottom`, and a second edge one
           // pixel away reads as a doubled hairline. See `SceneOptions.frame`.
           frame: false,
+          // §16b's KEY, KEPT IN VIEW. It explains every line and station on this
+          // zone, and below a scroll it was the one thing a reader had to leave the
+          // reading to reach. See `SceneOptions.dockLegend`.
+          dockLegend: true,
           edgeMarks: edgeMarkRequests(requestedOverlays),
         })
       : null;

@@ -974,6 +974,10 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
       // container that declines the frame does not know which projection it
       // was handed.
       'data-frame': options.frame === false ? 'none' : undefined,
+      // See `SceneOptions.dockLegend`; stamped on all three roots, because every
+      // projection draws the same legend and the container's scrollport does not
+      // change with the projection.
+      'data-legend': options.dockLegend === true ? 'docked' : undefined,
       // Stamped on all three roots rather than on the one that draws rows.
       // A projection toggle must not silently drop a host's decision, and
       // the graph carries a footer group of rows of its own. See

@@ -328,6 +328,39 @@ export const viewerStylesheet = `
   border-radius: 0;
 }
 
+/* THE LEGEND DOCKS AGAINST THE CONTAINER'S SCROLLPORT, NOT THIS ROOT'S.
+   See SceneOptions.dockLegend for why only a container can ask for this.
+
+   THE overflow LINE IS THE WHOLE MECHANISM AND LOOKS LIKE A TIDY-UP. A sticky
+   element positions against its nearest SCROLLPORT, and an ancestor with
+   overflow: hidden is one — so with the root left as it is above, the legend
+   sticks to a box that never scrolls, which is the box it already sat at the
+   bottom of. Nothing moves, nothing errors, and the declaration below reads as
+   though it works. Lifting the clip hands the legend the container's scroller
+   instead, which is the only one that scrolls.
+
+   WHICH IS ALSO WHY THIS IS SAFE ONLY WITH THE FRAME DECLINED. The clip exists
+   so a drawn radius cuts its own corners; a root that has stopped clipping must
+   not be drawing one. The rule above and this one are written to be passed
+   together, and the workspace passes both.
+
+   NO z-index, DELIBERATELY. The legend is the root's last child, so it already
+   paints over the order it overlaps; a layer number here would be a claim about
+   a stacking order this package does not own. */
+.ig-viewer[data-legend='docked'] {
+  overflow: visible;
+}
+
+/* bottom: 0 IS A DEFAULT THE CONTAINER OVERRIDES, not a fixed position. A
+   container with something of its own already pinned to that edge — the
+   grooming workspace's rail footer — sets this element's bottom to clear it,
+   from a height it measures rather than from a number either package wrote
+   down and both would have to keep true. */
+.ig-viewer[data-legend='docked'] > .ig-legend {
+  position: sticky;
+  bottom: 0;
+}
+
 .ig-viewer *,
 .ig-viewer *::before,
 .ig-viewer *::after {

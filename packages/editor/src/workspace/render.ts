@@ -3042,6 +3042,10 @@ export function renderWorkspace(
     // `border-right`, so a frame here doubles that seam and the host's outer
     // border on the other edge. See `SceneOptions.frame`.
     frame: false,
+    // §16b's KEY, KEPT IN VIEW while the order scrolls under it. See
+    // `SceneOptions.dockLegend`; `dockRailLegend` in mount.ts moves it clear of
+    // this zone's own footer.
+    dockLegend: true,
     // The rail is where a selected ISSUE reads as current. An edge selection
     // resolves to no key, which is `selectedKey`'s whole job.
     selected: selectedKey(selection),

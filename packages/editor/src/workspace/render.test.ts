@@ -170,6 +170,24 @@ describe('the workspace rules its own seams, so no edge is drawn twice', () => {
       assert.match(root, /data-frame="none"/, `a composed viewer draws its own frame: ${root}`);
     }
   });
+
+  it('docks every composed viewer\u2019s legend, so the key survives the scroll', () => {
+    // The key to five line styles and three station fills is what makes every
+    // row and every edge on this surface legible, and it sat below everything
+    // it explains — so the one thing a reader consults WHILE reading was the
+    // one thing they had to leave the reading to reach.
+    //
+    // DERIVED FROM THE MARKUP, like the frame above: a zone added later has to
+    // answer the same question rather than inherit an answer by omission.
+    const markup = renderWorkspace(backlogOf(8), WORDS).markup;
+    const roots = [...markup.matchAll(/<section class="ig-viewer [^"]*"[^>]*>/g)].map(
+      (match) => match[0],
+    );
+    assert.ok(roots.length > 0, 'no viewer is composed here, so this proves nothing');
+    for (const root of roots) {
+      assert.match(root, /data-legend="docked"/, `a composed viewer lets its legend scroll away: ${root}`);
+    }
+  });
 });
 
 describe('the rail is windowed and the canvas is not', () => {

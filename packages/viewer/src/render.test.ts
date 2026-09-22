@@ -251,6 +251,47 @@ describe('the outer frame, and the container that declines it', () => {
   });
 });
 
+describe('the docked legend, and the scrollport it needs', () => {
+  it('leaves the legend in the flow unless a container asks for the dock', () => {
+    for (const projection of ['linear', 'graph', 'tree'] as const) {
+      const markup = renderViewer(fixtureDocument, { projection }).markup;
+      assert.equal(
+        /data-legend=/.test(markup),
+        false,
+        `${projection} docks unasked, and a viewer at its natural height has no scrollport but the page`,
+      );
+    }
+  });
+
+  it('stamps data-legend on all three roots when a container asks', () => {
+    for (const projection of ['linear', 'graph', 'tree'] as const) {
+      const markup = renderViewer(fixtureDocument, { projection, dockLegend: true }).markup;
+      assert.match(markup, /data-legend="docked"/, `${projection} did not dock its legend`);
+    }
+  });
+
+  it('lifts the root\u2019s clip, which is the whole mechanism', () => {
+    // THE DECLARATION THAT LOOKS LIKE A TIDY-UP AND IS THE FEATURE. Sticky
+    // positions against the nearest SCROLLPORT, and a root left at
+    // `overflow: hidden` is one — so the legend would stick to a box that never
+    // scrolls, which is the box it already sat at the bottom of. Nothing moves
+    // and nothing errors: the sticky rule below would read as though it worked.
+    const css = viewerStylesheet.replace(/\/\*[\s\S]*?\*\//g, '');
+    const docked = /\.ig-viewer\[data-legend='docked'\] \{([^}]*)\}/.exec(css);
+    assert.ok(docked, 'the docked root has no rule, so it is still its own scrollport');
+    assert.match(docked[1] as string, /overflow:\s*visible/);
+
+    const legend = /\.ig-viewer\[data-legend='docked'\] > \.ig-legend \{([^}]*)\}/.exec(css);
+    assert.ok(legend, 'the docked legend has no rule of its own');
+    assert.match(legend[1] as string, /position:\s*sticky/);
+    assert.match(
+      legend[1] as string,
+      /bottom:\s*0/,
+      'the dock needs a default edge for a container with nothing else pinned there',
+    );
+  });
+});
+
 describe('a document whose keys are not encodable', () => {
   it('renders a together unit with a lone surrogate key instead of throwing', () => {
     // THE CONTRACT THIS FILE ALREADY STATES: a malformed document produces

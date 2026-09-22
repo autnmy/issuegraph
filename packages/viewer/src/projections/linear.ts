@@ -90,6 +90,39 @@ export interface SceneOptions {
    */
   readonly frame?: boolean | undefined;
   /**
+   * Dock the legend against the bottom of the container's scrollport instead
+   * of letting it scroll away with the order. Defaults to `false`.
+   *
+   * IT IS THE KEY TO THE GRAMMAR, AND IT WAS AT THE BOTTOM OF THE SCROLL. Five
+   * line styles and three station fills are what make every row and every edge
+   * on the surface legible, and in a container tall enough to scroll they sat
+   * below everything they explain — so the one thing a reader consults WHILE
+   * reading was the one thing they had to leave the reading to reach.
+   *
+   * ONLY A CONTAINER CAN ANSWER THIS, which is why it is an option and not the
+   * default. Sticky positions against the nearest scrollport: dropped into a
+   * host's page at its natural height the viewer has no scrollport of its own,
+   * so the nearest one is the PAGE, and a legend docked there would float over
+   * the host's own content for the whole of their document. A container that
+   * has given this viewer a bounded, scrolling box is the only party that knows
+   * the dock has somewhere to sit.
+   *
+   * IT IMPLIES `frame: false`, AND THE STYLESHEET ENFORCES THAT BY CONSTRUCTION.
+   * A sticky child cannot escape an ancestor that is itself a scroll container,
+   * and this root is `overflow: hidden` precisely so a drawn frame clips its
+   * own corners — so the docked rule has to lift that, and a root that no
+   * longer clips must not be drawing a radius to clip to. The workspace passes
+   * both; a caller that passes only this one gets a docked legend and an
+   * unclipped frame, which is why they are documented together.
+   *
+   * WHERE the dock sits is still the container's: it renders as
+   * `data-legend="docked"` with `bottom: 0`, and a container with something
+   * else already pinned to that edge moves it. The grooming workspace does —
+   * its rail footer holds the bottom of that zone — and sets the offset from
+   * the footer it measures rather than from a number either package wrote down.
+   */
+  readonly dockLegend?: boolean | undefined;
+  /**
    * Draw the header's own view controls — the List/Graph toggle, and the
    * graph's expand/collapse affordance. Defaults to `false`.
    *
@@ -585,6 +618,10 @@ export function linearScene(
       // container that declines the frame does not know which projection it
       // was handed.
       'data-frame': options.frame === false ? 'none' : undefined,
+      // See `SceneOptions.dockLegend`; stamped on all three roots, because every
+      // projection draws the same legend and the container's scrollport does not
+      // change with the projection.
+      'data-legend': options.dockLegend === true ? 'docked' : undefined,
       // §17j'S DENSITY, WHERE THE HOST TOOK IT OVER. Absent is the whole
       // default: the stylesheet keys the density block off this attribute's
       // PRESENCE, so a viewer that renders none is decided by the container
