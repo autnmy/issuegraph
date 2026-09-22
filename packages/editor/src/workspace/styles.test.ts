@@ -1096,6 +1096,48 @@ describe('the workspace stylesheet carries structure, never a value', () => {
  * text, and every existing check passed, because nothing about it was a hex
  * literal and the class was styled.
  */
+describe('the zone rules reach their corners', () => {
+  const css = withoutComments(workspaceStylesheet);
+
+  it('leaves the three-zone grid no gap, so no seam stops short of the next', () => {
+    // THE DEFECT A GAP CAUSES HERE IS NOT SPACING, IT IS BROKEN JOINERY. The
+    // seams on this surface are drawn rules on the zones themselves — the
+    // header's border-bottom, the rail's border-right, the inspector's
+    // border-left, the canvas toolbar's border-bottom. A track gap puts ground
+    // BETWEEN those elements, so every rule ends a gap's width from the one it
+    // should have met: three lines under the header that never touch it, and a
+    // toolbar rule floating clear of both vertical rules beside it.
+    //
+    // THE INSET IS EACH ZONE'S OWN, and that is the property worth keeping
+    // rather than the gap: content padding separates text from a rule while
+    // leaving the rule's own geometry alone, which is the whole difference.
+    const block = /\.ig-workspace \{([^}]*)\}/.exec(css);
+    assert.ok(block, 'the workspace root no longer has a rule of its own');
+    assert.equal(
+      /(^|[\s;])(gap|row-gap|column-gap):/.test(block[1] as string),
+      false,
+      'a gap on the zone grid pulls every seam away from the corner it should meet',
+    );
+  });
+
+  it('draws each seam on the zone it belongs to, so the tracks stay flush', () => {
+    // Stated as the positive half of the rule above: the lines exist, they are
+    // simply on the zones rather than in the space between them. If a future
+    // pass moves a seam onto a spacer element, this fails and the reasoning
+    // above has to be reconsidered rather than silently dropped.
+    for (const [selector, side] of [
+      ["\\.ig-zone\\[data-zone='rail'\\]", 'border-right'],
+      ["\\.ig-zone\\[data-zone='inspector'\\]", 'border-left'],
+      ['\\.ig-workspace-header', 'border-bottom'],
+      ['\\.ig-canvas-toolbar', 'border-bottom'],
+    ] as const) {
+      const block = new RegExp(`${selector} \\{([^}]*)\\}`).exec(css);
+      assert.ok(block, `${selector} no longer has a rule of its own`);
+      assert.match(block[1] as string, new RegExp(`${side}:`), `${selector} no longer draws its seam`);
+    }
+  });
+});
+
 describe('the tint tokens are only used where they mean something', () => {
   const css = withoutComments(workspaceStylesheet);
 

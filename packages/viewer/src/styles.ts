@@ -1605,8 +1605,29 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   padding: var(--ig-space) var(--ig-space-wide);
 }
 
+/* FLOATED SO THE BROWSER STOPS TREATING IT AS A RENDERED LEGEND, which is the
+   only reason this declaration exists. HTML gives the first in-flow legend of a
+   fieldset a layout nothing else in CSS has: it is lifted OUT of the fieldset's
+   content box, painted across the top border with a notch cut through the rule
+   either side of it, and the content box then starts below it. On this bar that
+   drew the caption sitting on the rule, a gap of bare ground under the caption
+   where the fieldset's own surface should have been, and a top rule broken in
+   the middle — all three of which looked like a styling bug and none of which
+   any rule here asked for.
+
+   The spec's own escape hatch is the float: a legend whose computed float is
+   not none is not the rendered legend, and becomes an ordinary child. This bar
+   is a flex container, where float does not apply to an item at all, so the
+   caption simply lays out as the first item on the row — which is what the
+   flex rule above, its muted uppercase micro type and its centred alignment
+   were always written for.
+
+   IT IS LOAD-BEARING AND LOOKS DECORATIVE, which is why it is recorded here at
+   this length: delete it and the notch, the gap and the broken rule all come
+   back, with nothing else in this file changed. */
 .ig-legend-caption {
   color: var(--ig-text-muted);
+  float: left;
   font-family: var(--ig-font-mono);
   font-size: var(--ig-font-size-pill);
   letter-spacing: var(--ig-tracking-group);

@@ -75,7 +75,23 @@ export const workspaceStylesheet = `
     1fr
     calc(var(--ig-char-width) * 40);
   grid-template-rows: auto 1fr;
-  gap: var(--ig-space);
+  /* NO GAP, BECAUSE THE SEAMS ARE DRAWN RULES AND A RULE HAS TO REACH ITS
+     CORNER. The tracks used to be separated by --ig-space, and every rule on
+     this surface stopped short of the one it should have met: the header's
+     border-bottom ran the full width, then a 12px band of ground, and only
+     then did the rail's border-right and the inspector's border-left begin —
+     three lines that never touched. The canvas toolbar's border-bottom had the
+     same defect on the other axis, ending 12px shy of the rail rule at one end
+     and the inspector rule at the other, so the zone it captions read as a
+     floating band rather than as the top row of a column.
+
+     THE BREATHING ROOM DID NOT GO ANYWHERE; IT MOVED INSIDE. A gap puts the
+     space OUTSIDE the zone, where it separates the rule from its corner. Each
+     zone's own content already carries its inset — the rail's rows and footer
+     take --ig-space-wide, the canvas toolbar and the inspector take
+     --ig-space — so the measured gutter between a rule and the nearest text is
+     unchanged in kind, and what is gone is only the dead band the rules were
+     stopping at. */
   background: var(--ig-bg);
   color: var(--ig-text-body);
   font-family: var(--ig-font-ui);
