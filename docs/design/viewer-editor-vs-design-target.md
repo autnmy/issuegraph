@@ -122,6 +122,17 @@ assumed.
 
 ## 3. The gap table
 
+> **Status 2026-09-22, re-scored against `main` at `bce5a2f` (#216).** Every row
+> was re-read against the demo and the source as they stand, not against the
+> 09-20 notes. Of 54 row ids: **28 met**, **22 open**, **4 cannot be told** without
+> the design frames. Each row says which, with the file:line it rests on; the
+> earlier text follows as "Was:". Rows 9 and 30 are one defect, and so are 44
+> and 50. Row 47 (the focused-neighbourhood canvas) is the one large build, and
+> 48 and 49 follow from it. Rows 1, 2, 7, 33, 42 and 51 were closed on 09-20 and
+> stay closed; rows 39, 40 and 43 were already correct.
+>
+> The 09-20 note below is superseded by this one and kept for the record.
+>
 > **Status 2026-09-20, after `28a83a5` merged to `main`.** Rows **1, 2, 7, 33,
 > 42 and 51** are **CLOSED** and say so in place; row **3** is **PARTIAL**. Every
 > other row is **unchanged** — the sweep touched the rail, the audit filter, the
@@ -158,64 +169,64 @@ A struck class (`~~SI~~`) means the gap is closed; the class records what it was
 |---|---|---|---|---|
 | 1 | Rail row height | 53px, uniform, 4 lines | **CLOSED `28a83a5`** — 53px, every row, now strip included. Was 134–408px, variable, 8–22 lines | ~~SI~~ |
 | 2 | Rail row content | rank · title · **one** metadata line · delta chip | **CLOSED `28a83a5`** — line 2 is one `.ig-row-meta` run (`488 · P3 → 0 · ⊘ blocks 512`). Was every badge on its own line plus a `↳` sentence per rule | ~~SI~~ |
-| 3 | Provenance placement | in the inspector, under `WHY RANK n`; §16f makes it `→ expand` on a row | **PARTIAL `28a83a5`** — no longer inline on the row (`display: none` at rail density), but **there is no expand affordance**, so a rail reader reaches it only through the inspector. §16f's `→ expand` does not exist | **SI** |
-| 4 | Rail heading | `WORK ORDER` | `ORDER PREVIEW` — which is §16's name for the read-only surface | **SI** |
-| 5 | Rail header controls | `filter` control + total count `312` | three count chips (`8 ranked`, `6 ready now · cap 2`, `6 held`), no filter control | **SI** |
-| 6 | Relationship legend | not present in the workspace | present **twice** — 229px in the rail, 88px in the canvas | **MS** |
+| 3 | Provenance placement | in the inspector, under `WHY RANK n`; §16f makes it `→ expand` on a row | **MET at `bce5a2f`** — expandable: `→` opens a row (`mount.ts:2431-2447` handles `expand:<key>`, `linear.ts:305-312` sets `aria-expanded`); keyboard only. Was: **PARTIAL `28a83a5`** — no longer inline on the row (`display: none` at rail density), but **there is no expand affordance**, so a rail reader reaches it only through the inspector. §16f's `→ expand` does not exist | ~~SI~~ |
+| 4 | Rail heading | `WORK ORDER` | **OPEN at `bce5a2f`** — `viewer/src/parts.ts:467` still reads `Order preview`. Was: `ORDER PREVIEW` — which is §16's name for the read-only surface | **SI** |
+| 5 | Rail header controls | `filter` control + total count `312` | **OPEN at `bce5a2f`** — `parts.ts:463-472`: label, projection toggle, stamp and size; no filter. Was: three count chips (`8 ranked`, `6 ready now · cap 2`, `6 held`), no filter control | **SI** |
+| 6 | Relationship legend | not present in the workspace | **OPEN at `bce5a2f`** — `legend()` drawn unconditionally at `linear.ts:590` and `graph.ts:1043`. Was: present **twice** — 229px in the rail, 88px in the canvas | **MS** |
 | 7 | `NOW` block | ~~not present~~ **`16a` draws it** — my original cell was wrong, see [3b](#3b-design-answered--and-two-of-my-four-questions-were-my-own-misreading) | **CLOSED `28a83a5`** — a 53px first row of the rail carrying a `now` mark and no rank number. It never printed a rank; what was wrong was its 83px height | ~~MS~~ |
-| 8 | Zone proportions | ≈ 390 / 575 / 330 (30 / 45 / 25) | 312 / 758 / 312 (22 / 54 / 22) — narrowest rail carrying the most content | **SI** |
-| 9 | Header counts | `312 open` · `64 encoded` · `◆ 3 encoding problems` | `297 open · 126 encoded` present at scale; audit chip reads `6 audit` with no `◆` | **SI** |
-| 10 | Freshness + refresh | `as of 14:32` then a separate `↻` control | `as of 22:26 · 59s agorefresh` — **no space before the control** | **SI** |
-| 11 | Solid-cyan budget | one primary action (`First pass →`) plus the active view toggle | also spent on the `NOW` badge and the `ready now · cap 2` count chip, so the primary action no longer leads | **SI** |
+| 8 | Zone proportions | ≈ 390 / 575 / 330 (30 / 45 / 25) | **MET at `bce5a2f`** — `workspace/styles.ts:124-130` sets 50ch / 1fr / 42ch; measured 390 / 664 / 328 at 1440px. Was: 312 / 758 / 312 (22 / 54 / 22) — narrowest rail carrying the most content | ~~SI~~ |
+| 9 | Header counts | `312 open` · `64 encoded` · `◆ 3 encoding problems` | **OPEN at `bce5a2f`** — `open · encoded` shows (`render.ts:2068`); the audit chip is `surface.ts:322-323` count + `audit`, no `◆`. Was: `297 open · 126 encoded` present at scale; audit chip reads `6 audit` with no `◆` | **SI** |
+| 10 | Freshness + refresh | `as of 14:32` then a separate `↻` control | **MET at `bce5a2f`** — `workspace/styles.ts:187-188` `margin-left`; a 6px gap measured on screen. Was: `as of 22:26 · 59s agorefresh` — **no space before the control** | ~~SI~~ |
+| 11 | Solid-cyan budget | one primary action (`First pass →`) plus the active view toggle | **CANNOT TELL without the design frames** — the ready chip is now a tint (`viewer/styles.ts:450-451`); the NOW mark is solid accent (`styles.ts:660-661`), and whether 16a draws it solid needs the frame. Was: also spent on the `NOW` badge and the `ready now · cap 2` count chip, so the primary action no longer leads | **SI** |
 
 ### 3.2 Inspector (§17a) — the largest single gap
 
 | # | Element | Design target | Implementation | Class |
 |---|---|---|---|---|
-| 12 | The `WHY RANK` sentence | one punctuated sentence: *"Matched query 1 (`label:P0`). Held until #488 closes, then worked with #514 as one unit."* | three unpunctuated fragments separated by a **2px margin**, so they collide on screen: `…ranked in tier P0worked as one unit with 514` | **SI** |
-| 13 | Heading when held | frame always says `WHY RANK n` | says `WHY HELD`, because derive gives a held slot no rank | **SA** — see Q1 |
-| 14 | Deep-link chip | `descant-web #512 ↗` pill, described in §16f as *the only external link* and *one predictable target in both views* | absent; the inspector prints a bare `512`. The only `open in GitHub` on screen belongs to the encoding-refused block | **SI** |
-| 15 | `ADD RELATIONSHIP` list | standing, always visible under the relationship list | hidden behind `+ add`; at rest the zone shows one hint string instead | **SI** |
-| 16 | Kind key numbers | `blocked-by 1 · serialize-with 2 · together-with 3 · duplicate-of 4 · decomposed-from 5` | `blocked by 1 · decomposed from 2 · duplicate of 3 · serialized with 4 · together with 5` — **four of five keys bound to a different type** | **SI** |
-| 17 | Kind labels | the spec's own field names (`blocked-by`, `serialize-with`) | prose forms (`blocked by`, `serialized with`), which no longer match the YAML the user is editing | **SI** |
-| 18 | Close control | `✕` | a text button reading `clear the selection` | **SI** |
-| 19 | Encoding-refused block | §17d draws it inside the audit panel | permanently pinned above the inspector, in red, at the top of the right column — the loudest thing on screen before anything is selected | **SA** — see Q3 |
+| 12 | The `WHY RANK` sentence | one punctuated sentence: *"Matched query 1 (`label:P0`). Held until #488 closes, then worked with #514 as one unit."* | **OPEN at `bce5a2f`** — `workspace/styles.ts:737-738` keeps the 2px `margin-left`; no punctuation or connectives (`demo/src/workspace.ts:220`). Was: three unpunctuated fragments separated by a **2px margin**, so they collide on screen: `…ranked in tier P0worked as one unit with 514` | **SI** |
+| 13 | Heading when held | frame always says `WHY RANK n` | **MET at `bce5a2f`** — `render.ts:1871-1872` uses the rank whenever it is not null; #512 reads `Why rank 2`. Was: says `WHY HELD`, because derive gives a held slot no rank | ~~SA~~ — see Q1 |
+| 14 | Deep-link chip | `descant-web #512 ↗` pill, described in §16f as *the only external link* and *one predictable target in both views* | **OPEN at `bce5a2f`** — `render.ts:2558-2561` draws title, identity and why-rank, no link; `issueUrl` is used only by the refused block (`render.ts:3230`). Was: absent; the inspector prints a bare `512`. The only `open in GitHub` on screen belongs to the encoding-refused block | **SI** |
+| 15 | `ADD RELATIONSHIP` list | standing, always visible under the relationship list | **OPEN at `bce5a2f`** — `render.ts:2748` gives `kind: 'add'`, a button only; the kind list appears after `+ add` (`2742`). Was: hidden behind `+ add`; at rest the zone shows one hint string instead | **SI** |
+| 16 | Kind key numbers | `blocked-by 1 · serialize-with 2 · together-with 3 · duplicate-of 4 · decomposed-from 5` | **OPEN at `bce5a2f`** — `create/keys.ts:329` indexes `EDGE_FIELDS`, ordered blocked, decomposed, duplicate, serialize, together (`core/src/index.ts:26-32`). Was: `blocked by 1 · decomposed from 2 · duplicate of 3 · serialized with 4 · together with 5` — **four of five keys bound to a different type** | **SI** |
+| 17 | Kind labels | the spec's own field names (`blocked-by`, `serialize-with`) | **OPEN at `bce5a2f`** — `viewer/src/vocabulary.ts:84` `label: 'serialized with'`. Was: prose forms (`blocked by`, `serialized with`), which no longer match the YAML the user is editing | **SI** |
+| 18 | Close control | `✕` | **OPEN at `bce5a2f`** — `render.ts:2562` with `demo/src/workspace.ts:196` `'clear the selection'`. Was: a text button reading `clear the selection` | **SI** |
+| 19 | Encoding-refused block | §17d draws it inside the audit panel | **MET at `bce5a2f`** — inside the canvas zone as `.ig-audit-overlay` (`render.ts:3252`, `3364`). Was: permanently pinned above the inspector, in red, at the top of the right column — the loudest thing on screen before anything is selected | ~~SA~~ — see Q3 |
 
 ### 3.3 Edit interactions (§17b)
 
 | # | Element | Design target | Implementation | Class |
 |---|---|---|---|---|
-| 20 | Direction sentence | `#530` `is blocked by` `#602` | present and correct — `#520 is blocked by …` | — ok |
-| 21 | Flip control | `⇅ flip` beside the sentence, because *"which way round" is the single most common encoding mistake* | **no flip control anywhere in the create flow** | **SI** |
-| 22 | Canvas create path | select source → drag from edge port → picker at drop point | not reachable in the demo; the canvas draws §16's three-column spine, which has no edge ports | **SI** |
-| 23 | Keyboard `R` | opens the picker from a selected issue | did not open the picker from a focused rail row in this run; `+ add` works. (CHANGELOG records one fix in this area already) | **SI** |
-| 24 | Edge mutation states, on a graph edge | five overlays — selected / pending-write / invalid / failed / conflict | all five exist in `overlay/`; not reachable as *edge* overlays in the demo, because its canvas draws §16's column spine and not a graph with edges to overlay | **BU** — see Q4 |
-| 24b | The same states in the rail and inspector | design does not draw them outside the canvas | **implemented and correct** — pending, refused and conflicted all render with their controls, and the order does not move. See [2b](#2b-the-2026-08-22-amendment-already-met) | — ok |
-| 24c | Conflict controls in the writes strip | `view diff` · `retry on latest` · `discard mine` | the strip offers two; `view diff` appears only in the inspector | **SI** |
+| 20 | Direction sentence | `#530` `is blocked by` `#602` | **MET at `bce5a2f`** — `mount.ts:880` `#${source} ${kind} …`. Was: present and correct — `#520 is blocked by …` | — ok |
+| 21 | Flip control | `⇅ flip` beside the sentence, because *"which way round" is the single most common encoding mistake* | **OPEN at `bce5a2f`** — a flip exists on a selected edge (`render.ts:1425+`); the create flow's target search (`mount.ts:877-906`) has none. Was: **no flip control anywhere in the create flow** | **SI** |
+| 22 | Canvas create path | select source → drag from edge port → picker at drop point | **MET at `bce5a2f`** — `mount.ts:2799-2870`: drag from a canvas node, drop dispatches `{kind:'drop', at}` (no port handle; not exercised with a pointer). Was: not reachable in the demo; the canvas draws §16's three-column spine, which has no edge ports | ~~SI~~ |
+| 23 | Keyboard `R` | opens the picker from a selected issue | **MET at `bce5a2f`** — `create/keys.ts:302,325`; test `keys.test.ts:24` "R starts a relate from the focused issue"; confirmed in the demo. Was: did not open the picker from a focused rail row in this run; `+ add` works. (CHANGELOG records one fix in this area already) | ~~SI~~ |
+| 24 | Edge mutation states, on a graph edge | five overlays — selected / pending-write / invalid / failed / conflict | **MET at `bce5a2f`** — `overlay/grammar.ts:241` `data-ig-state`; a conflicted canvas edge carries `data-ig-state=conflict`. Was: all five exist in `overlay/`; not reachable as *edge* overlays in the demo, because its canvas draws §16's column spine and not a graph with edges to overlay | ~~BU~~ — see Q4 |
+| 24b | The same states in the rail and inspector | design does not draw them outside the canvas | **MET at `bce5a2f`** — the inspector shows view diff, retry on latest and discard mine on a conflict. Was: **implemented and correct** — pending, refused and conflicted all render with their controls, and the order does not move. See [2b](#2b-the-2026-08-22-amendment-already-met) | — ok |
+| 24c | Conflict controls in the writes strip | `view diff` · `retry on latest` · `discard mine` | **OPEN at `bce5a2f`** — `demo/src/workspace.ts:692-697` adds retry and discard only (demo code, not `overlay/render.ts`). Was: the strip offers two; `view diff` appears only in the inspector | **SI** |
 
 ### 3.4 The re-evaluate loop (§17c)
 
 | # | Element | Design target | Implementation | Class |
 |---|---|---|---|---|
-| 25 | Change summary, line 1 | **the cause**: *"You added `#488 blocks #512` — 3 rows moved"* | no cause, no total; reads only `1 newly held` | **SI** |
-| 26 | Change summary, line 2 | the breakdown: *"1 newly promoted · 1 newly held · 1 pushed down"* | the breakdown is the whole summary | **SI** |
-| 27 | `undo` | beside `dismiss` | `dismiss` only | **SI** |
-| 28 | Summary placement | a full-width band above the rail | appended to the far right of the workspace header, after `First pass →` | **SI** |
-| 29 | Delta chips | `▲5` `▼2` `→ held` `→ ready` | `newly held` as text; the `▲n` / `▼n` rank-delta forms were not produced | **SI** |
+| 25 | Change summary, line 1 | **the cause**: *"You added `#488 blocks #512` — 3 rows moved"* | **OPEN at `bce5a2f`** — `reevaluate/words.ts` `ChangeWords` has no cause field; the demo reads `3 moved · 1 newly held`. Was: no cause, no total; reads only `1 newly held` | **SI** |
+| 26 | Change summary, line 2 | the breakdown: *"1 newly promoted · 1 newly held · 1 pushed down"* | **MET at `bce5a2f`** — the facets render (`demo/src/workspace.ts:165-171`); what is missing is row 25's cause line. Was: the breakdown is the whole summary | ~~SI~~ |
+| 27 | `undo` | beside `dismiss` | **OPEN at `bce5a2f`** — `ChangeWords` has only `dismiss`; no undo anywhere in `reevaluate/`. Was: `dismiss` only | **SI** |
+| 28 | Summary placement | a full-width band above the rail | **MET at `bce5a2f`** — `render.ts:3320` puts it in the header zone; a 1406px band above the rail. Was: appended to the far right of the workspace header, after `First pass →` | ~~SI~~ |
+| 29 | Delta chips | `▲5` `▼2` `→ held` `→ ready` | **MET at `bce5a2f`** — `reevaluate/parts.ts:245-253` emits `ig-delta-move` with a count (`2 up`, `1 down`); the demo words are `up`/`down`, not glyphs. Was: `newly held` as text; the `▲n` / `▼n` rank-delta forms were not produced | ~~SI~~ |
 
 ### 3.5 Audit (§17d)
 
 | # | Element | Design target | Implementation | Class |
 |---|---|---|---|---|
-| 30 | Header count | persistent, quiet, `◆ 3 encoding problems` | present; reads `6 audit`, no `◆` glyph | **SI** |
-| 31 | Gold 2px left-bar on flagged rail rows | required | **implemented and correct** — `#E2B912`, 2px inset. But it reached only 2 of 6 findings: the cycle members carry no bar | **SI** (partial) |
-| 32 | Audit toggle state | a toggle | `aria-pressed` did not track across clicks in this run | **SI** |
+| 30 | Header count | persistent, quiet, `◆ 3 encoding problems` | **OPEN at `bce5a2f`** — `audit/surface.ts:322-323`; the same defect as row 9. Was: present; reads `6 audit`, no `◆` glyph | **SI** |
+| 31 | Gold 2px left-bar on flagged rail rows | required | **MET at `bce5a2f`** — `render.ts:3056-3069`; filtered, all 8 flagged rows carry `data-ig-audit`, cycle members included. Was: **implemented and correct** — `#E2B912`, 2px inset. But it reached only 2 of 6 findings: the cycle members carry no bar | ~~SI~~ (partial) |
+| 32 | Audit toggle state | a toggle | **MET at `bce5a2f`** — `audit/panel.ts:625` `aria-pressed` goes false → true. Was: `aria-pressed` did not track across clicks in this run | ~~SI~~ |
 | 33 | Filtered rail | §17a: the rail *"must never refuse or paginate away from an answer"* | **CLOSED `28a83a5`** — reads `No flagged rows match. / 8 issues are ranked / clear the filter`, the denominator from `host.counts.ranked`. Was the §16i zero | ~~SA~~ |
-| 34 | Finding card headline | specific per finding — *"#533 is blocked by an issue closed 4 months ago"* | generic per class — *"This waits on an issue that is already closed."* — so every card of a class is identical at a glance | **SI** |
-| 35 | Finding card rationale | a paragraph explaining why it matters | absent | **SI** |
-| 36 | Finding card remedies | `Remove the edge` · `Keep as history` · `Repoint or clear` | `show me` only. CHANGELOG records this as deliberate, citing §17d's *"navigation and never a remedy"* — **but the frame draws the remedies** | **SA** — see Q3 |
-| 37 | Cycle walk line | `#544 → #551 → #560 → #544` | one card shows the walk, another shows a `·`-joined set — inconsistent between cards | **SI** |
-| 38 | Panel placement | its own panel | inside the inspector zone, above the inspector | **SA** — see Q3 |
+| 34 | Finding card headline | specific per finding — *"#533 is blocked by an issue closed 4 months ago"* | **OPEN at `bce5a2f`** — `audit/panel.ts:324` `words.titles[finding.kind]`, one sentence per class. Was: generic per class — *"This waits on an issue that is already closed."* — so every card of a class is identical at a glance | **SI** |
+| 35 | Finding card rationale | a paragraph explaining why it matters | **CANNOT TELL without the design frames** — a detail paragraph exists (`panel.ts:330`); whether it is the frame's text needs the frame. Was: absent | **SI** |
+| 36 | Finding card remedies | `Remove the edge` · `Keep as history` · `Repoint or clear` | **MET at `bce5a2f`** — `panel.ts:211-221`: Remove the edge, Keep as history and Repoint or clear all render. Was: `show me` only. CHANGELOG records this as deliberate, citing §17d's *"navigation and never a remedy"* — **but the frame draws the remedies** | ~~SA~~ — see Q3 |
+| 37 | Cycle walk line | `#544 → #551 → #560 → #544` | **MET at `bce5a2f`** — `panel.ts:345-348`; the walk is left out only when §6.6 names none (`audit/findings.ts:165`). Was: one card shows the walk, another shows a `·`-joined set — inconsistent between cards | ~~SI~~ |
+| 38 | Panel placement | its own panel | **MET at `bce5a2f`** — the RULINGS §3 overlay (`workspace/styles.ts:466-470`), 520px over the canvas. Was: inside the inspector zone, above the inspector | ~~SA~~ — see Q3 |
 
 ### 3.6 Scale (§17f)
 
@@ -223,28 +234,28 @@ A struck class (`~~SI~~`) means the gap is closed; the class records what it was
 |---|---|---|---|---|
 | 39 | Refusal above budget | refuse and say so | **correct** — *"141 related issues is past this canvas's budget of 60, so it is not drawing them."* | — ok |
 | 40 | Search-to-focus | `⌕ focus an issue` | **present** | — ok |
-| 41 | Capsule tail | 4 capsules + `+ 5 more · 2–7 issues each` | all 13 drawn | **SI** |
+| 41 | Capsule tail | 4 capsules + `+ 5 more · 2–7 issues each` | **MET at `bce5a2f`** — `ladder.ts:580` `capsulesOmitted`: `9 further components are not listed · 2–72 issues each` (cap 12 at `ladder.ts:235` against the frame's 4). Was: all 13 drawn | ~~SI~~ |
 | 42 | Capsule name | identify by **anchor** — `around #488 · Extract session store adapter`; never a generated phrase (`RULINGS.md` §4) | **CLOSED `28a83a5`** — renders `around 315 · Backfill the audit count`, and the anchor is now the **highest-ranked member**. Was one member's bare title, picked by `members.sort()` — the alphabetically first key | ~~SA~~ |
 | 43 | `nothing can start` on a cyclic capsule | required | **correct** | — ok |
-| 44 | Isolated count chip | `248 isolated · open as list` on the canvas | in the rail footer (`5 with no relationships · show`), not on the canvas | **SI** |
-| 45 | Canvas filter chips | `has relationships · held only · problems only · label…` | absent | **SI** |
-| 46 | Refusal copy | one sentence with the next move | three sentences, two of them explaining the rail's behaviour rather than offering a move | **SI** |
+| 44 | Isolated count chip | `248 isolated · open as list` on the canvas | **CANNOT TELL without the design frames** — `render.ts:1127-1130` puts it in the rail footer citing 17a; this row cites 17f's canvas, and the two frames disagree. Was: in the rail footer (`5 with no relationships · show`), not on the canvas | **SI** |
+| 45 | Canvas filter chips | `has relationships · held only · problems only · label…` | **OPEN at `bce5a2f`** — none; `canvasToolbar` (`render.ts:1058-1117`) draws only the caption and the edit-mode pill. Was: absent | **SI** |
+| 46 | Refusal copy | one sentence with the next move | **OPEN at `bce5a2f`** — `ladder.ts:437-448` adds three route sentences. Was: three sentences, two of them explaining the rail's behaviour rather than offering a move | **SI** |
 
 ### 3.7 Canvas projection (§17a / §17f)
 
 | # | Element | Design target | Implementation | Class |
 |---|---|---|---|---|
-| 47 | What the canvas draws below budget | a **focused neighbourhood** — free-positioned node cards with SVG edges, `focus: #512 · 1 hop · 6 of 312 shown` | §16b's three-column ordered spine, labelled `EXPLAINS THE ORDER` / `THE WORK ORDER ↓` / `NOT WORKED` | **SI** |
-| 48 | Graph / List toggle | `⛓ Graph  ☰ List` on the canvas toolbar | absent from the workspace; the demo host offers `neighbourhood` / `tree` in its own chrome instead | **SI** |
-| 49 | Focus statement | `focus: #512 · 1 hop · 6 of 312 shown` | `10 of 15 drawn` — the count without the focus or the hop radius | **SI** |
-| 50 | Isolated-issues chip on canvas | `248 isolated issues hidden · list them` | absent from the canvas | **SI** |
+| 47 | What the canvas draws below budget | a **focused neighbourhood** — free-positioned node cards with SVG edges, `focus: #512 · 1 hop · 6 of 312 shown` | **OPEN at `bce5a2f`** — `viewer/src/projections/graph.ts:416-420` still draws the three columns. Was: §16b's three-column ordered spine, labelled `EXPLAINS THE ORDER` / `THE WORK ORDER ↓` / `NOT WORKED` | **SI** |
+| 48 | Graph / List toggle | `⛓ Graph  ☰ List` on the canvas toolbar | **OPEN at `bce5a2f`** — `render.ts:1058-1117` has no toggle. Was: absent from the workspace; the demo host offers `neighbourhood` / `tree` in its own chrome instead | **SI** |
+| 49 | Focus statement | `focus: #512 · 1 hop · 6 of 312 shown` | **OPEN at `bce5a2f`** — `render.ts:1072-1105` gives `focus: N · n of m drawn`, no hop radius (follows row 47). Was: `10 of 15 drawn` — the count without the focus or the hop radius | **SI** |
+| 50 | Isolated-issues chip on canvas | `248 isolated issues hidden · list them` | **CANNOT TELL without the design frames** — the same split as row 44 (`render.ts:3101`). Was: absent from the canvas | **SI** |
 
 ### 3.8 Together-with
 
 | # | Element | Design target | Implementation | Class |
 |---|---|---|---|---|
 | 51 | A together unit in the rail | one row, one rank, containing a box; at 390px a `⧉ n` marker inline with the lead's title (`RULINGS.md` §1, `17j`) | **CLOSED `28a83a5`** — 53px, `⧉ 2` marker with the lead's title; the enclosure survives only above 430px. Was a 408px boxed enclosure | ~~SA~~ |
-| 52 | Cyan hairline connector | the kit's one amendment: a 1.6px cyan hairline between members, so a together-edge is individually clickable | the enclosure is drawn; no separate connector hit target | **SI** |
+| 52 | Cyan hairline connector | the kit's one amendment: a 1.6px cyan hairline between members, so a together-edge is individually clickable | **OPEN at `bce5a2f`** — members are clickable through their badge (`viewer/src/parts.ts:910`), no line between them. Was: the enclosure is drawn; no separate connector hit target | **SI** |
 
 ---
 
