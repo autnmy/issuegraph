@@ -472,6 +472,29 @@ describe('the density escape hatch overrides the crossover it is an escape from'
       'the wide direction grew rules of its own, so it can now disagree with the base density',
     );
   });
+
+  it('says a matched query once on a list row, at every density (#131)', () => {
+    // THE CHIP AND THE LINE TRADE PLACES. The line names the query wherever it
+    // is drawn, so the chip is hidden there; the dense rail hides the line, so
+    // the chip comes back; an opened dense row draws the line again, so the
+    // chip leaves. Asserted on both density keys, because a rule written into
+    // one emission and not the other is the drift `railDensity` exists to stop.
+    const display = (selector: string): string | undefined =>
+      rules()
+        .filter((rule) => rule.selector === selector)
+        .map((rule) => /display:\s*([\w-]+)/.exec(rule.body)?.[1])
+        .at(-1);
+    const chip = ".ig-badge[data-priority='query']";
+    assert.equal(display(`.ig-slot ${chip}`), 'none', 'the wide row prints the query twice');
+    for (const scope of [CONTAINER_SCOPE, ATTRIBUTE_SCOPE]) {
+      assert.equal(display(`${scope} .ig-slot ${chip}`), 'inline-flex', `${scope}: the dense row names no query`);
+      assert.equal(
+        display(`${scope} .ig-slot[aria-expanded='true'] ${chip}`),
+        'none',
+        `${scope}: an opened dense row prints the query twice`,
+      );
+    }
+  });
 });
 
 describe('the density escape hatch reaches the markup the sheet keys off', () => {
