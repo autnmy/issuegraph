@@ -250,6 +250,12 @@ describe('the public surface', () => {
       'normalizeDocument',
       'provenanceClause',
       'reconcile',
+      // WHAT BOTH BUDGETS COUNT, for the editor's scale ladder: it decides the
+      // same three tiers against the same two constants, so it has to count the
+      // same issues the canvas counts. A second spelling of "related" out there
+      // is a workspace tier and a canvas free to disagree about whether one
+      // document can be drawn (issuegraph #133).
+      'relatedKeys',
       'renderMarkup',
       'renderViewer',
       // THE LOADING PLACEHOLDER, pure so a host can render it server-side in a

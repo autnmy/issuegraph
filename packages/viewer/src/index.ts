@@ -115,7 +115,10 @@ export type { EdgeDash, EdgeTerminal, EdgeTreatment, OrderingEffect } from './vo
 // already.
 export { EDGE_TREATMENTS, dashArrayFor, labelFrom, treatmentFor } from './vocabulary.ts';
 
-export { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET } from './projections/graph.ts';
+// `relatedKeys` IS WHAT THOSE TWO NUMBERS COUNT, and it travels with them: the
+// editor's scale ladder decides the same tiers against the same constants, so it
+// reads the canvas's own count rather than spelling "related" a second time.
+export { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET, relatedKeys } from './projections/graph.ts';
 
 // `isFooterSlot` IS ON THE SURFACE FOR THE EDITOR'S RAIL, which windows the
 // sequence and carries the footer's slots whole. Which slots belong to the

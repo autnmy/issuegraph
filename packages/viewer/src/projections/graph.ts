@@ -71,11 +71,66 @@ import {
 } from './linear.ts';
 
 /**
- * The node budget, from the design's scale table. Above the first threshold the
- * canvas shows component capsules; above the second, clusters only.
+ * The node budget, from the design's scale table: the most RELATED issues — the
+ * count {@link relatedKeys} answers — the canvas draws. Past it the canvas
+ * shows component capsules instead.
+ *
+ * WHAT IS COUNTED IS THE WHOLE MEANING OF THE NUMBER, and it used to be the
+ * wrong thing. The budget compared `layout.nodes.size` — every laid-out card,
+ * related or not — while the refusal it triggers says "N related issues are too
+ * many to draw here". A day-one repository of 300 issues and no relationships
+ * was therefore refused as "300 related issues", with 300 one-issue capsules,
+ * and that refusal cost MORE to build than the plain spine it withheld: 293 KB
+ * and 6,050 elements against the canvas's 198 KB and 2,451 (issuegraph #133).
+ * An issue with no relationship adds a card to the spine and nothing else — no
+ * gutter, no arc — which is the same work the list does at any size, so it is
+ * not what the budget bounds.
  */
 export const GRAPH_NODE_BUDGET = 60;
+/**
+ * The second threshold, over the same count as {@link GRAPH_NODE_BUDGET}: past
+ * this many RELATED issues the refusal lists clusters only, truncated.
+ */
 export const CLUSTER_ONLY_BUDGET = 300;
+
+/**
+ * The issues both budgets count: every issue that is an endpoint of at least
+ * one relationship this document keeps.
+ *
+ * ONE FUNCTION, SO THE RULE LIVES IN ONE PLACE. The canvas compares it against
+ * the budgets, the refusal partitions it into capsules — so the count in the
+ * heading and the sum of the capsules cannot disagree — and the editor's scale
+ * ladder reads it for the same decision, so the workspace's tier and the
+ * canvas it narrows to cannot either.
+ *
+ * WHICH EDGES COUNT: every edge `normalizeDocument` kept, which is every edge
+ * this projection draws. Most become an arc between two cards. An edge whose
+ * two ends share one card — a `together-with` pair, or any relationship between
+ * members of one unit — draws no arc, but it is drawn: as the unit's enclosure,
+ * one title per member, and as a chip on the card's badge row. So a unit's
+ * members count, each of them, which is also how the capsules have always
+ * counted them ("3 issues" for a three-member unit) and what "related issues"
+ * says. An edge `normalizeDocument` dropped — dangling, or a `together-with`
+ * across two slots — is drawn nowhere and makes nothing related.
+ *
+ * NOT CYCLES. A cycle is the host's reading OF edges, and it draws no node of
+ * its own: on the canvas it is a badge on a card that is already there. A
+ * cycle member is counted when it keeps an edge in this document and not
+ * otherwise — a slice that carries the member but none of the loop's edges
+ * draws it as an ordinary station, so it costs what any unrelated issue costs.
+ *
+ * NOT RELATIVE TO `compact`. The column draws no arcs, yet the count is the
+ * same at either width: the budget is a property of the DOCUMENT, so the
+ * preview and the picture its expand affordance opens never disagree about
+ * whether this document can be drawn.
+ */
+export function relatedKeys(document: NormalizedDocument): ReadonlySet<string> {
+  const keys = new Set<string>();
+  for (const issue of document.issues) {
+    if ((document.edgesOf.get(issue.key) ?? []).length > 0) keys.add(issue.key);
+  }
+  return keys;
+}
 
 export interface GraphOptions extends SceneOptions {
   /**
@@ -240,7 +295,9 @@ function nodeCard(
   const box = layout.nodes.get(key);
   if (box === undefined) return null;
   const issue = document.byKey.get(key);
-  const slot = document.order.slots.find((candidate) => candidate.lead === key);
+  // ONE LOOKUP PER CARD — see `NormalizedDocument.slotByLead` for the scan this
+  // replaced and what it cost.
+  const slot = document.slotByLead.get(key);
   const members = layout.slotMembers.get(key) ?? [key];
   const exclusion = document.order.excluded.find((candidate) => candidate.key === key);
 
@@ -379,7 +436,7 @@ function spineStations(
   for (const key of layout.spineOrder) {
     const box = layout.nodes.get(key);
     if (box === undefined) continue;
-    const slot = document.order.slots.find((candidate) => candidate.lead === key);
+    const slot = document.slotByLead.get(key);
     const fill = slot === undefined ? 'filled' : stationFill(slot);
     // A serialize hold waits on a PEER rather than on a rank above it, and the
     // frame colours that station differently for exactly that reason.
@@ -529,15 +586,18 @@ function capsuleSpec(cluster: Cluster): ElementSpec {
  */
 function refusal(
   document: NormalizedDocument,
-  layout: GraphLayout,
-  nodeCount: number,
+  related: ReadonlySet<string>,
   mode: 'capsules' | 'clusters',
 ): ElementSpec {
-  // THE SAME KEY SET THE COUNT ABOVE CAME FROM. `nodeCount` is `layout.nodes`,
-  // so the component list has to partition `layout.nodes` or the two disagree —
-  // which is how an edge-free over-budget document listed no components at all
-  // under a sentence telling the reader to choose one.
-  const clusters = clustersOf(document, new Set(layout.nodes.keys()));
+  // THE SAME KEY SET THE COUNT CAME FROM. The heading's number is `related`'s
+  // size, so the component list has to partition `related` or the two disagree
+  // — which is how an edge-free over-budget document once listed no components
+  // at all under a sentence telling the reader to choose one. It partitioned
+  // `layout.nodes` while the budget counted those; since the budget counts
+  // related issues, a related issue is the only kind that reaches a capsule,
+  // and an issue with no relationship is never listed as a "group" of one.
+  const clusters = clustersOf(document, related);
+  const nodeCount = related.size;
   const heading =
     mode === 'capsules'
       ? `${String(nodeCount)} related issues are too many to draw here. The limit is ${String(GRAPH_NODE_BUDGET)}.`
@@ -604,10 +664,11 @@ function footerGroup(
 ): ElementSpec | null {
   const entries = footerKeys(document, layout, { ...options, focused });
   if (entries.length === 0) return null;
-  const slots = document.order.slots.filter((slot) => layout.footer.includes(slot.lead));
-  const excluded = document.order.excluded.filter((exclusion) =>
-    layout.footer.includes(exclusion.key),
-  );
+  // A SET, so each test is a lookup rather than a scan of the footer — the
+  // same membership question, asked once per slot and once per exclusion.
+  const inFooter: ReadonlySet<string> = new Set(layout.footer);
+  const slots = document.order.slots.filter((slot) => inFooter.has(slot.lead));
+  const excluded = document.order.excluded.filter((exclusion) => inFooter.has(exclusion.key));
   // WHAT THIS GROUP ACTUALLY HOLDS. In the column it also holds every gutter
   // endpoint the compact picture does not draw — an ordinary open blocker, say,
   // which no runner holds and which is worked like anything else — so a heading
@@ -642,7 +703,7 @@ function footerKeys(
   options: SceneOptions,
 ): readonly ElementSpec[] {
   return layout.footer.map((key) => {
-    const slot = document.order.slots.find((candidate) => candidate.lead === key);
+    const slot = document.slotByLead.get(key);
     if (slot !== undefined) return footerRow(document, slot, options);
     const exclusion = document.order.excluded.find((candidate) => candidate.key === key);
     if (exclusion !== undefined) {
@@ -658,7 +719,11 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
   const options = atStations(rawOptions, stations);
   const theme = resolveTheme(options.theme);
   const layout = layoutGraph(document, theme, options.compact === true);
+  // TWO COUNTS, AND THEY ANSWER DIFFERENT QUESTIONS. `nodeCount` is whether
+  // there is anything to draw at all; `related` is what the budgets bound —
+  // see `relatedKeys` for why those are not the same number.
   const nodeCount = layout.nodes.size;
+  const related = relatedKeys(document);
 
   const inline = document.order.slots.filter((slot) => !isFooterSlot(slot));
   const footerSlots = document.order.slots.filter(isFooterSlot);
@@ -685,7 +750,7 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
   // footer group that was holding all of them, so the panel came back blank.
   // The question is whether this scene draws anything, and the footer draws.
   const drawsNothing = nodeCount === 0 && layout.footer.length === 0;
-  const refused = drawsNothing || nodeCount > GRAPH_NODE_BUDGET;
+  const refused = drawsNothing || related.size > GRAPH_NODE_BUDGET;
   // FROM THE SAME RULE THE LIST RENDERS FROM — see `refusalContents`. With a
   // canvas every node is a card and the card owns the tab stop; without one,
   // the list is the whole order UI and its rows do.
@@ -710,12 +775,18 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
   // held no slot, so the keyboard walked the drawing non-monotonically: down
   // the spine, back up to the top, on again.
   const spineFirst = refused ? [] : [...layout.spineOrder];
-  const focusOrder = [
+  // FIRST OCCURRENCE WINS, through a Set: `indexOf` per entry made this dedupe
+  // quadratic in the order's length, for the same answer.
+  const ordered = new Set<string>();
+  for (const key of [
     ...spineFirst,
     ...inline.map((slot) => slot.lead),
     ...footerSlots.map((slot) => slot.lead),
     ...document.order.excluded.map((exclusion) => exclusion.key),
-  ].filter((key, index, all) => focusable.has(key) && all.indexOf(key) === index);
+  ]) {
+    if (focusable.has(key)) ordered.add(key);
+  }
+  const focusOrder = [...ordered];
 
   // ── the lateral axis: ONLY PAIRS WHOSE REVERSE HOLDS ──────────────────────
   //
@@ -798,8 +869,13 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
     // than on a column, so a set derived from the laid-out nodes alone reached
     // none of them — and in compact mode, where the gutters are not drawn, that
     // is every off-order endpoint the panel still lists.
+    // `ordered` IS `focusOrder`'s membership, kept in step with every push, so
+    // the test is a lookup where `includes` scanned the whole order per node.
     for (const key of [...layout.nodes.keys(), ...layout.footer]) {
-      if (!focusOrder.includes(key) && !lateral.has(key) && !represented.has(key)) focusOrder.push(key);
+      if (!ordered.has(key) && !lateral.has(key) && !represented.has(key)) {
+        ordered.add(key);
+        focusOrder.push(key);
+      }
     }
   }
 
@@ -813,7 +889,7 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
   // come after a pass that changes the order.
   const navigableKeys = [...focusOrder];
   for (const key of lateral.keys()) {
-    if (!navigableKeys.includes(key)) navigableKeys.push(key);
+    if (!ordered.has(key)) navigableKeys.push(key);
   }
   // One rule, shared with `reconcile` and the other projections, so the element
   // that renders `tabindex="0"` and the state a host reads cannot disagree.
@@ -835,16 +911,20 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
     canvas = null;
   } else if (drawsNothing) {
     canvas = emptyState('No relationships yet, so there is nothing to draw.');
+  } else if (related.size > CLUSTER_ONLY_BUDGET) {
+    diagnostics.push(`graph refused: ${String(related.size)} nodes is past the cluster-only budget of ${String(CLUSTER_ONLY_BUDGET)}`);
+    canvas = refusal(document, related, 'clusters');
+  } else if (related.size > GRAPH_NODE_BUDGET) {
+    diagnostics.push(`graph refused: ${String(related.size)} nodes is past the node budget of ${String(GRAPH_NODE_BUDGET)}`);
+    canvas = refusal(document, related, 'capsules');
   } else if (nodeCount === 0) {
     // Nothing to draw ON the canvas, and a footer group beneath it that is the
     // whole panel. No stage, no refusal: the group renders in ordinary flow.
+    // AFTER THE BUDGETS, because `refused` above is read off the related count
+    // alone: in the column every off-order endpoint is in the footer and
+    // nothing is laid out, so an over-budget document there has no nodes and
+    // still refuses — and the refusal, not this sentence, is what it draws.
     canvas = emptyState('Nothing is in the order yet, so there is nothing to draw.');
-  } else if (nodeCount > CLUSTER_ONLY_BUDGET) {
-    diagnostics.push(`graph refused: ${String(nodeCount)} nodes is past the cluster-only budget of ${String(CLUSTER_ONLY_BUDGET)}`);
-    canvas = refusal(document, layout, nodeCount, 'clusters');
-  } else if (nodeCount > GRAPH_NODE_BUDGET) {
-    diagnostics.push(`graph refused: ${String(nodeCount)} nodes is past the node budget of ${String(GRAPH_NODE_BUDGET)}`);
-    canvas = refusal(document, layout, nodeCount, 'capsules');
   } else {
     const edgeLayers: ElementSpec[] = [];
     // ONE STATION PER SLOT MEANS ONE BOX PER SLOT, so an edge inside a unit has

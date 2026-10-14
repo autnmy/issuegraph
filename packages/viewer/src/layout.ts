@@ -532,7 +532,9 @@ export function layoutGraph(
   // the unit rather than taking a card the projection has no station for.
   const nowKeys: string[] = [];
   for (const job of document.host.running) {
-    const lead = document.order.slots.find((slot) => slot.members.includes(job.key))?.lead ?? job.key;
+    // `leadOf`, built once in `normalizeDocument`, rather than a scan of every
+    // slot's members per job — the same answer, one lookup.
+    const lead = document.leadOf.get(job.key) ?? job.key;
     if (!nowKeys.includes(lead)) nowKeys.push(lead);
   }
   const { spine, left, right, footer, slotMembers } = assignColumns(document, new Set(nowKeys));
@@ -610,7 +612,10 @@ export function layoutGraph(
       // alone could not resolve it, so a gutter card explaining the SECOND of
       // two running jobs fell back beside the first row and drew exactly the
       // cross-row arc this pass exists to prevent.
-      const station = document.order.slots.find((slot) => slot.members.includes(other))?.lead ?? other;
+      // THROUGH THE INDEX. This runs for every edge of every gutter card, and
+      // a scan of every slot's members here made placing the gutters quadratic
+      // in the order's length (issuegraph #133).
+      const station = document.leadOf.get(other) ?? other;
       const box = nodes.get(station);
       // A SPINE PARTNER, NEVER A GUTTER ONE. The right gutter is placed after
       // the left, so by then a left card has a box too — and aligning a right
