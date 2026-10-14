@@ -1219,9 +1219,17 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // `frame: false` MIRRORS WHAT IS DRAWN. These rebuild a scene to answer a
     // navigation question, and a scene built from different options than the
     // markup is a second opinion about the surface. See `SceneOptions.frame`.
+    // `detachFooter` too, for the same reason: the rail DRAWS its footer group
+    // detached, after the extent. The traversal is the same either way, so this
+    // is agreement with the markup rather than a different answer.
     if (zoneName === 'rail')
-      return renderViewer(drawn.rail.document, { projection: 'linear', theme: theme(), frame: false, dockLegend: true })
-        .scene;
+      return renderViewer(drawn.rail.document, {
+        projection: 'linear',
+        theme: theme(),
+        frame: false,
+        dockLegend: true,
+        detachFooter: true,
+      }).scene;
     if (zoneName !== 'canvas') return null;
     if (current.canvas === 'tree')
       return renderViewer(withoutChrome(drawn.viewer), { projection: 'tree', theme: theme(), chrome: false, frame: false, dockLegend: true }).scene;
@@ -1861,10 +1869,11 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       const rows = result.view.rail.rows;
       const wanted = pendingFocus.key;
       const at = rows.findIndex((slot) => wanted !== null && slot.members.includes(wanted));
-      // THE ENDS ARE THE VIEWER'S ENDS. The linear projection appends the
-      // excluded rows after the slots, so the last focusable row of the last
-      // window is an exclusion when the document has any; read the ends off
-      // what the rail actually drew rather than off the slots alone.
+      // THE ENDS ARE THE VIEWER'S ENDS. The rail draws the footer group — held
+      // slots and exclusions — after the window at every scroll position, so
+      // the last focusable row of the last window is a footer row when the
+      // document has any; read the ends off what the rail actually drew rather
+      // than off the window's rows alone.
       const drawnKeys = [...(rail?.querySelectorAll<HTMLElement>(`[${KEY_ATTRIBUTE}][tabindex]`) ?? [])].map((row) =>
         row.getAttribute(KEY_ATTRIBUTE),
       );
@@ -2269,8 +2278,12 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // host running dozens of jobs does not scroll the window past ranks the
     // reader has not reached. Measured, not derived from the theme: the header
     // wraps, and a wrapped header is taller than any constant would say.
-    const rows = rail.querySelector('.ig-viewer .ig-list');
-    const viewer = rail.querySelector('.ig-viewer');
+    // THE PANEL'S ROOT, NOT THE DETACHED FOOTER'S WRAPPER. Both carry
+    // `.ig-viewer` — the group's styles hang off that class — and the wrapper
+    // holds an `.ig-list` of its own; document order makes the root win today,
+    // and the attribute makes it win on purpose. See `SceneOptions.detachFooter`.
+    const rows = rail.querySelector('.ig-viewer:not([data-ig-detached]) .ig-list');
+    const viewer = rail.querySelector('.ig-viewer:not([data-ig-detached])');
     const chrome =
       rows === null || viewer === null
         ? 0
@@ -2434,12 +2447,12 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   /**
    * The rail's window edge, decided BEFORE the viewer is asked.
    *
-   * The viewer draws the excluded rows after every window, so its scene's
-   * focus order runs from the last drawn slot into the exclusions rather than
-   * ending there — from the viewer's side the window is the whole document.
-   * The window is the mount's, so the mount decides first: on the last drawn
-   * slot, ArrowDown and End re-cut the window rather than stepping into the
-   * exclusions; on the first, ArrowUp and Home re-cut it upward. Anything
+   * The viewer draws the footer group — held slots and exclusions — after
+   * every window, so its scene's focus order runs from the last drawn row into
+   * the footer rather than ending there — from the viewer's side the window is
+   * the whole document. The window is the mount's, so the mount decides first:
+   * on the last drawn row, ArrowDown and End re-cut the window rather than
+   * stepping into the footer; on the first, ArrowUp and Home re-cut it upward. Anything
    * inside the window, and every other key, is the viewer's to answer.
    */
   const advanceRail = (rail: RailWindow, key: string, pressedKey: string): boolean => {

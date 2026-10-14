@@ -225,6 +225,12 @@ describe('the public surface', () => {
       'hiddenGlyph',
       'identity',
       'initialNavigationState',
+      // WHICH SLOTS THE FOOTER OWNS, for the editor's rail: it windows the
+      // sequence and carries the footer's slots whole, so it has to ask the
+      // same question the projection asks. A second spelling of "any tracker
+      // hold" out there is a rail and a projection free to disagree about
+      // whether a slot is a row or a footer entry.
+      'isFooterSlot',
       // THE ONE ANSWER TO "may this string go in an href". A consumer left to
       // write it themselves gets the easy half — an allowlist of schemes — and
       // misses the half that matters: the URL parser strips every ASCII tab,

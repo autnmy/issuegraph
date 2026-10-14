@@ -1222,3 +1222,22 @@ describe('the graph projection', () => {
     assert.equal(render(), render());
   });
 });
+
+describe('the graph projection and a detached footer', () => {
+  it('keeps its footer group inline and returns footer: null, whatever detachFooter says', () => {
+    // THE CONTRACT, SETTLED: `detachFooter` exists for a host that virtualizes
+    // rows, and nothing virtualizes a graph — the rail that windows the order is
+    // always linear. So the option is honoured by the linear projection only,
+    // and a host passing it here loses nothing from the canvas. COMPACT,
+    // because that is the graph that draws the group: the full picture puts
+    // the same entries in its gutters.
+    const asked = scene(fixtureDocument, { compact: true, detachFooter: true });
+    const plain = scene(fixtureDocument, { compact: true });
+
+    assert.equal(asked.footer, null);
+    assert.equal(plain.footer, null);
+    assert.equal(renderMarkup(asked.root), renderMarkup(plain.root));
+    assert.match(renderMarkup(asked.root), /<section class="ig-footer"/);
+    assert.deepEqual([...asked.focusOrder], [...plain.focusOrder]);
+  });
+});

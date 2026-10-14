@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { normalizeDocument } from '@issuegraph/viewer';
+import { type ViewerDocument, type ViewerHold, normalizeDocument } from '@issuegraph/viewer';
 
 import { RAIL_WINDOW, railWindow } from './rail.ts';
 import { backlogOf, keysOf } from '../testing/workspace.ts';
@@ -344,5 +344,99 @@ describe('the rail window carries the host facts whole', () => {
   it('carries an empty host as the viewer normalises it, so a window is no change to the markup', () => {
     const rail = railWindow(backlogOf(12), { start: 0, count: 5 });
     assert.deepEqual(rail.document.host, { running: [] });
+  });
+});
+
+describe('the footer is not part of the sequence, and it is carried whole', () => {
+  // THE DEFECT: the window sliced `order.slots` whole, and a slot with a
+  // tracker-family hold — which layer 1 draws in the "not in the order" group,
+  // wherever it sits in the array — was drawn only when its position happened
+  // to fall inside the window, and padded a spacer with a row the rail never
+  // draws up there whenever it did not.
+  //
+  // TWO FOOTER SLOTS, BOTH INSIDE THE SEQUENCE, and one exclusion. `i0005` is
+  // unranked, as a claimed slot usually is; `i0015` keeps the rank its host
+  // gave it, because the port allows one and a rank is an address wherever its
+  // slot is drawn.
+  const TRACKER: ViewerHold = { family: 'tracker', reason: 'Another worker already has it.' };
+  const base = backlogOf(20);
+  let rank = 0;
+  const document: ViewerDocument = {
+    ...base,
+    order: {
+      slots: base.order.slots
+        .filter((slot) => slot.lead !== 'i0020')
+        .map((slot) => {
+          if (slot.lead === 'i0005') return { ...slot, rank: null, ready: false, holds: [TRACKER] };
+          rank += 1;
+          return slot.lead === 'i0015'
+            ? { ...slot, rank, ready: false, holds: [TRACKER] }
+            : { ...slot, rank };
+        }),
+      excluded: [{ key: 'i0020', canonical: 'i0001', reason: 'duplicate-of' }],
+    },
+  };
+  const footer = ['i0005', 'i0015'];
+  const sequence = keysOf(19).filter((key) => !footer.includes(key));
+
+  it('carries every footer slot whole, after the rows, at every window', () => {
+    for (const start of [0, 3, 8, 14, 9_000]) {
+      const rail = railWindow(document, { start, count: 3 });
+      const leads = rail.document.order.slots.map((slot) => slot.lead);
+      assert.deepEqual(
+        leads,
+        [...rail.rows.map((slot) => slot.lead), ...footer],
+        `the footer was not carried whole at start ${String(start)}`,
+      );
+      assert.equal(rail.document.order.excluded.length, 1);
+      for (const key of footer) {
+        assert.ok(rail.document.issues.some((issue) => issue.key === key), `${key} lost its issue`);
+      }
+    }
+  });
+
+  it('never draws a footer slot as a row, so it never lands in a spacer', () => {
+    // A window that covers the footer slots' raw positions — 4 and 14 — draws
+    // none of them as rows.
+    for (const start of [3, 12]) {
+      const rail = railWindow(document, { start, count: 4 });
+      assert.equal(rail.rows.some((slot) => footer.includes(slot.lead)), false);
+    }
+  });
+
+  it('counts total, before and after over the sequence alone', () => {
+    const rail = railWindow(document, { start: 5, count: 4 });
+    assert.equal(rail.total, sequence.length);
+    assert.equal(rail.total, 17);
+    assert.equal(rail.start, 5);
+    assert.equal(rail.count, 4);
+    assert.equal(rail.before, 5);
+    assert.equal(rail.after, 8);
+    assert.equal(rail.before + rail.count + rail.after, rail.total);
+    assert.deepEqual(
+      rail.rows.map((slot) => slot.lead),
+      sequence.slice(5, 9),
+    );
+    // And the last window reaches the last SEQUENCE row, not a footer slot.
+    const last = railWindow(document, { start: 9_000, count: 4 });
+    assert.equal(last.after, 0);
+    assert.equal(last.start, 13);
+    assert.equal(last.rows[last.rows.length - 1]?.lead, 'i0019');
+  });
+
+  it('answers offsets in the sequence, and none for a footer slot', () => {
+    const rail = railWindow(document, { start: 10, count: 3 });
+    for (const [offset, key] of sequence.entries()) assert.equal(rail.offsetOf(key), offset, key);
+    for (const key of footer) assert.equal(rail.offsetOf(key), undefined, key);
+  });
+
+  it('still addresses every rank, the footer slot’s included', () => {
+    const rail = railWindow(document, { start: 0, count: 2 });
+    for (let at = 1; at <= rank; at += 1) {
+      const slot = rail.addressOf(at);
+      assert.ok(slot !== undefined, `rank ${String(at)} is unaddressable`);
+      assert.equal(slot.rank, at);
+    }
+    assert.equal(rail.addressOf(14)?.lead, 'i0015');
   });
 });

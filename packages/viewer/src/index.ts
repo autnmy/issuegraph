@@ -117,6 +117,13 @@ export { EDGE_TREATMENTS, dashArrayFor, labelFrom, treatmentFor } from './vocabu
 
 export { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET } from './projections/graph.ts';
 
+// `isFooterSlot` IS ON THE SURFACE FOR THE EDITOR'S RAIL, which windows the
+// sequence and carries the footer's slots whole. Which slots belong to the
+// footer is this package's rule — any tracker-family hold — and a rail that
+// spelled it again would be a second copy free to disagree about where a slot
+// is drawn, which is exactly the question the window has to get right.
+export { isFooterSlot } from './projections/linear.ts';
+
 /**
  * The mark vocabulary, and it is deliberately the ONLY thing `marks.ts` puts on
  * the surface.

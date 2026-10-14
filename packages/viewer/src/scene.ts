@@ -24,6 +24,28 @@ export interface Scene {
   readonly projection: Projection;
   readonly root: ElementSpec;
   /**
+   * The document-level footer — the "not in the order" group — when the host
+   * asked for it DETACHED from `root`, and `null` otherwise.
+   *
+   * A HOST THAT VIRTUALIZES ROWS CANNOT PLACE A FOOTER IT DOES NOT HOLD. The
+   * footer is a fact about the whole order, and it belongs after the whole
+   * order — but a host drawing a window of rows between two spacers composes
+   * `spacer + root + spacer`, so a footer inside `root` lands after the
+   * VISIBLE rows, mid-scroll, with the rest of the order still below it. Handed
+   * out on its own, the host composes it after the trailing spacer, which is
+   * where the order actually ends. See `SceneOptions.detachFooter`.
+   *
+   * REQUIRED, AND `null` IS THE ANSWER ALMOST EVERYWHERE. A projection that
+   * kept the footer inline says so here rather than leaving the field out, so
+   * a caller cannot read an absent field as "this scene has no footer" when it
+   * means "the footer is already in `root`".
+   *
+   * The traversal does not move with it: `focusOrder` and `navigable` are the
+   * same whether the footer is detached or not, because where a host draws the
+   * group changes its position on the page, not its position in the order.
+   */
+  readonly footer: ElementSpec | null;
+  /**
    * Every key the vertical keys walk, in the order they walk them. For the
    * spine that is RANK ORDER — never the order boxes happen to sit in.
    */

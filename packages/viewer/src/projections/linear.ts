@@ -122,6 +122,40 @@ export interface SceneOptions {
    */
   readonly dockLegend?: boolean | undefined;
   /**
+   * Hand the "not in the order" group back on `Scene.footer` instead of drawing
+   * it inside `Scene.root`. Defaults to `false`.
+   *
+   * THE FOOTER ENDS THE ORDER, AND A HOST THAT WINDOWS THE ORDER ENDS IT
+   * SOMEWHERE ELSE. The group is a fact about the whole document — every
+   * runner-held slot and every exclusion — so it belongs after the last row of
+   * the order. A host that virtualizes rows draws only a window of them, with a
+   * spacer above and below standing in for the rest, and composes
+   * `spacer + root + spacer`. With the footer inside the root that put the
+   * group directly under the VISIBLE rows: mid-scroll, with hundreds of ranks
+   * still to come beneath it. Detached, the host composes it after the
+   * trailing spacer, which is where the order actually ends.
+   *
+   * ONLY A CONTAINER THAT VIRTUALIZES NEEDS IT, which is why it is an option and
+   * not the default — the same reasoning as `frame` and `dockLegend`. A viewer
+   * that draws every row is its own extent, and the inline footer is already
+   * in the right place.
+   *
+   * HONOURED BY THE LINEAR PROJECTION ONLY. The graph and the tree are never
+   * virtualized — the rail that windows the order is always linear — so they
+   * keep their footer inline and return `footer: null` whatever this says. A
+   * host passing it to every projection is therefore safe: nothing goes
+   * missing from the projections that ignore it.
+   *
+   * THE DETACHED GROUP CARRIES ITS OWN `.ig-viewer` WRAPPER. Its styles hang off
+   * that ancestor — the type, the box sizing, the focus ring and §17j's density
+   * block are all scoped to it — so the group is handed out inside an element
+   * carrying the root's class and its `frame` and `density` attributes rather
+   * than leaving every host to rebuild that context or this sheet to say every
+   * rule twice. The traversal does not change: `focusOrder` and `navigable` are
+   * identical either way.
+   */
+  readonly detachFooter?: boolean | undefined;
+  /**
    * Draw the header's own view controls — the List/Graph toggle, and the
    * graph's expand/collapse affordance. Defaults to `false`.
    *
@@ -675,6 +709,36 @@ export function linearScene(
           ),
         ]);
 
+  // WHERE THE GROUP GOES IS THE HOST'S CALL, AND ONLY ONE OF TWO PLACES. Inline
+  // it sits under the order exactly as it always has, byte for byte; detached it
+  // leaves the root entirely and travels on `Scene.footer`, so there is never a
+  // scene that draws it twice or a host that has to remove it from one place to
+  // put it in the other. See `SceneOptions.detachFooter`.
+  const detached = options.detachFooter === true;
+  const detachedFooter =
+    !detached || footer === null
+      ? null
+      : element(
+          'div',
+          {
+            // THE ROOT'S CLASS AND THE TWO ATTRIBUTES ITS RULES READ, and no
+            // others. The group's type, box sizing, focus ring and §17j's
+            // density block all hang off `.ig-viewer`, so outside the root it
+            // needs one to hang off; restating those rules for a second ancestor
+            // would be two sheets for one group. `data-legend` and
+            // `data-ig-condition` are deliberately left off: there is no legend
+            // in here to dock, and the importing outline is drawn once, on the
+            // panel, rather than a second time around its footer.
+            class: 'ig-viewer ig-linear',
+            'data-frame': options.frame === false ? 'none' : undefined,
+            'data-density': options.density,
+            // So a host and a test can tell the group's wrapper from the panel
+            // it was detached from without counting classes.
+            'data-ig-detached': 'footer',
+          },
+          [footer],
+        );
+
   const root = element(
     'section',
     {
@@ -718,7 +782,7 @@ export function linearScene(
       // `conditionNotice` rather than being restated at each of the three roots.
       conditionNotice(document, options.chrome),
       body,
-      footer,
+      detached ? null : footer,
       isolatedChip(document.isolated.length),
       legend(),
       // LAST, because §16h calls it the panel FOOTER and the legend is a footer
@@ -737,6 +801,7 @@ export function linearScene(
   return {
     projection: 'linear',
     root,
+    footer: detachedFooter,
     focusOrder,
     navigable: focusOrder,
     lateral,

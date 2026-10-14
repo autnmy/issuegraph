@@ -1051,6 +1051,12 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
   return {
     projection: 'graph',
     root,
+    // INLINE, WHATEVER `detachFooter` SAYS. The option exists for a host that
+    // virtualizes rows, and nothing virtualizes a graph: the rail that windows
+    // the order is always linear, and a canvas draws every node it draws at
+    // once. So the footer group stays where the canvas puts it and this field
+    // says so. See `SceneOptions.detachFooter`.
+    footer: null,
     focusOrder,
     navigable: navigableKeys,
     lateral,

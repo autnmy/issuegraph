@@ -506,6 +506,14 @@ export function attachEdgeOverlays(
     theme,
   };
   const root = overlayTree(scene.root, context);
+  // A DETACHED FOOTER IS THE SAME SCENE, DRAWN SOMEWHERE ELSE. Its rows carry
+  // relationship badges like any other row, so an overlay naming one of their
+  // edges attaches there — and is counted attached — exactly as it would have
+  // with the group inside `root`. Walked before `unattached` below reads the
+  // set, or an edge drawn only on a footer row would be reported as undrawn.
+  // `null` for every scene a caller did not ask to detach, which today is
+  // every scene this function is handed: the composer passes graph scenes.
+  const footer = scene.footer === null ? null : overlayTree(scene.footer, context);
 
   // REPORTED, NOT DROPPED. An overlay whose edge the scene does not draw is
   // ordinary — the graph projection has a node budget and falls back to
@@ -520,7 +528,7 @@ export function attachEdgeOverlays(
     return !attached.has(edge.id) && !attached.has(edgeName(edge));
   });
 
-  return { scene: { ...scene, root }, overlays, unattached };
+  return { scene: { ...scene, root, footer }, overlays, unattached };
 }
 
 /**

@@ -261,3 +261,19 @@ describe('the tree projection', () => {
     assert.equal(render(), render());
   });
 });
+
+describe('the tree projection and a detached footer', () => {
+  it('draws exactly what it drew without the option and returns footer: null', () => {
+    // THE CONTRACT, SETTLED: `detachFooter` is honoured by the linear projection
+    // only. The tree draws no "not in the order" group to move, and it is never
+    // the projection a host virtualizes, so the option changes nothing here and
+    // the field says there is nothing detached.
+    const asked = scene(fixtureDocument, { detachFooter: true });
+    const plain = scene(fixtureDocument);
+
+    assert.equal(asked.footer, null);
+    assert.equal(plain.footer, null);
+    assert.equal(renderMarkup(asked.root), renderMarkup(plain.root));
+    assert.deepEqual([...asked.focusOrder], [...plain.focusOrder]);
+  });
+});

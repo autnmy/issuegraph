@@ -394,3 +394,97 @@ describe('the linear projection', () => {
     assert.match(row(markup, 'dup'), /data-edge="blocked-by"/, 'an exclusion lost its relationship');
   });
 });
+
+describe('the linear projection, with the footer detached', () => {
+  // THE DEFECT THIS OPTION CLOSES: a host that virtualizes rows composes
+  // `spacer + root + spacer`, so a footer inside the root landed directly under
+  // the VISIBLE rows — mid-scroll, with the rest of the order still below it.
+  // The group is handed back on `scene.footer` for the host to place after its
+  // extent, and nothing else about the scene may move.
+  const document = normalizeDocument(fixtureDocument).document;
+
+  /** The inline `<section class="ig-footer">` of a rendered root, whole. */
+  function footerSection(markup: string): string {
+    const start = markup.indexOf('<section class="ig-footer"');
+    assert.notEqual(start, -1, 'no inline footer to compare against');
+    const end = markup.indexOf('</section>', start);
+    return markup.slice(start, end + '</section>'.length);
+  }
+
+  it('leaves the root without the group and hands every entry back on scene.footer', () => {
+    const scene = linearScene(document, { detachFooter: true });
+    const root = renderMarkup(scene.root);
+
+    assert.equal(root.includes('ig-footer'), false, 'the detached group is still drawn in the root');
+    assert.ok(scene.footer !== null, 'a document with footer entries detached no footer');
+    const footer = renderMarkup(scene.footer);
+    // 105 is the tracker-held slot and 106 the duplicate: one of each family.
+    assert.match(footer, /<section class="ig-footer"/);
+    assert.match(row(footer, '105'), /class="ig-footer-row"/);
+    assert.match(row(footer, '106'), /class="ig-footer-row"/);
+    assert.equal(root.includes('data-ig-key="105"'), false);
+    assert.equal(root.includes('data-ig-key="106"'), false);
+  });
+
+  it('detaches the SAME group the root would have drawn, byte for byte', () => {
+    const inline = footerSection(renderMarkup(linearScene(document).root));
+    const detached = linearScene(document, { detachFooter: true }).footer;
+    assert.ok(detached !== null);
+    assert.ok(renderMarkup(detached).includes(inline), 'the detached group differs from the inline one');
+  });
+
+  it('draws the default exactly as before and says it detached nothing', () => {
+    const before = linearScene(document);
+    const declined = linearScene(document, { detachFooter: false });
+
+    assert.equal(before.footer, null);
+    assert.equal(declined.footer, null);
+    assert.equal(renderMarkup(declined.root), renderMarkup(before.root));
+    assert.match(renderMarkup(before.root), /<section class="ig-footer"/);
+  });
+
+  it('keeps the traversal identical, because the order did not move', () => {
+    const options = { selected: '105', focused: '106' };
+    const inline = linearScene(document, options);
+    const detached = linearScene(document, { ...options, detachFooter: true });
+
+    assert.deepEqual([...detached.focusOrder], [...inline.focusOrder]);
+    assert.deepEqual([...detached.navigable], [...inline.navigable]);
+    assert.deepEqual([...detached.focusOrder], ['102', '101', '103', '105', '106']);
+    // The tab stop and the selection still land on the footer rows they named.
+    assert.ok(detached.footer !== null);
+    const footer = renderMarkup(detached.footer);
+    assert.match(row(footer, '105'), /aria-current="true"/);
+    assert.match(row(footer, '106'), /tabindex="0"/);
+  });
+
+  it('wraps the group in the root class and the attributes its rules read, and no others', () => {
+    // The group's type, box sizing, focus ring and §17j's density block hang
+    // off `.ig-viewer`; outside the root it needs one to hang off.
+    const scene = linearScene(document, { detachFooter: true, frame: false, density: 'dense', dockLegend: true });
+    assert.ok(scene.footer !== null);
+    const footer = renderMarkup(scene.footer);
+    const wrapper = footer.slice(0, footer.indexOf('>') + 1);
+
+    assert.match(wrapper, /^<div class="ig-viewer ig-linear"/);
+    assert.match(wrapper, /data-frame="none"/);
+    assert.match(wrapper, /data-density="dense"/);
+    assert.match(wrapper, /data-ig-detached="footer"/);
+    // No legend lives in here to dock, and the importing outline is the panel's.
+    assert.equal(/data-legend=/.test(wrapper), false);
+    assert.equal(/data-ig-condition=/.test(wrapper), false);
+  });
+
+  it('detaches nothing from a document with no footer entries', () => {
+    const bare = {
+      ...fixtureDocument,
+      order: {
+        slots: fixtureDocument.order.slots.filter((slot) => slot.lead !== '105'),
+        excluded: [],
+      },
+    };
+    const scene = linearScene(normalizeDocument(bare).document, { detachFooter: true });
+    assert.equal(scene.footer, null);
+    assert.equal(renderMarkup(scene.root).includes('ig-footer'), false);
+  });
+});

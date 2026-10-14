@@ -24,6 +24,11 @@ export interface RenderOptions extends GraphOptions {
 }
 
 export interface RenderResult {
+  /**
+   * `scene.root`, rendered. A DETACHED FOOTER IS NOT IN IT: a caller that passed
+   * `detachFooter` asked to place the group itself, so it renders `scene.footer`
+   * where its extent ends. See `SceneOptions.detachFooter`.
+   */
   readonly markup: string;
   /** The stylesheet and the theme, in that order. Install both. */
   readonly styles: string;
