@@ -260,6 +260,19 @@ ${scope} .ig-slot[aria-expanded='true'] {
 ${scope} .ig-slot[aria-expanded='true'] .ig-provenance {
   display: block;
 }
+
+/* THE QUERY CHIP COMES BACK WHERE ITS LINE GOES (#131). At this density the
+   provenance line is hidden, so the chip is the only mark on the row naming
+   WHICH ordered query placed it — and step 3 below keeps it for exactly that
+   reason. A row the reader opened draws the line again, and the chip leaves
+   with it: one fact, said once, at every density. */
+${scope} .ig-slot .ig-badge[data-priority='query'] {
+  display: inline-flex;
+}
+
+${scope} .ig-slot[aria-expanded='true'] .ig-badge[data-priority='query'] {
+  display: none;
+}
 `;
 }
 
@@ -1050,6 +1063,20 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   font-size: var(--ig-font-size-micro);
   gap: var(--ig-space-tight);
   padding: var(--ig-space-micro) var(--ig-space-tight);
+}
+
+/* A MATCHED QUERY IS SAID ONCE ON A LIST ROW, BY ITS LINE (#131). The row's
+   provenance line already reads "Picked by query 1 · label:P0", so a chip
+   carrying "label:P0" above it printed the same label twice on every row a
+   query placed — and no §16 frame draws that chip; §16h gives a row "a single
+   provenance line". Hidden by CSS rather than dropped from the markup, for the
+   reason the dense rail hides the line instead: the markup stays whole, and
+   at the dense density, where the LINE is the one hidden, the rail block
+   brings the chip back. A graph card is not an .ig-slot and draws no line, so
+   its chip is untouched. A declared tier and a promotion keep their chips:
+   those are the scanning read §16a draws beside the sentence. */
+.ig-slot .ig-badge[data-priority='query'] {
+  display: none;
 }
 
 /* THE HUE IS A BORDER AND A FILL HERE, NOT A TEXT COLOUR — the theme holds the
