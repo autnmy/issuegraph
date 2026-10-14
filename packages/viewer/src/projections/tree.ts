@@ -296,6 +296,11 @@ export function treeScene(document: NormalizedDocument, options: SceneOptions = 
   return {
     projection: 'tree',
     root,
+    // NOTHING TO DETACH. The tree draws no "not in the order" group — it lays
+    // out nesting, not the order — and it is never the projection a host
+    // virtualizes, so `detachFooter` has no footer here to move. See
+    // `SceneOptions.detachFooter`.
+    footer: null,
     focusOrder,
     navigable: focusOrder,
     lateral,

@@ -8,7 +8,7 @@ import { KEY_ATTRIBUTE, type ViewerHold, labelFrom, treatmentFor } from '@issueg
 import { RELATE_KEY, keyIntent } from '../create/keys.ts';
 import { AUDIT_SEVERITY_ATTRIBUTE } from '../audit/surface.ts';
 import { treatmentForState } from '../overlay/grammar.ts';
-import type { AuditGraph } from '../audit/findings.ts';
+import type { AuditGraph, AuditInput } from '../audit/findings.ts';
 import { type WorkspaceRecovery, ZONES, renderWorkspace } from './render.ts';
 import type { ViewerDocument } from '@issuegraph/viewer';
 import { selectionReducer } from './selection.ts';
@@ -2464,5 +2464,132 @@ describe('\u00a716f \u2014 the rail passes the host\u2019s open rows to the view
     const rows = markup.match(/<li class="ig-slot"[^>]*>/g) ?? [];
     assert.ok(rows.length > 0, 'the premise: the rail drew rows to check');
     assert.deepEqual(rows.filter((row) => /aria-expanded/.test(row)), []);
+  });
+});
+
+describe('the "not in the order" group follows the whole order, not the window', () => {
+  // THE DEFECT: the linear projection drew its footer group INSIDE the root, and
+  // the rail composes `spacer + root + spacer` — so the group sat directly under
+  // the VISIBLE rows, mid-scroll, with the rest of the order still below it. The
+  // window also sliced the footer's slots with the rows, so a held slot was
+  // drawn only when its position happened to fall inside the window.
+  //
+  // THE FIXTURE MAKES BOTH FAILURES REACHABLE: a footer slot positioned INSIDE
+  // the sequence (`i0010`, well past the first window), one exclusion
+  // (`i0040`), one edge so the ladder has isolated issues and the rail draws its
+  // own footer, and an order much larger than the window.
+  const TRACKER: ViewerHold = { family: 'tracker', reason: 'Another worker already has it.' };
+  const base = backlogOf(40, { edges: [['blocked-by', 'i0001', 'i0002']] });
+  let rank = 0;
+  const document: ViewerDocument = {
+    ...base,
+    order: {
+      slots: base.order.slots
+        .filter((slot) => slot.lead !== 'i0040')
+        .map((slot) => {
+          if (slot.lead === 'i0010') return { ...slot, rank: null, ready: false, holds: [TRACKER] };
+          rank += 1;
+          return { ...slot, rank };
+        }),
+      excluded: [{ key: 'i0040', canonical: 'i0001', reason: 'duplicate-of' }],
+    },
+  };
+  const words = {
+    words: { ...WORKSPACE_WORDS, rail: { isolated: 'carrying no edges', show: 'reveal', hide: 'fold away' } },
+  };
+
+  /** The rail zone alone: it runs from its own marker to the canvas zone's. */
+  function railOf(markup: string): string {
+    const at = markup.indexOf('data-zone="rail"');
+    assert.notEqual(at, -1, 'no rail zone');
+    return markup.slice(at, markup.indexOf('data-zone="canvas"', at));
+  }
+
+  /** Where each landmark of the rail zone sits, so their order can be asserted. */
+  function landmarks(rail: string) {
+    return {
+      root: rail.indexOf('<section class="ig-viewer'),
+      after: rail.indexOf('data-edge="after"'),
+      footer: rail.indexOf('<section class="ig-footer"'),
+      railFooter: rail.indexOf('<div class="ig-rail-footer">'),
+    };
+  }
+
+  /** The group's section, whole — it holds no nested section. */
+  function groupOf(rail: string): string {
+    const at = rail.indexOf('<section class="ig-footer"');
+    return rail.slice(at, rail.indexOf('</section>', at));
+  }
+
+  it('composes the group after the trailing spacer, at a window that is not the last', () => {
+    const result = renderWorkspace(document, { ...words, rail: { start: 3, count: 5 } });
+    const rail = railOf(result.markup);
+    const at = landmarks(rail);
+
+    // The window really is mid-order, or the ordering below proves nothing.
+    assert.ok(result.view.rail.after > 0, 'the window reached the end of the order');
+    assert.notEqual(at.after, -1, 'no trailing spacer at a non-final window');
+    assert.notEqual(at.footer, -1, 'the group was not drawn at all');
+    assert.notEqual(at.railFooter, -1, 'the rail footer was not drawn, so the order below proves nothing');
+    assert.ok(at.root < at.after, 'the window root is not before the trailing spacer');
+    assert.ok(at.after < at.footer, 'the group sits inside the window, above the rest of the order');
+    assert.ok(at.footer < at.railFooter, 'the group is below the rail footer');
+    assert.equal(rail.split('<section class="ig-footer"').length - 1, 1, 'the group is drawn twice');
+  });
+
+  it('draws every footer slot and every exclusion in the group, wherever they sit', () => {
+    // `i0010` is at raw position 9, outside a window over 3..7: it is drawn
+    // anyway, because the group holds the whole document's footer.
+    for (const start of [0, 3, 20, 9_000]) {
+      const result = renderWorkspace(document, { ...words, rail: { start, count: 5 } });
+      const group = groupOf(railOf(result.markup));
+      assert.match(group, /data-ig-key="i0010"/, `the held slot is missing at start ${String(start)}`);
+      assert.match(group, /data-ig-key="i0040"/, `the exclusion is missing at start ${String(start)}`);
+      assert.equal(drawnKeys(result.markup).includes('i0010'), false, 'a footer slot was drawn as a ranked row');
+    }
+  });
+
+  it('composes the group after the order and before the rail footer at the final window too', () => {
+    const result = renderWorkspace(document, { ...words, rail: { start: 9_000, count: 5 } });
+    const rail = railOf(result.markup);
+    const at = landmarks(rail);
+
+    assert.equal(result.view.rail.after, 0);
+    assert.equal(at.after, -1, 'a trailing spacer with nothing to space');
+    assert.ok(at.root < at.footer, 'the group is above the order');
+    assert.ok(at.footer < at.railFooter, 'the group is below the rail footer');
+    // And outside the window root, in its own wrapper, not merely after its rows.
+    assert.match(rail, /<div class="ig-viewer ig-linear"[^>]*data-ig-detached="footer"[^>]*><section class="ig-footer"/);
+  });
+
+  it('sizes the spacers in rows of the sequence, which the footer slot is not', () => {
+    const result = renderWorkspace(document, { ...words, rail: { start: 3, count: 5 } });
+    const spacers = [
+      ...result.markup.matchAll(/<div class="ig-rail-spacer" data-edge="([^"]+)"[^>]*style="--ig-rail-rows:(\d+)"/g),
+    ].map((match): [string | undefined, number] => [match[1], Number(match[2])]);
+    // 39 slots less the one footer slot is a sequence of 38: 3 before, 5 drawn, 30 after.
+    assert.deepEqual(spacers, [
+      ['before', 3],
+      ['after', 30],
+    ]);
+  });
+
+  it('marks a footer row with its audit severity wherever the group is drawn', () => {
+    // The rows were marked when they lived in the root; detaching them must not
+    // strip the bar off the one row it describes. `i0010` is outside the window.
+    const refs = ['i0010', 'i0011'];
+    const audit: AuditInput = {
+      document: {
+        issues: refs.map((ref) => ({ ref, title: `issue ${ref}`, state: 'open' })),
+        edges: [
+          { id: edgeIdentity('blocked-by', 'i0010', 'i0011'), kind: 'blocked-by', from: 'i0010', to: 'i0011' },
+          { id: edgeIdentity('blocked-by', 'i0011', 'i0010'), kind: 'blocked-by', from: 'i0011', to: 'i0010' },
+        ],
+      },
+      graph: graphFor(refs, { i0010: ['i0011'], i0011: ['i0010'] }),
+    };
+    const result = renderWorkspace(document, { ...words, audit, rail: { start: 20, count: 5 } });
+    const group = groupOf(railOf(result.markup));
+    assert.match(group, new RegExp(`${KEY_ATTRIBUTE}="i0010"[^>]*${AUDIT_SEVERITY_ATTRIBUTE}="`));
   });
 });

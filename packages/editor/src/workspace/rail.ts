@@ -33,9 +33,20 @@
  *
  * ## What gets windowed
  *
- * Slots are sliced, and the issues and edges are cut down to exactly what the
- * drawn rows need — a drawn slot's members, an exclusion's key, and the
- * endpoints of any edge a drawn row owes a badge for.
+ * The SEQUENCE is sliced — the slots that hold a position in the order — and
+ * the issues and edges are cut down to exactly what the drawn rows need: a
+ * drawn slot's members, a footer entry's key, and the endpoints of any edge a
+ * drawn row owes a badge for.
+ *
+ * THE FOOTER IS NOT PART OF THE SEQUENCE, AND IT IS CARRIED WHOLE. A slot with
+ * a tracker-family hold (`isFooterSlot`, layer 1's rule) earns no rank slot and
+ * is drawn in the "not in the order" group, after every row — and it can sit
+ * ANYWHERE in `order.slots`. Slicing it with the rows meant a footer entry was
+ * drawn only when its position happened to fall inside the window, and every
+ * one of them outside it padded a spacer with a row the rail never draws there.
+ * So the window counts and slices the sequence alone, and the footer's slots
+ * ride along whole, for the reason exclusions always have: they hold no
+ * position, so there is nothing to window them by.
  *
  * KEEPING THE WHOLE ISSUE LIST WAS THE OBVIOUS THING AND IT WAS WRONG. See the
  * note at the filter itself for what it cost: the linear projection renders a
@@ -53,7 +64,7 @@
 
 import { edgeIdentity } from '@issuegraph/core';
 import type { ViewerDocument, ViewerSlot } from '@issuegraph/viewer';
-import { normalizeDocument } from '@issuegraph/viewer';
+import { isFooterSlot, normalizeDocument } from '@issuegraph/viewer';
 
 /**
  * How many rows a window holds when the host does not say.
@@ -67,7 +78,8 @@ export const RAIL_WINDOW = 50;
 
 export interface RailWindowOptions {
   /**
-   * The first row to draw, as a 0-BASED offset into the order's slots.
+   * The first row to draw, as a 0-BASED offset into the order's SEQUENCE — its
+   * slots less the footer's, which hold no position and are never windowed.
    *
    * An offset, deliberately, and not a rank. The ISSUED ranks are contiguous —
    * `1, 2, 3, …` with no holes, and a would-be rank takes none of them — but
@@ -83,19 +95,30 @@ export interface RailWindowOptions {
 }
 
 export interface RailWindow {
-  /** Every slot in the order, drawn or not. The completeness claim, as a number. */
+  /**
+   * Every slot in the SEQUENCE, drawn or not. The completeness claim, as a
+   * number. The footer's slots are not in it: they are carried whole on
+   * `document`, so there is no "drawn or not" about them to count.
+   */
   readonly total: number;
-  /** The 0-based offset of the first drawn row, after clamping. */
+  /** The 0-based offset into the sequence of the first drawn row, after clamping. */
   readonly start: number;
-  /** How many rows are drawn. Fewer than asked for at the end of the order. */
+  /** How many sequence rows are drawn. Fewer than asked for at the end of the order. */
   readonly count: number;
-  /** Slots before the window. A host sizes its leading spacer from this. */
+  /**
+   * Sequence slots before the window. A host sizes its leading spacer from this,
+   * which is why a footer slot is never in it: it would buy a row of height for
+   * an entry the rail draws below the order, not up here.
+   */
   readonly before: number;
-  /** Slots after the window. A host sizes its trailing spacer from this. */
+  /** Sequence slots after the window. A host sizes its trailing spacer from this. */
   readonly after: number;
-  /** The drawn slots, in order. */
+  /** The drawn sequence slots, in order. The footer's slots are not rows here. */
   readonly rows: readonly ViewerSlot[];
-  /** The document to hand the viewer: the windowed slots, and what they need. */
+  /**
+   * The document to hand the viewer: the windowed rows, then every footer slot
+   * whole, plus the exclusions and whatever all of those need.
+   */
   readonly document: ViewerDocument;
   /**
    * `together-with` edges left out because their unit is outside the window.
@@ -115,10 +138,16 @@ export interface RailWindow {
    * Ranks are 1-BASED, matching what the rail renders and what a reader sees.
    * A held slot has no rank at all and is unreachable this way by construction
    * — it has no position in the sequence, which is precisely what `rank: null`
-   * says.
+   * says. It answers over EVERY slot, footer included: the index is built
+   * before the sequence is separated out, so a rank is answered wherever its
+   * slot is drawn.
    */
   readonly addressOf: (rank: number) => ViewerSlot | undefined;
-  /** The 0-based offset of a slot's lead key, for a host scrolling to it. */
+  /**
+   * The 0-based offset into the sequence of a slot's member, for a host
+   * scrolling to it. `undefined` for a footer slot's member as for an unknown
+   * key: it has no offset to scroll to, and it is drawn at every window anyway.
+   */
   readonly offsetOf: (key: string) => number | undefined;
 }
 
@@ -176,17 +205,24 @@ export function railWindow(
   // which is the number a caller is asking about.
   const input = normalizeDocument(raw).document;
   const slots = input.order.slots;
-  const total = slots.length;
+  // THE SEQUENCE AND THE FOOTER, SPLIT BY LAYER 1'S OWN RULE. The viewer draws
+  // a footer slot in the "not in the order" group whatever its position in
+  // `order.slots`, so a window that sliced it with the rows decided whether it
+  // was drawn by where it happened to sit. Every count below is the sequence's.
+  const sequence = slots.filter((slot) => !isFooterSlot(slot));
+  const footer = slots.filter(isFooterSlot);
+  const total = sequence.length;
   const { start, count } = clampWindow(total, options);
-  const rows = slots.slice(start, start + count);
+  const rows = sequence.slice(start, start + count);
 
-  // BUILT OVER EVERY SLOT, not the window. These are the indexes behind the two
-  // lookups, and narrowing them to the window is exactly the completeness bug
-  // this module exists to avoid.
+  // `addressOf` IS BUILT OVER EVERY SLOT, and `offsetOf` over the whole
+  // SEQUENCE — never the window. These are the indexes behind the two lookups,
+  // and narrowing them to the window is exactly the completeness bug this
+  // module exists to avoid.
   const byRank = new Map<number, ViewerSlot>();
+  for (const slot of slots) if (slot.rank !== null) byRank.set(slot.rank, slot);
   const offsetByKey = new Map<string, number>();
-  for (const [offset, slot] of slots.entries()) {
-    if (slot.rank !== null) byRank.set(slot.rank, slot);
+  for (const [offset, slot] of sequence.entries()) {
     // FIRST WINS, matching `normalizeDocument`'s own rule for a key placed
     // twice: it keeps the earlier slot and drops the later placement. A last-
     // wins index here would send a host scrolling to a row the viewer never
@@ -194,19 +230,24 @@ export function railWindow(
     for (const member of slot.members) if (!offsetByKey.has(member)) offsetByKey.set(member, offset);
   }
 
+  // EVERY SLOT THE VIEWER WILL DRAW: the window's rows, and the footer's slots,
+  // which are drawn at every window.
+  const drawnSlots = [...rows, ...footer];
+
   // Which leads are drawn, so the `together-with` rule below can ask whether a
   // unit survived the window.
   const drawnLead = new Map<string, string>();
-  for (const slot of rows) for (const member of slot.members) drawnLead.set(member, slot.lead);
+  for (const slot of drawnSlots) for (const member of slot.members) drawnLead.set(member, slot.lead);
 
   // EVERY KEY THAT RENDERS A ROW, WHICH IS NOT THE SAME AS EVERY SLOT MEMBER.
   // Exclusions are carried whole, and layer 1 draws each one as a footer row
   // that calls `edgeBadges` for its own key — so an excluded row owes badges
   // exactly like a slot does. Built from the slots alone, an excluded issue
   // related only to an out-of-window slot lost its badge as the reader
-  // scrolled, on a row that never left the screen.
+  // scrolled, on a row that never left the screen. A footer SLOT is the same
+  // case one family over, and is carried whole for the same reason.
   const drawnMember = new Set([
-    ...rows.flatMap((slot) => slot.members),
+    ...drawnSlots.flatMap((slot) => slot.members),
     ...input.order.excluded.map((exclusion) => exclusion.key),
   ]);
 
@@ -263,10 +304,16 @@ export function railWindow(
   // not part of. Windowing them would need a second window with its own
   // coordinate, for a population that is duplicates and is small by
   // construction. A host that needs them bounded filters before calling.
+  //
+  // THE FOOTER'S SLOTS ARE CARRIED WHOLE FOR THE SAME REASON, and AFTER the
+  // rows. They are runner-held work with no position in the sequence either,
+  // and the viewer draws them in the footer group whatever their place in this
+  // array — so placing them last changes nothing it draws, and says in the data
+  // what the picture already says: they come after the order, not inside it.
   const document: ViewerDocument = {
     issues: input.issues.filter((issue) => keep.has(issue.key)),
     edges,
-    order: { slots: rows, excluded: input.order.excluded },
+    order: { slots: drawnSlots, excluded: input.order.excluded },
     // NARROWED TO THE WINDOW, exactly as the edges are. The viewer drops a cycle
     // member it does not carry WITH A DIAGNOSTIC, and this document carries only
     // the window — so relaying the host's cycles whole made every scroll

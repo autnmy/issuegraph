@@ -100,6 +100,10 @@ export function renderReevaluate(
 ): ReevaluateResult {
   const status = options.status ?? 'settled';
   const theme = resolveTheme(options.theme);
+  // NOT `detachFooter`, deliberately. This surface draws every slot it is
+  // handed — there is no window and no spacer — so the root IS the extent, and
+  // the inline footer already follows the last row of the order. Detaching it
+  // would only hand this function a second spec to place in the same position.
   const rail = renderViewer(input, {
     projection: 'linear',
     theme,

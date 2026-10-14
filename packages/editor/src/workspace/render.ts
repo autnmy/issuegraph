@@ -3057,6 +3057,13 @@ export function renderWorkspace(
     // `SceneOptions.dockLegend`; `dockRailLegend` in mount.ts moves it clear of
     // this zone's own footer.
     dockLegend: true,
+    // THE "NOT IN THE ORDER" GROUP ENDS THE ORDER, AND THIS ROOT DOES NOT. The
+    // root is the WINDOW, and the zone composes it between two spacers standing
+    // in for the rest — so a group drawn inside it sat directly under the
+    // visible rows, mid-scroll, with the rest of the order still below. Handed
+    // back on `scene.footer`, it is composed after the trailing spacer below.
+    // See `SceneOptions.detachFooter`.
+    detachFooter: true,
     // The rail is where a selected ISSUE reads as current. An edge selection
     // resolves to no key, which is `selectedKey`'s whole job.
     selected: selectedKey(selection),
@@ -3070,10 +3077,13 @@ export function renderWorkspace(
     // projection the option says nothing about. See `ViewerOptions.density`.
     ...(options.railDensity === undefined ? {} : { density: options.railDensity }),
   });
-  // Built once, over the window's rows, so a rail of 312 costs one pass rather
-  // than one scan of `overlay.rows` per drawn row.
+  // Built once, over the slots the viewer draws, so a rail of 312 costs one pass
+  // rather than one scan of `overlay.rows` per drawn row. THE DRAWN SLOTS, NOT
+  // `rail.rows`: the footer's slots are carried whole beside the window and
+  // render a row at every scroll position, so a bar keyed off the window alone
+  // vanished from a runner-held row the moment it stopped being a window row.
   const severityByKey = new Map<string, AuditSeverity>();
-  for (const slot of rail.rows) {
+  for (const slot of rail.document.order.slots) {
     const severity = severityForRow(overlay, slot.members);
     if (severity !== undefined) severityByKey.set(slot.lead, severity);
   }
@@ -3294,6 +3304,15 @@ export function renderWorkspace(
         return renderMarkup(element('div', { class: 'ig-audit-overlay' }, members));
       })();
 
+  // ONE MARKING FOR BOTH HALVES OF THE RAIL'S VIEWER — the window's root and the
+  // detached footer group — so the two cannot be decorated by different rules.
+  const markRailRows = (spec: ElementSpec): ElementSpec =>
+    markRail(
+      spec,
+      (key) => severityByKey.get(key),
+      (key) => deltaByKey.get(key),
+    );
+
   const markup = [
     // THE ORDER'S STATUS, ON THE SURFACE ROOT. `mount.ts` already publishes the
     // same value on the mounted element for a host to read; this puts it where
@@ -3366,14 +3385,14 @@ export function renderWorkspace(
       'rail',
       [
         railSpacer(rail.before, 'before'),
-        renderMarkup(
-          markRail(
-            railRender.scene.root,
-            (key) => severityByKey.get(key),
-            (key) => deltaByKey.get(key),
-          ),
-        ),
+        renderMarkup(markRailRows(railRender.scene.root)),
         railSpacer(rail.after, 'after'),
+        // AFTER THE EXTENT, WHERE THE ORDER ENDS. The spacers stand in for the
+        // sequence rows outside the window, so the group that follows the order
+        // follows them — at every window, not only the last. It is marked like
+        // the rows it holds always were: a held or excluded row carries its
+        // audit bar and its delta chip wherever the group is drawn.
+        railRender.scene.footer === null ? '' : renderMarkup(markRailRows(railRender.scene.footer)),
         railFooterSpec === null ? '' : renderMarkup(railFooterSpec),
       ].join(''),
     ),

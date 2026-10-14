@@ -325,6 +325,12 @@ export function mountViewer(
     if (root !== null) container.removeChild(root);
     const scene = sceneFor(normalized, projection, {
       ...currentOptions,
+      // NEVER DETACHED HERE. The mount draws every row it is handed, so it is
+      // its own extent and the inline footer is already after the last of
+      // them. It also materializes `scene.root` and nothing else — a detached
+      // group would be in `focusOrder` and on no element, which is a keyboard
+      // walking into keys the page does not have. See `SceneOptions.detachFooter`.
+      detachFooter: false,
       theme: currentOptions.theme ?? theme,
       selected: state.selected,
       focused: state.focused,
