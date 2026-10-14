@@ -17,7 +17,7 @@
 import { edgeIdentity } from '@issuegraph/core';
 
 import { type NormalizedDocument, type ViewerDocument, normalizeDocument } from './document.ts';
-import { type SpecDocument, type SpecElement, materialize } from './element.ts';
+import { type SpecDocument, type SpecElement, type SpecNode, materialize } from './element.ts';
 import {
   type NavigationState,
   initialNavigationState,
@@ -36,7 +36,7 @@ export interface MountElement extends SpecElement {
   readonly tagName?: string;
   addEventListener(type: string, handler: (event: MountEvent) => void): void;
   removeEventListener(type: string, handler: (event: MountEvent) => void): void;
-  removeChild(child: SpecElement): void;
+  removeChild(child: SpecNode): void;
   getAttribute(name: string): string | null;
   readonly parentElement: MountElement | null;
   focus?(): void;

@@ -171,9 +171,18 @@ export interface SpecElement extends SpecNode {
    * the other view to bring the surviving selection into view, and where an
    * implementation cannot scroll — a server render, a test double — omitting it
    * degrades to "the selection survives", which is the half that matters.
+   *
+   * THE POSITIONS ARE THE DOM'S FOUR WORDS, NOT `string` (#112). A `string`
+   * here is WIDER than the DOM's `ScrollLogicalPosition`, so a real element's
+   * `scrollIntoView` did not satisfy this one under `exactOptionalPropertyTypes`
+   * and a typed host could not hand `mountViewer` a real element at all. Every
+   * caller passes `'nearest'`; nothing was using the width.
    */
-  scrollIntoView?(options?: { block?: string; inline?: string }): void;
+  scrollIntoView?(options?: { block?: ScrollPosition; inline?: ScrollPosition }): void;
 }
+
+/** Where `scrollIntoView` puts an element: the DOM's `ScrollLogicalPosition`, spelled without the DOM. */
+export type ScrollPosition = 'start' | 'center' | 'end' | 'nearest';
 
 export interface MaterializeOptions {
   readonly ns?: 'svg' | undefined;
