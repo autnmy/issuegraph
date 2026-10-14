@@ -114,6 +114,20 @@ issuegraph splice --edges '{"blockedBy":["7"],"serializeWith":null}' < body.md
 issuegraph backfill < body.md
 ```
 
+### Removing one blocker, or all of them
+
+`--blocked-by` **replaces** the whole list, and `--no-blocked-by` **clears** it. Neither removes one entry and keeps the rest, so dropping one blocker means writing the ones that stay. For a body blocked by `111` and `222`, where `111` is now done:
+
+```sh
+# Drop 111, keep 222: write the survivors.
+issuegraph set --blocked-by 222 < body.md > new-body.md
+
+# Only when NO blocker should remain:
+issuegraph set --no-blocked-by < body.md > new-body.md
+```
+
+Read the block first (`issuegraph parse`) so every blocker that still holds is in the list you write, then parse the result. Fields you do not name are left as they were.
+
 ### `backfill --json` — the outcome as data
 
 `backfill` normally writes the repaired body, and reports which of its four

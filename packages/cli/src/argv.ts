@@ -49,13 +49,28 @@ const REF = 'a reference: 123, #123, or owner/repo#123';
 
 /** The value each writable field takes, for its `--<field>` option's summary. */
 const FIELD_VALUE: Readonly<Record<string, string>> = Object.freeze({
-  'blocked-by': `${REF}; repeat to give the whole list`,
+  'blocked-by': `${REF}; repeat to give the whole list, which replaces the old one — to drop one blocker, pass the ones that stay`,
   'serialize-with': REF,
   'decomposed-from': REF,
   'duplicate-of': REF,
   'together-with': REF,
   priority: 'an integer 0-3',
   evidence: 'asserted or verified',
+});
+
+/**
+ * A `--no-<field>` summary that has to say more than "remove the entry".
+ *
+ * `blocked-by` IS A LIST, AND ITS CLEAR TAKES ALL OF IT. Every other clearable
+ * field holds one reference, so removing the entry and removing the value are
+ * the same act. For a list they are not: a reader asked to drop one satisfied
+ * blocker reaches for `--no-blocked-by` and loses every blocker that still
+ * holds. The help states the clear-all at the point of use and names the
+ * remove-one operation beside it — pass the survivors — which is the
+ * replacement semantics `--blocked-by` already has, not a second operation.
+ */
+const CLEAR_SUMMARY: Readonly<Record<string, string>> = Object.freeze({
+  'blocked-by': 'remove EVERY blocker; to drop only one, pass the ones that stay with --blocked-by instead',
 });
 
 /**
@@ -79,7 +94,7 @@ const SET_FIELD_OPTIONS: Readonly<Record<string, OptionSpec>> = Object.freeze(
     ]),
     ...SPLICE_CLEARABLE.map((field) => [
       `--no-${field}`,
-      opt(0, `remove the ${field} entry from the block`),
+      opt(0, CLEAR_SUMMARY[field] ?? `remove the ${field} entry from the block`),
     ]),
   ]),
 );
