@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET } from '@issuegraph/viewer';
+import {
+  CLUSTER_ONLY_BUDGET,
+  GRAPH_NODE_BUDGET,
+  normalizeDocument,
+  relatedKeys,
+  renderViewer,
+} from '@issuegraph/viewer';
 
 import { componentKey, componentsSumming, documentOf, isolatedKey } from '../testing/documents.ts';
 import { INITIAL_SCALE_STATE } from './commands.ts';
@@ -39,6 +45,21 @@ describe('the tier is decided by the viewer\'s own budgets', () => {
     assert.equal(ladder.nodeCount, 20);
     assert.equal(ladder.tier, 'direct');
     assert.equal(ladder.isolated.count, 500);
+  });
+
+  it('counts the same issues the viewer\'s canvas counts, on the whole document', () => {
+    // ONE RULE, READ IN BOTH PLACES (issuegraph #133). The viewer's budgets
+    // used to count every laid-out node, so the canvas handed this WHOLE
+    // document — 500 relationship-free issues beside the related ones — refused
+    // where this tier said `direct`. Both now read the viewer's `relatedKeys`,
+    // so the tier and an unnarrowed canvas agree at the boundary as well.
+    for (const total of [GRAPH_NODE_BUDGET, GRAPH_NODE_BUDGET + 1]) {
+      const input = documentOf({ components: componentsSumming(total, 20), isolated: 500 });
+      const ladder = scaleLadder(input);
+      const canvas = renderViewer(input, { projection: 'graph' }).scene;
+      assert.equal(ladder.nodeCount, relatedKeys(normalizeDocument(input).document).size);
+      assert.equal(ladder.tier === 'direct', canvas.diagnostics.length === 0, `disagreed at ${String(total)}`);
+    }
   });
 });
 

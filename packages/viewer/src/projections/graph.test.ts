@@ -9,6 +9,7 @@ import { cardBlocks } from '../parts.ts';
 import { type ElementSpec, renderMarkup } from '../element.ts';
 import {
   crowdedDocument,
+  denseUnitDocument,
   fixtureDocument,
   heldButRankedDocument,
   heldTogetherDocument,
@@ -16,7 +17,7 @@ import {
 } from '../testing/fixtures.ts';
 import { viewerStylesheet } from '../styles.ts';
 import { defaultTheme, extendTheme } from '../theme.ts';
-import { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET, graphScene } from './graph.ts';
+import { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET, graphScene, relatedKeys } from './graph.ts';
 
 function scene(input: ViewerDocument = fixtureDocument, options = {}) {
   return graphScene(normalizeDocument(input).document, options);
@@ -942,26 +943,26 @@ describe('the graph projection', () => {
     }
   });
 
-  it('lists a component for every node it refused to draw, even with no edges at all', () => {
-    // The refusal counts LAID-OUT nodes while the component list was built
-    // from nodes carrying an EDGE, so an over-budget document with no
-    // relationships refused to draw and then listed nothing — under a
-    // sentence pointing at the list. A partition cannot disagree with the
-    // count that triggered it.
-    const size = GRAPH_NODE_BUDGET + 1;
-    const edgeless: ViewerDocument = {
-      issues: Array.from({ length: size }, (_, index) => ({
-        key: String(index + 1),
-        title: `Issue ${String(index + 1)}`,
-        open: true,
-        priority: 2,
-      })),
+  // ── WHAT THE BUDGETS COUNT: RELATED ISSUES (issuegraph #133) ─────────────
+  //
+  // The budgets compared every LAID-OUT node, so a day-one repository — hundreds
+  // of ranked issues, not one relationship — was refused as "300 related issues
+  // are too many to draw here" and drawn as 300 one-issue capsules, a refusal
+  // that cost more than the canvas it withheld. They now count the issues on at
+  // least one kept edge, which is what the refusal's own sentence has always
+  // said it counted.
+
+  /** `size` ranked issues with no relationship at all, keyed from `first`. */
+  function unrelated(size: number, first = 1): ViewerDocument {
+    const keys = Array.from({ length: size }, (_, index) => `u${String(first + index)}`);
+    return {
+      issues: keys.map((key) => ({ key, title: `Unrelated ${key}`, open: true, priority: 2 as const })),
       edges: [],
       order: {
-        slots: Array.from({ length: size }, (_, index) => ({
+        slots: keys.map((key, index) => ({
           rank: index + 1,
-          lead: String(index + 1),
-          members: [String(index + 1)],
+          lead: key,
+          members: [key],
           ready: true,
           holds: [],
         })),
@@ -969,11 +970,107 @@ describe('the graph projection', () => {
       },
       cycles: [],
     };
-    const markup = render(edgeless);
+  }
 
-    assert.match(markup, /class="ig-refusal"/);
-    const capsules = [...markup.matchAll(/class="ig-capsule"/g)].length;
-    assert.equal(capsules, size, `refused ${String(size)} nodes but listed ${String(capsules)}`);
+  /** `related` with `extra` unrelated ranked issues added to it. */
+  function withUnrelated(related: ViewerDocument, extra: number): ViewerDocument {
+    const more = unrelated(extra);
+    return {
+      ...related,
+      issues: [...related.issues, ...more.issues],
+      order: { slots: [...related.order.slots, ...more.order.slots], excluded: related.order.excluded },
+    };
+  }
+
+  /** The refusal block alone — everything the budget decides, without the order list. */
+  function refusalBlock(markup: string): string {
+    const start = markup.indexOf('<section class="ig-refusal"');
+    return start === -1 ? '' : markup.slice(start, markup.indexOf('</section>', start) + '</section>'.length);
+  }
+
+  it('draws a zero-edge document of 300 as the plain spine, not as a refusal', () => {
+    const built = scene(unrelated(CLUSTER_ONLY_BUDGET));
+    const markup = renderMarkup(built.root);
+
+    assert.deepEqual(built.diagnostics, [], 'a document with no relationships was refused');
+    assert.match(markup, /<svg class="ig-canvas"/);
+    assert.equal(/ig-refusal/.test(markup), false);
+    assert.equal(/class="ig-capsule"/.test(markup), false, 'an unrelated issue was listed as a group of one');
+    // EVERY ISSUE IS A STATION, which is the picture the refusal withheld.
+    assert.equal([...markup.matchAll(/class="ig-spine-station"/g)].length, CLUSTER_ONLY_BUDGET);
+  });
+
+  it('still refuses 61 related issues, with the diagnostic and copy it always had', () => {
+    const built = scene(crowdedDocument(GRAPH_NODE_BUDGET + 1));
+    const markup = renderMarkup(built.root);
+
+    assert.deepEqual(built.diagnostics, ['graph refused: 61 nodes is past the node budget of 60']);
+    assert.match(markup, /<p>61 related issues are too many to draw here\. The limit is 60\.<\/p>/);
+    assert.equal(/<svg class="ig-canvas"/.test(markup), false);
+  });
+
+  it('refuses 61 related issues identically however many unrelated ones sit beside them', () => {
+    const alone = scene(crowdedDocument(GRAPH_NODE_BUDGET + 1));
+    const crowded = scene(withUnrelated(crowdedDocument(GRAPH_NODE_BUDGET + 1), 500));
+
+    assert.deepEqual(crowded.diagnostics, alone.diagnostics);
+    // THE WHOLE REFUSAL, BYTE FOR BYTE — heading, capsules and the line under
+    // them. The unrelated issues still reach the reader: they are rows in the
+    // order list beneath it, which is complete at any size.
+    const block = refusalBlock(renderMarkup(crowded.root));
+    assert.notEqual(block, '');
+    assert.equal(block, refusalBlock(renderMarkup(alone.root)));
+    assert.match(renderMarkup(crowded.root), /Unrelated u500/);
+  });
+
+  it('draws exactly 60 related issues, unrelated ones or not', () => {
+    for (const input of [crowdedDocument(GRAPH_NODE_BUDGET), withUnrelated(crowdedDocument(GRAPH_NODE_BUDGET), 500)]) {
+      const built = scene(input);
+      const markup = renderMarkup(built.root);
+      assert.deepEqual(built.diagnostics, []);
+      assert.match(markup, /<svg class="ig-canvas"/);
+      assert.equal(/ig-refusal/.test(markup), false);
+    }
+  });
+
+  it('counts each member of a unit, so the heading and the capsules name one number', () => {
+    // A TOGETHER UNIT IS ONE CARD AND SEVERAL RELATED ISSUES. Counting cards
+    // printed "61 related issues" over a capsule of "62 issues" for this very
+    // document: the hub's unit is one box holding two members.
+    const markup = render(denseUnitDocument(GRAPH_NODE_BUDGET));
+    const heading = /<p>(\d+) related issues/.exec(markup)?.[1];
+    const listed = [...markup.matchAll(/<li class="ig-capsule"><span class="ig-count">(\d+) issues/g)]
+      .map((match) => Number(match[1]))
+      .reduce((sum, count) => sum + count, 0);
+    assert.equal(heading, String(GRAPH_NODE_BUDGET + 2));
+    assert.equal(Number(heading), listed);
+  });
+
+  it('counts an issue as related only through an edge the document keeps', () => {
+    const related = (input: ViewerDocument): string[] =>
+      [...relatedKeys(normalizeDocument(input).document)].sort();
+
+    assert.deepEqual(related(unrelated(5)), []);
+    // A unit's members are each related: the enclosure draws the edge.
+    assert.deepEqual(related(togetherChain), ['1', '2', '3']);
+    assert.deepEqual(
+      related({
+        issues: [
+          { key: 'a', title: 'A', open: true, priority: 2 },
+          { key: 'b', title: 'B', open: true, priority: 2 },
+          { key: 'c', title: 'C', open: true, priority: 2 },
+        ],
+        // A DANGLING EDGE IS DROPPED, so it relates nothing; a cycle draws no
+        // node of its own, so naming `c` in one does not make it related.
+        edges: [
+          { field: 'blocked-by', from: 'a', to: 'b' },
+          { field: 'blocked-by', from: 'c', to: 'missing' },
+        ],
+        order: { slots: [], excluded: [] },
+        cycles: [['c']],
+      }),
+      ['a', 'b'],
+    );
   });
 
   it('says how many components it did not list, rather than truncating in silence', () => {

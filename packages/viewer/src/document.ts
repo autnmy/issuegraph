@@ -565,6 +565,33 @@ export interface NormalizedDocument {
   readonly byKey: ReadonlyMap<string, ViewerIssue>;
   /** Key -> the edges touching it, in document order. */
   readonly edgesOf: ReadonlyMap<string, readonly ViewerEdge[]>;
+  /**
+   * A slot's lead -> that slot, for every kept slot.
+   *
+   * AN INDEX, BECAUSE THE GRAPH ASKED THIS ONCE PER NODE BY SCANNING. The card,
+   * the card's measured height and the spine station each found their slot with
+   * `order.slots.find((slot) => slot.lead === key)` — three scans of the whole
+   * order for every node drawn, which made the canvas quadratic in its node
+   * count: at 2,000 issues that scan was ~70% of the graph's self time
+   * (issuegraph #133). Built here, in the pass that already walks every slot,
+   * so there is one answer to "which slot does this key lead" and it costs one
+   * lookup. Leads are unique — `normalizeDocument` places an issue once — so
+   * the lookup answers exactly what the `find` did.
+   */
+  readonly slotByLead: ReadonlyMap<string, ViewerSlot>;
+  /**
+   * Every slot member -> its slot's lead (a lead maps to itself).
+   *
+   * THE SAME PASS, THE OTHER QUESTION. The layout resolves an arbitrary key to
+   * the card that stands for it — a running partner to its unit's NOW station,
+   * a gutter card's partner to its spine row — and did it with
+   * `order.slots.find((slot) => slot.members.includes(key))`, a scan of every
+   * slot's members per lookup. This map was already built to validate
+   * `together-with` edges; it is published rather than built a second time. A
+   * key in no slot is absent, which is the "represents itself" answer every
+   * caller already falls back to.
+   */
+  readonly leadOf: ReadonlyMap<string, string>;
   /** Keys that appear in no slot and on no edge. */
   readonly isolated: readonly string[];
   /**
@@ -1200,9 +1227,16 @@ export function normalizeDocument(input: ViewerDocument): NormalizeResult {
   // `indexEdges` is where an undrawable edge is dropped and reported. Nothing in
   // `normalizeSlots` reads the edges, so the two are free to swap.
   const { kept: slots, placed } = normalizeSlots(input.order.slots, byKey, diagnostics);
-  // WHICH SLOT OWNS EACH KEY, which is the whole question the rule asks.
+  // WHICH SLOT OWNS EACH KEY, which is the whole question the rule asks. Both
+  // indexes come out of this one walk and are published — see
+  // `NormalizedDocument.slotByLead` and `leadOf` for why the projections need
+  // them rather than a scan of `order.slots`.
   const slotOf = new Map<string, string>();
-  for (const slot of slots) for (const member of slot.members) slotOf.set(member, slot.lead);
+  const slotByLead = new Map<string, ViewerSlot>();
+  for (const slot of slots) {
+    slotByLead.set(slot.lead, slot);
+    for (const member of slot.members) slotOf.set(member, slot.lead);
+  }
   const { kept: edges, edgesOf, outOfSetOrigins } = indexEdges(input.edges, byKey, slotOf, diagnostics);
 
   // AN EXCLUSION IS A POSITION TOO. The rule is one issue, one position — and
@@ -1261,6 +1295,8 @@ export function normalizeDocument(input: ViewerDocument): NormalizeResult {
       cycles: Object.freeze(cycles),
       byKey,
       edgesOf,
+      slotByLead,
+      leadOf: slotOf,
       isolated: Object.freeze(isolated),
       outOfSetOrigins,
       host,

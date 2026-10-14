@@ -215,13 +215,14 @@ function connectedComponents(
   // Walk in the document's issue order so the component list is stable.
   for (const issue of document.issues) {
     if (seen.has(issue.key)) continue;
-    // AN EDGE-FREE NODE IS A COMPONENT OF ONE, and dropping it broke the only
-    // promise the refusal makes. The refusal fires on how many nodes the canvas
-    // would DRAW, but the component list was built from nodes that have an
-    // EDGE — so an over-budget document with no relationships in it refused to
-    // draw and then listed nothing, under a sentence pointing at the list.
-    // A partition of the drawn set cannot disagree with the count that
-    // triggered it, whatever the document contains.
+    // AN EDGE-FREE KEY IN `drawn` IS A COMPONENT OF ONE, so the result stays a
+    // partition of whatever set the caller counted. It was written when the
+    // refusal counted every LAID-OUT node, and an over-budget document with no
+    // relationships refused to draw and then listed nothing, under a sentence
+    // pointing at the list. The graph now counts related issues only
+    // (issuegraph #133), so it never passes an edge-free key and this arm is
+    // idle there; it stays because a partition of the counted set must not
+    // depend on which set the caller counted.
     if (!adjacency.has(issue.key)) {
       if (drawn !== undefined && drawn.has(issue.key)) components.push([issue.key]);
       continue;
@@ -330,7 +331,7 @@ function chainDepthOf(
 export function clustersOf(
   document: NormalizedDocument,
   /**
-   * The keys the canvas would actually draw — `layout.nodes`' key set.
+   * The keys the refusal counted — `relatedKeys(document)` in the graph.
    *
    * Passing it makes the returned components a PARTITION of exactly the nodes
    * the refusal counted, which is the property the refusal's own text depends

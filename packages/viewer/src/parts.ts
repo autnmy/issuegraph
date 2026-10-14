@@ -1122,7 +1122,10 @@ export function cardBlocks(
   onSpine: boolean,
   now: boolean,
 ): readonly CardBlock[] {
-  const slot = document.order.slots.find((candidate) => candidate.lead === key);
+  // THE INDEX, NOT A SCAN. This runs twice per card — once when the layout
+  // measures it and once when the graph draws it — so a `find` over the order
+  // here was two full scans per node; see `NormalizedDocument.slotByLead`.
+  const slot = document.slotByLead.get(key);
   const issue = document.byKey.get(key);
   const blocks: CardBlock[] = [];
 
@@ -1164,10 +1167,9 @@ export function cardBlocks(
  */
 export function noteText(document: NormalizedDocument, key: string): readonly string[] {
   const lines: string[] = [];
-  for (const slot of document.order.slots) {
-    if (slot.lead !== key) continue;
-    for (const hold of slot.holds) lines.push(hold.reason);
-  }
+  // ONE LOOKUP, where this walked the whole order per card: a lead is unique,
+  // so at most one slot ever matched and its holds are the only lines it added.
+  for (const hold of document.slotByLead.get(key)?.holds ?? []) lines.push(hold.reason);
   for (const exclusion of document.order.excluded) {
     // THE BADGE ALREADY NAMES THE CANONICAL, so the sentence says only what the
     // badge cannot: that this issue is never worked at all.

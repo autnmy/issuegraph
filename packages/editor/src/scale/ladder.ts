@@ -45,6 +45,7 @@ import {
   clusterReach,
   clustersOf,
   normalizeDocument,
+  relatedKeys,
 } from '@issuegraph/viewer';
 
 import { INITIAL_SCALE_STATE, type ScaleState } from './commands.ts';
@@ -240,15 +241,6 @@ function tierFor(nodeCount: number): TierStep {
   // The last step's ceiling is infinite, so the fallback is unreachable — it
   // stays because a total function must not depend on a reader noticing that.
   return TIERS.find((step) => nodeCount <= step.ceiling) ?? CLUSTERS_ONLY;
-}
-
-/** The keys carrying at least one relationship: exactly what the canvas draws. */
-function relatedKeys(document: NormalizedDocument): ReadonlySet<string> {
-  const keys = new Set<string>();
-  for (const issue of document.issues) {
-    if ((document.edgesOf.get(issue.key) ?? []).length > 0) keys.add(issue.key);
-  }
-  return keys;
 }
 
 /**
@@ -512,6 +504,12 @@ export function scaleLadder(
   const { document, diagnostics: normalizeDiagnostics } = normalizeDocument(input);
   const diagnostics = [...normalizeDiagnostics];
 
+  // THE VIEWER'S OWN COUNT, NOT A COPY OF IT. This module kept a private
+  // `relatedKeys` with this body while the viewer's canvas compared its budgets
+  // against every LAID-OUT node — two readings of one pair of constants, which
+  // agreed here only because `narrow` hands the canvas related issues alone.
+  // The viewer's budgets now count exactly this set (issuegraph #133), so the
+  // function moved there and the tier and the canvas read the one rule.
   const related = relatedKeys(document);
   const clusters = clustersOf(document);
   const leadOf = new Map<string, string>();
