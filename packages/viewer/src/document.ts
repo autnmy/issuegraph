@@ -374,6 +374,12 @@ export type ViewerCondition =
       readonly caution: string;
       /** Honest progress, as the host counts it: `412 of ~1,200 issues`. */
       readonly progress: string;
+      /**
+       * The same progress as a share from 0 to 1, for the meter above the figure
+       * (#129). OPTIONAL, and the host's number: the viewer never parses one out
+       * of `progress`, because that string is prose. Absent draws the figure alone.
+       */
+      readonly fraction?: number | undefined;
       readonly glyph?: string | undefined;
     }
   /** Nothing is eligible. The host says why, and that its pipeline stays armed. */
@@ -1010,6 +1016,11 @@ function spoken(label: string | undefined): string | undefined {
   return label === undefined || label.trim() === '' ? undefined : label;
 }
 
+/** A finite share from 0 to 1: the only fraction a meter can draw. */
+function isShare(value: number): boolean {
+  return Number.isFinite(value) && value >= 0 && value <= 1;
+}
+
 /** A condition the viewer can draw, or nothing plus a diagnostic naming what was missing. */
 function normalizeCondition(
   condition: ViewerCondition,
@@ -1018,6 +1029,12 @@ function normalizeCondition(
   if (requiredTextOf(condition).some((text) => text.trim() === '')) {
     diagnostics.push(`${condition.kind} condition has an empty required string and was dropped whole`);
     return undefined;
+  }
+  if (condition.kind === 'importing' && condition.fraction !== undefined && !isShare(condition.fraction)) {
+    // A meter cannot draw a share it was not given. The figure stays; the bar goes.
+    diagnostics.push('importing condition fraction is not a number from 0 to 1 and was dropped');
+    const { fraction: _invalid, ...rest } = condition;
+    return Object.freeze(rest);
   }
   if (condition.kind !== 'empty' || condition.action === undefined) return Object.freeze({ ...condition });
   if (spoken(condition.action.label) === undefined) {
