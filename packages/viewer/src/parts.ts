@@ -174,13 +174,18 @@ export function provenanceClause(provenance: RankProvenance | undefined): Elemen
         via,
       ]);
     }
+    case 'order-strategy':
+      // §16h's unlabeled-tail row, in its own words: the tail, then the rule
+      // that ordered it. No priority, because the tail has none (#130).
+      return element('span', {}, [`Unlabeled tail · ${provenance.strategy}`]);
   }
 }
 
 /**
- * The provenance line, in the three forms the design fixes: a matched ordering
- * query, the declared tier, and an effective-priority promotion that names the
- * dependent the urgency arrived through.
+ * The provenance line, in the four forms the design fixes: a matched ordering
+ * query, the declared tier, an effective-priority promotion that names the
+ * dependent the urgency arrived through, and the order strategy that placed an
+ * unlabeled-tail row.
  *
  * The wording is {@link provenanceClause}'s; this adds only §16's turnstile and
  * the paragraph it hangs on, so the rail and the inspector cannot come to
@@ -230,6 +235,10 @@ export function priorityBadge(provenance: RankProvenance | undefined): ElementSp
       return element('span', { class: 'ig-badge', 'data-priority': 'promoted' }, [
         provenance.notation,
       ]);
+    case 'order-strategy':
+      // NO CHIP. The chip names the priority that ranked the row, and the tail
+      // has none; §16h draws its row with the provenance line alone (#130).
+      return null;
   }
 }
 

@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import type { RankProvenance, ViewerHold, ViewerSlot } from './document.ts';
-import { provenanceClause, provenanceLine, slotPosition } from './parts.ts';
+import { priorityBadge, provenanceClause, provenanceLine, slotPosition } from './parts.ts';
 import { renderMarkup } from './element.ts';
 
 /**
- * The three arms the design fixes, one fixture each.
+ * The four arms the design fixes, one fixture each.
  *
  * `promotion` appears twice on purpose: `promotedBy` empty is a real state —
  * the host knows the notation but named no dependent — and it is the one arm
@@ -18,6 +18,7 @@ const ARMS: readonly (readonly [string, RankProvenance])[] = [
   ['declared-tier', { kind: 'declared-tier', priority: 2 }],
   ['promotion', { kind: 'promotion', notation: 'P3 → 0', promotedBy: ['512'] }],
   ['promotion, nothing named', { kind: 'promotion', notation: 'P3 → 0', promotedBy: [] }],
+  ['order-strategy', { kind: 'order-strategy', strategy: 'oldest first' }],
 ];
 
 describe('provenanceClause', () => {
@@ -35,6 +36,26 @@ describe('provenanceClause', () => {
   it('answers null for absent provenance, as the line does', () => {
     assert.equal(provenanceClause(undefined), null);
     assert.equal(provenanceLine(undefined), null);
+  });
+});
+
+describe('the order-strategy arm (#130)', () => {
+  const tail: RankProvenance = { kind: 'order-strategy', strategy: 'oldest first' };
+
+  it("reads as §16h's unlabeled-tail row, in the host's words for the rule", () => {
+    assert.equal(
+      renderMarkup(provenanceLine(tail)!),
+      '<p class="ig-provenance"><span class="ig-turn" aria-hidden="true">↳</span><span>Unlabeled tail · oldest first</span></p>',
+    );
+  });
+
+  it('wears no priority chip, because the tail has no priority', () => {
+    assert.equal(priorityBadge(tail), null);
+  });
+
+  it('never borrows the declared-tier sentence', () => {
+    const markup = renderMarkup(provenanceClause(tail)!);
+    assert.ok(!markup.includes('priority'), 'the tail row claimed a priority it does not have');
   });
 });
 
