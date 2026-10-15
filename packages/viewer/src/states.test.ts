@@ -21,6 +21,7 @@ import { describe, it } from 'node:test';
 import type { HostFacts, ViewerDocument, ViewerIssue } from './document.ts';
 import { normalizeDocument } from './document.ts';
 import { type RenderOptions, renderViewer } from './render.ts';
+import { viewerStylesheet } from './styles.ts';
 import type { Projection } from './scene.ts';
 
 const PROJECTIONS: readonly Projection[] = ['linear', 'graph', 'tree'];
@@ -131,6 +132,8 @@ const STATES: readonly State[] = [
       EMPTY.reason,
       EMPTY.assurance,
       'data-ig-command="review-pick-order"',
+      // §16g's empty card leads with the dashed station row; no banner arm does (#132).
+      'class="ig-notice-stations"',
     ],
   },
   {
@@ -196,6 +199,27 @@ describe('the §16 states', () => {
         }
       }
     }
+  });
+
+  it('leads the empty card with three dashed stations, hidden from assistive technology, above the headline (#132)', () => {
+    const empty = STATES.find((state) => state.name === 'empty')!;
+    for (const projection of PROJECTIONS) {
+      const markup = draw(empty, projection);
+      const row = /<div class="ig-notice-stations" aria-hidden="true">(.*?)<\/div>/.exec(markup);
+      assert.ok(row !== null, `${projection}: no hidden station row`);
+      assert.equal(row[1]!.split('data-fill="dashed"').length - 1, 3, `${projection}: not three dashed stations`);
+      assert.ok(markup.indexOf('ig-notice-stations') < markup.indexOf(EMPTY.headline), `${projection}: the stations sit below the headline`);
+    }
+  });
+
+  it('composes the empty card centred, and leaves the banner arms as they were (#132)', () => {
+    const sheet = viewerStylesheet;
+    const rule = /\.ig-notice\[data-ig-condition='empty'\] \{([^}]*)\}/.exec(sheet);
+    assert.ok(rule !== null, 'no empty-card rule');
+    assert.match(rule[1]!, /flex-direction: column;/);
+    assert.match(rule[1]!, /text-align: center;/);
+    assert.match(rule[1]!, /align-items: center;/);
+    assert.ok(!/\.ig-notice\[data-ig-condition='(importing|error)'\] \{/.test(sheet), 'a banner arm got its own composition');
   });
 
   it('keeps the stamp present and the panel never busy, in every state and projection', () => {
