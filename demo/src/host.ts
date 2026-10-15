@@ -211,6 +211,9 @@ const DEMO_CONDITIONS: Readonly<Record<DemoStateName, ViewerCondition | undefine
     headline: 'Still loading your issues',
     caution: 'The order below is real but not complete. It will change as more issues arrive.',
     progress: '412 of about 1,200 issues loaded',
+    // THE SAME COUNT AS A SHARE, for §16g's bar (#129). The host's numbers,
+    // never parsed back out of the sentence above.
+    fraction: 412 / 1200,
     // ◔ RATHER THAN THE FRAME'S ◐, and the reason is a collision the frame does
     // not have: ◐ already means `preview-only` in this package's badge
     // vocabulary, and a glyph that means two things is a glyph that means

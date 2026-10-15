@@ -222,6 +222,43 @@ describe('the §16 states', () => {
     assert.ok(!/\.ig-notice\[data-ig-condition='(importing|error)'\] \{/.test(sheet), 'a banner arm got its own composition');
   });
 
+  it('draws the first-import bar at the host share, hidden, above the figure, and only when given one (#129)', () => {
+    const withShare = { ...IMPORTING, fraction: 412 / 1200 };
+    for (const projection of PROJECTIONS) {
+      const markup = renderViewer(
+        { ...populated, host: { freshness: FRESHNESS, condition: withShare } },
+        { projection },
+      ).markup;
+      const meter = /<svg class="ig-notice-meter" aria-hidden="true" focusable="false">(.*?)<\/svg>/.exec(markup);
+      assert.ok(meter !== null, `${projection}: no hidden meter`);
+      assert.match(meter[1]!, /class="ig-notice-meter-fill" width="34.3%"/);
+      assert.ok(!markup.includes('role="progressbar"'), `${projection}: the bar became a progress control`);
+      assert.ok(markup.indexOf('ig-notice-meter') < markup.indexOf(IMPORTING.progress), `${projection}: the bar sits below the figure`);
+      // No share, no bar: the figure alone, as before #129.
+      const figureOnly = draw(STATES.find((state) => state.name === 'first import')!, projection);
+      assert.ok(!figureOnly.includes('ig-notice-meter'), `${projection}: a bar was drawn with no share`);
+      assert.ok(figureOnly.includes(IMPORTING.progress));
+    }
+  });
+
+  it('drops a share a meter cannot draw, keeping the figure (#129)', () => {
+    for (const fraction of [1.5, -0.1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const result = normalizeDocument({ ...populated, host: { freshness: FRESHNESS, condition: { ...IMPORTING, fraction } } });
+      const condition = result.document.host.condition;
+      assert.ok(condition?.kind === 'importing', `${String(fraction)}: the condition was dropped whole`);
+      assert.equal(condition.fraction, undefined, `${String(fraction)}: an undrawable share was kept`);
+      assert.equal(condition.progress, IMPORTING.progress);
+      assert.ok(
+        result.diagnostics.some((line) => line.includes('fraction is not a number from 0 to 1')),
+        `${String(fraction)}: dropped silently`,
+      );
+    }
+    for (const fraction of [0, 1]) {
+      const kept = normalizeDocument({ ...populated, host: { freshness: FRESHNESS, condition: { ...IMPORTING, fraction } } });
+      assert.equal(kept.document.host.condition?.kind === 'importing' ? kept.document.host.condition.fraction : 'gone', fraction);
+    }
+  });
+
   it('keeps the stamp present and the panel never busy, in every state and projection', () => {
     // ALWAYS PRESENT, NEVER A SPINNER — the design states it as an absolute, so
     // it is asserted in every row rather than made one state’s discriminator.

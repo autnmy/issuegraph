@@ -590,6 +590,28 @@ export const viewerStylesheet = `
   outline-offset: var(--ig-space-micro);
 }
 
+/* §16g's FIRST-IMPORT BAR (#129): a track the host's share fills, in the
+   importing state's own gold, above the figure it repeats. Rounded at the
+   radius the small badge already uses. */
+.ig-notice-meter {
+  block-size: var(--ig-space-tight);
+  display: block;
+  inline-size: 100%;
+  margin-block-start: var(--ig-space-snug);
+}
+
+.ig-notice-meter-track {
+  fill: var(--ig-surface);
+}
+
+.ig-notice-meter-fill {
+  fill: var(--ig-state-conflict);
+}
+
+.ig-notice-meter rect {
+  rx: calc(var(--ig-space-tight) / 2);
+}
+
 .ig-notice[data-ig-condition='importing'] .ig-notice-head {
   color: var(--ig-state-conflict);
 }

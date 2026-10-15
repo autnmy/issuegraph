@@ -507,6 +507,8 @@ interface NoticeParts {
   readonly body: readonly string[];
   /** The mono line a progress figure sits on. Absent for the kinds that have none. */
   readonly progress?: string | undefined;
+  /** The share the meter above the figure draws, 0 to 1. Absent draws the figure alone (#129). */
+  readonly meter?: number | undefined;
   /** A control this package publishes and does not wire. Absent when the host named none. */
   readonly control?: { readonly label: string; readonly command: string; readonly href?: string | undefined } | undefined;
 }
@@ -528,7 +530,12 @@ interface NoticeParts {
 function noticeParts(condition: ViewerCondition): NoticeParts {
   switch (condition.kind) {
     case 'importing':
-      return { headline: condition.headline, body: [condition.caution], progress: condition.progress };
+      return {
+        headline: condition.headline,
+        body: [condition.caution],
+        progress: condition.progress,
+        ...(condition.fraction === undefined ? {} : { meter: condition.fraction }),
+      };
     case 'empty':
       return {
         headline: condition.headline,
@@ -628,9 +635,25 @@ export function conditionNotice(document: NormalizedDocument, chrome: boolean | 
           : glyphAndLabel(condition.glyph, condition.headline),
       ),
       ...parts.body.map((line) => element('p', { class: 'ig-notice-body' }, [line])),
+      parts.meter === undefined ? null : noticeMeter(parts.meter),
       parts.progress === undefined ? null : element('p', { class: 'ig-notice-progress' }, [parts.progress]),
     ]),
     control,
+  ]);
+}
+
+/**
+ * §16g's first-import bar: the host's share as a filled track above the figure
+ * (#129). NOT A PROGRESS CONTROL. It is `aria-hidden` and carries no
+ * `role="progressbar"`, because the figure beside it already holds the
+ * accessible name, and §16g's absolute is that the panel is never busy. An SVG
+ * rect takes its width as an attribute, so the share needs no inline style.
+ */
+function noticeMeter(share: number): ElementSpec {
+  const width = `${String(Math.round(share * 1000) / 10)}%`;
+  return svg('svg', { class: 'ig-notice-meter', 'aria-hidden': 'true', focusable: 'false' }, [
+    svg('rect', { class: 'ig-notice-meter-track', width: '100%', height: '100%' }),
+    svg('rect', { class: 'ig-notice-meter-fill', width, height: '100%' }),
   ]);
 }
 
