@@ -619,6 +619,7 @@ export function conditionNotice(document: NormalizedDocument, chrome: boolean | 
           );
   return element('aside', { class: 'ig-notice', 'data-ig-condition': condition.kind }, [
     element('div', { class: 'ig-notice-text', role: 'status' }, [
+      condition.kind === 'empty' ? emptyStations() : null,
       element(
         'p',
         { class: 'ig-notice-head' },
@@ -630,6 +631,19 @@ export function conditionNotice(document: NormalizedDocument, chrome: boolean | 
       parts.progress === undefined ? null : element('p', { class: 'ig-notice-progress' }, [parts.progress]),
     ]),
     control,
+  ]);
+}
+
+/**
+ * §16g's empty card leads with three dashed stations: the panel's own mark for
+ * "nothing here", reused rather than drawn anew (#132). DECORATION ONLY, so the
+ * row is hidden from assistive technology; the headline beneath says it.
+ */
+function emptyStations(): ElementSpec {
+  return element('div', { class: 'ig-notice-stations', 'aria-hidden': 'true' }, [
+    station('dashed'),
+    station('dashed'),
+    station('dashed'),
   ]);
 }
 

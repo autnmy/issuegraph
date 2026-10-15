@@ -598,6 +598,34 @@ export const viewerStylesheet = `
   color: var(--ig-state-failed);
 }
 
+/* THE EMPTY STATE IS A CENTRED CARD, NOT A BANNER (#132). The shared rule above
+   is right for importing and error, whose frames sit left with the control
+   pushed aside; §16g's empty frame centres everything, leads with the dashed
+   station row, and puts its control beneath the prose. Its frame pads it 30px
+   by 20px: the block inset here is 2 x 16px, the nearest the space scale draws. */
+.ig-notice[data-ig-condition='empty'] {
+  align-items: center;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: calc(var(--ig-space-loose) * 2) var(--ig-space-wide);
+  text-align: center;
+}
+
+.ig-notice[data-ig-condition='empty'] .ig-notice-text {
+  align-items: center;
+}
+
+.ig-notice[data-ig-condition='empty'] .ig-notice-head {
+  justify-content: center;
+}
+
+.ig-notice-stations {
+  display: flex;
+  gap: var(--ig-space-tight);
+  justify-content: center;
+  margin-block-end: var(--ig-space);
+}
+
 /* ── the adoption line ─────────────────────────────────────────────────── */
 
 /* ONE QUIET LINE, which is the whole of what the design asks for here: the
