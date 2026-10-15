@@ -752,7 +752,8 @@ export function unitBlock(document: NormalizedDocument, slot: ViewerSlot): Eleme
           ? element('span', { class: 'ig-id' }, [member])
           : element('span', { class: 'ig-id' }, [
               identity(issue),
-              ` · P${String(issue.priority)}`,
+              // No tier when the host stated none (#130): never a made-up `P2`.
+              issue.priority === undefined ? null : ` · P${String(issue.priority)}`,
             ]),
       ]);
     }),

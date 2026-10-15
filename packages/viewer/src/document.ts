@@ -169,8 +169,12 @@ export interface ViewerIssue {
    */
   readonly url?: string | undefined;
   readonly open: boolean;
-  /** Declared priority, as the host resolved it. */
-  readonly priority: number;
+  /**
+   * Declared priority, as the host resolved it. ABSENT when the host has none to
+   * state: an unlabeled-tail row its order strategy placed (`order-strategy`
+   * provenance, #130), which a host must not be made to give an invented tier.
+   */
+  readonly priority?: number | undefined;
   /** Absent when the host has no provenance to state. */
   readonly provenance?: RankProvenance | undefined;
   /** Set when the host's engine ranked this row by a fallback. Absent means the query evaluated. */

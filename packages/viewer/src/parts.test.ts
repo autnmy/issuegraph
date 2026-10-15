@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import type { RankProvenance, ViewerHold, ViewerSlot } from './document.ts';
-import { priorityBadge, provenanceClause, provenanceLine, slotPosition } from './parts.ts';
+import { normalizeDocument } from './document.ts';
+import { priorityBadge, provenanceClause, provenanceLine, slotPosition, unitBlock } from './parts.ts';
 import { renderMarkup } from './element.ts';
 
 /**
@@ -56,6 +57,24 @@ describe('the order-strategy arm (#130)', () => {
   it('never borrows the declared-tier sentence', () => {
     const markup = renderMarkup(provenanceClause(tail)!);
     assert.ok(!markup.includes('priority'), 'the tail row claimed a priority it does not have');
+  });
+  it('lets a unit member state no priority, and the unit prints none for it', () => {
+    const slot: ViewerSlot = { rank: 1, lead: '1', members: ['1', '2'], ready: true, holds: [] };
+    const { document } = normalizeDocument({
+      issues: [
+        { key: '1', title: 'Lead', open: true, priority: 1 },
+        { key: '2', title: 'Tail partner', open: true, provenance: tail },
+      ],
+      edges: [{ field: 'together-with', from: '1', to: '2' }],
+      order: { slots: [slot], excluded: [] },
+      cycles: [],
+    });
+    const markup = renderMarkup(unitBlock(document, slot)!);
+    assert.ok(markup.includes('<span class="ig-id">1</span> · P1</span>'), 'the lead lost its stated tier');
+    assert.ok(
+      markup.includes('Tail partner</span><span class="ig-id"><span class="ig-id">2</span></span>'),
+      'the tail partner was given a tier',
+    );
   });
 });
 
