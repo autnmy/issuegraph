@@ -2,11 +2,12 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import type { RankProvenance, ViewerHold, ViewerSlot } from './document.ts';
-import { provenanceClause, provenanceLine, slotPosition } from './parts.ts';
+import { normalizeDocument } from './document.ts';
+import { priorityBadge, provenanceClause, provenanceLine, slotPosition, unitBlock } from './parts.ts';
 import { renderMarkup } from './element.ts';
 
 /**
- * The three arms the design fixes, one fixture each.
+ * The four arms the design fixes, one fixture each.
  *
  * `promotion` appears twice on purpose: `promotedBy` empty is a real state —
  * the host knows the notation but named no dependent — and it is the one arm
@@ -18,6 +19,7 @@ const ARMS: readonly (readonly [string, RankProvenance])[] = [
   ['declared-tier', { kind: 'declared-tier', priority: 2 }],
   ['promotion', { kind: 'promotion', notation: 'P3 → 0', promotedBy: ['512'] }],
   ['promotion, nothing named', { kind: 'promotion', notation: 'P3 → 0', promotedBy: [] }],
+  ['order-strategy', { kind: 'order-strategy', strategy: 'oldest first' }],
 ];
 
 describe('provenanceClause', () => {
@@ -35,6 +37,44 @@ describe('provenanceClause', () => {
   it('answers null for absent provenance, as the line does', () => {
     assert.equal(provenanceClause(undefined), null);
     assert.equal(provenanceLine(undefined), null);
+  });
+});
+
+describe('the order-strategy arm (#130)', () => {
+  const tail: RankProvenance = { kind: 'order-strategy', strategy: 'oldest first' };
+
+  it("reads as §16h's unlabeled-tail row, in the host's words for the rule", () => {
+    assert.equal(
+      renderMarkup(provenanceLine(tail)!),
+      '<p class="ig-provenance"><span class="ig-turn" aria-hidden="true">↳</span><span>Unlabeled tail · oldest first</span></p>',
+    );
+  });
+
+  it('wears no priority chip, because the tail has no priority', () => {
+    assert.equal(priorityBadge(tail), null);
+  });
+
+  it('never borrows the declared-tier sentence', () => {
+    const markup = renderMarkup(provenanceClause(tail)!);
+    assert.ok(!markup.includes('priority'), 'the tail row claimed a priority it does not have');
+  });
+  it('lets a unit member state no priority, and the unit prints none for it', () => {
+    const slot: ViewerSlot = { rank: 1, lead: '1', members: ['1', '2'], ready: true, holds: [] };
+    const { document } = normalizeDocument({
+      issues: [
+        { key: '1', title: 'Lead', open: true, priority: 1 },
+        { key: '2', title: 'Tail partner', open: true, provenance: tail },
+      ],
+      edges: [{ field: 'together-with', from: '1', to: '2' }],
+      order: { slots: [slot], excluded: [] },
+      cycles: [],
+    });
+    const markup = renderMarkup(unitBlock(document, slot)!);
+    assert.ok(markup.includes('<span class="ig-id">1</span> · P1</span>'), 'the lead lost its stated tier');
+    assert.ok(
+      markup.includes('Tail partner</span><span class="ig-id"><span class="ig-id">2</span></span>'),
+      'the tail partner was given a tier',
+    );
   });
 });
 

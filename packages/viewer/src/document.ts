@@ -30,7 +30,7 @@ import {
 } from '@issuegraph/core';
 
 /**
- * How an issue's rank came about, in the three forms the format and a host's
+ * How an issue's rank came about, in the four forms the format and a host's
  * own configuration can produce. The viewer FORMATS provenance; it never
  * decides it — which is why every arm carries its own text rather than a code
  * the viewer would have to interpret.
@@ -49,7 +49,15 @@ export type RankProvenance =
       readonly kind: 'promotion';
       readonly notation: string;
       readonly promotedBy: readonly string[];
-    };
+    }
+  /**
+   * No query matched and the issue has no priority to sit in: the host's order
+   * strategy, the last step of its config layer, placed it as tie-breaker
+   * (§16h's unlabeled tail). `strategy` is the host's own words for that rule,
+   * such as `oldest first`, because the viewer cannot name a rule it did not
+   * apply. It carries no priority, so a host never has to invent one.
+   */
+  | { readonly kind: 'order-strategy'; readonly strategy: string };
 
 /** Where a hold came from. The two families never share a treatment. */
 export type HoldFamily =
@@ -161,8 +169,12 @@ export interface ViewerIssue {
    */
   readonly url?: string | undefined;
   readonly open: boolean;
-  /** Declared priority, as the host resolved it. */
-  readonly priority: number;
+  /**
+   * Declared priority, as the host resolved it. ABSENT when the host has none to
+   * state: an unlabeled-tail row its order strategy placed (`order-strategy`
+   * provenance, #130), which a host must not be made to give an invented tier.
+   */
+  readonly priority?: number | undefined;
   /** Absent when the host has no provenance to state. */
   readonly provenance?: RankProvenance | undefined;
   /** Set when the host's engine ranked this row by a fallback. Absent means the query evaluated. */
