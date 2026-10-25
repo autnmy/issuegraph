@@ -188,20 +188,143 @@ function describeThrown(value) {
   }
 }
 
+/** The one issue body the text probes read: priority 1, blocked by #2. */
+const SAMPLE_BODY = '---\nissuegraph:\n  priority: 1\n  blocked-by:\n    - "#2"\n---\n\nBody.\n';
+
+/** A reader `NodeInput` with an empty declaration, for the graph calls. */
+function sampleNode(id, blockedBy = []) {
+  return {
+    id,
+    repo: null,
+    open: true,
+    labels: [],
+    assigneeCount: 0,
+    declarationRead: 'read',
+    data: {
+      blockedBy: blockedBy.map((to) => ({ repo: null, id: to })),
+      decomposedFrom: null,
+      duplicateOf: null,
+      serializeWith: null,
+      togetherWith: null,
+      priority: null,
+      evidence: null,
+    },
+  };
+}
+
+/**
+ * ONE REAL CALL PER PUBLISHED PACKAGE, run on the floor after the entry loads.
+ *
+ * A clean LOAD proves only that the entry's static graph resolves and its module
+ * scope runs. It says nothing about a built-in an exported function reaches only
+ * when it is CALLED (`Array.prototype.toSorted` is ES2023 and absent from Node
+ * 18), so a package can load on its declared floor and still throw for every
+ * consumer that uses it. Each entry here calls one public function the way a
+ * consumer would and asserts what it returns.
+ *
+ * WHAT THIS PROVES, AND WHAT IT DOES NOT. A call exercises the paths it takes
+ * and no others; it is not a proof that every export runs on the floor. The
+ * compile-time half is `tsconfig.base.json`'s `lib`, held at the floor's level
+ * so an unsupported built-in is a type error before it is a runtime one. Neither
+ * half is sufficient alone, and neither is advertised as such.
+ *
+ * A package that declares a floor and has NO entry here fails the run by name,
+ * so a new published package cannot ship its floor claim on a load alone.
+ * `load(name)` imports a sibling's built entry, for a call whose input is
+ * another package's output (the writer's render, read back by the reader).
+ */
+export const CALL_PROBES = {
+  '@issuegraph/core': (core) => {
+    assert.equal(core.isPriority(1), true);
+    assert.equal(core.isPriority(9), false);
+    assert.equal(core.edgeIdentity('blocked-by', '#1', '#2'), 'blocked-by|%231|%232');
+  },
+  '@issuegraph/reader': (reader) => {
+    const { data } = reader.parseFrontmatter(SAMPLE_BODY);
+    assert.equal(data.priority, 1);
+    assert.deepEqual(data.blockedBy, [{ repo: null, id: '2' }]);
+  },
+  '@issuegraph/writer': async (writer, load) => {
+    const reader = await load('@issuegraph/reader');
+    const input = { priority: 1, blockedBy: [{ repo: null, id: '2' }] };
+    assert.deepEqual(reader.parseFrontmatter(writer.renderFrontmatter(input)).data, writer.expectedParseOfRender(input));
+  },
+  '@issuegraph/derive': (derive) => {
+    const issues = [sampleNode('1', ['2']), sampleNode('2')];
+    assert.equal(derive.wouldCycleOnBlockedBy(issues, '2', '1'), true);
+    assert.equal(derive.wouldCycleOnBlockedBy(issues, '1', '2'), false);
+  },
+  '@issuegraph/store': async (store) => {
+    const seed = { issues: [{ ref: '1', title: 'One', state: 'open' }], edges: [store.makeEdge('blocked-by', '1', '2')] };
+    const source = store.createMemorySource(seed);
+    assert.deepEqual(source.current(), seed);
+  },
+  '@issuegraph/cli': (cli) => {
+    assert.equal(cli.validateBody(SAMPLE_BODY).code, cli.EXIT.ok);
+    assert.equal(cli.parseArgv(['parse']).verb, 'parse');
+  },
+  '@issuegraph/editor': async (editor, load) => {
+    const [reader, store] = await Promise.all([load('@issuegraph/reader'), load('@issuegraph/store')]);
+    const document = {
+      issues: [{ ref: 'a', title: 'A', state: 'open' }, { ref: 'b', title: 'B', state: 'open' }],
+      edges: [store.makeEdge('blocked-by', 'a', 'b'), store.makeEdge('blocked-by', 'b', 'a')],
+    };
+    const model = reader.buildModel([sampleNode('a', ['b']), sampleNode('b', ['a'])]);
+    const graph = { cycles: model.cycles, duplicateCanonical: model.duplicateCanonical, cycleWalk: model.cycleWalk };
+    assert.deepEqual(editor.auditDocument({ document, graph }).map((found) => found.kind), ['cycle']);
+  },
+  '@issuegraph/viewer': (viewer) => {
+    const { document, diagnostics } = viewer.normalizeDocument({
+      issues: [{ key: '1', title: 'One', open: true, priority: 2 }, { key: '2', title: 'Two', open: true, priority: 2 }],
+      edges: [{ field: 'blocked-by', from: '1', to: '2' }],
+      order: {
+        slots: [
+          { lead: '2', members: ['2'], rank: 1, ready: true, holds: [] },
+          { lead: '1', members: ['1'], rank: 2, ready: false, holds: [] },
+        ],
+        excluded: [],
+      },
+      cycles: [],
+    });
+    assert.equal(document.edges.length, 1);
+    assert.deepEqual(diagnostics, []);
+  },
+};
+
+/** Each package's built runtime entry, by its manifest name, for a probe's `load`. */
+function entriesByName(packagesDir) {
+  const entries = new Map();
+  for (const entry of readdirSync(packagesDir, { withFileTypes: true })) {
+    const manifestPath = join(packagesDir, entry.name, 'package.json');
+    if (!entry.isDirectory() || !existsSync(manifestPath)) continue;
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    const runtime = manifest.exports?.['.']?.default ?? manifest.main;
+    if (runtime) entries.set(manifest.name, join(packagesDir, entry.name, runtime));
+  }
+  return entries;
+}
+
 /**
  * Smoke-test every package under `packagesDir`. Returns one result per package.
  *
- * A package that declares `engines.node` is held to BOTH checks: this process
- * must be running that floor, and the built entry must load in it. A package
+ * A package that declares `engines.node` is held to THREE checks: this process
+ * must be running that floor, the built entry must load in it, and one public
+ * function must return what it should there (`probes`, `CALL_PROBES` by default). A package
  * that declares none is not exempt from being checked — it is exempt from
  * claiming a Node floor. Every package, floor or not, must still PARSE and must
  * name only files it actually ships. The difference between the two is reported
  * per package rather than left silent, because a check that quietly weakens is
  * indistinguishable from one that passed.
  */
-export async function smokeTest(packagesDir, { log = () => {} } = {}) {
+export async function smokeTest(packagesDir, { log = () => {}, probes = CALL_PROBES } = {}) {
   const results = [];
   const runningMajor = Number(process.versions.node.split('.')[0]);
+  const entries = entriesByName(packagesDir);
+  const load = (name) => {
+    const path = entries.get(name);
+    assert.ok(path, `a call probe asked for ${name}, which is not a package here`);
+    return import(pathToFileURL(path).href);
+  };
 
   for (const entry of readdirSync(packagesDir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
@@ -354,16 +477,30 @@ export async function smokeTest(packagesDir, { log = () => {} } = {}) {
       reason = describeThrown(error);
     }
 
+    let called = false;
     if (parseOnly) {
       log(`parse ${manifest.name}  ${runtime}  parsed, not loadable here — ${reason}`);
     } else {
       assert.ok(Object.keys(loaded).length > 0, `${manifest.name} loaded but exported nothing`);
       log(`ok    ${manifest.name}  ${runtime}  loaded, ${Object.keys(loaded).length} exports, node ${process.version}`);
+      // A FLOOR IS A CLAIM ABOUT CALLS, NOT ONLY LOADS — see `CALL_PROBES`.
+      if (floor !== undefined) {
+        const probe = probes[manifest.name];
+        assert.ok(
+          probe,
+          `${manifest.name} declares node >=${floor} but the smoke calls nothing in it. ` +
+            'Add a CALL_PROBES entry that calls one public function and asserts its result.',
+        );
+        await probe(loaded, load);
+        called = true;
+        log(`call  ${manifest.name}  one public call returned what it should, node ${process.version}`);
+      }
     }
     results.push({
       name: manifest.name,
       entry: runtime,
       check: parseOnly ? 'parsed' : 'loaded',
+      called,
       downgraded: parseOnly ? reason : undefined,
     });
   }
@@ -376,5 +513,6 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
   const packagesDir = fileURLToPath(new URL('../packages', import.meta.url));
   const results = await smokeTest(packagesDir, { log: (line) => console.log(line) });
   const loaded = results.filter((r) => r.check === 'loaded').length;
-  console.log(`smoke: ${results.length} package(s) on node ${process.version} — ${loaded} loaded, ${results.length - loaded} parse-only`);
+  const called = results.filter((r) => r.called).length;
+  console.log(`smoke: ${results.length} package(s) on node ${process.version} — ${loaded} loaded (${called} called), ${results.length - loaded} parse-only`);
 }

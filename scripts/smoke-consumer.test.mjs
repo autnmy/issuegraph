@@ -7,13 +7,14 @@
  * three of them assert the weaker path does NOT become an exemption.
  */
 
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 
-import { smokeTest, declaredFloorMajor } from './smoke-consumer.mjs';
+import { CALL_PROBES, smokeTest, declaredFloorMajor } from './smoke-consumer.mjs';
 
 const roots = [];
 after(() => { for (const root of roots) rmSync(root, { recursive: true, force: true }); });
@@ -39,9 +40,51 @@ function fixture(entrySource, manifest = {}, extraFiles = {}) {
 
 const running = Number(process.versions.node.split('.')[0]);
 
+/** The fixture's one call: the export the entry declares, read back. */
+const SUBJECT_PROBES = { '@issuegraph/subject': (subject) => assert.equal(subject.a, 1) };
+
 test('a Node package that declares its floor is LOADED, not merely parsed', async () => {
   const dir = fixture('export const a = 1;\n', { engines: { node: `>=${running}` } });
-  assert.deepEqual((await smokeTest(dir)).map((r) => r.check), ['loaded']);
+  assert.deepEqual((await smokeTest(dir, { probes: SUBJECT_PROBES })).map((r) => r.check), ['loaded']);
+});
+
+test('a package that declares its floor is CALLED there, not only loaded', async () => {
+  const dir = fixture('export const a = 1;\n', { engines: { node: `>=${running}` } });
+  assert.deepEqual((await smokeTest(dir, { probes: SUBJECT_PROBES })).map((r) => r.called), [true]);
+});
+
+test('NOT AN EXEMPTION: a floor with no call probe fails, naming the package', async () => {
+  // A load proves the module scope ran; a call-time gap (an ES2023 method the
+  // floor lacks, reached only inside a function) is invisible to it.
+  const dir = fixture('export const a = 1;\n', { engines: { node: `>=${running}` } });
+  await assert.rejects(smokeTest(dir, { probes: {} }), /@issuegraph\/subject declares node >=\d+ but the smoke calls nothing in it/);
+});
+
+test('NOT AN EXEMPTION: a probe whose call fails on the floor fails the run', async () => {
+  // The shape of the original defect: the entry loads, the function throws.
+  const dir = fixture('export const a = 1;\nexport const sorted = (xs) => xs.toSorted?.() ?? (() => { throw new TypeError("xs.toSorted is not a function"); })();\n',
+    { engines: { node: `>=${running}` } });
+  const probes = { '@issuegraph/subject': (subject) => { subject.sorted(Object.assign([2, 1], { toSorted: undefined })); } };
+  await assert.rejects(smokeTest(dir, { probes }), /toSorted is not a function/);
+});
+
+test('CONTROL: a package with no declared floor is loaded and NOT called', async () => {
+  const dir = fixture('export const a = 1;\n');
+  assert.deepEqual((await smokeTest(dir, { probes: {} })).map((r) => [r.check, r.called]), [['loaded', false]]);
+});
+
+test('every published package that declares a floor has a call probe', async () => {
+  // The real table against the real manifests, so a new package (or a rename)
+  // reds here on any Node, not only on the floor job.
+  const packagesDir = fileURLToPath(new URL('../packages', import.meta.url));
+  const claimed = readdirSync(packagesDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && existsSync(join(packagesDir, entry.name, 'package.json')))
+    .map((entry) => JSON.parse(readFileSync(join(packagesDir, entry.name, 'package.json'), 'utf8')))
+    .filter((manifest) => manifest.private !== true && manifest.engines?.node !== undefined)
+    .map((manifest) => manifest.name)
+    .sort();
+  assert.ok(claimed.length > 0, 'no package declares a floor; this test proved nothing');
+  assert.deepEqual(Object.keys(CALL_PROBES).sort(), claimed);
 });
 
 test('a package with no declared floor is PARSED when Node cannot load it', async () => {
