@@ -384,7 +384,8 @@ describe('the four redundant channels survive every overlay', () => {
     for (const state of ['selected', 'pending-write', 'invalid'] as const) {
       const { scene } = attachEdgeOverlays(sceneOf(), [projected(state)]);
       const order = walk(scene.root);
-      const lastMark = order.findLastIndex((spec) => classesOf(spec).includes(OVERLAY_CLASS));
+      // `reduce`, not `findLastIndex`: that is ES2023, past the `lib` the Node 18 floor holds.
+      const lastMark = order.reduce((at, spec, index) => (classesOf(spec).includes(OVERLAY_CLASS) ? index : at), -1);
       const firstTerminal = order.findIndex((spec) => classesOf(spec).includes('ig-terminal'));
       assert.ok(lastMark >= 0, `${state} added no mark to order`);
       assert.ok(firstTerminal >= 0, 'the fixture draws no terminal');
