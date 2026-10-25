@@ -188,38 +188,7 @@ function describeThrown(value) {
   }
 }
 
-/**
- * Smoke-test every package under `packagesDir`. Returns one result per package.
- *
- * A package that declares `engines.node` is held to BOTH checks: this process
- * must be running that floor, and the built entry must load in it. A package
- * that declares none is not exempt from being checked — it is exempt from
- * claiming a Node floor. Every package, floor or not, must still PARSE and must
- * name only files it actually ships. The difference between the two is reported
- * per package rather than left silent, because a check that quietly weakens is
- * indistinguishable from one that passed.
- */
-/**
- * ONE REAL CALL PER PUBLISHED PACKAGE, run on the floor after the entry loads.
- *
- * A clean LOAD proves only that the entry's static graph resolves and its module
- * scope runs. It says nothing about a built-in an exported function reaches only
- * when it is CALLED (`Array.prototype.toSorted` is ES2023 and absent from Node
- * 18), so a package can load on its declared floor and still throw for every
- * consumer that uses it. Each entry here calls one public function the way a
- * consumer would and asserts what it returns.
- *
- * WHAT THIS PROVES, AND WHAT IT DOES NOT. A call exercises the paths it takes
- * and no others; it is not a proof that every export runs on the floor. The
- * compile-time half is `tsconfig.base.json`'s `lib`, held at the floor's level
- * so an unsupported built-in is a type error before it is a runtime one. Neither
- * half is sufficient alone, and neither is advertised as such.
- *
- * A package that declares a floor and has NO entry here fails the run by name,
- * so a new published package cannot ship its floor claim on a load alone.
- * `load(name)` imports a sibling's built entry, for a call whose input is
- * another package's output (the writer's render, read back by the reader).
- */
+/** The one issue body the text probes read: priority 1, blocked by #2. */
 const SAMPLE_BODY = '---\nissuegraph:\n  priority: 1\n  blocked-by:\n    - "#2"\n---\n\nBody.\n';
 
 /** A reader `NodeInput` with an empty declaration, for the graph calls. */
@@ -243,6 +212,27 @@ function sampleNode(id, blockedBy = []) {
   };
 }
 
+/**
+ * ONE REAL CALL PER PUBLISHED PACKAGE, run on the floor after the entry loads.
+ *
+ * A clean LOAD proves only that the entry's static graph resolves and its module
+ * scope runs. It says nothing about a built-in an exported function reaches only
+ * when it is CALLED (`Array.prototype.toSorted` is ES2023 and absent from Node
+ * 18), so a package can load on its declared floor and still throw for every
+ * consumer that uses it. Each entry here calls one public function the way a
+ * consumer would and asserts what it returns.
+ *
+ * WHAT THIS PROVES, AND WHAT IT DOES NOT. A call exercises the paths it takes
+ * and no others; it is not a proof that every export runs on the floor. The
+ * compile-time half is `tsconfig.base.json`'s `lib`, held at the floor's level
+ * so an unsupported built-in is a type error before it is a runtime one. Neither
+ * half is sufficient alone, and neither is advertised as such.
+ *
+ * A package that declares a floor and has NO entry here fails the run by name,
+ * so a new published package cannot ship its floor claim on a load alone.
+ * `load(name)` imports a sibling's built entry, for a call whose input is
+ * another package's output (the writer's render, read back by the reader).
+ */
 export const CALL_PROBES = {
   '@issuegraph/core': (core) => {
     assert.equal(core.isPriority(1), true);
@@ -314,6 +304,18 @@ function entriesByName(packagesDir) {
   return entries;
 }
 
+/**
+ * Smoke-test every package under `packagesDir`. Returns one result per package.
+ *
+ * A package that declares `engines.node` is held to THREE checks: this process
+ * must be running that floor, the built entry must load in it, and one public
+ * function must return what it should there (`probes`, `CALL_PROBES` by default). A package
+ * that declares none is not exempt from being checked — it is exempt from
+ * claiming a Node floor. Every package, floor or not, must still PARSE and must
+ * name only files it actually ships. The difference between the two is reported
+ * per package rather than left silent, because a check that quietly weakens is
+ * indistinguishable from one that passed.
+ */
 export async function smokeTest(packagesDir, { log = () => {}, probes = CALL_PROBES } = {}) {
   const results = [];
   const runningMajor = Number(process.versions.node.split('.')[0]);
