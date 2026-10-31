@@ -7,6 +7,7 @@ import { after, describe, it } from 'node:test';
 
 import {
   DEMO_FILES,
+  PLAY_FILES,
   ROOT_FILES,
   SITE_PACKAGES,
   assembleSite,
@@ -53,10 +54,11 @@ describe('the assembled site satisfies every reference the pages make', () => {
   it('copies the allowlist and every demo reference resolves inside it', () => {
     const out = fresh('issuegraph-site-');
     const copied = assembleSite({ root: repoRoot, out });
-    for (const entry of [...ROOT_FILES, ...DEMO_FILES]) assert.ok(copied.includes(entry), entry);
+    for (const entry of [...ROOT_FILES, ...PLAY_FILES, ...DEMO_FILES]) assert.ok(copied.includes(entry), entry);
     for (const name of SITE_PACKAGES) assert.ok(copied.includes(`packages/${name}/dist`), name);
     assert.deepEqual(missingReferences(out, 'demo/index.html'), []);
     assert.deepEqual(missingReferences(out, 'index.html'), []);
+    assert.deepEqual(missingReferences(out, 'play/index.html'), []);
   });
 
   it('ships no declaration files and no source outside the allowlist', () => {
@@ -78,6 +80,8 @@ describe('the assembled site satisfies every reference the pages make', () => {
   it('refuses a tree whose build has not run', () => {
     const root = fresh('issuegraph-unbuilt-');
     for (const entry of ROOT_FILES) writeFileSync(join(root, entry), '');
+    mkdirSync(join(root, 'play'), { recursive: true });
+    for (const entry of PLAY_FILES) writeFileSync(join(root, entry), '');
     mkdirSync(join(root, 'demo'), { recursive: true });
     assert.throws(() => assembleSite({ root, out: fresh('issuegraph-site-') }), /demo\/index\.html is missing/);
   });

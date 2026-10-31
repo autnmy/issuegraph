@@ -32,6 +32,9 @@ export const SITE_PACKAGES = Object.freeze(['core', 'derive', 'editor', 'reader'
 /** Files at the repository root the site serves as-is. */
 export const ROOT_FILES = Object.freeze(['index.html', 'CNAME', '.nojekyll']);
 
+/** The Whack-an-Issue game at /play/: one self-contained page, no build step. */
+export const PLAY_FILES = Object.freeze(['play/index.html']);
+
 /** The demo's own files. Its `dist` is the build output; the rest is checked in. */
 export const DEMO_FILES = Object.freeze([
   'demo/index.html',
@@ -110,6 +113,7 @@ export function assembleSite({ root, out }) {
   const copied = [];
   const entries = [
     ...ROOT_FILES,
+    ...PLAY_FILES,
     ...DEMO_FILES,
     ...SITE_PACKAGES.map((name) => `packages/${name}/dist`),
     `${YAML_PATH}/package.json`,
@@ -133,7 +137,7 @@ if (invokedDirectly) {
   const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
   const out = resolve(process.argv[2] ?? join(root, '_site'));
   const copied = assembleSite({ root, out });
-  const missing = ['index.html', 'demo/index.html'].flatMap((page) =>
+  const missing = ['index.html', 'play/index.html', 'demo/index.html'].flatMap((page) =>
     missingReferences(out, page).map((path) => `${page} -> ${path}`),
   );
   if (missing.length > 0) {

@@ -3,79 +3,48 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Issuegraph — a specification for machine-readable work relationships and ordering</title>
-<meta name="description" content="Issuegraph is a specification for machine-readable work relationships and ordering, written as YAML frontmatter on the issues of an existing tracker. Seven fields; reader rules for a ready set and effective priority.">
-<meta name="theme-color" content="#f7f8fa" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0c0f14" media="(prefers-color-scheme: dark)">
-<meta property="og:type" content="website">
-<meta property="og:title" content="Issuegraph — machine-readable work relationships and ordering">
-<meta property="og:description" content="A specification for machine-readable work relationships and ordering, written as YAML frontmatter on the issues of an existing tracker.">
-<meta property="og:site_name" content="Issuegraph">
-<meta name="twitter:card" content="summary">
-<script>
-  try {
-    var t = localStorage.getItem('ig-theme');
-    if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
-  } catch (e) {}
-</script>
+<title>Issuegraph · A spec for issue dependencies</title>
+<meta name="description" content="Issuegraph defines seven optional YAML frontmatter fields that record how issues depend on each other. Any tracker can store them, and any tool can read them to work out which issues are ready to start.">
+<meta property="og:title" content="Issuegraph">
+<meta property="og:description" content="A spec for issue dependencies, written as YAML frontmatter on the issues you already have.">
+<meta name="theme-color" content="#F5F6F3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121413" media="(prefers-color-scheme: dark)">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,300;6..72,400;6..72,500&family=Geist+Mono:wght@400;500&display=swap">
 <style>
 :root {
   color-scheme: light;
-  --canvas: #ffffff;
-  --canvas-2: #f7f8fa;
-  --canvas-3: #eef0f4;
-  --border: #d5dae1;
-  --border-2: #e5e9ee;
-  --fg: #1c2027;
-  --fg-2: #545c69;
-  --fg-3: #666e7a;
-  --accent: #1a5fa8;
-  --accent-bg: #e8f0f9;
-  --on-accent: #ffffff;
-  --green: #1a7a44;
-  --green-bg: #e6f4eb;
-  --amber: #8a5a00;
-  --amber-bg: #fbf1dc;
-
-  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, sans-serif;
-  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
-}
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --canvas: #12161c;
-  --canvas-2: #0c0f14;
-  --canvas-3: #171c24;
-  --border: #2c333d;
-  --border-2: #21272f;
-  --fg: #e8ecf1;
-  --fg-2: #a3acb9;
-  --fg-3: #8b94a1;
-  --accent: #6aa9e9;
-  --accent-bg: #16283d;
-  --on-accent: #0c0f14;
-  --green: #46b56a;
-  --green-bg: #13291b;
-  --amber: #d0a02c;
-  --amber-bg: #2b2312;
+  --bg: #F5F6F3;
+  --panel: #FFFFFF;
+  --chip: #EEF0EC;
+  --ink: #1B1E1C;
+  --ink-2: #474D48;
+  --ink-3: #5A605B;
+  --faint: #A3A8A3;
+  --rule: #E2E4DF;
+  --rule-2: #D5D8D2;
+  --accent: #2440C8;
+  --accent-hover: #16288A;
+  --dash: #8A908B;
+  --serif: Newsreader, Georgia, "Times New Roman", serif;
+  --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) {
+  :root {
     color-scheme: dark;
-    --canvas: #12161c;
-    --canvas-2: #0c0f14;
-    --canvas-3: #171c24;
-    --border: #2c333d;
-    --border-2: #21272f;
-    --fg: #e8ecf1;
-    --fg-2: #a3acb9;
-    --fg-3: #8b94a1;
-    --accent: #6aa9e9;
-    --accent-bg: #16283d;
-    --on-accent: #0c0f14;
-    --green: #46b56a;
-    --green-bg: #13291b;
-    --amber: #d0a02c;
-    --amber-bg: #2b2312;
+    --bg: #121413;
+    --panel: #1A1D1B;
+    --chip: #252926;
+    --ink: #E7EAE6;
+    --ink-2: #B4BAB4;
+    --ink-3: #9AA19B;
+    --faint: #5F665F;
+    --rule: #262A27;
+    --rule-2: #313632;
+    --accent: #8DA2FF;
+    --accent-hover: #B5C3FF;
+    --dash: #737A74;
   }
 }
 
@@ -83,1676 +52,249 @@
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
-  background: var(--canvas-2);
-  color: var(--fg);
-  font-family: var(--sans);
-  font-size: 14px;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 20px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
 a { color: var(--accent); text-decoration: none; }
-a:hover { text-decoration: underline; }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+a:hover { color: var(--accent-hover); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
 code, pre, .mono { font-family: var(--mono); }
-svg { overflow: visible; }
-h1, h2, h3 { margin: 0; font-weight: 600; }
 p { margin: 0; }
+h1, h2, h3 { margin: 0; font-weight: 400; }
 
-.container { max-width: 1080px; margin: 0 auto; padding: 0 16px; }
+.wrap { max-width: 1200px; margin: 0 auto; padding: 0 clamp(20px, 5vw, 64px); }
 
-/* ---- app bar -------------------------------------------------------- */
+/* header */
+.top { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 22px 0; font-family: var(--mono); font-size: 13px; }
+.top .mark { color: var(--ink); letter-spacing: .02em; padding: 10px 0; }
+.top nav { display: flex; flex-wrap: wrap; gap: 0 28px; }
+.top nav a { color: var(--ink-3); padding: 10px 0; }
+.top nav a:hover { color: var(--ink); }
 
-.appbar {
-  position: sticky; top: 0; z-index: 20;
-  background: var(--canvas);
-  border-bottom: 1px solid var(--border);
-}
-.appbar .inner { display: flex; align-items: center; gap: 12px; height: 52px; }
-.wordmark {
-  font-family: var(--mono); font-size: 17px; font-weight: 600;
-  letter-spacing: -0.02em; color: var(--fg); white-space: nowrap;
-}
-.wordmark span { color: var(--accent); }
-.appbar .spacer { flex: 1 1 auto; }
-.appbar nav { display: flex; align-items: center; gap: 2px; }
-.appbar nav a {
-  font-size: 13px; color: var(--fg-2); padding: 5px 9px; border-radius: 5px;
-}
-.appbar nav a:hover { background: var(--canvas-3); color: var(--fg); text-decoration: none; }
+/* hero */
+.hero { padding: clamp(72px, 11vw, 140px) 0 clamp(88px, 12vw, 160px); display: flex; flex-wrap: wrap; gap: 64px; align-items: flex-end; justify-content: space-between; }
+.hero .lede { flex: 1 1 520px; max-width: 760px; }
+.hero h1 { font-weight: 300; font-size: clamp(44px, 5.6vw, 80px); line-height: 1.04; letter-spacing: -0.02em; text-wrap: balance; }
+.hero p { margin-top: 40px; max-width: 540px; color: var(--ink-2); text-wrap: pretty; }
+.links { display: flex; flex-wrap: wrap; gap: 0 32px; margin-top: 40px; font-family: var(--mono); font-size: 14px; }
+.links a { padding: 12px 0; }
+.links .primary { border-bottom: 1px solid var(--accent); }
+.links .quiet { color: var(--ink-3); }
+.links .quiet:hover { color: var(--ink); }
+.graph { flex: 0 1 440px; width: 100%; max-width: 440px; height: auto; display: block; }
+.graph .edge { fill: none; stroke: var(--ink); stroke-width: 1; }
+.graph .ser { fill: none; stroke: var(--dash); stroke-width: 1; stroke-dasharray: 3 4; }
+.graph .node { fill: var(--bg); stroke: var(--ink); stroke-width: 1; }
+.graph .ready { fill: var(--accent); }
+.graph .head { fill: var(--ink); }
+.graph text { font-family: var(--mono); font-size: 11px; fill: var(--ink-3); }
 
-.btn {
-  font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
-  color: var(--fg-2); background: var(--canvas); border: 1px solid var(--border);
-  padding: 5px 9px; border-radius: 5px; cursor: pointer; line-height: 1.4;
-}
-.btn:hover { background: var(--canvas-3); color: var(--fg); }
+/* labelled sections */
+.sec { display: flex; flex-wrap: wrap; gap: 20px 48px; padding-bottom: clamp(88px, 12vw, 160px); }
+.sec > .label { flex: 0 0 220px; font-family: var(--mono); font-size: 13px; color: var(--ink-3); padding-top: 8px; }
+.sec > .body { flex: 1 1 560px; min-width: 0; }
 
-/* ---- hero ----------------------------------------------------------- */
+/* editor */
+.editor { background: var(--panel); border: 1px solid var(--rule-2); border-radius: 8px; overflow: hidden; max-width: 720px; }
+.editor .bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 14px; border-bottom: 1px solid var(--rule); }
+.dots { display: flex; gap: 8px; }
+.dots span { width: 12px; height: 12px; border-radius: 50%; }
+.dots span:nth-child(1) { background: #FF5F57; }
+.dots span:nth-child(2) { background: #FEBC2E; }
+.dots span:nth-child(3) { background: #28C840; }
+.tabs { display: flex; gap: 4px; font-family: var(--mono); font-size: 12px; }
+.tabs span { padding: 5px 10px; border-radius: 4px; color: var(--ink-3); }
+.tabs .on { background: var(--chip); color: var(--ink); }
+.code { display: flex; overflow-x: auto; font-family: var(--mono); font-size: clamp(13px, 1.4vw, 17px); line-height: 1.8; padding: 16px 0; }
+.code pre { margin: 0; font-family: inherit; white-space: pre; }
+.code .gutter { padding: 0 14px 0 18px; text-align: right; color: var(--faint); user-select: none; }
+.code .src { padding: 0 24px 0 6px; color: var(--ink); }
+.code .d { color: var(--dash); }
+.code .v { color: var(--accent); }
 
-.hero {
-  background: var(--canvas); border-bottom: 1px solid var(--border);
-  padding-top: clamp(36px, 5vw, 56px); padding-bottom: clamp(32px, 4vw, 44px);
-}
-.mark {
-  font-family: var(--mono); font-size: clamp(34px, 6.4vw, 58px); font-weight: 600;
-  letter-spacing: -0.04em; line-height: 1; color: var(--fg);
-}
-.mark span { color: var(--accent); }
-.tagline {
-  margin: 16px 0 0; font-size: clamp(16px, 1.9vw, 19px); line-height: 1.45;
-  color: var(--fg); font-weight: 500; max-width: 46ch; text-wrap: pretty;
-}
-.copy { margin: 18px 0 0; display: flex; flex-direction: column; gap: 11px; max-width: 72ch; }
-.copy p { font-size: 14.5px; line-height: 1.62; color: var(--fg-2); text-wrap: pretty; }
-.copy code {
-  font-family: var(--mono); font-size: 12.5px; color: var(--fg);
-  background: var(--canvas-2); border: 1px solid var(--border-2);
-  border-radius: 4px; padding: 1px 5px;
-}
-.metarow {
-  display: flex; flex-wrap: wrap; gap: 14px 20px; align-items: center;
-  justify-content: space-between; margin: 24px 0 0;
-}
-.actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.abtn {
-  font-family: var(--mono); font-size: 12px; color: var(--fg-2);
-  background: var(--canvas-2); border: 1px solid var(--border);
-  padding: 5px 12px; border-radius: 5px; white-space: nowrap;
-}
-.abtn:hover { background: var(--canvas-3); color: var(--fg); text-decoration: none; }
-.abtn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-.abtn.primary:hover { background: var(--accent); color: var(--on-accent); filter: brightness(1.08); }
-.desc { margin: 8px 0 0; max-width: 62ch; font-size: 15px; color: var(--fg-2); text-wrap: pretty; }
-.pills { display: flex; flex-wrap: wrap; gap: 6px; }
-.pill {
-  font-family: var(--mono); font-size: 11.5px; color: var(--fg-2);
-  border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px 3px;
-  background: var(--canvas-2);
-}
-.pill.draft { color: var(--amber); border-color: var(--amber); background: var(--amber-bg); font-weight: 600; }
+/* fields */
+.field { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 24px; padding: 14px 0; border-bottom: 1px solid var(--rule); }
+.field .k { font-family: var(--mono); font-size: 16px; flex: 0 0 160px; }
+.field .t { font-family: var(--mono); font-size: 14px; color: var(--ink-3); flex: 0 0 210px; }
+.field .d { font-size: 17px; color: var(--ink-2); flex: 1 1 240px; }
+.note { margin-top: 24px; max-width: 560px; font-size: 16px; color: var(--ink-3); }
+.note code { font-size: 14px; color: var(--ink); }
 
+/* reading */
+.reading { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 40px 48px; }
+.reading h3 { font-size: 28px; line-height: 1.2; }
+.reading p { margin-top: 10px; font-size: 17px; color: var(--ink-2); text-wrap: pretty; }
 
+/* closing */
+.closing { padding: 80px 0 clamp(120px, 14vw, 200px); border-top: 1px solid var(--rule-2); }
+.closing p { font-weight: 300; font-size: clamp(28px, 3vw, 42px); line-height: 1.25; max-width: 820px; text-wrap: pretty; }
+.closing .links { margin-top: 32px; }
 
-/* ---- boxes ---------------------------------------------------------- */
-
-main.container { margin-top: clamp(32px, 4.5vw, 48px); display: flex; flex-direction: column; gap: 20px; }
-.box {
-  background: var(--canvas); border: 1px solid var(--border); border-radius: 6px;
-  scroll-margin-top: 64px; overflow: hidden;
-}
-.box > header {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  padding: 9px 16px; background: var(--canvas-3); border-bottom: 1px solid var(--border);
-}
-.box > header h2 { font-size: 13px; color: var(--fg); }
-.box > header .meta { font-family: var(--mono); font-size: 11.5px; color: var(--fg-3); }
-.box > header .push { flex: 1 1 auto; }
-.body { padding: 16px; }
-.rule {
-  padding: 11px 16px; border-top: 1px solid var(--border-2);
-  font-family: var(--mono); font-size: 12px; line-height: 1.7; color: var(--fg-3);
-  background: var(--canvas-2);
-}
-.rule b { color: var(--fg-2); font-weight: 600; }
-.rule code { color: var(--fg-2); }
-.explain {
-  padding: 12px 16px; border-top: 1px solid var(--border-2);
-  font-size: 12.5px; line-height: 1.6; color: var(--fg-3);
-  background: var(--canvas-2); display: flex; flex-direction: column; gap: 8px;
-}
-.explain p { max-width: 78ch; text-wrap: pretty; }
-.explain b { color: var(--fg-2); font-weight: 600; }
-.explain code {
-  font-family: var(--mono); font-size: 11.5px; color: var(--fg-2);
-  background: var(--canvas); border: 1px solid var(--border-2);
-  border-radius: 4px; padding: 1px 4px;
-}
-.explain .eg {
-  font-family: var(--mono); font-size: 12px; color: var(--fg-3);
-  background: var(--canvas); border: 1px solid var(--border-2);
-  border-radius: 5px; padding: 8px 11px; line-height: 1.7;
-}
-.explain .eg b { color: var(--accent); font-weight: 600; }
-
-/* ---- 01 the format -------------------------------------------------- */
-
-.pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 380px); gap: 20px; align-items: center; }
-.codeblock {
-  background: var(--canvas-2); border: 1px solid var(--border-2); border-radius: 6px;
-  padding: 12px 14px; overflow-x: auto;
-}
-.fm { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.85; color: var(--fg-2); }
-.fm > span { display: block; white-space: pre; border-radius: 3px; }
-.fm .d { color: var(--fg-3); }
-.fm .root { color: var(--fg); font-weight: 600; }
-.fm .v { color: var(--accent); }
-
-.hgwrap { overflow-x: auto; }
-.hg { display: block; width: 100%; min-width: 376px; height: auto; }
-.nd rect { fill: var(--canvas-2); stroke: var(--border); stroke-width: 1; }
-.nd text { fill: var(--fg-3); font-family: var(--mono); font-size: 12px; }
-.nd.subj rect { fill: var(--accent-bg); stroke: var(--accent); stroke-width: 1.5; }
-.nd.subj text { fill: var(--accent); font-weight: 600; }
-.lbl { fill: var(--fg-3); font-family: var(--mono); font-size: 10px; }
-.blk { fill: none; stroke: var(--fg-3); stroke-width: 1; marker-end: url(#arrow); }
-.prv { fill: none; stroke: var(--fg-3); stroke-width: 1; stroke-dasharray: 1 3; marker-end: url(#arrow); }
-.ser { fill: none; stroke: var(--fg-3); stroke-width: 1; stroke-dasharray: 4 4; }
-#arrow path { stroke: var(--fg-3); }
-#arrowdim path { stroke: var(--border); }
-
-.wrapall:has(tr[data-field="blocked-by"]:hover) .fm [data-field="blocked-by"],
-.wrapall:has(tr[data-field="decomposed-from"]:hover) .fm [data-field="decomposed-from"],
-.wrapall:has(tr[data-field="serialize-with"]:hover) .fm [data-field="serialize-with"],
-.wrapall:has(tr[data-field="priority"]:hover) .fm [data-field="priority"] {
-  background: var(--accent-bg);
-}
-
-/* ---- 02 fields table ------------------------------------------------ */
-
-.tablewrap { overflow-x: auto; }
-table { border-collapse: collapse; width: 100%; }
-thead th {
-  text-align: left; font-family: var(--mono); font-size: 11px; font-weight: 600;
-  letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-3);
-  padding: 8px 16px; background: var(--canvas-2); border-bottom: 1px solid var(--border);
-  white-space: nowrap;
-}
-tbody td { padding: 10px 16px; border-bottom: 1px solid var(--border-2); vertical-align: top; }
-tbody tr:last-child td { border-bottom: 0; }
-tbody tr:hover { background: var(--canvas-2); }
-.list tbody tr[data-act="0"]:hover { background: transparent; }
-td.f { font-family: var(--mono); font-size: 12.5px; color: var(--accent); white-space: nowrap; font-weight: 600; }
-td.ty { font-family: var(--mono); font-size: 11.5px; color: var(--fg-3); white-space: nowrap; }
-td.m { color: var(--fg-2); max-width: 62ch; text-wrap: pretty; }
-td.m strong { color: var(--fg); font-weight: 600; }
-td.m code { font-size: 12.5px; }
-
-/* ---- 03 relationships ----------------------------------------------- */
-
-.rels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--border-2); }
-.rel { background: var(--canvas); padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
-.rel svg { color: var(--fg-3); }
-.rel .f { font-family: var(--mono); font-size: 12.5px; font-weight: 600; color: var(--accent); }
-.rel .m { font-size: 13.5px; color: var(--fg-2); }
-.rel .m strong { color: var(--fg); font-weight: 600; }
-
-/* ---- 04 reading the graph ------------------------------------------- */
-
-.reader { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 0; }
-.reader .pane { padding: 16px; }
-.reader .pane.flush { padding: 0 0 16px; }
-.pane.flush .panelnote { padding-left: 16px; padding-right: 16px; margin-top: 16px; }
-.reader .pane + .pane { border-left: 1px solid var(--border-2); }
-.panelnote { font-size: 13.5px; line-height: 1.6; color: var(--fg-2); margin-bottom: 14px; max-width: 60ch; text-wrap: pretty; }
-.panelnote b { color: var(--fg); font-weight: 600; }
-.graphwrap { width: 100%; overflow-x: auto; }
-.dgraph { display: block; width: 100%; min-width: 430px; height: auto; }
-.dgraph .prov text { fill: var(--fg-3); font-family: var(--mono); font-size: 10.5px; }
-.dgraph .prov path { stroke: var(--border); stroke-width: 1; stroke-dasharray: 1 4; fill: none; }
-.edges path { fill: none; stroke: var(--fg-3); stroke-width: 1; marker-end: url(#arrow); transition: stroke 150ms linear; }
-.edges path[data-done="1"] { stroke: var(--border); marker-end: url(#arrowdim); }
-.edges .serial { stroke-dasharray: 4 4; }
-.dgraph[data-held="1"] .edges .serial { stroke: var(--amber); stroke-width: 1.4; }
-
-.node rect { fill: var(--canvas-2); stroke: var(--border); stroke-width: 1; transition: stroke 150ms linear, fill 150ms linear; }
-.node .id { fill: var(--fg-2); font-family: var(--mono); font-size: 12.5px; font-weight: 600; }
-.node .p { fill: var(--fg-3); font-family: var(--mono); font-size: 10px; }
-.node .strike { stroke: var(--fg-3); stroke-width: 1; opacity: 0; }
-.node[data-state="ready"] rect { fill: var(--accent-bg); stroke: var(--accent); stroke-width: 1.6; }
-.node[data-state="ready"] .id, .node[data-state="ready"] .p { fill: var(--accent); }
-.node[data-state="claimed"] rect { fill: var(--accent); stroke: var(--accent); }
-.node[data-state="claimed"] .id, .node[data-state="claimed"] .p { fill: var(--on-accent); }
-.node[data-state="held"] rect { stroke: var(--amber); stroke-dasharray: 3 3; fill: var(--amber-bg); }
-.node[data-state="held"] .id, .node[data-state="held"] .p { fill: var(--amber); }
-.node[data-state="closed"] { opacity: 0.55; }
-.node[data-state="closed"] .strike { opacity: 1; }
-.node[data-state="ready"], .node[data-state="claimed"], .node[data-state="closed"] { cursor: pointer; }
-.node[data-state="ready"]:hover rect, .node[data-state="claimed"]:hover rect { stroke-width: 2.4; }
-.node:focus-visible { outline: none; }
-.node:focus-visible rect { stroke: var(--accent); stroke-width: 2.4; }
-
-/* issue list — the same graph, as a tracker shows it */
-.list { width: 100%; border-collapse: collapse; }
-.list th {
-  text-align: left; font-family: var(--mono); font-size: 10.5px; font-weight: 600;
-  letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-3);
-  padding: 9px 8px 9px 0; border-bottom: 1px solid var(--border);
-}
-.list th.r, .list td.r { text-align: right; }
-.list td { padding: 7px 8px 7px 0; border-bottom: 1px solid var(--border-2); vertical-align: middle; }
-.list th:first-child, .list td:first-child { padding-left: 16px; }
-.list th:last-child, .list td:last-child { padding-right: 16px; }
-.list tr:last-child td { border-bottom: 0; }
-.list tr[data-act="1"] { cursor: pointer; }
-.list tr[data-act="1"]:hover { background: var(--canvas-2); }
-.list .key { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--accent); white-space: nowrap; }
-.list .sum { color: var(--fg-2); font-size: 13px; }
-.list tr[data-state="closed"] .sum { color: var(--fg-3); text-decoration: line-through; text-decoration-color: var(--border); }
-.list .pri { font-family: var(--mono); font-size: 11.5px; color: var(--fg-3); white-space: nowrap; }
-.list .pri em { font-style: normal; color: var(--accent); font-weight: 600; }
-
-.loz {
-  display: inline-block; font-family: var(--mono); font-size: 10px; font-weight: 600;
-  letter-spacing: 0.06em; text-transform: uppercase; padding: 2px 6px 2px;
-  border-radius: 3px; white-space: nowrap; line-height: 1.5;
-}
-.loz[data-s="ready"] { color: var(--accent); background: var(--accent-bg); box-shadow: inset 0 0 0 1px var(--accent); }
-.loz[data-s="claimed"] { color: var(--on-accent); background: var(--accent); }
-.loz[data-s="held"] { color: var(--amber); background: var(--amber-bg); box-shadow: inset 0 0 0 1px var(--amber); }
-.loz[data-s="closed"] { color: var(--green); background: var(--green-bg); }
-.loz[data-s="blocked"] { color: var(--fg-3); background: var(--canvas-3); box-shadow: inset 0 0 0 1px var(--border); }
-
-.readout {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px;
-  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border-2);
-  font-family: var(--mono); font-size: 12.5px;
-}
-.pane.flush .readout { padding: 16px 16px 0; margin-top: 0; }
-.readout .set { color: var(--accent); font-weight: 600; }
-.readout .hold { color: var(--amber); }
-
-/* ---- 05 scope ------------------------------------------------------- */
-
-.scope { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); gap: 1px; background: var(--border-2); }
-.scope > div { background: var(--canvas); padding: 14px 16px; }
-.scope h3 {
-  font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
-  color: var(--fg-3); padding-bottom: 9px; margin-bottom: 10px; border-bottom: 1px solid var(--border-2);
-}
-.scope ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.scope li { font-family: var(--mono); font-size: 12.5px; color: var(--fg-2); display: flex; gap: 9px; }
-.scope li::before { content: "+"; color: var(--green); font-weight: 600; }
-.scope .out li { color: var(--fg-3); display: grid; grid-template-columns: 12px minmax(0, 1fr); column-gap: 9px; row-gap: 2px; align-items: baseline; }
-.scope .out li::before { content: "−"; color: var(--fg-3); grid-row: 1; }
-.scope .out .k { grid-column: 2; grid-row: 1; color: var(--fg-2); }
-.scope .out .w { grid-column: 2; grid-row: 2; font-family: var(--sans); font-size: 12.5px; line-height: 1.5; color: var(--fg-3); }
-.scope .out .w b { color: var(--fg-2); font-weight: 600; }
-.scope .out ul { gap: 12px; }
-
-/* ---- at backlog scale (interactive) ---------------------------------- */
-
-.seg { display: flex; border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
-.segb {
-  font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--fg-3); background: var(--canvas); border: 0; padding: 5px 11px; cursor: pointer;
-}
-.segb + .segb { border-left: 1px solid var(--border); }
-.segb:hover { color: var(--fg); }
-.segb.on { background: var(--accent); color: var(--on-accent); }
-.segb[disabled] { cursor: default; }
-.segb[disabled]:not(.on) { opacity: 0.5; }
-.segb[disabled]:not(.on):hover { color: var(--fg-3); background: var(--canvas); }
-
-.gamebar {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px;
-  padding: 12px 16px; border-top: 1px solid var(--border-2); background: var(--canvas);
-}
-.gamebar .push { flex: 1 1 auto; }
-.gsel {
-  display: inline-flex; align-items: center; gap: 8px;
-  font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em;
-  text-transform: uppercase; color: var(--fg-3);
-}
-.gsel select {
-  font-family: var(--mono); font-size: 12px; text-transform: none; letter-spacing: 0;
-  color: var(--fg-2); background: var(--canvas-2); border: 1px solid var(--border);
-  border-radius: 5px; padding: 5px 8px;
-}
-.stat {
-  font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--fg-3); white-space: nowrap;
-}
-.stat b { font-size: 14px; color: var(--fg); margin-left: 5px; letter-spacing: 0; transition: font-size 200ms ease; }
-.stat.time b { color: var(--accent); }
-.stat.live b { color: var(--amber); }
-.gamebar.playing .stat b { font-size: 17px; }
-.stat.time.low b { color: var(--amber); animation: tpulse 500ms linear infinite alternate; }
-@keyframes tpulse { from { opacity: 1; } to { opacity: 0.4; } }
-
-/* one set of 48 tiles; grid and graph are two arrangements of the same elements */
-.stagewrap {
-  position: relative; overflow: hidden;
-  border-top: 1px solid var(--border-2); background: var(--canvas-2);
-  transition: height 520ms cubic-bezier(0.2, 0.7, 0.2, 1);
-}
-#edgesvg {
-  position: absolute; left: 0; top: 0; opacity: 0; pointer-events: none;
-  transition: opacity 400ms linear;
-}
-.graphmode #edgesvg { opacity: 1; }
-
-.tile {
-  position: absolute; left: 0; top: 0; margin: 0;
-  transform: translate(var(--tx), var(--ty));
-  transition: transform 520ms cubic-bezier(0.2, 0.7, 0.2, 1), background-color 160ms linear, opacity 200ms linear;
-  background: var(--canvas); padding: 8px 10px 9px; border: 0; border-radius: 5px; text-align: left;
-  display: flex; flex-direction: column; gap: 3px; cursor: default;
-  font-family: inherit; color: inherit; overflow: hidden;
-  box-shadow: inset 0 0 0 1px var(--border-2);
-}
-.tile .tid { font-family: var(--mono); font-size: 11.5px; font-weight: 600; color: var(--fg-3); }
-.tile .tt {
-  font-size: 11.5px; line-height: 1.35; color: var(--fg-3);
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-}
-.tile .tp {
-  position: absolute; top: 8px; right: 10px;
-  font-family: var(--mono); font-size: 9.5px; color: var(--fg-3);
-}
-.tile[data-state="ready"] .tid, .tile[data-state="ready"] .tt { color: var(--fg-2); }
-.tile[data-state="lit"] {
-  background: var(--accent); cursor: pointer; z-index: 2;
-  animation: pop 900ms ease-in-out infinite alternate;
-}
-.tile[data-state="lit"] .tid, .tile[data-state="lit"] .tt, .tile[data-state="lit"] .tp { color: var(--on-accent); }
-.tile[data-state="lit"] { box-shadow: none; }
-/* the mole */
-.tile[data-state="lit"]::before {
-  content: "\1F439"; position: absolute; right: 8px; bottom: 3px;
-  font-size: 26px; line-height: 1; z-index: 1; pointer-events: none;
-  animation: molepop 260ms cubic-bezier(0.2, 0.9, 0.3, 1.4);
-}
-.tile[data-state="hit"]::before {
-  content: "\1F4AB"; position: absolute; right: 8px; bottom: 3px;
-  font-size: 22px; line-height: 1; pointer-events: none;
-}
-@keyframes molepop { from { transform: translateY(28px); } to { transform: translateY(0); } }
-/* the fuse: how long this mole has left */
-.tile[data-state="lit"]::after {
-  content: ""; position: absolute; left: 0; bottom: 0; height: 3px; width: 100%;
-  background: var(--on-accent); opacity: 0.75;
-  animation: fuse linear forwards; animation-duration: var(--life, 1350ms);
-}
-@keyframes fuse { from { width: 100%; } to { width: 0; } }
-.tile[data-state="closed"] { opacity: 0.4; }
-.tile[data-state="closed"] .tt { text-decoration: line-through; }
-.tile[data-state="hit"] { background: var(--green-bg); }
-.tile[data-state="hit"] .tid { color: var(--green); }
-.tile[data-state="missed"] { background: var(--amber-bg); }
-.tile[data-state="missed"] .tid, .tile[data-state="missed"] .tt { color: var(--amber); }
-.tile.whiff { animation: shake 260ms linear; }
-@keyframes pop { from { filter: brightness(0.92); } to { filter: brightness(1.14); } }
-@keyframes shake {
-  25% { transform: translate(var(--tx), var(--ty)) translateX(-3px); }
-  75% { transform: translate(var(--tx), var(--ty)) translateX(3px); }
-}
-
-.be { fill: none; stroke: var(--border); stroke-width: 1.2; transition: stroke 200ms linear; }
-.be[data-hot="1"] { stroke: var(--accent); stroke-width: 1.8; }
-.be[data-done="1"] { stroke: var(--border-2); }
-.bs { fill: none; stroke: var(--amber); stroke-width: 1.2; stroke-dasharray: 4 4; opacity: 0.55; }
-.bt { fill: none; stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 2 4; opacity: 0.7; }
-
-.pop {
-  position: absolute; z-index: 4; pointer-events: none;
-  font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--green);
-  animation: rise 700ms ease-out forwards;
-}
-.pop.neg { color: var(--amber); }
-@keyframes rise { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-26px); } }
-
-.rflash {
-  position: absolute; inset: 0; z-index: 5; pointer-events: none;
-  display: flex; align-items: flex-start; justify-content: center; padding-top: 84px;
-}
-.rflash span {
-  font-family: var(--mono); font-size: clamp(20px, 3.6vw, 30px); font-weight: 600;
-  letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent);
-  background: var(--canvas); border: 1px solid var(--border); border-radius: 8px;
-  padding: 12px 22px; box-shadow: 0 10px 32px rgba(0, 0, 0, 0.16);
-  animation: rf 1100ms ease-out forwards;
-}
-@keyframes rf {
-  0% { opacity: 0; transform: scale(0.7); }
-  18% { opacity: 1; transform: scale(1); }
-  78% { opacity: 1; }
-  100% { opacity: 0; transform: scale(1.05); }
-}
-
-.gover {
-  position: absolute; inset: 0; z-index: 6;
-  display: flex; align-items: center; justify-content: center;
-  background: color-mix(in srgb, var(--canvas-2) 74%, transparent);
-}
-.gover[hidden] { display: none; }
-.gover .card {
-  background: var(--canvas); border: 1px solid var(--border); border-radius: 8px;
-  width: min(400px, calc(100% - 32px)); padding: 22px 24px;
-  display: flex; flex-direction: column; gap: 13px; text-align: center;
-  box-shadow: 0 14px 44px rgba(0, 0, 0, 0.2);
-  animation: cardin 420ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
-}
-@keyframes cardin { from { opacity: 0; transform: scale(0.86); } }
-.gover h3 {
-  font-family: var(--mono); font-size: 13px; font-weight: 600;
-  letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-3);
-}
-.gover .big { font-family: var(--mono); font-size: 42px; font-weight: 600; line-height: 1; color: var(--accent); }
-.gover table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
-.gover th {
-  font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
-  color: var(--fg-3); padding: 4px 6px; border-bottom: 1px solid var(--border-2); text-align: right;
-}
-.gover td { padding: 6px; color: var(--fg-2); border-bottom: 1px solid var(--border-2); text-align: right; }
-.gover th:first-child, .gover td:first-child { text-align: left; }
-.gover tr:last-child td { border-bottom: 0; }
-.gover .kick { font-size: 13px; line-height: 1.55; color: var(--fg-2); text-wrap: pretty; }
-.gover .pb {
-  font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em;
-  text-transform: uppercase; color: var(--amber);
-}
-.gover .abtn { align-self: center; }
-.gover .abtn[disabled] { opacity: 0.45; cursor: default; }
-
-.gnote {
-  padding: 12px 16px; border-top: 1px solid var(--border-2); background: var(--canvas-2);
-  font-size: 13px; line-height: 1.55; color: var(--fg-2);
-}
-.gnote b { color: var(--fg); font-weight: 600; }
-
-/* ---- footer --------------------------------------------------------- */
-
-footer {
-  border-top: 1px solid var(--border); margin-top: 24px; background: var(--canvas);
-}
-footer .inner {
-  display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center;
-  padding: 18px 0; font-family: var(--mono); font-size: 11.5px; color: var(--fg-3);
-}
-footer a { color: var(--fg-2); }
-
-/* ---- narrow --------------------------------------------------------- */
+footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px 24px; padding: 28px 0 48px; border-top: 1px solid var(--rule); font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+footer nav { display: flex; flex-wrap: wrap; gap: 4px 20px; }
+footer a { color: var(--ink-3); padding: 6px 0; }
+footer a:hover { color: var(--ink); }
 
 @media (max-width: 640px) {
-  .rels { grid-template-columns: minmax(0, 1fr); }
-  .scope { grid-template-columns: minmax(0, 1fr); }
-}
-@media (max-width: 900px) {
-  .reader { grid-template-columns: minmax(0, 1fr); }
-  .reader .pane + .pane { border-left: 0; border-top: 1px solid var(--border-2); }
-}
-@media (max-width: 720px) {
-  .pair { grid-template-columns: minmax(0, 1fr); }
-  .appbar nav a { padding: 5px 6px; }
-}
-@media (max-width: 520px) {
-  .appbar nav { display: none; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+  body { font-size: 18px; }
+  .top nav { gap: 0 18px; }
+  .hero { gap: 48px; }
+  .hero p, .links { margin-top: 28px; }
+  .graph { max-width: none; flex-basis: 100%; }
+  .sec > .label { flex-basis: 100%; padding-top: 0; font-size: 12px; }
+  .field { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; }
+  .field .k { font-size: 15px; }
+  .field .t { font-size: 12px; text-align: right; }
+  .field .d { grid-column: 1 / -1; font-size: 16px; }
+  .reading h3 { font-size: 26px; }
+  .code .gutter { padding: 0 10px 0 12px; }
+  .code .src { padding: 0 16px 0 4px; }
 }
 </style>
 </head>
-<body class="wrapall">
+<body>
+<div class="wrap">
 
-<svg width="0" height="0" aria-hidden="true" focusable="false" style="position: absolute;">
-  <defs>
-    <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M1,1 L7,4 L1,7" fill="none" stroke-width="1.2"></path>
-    </marker>
-    <marker id="arrowdim" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M1,1 L7,4 L1,7" fill="none" stroke-width="1.2"></path>
-    </marker>
-  </defs>
-</svg>
+  <header class="top">
+    <a class="mark" href="/">issuegraph</a>
+    <nav aria-label="Primary">
+      <a href="https://github.com/autnmy/issuegraph/blob/main/SPEC.md">spec</a>
+      <a href="/demo/">demo</a>
+      <a href="/play/">play</a>
+      <a href="https://github.com/autnmy/issuegraph">github</a>
+    </nav>
+  </header>
 
-<div class="appbar">
-  <div class="container inner">
-    <span class="wordmark">issuegraph<span>:</span></span>
-    <span class="spacer"></span>
-    <nav>
+  <main>
+    <section class="hero">
+      <div class="lede">
+        <h1>A spec for issue dependencies</h1>
+        <p>Issuegraph defines seven optional fields you add to the top of an issue as YAML frontmatter. The fields record how issues depend on each other. Any tracker can store them, and any tool can read them to work out which issues are ready to start.</p>
+        <div class="links">
+          <a class="primary" href="https://github.com/autnmy/issuegraph/blob/main/SPEC.md">Read the spec →</a>
+          <a class="quiet" href="/play/">Try the game</a>
+        </div>
+      </div>
+      <svg class="graph" viewBox="0 0 440 330" role="img" aria-label="A dependency graph of fourteen issues in five columns. Two issues on the left are ready; arrows show which issues wait on which, and two pairs are serialized.">
+        <defs><marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0 L8 4 L0 8 z"/></marker></defs>
+        <path class="edge" d="M38 40 L 115 40" marker-end="url(#arrow)"/>
+        <path class="edge" d="M38 40 C 78 40, 78 110, 115 110" marker-end="url(#arrow)"/>
+        <path class="edge" d="M38 180 C 78 180, 78 110, 115 110" marker-end="url(#arrow)"/>
+        <path class="edge" d="M38 180 L 115 180" marker-end="url(#arrow)"/>
+        <path class="edge" d="M38 180 C 78 180, 78 250, 115 250" marker-end="url(#arrow)"/>
+        <path class="edge" d="M133 250 L 210 250" marker-end="url(#arrow)"/>
+        <path class="edge" d="M228 250 C 268 250, 268 180, 305 180" marker-end="url(#arrow)"/>
+        <path class="edge" d="M133 180 L 305 180" marker-end="url(#arrow)"/>
+        <path class="edge" d="M133 180 C 172 180, 172 110, 210 110" marker-end="url(#arrow)"/>
+        <path class="edge" d="M133 40 L 210 40" marker-end="url(#arrow)"/>
+        <path class="edge" d="M133 110 C 172 110, 172 40, 210 40" marker-end="url(#arrow)"/>
+        <path class="edge" d="M133 110 L 210 110" marker-end="url(#arrow)"/>
+        <path class="edge" d="M228 40 L 305 40" marker-end="url(#arrow)"/>
+        <path class="edge" d="M228 40 C 268 40, 268 110, 305 110" marker-end="url(#arrow)"/>
+        <path class="edge" d="M228 110 L 305 110" marker-end="url(#arrow)"/>
+        <path class="edge" d="M228 110 L 400 110" marker-end="url(#arrow)"/>
+        <path class="edge" d="M323 180 L 400 180" marker-end="url(#arrow)"/>
+        <path class="edge" d="M323 180 C 362 180, 362 110, 400 110" marker-end="url(#arrow)"/>
+        <path class="edge" d="M323 110 L 400 110" marker-end="url(#arrow)"/>
+        <path class="ser" d="M125 49 L 125 101"/>
+        <path class="ser" d="M227 115 L 308 175"/>
+        <circle class="ready" cx="30" cy="40" r="7"/>
+        <circle class="ready" cx="30" cy="180" r="7"/>
+        <circle class="node" cx="125" cy="40" r="7"/>
+        <circle class="node" cx="125" cy="110" r="7"/>
+        <circle class="node" cx="125" cy="180" r="7"/>
+        <circle class="node" cx="125" cy="250" r="7"/>
+        <circle class="node" cx="220" cy="40" r="7"/>
+        <circle class="node" cx="220" cy="110" r="7"/>
+        <circle class="node" cx="220" cy="250" r="7"/>
+        <circle class="node" cx="315" cy="40" r="7"/>
+        <circle class="node" cx="315" cy="110" r="7"/>
+        <circle class="node" cx="315" cy="180" r="7"/>
+        <circle class="node" cx="410" cy="110" r="7"/>
+        <circle class="node" cx="410" cy="180" r="7"/>
+        <path class="edge" d="M20 316 L 44 316" marker-end="url(#arrow)"/>
+        <text x="52" y="320">blocked-by</text>
+        <path class="ser" d="M150 316 L 174 316"/>
+        <text x="182" y="320">serialize-with</text>
+      </svg>
+    </section>
+
+    <section class="sec" aria-labelledby="fm-label">
+      <h2 class="label" id="fm-label">YAML frontmatter</h2>
+      <div class="body">
+        <div class="editor">
+          <div class="bar">
+            <div class="dots" aria-hidden="true"><span></span><span></span><span></span></div>
+            <div class="tabs" aria-hidden="true"><span class="on">Write</span><span>Preview</span></div>
+          </div>
+          <div class="code">
+<pre class="gutter" aria-hidden="true">1
+2
+3
+4
+5
+6
+7
+8</pre>
+<pre class="src"><code><span class="d">---</span>
+issuegraph:
+  blocked-by: [<span class="v">"#231"</span>, <span class="v">"#234"</span>]
+  decomposed-from: <span class="v">"#230"</span>
+  serialize-with: <span class="v">"#232"</span>
+  priority: 1
+
+<span class="d">---</span></code></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec" aria-labelledby="fields-label">
+      <h2 class="label" id="fields-label">Fields</h2>
+      <div class="body">
+        <div class="field"><code class="k">blocked-by</code><span class="t">list of refs</span><span class="d">Must close before this issue can start.</span></div>
+        <div class="field"><code class="k">serialize-with</code><span class="t">ref</span><span class="d">Not worked at the same time. Either can go first.</span></div>
+        <div class="field"><code class="k">together-with</code><span class="t">ref</span><span class="d">Worked together with this issue as one unit.</span></div>
+        <div class="field"><code class="k">duplicate-of</code><span class="t">ref</span><span class="d">The original. Readers ignore the duplicate.</span></div>
+        <div class="field"><code class="k">decomposed-from</code><span class="t">ref</span><span class="d">The issue this was split from. No effect on order.</span></div>
+        <div class="field"><code class="k">priority</code><span class="t">integer, 0–3 · default 2</span><span class="d">0 is most urgent.</span></div>
+        <div class="field"><code class="k">evidence</code><span class="t">"asserted" | "verified"</span><span class="d">Whether the writer checked the issue’s claims.</span></div>
+        <p class="note"><code>ref</code> is an issue ID as your tracker writes it: <code>231</code>, <code>"#231"</code>, <code>ABC-231</code>, or <code>owner/repo#231</code>. All fields are optional.</p>
+      </div>
+    </section>
+
+    <section class="sec" aria-labelledby="reading-label">
+      <h2 class="label" id="reading-label">Reading the graph</h2>
+      <div class="body reading">
+        <div><h3>Ready</h3><p>An issue is ready when everything it’s blocked by is closed and nothing it’s serialized with is in progress.</p></div>
+        <div><h3>Effective priority</h3><p>An issue takes the highest priority of anything waiting on it, so a P3 that blocks a P0 is treated as P0.</p></div>
+        <div><h3>Parallel work</h3><p>Ready issues with no dependency path between them can be worked at the same time.</p></div>
+      </div>
+    </section>
+
+    <section class="closing">
+      <p>Issuegraph describes the work, not how it gets done. Assignees, status, and progress stay in your tracker.</p>
+      <div class="links">
+        <a class="primary" href="https://github.com/autnmy/issuegraph/blob/main/SPEC.md">Read the spec →</a>
+        <a class="quiet" href="https://github.com/autnmy/issuegraph/blob/main/examples/decomposition.md">Worked example</a>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>v0.3.0 draft · Apache-2.0 · Stewarded by <a href="https://github.com/autnmy">Autonomy LLC</a></span>
+    <nav aria-label="Footer">
       <a href="https://github.com/autnmy/issuegraph/blob/main/SPEC.md">Specification</a>
       <a href="/demo/">Demo</a>
-      <a href="https://github.com/autnmy/issuegraph/blob/main/examples/decomposition.md">Example</a>
+      <a href="/play/">Play</a>
       <a href="https://github.com/autnmy/issuegraph/blob/main/CHANGELOG.md">Changelog</a>
       <a href="https://github.com/autnmy/issuegraph">Repository</a>
     </nav>
-    <button type="button" class="btn" id="theme" aria-label="Change colour theme">auto</button>
-  </div>
+  </footer>
 </div>
-
-<div class="hero">
-  <div class="container">
-    <h1 class="mark">issuegraph<span>:</span></h1>
-    <p class="tagline">A specification for machine-readable work relationships and ordering.</p>
-    <div class="copy">
-      <p>Issuegraph is a data format plus rules for reading and writing it. Relationships and ordering live in YAML frontmatter on the issue body, namespaced under an <code>issuegraph:</code> key — seven optional fields, each carrying either issue references or a small scalar.</p>
-      <p>Nothing is installed and nothing is migrated. The frontmatter is ordinary YAML at the top of the body, so any tracker can store it and any parser already reads it; the tracker stays the source of truth. From the edges, a reader computes which issues are ready to start.</p>
-    </div>
-    <div class="metarow">
-      <div class="actions">
-        <a class="abtn primary" href="https://github.com/autnmy/issuegraph/blob/main/SPEC.md">Specification</a>
-        <a class="abtn" href="/demo/">Demo</a>
-        <a class="abtn" href="https://github.com/autnmy/issuegraph">Repository</a>
-      </div>
-      <div class="pills">
-        <span class="pill draft">v0.2.0 · draft</span>
-        <span class="pill">Apache-2.0</span>
-      </div>
-    </div>
-  </div>
-</div>
-
-<main class="container">
-
-  <section class="box" id="format">
-    <header>
-      <h2>The format</h2>
-      <span class="push"></span>
-      <span class="meta">YAML frontmatter · issue body</span>
-    </header>
-    <div class="body">
-      <div class="pair">
-        <div class="codeblock">
-          <pre class="fm" role="img" aria-label="YAML issuegraph frontmatter at the top of an issue body, declaring blocked-by 231 and 234, decomposed-from 230, serialize-with 232, and priority 1."><span class="d">---</span><span><span class="root">issuegraph</span><span class="d">:</span></span><span data-field="blocked-by">  blocked-by<span class="d">:</span> <span class="v">[231, 234]</span></span><span data-field="decomposed-from">  decomposed-from<span class="d">:</span> <span class="v">230</span></span><span data-field="serialize-with">  serialize-with<span class="d">:</span> <span class="v">232</span></span><span data-field="priority">  priority<span class="d">:</span> <span class="v">1</span></span><span class="d">---</span></pre>
-        </div>
-
-        <div class="hgwrap">
-        <svg class="hg" viewBox="-8 4 376 236" role="img" aria-label="The same frontmatter as a graph: issues 231 and 234 point at this issue along blocked-by edges, 230 points at it along a decomposed-from edge, and 232 is joined to it by an undirected serialize-with edge.">
-          <path class="blk" d="M86,44 C86,80 104,96 118,104"></path>
-          <path class="blk" d="M214,44 C214,80 196,96 182,104"></path>
-          <path class="prv" d="M73,125 L89,125"></path>
-          <path class="ser" d="M271,125 L211,125"></path>
-          <text class="lbl" x="150" y="74" text-anchor="middle">blocked-by</text>
-          <text class="lbl" x="44" y="160" text-anchor="middle">decomposed-from</text>
-          <text class="lbl" x="300" y="160" text-anchor="middle">serialize-with</text>
-          <g class="nd"><rect x="56" y="16" width="60" height="28" rx="3"></rect><text x="86" y="34" text-anchor="middle">231</text></g>
-          <g class="nd"><rect x="184" y="16" width="60" height="28" rx="3"></rect><text x="214" y="34" text-anchor="middle">234</text></g>
-          <g class="nd"><rect x="15" y="112" width="58" height="26" rx="3"></rect><text x="44" y="129" text-anchor="middle">230</text></g>
-          <g class="nd"><rect x="271" y="112" width="58" height="26" rx="3"></rect><text x="300" y="129" text-anchor="middle">232</text></g>
-          <g class="nd subj"><rect x="95" y="107" width="110" height="36" rx="3"></rect><text x="150" y="129" text-anchor="middle">this issue</text></g>
-        </svg>
-        </div>
-      </div>
-    </div>
-    <div class="explain">
-      <p><b>Standard YAML frontmatter.</b> Any tracker can store it, any parser already reads it. Nothing is installed and nothing is migrated.</p>
-      <p><b>If a body somehow ends up with two frontmatter blocks</b>, the first one containing an <code>issuegraph:</code> key is the real data. Later ones are ignored, so a bot's banner or a wrapper can't quietly override what you wrote.</p>
-      <p><b>Write it plain, exactly as above.</b> Some trackers garble bare frontmatter when they render it — GitHub, for one, draws <code>---</code> as a horizontal line and turns the line above it into a heading. For exactly that case, <b>the spec explicitly permits wrapping the block in a normal triple-backtick code block</b> — it is a sanctioned part of the format, not a workaround. It changes only how the block looks on screen: the text inside is byte-for-byte identical, it stays portable between trackers, and readers look straight through the wrapper to find it.</p>
-    </div>
-  </section>
-
-  <section class="box" id="fields">
-    <header>
-      <h2>Fields</h2>
-      <span class="push"></span>
-      <span class="meta">7 · all optional</span>
-    </header>
-    <div class="tablewrap">
-      <table>
-        <thead>
-          <tr><th>Field</th><th>Type</th><th>Meaning</th></tr>
-        </thead>
-        <tbody>
-          <tr data-field="blocked-by">
-            <td class="f">blocked-by</td>
-            <td class="ty">list of refs</td>
-            <td class="m">These issues must reach closure before this one may start. The only hard ordering fact.</td>
-          </tr>
-          <tr data-field="decomposed-from">
-            <td class="f">decomposed-from</td>
-            <td class="ty">ref</td>
-            <td class="m">Provenance: this issue was produced by decomposing that one. Not a scheduling edge.</td>
-          </tr>
-          <tr data-field="duplicate-of">
-            <td class="f">duplicate-of</td>
-            <td class="ty">ref</td>
-            <td class="m">This issue is the same work as that one; readers ignore this issue and treat the target as canonical.</td>
-          </tr>
-          <tr data-field="serialize-with">
-            <td class="f">serialize-with</td>
-            <td class="ty">ref</td>
-            <td class="m">This issue must not run concurrently with the referenced issue or anything transitively linked to it (see <a href="https://github.com/autnmy/issuegraph/blob/main/SPEC.md#434-serialize-with">4.3.4</a>). No ordering implied.</td>
-          </tr>
-          <tr data-field="together-with">
-            <td class="f">together-with</td>
-            <td class="ty">ref</td>
-            <td class="m">This issue and the referenced issue (and anything transitively linked) are distinct issues forming <strong>one unit of work</strong> — selected, claimed, and worked together (see <a href="https://github.com/autnmy/issuegraph/blob/main/SPEC.md#437-together-with">4.3.7</a>).</td>
-          </tr>
-          <tr data-field="priority">
-            <td class="f">priority</td>
-            <td class="ty">integer 0–3</td>
-            <td class="m">0 is most urgent. Absent means 2. Carrier precedence in <a href="https://github.com/autnmy/issuegraph/blob/main/SPEC.md#435-priority">4.3.5</a>.</td>
-          </tr>
-          <tr data-field="evidence">
-            <td class="f">evidence</td>
-            <td class="ty">asserted | verified</td>
-            <td class="m">Whether the issue's factual claims were verified by the writer or merely asserted. Absent means <code>asserted</code> for machine-written issues.</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    <div class="explain">
-      <p><b>An issue with no issuegraph frontmatter is still valid</b> — it just has no edges and default priority. You add fields where you actually know something.</p>
-      <p><b><code>decomposed-from</code> only records where an issue came from.</b> It has no effect on ordering. There are no parent issues and no container issues: an issue that got split closes as soon as the split is done, and “what came out of #230?” is answered by asking the graph, not by a tracking issue someone has to keep tidy.</p>
-      <p><b><code>evidence</code> is the odd one out</b> — it changes no ordering at all. It says whether whoever wrote the issue actually verified its claims or just asserted them. Machine-filed issues are frequently wrong in small ways, and splitting an unverified issue produces a whole subtree of work built on a false premise, so the next worker wants to know before building on it. It earns its place by protecting decomposition, which is what produces the relationships in the first place.</p>
-    </div>
-  </section>
-
-  <section class="box" id="relationships">
-    <header>
-      <h2>Relationships</h2>
-      <span class="push"></span>
-      <span class="meta">4</span>
-    </header>
-    <div class="rels">
-      <div class="rel">
-        <svg width="96" height="30" viewBox="0 0 96 30" aria-hidden="true">
-          <circle cx="14" cy="15" r="7" fill="none" stroke="currentColor" stroke-width="1"></circle>
-          <line x1="9" y1="20" x2="19" y2="10" stroke="currentColor" stroke-width="1"></line>
-          <line x1="23" y1="15" x2="70" y2="15" stroke="currentColor" stroke-width="1"></line>
-          <path d="M68 11 L73 15 L68 19" fill="none" stroke="currentColor" stroke-width="1"></path>
-          <circle cx="82" cy="15" r="7" fill="var(--accent)" stroke="var(--accent)" stroke-width="1"></circle>
-        </svg>
-        <span class="f">duplicate-of</span>
-        <span class="m"><strong>same work</strong> — keep one.</span>
-      </div>
-      <div class="rel">
-        <svg width="96" height="30" viewBox="0 0 96 30" aria-hidden="true">
-          <rect x="2" y="2" width="92" height="26" rx="13" fill="none" stroke="var(--accent)" stroke-width="1" stroke-dasharray="3 3"></rect>
-          <circle cx="34" cy="15" r="7" fill="none" stroke="currentColor" stroke-width="1"></circle>
-          <circle cx="62" cy="15" r="7" fill="none" stroke="currentColor" stroke-width="1"></circle>
-        </svg>
-        <span class="f">together-with</span>
-        <span class="m"><strong>different work</strong> — one unit.</span>
-      </div>
-      <div class="rel">
-        <svg width="96" height="30" viewBox="0 0 96 30" aria-hidden="true">
-          <circle cx="14" cy="15" r="7" fill="none" stroke="currentColor" stroke-width="1"></circle>
-          <line x1="23" y1="15" x2="43" y2="15" stroke="currentColor" stroke-width="1" stroke-dasharray="3 3"></line>
-          <line x1="53" y1="15" x2="73" y2="15" stroke="currentColor" stroke-width="1" stroke-dasharray="3 3"></line>
-          <line x1="48" y1="6" x2="48" y2="24" stroke="var(--accent)" stroke-width="1"></line>
-          <circle cx="82" cy="15" r="7" fill="none" stroke="currentColor" stroke-width="1"></circle>
-        </svg>
-        <span class="f">serialize-with</span>
-        <span class="m"><strong>either order</strong> — never overlapping.</span>
-      </div>
-      <div class="rel">
-        <svg width="96" height="30" viewBox="0 0 96 30" aria-hidden="true">
-          <circle cx="14" cy="15" r="7" fill="none" stroke="currentColor" stroke-width="1"></circle>
-          <line x1="23" y1="15" x2="70" y2="15" stroke="var(--accent)" stroke-width="1"></line>
-          <path d="M68 11 L73 15 L68 19" fill="none" stroke="var(--accent)" stroke-width="1"></path>
-          <circle cx="82" cy="15" r="7" fill="none" stroke="currentColor" stroke-width="1"></circle>
-        </svg>
-        <span class="f">blocked-by</span>
-        <span class="m"><strong>this order</strong> — no overlap question.</span>
-      </div>
-    </div>
-    <div class="explain">
-      <p><b>You never write the group down.</b> <code>serialize-with</code> and <code>together-with</code> both describe a set of issues, but no issue ever holds the list. To join, point at any one issue already in the set — it does not matter which. The reader follows the links and works out the full set for you.</p>
-      <p class="eg">#232 writes <b>serialize-with: 231</b>&nbsp; · &nbsp;#233 writes <b>serialize-with: 232</b>&nbsp; · &nbsp;#234 writes <b>serialize-with: 231</b><br>→ the reader sees one group: <b>{ 231, 232, 233, 234 }</b> — and only one of them may run at a time.</p>
-      <p><b>This is the part that stops it rotting.</b> To leave a group you delete your own field, and nothing else. Closing an issue never means going back to edit the others. No issue ever writes to another issue's body, and there is no membership list anywhere that can drift out of date — the usual way this kind of bookkeeping dies. One line per issue, and nothing to maintain.</p>
-      <p>If you accidentally link two groups they merge, which costs you some parallelism and never costs you correctness.</p>
-    </div>
-  </section>
-
-  <section class="box" id="reading">
-    <header>
-      <h2>Reading the graph</h2>
-      <span class="meta">#230 — Add usage-based billing · decomposed</span>
-      <span class="push"></span>
-      <button type="button" class="btn" id="reset">reset</button>
-    </header>
-    <div class="reader">
-      <div class="pane">
-        <p class="panelnote">#230 was too big to work, so the only work permitted on it was decomposition: four leaves and a verification gate, with every edge written at split time. #230 then closed — there is no tracking issue.</p>
-        <div class="graphwrap">
-          <svg class="dgraph" id="dgraph" viewBox="0 0 474 296" role="img" aria-label="Interactive decomposition graph of issues 231 to 235.">
-            <g class="prov">
-              <text x="56" y="34" text-anchor="middle">#230 closed</text>
-              <path d="M56,42 L56,98"></path>
-            </g>
-            <g class="edges">
-              <path data-from="231" d="M87,112 C112,112 124,60 145,60"></path>
-              <path data-from="231" d="M87,128 C112,128 124,190 145,190"></path>
-              <path data-from="232" d="M209,60 L265,60"></path>
-              <path data-from="232" d="M209,72 C264,100 334,104 385,112"></path>
-              <path data-from="233" d="M331,66 C358,70 372,96 385,108"></path>
-              <path data-from="234" d="M209,190 C284,190 344,152 385,128"></path>
-              <path data-from="231" d="M56,138 C60,250 240,266 385,134"></path>
-              <path class="serial" d="M300,78 C292,124 254,160 210,180"></path>
-            </g>
-            <g class="nodes">
-              <g class="node" data-id="231" tabindex="0" role="button"><rect x="25" y="102" width="62" height="36" rx="3"></rect><text class="id" x="56" y="118" text-anchor="middle">#231</text><text class="p" x="56" y="131" text-anchor="middle">P1</text><line class="strike" x1="34" y1="120" x2="78" y2="120"></line></g>
-              <g class="node" data-id="232" tabindex="0" role="button"><rect x="147" y="42" width="62" height="36" rx="3"></rect><text class="id" x="178" y="58" text-anchor="middle">#232</text><text class="p" x="178" y="71" text-anchor="middle">P1</text><line class="strike" x1="156" y1="60" x2="200" y2="60"></line></g>
-              <g class="node" data-id="233" tabindex="0" role="button"><rect x="269" y="42" width="62" height="36" rx="3"></rect><text class="id" x="300" y="58" text-anchor="middle">#233</text><text class="p" x="300" y="71" text-anchor="middle">P2</text><line class="strike" x1="278" y1="60" x2="322" y2="60"></line></g>
-              <g class="node" data-id="234" tabindex="0" role="button"><rect x="147" y="172" width="62" height="36" rx="3"></rect><text class="id" x="178" y="188" text-anchor="middle">#234</text><text class="p" x="178" y="201" text-anchor="middle">P2</text><line class="strike" x1="156" y1="190" x2="200" y2="190"></line></g>
-              <g class="node" data-id="235" tabindex="0" role="button"><rect x="389" y="102" width="62" height="36" rx="3"></rect><text class="id" x="420" y="118" text-anchor="middle">#235</text><text class="p" x="420" y="131" text-anchor="middle">P1</text><line class="strike" x1="398" y1="120" x2="442" y2="120"></line></g>
-            </g>
-          </svg>
-        </div>
-      </div>
-
-      <div class="pane flush">
-        <table class="list">
-          <thead>
-            <tr><th>Key</th><th>Summary</th><th>Status</th><th class="r">Pri</th></tr>
-          </thead>
-          <tbody id="rows"></tbody>
-        </table>
-        <div class="readout" aria-live="polite">
-          <span class="set" id="set"></span>
-          <span class="hold" id="hold"></span>
-        </div>
-        <p class="panelnote" style="margin: 14px 0 0;">Click a ready issue to claim it, and again to close it. Blocked and held issues do not respond.</p>
-      </div>
-    </div>
-    <div class="explain">
-      <p><b>ready</b> — the issue is open, every issue in its <code>blocked-by</code> has closed, and nothing in its serialize group is being worked. Anything not ready is invisible to selection: a scheduler cannot pick it up, so nobody has to protect it.</p>
-      <p><b>effective priority</b> — the highest declared priority among the issue itself and every open issue that depends on it, however far down the chain. Readers select by this, not by the number written on the issue. That is why <b>#233</b> above shows <b>P2 → 1</b>: it is a P2 holding up a P1.</p>
-      <p><b>parallelism</b> — two ready issues with no path between them can be worked at the same time. Nothing else needs to say so.</p>
-    </div>
-  </section>
-
-  <section class="box" id="scope">
-    <header>
-      <h2>Scope</h2>
-      <span class="push"></span>
-      <span class="meta">describes work, never execution</span>
-    </header>
-    <div class="scope">
-      <div>
-        <h3>In the format</h3>
-        <ul>
-          <li>what blocks what</li>
-          <li>what must not run at the same time</li>
-          <li>what must be worked as one unit</li>
-          <li>which issues are the same work</li>
-          <li>where an issue came from</li>
-          <li>how urgent it is</li>
-          <li>whether its claims were checked</li>
-        </ul>
-      </div>
-      <div class="out">
-        <h3>Not in the format — and where it goes instead</h3>
-        <ul>
-          <li><span class="k">who is working on it, right now</span><span class="w">Your tracker's <b>assignee</b> and <b>status</b> fields, or whatever your runner uses to claim work.</span></li>
-          <li><span class="k">retries · heartbeats · logs</span><span class="w">The runner's own <b>logs and metrics</b>. None of it is a fact about the work; it's a fact about one attempt at the work.</span></li>
-          <li><span class="k">“don't start this yet”</span><span class="w">A tracker <b>label or paused state</b> — <code>needs-human</code>, <code>waiting</code>. Every tracker already has this, and duplicating it in the body means two places to fix. If the hold is really a specific question, file the question as its own issue and put it in <code>blocked-by</code> instead.</span></li>
-          <li><span class="k">what kind of work this is</span><span class="w">Each runner decides that <b>from its own capabilities</b>. “Pay the vendor invoice” is human work for everyone; “write this migration” depends entirely on the runner.</span></li>
-          <li><span class="k">how many things may run at once</span><span class="w">A <b>setting on your scheduler</b>. The graph says what <em>may</em> run together; how much you actually run is your call.</span></li>
-          <li><span class="k">how far along a feature is</span><span class="w">A <b>query</b>, run when someone asks. Stored progress numbers go stale the moment nobody updates them.</span></li>
-          <li><span class="k">“prefer after” · “not near” · affinity</span><span class="w"><b>Nowhere — on purpose.</b> These are suggestions rather than rules. The first scheduler ignores the suggestion, so nobody keeps it accurate; a later scheduler decides to respect it and acts on something that went stale months ago. Every Issuegraph field is a hard rule with one exact behavior, so a reader can't be misled by one.</span></li>
-          <li><span class="k">issues that aren't work — trackers, checklists, logs</span><span class="w">Nothing to add: they stay in your tracker and your reader skips them, normally <b>by label</b>. Issuegraph defines no way to mark an issue as excluded, because that is the reader's judgment call, not a fact about the work.</span></li>
-        </ul>
-      </div>
-    </div>
-    <div class="explain">
-      <p><b>Where the line is.</b> Issuegraph records what the work <em>is</em> and what it depends on — things that stay true no matter who or what picks it up, or how many times they try. Anything describing a particular attempt at the work belongs to the thing making the attempt.</p>
-      <p><b>The one-question version:</b> if you had a flawless scheduler, would it still need this written on the issue? If it could work the answer out for itself, or get along fine without it, the field stays out. “Is #232 blocked?” it cannot possibly guess — that's a fact somebody knows. “Is anyone working on #232 right now?” it already knows, because it's the one handing out the work.</p>
-      <p>The reason to be strict about this: the moment a format starts carrying run state, it's welded to whichever tool wrote that state, and it stops being portable — which was the whole point.</p>
-      <p><b>Every issue is a piece of work.</b> Issuegraph has no issue kinds — no PM issues, no tracking issues that exist only to hold other issues, no standing checklists, no issues used as a log. An issue is either small enough to work, or the only thing you may do to it is split it, and the split closes as soon as the smaller issues exist. That is what stops the graph filling up with nodes nobody will ever finish.</p>
-      <p><b>So where do those issues go?</b> They stay in your tracker, and the spec says nothing about them on purpose. Readiness is the graph's answer to “may this start?”; whether a reader is <em>willing</em> to pick something up is the reader's own business, layered on top. Filtering by label is the normal way to do it — tag your standing checklists <code>meta</code>, your discussion threads <code>rfc</code>, and have your reader ignore those labels. Issuegraph never learns why you skipped them, and no field is added to describe it.</p>
-    </div>
-  </section>
-
-  <section class="box" id="scale">
-    <header>
-      <h2>At backlog scale</h2>
-      <span class="meta">48 issues · one repository</span>
-      <span class="push"></span>
-      <div class="seg" role="group" aria-label="Ordering">
-        <button type="button" class="segb on" id="vgrid">order by newest</button>
-        <button type="button" class="segb" id="vgraph">order by issuegraph</button>
-      </div>
-    </header>
-    <div class="explain">
-      <p><b>The same 48 issues, two orderings.</b> <b>Order by newest</b> is the backlog as a tracker shows it — newest first, read left to right. <b>Order by issuegraph</b> is the same 48 issues in the exact order the reader deals them — left to right, top to bottom — each one settling under the issues that blocked it, edges drawn between them. Nothing was added to get from one to the other.</p>
-      <p><b>Then play it — whack-a-mole, two rounds.</b> The reader deals the backlog in waves: everything ready lights up at once — one to four issues, your pick — holds for a blink, then the board rests before the next wave. Whack what you can while it shows; whatever you miss closes anyway, because the frontier moves with or without you. <b>Round 1 plays ordered by newest</b>, where every wave lands somewhere you didn&rsquo;t expect. <b>Round 2 replays the identical waves ordered by issuegraph</b>, where the next wave is always the next tiles along. The sequence never changes; only your ability to see it coming does.</p>
-    </div>
-    <div class="gamebar" id="gamebar">
-      <button type="button" class="abtn primary" id="gstart">Start round 1 · by newest</button>
-      <label class="gsel">at a time
-        <select id="gdiff">
-          <option value="4">4 — easiest</option>
-          <option value="3" selected>3</option>
-          <option value="2">2</option>
-          <option value="1">1 — hardest</option>
-        </select>
-      </label>
-      <span class="push"></span>
-      <span class="stat">round <b id="ground">–</b></span>
-      <span class="stat">score <b id="gscore">0</b></span>
-      <span class="stat live">streak <b id="gstreak">0</b></span>
-      <span class="stat">hit <b id="ghit">0</b>/48</span>
-      <span class="stat time">time <b id="gtime">30</b>s</span>
-    </div>
-    <div class="stagewrap" id="stagewrap">
-      <svg id="edgesvg" aria-hidden="true" focusable="false"></svg>
-      <div class="gover" id="gover" hidden></div>
-    </div>
-    <p class="gnote" id="gnote" aria-live="polite">Idle — nothing is lit. The reader deals the same waves every time; ordered by newest, nothing tells you where they&rsquo;ll land — ordered by issuegraph, the board itself does. Press start.</p>
-  </section>
-
-</main>
-
-<footer>
-  <div class="container inner">
-    <span>Stewarded by <a href="https://github.com/autnmy">Autonomy LLC</a></span>
-    <a href="https://github.com/autnmy/issuegraph">Repository</a>
-    <a href="https://github.com/autnmy/issuegraph/blob/main/SPEC.md">Specification</a>
-    <a href="/demo/">Demo</a>
-    <a href="https://github.com/autnmy/issuegraph/blob/main/examples/decomposition.md">Worked example</a>
-    <a href="https://github.com/autnmy/issuegraph/blob/main/CHANGELOG.md">Changelog</a>
-    <span>Apache-2.0</span>
-  </div>
-</footer>
-
-<script>
-(function () {
-  /* theme: auto → light → dark */
-  var btn = document.getElementById('theme'), root = document.documentElement;
-  function read() { try { return localStorage.getItem('ig-theme') || 'auto'; } catch (e) { return 'auto'; } }
-  function apply(t) {
-    if (t === 'auto') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', t);
-    btn.textContent = t;
-    try { localStorage.setItem('ig-theme', t); } catch (e) {}
-  }
-  apply(read());
-  btn.addEventListener('click', function () {
-    var order = ['auto', 'light', 'dark'];
-    apply(order[(order.indexOf(read()) + 1) % order.length]);
-  });
-
-  /* ---- the reader, live over the #230 decomposition ---------------- */
-
-  var IDS = ['231', '232', '233', '234', '235'];
-  var SUMMARY = {
-    231: 'Metering schema and write path',
-    232: 'Rating engine over metered usage',
-    233: 'Invoice rendering',
-    234: 'Usage dashboard widgets',
-    235: 'End-to-end verification of the composed flow'
-  };
-  var DECLARED = { 231: 1, 232: 1, 233: 2, 234: 2, 235: 1 };
-  var BLOCKED_BY = { 231: [], 232: ['231'], 233: ['232'], 234: ['231'], 235: ['231', '232', '233', '234'] };
-  var SERIAL = ['233', '234'];
-  var LABEL = { ready: 'Ready', claimed: 'In progress', held: 'Held', closed: 'Done', blocked: 'Blocked' };
-
-  var svg = document.getElementById('dgraph'),
-      rowsEl = document.getElementById('rows'),
-      setEl = document.getElementById('set'),
-      holdEl = document.getElementById('hold'),
-      nodes = {}, rows = {}, closed = {}, claimed = new Set();
-
-  svg.querySelectorAll('.node').forEach(function (n) { nodes[n.getAttribute('data-id')] = n; });
-
-  IDS.forEach(function (id) {
-    var tr = document.createElement('tr');
-    tr.setAttribute('data-id', id);
-    tr.innerHTML =
-      '<td class="key">#' + id + '</td>' +
-      '<td class="sum">' + SUMMARY[id] + '</td>' +
-      '<td><span class="loz"></span></td>' +
-      '<td class="pri r"></td>';
-    rowsEl.appendChild(tr);
-    rows[id] = tr;
-    tr.addEventListener('click', function () { activate(id); });
-  });
-
-  function isClosed(id) { return !!closed[id]; }
-  function blockersClear(id) { return BLOCKED_BY[id].every(isClosed); }
-  function serialHeld(id) {
-    return SERIAL.indexOf(id) > -1 && SERIAL.some(function (m) { return m !== id && claimed.has(m); });
-  }
-  function stateOf(id) {
-    if (isClosed(id)) return 'closed';
-    if (claimed.has(id)) return 'claimed';
-    if (!blockersClear(id)) return 'blocked';
-    if (serialHeld(id)) return 'held';
-    return 'ready';
-  }
-
-  /* effective priority: highest declared (numerically lowest) among itself
-     and every open issue that transitively depends on it via blocked-by */
-  function effective(id) {
-    var best = DECLARED[id], seen = {}, stack = [id];
-    while (stack.length) {
-      var cur = stack.pop();
-      IDS.forEach(function (other) {
-        if (BLOCKED_BY[other].indexOf(cur) > -1 && !seen[other]) {
-          seen[other] = 1;
-          if (!isClosed(other) && DECLARED[other] < best) best = DECLARED[other];
-          stack.push(other);
-        }
-      });
-    }
-    return best;
-  }
-
-  function render() {
-    var ready = [], held = null;
-
-    IDS.forEach(function (id) {
-      var st = stateOf(id), n = nodes[id], tr = rows[id];
-      if (st === 'ready') ready.push('#' + id);
-      if (st === 'held') held = id;
-
-      var dec = DECLARED[id], eff = effective(id), lifted = !isClosed(id) && eff < dec;
-
-      n.setAttribute('data-state', st);
-      n.querySelector('.p').textContent = lifted ? 'P' + dec + '→' + eff : 'P' + dec;
-      n.setAttribute('aria-label', 'Issue ' + id + ', ' + LABEL[st] + ', effective priority ' + eff +
-        (st === 'ready' ? '. Activate to claim.' : st === 'claimed' ? '. Activate to close.' : ''));
-
-      tr.setAttribute('data-state', st);
-      tr.setAttribute('data-act', st === 'blocked' || st === 'held' ? '0' : '1');
-      var loz = tr.querySelector('.loz');
-      loz.setAttribute('data-s', st);
-      loz.textContent = LABEL[st];
-      tr.querySelector('.pri').innerHTML = lifted
-        ? 'P' + dec + ' <em>→ ' + eff + '</em>'
-        : 'P' + dec;
-    });
-
-    svg.setAttribute('data-held', held ? '1' : '0');
-    svg.querySelectorAll('.edges path[data-from]').forEach(function (e) {
-      e.setAttribute('data-done', isClosed(e.getAttribute('data-from')) ? '1' : '0');
-    });
-
-    setEl.textContent = ready.length ? 'ready = { ' + ready.join(', ') + ' }' : 'ready = { }';
-    holdEl.textContent = held ? '#' + held + ' held — serialize group' : '';
-  }
-
-  function activate(id) {
-    var st = stateOf(id);
-    if (st === 'ready') { claimed.add(id); }
-    else if (st === 'claimed') { claimed.delete(id); closed[id] = true; }
-    else if (st === 'closed') { closed[id] = false; }
-    else { return; }
-    render();
-  }
-
-  IDS.forEach(function (id) {
-    var n = nodes[id];
-    n.addEventListener('click', function () { activate(id); });
-    n.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(id); }
-    });
-  });
-
-  document.getElementById('reset').addEventListener('click', function () {
-    closed = {}; claimed.clear(); render();
-  });
-
-  render();
-})();
-</script>
-<script>
-(function () {
-  /* 48 issues from one repository: [id, title, priority, blockedBy, serializeWith, togetherWith] */
-  var B = [
-    [101, 'SAML metadata parser', 1, []],
-    [102, 'SSO session exchange', 1, [101]],
-    [103, 'SCIM user provisioning', 2, [101]],
-    [104, 'SCIM group sync', 2, [103]],
-    [105, 'Just-in-time account creation', 2, [102]],
-    [106, 'IdP-initiated login flow', 1, [102]],
-    [107, 'SSO admin settings screen', 2, [102], 108],
-    [108, 'Account settings redesign', 3, [], 107],
-    [109, 'Metering schema design', 1, []],
-    [110, 'Metering write path', 1, [109]],
-    [111, 'Rating engine', 1, [110]],
-    [112, 'Invoice rendering', 2, [111], 113],
-    [113, 'Usage dashboard widgets', 2, [110], 112],
-    [114, 'Tax calculation service', 1, [111]],
-    [115, 'Dunning emails', 3, [111]],
-    [116, 'Proration on plan change', 2, [111]],
-    [117, 'Billing verification gate', 1, [110, 111, 112, 113, 114, 116]],
-    [118, 'Stripe webhook idempotency', 0, []],
-    [119, 'Search index schema v2', 1, []],
-    [120, 'Index backfill job', 1, [119]],
-    [121, 'Query parser', 2, [119]],
-    [122, 'Ranking model swap', 2, [120, 121]],
-    [123, 'Faceted filters UI', 2, [121], 124],
-    [124, 'Search results redesign', 3, [], 123],
-    [125, 'Synonym dictionary', 3, [121]],
-    [126, 'Search latency alerting', 2, [122]],
-    [127, 'Notification delivery queue', 1, []],
-    [128, 'Email template renderer', 2, [127]],
-    [129, 'Push token registry', 2, [127]],
-    [130, 'Digest scheduler', 2, [128]],
-    [131, 'Unsubscribe center', 2, [128], null, 132],
-    [132, 'Notification preference API', 2, [129], null, 131],
-    [133, 'Notification audit trail', 3, [130, 131, 132]],
-    [134, 'Export job runner', 1, []],
-    [135, 'CSV writer', 2, [134]],
-    [136, 'Parquet writer', 3, [134]],
-    [137, 'Signed download URLs', 1, [134]],
-    [138, 'Export retention policy', 3, [135, 136]],
-    [139, 'Large export chunking', 2, [135]],
-    [140, 'Export UI', 2, [137, 139]],
-    [141, 'Postgres 16 upgrade', 0, []],
-    [142, 'Connection pool tuning', 1, [141]],
-    [143, 'Read replica routing', 2, [142]],
-    [144, 'Migration runner hardening', 1, [141], 148],
-    [145, 'Trace sampling config', 2, []],
-    [146, 'Secrets rotation', 1, []],
-    [147, 'CI cache rebuild', 3, []],
-    [148, 'Deprecate legacy API v1', 2, [102, 140], 144]
-  ];
-
-  var IX = {}, IDS = B.map(function (r) { return r[0]; });
-  B.forEach(function (r) { IX[r[0]] = { id: r[0], t: r[1], p: r[2], bb: r[3], ser: r[4] || null, tog: r[5] || null }; });
-
-  /* dependents index + serialize / together groups as connected components */
-  var DEP = {};
-  IDS.forEach(function (id) { DEP[id] = []; });
-  IDS.forEach(function (id) { IX[id].bb.forEach(function (b) { if (DEP[b]) DEP[b].push(id); }); });
-
-  function components(key) {
-    var seen = {}, out = {};
-    IDS.forEach(function (id) {
-      if (seen[id]) return;
-      var stack = [id], group = [];
-      while (stack.length) {
-        var c = stack.pop();
-        if (seen[c]) continue;
-        seen[c] = 1; group.push(c);
-        var link = IX[c][key];
-        if (link && IX[link]) stack.push(link);
-        IDS.forEach(function (o) { if (IX[o][key] === c) stack.push(o); });
-      }
-      if (group.length > 1) group.forEach(function (g) { out[g] = group; });
-    });
-    return out;
-  }
-  var SER = components('ser'), TOG = components('tog');
-
-  function unit(id) { return TOG[id] || [id]; }
-
-  /* ---- reader rules ---- */
-  var closed = {}, lit = {};
-
-  function isClosed(id) { return !!closed[id]; }
-  function blockersClear(id) {
-    return IX[id].bb.every(isClosed) && unit(id).every(function (m) { return isClosed(m) || IX[m].bb.every(function (b) { return unit(id).indexOf(b) > -1 || isClosed(b); }); });
-  }
-  function serBusy(id) {
-    var g = SER[id];
-    if (!g) return false;
-    return g.some(function (m) { return m !== id && lit[m]; });
-  }
-  function ready(id) {
-    if (isClosed(id) || !blockersClear(id) || serBusy(id)) return false;
-    return unit(id).every(function (m) { return isClosed(m) || (IX[m].bb.every(function (b) { return unit(id).indexOf(b) > -1 || isClosed(b); }) && !serBusy(m)); });
-  }
-  function effective(id) {
-    var bestP = IX[id].p, seen = {}, stack = [id];
-    while (stack.length) {
-      var c = stack.pop();
-      DEP[c].forEach(function (d) {
-        if (seen[d]) return;
-        seen[d] = 1;
-        if (!isClosed(d) && IX[d].p < bestP) bestP = IX[d].p;
-        stack.push(d);
-      });
-    }
-    return bestP;
-  }
-  function readySet() {
-    /* effective priority, then newest first — the default selection tiebreak (§6.4) */
-    return IDS.filter(ready).sort(function (a, b2) {
-      var d = effective(a) - effective(b2);
-      return d !== 0 ? d : b2 - a;
-    });
-  }
-
-  /* ---- the wave sequence, precomputed.
-     A wave is the top `conc` units of the ready set (a together group is one unit —
-     one claim, §6.4; a serialize group never contributes two members to one wave).
-     Every issue in a wave closes when the wave ends, whacked or not, so the whole
-     30-second sequence is deterministic — identical in both rounds by construction. ---- */
-  function simulateBatches(c) {
-    var savedClosed = closed, savedLit = lit;
-    closed = {}; lit = {};
-    var out = [], guard = 0;
-    while (!IDS.every(isClosed) && guard++ < 100) {
-      var pool = readySet(), wave = [];
-      for (var i = 0; i < pool.length && wave.length < c; i++) {
-        var id = pool[i];
-        if (lit[id] || !ready(id)) continue;
-        unit(id).forEach(function (m) { if (!isClosed(m)) lit[m] = 1; });
-        wave.push(id);
-      }
-      if (!wave.length) break;
-      wave.forEach(function (a) { unit(a).forEach(function (m) { closed[m] = true; }); });
-      lit = {};
-      out.push(wave);
-    }
-    closed = savedClosed; lit = savedLit;
-    return out;
-  }
-
-  var simConc = null, batches = [];
-  function ensureSim() {
-    var c = +el.diff.value;
-    if (simConc === c) return;
-    simConc = c;
-    batches = simulateBatches(c);
-  }
-
-  /* ---- game state ---- */
-  var flash = {}, missedFlash = {},
-      phase = 'idle', /* idle | r1 | between | r2 | over */
-      running = false, view = 'grid',
-      score = 0, streak = 0, best = 0, whacked = 0, whiffs = 0, missedN = 0,
-      conc = 3, life = 700, timer = null, endAt = 0,
-      inBatch = false, batchIdx = 0, batchEndsAt = 0, deadUntil = 0, batchHits = 0,
-      shieldUntil = 0, rounds = {};
-  var DEAD = 2000;
-  var LIFE = { 4: 800, 3: 700, 2: 575, 1: 475 };
-
-  var el = {
-    wrap: document.getElementById('stagewrap'),
-    svg: document.getElementById('edgesvg'),
-    over: document.getElementById('gover'),
-    start: document.getElementById('gstart'),
-    diff: document.getElementById('gdiff'),
-    round: document.getElementById('ground'),
-    score: document.getElementById('gscore'),
-    streak: document.getElementById('gstreak'),
-    hit: document.getElementById('ghit'),
-    time: document.getElementById('gtime'),
-    note: document.getElementById('gnote'),
-    bar: document.getElementById('gamebar'),
-    vgrid: document.getElementById('vgrid'),
-    vgraph: document.getElementById('vgraph')
-  };
-
-  /* ---- tiles: one set of buttons, both views position the same elements ---- */
-  var tiles = {};
-  IDS.slice().sort(function (a, b2) { return b2 - a; }).forEach(function (id) {
-    var b = document.createElement('button');
-    b.type = 'button'; b.className = 'tile'; b.setAttribute('data-id', id);
-    b.innerHTML = '<span class="tid">#' + id + '</span><span class="tt">' + IX[id].t +
-      '</span><span class="tp">P' + IX[id].p + '</span>';
-    b.addEventListener('click', function () { tap(id); });
-    el.wrap.insertBefore(b, el.over);
-    tiles[id] = b;
-  });
-
-  /* ---- layout: same tile size, columns, and spacing in both views. The grid
-     orders newest-first; the graph layers by longest-path depth — blockers above,
-     dependents below, like the worked example — ordered within a tier under the
-     tiles that block them. ---- */
-  var TH = 66, pos = {}, tileW = 148;
-
-  var depth = {};
-  function computeDepth(id, guard) {
-    if (depth[id] !== undefined) return depth[id];
-    if (guard[id]) return 0;
-    guard[id] = 1;
-    var d = 0;
-    IX[id].bb.forEach(function (b) { if (IX[b]) d = Math.max(d, computeDepth(b, guard) + 1); });
-    depth[id] = d;
-    return d;
-  }
-  IDS.forEach(function (id) { computeDepth(id, {}); });
-  var maxD = 0;
-  IDS.forEach(function (id) { if (depth[id] > maxD) maxD = depth[id]; });
-
-  function geometry(W) {
-    var g0 = 1, n0 = Math.max(2, Math.floor((W + g0) / (148 + g0)));
-    tileW = Math.floor((W - (n0 - 1) * g0) / n0);
-    var n = Math.floor((W + 12) / (tileW + 12));
-    if (n < 2) n = Math.min(2, Math.max(1, Math.floor((W + 1) / (tileW + 1))));
-    if (n < 1) n = 1;
-    var gapX = (W - n * tileW) / (n + 1);
-    var rows = Math.ceil(48 / n);
-    var gapY = 26, pad = 14;
-    return { n: n, gapX: gapX, rows: rows, gapY: gapY, pad: pad,
-             h: pad * 2 + rows * TH + (rows - 1) * gapY };
-  }
-  function place(order, W) {
-    var g = geometry(W), out = {};
-    order.forEach(function (id, i) {
-      var row = Math.floor(i / g.n), col = i % g.n;
-      out[id] = { x: g.gapX + col * (tileW + g.gapX), y: g.pad + row * (TH + g.gapY) };
-    });
-    out._h = g.h;
-    return out;
-  }
-  function bary(id, placed) {
-    var xs = IX[id].bb.filter(function (b) { return placed[b]; }).map(function (b) { return placed[b].x; });
-    if (!xs.length && IX[id].ser && placed[IX[id].ser]) xs = [placed[IX[id].ser].x];
-    if (!xs.length && IX[id].tog && placed[IX[id].tog]) xs = [placed[IX[id].tog].x];
-    if (!xs.length) return 1e9;
-    var s = 0;
-    xs.forEach(function (x) { s += x; });
-    return s / xs.length;
-  }
-  function graphPositions(W) {
-    /* the board in the exact order the reader deals it: reading order (left to
-       right, top to bottom) IS the lighting order. Waves place as a block, each
-       tile seeking the column under its blockers — chains run vertically, fans
-       spread beneath their blocker — and a wave that cannot hold that shape on
-       the current row wraps whole to the next. */
-    ensureSim();
-    var g = geometry(W), pitch = tileW + g.gapX, gapY = 24;
-    var waves = [];
-    batches.forEach(function (wave) {
-      var members = [];
-      wave.forEach(function (a) {
-        unit(a).forEach(function (m) { if (members.indexOf(m) < 0) members.push(m); });
-      });
-      waves.push(members);
-    });
-    var placedIds = {};
-    waves.forEach(function (ws) { ws.forEach(function (m) { placedIds[m] = 1; }); });
-    var rest = IDS.filter(function (id) { return !placedIds[id]; });
-    if (rest.length) waves.push(rest);
-
-    var out = {}, row = 0, cursor = 0;
-    function wantCol(id) {
-      var b = bary(id, out);
-      return b >= 1e9 ? -1 : Math.max(0, Math.min(g.n - 1, Math.round((b - g.gapX) / pitch)));
-    }
-    function tryRow(ws, startCol, drift) {
-      var wants = ws.map(wantCol), idx = ws.map(function (m, i) { return i; });
-      idx.sort(function (a, b2) { return (wants[a] < 0 ? 99 : wants[a]) - (wants[b2] < 0 ? 99 : wants[b2]) || a - b2; });
-      var cols = [], c = startCol, k, maxCol = 0;
-      for (k = 0; k < idx.length; k++) {
-        var wnt = wants[idx[k]];
-        var col = wnt < 0 ? c : Math.max(wnt, c);
-        cols[idx[k]] = col;
-        if (col > maxCol) maxCol = col;
-        c = col + 1;
-      }
-      var shift = Math.max(0, maxCol - (g.n - 1));
-      for (k = 0; k < ws.length; k++) {
-        var col2 = cols[k] - shift;
-        if (col2 < startCol) return null;
-        var wnt2 = wants[k];
-        if (wnt2 >= 0 && Math.abs(col2 - wnt2) > drift) return null;
-        cols[k] = col2;
-      }
-      return cols;
-    }
-    waves.forEach(function (ws) {
-      var cols = tryRow(ws, cursor, 1);
-      if (!cols) {
-        row++; cursor = 0;
-        cols = tryRow(ws, 0, 1) || tryRow(ws, 0, 2) || tryRow(ws, 0, 3);
-      }
-      if (cols) {
-        var maxCol = 0;
-        ws.forEach(function (m, i) {
-          out[m] = { x: g.gapX + cols[i] * pitch, y: g.pad + row * (TH + gapY) };
-          if (cols[i] > maxCol) maxCol = cols[i];
-        });
-        cursor = maxCol + 1;
-      } else {
-        /* wave wider than the row allows (narrow screens) — sequential fill */
-        if (cursor > 0) { row++; cursor = 0; }
-        ws.forEach(function (m) {
-          if (cursor > g.n - 1) { row++; cursor = 0; }
-          out[m] = { x: g.gapX + cursor * pitch, y: g.pad + row * (TH + gapY) };
-          cursor++;
-        });
-      }
-    });
-    out._h = g.pad * 2 + (row + 1) * (TH + gapY) - gapY;
-    return out;
-  }
-
-  function layout() {
-    var W = el.wrap.clientWidth;
-    if (view === 'graph') {
-      pos = graphPositions(W);
-    } else {
-      pos = place(IDS.slice().sort(function (a, b2) { return b2 - a; }), W);
-    }
-    IDS.forEach(function (id) {
-      var t = tiles[id];
-      t.style.width = tileW + 'px';
-      t.style.height = TH + 'px';
-      t.style.setProperty('--tx', pos[id].x + 'px');
-      t.style.setProperty('--ty', pos[id].y + 'px');
-    });
-    el.wrap.style.height = pos._h + 'px';
-    el.wrap.classList.toggle('graphmode', view === 'graph');
-    el.svg.setAttribute('width', W);
-    el.svg.setAttribute('height', pos._h);
-    drawEdges();
-  }
-
-  /* ---- edges (drawn once, retraced on layout; visible in flow view) ---- */
-  var ns = 'http://www.w3.org/2000/svg';
-  function mkpath(cls) {
-    var p = document.createElementNS(ns, 'path');
-    p.setAttribute('class', cls);
-    el.svg.appendChild(p);
-    return p;
-  }
-  var blockEdges = [], pairEdges = [];
-  IDS.forEach(function (id) {
-    IX[id].bb.forEach(function (b) {
-      if (IX[b]) blockEdges.push({ from: b, to: id, el: mkpath('be') });
-    });
-    if (IX[id].ser && IX[IX[id].ser] && id < IX[id].ser) pairEdges.push({ a: id, b: IX[id].ser, el: mkpath('bs') });
-    if (IX[id].tog && IX[IX[id].tog] && id < IX[id].tog) pairEdges.push({ a: id, b: IX[id].tog, el: mkpath('bt') });
-  });
-  function drawEdges() {
-    var w2 = tileW / 2;
-    blockEdges.forEach(function (e) {
-      var a = pos[e.from], b = pos[e.to];
-      if (!a || !b) return;
-      var x1 = a.x + w2, x2 = b.x + w2;
-      if (Math.abs(a.y - b.y) < 1) {
-        e.el.setAttribute('d', 'M' + x1 + ',' + a.y + ' C' + x1 + ',' + (a.y - 22) + ' ' + x2 + ',' + (b.y - 22) + ' ' + x2 + ',' + b.y);
-        return;
-      }
-      var y1 = a.y + TH, y2 = b.y, my = (y1 + y2) / 2;
-      e.el.setAttribute('d', 'M' + x1 + ',' + y1 + ' C' + x1 + ',' + my + ' ' + x2 + ',' + my + ' ' + x2 + ',' + y2);
-    });
-    pairEdges.forEach(function (e) {
-      var a = pos[e.a], b = pos[e.b];
-      if (!a || !b) return;
-      e.el.setAttribute('d', 'M' + (a.x + w2) + ',' + (a.y + TH / 2) + ' L' + (b.x + w2) + ',' + (b.y + TH / 2));
-    });
-  }
-
-  /* ---- render ---- */
-  function stateOf(id) {
-    if (isClosed(id)) return flash[id] ? 'hit' : 'closed';
-    if (lit[id]) return 'lit';
-    if (missedFlash[id]) return 'missed';
-    return ready(id) ? 'ready' : 'blocked';
-  }
-  function paint() {
-    IDS.forEach(function (id) {
-      var st = stateOf(id);
-      tiles[id].setAttribute('data-state', st);
-      tiles[id].setAttribute('aria-label', '#' + id + ' ' + IX[id].t + ', ' + st);
-    });
-    blockEdges.forEach(function (e) {
-      e.el.setAttribute('data-done', isClosed(e.from) ? '1' : '0');
-      e.el.setAttribute('data-hot', lit[e.from] || lit[e.to] ? '1' : '0');
-    });
-    el.score.textContent = score;
-    el.streak.textContent = streak;
-    el.hit.textContent = whacked;
-  }
-
-  /* ---- game feel ---- */
-  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
-  function popup(id, text, neg) {
-    if (reduced.matches || !pos[id]) return;
-    var s = document.createElement('span');
-    s.className = 'pop' + (neg ? ' neg' : '');
-    s.textContent = text;
-    s.style.left = (pos[id].x + tileW / 2 - 14) + 'px';
-    s.style.top = (pos[id].y - 6) + 'px';
-    el.wrap.appendChild(s);
-    s.addEventListener('animationend', function () { s.remove(); });
-  }
-  function banner(text) {
-    var d = document.createElement('div');
-    d.className = 'rflash';
-    d.innerHTML = '<span></span>';
-    d.firstChild.textContent = text;
-    el.wrap.appendChild(d);
-    d.firstChild.addEventListener('animationend', function () { d.remove(); });
-  }
-  function confetti() {
-    if (reduced.matches) return;
-    var cv = document.createElement('canvas');
-    cv.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;z-index:80;pointer-events:none;';
-    document.body.appendChild(cv);
-    var dpr = Math.min(2, window.devicePixelRatio || 1);
-    cv.width = window.innerWidth * dpr; cv.height = window.innerHeight * dpr;
-    var ctx = cv.getContext('2d'); ctx.scale(dpr, dpr);
-    var cs = getComputedStyle(document.documentElement);
-    var colors = ['--accent', '--green', '--amber', '--fg-2'].map(function (v) { return cs.getPropertyValue(v).trim(); });
-    var parts = [];
-    function burst(x, y, angle) {
-      for (var i = 0; i < 70; i++) {
-        var a = angle + (Math.random() - 0.5) * 1.0, sp = 7 + Math.random() * 9;
-        parts.push({ x: x, y: y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
-          w: 5 + Math.random() * 5, h: 3 + Math.random() * 4,
-          c: colors[(Math.random() * colors.length) | 0],
-          r: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 0.3,
-          life: 130 + Math.random() * 70 });
-      }
-    }
-    burst(window.innerWidth * 0.12, window.innerHeight * 0.92, -1.15);
-    burst(window.innerWidth * 0.88, window.innerHeight * 0.92, -Math.PI + 1.15);
-    setTimeout(function () {
-      burst(window.innerWidth * 0.5, window.innerHeight * 0.95, -Math.PI / 2);
-    }, 260);
-    var frames = 0;
-    (function step() {
-      ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-      parts.forEach(function (p) {
-        p.x += p.vx; p.y += p.vy; p.vy += 0.22; p.vx *= 0.99; p.r += p.vr; p.life--;
-        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r);
-        ctx.globalAlpha = Math.max(0, Math.min(1, p.life / 40));
-        ctx.fillStyle = p.c;
-        ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
-        ctx.restore();
-      });
-      parts = parts.filter(function (p) { return p.life > 0 && p.y < window.innerHeight + 30; });
-      if (parts.length && frames++ < 420) requestAnimationFrame(step);
-      else cv.remove();
-    })();
-  }
-
-  /* ---- the game ---- */
-  function setView(v) {
-    view = v;
-    el.vgrid.classList.toggle('on', v === 'grid');
-    el.vgraph.classList.toggle('on', v === 'graph');
-    layout();
-  }
-  function lockSeg(b) {
-    el.vgrid.disabled = b; el.vgraph.disabled = b;
-  }
-
-  function lightWave(now) {
-    if (batchIdx >= batches.length) {
-      /* backlog exhausted before the clock — loop it */
-      closed = {}; flash = {}; missedFlash = {};
-      batchIdx = 0;
-      score += 100;
-      banner('Backlog cleared · +100');
-    }
-    var wave = batches[batchIdx++];
-    batchHits = 0; inBatch = true; batchEndsAt = now + life;
-    wave.forEach(function (a) {
-      unit(a).forEach(function (m) {
-        if (!isClosed(m)) { lit[m] = batchEndsAt; tiles[m].style.setProperty('--life', life + 'ms'); }
-      });
-    });
-  }
-  function settleWave(now) {
-    /* the wave is over: whatever wasn't whacked closes anyway — the reader's
-       frontier advances either way; only the score remembers the difference */
-    var missedHere = 0;
-    Object.keys(lit).forEach(function (id) {
-      delete lit[id];
-      closed[id] = true;
-      missedHere++;
-      missedFlash[id] = 1;
-      (function (mid) { setTimeout(function () { delete missedFlash[mid]; paint(); }, 380); })(id);
-    });
-    missedN += missedHere;
-    if (batchHits === 0 && missedHere > 0) streak = 0;
-    inBatch = false;
-    deadUntil = now + DEAD;
-  }
-
-  function tap(id) {
-    if (!running) return;
-    if (lit[id]) whack(id); else whiff(id);
-  }
-  function whack(id) {
-    unit(id).forEach(function (m) {
-      if (!lit[m]) return;
-      delete lit[m]; closed[m] = true; flash[m] = 1; whacked++;
-      setTimeout(function () { delete flash[m]; paint(); }, 300);
-    });
-    streak++; batchHits++;
-    if (streak > best) best = streak;
-    var pts = 10 + Math.min(streak - 1, 10) * 5;
-    score += pts;
-    popup(id, '+' + pts, false);
-    if (inBatch && !Object.keys(lit).length) {
-      /* whole wave whacked — no need to wait out the fuse */
-      inBatch = false;
-      deadUntil = Date.now() + DEAD;
-    }
-    paint();
-  }
-  function whiff(id) {
-    whiffs++;
-    if (streak > 0) { streak = 0; el.streak.textContent = '0'; }
-    var t = tiles[id];
-    t.classList.remove('whiff'); void t.offsetWidth; t.classList.add('whiff');
-  }
-
-  function tick() {
-    var now = Date.now();
-    if (inBatch && now >= batchEndsAt) settleWave(now);
-    if (!inBatch && now >= deadUntil) lightWave(now);
-    var left = Math.max(0, (endAt - now) / 1000);
-    el.time.textContent = Math.ceil(left);
-    el.time.parentNode.classList.toggle('low', running && left <= 5.5);
-    paint();
-    if (endAt - now <= 0) endRound();
-  }
-
-  function beginRound(r) {
-    phase = r === 1 ? 'r1' : 'r2';
-    if (r === 1) rounds = {};
-    conc = +el.diff.value;
-    life = LIFE[conc];
-    ensureSim();
-    closed = {}; lit = {}; flash = {}; missedFlash = {};
-    score = 0; streak = 0; best = 0; whacked = 0; whiffs = 0; missedN = 0;
-    inBatch = false; batchIdx = 0; batchHits = 0;
-    running = true; endAt = Date.now() + 30000; deadUntil = Date.now() + 1200;
-    el.over.hidden = true;
-    setView(r === 1 ? 'grid' : 'graph');
-    lockSeg(true);
-    el.bar.classList.add('playing');
-    el.round.textContent = r + '/2';
-    el.start.textContent = 'Restart round ' + r;
-    el.note.innerHTML = r === 1
-      ? '<b>Round 1 — ordered by newest.</b> Waves of issues pop up together and vanish fast; whack what you can. Whatever you miss closes anyway — the backlog moves on without you. Clicking a dark tile resets your streak.'
-      : '<b>Round 2 — ordered by issuegraph.</b> The identical waves in reading order: the next wave is always the next tiles along — left to right, top to bottom — and the edges show why each one unlocked.';
-    banner(r === 1 ? 'Round 1 · order by newest' : 'Round 2 · order by issuegraph');
-    clearInterval(timer);
-    timer = setInterval(tick, 100);
-    paint();
-  }
-
-  function endRound() {
-    if (!running) return;
-    running = false;
-    clearInterval(timer);
-    lit = {}; inBatch = false;
-    el.time.parentNode.classList.remove('low');
-    el.bar.classList.remove('playing');
-    var rec = { score: score, whacked: whacked, best: best, whiffs: whiffs, missed: missedN };
-    if (phase === 'r1') {
-      rounds.r1 = rec;
-      phase = 'between';
-      el.round.textContent = '1 done';
-      el.start.textContent = 'Start round 2 · by issuegraph';
-      lockSeg(false);
-      setView('graph');
-      el.note.innerHTML = '<b>Round 1: ' + rec.whacked + ' whacked, score ' + rec.score + '.</b> ' +
-        'Watch the board rearrange — the same 48 tiles, re-dealt into the order the reader computed: left to right, top to bottom is exactly the order they will light, and the edges show why. ' +
-        'Round 2 replays the identical waves here.';
-    } else {
-      rounds.r2 = rec;
-      phase = 'over';
-      el.round.textContent = 'done';
-      el.start.textContent = 'Play again';
-      lockSeg(false);
-      showOver();
-      confetti();
-    }
-    paint();
-  }
-
-  function showOver() {
-    var r1 = rounds.r1, r2 = rounds.r2;
-    var d = r2.whacked - r1.whacked;
-    var kick = d > 0
-      ? 'Same waves, same order — ' + d + ' more whacked when you could see them coming. The graph didn’t change the game; it let you read it.'
-      : d === 0
-        ? 'Same waves, same order, dead even — but in round 2 you knew what was coming.'
-        : 'Same waves, same order. Knowing where and getting there in time are different problems.';
-    var total = r1.score + r2.score, pb = '';
-    try {
-      var old = +(localStorage.getItem('ig-best') || 0);
-      if (total > old) { localStorage.setItem('ig-best', String(total)); pb = 'new personal best — ' + total; }
-      else pb = 'total ' + total + ' · personal best ' + old;
-    } catch (e) { pb = 'total ' + total; }
-    el.over.innerHTML =
-      '<div class="card" role="dialog" aria-label="Game results">' +
-      '<h3>Time</h3>' +
-      '<div class="big">' + r2.score + '</div>' +
-      '<table><thead><tr><th>round</th><th>whacked</th><th>score</th><th>streak</th></tr></thead><tbody>' +
-      '<tr><td>1 · newest</td><td>' + r1.whacked + '/48</td><td>' + r1.score + '</td><td>' + r1.best + '</td></tr>' +
-      '<tr><td>2 · issuegraph</td><td>' + r2.whacked + '/48</td><td>' + r2.score + '</td><td>' + r2.best + '</td></tr>' +
-      '</tbody></table>' +
-      '<p class="kick">' + kick + '</p>' +
-      '<p class="pb">' + pb + '</p>' +
-      '<button type="button" class="abtn primary" id="gagain" disabled>Play again</button>' +
-      '</div>';
-    el.over.hidden = false;
-    /* spam-click shield: the recap ignores input for a beat so it can't be clicked through */
-    shieldUntil = Date.now() + 1000;
-    var again = document.getElementById('gagain');
-    setTimeout(function () { again.disabled = false; }, 1000);
-    again.addEventListener('click', function () { if (Date.now() >= shieldUntil) beginRound(1); });
-    el.over.addEventListener('click', function (e) {
-      if (e.target === el.over && Date.now() >= shieldUntil) el.over.hidden = true;
-    });
-    el.note.innerHTML = '<b>Final — by newest ' + r1.whacked + ' whacked · by issuegraph ' + r2.whacked + ' whacked.</b> ' +
-      'The waves were identical both rounds: whatever is ready lights together, worst-first by effective priority. ' +
-      'The grid just couldn’t tell you where.';
-  }
-
-  el.start.addEventListener('click', function () {
-    if (phase === 'between' || phase === 'r2') beginRound(2);
-    else beginRound(1);
-  });
-  el.diff.addEventListener('change', function () {
-    /* difficulty changes the wave sequence itself — reset the match */
-    running = false; clearInterval(timer);
-    phase = 'idle'; rounds = {};
-    simConc = null;
-    closed = {}; lit = {}; flash = {}; missedFlash = {};
-    score = 0; streak = 0; best = 0; whacked = 0; whiffs = 0; missedN = 0;
-    inBatch = false; batchIdx = 0;
-    el.over.hidden = true;
-    el.round.textContent = '–';
-    el.time.textContent = '30';
-    el.time.parentNode.classList.remove('low');
-    el.bar.classList.remove('playing');
-    el.start.textContent = 'Start round 1 · by newest';
-    el.note.innerHTML = 'Difficulty set — the wave size changed, so the sequence recomputed. Round 1 plays ordered by newest, round 2 ordered by issuegraph.';
-    lockSeg(false);
-    layout();
-    paint();
-  });
-  el.vgrid.addEventListener('click', function () { if (!running) setView('grid'); });
-  el.vgraph.addEventListener('click', function () { if (!running) setView('graph'); });
-
-  var resizeT;
-  window.addEventListener('resize', function () {
-    clearTimeout(resizeT);
-    resizeT = setTimeout(layout, 150);
-  });
-
-  layout();
-  paint();
-})();
-</script>
 </body>
 </html>
