@@ -40,7 +40,11 @@ export const ROOT_FILES = Object.freeze([
   'llms.txt',
   'llms-full.txt',
   '404.html',
+  'og.png',
 ]);
+
+/** Static human + agent readable pages: the FAQ and the HTML rendering of SPEC.md. */
+export const PAGE_FILES = Object.freeze(['faq/index.html', 'spec/index.html', 'spec/v0.3/index.html']);
 
 /** The Whack-an-Issue game at /play/: one self-contained page, no build step. */
 export const PLAY_FILES = Object.freeze(['play/index.html']);
@@ -125,6 +129,7 @@ export function assembleSite({ root, out }) {
     ...ROOT_FILES,
     ...PLAY_FILES,
     ...DEMO_FILES,
+    ...PAGE_FILES,
     ...SITE_PACKAGES.map((name) => `packages/${name}/dist`),
     `${YAML_PATH}/package.json`,
     `${YAML_PATH}/browser`,
@@ -147,7 +152,7 @@ if (invokedDirectly) {
   const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
   const out = resolve(process.argv[2] ?? join(root, '_site'));
   const copied = assembleSite({ root, out });
-  const missing = ['index.html', 'play/index.html', 'demo/index.html'].flatMap((page) =>
+  const missing = ['index.html', 'play/index.html', 'demo/index.html', ...PAGE_FILES].flatMap((page) =>
     missingReferences(out, page).map((path) => `${page} -> ${path}`),
   );
   if (missing.length > 0) {

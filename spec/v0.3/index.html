@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Issuegraph Specification v0.3.0 (draft) · Issue dependencies as YAML frontmatter</title>
+<meta name="description" content="The Issuegraph v0.3.0 draft spec: seven optional YAML frontmatter fields (blocked-by, decomposed-from, duplicate-of, serialize-with, together-with, priority, evidence) plus writing and reading rules for the ready set, effective priority and safe parallelism.">
+<link rel="canonical" href="https://issuegraph.org/spec/v0.3/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Issuegraph">
+<meta property="og:url" content="https://issuegraph.org/spec/v0.3/">
+<meta property="og:title" content="Issuegraph Specification v0.3.0 (draft) · Issue dependencies as YAML frontmatter">
+<meta property="og:description" content="The Issuegraph v0.3.0 draft spec: seven optional YAML frontmatter fields (blocked-by, decomposed-from, duplicate-of, serialize-with, together-with, priority, evidence) plus writing and reading rules for the ready set, effective priority and safe parallelism.">
+<meta property="og:image" content="https://issuegraph.org/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Issuegraph Specification v0.3.0 (draft) · Issue dependencies as YAML frontmatter">
+<meta name="twitter:description" content="The Issuegraph v0.3.0 draft spec: seven optional YAML frontmatter fields (blocked-by, decomposed-from, duplicate-of, serialize-with, together-with, priority, evidence) plus writing and reading rules for the ready set, effective priority and safe parallelism.">
+<meta name="twitter:image" content="https://issuegraph.org/og.png">
+<link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,300;6..72,400;6..72,500&family=Geist+Mono:wght@400;500&display=swap">
+<style>:root{--bg:#F5F6F3;--panel:#fff;--ink:#1B1E1C;--ink2:#474D48;--rule:#E2E4DF;--chip:#EEF0EC;--accent:#2440C8;--serif:Newsreader,Georgia,"Times New Roman",serif;--mono:"Geist Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+@media(prefers-color-scheme:dark){:root{--bg:#121413;--panel:#1a1d1b;--ink:#E7EAE6;--ink2:#B4BAB4;--rule:#2a2e2b;--chip:#202421;--accent:#8DA2FF}}
+body{margin:0;background:var(--bg);color:var(--ink);font:19px/1.6 var(--serif)}
+*{box-sizing:border-box}a{color:var(--accent)}.wrap{max-width:820px;margin:0 auto;padding:24px 20px 64px}
+header.top{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:baseline;border-bottom:1px solid var(--rule);padding-bottom:12px;margin-bottom:28px;font:14px/1.4 var(--mono)}
+header.top b a{color:var(--ink);text-decoration:none}header.top a{text-decoration:none}
+.crumbs{font:13px var(--mono);color:var(--ink2);margin-bottom:8px}.crumbs a{color:var(--ink2)}
+h1{font-size:2em;line-height:1.2;margin:.2em 0 .4em}h2{margin-top:2em;border-top:1px solid var(--rule);padding-top:1em}h1,h2,h3,h4{font-weight:500}
+a.anchor{color:inherit;text-decoration:none}
+code{font:.85em var(--mono);background:var(--chip);padding:.1em .3em;border-radius:4px}pre{background:var(--panel);border:1px solid var(--rule);padding:14px;overflow:auto;border-radius:8px}pre code{background:none;padding:0}
+table{border-collapse:collapse;display:block;overflow:auto;font-size:.9em}th,td{border:1px solid var(--rule);padding:6px 9px;text-align:left;vertical-align:top}
+blockquote{margin:1em 0;padding:.2em 1em;border-left:3px solid var(--rule);color:var(--ink2)}
+nav.toc{background:var(--panel);border:1px solid var(--rule);border-radius:8px;padding:10px 18px;font-size:.92em}nav.toc ol{margin:.3em 0;padding-left:1.2em}
+.note{font:14px/1.5 var(--mono);color:var(--ink2)}details{border-bottom:1px solid var(--rule);padding:10px 0}summary{cursor:pointer;font-weight:500}
+footer{margin-top:56px;border-top:1px solid var(--rule);padding-top:14px;font:13px/1.6 var(--mono);color:var(--ink2)}</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"Organization","@id":"https://meetautonomy.com/#org","name":"Autonomy LLC","url":"https://meetautonomy.com/","sameAs":["https://github.com/autnmy"]},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Issuegraph","item":"https://issuegraph.org/"},{"@type":"ListItem","position":2,"name":"Spec","item":"https://issuegraph.org/spec/"},{"@type":"ListItem","position":3,"name":"v0.3.0","item":"https://issuegraph.org/spec/v0.3/"}]},{"@type":"TechArticle","headline":"Issuegraph Specification v0.3.0 (draft)","version":"0.3.0","url":"https://issuegraph.org/spec/v0.3/","author":{"@id":"https://meetautonomy.com/#org"},"publisher":{"@id":"https://meetautonomy.com/#org"},"license":"https://www.apache.org/licenses/LICENSE-2.0","isPartOf":{"@id":"https://issuegraph.org/#website"}}]}</script>
+</head>
+<body>
+<div class="wrap">
+<header class="top"><b><a href="/">Issuegraph</a></b><a href="/spec/">Spec</a><a href="/faq/">FAQ</a><a href="/demo/">Demo</a><a href="/play/">Play</a><a href="https://github.com/autnmy/issuegraph">GitHub</a></header>
+<div class="crumbs"><a href="/">Issuegraph</a> / <a href="/spec/">Spec</a> / v0.3.0</div>
+<main>
+<p class="note">Rendered from <a href="https://github.com/autnmy/issuegraph/blob/main/SPEC.md">SPEC.md</a> · plain text for agents: <a href="/llms-full.txt">/llms-full.txt</a></p>
+<nav class="toc" aria-label="Contents"><b>Contents</b><ol><li><a href="#1-motivation">1. Motivation</a></li><li><a href="#2-scope-and-non-goals">2. Scope and non-goals</a></li><li><a href="#3-conformance-language">3. Conformance language</a></li><li><a href="#4-the-format">4. The format</a></li><li><a href="#5-writing-rules">5. Writing rules</a></li><li><a href="#6-reading-rules">6. Reading rules</a></li><li><a href="#7-prior-art">7. Prior art</a></li><li><a href="#8-versioning-and-stability">8. Versioning and stability</a></li></ol></nav>
+<h1 id="issuegraph--specification"><a class="anchor" href="#issuegraph--specification">Issuegraph — Specification</a></h1>
+<p><strong>Version:</strong> 0.3.0 (draft)
+<strong>Status:</strong> Draft for implementation. Not stable. Field names and semantics may change until 1.0. See <a href="#8-versioning-and-stability">Versioning</a>.</p>
+<p>Issuegraph is a specification for machine-readable work relationships and ordering, written directly onto the issues of an existing issue tracker. It defines a small data format (what you can write on an issue), writing rules (who writes it and when), and reading rules (how a scheduler turns a backlog into correctly ordered, safely parallel work).</p>
+<hr>
+<h2 id="1-motivation"><a class="anchor" href="#1-motivation">1. Motivation</a></h2>
+<p>A list of tasks does not tell you what order to do them in.</p>
+<p>Human teams solve ordering by talking. The knowledge — &quot;don&#39;t start the invoice screen until the money rounding is fixed&quot; — lives in conversations and in people&#39;s heads. That works because a team of five has a shared head. A fleet of autonomous agents has none: an agent picks an issue, reads it, and starts. If issue B secretly needed issue A to land first, nothing stops it. Best case, a wasted run. Worst case, work that looks right, passes tests, and is wrong, because it was built on an assumption about to change.</p>
+<p>In practice, operating an autonomous development pipeline without machine-readable ordering produces a recognizable set of workarounds, each of which this specification exists to retire:</p>
+<ul>
+<li><strong>The global kill-switch.</strong> When per-edge ordering cannot be expressed, the only available control is &quot;nobody starts anything.&quot; Operators end up gating an entire fleet on one variable because they cannot gate one issue on another.</li>
+<li><strong>Pre-claiming.</strong> Batches of related work get claimed by a human so automated selection will not touch them, then hand-fed to workers in the correct order — a person simulating a scheduler.</li>
+<li><strong>Poll chains.</strong> Agents standing watch on an issue, waiting for it to close so they can fire the next tranche. The ordering knowledge lives in agents&#39; standing instructions; one crashed agent silently breaks the chain.</li>
+<li><strong>Improvised decomposition.</strong> Large work gets split into sub-issues under rules invented at split time and changed at the next split. The structure rots because it was never written down.</li>
+</ul>
+<p>Ordering knowledge written as prose — &quot;blocked on #123&quot;, &quot;do this after the auth work&quot; — is readable by humans and useless to schedulers. <strong>A scheduler cannot act on prose.</strong> Issuegraph makes the same knowledge machine-readable, in place, on the tracker the work already lives in.</p>
+<h2 id="2-scope-and-non-goals"><a class="anchor" href="#2-scope-and-non-goals">2. Scope and non-goals</a></h2>
+<p><strong>Issuegraph describes work. It never describes execution.</strong></p>
+<p>No claims, no leases, no in-progress states, no retries, no heartbeats, no logs, no &quot;who is working on this right now.&quot; Those are properties of the <em>system doing the work</em>, not of the work itself, and embedding them couples the format to one executor&#39;s lifetime. The test for any proposed field: <em>would a perfect execution system still need this written on the issue?</em> If a sufficiently good scheduler could derive it or tolerate its absence, it does not go in.</p>
+<p>Consequences of that test, recorded here so they are not relitigated field by field:</p>
+<ul>
+<li><strong>Work-type classification is executor policy, not format.</strong> Whether an issue&#39;s deliverable is a code change, a decomposition, or something no automated pipeline can perform at all (&quot;pay the vendor invoice,&quot; &quot;migrate the repository&quot;) is a judgment each executor makes against its own capabilities. The format does not carry it.</li>
+<li><strong>Holds are tracker/executor policy, not format.</strong> Trackers already have conventions that pause work on a single issue pending attention — a <code>needs-human</code> label, a &quot;waiting&quot; state. These gate workability without referencing any other issue, and they stay out of the format: a <code>hold:</code> field would duplicate tracker-native machinery and rot beside it. The format&#39;s contributions to the problem are the composition rule (§6.8) and the decision-issue pattern (§5.5), which turns the <em>nameable</em> subset of human blockers into ordinary graph nodes.</li>
+<li><strong>Concurrency rate is scheduler policy, not format.</strong> The graph defines which issues <em>may</em> run concurrently; how many run at once is a knob on the scheduler.</li>
+<li><strong>Progress roll-ups are queries, not data.</strong> &quot;How far along is the feature&quot; is computed from the graph; it is never stored where it can rot.</li>
+</ul>
+<p>Issuegraph is a <strong>specification</strong> — a data format plus rules for reading and writing it. It is not a protocol (nothing exchanges messages) and does not call itself a standard (a title earned by adoption, not claimed at birth).</p>
+<h2 id="3-conformance-language"><a class="anchor" href="#3-conformance-language">3. Conformance language</a></h2>
+<p>MUST, MUST NOT, SHOULD, and MAY are used as in RFC 2119. Two conformance roles exist:</p>
+<ul>
+<li>A <strong>writer</strong> is anything that creates or edits issues: a human, a decomposing agent, a triage bot, a grooming pass, a residual filer.</li>
+<li>A <strong>reader</strong> is anything that consumes the graph to select or order work: a scheduler, a selection query, a dashboard.</li>
+</ul>
+<h2 id="4-the-format"><a class="anchor" href="#4-the-format">4. The format</a></h2>
+<h3 id="41-location"><a class="anchor" href="#41-location">4.1 Location</a></h3>
+<p>Issuegraph data is <strong>YAML frontmatter</strong> on the issue body — the standard <code>---</code>-delimited block at the top, the same convention markdown files and their entire tooling ecosystem already read and write — containing a top-level <code>issuegraph</code> key:</p>
+<pre><code class="language-markdown">---
+issuegraph:
+  blocked-by: [123, 124]
+  priority: 1
+---
+</code></pre>
+<p>Nothing bespoke is introduced here, deliberately: the delimiters, the YAML, and the top-of-document placement are the existing universal convention, chosen because every human, model, and parser already knows it. Rules:</p>
+<ul>
+<li><p>Writers SHOULD open the body with the frontmatter. Readers MUST be tolerant of prefixed and wrapping content (a bot&#39;s banner, a callout, a code fence): the canonical data is the <strong>first</strong> <code>---</code>-delimited YAML block in the body containing a top-level <code>issuegraph</code> key; later claimants MUST be ignored.</p>
+</li>
+<li><p>Writers SHOULD write the frontmatter <strong>bare</strong> — the universal form, nothing wrapped — and SHOULD leave a <strong>blank line before the closing delimiter</strong>:</p>
+<pre><code class="language-markdown">---
+issuegraph:
+  blocked-by: [&quot;#123&quot;, &quot;#124&quot;]
+  priority: 1
+
+---
+</code></pre>
+<p>The blank line is structural, not spacing. A markdown renderer reads a closing <code>---</code> directly under a non-blank line as a <strong>setext heading underline</strong>, which turns the last field into a heading and the whole block into a banner — the mangling that made the fence exception necessary in the first place. With the blank line the block renders as rule, paragraph, rule. A trailing blank line inside the block is valid YAML, so it costs the parse nothing.</p>
+<p>Writing the block bare is what lets a tracker <strong>auto-link</strong> the <code>#</code>-sigil references in it, and auto-linking is worth more than it looks: a linked reference stamps a <strong>cross-reference on the target issue</strong>, which is the only surface anywhere showing what an issue is <em>blocking</em>. §4.3.1 deliberately has no <code>blocks</code> field, so without it the reverse edge is reconstructed by hand.</p>
+<p>The one permitted exception: where the tracker&#39;s rendering still mangles bare frontmatter, writers MAY wrap it in a plain code fence. The fence is display armor only: the frontmatter text inside is unchanged and byte-portable, and readers see through it via the tolerance rule above.</p>
+<pre><code class="language-markdown">```
+---
+issuegraph:
+  blocked-by: [123, 124]
+  priority: 1
+---
+```
+</code></pre>
+</li>
+<li><p>The <code>issuegraph</code> key namespaces this specification&#39;s data. Other tools&#39; keys MAY coexist in the same frontmatter and MUST be treated as inert by issuegraph readers.</p>
+</li>
+<li><p><strong>Readers MUST take the key their YAML parser reports; writers MUST write it literally.</strong> The two halves are not symmetric, and each closes a different hole. A reader that instead matched one <em>spelling</em> of the key silently loses declarations written in another — a flow-root mapping (<code>{issuegraph: …}</code>, which is simply what a YAML serializer emits in flow style) reads as a body with no block at all, with no diagnostic to say otherwise. So readers ask the parser. Writers, in turn, MUST emit the key as the literal <code>issuegraph</code> — optionally quoted — as a key of the block&#39;s own root mapping, and MUST NOT escape-encode it: a tracker mirror needs to prefilter candidate bodies cheaply, in SQL or with a regex, and no such prefilter can be written against an open set of encodings. A body that violates the writer rule is still <em>read</em> by a conforming reader; what it forfeits is being <em>found</em> by a mirror that has not fetched it.</p>
+</li>
+<li><p>The frontmatter MUST NOT be hidden from rendering (e.g. inside an HTML comment): invisible data is data nobody maintains, and human writers cannot correct what they cannot see.</p>
+</li>
+<li><p>Issue body text is untrusted input in most pipelines. Readers MUST parse the frontmatter with a plain YAML data parser (no anchors resolving to arbitrary object construction, no custom tags) and MUST treat everything outside the recognized fields as inert.</p>
+</li>
+<li><p>Trackers with native equivalents (sub-issue APIs, dependency features, priority labels) MAY mirror issuegraph fields into native features for human ergonomics. <strong>For relationship fields, the frontmatter is canonical</strong>; on disagreement, the frontmatter wins, and the disagreement SHOULD be surfaced by grooming. The scalar fields (<code>priority</code>, <code>evidence</code>) run the other way — see 4.3.5 for the carrier-precedence rule.</p>
+</li>
+</ul>
+<h3 id="42-issue-references"><a class="anchor" href="#42-issue-references">4.2 Issue references</a></h3>
+<p>A reference is an <strong>opaque tracker-scoped identifier</strong>. It MAY carry a leading <code>#</code> sigil, and it MAY be qualified by a <code>owner/repo</code> prefix separated by <code>#</code>. All four of these are references, and readers MUST support all four:</p>
+<table>
+<thead>
+<tr>
+<th>form</th>
+<th>meaning</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>123</code></td>
+<td>an issue in the same repository/project</td>
+</tr>
+<tr>
+<td><code>&quot;#123&quot;</code></td>
+<td>the same issue — the sigil is spelling, not identity</td>
+</tr>
+<tr>
+<td><code>ABC-123</code></td>
+<td>a non-numeric tracker identifier (Jira, Linear, and anything else)</td>
+</tr>
+<tr>
+<td><code>owner/repo#123</code></td>
+<td>an issue in another repository/project</td>
+</tr>
+</tbody></table>
+<p>The identifier is <strong>opaque</strong>: a reader compares references, it does not interpret them. <code>123</code> and <code>#123</code> denote the same issue and MUST parse to the same reference, so the sigil is never part of the stored identifier.</p>
+<p><strong>Opaque does not mean unconstrained, and the grammar is normative.</strong> An identifier is one or more characters from <code>A-Z a-z 0-9 . _ -</code>, beginning with a letter or a digit. Anything else is not a reference: a reader MUST reject it (dropping the field with a diagnostic, per 4.1) and a writer MUST refuse to emit it.</p>
+<p>The bound exists because three separate mechanisms in this format read the identifier back, and each excludes something:</p>
+<ul>
+<li><strong>The writer emits a reference inside a quoted scalar</strong>, so <code>&quot;</code> and <code>\</code> would break the very quoting the sigil rule below requires.</li>
+<li><strong><code>#</code> separates the sigil and the qualifier</strong>, and <strong><code>/</code> separates <code>owner</code> from <code>repo</code></strong>, so neither can appear in an identifier without making a reference ambiguous.</li>
+<li><strong>Whitespace cannot be part of an identifier.</strong> Readers strip it from a plain scalar and preserve it inside quotes, so admitting it would make <code>123</code> and <code>&quot; 123 &quot;</code> two different references for the same issue.</li>
+</ul>
+<p>A specification that said &quot;whatever string the tracker uses&quot; would be unimplementable: two conforming readers would disagree about <code>&quot; a b &quot;</code>, and a conforming writer could emit a block its own reader cannot parse. So the class is stated, and this table is the conformance surface:</p>
+<table>
+<thead>
+<tr>
+<th>identifier</th>
+<th>accepted</th>
+<th>why</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>231</code></td>
+<td>yes</td>
+<td>numeric, canonical, in range</td>
+</tr>
+<tr>
+<td><code>ABC-123</code></td>
+<td>yes</td>
+<td>the Jira and Linear shape</td>
+</tr>
+<tr>
+<td><code>a.b_c-1</code></td>
+<td>yes</td>
+<td>every permitted punctuation mark</td>
+</tr>
+<tr>
+<td><code>0</code></td>
+<td>no</td>
+<td>not a positive integer</td>
+</tr>
+<tr>
+<td><code>007</code></td>
+<td>no</td>
+<td>an all-digits identifier must be canonical</td>
+</tr>
+<tr>
+<td><code>a b</code></td>
+<td>no</td>
+<td>whitespace</td>
+</tr>
+<tr>
+<td><code>a/b</code></td>
+<td>no</td>
+<td><code>/</code> separates <code>owner</code> from <code>repo</code></td>
+</tr>
+<tr>
+<td><code>a#b</code></td>
+<td>no</td>
+<td><code>#</code> separates the sigil and the qualifier</td>
+</tr>
+<tr>
+<td><code>a&quot;b</code></td>
+<td>no</td>
+<td>would break the writer&#39;s quoted rendering</td>
+</tr>
+<tr>
+<td><code>ABC:123</code></td>
+<td>no</td>
+<td>outside the class — see below</td>
+</tr>
+</tbody></table>
+<p><strong>An identifier is never typed.</strong> Readers MUST take a plain scalar&#39;s identifier from its <strong>source text</strong>, not from whatever a YAML schema makes of it. <code>1e5</code>, <code>0x1F</code> and <code>007</code> are identifiers, not numbers — a reader that materializes them first sees <code>100000</code>, <code>31</code> and <code>7</code>, silently pointing the edge at a different issue and bypassing the canonical-number rule above. By the same rule a token a schema would read as a boolean is still just an identifier; it will not resolve against any tracker, and an unresolvable reference blocks (6.2), which is the safe direction.</p>
+<p><strong>Widening the class is a spec revision, not an implementation choice.</strong> A tracker whose identifiers carry other punctuation is not modelled today, and the failure is loud on both sides rather than silent — the reader reports a dropped field and the writer throws — so a consumer learns immediately rather than filing a graph that lies. A future revision MAY widen it; the constraints it must keep are the three above.</p>
+<p><strong>Numeric identifiers carry one bound.</strong> An all-digits identifier MUST be a positive integer exactly representable by the host language&#39;s integer type, written canonically (no leading zeros). This is not arithmetic on the identifier — it is what makes a reference survive a re-render: a value outside that range comes back from a naive round-trip in a spelling (<code>1e+21</code>) no reader accepts, so an identifier that parsed cleanly would be written back unparseable. Identifiers that are not all digits carry no such bound.</p>
+<p><strong><code>#</code>-sigil references MUST be quoted.</strong> <code>#</code> opens a comment in YAML, and the two unquoted spellings fail differently — one loudly, one silently:</p>
+<table>
+<thead>
+<tr>
+<th>written</th>
+<th>result</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>blocked-by: [#123, #124]</code></td>
+<td>a parse <strong>error</strong></td>
+</tr>
+<tr>
+<td><code>blocked-by:</code> / <code>  - #123</code></td>
+<td>parses to <code>[null, null]</code> — <strong>silently empty</strong></td>
+</tr>
+<tr>
+<td><code>blocked-by: [&quot;#123&quot;, &quot;#124&quot;]</code></td>
+<td>the two references</td>
+</tr>
+</tbody></table>
+<p>The block-sequence case is why this is normative rather than advice: it is a successful parse, with no error and no warning, of a body that declares two edges and produces none. An issue whose blockers vanished reads exactly like an issue with no blockers — a park indistinguishable from a free issue. Readers SHOULD refuse a null list member rather than dropping it, for the same reason.</p>
+<p>A qualified reference needs no quoting, because no whitespace precedes its <code>#</code>; writers MAY quote it anyway for consistency.</p>
+<h3 id="43-fields"><a class="anchor" href="#43-fields">4.3 Fields</a></h3>
+<p>All fields are optional. An issue with no issuegraph frontmatter is a valid node with no edges and default priority.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>blocked-by</code></td>
+<td>list of refs</td>
+<td>These issues must reach closure before this one may start. The only hard ordering fact.</td>
+</tr>
+<tr>
+<td><code>decomposed-from</code></td>
+<td>ref</td>
+<td>Provenance: this issue was produced by decomposing that one. Not a scheduling edge.</td>
+</tr>
+<tr>
+<td><code>duplicate-of</code></td>
+<td>ref</td>
+<td>This issue is the same work as that one; readers ignore this issue and treat the target as canonical.</td>
+</tr>
+<tr>
+<td><code>serialize-with</code></td>
+<td>ref</td>
+<td>This issue must not run concurrently with the referenced issue or anything transitively linked to it (see 4.3.4). No ordering implied.</td>
+</tr>
+<tr>
+<td><code>together-with</code></td>
+<td>ref</td>
+<td>This issue and the referenced issue (and anything transitively linked) are distinct issues forming <strong>one unit of work</strong> — selected, claimed, and worked together (see 4.3.7).</td>
+</tr>
+<tr>
+<td><code>priority</code></td>
+<td>integer 0–3</td>
+<td>0 is most urgent. Absent means 2. Carrier precedence in 4.3.5.</td>
+</tr>
+<tr>
+<td><code>evidence</code></td>
+<td><code>asserted</code> | <code>verified</code></td>
+<td>Whether the issue&#39;s factual claims were verified by the writer or merely asserted. Absent means <code>asserted</code> for machine-written issues.</td>
+</tr>
+</tbody></table>
+<h4 id="431-blocked-by"><a class="anchor" href="#431-blocked-by">4.3.1 <code>blocked-by</code></a></h4>
+<p>Stored on the <strong>blocked</strong> issue, never the blocker — the fact lives where the decision (&quot;can I start this?&quot;) is read. There is no <code>blocks</code> field; a reverse index is the reader&#39;s job. Everything else about sequencing reduces to this field.</p>
+<h4 id="432-decomposed-from"><a class="anchor" href="#432-decomposed-from">4.3.2 <code>decomposed-from</code></a></h4>
+<p>Provenance, not hierarchy. Issuegraph has <strong>no container issues</strong>: there is no issue kind that exists only to hold other issues. What legacy processes called a &quot;tracking issue&quot; is, under this specification, an ordinary issue whose work product was a decomposition (see 5.2) — it closes when the split is done, like any other issue. The story it used to hold is carried by <code>decomposed-from</code> edges and reconstructed by query. A &quot;verify the composed whole&quot; gate, when one is wanted, is an ordinary workable issue <code>blocked-by</code> all its siblings.</p>
+<p>Because there are no containers, there is no containment-inheritance question: blocking never inherits &quot;downward,&quot; because there is no downward.</p>
+<h4 id="433-duplicate-of"><a class="anchor" href="#433-duplicate-of">4.3.3 <code>duplicate-of</code></a></h4>
+<p>Points at the canonical issue. The set of duplicates is derived by readers (everything pointing, transitively, at the canonical node); it is never maintained as a roster. Writers detecting a duplicate MUST point the <em>newer</em> issue at the <em>older</em> unless there is a specific reason to prefer otherwise, and SHOULD say why when they deviate.</p>
+<h4 id="434-serialize-with"><a class="anchor" href="#434-serialize-with">4.3.4 <code>serialize-with</code></a></h4>
+<p>Expresses mutual exclusion without ordering: &quot;these must not run at the same time, in whatever order they happen to run.&quot; The canonical use is a <strong>conflict forecast</strong> — two features known to gut the same code, where concurrent runs produce rebase disasters despite no logical dependency either way.</p>
+<p>Semantics: the <strong>serialize group</strong> is the connected component over <code>serialize-with</code> edges, treated as undirected. A writer joins a group by pointing at <em>any one</em> existing member; it does not matter which, and chains (<code>B→A</code>, <code>C→B</code>, <code>D→C</code>) produce the same component as stars (<code>B→A</code>, <code>C→A</code>, <code>D→A</code>). Leaving a group is deleting your own field. No issue ever edits another issue&#39;s data to maintain a group, and no roster exists anywhere.</p>
+<p>Readers MUST admit at most one actively-claimed issue per serialize group at a time (a width-1 semaphore). Direction therefore emerges at claim time: whichever member is picked up first excludes the rest until it completes. Members that close leave the <em>active</em> group automatically (only open issues count) but remain valid anchors for other members&#39; edges — no cleanup is required or expected.</p>
+<p>Accidentally linking two groups merges them. This is deliberate fail-safety: the error direction is <em>more</em> serialization, which costs throughput, never correctness.</p>
+<p><code>serialize-with</code> earns its place only because a conflict forecast is knowledge the scheduler cannot derive — file overlap is only computable after the diffs exist, which is after the work is done. Together with <code>together-with</code> (4.3.7) it forms the format&#39;s complete coordination vocabulary beyond <code>blocked-by</code>, and both are <strong>hard constraints with exact reader behavior</strong>. Implementers are urged to resist preference-shaped additions (&quot;affinity,&quot; &quot;prefer-after,&quot; &quot;not-near&quot;): a preference a scheduler may ignore is a field that will go stale and mislead the reader that eventually honors it.</p>
+<h4 id="435-priority"><a class="anchor" href="#435-priority">4.3.5 <code>priority</code></a></h4>
+<p>An integer 0–3, 0 most urgent, matching the common P0–P3 convention; absent means 2. This is the <em>declared</em> priority; readers compute <em>effective</em> priority from it (6.3).</p>
+<p><strong>Carrier precedence — the rule for scalar fields, the reverse of the relationship fields.</strong> The scalar fields (<code>priority</code>, and <code>evidence</code> in 4.3.6) annotate a single issue with a value a human might flip; relationship fields carry references between issues. The precedence rule: <strong>where the tracker has an established convention for a scalar field (priority labels, an evidence label pair), the native convention is canonical</strong> and the frontmatter&#39;s field is an optional mirror; where no convention is established, the frontmatter carries the value. The reasoning is the same one that keeps holds out of the format (§2, 6.8): truth belongs in the carrier people actually edit. Humans and triage tooling flip labels; nobody re-edits YAML in an issue body to bump a priority — a frontmatter-canonical rule for scalars would put the authoritative value in the carrier guaranteed to go stale. Relationship fields don&#39;t have this problem (most trackers have no native edge convention worth the name), which is why the frontmatter stays canonical for them (4.1).</p>
+<p>Readers resolve declared priority: the tracker&#39;s established convention if one exists, else the frontmatter field, else 2. Grooming surfaces disagreements between carriers (5.4).</p>
+<h4 id="436-evidence"><a class="anchor" href="#436-evidence">4.3.6 <code>evidence</code></a></h4>
+<p>Machine-filed issues are hypotheses. Operational experience shows agents filing issues whose central claims are false — a function said to misbehave that did not, a component said to be dead that was referenced, a dependency said to exist that was absent — each caught only because the next agent re-verified before acting. A human-written issue carries implicit authority; a machine-written one has not earned it. <code>evidence: asserted</code> tells the next worker to verify before building; <code>verified</code> says the writer reproduced or otherwise confirmed the claim, and SHOULD be accompanied in the body by how.</p>
+<p>As a scalar field, <code>evidence</code> follows the carrier-precedence rule (4.3.5): an executor that establishes a native convention for it (e.g. an <code>evidence:verified</code> label an agent flips after reproducing the claim) makes that convention canonical, with the frontmatter as fallback where none exists. The flip from <code>asserted</code> to <code>verified</code> is exactly the kind of single-value edit label conventions handle better than body-YAML edits.</p>
+<h4 id="437-together-with"><a class="anchor" href="#437-together-with">4.3.7 <code>together-with</code></a></h4>
+<p>Expresses a <strong>unit of work spanning distinct issues</strong>: &quot;these are separate issues, but they must be selected, claimed, and worked as one.&quot; Two canonical uses:</p>
+<ul>
+<li><strong>Cross-repository coupling</strong> — one logical change that necessarily spans trackers: a spec change and its implementation, an API and its client. Merging them into one issue is impossible; working them separately produces broken intermediate states.</li>
+<li><strong>Shared-fix coupling</strong> — independently-filed issues describing <em>different</em> problems resolved by one change (two distinct defects, one refactor fixes both). <code>duplicate-of</code> would be false — they are not the same work and each needs its own closure trail — but working them apart is waste or conflict.</li>
+</ul>
+<p>Encoding mirrors <code>serialize-with</code>: symmetric, one edge per joining issue pointing at any existing member; the <strong>together group</strong> is the connected component; joining is one write on the joiner, leaving is deleting your own field; accidental linkage merges groups.</p>
+<p>Reader semantics — a together group is one schedulable unit:</p>
+<ul>
+<li><strong>Readiness</strong>: the group is ready when every open member is ready per §6.2, evaluating <code>blocked-by</code> over <strong>boundary-crossing edges only</strong>. Internal <code>blocked-by</code> edges (member blocking member) are not readiness inputs — they would deadlock the group against itself — and are surfaced to the worker as advisory ordering and to grooming as a possible smell.</li>
+<li><strong>Claim</strong>: atomic — claiming any member claims the group. For serialize admission (4.3.4), the whole group is one claim.</li>
+<li><strong>Effective priority</strong>: the maximum (numerically lowest) over members, composed with §6.3&#39;s backward flow.</li>
+<li><strong>Closure</strong>: members close individually as their deliverables land; the unit constraint is about <em>working</em>, not about closing in the same instant.</li>
+</ul>
+<p>Boundaries with neighbors, in one line each: <code>duplicate-of</code> says <em>same work — keep one</em>; <code>together-with</code> says <em>different work — one unit</em>; <code>serialize-with</code> says <em>either order — never overlapping</em>; <code>blocked-by</code> says <em>this order — no overlap question</em>.</p>
+<p>A caution symmetric to 4.3.4&#39;s: <code>together-with</code> inside a single repository is often a <strong>decomposition smell</strong> — if two halves of a split cannot stand alone, ask whether the split was right before coupling them back together. Its home ground is coupling that cannot be merged into one issue.</p>
+<h2 id="5-writing-rules"><a class="anchor" href="#5-writing-rules">5. Writing rules</a></h2>
+<p>These rules bind <strong>every</strong> writer — human or machine, front-of-pipeline or back. A pipeline&#39;s grooming pass, residual filer, and triage bot are writers in exactly the sense a decomposing agent is, and emit graph data under the same rules. Writing the graph is not a special activity; it is part of writing any issue.</p>
+<h3 id="51-write-at-creation-time"><a class="anchor" href="#51-write-at-creation-time">5.1 Write at creation time</a></h3>
+<p>Graph fields are written when the issue is written, by the writer that has the knowledge, not retrofitted later by someone reconstructing intent. A triage pass that assigns priority writes <code>priority</code>. A grooming pass that detects duplication writes <code>duplicate-of</code> — a dedupe verdict <em>is</em> an edge; discarding the relationship and keeping only a close-action throws structure away. A residual filer creating follow-up work writes <code>blocked-by</code> when the follow-up genuinely cannot land first.</p>
+<h3 id="52-the-size-rule"><a class="anchor" href="#52-the-size-rule">5.2 The size rule</a></h3>
+<p><strong>An issue is either small enough to work, or the only work permitted on it is decomposition.</strong></p>
+<p>Decomposition is a defined job with a defined deliverable: the smaller issues <strong>plus the edges between them</strong> — <code>blocked-by</code> where order exists, <code>serialize-with</code> where a conflict forecast exists, <code>decomposed-from</code> on every produced issue — written at split time, by the splitter. An issue that was decomposed closes when its decomposition is complete; it does not linger as a container (4.3.2).</p>
+<p>What counts as &quot;small enough&quot; is executor policy (a pipeline that wants small PRs draws the line accordingly); <em>that the line exists and that crossing it produces edges</em> is what this specification fixes.</p>
+<h3 id="53-closure-semantics"><a class="anchor" href="#53-closure-semantics">5.3 Closure semantics</a></h3>
+<p><code>blocked-by</code> is satisfied by <strong>closure</strong>, of any kind. A dependent MUST NOT remain blocked on an issue that will never be worked.</p>
+<p>However, closure kinds differ in what they imply for dependents:</p>
+<ul>
+<li><strong>Completed</strong> closure satisfies the dependency with no further obligation.</li>
+<li><strong>Non-completed</strong> closure (won&#39;t-do, superseded, closed as duplicate) also unblocks — but it may invalidate the dependent&#39;s premise. Writers closing an issue as superseded SHOULD rewire dependents&#39; <code>blocked-by</code> to the superseding issue where the dependency genuinely transfers. Readers and grooming passes MUST treat &quot;unblocked by a non-completed closure&quot; as a signal to re-examine the dependent before it is worked.</li>
+</ul>
+<h3 id="54-grooming-obligations"><a class="anchor" href="#54-grooming-obligations">5.4 Grooming obligations</a></h3>
+<p>A conforming grooming pass (any recurring maintenance process, human or machine) SHOULD surface:</p>
+<ul>
+<li>unresolvable references (targets deleted, moved, or unreachable),</li>
+<li>dependency cycles (6.6),</li>
+<li>serialize groups whose members have all been open and untouched for an extended period (stale forecasts),</li>
+<li>disagreements between the canonical frontmatter and any native-feature mirror (4.1),</li>
+<li>dependents unblocked by non-completed closures (5.3),</li>
+<li>issues held ineligible by executor conventions (§6.8) for an extended period — a hold that never lifts is a decision nobody is making,</li>
+<li>internal <code>blocked-by</code> edges within a together group (advisory ordering or a sign the coupling is wrong — 4.3.7), and together groups too large to work as one unit (a decomposition problem wearing a coupling costume).</li>
+</ul>
+<h3 id="55-human-gates-name-the-question"><a class="anchor" href="#55-human-gates-name-the-question">5.5 Human gates: name the question</a></h3>
+<p>Work is often blocked on a person rather than on another issue: a decision to make, an approval to grant, an account action only a human can take. Two mechanisms exist, and choosing between them follows one rule: <strong>if you can name the question, make it a node; if you can&#39;t, hold the issue.</strong></p>
+<ul>
+<li><strong>A decision issue</strong> (RECOMMENDED whenever the blocker is a specific, answerable question). Write the question as its own issue — &quot;Decide: adopt X or build Y,&quot; &quot;Approve the ceiling change&quot; — and put it in the dependent work&#39;s <code>blocked-by</code>. The gate is now an ordinary graph node: it lifts by ordinary closure, dependents become ready by the ordinary rule, and — the property that makes this worth the ceremony — <strong>effective priority flows backward into it</strong> (§6.3). The humans answering questions get a queue ordered by how urgent the work behind each question is, instead of a flat pile of flagged issues. Executors classify a decision issue&#39;s deliverable as human-performed (§2) and route it to their human-attention surface rather than to automated work.</li>
+<li><strong>A hold</strong> (a tracker-native label or state, per §6.8) for diffuse attention that has no single answerable question — &quot;this RFC needs discussion,&quot; &quot;customer escalation, handle manually.&quot; Holds are the honest representation of <em>unstructured</em> human involvement; converting them into vague decision issues (&quot;figure this out&quot;) adds nodes without adding information.</li>
+</ul>
+<p>A hold that turns out to contain a specific question SHOULD be converted: file the decision issue, add the edge, drop the hold.</p>
+<h2 id="6-reading-rules"><a class="anchor" href="#6-reading-rules">6. Reading rules</a></h2>
+<h3 id="61-graph-construction"><a class="anchor" href="#61-graph-construction">6.1 Graph construction</a></h3>
+<p>A reader parses the canonical frontmatter from each issue in its scope, resolves references, and builds: the dependency graph (<code>blocked-by</code>), the duplicate mapping (<code>duplicate-of</code> closure to canonical), the serialize components (<code>serialize-with</code>, undirected, union-find), and provenance (<code>decomposed-from</code>). Readers maintain whatever indexes they need; the format never stores derived data.</p>
+<h3 id="62-the-ready-set"><a class="anchor" href="#62-the-ready-set">6.2 The ready set</a></h3>
+<p>An issue is <strong>ready</strong> when all of the following hold:</p>
+<ol>
+<li>it is open;</li>
+<li>it is not a duplicate (no <code>duplicate-of</code>, directly or transitively);</li>
+<li>every issue in its <code>blocked-by</code> list is closed — for members of a together group, evaluated over boundary-crossing edges only (4.3.7);</li>
+<li>its serialize group (if any) has no actively-claimed member;</li>
+<li>if it belongs to a together group, every other open member also satisfies 1–4 (the group is ready as a unit or not at all).</li>
+</ol>
+<p>Issues that are not ready MUST be invisible to selection. This retires pre-claiming: unready work needs no protection from an eager scheduler, because the scheduler cannot see it.</p>
+<h3 id="63-effective-priority"><a class="anchor" href="#63-effective-priority">6.3 Effective priority</a></h3>
+<p><strong>Importance flows backward along blocking edges.</strong> If a minor issue blocks an urgent one, it is not minor — it is the most urgent thing in the system, because nothing else unblocks the urgent one.</p>
+<p>The <strong>effective priority</strong> of an issue is the highest declared priority (numerically lowest value) among itself and every open issue that transitively depends on it through <code>blocked-by</code>. A together group&#39;s effective priority is the highest over its members. Readers MUST select by effective priority, not declared priority. A naive scheduler that sorts by declared priority finds the urgent item blocked, moves on to the next-most-urgent thing it <em>can</em> do, and leaves the actual critical path at the bottom of the queue while everything looks busy.</p>
+<h3 id="64-selection"><a class="anchor" href="#64-selection">6.4 Selection</a></h3>
+<blockquote>
+<p>A reader selects work by: <strong>effective priority</strong> among <strong>ready, eligible</strong> issues, <strong>newest first</strong> as the default tiebreak.</p>
+</blockquote>
+<p>Readiness is the graph&#39;s verdict (§6.2); eligibility is the executor&#39;s (§6.8). Both must hold. Together groups enter selection as single units: one candidate, one claim, group effective priority (4.3.7).</p>
+<p><strong>Why newest-first.</strong> The tiebreak&#39;s old job — starvation avoidance — is done better by the graph itself: an old issue that matters blocks something, and effective priority hands it the urgency of whatever waits on it. What a tiebreak can still buy is <strong>premise freshness</strong>: issue bodies rot as the code moves, and newer issues describe the codebase that exists. An executor MAY substitute another deterministic tiebreak where its domain argues for one; what is NOT conformant is a non-deterministic pick.</p>
+<p>This is deliberately a cheap query: one indexed pass, incrementally recomputable on events (an issue closed, an edge written). &quot;Issue closed&quot; is the event that moves the frontier: dependents whose last blocker closed <em>become ready</em> at that moment — no polling.</p>
+<h3 id="65-parallelism"><a class="anchor" href="#65-parallelism">6.5 Parallelism</a></h3>
+<p>Ready issues are safe to run concurrently <strong>by construction</strong> — anything unsafe is either blocked (not ready) or serialized (group admission). How many ready issues to dispatch at once is scheduler policy, out of scope (§2).</p>
+<h3 id="66-cycles"><a class="anchor" href="#66-cycles">6.6 Cycles</a></h3>
+<p>A <code>blocked-by</code> cycle is detected <strong>on read</strong> and surfaced as a stuck group; writers are not required to prevent it at write time. Write-time rejection pushes writers into describing the dependency in prose instead, which is strictly worse than a cycle a groomer can see. Issues in a cycle are not ready.</p>
+<p><strong>The cycle graph is over schedulable units, not over issues.</strong> A <code>together</code> group is one unit of work (4.3.7), so a blocker on any member blocks every member: contract each group to a single vertex before searching, using <strong>boundary-crossing edges only</strong>. Internal <code>blocked-by</code> edges stay advisory, exactly as they are for readiness — they would make every group carrying its own ordering read as stuck. A self-loop on a single issue is unaffected, because a lone issue is its own unit.</p>
+<p>Without the contraction a real deadlock has no surface at all. <code>#1 blocked-by #2</code>, <code>#3 blocked-by #1</code>, <code>#2 together-with #3</code> can never start — #2 waits on its partner #3, #3 waits on #1, #1 waits on #2 — yet every issue reports an ordinary open blocker and the stuck group is empty. That is precisely the state detect-on-read exists to prevent, so a reader that does not contract is not conforming.</p>
+<p>A stuck group is reported as <strong>issue keys</strong>, every open member of every unit in it. A groomer needs issues it can open.</p>
+<p><strong>A reader MAY also carry the group&#39;s ordered walk</strong>, in <code>blocked-by</code> direction — <code>a → b</code> reads <em>a waits on b</em> — with each member named <strong>once</strong> and the return edge to the head implied. It starts at the lexicographically smallest member key, so two reads of one backlog agree. The walk is presentational: it changes no readiness, and <strong>a reader that omits it is still conforming</strong>.</p>
+<p>It is emitted only where the component <strong>is</strong> exactly one simple cycle over units <strong>and</strong> every unit on it holds exactly one open member. Both limits exist because the alternative is asserting an ordering that is not there. A component carrying several simple cycles has no canonical representative and one is not invented. A multi-member unit cannot go on an issue-level <code>blocked-by</code> arrow at all: in the worked example above the unit cycle is <code>{1} → {2,3} → {1}</code>, carried by <em>1 waits on 2</em> and <em>3 waits on 1</em>, so an issue-level line would have to hop from <code>#2</code> to <code>#3</code> across the group&#39;s own <code>together-with</code> — which is not a dependency, and drawing it as one asserts an edge that does not exist. The cost is worth stating: that example is this section&#39;s own flagship deadlock, and it is exactly the case that gets no walk.</p>
+<h3 id="67-unresolvable-references"><a class="anchor" href="#67-unresolvable-references">6.7 Unresolvable references</a></h3>
+<p>A <code>blocked-by</code> reference that cannot be resolved MUST be treated as <strong>blocking</strong> (fail-safe: unknown state is not &quot;closed&quot;) and MUST be surfaced for grooming. Unresolvable <code>serialize-with</code> references contribute no linkage but are likewise surfaced.</p>
+<h3 id="68-holds-and-eligibility"><a class="anchor" href="#68-holds-and-eligibility">6.8 Holds and eligibility</a></h3>
+<p>The ready set (§6.2) is the graph&#39;s answer to &quot;may this start?&quot; — it is <strong>necessary, not sufficient</strong>. Executors compose it with their own <strong>eligibility</strong> gates: tracker-native hold conventions (a <code>needs-human</code> label, a paused state), claim protocols, capability classifications (§2), operational switches. A held issue is <em>ready but ineligible</em>: invisible to selection, exactly like an unready one.</p>
+<p>Two rules keep the composition clean:</p>
+<ul>
+<li>Hold semantics MUST NOT be encoded as format fields (§2). The format never learns why an executor declines ready work.</li>
+<li>Effective priority (§6.3) is computed from the graph <strong>regardless of holds</strong> — a held issue that blocks urgent work still propagates that urgency. This is deliberate: it is what surfaces &quot;the most urgent thing in the system is waiting on a hold nobody is looking at,&quot; which grooming (§5.4) and human-attention surfaces consume. Compare §5.5: when the hold is really a nameable question, a decision issue represents it better.</li>
+</ul>
+<h2 id="7-prior-art"><a class="anchor" href="#7-prior-art">7. Prior art</a></h2>
+<ul>
+<li><strong>ForgeFed</strong> defines ticket-dependency vocabulary for federated forges; where relation semantics coincide, this specification prefers compatible naming rather than a private dialect.</li>
+<li><strong>wg</strong> (graphwork) is a dependency-graph orchestration tool coordinating humans and AI agents — a standalone work-OS with its own store, its own coordinator, and execution state (claims, progress, logs) embedded in its graph. It is the closest system in spirit, and the sharpest contrast in design: Issuegraph annotates existing trackers and excludes execution state entirely (§2), precisely so the format is not coupled to any executor. An Issuegraph-annotated backlog could be exported to wg&#39;s format for its tooling; the reverse is not generally true.</li>
+<li><strong>Asana&#39;s Work Graph®</strong> is a commercial work-management data model; the name and the containerless direction here are unrelated developments, and the trademark is one reason this specification is not called a work graph.</li>
+<li><strong>OSLC</strong> is the only genuinely vendor-neutral standard in this space and is far too heavy for the problem; worth knowing exists, not worth adopting.</li>
+<li><strong>Native tracker features</strong> (sub-issues, dependency links, priority labels) are mirrors, not competitors (4.1): they carry parts of the graph for human ergonomics wherever the tracker supports them.</li>
+</ul>
+<h2 id="8-versioning-and-stability"><a class="anchor" href="#8-versioning-and-stability">8. Versioning and stability</a></h2>
+<p>This is <strong>v0.3.0, a draft</strong>. It is published for implementation, not for adoption claims: the intent is to implement it against at least one real backlog with a real automated pipeline, amend it from what breaks, and only then stamp 1.0. Fields that survive contact stay; fields nobody writes get cut. Breaking changes before 1.0 are expected and will be recorded in the changelog.</p>
+<hr>
+<p><em>Stewarded by Autonomy LLC. Licensed under Apache-2.0.</em></p>
+
+</main>
+<footer>v0.3.0 draft · Apache-2.0 · Stewarded by <a href="https://meetautonomy.com/">Autonomy LLC</a> · Related: <a href="https://descant.run/">Descant</a> (uses Issuegraph) · <a href="https://ma2h.org/">MA2H</a> · <a href="https://ohhai.app/">OH HAI</a></footer>
+</div>
+</body>
+</html>

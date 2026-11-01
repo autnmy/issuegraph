@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Issuegraph FAQ · Issue dependencies for AI coding agents</title>
+<meta name="description" content="Answers about Issuegraph: what it is, which trackers it works with, its seven fields, how agents pick the next ready issue, parallelism, the npm reference implementation and licensing.">
+<link rel="canonical" href="https://issuegraph.org/faq/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Issuegraph">
+<meta property="og:url" content="https://issuegraph.org/faq/">
+<meta property="og:title" content="Issuegraph FAQ · Issue dependencies for AI coding agents">
+<meta property="og:description" content="Answers about Issuegraph: what it is, which trackers it works with, its seven fields, how agents pick the next ready issue, parallelism, the npm reference implementation and licensing.">
+<meta property="og:image" content="https://issuegraph.org/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Issuegraph FAQ · Issue dependencies for AI coding agents">
+<meta name="twitter:description" content="Answers about Issuegraph: what it is, which trackers it works with, its seven fields, how agents pick the next ready issue, parallelism, the npm reference implementation and licensing.">
+<meta name="twitter:image" content="https://issuegraph.org/og.png">
+<link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,300;6..72,400;6..72,500&family=Geist+Mono:wght@400;500&display=swap">
+<style>:root{--bg:#F5F6F3;--panel:#fff;--ink:#1B1E1C;--ink2:#474D48;--rule:#E2E4DF;--chip:#EEF0EC;--accent:#2440C8;--serif:Newsreader,Georgia,"Times New Roman",serif;--mono:"Geist Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+@media(prefers-color-scheme:dark){:root{--bg:#121413;--panel:#1a1d1b;--ink:#E7EAE6;--ink2:#B4BAB4;--rule:#2a2e2b;--chip:#202421;--accent:#8DA2FF}}
+body{margin:0;background:var(--bg);color:var(--ink);font:19px/1.6 var(--serif)}
+*{box-sizing:border-box}a{color:var(--accent)}.wrap{max-width:820px;margin:0 auto;padding:24px 20px 64px}
+header.top{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:baseline;border-bottom:1px solid var(--rule);padding-bottom:12px;margin-bottom:28px;font:14px/1.4 var(--mono)}
+header.top b a{color:var(--ink);text-decoration:none}header.top a{text-decoration:none}
+.crumbs{font:13px var(--mono);color:var(--ink2);margin-bottom:8px}.crumbs a{color:var(--ink2)}
+h1{font-size:2em;line-height:1.2;margin:.2em 0 .4em}h2{margin-top:2em;border-top:1px solid var(--rule);padding-top:1em}h1,h2,h3,h4{font-weight:500}
+a.anchor{color:inherit;text-decoration:none}
+code{font:.85em var(--mono);background:var(--chip);padding:.1em .3em;border-radius:4px}pre{background:var(--panel);border:1px solid var(--rule);padding:14px;overflow:auto;border-radius:8px}pre code{background:none;padding:0}
+table{border-collapse:collapse;display:block;overflow:auto;font-size:.9em}th,td{border:1px solid var(--rule);padding:6px 9px;text-align:left;vertical-align:top}
+blockquote{margin:1em 0;padding:.2em 1em;border-left:3px solid var(--rule);color:var(--ink2)}
+nav.toc{background:var(--panel);border:1px solid var(--rule);border-radius:8px;padding:10px 18px;font-size:.92em}nav.toc ol{margin:.3em 0;padding-left:1.2em}
+.note{font:14px/1.5 var(--mono);color:var(--ink2)}details{border-bottom:1px solid var(--rule);padding:10px 0}summary{cursor:pointer;font-weight:500}
+footer{margin-top:56px;border-top:1px solid var(--rule);padding-top:14px;font:13px/1.6 var(--mono);color:var(--ink2)}</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"Organization","@id":"https://meetautonomy.com/#org","name":"Autonomy LLC","url":"https://meetautonomy.com/","sameAs":["https://github.com/autnmy"]},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Issuegraph","item":"https://issuegraph.org/"},{"@type":"ListItem","position":2,"name":"FAQ","item":"https://issuegraph.org/faq/"}]},{"@type":"FAQPage","url":"https://issuegraph.org/faq/","mainEntity":[{"@type":"Question","name":"What is Issuegraph?","acceptedAnswer":{"@type":"Answer","text":"Issuegraph is an open specification (v0.3.0 draft, Apache-2.0, stewarded by Autonomy LLC) for machine-readable issue dependencies and work ordering. It defines optional YAML frontmatter fields written directly on the issues in your existing tracker, plus writing and reading rules that let a scheduler — or a fleet of autonomous coding agents — work out which issues are ready to start. Read the spec."}},{"@type":"Question","name":"Which issue trackers does Issuegraph work with?","acceptedAnswer":{"@type":"Answer","text":"Any tracker that stores an issue body as text: GitHub Issues, Linear, Jira and others. There is no server, no new tool and no migration — the fields live in the issue body."}},{"@type":"Question","name":"What fields does Issuegraph define?","acceptedAnswer":{"@type":"Answer","text":"Seven optional fields: blocked-by, decomposed-from, duplicate-of, serialize-with, together-with, priority and evidence. See §4 The format."}},{"@type":"Question","name":"How do AI coding agents decide which issue to work on next with Issuegraph?","acceptedAnswer":{"@type":"Answer","text":"The reading rules compute a ready set (open, not a duplicate, every blocker closed, no actively-claimed member of its serialize group), then select by effective priority — importance flows backward along blocking edges, so a minor issue that blocks an urgent one becomes urgent — with newest-first as the default tiebreak."}},{"@type":"Question","name":"Can several agents work in parallel without conflicting?","acceptedAnswer":{"@type":"Answer","text":"Yes. serialize-with marks issues that must not run at the same time, and together-with groups issues that must ship as a unit; the reading rules use these to derive safe parallelism."}},{"@type":"Question","name":"Does Issuegraph track status, claims or who is working on what?","acceptedAnswer":{"@type":"Answer","text":"No. Issuegraph describes work, never execution: no claims, leases, in-progress states, retries or logs. Those belong to the system doing the work."}},{"@type":"Question","name":"How do I write an Issuegraph block?","acceptedAnswer":{"@type":"Answer","text":"Add a YAML frontmatter block at the top of the issue body with an issuegraph: key, e.g. blocked-by: [\"#231\", \"#234\"]. Quote # references (it is the YAML comment character) and leave a blank line before the closing ---."}},{"@type":"Question","name":"Is there a reference implementation?","acceptedAnswer":{"@type":"Answer","text":"Yes — TypeScript packages on npm under the @issuegraph scope: core, reader, writer, derive, cli, store and viewer. They are 0.x and unstable; pin exact versions. Try the live demo."}},{"@type":"Question","name":"Is the specification stable?","acceptedAnswer":{"@type":"Answer","text":"Not yet. v0.3.0 is a draft for implementation; field names and semantics may change until 1.0."}},{"@type":"Question","name":"Who uses Issuegraph?","acceptedAnswer":{"@type":"Answer","text":"Descant, an autonomous software-delivery pipeline, uses Issuegraph for graph parsing, ready-set and effective-priority selection, decomposition and grooming writers."}},{"@type":"Question","name":"How does Issuegraph relate to MA2H?","acceptedAnswer":{"@type":"Answer","text":"They are separate open specs from the same steward. Issuegraph describes the order of work on issues; MA2H is a protocol for agent fleets to notify, ask and hand tasks to a human through one hub, such as OH HAI."}},{"@type":"Question","name":"What license is Issuegraph under?","acceptedAnswer":{"@type":"Answer","text":"Apache-2.0, for both the specification and the reference implementation. It is stewarded by Autonomy LLC."}}]}]}</script>
+</head>
+<body>
+<div class="wrap">
+<header class="top"><b><a href="/">Issuegraph</a></b><a href="/spec/">Spec</a><a href="/faq/">FAQ</a><a href="/demo/">Demo</a><a href="/play/">Play</a><a href="https://github.com/autnmy/issuegraph">GitHub</a></header>
+<div class="crumbs"><a href="/">Issuegraph</a> / FAQ</div>
+<main>
+<h1>Issuegraph FAQ</h1>
+<p>Common questions about the Issuegraph specification. The <a href="/spec/v0.3/">spec</a> is authoritative where this page summarises.</p>
+<section><h2 id="q1">What is Issuegraph?</h2>
+<p>Issuegraph is an open specification (v0.3.0 draft, Apache-2.0, stewarded by Autonomy LLC) for machine-readable issue dependencies and work ordering. It defines optional YAML frontmatter fields written directly on the issues in your existing tracker, plus writing and reading rules that let a scheduler — or a fleet of autonomous coding agents — work out which issues are ready to start. <a href="/spec/v0.3/">Read the spec</a>.</p></section>
+<section><h2 id="q2">Which issue trackers does Issuegraph work with?</h2>
+<p>Any tracker that stores an issue body as text: GitHub Issues, Linear, Jira and others. There is no server, no new tool and no migration — the fields live in the issue body.</p></section>
+<section><h2 id="q3">What fields does Issuegraph define?</h2>
+<p>Seven optional fields: <code>blocked-by</code>, <code>decomposed-from</code>, <code>duplicate-of</code>, <code>serialize-with</code>, <code>together-with</code>, <code>priority</code> and <code>evidence</code>. See <a href="/spec/v0.3/#4-the-format">§4 The format</a>.</p></section>
+<section><h2 id="q4">How do AI coding agents decide which issue to work on next with Issuegraph?</h2>
+<p>The reading rules compute a <a href="/spec/v0.3/#62-the-ready-set">ready set</a> (open, not a duplicate, every blocker closed, no actively-claimed member of its serialize group), then select by <a href="/spec/v0.3/#63-effective-priority">effective priority</a> — importance flows backward along blocking edges, so a minor issue that blocks an urgent one becomes urgent — with newest-first as the default tiebreak.</p></section>
+<section><h2 id="q5">Can several agents work in parallel without conflicting?</h2>
+<p>Yes. <code>serialize-with</code> marks issues that must not run at the same time, and <code>together-with</code> groups issues that must ship as a unit; the reading rules use these to derive safe parallelism.</p></section>
+<section><h2 id="q6">Does Issuegraph track status, claims or who is working on what?</h2>
+<p>No. Issuegraph describes work, never execution: no claims, leases, in-progress states, retries or logs. Those belong to the system doing the work.</p></section>
+<section><h2 id="q7">How do I write an Issuegraph block?</h2>
+<p>Add a YAML frontmatter block at the top of the issue body with an <code>issuegraph:</code> key, e.g. <code>blocked-by: ["#231", "#234"]</code>. Quote <code>#</code> references (it is the YAML comment character) and leave a blank line before the closing <code>---</code>.</p></section>
+<section><h2 id="q8">Is there a reference implementation?</h2>
+<p>Yes — TypeScript packages on npm under the <code>@issuegraph</code> scope: <a href="https://www.npmjs.com/package/@issuegraph/core">core</a>, <a href="https://www.npmjs.com/package/@issuegraph/reader">reader</a>, <a href="https://www.npmjs.com/package/@issuegraph/writer">writer</a>, <a href="https://www.npmjs.com/package/@issuegraph/derive">derive</a>, <a href="https://www.npmjs.com/package/@issuegraph/cli">cli</a>, store and viewer. They are 0.x and unstable; pin exact versions. Try the <a href="/demo/">live demo</a>.</p></section>
+<section><h2 id="q9">Is the specification stable?</h2>
+<p>Not yet. v0.3.0 is a draft for implementation; field names and semantics may change until 1.0.</p></section>
+<section><h2 id="q10">Who uses Issuegraph?</h2>
+<p><a href="https://descant.run/">Descant</a>, an autonomous software-delivery pipeline, uses Issuegraph for graph parsing, ready-set and effective-priority selection, decomposition and grooming writers.</p></section>
+<section><h2 id="q11">How does Issuegraph relate to MA2H?</h2>
+<p>They are separate open specs from the same steward. Issuegraph describes the order of work on issues; <a href="https://ma2h.org/">MA2H</a> is a protocol for agent fleets to notify, ask and hand tasks to a human through one hub, such as <a href="https://ohhai.app/">OH HAI</a>.</p></section>
+<section><h2 id="q12">What license is Issuegraph under?</h2>
+<p>Apache-2.0, for both the specification and the reference implementation. It is stewarded by <a href="https://meetautonomy.com/">Autonomy LLC</a>.</p></section>
+</main>
+<footer>v0.3.0 draft · Apache-2.0 · Stewarded by <a href="https://meetautonomy.com/">Autonomy LLC</a> · Related: <a href="https://descant.run/">Descant</a> (uses Issuegraph) · <a href="https://ma2h.org/">MA2H</a> · <a href="https://ohhai.app/">OH HAI</a></footer>
+</div>
+</body>
+</html>
