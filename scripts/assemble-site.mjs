@@ -30,7 +30,17 @@ import { fileURLToPath } from 'node:url';
 export const SITE_PACKAGES = Object.freeze(['core', 'derive', 'editor', 'reader', 'store', 'viewer']);
 
 /** Files at the repository root the site serves as-is. */
-export const ROOT_FILES = Object.freeze(['index.html', 'CNAME', '.nojekyll']);
+export const ROOT_FILES = Object.freeze([
+  'index.html',
+  'CNAME',
+  '.nojekyll',
+  // Crawler and agent discovery files, served as-is at the site root.
+  'robots.txt',
+  'sitemap.xml',
+  'llms.txt',
+  'llms-full.txt',
+  '404.html',
+]);
 
 /** The Whack-an-Issue game at /play/: one self-contained page, no build step. */
 export const PLAY_FILES = Object.freeze(['play/index.html']);
