@@ -41,6 +41,8 @@ export const ROOT_FILES = Object.freeze([
   'llms-full.txt',
   '404.html',
   'og.png',
+  // IndexNow key file (search engine URL submission).
+  '6f8ddb54412f45d4ae745548c3bcb324.txt',
 ]);
 
 /** Static human + agent readable pages: the FAQ and the HTML rendering of SPEC.md. */
