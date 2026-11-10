@@ -99,12 +99,14 @@ const CASES: readonly Case[] = [
   { label: 'validate', argv: ['validate'], expectSame: true },
   { label: 'backfill', argv: ['backfill'], expectSame: true },
 
-  // THE RELEASE'S OWN CLAIM about what changed. Each of these exited `usage` at
-  // the baseline — a refusal, never a success — so nothing that worked moved.
-  { label: '--edges duplicateOf null', argv: ['splice', '--edges', '{"duplicateOf":null}'], expectSame: false },
-  { label: '--edges decomposedFrom null', argv: ['splice', '--edges', '{"decomposedFrom":null}'], expectSame: false },
-  { label: 'set --no-duplicate-of', argv: ['set', '--no-duplicate-of'], expectSame: false },
-  { label: 'set --no-decomposed-from', argv: ['set', '--no-decomposed-from'], expectSame: false },
+  // THE RELEASE'S OWN CLAIM about what changed (#116: `together-with` is an
+  // owned edge). Each of these was refused at the baseline — `usage` for the
+  // `--edges` key and the `--no-` flag, `refusedWrite` for the render-only
+  // amend — never a success, so nothing that worked moved.
+  { label: '--edges togetherWith ref', argv: ['splice', '--edges', '{"togetherWith":"#5"}'], expectSame: false },
+  { label: '--edges togetherWith null', argv: ['splice', '--edges', '{"togetherWith":null}'], expectSame: false },
+  { label: 'set --together-with (amend)', argv: ['set', '--together-with', '#5'], expectSame: false },
+  { label: 'set --no-together-with', argv: ['set', '--no-together-with'], expectSame: false },
 ];
 
 interface Run {

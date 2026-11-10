@@ -36,7 +36,7 @@ export type { RenderInput, RenderOptions } from './render.ts';
 /**
  * The splice's OWNERSHIP DOMAIN is exported alongside the call it governs: which
  * fields {@link spliceGeneratedEdges} can own, and — through {@link EdgeWrite} —
- * the one shape all four of them are written and cleared with. A consumer that
+ * the one shape every one of them is written and cleared with. A consumer that
  * validates a write request before making one needs both answers, and reading
  * them out of a doc comment is how four separate restatements of this rule came
  * to exist. {@link owns} inside the package derives from the same table, so

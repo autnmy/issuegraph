@@ -230,12 +230,12 @@ function ownedFieldMismatch(edges: EdgeSnapshot, after: Frontmatter | null): str
  * Where every recognised field lives on the parsed value.
  *
  * THE ONE SPELLING OF EACH FIELD'S PROPERTY NAME. `SPLICE_FIELD_OWNERSHIP`
- * below maps the four fields the splice can own onto `GeneratedEdges`, whose
- * property names coincide with `Frontmatter`'s — so its rows READ this table
- * rather than restating it, and a rename that reaches one cannot miss the
- * other. The three fields the splice can never own — `together-with`,
- * `priority`, `evidence` — exist only here, because only the unowned
- * comparison ever asks about them.
+ * below maps the five edge fields the splice can own onto `GeneratedEdges`,
+ * whose property names coincide with `Frontmatter`'s — so its rows READ this
+ * table rather than restating it, and a rename that reaches one cannot miss the
+ * other. The two fields the splice can never own — `priority` and `evidence`,
+ * which are not edges — exist only here, because only the unowned comparison
+ * ever asks about them.
  *
  * `as const` keeps each value a literal, which is what lets an ownership row
  * hand `FIELD_PROPERTY['blocked-by']` to a slot typed `keyof GeneratedEdges`;
@@ -324,7 +324,7 @@ export function unownedFieldMismatch(
  * serve. So `null` was taken, and those two fields had NO WAY TO CLEAR at all,
  * which is what [#18](https://github.com/autnmy/issuegraph/issues/18) reports.
  * Absent / `{ set }` / `{ clear }` are three spellings for three meanings, so
- * nothing is overloaded and all four fields read the same.
+ * nothing is overloaded and every owned field reads the same.
  *
  * TWO REJECTED ALTERNATIVES, because the next reader will think of both. A
  * DISTINCT SENTINEL (a `CLEAR` symbol, so `null` keeps its meaning) is cheaper
@@ -380,6 +380,7 @@ interface EdgeSnapshot {
   readonly owned: ReadonlySet<SpliceOwnedField>;
   readonly blockedBy: readonly IssueRef[];
   readonly serializeWith: IssueRef | null;
+  readonly togetherWith: IssueRef | null;
   readonly decomposedFrom: IssueRef | null;
   readonly duplicateOf: IssueRef | null;
 }
@@ -440,7 +441,7 @@ export type SpliceResult =
  * away unparseable items and exotic spellings the parser tolerates with a
  * diagnostic.
  *
- * ALL FOUR FIELDS BEHAVE IDENTICALLY, which they did not before #18: absent
+ * EVERY FIELD BEHAVES IDENTICALLY, which they did not before #18: absent
  * leaves the entry alone, `{ set }` replaces or inserts, `{ clear: true }`
  * removes. {@link EdgeWrite} carries why the uniform shape replaced a bare
  * value, and which two alternatives were rejected.
@@ -456,6 +457,8 @@ export interface GeneratedEdges {
   readonly blockedBy?: EdgeWrite<readonly IssueRef[]>;
   /** A SCHEDULING edge. */
   readonly serializeWith?: EdgeWrite<IssueRef>;
+  /** A SCHEDULING edge: one unit of work with the referenced issue (§4.3.7). */
+  readonly togetherWith?: EdgeWrite<IssueRef>;
   /** PROVENANCE: which issue this one was split out of (§5.2). */
   readonly decomposedFrom?: EdgeWrite<IssueRef>;
   /** A dedupe VERDICT (§4.3.3, §5.1). */
@@ -463,16 +466,17 @@ export interface GeneratedEdges {
 }
 
 /**
- * The edge fields this splice can own, spelled as they appear in a block.
+ * The edge fields this splice can own, spelled as they appear in a block: every
+ * edge field the specification defines.
  *
- * `together-with` is ABSENT rather than present-and-false: the splice cannot
- * write it at all, so it is not a member of this domain. A consumer asking
- * "can I splice this?" gets `false` from {@link isSpliceOwnedField} without the
- * table needing a third state to describe a field it does not handle.
+ * `together-with` joined in #116. Without it a host could land that edge only
+ * through a whole-block re-render, which drops every field the splice does not
+ * own — a human's `priority`, an `evidence`, unknown children, comments.
  */
 export const SPLICE_OWNED_FIELDS = Object.freeze([
   'blocked-by',
   'serialize-with',
+  'together-with',
   'decomposed-from',
   'duplicate-of',
 ] as const);
@@ -515,13 +519,14 @@ export interface SpliceFieldOwnership {
  * DIRECTION. Excess-property checking applies only to a FRESH object literal, so
  * `Object.freeze({…}) satisfies …` checks the freeze's RETURN VALUE — by then
  * the literal is spent, and an extra key rides through silently. Measured: with
- * the assertion outside, a bogus `'together-with'` row compiled clean, while the
- * missing-row direction failed correctly. A one-directional guard that reads as
+ * the assertion outside, a bogus `'together-with'` row (before #116 made it a
+ * member) compiled clean, while the missing-row direction failed correctly. A one-directional guard that reads as
  * two-directional is worse than none, because the comment above would be false.
  */
 export const SPLICE_FIELD_OWNERSHIP = Object.freeze({
   'blocked-by': Object.freeze({ property: FIELD_PROPERTY['blocked-by'] }),
   'serialize-with': Object.freeze({ property: FIELD_PROPERTY['serialize-with'] }),
+  'together-with': Object.freeze({ property: FIELD_PROPERTY['together-with'] }),
   'decomposed-from': Object.freeze({ property: FIELD_PROPERTY['decomposed-from'] }),
   'duplicate-of': Object.freeze({ property: FIELD_PROPERTY['duplicate-of'] }),
 } satisfies Readonly<Record<SpliceOwnedField, SpliceFieldOwnership>>);
@@ -546,7 +551,7 @@ export function isSpliceOwnedField(value: unknown): value is SpliceOwnedField {
  * DERIVED FROM {@link SPLICE_FIELD_OWNERSHIP}, not a switch restating it — see
  * that table's note.
  *
- * ONE PREDICATE FOR ALL FOUR FIELDS. It used to branch on `clearable`, because
+ * ONE PREDICATE FOR EVERY OWNED FIELD. It used to branch on `clearable`, because
  * a non-clearable field could only be owned when its property was non-`null` —
  * `null` there meant *leave alone*, so treating presence as ownership would
  * have deleted the entry. {@link EdgeWrite} removed the overload, so presence
@@ -737,6 +742,7 @@ function snapshotEdges(edges: GeneratedEdges): EdgeSnapshot {
   const values: Record<string, readonly IssueRef[] | IssueRef | null> = {
     blockedBy: [],
     serializeWith: null,
+    togetherWith: null,
     decomposedFrom: null,
     duplicateOf: null,
   };
@@ -762,6 +768,7 @@ function snapshotEdges(edges: GeneratedEdges): EdgeSnapshot {
     owned,
     blockedBy: (values['blockedBy'] ?? []) as readonly IssueRef[],
     serializeWith: values['serializeWith'] as IssueRef | null,
+    togetherWith: values['togetherWith'] as IssueRef | null,
     decomposedFrom: values['decomposedFrom'] as IssueRef | null,
     duplicateOf: values['duplicateOf'] as IssueRef | null,
   });
@@ -956,6 +963,7 @@ export function spliceGeneratedEdges(body: string, rawEdges: GeneratedEdges): Sp
   if (edges.decomposedFrom !== null) ins.push(`${pad}decomposed-from: ${renderRef(edges.decomposedFrom)}`);
   if (edges.duplicateOf !== null) ins.push(`${pad}duplicate-of: ${renderRef(edges.duplicateOf)}`);
   if (edges.serializeWith !== null) ins.push(`${pad}serialize-with: ${renderRef(edges.serializeWith)}`);
+  if (edges.togetherWith !== null) ins.push(`${pad}together-with: ${renderRef(edges.togetherWith)}`);
 
   const insertAt = firstOwned ?? sectionHeader + 1;
 

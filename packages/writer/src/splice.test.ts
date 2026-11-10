@@ -906,6 +906,81 @@ describe('an empty section takes its child indent from the header', () => {
 });
 
 /**
+ * `together-with` is an owned field since #116. Before, the only way to land it
+ * in a block that already existed was a whole-block re-render, which drops
+ * every field the splice does not own. These pin the surgical write for it.
+ */
+describe('together-with is spliced like any other owned edge (#116)', () => {
+  const PARTNER = { repo: null, id: '8' };
+  const AUTHORED = [
+    '---',
+    'issuegraph:',
+    '  blocked-by:',
+    '    - 7',
+    '  # owner ruling: keep this pair apart until the spike lands',
+    '  serialize-with: 4',
+    '  priority: 1',
+    '  evidence: verified',
+    '  risk-class: high',
+    'labels-hint: platform',
+    '---',
+    '',
+    'The brief body.',
+  ].join('\n');
+
+  it('inserts it into an existing block and leaves every other byte alone', () => {
+    const next = spliceGeneratedEdges(AUTHORED, { togetherWith: { set: PARTNER } }) as string;
+    assert.notEqual(next, null);
+    // Every authored line survives, the comment and both unknown keys included.
+    for (const line of AUTHORED.split('\n')) assert.ok(next.split('\n').includes(line), line);
+    assert.ok(next.includes('  together-with: "#8"'));
+    const data = parseFrontmatter(next).data;
+    assert.deepEqual(data?.togetherWith, PARTNER);
+    assert.deepEqual(data?.serializeWith, { repo: null, id: '4' });
+    assert.equal(data?.priority, 1);
+    assert.equal(data?.evidence, 'verified');
+  });
+
+  it('replaces an existing partner in place, with a cross-repository ref', () => {
+    const body = AUTHORED.replace('  priority: 1', '  together-with: 5\n  priority: 1');
+    const other = { repo: 'acme/widgets', id: '9' };
+    const next = spliceGeneratedEdges(body, { togetherWith: { set: other } }) as string;
+    assert.ok(!next.includes('together-with: 5'));
+    assert.equal(next.match(/together-with:/g)?.length, 1);
+    assert.deepEqual(parseFrontmatter(next).data?.togetherWith, other);
+  });
+
+  it('clears it and keeps the unowned neighbours', () => {
+    const body = AUTHORED.replace('  priority: 1', '  together-with: 5\n  priority: 1');
+    const next = spliceGeneratedEdges(body, { togetherWith: { clear: true } }) as string;
+    assert.ok(!next.includes('together-with'));
+    const data = parseFrontmatter(next).data;
+    assert.equal(data?.togetherWith, null);
+    assert.deepEqual(data?.blockedBy, [{ repo: null, id: '7' }]);
+    assert.equal(data?.priority, 1);
+    assert.ok(next.includes('  risk-class: high'));
+  });
+
+  it('retypes serialize-with into together-with in ONE call, so it cannot half-apply', () => {
+    const next = spliceGeneratedEdges(AUTHORED, {
+      serializeWith: { clear: true },
+      togetherWith: { set: { repo: null, id: '4' } },
+    }) as string;
+    const data = parseFrontmatter(next).data;
+    assert.equal(data?.serializeWith, null);
+    assert.deepEqual(data?.togetherWith, { repo: null, id: '4' });
+    assert.equal(data?.priority, 1);
+  });
+
+  it('refuses a malformed write by its field name', () => {
+    assert.throws(
+      () => spliceResult(AUTHORED, { togetherWith: { set: '#8' } } as unknown as GeneratedEdges),
+      (error: unknown) => error instanceof TypeError && String(error).includes('together-with'),
+    );
+  });
+});
+
+/**
  * The ownership domain, exported so consumers ask instead of re-deriving.
  *
  * THE DERIVATION PIN AT THE BOTTOM IS THE ONE THAT MATTERS. Everything above it
@@ -918,6 +993,7 @@ describe('the splice ownership domain', () => {
     assert.deepEqual([...SPLICE_OWNED_FIELDS], [
       'blocked-by',
       'serialize-with',
+      'together-with',
       'decomposed-from',
       'duplicate-of',
     ]);
@@ -933,7 +1009,7 @@ describe('the splice ownership domain', () => {
   it('maps each field to a distinct GeneratedEdges property', () => {
     const properties = SPLICE_OWNED_FIELDS.map((f) => SPLICE_FIELD_OWNERSHIP[f].property);
     assert.equal(new Set(properties).size, properties.length, 'two fields share one property');
-    assert.deepEqual(properties, ['blockedBy', 'serializeWith', 'decomposedFrom', 'duplicateOf']);
+    assert.deepEqual(properties, ['blockedBy', 'serializeWith', 'togetherWith', 'decomposedFrom', 'duplicateOf']);
   });
 
   it('carries NO clearable flag — #18 left that question with no cases', () => {
@@ -961,11 +1037,11 @@ describe('the splice ownership domain', () => {
       for (const field of SPLICE_OWNED_FIELDS) assert.equal(isSpliceOwnedField(field), true, field);
     });
 
-    it('REFUSES together-with — the field the splice genuinely cannot write', () => {
-      // The one a consumer is most likely to assume is spliceable, because it is
-      // an edge field like the other four. It is absent from the domain rather
-      // than present-and-false, and this is what makes that absence answerable.
-      assert.equal(isSpliceOwnedField('together-with'), false);
+    it('accepts together-with, the edge #116 added (it used to be refused)', () => {
+      assert.equal(isSpliceOwnedField('together-with'), true);
+    });
+
+    it('REFUSES the fields that are not edges', () => {
       assert.equal(isSpliceOwnedField('priority'), false);
       assert.equal(isSpliceOwnedField('evidence'), false);
     });
@@ -985,12 +1061,13 @@ describe('the splice ownership domain', () => {
     //
     // It used to assert "gone IFF the table says clearable". #18 removed the
     // flag and the conditional with it, so the expectation is unconditional
-    // across all four now — which is the change, stated as a test rather than
+    // across every owned field now — which is the change, stated as a test rather than
     // as a sentence in a doc comment.
     const ref = { repo: null, id: '9' };
     const clears: Readonly<Record<string, GeneratedEdges>> = {
       'blocked-by': { blockedBy: { clear: true } },
       'serialize-with': { serializeWith: { clear: true } },
+      'together-with': { togetherWith: { clear: true } },
       'decomposed-from': { decomposedFrom: { clear: true } },
       'duplicate-of': { duplicateOf: { clear: true } },
     };
@@ -1006,7 +1083,7 @@ describe('the splice ownership domain', () => {
       const data = parseFrontmatter(next as string).data;
       const present = property === 'blockedBy'
         ? (data?.blockedBy.length ?? 0) > 0
-        : data?.[property as 'serializeWith' | 'decomposedFrom' | 'duplicateOf'] != null;
+        : data?.[property as 'serializeWith' | 'togetherWith' | 'decomposedFrom' | 'duplicateOf'] != null;
       assert.equal(present, false, `${field}: the clear did not remove the entry`);
       // The un-owned neighbour survives either way — the splice is surgical.
       assert.equal(data?.priority, 1, field);
@@ -1606,6 +1683,8 @@ describe('a malformed edge value throws before anything is written (#18)', () =>
       { blockedBy: { clear: true } },
       { serializeWith: { set: REF } },
       { serializeWith: { clear: true } },
+      { togetherWith: { set: REF } },
+      { togetherWith: { clear: true } },
       { decomposedFrom: { set: REF } },
       { decomposedFrom: { clear: true } },
       { duplicateOf: { set: REF } },

@@ -132,7 +132,6 @@ type RenderOnlyField = Exclude<WritableField, SpliceOwnedField>;
  * same thing. It holds in both directions, which is what `SameKeys` is for.
  */
 const RENDER_ONLY_MEMBERS = Object.freeze({
-  'together-with': true,
   priority: true,
   evidence: true,
 });
@@ -212,9 +211,9 @@ export function writeRequestRefusal(
   // The keys the operation being reached can actually act on. Passed IN rather
   // than fixed here, because the two write paths have different surfaces: `set`
   // reaches `renderFrontmatter` and owns seven fields, `splice` reaches
-  // `spliceGeneratedEdges` and owns four. One shared allowlist would have to be
-  // their union, and would then wave `togetherWith` through to a splice that
-  // ignores it — the same silent no-op, one field further along.
+  // `spliceGeneratedEdges` and owns the five edges. One shared allowlist would
+  // have to be their union, and would then wave `priority` through to a splice
+  // that ignores it — the same silent no-op, one field further along.
   allowed: readonly string[],
 ): WriteRefusal | null {
   // `Object.entries` types its values `any` against an interface; re-binding

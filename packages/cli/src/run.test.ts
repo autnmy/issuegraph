@@ -57,7 +57,8 @@ describe('a clear is offered only where the writer can perform one', () => {
     // `decomposed-from` and `duplicate-of` were the two reported, and
     // `together-with`, `priority` and `evidence` were found by applying the
     // predicate rather than by a second review round. #18 made the first two
-    // clearable, so three remain — and those three are a DIFFERENT limit: the
+    // clearable and #116 made `together-with` an owned edge, so two remain — and
+    // those two are a DIFFERENT limit: the
     // splice cannot amend them in an existing block at all, so there is nothing
     // for a `--no-` form to remove.
     const nonClearable = [...SPLICE_WRITABLE, ...RENDER_ONLY].filter(

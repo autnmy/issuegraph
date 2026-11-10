@@ -25,11 +25,12 @@
  * table lives in `fields.ts` and this is its consequence. Two limits, and they
  * are different:
  *
- * - The splice surface owns GENERATED EDGES only, so `together-with`,
- *   `priority` and `evidence` reach a body with NO block (via render) and cannot
- *   be amended in one that has. The specification makes a tracker's own
- *   convention canonical for those, and the frontmatter field a mirror.
- * - All four edges it owns can be REMOVED as well as written, since
+ * - The splice surface owns EDGES only, so `priority` and `evidence` reach a
+ *   body with NO block (via render) and cannot be amended in one that has. The
+ *   specification makes a tracker's own convention canonical for those, and the
+ *   frontmatter field a mirror. `together-with` was in this list until #116
+ *   made it an owned edge.
+ * - Every edge it owns can be REMOVED as well as written, since
  *   [#18](https://github.com/autnmy/issuegraph/issues/18). They could not
  *   before: the writer read an empty value on `decomposed-from` and
  *   `duplicate-of` as "leave untouched", deliberately, so a machine refreshing
@@ -71,7 +72,6 @@ export interface SetFields {
   readonly serializeWith?: IssueRef | null;
   readonly decomposedFrom?: IssueRef | null;
   readonly duplicateOf?: IssueRef | null;
-  /** Render-only — see the module note. */
   readonly togetherWith?: IssueRef | null;
   /** Render-only — see the module note. */
   readonly priority?: number | null;
@@ -105,7 +105,6 @@ export type SetFieldKeysCoverSetFields = AssertTrue<
 
 function renderOnlyRequested(fields: SetFields): readonly string[] {
   const requested: string[] = [];
-  if (fields.togetherWith !== undefined) requested.push('together-with');
   if (fields.priority !== undefined) requested.push('priority');
   if (fields.evidence !== undefined) requested.push('evidence');
   return requested;
@@ -120,6 +119,7 @@ function toGeneratedEdges(fields: SetFields): GeneratedEdges {
   return {
     ...(fields.blockedBy === undefined ? {} : { blockedBy: edgeWrite(fields.blockedBy) }),
     ...(fields.serializeWith === undefined ? {} : { serializeWith: edgeWrite(fields.serializeWith) }),
+    ...(fields.togetherWith === undefined ? {} : { togetherWith: edgeWrite(fields.togetherWith) }),
     ...(fields.decomposedFrom === undefined ? {} : { decomposedFrom: edgeWrite(fields.decomposedFrom) }),
     ...(fields.duplicateOf === undefined ? {} : { duplicateOf: edgeWrite(fields.duplicateOf) }),
   };
@@ -167,9 +167,10 @@ function refuse(refusal: WriteRefusal): VerbResult {
  * structural rather than a rule each author has to remember.
  *
  * The allowlist is an ARGUMENT because the answer to the FIRST question differs
- * per path — `set` owns seven fields, `splice` owns four — while the other three
- * are the same for every write. Fixing one shared list here would have to be the
- * union of the two, which accepts `togetherWith` into a splice that ignores it.
+ * per path — `set` owns seven fields, `splice` owns the five edges — while the
+ * other three are the same for every write. Fixing one shared list here would
+ * have to be the union of the two, which accepts `priority` into a splice that
+ * ignores it.
  *
  * That is the point. Review found four spellings of one defect across three
  * rounds, and every fix added the missing check at the one site that lacked it,
@@ -230,7 +231,7 @@ export function setFields(body: string, fields: SetFields): VerbResult {
       // could set but not remove. #18 made every owned field clearable, so it is
       // gone — and with it the last of the four sites that each learned the same
       // rule separately. The render-only refusal below is a DIFFERENT limit and
-      // stays: those three fields reach a body with no block yet and cannot be
+      // stays: those two fields reach a body with no block yet and cannot be
       // amended in one that has, because the specification makes a tracker's own
       // convention canonical for them.
       const renderOnly = renderOnlyRequested(fields);
@@ -238,7 +239,7 @@ export function setFields(body: string, fields: SetFields): VerbResult {
         return {
           stdout: '',
           stderr: [
-            `issuegraph: refusing to write ${renderOnly.join(', ')} into an existing block — the writer's splice surface owns generated edges only (blocked-by, serialize-with, decomposed-from, duplicate-of).`,
+            `issuegraph: refusing to write ${renderOnly.join(', ')} into an existing block — the writer's splice surface owns generated edges only (blocked-by, serialize-with, together-with, decomposed-from, duplicate-of).`,
             `  ${RENDER_ONLY.join(', ')} can be written when the body has no block yet, but not amended in one that has.`,
           ],
           code: EXIT.refusedWrite,
