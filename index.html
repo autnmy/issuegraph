@@ -143,6 +143,14 @@ h1, h2, h3 { margin: 0; font-weight: 400; }
 .reading h3 { font-size: 28px; line-height: 1.2; }
 .reading p { margin-top: 10px; font-size: 17px; color: var(--ink-2); text-wrap: pretty; }
 
+/* build */
+.cmd { margin: 0 0 32px; max-width: 720px; background: var(--panel); border: 1px solid var(--rule-2); border-radius: 8px; padding: 16px 20px; overflow-x: auto; font-size: clamp(13px, 1.4vw, 15px); line-height: 1.7; white-space: pre; color: var(--ink); }
+.note.lead { margin: 0 0 16px; }
+.pkg { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 24px; padding: 14px 0; border-bottom: 1px solid var(--rule); }
+.pkg .n { font-family: var(--mono); font-size: 16px; flex: 0 0 200px; }
+.pkg .d { font-size: 17px; color: var(--ink-2); flex: 1 1 280px; }
+.pkg .i { font-family: var(--mono); font-size: 13px; color: var(--ink-3); flex: 1 1 100%; overflow-wrap: anywhere; }
+
 /* closing */
 .closing { padding: 80px 0 clamp(120px, 14vw, 200px); border-top: 1px solid var(--rule-2); }
 .closing p { font-weight: 300; font-size: clamp(28px, 3vw, 42px); line-height: 1.25; max-width: 820px; text-wrap: pretty; }
@@ -165,6 +173,8 @@ footer a:hover { color: var(--ink); }
   .field .t { font-size: 12px; text-align: right; }
   .field .d { grid-column: 1 / -1; font-size: 16px; }
   .reading h3 { font-size: 26px; }
+  .pkg .n { flex-basis: 100%; font-size: 15px; }
+  .pkg .d { font-size: 16px; }
   .code .gutter { padding: 0 10px 0 12px; }
   .code .src { padding: 0 16px 0 4px; }
 }
@@ -179,6 +189,7 @@ footer a:hover { color: var(--ink); }
       <a href="https://github.com/autnmy/issuegraph/blob/main/SPEC.md">spec</a>
       <a href="/demo/">demo</a>
       <a href="/play/">play</a>
+      <a href="#build">build</a>
       <a href="https://github.com/autnmy/issuegraph">github</a>
     </nav>
   </header>
@@ -287,6 +298,24 @@ issuegraph:
         <div><h3>Ready</h3><p>An issue is ready when everything it’s blocked by is closed and nothing it’s serialized with is in progress.</p></div>
         <div><h3>Effective priority</h3><p>An issue takes the highest priority of anything waiting on it, so a P3 that blocks a P0 is treated as P0.</p></div>
         <div><h3>Parallel work</h3><p>Ready issues with no dependency path between them can be worked at the same time.</p></div>
+      </div>
+    </section>
+
+    <section class="sec" id="build" aria-labelledby="build-label">
+      <h2 class="label" id="build-label">Build with issuegraph</h2>
+      <div class="body">
+        <p class="note lead">Try the CLI with no install. This reads the block at the top of an issue body and prints what it declares:</p>
+<pre class="cmd mono">printf -- '---\nissuegraph:\n  blocked-by: ["#231"]\n  priority: 1\n---\nShip the parser.\n' \
+  | npx -y @issuegraph/cli parse</pre>
+        <div class="pkg"><a class="n" href="https://www.npmjs.com/package/@issuegraph/cli">@issuegraph/cli</a><span class="d">Read, order and edit Issuegraph blocks from the command line.</span><code class="i">npm install -g @issuegraph/cli</code></div>
+        <div class="pkg"><a class="n" href="https://www.npmjs.com/package/@issuegraph/reader">@issuegraph/reader</a><span class="d">Read the block out of an issue body and work out the graph: ready set, effective priority, cycles.</span><code class="i">npm install @issuegraph/reader</code></div>
+        <div class="pkg"><a class="n" href="https://www.npmjs.com/package/@issuegraph/writer">@issuegraph/writer</a><span class="d">Write the block into an issue body, or change one field without touching the rest.</span><code class="i">npm install @issuegraph/writer</code></div>
+        <div class="pkg"><a class="n" href="https://www.npmjs.com/package/@issuegraph/derive">@issuegraph/derive</a><span class="d">Turn a set of issues into the order to work them in, with the reason each held issue waits.</span><code class="i">npm install @issuegraph/derive</code></div>
+        <div class="pkg"><a class="n" href="https://www.npmjs.com/package/@issuegraph/core">@issuegraph/core</a><span class="d">The field names, defaults and allowed values every other package shares.</span><code class="i">npm install @issuegraph/core</code></div>
+        <div class="pkg"><a class="n" href="https://www.npmjs.com/package/@issuegraph/store">@issuegraph/store</a><span class="d">A browser-side store for a graph you edit, plus the port your tracker plugs into.</span><code class="i">npm install @issuegraph/store</code></div>
+        <div class="pkg"><a class="n" href="https://www.npmjs.com/package/@issuegraph/viewer">@issuegraph/viewer</a><span class="d">Draw a graph as a work order, themeable with CSS.</span><code class="i">npm install @issuegraph/viewer</code></div>
+        <div class="pkg"><a class="n" href="https://www.npmjs.com/package/@issuegraph/editor">@issuegraph/editor</a><span class="d">Edit controls drawn on top of the viewer, saved through the store.</span><code class="i">npm install @issuegraph/editor</code></div>
+        <p class="note">Every package is TypeScript, Apache-2.0, and runs on Node 18 or later. None of them fetches anything or needs a credential.</p>
       </div>
     </section>
 
