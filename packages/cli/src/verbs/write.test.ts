@@ -71,7 +71,7 @@ describe('set', () => {
   test('render-only fields are REFUSED on a body that already has a block, with the reason', () => {
     // The writer's splice surface owns generated edges only. Refusing is the
     // honest answer; silently dropping the field is the one that costs money.
-    for (const fields of [{ evidence: 'verified' } as const, { priority: 1 }, { togetherWith: REF_7 }]) {
+    for (const fields of [{ evidence: 'verified' } as const, { priority: 1 }]) {
       const result = setFields(QUOTED_BODY, fields);
       assert.equal(result.code, EXIT.refusedWrite);
       assert.equal(result.stdout, '', 'a refusal must write nothing to stdout');
@@ -385,22 +385,35 @@ describe('a write request naming a field the writer cannot act on', () => {
   });
 
   test('the allowlist is PER PATH: a set-only field is refused by splice', () => {
-    // The case a single shared allowlist would wave through. `togetherWith` is a
+    // The case a single shared allowlist would wave through. `priority` is a
     // real `SetFields` key, so a union allowlist would accept it here — and
     // `spliceGeneratedEdges` does not own it, so the request would be ignored and
     // the body returned unchanged at exit 0. Same defect, one field further along.
-    const result = spliceFromJs({ togetherWith: REF_7 });
+    const result = spliceFromJs({ priority: 1 });
     assert.equal(result.code, EXIT.usage);
     assert.equal(result.stdout, '');
-    assert.ok(result.stderr.join('\n').includes('togetherWith'), result.stderr.join('\n'));
+    assert.ok(result.stderr.join('\n').includes('priority'), result.stderr.join('\n'));
   });
 
   test('CONTROL: that same field is accepted by set, on a body with no block', () => {
     // Proves the refusal above is about the SURFACE REACHED and not about the
     // field being unknown to the package — otherwise the test above would pass
     // for the wrong reason.
-    const result = setFields(ABSENT_BODY, { togetherWith: REF_7 });
+    const result = setFields(ABSENT_BODY, { priority: 1 });
     assert.equal(result.code, EXIT.ok, result.stderr.join('\n'));
+  });
+
+  test('together-with is amended in an existing block, and removed (#116)', () => {
+    const set = setFields(CANONICAL_BODY, { togetherWith: REF_7 });
+    assert.equal(set.code, EXIT.ok, set.stderr.join('\n'));
+    const written = classifyDeclaration(parseFrontmatter(set.stdout));
+    assert.ok(written.state === 'read');
+    assert.deepEqual(written.data.togetherWith, REF_7);
+    const cleared = setFields(set.stdout, { togetherWith: null });
+    assert.equal(cleared.code, EXIT.ok, cleared.stderr.join('\n'));
+    const after = classifyDeclaration(parseFrontmatter(cleared.stdout));
+    assert.ok(after.state === 'read');
+    assert.equal(after.data.togetherWith, null);
   });
 
   test('CONTROL: every allowed key still reaches the writer', () => {
@@ -410,7 +423,9 @@ describe('a write request naming a field the writer cannot act on', () => {
     assert.equal(setFields(CANONICAL_BODY, { serializeWith: REF_7 }).code, EXIT.ok);
     assert.equal(setFields(CANONICAL_BODY, { decomposedFrom: REF_7 }).code, EXIT.ok);
     assert.equal(setFields(CANONICAL_BODY, { duplicateOf: REF_7 }).code, EXIT.ok);
+    assert.equal(setFields(CANONICAL_BODY, { togetherWith: REF_7 }).code, EXIT.ok);
     assert.equal(spliceEdges(CANONICAL_BODY, { blockedBy: { set: [REF_7] } }).code, EXIT.ok);
+    assert.equal(spliceEdges(CANONICAL_BODY, { togetherWith: { set: REF_7 } }).code, EXIT.ok);
     assert.equal(spliceEdges(CANONICAL_BODY, { serializeWith: { clear: true } }).code, EXIT.ok);
   });
 

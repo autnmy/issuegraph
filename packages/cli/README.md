@@ -179,13 +179,13 @@ The writer's capabilities differ per field, and the CLI refuses what it cannot p
 | `serialize-with` | yes | yes — `--no-serialize-with` |
 | `decomposed-from` | yes | yes — `--no-decomposed-from` |
 | `duplicate-of` | yes | yes — `--no-duplicate-of` |
-| `together-with` | **no** | no |
+| `together-with` | yes | yes — `--no-together-with` |
 | `priority` | **no** | no |
 | `evidence` | **no** | no |
 
-The last three reach a body that has **no block yet** (rendered) and cannot be amended in one that has: the specification makes a tracker's own convention canonical for them and the frontmatter field a mirror. There is no `--no-` form for them because there is nothing for it to remove.
+The last two reach a body that has **no block yet** (rendered) and cannot be amended in one that has: the specification makes a tracker's own convention canonical for them and the frontmatter field a mirror. There is no `--no-` form for them because there is nothing for it to remove.
 
-The four edges the splice owns can each be written *and* removed. That is new in `0.3.0`: before it, `decomposed-from` and `duplicate-of` could be written but not cleared, because the writer read an empty value there as *leave untouched* — deliberately, so a machine refreshing its own edges could not erase provenance by omission, and at the cost of no way to retract a dedupe verdict at all. The writer gave removal its own spelling, so omission still means *not mine* and both `--no-` flags exist now.
+Every edge the splice owns can be written *and* removed. `together-with` joined them in `0.5.0`; before it, it was render-only like the last two. That is new in `0.3.0`: before it, `decomposed-from` and `duplicate-of` could be written but not cleared, because the writer read an empty value there as *leave untouched* — deliberately, so a machine refreshing its own edges could not erase provenance by omission, and at the cost of no way to retract a dedupe verdict at all. The writer gave removal its own spelling, so omission still means *not mine* and both `--no-` flags exist now.
 
 **Omitting a key is still the only way to say *leave it alone*.** A key you name is a key this command will write or remove.
 

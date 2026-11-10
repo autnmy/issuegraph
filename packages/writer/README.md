@@ -71,7 +71,7 @@ switch (result.outcome) {
     // Nothing readable to edit — prepend a fresh block. Lossless, and ONLY here.
     //
     // `renderFrontmatter` takes a DIFFERENT input: flat values, and it also
-    // accepts the render-only fields (`priority`, `evidence`, `together-with`)
+    // accepts the render-only fields (`priority`, `evidence`)
     // that `GeneratedEdges` has no concept of. So state what the fresh block
     // should contain rather than reusing the splice's edges — a clear has
     // nothing to render, and passing the wrapper through reaches `renderRef`
@@ -85,7 +85,7 @@ switch (result.outcome) {
 }
 ```
 
-**The two inputs are deliberately different shapes.** `spliceGeneratedEdges` edits four fields in a block somebody else wrote, so it needs to say *clear this one* and *leave that one alone*. `renderFrontmatter` writes a whole block from nothing, where "clear" has no meaning and there is no existing entry to leave alone — so it takes the values directly, and takes the three render-only fields as well. Reusing one object for both reads as a convenience and is a category error.
+**The two inputs are deliberately different shapes.** `spliceGeneratedEdges` edits the five edge fields in a block somebody else wrote, so it needs to say *clear this one* and *leave that one alone*. `renderFrontmatter` writes a whole block from nothing, where "clear" has no meaning and there is no existing entry to leave alone — so it takes the values directly, and takes the two render-only fields as well. Reusing one object for both reads as a convenience and is a category error.
 
 **Four outcomes, because two of them need opposite repairs.**
 
