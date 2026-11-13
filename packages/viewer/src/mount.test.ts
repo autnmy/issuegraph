@@ -705,12 +705,18 @@ describe('mountViewer', () => {
     }
   });
 
-  it('ignores a click that lands on nothing keyed', () => {
+  it('clears the selection on a click that lands on nothing keyed, as select(null) does', () => {
     const selected: (string | null)[] = [];
-    const { container } = mounted({ onSelect: (key: string | null) => selected.push(key) });
+    const { container, handle } = mounted({ onSelect: (key: string | null) => selected.push(key) });
+    const row = container.find(KEY_ATTRIBUTE, '101');
+    assert.ok(row !== undefined);
+    container.dispatch('click', { target: row });
 
     container.dispatch('click', { target: container });
-    assert.deepEqual(selected, []);
+
+    assert.deepEqual(selected, ['101', null]);
+    assert.equal(handle.state.selected, null);
+    assert.equal(container.find(KEY_ATTRIBUTE, '101')?.getAttribute('aria-current'), 'false');
   });
 
   it('marks the selected row after a click', () => {
@@ -747,7 +753,7 @@ describe('mountViewer', () => {
     });
 
     container.dispatch('click', { target: container });
-    assert.deepEqual(selected, [], 'a host ancestor answered for a click on nothing of ours');
+    assert.deepEqual(selected, [null], 'a host ancestor answered for a click on nothing of ours');
   });
 
   it('leaves keyboard activation to a nested link', () => {
@@ -1382,12 +1388,22 @@ describe('mountViewer recedes the graph by the selection as given', () => {
     assert.deepEqual(recedeStampsOf(container), afterClick, 'an update with the same document changed what recedes');
   });
 
-  it('a click on nothing keyed stamps nothing, even beside a host-passed selectedEdge', () => {
-    const { container } = mounted({ projection: 'graph', selectedEdge: blocked101To102 });
+  it('a click on nothing keyed clears a clicked relationship and every stamp, even beside a host-passed selectedEdge', () => {
+    const selected: (string | null)[] = [];
+    const { container, handle } = mounted({
+      projection: 'graph',
+      selectedEdge: blocked101To102,
+      onSelect: (key: string | null) => selected.push(key),
+    });
+    container.dispatch('click', { target: lineOf(container, blocked101To102) });
+    assert.notDeepEqual(recedeStampsOf(container), [], 'clicking the relationship receded nothing, so this proves nothing');
 
+    // The issue: "a click on nothing, `select(null)` and an update that drops the edge each clear every stamp"
     container.dispatch('click', { target: container });
 
-    assert.deepEqual(recedeStampsOf(container), []);
+    assert.equal(handle.state.selected, null);
+    assert.deepEqual(selected, [blocked101To102, null]);
+    assert.deepEqual(recedeStampsOf(container), [], 'a click on nothing left an element carrying data-recede');
   });
 
   it('a cleared relationship stays cleared across an update and a projection round trip, whatever selectedEdge the host passed', () => {

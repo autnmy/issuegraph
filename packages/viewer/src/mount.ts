@@ -575,9 +575,9 @@ export function mountViewer(
       return;
     }
     if (ownsItsOwnActivation(event.target, container)) return;
-    const key = keyAt(event.target, container);
-    if (key === null) return;
-    emitSelect(key);
+    // A CLICK ON NOTHING KEYED CLEARS THE SELECTION, exactly as `select(null)`
+    // does, so a reader can restore a receded graph by clicking blank space.
+    emitSelect(keyAt(event.target, container));
   };
 
   const onPointerOver = (event: MountEvent): void => {
