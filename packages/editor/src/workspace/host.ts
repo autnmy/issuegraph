@@ -44,6 +44,7 @@ import {
   INITIAL_FIRST_PASS,
   firstPassReducer,
 } from './firstpass.ts';
+import { type CanvasMode, type NarrowView, isNarrowTab, pressNarrowTab } from './narrow.ts';
 import {
   INITIAL_SELECTION,
   type WorkspaceSelection,
@@ -66,7 +67,7 @@ export interface HostState {
    * forbids the package reading a viewport — *"a package that reads the window
    * cannot be dropped into someone else's settings page"* — so the three
    * layouts are the stylesheet's, chosen by a container query on the mount's
-   * own box, and this reducer holds only the two reader decisions those layouts
+   * own box, and this reducer holds only the reader decisions those layouts
    * need. At the two wider layouts the canvas is a zone rather than a strip and
    * the stylesheet never reads this, so the state is simply not drawn.
    */
@@ -136,6 +137,23 @@ export interface HostState {
    * gone. So the rule is "still a conflict".
    */
   readonly diffOpen: MutationId | null;
+  /**
+   * What the canvas zone draws.
+   *
+   * HELD HERE RATHER THAN ONLY AS A MOUNT OPTION because the narrow layout's
+   * Sub-issues tab IS the tree mode, and a tab press must be able to set it:
+   * the package has no callback through which it could ask a host to switch.
+   */
+  readonly canvas: CanvasMode;
+  /**
+   * Which zone the layout under `640` shows. Like `canvasOpen`, it is a reader
+   * decision and not a width: the wider layouts never read it.
+   */
+  readonly narrowView: NarrowView;
+  /** The relationship kind whose group the Related groups list has open, if any. */
+  readonly relatedGroup: EdgeField | null;
+  /** What the reader has typed into the Related groups search. */
+  readonly relatedQuery: string;
 }
 
 export const INITIAL_HOST_STATE: HostState = Object.freeze({
@@ -153,6 +171,10 @@ export const INITIAL_HOST_STATE: HostState = Object.freeze({
   drop: null,
   firstPass: INITIAL_FIRST_PASS,
   diffOpen: null,
+  canvas: 'neighbourhood',
+  narrowView: 'order',
+  relatedGroup: null,
+  relatedQuery: '',
 });
 
 /**
@@ -903,6 +925,24 @@ function controlled(
       });
     case 'target-query':
       return settled({ ...state, targetQuery: value ?? '' });
+    // The layout under `640`'s tabs. A value naming no tab is somebody else's
+    // press, the same rule as a bare `expand`.
+    case 'narrow-tab':
+      return value === undefined || !isNarrowTab(value)
+        ? unclaimed(state)
+        : settled({ ...state, ...pressNarrowTab(value, state.canvas) });
+    // A toggle, and every press changes the group, so the query typed for the
+    // old group is cleared rather than filtering a group it was not typed in.
+    case 'related-group':
+      return value === undefined || !isEdgeField(value)
+        ? unclaimed(state)
+        : settled({
+            ...state,
+            relatedGroup: state.relatedGroup === value ? null : value,
+            relatedQuery: '',
+          });
+    case 'related-query':
+      return settled({ ...state, relatedQuery: value ?? '' });
     case 'target':
       return target === undefined ? settled(state) : drafted(state, { kind: 'target', ref: target }, document);
     case 'retry':
@@ -983,12 +1023,26 @@ function intended(state: HostState, intent: KeyIntent, document: GraphDocument):
  * SO IT IS ASKED OF THE RESULT, ONCE: if the selection MOVED and now names
  * something, the panel is open again. Comparing the two selections rather than
  * listing the commands that change one is what makes a ninth arm free.
+ *
+ * The Related groups list's open group and query go on the same move, to
+ * nothing selected as well: both describe the old selection's relationships.
  */
 export function reduceHost(state: HostState, command: HostCommand, document: GraphDocument): HostResult {
   const result = reduceCommand(state, command, document);
-  const moved = result.state.selection !== state.selection;
-  if (!moved || result.state.selection.kind === 'none' || !result.state.inspectorDismissed) return result;
-  return { ...result, state: { ...result.state, inspectorDismissed: false } };
+  if (result.state.selection === state.selection) return result;
+  return { ...result, state: afterSelectionMoved(result.state) };
+}
+
+function afterSelectionMoved(state: HostState): HostState {
+  return {
+    ...forgetRelatedList(state),
+    inspectorDismissed: state.selection.kind === 'none' ? state.inspectorDismissed : false,
+  };
+}
+
+/** The Related groups list's reader state, cleared for a selection it no longer describes. */
+function forgetRelatedList(state: HostState): HostState {
+  return { ...state, relatedGroup: null, relatedQuery: '' };
 }
 
 function reduceCommand(state: HostState, command: HostCommand, document: GraphDocument): HostResult {
@@ -1128,7 +1182,7 @@ export function reconcileHost(
   const expandedStands = expanded.length === state.expanded.length;
   if (selection === state.selection && draftStands && expandedStands) return state;
   return {
-    ...state,
+    ...(selection === state.selection ? state : forgetRelatedList(state)),
     selection,
     ...(expandedStands ? {} : { expanded }),
     ...(draftStands ? {} : { draft: IDLE_CREATE_DRAFT, targetQuery: '', drop: null }),

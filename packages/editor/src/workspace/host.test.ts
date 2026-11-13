@@ -1125,3 +1125,434 @@ describe("§17k's narrow layouts are two reader decisions, never a measurement",
     assert.equal(INITIAL_HOST_STATE.inspectorDismissed, false);
   });
 });
+
+import { narrowTabOf } from './narrow.ts';
+
+describe("more tests", function () {
+it('R5: narrow-tab leaves unclaimed a value named after an Object.prototype member', () => {
+  // The issue: "A `narrow-tab` control sets them, taking `order`, `related` or `sub-issues`."
+  // The value comes from a `data-ig-value` attribute in the page. A tab table read as a plain
+  // object would find `constructor` or `toString` on its prototype and act on a value no tab has.
+  const tree = reduceHost(INITIAL_HOST_STATE, { kind: 'control', name: 'narrow-tab', value: 'sub-issues' }, document);
+  assert.equal(tree.claimed, true);
+  assert.equal(tree.state.canvas, 'tree');
+  assert.equal(tree.state.narrowView, 'canvas');
+  for (const value of ['__proto__', 'constructor', 'toString', 'hasOwnProperty', 'valueOf']) {
+    const result = reduceHost(tree.state, { kind: 'control', name: 'narrow-tab', value }, document);
+    assert.equal(result.claimed, false, `narrow-tab claimed ${value}`);
+    assert.deepEqual(result.state, tree.state, `narrow-tab ${value} changed the state`);
+  }
+});
+
+it('R13: related-group leaves unclaimed a value that is not a relationship kind', () => {
+  // The issue: "Past 60 they draw one group per kind with its count, opened by a `related-group` control."
+  // The value comes from a `data-ig-value` attribute in the page, so only a relationship kind
+  // may become the open group; anything else, a prototype name included, changes nothing.
+  const opened = reduceHost(INITIAL_HOST_STATE, { kind: 'control', name: 'related-group', value: 'blocked-by' }, document);
+  assert.equal(opened.claimed, true);
+  assert.equal(opened.state.relatedGroup, 'blocked-by');
+  for (const value of ['__proto__', 'constructor', 'toString', 'nonsense', '']) {
+    const result = reduceHost(opened.state, { kind: 'control', name: 'related-group', value }, document);
+    assert.equal(result.claimed, false, `related-group claimed ${JSON.stringify(value)}`);
+    assert.deepEqual(result.state, opened.state, `related-group ${JSON.stringify(value)} changed the state`);
+  }
+  const bare = reduceHost(opened.state, { kind: 'control', name: 'related-group' }, document);
+  assert.equal(bare.claimed, false, 'a related-group with no value was claimed');
+  assert.deepEqual(bare.state, opened.state);
+});
+});
+
+describe("more tests 2", function () {
+it('R5 narrow-tab: pressing Sub-issues again stores the same state and proposes nothing', () => {
+  // "A `narrow-tab` control sets them, taking `order`, `related` or `sub-issues`."
+  // A tab press selects a view; it is not a toggle, so a second press of the
+  // same tab must leave exactly what the first one stored.
+  const once = drive([{ kind: 'control', name: 'narrow-tab', value: 'sub-issues' }]);
+  assert.equal(once.state.canvas, 'tree');
+  assert.equal(once.state.narrowView, 'canvas');
+  assert.deepEqual(once.effects, [], 'a tab press proposed a write');
+
+  const twice = reduceHost(once.state, { kind: 'control', name: 'narrow-tab', value: 'sub-issues' }, document);
+  assert.deepEqual(twice.state, once.state, 'the second press changed the stored state');
+  assert.deepEqual(twice.effects, [], 'the second press proposed a write');
+});
+
+it('R15 narrow-tab: the rail window start and the selection survive a switch to every tab', () => {
+  const placed = drive([
+    { kind: 'point', key: '1' },
+    { kind: 'scroll', start: 12 },
+  ]).state;
+  assert.equal(placed.railStart, 12, 'the fixture stored no rail start, so this proves nothing');
+
+  let state = placed;
+  for (const [value, narrowView, canvas] of [
+    ['related', 'canvas', 'neighbourhood'],
+    ['sub-issues', 'canvas', 'tree'],
+    ['order', 'order', 'tree'],
+  ] as const) {
+    state = reduceHost(state, { kind: 'control', name: 'narrow-tab', value }, document).state;
+    assert.equal(state.narrowView, narrowView, `${value} stored the wrong view`);
+    assert.equal(state.canvas, canvas, `${value} stored the wrong canvas mode`);
+    // "The reader's place in the order survives a tab switch and a redraw"
+    assert.equal(state.railStart, placed.railStart, `${value} moved the rail window`);
+    assert.deepEqual(state.selection, placed.selection, `${value} moved the selection`);
+    assert.deepEqual(state.expanded, placed.expanded, `${value} changed the expanded rows`);
+  }
+});
+
+it('R13 related-query: the stored group and query survive tab switches, and a moved selection clears them', () => {
+  // "Past 300, and inside an open group holding more than 60, a search field filters by key or title through a `related-query` control, held in `HostState` like `targetQuery`."
+  const searched = drive([
+    { kind: 'point', key: '1' },
+    { kind: 'control', name: 'related-group', value: 'blocked-by' },
+    { kind: 'control', name: 'related-query', value: 'abc' },
+  ]).state;
+  assert.equal(searched.relatedGroup, 'blocked-by');
+  assert.equal(searched.relatedQuery, 'abc');
+
+  // The same query delivered again stores nothing new.
+  assert.deepEqual(
+    reduceHost(searched, { kind: 'control', name: 'related-query', value: 'abc' }, document).state,
+    searched,
+  );
+
+  const switched = drive(
+    [
+      { kind: 'scroll', start: 4 },
+      { kind: 'control', name: 'narrow-tab', value: 'order' },
+      { kind: 'control', name: 'narrow-tab', value: 'related' },
+    ],
+    searched,
+  ).state;
+  assert.equal(switched.relatedGroup, 'blocked-by', 'a tab switch dropped the open group');
+  assert.equal(switched.relatedQuery, 'abc', 'a tab switch dropped the typed query');
+
+  const moved = drive([{ kind: 'point', key: '2' }], switched).state;
+  assert.deepEqual(moved.selection, { kind: 'issue', key: '2' });
+  assert.equal(moved.relatedGroup, null, 'the group of the old selection stayed open');
+  assert.equal(moved.relatedQuery, '', 'the query of the old selection stayed typed');
+});
+
+it('R13 reconcileHost: a vanished selection clears the related group and query, and an unmoved document keeps the state', () => {
+  const searched = drive([
+    { kind: 'point', key: '2' },
+    { kind: 'control', name: 'related-group', value: 'blocked-by' },
+    { kind: 'control', name: 'related-query', value: 'x' },
+  ]).state;
+  assert.equal(searched.relatedGroup, 'blocked-by', 'the fixture stored no group, so this proves nothing');
+  assert.equal(searched.relatedQuery, 'x', 'the fixture stored no query, so this proves nothing');
+
+  const withoutTwo: GraphDocument = { issues: document.issues.filter((issue) => issue.ref !== '2'), edges: [] };
+  const reconciled = reconcileHost(searched, withoutTwo, new Set());
+  assert.deepEqual(reconciled.selection, { kind: 'none' });
+  assert.equal(reconciled.relatedGroup, null);
+  assert.equal(reconciled.relatedQuery, '');
+
+  assert.equal(reconcileHost(searched, document, new Set()), searched, 'nothing moved, so nothing may change');
+});
+});
+
+describe("more tests 3", function () {
+it('R5 INITIAL_HOST_STATE starts on the order tab over the neighbourhood with no related group or query', () => {
+  // The issue: "In packages/editor/src/workspace/host.ts, `HostState` gains `canvas: CanvasMode`, moved from the mount-only option, and `narrowView: 'order' | 'canvas'`."
+  assert.equal(INITIAL_HOST_STATE.canvas, 'neighbourhood');
+  assert.equal(INITIAL_HOST_STATE.narrowView, 'order');
+  assert.equal(INITIAL_HOST_STATE.relatedGroup, null);
+  assert.equal(INITIAL_HOST_STATE.relatedQuery, '');
+});
+
+it('R5 narrow-tab sub-issues switches the canvas to the tree and keeps the reader in place', () => {
+  const from = drive([
+    { kind: 'point', key: '2' },
+    { kind: 'control', name: 'expand', target: '3' },
+    { kind: 'scroll', start: 7 },
+  ]).state;
+  const result = reduceHost(from, { kind: 'control', name: 'narrow-tab', value: 'sub-issues' }, document);
+  // The issue: "A `narrow-tab` control sets them, taking `order`, `related` or `sub-issues`."
+  assert.equal(result.claimed, true);
+  assert.deepEqual(result.effects, []);
+  // Only the mode and the view move. The selection, the open rows, the rail
+  // window and both wider-layout transients are the reader's place and stay.
+  assert.deepEqual(result.state, { ...from, canvas: 'tree', narrowView: 'canvas' });
+});
+
+it('R5 narrow-tab related shows the neighbourhood and order keeps the mode the reader chose', () => {
+  const tree = drive([{ kind: 'control', name: 'narrow-tab', value: 'sub-issues' }]).state;
+  // The issue: "A `narrow-tab` control sets them, taking `order`, `related` or `sub-issues`."
+  assert.deepEqual(drive([{ kind: 'control', name: 'narrow-tab', value: 'related' }], tree).state, {
+    ...tree,
+    canvas: 'neighbourhood',
+    narrowView: 'canvas',
+  });
+  // The issue does not say what `order` does to the mode. Keeping it leaves
+  // the wider layouts on the mode the reader last picked.
+  assert.deepEqual(drive([{ kind: 'control', name: 'narrow-tab', value: 'order' }], tree).state, {
+    ...tree,
+    narrowView: 'order',
+  });
+});
+
+it('R5 narrow-tab with an unknown, empty or missing value is unclaimed and changes nothing', () => {
+  const from = drive([
+    { kind: 'point', key: '2' },
+    { kind: 'control', name: 'narrow-tab', value: 'sub-issues' },
+  ]).state;
+  // `subIssues` is the host word's key, not a tab value, so it is refused too.
+  for (const value of ['graph', '', 'subIssues', undefined]) {
+    const command: HostCommand =
+      value === undefined
+        ? { kind: 'control', name: 'narrow-tab' }
+        : { kind: 'control', name: 'narrow-tab', value };
+    const result = reduceHost(from, command, document);
+    // The issue: "A `narrow-tab` control sets them, taking `order`, `related` or `sub-issues`."
+    assert.equal(result.claimed, false, String(value));
+    assert.deepEqual(result.effects, [], String(value));
+    assert.deepEqual(result.state, from, String(value));
+  }
+});
+
+it('R5 narrowTabOf derives the tab from the view and the mode, and agrees with every narrow-tab press', () => {
+  assert.equal(narrowTabOf('order', 'neighbourhood'), 'order');
+  assert.equal(narrowTabOf('order', 'tree'), 'order');
+  assert.equal(narrowTabOf('canvas', 'neighbourhood'), 'related');
+  assert.equal(narrowTabOf('canvas', 'tree'), 'sub-issues');
+  const tree = drive([{ kind: 'control', name: 'narrow-tab', value: 'sub-issues' }]).state;
+  for (const tab of ['order', 'related', 'sub-issues'] as const) {
+    for (const start of [INITIAL_HOST_STATE, tree]) {
+      const { state } = drive([{ kind: 'control', name: 'narrow-tab', value: tab }], start);
+      // The issue: "A `narrow-tab` control sets them, taking `order`, `related` or `sub-issues`."
+      assert.equal(narrowTabOf(state.narrowView, state.canvas), tab, `${tab} pressed over ${start.canvas}`);
+    }
+  }
+});
+
+it('R13 related-group opens a kind, closes it on a second press, and refuses anything that is not a kind', () => {
+  const opened = reduceHost(
+    INITIAL_HOST_STATE,
+    { kind: 'control', name: 'related-group', value: 'blocked-by' },
+    document,
+  );
+  // The issue: "Past 60 they draw one group per kind with its count, opened by a `related-group` control."
+  assert.equal(opened.state.relatedGroup, 'blocked-by');
+  assert.equal(
+    drive([{ kind: 'control', name: 'related-group', value: 'blocked-by' }], opened.state).state.relatedGroup,
+    null,
+  );
+  for (const command of [
+    { kind: 'control', name: 'related-group', value: 'nonsense' },
+    { kind: 'control', name: 'related-group', value: '' },
+    { kind: 'control', name: 'related-group' },
+  ] satisfies HostCommand[]) {
+    const result = reduceHost(opened.state, command, document);
+    assert.equal(result.claimed, false, JSON.stringify(command));
+    assert.deepEqual(result.state, opened.state, JSON.stringify(command));
+  }
+  // Moving to another kind starts that kind's search empty.
+  const typed = drive([{ kind: 'control', name: 'related-query', value: 'abc' }], opened.state).state;
+  const moved = drive([{ kind: 'control', name: 'related-group', value: 'serialize-with' }], typed).state;
+  assert.equal(moved.relatedGroup, 'serialize-with');
+  assert.equal(moved.relatedQuery, '');
+});
+
+it('R13 related-query stores the typed text and an absent value as the empty string', () => {
+  // The issue: "Past 300, and inside an open group holding more than 60, a search field filters by key or title through a `related-query` control, held in `HostState` like `targetQuery`."
+  const typed = drive([{ kind: 'control', name: 'related-query', value: 'abc' }]).state;
+  assert.equal(typed.relatedQuery, 'abc');
+  assert.equal(drive([{ kind: 'control', name: 'related-query' }], typed).state.relatedQuery, '');
+});
+
+it('R13 moving the selection clears the related group and query, in reduceHost and in reconcileHost', () => {
+  const opened = drive([
+    { kind: 'point', key: '1' },
+    { kind: 'control', name: 'related-group', value: 'blocked-by' },
+    { kind: 'control', name: 'related-query', value: 'abc' },
+  ]).state;
+  assert.equal(opened.relatedGroup, 'blocked-by');
+  assert.equal(opened.relatedQuery, 'abc');
+
+  // A command that leaves the selection where it is leaves the list alone.
+  const scrolled = drive([{ kind: 'scroll', start: 3 }], opened).state;
+  assert.equal(scrolled.relatedGroup, 'blocked-by');
+  assert.equal(scrolled.relatedQuery, 'abc');
+
+  const moved = drive([{ kind: 'point', key: '2' }], opened).state;
+  assert.deepEqual(moved.selection, { kind: 'issue', key: '2' });
+  assert.equal(moved.relatedGroup, null);
+  assert.equal(moved.relatedQuery, '');
+
+  const without1: GraphDocument = {
+    issues: document.issues.filter((issue) => issue.ref !== '1'),
+    edges: [],
+  };
+  const reconciled = reconcileHost(opened, without1, new Set());
+  assert.deepEqual(reconciled.selection, { kind: 'none' });
+  assert.equal(reconciled.relatedGroup, null);
+  assert.equal(reconciled.relatedQuery, '');
+});
+
+it('R6 the host state holds no width before or after a narrow-tab press', () => {
+  const fieldsOf = (value: unknown, path: string): string[] => {
+    if (value === null || typeof value !== 'object') return [];
+    return Object.entries(value).flatMap(([key, inner]) => [`${path}.${key}`, ...fieldsOf(inner, `${path}.${key}`)]);
+  };
+  const numbersOf = (value: unknown): number[] => {
+    if (typeof value === 'number') return [value];
+    if (value === null || typeof value !== 'object') return [];
+    return Object.values(value).flatMap(numbersOf);
+  };
+  assert.equal(INITIAL_HOST_STATE.narrowView, 'order');
+  const states = [
+    INITIAL_HOST_STATE,
+    ...(['order', 'related', 'sub-issues'] as const).map(
+      (value) => drive([{ kind: 'control', name: 'narrow-tab', value }]).state,
+    ),
+  ];
+  // "The reducer holds no width."
+  for (const state of states) {
+    assert.deepEqual(Object.keys(state).sort(), Object.keys(INITIAL_HOST_STATE).sort(), 'a tab press added a field');
+    assert.deepEqual(fieldsOf(state, 'state').filter((field) => /width|breakpoint|viewport/i.test(field)), []);
+    assert.deepEqual(numbersOf(state).filter((value) => [640, 1120, 1360].includes(value)), []);
+  }
+});
+});
+
+describe("more tests 4", function () {
+it('R5 KTD2 narrow-tab: a value that names no tab is unclaimed and leaves the state as it was', () => {
+  const onSubIssues = drive([{ kind: 'control', name: 'narrow-tab', value: 'sub-issues' }]).state;
+  // "A `narrow-tab` control sets them, taking `order`, `related` or `sub-issues`."
+  // The start really is on Sub-issues, so a reducer that ignores the control cannot pass the loop below.
+  assert.equal(onSubIssues.canvas, 'tree');
+  assert.equal(onSubIssues.narrowView, 'canvas');
+  // A canvas mode, the zone name and a word's spelling are near misses for a tab value, and none of them is one.
+  for (const value of ['graph', '', 'tree', 'neighbourhood', 'canvas', 'Related', 'subIssues', undefined]) {
+    const command: HostCommand =
+      value === undefined
+        ? { kind: 'control', name: 'narrow-tab' }
+        : { kind: 'control', name: 'narrow-tab', value };
+    const result = reduceHost(onSubIssues, command, document);
+    assert.equal(result.claimed, false, `narrow-tab ${String(value)} was claimed`);
+    assert.deepEqual(result.state, onSubIssues, `narrow-tab ${String(value)} changed the state`);
+  }
+});
+
+it('R13 KTD8 related-group: a second press closes the group, a group change clears the query, and a value naming no kind is unclaimed', () => {
+  const opened = drive([
+    { kind: 'point', key: '1' },
+    { kind: 'control', name: 'related-group', value: 'blocked-by' },
+    { kind: 'control', name: 'related-query', value: 'abc' },
+  ]).state;
+  assert.equal(opened.relatedGroup, 'blocked-by');
+  assert.equal(opened.relatedQuery, 'abc');
+
+  // A query typed inside one group would filter the next group by text the reader never typed there.
+  const moved = drive([{ kind: 'control', name: 'related-group', value: 'serialize-with' }], opened).state;
+  assert.equal(moved.relatedGroup, 'serialize-with');
+  assert.equal(moved.relatedQuery, '', 'a query typed for one group was carried into another');
+
+  // The same press delivered twice is a toggle: the second closes what the first opened.
+  const typed = drive([{ kind: 'control', name: 'related-query', value: 'xyz' }], moved).state;
+  const closed = drive([{ kind: 'control', name: 'related-group', value: 'serialize-with' }], typed).state;
+  assert.equal(closed.relatedGroup, null, 'pressing the open group again did not close it');
+  assert.equal(closed.relatedQuery, '', 'closing the group kept its query');
+
+  for (const value of ['nonsense', 'Blocked-By', 'blocked_by', '', undefined]) {
+    const command: HostCommand =
+      value === undefined
+        ? { kind: 'control', name: 'related-group' }
+        : { kind: 'control', name: 'related-group', value };
+    const result = reduceHost(typed, command, document);
+    assert.equal(result.claimed, false, `related-group ${String(value)} was claimed`);
+    assert.deepEqual(result.state, typed, `related-group ${String(value)} changed the state`);
+  }
+});
+
+it('R13 KTD8 reduceHost: moving the selection clears the related group and query, and a command that keeps it clears neither', () => {
+  const reading = drive([
+    { kind: 'point', key: '1' },
+    { kind: 'control', name: 'related-group', value: 'blocked-by' },
+    { kind: 'control', name: 'related-query', value: 'abc' },
+  ]).state;
+  assert.equal(reading.relatedGroup, 'blocked-by');
+  assert.equal(reading.relatedQuery, 'abc');
+
+  // Three routes that move the selection, so the clearing cannot live in one command's arm.
+  const moves: HostCommand[] = [
+    { kind: 'point', key: '2' },
+    { kind: 'control', name: 'reveal-issue', target: '3' },
+    { kind: 'control', name: 'clear' },
+  ];
+  for (const command of moves) {
+    const { state } = drive([command], reading);
+    const label = JSON.stringify(command);
+    assert.notDeepEqual(state.selection, reading.selection, `${label} did not move the selection`);
+    assert.equal(state.relatedGroup, null, `${label} left the old selection's group open`);
+    assert.equal(state.relatedQuery, '', `${label} left the old selection's query`);
+  }
+
+  // A tab switch, a rail scroll or a filter toggle leaves the selection where it was, so the reader's group and query stay.
+  const stays: HostCommand[] = [
+    { kind: 'scroll', start: 4 },
+    { kind: 'control', name: 'narrow-tab', value: 'order' },
+    { kind: 'control', name: 'narrow-tab', value: 'related' },
+    { kind: 'control', name: 'audit-filter' },
+  ];
+  for (const command of stays) {
+    const { state } = drive([command], reading);
+    const label = JSON.stringify(command);
+    assert.deepEqual(state.selection, reading.selection, `${label} moved the selection`);
+    assert.equal(state.relatedGroup, 'blocked-by', `${label} closed the group`);
+    assert.equal(state.relatedQuery, 'abc', `${label} cleared the query`);
+  }
+});
+
+it('R13 KTD8 reconcileHost: a selection dropped or moved to its carrier clears the related group and query, and a live one keeps the same state', () => {
+  const nothingHidden: ReadonlySet<string> = new Set();
+  const groupAndQuery: HostCommand[] = [
+    { kind: 'control', name: 'related-group', value: 'blocked-by' },
+    { kind: 'control', name: 'related-query', value: 'abc' },
+  ];
+
+  // A landed write removed the selected issue: the selection becomes none.
+  const onIssue = drive([{ kind: 'point', key: '2' }, ...groupAndQuery]).state;
+  assert.equal(onIssue.relatedGroup, 'blocked-by');
+  const without2: GraphDocument = { issues: document.issues.filter((issue) => issue.ref !== '2'), edges: [] };
+  const dropped = reconcileHost(onIssue, without2, nothingHidden);
+  assert.deepEqual(dropped.selection, { kind: 'none' });
+  assert.equal(dropped.relatedGroup, null, 'a group stayed open for a selection that is gone');
+  assert.equal(dropped.relatedQuery, '', 'a query stayed for a selection that is gone');
+
+  assert.equal(reconcileHost(onIssue, document, nothingHidden), onIssue, 'nothing moved, so nothing may change');
+
+  // The store hides the selected edge: the selection moves to the edge's carrier, which is a selection change too.
+  const onEdge = drive([{ kind: 'group', id: blockedBy.id }, ...groupAndQuery]).state;
+  assert.equal(onEdge.relatedQuery, 'abc');
+  const carried = reconcileHost(onEdge, document, new Set([blockedBy.id]));
+  assert.deepEqual(carried.selection, { kind: 'issue', key: blockedBy.from });
+  assert.equal(carried.relatedGroup, null, 'the edge selection\'s group followed the reader to the carrier');
+  assert.equal(carried.relatedQuery, '', 'the edge selection\'s query followed the reader to the carrier');
+});
+
+it('KTD2 narrowTabOf: the tab follows the mode, so a mode set after a tab press moves the tab with it', () => {
+  assert.equal(narrowTabOf('order', 'neighbourhood'), 'order');
+  assert.equal(narrowTabOf('order', 'tree'), 'order');
+  assert.equal(narrowTabOf('canvas', 'neighbourhood'), 'related');
+  assert.equal(narrowTabOf('canvas', 'tree'), 'sub-issues');
+
+  // The reader pressed Related groups, then the host called update({ canvas: 'tree' }), which writes only the mode.
+  // A stored tab would still say Related groups over a tree.
+  const related = drive([{ kind: 'control', name: 'narrow-tab', value: 'related' }]).state;
+  const retargeted: HostState = { ...related, canvas: 'tree' };
+  assert.equal(narrowTabOf(retargeted.narrowView, retargeted.canvas), 'sub-issues');
+
+  // Order keeps the mode the reader chose, so the wide layouts still draw the tree after Sub-issues then Order.
+  const back = drive([
+    { kind: 'control', name: 'narrow-tab', value: 'sub-issues' },
+    { kind: 'control', name: 'narrow-tab', value: 'order' },
+  ]).state;
+  assert.equal(back.canvas, 'tree', 'the Order tab reset the canvas mode');
+  assert.equal(narrowTabOf(back.narrowView, back.canvas), 'order');
+  const again = drive([{ kind: 'control', name: 'narrow-tab', value: 'related' }], back).state;
+  assert.equal(again.canvas, 'neighbourhood');
+  assert.equal(narrowTabOf(again.narrowView, again.canvas), 'related');
+});
+});
