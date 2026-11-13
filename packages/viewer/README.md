@@ -158,6 +158,11 @@ const paper = extendTheme(defaultTheme, {
     '--ig-edge-together-with': '#0A5B8A',
     '--ig-edge-duplicate-of': '#6B2E9E',
     '--ig-edge-decomposed-from': '#A31257',
+    // Dark, because a state hue is drawn faded and the blend that lands on a
+    // light surface must still clear 3:1; the default theme's pale hues do not.
+    '--ig-state-invalid': '#5A0000',
+    '--ig-state-failed': '#3D0F00',
+    '--ig-state-conflict': '#5C4300',
   },
 });
 
