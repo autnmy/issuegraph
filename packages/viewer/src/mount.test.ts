@@ -31,7 +31,7 @@ function reserialize(node: TestElement | TestNode): string {
           .replace(/&/g, '&amp;')
           .replace(/</g, '&lt;')
           .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')}"`,
+          .replaceAll('"', '&quot;')}"`,
     )
     .join('');
   if (node.children.length === 0) {
