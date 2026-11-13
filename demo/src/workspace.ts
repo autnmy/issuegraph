@@ -422,11 +422,13 @@ export const WORKSPACE_WORDS: MountWords = {
 };
 
 /**
- * The second theme: the paper palette the viewer's README documents, so the
- * switcher proves the contract the Descant embed relies on — redeclare the
- * tokens, touch nothing else. The exact values are the README's, which the
- * viewer's acceptance test also renders, so this cannot drift from what is
- * tested.
+ * The second theme: the paper palette the viewer documents, so the switcher
+ * proves the contract the Descant embed relies on — redeclare the tokens,
+ * touch nothing else. The values are the light palette the viewer's
+ * acceptance test renders. This is a copy, and it extends the dark default, so
+ * a colour token missing here would keep a hue picked for a dark page:
+ * `demo/src/theme.test.ts` fails when any of the viewer's `COLOR_TOKENS` is
+ * left out, or when a state hue drops below 3:1 on a light surface.
  */
 export const PAPER_THEME: Theme = extendTheme(defaultTheme, {
   colors: {
@@ -447,6 +449,12 @@ export const PAPER_THEME: Theme = extendTheme(defaultTheme, {
     '--ig-edge-together-with': '#0A5B8A',
     '--ig-edge-duplicate-of': '#6B2E9E',
     '--ig-edge-decomposed-from': '#A31257',
+    // Dark, because the editor draws a state hue faded, and what must clear
+    // 3:1 is the blend that lands on the surface. The dark theme's pale state
+    // hues nearly vanish on this page.
+    '--ig-state-invalid': '#5A0000',
+    '--ig-state-failed': '#3D0F00',
+    '--ig-state-conflict': '#5C4300',
   },
 });
 
