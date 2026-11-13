@@ -41,7 +41,7 @@ Quote `#` references (YAML comment char) and leave a blank line before the closi
 - [Whack-an-Issue](https://issuegraph.org/play/): a game contrasting list order vs issuegraph order
 
 ## Implementations
-- [Descant](https://descant.run): autonomous software-delivery pipeline that uses Issuegraph for graph parsing, ready-set and effective-priority selection, decomposition, and grooming writers.
+- [Descant](https://descant.run): software factory that uses Issuegraph for graph parsing, ready-set and effective-priority selection, decomposition, and grooming writers.
 
 ## Related (same steward)
 - [MA2H](https://ma2h.org): open protocol for agent fleets to notify, ask, and hand tasks to a human through one hub
