@@ -57,6 +57,7 @@ import {
   stationsOf,
   unitBlock,
 } from '../parts.ts';
+import { type Receding, recedingOf } from '../recede.ts';
 import { type LateralNeighbours, type Scene, resolveFocusKey } from '../scene.ts';
 import { type Theme, resolveTheme } from '../theme.ts';
 import { type EdgeTerminal, dashArrayFor, treatmentFor } from '../vocabulary.ts';
@@ -158,6 +159,21 @@ export interface GraphOptions extends SceneOptions {
    * gets — the reason this is an option rather than a field on the scene.
    */
   readonly edgeMarks?: ReadonlyMap<string, readonly EdgeMark[]> | undefined;
+  /**
+   * The selected relationship, as its `edgeIdentity(field, from, to)`. With
+   * one, everything that does not touch it recedes. Ignored when `selected`
+   * names an issue this document carries — see `recedingOf`.
+   */
+  readonly selectedEdge?: string | null | undefined;
+}
+
+/**
+ * The recede stamp. Constant, and absent rather than `"false"` on what stays,
+ * so a render with nothing receding is byte for byte the render without a
+ * selection, and the selection itself never reaches the markup.
+ */
+function recedeStamp(recedes: boolean): 'true' | null {
+  return recedes ? 'true' : null;
 }
 
 function terminalMarker(
@@ -166,6 +182,7 @@ function terminalMarker(
   field: EdgeField,
   identity: string,
   theme: Theme,
+  recedes: boolean,
 ): ElementSpec | null {
   const { end, endAngle } = geometry;
   const degrees = (endAngle * 180) / Math.PI;
@@ -177,7 +194,13 @@ function terminalMarker(
   // Overlays are unaffected — `attachEdgeOverlays` skips `ig-terminal` on the
   // CLASS, before it ever looks at an identity, precisely so an overlay never
   // draws over one of the four redundant channels.
-  const common = { class: 'ig-terminal', 'data-edge': field, 'data-ig-group': identity, transform };
+  const common = {
+    class: 'ig-terminal',
+    'data-edge': field,
+    'data-ig-group': identity,
+    transform,
+    'data-recede': recedeStamp(recedes),
+  };
   // Every dimension is theme data. A marker sized by a literal would stay put
   // while a host scaled the type around it, and the shape channel the
   // colour-blind-safety claim leans on is exactly what would stop reading.
@@ -221,7 +244,12 @@ function terminalMarker(
  * line — the "double" pattern is structural, so it cannot be confused with a
  * dash under any theme.
  */
-function edgePaths(edge: ViewerEdge, geometry: EdgeGeometry, theme: Theme): ElementSpec[] {
+function edgePaths(
+  edge: ViewerEdge,
+  geometry: EdgeGeometry,
+  theme: Theme,
+  recedes: boolean,
+): ElementSpec[] {
   const treatment = treatmentFor(edge.field);
   const dash = dashArrayFor(treatment.dash);
   const label = `${edge.from} ${treatment.label} ${edge.to}`;
@@ -249,6 +277,7 @@ function edgePaths(edge: ViewerEdge, geometry: EdgeGeometry, theme: Theme): Elem
     'stroke-dasharray': dash,
     role: 'img',
     'aria-label': label,
+    'data-recede': recedeStamp(recedes),
   } as const;
 
   if (treatment.dash === 'double') {
@@ -291,6 +320,7 @@ function nodeCard(
   key: string,
   options: SceneOptions,
   focused: string | null,
+  receding: Receding,
 ): ElementSpec | null {
   const box = layout.nodes.get(key);
   if (box === undefined) return null;
@@ -335,6 +365,9 @@ function nodeCard(
       'aria-label': label,
       title: heldBecause === '' ? null : heldBecause,
       tabindex: focused === key ? 0 : -1,
+      // By the card's key: a unit recedes whole or not at all, so its lead
+      // answers for every member.
+      'data-recede': recedeStamp(receding.keys.has(key)),
       // Positioned from the layout, not from the flow, so a card sits where its
       // edges terminate however the theme scales the geometry.
       style: `--ig-row-x:${String(box.x)}px;--ig-row-y:${String(box.y)}px;--ig-row-w:${String(box.width)}px;--ig-row-h:${String(box.height)}px`,
@@ -430,6 +463,7 @@ function spineStations(
   document: NormalizedDocument,
   layout: GraphLayout,
   theme: Theme,
+  receding: Receding,
 ): readonly ElementSpec[] {
   const size = theme.metrics['--ig-station-box'];
   const stations: ElementSpec[] = [];
@@ -448,6 +482,8 @@ function spineStations(
           class: 'ig-spine-station',
           'data-fill': box.now === true ? 'filled' : fill,
           'data-wait': waiting ? 'serialize' : null,
+          // By this station's own key, so it always agrees with its card.
+          'data-recede': recedeStamp(receding.keys.has(key)),
           role: 'img',
           // THE SAME TWO-FIELD PHRASE THE ROW SPEAKS — `slotPosition`, not a
           // second reading of `rank`. Inferring held from a missing rank here
@@ -661,8 +697,9 @@ function footerGroup(
   layout: GraphLayout,
   options: SceneOptions,
   focused: string | null,
+  receding: Receding,
 ): ElementSpec | null {
-  const entries = footerKeys(document, layout, { ...options, focused });
+  const entries = footerKeys(document, layout, { ...options, focused }, receding);
   if (entries.length === 0) return null;
   // A SET, so each test is a lookup rather than a scan of the footer — the
   // same membership question, asked once per slot and once per exclusion.
@@ -701,8 +738,9 @@ function footerKeys(
   document: NormalizedDocument,
   layout: GraphLayout,
   options: SceneOptions,
+  receding: Receding,
 ): readonly ElementSpec[] {
-  return layout.footer.map((key) => {
+  const row = (key: string): ElementSpec => {
     const slot = document.slotByLead.get(key);
     if (slot !== undefined) return footerRow(document, slot, options);
     const exclusion = document.order.excluded.find((candidate) => candidate.key === key);
@@ -710,12 +748,25 @@ function footerKeys(
       return excludedRow(document, key, exclusion.canonical, options);
     }
     return asideRow(document, key, options);
+  };
+  // STAMPED HERE, ON THE ROW IT RETURNS, because the list draws the same three
+  // row builders and the list never recedes.
+  return layout.footer.map((key) => {
+    const spec = row(key);
+    return { ...spec, attrs: { ...spec.attrs, 'data-recede': recedeStamp(receding.keys.has(key)) } };
   });
 }
 
 export function graphScene(document: NormalizedDocument, rawOptions: GraphOptions = {}): Scene {
   // See `linearScene` — the same rule, applied before the canvas is laid out.
   const stations = stationsOf(document);
+  // FROM THE OPTIONS AS GIVEN, before `atStations` moves a selected member to
+  // its unit's lead: selecting one member keeps that member's neighbours, not
+  // its partners'.
+  const receding = recedingOf(document, {
+    key: rawOptions.selected ?? null,
+    edge: rawOptions.selectedEdge ?? null,
+  });
   const options = atStations(rawOptions, stations);
   const theme = resolveTheme(options.theme);
   const layout = layoutGraph(document, theme, options.compact === true);
@@ -950,13 +1001,15 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
       const geometry = edgeGeometry(layout, drawn);
       if (geometry === null) continue;
       const identity = edgeIdentity(edge.field, edge.from, edge.to);
-      edgeLayers.push(...edgePaths(edge, geometry, theme));
+      const edgeRecedes = receding.edges.has(identity);
+      edgeLayers.push(...edgePaths(edge, geometry, theme, edgeRecedes));
       const marker = terminalMarker(
         treatmentFor(edge.field).terminal,
         geometry,
         edge.field,
         identity,
         theme,
+        edgeRecedes,
       );
       if (marker !== null) edgeLayers.push(marker);
       // THE MARKS A CALLER ASKED FOR, LAST, so every one of them sits in front
@@ -1030,7 +1083,7 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
         .map(([column, label]) => {
           const cards = [...layout.nodes.keys()]
             .filter((key) => layout.nodes.get(key)?.column === column)
-            .map((key) => nodeCard(document, layout, key, options, navigable.focused))
+            .map((key) => nodeCard(document, layout, key, options, navigable.focused, receding))
             .filter((card): card is ElementSpec => card !== null);
           return cards.length === 0
             ? null
@@ -1097,7 +1150,7 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
               element('div', { class: 'ig-rail' }, [
                 ...columnHeads(layout),
                 ...cardLists,
-                ...spineStations(document, layout, theme),
+                ...spineStations(document, layout, theme, receding),
               ]),
             ],
           ),
@@ -1115,7 +1168,7 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
       // position in a sequence it is not part of. So it lands here, in the same
       // one-line-each group the list draws, which is also what keeps the two
       // projections showing the same set of issues.
-      refused ? null : footerGroup(document, layout, options, navigable.focused),
+      refused ? null : footerGroup(document, layout, options, navigable.focused, receding),
       document.isolated.length === 0
         ? null
         : element('p', { class: 'ig-count' }, [
