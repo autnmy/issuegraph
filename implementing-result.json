@@ -1,0 +1,227 @@
+{
+ "kind": "complete",
+ "summary": {
+  "subject": "feat(viewer): drop the rail's chip-hiding rules and mute row notes",
+  "body": "The order row now draws only the priority tag, one fact and +N, so no width rule has to hide chips. A held row's opacity put the muted notes under 4.5:1, so it is removed."
+ },
+ "commitConvention": "conventional",
+ "repositorySuite": "ran-in-part",
+ "prBody": {
+  "what": "An order row in the viewer's list, which is also the editor's rail, now shows the priority tag, one more fact and a +N chip for the relationships it does not show. The one fact is the not-ready mark on a held row, otherwise the first relationship in field order. Verified, estimated and priorities disagree follow the chips as muted words, never as tags, and +N never counts them. The stylesheet loses the three width rules at 360, 345 and 335px that hid chips by kind, and the three rules that hid a matched-query chip on a list row. The 430px density crossover stays. A held row is no longer faded. The graph card, the tree view and the twelve-relationship budget they use are unchanged.",
+  "why": "At a 336px rail the old row clipped, and the 335px rule hid the priority tag, which is the one chip a reader scans the order by. Evidence chips looked like facts about the work, so a reader could not tell them from a note about how the row was ranked. With the row built short, nothing has to be hidden by width. The held row's 0.72 opacity faded the muted words to about 3.1:1 on dark and 3.3:1 on light, under the 4.5:1 text bar. Removing it fixes that at the cause, and the hatch and held station still mark the row.",
+  "approach": "A pure orderRowFacts in the parts module returns the priority, the shown fact, the omitted count and the notes. It reads the same deduplicated relationship walk the tree and graph card use, so all three name the same first relationship. One result of that: the first relationship can be an incoming blocked-by, drawn as 'blocks N'. At the wide density a together unit now hides only its lead's title and key, so its chips show above the enclosure. A wide row placed by a query names its label twice, in the chip and in its provenance line. The graph's refusal list draws order rows, so it gets the new row. Two contrast tests counted the graph card's 0.75 held opacity, which never applies to an order row; they now count only rules that reach the row.",
+  "testPlan": "The tests check that a row draws the priority tag, one fact and an exact +N, with no chip when nothing is left; that the +N chip has a title but no aria-label or edge group; that notes are muted words and never counted; that no stylesheet rule hides those parts or fades a held row; that muted text clears 4.5:1 on every row ground in dark and light; and that the tree and graph card are unchanged. node --test over the seven changed test files and the mount, tree, states and layout tests exited 0 with 382 passing. npm test and the editor tests did not run; this pass ran only the touched files and their neighbours.",
+  "risks": "Screen-reader users hear the overflow chip as '+N' only, because its text is fixed at the number and the package has no hidden-text style; that is left for a follow-up. If a graph selection names an edge that the order row only counts, switching to the list keeps the selection but has no element to scroll to. A long query label can still be cut off on the dense line, because these tests check what is hidden, not what fits.",
+  "shape": {
+   "complexity": "removed",
+   "ways": {
+    "before": 2,
+    "after": 1
+   }
+  }
+ },
+ "writtenRuleDeviations": [
+  {
+   "rule": "The \"+N\" chip's visible text is exactly `+N`. It carries `data-omitted` and a `title`, but no `aria-label` and no `data-ig-group`.",
+   "delivered": "Built as written. With the text fixed at the number and no aria-label, a screen reader announces only '+N'; the fuller words sit on title, and a hidden-text remedy is left to a follow-up."
+  },
+  {
+   "rule": "The pull request must say that the wide-density row then names the query label twice: in the chip and in its provenance line.",
+   "delivered": "Built as written. The wide row shows the query label in the chip and in the provenance line, and the approach section and changelog say so."
+  }
+ ],
+ "riskClaims": [
+  {
+   "claim": "The tree projection draws the same markup, and the graph card the same chip text, as before the change.",
+   "evidenceKind": "tests",
+   "evidence": "render.test.ts 'the tree projection still draws ROW_BADGE_BUDGET relationship chips and +25 more relationships for the hub, unchanged by a linear render (R13)' and parts.test.ts badgeTexts tests."
+  }
+ ],
+ "testChanges": [
+  {
+   "path": "packages/viewer/src/theme.test.ts",
+   "reason": "Adds the muted-text contrast tests for order rows. Their held-row opacity filter was narrowed to rules that reach an order row's li.ig-slot, so the graph card's own 0.75 no longer counts; a held-row opacity still fails them.",
+   "noExpectationMoved": true,
+   "examples": []
+  },
+  {
+   "path": "packages/viewer/src/render.test.ts",
+   "reason": "Adds tests that the tree projection is unchanged and that the rail row draws the priority tag, one fact and +2 at both densities.",
+   "noExpectationMoved": true,
+   "examples": []
+  },
+  {
+   "path": "packages/viewer/src/parts.test.ts",
+   "reason": "Adds tests for orderRowFacts and for badgeTexts matching the graph card.",
+   "noExpectationMoved": true,
+   "examples": []
+  },
+  {
+   "path": "packages/viewer/src/projections/graph.test.ts",
+   "reason": "Adds tests that the refusal list draws the new order row and the graph card keeps its chips.",
+   "noExpectationMoved": true,
+   "examples": []
+  },
+  {
+   "path": "packages/viewer/src/styles.test.ts",
+   "reason": "The query-chip test now checks the chip shows at both densities, not that it hides on list rows. The specificity test now finds the narrowed unit rule. Adds tests for the removed width rules, the note style and the tag's ink.",
+   "noExpectationMoved": false,
+   "examples": [
+    {
+     "example": "says a matched query once on a list row, at every density (#131)",
+     "proves": {
+      "before": "a matched-query chip is hidden on a list row and shown only at the dense density",
+      "after": {
+       "path": "packages/viewer/src/styles.test.ts",
+       "example": "shows a matched-query chip on a list row at both densities, opened or not"
+      }
+     },
+     "dropped": null
+    },
+    {
+     "example": "wins on specificity, not on where anyone put the rule",
+     "proves": {
+      "before": "the rail override of the wide unit rule wins on specificity",
+      "after": {
+       "path": "packages/viewer/src/styles.test.ts",
+       "example": "wins on specificity, not on where anyone put the rule"
+      }
+     },
+     "dropped": null
+    }
+   ]
+  },
+  {
+   "path": "packages/viewer/src/projections/linear.test.ts",
+   "reason": "The tests that pinned twelve relationship chips per order row now pin the priority tag, one fact and an exact +N per row, with the same fixtures. The tree's budget tests are untouched.",
+   "noExpectationMoved": false,
+   "examples": [
+    {
+     "example": "draws a row past the badge budget as the budget plus one chip naming the rest",
+     "proves": {
+      "before": "a row past the budget draws twelve chips and one overflow chip",
+      "after": {
+       "path": "packages/viewer/src/projections/linear.test.ts",
+       "example": "R6 linearScene: the hub of denseRowDocument(ROW_BADGE_BUDGET + 24) draws at most three chips, one blocked-by badge and +36"
+      }
+     },
+     "dropped": null
+    },
+    {
+     "example": "spends the budget in field order, so blocked-by survives the cut",
+     "proves": {
+      "before": "blocked-by is drawn first",
+      "after": {
+       "path": "packages/viewer/src/projections/linear.test.ts",
+       "example": "R2 linearScene: without the hold the row shows its first blocked-by badge and +2, and its notes are not counted"
+      }
+     },
+     "dropped": null
+    },
+    {
+     "example": "draws no chip for a row at or under the budget",
+     "proves": {
+      "before": "no overflow chip when nothing is cut",
+      "after": {
+       "path": "packages/viewer/src/projections/linear.test.ts",
+       "example": "R3 linearScene: a row with nothing omitted draws no +N chip and never +0, however many notes it has"
+      }
+     },
+     "dropped": null
+    },
+    {
+     "example": "gives the overflow chip no edge identity",
+     "proves": {
+      "before": "the overflow chip carries no edge identity",
+      "after": {
+       "path": "packages/viewer/src/projections/linear.test.ts",
+       "example": "R4 linearScene: the +N chip reads exactly +17 and carries data-omitted and a title, but no aria-label, data-ig-group or data-edge"
+      }
+     },
+     "dropped": null
+    },
+    {
+     "example": "bounds the badges a dense document draws by its rows, not its edges",
+     "proves": {
+      "before": "chip count grows with rows, not edges",
+      "after": {
+       "path": "packages/viewer/src/projections/linear.test.ts",
+       "example": "R1 linearScene: every row of denseRowDocument(400) draws exactly one relationship chip, the hub +400 and issue 1 +1"
+      }
+     },
+     "dropped": null
+    },
+    {
+     "example": "counts an omitted intra-unit edge once, after the dedupe",
+     "proves": {
+      "before": "an edge inside a unit is counted once",
+      "after": {
+       "path": "packages/viewer/src/projections/linear.test.ts",
+       "example": "R3 linearScene: denseUnitDocument(ROW_BADGE_BUDGET) counts the edge inside the together unit once and draws +14"
+      }
+     },
+     "dropped": null
+    },
+    {
+     "example": "carries a partner's relationships onto the unit's one row",
+     "proves": {
+      "before": "a unit row carries its partner's relationships",
+      "after": {
+       "path": "packages/viewer/src/projections/linear.test.ts",
+       "example": "R2 linearScene: the held unit of heldTogetherDocument shows the not-ready mark and counts its partner's relationships as +2"
+      }
+     },
+     "dropped": null
+    },
+    {
+     "example": "renders an edge internal to a unit once, not once per member",
+     "proves": {
+      "before": "an internal unit edge is drawn once",
+      "after": {
+       "path": "packages/viewer/src/projections/linear.test.ts",
+       "example": "a together unit at the badge budget draws one relationship and +14, counting its internal edge once"
+      }
+     },
+     "dropped": null
+    }
+   ]
+  },
+  {
+   "path": "packages/viewer/src/host.test.ts",
+   "reason": "The caveat test now expects muted ig-row-note words on the row instead of caveat chips, and keeps the sentence beneath with only the losing value struck.",
+   "noExpectationMoved": false,
+   "examples": [
+    {
+     "example": "draws each caveat as a chip on the badge row and a sentence beneath, striking only the losing value",
+     "proves": {
+      "before": "each caveat is a chip plus a sentence",
+      "after": {
+       "path": "packages/viewer/src/host.test.ts",
+       "example": "draws each caveat as a muted note on the row and a sentence beneath, striking only the losing value"
+      }
+     },
+     "dropped": null
+    }
+   ]
+  },
+  {
+   "path": "packages/viewer/src/mount.test.ts",
+   "reason": "The test selected a held unit's together-with edge, which the order row now only counts; it now selects the partner's blocked-by on a ready copy, which the row shows. It still checks the selection scrolls into view after a switch.",
+   "noExpectationMoved": false,
+   "examples": [
+    {
+     "example": "brings a surviving selection into view on a projection switch, edge or issue",
+     "proves": {
+      "before": "a selected together-with edge scrolls into view after a switch",
+      "after": {
+       "path": "packages/viewer/src/mount.test.ts",
+       "example": "brings a surviving selection into view on a projection switch, edge or issue"
+      }
+     },
+     "dropped": null
+    }
+   ]
+  }
+ ],
+ "reason": null
+}
