@@ -14,7 +14,7 @@
  */
 
 import type { Mutation, OrderRow } from '@issuegraph/store';
-import type { ViewerDocument } from '@issuegraph/viewer';
+import { COLOR_TOKENS, type ViewerDocument } from '@issuegraph/viewer';
 import assert from 'node:assert/strict';
 
 import type { ChangeWords } from '../index.ts';
@@ -136,5 +136,33 @@ export function railRow(markup: string, key: string): string {
 export function ranks(markup: string): string[] {
   return [...markup.matchAll(/<span class="ig-rank"[^>]*>([^<]*)<\/span>/g)].map(
     (match) => match[1] ?? '',
+  );
+}
+
+/** The background, the surfaces, the hairline and the text roles: the colour tokens with no hue. */
+const NEUTRAL_TOKEN = /^--ig-(?:bg|surface(?:-2)?|line|text(?:-body|-muted)?)$/;
+
+/**
+ * What a held rail's rule must declare: each colour token that is not the
+ * background, a surface, the hairline or a text role, set to the muted grey.
+ * Read off the viewer's own list by name, so a hue the viewer adds is owed too.
+ */
+export const HELD_RAIL_GREY: ReadonlyMap<string, string> = new Map(
+  COLOR_TOKENS.filter((token) => !NEUTRAL_TOKEN.test(token)).map(
+    (token): [string, string] => [token, 'var(--ig-text-muted)'],
+  ),
+);
+
+/** A rule body's declarations as property to value, in source order. */
+export function heldRuleDeclarations(body: string): ReadonlyMap<string, string> {
+  return new Map(
+    body
+      .split(';')
+      .map((declaration) => declaration.trim())
+      .filter((declaration) => declaration !== '')
+      .map((declaration): [string, string] => {
+        const colon = declaration.indexOf(':');
+        return [declaration.slice(0, colon).trim(), declaration.slice(colon + 1).trim()];
+      }),
   );
 }

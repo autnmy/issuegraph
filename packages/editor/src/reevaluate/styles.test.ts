@@ -6,7 +6,15 @@ import { THEME_TOKENS, renderViewer, viewerStylesheet } from '@issuegraph/viewer
 
 import { renderReevaluate } from './render.ts';
 import { reevaluateStylesheet } from './styles.ts';
-import { WORDS, editOf, orderOf, railOf, unitRailOf } from '../testing/reevaluate.ts';
+import {
+  HELD_RAIL_GREY,
+  WORDS,
+  editOf,
+  heldRuleDeclarations,
+  orderOf,
+  railOf,
+  unitRailOf,
+} from '../testing/reevaluate.ts';
 
 /** The stylesheet with its comments removed — a comment is not a declaration. */
 function withoutComments(css: string): string {
@@ -135,10 +143,11 @@ describe('the re-evaluate stylesheet carries structure, never a value', () => {
 
     const held = css.match(/\.ig-reevaluate\[data-order='held'\][^{]*\{([^}]*)\}/)?.[1];
     assert.ok(held !== undefined, 'nothing greys the held rail');
-    // A subtree-wide property, so a descendant layer 1 colours later is covered
-    // by construction. Enumerating the descendants to override is the
+    // Every hue token redefined, and nothing else declared: a redefined token
+    // is inherited, so a descendant layer 1 colours later is covered by
+    // construction. Enumerating the descendants to override is the
     // one-spelling-at-a-time class this repository has already paid for.
-    assert.match(held, /filter:/);
+    assert.deepEqual(heldRuleDeclarations(held), HELD_RAIL_GREY);
     assert.equal(/(^|;)\s*color:/.test(held), false, 'a bare colour the descendants override');
   });
 

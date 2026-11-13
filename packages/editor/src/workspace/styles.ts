@@ -36,6 +36,8 @@
  * could creep back in without touching a line of TypeScript.
  */
 
+import { heldRailDeclarations } from '../reevaluate/styles.ts';
+
 export const workspaceStylesheet = `
 .ig-workspace {
   display: grid;
@@ -1453,11 +1455,12 @@ export const workspaceStylesheet = `
 /* §17c's "write landed · order computing": the PREVIOUS order, held still and
    greyed one step, with the label saying why.
 
-   THE SAME FILTER, for the reason reevaluate/styles.ts gives where it greys
-   .ig-reevaluate[data-order='held'] .ig-viewer: layer 1 sets color directly on
-   its own descendants, so an inherited colour greys almost nothing, and a list
-   of descendants to override goes stale the first time layer 1 colours
-   something new.
+   THE SAME HUE-TOKEN BLOCK, for the reason reevaluate/styles.ts gives where it
+   greys .ig-reevaluate[data-order='held'] .ig-viewer: layer 1 sets color
+   directly on its own descendants, so an inherited colour greys almost
+   nothing, and a list of descendants to override goes stale the first time
+   layer 1 colours something new. Redefined hue tokens inherit, and greying by
+   colour keeps the rail's text at its theme's contrast.
 
    SCOPED TO THE RAIL ZONE, WHICH THE STANDALONE SURFACE DID NOT HAVE TO BE.
    There, .ig-viewer is the rail and nothing else. The workspace draws a SECOND
@@ -1469,7 +1472,7 @@ export const workspaceStylesheet = `
    in flight. The rail is the only surface whose ranks the store cannot vouch
    for, so it is the only one greyed. */
 .ig-workspace[data-order='held'] .ig-zone[data-zone='rail'] .ig-viewer {
-  filter: grayscale(1);
+${heldRailDeclarations}
 }
 
 /* ── 17k's OTHER TWO LAYOUTS ───────────────────────────────────────────────

@@ -21,6 +21,31 @@
  * place both could creep back in.
  */
 
+import { COLOR_TOKENS, type ColorToken } from '@issuegraph/viewer';
+
+/**
+ * The colour tokens that carry no hue: the background, the surfaces, the
+ * hairline and the text roles. Every other entry of `COLOR_TOKENS` is a hue.
+ */
+const NEUTRAL_TOKENS: ReadonlySet<ColorToken> = new Set<ColorToken>([
+  '--ig-bg',
+  '--ig-surface',
+  '--ig-surface-2',
+  '--ig-line',
+  '--ig-text',
+  '--ig-text-body',
+  '--ig-text-muted',
+]);
+
+/**
+ * The declarations that grey a held rail: every hue token redefined to
+ * `--ig-text-muted`. Taken from the viewer's own token list, so a hue added
+ * there is greyed here too. The workspace's held rule uses the same block.
+ */
+export const heldRailDeclarations = COLOR_TOKENS.filter((token) => !NEUTRAL_TOKENS.has(token))
+  .map((token) => `  ${token}: var(--ig-text-muted);`)
+  .join('\n');
+
 export const reevaluateStylesheet = `
 .ig-reevaluate {
   display: flex;
@@ -35,23 +60,22 @@ export const reevaluateStylesheet = `
 /* Greyed one step, and never hidden: a stale order that is labelled is still
    the most useful thing on the screen.
 
-   A FILTER, NOT A COLOUR, and that is the whole point of this rule. color on
-   the rail greys almost nothing: the viewer's own stylesheet sets color
+   THE HUE TOKENS, NOT color, and that is the whole point of this rule. color
+   on the rail greys almost nothing: the viewer's own stylesheet sets color
    directly on .ig-title, .ig-id and .ig-hold, and carries the stations
    and badges in background and border-color, none of which inherit at all.
    A specified value beats an inherited one, so the stale order would have kept
    its normal palette while this rule looked like it was doing something.
 
-   The enumeration is the trap here, not the oversight: listing the descendants
-   to override is the "a static rule names one spelling of a capability"
-   class this repository has already paid for several times over, and it would
-   go stale the first time layer 1 colours something new. filter applies to
-   an element AND its whole subtree whatever properties that subtree sets, so
-   a descendant added later is covered by construction. styles.test.ts pins
-   both halves: that layer 1 really does colour its own descendants, and that
-   this rule is not a bare color. */
+   Listing the descendants to override would go stale the first time layer 1
+   colours something new. Custom properties DO inherit, so redefining the hue
+   tokens here greys every descendant that reads one, a descendant added later
+   included. It greys by colour, never by filter or opacity, so the rail's
+   text keeps the contrast its theme pairs promise. styles.test.ts pins both
+   halves: that layer 1 really does colour its own descendants, and that this
+   rule redefines every hue and sets no bare color. */
 .ig-reevaluate[data-order='held'] .ig-viewer {
-  filter: grayscale(1);
+${heldRailDeclarations}
 }
 
 .ig-order-computing {

@@ -21,7 +21,13 @@ import { renderScaleLadder } from '../scale/render.ts';
 import { scaleLadderStylesheet } from '../scale/styles.ts';
 import { workspaceStylesheet } from './styles.ts';
 import { WORKSPACE_WORDS, backlogOf, keysOf } from '../testing/workspace.ts';
-import { WORDS as CHANGE_WORDS, editOf, orderOf } from '../testing/reevaluate.ts';
+import {
+  WORDS as CHANGE_WORDS,
+  HELD_RAIL_GREY,
+  editOf,
+  heldRuleDeclarations,
+  orderOf,
+} from '../testing/reevaluate.ts';
 
 /**
  * Every `calc(...)` body in the sheet, matched on BALANCED parentheses.
@@ -1666,4 +1672,40 @@ describe('the layout under 640', () => {
       ['width >= 1360px', 'width < 1360px', 'width < 1120px'],
     );
   });
+});
+
+describe('the held rail greys by its hue tokens, never by a filter', () => {
+  it('redefines every hue token to the muted grey on the rail zone, and declares nothing else', () => {
+    // Redefined tokens are inherited, so every station, badge and line in the
+    // rail that reads a hue turns grey, and the rail's text keeps its contrast.
+    const held = withoutComments(workspaceStylesheet).match(
+      /\.ig-workspace\[data-order='held'\] \.ig-zone\[data-zone='rail'\] \.ig-viewer\s*\{([^}]*)\}/,
+    )?.[1];
+    assert.ok(held !== undefined, 'nothing greys the held rail');
+    assert.ok(HELD_RAIL_GREY.has('--ig-station-ready'), 'the expected hues hold no station hue');
+    assert.ok(HELD_RAIL_GREY.has('--ig-state-failed'), 'the expected hues hold no write-state hue');
+    assert.deepEqual(heldRuleDeclarations(held), HELD_RAIL_GREY);
+    assert.equal(/(^|;)\s*color:/.test(held), false, 'a bare colour the descendants override');
+  });
+});
+
+describe("more tests", function () {
+it('renderWorkspace styles declare no opacity and no filter once comments are stripped, so no editor text is dimmed by opacity', () => {
+  // "No text in either package is dimmed by opacity"
+  // "In packages/editor, `renderScaleLadder(document, { selectedEdge })` stamps the rest, the comment-stripped `styles` of `renderWorkspace` and `renderScaleLadder` hold no `opacity:` or `filter:` declaration, and a receded failed edge has no `opacity` attribute."
+  // A held order brings in the stylesheet that greys the held-order rail, which is where a filter sat.
+  const { styles } = renderWorkspace(
+    backlogOf(4, { held: ['i0003'], edges: [['blocked-by', 'i0001', 'i0002']] }),
+    { words: WORKSPACE_WORDS, orderStatus: 'held' },
+  );
+  const css = styles.replace(/\/\*[\s\S]*?\*\//g, '');
+  // The property name is matched exactly, so stroke-opacity and fill-opacity are not counted.
+  assert.deepEqual(
+    [...css.matchAll(/(?:^|[;{\s])(opacity|filter)\s*:/g)].map((match) => match[1]),
+    [],
+    'the workspace styles still fade something by opacity or filter',
+  );
+  // A receded line draws by stroke-opacity, so finding it shows the viewer sheet was part of what was scanned.
+  assert.match(css, /(?:^|[;{\s])stroke-opacity\s*:/);
+});
 });
