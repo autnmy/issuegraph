@@ -23,6 +23,8 @@
  * properties on `.ig-viewer`.
  */
 
+import { RECEDE_ALPHA } from './recede.ts';
+
 /**
  * §17j's rail density, written once and emitted under two keys.
  *
@@ -275,6 +277,10 @@ ${scope} .ig-slot[aria-expanded='true'] .ig-badge[data-priority='query'] {
 }
 `;
 }
+
+/** `RECEDE_ALPHA` as a `color-mix` share, so a receded station's ring and a
+ * receded line draw at one strength from one source. */
+const RECEDE_PERCENT = `${RECEDE_ALPHA * 100}%`;
 
 export const viewerStylesheet = `
 .ig-viewer {
@@ -1018,16 +1024,17 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   overflow-wrap: anywhere;
 }
 
-.ig-slot[data-held='true'] .ig-title,
 .ig-footer .ig-title {
   color: var(--ig-text-body);
 }
 
-/* A held row's CONTENT recedes, not its position. The frame dims the body and
-   leaves the rank track at full strength, so the row still reads as occupying
-   the slot it would have taken. */
-.ig-slot[data-held='true'] .ig-row-body {
-  opacity: 0.72;
+/* A held row's CONTENT recedes, not its position. The body's text turns muted
+   and the rank track stays at full strength, so the row still reads as
+   occupying the slot it would have taken. By colour, never by opacity: fading
+   the text would drop it below the contrast the theme's text roles promise. */
+.ig-slot[data-held='true'] .ig-row-body,
+.ig-slot[data-held='true'] .ig-title {
+  color: var(--ig-text-muted);
 }
 
 /* The isolated-issue tally sits directly on the panel, outside the padded
@@ -1442,7 +1449,7 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 .ig-card[data-column='right'] {
   background: transparent;
   border-style: dashed;
-  opacity: 0.8;
+  color: var(--ig-text-muted);
 }
 
 .ig-card[data-exclusion='true'] {
@@ -1453,7 +1460,14 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 .ig-card[data-held='true'] {
   background: transparent;
   border-style: dashed;
-  opacity: 0.75;
+  color: var(--ig-text-muted);
+}
+
+/* The card's own text roles set their colour, so the card's muted colour has
+   to be named on them too, or only the unstyled text would dim. */
+.ig-card[data-column='right'] .ig-title,
+.ig-card[data-held='true'] .ig-title {
+  color: var(--ig-text-muted);
 }
 
 .ig-card[data-now='true'] {
@@ -1620,6 +1634,71 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 .ig-terminal[data-edge='together-with'] { color: var(--ig-edge-together-with); }
 .ig-terminal[data-edge='duplicate-of'] { color: var(--ig-edge-duplicate-of); }
 .ig-terminal[data-edge='decomposed-from'] { color: var(--ig-edge-decomposed-from); }
+
+/* ── what recedes around a selection ───────────────────────────────────── */
+
+/* EVERYTHING THAT DOES NOT TOUCH THE SELECTION RECEDES, so its neighbours read
+   first. The graph stamps data-recede='true' on each receding card row, spine
+   station, footer row, line and terminal; these rules draw the stamp.
+
+   NO RULE HERE USES opacity OR filter. Fading a card by opacity fades its text
+   below the contrast the theme's text roles promise, so a card recedes by
+   colour instead: the second surface, with muted labels. A line or terminal
+   recedes by stroke-opacity and fill-opacity on the stamped element itself,
+   never on a kind's class, so the legend's samples never dim. No rule touches
+   a dash, a border style or a stroke width: those carry each kind's line.
+
+   THESE RULES COME LAST AND MATCH OR BEAT EVERY VARIANT'S SPECIFICITY, so a
+   held, unit, gutter or now card still recedes the same way. styles.test.ts
+   checks that order. */
+.ig-canvas path[data-recede='true'],
+.ig-canvas circle[data-recede='true'] {
+  fill-opacity: ${RECEDE_ALPHA};
+  stroke-opacity: ${RECEDE_ALPHA};
+}
+
+.ig-rail-row[data-recede='true'] .ig-card {
+  background: var(--ig-surface-2);
+}
+
+.ig-rail-row[data-recede='true'] .ig-title,
+.ig-rail-row[data-recede='true'] .ig-id,
+.ig-rail-row[data-recede='true'] .ig-hold,
+.ig-rail-row[data-recede='true'] .ig-unit-note,
+.ig-footer-row[data-recede='true'] .ig-title {
+  color: var(--ig-text-muted);
+}
+
+/* The priority tag keeps its words and loses its chip, so a receded card
+   carries no filled shape that competes with the kept ones. The border turns
+   transparent rather than going, so the tag keeps its size and nothing moves. */
+.ig-rail-row[data-recede='true'] .ig-badge[data-priority] {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ig-text);
+}
+
+/* A RECEDED STATION MIXES ITS OWN COLOURS WITH THE PAGE GROUND, never with
+   transparent and never by opacity: the station has to stay opaque, because
+   it sits on the spine line and covers it. Mixing over --ig-bg also makes what
+   is drawn equal to what the contrast test composites. Each variant names its
+   own hue, in the same order the variants above set it. */
+.ig-spine-station[data-recede='true'] {
+  border-color: color-mix(in srgb, var(--ig-station-ready) ${RECEDE_PERCENT}, var(--ig-bg));
+  color: var(--ig-text-muted);
+}
+
+.ig-spine-station[data-fill='filled'][data-recede='true'] {
+  background: color-mix(in srgb, var(--ig-station-ready) ${RECEDE_PERCENT}, var(--ig-bg));
+}
+
+.ig-spine-station[data-fill='dashed'][data-recede='true'] {
+  border-color: color-mix(in srgb, var(--ig-station-held) ${RECEDE_PERCENT}, var(--ig-bg));
+}
+
+.ig-spine-station[data-wait='serialize'][data-recede='true'] {
+  border-color: color-mix(in srgb, var(--ig-edge-serialize-with) ${RECEDE_PERCENT}, var(--ig-bg));
+}
 
 /* ── refusals and empty states ─────────────────────────────────────────── */
 
