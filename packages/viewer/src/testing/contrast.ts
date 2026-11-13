@@ -52,6 +52,17 @@ export const EDGE_TOKENS = Object.freeze([
 ] as const);
 
 /**
+ * Readiness station hues: a station's ring and fill. Measured against the same
+ * 3:1 NON-TEXT minimum as the edges, because a ring is a graphical object; the
+ * rank numeral inside it is text and is measured as text.
+ */
+export const STATION_TOKENS = Object.freeze([
+  '--ig-station-ready',
+  '--ig-station-pending',
+  '--ig-station-held',
+] as const);
+
+/**
  * Edit-state hues, held to the same 3:1 NON-TEXT minimum and for the same
  * reason: an overlay is a stroke, a ghost line or a terminal mark — a graphical
  * object, never text.
