@@ -1430,9 +1430,11 @@ export const workspaceStylesheet = `
    changed kept its tint and read as one the selection touches. Placed after
    every tint so it wins by order at the same specificity. The delta chip and
    the row's accessible name still report the change. Background-color, never
-   the shorthand, for the held hatch's sake, as above. */
+   the shorthand, for the held hatch's sake, as above. The footer selector
+   names .ig-linear, as layer 1's does: the canvas graph draws footer rows
+   too, and a receded graph row takes no ground. */
 .ig-workspace .ig-slot[data-recede='true'],
-.ig-workspace .ig-footer-row[data-recede='true'] {
+.ig-workspace .ig-linear .ig-footer-row[data-recede='true'] {
   background-color: var(--ig-surface-2);
 }
 

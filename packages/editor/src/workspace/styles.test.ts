@@ -1841,5 +1841,12 @@ describe('the workspace styles draw a receded rail row like a receded card', () 
         assert.ok(filter === undefined || filter === 'none', `${name}: ${element.tagName} sets filter ${String(filter)}`);
       }
     }
+
+    // The canvas graph draws footer rows too (its runner-held slots); a receded graph row takes no ground, as in layer 1.
+    const graphFooter = pageOf(
+      '<div class="ig-workspace"><section class="ig-viewer ig-graph"><ul><li class="ig-footer-row" data-recede="true"></li></ul></section></div>',
+    ).querySelector('.ig-footer-row');
+    assert.ok(graphFooter !== null, 'the graph footer row is not drawn');
+    assert.doesNotMatch(declared(rules, graphFooter, GROUND) ?? '', /var\(--ig-surface-2\)/, 'a receded graph footer row takes a ground');
   });
 });
