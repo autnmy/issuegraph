@@ -2951,22 +2951,6 @@ describe('the rail recedes as the whole document says', () => {
     }
   });
 
-  it('recedes the drawn rail rows as the whole document says when the selected issue or relationship lies outside the rail window', () => {
-    const unselected = bareMarkup(outsideWindow);
-    for (const { name, selection, receding } of outsideCases) {
-      const markup = selectedMarkup(outsideWindow, selection);
-      // The selection adds no row to the window: the rail draws exactly the rows it draws with nothing selected.
-      assert.deepEqual(drawnKeys(markup), drawnKeys(unselected), `${name}: the selection changed which rows the rail draws`);
-      const stamps = railRowStamps(markup);
-      assert.equal(stamps.has('i0015') || stamps.has('i0016'), false, `${name}: the window drew the selection, so this proves nothing`);
-      // The issue: "The editor rail's rows recede as the whole document says, including when the selected issue is outside the rail window"
-      for (const [key, stamp] of stamps) {
-        assert.equal(stamp, receding.keys.has(key) ? 'true' : null, `${name}: the rail row of ${key} disagrees with the whole document`);
-      }
-      assert.ok([...stamps.values()].includes('true'), `${name}: no drawn rail row receded`);
-    }
-  });
-
   it('keeps a selected in-window issue and its neighbour, recedes the other rail rows, and stamps nothing with nothing selected', () => {
     // The issue: "With nothing selected, list markup is byte-identical to before"
     const bare = railRowStamps(bareMarkup(outsideWindow));
@@ -2990,10 +2974,12 @@ describe('the rail recedes as the whole document says', () => {
     // The issue: "The editor rail's rows recede as the whole document says, including when the selected issue is outside the rail window"
     // Windows before the selected issue i0015, holding it, across it and from it.
     const windows: readonly RailRange[] = [outsideWindow, { start: 10, count: 10 }, { start: 12, count: 5 }, { start: 15, count: 5 }];
+    const unselected = bareMarkup(outsideWindow);
     const seen = new Map<string, string | null>();
     for (const { name, selection, receding } of outsideCases) {
       for (const rail of windows) {
-        const stamps = railRowStamps(selectedMarkup(rail, selection));
+        const markup = selectedMarkup(rail, selection);
+        const stamps = railRowStamps(markup);
         const where = `${name}, rail from ${String(rail.start)}`;
         for (const [key, stamp] of stamps) {
           assert.equal(stamp, receding.keys.has(key) ? 'true' : null, `${where}: row ${key}`);
@@ -3002,7 +2988,13 @@ describe('the rail recedes as the whole document says', () => {
         const values = [...stamps.values()];
         assert.ok(values.includes('true'), `${where}: no stamped row, so this proves nothing`);
         if (rail === outsideWindow) {
-          assert.equal(stamps.has('i0015'), false, `${where}: i0015 was drawn, so the window does not leave it out`);
+          // The selection adds no row to the window: the rail draws exactly the rows it draws with nothing selected.
+          assert.deepEqual(drawnKeys(markup), drawnKeys(unselected), `${where}: the selection changed which rows the rail draws`);
+          assert.equal(
+            stamps.has('i0015') || stamps.has('i0016'),
+            false,
+            `${where}: the window drew i0015 or i0016, so it does not leave the selection out`,
+          );
         } else {
           assert.ok(values.includes(null), `${where}: no unstamped row, so this proves nothing`);
         }

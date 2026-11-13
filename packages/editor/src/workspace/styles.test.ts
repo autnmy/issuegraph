@@ -1408,6 +1408,99 @@ describe("the inspector zone stays one track, so the mount's chrome cannot be cl
 });
 
 /**
+ * A reading of the cascade, shared by every test below that asks what the sheet
+ * declares on an element.
+ *
+ * jsdom applies no stylesheet, so this evaluates it: every container block whose
+ * condition holds at one width, then specificity, `!important` and source order.
+ */
+type Rule = { readonly selector: string; readonly body: string };
+/** The properties the reading reads, as a declaration names them; a ground is either background form. */
+const PROPERTIES = {
+  display: 'display',
+  visibility: 'visibility',
+  background: 'background(?:-color)?',
+  color: 'color',
+  opacity: 'opacity',
+  filter: 'filter',
+} as const;
+type Property = keyof typeof PROPERTIES;
+// Container conditions are single-sided, so at one width every block whose
+// condition holds applies at once, in source order.
+const holds = (prelude: string, width: number): boolean => {
+  const band = /\((?:width\s*(<|>=)|(max|min)-width:)\s*(\d+(?:\.\d+)?)px\)/.exec(prelude);
+  assert.ok(band !== null, `an unread container condition: ${prelude}`);
+  const limit = Number(band[3]);
+  const operator = band[1] ?? (band[2] === 'max' ? '<=' : '>=');
+  if (operator === '<') return width < limit;
+  if (operator === '<=') return width <= limit;
+  return width >= limit;
+};
+const rulesAt = (css: string, width: number): Rule[] => {
+  const rules: Rule[] = [];
+  let at = 0;
+  for (let open = css.indexOf('{'); open !== -1; open = css.indexOf('{', at)) {
+    let depth = 0;
+    let close = open;
+    for (; close < css.length; close += 1) {
+      if (css[close] === '{') depth += 1;
+      if (css[close] === '}') depth -= 1;
+      if (depth === 0) break;
+    }
+    const prelude = css.slice(at, open).trim();
+    const body = css.slice(open + 1, close);
+    at = close + 1;
+    if (prelude.startsWith('@container ig-workspace')) {
+      if (holds(prelude, width)) rules.push(...rulesAt(body, width));
+    } else if (!prelude.startsWith('@')) {
+      rules.push({ selector: prelude, body });
+    }
+  }
+  return rules;
+};
+const selectorsOf = (list: string): string[] => {
+  const out: string[] = [];
+  let depth = 0;
+  let start = 0;
+  [...list].forEach((char, index) => {
+    if (char === '(') depth += 1;
+    if (char === ')') depth -= 1;
+    if (char === ',' && depth === 0) {
+      out.push(list.slice(start, index).trim());
+      start = index + 1;
+    }
+  });
+  return [...out, list.slice(start).trim()];
+};
+// The cascade order: the more specific selector wins, then the later rule.
+const specificity = (selector: string): number =>
+  (selector.match(/#[\w-]+/g)?.length ?? 0) * 10000 +
+  (selector.match(/\.[\w-]+|\[[^\]]*\]|:(?!not\(|is\(|where\()[\w-]+/g)?.length ?? 0) * 100 +
+  (selector.match(/(?:^|[\s>+~(])[a-z][\w-]*/g)?.length ?? 0);
+const declaredOf = (element: Element, rules: readonly Rule[], property: Property): string | undefined => {
+  const declaration = new RegExp(`(?:^|[;\\s])${PROPERTIES[property]}\\s*:\\s*([^;]+)`, 'g');
+  let winner: { rank: number; value: string } | undefined;
+  for (const rule of rules) {
+    const value = [...rule.body.matchAll(declaration)].pop()?.[1]?.trim();
+    if (value === undefined) continue;
+    for (const selector of selectorsOf(rule.selector)) {
+      if (selector.includes('::')) continue;
+      let matches = false;
+      try {
+        matches = element.matches(selector);
+      } catch {
+        matches = false;
+      }
+      const rank = specificity(selector) + (value.includes('!important') ? 1_000_000 : 0);
+      if (matches && (winner === undefined || rank >= winner.rank)) winner = { rank, value };
+    }
+  }
+  return winner?.value;
+};
+const pageOf = (markup: string): Document =>
+  new JSDOM(`<!doctype html><html><body><div class="ig-mount">${markup}</div></body></html>`).window.document;
+
+/**
  * The layout under 640, and the three wider layouts it must leave alone.
  *
  * jsdom applies no stylesheet, so the tests below evaluate the sheet's
@@ -1417,84 +1510,7 @@ describe("the inspector zone stays one track, so the mount's chrome cannot be cl
  * drawn at all.
  */
 describe('the layout under 640', () => {
-  type Rule = { readonly selector: string; readonly body: string };
   const sheet = workspaceStylesheet.replace(/\/\*[\s\S]*?\*\//g, '');
-  // Container conditions are single-sided, so at one width every block whose
-  // condition holds applies at once, in source order.
-  const holds = (prelude: string, width: number): boolean => {
-    const band = /\((?:width\s*(<|>=)|(max|min)-width:)\s*(\d+(?:\.\d+)?)px\)/.exec(prelude);
-    assert.ok(band !== null, `an unread container condition: ${prelude}`);
-    const limit = Number(band[3]);
-    const operator = band[1] ?? (band[2] === 'max' ? '<=' : '>=');
-    if (operator === '<') return width < limit;
-    if (operator === '<=') return width <= limit;
-    return width >= limit;
-  };
-  const rulesAt = (css: string, width: number): Rule[] => {
-    const rules: Rule[] = [];
-    let at = 0;
-    for (let open = css.indexOf('{'); open !== -1; open = css.indexOf('{', at)) {
-      let depth = 0;
-      let close = open;
-      for (; close < css.length; close += 1) {
-        if (css[close] === '{') depth += 1;
-        if (css[close] === '}') depth -= 1;
-        if (depth === 0) break;
-      }
-      const prelude = css.slice(at, open).trim();
-      const body = css.slice(open + 1, close);
-      at = close + 1;
-      if (prelude.startsWith('@container ig-workspace')) {
-        if (holds(prelude, width)) rules.push(...rulesAt(body, width));
-      } else if (!prelude.startsWith('@')) {
-        rules.push({ selector: prelude, body });
-      }
-    }
-    return rules;
-  };
-  const selectorsOf = (list: string): string[] => {
-    const out: string[] = [];
-    let depth = 0;
-    let start = 0;
-    [...list].forEach((char, index) => {
-      if (char === '(') depth += 1;
-      if (char === ')') depth -= 1;
-      if (char === ',' && depth === 0) {
-        out.push(list.slice(start, index).trim());
-        start = index + 1;
-      }
-    });
-    return [...out, list.slice(start).trim()];
-  };
-  // The cascade order: the more specific selector wins, then the later rule.
-  const specificity = (selector: string): number =>
-    (selector.match(/#[\w-]+/g)?.length ?? 0) * 10000 +
-    (selector.match(/\.[\w-]+|\[[^\]]*\]|:(?!not\(|is\(|where\()[\w-]+/g)?.length ?? 0) * 100 +
-    (selector.match(/(?:^|[\s>+~(])[a-z][\w-]*/g)?.length ?? 0);
-  const declaredOf = (
-    element: Element,
-    rules: readonly Rule[],
-    property: 'display' | 'visibility',
-  ): string | undefined => {
-    const declaration = new RegExp(`(?:^|[;\\s])${property}\\s*:\\s*([^;]+)`, 'g');
-    let winner: { rank: number; value: string } | undefined;
-    for (const rule of rules) {
-      const value = [...rule.body.matchAll(declaration)].pop()?.[1]?.trim();
-      if (value === undefined) continue;
-      for (const selector of selectorsOf(rule.selector)) {
-        if (selector.includes('::')) continue;
-        let matches = false;
-        try {
-          matches = element.matches(selector);
-        } catch {
-          matches = false;
-        }
-        const rank = specificity(selector);
-        if (matches && (winner === undefined || rank >= winner.rank)) winner = { rank, value };
-      }
-    }
-    return winner?.value;
-  };
   // display:none on any ancestor hides whatever its children declare, while
   // visibility is inherited, so the nearest box that declares it decides.
   const hidden = (element: Element, rules: readonly Rule[]): boolean => {
@@ -1506,8 +1522,6 @@ describe('the layout under 640', () => {
     }
     return visibility === 'hidden';
   };
-  const pageOf = (markup: string): Document =>
-    new JSDOM(`<!doctype html><html><body><div class="ig-mount">${markup}</div></body></html>`).window.document;
   const zone = (page: Document, name: string): Element =>
     page.querySelector(`[data-zone="${name}"]`) ?? assert.fail(`no ${name} zone`);
 
@@ -1711,81 +1725,16 @@ describe('the workspace styles fade no text', () => {
 
 describe('the workspace styles draw a receded rail row like a receded card', () => {
   it('draws a receded rail row on --ig-surface-2 over a delta tint, with --ig-text-muted text and no opacity', () => {
-    type Rule = { readonly selectors: readonly string[]; readonly body: string };
-    const GROUND = /(?:^|[;{\s])background(?:-color)?\s*:\s*([^;]+)/g;
-    const COLOUR = /(?:^|[;{\s])color\s*:\s*([^;]+)/g;
-    const OPACITY = /(?:^|[;{\s])opacity\s*:\s*([^;]+)/g;
-    const FILTER = /(?:^|[;{\s])filter\s*:\s*([^;]+)/g;
-    const splitSelectors = (list: string): string[] => {
-      const out: string[] = [];
-      let depth = 0;
-      let start = 0;
-      [...list].forEach((char, index) => {
-        if (char === '(') depth += 1;
-        if (char === ')') depth -= 1;
-        if (char === ',' && depth === 0) {
-          out.push(list.slice(start, index).trim());
-          start = index + 1;
-        }
-      });
-      return [...out, list.slice(start).trim()];
-    };
-    // Top-level rules only: a rule inside an at-rule applies only under its condition, and the recede rules have none.
-    const rulesOf = (css: string): Rule[] => {
-      const text = css.replace(/\/\*[\s\S]*?\*\//g, '');
-      const rules: Rule[] = [];
-      let start = 0;
-      let open = 0;
-      let depth = 0;
-      for (let at = 0; at < text.length; at += 1) {
-        if (text[at] === '{') {
-          if (depth === 0) open = at;
-          depth += 1;
-        } else if (text[at] === '}') {
-          depth -= 1;
-          if (depth === 0) {
-            const prelude = text.slice(start, open).trim();
-            if (!prelude.startsWith('@')) rules.push({ selectors: splitSelectors(prelude), body: text.slice(open + 1, at) });
-            start = at + 1;
-          }
-        }
-      }
-      return rules;
-    };
-    // The cascade order: the more specific selector wins, then the later rule.
-    const specificity = (selector: string): number =>
-      (selector.match(/#[\w-]+/g)?.length ?? 0) * 10000 +
-      (selector.match(/\.[\w-]+|\[[^\]]*\]|:(?!not\(|is\(|where\()[\w-]+/g)?.length ?? 0) * 100 +
-      (selector.match(/(?:^|[\s>+~(])[a-z][\w-]*/g)?.length ?? 0);
-    const declared = (rules: readonly Rule[], element: Element, property: RegExp): string | undefined => {
-      let winner: { rank: number; value: string } | undefined;
-      for (const rule of rules) {
-        const value = [...rule.body.matchAll(property)].pop()?.[1]?.trim();
-        if (value === undefined) continue;
-        for (const selector of rule.selectors) {
-          if (selector.includes('::')) continue;
-          let matches = false;
-          try {
-            matches = element.matches(selector);
-          } catch {
-            matches = false;
-          }
-          const rank = specificity(selector) + (value.includes('!important') ? 1_000_000 : 0);
-          if (matches && (winner === undefined || rank >= winner.rank)) winner = { rank, value };
-        }
-      }
-      return winner?.value;
-    };
+    // The recede rules sit outside every container block, so the widest layout reads them as any width would.
+    const rulesOf = (styles: string): Rule[] => rulesAt(withoutComments(styles), 1500);
     // Text colour inherits, so the nearest element that declares one decides.
     const colourOf = (rules: readonly Rule[], element: Element): string | undefined => {
       for (let node: Element | null = element; node !== null; node = node.parentElement) {
-        const value = declared(rules, node, COLOUR);
+        const value = declaredOf(node, rules, 'color');
         if (value !== undefined) return value;
       }
       return undefined;
     };
-    const pageOf = (markup: string): Document =>
-      new JSDOM(`<!doctype html><html><body><div class="ig-mount">${markup}</div></body></html>`).window.document;
 
     // i0006 is excluded, so it draws as a footer row. The change tints the two ranked rows that swap and the footer row that left the order.
     const backlog = backlogOf(6, { edges: [['blocked-by', 'i0001', 'i0002'], ['duplicate-of', 'i0003', 'i0006']] });
@@ -1812,7 +1761,7 @@ describe('the workspace styles draw a receded rail row like a receded card', () 
       (row) => row.getAttribute('data-recede') === null,
     );
     assert.ok(
-      unreceded.some((row) => /color-mix/.test(declared(controlRules, row, GROUND) ?? '')),
+      unreceded.some((row) => /color-mix/.test(declaredOf(row, controlRules, 'background') ?? '')),
       'no unreceded tinted row reads its tint, so this reading of the cascade proves nothing',
     );
 
@@ -1828,15 +1777,15 @@ describe('the workspace styles draw a receded rail row like a receded card', () 
     // The issue: "Receded rows draw like receded cards (`--ig-surface-2`, `--ig-text-muted` text, no opacity)"
     for (const row of receded) {
       const name = `${row.className} ${row.getAttribute('data-ig-key') ?? ''}`;
-      assert.match(declared(rules, row, GROUND) ?? '', /var\(--ig-surface-2\)/, `${name}: the ground`);
+      assert.match(declaredOf(row, rules, 'background') ?? '', /var\(--ig-surface-2\)/, `${name}: the ground`);
       const texts = [...row.querySelectorAll('.ig-title, .ig-id')];
       assert.ok(texts.length > 0, `${name}: draws no title and no id`);
       for (const text of texts) {
         assert.match(colourOf(rules, text) ?? '', /var\(--ig-text-muted\)/, `${name}: the ${text.className} colour`);
       }
       for (const element of [row, ...row.querySelectorAll('*')]) {
-        const opacity = declared(rules, element, OPACITY);
-        const filter = declared(rules, element, FILTER);
+        const opacity = declaredOf(element, rules, 'opacity');
+        const filter = declaredOf(element, rules, 'filter');
         assert.ok(opacity === undefined || opacity === '1', `${name}: ${element.tagName} sets opacity ${String(opacity)}`);
         assert.ok(filter === undefined || filter === 'none', `${name}: ${element.tagName} sets filter ${String(filter)}`);
       }
@@ -1847,6 +1796,6 @@ describe('the workspace styles draw a receded rail row like a receded card', () 
       '<div class="ig-workspace"><section class="ig-viewer ig-graph"><ul><li class="ig-footer-row" data-recede="true"></li></ul></section></div>',
     ).querySelector('.ig-footer-row');
     assert.ok(graphFooter !== null, 'the graph footer row is not drawn');
-    assert.doesNotMatch(declared(rules, graphFooter, GROUND) ?? '', /var\(--ig-surface-2\)/, 'a receded graph footer row takes a ground');
+    assert.doesNotMatch(declaredOf(graphFooter, rules, 'background') ?? '', /var\(--ig-surface-2\)/, 'a receded graph footer row takes a ground');
   });
 });
