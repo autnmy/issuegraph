@@ -62,7 +62,8 @@ export interface SceneOptions {
   readonly selectedEdge?: string | null | undefined;
   /**
    * What the list recedes, in place of what it works out from `selected` and
-   * `selectedEdge`. The graph and the tree ignore it.
+   * `selectedEdge`. The graph, the tree and `mountViewer` ignore it; the mount
+   * works out what recedes from its own live selection.
    *
    * FOR A HOST THAT DRAWS ONLY PART OF ITS DOCUMENT. A list handed a window of
    * a larger document can only work out what recedes inside that window, so a
