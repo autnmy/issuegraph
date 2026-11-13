@@ -36,7 +36,7 @@ function inspectorMarkupFor(document: ViewerDocument, key: string): string {
     words: WORKSPACE_WORDS,
     selection: { kind: 'issue', key },
   });
-  const zone = /<section class="ig-zone" data-zone="inspector">([\s\S]*)$/.exec(result.markup);
+  const zone = /<section class="ig-zone" data-zone="inspector"[^>]*>([\s\S]*)$/.exec(result.markup);
   assert.ok(zone !== null, 'no inspector zone');
   return zone[1] ?? '';
 }

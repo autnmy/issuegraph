@@ -65,9 +65,9 @@ const WITH_RAIL = { ...WORKSPACE_WORDS, rail: RAIL_WORDS };
  * canvas, inspector — so the slice ends where the canvas begins.
  */
 function railZone(markup: string): string {
-  const start = markup.indexOf('<section class="ig-zone" data-zone="rail">');
+  const start = markup.indexOf('<section class="ig-zone" data-zone="rail"');
   assert.notEqual(start, -1, 'no rail zone');
-  const end = markup.indexOf('<section class="ig-zone" data-zone="canvas">', start);
+  const end = markup.indexOf('<section class="ig-zone" data-zone="canvas"', start);
   assert.notEqual(end, -1, 'no canvas zone after the rail');
   return markup.slice(start, end);
 }
@@ -242,7 +242,9 @@ describe("§17a's rail footer", () => {
       scale: { ...INITIAL_SCALE_STATE, isolatedOpen: true },
     });
 
-    assert.ok(!markup.includes('aria-controls'), 'an association with no unique id behind it');
+    // THE RAIL ZONE, NOT THE WHOLE SURFACE: the narrow tabs in the header
+    // always name their zones, with fixed ids when no surface value is given.
+    assert.ok(!railZone(markup).includes('aria-controls'), 'an association with no unique id behind it');
     assert.ok(!markup.includes('<ol class="ig-isolated-list" id='), 'an id nothing names');
   });
 

@@ -46,6 +46,54 @@
     {
       "zone": "header",
       "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "order",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "true",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "related",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "sub-issues",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
       "control": "refresh",
       "target": null,
       "value": null,
@@ -193,6 +241,54 @@
       "inert": false,
       "name": "text",
       "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "order",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "true",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "related",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "sub-issues",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
     },
     {
       "zone": "header",
@@ -345,6 +441,54 @@
       "inert": false,
       "name": "text",
       "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "order",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "true",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "related",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "sub-issues",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
     },
     {
       "zone": "header",
@@ -561,6 +705,54 @@
       "inert": false,
       "name": "text",
       "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "order",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "true",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "related",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "sub-issues",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
     },
     {
       "zone": "header",
@@ -816,6 +1008,54 @@
       "inert": true,
       "name": "text",
       "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "order",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "none",
+      "inert": true,
+      "name": "text",
+      "aria": {
+        "aria-selected": "true",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "related",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "none",
+      "inert": true,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "sub-issues",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "none",
+      "inert": true,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
     },
     {
       "zone": "header",
@@ -1140,6 +1380,54 @@
     {
       "zone": "header",
       "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "order",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "true",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "related",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "sub-issues",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
       "control": "refresh",
       "target": null,
       "value": null,
@@ -1326,6 +1614,54 @@
       "inert": false,
       "name": "text",
       "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "order",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "true",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "related",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "sub-issues",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
     },
     {
       "zone": "header",
@@ -1530,6 +1866,54 @@
     {
       "zone": "header",
       "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "order",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "true",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "related",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "sub-issues",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
       "control": "refresh",
       "target": null,
       "value": null,
@@ -1697,6 +2081,54 @@
     {
       "zone": "header",
       "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "order",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "true",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "related",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "sub-issues",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
       "control": "refresh",
       "target": null,
       "value": null,
@@ -1844,6 +2276,54 @@
       "inert": false,
       "name": "text",
       "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "order",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "true",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "related",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "sub-issues",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
     },
     {
       "zone": "header",
@@ -2075,6 +2555,54 @@
       "inert": false,
       "name": "text",
       "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "order",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "true",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "related",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "sub-issues",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
     },
     {
       "zone": "header",

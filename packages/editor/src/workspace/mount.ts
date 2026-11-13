@@ -92,6 +92,7 @@ import {
   reduceHost,
   targetMatches,
 } from './host.ts';
+import type { CanvasMode } from './narrow.ts';
 import type { RailWindow } from './rail.ts';
 import { conflictDiff } from './recovery.ts';
 import {
@@ -103,9 +104,7 @@ import {
 } from './render.ts';
 import { selectedEdgeId, selectedKey } from './selection.ts';
 
-/** What the canvas zone draws: the editor's scale ladder, or the viewer's tree projection. */
-export const CANVAS_MODES = Object.freeze(['neighbourhood', 'tree'] as const);
-export type CanvasMode = (typeof CANVAS_MODES)[number];
+export { CANVAS_MODES, type CanvasMode } from './narrow.ts';
 
 /**
  * The words the mount's chrome needs on top of the workspace's own.
@@ -199,6 +198,12 @@ export interface MountWorkspaceOptions {
    * here too.
    */
   readonly railDensity?: WorkspaceOptions['railDensity'];
+  /**
+   * What the canvas zone draws when the workspace mounts. A SEED, not a
+   * setting: the reader's Sub-issues and Related groups tabs change the mode
+   * too, so after the mount `handle.state.canvas` is the mode drawn, and only an
+   * `update()` that names `canvas` sets it again.
+   */
   readonly canvas?: CanvasMode | undefined;
   /** How many rail rows are drawn per window. Wider than the package default so a scroll rarely lands past the drawn rows. */
   readonly railCount?: number | undefined;
@@ -487,7 +492,12 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   surface.className = 'ig-mount';
   element.append(styles, surface);
 
-  let state: HostState = INITIAL_HOST_STATE;
+  let state: HostState = { ...INITIAL_HOST_STATE, canvas: options.canvas ?? INITIAL_HOST_STATE.canvas };
+  // THE RAIL OFFSET THE SCROLL HANDLER LAST SAW, which is what every redraw
+  // restores. Read back off the old rail instead, a redraw while another tab
+  // shows would restore the 0 a hidden rail reports, and the reader would lose
+  // their place in the order on the way back.
+  let railOffset = 0;
   let pending = false;
   let destroyed = false;
   // What the last redraw drew, kept so a key press can ask the viewer's own
@@ -1231,7 +1241,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         detachFooter: true,
       }).scene;
     if (zoneName !== 'canvas') return null;
-    if (current.canvas === 'tree')
+    if (state.canvas === 'tree')
       return renderViewer(withoutChrome(drawn.viewer), { projection: 'tree', theme: theme(), chrome: false, frame: false, dockLegend: true }).scene;
     const ladder = scaleLadder(drawn.viewer, state.scale);
     return ladder.tier === 'direct'
@@ -1542,6 +1552,12 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       // that reopened itself on every landed write would be unusable.
       canvasOpen: state.canvasOpen,
       inspectorDismissed: state.inspectorDismissed,
+      // The layout under 640's tab and the Related groups list's place, for the
+      // same reason: the renderer keeps nothing across a redraw.
+      narrowView: state.narrowView,
+      canvas: state.canvas,
+      relatedGroup: state.relatedGroup,
+      relatedQuery: state.relatedQuery,
       // §17d's overlay. Host state, for the same reason the filter beside it
       // is: the renderer keeps nothing across a redraw.
       auditOpen: state.auditOpen,
@@ -1573,11 +1589,9 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     const sheet = [result.styles, pickerStylesheet, firstPassStylesheet, mountStylesheet].join('\n');
     if (styles.textContent !== sheet) styles.textContent = sheet;
 
-    // What the reader was doing survives the redraw: the rail's scroll offset,
-    // the audit panel's, and the caret in whichever search box they were typing
-    // into.
-    const railBefore = zone('rail');
-    const scrollTop = railBefore?.scrollTop ?? 0;
+    // What the reader was doing survives the redraw: the rail's scroll offset
+    // (kept as `railOffset`), the audit panel's, and the caret in whichever
+    // search box they were typing into.
     // THE AUDIT SCROLLS TOO, SINCE IT TOOK A SHARE OF ITS COLUMN. Before it had
     // a bound it grew to its content and only the ZONE scrolled, so there was no
     // second offset to keep. Now a long audit is read inside its own scroller,
@@ -1677,7 +1691,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // reads it without this package inventing a sentence.
     surface.setAttribute('data-order', snapshot.order.status);
 
-    if (current.canvas === 'tree') {
+    if (state.canvas === 'tree') {
       const canvas = zone('canvas');
       if (canvas !== null) {
         // THE SAME STATES THE LADDER DRAWS, on the tree's badges. The tree
@@ -1783,7 +1797,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     }
 
     const rail = zone('rail');
-    if (rail !== null) rail.scrollTop = scrollTop;
+    if (rail !== null) rail.scrollTop = railOffset;
     // AFTER the subtree is in place, because it measures what was just drawn.
     dockRailLegend();
     // RE-QUERIED, NEVER REUSED: `surface.innerHTML` above replaced the subtree,
@@ -1896,6 +1910,9 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
           const now = doc.activeElement;
           if (isFocusable(now) && typeof now.scrollIntoView === 'function') now.scrollIntoView({ block: 'nearest' });
         }
+        // Recorded here as well as by the scroll handler, whose event arrives
+        // later: a redraw before it would put the rail back where the jump began.
+        railOffset = rail.scrollTop;
       }
     } else {
       // THE COMMAND CONTROL, WHERE THE RAIL CANNOT ANSWER. Strictly additive:
@@ -2204,7 +2221,9 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     const target = isElement(event.target) && isInput(event.target) ? event.target : null;
     if (target === null || !surface.contains(target)) return;
     const name = target.getAttribute(COMMAND_ATTRIBUTE);
-    if (name === 'search' || name === 'target-query') dispatch({ kind: 'control', name, value: target.value });
+    if (name === 'search' || name === 'target-query' || name === 'related-query') {
+      dispatch({ kind: 'control', name, value: target.value });
+    }
   };
 
   // NOT WHILE AN INPUT METHOD IS COMPOSING. Every keystroke of a composition
@@ -2266,6 +2285,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   const onScroll = (event: Event): void => {
     const rail = zone('rail');
     if (rail === null || event.target !== rail) return;
+    railOffset = rail.scrollTop;
     if (drawn === null) return;
     // THE DECISION IS THE REDUCER'S, and `null` is load-bearing: a scroll that
     // clamps back to the current start must not dispatch, because every
@@ -3060,6 +3080,9 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       if (destroyed) return;
       if (next !== undefined) {
         current = { ...current, ...next, store };
+        // ONLY AN UPDATE THAT NAMES THE MODE SETS IT. `current` keeps the mount's
+        // seed, so re-reading it here would undo the reader's last tab press.
+        if (next.canvas !== undefined) state = { ...state, canvas: next.canvas };
         adoptSource();
       }
       schedule();

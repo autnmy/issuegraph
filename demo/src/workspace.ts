@@ -274,6 +274,14 @@ export const WORKSPACE_WORDS: MountWords = {
   showCanvas: 'Show the graph',
   hideCanvas: 'Hide the graph',
   relationships: 'Relationships',
+  // The layout under 640: one view at a time, picked from these tabs.
+  narrow: {
+    order: 'Order',
+    related: 'Related groups',
+    subIssues: 'Sub-issues',
+    closeSheet: 'Close',
+    noSelection: 'Select an issue to list its relationships.',
+  },
   // §17a's inspector explains the position before it lists the relationships.
   // The frame draws the heading in caps; the caps are the stylesheet's, so the
   // words here read as words.
@@ -730,7 +738,9 @@ export function mountSandbox(
   };
 
   let theme: ThemeName = 'default';
-  let canvas: CanvasMode = 'neighbourhood';
+  // THE MODE IS THE MOUNT'S, read off `handle.state.canvas`: the workspace's
+  // Sub-issues and Related groups tabs change it without asking this page.
+  const canvas = (): CanvasMode => handle?.state.canvas ?? 'neighbourhood';
   let scenario: ScenarioName = DEFAULT_SCENARIO;
   let panelState: DemoStateName = 'live';
   // THE HOST HIDES ITS OWN LINE, NOT THE VIEWER. Dismiss is published like every
@@ -797,7 +807,7 @@ export function mountSandbox(
       toggle.setAttribute('aria-pressed', String(toggle.getAttribute('data-ig-value') === theme));
     }
     for (const toggle of root.querySelectorAll<HTMLElement>('[data-chrome="canvas"] [data-ig-value]')) {
-      toggle.setAttribute('aria-pressed', String(toggle.getAttribute('data-ig-value') === canvas));
+      toggle.setAttribute('aria-pressed', String(toggle.getAttribute('data-ig-value') === canvas()));
     }
     for (const toggle of root.querySelectorAll<HTMLElement>('[data-chrome="scenario"] [data-ig-value]')) {
       toggle.setAttribute('aria-pressed', String(toggle.getAttribute('data-ig-value') === scenario));
@@ -808,11 +818,13 @@ export function mountSandbox(
     // OPTIONAL, like every other chrome hook here: a host page without the
     // scenario panel has nothing to summarise, and the sandbox runs regardless.
     const summary = root.querySelector('[data-chrome="summary"]');
-    if (summary !== null) summary.textContent = scenarioSummary(scenario, panelState, canvas, live.source.armed());
+    if (summary !== null) summary.textContent = scenarioSummary(scenario, panelState, canvas(), live.source.armed());
   };
 
   /** Build a fresh store over the current scenario and mount the workspace over it. Called at start, on reset, and when the scenario changes. */
   const start = (): void => {
+    // A reset keeps the mode the reader was on.
+    const seed = canvas();
     unsubscribe();
     handle?.destroy();
     const loaded = SCENARIOS[scenario];
@@ -823,7 +835,7 @@ export function mountSandbox(
       project: projectFor(loaded, moments),
       words: WORKSPACE_WORDS,
       theme: themeFor(theme),
-      canvas,
+      canvas: seed,
       // THE HOST'S HALF OF THE FIRST PASS: a detector the package refuses to
       // ship, and the five words it refuses to invent. Read against the store's
       // CURRENT document, not the one this closure was built with.
@@ -892,15 +904,43 @@ export function mountSandbox(
 
   // --- the sandbox's own controls ---
 
+  /**
+   * The command control a press landed on, and whether the mounted element
+   * holds it.
+   *
+   * READ OFF THE PRESS'S PATH, NOT THE DOCUMENT. The path is fixed when
+   * dispatch starts. On a real press the browser runs microtasks between
+   * listeners, so the mount's redraw, queued by its own listener on
+   * `workspace`, has replaced the control before the press bubbles here, and
+   * asking `root.contains(control)` answers no for every command drawn inside
+   * the workspace. A press dispatched from script runs no microtasks until
+   * every listener has returned, which is why a test could not see it.
+   */
+  const pressOf = (event: Event): { readonly control: Element; readonly inWorkspace: boolean } | null => {
+    const path = event.composedPath();
+    const at = path.findIndex((node) => node instanceof Element && node.hasAttribute('data-ig-command'));
+    const control = path[at];
+    if (!(control instanceof Element) || at > path.indexOf(root)) return null;
+    return { control, inWorkspace: path.indexOf(workspace) > at };
+  };
+
+  // A NARROW TAB IS THE MOUNT'S TO REDUCE, and it has by the time the press
+  // reaches this page; the masthead's canvas toggle and summary read the mode
+  // it may have changed.
+  const refreshForNarrowTab = (press: ReturnType<typeof pressOf>): void => {
+    if (press?.inWorkspace === true && press.control.getAttribute('data-ig-command') === 'narrow-tab') schedule();
+  };
+
   const onClick = (event: MouseEvent): void => {
-    const target = event.target instanceof Element ? event.target : null;
-    const control = target?.closest<HTMLElement>('[data-ig-command]') ?? null;
-    if (control === null || !root.contains(control)) return;
+    const press = pressOf(event);
+    if (press === null) return;
+    const { control, inWorkspace } = press;
     const name = control.getAttribute('data-ig-command') ?? '';
+    refreshForNarrowTab(press);
     // Inside the mounted element the mount owns every command; this listener
     // reads only the chrome around it — and the few commands the packages
     // publish for the HOST to act on (`HOST_COMMANDS_FROM_WORKSPACE`).
-    if (workspace.contains(control) && !HOST_COMMANDS_FROM_WORKSPACE.has(name)) return;
+    if (inWorkspace && !HOST_COMMANDS_FROM_WORKSPACE.has(name)) return;
     const value = control.getAttribute('data-ig-value');
     if (handle === null) return;
     if (FORWARDED.has(name)) {
@@ -916,8 +956,7 @@ export function mountSandbox(
         return;
       case 'canvas':
         if (!isCanvasMode(value)) return;
-        canvas = value;
-        handle.update({ canvas });
+        handle.update({ canvas: value });
         schedule();
         return;
       case 'scenario':
@@ -979,6 +1018,14 @@ export function mountSandbox(
     }
   };
 
+  // A TAB PRESSED FROM THE KEYBOARD NEVER CLICKS. The mount reduces Enter and
+  // Space on keydown and cancels the key, which suppresses the click, so the
+  // chrome is refreshed from the key too. Any other key on a tab refreshes it
+  // for nothing, which redraws the same chrome.
+  const onKeydown = (event: KeyboardEvent): void => {
+    refreshForNarrowTab(pressOf(event));
+  };
+
   const onChange = (event: Event): void => {
     if (event.target !== outcome || !isOutcome(outcome.value)) return;
     live.source.arm(outcome.value);
@@ -988,6 +1035,7 @@ export function mountSandbox(
   };
 
   root.addEventListener('click', onClick);
+  root.addEventListener('keydown', onKeydown);
   root.addEventListener('change', onChange);
   // THE CLOCK MOVES WHEN NOTHING ELSE DOES. `update()` re-runs the projection,
   // which reads `now`; cleared in `destroy()`, so a torn-down sandbox draws
@@ -1043,7 +1091,7 @@ export function mountSandbox(
   return {
     state: () => {
       if (handle === null) throw new Error('the sandbox is not mounted');
-      return { theme, canvas, scenario, workspace: handle.state };
+      return { theme, canvas: canvas(), scenario, workspace: handle.state };
     },
     destroy: () => {
       destroyed = true;
@@ -1051,6 +1099,7 @@ export function mountSandbox(
       unsubscribe();
       handle?.destroy();
       root.removeEventListener('click', onClick);
+      root.removeEventListener('keydown', onKeydown);
       root.removeEventListener('change', onChange);
     },
   };

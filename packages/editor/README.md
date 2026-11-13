@@ -237,6 +237,10 @@ The assembly leaf: the rail on the left, the canvas in the centre, the inspector
 
 **The canvas zone leads with a caption, and only where it is true.** Refusing loudly is the easy half of §17f; the quiet decline is the `direct` tier, where the ladder narrows to one component, draws it successfully, and would otherwise say nothing about the rest — leaving a canvas of 6 issues out of 312 indistinguishable from a backlog that has 6. So the row states the focused key and the ratio there, and nowhere else: above the budget there is no canvas to describe and the refusal already carries its own count. Its words are the host's (`WorkspaceWords.canvas`), and the `edit mode` pill beside them is separately optional, because markup served without `mountWorkspace` is not editable and must not claim to be.
 
+**Under 640px the workspace shows one view at a time, under tabs.** Order shows the rail, Sub-issues the tree, and Related groups the selection's relationships as a list, because a line on the graph needs two columns. The tabs are drawn on every render with `role="tab"`, `aria-selected` and an `aria-controls` that names the zone they show, and the stylesheet hides them at 640px and wider, where the three layouts above are unchanged. Their words are the host's, in the required `WorkspaceWords.narrow`. Which view shows is reader state, `HostState.narrowView` and `HostState.canvas`, set by the `narrow-tab` control, and the root carries the tab as `data-tab`. The Related groups list reads the Inspector's own relationships and rows: up to 60 draw flat, past 60 they group by kind behind `related-group` controls, and past 300 (or inside an open group holding more than 60) a `related-query` search filters them by key or title. No draw holds more than 60 rows. The inspector is not drawn at this width, so on the Order tab the findings opened from the header's problem count are drawn over the order.
+
+**Each zone frame carries an id** for those tabs to name: `ig-zone-<zone>-<surfaceId>`, or `ig-zone-<zone>` when no `surfaceId` is given. `mountWorkspace` supplies one per mount; **a page that draws more than one workspace without the mount passes a `surfaceId` per workspace**, or the ids repeat and a tab can name the other workspace's zone.
+
 **The rail is virtualised, which is what lets it stay complete.** Those read as opposites and are not: the MODEL holds every slot and `addressOf` answers for every rank in the order, while the WINDOW bounds only how many rows are drawn. A reader looking at rows 1–50 of 312 can still ask what is at rank 287 and get an answer. Windowing is therefore a rail *requirement* — the alternative, a rail that paginates, has stopped answering its question.
 
 The window is an **offset**, not a rank, because a held slot has `rank: null` and ranks are not a coordinate you can slice on. Every out-of-range value is clamped rather than refused: this reads a scroll position, and taking the rail down over a rounding error is the one thing it may not do.
@@ -293,11 +297,11 @@ const handle = mountWorkspace(element, {
   project,    // (snapshot) => { viewer: ViewerDocument; audit?: AuditInput } — the host's projection
   words,      // MountWords: WorkspaceWords plus the picker's and the chrome's
   theme?, themeSelector?,
-  canvas?: 'neighbourhood' | 'tree',
+  canvas?: 'neighbourhood' | 'tree',   // a seed: the tabs change it; read handle.state.canvas, set it with update({ canvas })
 });
 handle.update({ theme });          // new options, redrawn in place; the selection and the focus survive
 handle.dispatch({ kind: 'point', key: '12' });   // a command from the host's own chrome
-handle.state;                      // the selection, the draft, the scale, the rail window
+handle.state;                      // the selection, the draft, the scale, the rail window, the canvas mode
 handle.destroy();                  // every listener off, the nodes it built removed
 ```
 

@@ -12,7 +12,9 @@ import type { AuditGraph, AuditInput } from '../audit/findings.ts';
 import { type WorkspaceRecovery, ZONES, renderWorkspace } from './render.ts';
 import type { ViewerDocument } from '@issuegraph/viewer';
 import { selectionReducer } from './selection.ts';
+import type { WorkspaceWords } from '../index.ts';
 import { WORKSPACE_WORDS, backlogOf, drawnKeys, zonesIn } from '../testing/workspace.ts';
+import { TASK_KEYS, blockedHub, keysOf, relatedHubEdges } from '../testing/workspace.ts';
 
 /** A graph port built from the reader's own model, as a host would build it. */
 function graphFor(
@@ -101,9 +103,10 @@ describe('the three zones render at their fixed positions', () => {
     // exhaustive list below is still exact — a third attribute added later
     // still fails here — and the two `data-order` arms are still asserted, one
     // per branch. What is no longer claimed is that the root carries NOTHING.
+    // The layout under 640 adds `data-tab`, the tab its container block reads.
     assert.match(
       result.markup,
-      /^<div class="ig-workspace" data-canvas="strip" data-canvas-legend="[a-z]+" data-inspector="dismissed">/,
+      /^<div class="ig-workspace" data-canvas="strip" data-canvas-legend="[a-z]+" data-inspector="dismissed" data-tab="order">/,
     );
     assert.equal(/^<div class="ig-workspace"[^>]*data-order=/.test(result.markup), false);
     assert.match(result.markup, /<\/div>$/);
@@ -2591,5 +2594,288 @@ describe('the "not in the order" group follows the whole order, not the window',
     const result = renderWorkspace(document, { ...words, audit, rail: { start: 20, count: 5 } });
     const group = groupOf(railOf(result.markup));
     assert.match(group, new RegExp(`${KEY_ATTRIBUTE}="i0010"[^>]*${AUDIT_SEVERITY_ATTRIBUTE}="`));
+  });
+});
+
+/** The layout under 640's tabs, and the Related groups list they show. */
+describe('the narrow tabs and the Related groups list', () => {
+  it('R11: the Related groups list escapes a hostile key, title and query instead of drawing them as markup', () => {
+    // The issue: "Every node goes through `renderMarkup`, so no issue title is concatenated into markup."
+    // The key and the query each hold a closing tag, and the query is echoed into the search
+    // field's `value`, so a list built by joining strings would open a new element in the page.
+    // 302 relationships put the search field on screen, so the query is drawn as well as applied.
+    const hostileKey = 'TASK-1"<&</li><li id=injected>';
+    const document = blockedHub([...TASK_KEYS, hostileKey], () => '<img src=x onerror=alert(1)>');
+    const { markup } = renderWorkspace(document, {
+      words: WORKSPACE_WORDS,
+      selection: { kind: 'issue', key: 'HUB' },
+      narrowView: 'canvas',
+      canvas: 'neighbourhood',
+      relatedGroup: null,
+      relatedQuery: '"<&</li>',
+    });
+    const canvas = canvasOf(markup);
+    const field = /<input\b[^>]*data-ig-command="related-query"[^>]*>/.exec(canvas);
+    assert.ok(field !== null, 'past 300 relationships the canvas zone draws no search field');
+    assert.match(field[0], /value="&quot;&lt;&amp;&lt;\/li&gt;"/, 'the query was not escaped in the field value');
+    assert.ok(canvas.includes('&lt;/li&gt;&lt;li id=injected&gt;'), 'the relationship the query matches was not drawn');
+    assert.equal(markup.includes('<li id=injected>'), false, 'an issue key opened an element');
+    assert.equal(/<img\b/i.test(markup), false, 'an issue title opened an element');
+  });
+
+  it('R2: a surfaceId holding markup is escaped in every zone id the tabs name', () => {
+    // The issue: "`renderWorkspace` always draws a `role="tablist"` whose tabs carry `aria-selected` and `aria-controls` naming rendered zone ids, and stamps `data-tab` on the root."
+    // The zone ids are built from the host's `surfaceId`, so the zone frame now writes a
+    // caller value into an attribute; a value that closes the quote must stay text.
+    const surfaceId = '"><b>';
+    const { markup } = renderWorkspace(backlogOf(4), { words: WORKSPACE_WORDS, surfaceId });
+    assert.equal(markup.includes('<b>'), false, 'the surfaceId opened an element');
+    assert.ok(markup.includes('id="ig-zone-rail-&quot;&gt;&lt;b&gt;"'), 'the rail zone id is missing or unescaped');
+    assert.ok(markup.includes('id="ig-zone-canvas-&quot;&gt;&lt;b&gt;"'), 'the canvas zone id is missing or unescaped');
+    const tabs = [...markup.matchAll(/<button\b[^>]*role="tab"[^>]*>/g)].map((match) => match[0]);
+    assert.equal(tabs.length, 3, 'the tablist does not draw Order, Related groups and Sub-issues');
+    for (const tab of tabs) {
+      const controls = /aria-controls="([^"]+)"/.exec(tab);
+      assert.ok(controls !== null, `a tab names no zone: ${tab}`);
+      for (const id of (controls[1] ?? '').split(' ')) {
+        assert.ok(markup.includes(`id="${id}"`), `aria-controls names ${id}, which no element carries`);
+      }
+    }
+  });
+
+  it('R2 KTD2 KTD3 renderWorkspace: the one selected tab is the one the mode derives, and each tab controls the one zone it shows', () => {
+    const attr = (tag: string, name: string): string | undefined => tag.split(` ${name}="`)[1]?.split('"')[0];
+    const tabsOf = (markup: string): string[] =>
+      markup
+        .split('<')
+        .filter((tag) => tag.startsWith('button') && tag.includes('data-ig-command="narrow-tab"'))
+        .map((tag) => tag.slice(0, tag.indexOf('>')));
+    const zoneFor: Readonly<Record<string, string>> = { order: 'rail', related: 'canvas', 'sub-issues': 'canvas' };
+    const tabbed = backlogOf(4, { edges: [['blocked-by', 'i0001', 'i0002']] });
+    // A render naming no view or mode is the order tab. Order with the tree mode is the state a
+    // reader leaves after Sub-issues then Order, and a stored tab could disagree with it.
+    const cases = [
+      [{}, 'order'],
+      [{ narrowView: 'order', canvas: 'neighbourhood' }, 'order'],
+      [{ narrowView: 'order', canvas: 'tree' }, 'order'],
+      [{ narrowView: 'canvas', canvas: 'neighbourhood' }, 'related'],
+      [{ narrowView: 'canvas', canvas: 'tree' }, 'sub-issues'],
+    ] as const;
+    for (const surfaceId of [undefined, 'left']) {
+      for (const [state, tab] of cases) {
+        const label = `${String(surfaceId)} ${JSON.stringify(state)}`;
+        const { markup } = renderWorkspace(tabbed, {
+          words: WORKSPACE_WORDS,
+          selection: { kind: 'issue', key: 'i0001' },
+          ...state,
+          ...(surfaceId === undefined ? {} : { surfaceId }),
+        });
+        // The issue: "`renderWorkspace` always draws a `role="tablist"` whose tabs carry `aria-selected` and `aria-controls` naming rendered zone ids, and stamps `data-tab` on the root."
+        assert.ok(markup.includes('role="tablist"'), `no tablist for ${label}`);
+        assert.equal(attr(markup.slice(0, markup.indexOf('>')), 'data-tab'), tab, label);
+        const tabs = tabsOf(markup);
+        assert.deepEqual(tabs.map((each) => attr(each, 'data-ig-value')).sort(), ['order', 'related', 'sub-issues'], label);
+        assert.ok(tabs.every((each) => attr(each, 'role') === 'tab'), label);
+        assert.deepEqual(
+          tabs.filter((each) => attr(each, 'aria-selected') === 'true').map((each) => attr(each, 'data-ig-value')),
+          [tab],
+          label,
+        );
+        for (const each of tabs) {
+          const value = attr(each, 'data-ig-value') ?? '';
+          const ids = (attr(each, 'aria-controls') ?? '').split(' ').filter((id) => id !== '');
+          assert.ok(ids.length > 0, `${label}: ${value} controls nothing`);
+          for (const id of ids) {
+            const parts = markup.split(` id="${id}"`);
+            assert.equal(parts.length, 2, `${label}: ${value} names ${id}, which is not exactly one element`);
+            const before = parts[0] ?? '';
+            const after = parts[1] ?? '';
+            const opening = before.slice(before.lastIndexOf('<')) + after.slice(0, after.indexOf('>'));
+            assert.ok(
+              opening.includes(`data-zone="${zoneFor[value] ?? ''}"`),
+              `${label}: ${value} names ${id}, which is not the ${zoneFor[value] ?? '?'} zone`,
+            );
+          }
+        }
+      }
+    }
+  });
+
+  it("R9 the Related groups list states narrow.noSelection with nothing selected and the Inspector's noRelationships for an unrelated issue", () => {
+    const related = { words: WORKSPACE_WORDS, narrowView: 'canvas', canvas: 'neighbourhood' } as const;
+    const document = backlogOf(4, { edges: [['blocked-by', 'i0001', 'i0002']] });
+    const empty = canvasOf(renderWorkspace(document, related).markup);
+    // The issue: "Related groups lists the selection's relationships in the Inspector's words, with a sentence when nothing is selected"
+    assert.ok(empty.includes(WORKSPACE_WORDS.narrow.noSelection), 'the canvas zone states nothing when nothing is selected');
+
+    const lone = canvasOf(
+      renderWorkspace(document, { ...related, selection: { kind: 'issue', key: 'i0003' } }).markup,
+    );
+    assert.ok(lone.includes(WORKSPACE_WORDS.noRelationships), 'an unrelated issue is not worded as the Inspector words it');
+    assert.equal(lone.includes(WORKSPACE_WORDS.narrow.noSelection), false, 'a selected issue is worded as nothing selected');
+  });
+
+  it('R9 R10 the Related groups list states each relationship in the Inspector words from either end', () => {
+    const backlog = backlogOf(6, {
+      edges: [
+        ['blocked-by', 'i0001', 'i0002'],
+        ['duplicate-of', 'i0004', 'i0001'],
+        ['serialize-with', 'i0001', 'i0003'],
+        ['blocked-by', 'i0005', 'i0006'],
+      ],
+    });
+    // Each row as its kind words and the other end, the pair the Inspector draws.
+    const statements = (markup: string): string[] =>
+      [...markup.matchAll(/<span>([^<]+)<\/span><\/span><span class="ig-relationship-ref"[^>]*>([^<]+)<\/span>/g)]
+        .map(([, words = '', ref = '']) => `${words} ${ref}`)
+        .sort();
+    const listed = (key: string): { list: string[]; inspector: string[] } => {
+      const { markup } = renderWorkspace(backlog, {
+        ...WORDS,
+        selection: { kind: 'issue', key },
+        narrowView: 'canvas',
+        canvas: 'neighbourhood',
+      });
+      return { list: statements(canvasOf(markup)), inspector: statements(listOf(inspectorOf(markup))) };
+    };
+    // "Related groups lists the selection's relationships in the Inspector's words, with a sentence when nothing is selected"
+    // "The list is drawn in the canvas zone from `inspectorView(...).relationships` through `relationshipDescription`, so its words and direction match the Inspector."
+    for (const key of ['i0001', 'i0005', 'i0006']) {
+      const { list, inspector } = listed(key);
+      assert.ok(inspector.length > 0, `${key}: the Inspector lists nothing to compare with`);
+      assert.deepEqual(list, inspector, `${key}: the list and the Inspector word the relationships differently`);
+    }
+    assert.deepEqual(listed('i0001').list, ['blocked by i0002', 'duplicated by i0004', 'serialized with i0003']);
+    assert.deepEqual(listed('i0005').list, ['blocked by i0006']);
+    const [receiving = ''] = listed('i0006').list;
+    assert.match(receiving, / i0005$/);
+    assert.equal(receiving.startsWith('blocked by '), false, 'the receiving end took the sending end words');
+  });
+
+  it('R12 past 60 the rendered list draws one closed group per kind with its count, and an open group draws only its rows', () => {
+    const hub = backlogOf(62, { edges: relatedHubEdges(61) });
+    const blocking = keysOf(62)
+      .slice(1)
+      .filter((_, index) => index % 2 === 0);
+    const groupsOf = (canvas: string) =>
+      [...canvas.matchAll(/<button\b([^>]*\bdata-ig-command="related-group"[^>]*)>([\s\S]*?)<\/button>/g)].map(
+        ([, attributes = '', inner = '']) => ({
+          field: /data-ig-value="([^"]+)"/.exec(attributes)?.[1],
+          expanded: /aria-expanded="([^"]+)"/.exec(attributes)?.[1],
+          text: inner.replace(/<[^>]+>/g, ''),
+        }),
+      );
+    const states = (canvas: string): string[] =>
+      groupsOf(canvas)
+        .map(({ field, expanded }) => `${String(field)} ${String(expanded)}`)
+        .sort();
+    const refsOf = (canvas: string): string[] =>
+      [...canvas.matchAll(/<span class="ig-relationship-ref"[^>]*>([^<]+)<\/span>/g)].map(([, ref = '']) => ref).sort();
+    const options = {
+      ...WORDS,
+      selection: { kind: 'issue', key: 'i0001' },
+      narrowView: 'canvas',
+      canvas: 'neighbourhood',
+    } as const;
+    // "Past 60 relationships the list shows one group per kind that opens to its rows, and past 300 a search, so a relationship beyond the first 60 or 300 can be reached, and no render draws more than 60 rows"
+    // "Past 60 they draw one group per kind with its count, opened by a `related-group` control."
+    const closed = canvasOf(renderWorkspace(hub, options).markup);
+    assert.deepEqual(states(closed), ['blocked-by false', 'serialize-with false']);
+    for (const { field, text } of groupsOf(closed)) {
+      assert.match(text, field === 'blocked-by' ? /\b31\b/ : /\b30\b/, `${String(field)} does not state its count`);
+    }
+    assert.deepEqual(refsOf(closed), [], 'a closed group drew its rows');
+
+    const open = canvasOf(renderWorkspace(hub, { ...options, relatedGroup: 'blocked-by' }).markup);
+    assert.deepEqual(states(open), ['blocked-by true', 'serialize-with false']);
+    assert.deepEqual(refsOf(open), blocking, 'the open group does not draw exactly its own rows');
+  });
+
+  it('R17 the narrow tabs are named by the host narrow words, in the order Order, Related groups, Sub-issues', () => {
+    const narrow = {
+      order: 'the queue',
+      related: 'what touches it',
+      subIssues: 'its children',
+      closeSheet: 'fold the sheet away',
+      noSelection: 'choose something first',
+    };
+    const { markup } = renderWorkspace(backlogOf(4), { words: { ...WORKSPACE_WORDS, narrow } });
+    const tabs = [...markup.matchAll(/<button\b([^>]*\brole="tab"[^>]*)>([\s\S]*?)<\/button>/g)].map(
+      ([, attributes = '', inner = '']) => [
+        /data-ig-value="([^"]+)"/.exec(attributes)?.[1],
+        inner.replace(/<[^>]+>/g, '').trim(),
+      ],
+    );
+    // "New required `WorkspaceWords.narrow` words (`order`, `related`, `subIssues`, `closeSheet`, `noSelection`), because the package invents no English."
+    assert.deepEqual(tabs, [
+      ['order', 'the queue'],
+      ['related', 'what touches it'],
+      ['sub-issues', 'its children'],
+    ]);
+    for (const invented of ['>Order<', '>Related groups<', '>Sub-issues<']) {
+      assert.equal(markup.includes(invented), false, `the package wrote its own ${invented}`);
+    }
+    // @ts-expect-error -- a host that supplies no narrow words does not compile
+    const unworded: WorkspaceWords = { ...WORKSPACE_WORDS, narrow: undefined };
+    assert.ok(unworded !== null);
+  });
+
+  it('R12 KTD5 KTD8 renderWorkspace: no mix of an open, absent or missing group with a leftover broad query draws more than 60 related rows', () => {
+    // The issue: "Past 60 relationships the list shows one group per kind that opens to its rows, and past 300 a search, so a relationship beyond the first 60 or 300 can be reached, and no render draws more than 60 rows"
+    // The reducer clears the query when the group changes, but the renderer takes the group and the
+    // query as two separate options, so a host can hand it any pair. Each pair below is drawn at a
+    // grouped size (61) and a searchable size (401). The last two flags mark the pairs whose open
+    // group or search must draw rows at that size, so a renderer that draws no list fails as well.
+    const states: readonly (readonly [EdgeField | null, string, boolean, boolean])[] = [
+      [null, '', false, false],
+      ['blocked-by', '', true, true],
+      ['blocked-by', 'i0', true, true],
+      ['serialize-with', 'i00', true, true],
+      [null, 'i0', false, true],
+      ['duplicate-of', 'i0', false, false],
+    ];
+    for (const size of [61, 401]) {
+      const document = backlogOf(size + 1, { edges: relatedHubEdges(size) });
+      for (const [relatedGroup, relatedQuery, drawsAt61, drawsAt401] of states) {
+        const canvas = canvasOf(
+          renderWorkspace(document, {
+            words: WORKSPACE_WORDS,
+            selection: { kind: 'issue', key: 'i0001' },
+            narrowView: 'canvas',
+            canvas: 'neighbourhood',
+            relatedGroup,
+            relatedQuery,
+          }).markup,
+        );
+        const refs = [...canvas.matchAll(/class="ig-relationship-ref"[^>]*>([^<]*)<\/span>/g)].map((match) => match[1]);
+        const label = `${String(size)} relationships, group ${String(relatedGroup)}, query '${relatedQuery}'`;
+        assert.ok(refs.length <= 60, `${label} drew ${String(refs.length)} rows`);
+        assert.equal(new Set(refs).size, refs.length, `${label} drew one relationship twice`);
+        if (size === 61 ? drawsAt61 : drawsAt401) assert.ok(refs.length > 0, `${label} drew no rows`);
+      }
+    }
+  });
+
+  it('R12 KTD6 renderWorkspace: an exact key match that also matches as a substring is drawn once, first, inside the 60-row cut', () => {
+    // The issue: "Past 60 relationships the list shows one group per kind that opens to its rows, and past 300 a search, so a relationship beyond the first 60 or 300 can be reached, and no render draws more than 60 rows"
+    // TASK-1 leads the list here, so it is both the exact key match and the first substring match of
+    // 'task-1'. Putting exact matches first without taking them out of the remaining matches would draw
+    // its row twice and push the row count past the relationships the reader asked for.
+    const canvas = canvasOf(
+      renderWorkspace(blockedHub(['TASK-1', ...TASK_KEYS], () => 'Same title'), {
+        words: WORKSPACE_WORDS,
+        selection: { kind: 'issue', key: 'HUB' },
+        narrowView: 'canvas',
+        canvas: 'neighbourhood',
+        relatedGroup: null,
+        relatedQuery: 'task-1',
+      }).markup,
+    );
+    const refs = [...canvas.matchAll(/class="ig-relationship-ref"[^>]*>([^<]*)<\/span>/g)].map((match) => match[1]);
+    assert.ok(refs.length > 0, 'the search drew no rows');
+    assert.ok(refs.length <= 60, `the search drew ${String(refs.length)} rows`);
+    assert.equal(refs[0], 'TASK-1');
+    assert.equal(refs.filter((ref) => ref === 'TASK-1').length, 1, 'the exact match was drawn twice');
+    assert.equal(new Set(refs).size, refs.length, 'a relationship was drawn twice');
   });
 });

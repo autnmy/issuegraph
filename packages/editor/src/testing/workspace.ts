@@ -50,6 +50,15 @@ export const WORKSPACE_WORDS: WorkspaceWords = {
   showCanvas: 'unfold the graph',
   hideCanvas: 'put the graph away',
   relationships: 'relationships',
+  // THE LAYOUT UNDER 640, on this constant's standing rule: no tab's word is a
+  // substring of another's, so a tab that drew the wrong word fails its pin.
+  narrow: {
+    order: 'ranked queue',
+    related: 'linked issues',
+    subIssues: 'child tree',
+    closeSheet: 'fold the sheet down',
+    noSelection: 'select an issue to list its links',
+  },
   whyRank: 'why rank',
   whyHeld: 'why held',
   filteredEmpty: 'no flagged rows match',
@@ -139,6 +148,46 @@ export const WORKSPACE_WORDS: WorkspaceWords = {
 /** `count` keys, zero-padded so lexical and numeric order agree. */
 export function keysOf(count: number): string[] {
   return Array.from({ length: count }, (_, index) => `i${String(index + 1).padStart(4, '0')}`);
+}
+
+/**
+ * `count` relationships between `i0001` and each of the next `count` issues,
+ * alternating `blocked-by` and `serialize-with` — the hub the Related groups
+ * list needs to pass its limits. For `backlogOf(count + 1, { edges })`.
+ *
+ * EACH `serialize-with` IS DECLARED BY THE OTHER ISSUE. An issue may declare
+ * only one `serialize-with`, and the viewer keeps the first and drops the rest,
+ * so a hub declaring them all would list one. `blocked-by` takes many, so the
+ * hub declares those itself.
+ */
+export function relatedHubEdges(count: number): (readonly [EdgeField, string, string])[] {
+  return keysOf(count + 1)
+    .slice(1)
+    .map((key, index): readonly [EdgeField, string, string] =>
+      index % 2 === 0 ? ['blocked-by', 'i0001', key] : ['serialize-with', key, 'i0001'],
+    );
+}
+
+/** 301 keys that each hold `TASK-1` as a substring, so only an exact key match reaches `TASK-1` past 300. */
+export const TASK_KEYS: readonly string[] = Array.from({ length: 301 }, (_, n) => `TASK-${String(1000 + n)}`);
+
+/**
+ * `HUB`, blocked by each of `keys`, every issue titled `titleOf` its key.
+ *
+ * The Related groups list's search reads keys and titles, and the hub of
+ * {@link relatedHubEdges} gives every issue its own of both, so a search that
+ * must tell same-titled or substring keys apart needs this one.
+ */
+export function blockedHub(keys: readonly string[], titleOf: (key: string) => string): ViewerDocument {
+  return {
+    issues: ['HUB', ...keys].map((key) => ({ key, title: titleOf(key), open: true, priority: 2 })),
+    edges: keys.map((to) => ({ field: 'blocked-by' as const, from: 'HUB', to })),
+    order: {
+      slots: ['HUB', ...keys].map((key, n) => ({ rank: n + 1, lead: key, members: [key], ready: true, holds: [] })),
+      excluded: [],
+    },
+    cycles: [],
+  };
 }
 
 export interface BacklogOptions {

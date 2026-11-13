@@ -1485,7 +1485,9 @@ export const workspaceStylesheet = `
        below 1120         rail unchanged; the canvas collapses to a strip that
                           opens full-width on demand; the inspector returns inline
 
-   Below roughly 860 is section 9 territory and out of scope for the package.
+       below 640          one view at a time, picked from three tabs: the
+                          order, the selection's Related groups, or the
+                          Sub-issues tree; the inspector is not drawn
 
    THE RAIL IS THE SAME 50 CHARACTERS IN ALL THREE. That is the whole rule, and
    it is the one thing to check when touching this block: measured on the demo
@@ -1544,6 +1546,94 @@ export const workspaceStylesheet = `
 .ig-workspace .ig-canvas-strip:focus-visible {
   outline: var(--ig-focus-ring) solid var(--ig-focus);
   outline-offset: var(--ig-space-tight);
+}
+
+/* THE TABS AND THE RELATED GROUPS LIST, DRAWN ONLY UNDER 640, on the strip's
+   reasoning above: render.ts cannot know its width, so the tabs are always in
+   the markup and the list is in it whenever its tab is selected, and this is
+   what keeps both off the three wider layouts. The block at the foot of the
+   sheet draws them. */
+.ig-workspace .ig-narrow-tabs {
+  display: none;
+  gap: var(--ig-space-tight);
+  padding: var(--ig-space-tight) var(--ig-space);
+  border-bottom: var(--ig-stroke) solid var(--ig-line);
+}
+
+.ig-workspace .ig-narrow-tab {
+  flex: 1;
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  background: none;
+  color: var(--ig-text-muted);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+  padding: var(--ig-space-tight);
+  cursor: pointer;
+}
+
+.ig-workspace .ig-narrow-tab[aria-selected='true'] {
+  background: var(--ig-surface);
+  color: var(--ig-text-body);
+}
+
+.ig-workspace .ig-narrow-tab:focus-visible,
+.ig-workspace .ig-related-group:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-tight);
+}
+
+.ig-workspace .ig-related {
+  display: none;
+  padding: var(--ig-space);
+}
+
+/* The rows take the Inspector's own row box, '.ig-relationship', so they read
+   the same; only the lists around them are this list's. */
+.ig-related-rows,
+.ig-related-groups {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+}
+
+.ig-related-groups > li {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+}
+
+.ig-related-group {
+  display: flex;
+  gap: var(--ig-space-tight);
+  align-items: baseline;
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  background: var(--ig-surface);
+  color: var(--ig-text-body);
+  font-family: inherit;
+  font-size: inherit;
+  padding: var(--ig-space-tight);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ig-related-search {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+  margin-bottom: var(--ig-space-tight);
+  color: var(--ig-text-muted);
+  font-size: var(--ig-font-size-small);
+}
+
+.ig-related-empty {
+  margin: 0;
+  color: var(--ig-text-muted);
+  font-size: var(--ig-font-size-small);
 }
 
 /* ONE KEY PER SURFACE, AND THE CANVAS KEEPS IT.
@@ -1753,6 +1843,118 @@ export const workspaceStylesheet = `
   .ig-workspace[data-canvas='open'] .ig-canvas-strip {
     display: block;
     justify-self: start;
+  }
+}
+
+/* THE PHONE LAYOUT: one view at a time, under the tabs.
+
+   THE TAB IS THE ROOT'S data-tab, which render.ts derives from the host's
+   narrowView and canvas mode. The rail and the canvas zone share one grid
+   area, and the tab decides which of them is drawn in it. The inspector is not
+   drawn at this width.
+
+   THE TWO BLOCKS ABOVE ALSO MATCH HERE, because every condition in this sheet
+   is single-sided, so each of their rules this layout disagrees with is
+   answered below on a selector at least as specific, and source order settles
+   it. That includes the collapsed and opened canvas: neither means anything
+   when the canvas is a whole tab. */
+@container ig-workspace (width < 640px) {
+  .ig-workspace {
+    grid-template-areas:
+      'header'
+      'view';
+    grid-template-columns: 1fr;
+  }
+
+  .ig-workspace[data-canvas='open'] {
+    grid-template-areas:
+      'header'
+      'view';
+    grid-template-columns: 1fr;
+  }
+
+  .ig-workspace .ig-zone[data-zone='rail'],
+  .ig-workspace .ig-zone[data-zone='canvas'] {
+    grid-area: view;
+  }
+
+  .ig-workspace .ig-zone[data-zone='rail'] {
+    border-right: 0;
+  }
+
+  .ig-workspace .ig-narrow-tabs {
+    display: flex;
+  }
+
+  /* Every value of data-inspector, so the narrow block's 'dismissed' restore
+     and the middle block's lifted panel are both answered. */
+  .ig-workspace[data-inspector] .ig-zone[data-zone='inspector'] {
+    display: none;
+  }
+
+  .ig-workspace[data-tab='related'] .ig-zone[data-zone='rail'],
+  .ig-workspace[data-tab='sub-issues'] .ig-zone[data-zone='rail'] {
+    display: none;
+  }
+
+  /* THE ORDER TAB HIDES THE CANVAS ZONE BUT NOT THE AUDIT OVERLAY IN IT. The
+     header's problem count opens findings in that zone, and display:none would
+     take them down with it on the one tab a reader starts on. visibility is the
+     property a child can turn back on, and a hidden box is also out of hit
+     testing, the tab order and the accessibility tree, so the rail beneath it
+     stays the view. */
+  .ig-workspace[data-tab='order'] .ig-zone[data-zone='canvas'] {
+    visibility: hidden;
+  }
+
+  .ig-workspace[data-tab='order'] .ig-zone[data-zone='canvas'] .ig-audit-overlay {
+    visibility: visible;
+  }
+
+  /* NO STRIP: the tabs are the way to the canvas here. */
+  .ig-workspace[data-canvas] .ig-canvas-strip {
+    display: none;
+  }
+
+  /* THE COLLAPSED CANVAS IS UNDONE, rule by rule. The narrow block hides every
+     child of the zone but the strip and the audit overlay, lets the zone spill
+     and re-anchors the overlay to its leading edge. On the Sub-issues tab the
+     zone's children are drawn again — the tree, the isolated list and the
+     toolbar, which is a flex row; the ':not' on the toolbar's rule only lifts
+     it to the specificity of the rule before it. */
+  .ig-workspace[data-tab='sub-issues'][data-canvas='strip']
+    .ig-zone[data-zone='canvas']
+    > :not(.ig-canvas-strip):not(.ig-audit-overlay) {
+    display: block;
+  }
+
+  .ig-workspace[data-tab='sub-issues'][data-canvas='strip']
+    .ig-zone[data-zone='canvas']
+    > .ig-canvas-toolbar:not(.ig-audit-overlay) {
+    display: flex;
+  }
+
+  .ig-workspace[data-canvas='strip'] .ig-zone[data-zone='canvas'] {
+    overflow: auto;
+  }
+
+  .ig-workspace[data-canvas='strip'] .ig-zone[data-zone='canvas'] .ig-audit-overlay {
+    left: auto;
+    right: var(--ig-space-tight);
+    width: min(calc(var(--ig-char-width) * 66.67), calc(100% - var(--ig-space-tight) * 2));
+    max-height: calc(100% - var(--ig-space-tight) * 2);
+    box-shadow: var(--ig-elevation-overlay);
+  }
+
+  /* RELATED GROUPS SHOWS ONLY ITS LIST. The graph beneath it is the wide
+     layouts' view of the same relationships, and a line needs two columns. The
+     audit overlay is the exception, as it is in the collapsed canvas. */
+  .ig-workspace[data-tab='related'] .ig-zone[data-zone='canvas'] > :not(.ig-related):not(.ig-audit-overlay) {
+    display: none;
+  }
+
+  .ig-workspace[data-tab='related'][data-canvas] .ig-zone[data-zone='canvas'] > .ig-related {
+    display: block;
   }
 }
 `;

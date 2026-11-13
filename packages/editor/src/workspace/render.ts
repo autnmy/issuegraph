@@ -32,14 +32,15 @@
  * clean — which is the audit failing silently on exactly the rows where an
  * encoding error is hardest to see.
  *
- * ## The zone frames, and the one place a tag is written here
+ * ## The zone frames, and the one place markup is joined here
  *
  * Two of the four zones hand back a STRING rather than a spec — the ladder's
  * chrome and the audit header — so the frames are assembled by concatenation,
  * as `renderScaleLadder` already assembles its own canvas and chrome. What
- * makes that safe is not care: {@link ZONES} is a closed union of literals, so
- * no caller value can reach an attribute here at all, and `zones.test.ts` pins
- * it. Everything with a dynamic value in it goes through `renderMarkup`.
+ * makes that safe is not care: a frame's own opening tag carries the caller's
+ * `surfaceId` in its id, so {@link zone} has `renderMarkup` write it, and only
+ * already-rendered markup is joined inside. Everything with a dynamic value in
+ * it goes through `renderMarkup`.
  *
  * ## Dark only
  *
@@ -89,7 +90,7 @@ import type {
 } from '@issuegraph/store';
 
 import type { AuditInput, AuditSeverity } from '../audit/findings.ts';
-import { edgeIdentity } from '@issuegraph/core';
+import { type EdgeField, edgeIdentity } from '@issuegraph/core';
 import { type AuditWords, renderAuditPanel } from '../audit/panel.ts';
 import { type EncodingRefusedBlockOptions, renderEncodingRefusedBlock } from '../audit/refused.ts';
 import { auditStylesheet } from '../audit/styles.ts';
@@ -121,7 +122,9 @@ import {
   type InspectorWhyRank,
   inspectorView,
 } from './inspector.ts';
+import { type CanvasMode, type NarrowTab, type NarrowView, NARROW_TABS, narrowTabOf } from './narrow.ts';
 import { type RailWindow, type RailWindowOptions, railWindow } from './rail.ts';
+import { type RelatedListView, relatedListView } from './related.ts';
 import { type ConflictDiff, diffIsEmpty, diffWithin } from './recovery.ts';
 import {
   type WorkspaceSelection,
@@ -131,7 +134,7 @@ import {
 } from './selection.ts';
 import { workspaceStylesheet } from './styles.ts';
 
-/** The four fixed positions. A closed union, which is what keeps `zone` safe. */
+/** The four fixed positions. */
 export const ZONES = Object.freeze(['header', 'rail', 'canvas', 'inspector'] as const);
 
 
@@ -478,6 +481,16 @@ export interface WorkspaceWords {
    * are safely the same.
    */
   readonly rail?: RailWords | undefined;
+  /**
+   * The layout under `640`: its three tabs, and the Related groups list's
+   * sentence for nothing selected.
+   *
+   * REQUIRED, unlike `canvas` and `rail`. The tabs are the only way between the
+   * three views at that width, and every render draws them, so there is no
+   * absent state that would still work: a tab with no name is a control a
+   * screen reader announces as nothing.
+   */
+  readonly narrow: NarrowWords;
 }
 
 /**
@@ -571,6 +584,26 @@ export interface RailWords {
    * a screen-reader user the list is open and offer to open it in one breath.
    */
   readonly hide: string;
+}
+
+/**
+ * The words of the layout under `640`, where one of Order, Related groups and
+ * Sub-issues shows at a time.
+ */
+export interface NarrowWords {
+  /** The tab that shows the order. */
+  readonly order: string;
+  /** The tab that lists the selection's relationships. */
+  readonly related: string;
+  /** The tab that shows the sub-issue tree. */
+  readonly subIssues: string;
+  /**
+   * Names the control that closes the Inspector's sheet under `640`. Nothing
+   * in this version draws that sheet, so nothing reads this yet.
+   */
+  readonly closeSheet: string;
+  /** What the Related groups list says while nothing is selected. */
+  readonly noSelection: string;
 }
 
 export interface RecoveryWords {
@@ -969,22 +1002,45 @@ export interface WorkspaceOptions {
    */
   readonly diffOpen?: MutationId | null | undefined;
   /**
-   * A value unique to this surface, used to bind §17a's rail footer to the
-   * isolated list the canvas draws.
+   * A value unique to this surface, used to bind controls in one zone to what
+   * they open in another: §17a's rail footer to the isolated list the canvas
+   * draws, and each narrow tab to the zone it shows.
    *
-   * SUPPLIED BY WHOEVER KNOWS THE PAGE. The footer's toggle and the list are in
-   * different zones, so the toggle names the list with `aria-controls` — and an
-   * id invented in here would be emitted twice by a host rendering two
-   * workspaces, leaving the second toggle pointing at the first surface's list.
-   * `scale/render.ts`'s `searchSpec` records the same hazard for its own label.
+   * SUPPLIED BY WHOEVER KNOWS THE PAGE. A control names its target with
+   * `aria-controls`, and an id invented in here would be emitted twice by a
+   * host rendering two workspaces, leaving the second surface's controls
+   * pointing at the first surface's elements. `scale/render.ts`'s `searchSpec`
+   * records the same hazard for its own label. `mountWorkspace` mints a value
+   * per mount, so a PAGE THAT DRAWS MORE THAN ONE WORKSPACE WITHOUT A MOUNT
+   * PASSES ONE PER WORKSPACE.
    *
-   * ABSENT, NO ASSOCIATION IS DRAWN, and that is the honest default rather than
-   * a degraded one: `mountWorkspace` mints a value per mount, and markup served
-   * WITHOUT a mount is not operable anyway — the same argument
-   * `CanvasWords.editMode` is optional under. A toggle nobody can press needs no
-   * `aria-controls`.
+   * ABSENT, THE RAIL FOOTER DRAWS NO ASSOCIATION, and that is the honest
+   * default rather than a degraded one: markup served without a mount is not
+   * operable anyway — the same argument `CanvasWords.editMode` is optional
+   * under. A toggle nobody can press needs no `aria-controls`.
+   *
+   * THE ZONE FRAMES ARE THE ONE EXCEPTION, and they take the fixed ids
+   * `ig-zone-<zone>` when this is absent. The tabs are drawn on every render
+   * and a tab must name the panel it shows, so a tab with no `aria-controls`
+   * would be a broken tab rather than an absent one. The cost is the hazard
+   * above, for a page that draws two unmounted workspaces with no value here.
    */
   readonly surfaceId?: string | undefined;
+  /**
+   * Which zone the layout under `640` shows. See `HostState.narrowView`.
+   * Absent is `'order'`.
+   */
+  readonly narrowView?: NarrowView | undefined;
+  /**
+   * What the canvas zone draws. The tree itself is drawn by `mountWorkspace`;
+   * this only tells the tabs which one is selected. Absent is
+   * `'neighbourhood'`.
+   */
+  readonly canvas?: CanvasMode | undefined;
+  /** The Related groups list's open group. See `HostState.relatedGroup`. */
+  readonly relatedGroup?: EdgeField | null | undefined;
+  /** The Related groups list's search text. See `HostState.relatedQuery`. */
+  readonly relatedQuery?: string | undefined;
 }
 
 export interface WorkspaceView {
@@ -1012,15 +1068,72 @@ export interface WorkspaceResult {
   readonly diagnostics: readonly string[];
 }
 
+const ZONE_CLOSE = '</section>';
+
 /**
- * A zone frame.
+ * A zone frame, around already-rendered markup from `renderMarkup` or from a
+ * sibling leaf's renderer.
  *
- * The only tag written by hand in this package, and it takes no caller value:
- * `zone` is one of {@link ZONES} and `inner` is already-rendered markup from
- * `renderMarkup` or from a sibling leaf's renderer.
+ * THE OPENING TAG IS `renderMarkup`'S, because the id carries the caller's
+ * `surfaceId` and only that function escapes an attribute in this package. It
+ * renders the frame empty and the inner markup goes where its closing tag was.
  */
-function zone(name: Zone, inner: string): string {
-  return `<section class="ig-zone" data-zone="${name}">${inner}</section>`;
+function zone(name: Zone, id: string, inner: string): string {
+  const frame = renderMarkup(element('section', { class: 'ig-zone', 'data-zone': name, id }, []));
+  return `${frame.slice(0, -ZONE_CLOSE.length)}${inner}${ZONE_CLOSE}`;
+}
+
+/** Each zone frame's id, unique on the page when the caller supplied a `surfaceId`. */
+function zoneIds(surfaceId: string | undefined): Readonly<Record<Zone, string>> {
+  const suffix = surfaceId === undefined ? '' : `-${surfaceId}`;
+  return {
+    header: `ig-zone-header${suffix}`,
+    rail: `ig-zone-rail${suffix}`,
+    canvas: `ig-zone-canvas${suffix}`,
+    inspector: `ig-zone-inspector${suffix}`,
+  };
+}
+
+/** The zone each narrow tab shows, and the word that names it. */
+const NARROW_TAB_PARTS: Readonly<Record<NarrowTab, { readonly zone: Zone; readonly word: keyof NarrowWords }>> =
+  Object.freeze({
+    order: { zone: 'rail', word: 'order' },
+    related: { zone: 'canvas', word: 'related' },
+    'sub-issues': { zone: 'canvas', word: 'subIssues' },
+  });
+
+/**
+ * The tabs of the layout under `640`.
+ *
+ * ALWAYS DRAWN, AND HIDDEN BY THE SHEET AT THE WIDER LAYOUTS, for the reason the
+ * canvas strip is: this function does not know how wide it is. Every tab is a
+ * tab stop rather than one roving stop, so each is reachable the way every other
+ * control on this surface is.
+ */
+function narrowTabsSpec(
+  selected: NarrowTab,
+  words: NarrowWords,
+  ids: Readonly<Record<Zone, string>>,
+): ElementSpec {
+  return element(
+    'div',
+    { class: 'ig-narrow-tabs', role: 'tablist' },
+    NARROW_TABS.map((tab) =>
+      element(
+        'button',
+        {
+          type: 'button',
+          class: 'ig-narrow-tab',
+          role: 'tab',
+          'data-ig-command': 'narrow-tab',
+          'data-ig-value': tab,
+          'aria-selected': tab === selected ? 'true' : 'false',
+          'aria-controls': ids[NARROW_TAB_PARTS[tab].zone],
+        },
+        [words[NARROW_TAB_PARTS[tab].word]],
+      ),
+    ),
+  );
 }
 
 /**
@@ -1666,6 +1779,114 @@ function relationshipSpec(
       flipControl(relationship, selected, words),
     ],
   );
+}
+
+/**
+ * The Related groups list's rows: the Inspector's own head in the Inspector's
+ * own row box, so a relationship reads the same words, direction and hue here.
+ * Only the head: removing, retyping and flipping stay the Inspector's.
+ */
+function relatedRowsSpec(rows: readonly InspectorRelationship[], subject: string | null): ElementSpec {
+  return element(
+    'ul',
+    { class: 'ig-related-rows' },
+    rows.map((row) =>
+      element('li', { class: 'ig-relationship', 'data-edge': row.field }, [relationshipHead(row, subject)]),
+    ),
+  );
+}
+
+/**
+ * The Related groups search. The input sits inside its label, so the two are
+ * associated without an `id`, for the reason `scale/render.ts`'s `searchSpec`
+ * gives. Named by the tab's own word: the host words hold no search label.
+ */
+function relatedSearchSpec(query: string, words: NarrowWords): ElementSpec {
+  return element('label', { class: 'ig-related-search' }, [
+    words.related,
+    element('input', {
+      type: 'search',
+      'data-ig-command': 'related-query',
+      value: query,
+      autocomplete: 'off',
+    }),
+  ]);
+}
+
+/** One kind's group control, worded as the Inspector words that kind, then its count. */
+function relatedGroupSpec(field: EdgeField, count: number, open: boolean): ElementSpec {
+  const treatment = treatmentFor(field);
+  return element(
+    'button',
+    {
+      type: 'button',
+      class: 'ig-related-group',
+      'data-ig-command': 'related-group',
+      'data-ig-value': field,
+      'aria-expanded': open ? 'true' : 'false',
+    },
+    [...glyphAndLabel(treatment.glyph, labelFrom(treatment, true)), ' ', element('span', {}, [String(count)])],
+  );
+}
+
+/**
+ * The Related groups list, drawn in the canvas zone under `640`.
+ *
+ * EVERY DECISION IS `relatedListView`'S — which rows, which groups, whether a
+ * search is drawn and how many rows were cut. This only gives each part its
+ * element, so the 60-row cap is enforced in one place.
+ *
+ * An open group draws its search and its rows inside its own item, under its
+ * control. A search over every relationship sits above the groups, and while it
+ * holds a query its matches stand where the groups were.
+ */
+function relatedListSpec(
+  view: RelatedListView,
+  subject: string | null,
+  query: string,
+  words: WorkspaceWords,
+): ElementSpec {
+  return element(
+    'div',
+    {
+      class: 'ig-related',
+      'data-ig-omitted': view.kind === 'grouped' && view.omitted > 0 ? view.omitted : undefined,
+    },
+    relatedListParts(view, subject, query, words),
+  );
+}
+
+function relatedListParts(
+  view: RelatedListView,
+  subject: string | null,
+  query: string,
+  words: WorkspaceWords,
+): readonly (ElementSpec | null)[] {
+  switch (view.kind) {
+    case 'no-selection':
+      return [element('p', { class: 'ig-related-empty' }, [words.narrow.noSelection])];
+    case 'no-relationships':
+      return [element('p', { class: 'ig-related-empty' }, [words.noRelationships])];
+    case 'flat':
+      return [relatedRowsSpec(view.rows, subject)];
+    case 'grouped': {
+      const search = view.search === 'none' ? null : relatedSearchSpec(query, words.narrow);
+      const open = view.groups.some((group) => group.open);
+      const groups = element(
+        'ul',
+        { class: 'ig-related-groups' },
+        view.groups.map((group) =>
+          element('li', {}, [
+            relatedGroupSpec(group.field, group.count, group.open),
+            group.open ? search : null,
+            group.open ? relatedRowsSpec(view.rows, subject) : null,
+          ]),
+        ),
+      );
+      if (open) return [groups];
+      return [search, view.groups.length > 0 ? groups : relatedRowsSpec(view.rows, subject)];
+    }
+  }
 }
 
 /**
@@ -3197,10 +3418,15 @@ export function renderWorkspace(
   // Suppressing the markup with an option would put the key out of reach of
   // both.
   const canvasLegend = canvas.ladder.tier === 'direct' ? 'drawn' : 'absent';
+  // THE TAB IS READ OFF THE VIEW AND THE MODE, never handed in, so the selected
+  // tab cannot disagree with what the canvas zone draws. See `narrowTabOf`.
+  const tab = narrowTabOf(options.narrowView ?? 'order', options.canvas ?? 'neighbourhood');
   const narrowState =
     ` data-canvas="${canvasOpen ? 'open' : 'strip'}"` +
     ` data-canvas-legend="${canvasLegend}"` +
-    ` data-inspector="${lifted ? 'lifted' : 'dismissed'}"`;
+    ` data-inspector="${lifted ? 'lifted' : 'dismissed'}"` +
+    ` data-tab="${tab}"`;
+  const ids = zoneIds(options.surfaceId);
 
   // §17a'S RAIL FOOTER, FROM THE LADDER THE CANVAS ALREADY DERIVED. `isolated`
   // is a property of the whole document rather than of the tier the canvas
@@ -3215,6 +3441,22 @@ export function renderWorkspace(
   const railFooterSpec = railFooter(canvas.ladder.isolated, options.words.rail, isolatedListId);
 
   const inspector = inspectorView(document, selection);
+  // The Related groups list, drawn only while its tab is the one selected: the
+  // other two tabs show nothing of it, and the wider layouts hide it.
+  const relatedList =
+    tab !== 'related'
+      ? ''
+      : renderMarkup(
+          relatedListSpec(
+            relatedListView(document, selection, {
+              group: options.relatedGroup ?? null,
+              query: options.relatedQuery ?? '',
+            }),
+            inspector.subject.kind === 'issue' ? inspector.subject.issue.key : null,
+            options.relatedQuery ?? '',
+            options.words,
+          ),
+        );
 
   // §17c'S LOOP, OVER THE RAIL THE READER IS ACTUALLY LOOKING AT.
   // `reevaluateView` is handed the WINDOWED scene, so a chip whose row is
@@ -3335,7 +3577,7 @@ export function renderWorkspace(
     //
     // §17k'S TWO READER DECISIONS RIDE THE SAME ROOT, and for the same reason
     // `data-order` does: the stylesheet is the only party that knows which of
-    // the three layouts is drawn, so the surface publishes what the reader
+    // the four layouts is drawn, so the surface publishes what the reader
     // asked for and each container block reads the one it has a use for.
     // Neither attribute means anything at the width where its zone is a zone.
     //
@@ -3349,6 +3591,7 @@ export function renderWorkspace(
       : `<div class="ig-workspace" data-order="${orderStatus}"${narrowState}>`,
     zone(
       'header',
+      ids.header,
       [
         headerMarkup(
           document.host,
@@ -3379,10 +3622,15 @@ export function renderWorkspace(
         changeWords === undefined
           ? ''
           : renderMarkup(summarySpec(change.summary, changeWords, { held: change.held })),
+        // THE TABS ARE THE HEADER'S LAST CHILD, because the header is the one
+        // zone nothing replaces after this render: the mount swaps the canvas
+        // zone's children for the tree, and a tab inside it would vanish there.
+        renderMarkup(narrowTabsSpec(tab, options.words.narrow, ids)),
       ].join(''),
     ),
     zone(
       'rail',
+      ids.rail,
       [
         railSpacer(rail.before, 'before'),
         renderMarkup(markRailRows(railRender.scene.root)),
@@ -3398,13 +3646,13 @@ export function renderWorkspace(
     ),
     zone(
       'canvas',
+      ids.canvas,
       // THE CAPTION LEADS THE ZONE, above the graph, exactly as frame 17a
       // draws it — and it is assembled HERE rather than inside the ladder.
       // `renderScaleLadder` is also used standalone, where `chrome: false` is
       // the deliberate answer, and the words this row needs are the
       // workspace's. Both halves are already-rendered markup, which is the
-      // rule `zone` exists under: it writes the only hand-authored tag in this
-      // package and takes no caller value.
+      // rule `zone` exists under: it frames markup that was already escaped.
       //
       // THE STRIP CONTROL LEADS THE ZONE, above the caption, because below
       // `1120` it is the ONLY thing in the zone the reader can reach: the
@@ -3421,11 +3669,13 @@ export function renderWorkspace(
       [strip, toolbar]
         .map((spec) => (spec === null ? '' : renderMarkup(spec)))
         .join('') +
+      relatedList +
       canvas.markup +
       auditPanel,
     ),
     zone(
       'inspector',
+      ids.inspector,
       // §17d'S AUDIT IS THE SELECTION'S SIBLING, AND THEY SHARE ONE SCROLL
       // TRACK. Sibling rather than child so each surface keeps its own padding
       // and reads as a peer of the selection rather than part of it — their
@@ -3457,9 +3707,8 @@ export function renderWorkspace(
       // track is what avoids needing panes at all.
       //
       // BOTH SIDES ARE ALREADY-RENDERED MARKUP, which is the rule `zone` exists
-      // under: it writes the only hand-authored tag in this package and takes
-      // no caller value, and everything with a dynamic value in it went through
-      // `renderMarkup`.
+      // under: everything with a dynamic value in it went through
+      // `renderMarkup`, the frame's own id included.
       //
       // `known` IS THE DRAWN DOCUMENT'S KEYS, the same set `holdRow` withholds
       // its subject control on, and NOT the audit's: a host audits what it

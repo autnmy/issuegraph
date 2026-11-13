@@ -24,9 +24,9 @@ const CANVAS = WORKSPACE_WORDS.canvas;
  * running to the end of the document.
  */
 function canvasZone(markup: string): string {
-  const start = markup.indexOf('<section class="ig-zone" data-zone="canvas">');
+  const start = markup.indexOf('<section class="ig-zone" data-zone="canvas"');
   assert.notEqual(start, -1, 'no canvas zone');
-  const end = markup.indexOf('<section class="ig-zone" data-zone="inspector">', start);
+  const end = markup.indexOf('<section class="ig-zone" data-zone="inspector"', start);
   assert.notEqual(end, -1, 'no inspector zone after the canvas');
   return markup.slice(start, end);
 }
@@ -280,7 +280,7 @@ describe('§17f’s row is drawn from what the host said, and nothing else', () 
     // unchanged and is what this now says, with the strip named as the one
     // thing that is unconditionally there.
     assert.ok(
-      without.startsWith('<section class="ig-zone" data-zone="canvas"><button type="button" class="ig-canvas-strip"'),
+      /^<section class="ig-zone" data-zone="canvas"[^>]*><button type="button" class="ig-canvas-strip"/.test(without),
       'something other than §17k’s strip now leads the zone',
     );
     assert.match(
@@ -303,7 +303,7 @@ describe('§17f’s row is drawn from what the host said, and nothing else', () 
     // that matters is the pair's ORDER — caption above the graph — and that is
     // what is asserted, rather than an index into the children.
     assert.ok(
-      zone.startsWith('<section class="ig-zone" data-zone="canvas"><button type="button" class="ig-canvas-strip"'),
+      /^<section class="ig-zone" data-zone="canvas"[^>]*><button type="button" class="ig-canvas-strip"/.test(zone),
       '§17k’s strip does not lead the zone',
     );
     assert.match(
