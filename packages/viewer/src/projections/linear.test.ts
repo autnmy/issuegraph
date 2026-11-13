@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { edgeIdentity } from '@issuegraph/core';
+
 import { normalizeDocument } from '../document.ts';
 import { renderMarkup } from '../element.ts';
 import { ROW_BADGE_BUDGET } from '../parts.ts';
+import { type Receding, recedingOf } from '../recede.ts';
+import { renderViewer } from '../render.ts';
 import {
   denseRowDocument,
   denseUnitDocument,
@@ -486,5 +490,188 @@ describe('the linear projection, with the footer detached', () => {
     const scene = linearScene(normalizeDocument(bare).document, { detachFooter: true });
     assert.equal(scene.footer, null);
     assert.equal(renderMarkup(scene.root).includes('ig-footer'), false);
+  });
+});
+
+/** The recede stamp of each list row, ranked and footer, by the key the row carries. */
+function listRowStamps(markup: string): Map<string, boolean> {
+  const stamps = new Map<string, boolean>();
+  for (const [tag] of markup.matchAll(/<li class="(?:ig-slot|ig-footer-row)"[^>]*>/g)) {
+    const key = /data-ig-key="([^"]*)"/.exec(tag)?.[1];
+    if (key !== undefined && !stamps.has(key)) stamps.set(key, tag.includes('data-recede="true"'));
+  }
+  return stamps;
+}
+
+describe('the linear projection recedes what a selection does not touch', () => {
+  it('renders a selection that resolves to nothing byte for byte as the bare list, however it is spelled', () => {
+    const bare = render(fixtureDocument);
+    const bareViewer = renderViewer(fixtureDocument, { projection: 'linear' }).markup;
+    assert.equal(bare.includes('data-recede'), false, 'the bare list carries a recede stamp');
+    assert.equal(bareViewer.includes('data-recede'), false, 'the bare list carries a recede stamp');
+    const real = edgeIdentity('blocked-by', '101', '102');
+    // Without these two the loop below passes on a list that ignores the selection.
+    assert.match(render(fixtureDocument, { selected: '102' }), /data-recede="true"/, "selecting '102' receded no list row");
+    assert.match(render(fixtureDocument, { selectedEdge: real }), /data-recede="true"/, 'selecting a relationship receded no list row');
+
+    // The issue: "With an issue or a relationship selected, list-projection rows that `recedingOf` gives are stamped `data-recede="true"`, and every other row carries no stamp"
+    // A selection that names nothing in the document recedes nothing, so no row
+    // is stamped and the list draws exactly as it does with nothing selected.
+    // The values below break out of an attribute, a tag or a CSS attribute
+    // selector, or are a real identity swapped or with one byte added.
+    const hostile = [
+      '"><script>alert(1)</script>',
+      "'] , * { display: none } [x='",
+      '</svg><img src=x onerror=alert(1)>',
+      'a|b|c|d',
+      `${real}"`,
+      `${real}]`,
+    ];
+    const unresolved: readonly { selected?: string | null; selectedEdge?: string | null }[] = [
+      { selected: null, selectedEdge: null },
+      { selected: 'nowhere' },
+      { selected: '102"' },
+      { selectedEdge: 'not|an|edge' },
+      // blocked-by is directed, so the swapped identity names no relationship.
+      { selectedEdge: edgeIdentity('blocked-by', '102', '101') },
+      { selected: '"><li data-recede="true">', selectedEdge: `x"'<]|y` },
+      ...hostile.flatMap((value) => [{ selectedEdge: value }, { selected: value, selectedEdge: value }]),
+    ];
+    for (const options of unresolved) {
+      assert.equal(render(fixtureDocument, options), bare, JSON.stringify(options));
+      assert.equal(renderViewer(fixtureDocument, { projection: 'linear', ...options }).markup, bareViewer, JSON.stringify(options));
+    }
+  });
+
+  it('renderViewer adds only the constant recede stamp to list rows, and no copy of the selection', () => {
+    const bare = renderViewer(fixtureDocument, { projection: 'linear' }).markup;
+    const receding = renderViewer(fixtureDocument, {
+      projection: 'linear',
+      selectedEdge: edgeIdentity('blocked-by', '101', '102'),
+    }).markup;
+
+    // The issue: "With an issue or a relationship selected, list-projection rows that `recedingOf` gives are stamped `data-recede="true"`, and every other row carries no stamp"
+    const values = [...receding.matchAll(/data-recede="([^"]*)"/g)].map((match) => match[1]);
+    assert.ok(values.length > 0, 'a resolving relationship stamped no list row');
+    assert.deepEqual([...new Set(values)], ['true']);
+
+    // Removing every stamp gives back the bare list byte for byte, so the
+    // selection value is never written into the list's markup anywhere else.
+    assert.equal(receding.replaceAll(' data-recede="true"', ''), bare);
+  });
+
+  it('stamps each list row, ranked and footer, exactly when recedingOf gives its key for a selected issue', () => {
+    const normalized = normalizeDocument(fixtureDocument).document;
+    const markup = renderMarkup(linearScene(normalized, { selected: '102' }).root);
+    const receding = recedingOf(normalized, { key: '102', edge: null });
+    const stamps = listRowStamps(markup);
+
+    // The issue: "With an issue or a relationship selected, list-projection rows that `recedingOf` gives are stamped `data-recede="true"`, and every other row carries no stamp"
+    for (const [key, stamped] of stamps) {
+      assert.equal(stamped, receding.keys.has(key), `the list row of ${key} disagrees with recedingOf`);
+    }
+    // 102 shares both its lines with 101 and none with the unit 103, the footer slot 105 or the
+    // exclusion 106, so this reaches a ranked row, a held row, a unit row, a footer slot and an exclusion.
+    assert.deepEqual(
+      ['102', '101', '103', '105', '106'].map((key) => [key, stamps.get(key)]),
+      [
+        ['102', false],
+        ['101', false],
+        ['103', true],
+        ['105', true],
+        ['106', true],
+      ],
+    );
+    // A stamp is the constant "true" on the row itself, never "false" and never on anything inside a row.
+    const values = [...markup.matchAll(/data-recede="([^"]*)"/g)].map((match) => match[1]);
+    assert.deepEqual([...new Set(values)], ['true']);
+    assert.equal(values.length, [...stamps.values()].filter(Boolean).length, 'a stamp landed on something other than a list row');
+  });
+
+  it("recedes the list by the selected member '104' while the row of its lead '103' stays current and keeps the tab stop", () => {
+    const normalized = normalizeDocument(fixtureDocument).document;
+    const draw = (selected: string): string => renderMarkup(linearScene(normalized, { selected }).root);
+    const rowTag = (markup: string, key: string): string => {
+      const tag = [...markup.matchAll(/<li class="(?:ig-slot|ig-footer-row)"[^>]*>/g)]
+        .map(([found]) => found)
+        .find((found) => found.includes(`data-ig-key="${key}"`));
+      assert.ok(tag !== undefined, `no list row was drawn for ${key}`);
+      return tag;
+    };
+    const byMember = draw('104');
+    const byLead = draw('103');
+
+    assert.match(rowTag(byMember, '103'), /data-unit="true"/, "the row of '103' is not the unit row, so this proves nothing");
+    // The issue: "`linearScene` in packages/viewer/src/projections/linear.ts calls `recedingOf` with the selection as given, before `atStations` (packages/viewer/src/parts.ts) moves a selected unit member to its lead, exactly as packages/viewer/src/projections/graph.ts already does, and stamps each receded row."
+    const receding = recedingOf(normalized, { key: '104', edge: null });
+    const stamps = listRowStamps(byMember);
+    assert.ok(stamps.size > 0, 'the list drew no row');
+    for (const [key, stamped] of stamps) assert.equal(stamped, receding.keys.has(key), `row ${key}`);
+    // 105 touches the lead 103 over serialize-with and touches 104 by nothing, so it recedes for the
+    // member and stays for the lead.
+    assert.match(rowTag(byMember, '105'), /data-recede="true"/, "the row of 105 was kept, so the list receded by the lead '103'");
+    assert.equal(rowTag(byLead, '105').includes('data-recede'), false, "selecting '103' receded its serialize-with partner 105");
+    assert.equal(rowTag(byMember, '103').includes('data-recede'), false, 'the unit row of the selected member receded');
+    assert.match(rowTag(byMember, '103'), /aria-current="true"/, 'the unit row no longer marks the selection on its lead');
+    // Apart from the stamps, selecting the member draws what selecting the lead draws: the same
+    // current row and the same tab stop.
+    assert.equal(byMember.replaceAll(' data-recede="true"', ''), byLead.replaceAll(' data-recede="true"', ''));
+  });
+
+  it('stamps the list from a receding it is handed rather than from the selection beside it, and still marks the selected row', () => {
+    // This is how a host whose list draws only part of its document recedes the list by the whole document.
+    const normalized = normalizeDocument(fixtureDocument).document;
+    const handed: Receding = recedingOf(normalized, { key: '105', edge: null });
+    const markup = renderMarkup(linearScene(normalized, { selected: '102', receding: handed }).root);
+    const stamps = listRowStamps(markup);
+    assert.ok(stamps.size > 0, 'the list drew no row, so this proves nothing');
+    for (const [key, stamped] of stamps) {
+      assert.equal(stamped, handed.keys.has(key), `the list row of ${key} disagrees with the receding it was handed`);
+    }
+    // 102 touches nothing 105 touches, so its row recedes only when the handed receding wins.
+    assert.equal(stamps.get('102'), true, "the row of the selected '102' was kept, so the selection won over the handed receding");
+    assert.equal(stamps.get('105'), false, 'the row of 105 receded under a receding that keeps it');
+    assert.match(row(markup, '102'), /aria-current="true"/, 'the receding moved the selection mark');
+
+    const nothing = recedingOf(normalized, { key: null, edge: null });
+    const quiet = renderMarkup(linearScene(normalized, { selected: '102', receding: nothing }).root);
+    assert.equal(quiet.includes('data-recede'), false, 'a handed receding that recedes nothing still stamped a row');
+  });
+
+  it('an order list given an issue and a relationship together recedes by the issue alone', () => {
+    const edge = edgeIdentity('decomposed-from', '103', '107');
+    const draw = (options: { selected?: string; selectedEdge?: string }): string =>
+      renderViewer(fixtureDocument, { projection: 'linear', ...options }).markup;
+    const byIssue = draw({ selected: '102' });
+    assert.match(byIssue, /data-recede="true"/, "selecting '102' receded no row");
+    assert.notEqual(draw({ selectedEdge: edge }), byIssue, 'the relationship recedes the rows the issue does, so this proves nothing');
+
+    // The issue: "The list's stamps equal the graph's for the same selection, including a selected unit member, in `renderViewer` and in `mountViewer`"
+    // The graph recedes by the issue and ignores a relationship passed beside it, so the list must too.
+    assert.equal(draw({ selected: '102', selectedEdge: edge }), byIssue);
+  });
+
+  it('an order list recomputes its recede on every scene, so a selection leaves no stamp on the next scene of the same document', () => {
+    // One normalized document shared by every scene, so a recede result kept
+    // between scenes would show up in a later one.
+    const normalized = normalizeDocument(fixtureDocument).document;
+    const draw = (options: { selected?: string | null; selectedEdge?: string | null }): string =>
+      renderMarkup(linearScene(normalized, options).root);
+    const relationship = edgeIdentity('serialize-with', '103', '105');
+
+    const bare = draw({});
+    const byKey = draw({ selected: '102' });
+    const byEdge = draw({ selectedEdge: relationship });
+    assert.equal(bare.includes('data-recede'), false, 'the bare list carries a stamp');
+    assert.match(byKey, /data-recede="true"/, "selecting '102' receded no row");
+    assert.match(byEdge, /data-recede="true"/, 'selecting a relationship receded no row');
+
+    // The issue: "With nothing selected, list markup is byte-identical to before"
+    assert.equal(draw({}), bare, 'a bare scene after selections kept a stamp');
+    assert.equal(draw({ selected: null, selectedEdge: null }), bare, 'explicit nulls after selections kept a stamp');
+    assert.equal(draw({ selected: 'nowhere' }), bare, 'an unknown key after selections kept a stamp');
+    assert.equal(draw({ selectedEdge: edgeIdentity('blocked-by', '102', '101') }), bare, 'a swapped identity after selections kept a stamp');
+    assert.equal(draw({ selected: '102' }), byKey, 'repeating an issue selection changed what recedes');
+    assert.equal(draw({ selectedEdge: relationship }), byEdge, 'repeating a relationship selection changed what recedes');
   });
 });

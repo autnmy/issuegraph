@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import { buildModel } from '@issuegraph/reader';
 import { EDGE_FIELDS, type EdgeField, edgeIdentity, isSymmetricEdgeField } from '@issuegraph/core';
 import { KEY_ATTRIBUTE, type ViewerHold, labelFrom, treatmentFor } from '@issuegraph/viewer';
+import { normalizeDocument, recedingOf } from '@issuegraph/viewer';
 
 import { RELATE_KEY, keyIntent } from '../create/keys.ts';
 import { AUDIT_SEVERITY_ATTRIBUTE } from '../audit/surface.ts';
@@ -2877,5 +2878,140 @@ describe('the narrow tabs and the Related groups list', () => {
     assert.equal(refs[0], 'TASK-1');
     assert.equal(refs.filter((ref) => ref === 'TASK-1').length, 1, 'the exact match was drawn twice');
     assert.equal(new Set(refs).size, refs.length, 'a relationship was drawn twice');
+  });
+});
+
+describe('the rail recedes as the whole document says', () => {
+  const recedeInput = backlogOf(20, { edges: [['blocked-by', 'i0015', 'i0016'], ['blocked-by', 'i0001', 'i0002']] });
+  const wholeDocument = normalizeDocument(recedeInput).document;
+  type RailRange = { readonly start: number; readonly count: number };
+  type RailSelection = NonNullable<Parameters<typeof renderWorkspace>[1]['selection']>;
+  const bareMarkup = (rail: RailRange): string => renderWorkspace(recedeInput, { words: WORKSPACE_WORDS, rail }).markup;
+  const selectedMarkup = (rail: RailRange, selection: RailSelection): string =>
+    renderWorkspace(recedeInput, { words: WORKSPACE_WORDS, rail, selection }).markup;
+  /** The rail zone alone: it runs from its own marker to the canvas zone's. */
+  const railZoneOf = (markup: string): string => {
+    const start = markup.indexOf('data-zone="rail"');
+    const end = markup.indexOf('data-zone="canvas"');
+    assert.ok(start !== -1 && end > start, 'the rail zone was not found before the canvas');
+    return markup.slice(start, end);
+  };
+  /** The recede stamp of each drawn rail row by its key, footer group included. */
+  const railRowStamps = (markup: string): Map<string, string | null> => {
+    const stamps = new Map<string, string | null>();
+    for (const [tag] of railZoneOf(markup).matchAll(/<li class="(?:ig-slot|ig-footer-row)[^"]*"[^>]*>/g)) {
+      const key = /data-ig-key="([^"]*)"/.exec(tag)?.[1];
+      if (key !== undefined && !stamps.has(key)) stamps.set(key, /data-recede="([^"]*)"/.exec(tag)?.[1] ?? null);
+    }
+    assert.ok(stamps.size > 0, 'the rail drew no row');
+    return stamps;
+  };
+  const outsideWindow: RailRange = { start: 0, count: 5 };
+  const outsideRelationship = edgeIdentity('blocked-by', 'i0015', 'i0016');
+  const outsideCases = [
+    {
+      name: 'the issue i0015',
+      selection: { kind: 'issue', key: 'i0015' } as const,
+      receding: recedingOf(wholeDocument, { key: 'i0015', edge: null }),
+    },
+    {
+      name: 'the relationship blocked-by i0015 to i0016',
+      selection: { kind: 'edge', edgeId: outsideRelationship } as const,
+      receding: recedingOf(wholeDocument, { key: null, edge: outsideRelationship }),
+    },
+  ];
+
+  it('renderWorkspace stamps no rail row for a selection the whole document does not resolve', () => {
+    const bare = railZoneOf(bareMarkup(outsideWindow));
+    assert.ok(bare.includes('class="ig-slot"'), 'the rail drew no row, so this proves nothing');
+    assert.equal(bare.includes('data-recede'), false, 'the rail carries a recede stamp with nothing selected');
+    // Without this the loop below passes on a rail that never recedes.
+    assert.match(
+      railZoneOf(selectedMarkup(outsideWindow, { kind: 'issue', key: 'i0015' })),
+      /data-recede="true"/,
+      'selecting i0015 outside the rail window receded no drawn row',
+    );
+
+    // The issue: "The editor rail's rows recede as the whole document says, including when the selected issue is outside the rail window"
+    // None of these names an issue or a relationship of the whole document, so
+    // the whole document recedes nothing and no drawn row is stamped.
+    const unresolved: readonly RailSelection[] = [
+      { kind: 'issue', key: 'i9999' },
+      { kind: 'issue', key: '"><script>alert(1)</script>' },
+      // blocked-by is directed, so the swapped identity names no relationship.
+      { kind: 'edge', edgeId: edgeIdentity('blocked-by', 'i0016', 'i0015') },
+      { kind: 'edge', edgeId: 'blocked-by|nope|nope2' },
+      { kind: 'edge', edgeId: `${outsideRelationship}"` },
+    ];
+    for (const selection of unresolved) {
+      const drawn = railZoneOf(selectedMarkup(outsideWindow, selection));
+      assert.ok(drawn.includes('class="ig-slot"'), `${JSON.stringify(selection)}: the rail drew no row`);
+      assert.equal(drawn.includes('data-recede'), false, `${JSON.stringify(selection)} stamped a rail row`);
+      assert.equal(drawn.includes('<script>'), false, `${JSON.stringify(selection)} was written into the rail unescaped`);
+    }
+  });
+
+  it('keeps a selected in-window issue and its neighbour, recedes the other rail rows, and stamps nothing with nothing selected', () => {
+    // The issue: "With nothing selected, list markup is byte-identical to before"
+    const bare = railRowStamps(bareMarkup(outsideWindow));
+    assert.deepEqual([...bare.values()].filter((stamp) => stamp !== null), [], 'a rail row receded with nothing selected');
+
+    const markup = selectedMarkup(outsideWindow, { kind: 'issue', key: 'i0002' });
+    assert.equal(railZoneOf(markup).includes('data-recede="false"'), false, 'a rail row carries a "false" stamp');
+    const stamps = railRowStamps(markup);
+    const receding = recedingOf(wholeDocument, { key: 'i0002', edge: null });
+    // The issue: "The editor rail's rows recede as the whole document says, including when the selected issue is outside the rail window"
+    for (const [key, stamp] of stamps) {
+      assert.equal(stamp, receding.keys.has(key) ? 'true' : null, `the rail row of ${key} disagrees with the whole document`);
+    }
+    // i0002 is selected and i0001 is blocked by it; nothing ties i0003 to either.
+    assert.equal(stamps.get('i0002'), null, 'the selected rail row receded');
+    assert.equal(stamps.get('i0001'), null, 'the rail row of the neighbour i0001 receded');
+    assert.equal(stamps.get('i0003'), 'true', 'the rail row of i0003, which touches nothing selected, was kept');
+  });
+
+  it('recedes as the whole document says wherever the rail window sits, and recedes nothing with nothing selected', () => {
+    // The issue: "The editor rail's rows recede as the whole document says, including when the selected issue is outside the rail window"
+    // Windows before the selected issue i0015, holding it, across it and from it.
+    const windows: readonly RailRange[] = [outsideWindow, { start: 10, count: 10 }, { start: 12, count: 5 }, { start: 15, count: 5 }];
+    const unselected = bareMarkup(outsideWindow);
+    const seen = new Map<string, string | null>();
+    for (const { name, selection, receding } of outsideCases) {
+      for (const rail of windows) {
+        const markup = selectedMarkup(rail, selection);
+        const stamps = railRowStamps(markup);
+        const where = `${name}, rail from ${String(rail.start)}`;
+        for (const [key, stamp] of stamps) {
+          assert.equal(stamp, receding.keys.has(key) ? 'true' : null, `${where}: row ${key}`);
+          if (selection.kind === 'issue') seen.set(key, stamp);
+        }
+        const values = [...stamps.values()];
+        assert.ok(values.includes('true'), `${where}: no stamped row, so this proves nothing`);
+        if (rail === outsideWindow) {
+          // The selection adds no row to the window: the rail draws exactly the rows it draws with nothing selected.
+          assert.deepEqual(drawnKeys(markup), drawnKeys(unselected), `${where}: the selection changed which rows the rail draws`);
+          assert.equal(
+            stamps.has('i0015') || stamps.has('i0016'),
+            false,
+            `${where}: the window drew i0015 or i0016, so it does not leave the selection out`,
+          );
+        } else {
+          assert.ok(values.includes(null), `${where}: no unstamped row, so this proves nothing`);
+        }
+      }
+    }
+    assert.equal(seen.get('i0015'), null, 'no window drew the selected issue unstamped');
+    assert.equal(seen.get('i0016'), null, 'no window drew the neighbour i0016 unstamped');
+    assert.equal(seen.get('i0013'), 'true', 'the row of i0013, which i0015 does not touch, was kept');
+    assert.equal(seen.get('i0001'), 'true', 'the row of i0001, which i0015 does not touch, was kept');
+
+    for (const rail of windows) {
+      const stamps = railRowStamps(bareMarkup(rail));
+      assert.deepEqual(
+        [...stamps.values()].filter((stamp) => stamp !== null),
+        [],
+        `a rail from ${String(rail.start)} carries a recede stamp with nothing selected`,
+      );
+    }
   });
 });

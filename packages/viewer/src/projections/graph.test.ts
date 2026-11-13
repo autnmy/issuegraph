@@ -1444,17 +1444,15 @@ describe('the graph projection recedes what a selection does not touch', () => {
     assert.equal(refused.includes('data-recede'), false, 'a row of the refused canvas receded');
   });
 
-  it('leaves the list and the tree alone whatever is selected', () => {
+  it('leaves the tree alone whatever is selected', () => {
     const selectedEdge = edgeIdentity('blocked-by', '101', '102');
-    for (const projection of ['linear', 'tree'] as const) {
-      const bare = renderViewer(fixtureDocument, { projection }).markup;
-      assert.equal(renderViewer(fixtureDocument, { projection, selectedEdge }).markup, bare, `${projection} changed for a relationship`);
-      assert.equal(
-        renderViewer(fixtureDocument, { projection, selected: '102' }).markup.includes('data-recede'),
-        false,
-        `${projection} receded around an issue`,
-      );
-    }
+    const bare = renderViewer(fixtureDocument, { projection: 'tree' }).markup;
+    assert.equal(renderViewer(fixtureDocument, { projection: 'tree', selectedEdge }).markup, bare, 'the tree changed for a relationship');
+    assert.equal(
+      renderViewer(fixtureDocument, { projection: 'tree', selected: '102' }).markup.includes('data-recede'),
+      false,
+      'the tree receded around an issue',
+    );
   });
 
   it('draws a receding render byte for byte the same under the default and paper themes', () => {
@@ -1659,5 +1657,44 @@ describe('the graph projection recedes what a selection does not touch', () => {
     assert.ok(stamps.some(([, recedes]) => !recedes), 'every footer row receded');
     assert.equal(new Map(stamps).get('105'), false, 'the selected footer slot receded');
     assert.equal(new Map(stamps).get('107'), true, 'the footer row of 107, which 105 does not touch, was kept');
+  });
+
+  it('renderViewer stamps each list row as the graph stamps the same issue, for a selected issue, a relationship and a unit member', () => {
+    const normalized = normalizeDocument(fixtureDocument).document;
+    /** The stamp on the first keyed row of each issue, among rows of the given classes. */
+    const rowStamps = (markup: string, rowClasses: readonly string[]): Map<string, boolean> => {
+      const stamps = new Map<string, boolean>();
+      for (const [tag, rowClass] of markup.matchAll(/<li class="([^"]*)"[^>]*>/g)) {
+        const key = /data-ig-key="([^"]*)"/.exec(tag)?.[1];
+        if (key === undefined || !rowClasses.includes(rowClass ?? '') || stamps.has(key)) continue;
+        stamps.set(key, tag.includes('data-recede="true"'));
+      }
+      return stamps;
+    };
+    const relationship = edgeIdentity('decomposed-from', '103', '107');
+    const cases = [
+      { name: "the issue '102'", options: { selected: '102' }, selection: { key: '102', edge: null } },
+      { name: 'the relationship decomposed-from 103 to 107', options: { selectedEdge: relationship }, selection: { key: null, edge: relationship } },
+      { name: "the unit member '104'", options: { selected: '104' }, selection: { key: '104', edge: null } },
+    ];
+
+    for (const { name, options, selection } of cases) {
+      const receding = recedingOf(normalized, selection);
+      const list = rowStamps(renderViewer(fixtureDocument, { projection: 'linear', ...options }).markup, ['ig-slot', 'ig-footer-row']);
+      const graph = rowStamps(renderViewer(fixtureDocument, { projection: 'graph', ...options }).markup, ['ig-rail-row', 'ig-footer-row']);
+
+      // The issue: "The list's stamps equal the graph's for the same selection, including a selected unit member, in `renderViewer` and in `mountViewer`"
+      let compared = 0;
+      for (const [key, stamped] of list) {
+        assert.equal(stamped, receding.keys.has(key), `${name}: the list row of ${key} disagrees with recedingOf`);
+        const card = graph.get(key);
+        if (card === undefined) continue;
+        assert.equal(stamped, card, `${name}: the list row of ${key} disagrees with the graph`);
+        compared += 1;
+      }
+      assert.ok(compared > 0, `${name}: the list and the graph share no keyed row, so this proves nothing`);
+      assert.ok([...list.values()].some(Boolean), `${name}: no list row receded, so this proves nothing`);
+      assert.ok([...list.values()].some((stamped) => !stamped), `${name}: every list row receded, so this proves nothing`);
+    }
   });
 });

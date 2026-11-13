@@ -586,11 +586,51 @@ describe('a receded element draws by colour roles and stroke opacity', () => {
     assert.equal(viewerStylesheet.includes('fill-secondary'), false);
   });
 
+  it('draws a receded list row and a receded list footer row like a receded card, and leaves the graph footer row without a ground', () => {
+    // "List-projection rows are stamped `data-recede="true"` from the same `recedingOf` result and drawn like receded cards
+    // (`--ig-surface-2`, `--ig-text-muted` text, no opacity)"
+    const slot = /^\.ig-slot\[data-recede=(['"]?)true\1\]$/;
+    const listFooterRow = /^\.ig-linear \.ig-footer-row\[data-recede=(['"]?)true\1\]$/;
+    const groundOf = (selector: RegExp): string[] =>
+      recede
+        .filter((rule) => selector.test(rule.selector.replace(/^\.ig-viewer /, '')))
+        .flatMap((rule) => rule.declarations.filter((one) => one.name === 'background-color').map((one) => one.value));
+    assert.ok(groundOf(slot).includes('var(--ig-surface-2)'), 'no rule draws a receded list row on --ig-surface-2');
+    assert.ok(groundOf(listFooterRow).includes('var(--ig-surface-2)'), 'no rule draws a receded list footer row on --ig-surface-2');
+
+    /** Whether a recede rule colours `label` --ig-text-muted inside a stamped row that `row` names. */
+    const mutedInside = (row: RegExp, label: string): boolean =>
+      recede.some(
+        (rule) =>
+          styledCompound(rule.selector) === label &&
+          row.test(rule.selector.slice(0, rule.selector.lastIndexOf(' ')).replace(/^\.ig-viewer /, '')) &&
+          rule.declarations.some((one) => one.name === 'color' && one.value === 'var(--ig-text-muted)'),
+      );
+    const anyFooterRow = /^(?:\.ig-linear )?\.ig-footer-row\[data-recede=(['"]?)true\1\]$/;
+    for (const label of ['.ig-title', '.ig-id']) {
+      assert.ok(mutedInside(slot, label), `no rule colours the ${label} of a receded list row --ig-text-muted`);
+      assert.ok(mutedInside(anyFooterRow, label), `no rule colours the ${label} of a receded list footer row --ig-text-muted`);
+    }
+
+    // The graph draws its footer rows too, and a receded one keeps the panel's ground: only the list's root and its
+    // detached footer carry ig-linear, so a ground rule must be scoped there to stay off the graph.
+    const groundsAFooterRow = recede.filter(
+      (rule) =>
+        /^\.ig-footer-row(?![\w-])/.test(styledCompound(rule.selector)) &&
+        rule.declarations.some(({ name }) => name === 'background' || name === 'background-color'),
+    );
+    assert.deepEqual(
+      groundsAFooterRow.filter((rule) => !rule.selector.startsWith('.ig-linear ')).map((rule) => rule.selector),
+      [],
+      'these rules give a receded graph footer row a ground',
+    );
+  });
+
   it('sets no opacity and no filter on a receded node or station, or on any element that holds one', () => {
     // "Receded nodes draw on `--ig-surface-2` with `--ig-text-muted` labels, with no opacity or filter on them or above them"
     // and "its rank numeral is `--ig-text-muted` with no opacity on it or above it".
-    // The receded card, its labels, the station, and the rail row, canvas and viewer root that contain them.
-    const nodeOrHolder = /^\.ig-(?:viewer|canvas|rail-row|card|title|id|footer-row|spine-station)(?![\w-])/;
+    // The receded card, its labels, the station, the list row, and the rail row, canvas and viewer root that contain them.
+    const nodeOrHolder = /^\.ig-(?:viewer|canvas|rail-row|card|title|id|footer-row|spine-station|slot)(?![\w-])/;
 
     assert.ok(recede.length > 0, 'the stylesheet has no rule for a receded element');
     const offenders = sheet
@@ -713,8 +753,8 @@ describe('a receded element draws by colour roles and stroke opacity', () => {
  * sheet, so a variant added later is checked without anyone listing it here.
  */
 describe('the recede rules win over every card and station variant', () => {
-  /** The elements whose recede rules must win: the card, its labels, the footer title and the station. */
-  const RECEDE_ORDER_TARGETS = ['.ig-card', '.ig-title', '.ig-id', '.ig-hold', '.ig-unit-note', '.ig-spine-station'];
+  /** The elements whose recede rules must win: the card, its labels, the footer title, the station and the list rows. */
+  const RECEDE_ORDER_TARGETS = ['.ig-card', '.ig-title', '.ig-id', '.ig-hold', '.ig-unit-note', '.ig-spine-station', '.ig-slot', '.ig-footer-row'];
 
   interface RecedeOrderMember {
     readonly selector: string;
@@ -767,7 +807,7 @@ describe('the recede rules win over every card and station variant', () => {
     assert.deepEqual(
       [...new Set(recede.map((one) => one.target))].sort(),
       [...RECEDE_ORDER_TARGETS].sort(),
-      'an element the graph stamps has no recede rule',
+      'an element the graph or the list stamps has no recede rule',
     );
     assert.deepEqual(recedeOrderLosses(viewerStylesheet), []);
   });

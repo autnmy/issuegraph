@@ -1423,6 +1423,21 @@ export const workspaceStylesheet = `
   background-color: color-mix(in srgb, var(--ig-text-muted) var(--ig-tint-unit), transparent);
 }
 
+/* A RECEDED ROW DRAWS LAYER 1'S RECEDED GROUND, TINTED OR NOT.
+
+   The tints above tie layer 1's recede ground on specificity and this sheet
+   loads after it, so without this rule a receded row that the edit also
+   changed kept its tint and read as one the selection touches. Placed after
+   every tint so it wins by order at the same specificity. The delta chip and
+   the row's accessible name still report the change. Background-color, never
+   the shorthand, for the held hatch's sake, as above. The footer selector
+   names .ig-linear, as layer 1's does: the canvas graph draws footer rows
+   too, and a receded graph row takes no ground. */
+.ig-workspace .ig-slot[data-recede='true'],
+.ig-workspace .ig-linear .ig-footer-row[data-recede='true'] {
+  background-color: var(--ig-surface-2);
+}
+
 /* THE THIRD COLUMN IS WHAT PUTS THE CHIP AT THE ROW'S TRAILING EDGE.
 
    The frame draws the row as rank, body, chip — three columns, the last

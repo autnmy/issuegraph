@@ -189,13 +189,13 @@ export function mountViewer(
     selected: options.selected ?? initialNavigationState.selected,
   };
   /**
-   * The selection exactly as the reader or host made it, which the graph
-   * recedes by.
+   * The selection exactly as the reader or host made it, which the graph and
+   * the list recede by.
    *
    * `state.selected` cannot serve, because each draw moves a selected unit
    * member to its unit's lead, and a member keeps only its own neighbours and
-   * lines, not its partners'. Every other reader — the list, the tree, the
-   * handle and `onSelect` — still sees `state.selected`. Written wherever
+   * lines, not its partners'. Every other reader — the tree, the handle and
+   * `onSelect` — still sees `state.selected`. Written wherever
    * `state.selected` is chosen or dropped, and re-checked on every draw by
    * `asGivenSelection`.
    */
@@ -277,7 +277,7 @@ export function mountViewer(
    * It must name something this document carries and stand on the same
    * station as `state.selected`. An update that removes a selected member, or
    * a later selection of another subject, therefore falls back to the issue
-   * the graph marks and the handle reports, so the two never disagree.
+   * the graph and the list mark and the handle reports, so they never disagree.
    */
   const asGivenSelection = (): string | null => {
     const selected = state.selected;
@@ -356,15 +356,20 @@ export function mountViewer(
     if (root !== null) container.removeChild(root);
     const scene = sceneFor(normalized, projection, {
       ...currentOptions,
-      // THE GRAPH ALONE IS HANDED THE SELECTION AS GIVEN, because it is the
-      // only projection that recedes. It still marks the unit's lead, since
-      // the graph moves a member to its lead before it marks anything.
-      selected: projection === 'graph' ? selectedAsGiven : state.selected,
+      // THE GRAPH AND THE LIST ARE HANDED THE SELECTION AS GIVEN, because they
+      // are the projections that recede. Each still marks the unit's lead,
+      // since it moves a member to its lead before it marks anything. The tree
+      // does not recede and keeps the lead the handle reports.
+      selected: projection === 'tree' ? state.selected : selectedAsGiven,
       // DERIVED FROM THE SELECTION, never taken from the host's options, so a
-      // relationship recedes the graph only while it is the selection and a
-      // clear always restores everything.
+      // relationship recedes only while it is the selection and a clear
+      // always restores everything.
       selectedEdge:
         state.selected !== null && isDocumentEdge(state.selected) ? state.selected : null,
+      // NEVER TAKEN FROM THE HOST'S OPTIONS either, for the same reason: the
+      // mount draws its whole document, so the list works out what recedes
+      // from the live selection above.
+      receding: undefined,
       // NEVER DETACHED HERE. The mount draws every row it is handed, so it is
       // its own extent and the inline footer is already after the last of
       // them. It also materializes `scene.root` and nothing else — a detached
@@ -577,9 +582,9 @@ export function mountViewer(
     if (ownsItsOwnActivation(event.target, container)) return;
     // A CLICK ON NOTHING KEYED CLEARS A SELECTION ON THE GRAPH ONLY, exactly as
     // `select(null)` does, so a reader can restore a receded graph by clicking
-    // blank space. The graph is the one projection that recedes, so the list and
-    // the tree ignore such a click as they always did. With nothing selected
-    // there is nothing to clear, so it neither redraws nor tells the host.
+    // blank space. The list and the tree ignore such a click as they always
+    // did. With nothing selected there is nothing to clear, so it neither
+    // redraws nor tells the host.
     const key = keyAt(event.target, container);
     const clearsSelection = projection === 'graph' && state.selected !== null;
     if (key === null && !clearsSelection) return;

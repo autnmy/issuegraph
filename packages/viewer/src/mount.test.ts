@@ -1248,6 +1248,28 @@ describe('mountViewer', () => {
   });
 });
 
+/** The row classes a projection draws once per issue: graph cards and footer rows, and the list's ranked and footer rows. */
+const GRAPH_ROWS = ['ig-rail-row', 'ig-footer-row'] as const;
+const LIST_ROWS = ['ig-slot', 'ig-footer-row'] as const;
+
+/**
+ * The recede stamp of each drawn row carrying one of `rowClasses`, by the key
+ * the row carries. A projection draws one such row per issue, so a key drawn
+ * twice fails here rather than letting one row's stamp stand for the other's.
+ */
+function rowStampsOf(container: TestElement, rowClasses: readonly string[]): Map<string, string | null> {
+  const stamps = new Map<string, string | null>();
+  for (const element of container.descendants()) {
+    const key = element.getAttribute(KEY_ATTRIBUTE);
+    const classes = (element.getAttribute('class') ?? '').split(' ');
+    if (key === null || !rowClasses.some((name) => classes.includes(name))) continue;
+    assert.equal(stamps.has(key), false, `two drawn rows carry the key ${key}`);
+    stamps.set(key, element.getAttribute('data-recede'));
+  }
+  assert.ok(stamps.size > 0, 'the projection drew no row');
+  return stamps;
+}
+
 describe('mountViewer recedes the graph by the selection as given', () => {
   const normalizedFixture = normalizeDocument(fixtureDocument).document;
   const blocked101To102 = edgeIdentity('blocked-by', '101', '102');
@@ -1619,51 +1641,65 @@ describe('mountViewer recedes the graph by the selection as given', () => {
     assert.deepEqual(recedeStampsOf(container), recedeStampsFor('104'));
   });
 
-  it('a receding graph selection leaves the list and the tree drawn exactly as renderViewer draws them with no recede', () => {
-    // "Graph projection only: the list and the tree are unchanged."
+  it('a receding graph selection recedes the list as the graph does, and leaves the tree drawn exactly as renderViewer draws it with no recede', () => {
     // Each selection is made on the graph, where it must recede something, and
-    // then the mount switches away. The list and the tree are compared with a
-    // render given only the handle's own selection and focus and no
-    // selectedEdge, so neither a stamp nor the remembered member can reach them.
+    // then the mount switches away. The list must stamp each issue's row as the
+    // graph stamped that issue's card or footer row. The tree is compared with
+    // a render given only the handle's own selection and focus and no
+    // selectedEdge, so neither a stamp nor the remembered member can reach it.
     const selections = [
       {
         name: 'a clicked relationship',
         run: (_handle: ViewerHandle, container: TestElement): void => {
           container.dispatch('click', { target: lineOf(container, blocked101To102) });
         },
+        reportedAs: blocked101To102,
       },
       {
         name: 'a selected unit member',
         run: (handle: ViewerHandle): void => handle.select('104'),
+        reportedAs: '103',
       },
     ] as const;
 
-    for (const { name, run } of selections) {
-      for (const away of ['linear', 'tree'] as const) {
-        const { container, handle } = mounted({ projection: 'graph' });
-        run(handle, container);
+    for (const { name, run, reportedAs } of selections) {
+      const reported: (string | null)[] = [];
+      const listed = mounted({ projection: 'graph', onSelect: (key: string | null) => reported.push(key) });
+      run(listed.handle, listed.container);
+      const graph = rowStampsOf(listed.container, GRAPH_ROWS);
+      assert.ok([...graph.values()].includes('true'), `${name}: the graph receded no row, so the list is not under test`);
 
-        assert.ok(
-          container.descendants().some((element) => element.getAttribute('data-recede') === 'true'),
-          `${name}: the graph receded nothing, so the ${away} projection is not under test`,
-        );
-
-        handle.setProjection(away);
-        const root = container.children[0];
-        assert.ok(root instanceof TestElement);
-        assert.deepEqual(recedeStampsOf(container), [], `${name}: the ${away} projection carries a recede stamp`);
-        const projection: Projection = away;
-        const expected = renderViewer(fixtureDocument, {
-          projection,
-          selected: handle.state.selected,
-          focused: handle.state.focused,
-        });
-        assert.equal(
-          reserialize(root),
-          renderMarkup(expected.scene.root),
-          `${name}: the ${away} projection differs from its render without a recede`,
-        );
+      listed.handle.setProjection('linear');
+      assert.equal(listed.handle.state.selected, reportedAs, `${name}: the handle reports another selection`);
+      assert.deepEqual(reported, [reportedAs], `${name}: onSelect reported another selection`);
+      const list = rowStampsOf(listed.container, LIST_ROWS);
+      let compared = 0;
+      for (const [key, stamp] of list) {
+        if (!graph.has(key)) continue;
+        assert.equal(stamp, graph.get(key), `${name}: the list row of ${key} disagrees with the graph`);
+        compared += 1;
       }
+      assert.ok(compared > 0, `${name}: the list and the graph share no keyed row, so this proves nothing`);
+      const values = [...list.values()];
+      assert.ok(values.includes('true') && values.includes(null), `${name}: the list needs one stamped and one unstamped row to prove anything`);
+
+      const { container, handle } = mounted({ projection: 'graph' });
+      run(handle, container);
+      handle.setProjection('tree');
+      const root = container.children[0];
+      assert.ok(root instanceof TestElement);
+      assert.deepEqual(recedeStampsOf(container), [], `${name}: the tree projection carries a recede stamp`);
+      const projection: Projection = 'tree';
+      const expected = renderViewer(fixtureDocument, {
+        projection,
+        selected: handle.state.selected,
+        focused: handle.state.focused,
+      });
+      assert.equal(
+        reserialize(root),
+        renderMarkup(expected.scene.root),
+        `${name}: the tree projection differs from its render without a recede`,
+      );
     }
   });
 
@@ -1728,5 +1764,284 @@ describe('mountViewer recedes the graph by the selection as given', () => {
       true,
       'the line of the partner a was kept',
     );
+  });
+});
+
+describe('mountViewer recedes the list by the selection as given', () => {
+  const anyRecedeStamp = (container: TestElement): boolean =>
+    container.descendants().some((element) => element.getAttribute('data-recede') !== null);
+  const currentKeys = (container: TestElement): (string | null)[] =>
+    container
+      .descendants()
+      .filter((element) => element.getAttribute('aria-current') === 'true')
+      .map((element) => element.getAttribute(KEY_ATTRIBUTE));
+
+  it('recedes the list only by its own selection, whatever receding or selectedEdge the host passes', () => {
+    // The mount works out what recedes from its own live selection, so a recede
+    // result or a relationship the host passes must never stamp a row by itself.
+    const normalized = normalizeDocument(fixtureDocument).document;
+    const hostReceding = recedingOf(normalized, { key: '102', edge: null });
+    assert.ok(hostReceding.keys.has('105'), "the host's recede result keeps 105, so this proves nothing");
+    const { container, handle } = mounted({
+      projection: 'linear',
+      receding: hostReceding,
+      selectedEdge: edgeIdentity('blocked-by', '101', '102'),
+    });
+    const listRecedeStamps = (): string[] =>
+      container
+        .descendants()
+        .map((element) => element.getAttribute('data-recede'))
+        .filter((stamp): stamp is string => stamp !== null);
+
+    assert.deepEqual(listRecedeStamps(), [], 'a host-passed receding or selectedEdge receded the list with nothing selected');
+
+    // 105 shares serialize-with with 103 and no relationship with 101 or 102,
+    // while the host's result for 102 keeps 101 and 102 and recedes 105.
+    handle.select('105');
+    // The issue: "With an issue or a relationship selected, list-projection rows that `recedingOf` gives are stamped `data-recede="true"`, and every other row carries no stamp"
+    const own = recedingOf(normalized, { key: '105', edge: null });
+    const stamps = rowStampsOf(container, LIST_ROWS);
+    for (const [key, stamp] of stamps) assert.equal(stamp, own.keys.has(key) ? 'true' : null, `row ${key}`);
+    assert.equal(stamps.get('105'), null, 'the selected issue 105 receded');
+    assert.equal(stamps.get('103'), null, 'the neighbour 103 of the selected issue receded');
+    assert.equal(stamps.get('101'), 'true', "101, which 105 does not touch, was kept, so the host's receding won");
+    assert.equal(stamps.get('102'), 'true', "102, which 105 does not touch, was kept, so the host's receding won");
+    assert.deepEqual([...new Set(listRecedeStamps())], ['true']);
+
+    handle.select(null);
+    assert.deepEqual(listRecedeStamps(), [], 'select(null) left a receded list row beside the host-passed receding');
+  });
+
+  it("select('104') on the graph recedes the list by '104' across a repeated select, an update and a tree round trip, while the handle reports lead '103'", () => {
+    // The issue: "The list's stamps equal the graph's for the same selection, including a selected unit member, in `renderViewer` and in `mountViewer`"
+    // The issue: "Hand the list the as-given selection too, so the list and the graph recede alike for a selected unit member, and keep the tree on `state.selected`."
+    const whole = normalizeDocument(fixtureDocument).document;
+    const byMember = recedingOf(whole, { key: '104' });
+    // Lead 103 keeps 105 over serialize-with and member 104 does not, so only
+    // the selection as given stamps row 105.
+    assert.equal(byMember.keys.has('105'), true, "'104' keeps 105, so this proves nothing");
+    assert.equal(recedingOf(whole, { key: '103' }).keys.has('105'), false, "'103' recedes 105, so this proves nothing");
+
+    const { container, handle } = mounted({ projection: 'graph' });
+    handle.select('104');
+    handle.setProjection('linear');
+    const afterSelect = rowStampsOf(container, LIST_ROWS);
+    for (const [key, stamp] of afterSelect) {
+      assert.equal(stamp, byMember.keys.has(key) ? 'true' : null, `row ${key}`);
+    }
+    const values = [...afterSelect.values()];
+    assert.ok(values.includes('true') && values.includes(null), 'no stamped or no unstamped row, so this proves nothing');
+    assert.equal(afterSelect.get('105'), 'true', 'row 105 is unstamped, so the list receded by the lead');
+    assert.equal(handle.state.selected, '103', 'the handle no longer reports the lead');
+    assert.deepEqual(currentKeys(container), ['103'], "aria-current left the unit's lead");
+
+    const redraws: readonly (readonly [string, () => void])[] = [
+      ['a repeated select', () => handle.select('104')],
+      ['an update', () => handle.update(fixtureDocument)],
+      [
+        'a round trip through the tree',
+        () => {
+          handle.setProjection('tree');
+          // The issue: "The tree projection is unchanged, and its no-stamp tests stay"
+          assert.equal(anyRecedeStamp(container), false, 'the tree carries a recede stamp');
+          handle.setProjection('linear');
+        },
+      ],
+    ];
+    for (const [when, redraw] of redraws) {
+      redraw();
+      assert.deepEqual(rowStampsOf(container, LIST_ROWS), afterSelect, `${when} changed what the list recedes`);
+      assert.equal(handle.state.selected, '103', `${when}: the handle no longer reports the lead`);
+      assert.deepEqual(currentKeys(container), ['103'], `${when}: aria-current left the unit's lead`);
+    }
+  });
+
+  it('select(null) after a receding list selection draws the list as renderViewer draws it with nothing selected, and an update and a graph round trip keep it so', () => {
+    // The issue: "With nothing selected, list markup is byte-identical to before"
+    const { container, handle } = mounted({ projection: 'linear' });
+    const markupNow = (): string => {
+      const root = container.children[0];
+      assert.ok(root instanceof TestElement);
+      return reserialize(root);
+    };
+    // The handle may move its focus on a select, so the reference render is
+    // given the handle's own focus and no selection at all.
+    const bareList = (): string =>
+      renderMarkup(renderViewer(fixtureDocument, { projection: 'linear', focused: handle.state.focused }).scene.root);
+    assert.equal(markupNow().includes('data-recede'), false, 'the bare list already carries a stamp');
+
+    for (const selection of ['102', edgeIdentity('blocked-by', '101', '102'), '104']) {
+      handle.select(selection);
+      assert.match(markupNow(), /data-recede="true"/, `selecting ${selection} receded no row, so clearing it proves nothing`);
+
+      handle.select(null);
+      assert.equal(handle.state.selected, null, `clearing ${selection} left a selection`);
+      assert.equal(markupNow(), bareList(), `clearing ${selection} left the list changed`);
+
+      handle.update(fixtureDocument);
+      assert.equal(markupNow(), bareList(), `an update after clearing ${selection} brought a stamp back`);
+
+      handle.setProjection('graph');
+      handle.setProjection('linear');
+      assert.equal(markupNow(), bareList(), `a graph round trip after clearing ${selection} brought a stamp back`);
+    }
+  });
+
+  it("a mounted list selecting the unit member '104' stamps its rows as a graph mount does, still marks and reports the lead '103', and hands the tree that lead", () => {
+    const graphContainer = new TestDocument().createContainer();
+    mountViewer(graphContainer, fixtureDocument, { projection: 'graph', selected: '104' });
+    const graph = rowStampsOf(graphContainer, GRAPH_ROWS);
+
+    const reported: (string | null)[] = [];
+    const container = new TestDocument().createContainer();
+    const handle = mountViewer(container, fixtureDocument, {
+      projection: 'linear',
+      onSelect: (key: string | null) => reported.push(key),
+    });
+    handle.select('104');
+
+    assert.equal(handle.state.selected, '103', 'the handle no longer reports the lead');
+    assert.deepEqual(reported, ['103'], 'onSelect no longer reports the lead');
+    assert.deepEqual(currentKeys(container), ['103'], 'the list no longer marks the lead as current');
+
+    // The issue: "Hand the list the as-given selection too, so the list and the graph recede alike for a selected unit member, and keep the tree on `state.selected`."
+    const receding = recedingOf(normalizeDocument(fixtureDocument).document, { key: '104', edge: null });
+    const list = rowStampsOf(container, LIST_ROWS);
+    let compared = 0;
+    for (const [key, stamp] of list) {
+      assert.equal(stamp, receding.keys.has(key) ? 'true' : null, `the list row of ${key} disagrees with recedingOf`);
+      if (!graph.has(key)) continue;
+      assert.equal(stamp, graph.get(key), `the list row of ${key} disagrees with the graph`);
+      compared += 1;
+    }
+    assert.ok(compared > 0, 'the list and the graph share no keyed row, so this proves nothing');
+    // 105 touches the lead 103 over serialize-with and touches 104 by nothing.
+    assert.equal(list.get('105'), 'true', "the row of 105 was kept, so the list receded by the lead '103'");
+
+    handle.setProjection('tree');
+    assert.equal(anyRecedeStamp(container), false, 'the tree carries a recede stamp');
+    assert.deepEqual(reported, ['103'], 'the switch to the tree reported a selection change');
+    assert.deepEqual(currentKeys(container), ['103'], 'the tree does not mark the lead the handle reports');
+    const root = container.children[0];
+    assert.ok(root instanceof TestElement);
+    const expected = renderViewer(fixtureDocument, {
+      projection: 'tree',
+      selected: handle.state.selected,
+      focused: handle.state.focused,
+    });
+    assert.equal(reserialize(root), renderMarkup(expected.scene.root), 'the tree differs from its render by the lead');
+  });
+
+  it('a relationship clicked on the graph recedes the mounted list by that relationship after a switch to the list', () => {
+    const identity = edgeIdentity('blocked-by', '101', '102');
+    const container = new TestDocument().createContainer();
+    const handle = mountViewer(container, fixtureDocument, { projection: 'graph' });
+    const line = container
+      .descendants()
+      .find((element) => element.getAttribute('class') === 'ig-edge' && element.getAttribute(GROUP_ATTRIBUTE) === identity);
+    assert.ok(line !== undefined, 'the blocked-by 101 to 102 line was not drawn');
+    container.dispatch('click', { target: line });
+    handle.setProjection('linear');
+    assert.equal(handle.state.selected, identity, 'the switch to the list dropped the relationship');
+
+    const receding = recedingOf(normalizeDocument(fixtureDocument).document, { key: null, edge: identity });
+    const rows = container
+      .descendants()
+      .filter((element) => element.tag === 'li' && element.getAttribute(KEY_ATTRIBUTE) !== null);
+    assert.ok(rows.length > 0, 'the list drew no keyed row, so this proves nothing');
+    // The issue: "With an issue or a relationship selected, list-projection rows that `recedingOf` gives are stamped `data-recede="true"`, and every other row carries no stamp"
+    for (const row of rows) {
+      const key = row.getAttribute(KEY_ATTRIBUTE) ?? '';
+      assert.equal(row.getAttribute('data-recede'), receding.keys.has(key) ? 'true' : null, `the list row of ${key}`);
+    }
+    const stampOf = (key: string): string | null | undefined =>
+      rows.find((row) => row.getAttribute(KEY_ATTRIBUTE) === key)?.getAttribute('data-recede');
+    assert.equal(stampOf('101'), null, 'an end of the clicked relationship receded or was not drawn');
+    assert.equal(stampOf('102'), null, 'an end of the clicked relationship receded or was not drawn');
+    assert.ok(rows.some((row) => row.getAttribute('data-recede') === 'true'), 'no list row receded, so this proves nothing');
+  });
+
+  it('a mounted list stamps each row as a graph mount stamps that issue, for a host-passed selection and a later handle.select', () => {
+    const normalized = normalizeDocument(fixtureDocument).document;
+    const list = new TestDocument().createContainer();
+    const handle = mountViewer(list, fixtureDocument, { projection: 'linear', selected: '102' });
+    const assertListAgrees = (selected: string, when: string): void => {
+      const graph = new TestDocument().createContainer();
+      mountViewer(graph, fixtureDocument, { projection: 'graph', selected });
+      const graphStamps = rowStampsOf(graph, GRAPH_ROWS);
+      const listStamps = rowStampsOf(list, LIST_ROWS);
+      const receding = recedingOf(normalized, { key: selected });
+      let compared = 0;
+      for (const [key, stamp] of listStamps) {
+        assert.ok(stamp === null || stamp === 'true', `${when}: row ${key} carries data-recede="${String(stamp)}"`);
+        assert.equal(stamp === 'true', receding.keys.has(key), `${when}: row ${key} against recedingOf`);
+        const graphStamp = graphStamps.get(key);
+        if (graphStamp === undefined) continue;
+        assert.equal(stamp, graphStamp, `${when}: row ${key} against the graph's card`);
+        compared += 1;
+      }
+      const values = [...listStamps.values()];
+      assert.ok(compared > 0, `${when}: no list row had a graph card to compare`);
+      assert.ok(
+        values.includes('true') && values.includes(null),
+        `${when}: the list needs one stamped and one unstamped row to prove anything`,
+      );
+    };
+
+    // The issue: "The list's stamps equal the graph's for the same selection, including a selected unit member, in `renderViewer` and in `mountViewer`"
+    assertListAgrees('102', 'a host-passed selection');
+    handle.select('105');
+    assert.equal(handle.state.selected, '105');
+    assertListAgrees('105', 'handle.select');
+  });
+
+  it("a mounted list recedes by select('104'), then by select('103'), and select(null) clears every stamp", () => {
+    const normalized = normalizeDocument(fixtureDocument).document;
+    const { container, handle } = mounted({ projection: 'linear' });
+    const listStamps = (): Map<string, string | null> => rowStampsOf(container, LIST_ROWS);
+    const expectedFor = (selected: string): Map<string, string | null> => {
+      const receding = recedingOf(normalized, { key: selected, edge: null });
+      return new Map([...listStamps().keys()].map((key) => [key, receding.keys.has(key) ? 'true' : null] as const));
+    };
+
+    // The issue: "The list's stamps equal the graph's for the same selection, including a selected unit member, in `renderViewer` and in `mountViewer`"
+    handle.select('104');
+    assert.equal(handle.state.selected, '103', 'the handle no longer reports the lead');
+    assert.deepEqual(listStamps(), expectedFor('104'), "select('104')");
+    assert.equal(listStamps().get('105'), 'true', "the row of 105, which only the partner '103' touches, was kept");
+
+    // The handle reports '103' after both selects, so only the selection as given tells them apart.
+    handle.select('103');
+    assert.deepEqual(listStamps(), expectedFor('103'), "select('103') after select('104')");
+    assert.equal(listStamps().get('105'), null, "select('103') still recedes by '104'");
+
+    handle.select(null);
+    assert.equal(anyRecedeStamp(container), false, 'select(null) left a stamp on the list');
+  });
+
+  it("a mounted list that selected member '104' recedes by its lead '103' once an update removes '104'", () => {
+    // 104 leaves the document and its unit, and 103 stays as a unit of one.
+    const withoutMember: ViewerDocument = {
+      ...fixtureDocument,
+      issues: fixtureDocument.issues.filter((issue) => issue.key !== '104'),
+      edges: fixtureDocument.edges.filter((edge) => edge.from !== '104' && edge.to !== '104'),
+      order: {
+        ...fixtureDocument.order,
+        slots: fixtureDocument.order.slots.map((slot) => (slot.lead === '103' ? { ...slot, members: ['103'] } : slot)),
+      },
+    };
+    const { container, handle } = mounted({ projection: 'linear' });
+    handle.select('104');
+    handle.update(withoutMember);
+    assert.equal(handle.state.selected, '103', 'the handle no longer reports the lead');
+
+    // The issue: "The list's stamps equal the graph's for the same selection, including a selected unit member, in `renderViewer` and in `mountViewer`"
+    // Once the member is gone the graph recedes by the lead the handle reports, so the list must not keep receding by a key that names nothing.
+    const receding = recedingOf(normalizeDocument(withoutMember).document, { key: '103', edge: null });
+    const stamps = rowStampsOf(container, LIST_ROWS);
+    for (const [key, stamp] of stamps) assert.equal(stamp === 'true', receding.keys.has(key), `row ${key}`);
+    const values = [...stamps.values()];
+    assert.ok(values.includes('true'), 'no list row receded');
+    assert.ok(values.includes(null), 'every list row receded');
   });
 });

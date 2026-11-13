@@ -1443,6 +1443,26 @@ export function atStations<T extends { selected?: string | null | undefined; foc
   return { ...options, selected: at(options.selected), focused: at(options.focused) };
 }
 
+/**
+ * The recede stamp. Constant, and absent rather than `"false"` on what stays,
+ * so a render with nothing receding is byte for byte the render without a
+ * selection, and the selection itself never reaches the markup.
+ */
+export function recedeStamp(recedes: boolean): 'true' | null {
+  return recedes ? 'true' : null;
+}
+
+/**
+ * A row a builder returned, with its recede stamp.
+ *
+ * STAMPED BY THE SCENE, NEVER BY THE ROW BUILDERS. The graph's refusal draws
+ * the same builders as its rail and a refused canvas recedes nothing, so the
+ * stamp belongs to the scene that knows whether this row recedes.
+ */
+export function withRecede(row: ElementSpec, recedes: boolean): ElementSpec {
+  return { ...row, attrs: { ...row.attrs, 'data-recede': recedeStamp(recedes) } };
+}
+
 /** The title of a slot, naming every member — a together unit is one row. */
 export function slotTitle(document: NormalizedDocument, slot: ViewerSlot): string {
   return slot.members
