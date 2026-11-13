@@ -904,18 +904,43 @@ export function mountSandbox(
 
   // --- the sandbox's own controls ---
 
+  /**
+   * The command control a press landed on, and whether the mounted element
+   * holds it.
+   *
+   * READ OFF THE PRESS'S PATH, NOT THE DOCUMENT. The path is fixed when
+   * dispatch starts. On a real press the browser runs microtasks between
+   * listeners, so the mount's redraw, queued by its own listener on
+   * `workspace`, has replaced the control before the press bubbles here, and
+   * asking `root.contains(control)` answers no for every command drawn inside
+   * the workspace. A press dispatched from script runs no microtasks until
+   * every listener has returned, which is why a test could not see it.
+   */
+  const pressOf = (event: Event): { readonly control: Element; readonly inWorkspace: boolean } | null => {
+    const path = event.composedPath();
+    const at = path.findIndex((node) => node instanceof Element && node.hasAttribute('data-ig-command'));
+    const control = path[at];
+    if (!(control instanceof Element) || at > path.indexOf(root)) return null;
+    return { control, inWorkspace: path.indexOf(workspace) > at };
+  };
+
+  // A NARROW TAB IS THE MOUNT'S TO REDUCE, and it has by the time the press
+  // reaches this page; the masthead's canvas toggle and summary read the mode
+  // it may have changed.
+  const refreshForNarrowTab = (press: ReturnType<typeof pressOf>): void => {
+    if (press?.inWorkspace === true && press.control.getAttribute('data-ig-command') === 'narrow-tab') schedule();
+  };
+
   const onClick = (event: MouseEvent): void => {
-    const target = event.target instanceof Element ? event.target : null;
-    const control = target?.closest<HTMLElement>('[data-ig-command]') ?? null;
-    if (control === null || !root.contains(control)) return;
+    const press = pressOf(event);
+    if (press === null) return;
+    const { control, inWorkspace } = press;
     const name = control.getAttribute('data-ig-command') ?? '';
-    // A narrow tab is the mount's to reduce, and it has by now; the masthead's
-    // canvas toggle and summary read the mode it may have changed.
-    if (workspace.contains(control) && name === 'narrow-tab') schedule();
+    refreshForNarrowTab(press);
     // Inside the mounted element the mount owns every command; this listener
     // reads only the chrome around it — and the few commands the packages
     // publish for the HOST to act on (`HOST_COMMANDS_FROM_WORKSPACE`).
-    if (workspace.contains(control) && !HOST_COMMANDS_FROM_WORKSPACE.has(name)) return;
+    if (inWorkspace && !HOST_COMMANDS_FROM_WORKSPACE.has(name)) return;
     const value = control.getAttribute('data-ig-value');
     if (handle === null) return;
     if (FORWARDED.has(name)) {
@@ -993,6 +1018,14 @@ export function mountSandbox(
     }
   };
 
+  // A TAB PRESSED FROM THE KEYBOARD NEVER CLICKS. The mount reduces Enter and
+  // Space on keydown and cancels the key, which suppresses the click, so the
+  // chrome is refreshed from the key too. Any other key on a tab refreshes it
+  // for nothing, which redraws the same chrome.
+  const onKeydown = (event: KeyboardEvent): void => {
+    refreshForNarrowTab(pressOf(event));
+  };
+
   const onChange = (event: Event): void => {
     if (event.target !== outcome || !isOutcome(outcome.value)) return;
     live.source.arm(outcome.value);
@@ -1002,6 +1035,7 @@ export function mountSandbox(
   };
 
   root.addEventListener('click', onClick);
+  root.addEventListener('keydown', onKeydown);
   root.addEventListener('change', onChange);
   // THE CLOCK MOVES WHEN NOTHING ELSE DOES. `update()` re-runs the projection,
   // which reads `now`; cleared in `destroy()`, so a torn-down sandbox draws
@@ -1065,6 +1099,7 @@ export function mountSandbox(
       unsubscribe();
       handle?.destroy();
       root.removeEventListener('click', onClick);
+      root.removeEventListener('keydown', onKeydown);
       root.removeEventListener('change', onChange);
     },
   };

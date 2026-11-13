@@ -1892,10 +1892,23 @@ export const workspaceStylesheet = `
     display: none;
   }
 
-  .ig-workspace[data-tab='order'] .ig-zone[data-zone='canvas'],
   .ig-workspace[data-tab='related'] .ig-zone[data-zone='rail'],
   .ig-workspace[data-tab='sub-issues'] .ig-zone[data-zone='rail'] {
     display: none;
+  }
+
+  /* THE ORDER TAB HIDES THE CANVAS ZONE BUT NOT THE AUDIT OVERLAY IN IT. The
+     header's problem count opens findings in that zone, and display:none would
+     take them down with it on the one tab a reader starts on. visibility is the
+     property a child can turn back on, and a hidden box is also out of hit
+     testing, the tab order and the accessibility tree, so the rail beneath it
+     stays the view. */
+  .ig-workspace[data-tab='order'] .ig-zone[data-zone='canvas'] {
+    visibility: hidden;
+  }
+
+  .ig-workspace[data-tab='order'] .ig-zone[data-zone='canvas'] .ig-audit-overlay {
+    visibility: visible;
   }
 
   /* NO STRIP: the tabs are the way to the canvas here. */

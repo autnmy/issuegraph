@@ -1405,9 +1405,10 @@ describe("the inspector zone stays one track, so the mount's chrome cannot be cl
  * The layout under 640, and the three wider layouts it must leave alone.
  *
  * jsdom applies no stylesheet, so the tests below evaluate the sheet's
- * `display` rules themselves: every container block whose condition holds at
- * one width, then the cascade's specificity and source order, then the
- * ancestors. It reads only what decides whether a part is drawn at all.
+ * `display` and `visibility` rules themselves: every container block whose
+ * condition holds at one width, then the cascade's specificity and source
+ * order, then the ancestors. It reads only what decides whether a part is
+ * drawn at all.
  */
 describe('the layout under 640', () => {
   type Rule = { readonly selector: string; readonly body: string };
@@ -1464,10 +1465,15 @@ describe('the layout under 640', () => {
     (selector.match(/#[\w-]+/g)?.length ?? 0) * 10000 +
     (selector.match(/\.[\w-]+|\[[^\]]*\]|:(?!not\(|is\(|where\()[\w-]+/g)?.length ?? 0) * 100 +
     (selector.match(/(?:^|[\s>+~(])[a-z][\w-]*/g)?.length ?? 0);
-  const displayOf = (element: Element, rules: readonly Rule[]): string | undefined => {
+  const declaredOf = (
+    element: Element,
+    rules: readonly Rule[],
+    property: 'display' | 'visibility',
+  ): string | undefined => {
+    const declaration = new RegExp(`(?:^|[;\\s])${property}\\s*:\\s*([^;]+)`, 'g');
     let winner: { rank: number; value: string } | undefined;
     for (const rule of rules) {
-      const value = [...rule.body.matchAll(/(?:^|[;\s])display\s*:\s*([^;]+)/g)].pop()?.[1]?.trim();
+      const value = [...rule.body.matchAll(declaration)].pop()?.[1]?.trim();
       if (value === undefined) continue;
       for (const selector of selectorsOf(rule.selector)) {
         if (selector.includes('::')) continue;
@@ -1483,12 +1489,16 @@ describe('the layout under 640', () => {
     }
     return winner?.value;
   };
+  // display:none on any ancestor hides whatever its children declare, while
+  // visibility is inherited, so the nearest box that declares it decides.
   const hidden = (element: Element, rules: readonly Rule[]): boolean => {
+    let visibility: string | undefined;
     for (let node: Element | null = element; node !== null; node = node.parentElement) {
-      const display = displayOf(node, rules);
+      const display = declaredOf(node, rules, 'display');
       if (display === 'none' || (display === undefined && node.hasAttribute('hidden'))) return true;
+      visibility ??= declaredOf(node, rules, 'visibility');
     }
-    return false;
+    return visibility === 'hidden';
   };
   const pageOf = (markup: string): Document =>
     new JSDOM(`<!doctype html><html><body><div class="ig-mount">${markup}</div></body></html>`).window.document;
@@ -1543,6 +1553,58 @@ describe('the layout under 640', () => {
       } else {
         for (const child of list) assert.equal(hidden(child, rules), true, `${tab}: the Related groups list is drawn`);
       }
+    }
+  });
+
+  it('R1 under 640px the Sub-issues tab draws the tree and the toolbar the mount puts in the canvas zone', () => {
+    const backlog = backlogOf(6);
+    const rules = rulesAt(sheet, 600);
+    const page = pageOf(
+      renderWorkspace(backlog, { words: WORKSPACE_WORDS, narrowView: 'canvas', canvas: 'tree' }).markup,
+    );
+    // AS THE MOUNT LEAVES IT in tree mode: the zone's markup replaced by the
+    // viewer's tree, and the toolbar put back as its first child. The render
+    // starts collapsed to the strip, and the block for that hides every child
+    // but the strip, so this is the state the tab's own rules must undo.
+    const canvas = zone(page, 'canvas');
+    const toolbar = canvas.querySelector(':scope > .ig-canvas-toolbar') ?? assert.fail('no canvas toolbar');
+    canvas.innerHTML = renderViewer(backlog, { projection: 'tree', chrome: false, frame: false }).markup;
+    canvas.prepend(toolbar);
+    assert.equal(page.querySelector('[data-canvas]')?.getAttribute('data-canvas'), 'strip');
+    assert.ok(canvas.querySelector('.ig-tree') !== null, 'the tree drew no .ig-tree');
+    for (const child of canvas.children) {
+      assert.equal(hidden(child, rules), false, `sub-issues: the canvas zone's ${child.className} is hidden`);
+    }
+    assert.equal(declaredOf(toolbar, rules, 'display'), 'flex', 'sub-issues: the toolbar is not drawn as its row');
+  });
+
+  it('R1 under 640px the Order tab shows findings opened from the header, over the order', () => {
+    const rules = rulesAt(sheet, 600);
+    const page = pageOf(
+      renderWorkspace(DOCUMENT, {
+        words: WORKSPACE_WORDS,
+        narrowView: 'order',
+        auditOpen: true,
+        audit: {
+          document: {
+            issues: [
+              { ref: 'i0001', title: 'issue i0001', state: 'open' as const },
+              { ref: 'i0002', title: 'issue i0002', state: 'closed' as const },
+            ],
+            edges: [{ id: 'blocked-by|i0001|i0002', kind: 'blocked-by' as const, from: 'i0001', to: 'i0002' }],
+          },
+          graph: { cycles: [], duplicateCanonical: () => null },
+        },
+      }).markup,
+    );
+    assert.equal(page.querySelector('[data-tab]')?.getAttribute('data-tab'), 'order');
+    const canvas = zone(page, 'canvas');
+    const overlay = canvas.querySelector(':scope > .ig-audit-overlay') ?? assert.fail('no audit overlay');
+    assert.equal(hidden(overlay, rules), false, 'order: the opened findings are hidden');
+    assert.equal(hidden(zone(page, 'rail'), rules), false, 'order: the rail is hidden');
+    for (const child of canvas.children) {
+      if (child === overlay) continue;
+      assert.equal(hidden(child, rules), true, `order: the canvas zone's ${child.className} is drawn`);
     }
   });
 
