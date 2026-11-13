@@ -36,6 +36,8 @@ import { describe, it } from 'node:test';
 import { JSDOM } from 'jsdom';
 
 import { a11ySurface } from '../testing/a11y.ts';
+import { WORKSPACE_WORDS, backlogOf, keysOf } from '../testing/workspace.ts';
+import { renderWorkspace } from '../workspace/render.ts';
 import { type ControlEntry, controlSurface } from './baseline.ts';
 
 const BASELINE_PATH = new URL('./baseline.json', import.meta.url);
@@ -237,6 +239,9 @@ const RENDERED_CONTROLS: readonly string[] = Object.freeze([
   'data-ig-command:flip',
   'data-ig-command:focus',
   'data-ig-command:kind',
+  // THE LAYOUT UNDER 640's TABS, on every surface: the workspace draws them on
+  // every render and the stylesheet hides them at the wider layouts.
+  'data-ig-command:narrow-tab',
   'data-ig-command:open-isolated',
   // §17d's REFUSED BLOCK, LEAVING THE APPLICATION. It is an ANCHOR rather than a
   // button — it navigates away, and announcing itself as a button would tell a
@@ -284,6 +289,13 @@ const UNREACHABLE: Readonly<Record<string, string>> = Object.freeze({
   // the recovery cards are what it exists to record. A landed-and-moved state
   // is a different fixture, not another step in this one.
   'data-ig-command:dismiss-change': 'needs a landed edit that moved the order',
+  // THE RELATED GROUPS LIST'S TWO CONTROLS appear only past 60 relationships on
+  // one selection, and a fixture that large adds every one of them as an
+  // Inspector row to this artifact. Their tab stop and name are pinned below,
+  // over a rendered list, by 'the Related groups controls are tab stops with
+  // names'.
+  'data-ig-command:related-group': 'needs more than 60 relationships on one selection',
+  'data-ig-command:related-query': 'needs more than 60 relationships on one selection',
 });
 
 describe('the recorded states cover what the package renders', () => {
@@ -529,5 +541,75 @@ describe('controlSurface reads markup this package does not itself render', () =
     // reader throw rather than answer.
     const entry = only('<button data-ig-command="x" aria-describedby=\'a"]\'>Go</button>');
     assert.equal(entry.aria['aria-describedby'], 'dangling');
+  });
+});
+
+describe("more tests", function () {
+it('R18 every recorded surface draws three narrow tabs, one selected, each a tab whose aria-controls resolves', async () => {
+  const drawn = Object.entries(await allSurfaces());
+  assert.ok(drawn.length > 0, 'no surface was recorded');
+  // "The a11y baseline covers the tabs with no dangling ARIA reference"
+  for (const [surface, entries] of drawn) {
+    const tabs = entries.filter((entry) => nameOf(entry) === 'data-ig-command:narrow-tab');
+    assert.equal(tabs.length, 3, `${surface} records ${String(tabs.length)} narrow tabs`);
+    assert.equal(
+      tabs.filter((tab) => tab.aria['aria-selected'] === 'true').length,
+      1,
+      `${surface}: not exactly one narrow tab is selected`,
+    );
+    for (const tab of tabs) {
+      assert.equal(tab.role, 'tab', `${surface}: a narrow tab has another role`);
+      assert.equal(tab.aria['aria-controls'], 'resolves', `${surface}: a narrow tab names no rendered zone`);
+      assert.ok(['true', 'false'].includes(tab.aria['aria-selected'] ?? ''), `${surface}: a narrow tab carries no aria-selected`);
+      if (!tab.inert) assert.equal(tab.tabStop, 'tab', `${surface}: a narrow tab is not a tab stop`);
+    }
+  }
+});
+
+it('R19 the committed baseline records the narrow tabs on every surface, none of them dangling', () => {
+  const committed: Record<string, readonly ControlEntry[]> = JSON.parse(readFileSync(BASELINE_PATH, 'utf8'));
+  const surfaces = Object.entries(committed);
+  assert.ok(surfaces.length > 0, 'the committed baseline records no surface');
+  // "The a11y baseline covers the tabs with no dangling ARIA reference"
+  // "Regenerate packages/editor/src/a11y/baseline.json by hand."
+  for (const [surface, entries] of surfaces) {
+    const tabs = entries.filter((entry) => nameOf(entry) === 'data-ig-command:narrow-tab');
+    assert.equal(tabs.length, 3, `${surface} records ${String(tabs.length)} narrow tabs`);
+    for (const tab of tabs) {
+      assert.equal(tab.aria['aria-controls'], 'resolves', `${surface}: a narrow tab names no rendered zone`);
+      assert.ok(tab.aria['aria-selected'] !== undefined, `${surface}: a narrow tab records no aria-selected`);
+    }
+  }
+  assert.equal(typeof controlSurface, 'function');
+});
+});
+
+describe('the Related groups controls are tab stops with names', () => {
+  it('records the group control and the search of an open group past 60 as named tab stops', () => {
+    // One kind, so the open group holds all 61 and draws its own search.
+    const hub = backlogOf(62, {
+      edges: keysOf(62)
+        .slice(1)
+        .map((key) => ['blocked-by', 'i0001', key] as const),
+    });
+    const { markup } = renderWorkspace(hub, {
+      words: WORKSPACE_WORDS,
+      selection: { kind: 'issue', key: 'i0001' },
+      narrowView: 'canvas',
+      canvas: 'neighbourhood',
+      relatedGroup: 'blocked-by',
+    });
+    const dom = new JSDOM(`<!doctype html><html><body>${markup}</body></html>`);
+    try {
+      const entries = controlSurface(dom.window.document.body);
+      for (const control of ['related-group', 'related-query']) {
+        const found = entries.filter((entry) => entry.control === control);
+        assert.equal(found.length, 1, `expected one ${control}`);
+        assert.equal(found[0]?.tabStop, 'tab', `${control} is not a tab stop`);
+        assert.ok(['text', 'label'].includes(found[0]?.name ?? ''), `${control} has no name`);
+      }
+    } finally {
+      dom.window.close();
+    }
   });
 });

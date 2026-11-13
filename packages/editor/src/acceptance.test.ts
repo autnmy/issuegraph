@@ -813,6 +813,13 @@ const WORKSPACE_WORDS: surface.WorkspaceWords = {
   showCanvas: 'unfold the graph',
   hideCanvas: 'put the graph away',
   relationships: 'relationships',
+  narrow: {
+    order: 'ranked queue',
+    related: 'linked issues',
+    subIssues: 'child tree',
+    closeSheet: 'fold the sheet down',
+    noSelection: 'select an issue to list its links',
+  },
   whyRank: 'why rank',
   whyHeld: 'why held',
   filteredEmpty: 'no flagged rows match',

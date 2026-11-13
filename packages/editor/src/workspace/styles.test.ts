@@ -16,9 +16,10 @@ import { AUDIT_SEVERITY_ATTRIBUTE } from '../audit/surface.ts';
 import { INITIAL_SCALE_STATE } from '../scale/commands.ts';
 import { ZONES, renderWorkspace } from './render.ts';
 import { reevaluateStylesheet } from '../reevaluate/styles.ts';
+import { renderScaleLadder } from '../scale/render.ts';
 import { scaleLadderStylesheet } from '../scale/styles.ts';
 import { workspaceStylesheet } from './styles.ts';
-import { WORKSPACE_WORDS, backlogOf } from '../testing/workspace.ts';
+import { WORKSPACE_WORDS, backlogOf, keysOf } from '../testing/workspace.ts';
 import { WORDS as CHANGE_WORDS, editOf, orderOf } from '../testing/reevaluate.ts';
 
 /**
@@ -148,6 +149,16 @@ const WITH_AN_EXCLUSION = {
  * chip and move two committed a11y baselines as a side effect.
  */
 const RAIL_WORDS = { isolated: 'carrying no edges', show: 'reveal', hide: 'fold away' };
+
+/**
+ * One issue holding 61 relationships of one kind: the smallest hub past the
+ * Related groups list's flat limit whose open group draws its own search.
+ */
+const RELATED_HUB = backlogOf(62, {
+  edges: keysOf(62)
+    .slice(1)
+    .map((key) => ['blocked-by', 'i0001', key] as const),
+});
 
 const RENDERS = [
   renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS }),
@@ -446,6 +457,25 @@ const RENDERS = [
       graph: { cycles: [], duplicateCanonical: () => null },
     },
   }),
+  // THE LAYOUT UNDER 640, one render per tab and one per shape of the Related
+  // groups list: nothing selected, flat, and grouped with an open group of 61,
+  // which draws its own search. The list is drawn only on its own tab, so
+  // without these every rule for its parts reads as orphaned.
+  renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, narrowView: 'canvas', canvas: 'tree' }),
+  renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, narrowView: 'canvas', canvas: 'neighbourhood' }),
+  renderWorkspace(DOCUMENT, {
+    words: WORKSPACE_WORDS,
+    narrowView: 'canvas',
+    canvas: 'neighbourhood',
+    selection: { kind: 'issue', key: 'i0001' },
+  }),
+  renderWorkspace(RELATED_HUB, {
+    words: WORKSPACE_WORDS,
+    narrowView: 'canvas',
+    canvas: 'neighbourhood',
+    selection: { kind: 'issue', key: 'i0001' },
+    relatedGroup: 'blocked-by',
+  }),
 ];
 
 /**
@@ -512,6 +542,11 @@ const COMPOSED: ReadonlySet<string> = new Set([
   // The ladder's own root, which that sheet does not style: it is a grid area
   // this surface places, so its share is THIS sheet's to declare.
   'ig-ladder',
+  // AND WHAT THE LADDER DRAWS WHEN IT REFUSES. A hub past the Related groups
+  // list's flat limit holds more issues than the canvas draws, so the render
+  // that reaches the grouped list also reaches the ladder's refusal, whose
+  // classes are the ladder's to style.
+  ...classesIn(renderScaleLadder(RELATED_HUB).markup),
   // EVERY CLASS `auditStylesheet` STYLES, DERIVED FROM THAT SHEET rather than
   // listed here — the idiom `reevaluateStylesheet` below already uses, and for
   // the reason this file's other direction exists: a hand list goes on passing
@@ -1363,4 +1398,288 @@ describe("the inspector zone stays one track, so the mount's chrome cannot be cl
     assert.equal(/max-height/.test(inspector), false);
     assert.equal(/overflow/.test(inspector), false);
   });
+});
+
+import { JSDOM } from 'jsdom';
+
+describe("more tests", function () {
+it('R4 places one under-640 container block after the width < 1120px block', () => {
+  const css = withoutComments(workspaceStylesheet);
+  const narrowest = css.indexOf('@container ig-workspace (width < 1120px)');
+  const phone = css.indexOf('@container ig-workspace (width < 640px)');
+  // The issue: "Add `@container ig-workspace (width < 640px)` after the `width < 1120px` block in packages/editor/src/workspace/styles.ts."
+  assert.notEqual(phone, -1, 'no under-640 block');
+  assert.ok(
+    phone > narrowest + containerBlock(css, 'width < 1120px').length,
+    'the under-640 block does not follow the width < 1120px block, so the wider rules would win',
+  );
+  assert.equal(css.split('@container ig-workspace (width < 640px)').length, 2, 'the under-640 block is declared twice');
+  assert.notEqual(containerBlock(css, 'width < 640px').trim(), '', 'the under-640 block is empty');
+});
+
+it('R1 under 640px each narrow tab shows only the view it names, under the tabs', () => {
+  type Rule = { readonly selector: string; readonly body: string };
+  const sheet = workspaceStylesheet.replace(/\/\*[\s\S]*?\*\//g, '');
+  // Container conditions are single-sided, so at one width every block whose
+  // condition holds applies at once, in source order.
+  const holds = (prelude: string, width: number): boolean => {
+    const band = /\((?:width\s*(<|>=)|(max|min)-width:)\s*(\d+(?:\.\d+)?)px\)/.exec(prelude);
+    assert.ok(band !== null, `an unread container condition: ${prelude}`);
+    const limit = Number(band[3]);
+    const operator = band[1] ?? (band[2] === 'max' ? '<=' : '>=');
+    if (operator === '<') return width < limit;
+    if (operator === '<=') return width <= limit;
+    return width >= limit;
+  };
+  const rulesAt = (css: string, width: number): Rule[] => {
+    const rules: Rule[] = [];
+    let at = 0;
+    for (let open = css.indexOf('{'); open !== -1; open = css.indexOf('{', at)) {
+      let depth = 0;
+      let close = open;
+      for (; close < css.length; close += 1) {
+        if (css[close] === '{') depth += 1;
+        if (css[close] === '}') depth -= 1;
+        if (depth === 0) break;
+      }
+      const prelude = css.slice(at, open).trim();
+      const body = css.slice(open + 1, close);
+      at = close + 1;
+      if (prelude.startsWith('@container ig-workspace')) {
+        if (holds(prelude, width)) rules.push(...rulesAt(body, width));
+      } else if (!prelude.startsWith('@')) {
+        rules.push({ selector: prelude, body });
+      }
+    }
+    return rules;
+  };
+  const selectorsOf = (list: string): string[] => {
+    const out: string[] = [];
+    let depth = 0;
+    let start = 0;
+    [...list].forEach((char, index) => {
+      if (char === '(') depth += 1;
+      if (char === ')') depth -= 1;
+      if (char === ',' && depth === 0) {
+        out.push(list.slice(start, index).trim());
+        start = index + 1;
+      }
+    });
+    return [...out, list.slice(start).trim()];
+  };
+  // The cascade order: the more specific selector wins, then the later rule.
+  const specificity = (selector: string): number =>
+    (selector.match(/#[\w-]+/g)?.length ?? 0) * 10000 +
+    (selector.match(/\.[\w-]+|\[[^\]]*\]|:(?!not\(|is\(|where\()[\w-]+/g)?.length ?? 0) * 100 +
+    (selector.match(/(?:^|[\s>+~(])[a-z][\w-]*/g)?.length ?? 0);
+  const displayOf = (element: Element, rules: readonly Rule[]): string | undefined => {
+    let winner: { rank: number; value: string } | undefined;
+    for (const rule of rules) {
+      const value = [...rule.body.matchAll(/(?:^|[;\s])display\s*:\s*([^;]+)/g)].pop()?.[1]?.trim();
+      if (value === undefined) continue;
+      for (const selector of selectorsOf(rule.selector)) {
+        if (selector.includes('::')) continue;
+        let matches = false;
+        try {
+          matches = element.matches(selector);
+        } catch {
+          matches = false;
+        }
+        const rank = specificity(selector);
+        if (matches && (winner === undefined || rank >= winner.rank)) winner = { rank, value };
+      }
+    }
+    return winner?.value;
+  };
+  const hidden = (element: Element, rules: readonly Rule[]): boolean => {
+    for (let node: Element | null = element; node !== null; node = node.parentElement) {
+      const display = displayOf(node, rules);
+      if (display === 'none' || (display === undefined && node.hasAttribute('hidden'))) return true;
+    }
+    return false;
+  };
+  const pageOf = (markup: string): Document =>
+    new JSDOM(`<!doctype html><html><body><div class="ig-mount">${markup}</div></body></html>`).window.document;
+  const zone = (page: Document, name: string): Element =>
+    page.querySelector(`[data-zone="${name}"]`) ?? assert.fail(`no ${name} zone`);
+
+  const backlog = backlogOf(6);
+  const rules = rulesAt(sheet, 600);
+  const tabs = [
+    { tab: 'order', shows: 'rail', options: { narrowView: 'order', canvas: 'neighbourhood' } },
+    { tab: 'related', shows: 'canvas', options: { narrowView: 'canvas', canvas: 'neighbourhood' } },
+    { tab: 'sub-issues', shows: 'canvas', options: { narrowView: 'canvas', canvas: 'tree' } },
+  ] as const;
+  for (const { tab, shows, options } of tabs) {
+    const page = pageOf(renderWorkspace(backlog, { words: WORKSPACE_WORDS, ...options }).markup);
+    assert.equal(page.querySelector('[data-tab]')?.getAttribute('data-tab'), tab);
+    const tablist = page.querySelector('[role="tablist"]') ?? assert.fail('no tablist');
+    // "Under 640px the workspace shows one of Order, Related groups and Sub-issues at a time, under tabs"
+    assert.equal(hidden(tablist, rules), false, `${tab}: the tabs are hidden`);
+    assert.equal(hidden(zone(page, 'header'), rules), false, `${tab}: the header is hidden`);
+    assert.equal(hidden(zone(page, 'rail'), rules), shows !== 'rail', `${tab}: the rail zone`);
+    assert.equal(hidden(zone(page, 'canvas'), rules), shows !== 'canvas', `${tab}: the canvas zone`);
+    assert.equal(hidden(zone(page, 'inspector'), rules), true, `${tab}: the inspector zone is drawn`);
+    assert.equal(ZONES.length, 4);
+    for (const strip of page.querySelectorAll('.ig-canvas-strip')) {
+      assert.equal(hidden(strip, rules), true, `${tab}: the canvas strip is drawn`);
+    }
+    const children = [...zone(page, 'canvas').children];
+    const list = children.filter((child) => (child.textContent ?? '').includes(WORKSPACE_WORDS.narrow.noSelection));
+    if (tab === 'related') {
+      assert.equal(list.length, 1, 'the Related groups list is not one child of the canvas zone');
+      assert.deepEqual(
+        children.filter((child) => !hidden(child, rules)),
+        list,
+        'the Related groups tab shows more of the canvas zone than its list',
+      );
+    } else {
+      for (const child of list) assert.equal(hidden(child, rules), true, `${tab}: the Related groups list is drawn`);
+    }
+  }
+});
+
+it('R3 at 640px and wider the narrow tabs and list stay hidden and no tab changes which zones draw', () => {
+  type Rule = { readonly selector: string; readonly body: string };
+  const sheet = workspaceStylesheet.replace(/\/\*[\s\S]*?\*\//g, '');
+  // Container conditions are single-sided, so at one width every block whose
+  // condition holds applies at once, in source order.
+  const holds = (prelude: string, width: number): boolean => {
+    const band = /\((?:width\s*(<|>=)|(max|min)-width:)\s*(\d+(?:\.\d+)?)px\)/.exec(prelude);
+    assert.ok(band !== null, `an unread container condition: ${prelude}`);
+    const limit = Number(band[3]);
+    const operator = band[1] ?? (band[2] === 'max' ? '<=' : '>=');
+    if (operator === '<') return width < limit;
+    if (operator === '<=') return width <= limit;
+    return width >= limit;
+  };
+  const rulesAt = (css: string, width: number): Rule[] => {
+    const rules: Rule[] = [];
+    let at = 0;
+    for (let open = css.indexOf('{'); open !== -1; open = css.indexOf('{', at)) {
+      let depth = 0;
+      let close = open;
+      for (; close < css.length; close += 1) {
+        if (css[close] === '{') depth += 1;
+        if (css[close] === '}') depth -= 1;
+        if (depth === 0) break;
+      }
+      const prelude = css.slice(at, open).trim();
+      const body = css.slice(open + 1, close);
+      at = close + 1;
+      if (prelude.startsWith('@container ig-workspace')) {
+        if (holds(prelude, width)) rules.push(...rulesAt(body, width));
+      } else if (!prelude.startsWith('@')) {
+        rules.push({ selector: prelude, body });
+      }
+    }
+    return rules;
+  };
+  const selectorsOf = (list: string): string[] => {
+    const out: string[] = [];
+    let depth = 0;
+    let start = 0;
+    [...list].forEach((char, index) => {
+      if (char === '(') depth += 1;
+      if (char === ')') depth -= 1;
+      if (char === ',' && depth === 0) {
+        out.push(list.slice(start, index).trim());
+        start = index + 1;
+      }
+    });
+    return [...out, list.slice(start).trim()];
+  };
+  // The cascade order: the more specific selector wins, then the later rule.
+  const specificity = (selector: string): number =>
+    (selector.match(/#[\w-]+/g)?.length ?? 0) * 10000 +
+    (selector.match(/\.[\w-]+|\[[^\]]*\]|:(?!not\(|is\(|where\()[\w-]+/g)?.length ?? 0) * 100 +
+    (selector.match(/(?:^|[\s>+~(])[a-z][\w-]*/g)?.length ?? 0);
+  const displayOf = (element: Element, rules: readonly Rule[]): string | undefined => {
+    let winner: { rank: number; value: string } | undefined;
+    for (const rule of rules) {
+      const value = [...rule.body.matchAll(/(?:^|[;\s])display\s*:\s*([^;]+)/g)].pop()?.[1]?.trim();
+      if (value === undefined) continue;
+      for (const selector of selectorsOf(rule.selector)) {
+        if (selector.includes('::')) continue;
+        let matches = false;
+        try {
+          matches = element.matches(selector);
+        } catch {
+          matches = false;
+        }
+        const rank = specificity(selector);
+        if (matches && (winner === undefined || rank >= winner.rank)) winner = { rank, value };
+      }
+    }
+    return winner?.value;
+  };
+  const hidden = (element: Element, rules: readonly Rule[]): boolean => {
+    for (let node: Element | null = element; node !== null; node = node.parentElement) {
+      const display = displayOf(node, rules);
+      if (display === 'none' || (display === undefined && node.hasAttribute('hidden'))) return true;
+    }
+    return false;
+  };
+  const pageOf = (markup: string): Document =>
+    new JSDOM(`<!doctype html><html><body><div class="ig-mount">${markup}</div></body></html>`).window.document;
+  const zone = (page: Document, name: string): Element =>
+    page.querySelector(`[data-zone="${name}"]`) ?? assert.fail(`no ${name} zone`);
+
+  const backlog = backlogOf(6);
+  // A render that names no narrow state, then one per tab.
+  const renders = [
+    {},
+    { narrowView: 'order', canvas: 'neighbourhood' },
+    { narrowView: 'canvas', canvas: 'neighbourhood' },
+    { narrowView: 'canvas', canvas: 'tree' },
+  ] as const;
+  // "The three layouts at 640px and above are unchanged"
+  for (const width of [700, 1200, 1500]) {
+    const rules = rulesAt(sheet, width);
+    let lists = 0;
+    const drawn = renders.map((options) => {
+      const page = pageOf(renderWorkspace(backlog, { words: WORKSPACE_WORDS, ...options }).markup);
+      const tablist = page.querySelector('[role="tablist"]') ?? assert.fail('no tablist');
+      assert.equal(hidden(tablist, rules), true, `at ${String(width)} the narrow tabs are drawn`);
+      for (const child of [...zone(page, 'canvas').children]) {
+        if (!(child.textContent ?? '').includes(WORKSPACE_WORDS.narrow.noSelection)) continue;
+        lists += 1;
+        assert.equal(hidden(child, rules), true, `at ${String(width)} the Related groups list is drawn`);
+      }
+      return ZONES.map((name) => `${name}:${hidden(zone(page, name), rules) ? 'hidden' : 'drawn'}`);
+    });
+    assert.ok(lists > 0, 'no render drew the Related groups list to check');
+    for (const zones of drawn) {
+      assert.deepEqual(zones, drawn[0], `at ${String(width)} the narrow state changes which zones draw`);
+    }
+    assert.ok(drawn[0]?.includes('rail:drawn'), `at ${String(width)} the rail yields`);
+  }
+});
+
+it('R4 the under-640 block lays the workspace out in one column while the three bands still read as three layouts', () => {
+  const css = withoutComments(workspaceStylesheet);
+  // "Add `@container ig-workspace (width < 640px)` after the `width < 1120px` block in packages/editor/src/workspace/styles.ts. Assert it in packages/editor/src/workspace/styles.test.ts beside the three bands, which keep their current assertions."
+  const narrowest = containerBlock(css, 'width < 640px');
+  const template = narrowest.match(/(?:^|\n)\s*\.ig-workspace\s*\{[^}]*grid-template-columns:([^;]*);/);
+  assert.ok(template !== null, 'the under-640 block sets no column template');
+  const tracks: string[] = [];
+  let depth = 0;
+  let current = '';
+  for (const char of (template[1] ?? '').trim()) {
+    if (char === '(') depth += 1;
+    if (char === ')') depth -= 1;
+    if (/\s/.test(char) && depth === 0) {
+      if (current !== '') tracks.push(current);
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  if (current !== '') tracks.push(current);
+  assert.equal(tracks.length, 1, `the under-640 layout draws ${String(tracks.length)} columns: ${tracks.join(' ')}`);
+  assert.deepEqual(
+    layoutBands(css).map((band) => band.condition),
+    ['width >= 1360px', 'width < 1360px', 'width < 1120px'],
+  );
+});
 });

@@ -411,6 +411,9 @@ export {
   // this type cannot build the `WorkspaceWords.rail` member, and without that
   // member the footer never draws.
   type RailWords,
+  // AND AGAIN — the layout under 640. `WorkspaceWords.narrow` is required, so a
+  // host that cannot name this type cannot build its words at all.
+  type NarrowWords,
   ZONES,
   renderWorkspace,
 } from './workspace/render.ts';

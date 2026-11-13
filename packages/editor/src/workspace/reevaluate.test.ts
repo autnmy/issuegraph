@@ -46,7 +46,7 @@ const SWAPPED = diffOrder(
 );
 
 function railZone(markup: string): string {
-  const zone = /<section class="ig-zone" data-zone="rail">([\s\S]*?)<section class="ig-zone" data-zone="canvas">/.exec(
+  const zone = /<section class="ig-zone" data-zone="rail"[^>]*>([\s\S]*?)<section class="ig-zone" data-zone="canvas"/.exec(
     markup,
   );
   assert.ok(zone !== null, 'no rail zone');
@@ -54,7 +54,7 @@ function railZone(markup: string): string {
 }
 
 function headerZone(markup: string): string {
-  const zone = /<section class="ig-zone" data-zone="header">([\s\S]*?)<section class="ig-zone" data-zone="rail">/.exec(
+  const zone = /<section class="ig-zone" data-zone="header"[^>]*>([\s\S]*?)<section class="ig-zone" data-zone="rail"/.exec(
     markup,
   );
   assert.ok(zone !== null, 'no header zone');
@@ -330,7 +330,7 @@ describe('a write in flight labels the order and never re-ranks it', () => {
     // first and still carries `held`, which is the claim this test makes.
     assert.match(
       result.markup,
-      /^<div class="ig-workspace" data-order="held" data-canvas="strip" data-canvas-legend="[a-z]+" data-inspector="dismissed">/,
+      /^<div class="ig-workspace" data-order="held" data-canvas="strip" data-canvas-legend="[a-z]+" data-inspector="dismissed" data-tab="order">/,
     );
   });
 

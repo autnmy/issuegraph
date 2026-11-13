@@ -274,6 +274,14 @@ export const WORKSPACE_WORDS: MountWords = {
   showCanvas: 'Show the graph',
   hideCanvas: 'Hide the graph',
   relationships: 'Relationships',
+  // The layout under 640: one view at a time, picked from these tabs.
+  narrow: {
+    order: 'Order',
+    related: 'Related groups',
+    subIssues: 'Sub-issues',
+    closeSheet: 'Close',
+    noSelection: 'Select an issue to list its relationships.',
+  },
   // §17a's inspector explains the position before it lists the relationships.
   // The frame draws the heading in caps; the caps are the stylesheet's, so the
   // words here read as words.
@@ -730,7 +738,9 @@ export function mountSandbox(
   };
 
   let theme: ThemeName = 'default';
-  let canvas: CanvasMode = 'neighbourhood';
+  // THE MODE IS THE MOUNT'S, read off `handle.state.canvas`: the workspace's
+  // Sub-issues and Related groups tabs change it without asking this page.
+  const canvas = (): CanvasMode => handle?.state.canvas ?? 'neighbourhood';
   let scenario: ScenarioName = DEFAULT_SCENARIO;
   let panelState: DemoStateName = 'live';
   // THE HOST HIDES ITS OWN LINE, NOT THE VIEWER. Dismiss is published like every
@@ -797,7 +807,7 @@ export function mountSandbox(
       toggle.setAttribute('aria-pressed', String(toggle.getAttribute('data-ig-value') === theme));
     }
     for (const toggle of root.querySelectorAll<HTMLElement>('[data-chrome="canvas"] [data-ig-value]')) {
-      toggle.setAttribute('aria-pressed', String(toggle.getAttribute('data-ig-value') === canvas));
+      toggle.setAttribute('aria-pressed', String(toggle.getAttribute('data-ig-value') === canvas()));
     }
     for (const toggle of root.querySelectorAll<HTMLElement>('[data-chrome="scenario"] [data-ig-value]')) {
       toggle.setAttribute('aria-pressed', String(toggle.getAttribute('data-ig-value') === scenario));
@@ -808,11 +818,13 @@ export function mountSandbox(
     // OPTIONAL, like every other chrome hook here: a host page without the
     // scenario panel has nothing to summarise, and the sandbox runs regardless.
     const summary = root.querySelector('[data-chrome="summary"]');
-    if (summary !== null) summary.textContent = scenarioSummary(scenario, panelState, canvas, live.source.armed());
+    if (summary !== null) summary.textContent = scenarioSummary(scenario, panelState, canvas(), live.source.armed());
   };
 
   /** Build a fresh store over the current scenario and mount the workspace over it. Called at start, on reset, and when the scenario changes. */
   const start = (): void => {
+    // A reset keeps the mode the reader was on.
+    const seed = canvas();
     unsubscribe();
     handle?.destroy();
     const loaded = SCENARIOS[scenario];
@@ -823,7 +835,7 @@ export function mountSandbox(
       project: projectFor(loaded, moments),
       words: WORKSPACE_WORDS,
       theme: themeFor(theme),
-      canvas,
+      canvas: seed,
       // THE HOST'S HALF OF THE FIRST PASS: a detector the package refuses to
       // ship, and the five words it refuses to invent. Read against the store's
       // CURRENT document, not the one this closure was built with.
@@ -897,6 +909,9 @@ export function mountSandbox(
     const control = target?.closest<HTMLElement>('[data-ig-command]') ?? null;
     if (control === null || !root.contains(control)) return;
     const name = control.getAttribute('data-ig-command') ?? '';
+    // A narrow tab is the mount's to reduce, and it has by now; the masthead's
+    // canvas toggle and summary read the mode it may have changed.
+    if (workspace.contains(control) && name === 'narrow-tab') schedule();
     // Inside the mounted element the mount owns every command; this listener
     // reads only the chrome around it — and the few commands the packages
     // publish for the HOST to act on (`HOST_COMMANDS_FROM_WORKSPACE`).
@@ -916,8 +931,7 @@ export function mountSandbox(
         return;
       case 'canvas':
         if (!isCanvasMode(value)) return;
-        canvas = value;
-        handle.update({ canvas });
+        handle.update({ canvas: value });
         schedule();
         return;
       case 'scenario':
@@ -1043,7 +1057,7 @@ export function mountSandbox(
   return {
     state: () => {
       if (handle === null) throw new Error('the sandbox is not mounted');
-      return { theme, canvas, scenario, workspace: handle.state };
+      return { theme, canvas: canvas(), scenario, workspace: handle.state };
     },
     destroy: () => {
       destroyed = true;
