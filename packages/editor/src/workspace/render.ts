@@ -72,6 +72,7 @@ import {
   normalizeDocument,
   renderMarkup,
   provenanceClause,
+  recedingOf,
   renderViewer,
   resolveTheme,
   themeCss,
@@ -3288,6 +3289,11 @@ export function renderWorkspace(
     // The rail is where a selected ISSUE reads as current. An edge selection
     // resolves to no key, which is `selectedKey`'s whole job.
     selected: selectedKey(selection),
+    // WORKED OUT OVER THE WHOLE DOCUMENT, NOT THE WINDOW. `rail.document` holds
+    // only the window's issues and edges, so a selection outside it would
+    // recede nothing here while the canvas recedes around it. An edge
+    // selection recedes the rail too.
+    receding: recedingOf(document, { key: selectedKey(selection), edge: selectedEdgeId(selection) }),
     // §16f. Passed WHOLE rather than windowed: the window moves, and a reader
     // who opened a row, scrolled past it and came back should find it open.
     // A key the window does not draw costs one `includes` miss and nothing else.
