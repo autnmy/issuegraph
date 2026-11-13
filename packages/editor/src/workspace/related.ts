@@ -96,7 +96,7 @@ function matching(
   subject: string | null,
   titleOf: (key: string) => string,
 ): readonly InspectorRelationship[] {
-  const needle = query.trim().toLowerCase();
+  const needle = query.toLowerCase();
   if (needle === '') return rows;
   const ends = (row: InspectorRelationship): readonly string[] => drawnEnds(row, subject);
   const isExact = (row: InspectorRelationship): boolean => ends(row).some((key) => key.toLowerCase() === needle);

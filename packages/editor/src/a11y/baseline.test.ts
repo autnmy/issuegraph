@@ -544,44 +544,43 @@ describe('controlSurface reads markup this package does not itself render', () =
   });
 });
 
-describe("more tests", function () {
-it('R18 every recorded surface draws three narrow tabs, one selected, each a tab whose aria-controls resolves', async () => {
-  const drawn = Object.entries(await allSurfaces());
-  assert.ok(drawn.length > 0, 'no surface was recorded');
-  // "The a11y baseline covers the tabs with no dangling ARIA reference"
-  for (const [surface, entries] of drawn) {
-    const tabs = entries.filter((entry) => nameOf(entry) === 'data-ig-command:narrow-tab');
-    assert.equal(tabs.length, 3, `${surface} records ${String(tabs.length)} narrow tabs`);
-    assert.equal(
-      tabs.filter((tab) => tab.aria['aria-selected'] === 'true').length,
-      1,
-      `${surface}: not exactly one narrow tab is selected`,
-    );
-    for (const tab of tabs) {
-      assert.equal(tab.role, 'tab', `${surface}: a narrow tab has another role`);
-      assert.equal(tab.aria['aria-controls'], 'resolves', `${surface}: a narrow tab names no rendered zone`);
-      assert.ok(['true', 'false'].includes(tab.aria['aria-selected'] ?? ''), `${surface}: a narrow tab carries no aria-selected`);
-      if (!tab.inert) assert.equal(tab.tabStop, 'tab', `${surface}: a narrow tab is not a tab stop`);
+describe('the narrow tabs on every surface', () => {
+  it('R18 every recorded surface draws three narrow tabs, one selected, each a tab whose aria-controls resolves', async () => {
+    const drawn = Object.entries(await allSurfaces());
+    assert.ok(drawn.length > 0, 'no surface was recorded');
+    // "The a11y baseline covers the tabs with no dangling ARIA reference"
+    for (const [surface, entries] of drawn) {
+      const tabs = entries.filter((entry) => nameOf(entry) === 'data-ig-command:narrow-tab');
+      assert.equal(tabs.length, 3, `${surface} records ${String(tabs.length)} narrow tabs`);
+      assert.equal(
+        tabs.filter((tab) => tab.aria['aria-selected'] === 'true').length,
+        1,
+        `${surface}: not exactly one narrow tab is selected`,
+      );
+      for (const tab of tabs) {
+        assert.equal(tab.role, 'tab', `${surface}: a narrow tab has another role`);
+        assert.equal(tab.aria['aria-controls'], 'resolves', `${surface}: a narrow tab names no rendered zone`);
+        assert.ok(['true', 'false'].includes(tab.aria['aria-selected'] ?? ''), `${surface}: a narrow tab carries no aria-selected`);
+        if (!tab.inert) assert.equal(tab.tabStop, 'tab', `${surface}: a narrow tab is not a tab stop`);
+      }
     }
-  }
-});
+  });
 
-it('R19 the committed baseline records the narrow tabs on every surface, none of them dangling', () => {
-  const committed: Record<string, readonly ControlEntry[]> = JSON.parse(readFileSync(BASELINE_PATH, 'utf8'));
-  const surfaces = Object.entries(committed);
-  assert.ok(surfaces.length > 0, 'the committed baseline records no surface');
-  // "The a11y baseline covers the tabs with no dangling ARIA reference"
-  // "Regenerate packages/editor/src/a11y/baseline.json by hand."
-  for (const [surface, entries] of surfaces) {
-    const tabs = entries.filter((entry) => nameOf(entry) === 'data-ig-command:narrow-tab');
-    assert.equal(tabs.length, 3, `${surface} records ${String(tabs.length)} narrow tabs`);
-    for (const tab of tabs) {
-      assert.equal(tab.aria['aria-controls'], 'resolves', `${surface}: a narrow tab names no rendered zone`);
-      assert.ok(tab.aria['aria-selected'] !== undefined, `${surface}: a narrow tab records no aria-selected`);
+  it('R19 the committed baseline records the narrow tabs on every surface, none of them dangling', () => {
+    const committed: Record<string, readonly ControlEntry[]> = JSON.parse(readFileSync(BASELINE_PATH, 'utf8'));
+    const surfaces = Object.entries(committed);
+    assert.ok(surfaces.length > 0, 'the committed baseline records no surface');
+    // "The a11y baseline covers the tabs with no dangling ARIA reference"
+    // "Regenerate packages/editor/src/a11y/baseline.json by hand."
+    for (const [surface, entries] of surfaces) {
+      const tabs = entries.filter((entry) => nameOf(entry) === 'data-ig-command:narrow-tab');
+      assert.equal(tabs.length, 3, `${surface} records ${String(tabs.length)} narrow tabs`);
+      for (const tab of tabs) {
+        assert.equal(tab.aria['aria-controls'], 'resolves', `${surface}: a narrow tab names no rendered zone`);
+        assert.ok(tab.aria['aria-selected'] !== undefined, `${surface}: a narrow tab records no aria-selected`);
+      }
     }
-  }
-  assert.equal(typeof controlSurface, 'function');
-});
+  });
 });
 
 describe('the Related groups controls are tab stops with names', () => {

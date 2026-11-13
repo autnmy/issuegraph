@@ -27,6 +27,7 @@ import { FIRST_PASS_WORDS } from '../testing/firstpass.ts';
 import { PICKER_WORDS } from '../testing/picker.ts';
 import { WORDS as CHANGE_WORDS } from '../testing/reevaluate.ts';
 import { WORKSPACE_WORDS } from '../testing/workspace.ts';
+import { keysOf, relatedHubEdges } from '../testing/workspace.ts';
 import { mountStylesheet } from './chrome.ts';
 import {
   type CanvasMode,
@@ -5163,5 +5164,297 @@ describe('the first read draws a placeholder, never an empty backlog', () => {
     await flush();
     assert.equal(element.querySelector('[data-ig-loading]'), null);
     handle.destroy();
+  });
+});
+
+/**
+ * The layout under 640's tabs and its Related groups list, mounted.
+ *
+ * The reducer's half is driven in `host.test.ts`, and the list's rules in
+ * `related.test.ts`. What only the shell can get wrong is proven here: that the
+ * canvas mode is read from the host state after the mount seeds it, that the
+ * rail offset comes back from the scroll handler rather than from a hidden rail,
+ * and that a reader can reach a relationship the first draw did not hold.
+ */
+describe('the narrow tabs and the Related groups list, mounted', () => {
+  const narrowTab = (page: Mounted, value: string): HTMLElement =>
+    page.element.querySelector<HTMLElement>(`[data-ig-command="narrow-tab"][data-ig-value="${value}"]`) ??
+    assert.fail(`no ${value} tab`);
+  const treeOf = (page: Mounted): Element | null => page.element.querySelector('[data-zone="canvas"] .ig-tree');
+  const dataTabOf = (page: Mounted): string | null =>
+    page.element.querySelector('.ig-workspace')?.getAttribute('data-tab') ?? null;
+
+  /** `count` relationships on `i0001`, as a store seed, for the list's limits. */
+  function relatedHubSeed(count: number): GraphDocument {
+    return {
+      issues: keysOf(count + 1).map((ref) => ({ ref, title: `Issue ${ref}`, state: 'open' as const })),
+      edges: relatedHubEdges(count).map(([field, from, to]) => makeEdge(field, from, to)),
+    };
+  }
+
+  it('R7 mountWorkspace: a Sub-issues press stays in handle.state.canvas through update() calls that do not name canvas', async () => {
+    const page = await mounted(SEED);
+    try {
+      assert.equal(page.handle.state.canvas, 'neighbourhood');
+      assert.equal(treeOf(page), null, 'the default mount already draws the tree, so this proves nothing');
+
+      page.click(narrowTab(page, 'sub-issues'));
+      await flush();
+      assert.equal(page.handle.state.canvas, 'tree');
+      assert.equal(page.handle.state.narrowView, 'canvas');
+      assert.ok(treeOf(page) !== null, 'the Sub-issues tab did not draw the tree');
+      assert.equal(dataTabOf(page), 'sub-issues');
+
+      // "The mount's `canvas` option seeds the field, and an `update()` that names `canvas` sets it."
+      // Only an update naming `canvas` may set it, so none of these may re-seed it.
+      page.handle.update();
+      await flush();
+      assert.equal(page.handle.state.canvas, 'tree', 'a bare update() re-seeded the mode from the mount option');
+      assert.ok(treeOf(page) !== null, 'a bare update() drew the neighbourhood again');
+
+      page.handle.update({});
+      await flush();
+      assert.equal(page.handle.state.canvas, 'tree', 'update({}) re-seeded the mode from the mount option');
+      assert.ok(treeOf(page) !== null, 'update({}) drew the neighbourhood again');
+
+      page.handle.update({ firstPass: undefined });
+      await flush();
+      assert.equal(page.handle.state.canvas, 'tree', 'an update naming another option re-seeded the mode');
+      assert.ok(treeOf(page) !== null, 'an update naming another option drew the neighbourhood again');
+      assert.equal(dataTabOf(page), 'sub-issues');
+
+      page.handle.update({ canvas: 'neighbourhood' });
+      await flush();
+      assert.equal(page.handle.state.canvas, 'neighbourhood');
+      assert.equal(treeOf(page), null, 'update({ canvas }) left the tree drawn');
+      page.handle.destroy();
+    } finally {
+      page.dom.window.close();
+    }
+  });
+
+  it('R7 KTD1 mountWorkspace: an update that does not name canvas keeps the mode the Sub-issues tab set', async () => {
+    // The mount options name canvas, so an update() that merges options and re-seeds from them would undo the tab press.
+    const page = await mounted(SEED, { canvas: 'neighbourhood' });
+    try {
+      assert.equal(treeOf(page), null, 'the neighbourhood seed drew a tree, so this proves nothing');
+
+      page.click(narrowTab(page, 'sub-issues'));
+      await flush();
+      assert.equal(page.handle.state.canvas, 'tree');
+      assert.ok(treeOf(page) !== null, 'the Sub-issues tab did not swap the canvas to the tree');
+
+      // "The mount's `canvas` option seeds the field, and an `update()` that names `canvas` sets it."
+      page.handle.update({});
+      await flush();
+      assert.equal(page.handle.state.canvas, 'tree', 'update({}) re-seeded the mode from the mount options');
+      assert.ok(treeOf(page) !== null, 'update({}) drew the neighbourhood again');
+
+      page.handle.update({ words: WORDS });
+      await flush();
+      assert.equal(page.handle.state.canvas, 'tree', 'an update naming only the words reset the mode');
+      assert.ok(treeOf(page) !== null, 'an update naming only the words drew the neighbourhood again');
+
+      page.handle.update({ canvas: 'neighbourhood' });
+      await flush();
+      assert.equal(page.handle.state.canvas, 'neighbourhood');
+      assert.equal(treeOf(page), null, 'an update naming canvas did not set it');
+      page.handle.destroy();
+    } finally {
+      page.dom.window.close();
+    }
+  });
+
+  it('R7 the canvas mount option seeds state.canvas and an update naming canvas sets it and moves the tab with it', async () => {
+    const page = await mounted(SEED, { canvas: 'tree' });
+    try {
+      // The issue: "The mount's `canvas` option seeds the field, and an `update()` that names `canvas` sets it."
+      assert.equal(page.handle.state.canvas, 'tree');
+      assert.ok(treeOf(page) !== null, 'the seeded tree was not drawn');
+      assert.equal(dataTabOf(page), 'order');
+
+      page.handle.update();
+      await flush();
+      assert.equal(page.handle.state.canvas, 'tree', 'a bare update() dropped the seeded mode');
+
+      page.click(narrowTab(page, 'sub-issues'));
+      await flush();
+      assert.equal(dataTabOf(page), 'sub-issues');
+
+      page.handle.update({ canvas: 'neighbourhood' });
+      await flush();
+      assert.equal(page.handle.state.canvas, 'neighbourhood');
+      assert.equal(treeOf(page), null, 'the update naming the neighbourhood left the tree drawn');
+      // The tab is read from the view and the mode, so it cannot keep saying
+      // Sub-issues over the neighbourhood.
+      assert.equal(dataTabOf(page), 'related');
+      page.handle.destroy();
+    } finally {
+      page.dom.window.close();
+    }
+  });
+
+  it('R15 R16 KTD9 mountWorkspace: the rail comes back at the offset its scroll handler last saw, not at a hidden rail\'s zero', async () => {
+    const page = await mounted(SEED);
+    try {
+      const rail = (): HTMLElement => page.zone('rail') ?? assert.fail('no rail zone');
+      const before = rail();
+      const railStart = page.handle.state.railStart;
+      before.scrollTop = 120;
+      assert.equal(before.scrollTop, 120, 'the fixture cannot hold an offset, so this proves nothing');
+      before.dispatchEvent(new page.win.Event('scroll'));
+      await flush();
+      // A rail the stylesheet hides reports 0 in a browser. jsdom keeps the value, so the test writes the 0 itself, with no scroll event.
+      rail().scrollTop = 0;
+
+      // "The mount restores the rail offset its scroll handler last saw, never a hidden zone's."
+      page.click(narrowTab(page, 'related'));
+      await flush();
+      page.click(narrowTab(page, 'order'));
+      await flush();
+      const switched = rail();
+      assert.notEqual(switched, before, 'no redraw happened, so this test would prove nothing');
+      assert.equal(switched.scrollTop, 120, 'the tab switch restored the hidden rail\'s offset, not the scroll handler\'s');
+      assert.equal(page.handle.state.railStart, railStart, 'a tab press moved the rail window');
+
+      // "The reader's place in the order survives a tab switch and a redraw"
+      // The tabs are pressed through the host's `dispatch` from here on, the other route to them.
+      page.handle.dispatch({ kind: 'control', name: 'narrow-tab', value: 'related' });
+      await flush();
+      const hidden = rail();
+      hidden.scrollTop = 0;
+      page.handle.update();
+      await flush();
+      const redrawn = rail();
+      assert.notEqual(redrawn, hidden, 'no redraw happened, so this test would prove nothing');
+      assert.equal(redrawn.scrollTop, 120, 'a redraw while Related groups shows lost the reader\'s place in the order');
+
+      redrawn.scrollTop = 0;
+      page.handle.dispatch({ kind: 'control', name: 'narrow-tab', value: 'order' });
+      await flush();
+      const back = rail();
+      assert.notEqual(back, redrawn, 'the tab switch did not rebuild the rail, so this proves nothing');
+      assert.equal(back.scrollTop, 120, 'the way back to the order lost the reader\'s place');
+      assert.equal(page.handle.state.railStart, railStart, 'the redraw moved the rail window');
+      page.handle.destroy();
+    } finally {
+      page.dom.window.close();
+    }
+  });
+
+  it('R14 a mounted reader opens a group and selects the 61st relationship, which was not drawn before', async () => {
+    const last = makeEdge('blocked-by', 'i0001', 'i0062');
+    const hub = await mounted(relatedHubSeed(61));
+    try {
+      const canvas = (): HTMLElement => hub.zone('canvas') ?? assert.fail('no canvas zone');
+      const row = `[data-ig-command="select-edge"][data-ig-target="${last.id}"]`;
+      hub.click(hub.rows().find((each) => each.getAttribute('data-ig-key') === 'i0001') ?? assert.fail('no rail row for i0001'));
+      await flush();
+      hub.click(narrowTab(hub, 'related'));
+      await flush();
+      // "Test opening a relationship past the first 60, and finding one past 300 by search."
+      assert.equal(canvas().querySelector(row), null, 'the 61st relationship was drawn before its group opened');
+      hub.click(
+        canvas().querySelector('[data-ig-command="related-group"][data-ig-value="blocked-by"]') ??
+          assert.fail('no blocked-by group control'),
+      );
+      await flush();
+      hub.click(canvas().querySelector(row) ?? assert.fail('the open group does not draw the 61st relationship'));
+      await flush();
+      assert.deepEqual(hub.handle.state.selection, { kind: 'edge', edgeId: last.id });
+    } finally {
+      hub.handle.destroy();
+      hub.dom.window.close();
+    }
+  });
+
+  it('R14 a mounted reader finds the 301st relationship by typing its key into the search and selects it', async () => {
+    const last = makeEdge('blocked-by', 'i0001', 'i0302');
+    const hub = await mounted(relatedHubSeed(301));
+    try {
+      const canvas = (): HTMLElement => hub.zone('canvas') ?? assert.fail('no canvas zone');
+      const row = `[data-ig-command="select-edge"][data-ig-target="${last.id}"]`;
+      hub.click(hub.rows().find((each) => each.getAttribute('data-ig-key') === 'i0001') ?? assert.fail('no rail row for i0001'));
+      await flush();
+      hub.click(narrowTab(hub, 'related'));
+      await flush();
+      // "Test opening a relationship past the first 60, and finding one past 300 by search."
+      assert.equal(canvas().querySelector(row), null, 'the 301st relationship was drawn before any search');
+      const search =
+        canvas().querySelector<HTMLInputElement>('input[data-ig-command="related-query"]') ??
+        assert.fail('no search over 301 relationships');
+      search.value = 'i0302';
+      search.dispatchEvent(new hub.win.Event('input', { bubbles: true }));
+      await flush();
+      hub.click(canvas().querySelector(row) ?? assert.fail('the search does not draw the 301st relationship'));
+      await flush();
+      assert.deepEqual(hub.handle.state.selection, { kind: 'edge', edgeId: last.id });
+    } finally {
+      hub.handle.destroy();
+      hub.dom.window.close();
+    }
+  });
+
+  it('R18 KTD3 mountWorkspace: after the tree swap every aria-controls still names an element inside the workspace, and only Sub-issues is selected', async () => {
+    // The tree swap replaces the canvas zone's children, so an id carried by a child, not the zone frame, would vanish here.
+    const page = await mounted(SEED);
+    try {
+      page.click(narrowTab(page, 'sub-issues'));
+      await flush();
+      assert.ok(page.zone('canvas')?.querySelector('.ig-tree') != null, 'the tree swap did not happen, so this proves nothing');
+
+      // "The a11y baseline covers the tabs with no dangling ARIA reference"
+      const tabs = [...page.element.querySelectorAll<HTMLElement>('[role="tab"]')];
+      assert.equal(tabs.length, 3);
+      for (const node of page.element.querySelectorAll('[aria-controls]')) {
+        const tokens = (node.getAttribute('aria-controls') ?? '').split(/\s+/).filter((token) => token !== '');
+        for (const token of tokens) {
+          const target = page.win.document.getElementById(token);
+          assert.ok(target !== null && page.element.contains(target), `aria-controls names ${token}, which is not in the workspace`);
+        }
+      }
+      const selected = tabs.filter((tab) => tab.getAttribute('aria-selected') === 'true');
+      assert.deepEqual(selected.map((tab) => tab.getAttribute('data-ig-value')), ['sub-issues']);
+      const root = page.element.hasAttribute('data-tab') ? page.element : page.element.querySelector('[data-tab]');
+      assert.equal(root?.getAttribute('data-tab'), 'sub-issues');
+      page.handle.destroy();
+    } finally {
+      page.dom.window.close();
+    }
+  });
+
+  it('KTD3 mountWorkspace: two workspaces on one page share no zone id, so each tab controls a zone in its own workspace', async () => {
+    // With a shared id, getElementById answers the first workspace's zone for the second workspace's tab.
+    const dom = new JSDOM('<!doctype html><html><body><div id="left"></div><div id="right"></div></body></html>');
+    try {
+      const roots: HTMLElement[] = [];
+      const handles: ReturnType<typeof mountWorkspace>[] = [];
+      for (const id of ['left', 'right']) {
+        const root = dom.window.document.getElementById(id);
+        assert.ok(root !== null);
+        const store = createStore({ source: createScriptedSource(SEED, applyAny), derive: flatDeriver });
+        await store.hydrate();
+        handles.push(mountWorkspace(root, { store, project, words: WORDS }));
+        roots.push(root);
+      }
+      await flush();
+      const controlled = roots.map((root) => {
+        const tabs = [...root.querySelectorAll('[role="tab"]')];
+        assert.equal(tabs.length, 3, `${root.id} drew no tabs`);
+        const tokens = tabs.flatMap((tab) => (tab.getAttribute('aria-controls') ?? '').split(/\s+/).filter((token) => token !== ''));
+        assert.ok(tokens.length > 0, `${root.id}'s tabs control nothing`);
+        for (const token of tokens) {
+          const target = dom.window.document.getElementById(token);
+          assert.ok(target !== null && root.contains(target), `${root.id}'s tab names ${token}, which is not in ${root.id}`);
+        }
+        return new Set(tokens);
+      });
+      const [left, right] = controlled;
+      assert.ok(left !== undefined && right !== undefined);
+      assert.deepEqual([...left].filter((token) => right.has(token)), [], 'the two workspaces share a zone id');
+      for (const handle of handles) handle.destroy();
+    } finally {
+      dom.window.close();
+    }
   });
 });
