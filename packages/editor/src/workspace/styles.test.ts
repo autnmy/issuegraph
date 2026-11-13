@@ -21,7 +21,13 @@ import { renderScaleLadder } from '../scale/render.ts';
 import { scaleLadderStylesheet } from '../scale/styles.ts';
 import { workspaceStylesheet } from './styles.ts';
 import { WORKSPACE_WORDS, backlogOf, keysOf } from '../testing/workspace.ts';
-import { WORDS as CHANGE_WORDS, editOf, orderOf } from '../testing/reevaluate.ts';
+import {
+  WORDS as CHANGE_WORDS,
+  HELD_RAIL_GREY,
+  editOf,
+  heldRuleDeclarations,
+  orderOf,
+} from '../testing/reevaluate.ts';
 
 /**
  * Every `calc(...)` body in the sheet, matched on BALANCED parentheses.
@@ -1665,5 +1671,40 @@ describe('the layout under 640', () => {
       layoutBands(css).map((band) => band.condition),
       ['width >= 1360px', 'width < 1360px', 'width < 1120px'],
     );
+  });
+});
+
+describe('the held rail greys by its hue tokens, never by a filter', () => {
+  it('redefines every hue token to the muted grey on the rail zone, and declares nothing else', () => {
+    // Redefined tokens are inherited, so every station, badge and line in the
+    // rail that reads a hue turns grey, and the rail's text keeps its contrast.
+    const held = withoutComments(workspaceStylesheet).match(
+      /\.ig-workspace\[data-order='held'\] \.ig-zone\[data-zone='rail'\] \.ig-viewer\s*\{([^}]*)\}/,
+    )?.[1];
+    assert.ok(held !== undefined, 'nothing greys the held rail');
+    assert.ok(HELD_RAIL_GREY.has('--ig-station-ready'), 'the expected hues hold no station hue');
+    assert.ok(HELD_RAIL_GREY.has('--ig-state-failed'), 'the expected hues hold no write-state hue');
+    assert.deepEqual(heldRuleDeclarations(held), HELD_RAIL_GREY);
+    assert.equal(/(^|;)\s*color:/.test(held), false, 'a bare colour the descendants override');
+  });
+});
+
+describe('the workspace styles fade no text', () => {
+  it('declare no opacity and no filter once comments are stripped', () => {
+    // "No text in either package is dimmed by opacity"
+    // A held order, so the scan covers the render whose rail the held-order rule greys.
+    const { styles } = renderWorkspace(
+      backlogOf(4, { held: ['i0003'], edges: [['blocked-by', 'i0001', 'i0002']] }),
+      { words: WORKSPACE_WORDS, orderStatus: 'held' },
+    );
+    const css = withoutComments(styles);
+    // The property name is matched exactly, so stroke-opacity and fill-opacity are not counted.
+    assert.deepEqual(
+      [...css.matchAll(/(?:^|[;{\s])(opacity|filter)\s*:/g)].map((match) => match[1]),
+      [],
+      'the workspace styles still fade something by opacity or filter',
+    );
+    // A receded line draws by stroke-opacity, so finding it shows the viewer sheet was part of what was scanned.
+    assert.match(css, /(?:^|[;{\s])stroke-opacity\s*:/);
   });
 });

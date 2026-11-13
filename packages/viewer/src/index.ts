@@ -120,6 +120,13 @@ export { EDGE_TREATMENTS, dashArrayFor, labelFrom, treatmentFor } from './vocabu
 // reads the canvas's own count rather than spelling "related" a second time.
 export { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET, relatedKeys } from './projections/graph.ts';
 
+// WHAT A SELECTION RECEDES, on the surface so a host that draws over the
+// canvas asks the same rule the canvas stamps with instead of spelling
+// "touches the selection" a second time. `RECEDE_ALPHA` travels with it so the
+// strength a receded line draws at has one source.
+export type { RecedeSelection, Receding } from './recede.ts';
+export { RECEDE_ALPHA, recedingOf } from './recede.ts';
+
 // `isFooterSlot` IS ON THE SURFACE FOR THE EDITOR'S RAIL, which windows the
 // sequence and carries the footer's slots whole. Which slots belong to the
 // footer is this package's rule — any tracker-family hold — and a rail that

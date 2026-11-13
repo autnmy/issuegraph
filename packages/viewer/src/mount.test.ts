@@ -3,8 +3,10 @@ import { describe, it } from 'node:test';
 
 import { edgeIdentity } from '@issuegraph/core';
 
+import { type ViewerDocument, normalizeDocument } from './document.ts';
 import { renderMarkup } from './element.ts';
 import { type ViewerHandle, mountViewer } from './mount.ts';
+import { type Receding, recedingOf } from './recede.ts';
 import { renderViewer } from './render.ts';
 import { GROUP_ATTRIBUTE, KEY_ATTRIBUTE, type Projection } from './scene.ts';
 import { TestDocument, TestElement, TestNode } from './testing/document.ts';
@@ -29,7 +31,7 @@ function reserialize(node: TestElement | TestNode): string {
           .replace(/&/g, '&amp;')
           .replace(/</g, '&lt;')
           .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')}"`,
+          .replaceAll('"', '&quot;')}"`,
     )
     .join('');
   if (node.children.length === 0) {
@@ -711,6 +713,59 @@ describe('mountViewer', () => {
     assert.deepEqual(selected, []);
   });
 
+  for (const projection of ['linear', 'tree'] as const) {
+    it(`keeps a ${projection} selection on a click that lands on nothing keyed`, () => {
+      // The issue: "Graph projection only: the list and the tree are unchanged"
+      const selected: (string | null)[] = [];
+      const { container, handle } = mounted({ projection, onSelect: (key: string | null) => selected.push(key) });
+      const row = container.find(KEY_ATTRIBUTE, '101');
+      assert.ok(row !== undefined);
+      container.dispatch('click', { target: row });
+      const root = container.children[0];
+
+      container.dispatch('click', { target: container });
+
+      assert.deepEqual(selected, ['101']);
+      assert.equal(handle.state.selected, '101');
+      assert.equal(container.children[0], root, 'a click on nothing redrew the viewer');
+    });
+  }
+
+  it('clears a graph selection on a click that lands on nothing keyed, as select(null) does', () => {
+    const selected: (string | null)[] = [];
+    const { container, handle } = mounted({ projection: 'graph', onSelect: (key: string | null) => selected.push(key) });
+    const row = container.find(KEY_ATTRIBUTE, '101');
+    assert.ok(row !== undefined);
+    container.dispatch('click', { target: row });
+
+    container.dispatch('click', { target: container });
+
+    assert.deepEqual(selected, ['101', null]);
+    assert.equal(handle.state.selected, null);
+    assert.ok(
+      container.descendants().every((element) => element.getAttribute('aria-current') !== 'true'),
+      'a click on nothing left an element marked as the selection',
+    );
+  });
+
+  it('does nothing on a blank graph click with nothing selected: no notice, no redraw', () => {
+    const selected: (string | null)[] = [];
+    const { container } = mounted({ projection: 'graph', onSelect: (key: string | null) => selected.push(key) });
+    const root = container.children[0];
+    assert.ok(root instanceof TestElement);
+    const markup = reserialize(root);
+    // The horizontally scrolled canvas: a redraw replaces it, and with it the reader's scroll position.
+    const stage = container.descendants().find((element) => element.getAttribute('class') === 'ig-stage');
+    assert.ok(stage !== undefined, 'the graph drew no stage, so this proves nothing');
+
+    container.dispatch('click', { target: container });
+
+    assert.deepEqual(selected, []);
+    assert.equal(container.children[0], root, 'a click that changed nothing redrew the viewer');
+    assert.equal(reserialize(root), markup);
+    assert.ok(container.descendants().includes(stage), 'a click that changed nothing replaced the scrolled stage');
+  });
+
   it('marks the selected row after a click', () => {
     const { container } = mounted();
     const target = container.find(KEY_ATTRIBUTE, '101');
@@ -1190,5 +1245,488 @@ describe('mountViewer', () => {
 
     assert.ok(root instanceof TestElement);
     assert.equal(reserialize(root), renderMarkup(renderViewer(fixtureDocument, { projection: 'graph' }).scene.root));
+  });
+});
+
+describe('mountViewer recedes the graph by the selection as given', () => {
+  const normalizedFixture = normalizeDocument(fixtureDocument).document;
+  const blocked101To102 = edgeIdentity('blocked-by', '101', '102');
+
+  /** Every stamped element, named by what it draws, in markup order. Any value counts, so a leftover "false" shows. */
+  const recedeStampsOf = (container: TestElement): string[] =>
+    container
+      .descendants()
+      .filter((element) => element.getAttribute('data-recede') !== null)
+      .map((element) =>
+        [
+          element.tag,
+          element.getAttribute('class'),
+          element.getAttribute('data-recede'),
+          element.getAttribute(KEY_ATTRIBUTE) ?? element.getAttribute(GROUP_ATTRIBUTE),
+        ].join('|'),
+      );
+
+  /** The stamps a fresh graph mount draws for one selection, as the reference. */
+  const recedeStampsFor = (selected: string, input: ViewerDocument = fixtureDocument): string[] => {
+    const container = new TestDocument().createContainer();
+    mountViewer(container, input, { projection: 'graph', selected });
+    const stamps = recedeStampsOf(container);
+    assert.ok(stamps.length > 0, `selecting ${selected} receded nothing, so the comparison proves nothing`);
+    return stamps;
+  };
+
+  /** The drawn line of one relationship, to click or to read. */
+  const lineOf = (container: TestElement, identity: string): TestElement => {
+    const line = container
+      .descendants()
+      .find((element) => element.getAttribute('class') === 'ig-edge' && element.getAttribute(GROUP_ATTRIBUTE) === identity);
+    assert.ok(line !== undefined, `the ${identity} line was not drawn`);
+    return line;
+  };
+
+  /**
+   * Every card and line agrees with `recedingOf`: it is stamped exactly when
+   * its key or its edge identity is in the receding sets.
+   */
+  const assertStampsMatchReceding = (container: TestElement, receding: Receding): void => {
+    let cards = 0;
+    let lines = 0;
+    for (const element of container.descendants()) {
+      const kind = element.getAttribute('class');
+      const stamped = element.getAttribute('data-recede') === 'true';
+      if (kind === 'ig-rail-row') {
+        const key = element.getAttribute(KEY_ATTRIBUTE) ?? '';
+        assert.equal(stamped, receding.keys.has(key), `card ${key}`);
+        cards += 1;
+      }
+      if (kind === 'ig-edge' || kind === 'ig-terminal') {
+        const identity = element.getAttribute(GROUP_ATTRIBUTE) ?? '';
+        assert.equal(stamped, receding.edges.has(identity), `${kind} ${identity}`);
+        lines += 1;
+      }
+    }
+    assert.ok(cards > 0 && lines > 0, 'no card or no line was drawn, so this proves nothing');
+  };
+
+  /** The stamp on the rail row of one issue. */
+  const rowStamp = (container: TestElement, key: string): string | null => {
+    const row = container
+      .descendants()
+      .find((element) => element.tag === 'li' && element.getAttribute(KEY_ATTRIBUTE) === key);
+    assert.ok(row !== undefined, `no rail row was drawn for ${key}`);
+    return row.getAttribute('data-recede');
+  };
+
+  /** The stamps on every drawn line of one relationship. */
+  const lineStamps = (container: TestElement, identity: string): (string | null)[] => {
+    const lines = container
+      .descendants()
+      .filter(
+        (element) =>
+          (element.getAttribute('class') ?? '').split(' ').includes('ig-edge') &&
+          element.getAttribute(GROUP_ATTRIBUTE) === identity,
+      );
+    assert.ok(lines.length > 0, `no line was drawn for ${identity}`);
+    return lines.map((element) => element.getAttribute('data-recede'));
+  };
+
+  // 104 leaves the document and its unit, and 103 stays as a unit of one.
+  const without104: ViewerDocument = {
+    ...fixtureDocument,
+    issues: fixtureDocument.issues.filter((issue) => issue.key !== '104'),
+    edges: fixtureDocument.edges.filter((edge) => edge.from !== '104' && edge.to !== '104'),
+    order: {
+      ...fixtureDocument.order,
+      slots: fixtureDocument.order.slots.map((slot) => (slot.lead === '103' ? { ...slot, members: ['103'] } : slot)),
+    },
+  };
+
+  it('stamps exactly what recedingOf gives for a relationship a pointer clicked', () => {
+    const { container } = mounted({ projection: 'graph' });
+
+    container.dispatch('click', { target: lineOf(container, blocked101To102) });
+
+    const receding = recedingOf(normalizedFixture, { edge: blocked101To102 });
+    assert.ok(receding.keys.size > 0 && receding.edges.size > 0, 'the relationship recedes nothing, so this proves nothing');
+    assertStampsMatchReceding(container, receding);
+  });
+
+  it('stamps everything but a clicked relationship and its two issues, and select(null) restores the markup from before the click', () => {
+    const { container, handle } = mounted({ projection: 'graph' });
+    const markupNow = (): string => {
+      const root = container.children[0];
+      assert.ok(root instanceof TestElement);
+      return reserialize(root);
+    };
+    const before = markupNow();
+    assert.equal(before.includes('data-recede'), false, 'the bare mount already carries a stamp');
+
+    container.dispatch('click', { target: lineOf(container, blocked101To102) });
+    assert.equal(handle.state.selected, blocked101To102);
+
+    // "A relationship clicked in the standalone viewer recedes the rest, and clearing it restores everything"
+    // "For an edge selection, that edge and its two ends stay."
+    const drawn = container.descendants();
+    const rows = drawn.filter((element) => element.getAttribute('class') === 'ig-rail-row');
+    assert.ok(rows.some((row) => row.getAttribute(KEY_ATTRIBUTE) === '101'), 'no card for 101');
+    assert.ok(rows.some((row) => row.getAttribute(KEY_ATTRIBUTE) === '102'), 'no card for 102');
+    for (const row of rows) {
+      const key = row.getAttribute(KEY_ATTRIBUTE);
+      assert.equal(row.getAttribute('data-recede'), key === '101' || key === '102' ? null : 'true', `card ${String(key)}`);
+    }
+    const lines = drawn.filter(
+      (element) => element.getAttribute('class') === 'ig-edge' && element.getAttribute(GROUP_ATTRIBUTE) !== null,
+    );
+    // The other line between the same two issues recedes: only the clicked relationship stays.
+    assert.ok(lines.some((element) => element.getAttribute(GROUP_ATTRIBUTE) === edgeIdentity('decomposed-from', '102', '101')));
+    for (const element of lines) {
+      const group = element.getAttribute(GROUP_ATTRIBUTE);
+      assert.equal(element.getAttribute('data-recede'), group === blocked101To102 ? null : 'true', `line ${String(group)}`);
+    }
+
+    handle.select(null);
+    assert.equal(handle.state.selected, null);
+    assert.equal(markupNow(), before);
+  });
+
+  it('a clicked relationship keeps receding the same elements after a repeated click and an update', () => {
+    const edgePaths = (container: TestElement) =>
+      container
+        .descendants()
+        .filter(
+          (element) =>
+            element.tag === 'path' && (element.getAttribute('class') ?? '').split(' ').includes('ig-edge'),
+        );
+    const otherIdentities = new Set(
+      fixtureDocument.edges
+        .map((edge) => edgeIdentity(edge.field, edge.from, edge.to))
+        .filter((other) => other !== blocked101To102),
+    );
+    const { container, handle } = mounted({ projection: 'graph' });
+
+    const clicked = edgePaths(container).find((path) => path.getAttribute(GROUP_ATTRIBUTE) === blocked101To102);
+    assert.ok(clicked !== undefined, 'the blocked-by 101 to 102 line was not drawn');
+    container.dispatch('click', { target: clicked });
+    const afterClick = recedeStampsOf(container);
+
+    // The issue: "A relationship clicked in the standalone viewer recedes the rest, and clearing it restores everything"
+    // and "For an edge selection, that edge and its two ends stay."
+    const others = edgePaths(container).filter((path) => otherIdentities.has(path.getAttribute(GROUP_ATTRIBUTE) ?? ''));
+    assert.ok(others.length > 0, 'no other relationship line was drawn, so this proves nothing');
+    for (const path of others) {
+      assert.equal(path.getAttribute('data-recede'), 'true', `${String(path.getAttribute(GROUP_ATTRIBUTE))} did not recede`);
+    }
+    for (const element of container.descendants()) {
+      const key = element.getAttribute(KEY_ATTRIBUTE);
+      const group = element.getAttribute(GROUP_ATTRIBUTE);
+      if (key === '101' || key === '102' || group === blocked101To102) {
+        assert.equal(element.getAttribute('data-recede'), null, 'the selected relationship or one of its ends receded');
+      }
+    }
+
+    const again = edgePaths(container).find((path) => path.getAttribute(GROUP_ATTRIBUTE) === blocked101To102);
+    assert.ok(again !== undefined, 'the selected line was not redrawn');
+    container.dispatch('click', { target: again });
+    assert.equal(handle.state.selected, blocked101To102, 'a repeated click dropped the selection');
+    assert.deepEqual(recedeStampsOf(container), afterClick, 'a repeated click changed what recedes');
+
+    handle.update(fixtureDocument);
+    assert.equal(handle.state.selected, blocked101To102, 'an update with the same document dropped the selection');
+    assert.deepEqual(recedeStampsOf(container), afterClick, 'an update with the same document changed what recedes');
+  });
+
+  it('a click on nothing keyed clears a clicked relationship and every stamp, even beside a host-passed selectedEdge', () => {
+    const selected: (string | null)[] = [];
+    const { container, handle } = mounted({
+      projection: 'graph',
+      selectedEdge: blocked101To102,
+      onSelect: (key: string | null) => selected.push(key),
+    });
+    container.dispatch('click', { target: lineOf(container, blocked101To102) });
+    assert.notDeepEqual(recedeStampsOf(container), [], 'clicking the relationship receded nothing, so this proves nothing');
+
+    // The issue: "a click on nothing, `select(null)` and an update that drops the edge each clear every stamp"
+    container.dispatch('click', { target: container });
+
+    assert.equal(handle.state.selected, null);
+    assert.deepEqual(selected, [blocked101To102, null]);
+    assert.deepEqual(recedeStampsOf(container), [], 'a click on nothing left an element carrying data-recede');
+  });
+
+  it('a cleared relationship stays cleared across an update and a projection round trip, whatever selectedEdge the host passed', () => {
+    // The mount works out the selected relationship from its own selection, so a
+    // value the host passes here must never stamp anything by itself.
+    const { container, handle } = mounted({ projection: 'graph', selectedEdge: blocked101To102 });
+    assert.deepEqual(recedeStampsOf(container), [], 'a host-passed selectedEdge receded the graph with nothing selected');
+
+    handle.select(blocked101To102);
+    assert.notDeepEqual(recedeStampsOf(container), [], 'selecting the relationship receded nothing');
+
+    // The issue: "A relationship clicked in the standalone viewer recedes the rest, and clearing it restores everything"
+    handle.select(null);
+    assert.deepEqual(recedeStampsOf(container), [], 'select(null) left receded elements');
+
+    handle.update(fixtureDocument);
+    assert.deepEqual(recedeStampsOf(container), [], 'an update brought a cleared recede back');
+
+    handle.setProjection('linear');
+    handle.setProjection('graph');
+    assert.deepEqual(recedeStampsOf(container), [], 'returning to the graph brought a cleared recede back');
+    assert.equal(handle.state.selected, null, 'the cleared selection came back');
+  });
+
+  it('clears every recede stamp when an update drops the clicked relationship', () => {
+    const { container, handle } = mounted({ projection: 'graph' });
+    container.dispatch('click', { target: lineOf(container, blocked101To102) });
+    assert.notDeepEqual(recedeStampsOf(container), [], 'clicking the relationship receded nothing');
+
+    handle.update({
+      ...fixtureDocument,
+      edges: fixtureDocument.edges.filter(
+        (declared) => edgeIdentity(declared.field, declared.from, declared.to) !== blocked101To102,
+      ),
+    });
+    assert.equal(handle.state.selected, null, 'the dropped relationship is still selected');
+    // "A relationship clicked in the standalone viewer recedes the rest, and clearing it restores everything"
+    assert.deepEqual(recedeStampsOf(container), []);
+  });
+
+  it('recedes by the selected issue and ignores a selectedEdge the host passes beside it', () => {
+    // The issue: "When a host passes issues and a relationship together, the issues win and the relationship is ignored"
+    // The blocked-by 105 to other/repo#7 line touches neither 101 nor 102, so it
+    // stays at full strength only if the relationship wins over the issue.
+    const far = edgeIdentity('blocked-by', '105', 'other/repo#7');
+    const { container, handle } = mounted({ projection: 'graph', selected: '102', selectedEdge: far });
+
+    assert.equal(handle.state.selected, '102');
+    assert.equal(rowStamp(container, '102'), null, 'the selected issue receded');
+    assert.equal(rowStamp(container, '101'), null, 'a neighbour of the selected issue receded');
+    assert.equal(rowStamp(container, '105'), 'true', 'an end of the host relationship stayed, so the relationship won');
+    assert.ok(
+      lineStamps(container, far).every((stamp) => stamp === 'true'),
+      'the host relationship stayed at full strength',
+    );
+    assert.ok(
+      lineStamps(container, blocked101To102).every((stamp) => stamp === null),
+      'a line of the selected issue receded',
+    );
+  });
+
+  it('keeps the decomposed-from 102 to 101 line when the host also passes the blocked-by 101 to 102 relationship, across a redraw', () => {
+    // The issue: "When a host passes issues and a relationship together, the issues win and the relationship is ignored"
+    // The relationship alone keeps only 101, 102 and its own line, so the
+    // decomposed-from 102 to 101 line recedes exactly when the relationship is
+    // not ignored. The redraw checks that an update does not bring it back.
+    const { container, handle } = mounted({ projection: 'graph', selected: '102', selectedEdge: blocked101To102 });
+    const assertRecedesByIssue = (when: string): void => {
+      assert.ok(
+        lineStamps(container, edgeIdentity('decomposed-from', '102', '101')).every((stamp) => stamp === null),
+        `${when}: the decomposed-from line of 102 receded, so the relationship was not ignored`,
+      );
+      assert.ok(
+        lineStamps(container, blocked101To102).every((stamp) => stamp === null),
+        `${when}: a line of the selected issue receded`,
+      );
+      assert.equal(rowStamp(container, '105'), 'true', `${when}: nothing recedes, so this proves nothing`);
+    };
+
+    assertRecedesByIssue('at mount');
+    handle.update(fixtureDocument);
+    assertRecedesByIssue('after an update');
+    assert.equal(handle.state.selected, '102');
+  });
+
+  it("keeps receding by member '104', not lead '103', across every redraw", () => {
+    const byMember = recedeStampsFor('104');
+    // 104 and its lead 103 share one card, but 103 alone also touches 105 over
+    // serialize-with, so the two selections recede different elements.
+    assert.notDeepEqual(byMember, recedeStampsFor('103'), "'104' and '103' recede alike, so this proves nothing");
+
+    const container = new TestDocument().createContainer();
+    // A host that redraws whenever the hover moves, which is the redraw a
+    // hover can cause: the mount itself does not redraw on a hover.
+    const handle: ViewerHandle = mountViewer(container, fixtureDocument, {
+      projection: 'graph',
+      onHover: () => handle.update(fixtureDocument),
+    });
+    handle.select('104');
+    assert.equal(handle.state.selected, '103', 'the handle no longer reports the lead');
+    assert.deepEqual(recedeStampsOf(container), byMember, 'the select itself');
+
+    handle.update(fixtureDocument);
+    assert.deepEqual(recedeStampsOf(container), byMember, 'an update');
+
+    handle.setProjection('linear');
+    handle.setProjection('graph');
+    assert.deepEqual(recedeStampsOf(container), byMember, "setProjection('graph')");
+
+    const row = container.find(KEY_ATTRIBUTE, '101');
+    assert.ok(row !== undefined, 'no row for 101 to hover');
+    container.dispatch('pointerover', { target: row });
+    assert.deepEqual(recedeStampsOf(container), byMember, 'a redraw from a hover');
+
+    container.dispatch('keydown', { key: 'ArrowDown', target: container });
+    assert.deepEqual(recedeStampsOf(container), byMember, 'a redraw from a keyboard move');
+    assert.equal(handle.state.selected, '103');
+  });
+
+  it('an update that removes the selected member recedes by the lead the handle reports', () => {
+    const { container, handle } = mounted({ projection: 'graph' });
+    handle.select('104');
+    handle.update(without104);
+
+    // "The selection is read exactly as given." Once the member is gone, the graph recedes by the lead the handle marks and reports.
+    assert.equal(handle.state.selected, '103', 'the handle no longer reports the lead');
+    assert.deepEqual(
+      recedeStampsOf(container),
+      recedeStampsFor('103', without104),
+      'the graph still recedes by the removed member, not by the lead it marks',
+    );
+  });
+
+  it("select('104') then select('103') recedes by '103'", () => {
+    const { container, handle } = mounted({ projection: 'graph' });
+    handle.select('104');
+    // The handle reports lead '103' both times, so only the selection as given tells the two selects apart.
+    handle.select('103');
+
+    assert.equal(handle.state.selected, '103');
+    assert.deepEqual(recedeStampsOf(container), recedeStampsFor('103'));
+  });
+
+  it("select('104') then a switch to the tree behaves as before, and the graph recedes by '104' again on return", () => {
+    const reported: (string | null)[] = [];
+    const { container, handle } = mounted({
+      projection: 'graph',
+      onSelect: (key: string | null) => reported.push(key),
+    });
+    handle.select('104');
+    handle.setProjection('tree');
+
+    // What a mount with no recede reports and marks: the graph moved the
+    // member to its lead, and the tree keeps the lead.
+    assert.deepEqual(reported, ['103']);
+    assert.equal(handle.state.selected, '103');
+    const current = container
+      .descendants()
+      .filter((element) => element.getAttribute('aria-current') === 'true')
+      .map((element) => element.getAttribute(KEY_ATTRIBUTE));
+    assert.deepEqual(current, ['103']);
+    assert.deepEqual(recedeStampsOf(container), [], 'the tree carries a recede stamp');
+
+    handle.setProjection('graph');
+    assert.deepEqual(reported, ['103'], 'the return to the graph reported a selection change');
+    assert.deepEqual(recedeStampsOf(container), recedeStampsFor('104'));
+  });
+
+  it('a receding graph selection leaves the list and the tree drawn exactly as renderViewer draws them with no recede', () => {
+    // "Graph projection only: the list and the tree are unchanged."
+    // Each selection is made on the graph, where it must recede something, and
+    // then the mount switches away. The list and the tree are compared with a
+    // render given only the handle's own selection and focus and no
+    // selectedEdge, so neither a stamp nor the remembered member can reach them.
+    const selections = [
+      {
+        name: 'a clicked relationship',
+        run: (_handle: ViewerHandle, container: TestElement): void => {
+          container.dispatch('click', { target: lineOf(container, blocked101To102) });
+        },
+      },
+      {
+        name: 'a selected unit member',
+        run: (handle: ViewerHandle): void => handle.select('104'),
+      },
+    ] as const;
+
+    for (const { name, run } of selections) {
+      for (const away of ['linear', 'tree'] as const) {
+        const { container, handle } = mounted({ projection: 'graph' });
+        run(handle, container);
+
+        assert.ok(
+          container.descendants().some((element) => element.getAttribute('data-recede') === 'true'),
+          `${name}: the graph receded nothing, so the ${away} projection is not under test`,
+        );
+
+        handle.setProjection(away);
+        const root = container.children[0];
+        assert.ok(root instanceof TestElement);
+        assert.deepEqual(recedeStampsOf(container), [], `${name}: the ${away} projection carries a recede stamp`);
+        const projection: Projection = away;
+        const expected = renderViewer(fixtureDocument, {
+          projection,
+          selected: handle.state.selected,
+          focused: handle.state.focused,
+        });
+        assert.equal(
+          reserialize(root),
+          renderMarkup(expected.scene.root),
+          `${name}: the ${away} projection differs from its render without a recede`,
+        );
+      }
+    }
+  });
+
+  it('select of the unit member b keeps its neighbour, its line and the unit card, and recedes the neighbour and line of its partner a', () => {
+    // "Selecting one member of a together unit keeps that member's neighbours and lines, not its partners', and the unit's card stays"
+    // a and b are one unit led by a; c is a neighbour of b only, and d is a neighbour of a only.
+    const unit: ViewerDocument = {
+      issues: [
+        { key: 'a', title: 'Lead', open: true, priority: 2 },
+        { key: 'b', title: 'Partner', open: true, priority: 2 },
+        { key: 'c', title: 'Neighbour of b', open: true, priority: 2 },
+        { key: 'd', title: 'Neighbour of a', open: true, priority: 2 },
+      ],
+      edges: [
+        { field: 'together-with', from: 'a', to: 'b' },
+        { field: 'blocked-by', from: 'b', to: 'c' },
+        { field: 'blocked-by', from: 'd', to: 'a' },
+      ],
+      order: {
+        slots: [
+          { rank: 1, lead: 'c', members: ['c'], ready: true, holds: [] },
+          { rank: 2, lead: 'a', members: ['a', 'b'], ready: true, holds: [] },
+          { rank: 3, lead: 'd', members: ['d'], ready: true, holds: [] },
+        ],
+        excluded: [],
+      },
+      cycles: [],
+    };
+    const container = new TestDocument().createContainer();
+    const handle = mountViewer(container, unit, { projection: 'graph' });
+    assert.deepEqual(recedeStampsOf(container), [], 'something receded before anything was selected');
+
+    handle.select('b');
+    const card = (key: string): TestElement | undefined =>
+      container
+        .descendants()
+        .find((element) => element.getAttribute('class') === 'ig-rail-row' && element.getAttribute(KEY_ATTRIBUTE) === key);
+    const line = (identity: string): TestElement | undefined =>
+      container
+        .descendants()
+        .find(
+          (element) =>
+            element.tag === 'path' &&
+            element.getAttribute('class') === 'ig-edge' &&
+            element.getAttribute(GROUP_ATTRIBUTE) === identity,
+        );
+    const recedes = (element: TestElement | undefined, what: string): boolean => {
+      assert.ok(element !== undefined, `${what} was not drawn`);
+      return element.getAttribute('data-recede') === 'true';
+    };
+
+    assert.equal(recedes(card('a'), 'the unit card'), false, 'the card of the unit receded');
+    assert.equal(recedes(card('c'), 'the card of c'), false, 'the neighbour c of the selected member receded');
+    assert.equal(
+      recedes(line(edgeIdentity('blocked-by', 'b', 'c')), 'the line from b to c'),
+      false,
+      'the line of the selected member receded',
+    );
+    assert.equal(recedes(card('d'), 'the card of d'), true, 'the neighbour d of the partner a was kept');
+    assert.equal(
+      recedes(line(edgeIdentity('blocked-by', 'd', 'a')), 'the line from d to a'),
+      true,
+      'the line of the partner a was kept',
+    );
   });
 });

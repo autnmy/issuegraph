@@ -274,6 +274,16 @@ describe('the §16 states', () => {
     }
   });
 
+  it('recedes nothing in any state or projection while nothing is selected', () => {
+    // A recede stamp with no selection would dim part of the panel for no
+    // reason a reader could see.
+    for (const projection of PROJECTIONS) {
+      for (const state of STATES) {
+        assert.ok(!draw(state, projection).includes('data-recede'), `${projection}/${state.name} carries a recede stamp`);
+      }
+    }
+  });
+
   it('carries no rate-limit countdown in any state — the state was deleted, not restyled', () => {
     // PINNED OVER THE RENDERED MARKUP, not over the source. This package retired
     // a regex-over-source scan and wrote down why (`purity.test.ts`); a scan for

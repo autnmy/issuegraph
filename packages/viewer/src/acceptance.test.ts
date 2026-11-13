@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { edgeIdentity } from '@issuegraph/core';
+
+import { normalizeDocument } from './document.ts';
 import * as surface from './index.ts';
 import {
   EDGE_TOKENS,
@@ -192,6 +195,9 @@ describe('the public surface', () => {
       'KEY_ATTRIBUTE',
       'MARK_PLACEMENT_ATTRIBUTE',
       'METRIC_TOKENS',
+      // WHAT A SELECTION RECEDES and the strength it draws at, so a host that
+      // draws over the canvas recedes the same lines the canvas does.
+      'RECEDE_ALPHA',
       'ROW_BADGE_BUDGET',
       'THEME_TOKENS',
       'TYPE_TOKENS',
@@ -249,6 +255,7 @@ describe('the public surface', () => {
       'navigate',
       'normalizeDocument',
       'provenanceClause',
+      'recedingOf',
       'reconcile',
       // WHAT BOTH BUDGETS COUNT, for the editor's scale ladder: it decides the
       // same three tiers against the same two constants, so it has to count the
@@ -268,5 +275,23 @@ describe('the public surface', () => {
       'treatmentFor',
       'viewerStylesheet',
     ]);
+  });
+
+  it('exports RECEDE_ALPHA at 0.5 and a recedingOf that keeps issue 102, its neighbour and both their lines', () => {
+    // "A pure `recedingOf(document, { key, edge })` and `RECEDE_ALPHA = 0.5` in new packages/viewer/src/recede.ts, both exported from `@issuegraph/viewer`."
+    assert.equal(surface.RECEDE_ALPHA, 0.5);
+    const document = normalizeDocument(fixtureDocument).document;
+    const result = surface.recedingOf(document, { key: '102' });
+
+    const keptLines = new Set([edgeIdentity('blocked-by', '101', '102'), edgeIdentity('decomposed-from', '102', '101')]);
+    assert.deepEqual(result.keys, new Set([...document.byKey.keys()].filter((key) => key !== '101' && key !== '102')));
+    assert.deepEqual(
+      result.edges,
+      new Set(
+        document.edges
+          .map((edge) => edgeIdentity(edge.field, edge.from, edge.to))
+          .filter((identity) => !keptLines.has(identity)),
+      ),
+    );
   });
 });

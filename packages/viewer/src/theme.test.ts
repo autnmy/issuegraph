@@ -6,6 +6,7 @@ import {
   GHOSTED_STATE_TOKENS as GHOSTED,
   GHOST_ALPHA,
   STATE_TOKENS as STATES,
+  STATION_TOKENS,
   SURFACE_TOKENS as SURFACES,
   TEXT_TOKENS as TEXT,
   composite,
@@ -28,6 +29,7 @@ import {
 } from './theme.ts';
 import { normalizeDocument } from './document.ts';
 import { layoutGraph, measureLabel } from './layout.ts';
+import { RECEDE_ALPHA } from './recede.ts';
 import { renderViewer } from './render.ts';
 import { viewerStylesheet } from './styles.ts';
 import { fixtureDocument } from './testing/fixtures.ts';
@@ -554,6 +556,56 @@ describe('a host that sets none of the new tokens renders as it did before', () 
       for (const token of STILL_UNREAD) {
         assert.equal(markup.includes(token), false, `${token} reached the ${projection} markup`);
       }
+    }
+  });
+});
+
+describe('a receded line or station measured against the contrast bars', () => {
+  it('pins which edge and station hues fall under the 3:1 line bar once drawn at RECEDE_ALPHA over --ig-bg, in the default and paper themes', () => {
+    // "Measure edge and station hues composited at 0.5 over `--ig-bg` in packages/viewer/src/testing/contrast.ts, in the default and paper themes, against the 3:1 bar for lines."
+    // "Disclose any result under it; the 50% stays."
+    // The expected lists are the measured results, so one hue crossing the bar in either direction
+    // fails here and its new number has to be disclosed.
+    assert.equal(RECEDE_ALPHA, 0.5);
+    const expectedUnder = {
+      default: [
+        '--ig-edge-blocked-by',
+        '--ig-edge-together-with',
+        '--ig-edge-duplicate-of',
+        '--ig-edge-decomposed-from',
+        '--ig-station-ready',
+        '--ig-station-held',
+      ],
+      paper: [...EDGES, ...STATION_TOKENS],
+    };
+    for (const [name, theme] of [['default', defaultTheme], ['paper', paperTheme]] as const) {
+      const bg = theme.colors['--ig-bg'];
+      const measured = [...EDGES, ...STATION_TOKENS].map(
+        (token) => [token, contrastRatio(composite(theme.colors[token], bg, RECEDE_ALPHA), bg)] as const,
+      );
+      const under = measured.filter(([, ratio]) => ratio < 3).map(([token]) => token);
+      assert.deepEqual(
+        new Set<string>(under),
+        new Set<string>(expectedUnder[name]),
+        `${name}: ${measured.map(([token, ratio]) => `${token} ${ratio.toFixed(2)}:1`).join(', ')}`,
+      );
+    }
+  });
+
+  it('keeps the rank numeral of a receded station at 4.5:1 or more, --ig-text on a filled station and --ig-text-muted on a ring, in the default and paper themes', () => {
+    // A receded filled station draws its fill as --ig-station-ready at RECEDE_ALPHA over --ig-bg,
+    // and its numeral in --ig-text, because --ig-text-muted on that fill is under the 4.5:1 text bar.
+    // The measured ratios are pinned so a palette change that moves them fails here and is disclosed.
+    // A ring, dashed or serialize station is hollow, so its --ig-text-muted numeral sits on --ig-bg.
+    const expected = { default: '5.58', paper: '7.09' };
+    for (const [name, theme] of [['default', defaultTheme], ['paper', paperTheme]] as const) {
+      const bg = theme.colors['--ig-bg'];
+      const fill = composite(theme.colors['--ig-station-ready'], bg, RECEDE_ALPHA);
+      const filled = contrastRatio(theme.colors['--ig-text'], fill);
+      assert.ok(filled >= 4.5, `${name}: numeral on a receded filled station measures ${filled.toFixed(2)}:1`);
+      assert.equal(filled.toFixed(2), expected[name], `${name}: numeral on a receded filled station`);
+      const ring = contrastRatio(theme.colors['--ig-text-muted'], bg);
+      assert.ok(ring >= 4.5, `${name}: numeral on a receded ring station measures ${ring.toFixed(2)}:1`);
     }
   });
 });

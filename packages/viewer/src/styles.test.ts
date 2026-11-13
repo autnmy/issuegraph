@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import { type ElementSpec, type SpecChild } from './element.ts';
 import { LAYOUT_PROPERTIES } from './layout.ts';
 import { renderViewer } from './render.ts';
+import { RECEDE_ALPHA } from './recede.ts';
 import { fixtureDocument, hostedFixtureDocument } from './testing/fixtures.ts';
 import { viewerStylesheet } from './styles.ts';
 import { THEME_TOKENS } from './theme.ts';
@@ -16,6 +17,27 @@ function referencedTokens(css: string): string[] {
 /** The stylesheet with its comments removed — a comment is not a declaration. */
 function withoutComments(css: string): string {
   return css.replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
+/**
+ * A selector's specificity, folded to one comparable number.
+ *
+ * ENOUGH FOR THIS SHEET AND NO MORE: ids, then classes plus attribute
+ * selectors, then element names. `:not(…)` takes the specificity of its
+ * argument, which is the one subtlety that matters here — the container scope
+ * is `:not([data-density])` and would read as zero without it.
+ */
+function specificity(selector: string): number {
+  const inner = [...selector.matchAll(/:not\(([^)]*)\)/g)].map((match) => match[1] ?? '').join(' ');
+  const bare = selector.replace(/:not\([^)]*\)/g, ' ');
+  const count = (text: string): [number, number, number] => [
+    (text.match(/#[\w-]+/g) ?? []).length,
+    (text.match(/\.[\w-]+/g) ?? []).length + (text.match(/\[[^\]]*\]/g) ?? []).length,
+    (text.match(/(?:^|[\s>+~])([a-z][\w-]*)/g) ?? []).length,
+  ];
+  const [a1, b1, c1] = count(bare);
+  const [a2, b2, c2] = count(inner);
+  return (a1 + a2) * 10000 + (b1 + b2) * 100 + (c1 + c2);
 }
 
 describe('the structural stylesheet', () => {
@@ -364,27 +386,6 @@ describe('the density escape hatch overrides the crossover it is an escape from'
     return found;
   };
 
-  /**
-   * A selector's specificity, folded to one comparable number.
-   *
-   * ENOUGH FOR THIS SHEET AND NO MORE: ids, then classes plus attribute
-   * selectors, then element names. `:not(…)` takes the specificity of its
-   * argument, which is the one subtlety that matters here — the container scope
-   * is `:not([data-density])` and would read as zero without it.
-   */
-  const specificity = (selector: string): number => {
-    const inner = [...selector.matchAll(/:not\(([^)]*)\)/g)].map((match) => match[1] ?? '').join(' ');
-    const bare = selector.replace(/:not\([^)]*\)/g, ' ');
-    const count = (text: string): [number, number, number] => [
-      (text.match(/#[\w-]+/g) ?? []).length,
-      (text.match(/\.[\w-]+/g) ?? []).length + (text.match(/\[[^\]]*\]/g) ?? []).length,
-      (text.match(/(?:^|[\s>+~])([a-z][\w-]*)/g) ?? []).length,
-    ];
-    const [a1, b1, c1] = count(bare);
-    const [a2, b2, c2] = count(inner);
-    return (a1 + a2) * 10000 + (b1 + b2) * 100 + (c1 + c2);
-  };
-
   it('writes the density block once, and emits it under both keys', () => {
     // ONE SOURCE, TWO KEYS. CSS cannot say "this container condition OR that
     // selector", so the declarations would otherwise be written twice — and two
@@ -516,5 +517,288 @@ describe('the density escape hatch reaches the markup the sheet keys off', () =>
       const markup = renderViewer(fixtureDocument, { projection, density: 'dense' }).markup;
       assert.match(markup, /data-density="dense"/, projection);
     }
+  });
+});
+
+/** The recede stamp in a selector, however its value is quoted. */
+const RECEDE_STAMP = /\[data-recede=(['"]?)true\1\]/;
+
+/** The last compound of a selector: the element the rule styles. */
+function styledCompound(selector: string): string {
+  return selector.split(/[\s>+~]+/).at(-1) ?? '';
+}
+
+interface DeclaredRule {
+  readonly selector: string;
+  readonly declarations: readonly { readonly name: string; readonly value: string }[];
+}
+
+/** Every rule of the sheet, one per selector of a selector list, with its declarations. */
+function declaredRules(css: string): DeclaredRule[] {
+  return [...withoutComments(css).matchAll(/([^{}]+)\{([^{}]*)\}/g)].flatMap((match) =>
+    (match[1] ?? '').split(',').map((one) => ({
+      selector: one.replace(/\s+/g, ' ').trim(),
+      declarations: (match[2] ?? '')
+        .split(';')
+        .filter((line) => line.includes(':'))
+        .map((line) => ({ name: line.slice(0, line.indexOf(':')).trim(), value: line.slice(line.indexOf(':') + 1).trim() })),
+    })),
+  );
+}
+
+describe('a receded element draws by colour roles and stroke opacity', () => {
+  const sheet = declaredRules(viewerStylesheet);
+  const recede = sheet.filter((rule) => RECEDE_STAMP.test(rule.selector));
+  /** The values the recede rules styling `target` give to any of `names`. */
+  const recededValues = (target: RegExp, ...names: string[]): string[] =>
+    recede
+      .filter((rule) => target.test(styledCompound(rule.selector)))
+      .flatMap((rule) => rule.declarations.filter((one) => names.includes(one.name)).map((one) => one.value));
+
+  it('draws a receded line and its terminal at RECEDE_ALPHA through stroke-opacity and fill-opacity', () => {
+    // "With a selection, lines and stations that do not touch it draw at 50%, and with none selected nothing recedes"
+    const atAlpha = (value: string): boolean => value === String(RECEDE_ALPHA) || value === `${RECEDE_ALPHA * 100}%`;
+    for (const element of ['path', 'circle']) {
+      for (const property of ['stroke-opacity', 'fill-opacity']) {
+        assert.ok(
+          recededValues(new RegExp(`^${element}`), property).some(atAlpha),
+          `no rule draws a receded ${element} at RECEDE_ALPHA by ${property}`,
+        );
+      }
+    }
+  });
+
+  it('draws a receded card on --ig-surface-2 with --ig-text-muted title and id labels', () => {
+    // "Receded nodes draw on `--ig-surface-2` with `--ig-text-muted` labels, with no opacity or filter on them or above them"
+    assert.ok(
+      recededValues(/^\.ig-card(?![\w-])/, 'background', 'background-color').includes('var(--ig-surface-2)'),
+      'no rule draws a receded card on --ig-surface-2',
+    );
+    assert.ok(
+      recededValues(/^\.ig-title(?![\w-])/, 'color').includes('var(--ig-text-muted)'),
+      'no rule colours the title of a receded card --ig-text-muted',
+    );
+    assert.ok(
+      recededValues(/^\.ig-id(?![\w-])/, 'color').includes('var(--ig-text-muted)'),
+      'no rule colours the id of a receded card --ig-text-muted',
+    );
+    // The surface role is named by its token here; the host's own role name never enters the sheet.
+    assert.equal(viewerStylesheet.includes('fill-secondary'), false);
+  });
+
+  it('sets no opacity and no filter on a receded node or station, or on any element that holds one', () => {
+    // "Receded nodes draw on `--ig-surface-2` with `--ig-text-muted` labels, with no opacity or filter on them or above them"
+    // and "its rank numeral is `--ig-text-muted` with no opacity on it or above it".
+    // The receded card, its labels, the station, and the rail row, canvas and viewer root that contain them.
+    const nodeOrHolder = /^\.ig-(?:viewer|canvas|rail-row|card|title|id|footer-row|spine-station)(?![\w-])/;
+
+    assert.ok(recede.length > 0, 'the stylesheet has no rule for a receded element');
+    const offenders = sheet
+      .filter((rule) => RECEDE_STAMP.test(rule.selector) || nodeOrHolder.test(styledCompound(rule.selector)))
+      .filter((rule) => rule.declarations.some(({ name }) => name === 'opacity' || name === 'filter'))
+      .map((rule) => rule.selector);
+    assert.deepEqual(offenders, [], 'these rules fade a receded node, or something above it, by opacity or filter');
+  });
+
+  it('dims no viewer text by opacity, and colours the held row, the held card and the right-column card with --ig-text-muted instead', () => {
+    // "No text in either package is dimmed by opacity"
+    // The property name is compared exactly, so stroke-opacity and fill-opacity neither fail this nor hide a bare opacity.
+    assert.deepEqual(
+      sheet.filter((rule) => rule.declarations.some(({ name }) => name === 'opacity')).map((rule) => rule.selector),
+      [],
+      'these rules still fade by opacity',
+    );
+    assert.ok(
+      sheet.some((rule) => rule.declarations.some(({ name }) => name === 'stroke-opacity')),
+      'the sheet declares no stroke-opacity, so a receded line cannot draw at half strength',
+    );
+
+    // "Replace the opacity on text at packages/viewer/src/styles.ts:1030, :1445 and :1456 with `--ig-text-muted` colour, keeping the dashed borders."
+    for (const target of [`.ig-slot[data-held='true'] .ig-row-body`, `.ig-card[data-column='right']`, `.ig-card[data-held='true']`]) {
+      assert.ok(
+        sheet.some(
+          (rule) =>
+            rule.selector.includes(target) &&
+            rule.declarations.some(({ name, value }) => name === 'color' && value === 'var(--ig-text-muted)'),
+        ),
+        `${target} does not colour its text --ig-text-muted`,
+      );
+    }
+    assert.ok(
+      sheet.some(
+        (rule) =>
+          rule.selector.includes(`.ig-card[data-held='true']`) &&
+          rule.declarations.some(({ name, value }) => name.startsWith('border') && value.includes('dashed')),
+      ),
+      'the held card lost its dashed border',
+    );
+  });
+
+  it('drops the pill of the priority tag on a receded card, and moves its text from --ig-text-muted to --ig-text', () => {
+    // "a receded graph node's tag drops its pill, and where the priority tag's text reads `--ig-text-muted` it moves to `--ig-text`."
+    const priorityTag = /^\.ig-badge\[data-priority[^\]]*\]$/;
+    const values = (...names: string[]): string[] => recededValues(priorityTag, ...names);
+
+    assert.ok(recede.some((rule) => priorityTag.test(styledCompound(rule.selector))), 'no rule styles the priority tag of a receded card');
+    assert.ok(values('background', 'background-color').includes('transparent'), 'the receded priority tag keeps its pill fill');
+    assert.ok(values('border-color').includes('transparent'), 'the receded priority tag keeps its pill border');
+    assert.deepEqual(
+      values('display', 'visibility').filter((value) => value === 'none' || value === 'hidden'),
+      [],
+      'the receded priority tag lost its text along with its pill',
+    );
+    assert.equal(values('color').includes('var(--ig-text-muted)'), false, 'the receded priority tag still reads --ig-text-muted');
+
+    const readsMuted = sheet.some(
+      (rule) =>
+        !RECEDE_STAMP.test(rule.selector) &&
+        /^\.ig-badge(?:\[data-priority[^\]]*\])?$/.test(styledCompound(rule.selector)) &&
+        rule.declarations.some((one) => one.name === 'color' && one.value === 'var(--ig-text-muted)'),
+    );
+    if (readsMuted) {
+      assert.ok(values('color').includes('var(--ig-text)'), 'the muted priority tag text did not move to --ig-text on a receded card');
+    }
+  });
+
+  it('draws a receded station ring at RECEDE_ALPHA by mixing its own station colours, with a --ig-text numeral on a filled station and --ig-text-muted on the others', () => {
+    // "A receded station's ring draws at 50% through its own colours, and its rank numeral is `--ig-text-muted` with no opacity on it or above it"
+    // A filled station's numeral sits on its mixed fill, where --ig-text-muted is under 4.5:1, so it reads --ig-text;
+    // theme.test.ts measures both.
+    const station = /^\.ig-spine-station(?![\w-])/;
+    const values = (...names: string[]): string[] => recededValues(station, ...names);
+    const ownColourAtAlpha = (value: string): boolean => {
+      const mixed = /color-mix\([^;]*var\(--ig-station-[a-z-]+\)\s+(\d+(?:\.\d+)?)%/.exec(value);
+      return mixed !== null && Number(mixed[1]) === RECEDE_ALPHA * 100;
+    };
+
+    assert.ok(recede.some((rule) => station.test(styledCompound(rule.selector))), 'no rule styles a receded station');
+    assert.ok(values('border-color').some(ownColourAtAlpha), 'the receded ring is not its own station colour mixed at RECEDE_ALPHA');
+    assert.ok(values('background', 'background-color').some(ownColourAtAlpha), 'the receded fill is not its own station colour mixed at RECEDE_ALPHA');
+    const filled = /\[data-fill=(['"]?)filled\1\]/;
+    const colours = (rules: readonly DeclaredRule[]): string[] =>
+      rules.flatMap((rule) => rule.declarations.filter((one) => one.name === 'color').map((one) => one.value));
+    const stationRules = recede.filter((rule) => station.test(styledCompound(rule.selector)));
+    const filledColours = colours(stationRules.filter((rule) => filled.test(rule.selector)));
+    const otherColours = colours(stationRules.filter((rule) => !filled.test(rule.selector)));
+    assert.deepEqual(filledColours, ['var(--ig-text)'], 'the rank numeral of a receded filled station is not --ig-text');
+    assert.deepEqual(otherColours, ['var(--ig-text-muted)'], 'the rank numeral of a receded ring, dashed or serialize station is not --ig-text-muted');
+  });
+
+  it('lets no recede rule select a kind or change a dash, a border style or a stroke width, so every kind keeps its dash', () => {
+    // "A receded line keeps its kind's dash, for all five kinds"
+    // A rule on a kind would also dim the legend sample of that kind, which is never stamped.
+    // together-with draws its dash as the border of the unit enclosure inside a card, not as a line,
+    // so a recede rule that reset a border would take its dash away.
+    const dashChannels = ['stroke-dasharray', 'stroke-dashoffset', 'stroke-width', 'border', 'border-style'];
+
+    assert.ok(recede.length > 0, 'the stylesheet has no rule for a receded element');
+    for (const rule of recede) {
+      assert.equal(rule.selector.includes('data-edge'), false, `${rule.selector} selects a kind`);
+      assert.deepEqual(
+        rule.declarations.map(({ name }) => name).filter((name) => dashChannels.includes(name)),
+        [],
+        `${rule.selector} changes a dash, a border style or a stroke width`,
+      );
+    }
+  });
+});
+
+/**
+ * The recede rules win by their place in the sheet, not by luck.
+ *
+ * A receded card or station has to look the same whichever variant it is —
+ * held, unit, gutter, now, filled, dashed — so every recede rule must come
+ * after, and be at least as specific as, every other rule that sets the same
+ * property on the same element. The competitors are found by reading the
+ * sheet, so a variant added later is checked without anyone listing it here.
+ */
+describe('the recede rules win over every card and station variant', () => {
+  /** The elements whose recede rules must win: the card, its labels, the footer title and the station. */
+  const RECEDE_ORDER_TARGETS = ['.ig-card', '.ig-title', '.ig-id', '.ig-hold', '.ig-unit-note', '.ig-spine-station'];
+
+  interface RecedeOrderMember {
+    readonly selector: string;
+    readonly target: string;
+    readonly properties: ReadonlySet<string>;
+    readonly at: number;
+  }
+
+  /** `background-color` and `background`, or `border` and `border-color`, set one channel. */
+  const RECEDE_ORDER_CHANNELS: Readonly<Record<string, string>> = { 'background-color': 'background', border: 'border-color' };
+  const recedeOrderChannel = (name: string): string => RECEDE_ORDER_CHANNELS[name] ?? name;
+
+  const recedeOrderMembers = (css: string): RecedeOrderMember[] =>
+    [...withoutComments(css).matchAll(/([^{}]+)\{([^{}]*)\}/g)].flatMap((match) => {
+      const head = (match[1] ?? '').trim();
+      if (head === '' || head.startsWith('@')) return [];
+      const properties = new Set(
+        (match[2] ?? '')
+          .split(';')
+          .filter((line) => line.includes(':'))
+          .map((line) => recedeOrderChannel(line.slice(0, line.indexOf(':')).trim())),
+      );
+      return head.split(',').map((one) => {
+        const selector = one.replace(/\s+/g, ' ').trim();
+        return { selector, target: /^\.[\w-]+/.exec(styledCompound(selector))?.[0] ?? '', properties, at: match.index };
+      });
+    });
+
+  /** Every recede rule that loses to a variant, as one line per loss. */
+  const recedeOrderLosses = (css: string): string[] => {
+    const members = recedeOrderMembers(css);
+    const recede = members.filter((one) => RECEDE_STAMP.test(one.selector) && RECEDE_ORDER_TARGETS.includes(one.target));
+    return recede.flatMap((rule) =>
+      members
+        .filter(
+          (other) =>
+            !RECEDE_STAMP.test(other.selector) &&
+            other.target === rule.target &&
+            [...other.properties].some((name) => rule.properties.has(name)),
+        )
+        .filter((other) => other.at > rule.at || specificity(other.selector) > specificity(rule.selector))
+        .map((other) => `${rule.selector} loses to ${other.selector}`),
+    );
+  };
+
+  it('puts every recede rule after, and at least as specific as, every rule it overrides', () => {
+    const recede = recedeOrderMembers(viewerStylesheet).filter(
+      (one) => RECEDE_STAMP.test(one.selector) && RECEDE_ORDER_TARGETS.includes(one.target),
+    );
+    assert.deepEqual(
+      [...new Set(recede.map((one) => one.target))].sort(),
+      [...RECEDE_ORDER_TARGETS].sort(),
+      'an element the graph stamps has no recede rule',
+    );
+    assert.deepEqual(recedeOrderLosses(viewerStylesheet), []);
+  });
+
+  it('notices a recede rule moved above a variant it must override', () => {
+    const css = withoutComments(viewerStylesheet);
+    const moved = /\.ig-spine-station\[data-recede='true'\] \{[^}]*\}\n/.exec(css)?.[0];
+    const variant = ".ig-spine-station[data-fill='filled'] {";
+    assert.ok(moved !== undefined && css.includes(variant), 'the station rules this test moves are gone');
+    const reordered = css.replace(moved, '').replace(variant, `${moved}${variant}`);
+
+    assert.ok(
+      recedeOrderLosses(reordered).includes(
+        ".ig-spine-station[data-recede='true'] loses to .ig-spine-station[data-fill='filled']",
+      ),
+      'the order check passed a recede rule written above the variant it overrides',
+    );
+  });
+
+  it('draws every recede share and opacity at RECEDE_ALPHA', () => {
+    const bodies = [...withoutComments(viewerStylesheet).matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .filter((match) => RECEDE_STAMP.test(match[1] ?? ''))
+      .map((match) => match[2] ?? '');
+    const shares = bodies.flatMap((body) =>
+      [...body.matchAll(/color-mix\(in srgb, var\(--ig-[a-z-]+\) (\d+(?:\.\d+)?)%/g)].map((match) => Number(match[1]) / 100),
+    );
+    const opacities = bodies.flatMap((body) =>
+      [...body.matchAll(/(?:stroke|fill)-opacity:\s*([^;]+);/g)].map((match) => Number(match[1])),
+    );
+
+    assert.ok(shares.length > 0 && opacities.length > 0, 'the recede rules carry no alpha to check');
+    assert.deepEqual([...new Set([...shares, ...opacities])], [RECEDE_ALPHA]);
   });
 });

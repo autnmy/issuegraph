@@ -190,6 +190,23 @@ function isEdgeBadge(spec: ElementSpec): boolean {
   return classesOf(spec.attrs).includes(BADGE_CLASS);
 }
 
+/** Whether the viewer stamped this element as receding around a selection. */
+function recedes(spec: ElementSpec): boolean {
+  return spec.attrs?.['data-recede'] === 'true';
+}
+
+/**
+ * The overlay as drawn on a receded line: the same dash, hue and marks, with no
+ * write-state opacity.
+ *
+ * The viewer's stylesheet already draws a receded line at half strength. A
+ * write-state opacity on the line or on its clones would multiply with that and
+ * draw them fainter than half, while the dash and hue alone still show the state.
+ */
+function withoutFade(overlay: EdgeOverlay): EdgeOverlay {
+  return overlay.line === null ? overlay : { ...overlay, line: { ...overlay.line, opacity: null } };
+}
+
 /**
  * Which overlay this element carries, if any.
  *
@@ -442,15 +459,16 @@ function overlayTree(
     // so they travel as declared marks and are placed once by the composer.
     // A BADGE TAKES THE WORDS AND NOT THE MARKS — see `isEdgeBadge`.
     const stroke = isEdgePath(child);
+    const overlay = recedes(child) ? withoutFade(match.overlay) : match.overlay;
     const { behind, front } = stroke
-      ? overlayMarks(child, match.overlay, edge, context.theme)
+      ? overlayMarks(child, overlay, edge, context.theme)
       : { behind: [], front: [] };
 
     next.push(
       ...behind,
       {
         ...child,
-        attrs: { ...child.attrs, ...edgeAttributes(edgeName(edge), match.overlay, stroke) },
+        attrs: { ...child.attrs, ...edgeAttributes(edgeName(edge), overlay, stroke) },
       },
       ...front,
     );

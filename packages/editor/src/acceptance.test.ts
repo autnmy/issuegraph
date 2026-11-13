@@ -401,12 +401,13 @@ describe('done when: the computing state shows the previous order, greyed and la
   it('labels the surface and greys the rail through the stylesheet', () => {
     assert.match(held.markup, /data-order="held"/);
     assert.match(held.markup, /write landed, order computing/);
-    // A subtree-wide `filter`, not a colour: the viewer sets colours directly on
-    // its own descendants, and a specified value beats an inherited one — so a
-    // `color` here would leave the stale order in its normal palette.
+    // Hue tokens redefined to the muted grey, not a colour: the viewer sets
+    // colours directly on its own descendants, and a specified value beats an
+    // inherited one — so a `color` here would leave the stale order in its
+    // normal palette. A redefined token is inherited by every descendant.
     assert.match(
       reevaluateStylesheet,
-      /\[data-order='held'\][^{]*\.ig-viewer\s*\{[^}]*filter:\s*grayscale/,
+      /\[data-order='held'\][^{]*\.ig-viewer\s*\{[^}]*--ig-station-ready:\s*var\(--ig-text-muted\)/,
     );
   });
 

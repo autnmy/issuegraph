@@ -24,7 +24,7 @@ import {
   navigate,
   reconcile,
 } from './navigation.ts';
-import { COMMAND_ATTRIBUTE } from './parts.ts';
+import { COMMAND_ATTRIBUTE, stationsOf } from './parts.ts';
 import { type RenderOptions, sceneFor } from './render.ts';
 import { GROUP_ATTRIBUTE, KEY_ATTRIBUTE, type Projection, type Scene } from './scene.ts';
 import { type Theme, resolveTheme } from './theme.ts';
@@ -188,6 +188,18 @@ export function mountViewer(
     focused: options.focused ?? initialNavigationState.focused,
     selected: options.selected ?? initialNavigationState.selected,
   };
+  /**
+   * The selection exactly as the reader or host made it, which the graph
+   * recedes by.
+   *
+   * `state.selected` cannot serve, because each draw moves a selected unit
+   * member to its unit's lead, and a member keeps only its own neighbours and
+   * lines, not its partners'. Every other reader — the list, the tree, the
+   * handle and `onSelect` — still sees `state.selected`. Written wherever
+   * `state.selected` is chosen or dropped, and re-checked on every draw by
+   * `asGivenSelection`.
+   */
+  let selectedAsGiven: string | null = state.selected;
   let root: SpecElement | null = null;
   let keyed = new Map<string, SpecElement>();
   // EVERY IDENTITY THE LAST DRAW PUT UNDER THE POINTER — issues AND decoration.
@@ -258,6 +270,24 @@ export function mountViewer(
    */
   const stillDrawn = (key: string): boolean =>
     normalized.byKey.has(key) || isDocumentEdge(key) || pointable.has(key);
+  /**
+   * The remembered selection, while it still names what `state.selected`
+   * names; otherwise `state.selected` itself.
+   *
+   * It must name something this document carries and stand on the same
+   * station as `state.selected`. An update that removes a selected member, or
+   * a later selection of another subject, therefore falls back to the issue
+   * the graph marks and the handle reports, so the two never disagree.
+   */
+  const asGivenSelection = (): string | null => {
+    const selected = state.selected;
+    const given = selectedAsGiven;
+    if (selected === null || given === null) return selected;
+    const stations = stationsOf(normalized);
+    const stationOf = (key: string): string => stations.get(key) ?? key;
+    const stillNamed = normalized.byKey.has(given) || isDocumentEdge(given);
+    return stillNamed && stationOf(given) === stationOf(selected) ? given : selected;
+  };
   let hovered: string | null = null;
   let destroyed = false;
   // Set by the first `draw()` below, which runs before any listener can fire.
@@ -322,9 +352,19 @@ export function mountViewer(
     if (currentScene !== null && state.selected !== null && !stillDrawn(state.selected)) {
       state = { ...state, selected: null };
     }
+    selectedAsGiven = asGivenSelection();
     if (root !== null) container.removeChild(root);
     const scene = sceneFor(normalized, projection, {
       ...currentOptions,
+      // THE GRAPH ALONE IS HANDED THE SELECTION AS GIVEN, because it is the
+      // only projection that recedes. It still marks the unit's lead, since
+      // the graph moves a member to its lead before it marks anything.
+      selected: projection === 'graph' ? selectedAsGiven : state.selected,
+      // DERIVED FROM THE SELECTION, never taken from the host's options, so a
+      // relationship recedes the graph only while it is the selection and a
+      // clear always restores everything.
+      selectedEdge:
+        state.selected !== null && isDocumentEdge(state.selected) ? state.selected : null,
       // NEVER DETACHED HERE. The mount draws every row it is handed, so it is
       // its own extent and the inline footer is already after the last of
       // them. It also materializes `scene.root` and nothing else — a detached
@@ -332,7 +372,6 @@ export function mountViewer(
       // walking into keys the page does not have. See `SceneOptions.detachFooter`.
       detachFooter: false,
       theme: currentOptions.theme ?? theme,
-      selected: state.selected,
       focused: state.focused,
     });
     state = reconcile(scene, state);
@@ -419,6 +458,7 @@ export function mountViewer(
     // is reported exactly once, through the same channel as every other change.
     if (state.selected !== null && !stillDrawn(state.selected)) {
       state = { ...state, selected: null };
+      selectedAsGiven = null;
     }
     // TOLD, NOT JUST DROPPED. The host was told a selection began, so leaving it
     // to infer the ending from a document it happens to have replaced is the
@@ -475,6 +515,7 @@ export function mountViewer(
         ? resolved
         : null;
     state = { ...state, selected: resolved, focused: focusable ?? state.focused };
+    selectedAsGiven = resolved;
     // SILENCED, because this function reports the result itself once the draw
     // has settled it. Letting the draw announce too would fire `onSelect` twice
     // for one selection whenever reconciliation renamed it — and a caller
@@ -534,8 +575,14 @@ export function mountViewer(
       return;
     }
     if (ownsItsOwnActivation(event.target, container)) return;
+    // A CLICK ON NOTHING KEYED CLEARS A SELECTION ON THE GRAPH ONLY, exactly as
+    // `select(null)` does, so a reader can restore a receded graph by clicking
+    // blank space. The graph is the one projection that recedes, so the list and
+    // the tree ignore such a click as they always did. With nothing selected
+    // there is nothing to clear, so it neither redraws nor tells the host.
     const key = keyAt(event.target, container);
-    if (key === null) return;
+    const clearsSelection = projection === 'graph' && state.selected !== null;
+    if (key === null && !clearsSelection) return;
     emitSelect(key);
   };
 
