@@ -1709,137 +1709,137 @@ describe('the workspace styles fade no text', () => {
   });
 });
 
-describe("more tests", function () {
-it('R3, R11: a receded rail row draws --ig-surface-2 over a delta tint, with --ig-text-muted text and no opacity', () => {
-  type Rule = { readonly selectors: readonly string[]; readonly body: string };
-  const GROUND = /(?:^|[;{\s])background(?:-color)?\s*:\s*([^;]+)/g;
-  const COLOUR = /(?:^|[;{\s])color\s*:\s*([^;]+)/g;
-  const OPACITY = /(?:^|[;{\s])opacity\s*:\s*([^;]+)/g;
-  const FILTER = /(?:^|[;{\s])filter\s*:\s*([^;]+)/g;
-  const splitSelectors = (list: string): string[] => {
-    const out: string[] = [];
-    let depth = 0;
-    let start = 0;
-    [...list].forEach((char, index) => {
-      if (char === '(') depth += 1;
-      if (char === ')') depth -= 1;
-      if (char === ',' && depth === 0) {
-        out.push(list.slice(start, index).trim());
-        start = index + 1;
-      }
-    });
-    return [...out, list.slice(start).trim()];
-  };
-  // Top-level rules only: a rule inside an at-rule applies only under its condition, and the recede rules have none.
-  const rulesOf = (css: string): Rule[] => {
-    const text = css.replace(/\/\*[\s\S]*?\*\//g, '');
-    const rules: Rule[] = [];
-    let start = 0;
-    let open = 0;
-    let depth = 0;
-    for (let at = 0; at < text.length; at += 1) {
-      if (text[at] === '{') {
-        if (depth === 0) open = at;
-        depth += 1;
-      } else if (text[at] === '}') {
-        depth -= 1;
-        if (depth === 0) {
-          const prelude = text.slice(start, open).trim();
-          if (!prelude.startsWith('@')) rules.push({ selectors: splitSelectors(prelude), body: text.slice(open + 1, at) });
-          start = at + 1;
+describe('the workspace styles draw a receded rail row like a receded card', () => {
+  it('draws a receded rail row on --ig-surface-2 over a delta tint, with --ig-text-muted text and no opacity', () => {
+    type Rule = { readonly selectors: readonly string[]; readonly body: string };
+    const GROUND = /(?:^|[;{\s])background(?:-color)?\s*:\s*([^;]+)/g;
+    const COLOUR = /(?:^|[;{\s])color\s*:\s*([^;]+)/g;
+    const OPACITY = /(?:^|[;{\s])opacity\s*:\s*([^;]+)/g;
+    const FILTER = /(?:^|[;{\s])filter\s*:\s*([^;]+)/g;
+    const splitSelectors = (list: string): string[] => {
+      const out: string[] = [];
+      let depth = 0;
+      let start = 0;
+      [...list].forEach((char, index) => {
+        if (char === '(') depth += 1;
+        if (char === ')') depth -= 1;
+        if (char === ',' && depth === 0) {
+          out.push(list.slice(start, index).trim());
+          start = index + 1;
+        }
+      });
+      return [...out, list.slice(start).trim()];
+    };
+    // Top-level rules only: a rule inside an at-rule applies only under its condition, and the recede rules have none.
+    const rulesOf = (css: string): Rule[] => {
+      const text = css.replace(/\/\*[\s\S]*?\*\//g, '');
+      const rules: Rule[] = [];
+      let start = 0;
+      let open = 0;
+      let depth = 0;
+      for (let at = 0; at < text.length; at += 1) {
+        if (text[at] === '{') {
+          if (depth === 0) open = at;
+          depth += 1;
+        } else if (text[at] === '}') {
+          depth -= 1;
+          if (depth === 0) {
+            const prelude = text.slice(start, open).trim();
+            if (!prelude.startsWith('@')) rules.push({ selectors: splitSelectors(prelude), body: text.slice(open + 1, at) });
+            start = at + 1;
+          }
         }
       }
-    }
-    return rules;
-  };
-  // The cascade order: the more specific selector wins, then the later rule.
-  const specificity = (selector: string): number =>
-    (selector.match(/#[\w-]+/g)?.length ?? 0) * 10000 +
-    (selector.match(/\.[\w-]+|\[[^\]]*\]|:(?!not\(|is\(|where\()[\w-]+/g)?.length ?? 0) * 100 +
-    (selector.match(/(?:^|[\s>+~(])[a-z][\w-]*/g)?.length ?? 0);
-  const declared = (rules: readonly Rule[], element: Element, property: RegExp): string | undefined => {
-    let winner: { rank: number; value: string } | undefined;
-    for (const rule of rules) {
-      const value = [...rule.body.matchAll(property)].pop()?.[1]?.trim();
-      if (value === undefined) continue;
-      for (const selector of rule.selectors) {
-        if (selector.includes('::')) continue;
-        let matches = false;
-        try {
-          matches = element.matches(selector);
-        } catch {
-          matches = false;
+      return rules;
+    };
+    // The cascade order: the more specific selector wins, then the later rule.
+    const specificity = (selector: string): number =>
+      (selector.match(/#[\w-]+/g)?.length ?? 0) * 10000 +
+      (selector.match(/\.[\w-]+|\[[^\]]*\]|:(?!not\(|is\(|where\()[\w-]+/g)?.length ?? 0) * 100 +
+      (selector.match(/(?:^|[\s>+~(])[a-z][\w-]*/g)?.length ?? 0);
+    const declared = (rules: readonly Rule[], element: Element, property: RegExp): string | undefined => {
+      let winner: { rank: number; value: string } | undefined;
+      for (const rule of rules) {
+        const value = [...rule.body.matchAll(property)].pop()?.[1]?.trim();
+        if (value === undefined) continue;
+        for (const selector of rule.selectors) {
+          if (selector.includes('::')) continue;
+          let matches = false;
+          try {
+            matches = element.matches(selector);
+          } catch {
+            matches = false;
+          }
+          const rank = specificity(selector) + (value.includes('!important') ? 1_000_000 : 0);
+          if (matches && (winner === undefined || rank >= winner.rank)) winner = { rank, value };
         }
-        const rank = specificity(selector) + (value.includes('!important') ? 1_000_000 : 0);
-        if (matches && (winner === undefined || rank >= winner.rank)) winner = { rank, value };
+      }
+      return winner?.value;
+    };
+    // Text colour inherits, so the nearest element that declares one decides.
+    const colourOf = (rules: readonly Rule[], element: Element): string | undefined => {
+      for (let node: Element | null = element; node !== null; node = node.parentElement) {
+        const value = declared(rules, node, COLOUR);
+        if (value !== undefined) return value;
+      }
+      return undefined;
+    };
+    const pageOf = (markup: string): Document =>
+      new JSDOM(`<!doctype html><html><body><div class="ig-mount">${markup}</div></body></html>`).window.document;
+
+    // i0006 is excluded, so it draws as a footer row. The change tints the two ranked rows that swap and the footer row that left the order.
+    const backlog = backlogOf(6, { edges: [['blocked-by', 'i0001', 'i0002'], ['duplicate-of', 'i0003', 'i0006']] });
+    const input = {
+      ...backlog,
+      order: {
+        slots: backlog.order.slots.filter((slot) => slot.lead !== 'i0006'),
+        excluded: [{ key: 'i0006', reason: 'duplicate-of' as const, canonical: 'i0003' }],
+      },
+    };
+    const options = {
+      words: { ...WORKSPACE_WORDS, change: CHANGE_WORDS },
+      change: diffOrder(
+        orderOf(['i0001', 'i0002', 'i0003', 'i0004', 'i0005', 'i0006']),
+        orderOf(['i0002', 'i0001', 'i0003', 'i0004', 'i0005']),
+        editOf(),
+      ),
+    };
+
+    // With i0001 selected, the tinted rows i0001 and i0002 stay unreceded, so this reading of the cascade must find a tint on one of them.
+    const control = renderWorkspace(input, { ...options, selection: { kind: 'issue', key: 'i0001' } });
+    const controlRules = rulesOf(control.styles);
+    const unreceded = [...pageOf(control.markup).querySelectorAll('.ig-slot[data-ig-delta]')].filter(
+      (row) => row.getAttribute('data-recede') === null,
+    );
+    assert.ok(
+      unreceded.some((row) => /color-mix/.test(declared(controlRules, row, GROUND) ?? '')),
+      'no unreceded tinted row reads its tint, so this reading of the cascade proves nothing',
+    );
+
+    // i0005 has no relationships, so every other drawn row recedes, tinted ones included.
+    const result = renderWorkspace(input, { ...options, selection: { kind: 'issue', key: 'i0005' } });
+    const rules = rulesOf(result.styles);
+    const receded = [
+      ...pageOf(result.markup).querySelectorAll('.ig-slot[data-recede="true"], .ig-footer-row[data-recede="true"]'),
+    ].filter((row) => row.closest('.ig-graph') === null);
+    assert.ok(receded.some((row) => row.matches('.ig-slot[data-ig-delta]')), 'no receded ranked row carries a delta tint');
+    assert.ok(receded.some((row) => row.matches('.ig-footer-row[data-ig-delta]')), 'no receded footer row carries a delta tint');
+
+    // The issue: "Receded rows draw like receded cards (`--ig-surface-2`, `--ig-text-muted` text, no opacity)"
+    for (const row of receded) {
+      const name = `${row.className} ${row.getAttribute('data-ig-key') ?? ''}`;
+      assert.match(declared(rules, row, GROUND) ?? '', /var\(--ig-surface-2\)/, `${name}: the ground`);
+      const texts = [...row.querySelectorAll('.ig-title, .ig-id')];
+      assert.ok(texts.length > 0, `${name}: draws no title and no id`);
+      for (const text of texts) {
+        assert.match(colourOf(rules, text) ?? '', /var\(--ig-text-muted\)/, `${name}: the ${text.className} colour`);
+      }
+      for (const element of [row, ...row.querySelectorAll('*')]) {
+        const opacity = declared(rules, element, OPACITY);
+        const filter = declared(rules, element, FILTER);
+        assert.ok(opacity === undefined || opacity === '1', `${name}: ${element.tagName} sets opacity ${String(opacity)}`);
+        assert.ok(filter === undefined || filter === 'none', `${name}: ${element.tagName} sets filter ${String(filter)}`);
       }
     }
-    return winner?.value;
-  };
-  // Text colour inherits, so the nearest element that declares one decides.
-  const colourOf = (rules: readonly Rule[], element: Element): string | undefined => {
-    for (let node: Element | null = element; node !== null; node = node.parentElement) {
-      const value = declared(rules, node, COLOUR);
-      if (value !== undefined) return value;
-    }
-    return undefined;
-  };
-  const pageOf = (markup: string): Document =>
-    new JSDOM(`<!doctype html><html><body><div class="ig-mount">${markup}</div></body></html>`).window.document;
-
-  // i0006 is excluded, so it draws as a footer row. The change tints the two ranked rows that swap and the footer row that left the order.
-  const backlog = backlogOf(6, { edges: [['blocked-by', 'i0001', 'i0002'], ['duplicate-of', 'i0003', 'i0006']] });
-  const input = {
-    ...backlog,
-    order: {
-      slots: backlog.order.slots.filter((slot) => slot.lead !== 'i0006'),
-      excluded: [{ key: 'i0006', reason: 'duplicate-of' as const, canonical: 'i0003' }],
-    },
-  };
-  const options = {
-    words: { ...WORKSPACE_WORDS, change: CHANGE_WORDS },
-    change: diffOrder(
-      orderOf(['i0001', 'i0002', 'i0003', 'i0004', 'i0005', 'i0006']),
-      orderOf(['i0002', 'i0001', 'i0003', 'i0004', 'i0005']),
-      editOf(),
-    ),
-  };
-
-  // With i0001 selected, the tinted rows i0001 and i0002 stay unreceded, so this reading of the cascade must find a tint on one of them.
-  const control = renderWorkspace(input, { ...options, selection: { kind: 'issue', key: 'i0001' } });
-  const controlRules = rulesOf(control.styles);
-  const unreceded = [...pageOf(control.markup).querySelectorAll('.ig-slot[data-ig-delta]')].filter(
-    (row) => row.getAttribute('data-recede') === null,
-  );
-  assert.ok(
-    unreceded.some((row) => /color-mix/.test(declared(controlRules, row, GROUND) ?? '')),
-    'no unreceded tinted row reads its tint, so this reading of the cascade proves nothing',
-  );
-
-  // i0005 has no relationships, so every other drawn row recedes, tinted ones included.
-  const result = renderWorkspace(input, { ...options, selection: { kind: 'issue', key: 'i0005' } });
-  const rules = rulesOf(result.styles);
-  const receded = [
-    ...pageOf(result.markup).querySelectorAll('.ig-slot[data-recede="true"], .ig-footer-row[data-recede="true"]'),
-  ].filter((row) => row.closest('.ig-graph') === null);
-  assert.ok(receded.some((row) => row.matches('.ig-slot[data-ig-delta]')), 'no receded ranked row carries a delta tint');
-  assert.ok(receded.some((row) => row.matches('.ig-footer-row[data-ig-delta]')), 'no receded footer row carries a delta tint');
-
-  // The issue: "Receded rows draw like receded cards (`--ig-surface-2`, `--ig-text-muted` text, no opacity)"
-  for (const row of receded) {
-    const name = `${row.className} ${row.getAttribute('data-ig-key') ?? ''}`;
-    assert.match(declared(rules, row, GROUND) ?? '', /var\(--ig-surface-2\)/, `${name}: the ground`);
-    const texts = [...row.querySelectorAll('.ig-title, .ig-id')];
-    assert.ok(texts.length > 0, `${name}: draws no title and no id`);
-    for (const text of texts) {
-      assert.match(colourOf(rules, text) ?? '', /var\(--ig-text-muted\)/, `${name}: the ${text.className} colour`);
-    }
-    for (const element of [row, ...row.querySelectorAll('*')]) {
-      const opacity = declared(rules, element, OPACITY);
-      const filter = declared(rules, element, FILTER);
-      assert.ok(opacity === undefined || opacity === '1', `${name}: ${element.tagName} sets opacity ${String(opacity)}`);
-      assert.ok(filter === undefined || filter === 'none', `${name}: ${element.tagName} sets filter ${String(filter)}`);
-    }
-  }
-});
+  });
 });

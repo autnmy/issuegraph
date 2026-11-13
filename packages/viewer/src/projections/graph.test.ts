@@ -1658,45 +1658,43 @@ describe('the graph projection recedes what a selection does not touch', () => {
     assert.equal(new Map(stamps).get('105'), false, 'the selected footer slot receded');
     assert.equal(new Map(stamps).get('107'), true, 'the footer row of 107, which 105 does not touch, was kept');
   });
-});
 
-describe("more tests", function () {
-it('R4, R14: renderViewer stamps each list row as the graph stamps the same issue, for a selected issue, a relationship and a unit member', () => {
-  const normalized = normalizeDocument(fixtureDocument).document;
-  /** The stamp on the first keyed row of each issue, among rows of the given classes. */
-  const rowStamps = (markup: string, rowClasses: readonly string[]): Map<string, boolean> => {
-    const stamps = new Map<string, boolean>();
-    for (const [tag, rowClass] of markup.matchAll(/<li class="([^"]*)"[^>]*>/g)) {
-      const key = /data-ig-key="([^"]*)"/.exec(tag)?.[1];
-      if (key === undefined || !rowClasses.includes(rowClass ?? '') || stamps.has(key)) continue;
-      stamps.set(key, tag.includes('data-recede="true"'));
+  it('renderViewer stamps each list row as the graph stamps the same issue, for a selected issue, a relationship and a unit member', () => {
+    const normalized = normalizeDocument(fixtureDocument).document;
+    /** The stamp on the first keyed row of each issue, among rows of the given classes. */
+    const rowStamps = (markup: string, rowClasses: readonly string[]): Map<string, boolean> => {
+      const stamps = new Map<string, boolean>();
+      for (const [tag, rowClass] of markup.matchAll(/<li class="([^"]*)"[^>]*>/g)) {
+        const key = /data-ig-key="([^"]*)"/.exec(tag)?.[1];
+        if (key === undefined || !rowClasses.includes(rowClass ?? '') || stamps.has(key)) continue;
+        stamps.set(key, tag.includes('data-recede="true"'));
+      }
+      return stamps;
+    };
+    const relationship = edgeIdentity('decomposed-from', '103', '107');
+    const cases = [
+      { name: "the issue '102'", options: { selected: '102' }, selection: { key: '102', edge: null } },
+      { name: 'the relationship decomposed-from 103 to 107', options: { selectedEdge: relationship }, selection: { key: null, edge: relationship } },
+      { name: "the unit member '104'", options: { selected: '104' }, selection: { key: '104', edge: null } },
+    ];
+
+    for (const { name, options, selection } of cases) {
+      const receding = recedingOf(normalized, selection);
+      const list = rowStamps(renderViewer(fixtureDocument, { projection: 'linear', ...options }).markup, ['ig-slot', 'ig-footer-row']);
+      const graph = rowStamps(renderViewer(fixtureDocument, { projection: 'graph', ...options }).markup, ['ig-rail-row', 'ig-footer-row']);
+
+      // The issue: "The list's stamps equal the graph's for the same selection, including a selected unit member, in `renderViewer` and in `mountViewer`"
+      let compared = 0;
+      for (const [key, stamped] of list) {
+        assert.equal(stamped, receding.keys.has(key), `${name}: the list row of ${key} disagrees with recedingOf`);
+        const card = graph.get(key);
+        if (card === undefined) continue;
+        assert.equal(stamped, card, `${name}: the list row of ${key} disagrees with the graph`);
+        compared += 1;
+      }
+      assert.ok(compared > 0, `${name}: the list and the graph share no keyed row, so this proves nothing`);
+      assert.ok([...list.values()].some(Boolean), `${name}: no list row receded, so this proves nothing`);
+      assert.ok([...list.values()].some((stamped) => !stamped), `${name}: every list row receded, so this proves nothing`);
     }
-    return stamps;
-  };
-  const relationship = edgeIdentity('decomposed-from', '103', '107');
-  const cases = [
-    { name: "the issue '102'", options: { selected: '102' }, selection: { key: '102', edge: null } },
-    { name: 'the relationship decomposed-from 103 to 107', options: { selectedEdge: relationship }, selection: { key: null, edge: relationship } },
-    { name: "the unit member '104'", options: { selected: '104' }, selection: { key: '104', edge: null } },
-  ];
-
-  for (const { name, options, selection } of cases) {
-    const receding = recedingOf(normalized, selection);
-    const list = rowStamps(renderViewer(fixtureDocument, { projection: 'linear', ...options }).markup, ['ig-slot', 'ig-footer-row']);
-    const graph = rowStamps(renderViewer(fixtureDocument, { projection: 'graph', ...options }).markup, ['ig-rail-row', 'ig-footer-row']);
-
-    // The issue: "The list's stamps equal the graph's for the same selection, including a selected unit member, in `renderViewer` and in `mountViewer`"
-    let compared = 0;
-    for (const [key, stamped] of list) {
-      assert.equal(stamped, receding.keys.has(key), `${name}: the list row of ${key} disagrees with recedingOf`);
-      const card = graph.get(key);
-      if (card === undefined) continue;
-      assert.equal(stamped, card, `${name}: the list row of ${key} disagrees with the graph`);
-      compared += 1;
-    }
-    assert.ok(compared > 0, `${name}: the list and the graph share no keyed row, so this proves nothing`);
-    assert.ok([...list.values()].some(Boolean), `${name}: no list row receded, so this proves nothing`);
-    assert.ok([...list.values()].some((stamped) => !stamped), `${name}: every list row receded, so this proves nothing`);
-  }
-});
+  });
 });
