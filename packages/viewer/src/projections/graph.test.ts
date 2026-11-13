@@ -16,6 +16,7 @@ import {
   heldTogetherDocument,
   hostedFixtureDocument,
 } from '../testing/fixtures.ts';
+import { recedingOf } from '../recede.ts';
 import { renderViewer } from '../render.ts';
 import { viewerStylesheet } from '../styles.ts';
 import { defaultTheme, extendTheme } from '../theme.ts';
@@ -1638,5 +1639,25 @@ describe('the graph projection recedes what a selection does not touch', () => {
     assert.equal(recedes('c'), false, 'the card of c, a neighbour of the selected member b, receded');
     assert.equal(recedes('a'), false, 'the card of the unit receded');
     assert.equal(recedes('d'), true, 'the card of d, a neighbour of the partner a only, was kept');
+  });
+
+  it('stamps each footer row by whether the selection touches it, like the cards above them', () => {
+    // Compact mode, so the fixture's tracker-held slot 105, its exclusion 106
+    // and the off-order endpoints all land in the footer group as rows.
+    // Selecting 105 keeps 105 and 106 and recedes the endpoint 107.
+    const markup = render(fixtureDocument, { selected: '105', compact: true });
+    const receding = recedingOf(normalizeDocument(fixtureDocument).document, { key: '105', edge: null });
+    const rows = [...markup.matchAll(/<li class="ig-footer-row"[^>]*>/g)].map(([tag]) => tag);
+    assert.ok(rows.length > 0, 'the graph drew no footer row, so this proves nothing');
+
+    const stamps = rows.map((tag) => {
+      const key = /data-ig-key="([^"]*)"/.exec(tag)?.[1] ?? '';
+      assert.equal(stamped(tag), receding.keys.has(key), `the footer row of ${key} disagrees with what recedes`);
+      return [key, stamped(tag)] as const;
+    });
+    assert.ok(stamps.some(([, recedes]) => recedes), 'no footer row receded');
+    assert.ok(stamps.some(([, recedes]) => !recedes), 'every footer row receded');
+    assert.equal(new Map(stamps).get('105'), false, 'the selected footer slot receded');
+    assert.equal(new Map(stamps).get('107'), true, 'the footer row of 107, which 105 does not touch, was kept');
   });
 });

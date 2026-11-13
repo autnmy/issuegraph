@@ -705,9 +705,35 @@ describe('mountViewer', () => {
     }
   });
 
-  it('clears the selection on a click that lands on nothing keyed, as select(null) does', () => {
+  it('ignores a click that lands on nothing keyed', () => {
     const selected: (string | null)[] = [];
-    const { container, handle } = mounted({ onSelect: (key: string | null) => selected.push(key) });
+    const { container } = mounted({ onSelect: (key: string | null) => selected.push(key) });
+
+    container.dispatch('click', { target: container });
+    assert.deepEqual(selected, []);
+  });
+
+  for (const projection of ['linear', 'tree'] as const) {
+    it(`keeps a ${projection} selection on a click that lands on nothing keyed`, () => {
+      // The issue: "Graph projection only: the list and the tree are unchanged"
+      const selected: (string | null)[] = [];
+      const { container, handle } = mounted({ projection, onSelect: (key: string | null) => selected.push(key) });
+      const row = container.find(KEY_ATTRIBUTE, '101');
+      assert.ok(row !== undefined);
+      container.dispatch('click', { target: row });
+      const root = container.children[0];
+
+      container.dispatch('click', { target: container });
+
+      assert.deepEqual(selected, ['101']);
+      assert.equal(handle.state.selected, '101');
+      assert.equal(container.children[0], root, 'a click on nothing redrew the viewer');
+    });
+  }
+
+  it('clears a graph selection on a click that lands on nothing keyed, as select(null) does', () => {
+    const selected: (string | null)[] = [];
+    const { container, handle } = mounted({ projection: 'graph', onSelect: (key: string | null) => selected.push(key) });
     const row = container.find(KEY_ATTRIBUTE, '101');
     assert.ok(row !== undefined);
     container.dispatch('click', { target: row });
@@ -716,7 +742,28 @@ describe('mountViewer', () => {
 
     assert.deepEqual(selected, ['101', null]);
     assert.equal(handle.state.selected, null);
-    assert.equal(container.find(KEY_ATTRIBUTE, '101')?.getAttribute('aria-current'), 'false');
+    assert.ok(
+      container.descendants().every((element) => element.getAttribute('aria-current') !== 'true'),
+      'a click on nothing left an element marked as the selection',
+    );
+  });
+
+  it('does nothing on a blank graph click with nothing selected: no notice, no redraw', () => {
+    const selected: (string | null)[] = [];
+    const { container } = mounted({ projection: 'graph', onSelect: (key: string | null) => selected.push(key) });
+    const root = container.children[0];
+    assert.ok(root instanceof TestElement);
+    const markup = reserialize(root);
+    // The horizontally scrolled canvas: a redraw replaces it, and with it the reader's scroll position.
+    const stage = container.descendants().find((element) => element.getAttribute('class') === 'ig-stage');
+    assert.ok(stage !== undefined, 'the graph drew no stage, so this proves nothing');
+
+    container.dispatch('click', { target: container });
+
+    assert.deepEqual(selected, []);
+    assert.equal(container.children[0], root, 'a click that changed nothing redrew the viewer');
+    assert.equal(reserialize(root), markup);
+    assert.ok(container.descendants().includes(stage), 'a click that changed nothing replaced the scrolled stage');
   });
 
   it('marks the selected row after a click', () => {
@@ -753,7 +800,7 @@ describe('mountViewer', () => {
     });
 
     container.dispatch('click', { target: container });
-    assert.deepEqual(selected, [null], 'a host ancestor answered for a click on nothing of ours');
+    assert.deepEqual(selected, [], 'a host ancestor answered for a click on nothing of ours');
   });
 
   it('leaves keyboard activation to a nested link', () => {

@@ -575,9 +575,15 @@ export function mountViewer(
       return;
     }
     if (ownsItsOwnActivation(event.target, container)) return;
-    // A CLICK ON NOTHING KEYED CLEARS THE SELECTION, exactly as `select(null)`
-    // does, so a reader can restore a receded graph by clicking blank space.
-    emitSelect(keyAt(event.target, container));
+    // A CLICK ON NOTHING KEYED CLEARS A SELECTION ON THE GRAPH ONLY, exactly as
+    // `select(null)` does, so a reader can restore a receded graph by clicking
+    // blank space. The graph is the one projection that recedes, so the list and
+    // the tree ignore such a click as they always did. With nothing selected
+    // there is nothing to clear, so it neither redraws nor tells the host.
+    const key = keyAt(event.target, container);
+    const clearsSelection = projection === 'graph' && state.selected !== null;
+    if (key === null && !clearsSelection) return;
+    emitSelect(key);
   };
 
   const onPointerOver = (event: MountEvent): void => {
