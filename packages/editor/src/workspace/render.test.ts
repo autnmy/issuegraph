@@ -14,7 +14,7 @@ import type { ViewerDocument } from '@issuegraph/viewer';
 import { selectionReducer } from './selection.ts';
 import type { WorkspaceWords } from '../index.ts';
 import { WORKSPACE_WORDS, backlogOf, drawnKeys, zonesIn } from '../testing/workspace.ts';
-import { keysOf, relatedHubEdges } from '../testing/workspace.ts';
+import { TASK_KEYS, blockedHub, keysOf, relatedHubEdges } from '../testing/workspace.ts';
 
 /** A graph port built from the reader's own model, as a host would build it. */
 function graphFor(
@@ -2599,28 +2599,13 @@ describe('the "not in the order" group follows the whole order, not the window',
 
 /** The layout under 640's tabs, and the Related groups list they show. */
 describe('the narrow tabs and the Related groups list', () => {
-  /** `HUB`, blocked by each of `keys`, every issue titled alike. */
-  function sameTitleHub(keys: readonly string[], title: string): ViewerDocument {
-    return {
-      issues: ['HUB', ...keys].map((key) => ({ key, title, open: true, priority: 2 })),
-      edges: keys.map((to) => ({ field: 'blocked-by' as const, from: 'HUB', to })),
-      order: {
-        slots: ['HUB', ...keys].map((key, n) => ({ rank: n + 1, lead: key, members: [key], ready: true, holds: [] })),
-        excluded: [],
-      },
-      cycles: [],
-    };
-  }
-  /** 301 keys that each hold `TASK-1` as a substring. */
-  const TASK_KEYS = Array.from({ length: 301 }, (_, n) => `TASK-${String(1000 + n)}`);
-
   it('R11: the Related groups list escapes a hostile key, title and query instead of drawing them as markup', () => {
     // The issue: "Every node goes through `renderMarkup`, so no issue title is concatenated into markup."
     // The key and the query each hold a closing tag, and the query is echoed into the search
     // field's `value`, so a list built by joining strings would open a new element in the page.
     // 302 relationships put the search field on screen, so the query is drawn as well as applied.
     const hostileKey = 'TASK-1"<&</li><li id=injected>';
-    const document = sameTitleHub([...TASK_KEYS, hostileKey], '<img src=x onerror=alert(1)>');
+    const document = blockedHub([...TASK_KEYS, hostileKey], () => '<img src=x onerror=alert(1)>');
     const { markup } = renderWorkspace(document, {
       words: WORKSPACE_WORDS,
       selection: { kind: 'issue', key: 'HUB' },
@@ -2877,7 +2862,7 @@ describe('the narrow tabs and the Related groups list', () => {
     // 'task-1'. Putting exact matches first without taking them out of the remaining matches would draw
     // its row twice and push the row count past the relationships the reader asked for.
     const canvas = canvasOf(
-      renderWorkspace(sameTitleHub(['TASK-1', ...TASK_KEYS], 'Same title'), {
+      renderWorkspace(blockedHub(['TASK-1', ...TASK_KEYS], () => 'Same title'), {
         words: WORKSPACE_WORDS,
         selection: { kind: 'issue', key: 'HUB' },
         narrowView: 'canvas',

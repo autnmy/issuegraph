@@ -5193,72 +5193,73 @@ describe('the narrow tabs and the Related groups list, mounted', () => {
   }
 
   it('R7 mountWorkspace: a Sub-issues press stays in handle.state.canvas through update() calls that do not name canvas', async () => {
-    const page = await mounted(SEED);
-    try {
-      assert.equal(page.handle.state.canvas, 'neighbourhood');
-      assert.equal(treeOf(page), null, 'the default mount already draws the tree, so this proves nothing');
+    // "The mount's `canvas` option seeds the field, and an `update()` that names `canvas` sets it."
+    // Only an update naming `canvas` may set it. With the mode named in the mount options, an
+    // update() that merged options and re-seeded from them would undo the tab press, so both seeds run.
+    const seeds: readonly { readonly seed: string; readonly options: { readonly canvas?: CanvasMode } }[] = [
+      { seed: 'an omitted seed', options: {} },
+      { seed: 'an explicit neighbourhood seed', options: { canvas: 'neighbourhood' } },
+    ];
+    const updates: readonly { readonly update: string; readonly run: (page: Mounted) => void }[] = [
+      { update: 'a bare update()', run: (page) => page.handle.update() },
+      { update: 'update({})', run: (page) => page.handle.update({}) },
+      { update: 'an update naming only the words', run: (page) => page.handle.update({ words: WORDS }) },
+      { update: 'an update naming only firstPass', run: (page) => page.handle.update({ firstPass: undefined }) },
+    ];
+    for (const { seed, options } of seeds) {
+      const page = await mounted(SEED, options);
+      try {
+        assert.equal(page.handle.state.canvas, 'neighbourhood', seed);
+        assert.equal(treeOf(page), null, `${seed} already draws the tree, so this proves nothing`);
 
-      page.click(narrowTab(page, 'sub-issues'));
-      await flush();
-      assert.equal(page.handle.state.canvas, 'tree');
-      assert.equal(page.handle.state.narrowView, 'canvas');
-      assert.ok(treeOf(page) !== null, 'the Sub-issues tab did not draw the tree');
-      assert.equal(dataTabOf(page), 'sub-issues');
+        page.click(narrowTab(page, 'sub-issues'));
+        await flush();
+        assert.equal(page.handle.state.canvas, 'tree', seed);
+        assert.equal(page.handle.state.narrowView, 'canvas', seed);
+        assert.ok(treeOf(page) !== null, `${seed}: the Sub-issues tab did not draw the tree`);
+        assert.equal(dataTabOf(page), 'sub-issues', seed);
 
-      // "The mount's `canvas` option seeds the field, and an `update()` that names `canvas` sets it."
-      // Only an update naming `canvas` may set it, so none of these may re-seed it.
-      page.handle.update();
-      await flush();
-      assert.equal(page.handle.state.canvas, 'tree', 'a bare update() re-seeded the mode from the mount option');
-      assert.ok(treeOf(page) !== null, 'a bare update() drew the neighbourhood again');
+        for (const { update, run } of updates) {
+          run(page);
+          await flush();
+          assert.equal(page.handle.state.canvas, 'tree', `${seed}: ${update} re-seeded the mode from the mount options`);
+          assert.ok(treeOf(page) !== null, `${seed}: ${update} drew the neighbourhood again`);
+          assert.equal(dataTabOf(page), 'sub-issues', `${seed}: ${update} moved the tab`);
+        }
 
-      page.handle.update({});
-      await flush();
-      assert.equal(page.handle.state.canvas, 'tree', 'update({}) re-seeded the mode from the mount option');
-      assert.ok(treeOf(page) !== null, 'update({}) drew the neighbourhood again');
-
-      page.handle.update({ firstPass: undefined });
-      await flush();
-      assert.equal(page.handle.state.canvas, 'tree', 'an update naming another option re-seeded the mode');
-      assert.ok(treeOf(page) !== null, 'an update naming another option drew the neighbourhood again');
-      assert.equal(dataTabOf(page), 'sub-issues');
-
-      page.handle.update({ canvas: 'neighbourhood' });
-      await flush();
-      assert.equal(page.handle.state.canvas, 'neighbourhood');
-      assert.equal(treeOf(page), null, 'update({ canvas }) left the tree drawn');
-      page.handle.destroy();
-    } finally {
-      page.dom.window.close();
+        page.handle.update({ canvas: 'neighbourhood' });
+        await flush();
+        assert.equal(page.handle.state.canvas, 'neighbourhood', `${seed}: an update naming canvas did not set it`);
+        assert.equal(treeOf(page), null, `${seed}: update({ canvas }) left the tree drawn`);
+        page.handle.destroy();
+      } finally {
+        page.dom.window.close();
+      }
     }
   });
 
-  it('R7 KTD1 mountWorkspace: an update that does not name canvas keeps the mode the Sub-issues tab set', async () => {
-    // The mount options name canvas, so an update() that merges options and re-seeds from them would undo the tab press.
-    const page = await mounted(SEED, { canvas: 'neighbourhood' });
+  it('R7 KTD1 mountWorkspace: after the Sub-issues press the keyboard walks the tree scene, onto a node only the tree draws', async () => {
+    // The keyboard rebuilds the canvas scene from the mode, so a mode read from the mount
+    // options instead of the host state would walk the neighbourhood the reader left.
+    const page = await mounted(SEED);
     try {
-      assert.equal(treeOf(page), null, 'the neighbourhood seed drew a tree, so this proves nothing');
+      const canvasNode = (key: string): HTMLElement | null =>
+        page.zone('canvas')?.querySelector<HTMLElement>(`[data-ig-key="${key}"][tabindex]`) ?? null;
+      assert.ok(canvasNode('2') !== null, 'the neighbourhood does not draw 2, so there is nothing to compare');
+      assert.equal(canvasNode('3'), null, 'the neighbourhood draws 3, so reaching it proves nothing');
 
       page.click(narrowTab(page, 'sub-issues'));
       await flush();
-      assert.equal(page.handle.state.canvas, 'tree');
-      assert.ok(treeOf(page) !== null, 'the Sub-issues tab did not swap the canvas to the tree');
-
-      // "The mount's `canvas` option seeds the field, and an `update()` that names `canvas` sets it."
-      page.handle.update({});
+      assert.ok(treeOf(page) !== null, 'the Sub-issues tab did not draw the tree');
+      const from = canvasNode('2') ?? assert.fail('the tree draws no focusable node for 2');
+      from.focus();
+      from.dispatchEvent(new page.win.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
       await flush();
-      assert.equal(page.handle.state.canvas, 'tree', 'update({}) re-seeded the mode from the mount options');
-      assert.ok(treeOf(page) !== null, 'update({}) drew the neighbourhood again');
 
-      page.handle.update({ words: WORDS });
-      await flush();
-      assert.equal(page.handle.state.canvas, 'tree', 'an update naming only the words reset the mode');
-      assert.ok(treeOf(page) !== null, 'an update naming only the words drew the neighbourhood again');
-
-      page.handle.update({ canvas: 'neighbourhood' });
-      await flush();
-      assert.equal(page.handle.state.canvas, 'neighbourhood');
-      assert.equal(treeOf(page), null, 'an update naming canvas did not set it');
+      // "after that switch, keyboard navigation walks the tree scene"
+      const active = page.win.document.activeElement;
+      assert.equal(active?.getAttribute('data-ig-key'), '3', 'ArrowDown did not walk the tree scene');
+      assert.ok(active?.closest('.ig-tree') != null, 'focus left the tree');
       page.handle.destroy();
     } finally {
       page.dom.window.close();
@@ -5389,6 +5390,47 @@ describe('the narrow tabs and the Related groups list, mounted', () => {
       hub.click(canvas().querySelector(row) ?? assert.fail('the search does not draw the 301st relationship'));
       await flush();
       assert.deepEqual(hub.handle.state.selection, { kind: 'edge', edgeId: last.id });
+    } finally {
+      hub.handle.destroy();
+      hub.dom.window.close();
+    }
+  });
+
+  it('R14 mountWorkspace: an edit inside the related query keeps the field focused with its caret, through the input redraw and an unrelated update', async () => {
+    // Every keystroke redraws the surface and replaces the field, so a mount that did not carry
+    // focus and the caret across would throw the reader out of the search after one key, or send
+    // a caret placed mid-query to the end.
+    const hub = await mounted(relatedHubSeed(301));
+    try {
+      const field = (): HTMLInputElement | null =>
+        hub.zone('canvas')?.querySelector<HTMLInputElement>('input[data-ig-command="related-query"]') ?? null;
+      hub.click(hub.rows().find((each) => each.getAttribute('data-ig-key') === 'i0001') ?? assert.fail('no rail row for i0001'));
+      await flush();
+      hub.click(narrowTab(hub, 'related'));
+      await flush();
+
+      // The reader has typed `i032`, moves the caret back one place and inserts `0`.
+      const typed = field() ?? assert.fail('no search over 301 relationships');
+      typed.focus();
+      typed.value = 'i0302';
+      typed.setSelectionRange(4, 4);
+      typed.dispatchEvent(new hub.win.Event('input', { bubbles: true }));
+      await flush();
+      // "typing keeps focus and caret"
+      const redrawn = field() ?? assert.fail('the input redraw dropped the search');
+      assert.notEqual(redrawn, typed, 'the input did not redraw the field, so this proves nothing');
+      assert.equal(hub.handle.state.relatedQuery, 'i0302');
+      assert.equal(hub.win.document.activeElement, redrawn, 'the input redraw took focus off the search');
+      assert.equal(redrawn.value, 'i0302');
+      assert.deepEqual([redrawn.selectionStart, redrawn.selectionEnd], [4, 4], 'the input redraw moved the caret');
+
+      hub.handle.update();
+      await flush();
+      const updated = field() ?? assert.fail('an unrelated update dropped the search');
+      assert.notEqual(updated, redrawn, 'the update did not redraw the field, so this proves nothing');
+      assert.equal(hub.win.document.activeElement, updated, 'an unrelated update took focus off the search');
+      assert.equal(updated.value, 'i0302');
+      assert.deepEqual([updated.selectionStart, updated.selectionEnd], [4, 4], 'an unrelated update moved the caret');
     } finally {
       hub.handle.destroy();
       hub.dom.window.close();

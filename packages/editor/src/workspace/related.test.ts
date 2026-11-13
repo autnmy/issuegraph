@@ -3,7 +3,7 @@ import { it } from 'node:test';
 
 import type { ViewerDocument } from '@issuegraph/viewer';
 
-import { backlogOf, relatedHubEdges } from '../testing/workspace.ts';
+import { TASK_KEYS, backlogOf, blockedHub, relatedHubEdges } from '../testing/workspace.ts';
 import { relatedListView } from './related.ts';
 
 /** `count` relationships on `i0001`, alternating `blocked-by` and `serialize-with`. */
@@ -12,21 +12,6 @@ const SUBJECT = { kind: 'issue', key: 'i0001' } as const;
 /** The key a row draws besides `i0001`, the subject of every {@link hub}. */
 const drawnEnd = (row: { readonly from: string; readonly to: string }): string =>
   row.from === 'i0001' ? row.to : row.from;
-
-/** `HUB`, blocked by each of `keys`, every issue titled `titleOf` its key. */
-function blockedHub(keys: readonly string[], titleOf: (key: string) => string): ViewerDocument {
-  return {
-    issues: ['HUB', ...keys].map((key) => ({ key, title: titleOf(key), open: true, priority: 2 })),
-    edges: keys.map((to) => ({ field: 'blocked-by' as const, from: 'HUB', to })),
-    order: {
-      slots: ['HUB', ...keys].map((key, n) => ({ rank: n + 1, lead: key, members: [key], ready: true, holds: [] })),
-      excluded: [],
-    },
-    cycles: [],
-  };
-}
-/** 301 keys that each hold `TASK-1` as a substring. */
-const TASK_KEYS = Array.from({ length: 301 }, (_, n) => `TASK-${String(1000 + n)}`);
 
 it('R13 relatedListView draws 60 relationships flat and groups 61 by kind with their counts', () => {
   const sixty = relatedListView(hub(60), SUBJECT, { group: null, query: '' });

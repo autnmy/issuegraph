@@ -168,6 +168,28 @@ export function relatedHubEdges(count: number): (readonly [EdgeField, string, st
     );
 }
 
+/** 301 keys that each hold `TASK-1` as a substring, so only an exact key match reaches `TASK-1` past 300. */
+export const TASK_KEYS: readonly string[] = Array.from({ length: 301 }, (_, n) => `TASK-${String(1000 + n)}`);
+
+/**
+ * `HUB`, blocked by each of `keys`, every issue titled `titleOf` its key.
+ *
+ * The Related groups list's search reads keys and titles, and the hub of
+ * {@link relatedHubEdges} gives every issue its own of both, so a search that
+ * must tell same-titled or substring keys apart needs this one.
+ */
+export function blockedHub(keys: readonly string[], titleOf: (key: string) => string): ViewerDocument {
+  return {
+    issues: ['HUB', ...keys].map((key) => ({ key, title: titleOf(key), open: true, priority: 2 })),
+    edges: keys.map((to) => ({ field: 'blocked-by' as const, from: 'HUB', to })),
+    order: {
+      slots: ['HUB', ...keys].map((key, n) => ({ rank: n + 1, lead: key, members: [key], ready: true, holds: [] })),
+      excluded: [],
+    },
+    cycles: [],
+  };
+}
+
 export interface BacklogOptions {
   /** Keys whose slot is held: no rank, and a graph-family hold. */
   readonly held?: readonly string[] | undefined;
