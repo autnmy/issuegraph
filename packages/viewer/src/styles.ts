@@ -1639,11 +1639,13 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 
 /* EVERYTHING THAT DOES NOT TOUCH THE SELECTION RECEDES, so its neighbours read
    first. The graph stamps data-recede='true' on each receding card row, spine
-   station, footer row, line and terminal; these rules draw the stamp.
+   station, footer row, line and terminal, and the list stamps each receding
+   order row and footer row; these rules draw the stamp.
 
    NO RULE HERE USES opacity OR filter. Fading a card by opacity fades its text
    below the contrast the theme's text roles promise, so a card recedes by
-   colour instead: the second surface, with muted labels. A line or terminal
+   colour instead: the second surface, with muted labels, and a list row
+   recedes the same way a card does. A line or terminal
    recedes by stroke-opacity and fill-opacity on the stamped element itself,
    never on a kind's class, so the legend's samples never dim. No rule touches
    a dash, a border style or a stroke width: those carry each kind's line.
@@ -1661,18 +1663,34 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   background: var(--ig-surface-2);
 }
 
+/* A LIST ROW TAKES THE CARD'S GROUND through background-color alone, so a held
+   row keeps its hatch, which is a background-image, on the second surface. The
+   panel class lifts each rule to the card rule's specificity. The footer rule
+   is scoped to the list, whose root and detached footer both carry ig-linear,
+   because the graph draws its footer rows without a ground. */
+.ig-viewer .ig-slot[data-recede='true'],
+.ig-linear .ig-footer-row[data-recede='true'] {
+  background-color: var(--ig-surface-2);
+}
+
 .ig-rail-row[data-recede='true'] .ig-title,
 .ig-rail-row[data-recede='true'] .ig-id,
 .ig-rail-row[data-recede='true'] .ig-hold,
 .ig-rail-row[data-recede='true'] .ig-unit-note,
-.ig-footer-row[data-recede='true'] .ig-title {
+.ig-slot[data-recede='true'] .ig-title,
+.ig-slot[data-recede='true'] .ig-id,
+.ig-slot[data-recede='true'] .ig-hold,
+.ig-slot[data-recede='true'] .ig-unit-note,
+.ig-footer-row[data-recede='true'] .ig-title,
+.ig-linear .ig-footer-row[data-recede='true'] .ig-id {
   color: var(--ig-text-muted);
 }
 
 /* The priority tag keeps its words and loses its chip, so a receded card
    carries no filled shape that competes with the kept ones. The border turns
    transparent rather than going, so the tag keeps its size and nothing moves. */
-.ig-rail-row[data-recede='true'] .ig-badge[data-priority] {
+.ig-rail-row[data-recede='true'] .ig-badge[data-priority],
+.ig-slot[data-recede='true'] .ig-badge[data-priority] {
   background: transparent;
   border-color: transparent;
   color: var(--ig-text);
