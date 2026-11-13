@@ -3577,7 +3577,7 @@ export function renderWorkspace(
     //
     // §17k'S TWO READER DECISIONS RIDE THE SAME ROOT, and for the same reason
     // `data-order` does: the stylesheet is the only party that knows which of
-    // the three layouts is drawn, so the surface publishes what the reader
+    // the four layouts is drawn, so the surface publishes what the reader
     // asked for and each container block reads the one it has a use for.
     // Neither attribute means anything at the width where its zone is a zone.
     //
