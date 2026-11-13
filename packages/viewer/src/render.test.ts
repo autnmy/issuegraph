@@ -451,3 +451,95 @@ describe('\u00a716f \u2014 the expand affordance', () => {
     );
   });
 });
+
+import { edgeIdentity } from '@issuegraph/core';
+
+describe("more tests", function () {
+it('renderViewer stamps exactly the graph cards and lines that do not touch the selected issue 102', () => {
+  const markup = renderViewer(fixtureDocument, { projection: 'graph', selected: '102' }).markup;
+  const start = markup.indexOf('<svg class="ig-canvas"');
+  assert.notEqual(start, -1, 'the graph drew no canvas');
+  const canvas = markup.slice(start, markup.indexOf('</svg>', start));
+  // Identities are read out and compared as strings, because `edgeIdentity` output is not safe inside a RegExp.
+  const lines = [...canvas.matchAll(/<(?:path|circle) class="ig-(?:edge|terminal)"[^>]*>/g)]
+    .map((match) => ({
+      group: /data-ig-group="([^"]*)"/.exec(match[0])?.[1],
+      stamped: match[0].includes('data-recede="true"'),
+    }))
+    .filter((line) => line.group !== undefined);
+  const rows = [...markup.matchAll(/<li class="ig-rail-row" data-ig-key="([^"]*)"[^>]*>/g)].map((match) => ({
+    key: match[1] as string,
+    stamped: match[0].includes('data-recede="true"'),
+  }));
+
+  // "With a selection, lines and stations that do not touch it draw at 50%, and with none selected nothing recedes"
+  // "For an issue selection, the issue, its neighbours over any kind in either direction, and its edges stay."
+  const keptLines = new Set([edgeIdentity('blocked-by', '101', '102'), edgeIdentity('decomposed-from', '102', '101')]);
+  assert.deepEqual(new Set(lines.filter((line) => !line.stamped).map((line) => line.group)), keptLines);
+  for (const line of lines) {
+    assert.equal(line.stamped, !keptLines.has(line.group ?? ''), `line ${String(line.group)}`);
+  }
+  assert.deepEqual(rows.filter((row) => !row.stamped).map((row) => row.key).sort(), ['101', '102']);
+  assert.ok(rows.some((row) => row.key === '103' && row.stamped), 'the unit card 103 did not recede');
+
+  // "Receding elements get `data-recede="true"`; others get no attribute, never `"false"`."
+  assert.deepEqual(
+    [...markup.matchAll(/data-recede="([^"]*)"/g)].map((match) => match[1]).filter((value) => value !== 'true'),
+    [],
+  );
+  assert.equal(renderViewer(fixtureDocument, { projection: 'graph' }).markup.includes('data-recede'), false);
+});
+
+it('renderViewer keeps the unit card and the line of the selected partner 104 and recedes the other lines of its lead 103', () => {
+  const markup = renderViewer(fixtureDocument, { projection: 'graph', selected: '104' }).markup;
+  const start = markup.indexOf('<svg class="ig-canvas"');
+  assert.notEqual(start, -1, 'the graph drew no canvas');
+  const canvas = markup.slice(start, markup.indexOf('</svg>', start));
+  const lines = [...canvas.matchAll(/<(?:path|circle) class="ig-(?:edge|terminal)"[^>]*>/g)]
+    .map((match) => ({
+      group: /data-ig-group="([^"]*)"/.exec(match[0])?.[1],
+      stamped: match[0].includes('data-recede="true"'),
+    }))
+    .filter((line) => line.group !== undefined);
+  const rows = [...markup.matchAll(/<li class="ig-rail-row" data-ig-key="([^"]*)"[^>]*>/g)].map((match) => ({
+    key: match[1] as string,
+    stamped: match[0].includes('data-recede="true"'),
+  }));
+
+  // "Selecting one member of a together unit keeps that member's neighbours and lines, not its partners', and the unit's card stays"
+  // The unit's own together-with line draws no arc, so 104's one drawn line is decomposed-from 104 to 107.
+  const memberLine = edgeIdentity('decomposed-from', '104', '107');
+  assert.deepEqual(new Set(lines.filter((line) => !line.stamped).map((line) => line.group)), new Set([memberLine]));
+  assert.equal(lines.find((line) => line.group === edgeIdentity('decomposed-from', '103', '107'))?.stamped, true);
+  assert.equal(lines.find((line) => line.group === edgeIdentity('serialize-with', '103', '105'))?.stamped, true);
+  assert.equal(rows.find((row) => row.key === '103')?.stamped, false, 'the unit card receded');
+  assert.equal(rows.find((row) => row.key === '102')?.stamped, true);
+});
+
+it('renderViewer ignores a selected relationship when the selected issue resolves', () => {
+  const edge = edgeIdentity('blocked-by', '101', '102');
+  const byIssue = renderViewer(fixtureDocument, { projection: 'graph', selected: '105' }).markup;
+  const both = renderViewer(fixtureDocument, { projection: 'graph', selected: '105', selectedEdge: edge }).markup;
+
+  // "When a host passes issues and a relationship together, the issues win and the relationship is ignored"
+  assert.equal(both, byIssue);
+  const ignored = [...both.matchAll(/<path class="ig-edge"[^>]*>/g)]
+    .map((match) => match[0])
+    .filter((tag) => /data-ig-group="([^"]*)"/.exec(tag)?.[1] === edge);
+  assert.ok(ignored.length > 0, 'the ignored relationship has no line');
+  for (const tag of ignored) {
+    assert.equal(tag.includes('data-recede="true"'), true, 'the ignored relationship did not recede by issue 105');
+  }
+});
+
+it('renderViewer stamps the graph for a selected issue and leaves the list and the tree unstamped', () => {
+  const graph = renderViewer(fixtureDocument, { projection: 'graph', selected: '102' }).markup;
+  assert.equal(graph.includes('data-recede="true"'), true, 'the graph did not recede for 102');
+
+  // "Graph projection only: the list and the tree are unchanged."
+  for (const projection of ['linear', 'tree'] as const) {
+    const markup = renderViewer(fixtureDocument, { projection, selected: '102' }).markup;
+    assert.equal(markup.includes('data-recede'), false, `${projection} carries a recede stamp`);
+  }
+});
+});
