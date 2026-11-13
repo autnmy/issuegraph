@@ -652,3 +652,166 @@ describe('nothing in the module changes state on its own', () => {
     }
   });
 });
+
+describe("more tests", function () {
+it('attachEdgeOverlays writes no write-state opacity on a receded line or any of its clones, and still fades a kept line', () => {
+  // The issue: "A receded line with an editor write state draws at 50%, and its state still shows by its dash and colour"
+  // The stylesheet draws a receded line at half strength. A write-state opacity
+  // on the path or on one of its clones would multiply with it and draw that
+  // part fainter than 50%. The kept line is the control: it keeps its fade.
+  const document: ViewerDocument = {
+    issues: [
+      { key: '#488', title: 'The blocker', open: true, priority: 1 },
+      { key: '#512', title: 'The blocked', open: true, priority: 2 },
+      { key: '#600', title: 'A far blocker', open: true, priority: 1 },
+      { key: '#601', title: 'A far blocked', open: true, priority: 2 },
+    ],
+    edges: [
+      { field: 'blocked-by', from: '#512', to: '#488' },
+      { field: 'blocked-by', from: '#601', to: '#600' },
+    ],
+    order: {
+      slots: [
+        { rank: 1, lead: '#488', members: ['#488'], ready: true, holds: [] },
+        { rank: null, lead: '#512', members: ['#512'], ready: false, holds: [{ family: 'graph', reason: 'blocked by #488' }] },
+        { rank: 2, lead: '#600', members: ['#600'], ready: true, holds: [] },
+        { rank: null, lead: '#601', members: ['#601'], ready: false, holds: [{ family: 'graph', reason: 'blocked by #600' }] },
+      ],
+      excluded: [],
+    },
+    cycles: [],
+  };
+  const lineOf = (from: string, to: string, state: EdgeState): ProjectedEdge => ({
+    id: edgeIdentity('blocked-by', from, to),
+    kind: 'blocked-by',
+    from,
+    to,
+    states: [state],
+    writes: [],
+  });
+  const specsUnder = (spec: ElementSpec): ElementSpec[] => [
+    spec,
+    ...(spec.children ?? ([] as readonly SpecChild[])).flatMap((child) =>
+      typeof child === 'string' ? [] : specsUnder(child),
+    ),
+  ];
+  const classList = (spec: ElementSpec): readonly string[] => {
+    const value = spec.attrs?.['class'];
+    return typeof value === 'string' ? value.split(' ') : [];
+  };
+  const pathsOf = (specs: readonly ElementSpec[], id: string): ElementSpec[] =>
+    specs.filter((spec) => classList(spec).includes('ig-edge') && spec.attrs?.['data-ig-group'] === id);
+  const recedingScene = () => renderViewer(document, { projection: 'graph', selected: '#488' }).scene;
+
+  const fading = EDGE_STATES.filter((state) => treatmentForState(state).opacity !== null);
+  assert.ok(fading.length > 0, 'no write state declares an opacity, so this proves nothing');
+  for (const state of fading) {
+    const receded = lineOf('#601', '#600', state);
+    const overlaid = attachEdgeOverlays(recedingScene(), [receded]);
+    assert.deepEqual(overlaid.unattached, [], `${state} did not attach to the receded line`);
+    const specs = specsUnder(overlaid.scene.root);
+    const paths = pathsOf(specs, receded.id);
+    assert.ok(paths.length > 0, 'the receded line was not drawn');
+    for (const path of paths) {
+      assert.equal(path.attrs?.['data-recede'], 'true', 'the far line does not recede, so this proves nothing');
+      assert.equal(path.attrs?.[STATE_ATTRIBUTE], state, `${state} no longer shows on the receded line`);
+      assert.equal(path.attrs?.['opacity'] ?? null, null, `${state} wrote an opacity on a receded line`);
+    }
+    for (const mark of specs.filter((spec) => classList(spec).includes(OVERLAY_CLASS))) {
+      assert.equal(mark.attrs?.['opacity'] ?? null, null, `${state} wrote an opacity on a clone of a receded line`);
+    }
+
+    const kept = lineOf('#512', '#488', state);
+    const keptPaths = pathsOf(specsUnder(attachEdgeOverlays(recedingScene(), [kept]).scene.root), kept.id);
+    assert.ok(keptPaths.length > 0, 'the kept line was not drawn');
+    for (const path of keptPaths) {
+      assert.notEqual(path.attrs?.['data-recede'], 'true', 'a line of the selected issue receded');
+      assert.equal(
+        path.attrs?.['opacity'],
+        treatmentForState(state).opacity,
+        `${state} lost its fade on a line that does not recede`,
+      );
+    }
+  }
+});
+
+it("attachEdgeOverlays draws a receded line's write-state dash and hue exactly as on a line that does not recede", () => {
+  // The issue: "A receded line with an editor write state draws at 50%, and its state still shows by its dash and colour"
+  // The same far line is overlaid once on a scene where it recedes and once on
+  // a scene with no selection. Apart from the fade and the stamp, the line and
+  // every mark drawn for it must be the same, so the state keeps its dash and hue.
+  const document: ViewerDocument = {
+    issues: [
+      { key: '#488', title: 'The blocker', open: true, priority: 1 },
+      { key: '#512', title: 'The blocked', open: true, priority: 2 },
+      { key: '#600', title: 'A far blocker', open: true, priority: 1 },
+      { key: '#601', title: 'A far blocked', open: true, priority: 2 },
+    ],
+    edges: [
+      { field: 'blocked-by', from: '#512', to: '#488' },
+      { field: 'blocked-by', from: '#601', to: '#600' },
+    ],
+    order: {
+      slots: [
+        { rank: 1, lead: '#488', members: ['#488'], ready: true, holds: [] },
+        { rank: null, lead: '#512', members: ['#512'], ready: false, holds: [{ family: 'graph', reason: 'blocked by #488' }] },
+        { rank: 2, lead: '#600', members: ['#600'], ready: true, holds: [] },
+        { rank: null, lead: '#601', members: ['#601'], ready: false, holds: [{ family: 'graph', reason: 'blocked by #600' }] },
+      ],
+      excluded: [],
+    },
+    cycles: [],
+  };
+  const farLine = (state: EdgeState): ProjectedEdge => ({
+    id: edgeIdentity('blocked-by', '#601', '#600'),
+    kind: 'blocked-by',
+    from: '#601',
+    to: '#600',
+    states: [state],
+    writes: [],
+  });
+  const specsUnder = (spec: ElementSpec): ElementSpec[] => [
+    spec,
+    ...(spec.children ?? ([] as readonly SpecChild[])).flatMap((child) =>
+      typeof child === 'string' ? [] : specsUnder(child),
+    ),
+  ];
+  const classList = (spec: ElementSpec): readonly string[] => {
+    const value = spec.attrs?.['class'];
+    return typeof value === 'string' ? value.split(' ') : [];
+  };
+  const unfaded = (spec: ElementSpec) => {
+    const { opacity: _opacity, 'data-recede': _recede, ...attrs } = spec.attrs ?? {};
+    return { tag: spec.tag, attrs };
+  };
+  const overlaidSpecs = (selected: string | null, state: EdgeState): ElementSpec[] =>
+    specsUnder(
+      attachEdgeOverlays(renderViewer(document, { projection: 'graph', selected }).scene, [farLine(state)]).scene.root,
+    );
+  const drawnFor = (specs: readonly ElementSpec[], id: string) => ({
+    paths: specs
+      .filter((spec) => classList(spec).includes('ig-edge') && spec.attrs?.['data-ig-group'] === id)
+      .map(unfaded),
+    marks: specs.filter((spec) => classList(spec).includes(OVERLAY_CLASS)).map(unfaded),
+  });
+
+  for (const state of EDGE_STATES.filter((each) => each !== 'selected')) {
+    const id = farLine(state).id;
+    const receded = overlaidSpecs('#488', state);
+    assert.ok(
+      receded.some((spec) => classList(spec).includes('ig-edge') && spec.attrs?.['data-ig-group'] === id && spec.attrs['data-recede'] === 'true'),
+      'the far line does not recede, so this proves nothing',
+    );
+    assert.deepEqual(
+      drawnFor(receded, id),
+      drawnFor(overlaidSpecs(null, state), id),
+      `${state} draws differently on a receded line beyond its fade`,
+    );
+  }
+
+  const dashStroke = (state: EdgeState): unknown =>
+    overlaidSpecs('#488', state).find((spec) => classList(spec).includes('ig-overlay-dash'))?.attrs?.['stroke'];
+  assert.equal(dashStroke('pending-write'), 'var(--ig-edge-blocked-by)', 'a receded pending line lost its relationship hue');
+  assert.equal(dashStroke('invalid'), 'var(--ig-state-invalid)', 'a receded refused line lost its state hue');
+});
+});

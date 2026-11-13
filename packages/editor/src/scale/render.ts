@@ -37,6 +37,7 @@ import {
   type ViewerDocument,
   clusterReachLabel,
   element,
+  normalizeDocument,
   renderMarkup,
   renderViewer,
   resolveTheme,
@@ -99,6 +100,10 @@ export interface ScaleLadderOptions {
    * Resolved against `ladder.canvas`, which is what this canvas actually draws:
    * a narrowed tier, or a refusal that draws no canvas at all, renders as
    * nothing selected rather than as a halo on a line that is not there.
+   *
+   * Also handed to the viewer, which recedes everything the edge does not
+   * touch. Ignored, halo included, when `selected` names an issue on this
+   * canvas: a host passing both gets the issue's selection.
    */
   readonly selectedEdge?: string | null | undefined;
   /**
@@ -468,6 +473,19 @@ function isolatedSpec(
   ]);
 }
 
+/**
+ * Whether `key` names an issue on this canvas, by the rule the viewer's recede
+ * reads a selection with.
+ *
+ * ISSUES WIN OVER A RELATIONSHIP. When the selected issue resolves, the canvas
+ * recedes around it and ignores the selected edge, so the halo ignores the edge
+ * too. Drawing it would show two selections at once, with the halo on a line
+ * the canvas has receded.
+ */
+function issueResolves(canvas: ViewerDocument, key: string | null | undefined): boolean {
+  return key !== null && key !== undefined && normalizeDocument(canvas).document.byKey.has(key);
+}
+
 /** Render one document at one reader position. */
 export function renderScaleLadder(
   input: ViewerDocument,
@@ -484,7 +502,8 @@ export function renderScaleLadder(
   // marks come back inside the scene. The stroke-derived overlays still go the
   // other way, attached to the scene afterwards, because those reuse a position
   // that is already solved.
-  const requestedOverlays = overlaysFor(ladder.canvas.edges, options.projected, options.selectedEdge);
+  const selectedEdge = issueResolves(ladder.canvas, options.selected) ? null : (options.selectedEdge ?? null);
+  const requestedOverlays = overlaysFor(ladder.canvas.edges, options.projected, selectedEdge);
 
   const canvas =
     ladder.tier === 'direct'
@@ -492,6 +511,7 @@ export function renderScaleLadder(
           projection: 'graph',
           theme,
           selected: options.selected ?? null,
+          selectedEdge,
           // THE PANEL HAS ONE HEADER, and the rail beside this canvas is
           // drawing it. Two would mean two projection toggles disagreeing
           // about which projection is current.
