@@ -32,6 +32,10 @@ it('recedingOf recedes nothing and does not throw for malformed, prototype-named
     { edge: ` ${real}` },
     { edge: real.toUpperCase() },
     { edge: edgeIdentity('blocked-by', '102', '101') },
+    { key: '', edge: '' },
+    { key: [], edge: null },
+    // An edge identity is not an issue key, so passed as a key with no edge beside it, it selects nothing.
+    { key: real },
   ];
   for (const selection of selections) {
     const label = JSON.stringify(selection);
@@ -154,20 +158,8 @@ it('recedingOf recedes by the relationship when no selected key resolves, includ
   // "A key resolves when the document names it (in `byKey` or as an edge end), and keys that do not resolve are ignored."
   // "When any key resolves, the issues win and `edge` is ignored; packages/viewer/README.md says so."
   // So with no key resolving, the edge decides: "Otherwise the edge resolves when `edgeIdentity(edge.field, edge.from, edge.to)` from `@issuegraph/core`, over `document.edges` in declared orientation, equals it."
-  for (const key of [null, '', [], ['not-an-issue']] as const) {
+  for (const key of [null, '', [], ['not-an-issue'], ['nowhere', 'also-nowhere']] as const) {
     assert.deepEqual(recedingOf(document, { key, edge }), byEdge, `key ${JSON.stringify(key)}`);
-  }
-});
-
-it('recedingOf recedes nothing for no selection, explicit nulls, empty strings and an empty set with no edge', () => {
-  const document = normalizeDocument(fixtureDocument).document;
-  const selections = [{}, { key: null, edge: null }, { key: '', edge: '' }, { key: [], edge: null }] as const;
-
-  // "No selection, or one that does not resolve, recedes nothing."
-  for (const selection of selections) {
-    const result = recedingOf(document, selection);
-    assert.equal(result.keys.size, 0, `${JSON.stringify(selection)} receded issues`);
-    assert.equal(result.edges.size, 0, `${JSON.stringify(selection)} receded lines`);
   }
 });
 
@@ -192,39 +184,7 @@ it('recedingOf keeps the whole together unit when a selected relationship ends o
   assert.equal(result.edges.has(edgeIdentity('together-with', '103', '104')), true);
 });
 
-import { test } from 'node:test';
-test('recedingOf recedes nothing and does not throw when the selection resolves to nothing', () => {
-  const { document } = normalizeDocument(fixtureDocument);
-  const unresolved: readonly Parameters<typeof recedingOf>[1][] = [
-    {},
-    { key: null, edge: null },
-    { key: 'nowhere' },
-    { key: [] },
-    { key: ['nowhere', 'also-nowhere'] },
-    { edge: 'not|an|edge' },
-    // An edge identity is not an issue key, so passed as a key with no edge beside it, it selects nothing.
-    { key: edgeIdentity('blocked-by', '101', '102') },
-  ];
-  for (const selection of unresolved) {
-    // "No selection, or one that does not resolve, recedes nothing."
-    const result = recedingOf(document, selection);
-    assert.deepEqual([...result.keys], [], JSON.stringify(selection));
-    assert.deepEqual([...result.edges], [], JSON.stringify(selection));
-  }
-});
-
-test('recedingOf recedes nothing for the blocked-by 101 to 102 identity with its ends swapped', () => {
-  const { document } = normalizeDocument(fixtureDocument);
-  const declared = recedingOf(document, { edge: edgeIdentity('blocked-by', '101', '102') });
-  assert.ok(declared.edges.size > 0, 'the declared orientation receded nothing, so the swap proves nothing');
-
-  // "Otherwise the edge resolves when `edgeIdentity(edge.field, edge.from, edge.to)` from `@issuegraph/core`, over `document.edges` in declared orientation, equals it."
-  const swapped = recedingOf(document, { edge: edgeIdentity('blocked-by', '102', '101') });
-  assert.deepEqual([...swapped.keys], []);
-  assert.deepEqual([...swapped.edges], []);
-});
-
-test('recedingOf ignores a resolving edge when a key resolves, in single and set form', () => {
+it('recedingOf ignores a resolving edge when a key resolves, in single and set form', () => {
   const { document } = normalizeDocument(fixtureDocument);
   const sorted = (values: ReadonlySet<string>): string[] => [...values].sort();
   const edge = edgeIdentity('decomposed-from', '103', '107');
@@ -239,53 +199,13 @@ test('recedingOf ignores a resolving edge when a key resolves, in single and set
   const set = recedingOf(document, { key: ['102'], edge });
   assert.deepEqual(sorted(set.keys), sorted(byIssue.keys));
   assert.deepEqual(sorted(set.edges), sorted(byIssue.edges));
-});
-
-test('recedingOf ignores set keys that do not resolve, and falls back to the edge when none does', () => {
-  const { document } = normalizeDocument(fixtureDocument);
-  const sorted = (values: ReadonlySet<string>): string[] => [...values].sort();
-  const edge = edgeIdentity('decomposed-from', '103', '107');
-
   // "A key resolves when the document names it (in `byKey` or as an edge end), and keys that do not resolve are ignored."
-  const byIssue = recedingOf(document, { key: '102' });
   const mixed = recedingOf(document, { key: ['nowhere', '102'], edge });
   assert.deepEqual(sorted(mixed.keys), sorted(byIssue.keys));
   assert.deepEqual(sorted(mixed.edges), sorted(byIssue.edges));
-
-  // "When any key resolves, the issues win and `edge` is ignored", so when no key resolves the edge is the selection.
-  const byEdge = recedingOf(document, { edge });
-  assert.ok(byEdge.keys.size > 0, 'the edge alone receded nothing, so the fallback proves nothing');
-  const noneResolve = recedingOf(document, { key: ['nowhere', 'also-nowhere'], edge });
-  assert.deepEqual(sorted(noneResolve.keys), sorted(byEdge.keys));
-  assert.deepEqual(sorted(noneResolve.edges), sorted(byEdge.edges));
 });
 
-test("recedingOf gives a set naming '102' twice the same result as key '102'", () => {
-  const { document } = normalizeDocument(fixtureDocument);
-  const sorted = (values: ReadonlySet<string>): string[] => [...values].sort();
-  const single = recedingOf(document, { key: '102' });
-  assert.ok(single.keys.size > 0, "key '102' receded nothing, so the repeat proves nothing");
-
-  // "`recedingOf` accepts one issue key or a set of keys, and over a set an issue recedes when it is not in the set and touches no selected issue, and a line recedes when it touches no selected issue"
-  const repeated = recedingOf(document, { key: ['102', '102'] });
-  assert.deepEqual(sorted(repeated.keys), sorted(single.keys));
-  assert.deepEqual(sorted(repeated.edges), sorted(single.edges));
-});
-
-test('recedingOf still recedes by the edge when the same edge identity is also passed as key', () => {
-  const { document } = normalizeDocument(fixtureDocument);
-  const sorted = (values: ReadonlySet<string>): string[] => [...values].sort();
-  const edge = edgeIdentity('blocked-by', '101', '102');
-  const byEdge = recedingOf(document, { edge });
-  assert.ok(byEdge.edges.size > 0, 'the edge alone receded nothing, so this proves nothing');
-
-  // "So an edge identity passed as `key` never switches off an edge selection."
-  const both = recedingOf(document, { key: edge, edge });
-  assert.deepEqual(sorted(both.keys), sorted(byEdge.keys));
-  assert.deepEqual(sorted(both.edges), sorted(byEdge.edges));
-});
-
-test("recedingOf for member '104' keeps its unit card and recedes its partner 103's other lines", () => {
+it("recedingOf for member '104' keeps its unit card and recedes its partner 103's other lines", () => {
   const { document } = normalizeDocument(fixtureDocument);
   const result = recedingOf(document, { key: '104' });
 
@@ -300,7 +220,7 @@ test("recedingOf for member '104' keeps its unit card and recedes its partner 10
   assert.equal(result.edges.has(edgeIdentity('decomposed-from', '103', '107')), true, "the partner's line stayed");
 });
 
-test("recedingOf for key '103' keeps its unit partner and neighbours, and recedes the partner's decomposed-from 104 to 107", () => {
+it("recedingOf for key '103' keeps its unit partner and neighbours, and recedes the partner's decomposed-from 104 to 107", () => {
   const { document } = normalizeDocument(fixtureDocument);
   const result = recedingOf(document, { key: '103' });
 
@@ -317,7 +237,7 @@ test("recedingOf for key '103' keeps its unit partner and neighbours, and recede
   );
 });
 
-test('recedingOf gives each member of a together unit its own result when only one member has an origin', () => {
+it('recedingOf gives each member of a together unit its own result when only one member has an origin', () => {
   const { document } = normalizeDocument({
     issues: [
       { key: '103', title: 'Split the invoice writer', open: true },

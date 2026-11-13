@@ -1689,23 +1689,22 @@ describe('the held rail greys by its hue tokens, never by a filter', () => {
   });
 });
 
-describe("more tests", function () {
-it('renderWorkspace styles declare no opacity and no filter once comments are stripped, so no editor text is dimmed by opacity', () => {
-  // "No text in either package is dimmed by opacity"
-  // "In packages/editor, `renderScaleLadder(document, { selectedEdge })` stamps the rest, the comment-stripped `styles` of `renderWorkspace` and `renderScaleLadder` hold no `opacity:` or `filter:` declaration, and a receded failed edge has no `opacity` attribute."
-  // A held order, so the scan covers the render whose rail the held-order rule greys.
-  const { styles } = renderWorkspace(
-    backlogOf(4, { held: ['i0003'], edges: [['blocked-by', 'i0001', 'i0002']] }),
-    { words: WORKSPACE_WORDS, orderStatus: 'held' },
-  );
-  const css = styles.replace(/\/\*[\s\S]*?\*\//g, '');
-  // The property name is matched exactly, so stroke-opacity and fill-opacity are not counted.
-  assert.deepEqual(
-    [...css.matchAll(/(?:^|[;{\s])(opacity|filter)\s*:/g)].map((match) => match[1]),
-    [],
-    'the workspace styles still fade something by opacity or filter',
-  );
-  // A receded line draws by stroke-opacity, so finding it shows the viewer sheet was part of what was scanned.
-  assert.match(css, /(?:^|[;{\s])stroke-opacity\s*:/);
-});
+describe('the workspace styles fade no text', () => {
+  it('declare no opacity and no filter once comments are stripped', () => {
+    // "No text in either package is dimmed by opacity"
+    // A held order, so the scan covers the render whose rail the held-order rule greys.
+    const { styles } = renderWorkspace(
+      backlogOf(4, { held: ['i0003'], edges: [['blocked-by', 'i0001', 'i0002']] }),
+      { words: WORKSPACE_WORDS, orderStatus: 'held' },
+    );
+    const css = withoutComments(styles);
+    // The property name is matched exactly, so stroke-opacity and fill-opacity are not counted.
+    assert.deepEqual(
+      [...css.matchAll(/(?:^|[;{\s])(opacity|filter)\s*:/g)].map((match) => match[1]),
+      [],
+      'the workspace styles still fade something by opacity or filter',
+    );
+    // A receded line draws by stroke-opacity, so finding it shows the viewer sheet was part of what was scanned.
+    assert.match(css, /(?:^|[;{\s])stroke-opacity\s*:/);
+  });
 });

@@ -553,73 +553,7 @@ describe('the canvas draws each edge’s WRITE STATES from the store’s project
   });
 });
 
-describe("more tests", function () {
-it('renderScaleLadder stamps nothing for a selectedEdge this canvas does not draw, however it is spelled', () => {
-  const document = documentOf({ components: componentsSumming(10, 20) });
-  const drawn = edgeIdentity('blocked-by', componentKey(0, 1), componentKey(0, 2));
-  const bare = renderScaleLadder(document).markup;
-
-  // The issue: "packages/editor/src/scale/render.ts forwards `selectedEdge` to the viewer graph."
-  const forwarded = renderScaleLadder(document, { selectedEdge: drawn }).markup;
-  assert.match(forwarded, /data-recede="true"/, 'the forwarded edge receded nothing');
-
-  // The workspace hands this value through from its own selection state, so a
-  // stale or crafted identity must reach the canvas as nothing selected.
-  const unresolved = [
-    edgeIdentity('blocked-by', componentKey(0, 2), componentKey(0, 1)),
-    `${drawn}"><script>alert(1)</script>`,
-    'not|an|edge',
-    '__proto__',
-  ];
-  for (const value of unresolved) {
-    const result = renderScaleLadder(document, { selectedEdge: value });
-    // The issue: "No selection, or one that does not resolve, recedes nothing."
-    assert.equal(/data-recede/.test(result.markup), false, `${JSON.stringify(value)} stamped the canvas`);
-    assert.equal(result.markup, bare, `${JSON.stringify(value)} changed the canvas`);
-    assert.equal(/<script>/.test(result.markup), false);
-  }
-});
-});
-
-describe("more tests 2", function () {
-it('recedes the scale canvas by a selected issue and draws no halo when a relationship is selected too', () => {
-  const document = relatedDocument(10);
-  const ignored = edgeIdentity('blocked-by', componentKey(0, 1), componentKey(0, 2));
-  const kept = edgeIdentity('blocked-by', componentKey(0, 9), componentKey(0, 10));
-
-  const result = renderScaleLadder(document, { selected: componentKey(0, 10), selectedEdge: ignored });
-
-  // "When a host passes issues and a relationship together, the issues win and the relationship is ignored"
-  assert.equal(/ig-overlay-halo/.test(result.markup), false, 'the ignored relationship still draws a halo');
-  assert.equal(/data-ig-state="selected/.test(result.markup), false, 'the ignored relationship is still marked selected');
-  const lines = [...result.markup.matchAll(/<path class="ig-edge"[^>]*>/g)]
-    .map((match) => ({
-      group: /data-ig-group="([^"]*)"/.exec(match[0])?.[1],
-      stamped: match[0].includes('data-recede="true"'),
-    }))
-    .filter((line) => line.group !== undefined);
-  assert.deepEqual(new Set(lines.filter((line) => !line.stamped).map((line) => line.group)), new Set([kept]));
-  assert.equal(lines.find((line) => line.group === ignored)?.stamped, true);
-});
-
-it('renderScaleLadder styles declare no opacity and no filter once comments are stripped, so no editor text is dimmed by opacity', () => {
-  // "No text in either package is dimmed by opacity"
-  // "In packages/editor, `renderScaleLadder(document, { selectedEdge })` stamps the rest, the comment-stripped `styles` of `renderWorkspace` and `renderScaleLadder` hold no `opacity:` or `filter:` declaration, and a receded failed edge has no `opacity` attribute."
-  const { styles } = renderScaleLadder(documentOf({ components: [4, 3] }));
-  const css = styles.replace(/\/\*[\s\S]*?\*\//g, '');
-  // The property name is matched exactly, so stroke-opacity and fill-opacity are not counted.
-  assert.deepEqual(
-    [...css.matchAll(/(?:^|[;{\s])(opacity|filter)\s*:/g)].map((match) => match[1]),
-    [],
-    'the scale ladder styles still fade something by opacity or filter',
-  );
-  // A receded line draws by stroke-opacity, so finding it shows the viewer sheet was part of what was scanned.
-  assert.match(css, /(?:^|[;{\s])stroke-opacity\s*:/);
-});
-});
-
-describe("more tests 3", function () {
-it('renderScaleLadder draws no halo and recedes by the issue when a resolving selected issue comes with a selectedEdge', () => {
+describe('a selection recedes the rest of the scale canvas', () => {
   const recedingByEdge = (markup: string): Map<string, boolean> =>
     new Map(
       [...markup.matchAll(/<path class="ig-edge"[^>]*>/g)].map(([tag]): [string, boolean] => [
@@ -627,128 +561,7 @@ it('renderScaleLadder draws no halo and recedes by the issue when a resolving se
         tag.includes('data-recede="true"'),
       ]),
     );
-  const document = documentOf({ components: componentsSumming(10, 20) });
-  const picked = edgeIdentity('blocked-by', componentKey(0, 1), componentKey(0, 2));
 
-  // "When a host passes issues and a relationship together, the issues win and the relationship is ignored"
-  const result = renderScaleLadder(document, { selected: componentKey(0, 5), selectedEdge: picked });
-  assert.equal(/ig-overlay-halo/.test(result.markup), false, 'the ignored relationship still drew its halo');
-  const receding = recedingByEdge(result.markup);
-  assert.equal(receding.get(picked), true, 'the ignored relationship stayed at full strength');
-  assert.equal(receding.get(edgeIdentity('blocked-by', componentKey(0, 4), componentKey(0, 5))), false);
-  assert.equal(receding.get(edgeIdentity('blocked-by', componentKey(0, 5), componentKey(0, 6))), false);
-});
-
-it('renderScaleLadder keeps the edge selection and its halo when the selected issue does not resolve', () => {
-  const recedingByEdge = (markup: string): Map<string, boolean> =>
-    new Map(
-      [...markup.matchAll(/<path class="ig-edge"[^>]*>/g)].map(([tag]): [string, boolean] => [
-        /data-ig-group="([^"]*)"/.exec(tag)?.[1] ?? '',
-        tag.includes('data-recede="true"'),
-      ]),
-    );
-  const document = documentOf({ components: componentsSumming(10, 20) });
-  const picked = edgeIdentity('blocked-by', componentKey(0, 1), componentKey(0, 2));
-
-  // "A key resolves when the document names it (in `byKey` or as an edge end), and keys that do not resolve are ignored."
-  const result = renderScaleLadder(document, { selected: 'nowhere', selectedEdge: picked });
-  assert.match(result.markup, /class="ig-overlay ig-overlay-halo"/);
-  const receding = recedingByEdge(result.markup);
-  assert.equal(receding.get(picked), false, 'the selected relationship receded');
-  assert.equal(
-    receding.get(edgeIdentity('blocked-by', componentKey(0, 5), componentKey(0, 6))),
-    true,
-    'a line that touches neither end of the selected relationship stayed at full strength',
-  );
-});
-
-it('renderScaleLadder writes no write-state opacity on a receded line or its clones, and its state still shows', () => {
-  const document = documentOf({ components: componentsSumming(10, 20) });
-  const first = edgeIdentity('blocked-by', componentKey(0, 1), componentKey(0, 2));
-  const projectedAs = (state: EdgeState) => ({
-    id: first,
-    kind: 'blocked-by' as const,
-    from: componentKey(0, 1),
-    to: componentKey(0, 2),
-    states: [state],
-    writes: [],
-  });
-  // A line that does not recede is faded by an opacity attribute, which a receded line would stack on its own 50%.
-  assert.match(renderScaleLadder(document, { projected: [projectedAs('pending-write')] }).markup, /\sopacity="/);
-
-  const states: readonly EdgeState[] = ['pending-write', 'failed'];
-  for (const state of states) {
-    const { markup } = renderScaleLadder(document, { projected: [projectedAs(state)], selected: componentKey(0, 5) });
-    const path = [...markup.matchAll(/<path class="ig-edge"[^>]*>/g)]
-      .map(([tag]) => tag)
-      .find((tag) => tag.includes(`data-ig-group="${first}"`));
-    assert.ok(path !== undefined, `${state}: the line was not drawn`);
-    // "A receded line with an editor write state draws at 50%, and its state still shows by its dash and colour"
-    assert.match(path, /data-recede="true"/, `${state}: the line did not recede`);
-    assert.ok(path.includes(`data-ig-state="${state}"`), `${state}: the receded line lost its state`);
-    assert.equal(/\sopacity="/.test(markup), false, `${state}: a receded line or one of its clones carries an opacity attribute`);
-  }
-});
-
-it('renderScaleLadder draws a receded refused line with the dash and hue of an unselected canvas, faded only by the sheet', () => {
-  // The issue: "A receded line with an editor write state draws at 50%, and its state still shows by its dash and colour"
-  // Selecting c0-1 keeps only c0-1, c0-2 and their line, so the refused c0-6 to
-  // c0-7 line recedes. A write-state opacity attribute on it would multiply with
-  // the sheet's half strength and draw it fainter than 50%.
-  const document = documentOf({ components: [10] });
-  const far = edgeIdentity('blocked-by', componentKey(0, 6), componentKey(0, 7));
-  const refused = {
-    id: far,
-    kind: 'blocked-by' as const,
-    from: componentKey(0, 6),
-    to: componentKey(0, 7),
-    states: ['invalid' as const],
-    writes: [],
-  };
-  const bare = renderScaleLadder(document, { projected: [refused] });
-  const receding = renderScaleLadder(document, { projected: [refused], selected: componentKey(0, 1) });
-
-  const pathTags = (markup: string): string[] =>
-    [...markup.matchAll(/<path [^>]*>/g)].map((match) => match[0]);
-  const farLines = (markup: string): string[] =>
-    pathTags(markup).filter(
-      (tag) => tag.includes('class="ig-edge"') && tag.includes(`data-ig-group="${far}"`),
-    );
-  const dashClones = (markup: string): string[] =>
-    pathTags(markup).filter((tag) => /class="[^"]*\big-overlay-dash\b/.test(tag));
-  const unfaded = (tag: string): string =>
-    tag.replace(/ opacity="[^"]*"/g, '').replace(/ data-recede="true"/g, '');
-
-  const lines = farLines(receding.markup);
-  assert.ok(lines.length > 0, 'the refused line was not drawn');
-  for (const tag of lines) {
-    assert.ok(tag.includes('data-recede="true"'), 'the far line does not recede, so this proves nothing');
-    assert.ok(tag.includes('data-ig-state="invalid"'), 'the refusal no longer shows on the receded line');
-    assert.equal(/ opacity="/.test(tag), false, 'a write-state opacity sits on top of the recede');
-  }
-  assert.deepEqual(
-    lines.map(unfaded),
-    farLines(bare.markup).map(unfaded),
-    'receding changed the line beyond its fade',
-  );
-
-  const clones = dashClones(receding.markup);
-  assert.ok(clones.length > 0, 'the refusal lost its dash clone on a receded line');
-  for (const tag of clones) {
-    assert.ok(tag.includes('stroke="var(--ig-state-invalid)"'), 'the refusal lost its hue on a receded line');
-    assert.equal(/ opacity="/.test(tag), false, 'a clone of a receded line carries a write-state opacity');
-  }
-  assert.deepEqual(clones.map(unfaded), dashClones(bare.markup).map(unfaded));
-
-  assert.match(
-    receding.styles,
-    /\[data-recede(=["']?true["']?)?\][^{}]*\{[^}]*stroke-opacity:\s*0?\.5\b/,
-    'the shipped sheet draws no receded line at half strength',
-  );
-});
-});
-
-describe('a selected relationship recedes the rest of the scale canvas', () => {
   it('stamps every row, station and line the selected edge does not touch, and none that it does', () => {
     const document = relatedDocument(10);
     const picked = edgeIdentity('blocked-by', componentKey(0, 1), componentKey(0, 2));
@@ -782,5 +595,164 @@ describe('a selected relationship recedes the rest of the scale canvas', () => {
       new Set([picked]),
     );
     assert.ok(lines.some(stamped), 'no line receded');
+  });
+
+  it('stamps nothing for a selectedEdge this canvas does not draw, however it is spelled', () => {
+    const document = relatedDocument(10);
+    const drawn = edgeIdentity('blocked-by', componentKey(0, 1), componentKey(0, 2));
+    const bare = renderScaleLadder(document).markup;
+
+    // The workspace hands this value through from its own selection state, so a
+    // stale or crafted identity must reach the canvas as nothing selected.
+    const unresolved = [
+      edgeIdentity('blocked-by', componentKey(0, 2), componentKey(0, 1)),
+      `${drawn}"><script>alert(1)</script>`,
+      'not|an|edge',
+      '__proto__',
+    ];
+    for (const value of unresolved) {
+      const result = renderScaleLadder(document, { selectedEdge: value });
+      // The issue: "No selection, or one that does not resolve, recedes nothing."
+      assert.equal(/data-recede/.test(result.markup), false, `${JSON.stringify(value)} stamped the canvas`);
+      assert.equal(result.markup, bare, `${JSON.stringify(value)} changed the canvas`);
+      assert.equal(/<script>/.test(result.markup), false);
+    }
+  });
+
+  it('recedes by a selected issue and draws no halo when a relationship is selected too', () => {
+    const document = relatedDocument(10);
+    const ignored = edgeIdentity('blocked-by', componentKey(0, 1), componentKey(0, 2));
+    const kept = edgeIdentity('blocked-by', componentKey(0, 9), componentKey(0, 10));
+
+    const result = renderScaleLadder(document, { selected: componentKey(0, 10), selectedEdge: ignored });
+
+    // "When a host passes issues and a relationship together, the issues win and the relationship is ignored"
+    assert.equal(/ig-overlay-halo/.test(result.markup), false, 'the ignored relationship still draws a halo');
+    assert.equal(/data-ig-state="selected/.test(result.markup), false, 'the ignored relationship is still marked selected');
+    const lines = [...result.markup.matchAll(/<path class="ig-edge"[^>]*>/g)]
+      .map((match) => ({
+        group: /data-ig-group="([^"]*)"/.exec(match[0])?.[1],
+        stamped: match[0].includes('data-recede="true"'),
+      }))
+      .filter((line) => line.group !== undefined);
+    assert.deepEqual(new Set(lines.filter((line) => !line.stamped).map((line) => line.group)), new Set([kept]));
+    assert.equal(lines.find((line) => line.group === ignored)?.stamped, true);
+  });
+
+  it('keeps the edge selection and its halo when the selected issue does not resolve', () => {
+    const document = relatedDocument(10);
+    const picked = edgeIdentity('blocked-by', componentKey(0, 1), componentKey(0, 2));
+
+    // "A key resolves when the document names it (in `byKey` or as an edge end), and keys that do not resolve are ignored."
+    const result = renderScaleLadder(document, { selected: 'nowhere', selectedEdge: picked });
+    assert.match(result.markup, /class="ig-overlay ig-overlay-halo"/);
+    const receding = recedingByEdge(result.markup);
+    assert.equal(receding.get(picked), false, 'the selected relationship receded');
+    assert.equal(
+      receding.get(edgeIdentity('blocked-by', componentKey(0, 5), componentKey(0, 6))),
+      true,
+      'a line that touches neither end of the selected relationship stayed at full strength',
+    );
+  });
+
+  it('writes no write-state opacity on a receded line or its clones, and its state still shows', () => {
+    const document = relatedDocument(10);
+    const first = edgeIdentity('blocked-by', componentKey(0, 1), componentKey(0, 2));
+    const projectedAs = (state: EdgeState) => ({
+      id: first,
+      kind: 'blocked-by' as const,
+      from: componentKey(0, 1),
+      to: componentKey(0, 2),
+      states: [state],
+      writes: [],
+    });
+    // A line that does not recede is faded by an opacity attribute, which a receded line would stack on its own 50%.
+    assert.match(renderScaleLadder(document, { projected: [projectedAs('pending-write')] }).markup, /\sopacity="/);
+
+    const states: readonly EdgeState[] = ['pending-write', 'failed'];
+    for (const state of states) {
+      const { markup } = renderScaleLadder(document, { projected: [projectedAs(state)], selected: componentKey(0, 5) });
+      const path = [...markup.matchAll(/<path class="ig-edge"[^>]*>/g)]
+        .map(([tag]) => tag)
+        .find((tag) => tag.includes(`data-ig-group="${first}"`));
+      assert.ok(path !== undefined, `${state}: the line was not drawn`);
+      // "A receded line with an editor write state draws at 50%, and its state still shows by its dash and colour"
+      assert.match(path, /data-recede="true"/, `${state}: the line did not recede`);
+      assert.ok(path.includes(`data-ig-state="${state}"`), `${state}: the receded line lost its state`);
+      assert.equal(/\sopacity="/.test(markup), false, `${state}: a receded line or one of its clones carries an opacity attribute`);
+    }
+  });
+
+  it('draws a receded refused line with the dash and hue of an unselected canvas, faded only by the sheet', () => {
+    // The issue: "A receded line with an editor write state draws at 50%, and its state still shows by its dash and colour"
+    // Selecting c0-1 keeps only c0-1, c0-2 and their line, so the refused c0-6 to
+    // c0-7 line recedes. A write-state opacity attribute on it would multiply with
+    // the sheet's half strength and draw it fainter than 50%.
+    const document = documentOf({ components: [10] });
+    const far = edgeIdentity('blocked-by', componentKey(0, 6), componentKey(0, 7));
+    const refused = {
+      id: far,
+      kind: 'blocked-by' as const,
+      from: componentKey(0, 6),
+      to: componentKey(0, 7),
+      states: ['invalid' as const],
+      writes: [],
+    };
+    const bare = renderScaleLadder(document, { projected: [refused] });
+    const receding = renderScaleLadder(document, { projected: [refused], selected: componentKey(0, 1) });
+
+    const pathTags = (markup: string): string[] =>
+      [...markup.matchAll(/<path [^>]*>/g)].map((match) => match[0]);
+    const farLines = (markup: string): string[] =>
+      pathTags(markup).filter(
+        (tag) => tag.includes('class="ig-edge"') && tag.includes(`data-ig-group="${far}"`),
+      );
+    const dashClones = (markup: string): string[] =>
+      pathTags(markup).filter((tag) => /class="[^"]*\big-overlay-dash\b/.test(tag));
+    const unfaded = (tag: string): string =>
+      tag.replace(/ opacity="[^"]*"/g, '').replace(/ data-recede="true"/g, '');
+
+    const lines = farLines(receding.markup);
+    assert.ok(lines.length > 0, 'the refused line was not drawn');
+    for (const tag of lines) {
+      assert.ok(tag.includes('data-recede="true"'), 'the far line does not recede, so this proves nothing');
+      assert.ok(tag.includes('data-ig-state="invalid"'), 'the refusal no longer shows on the receded line');
+      assert.equal(/ opacity="/.test(tag), false, 'a write-state opacity sits on top of the recede');
+    }
+    assert.deepEqual(
+      lines.map(unfaded),
+      farLines(bare.markup).map(unfaded),
+      'receding changed the line beyond its fade',
+    );
+
+    const clones = dashClones(receding.markup);
+    assert.ok(clones.length > 0, 'the refusal lost its dash clone on a receded line');
+    for (const tag of clones) {
+      assert.ok(tag.includes('stroke="var(--ig-state-invalid)"'), 'the refusal lost its hue on a receded line');
+      assert.equal(/ opacity="/.test(tag), false, 'a clone of a receded line carries a write-state opacity');
+    }
+    assert.deepEqual(clones.map(unfaded), dashClones(bare.markup).map(unfaded));
+
+    assert.match(
+      receding.styles,
+      /\[data-recede(=["']?true["']?)?\][^{}]*\{[^}]*stroke-opacity:\s*0?\.5\b/,
+      'the shipped sheet draws no receded line at half strength',
+    );
+  });
+});
+
+describe('the scale ladder styles fade no text', () => {
+  it('declare no opacity and no filter once comments are stripped', () => {
+    // "No text in either package is dimmed by opacity"
+    const { styles } = renderScaleLadder(documentOf({ components: [4, 3] }));
+    const css = styles.replace(/\/\*[\s\S]*?\*\//g, '');
+    // The property name is matched exactly, so stroke-opacity and fill-opacity are not counted.
+    assert.deepEqual(
+      [...css.matchAll(/(?:^|[;{\s])(opacity|filter)\s*:/g)].map((match) => match[1]),
+      [],
+      'the scale ladder styles still fade something by opacity or filter',
+    );
+    // A receded line draws by stroke-opacity, so finding it shows the viewer sheet was part of what was scanned.
+    assert.match(css, /(?:^|[;{\s])stroke-opacity\s*:/);
   });
 });

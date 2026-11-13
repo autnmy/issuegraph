@@ -19,6 +19,7 @@ import {
 import { renderViewer } from '../render.ts';
 import { viewerStylesheet } from '../styles.ts';
 import { defaultTheme, extendTheme } from '../theme.ts';
+import { dashArrayFor, treatmentFor } from '../vocabulary.ts';
 import { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET, graphScene, relatedKeys } from './graph.ts';
 
 function scene(input: ViewerDocument = fixtureDocument, options = {}) {
@@ -1341,220 +1342,6 @@ describe('the graph projection and a detached footer', () => {
   });
 });
 
-import { dashArrayFor, treatmentFor } from '../vocabulary.ts';
-
-describe("more tests", function () {
-it('graphScene writes no unresolved selection value into the markup, however it is spelled', () => {
-  const { document } = normalizeDocument(fixtureDocument);
-  const bare = renderMarkup(graphScene(document, {}).root);
-  const real = edgeIdentity('blocked-by', '101', '102');
-  // Characters that break out of an attribute, a tag or a CSS attribute
-  // selector, the identity separator, and a real identity with one byte added:
-  // none of them names anything in the document.
-  const hostile = [
-    '"><script>alert(1)</script>',
-    "'] , * { display: none } [x='",
-    '</svg><img src=x onerror=alert(1)>',
-    'a|b|c|d',
-    `${real}"`,
-    `${real}]`,
-  ];
-  for (const value of hostile) {
-    // The issue: "With nothing receding, graph markup is byte-identical to the markup before the change"
-    assert.equal(
-      renderMarkup(graphScene(document, { selectedEdge: value }).root),
-      bare,
-      `selectedEdge ${JSON.stringify(value)} changed the markup`,
-    );
-    assert.equal(
-      renderMarkup(graphScene(document, { selected: value, selectedEdge: value }).root),
-      bare,
-      `selected and selectedEdge ${JSON.stringify(value)} changed the markup`,
-    );
-  }
-  assert.equal(/data-recede/.test(bare), false, 'the bare render carries a stamp');
-  // Without this the loop above passes on a graph that ignores selectedEdge.
-  const resolving = renderMarkup(graphScene(document, { selectedEdge: real }).root);
-  assert.match(resolving, /data-recede="true"/);
-});
-
-it('graphScene adds only the constant recede stamp for a resolving selectedEdge', () => {
-  const { document } = normalizeDocument(fixtureDocument);
-  const bare = renderMarkup(graphScene(document, {}).root);
-  const selected = edgeIdentity('decomposed-from', '103', '107');
-  const receding = renderMarkup(graphScene(document, { selectedEdge: selected }).root);
-
-  // The issue: "Receding elements get `data-recede="true"`; others get no attribute, never `"false"`."
-  const values = [...receding.matchAll(/data-recede="([^"]*)"/g)].map((match) => match[1]);
-  assert.ok(values.length > 0, 'a resolving edge stamped nothing');
-  assert.deepEqual([...new Set(values)], ['true']);
-
-  // The issue: "The selection value is compared, never written into markup, a selector or the stylesheet."
-  // Removing every stamp must give back the bare render byte for byte, so the
-  // receding render carries no copy of the selection anywhere else.
-  assert.equal(receding.replaceAll(' data-recede="true"', ''), bare);
-});
-});
-
-describe("more tests 2", function () {
-it('graphScene recomputes the recede on every render, so a selection leaves no stamp on the next render of the same document', () => {
-  // One normalized document shared by every render, so any recede result kept
-  // between renders would show up in a later render.
-  const normalized = normalizeDocument(fixtureDocument).document;
-  const draw = (options: { selected?: string | null; selectedEdge?: string | null }): string =>
-    renderMarkup(graphScene(normalized, options).root);
-
-  const bare = draw({});
-  const byKey = draw({ selected: '102' });
-  const byEdge = draw({ selectedEdge: edgeIdentity('serialize-with', '103', '105') });
-
-  assert.equal(bare.includes('data-recede'), false, 'the bare render carries a stamp');
-  assert.ok(byKey.includes('data-recede="true"'), 'selecting 102 receded nothing');
-  assert.ok(byEdge.includes('data-recede="true"'), 'selecting a relationship receded nothing');
-  assert.notEqual(byEdge, byKey, 'two different selections receded the same elements');
-
-  // The issue: "With nothing receding, graph markup is byte-identical to the markup before the change"
-  assert.equal(draw({}), bare, 'a bare render after selections kept a stamp');
-  assert.equal(draw({ selected: null, selectedEdge: null }), bare, 'explicit nulls after selections kept a stamp');
-  assert.equal(draw({ selected: '102' }), byKey, 'repeating a selection changed what recedes');
-  assert.equal(
-    draw({ selectedEdge: edgeIdentity('serialize-with', '103', '105') }),
-    byEdge,
-    'repeating a relationship selection changed what recedes',
-  );
-});
-});
-
-describe("more tests 3", function () {
-it('renderViewer stamps a spine station exactly when its own slot recedes, found by key and not by position', () => {
-  // "With a selection, lines and stations that do not touch it draw at 50%, and with none selected nothing recedes"
-  // A station is named here by its accessible name: "rank 1" is 102, "held, no rank" is 101,
-  // and "rank 2" is the unit of 103 and 104.
-  const stationsFor = (selected: string | null): Map<string, boolean> => {
-    const markup = renderMarkup(graphScene(normalizeDocument(fixtureDocument).document, { selected }).root);
-    const stations = new Map<string, boolean>();
-    for (const [tag] of markup.matchAll(/<span class="ig-spine-station"[^>]*>/g)) {
-      stations.set(/aria-label="([^"]*)"/.exec(tag)?.[1] ?? '', tag.includes('data-recede="true"'));
-    }
-    return stations;
-  };
-
-  const bare = stationsFor(null);
-  assert.ok(bare.size > 0, 'the graph drew no station, so this proves nothing');
-  assert.deepEqual([...bare.values()].filter(Boolean), [], 'a station receded with nothing selected');
-
-  // 102 shares both its lines with 101, and no line with 103 or 104.
-  const by102 = stationsFor('102');
-  assert.equal(by102.get('rank 1'), false, 'the selected issue 102 receded its own station');
-  assert.equal(by102.get('held, no rank'), false, 'the station of the neighbour 101 receded');
-  assert.equal(by102.get('rank 2'), true, 'the station of the unit 103, which touches nothing selected, did not recede');
-
-  // 105 shares serialize-with with 103, and no line with 102 or 101.
-  const by105 = stationsFor('105');
-  assert.equal(by105.get('rank 1'), true, 'the station of 102, which touches nothing selected, did not recede');
-  assert.equal(by105.get('held, no rank'), true, 'the station of 101, which touches nothing selected, did not recede');
-  assert.equal(by105.get('rank 2'), false, 'the station of the neighbour 103 receded');
-});
-
-it("renderViewer keeps each receded line on its kind's own dash for the four kinds the canvas draws", () => {
-  // "A receded line keeps its kind's dash, for all five kinds"
-  // together-with draws no line on the canvas, so its dash is checked against the stylesheet instead.
-  const markup = renderMarkup(graphScene(normalizeDocument(fixtureDocument).document, { selected: '102' }).root);
-  const start = markup.indexOf('<svg class="ig-canvas"');
-  assert.notEqual(start, -1, 'the graph drew no canvas');
-  const canvas = markup.slice(start, markup.indexOf('</svg>', start));
-
-  const recededKinds = new Set<string>();
-  for (const [tag] of canvas.matchAll(/<path class="ig-edge"[^>]*>/g)) {
-    if (!tag.includes('data-recede="true"')) continue;
-    const kind = (/data-edge="([^"]+)"/.exec(tag)?.[1] ?? '') as Parameters<typeof treatmentFor>[0];
-    recededKinds.add(kind);
-    assert.equal(
-      /stroke-dasharray="([^"]*)"/.exec(tag)?.[1] ?? null,
-      dashArrayFor(treatmentFor(kind).dash),
-      `a receded ${kind} line lost its dash`,
-    );
-  }
-  // 102 touches only blocked-by 101 to 102 and decomposed-from 102 to 101, so each of the
-  // four kinds still has a line that recedes.
-  assert.deepEqual([...recededKinds].sort(), ['blocked-by', 'decomposed-from', 'duplicate-of', 'serialize-with']);
-});
-
-it('renderViewer keeps the neighbour of the selected unit member b and the unit card, and recedes the neighbour of its partner a', () => {
-  // "Selecting one member of a together unit keeps that member's neighbours and lines, not its partners', and the unit's card stays"
-  // a and b are one unit led by a; c is a neighbour of b only, and d is a neighbour of a only.
-  const unit: ViewerDocument = {
-    issues: [
-      { key: 'a', title: 'Lead', open: true, priority: 2 },
-      { key: 'b', title: 'Partner', open: true, priority: 2 },
-      { key: 'c', title: 'Neighbour of b', open: true, priority: 2 },
-      { key: 'd', title: 'Neighbour of a', open: true, priority: 2 },
-    ],
-    edges: [
-      { field: 'together-with', from: 'a', to: 'b' },
-      { field: 'blocked-by', from: 'b', to: 'c' },
-      { field: 'blocked-by', from: 'd', to: 'a' },
-    ],
-    order: {
-      slots: [
-        { rank: 1, lead: 'c', members: ['c'], ready: true, holds: [] },
-        { rank: 2, lead: 'a', members: ['a', 'b'], ready: true, holds: [] },
-        { rank: 3, lead: 'd', members: ['d'], ready: true, holds: [] },
-      ],
-      excluded: [],
-    },
-    cycles: [],
-  };
-  const markup = renderMarkup(graphScene(normalizeDocument(unit).document, { selected: 'b' }).root);
-  const recedes = (key: string): boolean => {
-    const card = [...markup.matchAll(/<li class="ig-rail-row"[^>]*>/g)]
-      .map(([tag]) => tag)
-      .find((tag) => tag.includes(`data-ig-key="${key}"`));
-    assert.ok(card !== undefined, `no card was drawn for ${key}`);
-    return card.includes('data-recede="true"');
-  };
-
-  assert.equal(recedes('c'), false, 'the card of c, a neighbour of the selected member b, receded');
-  assert.equal(recedes('a'), false, 'the card of the unit receded');
-  assert.equal(recedes('d'), true, 'the card of d, a neighbour of the partner a only, was kept');
-});
-});
-
-describe("more tests 4", function () {
-it('graph markup with selection values that resolve to nothing is byte-identical to the bare render', () => {
-  const draw = (options: Parameters<typeof graphScene>[1]): string =>
-    renderMarkup(graphScene(normalizeDocument(fixtureDocument).document, options).root);
-  const bare = draw({});
-  assert.equal(bare.includes('data-recede'), false, 'the bare render carries a recede stamp');
-  // The declared orientation does stamp, so the swapped identity below is refused by its value rather than ignored.
-  assert.match(draw({ selectedEdge: edgeIdentity('blocked-by', '101', '102') }), /data-recede="true"/);
-
-  const unresolved: readonly Parameters<typeof graphScene>[1][] = [
-    { selected: null, selectedEdge: null },
-    { selected: `nowhere"'<]|` },
-    { selectedEdge: `x"'<]|y` },
-    { selectedEdge: 'not|an|edge' },
-    { selectedEdge: edgeIdentity('blocked-by', '102', '101') },
-  ];
-  for (const options of unresolved) {
-    // "With nothing receding, graph markup is byte-identical to the markup before the change"
-    assert.equal(draw(options), bare, JSON.stringify(options));
-  }
-});
-
-it('graph recedes by the selected issue and ignores a selectedEdge passed beside it', () => {
-  const draw = (options: Parameters<typeof graphScene>[1]): string =>
-    renderMarkup(graphScene(normalizeDocument(fixtureDocument).document, options).root);
-  const edge = edgeIdentity('decomposed-from', '103', '107');
-  const byIssue = draw({ selected: '102' });
-  assert.match(byIssue, /data-recede="true"/, "selecting '102' receded nothing");
-  assert.notEqual(draw({ selectedEdge: edge }), byIssue, 'the edge recedes what the issue does, so this proves nothing');
-
-  // "When a host passes issues and a relationship together, the issues win and the relationship is ignored"
-  assert.equal(draw({ selected: '102', selectedEdge: edge }), byIssue);
-});
-});
-
 describe('the graph projection recedes what a selection does not touch', () => {
   /** Every opening tag in `markup` that names `attribute`, whatever its value. */
   function tagsWith(markup: string, attribute: string): readonly string[] {
@@ -1675,5 +1462,181 @@ describe('the graph projection recedes what a selection does not touch', () => {
       assert.match(dark, /data-recede="true"/, `${JSON.stringify(options)} receded nothing`);
       assert.equal(render(fixtureDocument, { ...options, theme: paperTheme }), dark, JSON.stringify(options));
     }
+  });
+
+  it('renders a selection that resolves to nothing byte for byte as the bare render, however it is spelled', () => {
+    const bare = render(fixtureDocument);
+    assert.equal(bare.includes('data-recede'), false, 'the bare render carries a recede stamp');
+    const real = edgeIdentity('blocked-by', '101', '102');
+    // Without this the loop below passes on a graph that ignores selectedEdge.
+    // The declared orientation does stamp, so the swapped identity below is
+    // refused by its value rather than ignored.
+    assert.match(render(fixtureDocument, { selectedEdge: real }), /data-recede="true"/);
+
+    // Characters that break out of an attribute, a tag or a CSS attribute
+    // selector, the identity separator, and a real identity with one byte added:
+    // none of them names anything in the document.
+    const hostile = [
+      '"><script>alert(1)</script>',
+      "'] , * { display: none } [x='",
+      '</svg><img src=x onerror=alert(1)>',
+      'a|b|c|d',
+      `${real}"`,
+      `${real}]`,
+    ];
+    const unresolved: readonly Parameters<typeof graphScene>[1][] = [
+      { selected: null, selectedEdge: null },
+      { selected: `nowhere"'<]|` },
+      { selectedEdge: `x"'<]|y` },
+      { selectedEdge: 'not|an|edge' },
+      { selectedEdge: edgeIdentity('blocked-by', '102', '101') },
+      ...hostile.flatMap((value) => [{ selectedEdge: value }, { selected: value, selectedEdge: value }]),
+    ];
+    for (const options of unresolved) {
+      // The issue: "With nothing receding, graph markup is byte-identical to the markup before the change"
+      assert.equal(render(fixtureDocument, options), bare, JSON.stringify(options));
+    }
+  });
+
+  it('adds only the constant recede stamp for a resolving selectedEdge', () => {
+    const bare = render(fixtureDocument);
+    const receding = render(fixtureDocument, { selectedEdge: edgeIdentity('decomposed-from', '103', '107') });
+
+    // The issue: "Receding elements get `data-recede="true"`; others get no attribute, never `"false"`."
+    const values = [...receding.matchAll(/data-recede="([^"]*)"/g)].map((match) => match[1]);
+    assert.ok(values.length > 0, 'a resolving edge stamped nothing');
+    assert.deepEqual([...new Set(values)], ['true']);
+
+    // The issue: "The selection value is compared, never written into markup, a selector or the stylesheet."
+    // Removing every stamp must give back the bare render byte for byte, so the
+    // receding render carries no copy of the selection anywhere else.
+    assert.equal(receding.replaceAll(' data-recede="true"', ''), bare);
+  });
+
+  it('recomputes the recede on every render, so a selection leaves no stamp on the next render of the same document', () => {
+    // One normalized document shared by every render, so any recede result kept
+    // between renders would show up in a later render.
+    const normalized = normalizeDocument(fixtureDocument).document;
+    const draw = (options: { selected?: string | null; selectedEdge?: string | null }): string =>
+      renderMarkup(graphScene(normalized, options).root);
+
+    const bare = draw({});
+    const byKey = draw({ selected: '102' });
+    const byEdge = draw({ selectedEdge: edgeIdentity('serialize-with', '103', '105') });
+
+    assert.equal(bare.includes('data-recede'), false, 'the bare render carries a stamp');
+    assert.ok(byKey.includes('data-recede="true"'), 'selecting 102 receded nothing');
+    assert.ok(byEdge.includes('data-recede="true"'), 'selecting a relationship receded nothing');
+    assert.notEqual(byEdge, byKey, 'two different selections receded the same elements');
+
+    // The issue: "With nothing receding, graph markup is byte-identical to the markup before the change"
+    assert.equal(draw({}), bare, 'a bare render after selections kept a stamp');
+    assert.equal(draw({ selected: null, selectedEdge: null }), bare, 'explicit nulls after selections kept a stamp');
+    assert.equal(draw({ selected: '102' }), byKey, 'repeating a selection changed what recedes');
+    assert.equal(
+      draw({ selectedEdge: edgeIdentity('serialize-with', '103', '105') }),
+      byEdge,
+      'repeating a relationship selection changed what recedes',
+    );
+  });
+
+  it('recedes by the selected issue and ignores a selectedEdge passed beside it', () => {
+    const edge = edgeIdentity('decomposed-from', '103', '107');
+    const byIssue = render(fixtureDocument, { selected: '102' });
+    assert.match(byIssue, /data-recede="true"/, "selecting '102' receded nothing");
+    assert.notEqual(render(fixtureDocument, { selectedEdge: edge }), byIssue, 'the edge recedes what the issue does, so this proves nothing');
+
+    // "When a host passes issues and a relationship together, the issues win and the relationship is ignored"
+    assert.equal(render(fixtureDocument, { selected: '102', selectedEdge: edge }), byIssue);
+  });
+
+  it('stamps a spine station exactly when its own slot recedes, found by key and not by position', () => {
+    // "With a selection, lines and stations that do not touch it draw at 50%, and with none selected nothing recedes"
+    // A station is named here by its accessible name: "rank 1" is 102, "held, no rank" is 101,
+    // and "rank 2" is the unit of 103 and 104.
+    const stationsFor = (selected: string | null): Map<string, boolean> => {
+      const stations = new Map<string, boolean>();
+      for (const [tag] of render(fixtureDocument, { selected }).matchAll(/<span class="ig-spine-station"[^>]*>/g)) {
+        stations.set(/aria-label="([^"]*)"/.exec(tag)?.[1] ?? '', stamped(tag));
+      }
+      return stations;
+    };
+
+    const bare = stationsFor(null);
+    assert.ok(bare.size > 0, 'the graph drew no station, so this proves nothing');
+    assert.deepEqual([...bare.values()].filter(Boolean), [], 'a station receded with nothing selected');
+
+    // 102 shares both its lines with 101, and no line with 103 or 104.
+    const by102 = stationsFor('102');
+    assert.equal(by102.get('rank 1'), false, 'the selected issue 102 receded its own station');
+    assert.equal(by102.get('held, no rank'), false, 'the station of the neighbour 101 receded');
+    assert.equal(by102.get('rank 2'), true, 'the station of the unit 103, which touches nothing selected, did not recede');
+
+    // 105 shares serialize-with with 103, and no line with 102 or 101.
+    const by105 = stationsFor('105');
+    assert.equal(by105.get('rank 1'), true, 'the station of 102, which touches nothing selected, did not recede');
+    assert.equal(by105.get('held, no rank'), true, 'the station of 101, which touches nothing selected, did not recede');
+    assert.equal(by105.get('rank 2'), false, 'the station of the neighbour 103 receded');
+  });
+
+  it("keeps each receded line on its kind's own dash for the four kinds the canvas draws", () => {
+    // "A receded line keeps its kind's dash, for all five kinds"
+    // together-with draws no line on the canvas, so its dash is checked against the stylesheet instead.
+    const canvas = canvasOf(render(fixtureDocument, { selected: '102' }));
+    assert.notEqual(canvas, '', 'the graph drew no canvas');
+
+    const recededKinds = new Set<string>();
+    for (const [tag] of canvas.matchAll(/<path class="ig-edge"[^>]*>/g)) {
+      if (!stamped(tag)) continue;
+      const kind = (/data-edge="([^"]+)"/.exec(tag)?.[1] ?? '') as Parameters<typeof treatmentFor>[0];
+      recededKinds.add(kind);
+      assert.equal(
+        /stroke-dasharray="([^"]*)"/.exec(tag)?.[1] ?? null,
+        dashArrayFor(treatmentFor(kind).dash),
+        `a receded ${kind} line lost its dash`,
+      );
+    }
+    // 102 touches only blocked-by 101 to 102 and decomposed-from 102 to 101, so each of the
+    // four kinds still has a line that recedes.
+    assert.deepEqual([...recededKinds].sort(), ['blocked-by', 'decomposed-from', 'duplicate-of', 'serialize-with']);
+  });
+
+  it('keeps the neighbour of the selected unit member b and the unit card, and recedes the neighbour of its partner a', () => {
+    // "Selecting one member of a together unit keeps that member's neighbours and lines, not its partners', and the unit's card stays"
+    // a and b are one unit led by a; c is a neighbour of b only, and d is a neighbour of a only.
+    const unit: ViewerDocument = {
+      issues: [
+        { key: 'a', title: 'Lead', open: true, priority: 2 },
+        { key: 'b', title: 'Partner', open: true, priority: 2 },
+        { key: 'c', title: 'Neighbour of b', open: true, priority: 2 },
+        { key: 'd', title: 'Neighbour of a', open: true, priority: 2 },
+      ],
+      edges: [
+        { field: 'together-with', from: 'a', to: 'b' },
+        { field: 'blocked-by', from: 'b', to: 'c' },
+        { field: 'blocked-by', from: 'd', to: 'a' },
+      ],
+      order: {
+        slots: [
+          { rank: 1, lead: 'c', members: ['c'], ready: true, holds: [] },
+          { rank: 2, lead: 'a', members: ['a', 'b'], ready: true, holds: [] },
+          { rank: 3, lead: 'd', members: ['d'], ready: true, holds: [] },
+        ],
+        excluded: [],
+      },
+      cycles: [],
+    };
+    const markup = render(unit, { selected: 'b' });
+    const recedes = (key: string): boolean => {
+      const card = [...markup.matchAll(/<li class="ig-rail-row"[^>]*>/g)]
+        .map(([tag]) => tag)
+        .find((tag) => tag.includes(`data-ig-key="${key}"`));
+      assert.ok(card !== undefined, `no card was drawn for ${key}`);
+      return stamped(card);
+    };
+
+    assert.equal(recedes('c'), false, 'the card of c, a neighbour of the selected member b, receded');
+    assert.equal(recedes('a'), false, 'the card of the unit receded');
+    assert.equal(recedes('d'), true, 'the card of d, a neighbour of the partner a only, was kept');
   });
 });
