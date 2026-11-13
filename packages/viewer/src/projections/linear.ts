@@ -42,7 +42,9 @@ import {
   unitBlock,
   unitMark,
   atStations,
+  withRecede,
 } from '../parts.ts';
+import { type Receding, recedingOf } from '../recede.ts';
 import { type LateralNeighbours, type Scene, resolveFocusKey } from '../scene.ts';
 import { treatmentFor } from '../vocabulary.ts';
 
@@ -51,6 +53,23 @@ export interface SceneOptions {
   readonly selected?: string | null | undefined;
   /** The key holding the roving tab stop. Defaults to the first in order. */
   readonly focused?: string | null | undefined;
+  /**
+   * The selected relationship, as its `edgeIdentity(field, from, to)`. With
+   * one, everything that does not touch it recedes. Ignored when `selected`
+   * names an issue this document carries — see `recedingOf`. The tree
+   * ignores it.
+   */
+  readonly selectedEdge?: string | null | undefined;
+  /**
+   * What the list recedes, in place of what it works out from `selected` and
+   * `selectedEdge`. The graph and the tree ignore it.
+   *
+   * FOR A HOST THAT DRAWS ONLY PART OF ITS DOCUMENT. A list handed a window of
+   * a larger document can only work out what recedes inside that window, so a
+   * selection outside it would recede nothing. Such a host computes the
+   * receding over its whole document with `recedingOf` and passes it here.
+   */
+  readonly receding?: Receding | undefined;
   /**
    * Draw the panel's own header bar — its name, the projection toggle, the
    * host's counts, the freshness stamp. Defaults to `true`.
@@ -645,6 +664,13 @@ export function linearScene(
   // and building the markup from the partner marked nothing `aria-current`
   // and left the tab stop on the fallback.
   const stations = stationsOf(document);
+  // FROM THE OPTIONS AS GIVEN, before `atStations` moves a selected member to
+  // its unit's lead, as the graph does: selecting one member keeps that
+  // member's neighbours, not its partners'.
+  const receding =
+    rawOptions.receding ??
+    recedingOf(document, { key: rawOptions.selected ?? null, edge: rawOptions.selectedEdge ?? null });
+  const recedes = (key: string): boolean => receding.keys.has(key);
   const options = atStations(rawOptions, stations);
   const inline = document.order.slots.filter((slot) => !isFooterSlot(slot));
   const footerSlots = document.order.slots.filter(isFooterSlot);
@@ -682,13 +708,16 @@ export function linearScene(
           // violation that real screen readers and axe both flag — so selection
           // is announced with `aria-current`, which any element may carry.
           { class: 'ig-list', 'aria-label': 'work order' },
-          inline.map((slot) => slotRow(document, slot, withFocus, true)),
+          inline.map((slot) => withRecede(slotRow(document, slot, withFocus, true), recedes(slot.lead))),
         );
 
   const footerEntries = [
-    ...footerSlots.map((slot) => footerRow(document, slot, withFocus)),
+    ...footerSlots.map((slot) => withRecede(footerRow(document, slot, withFocus), recedes(slot.lead))),
     ...document.order.excluded.map((exclusion) =>
-      excludedRow(document, exclusion.key, exclusion.canonical, withFocus),
+      withRecede(
+        excludedRow(document, exclusion.key, exclusion.canonical, withFocus),
+        recedes(exclusion.key),
+      ),
     ),
   ];
 

@@ -51,11 +51,13 @@ import {
   legend,
   notReadyBadge,
   priorityBadge,
+  recedeStamp,
   slotLabel,
   slotPosition,
   stationFill,
   stationsOf,
   unitBlock,
+  withRecede,
 } from '../parts.ts';
 import { type Receding, recedingOf } from '../recede.ts';
 import { type LateralNeighbours, type Scene, resolveFocusKey } from '../scene.ts';
@@ -159,21 +161,6 @@ export interface GraphOptions extends SceneOptions {
    * gets — the reason this is an option rather than a field on the scene.
    */
   readonly edgeMarks?: ReadonlyMap<string, readonly EdgeMark[]> | undefined;
-  /**
-   * The selected relationship, as its `edgeIdentity(field, from, to)`. With
-   * one, everything that does not touch it recedes. Ignored when `selected`
-   * names an issue this document carries — see `recedingOf`.
-   */
-  readonly selectedEdge?: string | null | undefined;
-}
-
-/**
- * The recede stamp. Constant, and absent rather than `"false"` on what stays,
- * so a render with nothing receding is byte for byte the render without a
- * selection, and the selection itself never reaches the markup.
- */
-function recedeStamp(recedes: boolean): 'true' | null {
-  return recedes ? 'true' : null;
 }
 
 function terminalMarker(
@@ -749,12 +736,9 @@ function footerKeys(
     }
     return asideRow(document, key, options);
   };
-  // STAMPED HERE, ON THE ROW IT RETURNS, because the list draws the same three
-  // row builders and the list never recedes.
-  return layout.footer.map((key) => {
-    const spec = row(key);
-    return { ...spec, attrs: { ...spec.attrs, 'data-recede': recedeStamp(receding.keys.has(key)) } };
-  });
+  // STAMPED HERE, ON THE ROW IT RETURNS, because the refusal draws the same
+  // row builders and a refused canvas recedes nothing. See `withRecede`.
+  return layout.footer.map((key) => withRecede(row(key), receding.keys.has(key)));
 }
 
 export function graphScene(document: NormalizedDocument, rawOptions: GraphOptions = {}): Scene {
