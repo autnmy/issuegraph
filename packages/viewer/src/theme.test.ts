@@ -592,16 +592,20 @@ describe('a receded line or station measured against the contrast bars', () => {
     }
   });
 
-  it('pins the muted rank numeral on a receded filled station as under the 4.5:1 text bar, in the default and paper themes', () => {
+  it('keeps the rank numeral of a receded station at 4.5:1 or more, --ig-text on a filled station and --ig-text-muted on a ring, in the default and paper themes', () => {
     // A receded filled station draws its fill as --ig-station-ready at RECEDE_ALPHA over --ig-bg,
-    // and its numeral in --ig-text-muted. The measured ratio is under 4.5:1 in both themes; it is
-    // pinned so a palette change that moves it either way fails here and its number is disclosed.
-    const expected = { default: '1.71', paper: '2.77' };
+    // and its numeral in --ig-text, because --ig-text-muted on that fill is under the 4.5:1 text bar.
+    // The measured ratios are pinned so a palette change that moves them fails here and is disclosed.
+    // A ring, dashed or serialize station is hollow, so its --ig-text-muted numeral sits on --ig-bg.
+    const expected = { default: '5.58', paper: '7.09' };
     for (const [name, theme] of [['default', defaultTheme], ['paper', paperTheme]] as const) {
-      const fill = composite(theme.colors['--ig-station-ready'], theme.colors['--ig-bg'], RECEDE_ALPHA);
-      const ratio = contrastRatio(theme.colors['--ig-text-muted'], fill);
-      assert.equal(ratio.toFixed(2), expected[name], `${name}: numeral on receded station`);
-      assert.ok(ratio < 4.5, `${name}: ${ratio.toFixed(2)}:1`);
+      const bg = theme.colors['--ig-bg'];
+      const fill = composite(theme.colors['--ig-station-ready'], bg, RECEDE_ALPHA);
+      const filled = contrastRatio(theme.colors['--ig-text'], fill);
+      assert.ok(filled >= 4.5, `${name}: numeral on a receded filled station measures ${filled.toFixed(2)}:1`);
+      assert.equal(filled.toFixed(2), expected[name], `${name}: numeral on a receded filled station`);
+      const ring = contrastRatio(theme.colors['--ig-text-muted'], bg);
+      assert.ok(ring >= 4.5, `${name}: numeral on a receded ring station measures ${ring.toFixed(2)}:1`);
     }
   });
 });

@@ -1682,7 +1682,14 @@ ${railDensity(".ig-viewer[data-density='dense']")}
    transparent and never by opacity: the station has to stay opaque, because
    it sits on the spine line and covers it. Mixing over --ig-bg also makes what
    is drawn equal to what the contrast test composites. Each variant names its
-   own hue, in the same order the variants above set it. */
+   own hue, in the same order the variants above set it.
+
+   THE RANK NUMERAL IS TEXT AND KEEPS 4.5:1 ON WHAT IT SITS ON. A ring, dashed
+   or serialize station is hollow, so its numeral sits on --ig-bg and reads
+   --ig-text-muted, like every other receded label. A filled station's numeral
+   sits on its mixed fill instead, and --ig-text-muted there falls under 4.5:1
+   in both themes, so it reads --ig-text, which clears it. theme.test.ts
+   measures both. */
 .ig-spine-station[data-recede='true'] {
   border-color: color-mix(in srgb, var(--ig-station-ready) ${RECEDE_PERCENT}, var(--ig-bg));
   color: var(--ig-text-muted);
@@ -1690,6 +1697,7 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 
 .ig-spine-station[data-fill='filled'][data-recede='true'] {
   background: color-mix(in srgb, var(--ig-station-ready) ${RECEDE_PERCENT}, var(--ig-bg));
+  color: var(--ig-text);
 }
 
 .ig-spine-station[data-fill='dashed'][data-recede='true'] {

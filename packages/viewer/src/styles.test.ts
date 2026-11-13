@@ -660,8 +660,10 @@ describe('a receded element draws by colour roles and stroke opacity', () => {
     }
   });
 
-  it('draws a receded station ring at RECEDE_ALPHA by mixing its own station colours, with a --ig-text-muted numeral', () => {
+  it('draws a receded station ring at RECEDE_ALPHA by mixing its own station colours, with a --ig-text numeral on a filled station and --ig-text-muted on the others', () => {
     // "A receded station's ring draws at 50% through its own colours, and its rank numeral is `--ig-text-muted` with no opacity on it or above it"
+    // A filled station's numeral sits on its mixed fill, where --ig-text-muted is under 4.5:1, so it reads --ig-text;
+    // theme.test.ts measures both.
     const station = /^\.ig-spine-station(?![\w-])/;
     const values = (...names: string[]): string[] => recededValues(station, ...names);
     const ownColourAtAlpha = (value: string): boolean => {
@@ -672,7 +674,14 @@ describe('a receded element draws by colour roles and stroke opacity', () => {
     assert.ok(recede.some((rule) => station.test(styledCompound(rule.selector))), 'no rule styles a receded station');
     assert.ok(values('border-color').some(ownColourAtAlpha), 'the receded ring is not its own station colour mixed at RECEDE_ALPHA');
     assert.ok(values('background', 'background-color').some(ownColourAtAlpha), 'the receded fill is not its own station colour mixed at RECEDE_ALPHA');
-    assert.ok(values('color').includes('var(--ig-text-muted)'), 'the rank numeral of a receded station is not --ig-text-muted');
+    const filled = /\[data-fill=(['"]?)filled\1\]/;
+    const colours = (rules: readonly DeclaredRule[]): string[] =>
+      rules.flatMap((rule) => rule.declarations.filter((one) => one.name === 'color').map((one) => one.value));
+    const stationRules = recede.filter((rule) => station.test(styledCompound(rule.selector)));
+    const filledColours = colours(stationRules.filter((rule) => filled.test(rule.selector)));
+    const otherColours = colours(stationRules.filter((rule) => !filled.test(rule.selector)));
+    assert.deepEqual(filledColours, ['var(--ig-text)'], 'the rank numeral of a receded filled station is not --ig-text');
+    assert.deepEqual(otherColours, ['var(--ig-text-muted)'], 'the rank numeral of a receded ring, dashed or serialize station is not --ig-text-muted');
   });
 
   it('lets no recede rule select a kind or change a dash, a border style or a stroke width, so every kind keeps its dash', () => {
