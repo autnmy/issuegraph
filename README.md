@@ -63,11 +63,11 @@ pnpm run ci   # build, typecheck, lint, test, isolation
 
 ## Status
 
-**v0.3.0 draft.** Published for implementation, not adoption claims: the spec is being implemented against a real backlog by a real autonomous pipeline, and will be amended from what breaks before any 1.0. Expect changes.
+**v0.3.0 draft.** Published for implementation, not adoption claims: the spec is being implemented against a real backlog by a real software factory, and will be amended from what breaks before any 1.0. Expect changes.
 
 ## Implementations
 
-- **Descant** (autonomous software-delivery pipeline) — in progress: graph parsing, ready-set + effective-priority selection, decomposition stage, and back-of-pipeline writers (grooming, residual filing).
+- **Descant** (software factory) — in progress: graph parsing, ready-set + effective-priority selection, decomposition stage, and back-of-pipeline writers (grooming, residual filing).
 
 ---
 
