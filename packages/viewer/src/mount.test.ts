@@ -10,7 +10,8 @@ import { type Receding, recedingOf } from './recede.ts';
 import { renderViewer } from './render.ts';
 import { GROUP_ATTRIBUTE, KEY_ATTRIBUTE, type Projection } from './scene.ts';
 import { TestDocument, TestElement, TestNode } from './testing/document.ts';
-import { fixtureDocument, heldTogetherDocument } from './testing/fixtures.ts';
+import type { ViewerSelection } from './selection.ts';
+import { fixtureDocument, heldTogetherDocument, twoUnitDocument } from './testing/fixtures.ts';
 
 function mounted(options = {}) {
   const doc = new TestDocument();
@@ -668,8 +669,10 @@ describe('mountViewer', () => {
         const live = renderViewer(fixtureDocument, { projection: ended }).scene;
         const where = `${start} / ${door.name}`;
         const selected = handle.state.selected;
+        // One door selects one key, so the state holds a single key or none.
+        assert.equal(Array.isArray(selected), false, `${where}: a single gesture stored a set`);
 
-        if (selected !== null) {
+        if (typeof selected === 'string') {
           assert.ok(
             live.navigable.includes(selected),
             `${where}: selected ${selected}, which ${ended} cannot reach`,
@@ -2043,5 +2046,179 @@ describe('mountViewer recedes the list by the selection as given', () => {
     const values = [...stamps.values()];
     assert.ok(values.includes('true'), 'no list row receded');
     assert.ok(values.includes(null), 'every list row receded');
+  });
+});
+
+describe('the mount builds and reports a selection set', () => {
+  /** Mount `twoUnitDocument` and record both callbacks, in call order. */
+  function recorded(options = {}) {
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const calls: string[] = [];
+    const changes: ViewerSelection[] = [];
+    const selects: (string | null)[] = [];
+    const handle = mountViewer(container, twoUnitDocument, {
+      onSelectionChange: (selection: ViewerSelection) => {
+        changes.push(selection);
+        calls.push(`change ${JSON.stringify(selection)}`);
+      },
+      onSelect: (key: string | null) => {
+        selects.push(key);
+        calls.push(`select ${String(key)}`);
+      },
+      ...options,
+    });
+    const row = (key: string): TestElement => {
+      const found = container
+        .descendants()
+        .find((element) => element.getAttribute(KEY_ATTRIBUTE) === key && element.getAttribute('tabindex') !== null);
+      assert.ok(found !== undefined, `no row was drawn for ${key}`);
+      return found;
+    };
+    return { container, handle, calls, changes, selects, row };
+  }
+  const issues = (...keys: string[]): ViewerSelection => ({ kind: 'issues', keys });
+
+  it('adds with a Cmd-click and drops with a Ctrl-click, reporting each change once', () => {
+    const { container, handle, changes, selects, calls, row } = recorded();
+    container.dispatch('click', { target: row('31') });
+    container.dispatch('click', { target: row('33'), metaKey: true });
+    container.dispatch('click', { target: row('31'), ctrlKey: true });
+    assert.deepEqual(changes, [issues('31'), issues('31', '33'), issues('33')]);
+    assert.deepEqual(selects, ['31', '33', '33']);
+    // onSelectionChange first, then onSelect, for every change.
+    assert.deepEqual(calls.map((call) => call.split(' ')[0]), ['change', 'select', 'change', 'select', 'change', 'select']);
+    assert.equal(handle.state.selected, '33');
+  });
+
+  it('ranges over the rank order from an anchor ranked below the click, the clicked key last', () => {
+    const { container, handle, changes, selects, row } = recorded();
+    container.dispatch('click', { target: row('33') });
+    container.dispatch('click', { target: row('32'), shiftKey: true });
+    // Rank order, members included: 31 32 11 12 21 22 33 34. Walking up from 33.
+    assert.deepEqual(changes.at(-1), issues('33', '22', '21', '12', '11', '32'));
+    assert.equal(selects.at(-1), '32');
+    // The handle names the stations, each where its member was last added.
+    assert.deepEqual(handle.state.selected, ['33', '21', '11', '32']);
+  });
+
+  it('extends with Shift and an arrow, down and up', () => {
+    const { container, changes, row } = recorded();
+    container.dispatch('click', { target: row('31') });
+    container.dispatch('keydown', { key: 'ArrowDown', shiftKey: true, target: row('31') });
+    assert.deepEqual(changes.at(-1), issues('31', '32'));
+    container.dispatch('keydown', { key: 'ArrowDown', shiftKey: true, target: row('32') });
+    assert.deepEqual(changes.at(-1), issues('31', '32', '11'));
+    container.dispatch('keydown', { key: 'ArrowUp', shiftKey: true, target: row('11') });
+    // 32 is already present, so it moves to the end; nothing lies between.
+    assert.deepEqual(changes.at(-1), issues('31', '11', '32'));
+  });
+
+  it('reports the most recently added member exactly as given for a set, and one member as its lead', () => {
+    const { container, handle, selects, changes, row } = recorded({ selected: ['31', '12'] });
+    container.dispatch('click', { target: row('33'), metaKey: true });
+    container.dispatch('click', { target: row('33'), metaKey: true });
+    assert.deepEqual(changes, [issues('31', '12', '33'), issues('31', '12')]);
+    assert.deepEqual(selects, ['33', '12'], 'the set reported its unit lead, not the member as given');
+    handle.select('12');
+    assert.deepEqual(changes.at(-1), issues('12'));
+    assert.equal(selects.at(-1), '11', 'one selected member no longer reports its lead');
+  });
+
+  it('clears a set on Escape, announcing once, and leaves Escape alone with nothing selected', () => {
+    const { container, handle, calls, row } = recorded({ selected: ['31', '33'] });
+    let prevented = 0;
+    container.dispatch('keydown', { key: 'Escape', target: row('31'), preventDefault: () => (prevented += 1) });
+    assert.deepEqual(calls, ['change {"kind":"none"}', 'select null']);
+    assert.equal(handle.state.selected, null);
+    assert.equal(prevented, 1);
+    container.dispatch('keydown', { key: 'Escape', target: row('31'), preventDefault: () => (prevented += 1) });
+    assert.equal(calls.length, 2);
+    assert.equal(prevented, 1, 'Escape with nothing selected was taken from the host');
+  });
+
+  it('selects only the relationship on a Cmd-click on a connector, replacing the set', () => {
+    const { container, handle, changes } = recorded({ projection: 'graph', selected: ['31', '33'] });
+    const edge = container.descendants().find((element) => element.getAttribute('class') === 'ig-edge');
+    assert.ok(edge !== undefined, 'no edge was drawn');
+    const identity = edge.getAttribute(GROUP_ATTRIBUTE);
+    assert.ok(identity !== null);
+    container.dispatch('click', { target: edge, metaKey: true });
+    assert.deepEqual(changes, [{ kind: 'edge', edgeId: identity }]);
+    assert.equal(handle.state.selected, identity);
+  });
+
+  it('keeps the set on a modifier click on blank graph space, and a plain one clears it', () => {
+    const { container, handle, changes } = recorded({ projection: 'graph', selected: ['31', '33'] });
+    container.dispatch('click', { target: container, metaKey: true });
+    container.dispatch('click', { target: container, shiftKey: true });
+    assert.deepEqual(changes, []);
+    container.dispatch('click', { target: container });
+    assert.deepEqual(changes, [{ kind: 'none' }]);
+    assert.equal(handle.state.selected, null);
+  });
+
+  it('reports an update that drops a member once, and a redraw, a projection switch or an unchanged update not at all', () => {
+    const { handle, calls } = recorded({ selected: ['31', '33'] });
+    handle.update(twoUnitDocument);
+    handle.setProjection('graph');
+    handle.setProjection('linear');
+    assert.deepEqual(calls, []);
+    const without33: ViewerDocument = {
+      ...twoUnitDocument,
+      issues: twoUnitDocument.issues.filter((issue) => issue.key !== '33'),
+      edges: twoUnitDocument.edges.filter((edge) => edge.to !== '33'),
+      order: { ...twoUnitDocument.order, slots: twoUnitDocument.order.slots.filter((slot) => slot.lead !== '33') },
+    };
+    handle.update(without33);
+    assert.deepEqual(calls, ['change {"kind":"issues","keys":["31"]}', 'select 31']);
+    handle.update(without33);
+    assert.equal(calls.length, 2);
+  });
+
+  it('gives onSelect one call and onSelectionChange none for a repeated click or select()', () => {
+    const { container, handle, calls, row } = recorded({ selected: '31' });
+    container.dispatch('click', { target: row('31') });
+    handle.select('31');
+    assert.deepEqual(calls, ['select 31', 'select 31']);
+  });
+
+  it('draws a set a host passes, and marks every member', () => {
+    const { container, handle } = recorded({ selected: ['22', '12'] });
+    const marked = container
+      .descendants()
+      .filter((element) => element.getAttribute('aria-current') === 'true')
+      .map((element) => element.getAttribute(KEY_ATTRIBUTE));
+    assert.deepEqual(new Set(marked), new Set(['21', '11']));
+    assert.deepEqual(handle.state.selected, ['21', '11']);
+  });
+
+  it('hands out fresh frozen keys, and tells a host that reselects from inside a callback, in order', () => {
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const calls: string[] = [];
+    const handed: ViewerSelection[] = [];
+    const handle: ViewerHandle = mountViewer(container, twoUnitDocument, {
+      onSelectionChange: (selection: ViewerSelection) => {
+        calls.push(`change ${JSON.stringify(selection)}`);
+        handed.push(selection);
+        // A host that narrows every selection to 34 from inside the callback.
+        if (selection.kind === 'issues' && !selection.keys.includes('34')) handle.select('34');
+      },
+      onSelect: (key: string | null) => calls.push(`select ${String(key)}`),
+    });
+    handle.select('31');
+    assert.deepEqual(calls, [
+      'change {"kind":"issues","keys":["31"]}',
+      'select 31',
+      'change {"kind":"issues","keys":["34"]}',
+      'select 34',
+    ]);
+    assert.equal(handle.state.selected, '34');
+    const first = handed[0];
+    assert.ok(first !== undefined && first.kind === 'issues');
+    assert.equal(Object.isFrozen(first.keys), true);
+    assert.equal(Object.isFrozen(first), true);
+    assert.notEqual(handed[0], handed[1], 'two notices shared one object');
   });
 });

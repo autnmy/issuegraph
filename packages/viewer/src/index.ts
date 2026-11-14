@@ -78,7 +78,7 @@ export type {
 } from './mount.ts';
 export { mountViewer } from './mount.ts';
 
-export type { NavigationCommand, NavigationResult, NavigationState } from './navigation.ts';
+export type { NavigationCommand, NavigationModifiers, NavigationResult, NavigationState } from './navigation.ts';
 export { initialNavigationState, navigate, reconcile } from './navigation.ts';
 
 export type {

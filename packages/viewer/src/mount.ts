@@ -27,6 +27,16 @@ import {
 import { COMMAND_ATTRIBUTE, stationsOf } from './parts.ts';
 import { type RenderOptions, sceneFor } from './render.ts';
 import { GROUP_ATTRIBUTE, KEY_ATTRIBUTE, type Projection, type Scene } from './scene.ts';
+import {
+  type SelectionGesture,
+  type StoredSelection,
+  type ViewerSelection,
+  nextSelection,
+  sameSelection,
+  selectedKeysOf,
+  storedSelectionOf,
+  viewerSelectionOf,
+} from './selection.ts';
 import { type Theme, resolveTheme } from './theme.ts';
 
 /** The slice of an element `mount` needs beyond building. */
@@ -47,18 +57,30 @@ export interface MountEvent {
   readonly target?: MountElement | null;
   /** Present on a keyboard event. */
   readonly key?: string;
+  /** Shift-click ranges; Shift with an arrow extends. */
+  readonly shiftKey?: boolean;
+  /** Cmd-click adds or drops one issue. */
+  readonly metaKey?: boolean;
+  /** Ctrl-click adds or drops one issue, as Cmd-click does. */
+  readonly ctrlKey?: boolean;
   preventDefault?(): void;
 }
 
-/**
- * The mount holds ONE selected key until it builds a set from input, so its
- * `selected` stays a single key while the render options take a set.
- */
-export interface MountOptions extends Omit<RenderOptions, 'selected'> {
-  /** The selected key to start from, if any — an issue or a relationship. */
-  readonly selected?: string | null | undefined;
-  /** Called when a key is selected — by click, `Enter`, or `select()`. */
+export interface MountOptions extends RenderOptions {
+  /**
+   * Called when a key is selected — by click, `Enter`, or `select()`. Reports
+   * `null` for none, the identity for a relationship, a single issue as the
+   * station it is drawn on, and for a set of two or more issues the most
+   * recently added key exactly as given.
+   */
   readonly onSelect?: ((key: string | null) => void) | undefined;
+  /**
+   * Called once per change of the selection, with the whole selection as the
+   * reader made it: never for a redraw, a projection switch, or a repeated
+   * selection of what is already selected. Fires before `onSelect`. The keys
+   * are a fresh frozen array each time.
+   */
+  readonly onSelectionChange?: ((selection: ViewerSelection) => void) | undefined;
   /** Called with the hovered key, and with `null` when nothing is hovered. */
   readonly onHover?: ((key: string | null) => void) | undefined;
   /**
@@ -205,7 +227,7 @@ export function mountViewer(
    * `state.selected` is chosen or dropped, and re-checked on every draw by
    * `asGivenSelection`.
    */
-  let selectedAsGiven: string | null = state.selected;
+  let selectedAsGiven: StoredSelection = state.selected;
   let root: SpecElement | null = null;
   let keyed = new Map<string, SpecElement>();
   // EVERY IDENTITY THE LAST DRAW PUT UNDER THE POINTER — issues AND decoration.
@@ -277,6 +299,15 @@ export function mountViewer(
   const stillDrawn = (key: string): boolean =>
     normalized.byKey.has(key) || isDocumentEdge(key) || pointable.has(key);
   /**
+   * A selection with every member that no longer names something dropped.
+   * A single key is kept or dropped whole, as before; a set loses only the
+   * members that went, and collapses to one key or none as they go.
+   */
+  const keepDrawn = (selected: StoredSelection): StoredSelection =>
+    typeof selected === 'string' || selected === null
+      ? selected !== null && stillDrawn(selected) ? selected : null
+      : storedSelectionOf({ kind: 'issues', keys: selected.filter(stillDrawn) });
+  /**
    * The remembered selection, while it still names what `state.selected`
    * names; otherwise `state.selected` itself.
    *
@@ -285,14 +316,77 @@ export function mountViewer(
    * a later selection of another subject, therefore falls back to the issue
    * the graph and the list mark and the handle reports, so they never disagree.
    */
-  const asGivenSelection = (): string | null => {
+  const asGivenSelection = (): StoredSelection => {
     const selected = state.selected;
     const given = selectedAsGiven;
     if (selected === null || given === null) return selected;
     const stations = stationsOf(normalized);
-    const stationOf = (key: string): string => stations.get(key) ?? key;
-    const stillNamed = normalized.byKey.has(given) || isDocumentEdge(given);
-    return stillNamed && stationOf(given) === stationOf(selected) ? given : selected;
+    // Each station once, where its member was last added: the order `reconcile`
+    // names a set's stations in, so a set and its stations compare by value.
+    const stationsIn = (keys: readonly string[]): string => {
+      const named = keys.map((key) => stations.get(key) ?? key);
+      return JSON.stringify(named.filter((key, index) => named.lastIndexOf(key) === index));
+    };
+    const stillNamed = selectedKeysOf(given).filter((key) => normalized.byKey.has(key) || isDocumentEdge(key));
+    return stillNamed.length > 0 && stationsIn(stillNamed) === stationsIn(selectedKeysOf(selected))
+      ? storedSelectionOf(viewerSelectionOf(normalized, stillNamed.length === 1 ? (stillNamed[0] ?? null) : stillNamed))
+      : selected;
+  };
+  /** The selection as the reader made it, which `onSelectionChange` reports. */
+  const selectionAsGiven = (): ViewerSelection => viewerSelectionOf(normalized, selectedAsGiven);
+  /**
+   * What `onSelect` reports: for a set of two or more issues, the most recently
+   * added key exactly as given; otherwise the one key the handle holds, a unit
+   * member as its lead.
+   */
+  const reportedKey = (): string | null => {
+    const given = selectionAsGiven();
+    if (given.kind === 'issues' && given.keys.length > 1) return given.keys.at(-1) ?? null;
+    return selectedKeysOf(state.selected).at(-1) ?? null;
+  };
+  // WHAT THE HOST WAS LAST TOLD, compared by value, never by array identity.
+  // Seeded from the options, so mounting a selection is not a change.
+  let announced: ViewerSelection = selectionAsGiven();
+  let lastReported: string | null = reportedKey();
+  // ONE QUEUE FOR EVERY NOTICE, so a host that changes the selection from
+  // inside a callback is told about it after the notices already due, in
+  // order, and none is skipped or reported out of turn.
+  const notices: (() => void)[] = [];
+  let draining = false;
+  const deliver = (notice: () => void): void => {
+    notices.push(notice);
+    if (draining) return;
+    draining = true;
+    try {
+      for (let next = notices.shift(); next !== undefined; next = notices.shift()) next();
+    } finally {
+      draining = false;
+    }
+  };
+  /**
+   * Tell the host about the selection, from ONE place. `onSelectionChange`
+   * fires when the selection as given changed by value; `onSelect` fires with
+   * it, and also when the key it reports changed (a projection switch that
+   * renames a unit member to its lead), and — `force` — on every click,
+   * `Enter` or `select()`, even of what is already selected, as it always has.
+   */
+  const announce = (force: boolean): void => {
+    const selection = selectionAsGiven();
+    const key = reportedKey();
+    const changed = !sameSelection(announced, selection);
+    const reported = changed || force || key !== lastReported;
+    announced = selection;
+    lastReported = key;
+    // A FRESH FROZEN COPY per notice, so a host that mutates what it was
+    // handed changes nothing here.
+    const handed: ViewerSelection =
+      selection.kind === 'issues'
+        ? Object.freeze({ kind: 'issues', keys: Object.freeze([...selection.keys]) })
+        : Object.freeze({ ...selection });
+    deliver(() => {
+      if (changed) currentOptions.onSelectionChange?.(handed);
+      if (reported) currentOptions.onSelect?.(key);
+    });
   };
   let hovered: string | null = null;
   let destroyed = false;
@@ -339,7 +433,6 @@ export function mountViewer(
     // host has to hear about BOTH. Keying the notice on a single `dropped` flag
     // covered only the first, so `setProjection` renamed the selection and told
     // nobody: the handle read the station while the host still held the member.
-    const selectedBefore = state.selected;
     // A DECORATION SELECTION IS NOT AN ISSUE AND MUST SURVIVE THIS TEST. The
     // subject can be a `together-with` connector, whose identity is an edge and
     // is therefore absent from `byKey` by construction — dropping on document
@@ -355,9 +448,7 @@ export function mountViewer(
     // The post-materialize check settles it a few lines down, against a scene
     // that exists; deferring costs one frame in which nothing renders an edge
     // selection anyway.
-    if (currentScene !== null && state.selected !== null && !stillDrawn(state.selected)) {
-      state = { ...state, selected: null };
-    }
+    if (currentScene !== null) state = { ...state, selected: keepDrawn(state.selected) };
     selectedAsGiven = asGivenSelection();
     if (root !== null) container.removeChild(root);
     const scene = sceneFor(normalized, projection, {
@@ -371,7 +462,7 @@ export function mountViewer(
       // relationship recedes only while it is the selection and a clear
       // always restores everything.
       selectedEdge:
-        state.selected !== null && isDocumentEdge(state.selected) ? state.selected : null,
+        typeof state.selected === 'string' && isDocumentEdge(state.selected) ? state.selected : null,
       // NEVER TAKEN FROM THE HOST'S OPTIONS either, for the same reason: the
       // mount draws its whole document, so the list works out what recedes
       // from the live selection above.
@@ -467,21 +558,54 @@ export function mountViewer(
     // by `byKey` and by `reconcile`; this covers the decoration case those two
     // cannot see. It runs BEFORE the notice below, so a subject that went away
     // is reported exactly once, through the same channel as every other change.
-    if (state.selected !== null && !stillDrawn(state.selected)) {
-      state = { ...state, selected: null };
-      selectedAsGiven = null;
-    }
+    state = { ...state, selected: keepDrawn(state.selected) };
+    selectedAsGiven = state.selected === null ? null : asGivenSelection();
     // TOLD, NOT JUST DROPPED. The host was told a selection began, so leaving it
     // to infer the ending from a document it happens to have replaced is the
     // same divergence `clearHover` exists to prevent one line up. Fired AFTER
     // the DOM is in place, exactly as the hover clear is, so a host that redraws
     // from this callback finds the viewer already consistent.
-    if (announceSelection && state.selected !== selectedBefore) {
-      currentOptions.onSelect?.(state.selected);
-    }
+    if (announceSelection) announce(false);
   };
 
+  /**
+   * The rank order a Shift range walks: every member of every ranked slot, in
+   * the order the document ranks them, so a range across a unit adds each of
+   * its members as given.
+   */
+  const rankOrder = (): readonly string[] =>
+    normalized.order.slots.filter((slot) => slot.rank !== null).flatMap((slot) => slot.members);
+  /**
+   * The selection after `gesture`, with everything this document cannot name
+   * dropped BEFORE it is written, so no notice ever names it: an issue key the
+   * scene cannot point at, or an edge identity inside a set of issues.
+   */
+  const selectionAfter = (gesture: SelectionGesture): StoredSelection => {
+    const next = nextSelection(selectionAsGiven(), gesture, rankOrder());
+    if (next.kind === 'edge') return stillDrawn(next.edgeId) ? next.edgeId : null;
+    if (next.kind === 'none') return null;
+    return storedSelectionOf({
+      kind: 'issues',
+      keys: next.keys.filter((key) => stillDrawn(key) && !isDocumentEdge(key)),
+    });
+  };
+  /** What a pointer or key press on `key` asks for, given the modifiers held. */
+  const gestureFor = (key: string, event: MountEvent): SelectionGesture => {
+    // A RELATIONSHIP UNDER ANY MODIFIER IS A PLAIN RELATIONSHIP CLICK: a set
+    // holds issues only, so it replaces any set.
+    if (isDocumentEdge(key)) return { kind: 'edge', edgeId: key };
+    if (event.metaKey === true || event.ctrlKey === true) return { kind: 'toggle', key };
+    if (event.shiftKey === true) return { kind: 'range', key };
+    return { kind: 'replace', key };
+  };
   const emitSelect = (key: string | null): void => {
+    applyGesture(
+      key === null ? { kind: 'clear' } : isDocumentEdge(key) ? { kind: 'edge', edgeId: key } : { kind: 'replace', key },
+      key,
+    );
+  };
+
+  const applyGesture = (gesture: SelectionGesture, key: string | null): void => {
     // A KEY THIS DOCUMENT DOES NOT CARRY IS A SELECTION OF NOTHING, and it has
     // to be resolved HERE, before the state is written. `select()` is documented
     // to fire `onSelect` exactly as a click does — and a click can only ever
@@ -501,6 +625,7 @@ export function mountViewer(
     // arm a connector click resolved to `null`, so the host was told a
     // selection ENDED by the one gesture that was starting one.
     const resolved = key !== null && stillDrawn(key) ? key : null;
+    const selected = selectionAfter(gesture);
     // FOCUS FOLLOWS AN ISSUE, NEVER A DECORATION IDENTITY. `navigable` lists
     // issues, and `navigate` resolves a key it cannot find to -1 and throws the
     // reader back to the top of the order — which is why `onKeyDown` already
@@ -525,8 +650,8 @@ export function mountViewer(
       (currentScene?.navigable.includes(station) ?? false)
         ? resolved
         : null;
-    state = { ...state, selected: resolved, focused: focusable ?? state.focused };
-    selectedAsGiven = resolved;
+    state = { ...state, selected, focused: focusable ?? state.focused };
+    selectedAsGiven = selected;
     // SILENCED, because this function reports the result itself once the draw
     // has settled it. Letting the draw announce too would fire `onSelect` twice
     // for one selection whenever reconciliation renamed it — and a caller
@@ -562,7 +687,10 @@ export function mountViewer(
     // would tell the host a key the handle does not hold, which is the very
     // disagreement between the two notifications this function was written to
     // end. `select()` stays equivalent to the click it documents itself as.
-    currentOptions.onSelect?.(state.selected);
+    // FORCED, because `onSelect` has always reported every click, `Enter` and
+    // `select()`, even of what is already selected; `onSelectionChange` still
+    // fires only on a change.
+    announce(true);
   };
 
   const onClick = (event: MountEvent): void => {
@@ -591,10 +719,16 @@ export function mountViewer(
     // blank space. The list and the tree ignore such a click as they always
     // did. With nothing selected there is nothing to clear, so it neither
     // redraws nor tells the host.
+    // A MODIFIER CLICK ON BLANK SPACE KEEPS THE SET: the reader was building
+    // one and missed, which is not a request to throw it away.
     const key = keyAt(event.target, container);
-    const clearsSelection = projection === 'graph' && state.selected !== null;
-    if (key === null && !clearsSelection) return;
-    emitSelect(key);
+    const modified = event.shiftKey === true || event.metaKey === true || event.ctrlKey === true;
+    const clearsSelection = projection === 'graph' && state.selected !== null && !modified;
+    if (key === null) {
+      if (clearsSelection) emitSelect(null);
+      return;
+    }
+    applyGesture(gestureFor(key, event), key);
   };
 
   const onPointerOver = (event: MountEvent): void => {
@@ -635,11 +769,21 @@ export function mountViewer(
     if (standingOn !== null && standingOn !== state.focused && currentScene.navigable.includes(standingOn)) {
       state = { ...state, focused: standingOn };
     }
-    const result = navigate(currentScene, state, event.key);
+    const result = navigate(currentScene, state, event.key, { shift: event.shiftKey === true });
     if (result.command.kind === 'none') return;
     event.preventDefault?.();
     if (result.command.kind === 'select') {
       emitSelect(result.command.key);
+      return;
+    }
+    // SHIFT WITH AN ARROW IS A SHIFT-CLICK ON THE NEWLY FOCUSED ISSUE.
+    if (result.command.kind === 'extend') {
+      state = result.state;
+      applyGesture({ kind: 'range', key: result.command.key }, result.command.key);
+      return;
+    }
+    if (result.command.kind === 'clear') {
+      applyGesture({ kind: 'clear' }, null);
       return;
     }
     // A COMMAND IS THE HOST'S TO COMPLETE, exactly like the header's own
@@ -686,8 +830,9 @@ export function mountViewer(
       // or a NOW row, and neither carries a focus key — so `keyed` missed them
       // and the scroll this promises never happened for the subjects the two
       // views place furthest apart.
-      if (state.selected !== null) {
-        drawn.get(state.selected)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+      const subject = selectedKeysOf(state.selected).at(-1);
+      if (subject !== undefined) {
+        drawn.get(subject)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
       }
     },
     select(key: string | null): void {

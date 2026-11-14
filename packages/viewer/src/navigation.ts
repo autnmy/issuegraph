@@ -15,12 +15,22 @@
  */
 
 import { type Scene, resolveFocusKey } from './scene.ts';
+import type { StoredSelection } from './selection.ts';
 
 export interface NavigationState {
   /** The roving tab stop. `null` before anything has been focused. */
   readonly focused: string | null;
-  /** The selected key, which survives a projection change. */
-  readonly selected: string | null;
+  /**
+   * The selection, which survives a projection change: one issue or one
+   * relationship as a string, or a set of issues in the order they were added
+   * — see `StoredSelection`.
+   */
+  readonly selected: StoredSelection;
+}
+
+/** The modifier keys `navigate` reads. */
+export interface NavigationModifiers {
+  readonly shift?: boolean | undefined;
 }
 
 /** What the shell should do. `none` means the host keeps its own shortcut. */
@@ -28,6 +38,15 @@ export type NavigationCommand =
   | { readonly kind: 'none' }
   | { readonly kind: 'focus'; readonly key: string }
   | { readonly kind: 'select'; readonly key: string }
+  /**
+   * Shift with an arrow: focus moved to `key`, and the shell extends the
+   * selection to it as a Shift-click on it would — a range in rank order.
+   * `navigate` cannot build the set itself: the range rule needs the set as
+   * the reader made it, which only the shell holds.
+   */
+  | { readonly kind: 'extend'; readonly key: string }
+  /** Escape with something selected: the shell clears the selection. */
+  | { readonly kind: 'clear' }
   /**
    * A command the SHELL cannot complete on its own.
    *
@@ -95,11 +114,23 @@ export function reconcile(scene: Scene, state: NavigationState): NavigationState
   // from the click they are documented to be equivalent to.
   const station = (key: string | null | undefined): string | null =>
     key === null || key === undefined ? null : (scene.stationOf.get(key) ?? key);
-  const selected = station(state.selected);
+  const selected = stationsOfSelection(state.selected, (key) => scene.stationOf.get(key) ?? key);
   return {
     focused: resolveFocusKey(scene.navigable, station(state.focused), selected),
     selected,
   };
+}
+
+/**
+ * A selection named by its stations. A set keeps each station where its
+ * member was last added and collapses to a single key when only one is left,
+ * so the stored form never holds a one-key array.
+ */
+function stationsOfSelection(selected: StoredSelection, station: (key: string) => string): StoredSelection {
+  if (selected === null || typeof selected === 'string') return selected === null ? null : station(selected);
+  const named = selected.map(station);
+  const kept = named.filter((key, index) => named.lastIndexOf(key) === index);
+  return kept.length === 1 ? (kept[0] ?? null) : Object.freeze(kept);
 }
 
 /**
@@ -110,8 +141,21 @@ export function reconcile(scene: Scene, state: NavigationState): NavigationState
  * boundary. An unhandled key returns the state untouched and `none`, so a host
  * keeps every shortcut this package does not claim.
  */
-export function navigate(scene: Scene, state: NavigationState, key: string): NavigationResult {
+export function navigate(
+  scene: Scene,
+  state: NavigationState,
+  key: string,
+  modifiers: NavigationModifiers = {},
+): NavigationResult {
   const order = scene.focusOrder;
+
+  // ESCAPE CLEARS A SELECTION, and only a selection: with nothing selected it
+  // is not this package's key, so a host keeps whatever it bound to it.
+  if (key === 'Escape') {
+    return state.selected === null
+      ? stay(state)
+      : { state: { ...state, selected: null }, command: { kind: 'clear' } };
+  }
 
   // §16e's VIEW TOGGLE IS NOT A MOVEMENT, so it comes before the guard that
   // asks whether there is anywhere to move. A viewer with an empty order still
@@ -136,6 +180,21 @@ export function navigate(scene: Scene, state: NavigationState, key: string): Nav
 
   if (order.length === 0) return stay(state);
 
+  const moved = arrowMove(scene, state, key);
+  // SHIFT WITH AN ARROW IS A SHIFT-CLICK ON THE ISSUE FOCUS MOVED TO. A move
+  // that goes nowhere extends nothing, and a key that is not an arrow keeps
+  // its own meaning whatever modifier is held.
+  if (modifiers.shift === true && ARROWS.has(key) && moved.command.kind === 'focus') {
+    return { state: moved.state, command: { kind: 'extend', key: moved.command.key } };
+  }
+  return moved;
+}
+
+const ARROWS: ReadonlySet<string> = new Set(['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight']);
+
+/** Apply one key, modifiers aside. */
+function arrowMove(scene: Scene, state: NavigationState, key: string): NavigationResult {
+  const order = scene.focusOrder;
   const current = indexOfFocus(scene, state);
   const first = order[0] as string;
   const last = order[order.length - 1] as string;
