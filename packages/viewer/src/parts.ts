@@ -1333,7 +1333,7 @@ export function legend(): ElementSpec {
   // NAMED, NOT CAPTIONED (#288). The export carries the bar's name as an
   // aria-label and draws no caption: content.md rules out the small uppercase
   // label above a group. The accessible name is the word the caption carried.
-  return element('fieldset', { class: 'ig-legend', 'aria-label': 'relationships' }, [
+  return element('fieldset', { class: 'ig-legend', 'aria-label': 'Relationships' }, [
     ...EDGE_ORDER.map((field) => {
       const treatment = treatmentFor(field);
       return element('span', { class: 'ig-legend-item' }, [

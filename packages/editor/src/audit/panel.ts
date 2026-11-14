@@ -64,7 +64,7 @@
  * only thing the line adds is direction, and the glyph does not carry it: `→`
  * announces as "right arrow", not "waits on". Announcing the line anyway would
  * repeat three refs `detail` has just named, in a form that has lost the reason
- * it was drawn — the same trade `renderAuditPanel`'s `◆` makes below. The
+ * it was drawn — the same trade `./refused.ts`'s `↗` makes. The
  * remaining options were a visually-hidden utility this package does not have,
  * or an `aria-label` on a `p` with no role, which is not reliably announced. So
  * a screen reader hears exactly what it heard before this line existed, and the
@@ -581,11 +581,6 @@ export function renderAuditPanel(
     },
     [
     element('div', { class: 'ig-audit-panel-head' }, [
-      // THE MARK IS THE FRAME'S, AND IT IS NOT A WORD. `◆` is the same glyph
-      // §17a puts before the ambient count, so the panel and the chip that
-      // counts it read as one thing. `aria-hidden`, because it says nothing a
-      // reader needs said twice — the count and the heading beside it do.
-      element('span', { class: 'ig-audit-mark', 'aria-hidden': 'true' }, ['◆']),
       // THIS PANEL'S OWN CARDS, NOT `overlay.count`, AND THE TWO ARE NOW
       // DIFFERENT NUMBERS. `./surface.ts`'s header count is the persistent
       // control §17d gives one job — "always the same click" — and it counts

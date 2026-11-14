@@ -329,6 +329,10 @@ export const viewerStylesheet = `
   text-transform: none;
 }
 
+.ig-viewer[data-frame='none'] .ig-footer-title-row {
+  justify-content: space-between;
+}
+
 .ig-viewer[data-frame='none'] .ig-count-chip[data-count='footer'] {
   background: none;
   border: 0;

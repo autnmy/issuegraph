@@ -192,8 +192,8 @@ function openControl(
     [
       words.refusedOpen,
       // THE GLYPH IS THE FRAME'S AND IT IS NOT A WORD. `aria-hidden` for the
-      // reason `./panel.ts`'s `◆` is: the anchor already announces that it
-      // opens elsewhere, so the arrow would be said twice.
+      // reason any drawn glyph is: the anchor already announces that it opens
+      // elsewhere, so the arrow would be said twice.
       element('span', { class: 'ig-audit-refused-away', 'aria-hidden': 'true' }, ['↗']),
     ],
   );

@@ -130,14 +130,6 @@ export const auditStylesheet = `
   gap: var(--ig-space-tight);
 }
 
-/* THE GOLD IS THE AMBIENT MARK'S, not a fifth hue. §17d names one attention
-   colour and the rail bar already spends it; the panel head answering in the
-   same gold is what makes the count and the list read as one thing. */
-.ig-audit-mark {
-  color: var(--ig-edge-serialize-with);
-  font-size: var(--ig-font-size-small);
-}
-
 /* THE PANEL'S TITLE, AS THE EXPORT DRAWS IT: one heading, the count and then
    the host's words, in the sans at medium weight in text colour. It was an
    uppercase mono label in gold with the count beside it; content.md rules out

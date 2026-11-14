@@ -377,10 +377,10 @@ describe('the findings panel', () => {
     // focusable descendant at all. Browsers disagree about putting a generic
     // scroll container in the tab order, so it is declared rather than assumed.
     assert.match(markup, /<section class="ig-audit-panel"[^>]*\stabindex="0"/);
-    // THE MARK IS DECORATION. The count and the heading beside it say the same
-    // thing in words, so a reader who cannot see the glyph loses nothing and a
-    // reader who hears it twice gains nothing.
-    assert.match(markup, /<span class="ig-audit-mark" aria-hidden="true">◆<\/span>/);
+    // THE HEAD DRAWS NO MARK. The export's head row holds only the title and
+    // the filter button; a glyph beside a title that names no state is
+    // decoration.
+    assert.doesNotMatch(markup, /ig-audit-mark|◆/);
   });
 
   it('invents no English of its own', () => {
@@ -403,7 +403,7 @@ describe('the findings panel', () => {
     ]);
     const drawn = [...markup.matchAll(/>([^<>]+)</g)]
       .map((match) => (match[1] as string).trim())
-      .filter((text) => text !== '' && text !== '◆' && !/^\d+$/.test(text));
+      .filter((text) => text !== '' && !/^\d+$/.test(text));
     const overlay = overlayOf(EVERY_CLASS.issues, EVERY_CLASS.edges, [{ ref: 'f' }]);
     // A `detail` is the DETECTOR's sentence, composed from package values, and
     // it is package-owned prose by decision — recorded in `panel.ts` rather than
@@ -412,8 +412,8 @@ describe('the findings panel', () => {
     // A WALK LINE IS ALLOWED ON A STRONGER FOOTING THAN `detail`, and it is
     // listed rather than pattern-matched away. `detail` is a real sentence and
     // is admitted above by decision; a walk contains NO WORD AT ALL — it is the
-    // host's own refs joined by a separator glyph, the same category as the `◆`
-    // and the digits this test already skips. The composition still belongs to
+    // host's own refs joined by a separator glyph, the same category as the
+    // digits this test already skips. The composition still belongs to
     // the package, so it is named here explicitly rather than falling through a
     // widened filter that would admit the next real sentence too.
     for (const finding of overlay.findings) {

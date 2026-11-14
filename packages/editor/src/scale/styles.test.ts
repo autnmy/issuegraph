@@ -130,7 +130,7 @@ describe('a stuck capsule\u2019s cycle is a tag in the error state, not a count 
 
   it('draws the cycle in its own class, with neither the count\u2019s class nor a badge\u2019s', () => {
     const markup = renderScaleLadder(documentOf({ components: [40, 30], cycleIn: 1 })).markup;
-    assert.match(markup, /<span class="ig-capsule-loop">cycle<\/span>/);
+    assert.match(markup, /<span class="ig-capsule-loop">Loop<\/span>/);
     assert.equal(/class="ig-capsule-load ig-badge"/.test(markup), false, 'the cycle still wears the count and the badge');
   });
 

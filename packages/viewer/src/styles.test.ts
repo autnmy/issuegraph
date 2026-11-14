@@ -158,7 +158,7 @@ describe('the structural stylesheet', () => {
     const css = withoutComments(viewerStylesheet);
     assert.equal(/\.ig-legend-caption\b/.test(css), false, 'a rule still styles a legend caption');
     const markup = renderViewer(fixtureDocument, { projection: 'graph' }).markup;
-    assert.match(markup, /<fieldset class="ig-legend" aria-label="relationships">/);
+    assert.match(markup, /<fieldset class="ig-legend" aria-label="Relationships">/);
     assert.equal(/<legend\b/.test(markup), false, 'the legend draws a caption');
   });
 
@@ -1228,6 +1228,8 @@ describe('the chrome the export draws differently, drawn as the export draws it 
     for (const [property, expected] of Object.entries(HEADING)) {
       assert.equal(declaredOn(viewerStylesheet, heading, property, embedded)?.value, expected, `the embedded heading's ${property}`);
     }
+    // ITS COUNT SITS AT THE ROW'S END, as the export's group row sets it.
+    assert.equal(declaredOn(viewerStylesheet, '.ig-footer-title-row', 'justify-content', embedded)?.value, 'space-between');
     // AND ITS COUNT IS A NUMBER, NOT AN OUTLINED CHIP.
     const count = ".ig-count-chip[data-count='footer']";
     assert.equal(declaredOn(viewerStylesheet, count, 'border', embedded)?.value, '0');
