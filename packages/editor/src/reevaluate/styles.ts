@@ -96,22 +96,43 @@ ${heldRailDeclarations}
   align-items: baseline;
 }
 
+/* THE SAVED LINE IS QUIET TEXT, counts included. It reports an edit the
+   reader already made and stays until they dismiss it, so it must not compete
+   with the order beside it. The count and its word carry their own colours
+   because a rail chip draws them too, so inside the line both are named. */
+.ig-change-line,
+.ig-change-line .ig-change-count,
+.ig-change-line .ig-change-word {
+  color: var(--ig-text-muted);
+}
+
+/* The host's lead before the counts — the "Saved:" of "Saved: 2 moved". The
+   line itself has no gap, so the space after the lead is this margin. */
+.ig-change-saved {
+  margin-inline-end: var(--ig-space);
+}
+
 .ig-change-parts {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-wrap: wrap;
-  /* The blast radius reads as ONE line. The gap is the separator, so no
-     punctuation glyph is baked into the markup — that would be a second
-     language choice on top of the words themselves. */
-  gap: var(--ig-space);
+  /* The blast radius reads as ONE line: "2 moved · 1 newly held". */
+  gap: var(--ig-space-tight);
 }
 
 .ig-change-part {
   display: flex;
   gap: var(--ig-space-tight);
   align-items: baseline;
+}
+
+/* THE SEPARATOR IS GENERATED HERE, NOT WRITTEN INTO THE MARKUP, so the
+   markup carries only the host's words. The empty alternative text after the
+   slash keeps a screen reader from reading the dot aloud between facets. */
+.ig-change-part + .ig-change-part::before {
+  content: '·' / '';
 }
 
 .ig-change-count {
@@ -125,7 +146,6 @@ ${heldRailDeclarations}
 
 .ig-change-unchanged {
   margin: 0;
-  color: var(--ig-text-body);
 }
 
 .ig-change-dismiss {

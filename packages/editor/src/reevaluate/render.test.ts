@@ -67,6 +67,15 @@ describe('an edit that changed nothing renders, in the summary\'s own place', ()
     assert.equal(/class="ig-delta-chip"/.test(result.markup), false);
   });
 
+  it('leads the unchanged sentence with no saved word, which that sentence already says', () => {
+    const same = orderOf(['a', 'b']);
+    const result = renderReevaluate(railOf(['a', 'b']), {
+      words: WORDS,
+      change: diffOrder(same, orderOf(['a', 'b']), editOf()),
+    });
+    assert.equal(result.markup.includes(WORDS.saved), false, 'the saved word led a sentence that says it already');
+  });
+
   it('words the summary from the host and writes no sentence of its own', () => {
     const result = renderReevaluate(railOf(['b', 'a', 'c']), {
       words: WORDS,
@@ -189,7 +198,11 @@ describe('the status region is mounted before there is anything to say', () => {
       words: WORDS,
       change: diffOrder(orderOf(['a', 'b']), orderOf(['b', 'a']), editOf()),
     });
-    assert.match(result.markup, /<div class="ig-change-line" role="status"><ul class="ig-change-parts"/);
+    // The saved word leads the counts inside the region.
+    assert.match(
+      result.markup,
+      /<div class="ig-change-line" role="status"><span class="ig-change-saved">[^<]*<\/span><ul class="ig-change-parts"/,
+    );
     // Exactly one status region, before and after — not a second one alongside.
     assert.equal(result.markup.match(/role="status"/g)?.length, 1);
   });
@@ -274,4 +287,21 @@ describe('the surface composes the viewer rather than re-rendering it', () => {
     );
     assert.ok(result.diagnostics.length > 0);
   });
+});
+
+it('R6 KTD8 renderReevaluate: the host saved word leads the change line once, before the counts', () => {
+  const result = renderReevaluate(railOf(['b', 'a', 'c']), {
+    words: WORDS,
+    change: diffOrder(orderOf(['a', 'b', 'c']), orderOf(['b', 'a', 'c']), editOf()),
+  });
+  const line = /<div class="ig-change-line" role="status">([\s\S]*?)<\/div>/.exec(result.markup)?.[1];
+  assert.ok(line !== undefined, 'no change line was drawn');
+
+  // The issue: "A saved change says what it did to the order, in `text-muted`, until it is dismissed: "Saved: 2 moved · 1 newly held", or "Saved. The order did not change." Never on a timer."
+  const savedAt = line.indexOf(WORDS.saved);
+  const firstCountAt = line.indexOf('class="ig-change-part"');
+  assert.notEqual(savedAt, -1, 'the host saved word is missing from the change line');
+  assert.notEqual(firstCountAt, -1, 'the change line drew no counts');
+  assert.ok(savedAt < firstCountAt, 'the saved word is drawn after the counts');
+  assert.equal(line.split(WORDS.saved).length - 1, 1, 'the saved word is drawn more than once');
 });

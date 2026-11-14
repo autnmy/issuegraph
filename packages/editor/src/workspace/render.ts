@@ -82,11 +82,13 @@ import {
 
 import type {
   EdgeId,
+  EdgeKind,
   InvalidCode,
   MutationId,
   OrderChange,
   OrderStatus,
   ProjectedEdge,
+  Proposal,
   StoredEdge,
 } from '@issuegraph/store';
 
@@ -143,20 +145,18 @@ export type Zone = (typeof ZONES)[number];
 
 export interface WorkspaceWords {
   /**
-   * §17c's vocabulary — the change summary's facets, its dismiss control and
-   * its direction words.
+   * §17c's vocabulary — the change summary's facets, its saved lead, its
+   * dismiss control and its direction words.
    *
-   * OPTIONAL, AND ITS ABSENCE DRAWS NOTHING rather than drawing a default.
-   * `ChangeWords` states the doctrine and this obeys it exactly: the store
-   * ships the change as COUNTS so a host writes the sentence in its own
-   * language, and a default supplied here would take that choice back one layer
-   * down. So a host that has not supplied these gets no summary and no chips —
-   * not an English summary it cannot translate.
-   *
-   * It is the one shape that also keeps this a non-breaking addition: every
-   * host built against 0.12 renders exactly as it did.
+   * REQUIRED, because the log under the head always says whether the order is
+   * held and what the last save did to it. `ChangeWords` states the doctrine:
+   * the store ships the change as COUNTS so a host writes the sentence in its
+   * own language, and a default supplied here would take that choice back one
+   * layer down.
    */
-  readonly change?: ChangeWords | undefined;
+  readonly change: ChangeWords;
+  /** The log under the head: the writes still saving, in the host's words. */
+  readonly log: LogWords;
   /**
    * What the workspace says, to assistive technology, while its first read is
    * in flight — "Loading your issues". The placeholder itself has no words;
@@ -464,11 +464,11 @@ export interface WorkspaceWords {
   /**
    * The canvas toolbar's words — frame 17a's caption over the graph.
    *
-   * OPTIONAL, AND ITS ABSENCE DRAWS NO TOOLBAR, on `change`'s reasoning
-   * exactly: a required member here would break every host built against the
-   * current version, and a default supplied here would be this package writing
-   * an English caption for a host that may not speak English. So a host that
-   * has not worded the row gets the canvas it already had.
+   * OPTIONAL, AND ITS ABSENCE DRAWS NO TOOLBAR: a required member here would
+   * break every host built against the current version, and a default
+   * supplied here would be this package writing an English caption for a host
+   * that may not speak English. So a host that has not worded the row gets the
+   * canvas it already had.
    */
   readonly canvas?: CanvasWords | undefined;
   /**
@@ -624,6 +624,30 @@ export interface NarrowWords {
   readonly noMatch: string;
 }
 
+/**
+ * The words the log under the head names a saving write with.
+ *
+ * A write is named as its operation, its kind and its two ends. The ends are
+ * the issue refs themselves, so only the operation and the kind need words.
+ *
+ * KEYED BY THE STORE'S OWN VOCABULARIES, `Proposal['op']` and `EdgeKind`, so
+ * a new operation or kind fails a host's build here rather than drawing a
+ * bare ref. The viewer's fixed kind labels are not reused: they are the
+ * package's English, and the log is worded by the host.
+ */
+export interface LogWords {
+  /** Names the list of writes for assistive technology. */
+  readonly label: string;
+  /** Leads an entry whose write has not settled yet. */
+  readonly saving: string;
+  /** One word per operation a write can carry. */
+  readonly ops: Readonly<Record<Proposal['op'], string>>;
+  /** Sits between a retyped edge and the kind it is changed to. */
+  readonly becomes: string;
+  /** One word per relationship kind. */
+  readonly kinds: Readonly<Record<EdgeKind, string>>;
+}
+
 export interface RecoveryWords {
   /** Names the state on a failed card. */
   readonly failed: string;
@@ -656,14 +680,6 @@ export interface RecoveryWords {
    * observable.
    */
   readonly retryFailed: string;
-  /**
-   * Heads the region for recoveries with no panel to sit on.
-   *
-   * See {@link WorkspaceRecovery.carrier}: a write about issues this backlog
-   * does not hold has no panel, and dropping it would leave the reader's work
-   * unrecoverable.
-   */
-  readonly unplaced: string;
 }
 
 /**
@@ -674,7 +690,8 @@ export interface RecoveryWords {
  * The whole write ledger is the larger surface this deliberately is not: a
  * `WriteRecord` carries a `Mutation` and, on a conflict, an entire second
  * `GraphDocument`, none of which a renderer can draw. What a card needs is the
- * state, the reason or the difference, and which panel states it.
+ * state, the reason or the difference, which panel states it, and what the
+ * write did, so the log can name it above its card.
  *
  * A UNION, BECAUSE THE TWO STATES CARRY DIFFERENT FACTS. `WriteRecord` is
  * already a union on this exact line. Two optionals would admit a conflict with
@@ -693,6 +710,8 @@ export type WorkspaceRecovery =
       readonly mutationId: MutationId;
       readonly edgeId: EdgeId;
       readonly carrier: string | null;
+      /** What the write did, for the line the log draws above its card. */
+      readonly write: WorkspaceLoggedWrite;
       /**
        * The adapter's own sentence, verbatim.
        *
@@ -709,6 +728,7 @@ export type WorkspaceRecovery =
       readonly mutationId: MutationId;
       readonly edgeId: EdgeId;
       readonly carrier: string | null;
+      readonly write: WorkspaceLoggedWrite;
       /** Both sides, held apart. See `recovery.ts`. */
       readonly diff: ConflictDiff;
       /**
@@ -721,6 +741,49 @@ export type WorkspaceRecovery =
        */
       readonly refreshError: string | null;
     };
+
+/**
+ * The edge a logged write is about: as the landed document holds it, or its
+ * raw id when the document no longer holds it.
+ *
+ * THE RAW ID IS NEVER TAKEN APART. An id is a key, not a description: splitting
+ * it back into a kind and two ends would mean parsing a string whose spelling
+ * is the store's to choose, so a write about an edge that is gone is named by
+ * its id, drawn as one piece of text.
+ */
+export type WorkspaceLoggedEdge = StoredEdge | EdgeId;
+
+/**
+ * What one logged write does, in the facts a line naming it needs.
+ *
+ * A UNION ON THE OPERATION, because only a retype has a second kind to name,
+ * and a create always has its edge: it is the edit itself, not something the
+ * landed document might have lost.
+ */
+export type WorkspaceLoggedWrite =
+  | { readonly op: 'create'; readonly edge: StoredEdge }
+  | { readonly op: 'delete' | 'flip'; readonly edge: WorkspaceLoggedEdge }
+  | { readonly op: 'retype'; readonly edge: WorkspaceLoggedEdge; readonly nextKind: EdgeKind };
+
+/**
+ * One write the log lists: one still saving, or one that did not save.
+ *
+ * THE ONE INPUT BOTH PLACEMENTS DRAW FROM. The log under the header draws a
+ * card for every `failed` and `conflict` entry; the Inspector draws the ones
+ * its panel states. Two inputs could disagree about which writes exist, and
+ * one cannot.
+ *
+ * A REFUSED EDIT IS NOT AN ENTRY. The store refuses it before any write is
+ * attempted, so nothing was saving and nothing failed to save; its capsule
+ * stays on the relationship it refused, through {@link WorkspaceRefusal}.
+ */
+export type WorkspaceLogEntry =
+  | {
+      readonly kind: 'pending';
+      readonly mutationId: MutationId;
+      readonly write: WorkspaceLoggedWrite;
+    }
+  | WorkspaceRecovery;
 
 /**
  * One refused edit, as the panel needs it: which edge, and why.
@@ -1003,13 +1066,15 @@ export interface WorkspaceOptions {
    */
   readonly refusals?: readonly WorkspaceRefusal[] | undefined;
   /**
-   * The failed and conflicted writes the reader can still act on.
+   * The writes still saving and the writes that did not save, in the ledger's
+   * own order. The log under the header draws a card for each one that did
+   * not save, and the Inspector draws the ones its panel states.
    *
    * OPTIONAL, on the same reasoning as {@link WorkspaceOptions.refusals}: an
    * unsettled write is a fact the store produces, so "none" and "never asked"
-   * leave the panel with the same nothing to draw.
+   * leave the log with the same nothing to draw.
    */
-  readonly recoveries?: readonly WorkspaceRecovery[] | undefined;
+  readonly log?: readonly WorkspaceLogEntry[] | undefined;
   /**
    * Which conflict has its difference open, if any.
    *
@@ -1398,9 +1463,6 @@ function severityForRow(
  *
  * THE WORDS TRAVEL WITH THE CHIP rather than being closed over separately, so
  * a row can only be marked by a caller that actually has a vocabulary for it.
- * Without `words.change` there is no `RowDelta` to hand out at all, which is
- * how "the package invents no English" is held by the types instead of by a
- * branch someone has to remember.
  */
 interface RowDelta {
   readonly chip: PlacedChip;
@@ -2491,13 +2553,25 @@ const AFFORDANCE_COMMANDS = Object.freeze({
 } as const satisfies Record<OverlayAffordance, string>);
 
 /**
+ * Where a recovery card is drawn. One write can have a card in both places at
+ * once: the log lists every write, and the Inspector states the selected
+ * issue's.
+ */
+type RecoveryPlacement = 'log' | 'inspector';
+
+/**
  * The region a card's `view-diff` control discloses.
  *
  * Derived from the write's own identity so `aria-controls` can name it, and
  * scoped by a prefix because a page may mount more than one workspace.
+ *
+ * SCOPED BY PLACEMENT TOO. With the difference open, the log's card and the
+ * Inspector's card for one write each draw a region. Sharing an id would make
+ * each `aria-controls` name two elements, and the log's control could open
+ * the Inspector's region.
  */
-function diffRegionId(mutationId: MutationId): string {
-  return `ig-recovery-diff-${mutationId}`;
+function diffRegionId(mutationId: MutationId, placement: RecoveryPlacement): string {
+  return `ig-recovery-diff-${placement}-${mutationId}`;
 }
 
 /** One edge in a difference, named the way the relationship rows name one. */
@@ -2621,10 +2695,12 @@ function recoveryCard(
   recovery: WorkspaceRecovery,
   words: RecoveryWords,
   diffOpen: MutationId | null,
+  placement: RecoveryPlacement,
   keys: ReadonlySet<string> | null,
 ): ElementSpec {
   const treatment = OVERLAY_TREATMENTS[recovery.kind];
   const open = recovery.kind === 'conflict' && diffOpen === recovery.mutationId;
+  const regionId = diffRegionId(recovery.mutationId, placement);
   return element(
     'li',
     {
@@ -2675,7 +2751,7 @@ function recoveryCard(
               // screen-reader user. Found by the a11y baseline's
               // reference rule on its first run.
               'aria-controls':
-                affordance === 'view-diff' && open ? diffRegionId(recovery.mutationId) : undefined,
+                affordance === 'view-diff' && open ? regionId : undefined,
             },
             [affordanceWord(affordance, recovery.kind, words)],
           ),
@@ -2684,35 +2760,141 @@ function recoveryCard(
       // NARROWED BY THE PANEL'S KEY SET, not by the carrier alone. A together
       // unit's lead speaks for its partners, so a single key would drop a
       // partner's conflicted edge from the one panel entitled to state it.
-      // `null` keys is the unplaced region, which is nobody's unit: nothing is
-      // narrowed away there.
+      // `null` keys is the log, or an edge panel, which speak for no unit:
+      // nothing is narrowed away there.
       open && recovery.kind === 'conflict'
-        ? diffSpec(
-            keys === null ? recovery.diff : diffWithin(recovery.diff, keys),
-            words,
-            diffRegionId(recovery.mutationId),
-          )
+        ? diffSpec(keys === null ? recovery.diff : diffWithin(recovery.diff, keys), words, regionId)
         : null,
     ],
   );
 }
 
-/** The cards a panel states, or nothing when it states none. */
+/** The cards a placement draws, or nothing when it draws none. */
 function recoveryListSpec(
   recoveries: readonly WorkspaceRecovery[],
   words: RecoveryWords,
   diffOpen: MutationId | null,
+  placement: RecoveryPlacement,
   keys: ReadonlySet<string> | null,
-  heading: string | null,
 ): ElementSpec | null {
   if (recoveries.length === 0) return null;
   return element('div', { class: 'ig-recovery-region' }, [
-    heading === null ? null : element('h3', { class: 'ig-inspector-heading' }, [heading]),
     element(
       'ul',
       { class: 'ig-recovery-list' },
-      recoveries.map((recovery) => recoveryCard(recovery, words, diffOpen, keys)),
+      recoveries.map((recovery) => recoveryCard(recovery, words, diffOpen, placement, keys)),
     ),
+  ]);
+}
+
+/**
+ * The log's entries that did not save: the ones a reader can still act on.
+ *
+ * The Inspector takes its cards from the same entries the log draws, so the
+ * two placements cannot come to disagree about which writes failed.
+ */
+function recoveriesIn(log: readonly WorkspaceLogEntry[]): readonly WorkspaceRecovery[] {
+  return log.flatMap((entry) => (entry.kind === 'pending' ? [] : [entry]));
+}
+
+/**
+ * A logged edge, named: its `from` end, the host's word for its kind, then its
+ * `to` end.
+ *
+ * A RAW ID IS ONE PIECE OF TEXT. The landed document no longer holds that
+ * edge, and an id is the store's key rather than a description, so it is
+ * printed whole instead of being split back into a kind and two ends.
+ *
+ * THE KIND SITS BETWEEN THE ENDS. `from` is the issue whose frontmatter
+ * declares the edge, so `i0001 blocked by i0002` reads as the fact it stores.
+ * With the kind first, `blocked by i0001 i0002` reads either way round, and for
+ * a reversal the direction is the whole edit.
+ */
+function loggedEdgeSpecs(edge: WorkspaceLoggedEdge, words: LogWords): readonly ElementSpec[] {
+  return typeof edge === 'string'
+    ? [element('span', {}, [edge])]
+    : [
+        element('span', { class: 'ig-id' }, [edge.from]),
+        element('span', {}, [words.kinds[edge.kind]]),
+        element('span', { class: 'ig-id' }, [edge.to]),
+      ];
+}
+
+/** What a logged write does: the operation, the edge, and a retype's new kind. */
+function loggedWriteSpecs(write: WorkspaceLoggedWrite, words: LogWords): readonly ElementSpec[] {
+  return [
+    element('span', {}, [words.ops[write.op]]),
+    ...loggedEdgeSpecs(write.edge, words),
+    ...(write.op === 'retype'
+      ? [
+          element('span', {}, [words.becomes]),
+          element('span', {}, [words.kinds[write.nextKind]]),
+        ]
+      : []),
+  ];
+}
+
+/** A write still saving: the saving word, then what the write does. */
+function savingEntrySpec(mutationId: MutationId, write: WorkspaceLoggedWrite, words: LogWords): ElementSpec {
+  return element('li', { class: 'ig-log-entry', 'data-ig-state': 'pending', 'data-mutation': mutationId }, [
+    element('span', {}, [words.saving]),
+    ...loggedWriteSpecs(write, words),
+  ]);
+}
+
+/**
+ * A write that did not save: a line naming the write, then the Inspector's
+ * own card.
+ *
+ * THE NAMING LINE SITS OUTSIDE THE CARD. The card has to read exactly as the
+ * Inspector's does, and the Inspector names no write because its panel is
+ * already about the write's issue. The log speaks for every issue at once, so
+ * without the line two failed writes would show two identical cards.
+ */
+function recoveryEntrySpec(
+  recovery: WorkspaceRecovery,
+  words: WorkspaceWords,
+  diffOpen: MutationId | null,
+): ElementSpec {
+  return element('li', { class: 'ig-log-recovery', 'data-mutation': recovery.mutationId }, [
+    element('div', { class: 'ig-log-write' }, loggedWriteSpecs(recovery.write, words.log)),
+    element('ul', { class: 'ig-recovery-list' }, [recoveryCard(recovery, words.recovery, diffOpen, 'log', null)]),
+  ]);
+}
+
+/**
+ * The log under the workspace head: the change line, then one entry per write
+ * still saving or not saved, in the order the writes were made.
+ *
+ * THE CHANGE LINE COMES FIRST AND IS ALWAYS DRAWN. It holds the one live
+ * region the mount carries across a redraw, so it has to exist before there is
+ * anything to say in it. The entry list is not a live region.
+ *
+ * A WRITE THAT DID NOT SAVE IS THE INSPECTOR'S OWN CARD, drawn by
+ * {@link recoveryCard} under a line naming the write, so its note, reason and
+ * controls cannot differ between the two placements. It is drawn for every such write, whichever issue it is
+ * about and whether or not that issue is selected, and a conflict's difference
+ * is drawn whole, because the log speaks for no panel.
+ */
+function logSpec(
+  log: readonly WorkspaceLogEntry[],
+  changeLine: ElementSpec,
+  words: WorkspaceWords,
+  diffOpen: MutationId | null,
+): ElementSpec {
+  return element('div', { class: 'ig-workspace-log' }, [
+    changeLine,
+    log.length === 0
+      ? null
+      : element(
+          'ul',
+          { class: 'ig-recovery-list', 'aria-label': words.log.label },
+          log.map((entry) =>
+            entry.kind === 'pending'
+              ? savingEntrySpec(entry.mutationId, entry.write, words.log)
+              : recoveryEntrySpec(entry, words, diffOpen),
+          ),
+        ),
   ]);
 }
 
@@ -2940,33 +3122,16 @@ function inspectorSpec(view: InspectorView, context: InspectorContext): ElementS
     // — one `statedHere`, one carrier, no second derivation of whose panel this
     // is. No heading: the cards carry their own state names, and a heading over
     // a region that is usually absent is a heading a reader learns to skip.
+    //
+    // A WRITE WITH A `null` CARRIER IS NOT DRAWN HERE ON AN ISSUE PANEL. It is
+    // about issues this backlog does not hold, so no issue panel is entitled
+    // to it; the log lists it on every render, with its Retry and Discard.
     recoveryListSpec(
       context.recoveries.filter((recovery) => statedHere(scope, recovery)),
       words.recovery,
       context.diffOpen,
+      'inspector',
       scope.kind === 'issue' ? scope.keys : null,
-      null,
-    ),
-    // THE WRITES WITH NOWHERE TO SIT, ON EVERY PANEL. A recovery whose carrier
-    // is `null` is about issues this backlog does not hold, so no panel is
-    // entitled to it — and the refusal path drops exactly these. Dropping a
-    // REFUSAL costs a sentence the reader can live without; dropping a RECOVERY
-    // takes away the only retry and discard they have, which is #137's
-    // Done-when 1 ("offers all three resolutions from the editor's own
-    // surface") failing on the state where it matters most. So they are drawn
-    // here, under a heading that says why they are not on a relationship.
-    // AND NEVER TWICE ON ONE PANEL. `statedHere`'s EDGE arm matches on
-    // `edgeId` and ignores the carrier, so an edge panel narrowed to a
-    // null-carrier recovery's own edge states it above AND here — two identical
-    // cards, two tab stops, and two buttons carrying one write's id.
-    recoveryListSpec(
-      context.recoveries.filter(
-        (recovery) => recovery.carrier === null && !statedHere(scope, recovery),
-      ),
-      words.recovery,
-      context.diffOpen,
-      null,
-      words.recovery.unplaced,
     ),
   ]);
 }
@@ -3543,11 +3708,9 @@ export function renderWorkspace(
   // scrolled out of the window resolves to no row and draws nowhere — which is
   // right: a chip is a mark ON a row, and there is no row. The summary still
   // counts it, because the summary is about the ORDER and not about the window.
-  //
-  // NO WORDS, NO LOOP. `words.change` is optional and its absence is the whole
-  // reason there is no default sentence here; see `ChangeWords`.
   const changeWords = options.words.change;
   const orderStatus: OrderStatus = options.orderStatus ?? 'settled';
+  const log = options.log ?? [];
   // EVERY REF THE ORDER HAS, WINDOWED OR NOT — and taken from the UNFILTERED
   // document on purpose, so a row the audit filter is hiding counts as expected
   // for the same reason an off-window row does. The rail this render hands the
@@ -3561,19 +3724,9 @@ export function renderWorkspace(
   }
   for (const exclusion of document.order.excluded) inTheOrder.add(exclusion.key);
 
-  const change = reevaluateView(
-    changeWords === undefined ? null : options.change,
-    railRender.scene,
-    orderStatus,
-    inTheOrder,
-  );
+  const change = reevaluateView(options.change, railRender.scene, orderStatus, inTheOrder);
   const deltaByKey = new Map<string, RowDelta>(
-    changeWords === undefined
-      ? []
-      : change.chips.map((chip) => [
-          chip.key,
-          { chip, words: changeWords, kind: deltaKind(chip) },
-        ]),
+    change.chips.map((chip) => [chip.key, { chip, words: changeWords, kind: deltaKind(chip) }]),
   );
 
   // §17d'S PANEL IS AN OVERLAY OVER THE CANVAS, NOT A FOURTH ZONE.
@@ -3641,19 +3794,9 @@ export function renderWorkspace(
     // the stylesheet can reach it in the UNMOUNTED rendering too, so §17c's
     // "greyed one step, and labelled" is drawn by whoever renders rather than
     // only by whoever mounts. Same vocabulary, verbatim, so the two agree.
-    // STAMPED ONLY WHERE THE LABEL CAN BE DRAWN, and the two really are one
-    // treatment. §17c's held state is a greyed rail AND the word saying why —
-    // "a stale-but-labelled order beats a half-computed one" — and half of that
-    // is worse than neither: a dimmed order with no explanation is exactly the
-    // defect the label exists to prevent. `mountWorkspace` passes the store's
-    // status unconditionally, so a host that has not supplied `words.change`
-    // would otherwise get the greying with the label suppressed one branch
-    // below, on the very path the optional vocabulary exists to keep working.
-    //
-    // THE FACT IS NOT LOST TO A HOST. `mount.ts` publishes the same status on
-    // the element the host holds, which is the reader this attribute was never
-    // for: this one is the stylesheet's hook, so it is absent exactly when the
-    // stylesheet must not act.
+    // The greyed rail and the held sentence in the log are one treatment, and
+    // the change words are required, so the sentence is always there to
+    // explain the greying.
     //
     // §17k'S TWO READER DECISIONS RIDE THE SAME ROOT, and for the same reason
     // `data-order` does: the stylesheet is the only party that knows which of
@@ -3661,14 +3804,10 @@ export function renderWorkspace(
     // asked for and each container block reads the one it has a use for.
     // Neither attribute means anything at the width where its zone is a zone.
     //
-    // BOTH ARE ALWAYS STAMPED, unlike `data-order`. That one is withheld where
-    // its label cannot be drawn — a greyed rail with no word is worse than
-    // neither — and these two have no such pair: the value is the full state,
-    // and an absent attribute would read as the strip being open and the
-    // inspector being lifted, which is the opposite of both defaults.
-    changeWords === undefined
-      ? `<div class="ig-workspace"${narrowState}>`
-      : `<div class="ig-workspace" data-order="${orderStatus}"${narrowState}>`,
+    // Both are always stamped: the value is the full state, and an absent
+    // attribute would read as the strip being open and the inspector being
+    // lifted, which is the opposite of both defaults.
+    `<div class="ig-workspace" data-order="${orderStatus}"${narrowState}>`,
     zone(
       'header',
       ids.header,
@@ -3678,30 +3817,29 @@ export function renderWorkspace(
           overlay === null ? '' : renderAuditHeader(overlay, { open: auditOpen }),
           options.words,
         ),
-        // §17c'S SUMMARY LIVES IN THE HEADER, NOT AT THE TOP OF THE RAIL, and
-        // the frame draws them adjacent so this is a real departure worth the
-        // sentence. The rail zone is the SCROLLER — `mount.ts` preserves
-        // `railBefore.scrollTop` across every redraw — so a summary placed
-        // inside it scrolls away from the reader, and §17c's rule is that the
-        // summary "persists until the next edit or an explicit dismiss". A
-        // summary that survives a dismiss but not a scroll is not persistent.
+        // THE LOG IS IN THE HEADER because the header is the one zone drawn at
+        // every width: under 640 the grid keeps only the header and the view.
+        // A write that did not save keeps its Retry and Discard there whatever
+        // the width and whatever is selected.
         //
-        // The header is where #135 settled that a workspace-wide fact is
-        // stated, and it is stated in exactly one zone. The chips carry the
-        // adjacency instead: cause in the header, effect on the row.
+        // §17c'S SUMMARY LEADS THE LOG, NOT THE TOP OF THE RAIL. The rail zone
+        // is the SCROLLER — `mount.ts` preserves `railBefore.scrollTop` across
+        // every redraw — so a summary placed inside it would scroll away from
+        // the reader, and the summary stays until it is dismissed. The chips
+        // carry the adjacency instead: cause in the header, effect on the row.
+        //
         // "A STALE-BUT-LABELLED ORDER BEATS A HALF-COMPUTED ONE." §17c greys the
-        // held rail and says WHY beside it, and the greying without the label
-        // is the half of that pair which communicates nothing.
-        //
-        // THE LABEL IS `summarySpec`'S, INSIDE ITS LIVE REGION, and it was a
-        // sibling of that region until a reader pointed out this made it
-        // silent. The store clears `lastChange` when a write goes PENDING, so
-        // the region is empty in exactly the state the label exists for — a
-        // sighted reader got the greying and the sentence, and a screen-reader
-        // user was told nothing about the ranks having gone stale.
-        changeWords === undefined
-          ? ''
-          : renderMarkup(summarySpec(change.summary, changeWords, { held: change.held })),
+        // held rail and says WHY beside it, and the held sentence is
+        // `summarySpec`'s, inside its live region, so a screen-reader user is
+        // told the ranks have gone stale as well.
+        renderMarkup(
+          logSpec(
+            log,
+            summarySpec(change.summary, changeWords, { held: change.held }),
+            options.words,
+            options.diffOpen ?? null,
+          ),
+        ),
         // THE TABS ARE THE HEADER'S LAST CHILD, because the header is the one
         // zone nothing replaces after this render: the mount swaps the canvas
         // zone's children for the tree, and a tab inside it would vanish there.
@@ -3829,8 +3967,9 @@ export function renderWorkspace(
           refusals: options.refusals ?? [],
           // FORWARDED IN THE LEDGER'S ORDER too, for the reason above: the
           // cards are drawn in the order the writes were made, so the one the
-          // reader just caused is the one nearest what they were doing.
-          recoveries: options.recoveries ?? [],
+          // reader just caused is the one nearest what they were doing. Taken
+          // from the same log the header draws, so the two placements agree.
+          recoveries: recoveriesIn(log),
           diffOpen: options.diffOpen ?? null,
         }),
       ),

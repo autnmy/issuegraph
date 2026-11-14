@@ -97,11 +97,10 @@ import {
 } from './host.ts';
 import type { CanvasMode } from './narrow.ts';
 import type { RailWindow } from './rail.ts';
-import { conflictDiff } from './recovery.ts';
+import { writeLog } from './log.ts';
 import {
   RELATED_STATUS_CLASS,
   type WorkspaceOptions,
-  type WorkspaceRecovery,
   type WorkspaceRefusal,
   type WorkspaceWords,
   renderWorkspace,
@@ -291,6 +290,11 @@ const KEY_ATTRIBUTE = 'data-ig-key';
 const LIVE_REGION = '.ig-change-line[role="status"]';
 /** The Related groups search's status line, carried across redraws the same way. */
 const RELATED_STATUS = `.${RELATED_STATUS_CLASS}[role="status"]`;
+/**
+ * The regions that scroll inside a bound of their own, whose offsets a redraw
+ * keeps: the audit's findings and the log under the head.
+ */
+const SCROLLED_REGIONS = ['.ig-audit-overlay', '.ig-workspace-log'] as const;
 const GROUP_ATTRIBUTE = 'data-ig-group';
 const COMMAND_ATTRIBUTE = 'data-ig-command';
 
@@ -1479,58 +1483,26 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       return [{ edgeId, code: record.reason.code, carrier, phantom: !landedIds.has(edgeId) }];
     });
 
-    // §17b's RECOVERY CARDS, BUILT FROM THE SAME LEDGER PASS AS THE REFUSALS.
-    // One walk of `snapshot.writes` keeps the chronology the panel relies on,
-    // and reuses the `edgeId` and `carrier` answers already worked out above
-    // rather than asking either question a second time.
+    // THE LOG, BUILT FROM THE SAME LEDGER AS THE REFUSALS. It reuses the
+    // `markedBy` and carrier answers already worked out above rather than
+    // asking either question a second time.
     //
     // THE CARRIER IS CARRIED EVEN WHEN IT IS `null`, and that is the one place
     // this deliberately parts company with the refusal derivation above, which
-    // drops those. A refusal dropped costs the reader a sentence. A RECOVERY
-    // dropped costs them the only retry and discard they have, on a write that
-    // is still theirs to resolve — so it travels, and the panel draws it in the
-    // unplaced region instead of nowhere.
-    // ANNOTATED RATHER THAN INFERRED. `flatMap` takes its element type from the
-    // first arm it sees, which here is the `failed` one — so an unannotated
-    // callback types the whole list as failures and rejects the conflict arm
-    // for want of a `reason`. The repair this repository bans is a cast; the
-    // repair it wants is saying what the function returns.
-    const recoveries: readonly WorkspaceRecovery[] = snapshot.writes.flatMap(
-      (record): readonly WorkspaceRecovery[] => {
-      if (record.state !== 'failed' && record.state !== 'conflict') return [];
-      const carrier = writeCarriers.get(record.mutationId) ?? null;
-      const edgeId =
-        markedBy.get(record.mutationId) ??
-        (record.mutation.op === 'create'
-          ? edgeIdentity(record.mutation.kind, record.mutation.from, record.mutation.to)
-          : record.mutation.edgeId);
-      if (record.state === 'failed') {
-        return [{ kind: 'failed' as const, mutationId: record.mutationId, edgeId, carrier, reason: record.reason }];
-      }
-      return [
-        {
-          kind: 'conflict' as const,
-          mutationId: record.mutationId,
-          edgeId,
-          carrier,
-          // AGAINST `landedNow`, WHICH CANNOT HOLD THE EDIT — that is the
-          // point. `conflictDiff` reconstructs the reader's own side from the
-          // mutation, so the card is guaranteed to name the relationship it is
-          // about rather than depending on a document that by contract omits it.
-          diff: conflictDiff(landedNow, record.upstream, record.mutation),
-          // THE READ'S OWN FAILURE, WHICH IS NOT THE RECORD'S. A `retry on
-          // latest` whose refresh fails restores this record verbatim and
-          // dispatches nothing; the reason lands on the snapshot instead. Read
-          // from there, the card can say why the button appeared to do nothing.
-          // ONLY ON THE CARD WHOSE READ FAILED. Both halves are required: a
-          // hydration error with no press behind it belongs to no card, and a
-          // press whose read succeeded leaves no error to draw.
-          refreshError:
-            refreshFailedFor === record.mutationId ? (snapshot.hydrationError ?? null) : null,
-        },
-      ];
-      },
-    );
+    // drops those. A refusal dropped costs the reader a sentence. A write that
+    // did not save, dropped, costs them the only retry and discard they have —
+    // so it travels, and the log draws it whichever issue is selected.
+    const log = writeLog(snapshot.writes, {
+      landed: landedNow,
+      carriers: writeCarriers,
+      markedBy,
+      // THE READ'S OWN FAILURE, WHICH IS NOT THE RECORD'S. A `retry on latest`
+      // whose refresh fails restores its record verbatim and dispatches
+      // nothing; the reason lands on the snapshot instead, and the card whose
+      // press caused it says why the button appeared to do nothing.
+      refreshFailedFor,
+      hydrationError: snapshot.hydrationError ?? null,
+    });
     // ITS LIFETIME IS THE CONFLICT'S, NOT THE LEDGER'S, and the distinction is
     // load-bearing: `retryOnLatest` reserves its record as `pending`
     // synchronously, and a resolve whose re-check refuses leaves it `invalid`.
@@ -1549,9 +1521,8 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     const result = renderWorkspace(viewer, {
       words: current.words,
       // §17c's CAUSE AND EFFECT, STRAIGHT OFF THE SNAPSHOT. The store is the
-      // single source of truth for both — `lastChange` persists until the next
-      // edit or an explicit dismissal, and `dismissChange()` is already the
-      // only thing besides the next edit that clears it — so nothing about
+      // single source of truth for both — `lastChange` persists until a later
+      // saved edit replaces it or `dismissChange()` clears it — so nothing about
       // "has this been dismissed" is held out here. A second copy of that is
       // exactly the drift the command grammar exists to avoid.
       //
@@ -1608,7 +1579,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       draft: state.draft,
       drop: state.drop,
       refusals,
-      recoveries,
+      log,
       diffOpen: state.diffOpen,
     });
     // THE FIRST PASS'S OWN SHEET, IMPORTED — not `renderFirstPass(...).styles`,
@@ -1618,8 +1589,8 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     if (styles.textContent !== sheet) styles.textContent = sheet;
 
     // What the reader was doing survives the redraw: the rail's scroll offset
-    // (kept as `railOffset`), the audit panel's, and the caret in whichever
-    // search box they were typing into.
+    // (kept as `railOffset`), the offset of each bounded region below, and the
+    // caret in whichever search box they were typing into.
     // THE AUDIT SCROLLS TOO, SINCE IT TOOK A SHARE OF ITS COLUMN. Before it had
     // a bound it grew to its content and only the ZONE scrolled, so there was no
     // second offset to keep. Now a long audit is read inside its own scroller,
@@ -1631,8 +1602,13 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // §17d's second surface moved it up to the region holding both — so reading
     // the panel's offset now reads a number that is always zero, and restoring
     // it is a no-op a reader feels as the audit jumping back on every redraw.
-    const auditBefore = surface.querySelector<HTMLElement>('.ig-audit-overlay');
-    const auditScrollTop = auditBefore?.scrollTop ?? 0;
+    //
+    // THE LOG UNDER THE HEAD IS BOUNDED THE SAME WAY, so a long run of failed
+    // writes scrolls inside it, and every write that settles redraws this
+    // surface while the reader is working down that list.
+    const scrolledBefore = SCROLLED_REGIONS.map(
+      (selector) => [selector, surface.querySelector<HTMLElement>(selector)?.scrollTop ?? 0] as const,
+    );
     const active = doc.activeElement;
     const activeInput = isElement(active) && isInput(active) && surface.contains(active) ? active : null;
     const activeCommand = activeInput?.getAttribute(COMMAND_ATTRIBUTE) ?? null;
@@ -1845,8 +1821,10 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // so the element captured from is gone. A region that shrank clamps this on
     // assignment, and one the redraw removed — the audit going clean — is
     // simply absent, which is why nothing is restored rather than zeroed.
-    const auditRegion = surface.querySelector<HTMLElement>('.ig-audit-overlay');
-    if (auditRegion !== null) auditRegion.scrollTop = auditScrollTop;
+    for (const [selector, scrollTop] of scrolledBefore) {
+      const region = surface.querySelector<HTMLElement>(selector);
+      if (region !== null) region.scrollTop = scrollTop;
+    }
     // THE LIST THE READER JUST OPENED IS BROUGHT INTO VIEW. See
     // `revealIsolated` for why the control and the list are in different zones.
     // `block: 'nearest'` so a list already visible is not scrolled at all, and

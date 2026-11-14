@@ -33,6 +33,32 @@
     {
       "zone": "header",
       "channel": "data-ig-command",
+      "control": "discard",
+      "target": "m2",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "dismiss-change",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
       "control": "first-pass",
       "target": null,
       "value": null,
@@ -105,6 +131,34 @@
       "aria": {}
     },
     {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "retry",
+      "target": "m2",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "view-diff",
+      "target": "m2",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-expanded": "false"
+      }
+    },
+    {
       "zone": "inspector",
       "channel": "data-ig-command",
       "control": "add",
@@ -147,7 +201,7 @@
       "zone": "inspector",
       "channel": "data-ig-command",
       "control": "discard",
-      "target": "m1",
+      "target": "m2",
       "value": null,
       "tag": "button",
       "role": "button",
@@ -160,7 +214,7 @@
       "zone": "inspector",
       "channel": "data-ig-command",
       "control": "retry",
-      "target": "m1",
+      "target": "m2",
       "value": null,
       "tag": "button",
       "role": "button",
@@ -186,7 +240,7 @@
       "zone": "inspector",
       "channel": "data-ig-command",
       "control": "view-diff",
-      "target": "m1",
+      "target": "m2",
       "value": null,
       "tag": "button",
       "role": "button",
@@ -232,6 +286,19 @@
     {
       "zone": "header",
       "channel": "data-ig-command",
+      "control": "discard",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
       "control": "first-pass",
       "target": null,
       "value": null,
@@ -302,6 +369,35 @@
       "inert": false,
       "name": "text",
       "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "retry",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "view-diff",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-expanded": "true",
+        "aria-controls": "resolves"
+      }
     },
     {
       "zone": "inspector",
@@ -432,6 +528,19 @@
     {
       "zone": "header",
       "channel": "data-ig-command",
+      "control": "discard",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
       "control": "first-pass",
       "target": null,
       "value": null,
@@ -502,6 +611,34 @@
       "inert": false,
       "name": "text",
       "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "retry",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "view-diff",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-expanded": "false"
+      }
     },
     {
       "zone": "inspector",
@@ -696,6 +833,19 @@
     {
       "zone": "header",
       "channel": "data-ig-command",
+      "control": "discard",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
       "control": "first-pass",
       "target": null,
       "value": null,
@@ -766,6 +916,34 @@
       "inert": false,
       "name": "text",
       "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "retry",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "view-diff",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-expanded": "false"
+      }
     },
     {
       "zone": "inspector",
@@ -999,6 +1177,19 @@
     {
       "zone": "header",
       "channel": "data-ig-command",
+      "control": "discard",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "none",
+      "inert": true,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
       "control": "first-pass",
       "target": null,
       "value": null,
@@ -1069,6 +1260,34 @@
       "inert": true,
       "name": "text",
       "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "retry",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "none",
+      "inert": true,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "view-diff",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "none",
+      "inert": true,
+      "name": "text",
+      "aria": {
+        "aria-expanded": "false"
+      }
     },
     {
       "zone": "inspector",
@@ -1367,6 +1586,19 @@
     {
       "zone": "header",
       "channel": "data-ig-command",
+      "control": "discard",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
       "control": "first-pass",
       "target": null,
       "value": null,
@@ -1437,6 +1669,34 @@
       "inert": false,
       "name": "text",
       "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "retry",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "view-diff",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-expanded": "false"
+      }
     },
     {
       "zone": "inspector",
@@ -1605,6 +1865,19 @@
     {
       "zone": "header",
       "channel": "data-ig-command",
+      "control": "discard",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
       "control": "first-pass",
       "target": null,
       "value": null,
@@ -1675,6 +1948,34 @@
       "inert": false,
       "name": "text",
       "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "retry",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "view-diff",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-expanded": "false"
+      }
     },
     {
       "zone": "inspector",
@@ -1853,6 +2154,19 @@
     {
       "zone": "header",
       "channel": "data-ig-command",
+      "control": "discard",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
       "control": "first-pass",
       "target": null,
       "value": null,
@@ -1923,6 +2237,34 @@
       "inert": false,
       "name": "text",
       "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "retry",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "view-diff",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-expanded": "false"
+      }
     },
     {
       "zone": "inspector",
@@ -2068,6 +2410,19 @@
     {
       "zone": "header",
       "channel": "data-ig-command",
+      "control": "discard",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
       "control": "first-pass",
       "target": null,
       "value": null,
@@ -2138,6 +2493,34 @@
       "inert": false,
       "name": "text",
       "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "retry",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "view-diff",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-expanded": "false"
+      }
     },
     {
       "zone": "inspector",
@@ -2267,6 +2650,19 @@
     {
       "zone": "header",
       "channel": "data-ig-command",
+      "control": "discard",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
       "control": "first-pass",
       "target": null,
       "value": null,
@@ -2337,6 +2733,34 @@
       "inert": false,
       "name": "text",
       "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "retry",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "view-diff",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-expanded": "false"
+      }
     },
     {
       "zone": "inspector",
@@ -2546,6 +2970,19 @@
     {
       "zone": "header",
       "channel": "data-ig-command",
+      "control": "discard",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
       "control": "first-pass",
       "target": null,
       "value": null,
@@ -2616,6 +3053,34 @@
       "inert": false,
       "name": "text",
       "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "retry",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
+      "control": "view-diff",
+      "target": "m1",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-expanded": "false"
+      }
     },
     {
       "zone": "inspector",

@@ -177,6 +177,42 @@ export const workspaceStylesheet = `
   border-bottom: var(--ig-stroke) solid var(--ig-line);
 }
 
+/* THE LOG UNDER THE HEAD: the change line, the writes still saving, and the
+   writes that did not save, each with its own Retry and Discard. A full-width
+   row of its own, because the header zone is the one zone drawn at every
+   width.
+
+   BOUNDED, AND SCROLLING ITSELF PAST THE BOUND. Under 640 the grid is only
+   the header and the view, so a long batch of failed writes would otherwise
+   push the view off a phone screen. Twelve lines of body type is about two
+   recovery cards, sized in type so it follows a host that scales its type.
+   The mount keeps this region's scroll offset across a redraw. */
+.ig-workspace-log {
+  max-height: calc(var(--ig-font-size) * var(--ig-line-height) * 12);
+  overflow-y: auto;
+  padding: 0 var(--ig-space) var(--ig-space-tight);
+  border-bottom: var(--ig-stroke) solid var(--ig-line);
+}
+
+/* A write named on one line: the saving word for one still saving, then the
+   operation, the kind and the two issues. Its words are separate spans, so
+   the gap is the space between them. */
+.ig-log-entry,
+.ig-log-write {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ig-space-tight);
+  align-items: baseline;
+  color: var(--ig-text-muted);
+}
+
+/* A write that did not save: its naming line above the Inspector's card. */
+.ig-log-recovery {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+}
+
 .ig-workspace-identity {
   color: var(--ig-text);
   font-family: var(--ig-font-mono);

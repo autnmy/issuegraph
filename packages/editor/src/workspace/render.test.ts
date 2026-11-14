@@ -14,6 +14,7 @@ import { type WorkspaceRecovery, ZONES, renderWorkspace } from './render.ts';
 import type { ViewerDocument } from '@issuegraph/viewer';
 import { selectionReducer } from './selection.ts';
 import type { WorkspaceWords } from '../index.ts';
+import type { WorkspaceLogEntry } from '../index.ts';
 import { WORKSPACE_WORDS, backlogOf, drawnKeys, zonesIn } from '../testing/workspace.ts';
 import { TASK_KEYS, blockedHub, keysOf, relatedHubEdges } from '../testing/workspace.ts';
 
@@ -85,10 +86,9 @@ describe('the three zones render at their fixed positions', () => {
     // overlay existed, which made the header BE the audit header; §17a's header
     // carries five facts and the audit count is one of them.
     assert.deepEqual(zonesIn(result.markup), [...ZONES]);
-    // NO `data-order` HERE, and its absence is the contract rather than an
-    // omission: `WORDS` carries no §17c vocabulary, and the root attribute is
-    // the stylesheet's hook for a held order — which must not grey a rail this
-    // workspace cannot also label. `reevaluate.test.ts` pins both arms.
+    // `data-order` LEADS THE ROOT on every render. It is the stylesheet's hook
+    // for a held order, and the change words are required, so the sentence
+    // that explains the greying can always be drawn beside it.
     //
     // THIS USED TO ASSERT THE EXACT OPENING TAG `<div class="ig-workspace">`,
     // with nothing after the class — deliberately, "so an attribute added here
@@ -101,15 +101,14 @@ describe('the three zones render at their fixed positions', () => {
     // sheet, because CSS cannot read a reducer.
     //
     // SO THE SHAPE OF THE PIN CHANGES RATHER THAN THE PIN GOING AWAY. The
-    // exhaustive list below is still exact — a third attribute added later
-    // still fails here — and the two `data-order` arms are still asserted, one
-    // per branch. What is no longer claimed is that the root carries NOTHING.
-    // The layout under 640 adds `data-tab`, the tab its container block reads.
+    // exhaustive list below is still exact — a further attribute added later
+    // still fails here. What is no longer claimed is that the root carries
+    // NOTHING. The layout under 640 adds `data-tab`, the tab its container
+    // block reads.
     assert.match(
       result.markup,
-      /^<div class="ig-workspace" data-canvas="strip" data-canvas-legend="[a-z]+" data-inspector="dismissed" data-tab="order">/,
+      /^<div class="ig-workspace" data-order="settled" data-canvas="strip" data-canvas-legend="[a-z]+" data-inspector="dismissed" data-tab="order">/,
     );
-    assert.equal(/^<div class="ig-workspace"[^>]*data-order=/.test(result.markup), false);
     assert.match(result.markup, /<\/div>$/);
   });
 
@@ -1918,6 +1917,7 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
     mutationId: 'm1',
     edgeId: 'blocked-by|i0001|i0002',
     carrier: 'i0001',
+    write: { op: 'create', edge: { id: 'blocked-by|i0001|i0002', kind: 'blocked-by', from: 'i0001', to: 'i0002' } },
     refreshError: null,
     diff: {
       // ONE SIDE ON THIS PANEL AND ONE FAR AWAY. Without the far one, dropping
@@ -1954,12 +1954,14 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
       words: WORKSPACE_WORDS,
       selection: { kind: 'issue', key: 'i0001' },
       diffOpen: 'm1',
-      recoveries: [CONFLICT],
+      log: [CONFLICT],
     });
-    // READ OFF THE DIFF REGION, NOT THE WHOLE SURFACE. `i0005` is also a rail
-    // row on this backlog, so a document-wide search finds it either way and
-    // the assertion would be vacuous in the direction that matters.
-    const region = /<div class="ig-recovery-diff"[\s\S]*?<\/div><\/li>/.exec(markup)?.[0];
+    // READ OFF THE INSPECTOR'S DIFF REGION, NOT THE WHOLE SURFACE. `i0005` is
+    // also a rail row on this backlog, so a document-wide search finds it
+    // either way and the assertion would be vacuous in the direction that
+    // matters. The log draws the same difference whole, for no panel.
+    const inspector = markup.slice(markup.indexOf('data-zone="inspector"'));
+    const region = /<div class="ig-recovery-diff"[\s\S]*?<\/div><\/li>/.exec(inspector)?.[0];
     assert.ok(region !== undefined, 'the difference region was not drawn');
     assert.ok(region.includes('i0003'), 'the panel’s own upstream change is missing');
     assert.equal(
@@ -1976,7 +1978,7 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
     const shut = drawn({
       words: WORKSPACE_WORDS,
       selection: { kind: 'issue', key: 'i0001' },
-      recoveries: [CONFLICT],
+      log: [CONFLICT],
     });
     assert.match(shut, /data-ig-command="view-diff"[^>]*aria-expanded="false"/);
     assert.equal(shut.includes('aria-pressed'), false, 'a disclosure announced as a toggle');
@@ -1985,7 +1987,7 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
       words: WORKSPACE_WORDS,
       selection: { kind: 'issue', key: 'i0001' },
       diffOpen: 'm1',
-      recoveries: [CONFLICT],
+      log: [CONFLICT],
     });
     assert.match(open, /aria-expanded="true"/);
     // THE CONTROL NAMES THE REGION, and the region carries that id — an
@@ -1995,47 +1997,51 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
     assert.ok(open.includes(`id="${controls}"`), 'the region it names is not there');
   });
 
-  it('draws a carrier-less write once, even on the panel filtered to its edge', () => {
+  it('draws a carrier-less write once in the Inspector, even on the panel filtered to its edge', () => {
     // MEASURED: two identical cards, two tab stops, and two buttons carrying
     // one write's id. `statedHere`'s EDGE arm matches on `edgeId` and ignores
-    // the carrier, so the unplaced region drew it a second time.
+    // the carrier, so a second region for carrier-less writes drew it again.
     const markup = drawn({
       words: WORKSPACE_WORDS,
       selection: { kind: 'edge', edgeId: 'blocked-by|i0001|i0002' },
-      recoveries: [
+      log: [
         {
           kind: 'failed',
           mutationId: 'm2',
           edgeId: 'blocked-by|i0001|i0002',
           carrier: null,
+          write: { op: 'create', edge: { id: 'blocked-by|i0001|i0002', kind: 'blocked-by', from: 'i0001', to: 'i0002' } },
           reason: 'the tracker was unreachable',
         },
       ],
     });
-    assert.equal((markup.match(/class="ig-recovery"/g) ?? []).length, 1);
-    assert.equal((markup.match(/data-ig-target="m2"/g) ?? []).length, 2, 'retry and discard, once each');
+    const inspector = markup.slice(markup.indexOf('data-zone="inspector"'));
+    assert.equal((inspector.match(/class="ig-recovery"/g) ?? []).length, 1);
+    assert.equal((inspector.match(/data-ig-target="m2"/g) ?? []).length, 2, 'retry and discard, once each');
   });
 
-  it('draws a carrier-less write in the unplaced region when no panel states it', () => {
-    // THE REGION ITSELF HAD NO TEST: deleting it left every test green, and it
-    // is the one the code calls Done-when 1 failing where it matters most.
+  it('draws a carrier-less write in the log, and on no issue panel', () => {
+    // A write about issues this backlog does not hold has no panel, and the
+    // log is where it keeps its Retry and Discard.
     const markup = drawn({
       words: WORKSPACE_WORDS,
       selection: { kind: 'issue', key: 'i0001' },
-      recoveries: [
+      log: [
         {
           kind: 'failed',
           mutationId: 'm3',
           edgeId: 'blocked-by|gone|alsogone',
           carrier: null,
+          write: { op: 'create', edge: { id: 'blocked-by|gone|alsogone', kind: 'blocked-by', from: 'gone', to: 'alsogone' } },
           reason: 'the tracker was unreachable',
         },
       ],
     });
-    assert.ok(markup.includes(WORKSPACE_WORDS.recovery.unplaced), 'the unplaced heading is missing');
-    assert.equal((markup.match(/class="ig-recovery"/g) ?? []).length, 1);
+    const header = markup.slice(markup.indexOf('data-zone="header"'), markup.indexOf('data-zone="rail"'));
+    assert.equal((header.match(/class="ig-recovery"/g) ?? []).length, 1, 'the log does not draw the write');
+    assert.equal((markup.match(/class="ig-recovery"/g) ?? []).length, 1, 'an issue panel drew the write too');
     // AND IT KEEPS ITS CONTROLS, which is the whole reason it is drawn at all.
-    assert.equal((markup.match(/data-ig-target="m3"/g) ?? []).length, 2);
+    assert.equal((header.match(/data-ig-target="m3"/g) ?? []).length, 2);
   });
 
   it('says a conflicted delete removes something, rather than that nothing differs', () => {
@@ -2043,12 +2049,13 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
       words: WORKSPACE_WORDS,
       selection: { kind: 'issue', key: 'i0001' },
       diffOpen: 'm4',
-      recoveries: [
+      log: [
         {
           kind: 'conflict',
           mutationId: 'm4',
           edgeId: 'blocked-by|i0001|i0002',
           carrier: 'i0001',
+          write: { op: 'create', edge: { id: 'blocked-by|i0001|i0002', kind: 'blocked-by', from: 'i0001', to: 'i0002' } },
           refreshError: null,
           diff: {
             upstreamOnly: [],
@@ -2062,12 +2069,163 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
         },
       ],
     });
-    assert.ok(markup.includes(WORKSPACE_WORDS.recovery.mineRemoved));
-    assert.equal(
-      markup.includes(WORKSPACE_WORDS.recovery.diffEmpty),
-      false,
-      'the card claimed nothing differs about an edit that removes a relationship',
-    );
+    // Each placement is checked on its own: the log draws the card too, so a
+    // whole-page check would pass with the Inspector's difference missing.
+    const header = markup.slice(markup.indexOf('data-zone="header"'), markup.indexOf('data-zone="rail"'));
+    const inspector = markup.slice(markup.indexOf('data-zone="inspector"'));
+    for (const [placement, zone] of [['Inspector', inspector], ['log', header]] as const) {
+      assert.ok(zone.includes(WORKSPACE_WORDS.recovery.mineRemoved), `the ${placement} card does not say the edit removes something`);
+      assert.equal(
+        zone.includes(WORKSPACE_WORDS.recovery.diffEmpty),
+        false,
+        `the ${placement} card claimed nothing differs about an edit that removes a relationship`,
+      );
+    }
+  });
+
+  it('draws the same card in the log and in the Inspector for a failed write on the selected issue', () => {
+    const markup = drawn({
+      words: WORKSPACE_WORDS,
+      selection: { kind: 'issue', key: 'i0001' },
+      log: [
+        {
+          kind: 'failed',
+          mutationId: 'm5',
+          edgeId: 'blocked-by|i0001|i0002',
+          carrier: 'i0001',
+          write: { op: 'create', edge: { id: 'blocked-by|i0001|i0002', kind: 'blocked-by', from: 'i0001', to: 'i0002' } },
+          reason: 'the tracker was unreachable',
+        },
+      ],
+    });
+    const header = markup.slice(markup.indexOf('data-zone="header"'), markup.indexOf('data-zone="rail"'));
+    const inspector = markup.slice(markup.indexOf('data-zone="inspector"'));
+    const card = (zone: string): string | undefined =>
+      /<li class="ig-recovery"[\s\S]*?<\/li>/.exec(zone)?.[0];
+    const logged = card(header);
+    assert.ok(logged !== undefined, 'the log drew no card');
+    assert.equal(card(inspector), logged, 'the log card differs from the Inspector card');
+  });
+
+  it('names each write that did not save above its log card, and names none in the Inspector', () => {
+    const words = WORKSPACE_WORDS.log;
+    const markup = drawn({
+      words: WORKSPACE_WORDS,
+      selection: { kind: 'issue', key: 'i0001' },
+      log: [
+        {
+          kind: 'failed',
+          mutationId: 'm6',
+          edgeId: 'blocked-by|i0001|i0002',
+          carrier: 'i0001',
+          write: { op: 'delete', edge: { id: 'blocked-by|i0001|i0002', kind: 'blocked-by', from: 'i0001', to: 'i0002' } },
+          reason: 'the tracker was unreachable',
+        },
+      ],
+    });
+    const header = markup.slice(markup.indexOf('data-zone="header"'), markup.indexOf('data-zone="rail"'));
+    const inspector = markup.slice(markup.indexOf('data-zone="inspector"'));
+    const line = /<li class="ig-log-recovery" data-mutation="m6"><div class="ig-log-write">([\s\S]*?)<\/div><ul class="ig-recovery-list"><li class="ig-recovery"/.exec(header)?.[1];
+    assert.ok(line !== undefined, 'the log drew no line naming the write above its card');
+    for (const word of [words.ops.delete, words.kinds['blocked-by']]) {
+      assert.ok(line.includes(word), `the naming line does not carry "${word}"`);
+    }
+    assert.deepEqual([...line.matchAll(/<span class="ig-id">([^<]*)<\/span>/g)].map((match) => match[1]), ['i0001', 'i0002']);
+    assert.equal(inspector.includes('ig-log-write'), false, 'the Inspector card gained the log naming line');
+  });
+});
+
+describe('the log names each write still saving in the host words', () => {
+  const headerOf = (markup: string): string =>
+    markup.slice(markup.indexOf('data-zone="header"'), markup.indexOf('data-zone="rail"'));
+  const savingEntries = (options: Parameters<typeof renderWorkspace>[1]): string[] =>
+    [
+      ...headerOf(renderWorkspace(backlogOf(3), options).markup).matchAll(
+        /<li class="ig-log-entry" data-ig-state="pending"[^>]*>[\s\S]*?<\/li>/g,
+      ),
+    ].map((match) => match[0]);
+  const words = WORKSPACE_WORDS.log;
+
+  it('names a saving create by the host kind word and its two refs, and never by the viewer label', () => {
+    const [entry] = savingEntries({
+      words: WORKSPACE_WORDS,
+      orderStatus: 'held',
+      log: [
+        {
+          kind: 'pending',
+          mutationId: 'm-create',
+          write: { op: 'create', edge: { id: 'blocked-by|i0001|i0002', kind: 'blocked-by', from: 'i0001', to: 'i0002' } },
+        },
+      ],
+    });
+    assert.ok(entry !== undefined, 'the log drew no saving entry');
+    assert.match(entry, /data-mutation="m-create"/);
+    for (const word of [words.saving, words.ops.create, words.kinds['blocked-by']]) {
+      assert.ok(entry.includes(word), `the saving entry does not carry "${word}"`);
+    }
+    assert.deepEqual([...entry.matchAll(/<span class="ig-id">([^<]*)<\/span>/g)].map((match) => match[1]), [
+      'i0001',
+      'i0002',
+    ]);
+    assert.equal(entry.includes(labelFrom(treatmentFor('blocked-by'), true)), false, 'the viewer label named the kind');
+  });
+
+  it('names a saving reversal with the kind word between its from and to ends', () => {
+    const [entry] = savingEntries({
+      words: WORKSPACE_WORDS,
+      orderStatus: 'held',
+      log: [
+        {
+          kind: 'pending',
+          mutationId: 'm-flip',
+          write: { op: 'flip', edge: { id: 'blocked-by|i0003|i0001', kind: 'blocked-by', from: 'i0003', to: 'i0001' } },
+        },
+      ],
+    });
+    assert.ok(entry !== undefined, 'the log drew no saving entry');
+    const spans = [...entry.matchAll(/<span[^>]*>([^<]*)<\/span>/g)].map((match) => match[1]);
+    assert.deepEqual(spans, [words.saving, words.ops.flip, 'i0003', words.kinds['blocked-by'], 'i0001']);
+  });
+
+  it('names a saving retype with the becomes word before the new kind', () => {
+    const [entry] = savingEntries({
+      words: WORKSPACE_WORDS,
+      orderStatus: 'held',
+      log: [
+        {
+          kind: 'pending',
+          mutationId: 'm-retype',
+          write: {
+            op: 'retype',
+            edge: { id: 'blocked-by|i0001|i0002', kind: 'blocked-by', from: 'i0001', to: 'i0002' },
+            nextKind: 'duplicate-of',
+          },
+        },
+      ],
+    });
+    assert.ok(entry !== undefined, 'the log drew no saving entry');
+    const becomesAt = entry.indexOf(words.becomes);
+    assert.ok(entry.indexOf(words.kinds['blocked-by']) < becomesAt, 'the old kind is not named first');
+    assert.ok(becomesAt < entry.indexOf(words.kinds['duplicate-of']), 'the new kind is not named after the becomes word');
+  });
+
+  it('names a saving delete whose edge is gone by its raw id, as one piece of escaped text', () => {
+    const rawId = 'blocked-by|<b>i0001</b>|i0009';
+    const [entry] = savingEntries({
+      words: WORKSPACE_WORDS,
+      orderStatus: 'held',
+      log: [{ kind: 'pending', mutationId: 'm-gone', write: { op: 'delete', edge: rawId } }],
+    });
+    assert.ok(entry !== undefined, 'the log drew no saving entry');
+    assert.ok(entry.includes('blocked-by|&lt;b&gt;i0001&lt;/b&gt;|i0009'), 'the raw id is not one escaped text');
+    assert.equal(/<b>/.test(entry), false, 'the raw id was decoded as markup');
+    assert.equal(/class="ig-id"/.test(entry), false, 'the raw id was split into issue refs');
+  });
+
+  it('draws no entry list when no write is saving or unsaved, and keeps the change line', () => {
+    const header = headerOf(renderWorkspace(backlogOf(3), { words: WORKSPACE_WORDS }).markup);
+    assert.match(header, /<div class="ig-workspace-log"><div class="ig-change-summary"[^>]*><div class="ig-change-line" role="status">/);
+    assert.equal(header.includes(words.label), false, 'an empty list of writes was drawn');
   });
 });
 
@@ -3052,4 +3210,63 @@ describe('the rail recedes as the whole document says', () => {
       );
     }
   });
+});
+
+it('Compare open on a conflict drawn in the log and the Inspector gives each control its own region', () => {
+  // ONE WRITE, TWO CARDS. The selected issue carries the conflict, so the log
+  // and the Inspector both draw its card, and with Compare open both draw a
+  // difference region. If the two regions shared an id, each `aria-controls`
+  // would name two elements and the log's control could open the Inspector's.
+  const conflict: WorkspaceLogEntry = {
+    kind: 'conflict',
+    mutationId: 'm-twice',
+    edgeId: 'blocked-by|i0001|i0002',
+    carrier: 'i0001',
+    write: { op: 'create', edge: { id: 'blocked-by|i0001|i0002', kind: 'blocked-by', from: 'i0001', to: 'i0002' } },
+    refreshError: null,
+    diff: {
+      upstreamOnly: [{ id: 'blocked-by|i0001|i0003', kind: 'blocked-by', from: 'i0001', to: 'i0003' }],
+      mineOnly: [],
+      mineRemoved: [],
+      issuesChanged: [],
+      carrierReversed: [],
+    },
+  };
+  const { markup } = renderWorkspace(backlogOf(4, { edges: [['blocked-by', 'i0001', 'i0002']] }), {
+    words: WORKSPACE_WORDS,
+    selection: { kind: 'issue', key: 'i0001' },
+    diffOpen: 'm-twice',
+    log: [conflict],
+  });
+
+  const headerAt = markup.indexOf('data-zone="header"');
+  const railAt = markup.indexOf('data-zone="rail"');
+  const inspectorAt = markup.indexOf('data-zone="inspector"');
+  assert.ok(headerAt !== -1 && railAt > headerAt && inspectorAt > railAt, 'the zones are not in order');
+  const header = markup.slice(headerAt, railAt);
+  const inspector = markup.slice(inspectorAt);
+
+  const controlled = (zone: string): string[] =>
+    [...zone.matchAll(/<[^>]*data-ig-command="view-diff"[^>]*>/g)].map(
+      ([tag]) => /aria-controls="([^"]+)"/.exec(tag)?.[1] ?? '',
+    );
+  const fromLog = controlled(header);
+  const fromInspector = controlled(inspector);
+  assert.equal(fromLog.length, 1, 'the log card has no open Compare control');
+  assert.equal(fromInspector.length, 1, 'the Inspector card has no open Compare control');
+  const [logRegion = '', inspectorRegion = ''] = [fromLog[0], fromInspector[0]];
+  assert.notEqual(logRegion, '', 'the log control names no region');
+  assert.notEqual(inspectorRegion, '', 'the Inspector control names no region');
+  assert.notEqual(logRegion, inspectorRegion, 'both controls name the same region');
+
+  // EACH CONTROL NAMES EXACTLY ONE ELEMENT, and it is the one in its own placement.
+  for (const region of [logRegion, inspectorRegion]) {
+    assert.equal(markup.split(`id="${region}"`).length - 1, 1, `${region} is not exactly one element`);
+  }
+  assert.ok(header.includes(`id="${logRegion}"`), 'the log control opens a region outside the log');
+  assert.ok(inspector.includes(`id="${inspectorRegion}"`), 'the Inspector control opens a region outside the Inspector');
+
+  // AND NO OTHER ELEMENT ON THE SURFACE SHARES AN ID WHILE THE DIFFERENCE IS OPEN.
+  const ids = [...markup.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]);
+  assert.equal(new Set(ids).size, ids.length, 'two elements share an id');
 });

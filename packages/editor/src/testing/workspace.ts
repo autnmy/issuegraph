@@ -13,6 +13,7 @@ import type { EdgeField } from '@issuegraph/core';
 import type { ViewerDocument, ViewerHold } from '@issuegraph/viewer';
 
 import type { WorkspaceWords } from '../index.ts';
+import { WORDS as CHANGE_WORDS } from './reevaluate.ts';
 
 /**
  * A host vocabulary.
@@ -27,6 +28,31 @@ import type { WorkspaceWords } from '../index.ts';
  * the same string. A fixture word has to be one no renderer would write.
  */
 export const WORKSPACE_WORDS: WorkspaceWords = {
+  // THE RE-EVALUATE SURFACE'S OWN FIXTURE, so a summary drawn in the workspace
+  // and one drawn by `renderReevaluate` are checked against the same words.
+  change: CHANGE_WORDS,
+  // THE LOG UNDER THE HEAD, on this constant's standing rule. No operation
+  // word or kind word is a substring of another, so a test counting the
+  // writes the log lists by their operation word counts only those, and none
+  // of the kind words is the viewer's own label for that kind.
+  log: {
+    label: 'writes not yet settled',
+    saving: 'still being written',
+    ops: {
+      create: 'putting in place',
+      delete: 'taking out',
+      flip: 'turning around',
+      retype: 'swapping the kind of',
+    },
+    becomes: 'so that it reads as',
+    kinds: {
+      'blocked-by': 'waits on',
+      'decomposed-from': 'split out of',
+      'duplicate-of': 'repeats',
+      'serialize-with': 'queues behind',
+      'together-with': 'ships alongside',
+    },
+  },
   // FOUR WORDS THAT SHARE NO SUBSTRING, on this constant's standing rule. The
   // caption prints them in one line either side of two numbers, so a fixture
   // where `of` occurred inside `shown` would let a row that dropped a word
@@ -115,7 +141,6 @@ export const WORKSPACE_WORDS: WorkspaceWords = {
     issuesChanged: 'issues that moved',
     diffEmpty: 'nothing on this row differs',
     retryFailed: 'could not read the newest version',
-    unplaced: 'writes about issues this backlog does not hold',
   },
   audit: {
     heading: 'problems in the encoding',

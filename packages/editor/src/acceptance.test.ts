@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 
 import { EDGE_FIELDS, edgeIdentity, isSymmetricEdgeField } from '@issuegraph/core';
 import { buildModel } from '@issuegraph/reader';
-import type { EdgeKind, GraphDocument, Proposal } from '@issuegraph/store';
+import type { EdgeKind, GraphDocument, OrderDeriver, Proposal, StoreSnapshot } from '@issuegraph/store';
 import {
   createScriptedSource,
   createStore,
@@ -13,6 +13,7 @@ import {
   nextDocument,
 } from '@issuegraph/store';
 import { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET, labelFrom, treatmentFor } from '@issuegraph/viewer';
+import { JSDOM } from 'jsdom';
 
 import * as surface from './index.ts';
 import { componentKey, componentsSumming, documentOf } from './testing/documents.ts';
@@ -805,6 +806,20 @@ const {
 } = surface;
 
 const WORKSPACE_WORDS: surface.WorkspaceWords = {
+  change: WORDS,
+  log: {
+    label: 'writes not yet settled',
+    saving: 'still being written',
+    ops: { create: 'putting in place', delete: 'taking out', flip: 'turning around', retype: 'swapping the kind of' },
+    becomes: 'so that it reads as',
+    kinds: {
+      'blocked-by': 'waits on',
+      'decomposed-from': 'split out of',
+      'duplicate-of': 'repeats',
+      'serialize-with': 'queues behind',
+      'together-with': 'ships alongside',
+    },
+  },
   asOf: 'read at',
   open: 'in the backlog',
   encoded: 'carry relationships',
@@ -865,7 +880,6 @@ const WORKSPACE_WORDS: surface.WorkspaceWords = {
     issuesChanged: 'issues that moved',
     diffEmpty: 'nothing on this row differs',
     retryFailed: 'could not read the newest version',
-    unplaced: 'writes about issues this backlog does not hold',
   },
   audit: {
     heading: 'problems in the encoding',
@@ -1053,6 +1067,117 @@ describe('done when: the audit count sits in the header, never animates, and bar
       assert.equal(/dialog|aria-modal|\bmodal\b/i.test(text), false, 'a modal');
       assert.equal(/auto-?fix|\brepair\b/i.test(text), false, 'an auto-fix');
       assert.equal(/@keyframes|animation|animate|transition/i.test(text), false, 'an animation');
+    }
+  });
+});
+
+/**
+ * The log's saved line, mounted through the public surface with a real store.
+ *
+ * The timers are mocked so a dismissal scheduled anywhere — in the store, the
+ * mount or the renderer — would fire inside the test rather than after it.
+ * Microtasks still run, so the mount's coalesced redraw is not held back.
+ */
+describe('done when: a saved change stays in the log until it is dismissed, never on a timer', () => {
+  const { mountWorkspace } = surface;
+
+  const mountWords: surface.MountWords = {
+    ...WORKSPACE_WORDS,
+    picker: PICKER_WORDS,
+    deleteRelationship: 'take this relationship out',
+    chooseKind: 'pick what kind',
+    targetLabel: 'the other issue',
+    targetPlaceholder: 'look up the other issue',
+  };
+
+  const seed: GraphDocument = {
+    issues: ['1', '2', '3'].map((ref) => ({ ref, title: `Issue ${ref}`, state: 'open' as const })),
+    edges: [],
+  };
+
+  // An issue that waits on another sorts after every free one, so a landed
+  // `blocked-by` moves the order and the saved line has something to count.
+  const waitingLast: OrderDeriver = (document) => {
+    const waiting = new Set(document.edges.filter((edge) => edge.kind === 'blocked-by').map((edge) => edge.from));
+    const ordered = [
+      ...document.issues.filter((issue) => !waiting.has(issue.ref)),
+      ...document.issues.filter((issue) => waiting.has(issue.ref)),
+    ];
+    return ordered.map((issue, rank) => ({
+      ref: issue.ref,
+      rank,
+      ready: !waiting.has(issue.ref),
+      holdReasons: waiting.has(issue.ref) ? ['waiting'] : [],
+    }));
+  };
+
+  const project = (snapshot: StoreSnapshot): surface.WorkspaceProjection => ({
+    viewer: {
+      issues: snapshot.issues.map((issue) => ({ key: issue.ref, title: issue.title, open: true, priority: 2 })),
+      edges: snapshot.landed.map((edge) => ({ field: edge.kind, from: edge.from, to: edge.to })),
+      order: {
+        slots: snapshot.order.rows.map((row) => ({
+          rank: row.rank + 1,
+          lead: row.ref,
+          members: [row.ref],
+          ready: row.ready,
+          holds: [],
+        })),
+        excluded: [],
+      },
+      cycles: [],
+    },
+  });
+
+  // `setImmediate` is not among the mocked timers, so this waits out the
+  // store's settle and the mount's redraw without advancing mocked time.
+  const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
+  it('outlives a day of timers, a redraw and a new edit, and leaves only on dismiss-change', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+    const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>');
+    const host = dom.window.document.getElementById('host');
+    assert.ok(host !== null);
+    const source = createScriptedSource(seed, (document, mutation) =>
+      mutation.op === 'create'
+        ? { ...document, edges: [...document.edges, makeEdge(mutation.kind, mutation.from, mutation.to)] }
+        : document,
+    );
+    const store = createStore({ source, derive: waitingLast });
+    await store.hydrate();
+    const handle = mountWorkspace(host, { store, project, words: mountWords });
+    const savedLine = (): string =>
+      host.querySelector('[data-zone="header"] .ig-change-line[role="status"]')?.textContent ?? '';
+    try {
+      const first = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+      await source.whenPending(first.mutationId);
+      source.settleNext('applied');
+      await first.settled;
+      await settle();
+      assert.ok(savedLine().includes(WORDS.saved), 'the landed write drew no saved line');
+
+      t.mock.timers.tick(24 * 60 * 60 * 1000);
+      await settle();
+      assert.ok(savedLine().includes(WORDS.saved), 'a timer removed the saved line');
+
+      handle.update();
+      await settle();
+      assert.ok(savedLine().includes(WORDS.saved), 'a redraw removed the saved line');
+
+      const next = store.propose({ op: 'create', kind: 'blocked-by', from: '2', to: '3' });
+      await source.whenPending(next.mutationId);
+      await settle();
+      assert.ok(savedLine().includes(WORDS.saved), 'a new edit removed the saved line');
+
+      const dismiss = host.querySelector('[data-zone="header"] [data-ig-command="dismiss-change"]');
+      assert.ok(dismiss !== null, 'the saved line carries no dismiss control');
+      dismiss.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+      await settle();
+      assert.equal(savedLine().includes(WORDS.saved), false, 'dismiss-change left the saved line');
+      assert.equal(store.getSnapshot().lastChange, undefined);
+    } finally {
+      handle.destroy();
+      dom.window.close();
     }
   });
 });

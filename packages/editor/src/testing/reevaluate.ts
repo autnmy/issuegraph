@@ -110,6 +110,7 @@ export const WORDS: ChangeWords = {
     entered: 'entered',
     left: 'left',
   },
+  saved: 'the save went through',
   unchanged: 'this edit changed nothing',
   computing: 'write landed, order computing',
   dismiss: 'dismiss',

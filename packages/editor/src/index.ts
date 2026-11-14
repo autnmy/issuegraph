@@ -397,9 +397,13 @@ export {
   // declare is exported by accident, not withheld on purpose.
   type WorkspaceRefusal,
   // ON THE SURFACE FOR `WorkspaceRefusal`'s OWN REASON: it is the element type
-  // of `WorkspaceOptions.recoveries`, so without it a host could build the
-  // array and could not name it.
-  type WorkspaceRecovery,
+  // of `WorkspaceOptions.log`, so without it a host could build the array and
+  // could not name it.
+  type WorkspaceLogEntry,
+  // The two shapes a failed or conflicted log entry's required `write` is
+  // built from, exported for the same reason as `WorkspaceLogEntry`.
+  type WorkspaceLoggedEdge,
+  type WorkspaceLoggedWrite,
   type WorkspaceResult,
   type WorkspaceView,
   type WorkspaceWords,
@@ -415,6 +419,8 @@ export {
   // AND AGAIN — the layout under 640. `WorkspaceWords.narrow` is required, so a
   // host that cannot name this type cannot build its words at all.
   type NarrowWords,
+  // AND AGAIN — the log under the head. `WorkspaceWords.log` is required too.
+  type LogWords,
   ZONES,
   renderWorkspace,
 } from './workspace/render.ts';

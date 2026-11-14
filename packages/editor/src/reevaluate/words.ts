@@ -39,6 +39,15 @@ export interface ChangeWords {
    */
   readonly facets: Readonly<Record<ChangeFacet, string>>;
   /**
+   * Leads the counts when a save moved the order — the "Saved:" of
+   * "Saved: 2 moved · 1 newly held". Drawn once, before the first count.
+   *
+   * NOT DRAWN BESIDE {@link ChangeWords.unchanged}, which is a whole sentence
+   * on its own ("Saved. The order did not change."). Leading it with this word
+   * would say "saved" twice.
+   */
+  readonly saved: string;
+  /**
    * Shown, on its own and in the summary's own place, when the edit landed and
    * moved nothing. Not an empty state — the finding.
    */
@@ -55,7 +64,10 @@ export interface ChangeWords {
    * followed by a §17b failure card contradicting it.
    */
   readonly computing: string;
-  /** The dismiss control. The only thing besides the next edit that clears the summary. */
+  /**
+   * The dismiss control. The summary stays until it is pressed, or until a
+   * later saved edit replaces it; starting an edit does not clear it.
+   */
   readonly dismiss: string;
   /** How a movement chip names its direction. */
   readonly direction: Readonly<Record<'up' | 'down', string>>;

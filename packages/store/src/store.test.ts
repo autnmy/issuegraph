@@ -3,6 +3,7 @@ import { test } from 'node:test';
 
 import { type GraphDocument, type StoredEdge, edgeId, makeEdge } from './model.ts';
 import type { EdgeGuard, OrderDeriver, OrderRow } from './source.ts';
+import { diffOrder } from './change.ts';
 import { createStore } from './store.ts';
 import { createMemorySource } from './adapters/memory.ts';
 import { createScriptedSource } from './adapters/scripted.ts';
@@ -676,9 +677,9 @@ test('a symmetric edge whose carrier reversed upstream is adopted, not kept stal
   );
 });
 
-test('starting a new edit clears the previous edit’s change summary', async () => {
-  // The summary is evidence for ONE edit. Left standing through the next one, a
-  // UI attributes the previous edit's blast radius to the current one.
+test('starting a new edit leaves the previous edit’s change summary standing', async () => {
+  // The summary stays until it is dismissed: a host shows it beside the held
+  // order while the next edit is in flight, and a later landing replaces it.
   const source = createScriptedSource(threeOpenIssues(), applyEdit);
   const store = createStore({ source, derive: simpleDeriver });
   await store.hydrate();
@@ -689,8 +690,9 @@ test('starting a new edit clears the previous edit’s change summary', async ()
   await first.settled;
   assert.ok(store.getSnapshot().lastChange !== undefined);
 
+  const saved = store.getSnapshot().lastChange;
   const second = store.propose({ op: 'create', kind: 'duplicate-of', from: '3', to: '1' });
-  assert.equal(store.getSnapshot().lastChange, undefined, 'cleared the moment the next edit starts');
+  assert.equal(store.getSnapshot().lastChange, saved, 'starting the next edit cleared the summary');
 
   await source.whenPending(second.mutationId);
   source.settleNext({ outcome: 'rejected', reason: 'no' });
@@ -950,10 +952,9 @@ test('issue updates are not lost when a conflict is resolved after another edit 
 });
 
 test('a settling edit does not republish its summary once a newer edit has started', async () => {
-  // The contract is that a summary lasts until the NEXT edit. Two edits
-  // proposed before the first settles means the first's summary is written
-  // after the second began, so a host shows the previous edit's blast radius
-  // beside the current one.
+  // Two edits proposed together are one held period. The first landing must
+  // not publish a summary of its own while the second is still in flight; the
+  // period's summary waits for the second and is named by it.
   const source = createScriptedSource(threeOpenIssues(), applyEdit);
   const store = createStore({ source, derive: simpleDeriver });
   await store.hydrate();
@@ -968,7 +969,7 @@ test('a settling edit does not republish its summary once a newer edit has start
   assert.equal(
     store.getSnapshot().lastChange,
     undefined,
-    'the first edit is no longer the current one, so its summary is not published',
+    'the period has not ended, so no summary is published',
   );
 
   await source.whenPending(second.mutationId);
@@ -977,7 +978,7 @@ test('a settling edit does not republish its summary once a newer edit has start
   assert.equal(
     store.getSnapshot().lastChange?.mutation.mutationId,
     second.mutationId,
-    'the summary belongs to the edit that is current when it lands',
+    'the summary is named by the newest landing in the period',
   );
 });
 
@@ -1454,4 +1455,395 @@ test('an unchanged answer about a document the store already has changes nothing
   assert.equal(after.landed, before.landed, 'nothing adopted');
   assert.equal(after.order.rows, before.order.rows, 'nothing re-derived');
   assert.equal(after.lastChange, undefined);
+});
+
+test('the rows keep their identity through the first landing and are published once when the last write settles', async () => {
+  const source = createScriptedSource(threeOpenIssues(), applyEdit);
+  const store = createStore({ source, derive: simpleDeriver });
+  await store.hydrate();
+  const before = store.getSnapshot().order.rows;
+  // Every rows array a subscriber could have read, so a second re-derivation
+  // inside one held period shows up even if the final rows are right.
+  const published = new Set([before]);
+  const stop = store.subscribe(() => published.add(store.getSnapshot().order.rows));
+
+  const first = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  const second = store.propose({ op: 'create', kind: 'blocked-by', from: '3', to: '2' });
+  await source.whenPending(first.mutationId);
+  source.settleNext('applied');
+  await first.settled;
+
+  // The issue: "A change to several issues (#249) lists each write in the log, and the order holds until all of them settle."
+  const between = store.getSnapshot();
+  assert.equal(between.order.rows, before, 'the first landing re-derived the rows while a write was still pending');
+  assert.equal(between.order.status, 'held');
+  assert.equal(between.lastChange, undefined, 'a summary was published before the held period ended');
+
+  await source.whenPending(second.mutationId);
+  source.settleNext('applied');
+  await second.settled;
+  stop();
+
+  const after = store.getSnapshot();
+  assert.deepEqual(after.order.rows.map((row) => row.ref), ['2', '1', '3']);
+  assert.equal(after.order.status, 'settled');
+  assert.equal(published.size, 2, 'one held period published more than one new rows array');
+  // Diffed against the rows held before either write, issues 1 and 3 both
+  // became held. A diff of the last landing alone would count only issue 3.
+  assert.equal(after.lastChange?.counts.newlyHeld, 2, 'the summary does not count both landings');
+  assert.equal(after.lastChange?.counts.moved, 2);
+  assert.equal(after.lastChange?.mutation.mutationId, second.mutationId, 'the summary does not name the newest landing');
+});
+
+test('a held period whose landings cancel out publishes an empty summary that the order did not change', async () => {
+  const source = createScriptedSource(threeOpenIssues(), applyEdit);
+  const store = createStore({ source, derive: simpleDeriver });
+  await store.hydrate();
+  const before = store.getSnapshot().order.rows;
+  assert.deepEqual(before.map((row) => row.ref), ['1', '2', '3']);
+
+  // The first write would put issue 1 last; the second keeps the period open.
+  const holds = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  const keepsOpen = store.propose({ op: 'create', kind: 'duplicate-of', from: '3', to: '1' });
+  await source.whenPending(holds.mutationId);
+  source.settleNext('applied');
+  await holds.settled;
+  assert.equal(store.getSnapshot().order.rows, before, 'held while a write is still pending');
+
+  // Proposed after the first landed, so the edge it deletes exists; it undoes the first write's effect.
+  const undoes = store.propose({ op: 'delete', edgeId: edgeId('blocked-by', '1', '2') });
+  await source.whenPending(keepsOpen.mutationId);
+  source.settleNext('applied');
+  await keepsOpen.settled;
+  await source.whenPending(undoes.mutationId);
+  source.settleNext('applied');
+  await undoes.settled;
+
+  const settled = store.getSnapshot();
+  assert.equal(settled.order.status, 'settled');
+  assert.deepEqual(settled.order.rows.map((row) => row.ref), ['1', '2', '3']);
+  // "A saved change says what it did to the order, in `text-muted`, until it is dismissed: "Saved: 2 moved · 1 newly held", or "Saved. The order did not change." Never on a timer."
+  // Writes landed in the period, so a summary is published, and measured against the rows held
+  // before the period it reports no movement at all.
+  assert.ok(settled.lastChange !== undefined, 'writes were saved, so the period states its effect');
+  assert.deepEqual(settled.lastChange.deltas, []);
+  assert.deepEqual(settled.lastChange.counts, { moved: 0, promoted: 0, newlyHeld: 0, entered: 0, left: 0 });
+  assert.equal(settled.lastChange.mutation.mutationId, undoes.mutationId, 'named by the newest landing');
+
+  // The empty summary persists until it is dismissed.
+  assert.equal(store.getSnapshot().lastChange, settled.lastChange);
+  store.dismissChange();
+  assert.equal(store.getSnapshot().lastChange, undefined);
+});
+
+test('R6 KTD11 createStore: a saved summary outlives a new edit, a period that saves nothing and a retry, until the next saved period or dismissChange', async () => {
+  const source = createScriptedSource(threeOpenIssues(), applyEdit);
+  const store = createStore({ source, derive: simpleDeriver });
+  await store.hydrate();
+
+  const first = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  await source.whenPending(first.mutationId);
+  source.settleNext('applied');
+  await first.settled;
+  const saved = store.getSnapshot().lastChange;
+  assert.ok(saved !== undefined);
+  assert.equal(saved.counts.newlyHeld, 1);
+
+  // The issue: "A saved change says what it did to the order, in `text-muted`, until it is dismissed: "Saved: 2 moved · 1 newly held", or "Saved. The order did not change." Never on a timer."
+  const second = store.propose({ op: 'create', kind: 'blocked-by', from: '3', to: '2' });
+  assert.equal(store.getSnapshot().lastChange, saved, 'starting a new edit removed the saved line');
+  await source.whenPending(second.mutationId);
+  source.settleNext({ outcome: 'rejected', reason: 'the issue body is locked' });
+  await second.settled;
+  assert.equal(store.getSnapshot().lastChange, saved, 'a period that saved nothing removed the saved line');
+
+  const failedAgain = store.retry(second.mutationId);
+  assert.equal(store.getSnapshot().lastChange, saved, 'a retry removed the saved line');
+  await source.whenPending(failedAgain.mutationId);
+  source.settleNext({ outcome: 'rejected', reason: 'still locked' });
+  await failedAgain.settled;
+  assert.equal(store.getSnapshot().lastChange, saved, 'a retry that failed again replaced the saved line');
+
+  const retried = store.retry(second.mutationId);
+  await source.whenPending(retried.mutationId);
+  source.settleNext('applied');
+  await retried.settled;
+
+  // The next saved period replaces it with its own effect: issue 3 became held.
+  const replaced = store.getSnapshot().lastChange;
+  assert.ok(replaced !== undefined, 'the next saved period published nothing');
+  assert.notDeepEqual(replaced, saved);
+  assert.equal(replaced.counts.newlyHeld, 1);
+  assert.equal(replaced.counts.moved, 2);
+  assert.equal(replaced.mutation.mutationId, retried.mutationId);
+
+  store.dismissChange();
+  assert.equal(store.getSnapshot().lastChange, undefined);
+});
+
+test('a held period whose closing write is rejected moves the order once and still states the earlier landing', async () => {
+  const source = createScriptedSource(threeOpenIssues(), applyEdit);
+  const store = createStore({ source, derive: simpleDeriver });
+  await store.hydrate();
+  const held = store.getSnapshot().order.rows;
+  const published = new Set<unknown>([held]);
+  store.subscribe(() => published.add(store.getSnapshot().order.rows));
+
+  const first = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  const second = store.propose({ op: 'create', kind: 'duplicate-of', from: '3', to: '1' });
+  await source.whenPending(first.mutationId);
+  source.settleNext('applied');
+  await first.settled;
+
+  // The issue: "A change to several issues (#249) lists each write in the log, and the order holds until all of them settle."
+  assert.equal(store.getSnapshot().order.rows, held, 'the first landing moved the order while the second write was still pending');
+  assert.equal(store.getSnapshot().order.status, 'held');
+
+  await source.whenPending(second.mutationId);
+  source.settleNext({ outcome: 'rejected', reason: 'locked' });
+  await second.settled;
+
+  const after = store.getSnapshot();
+  assert.deepEqual(refs(after.order.rows), ['2', '3', '1']);
+  assert.equal(after.order.status, 'settled');
+  assert.equal(published.size, 2, 'the order was published more than once in one held period');
+  // The issue: "A saved change says what it did to the order, in `text-muted`, until it is dismissed: "Saved: 2 moved · 1 newly held", or "Saved. The order did not change." Never on a timer."
+  assert.equal(after.lastChange?.mutation.mutationId, first.mutationId, 'a rejected closing write erased the summary of the write that landed');
+  assert.equal(after.lastChange?.counts.newlyHeld, 1);
+  assert.equal(after.lastChange?.counts.moved, 3);
+  // The issue: "A write that was not saved stays in the log, whether or not its issue is selected, with Retry and "Discard my edit"."
+  assert.equal(
+    after.writes.find((record) => record.mutationId === second.mutationId)?.state,
+    'failed',
+    'the rejected write left the ledger',
+  );
+});
+
+test('a held period whose closing write answers unchanged still states the earlier landing', async () => {
+  // An unchanged answer is not a landing, so a store that only derives and
+  // summarises on a landing would end this period saying nothing.
+  const source = createScriptedSource(threeOpenIssues(), applyEdit);
+  const store = createStore({ source, derive: simpleDeriver });
+  await store.hydrate();
+  const held = store.getSnapshot().order.rows;
+
+  const first = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  const second = store.propose({ op: 'create', kind: 'duplicate-of', from: '3', to: '1' });
+  await source.whenPending(first.mutationId);
+  source.settleNext('applied');
+  await first.settled;
+
+  // The issue: "A change to several issues (#249) lists each write in the log, and the order holds until all of them settle."
+  assert.equal(store.getSnapshot().order.rows, held, 'the first landing moved the order while the second write was still pending');
+
+  await source.whenPending(second.mutationId);
+  source.settleNext('unchanged');
+  await second.settled;
+
+  const after = store.getSnapshot();
+  assert.deepEqual(refs(after.order.rows), ['2', '3', '1']);
+  assert.equal(after.order.status, 'settled');
+  // The issue: "A saved change says what it did to the order, in `text-muted`, until it is dismissed: "Saved: 2 moved · 1 newly held", or "Saved. The order did not change." Never on a timer."
+  assert.equal(after.lastChange?.mutation.mutationId, first.mutationId, 'an unchanged closing write erased the summary of the write that landed');
+  assert.equal(after.lastChange?.counts.newlyHeld, 1);
+  assert.equal(after.lastChange?.counts.moved, 3);
+});
+
+test('a refresh that runs between two writes of one held period does not move the order', async () => {
+  // The refresh queues behind the first write and ahead of the second, so it
+  // loads a document with the first write in it while the second is pending.
+  const scripted = createScriptedSource(threeOpenIssues(), applyEdit);
+  let reads = 0;
+  const store = createStore({
+    source: {
+      hydrate: () => {
+        reads += 1;
+        return scripted.hydrate();
+      },
+      dispatch: (mutation) => scripted.dispatch(mutation),
+    },
+    derive: simpleDeriver,
+  });
+  await store.hydrate();
+  const held = store.getSnapshot().order.rows;
+
+  const first = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  await scripted.whenPending(first.mutationId);
+  const refresh = store.rehydrate();
+  const second = store.propose({ op: 'create', kind: 'duplicate-of', from: '3', to: '1' });
+  scripted.settleNext('applied');
+  await first.settled;
+  await scripted.whenPending(second.mutationId);
+  assert.equal(reads, 2, 'the refresh did not run inside the held period, so this test proves nothing');
+
+  // The issue: "A change to several issues (#249) lists each write in the log, and the order holds until all of them settle."
+  const between = store.getSnapshot();
+  assert.equal(between.order.rows, held, 'the refresh re-derived the order while a write was still pending');
+  assert.equal(between.order.status, 'held');
+
+  scripted.settleNext('applied');
+  await second.settled;
+  await refresh;
+  const after = store.getSnapshot();
+  assert.deepEqual(refs(after.order.rows), ['2', '3', '1']);
+  assert.equal(after.order.status, 'settled');
+});
+
+test('a held period in which every write fails publishes no summary and keeps the rows', async () => {
+  const source = createScriptedSource(threeOpenIssues(), applyEdit);
+  const store = createStore({ source, derive: simpleDeriver });
+  await store.hydrate();
+  const held = store.getSnapshot().order.rows;
+
+  const first = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  const second = store.propose({ op: 'create', kind: 'duplicate-of', from: '3', to: '1' });
+  await source.whenPending(first.mutationId);
+  source.settleNext({ outcome: 'rejected', reason: 'locked' });
+  await first.settled;
+  await source.whenPending(second.mutationId);
+  source.settleNext({ outcome: 'rejected', reason: 'locked' });
+  await second.settled;
+
+  const after = store.getSnapshot();
+  assert.equal(after.order.status, 'settled');
+  assert.equal(after.order.rows, held, 'nothing was saved, so the rows must not move');
+  assert.equal(after.lastChange, undefined, 'nothing was saved, so there is nothing to summarise');
+});
+
+test('a held period that a failed retry-on-latest read closes still derives the earlier landing', async () => {
+  // The read failing restores the record without a settle from the adapter,
+  // so this is the one way a period can end with no dispatch answer at all.
+  const scripted = createScriptedSource(threeOpenIssues(), applyEdit);
+  let failRead = false;
+  const store = createStore({
+    source: {
+      hydrate: () => (failRead ? Promise.reject(new Error('offline')) : scripted.hydrate()),
+      dispatch: (mutation) => scripted.dispatch(mutation),
+    },
+    derive: simpleDeriver,
+  });
+  await store.hydrate();
+
+  const rejected = store.propose({ op: 'create', kind: 'duplicate-of', from: '3', to: '1' });
+  await scripted.whenPending(rejected.mutationId);
+  scripted.settleNext({ outcome: 'rejected', reason: 'locked' });
+  await rejected.settled;
+
+  const landed = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  failRead = true;
+  const resolving = store.retryOnLatest(rejected.mutationId);
+  await scripted.whenPending(landed.mutationId);
+  scripted.settleNext('applied');
+  await landed.settled;
+  await resolving.settled;
+
+  const after = store.getSnapshot();
+  assert.equal(after.order.status, 'settled');
+  assert.deepEqual(refs(after.order.rows), ['2', '3', '1']);
+  assert.equal(after.lastChange?.mutation.mutationId, landed.mutationId);
+});
+
+test('a save the deriver could not summarise clears the old summary, and so does the recovery after it', async () => {
+  // Left standing, the first save's summary would sit beside an order that the
+  // later saves produced, and read as their effect.
+  const source = createScriptedSource(threeOpenIssues(), applyEdit);
+  let explode = false;
+  const store = createStore({
+    source,
+    derive: (document) => {
+      if (explode) throw new Error('the deriver fell over');
+      return simpleDeriver(document);
+    },
+  });
+  await store.hydrate();
+
+  const first = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  await source.whenPending(first.mutationId);
+  source.settleNext('applied');
+  await first.settled;
+  assert.ok(store.getSnapshot().lastChange !== undefined, 'the first save has a summary to clear');
+
+  explode = true;
+  const second = store.propose({ op: 'create', kind: 'blocked-by', from: '3', to: '2' });
+  await source.whenPending(second.mutationId);
+  source.settleNext('applied');
+  await second.settled;
+  assert.ok(store.getSnapshot().orderError !== undefined, 'the order is stale');
+  assert.equal(store.getSnapshot().lastChange, undefined, 'the failed period left the old summary standing');
+
+  explode = false;
+  const third = store.propose({ op: 'create', kind: 'duplicate-of', from: '3', to: '1' });
+  await source.whenPending(third.mutationId);
+  source.settleNext('applied');
+  await third.settled;
+  assert.equal(store.getSnapshot().orderError, undefined, 'the order recovered');
+  assert.equal(store.getSnapshot().lastChange, undefined, 'the recovery period claimed a summary');
+});
+
+test('a redo on the latest version credits only its own movement, not the upstream change it read', async () => {
+  // The read inside the redo adopts somebody else's edge while the order is
+  // held. Diffing the redo's landing against the rows from before that read
+  // would count the upstream movement as the reader's own save.
+  const upstream = withEdge(threeOpenIssues(), 'blocked-by', '2', '3');
+  const scripted = createScriptedSource(upstream, applyEdit);
+  let readable = threeOpenIssues();
+  const store = createStore({
+    source: { hydrate: () => Promise.resolve(readable), dispatch: (mutation) => scripted.dispatch(mutation) },
+    derive: simpleDeriver,
+  });
+  await store.hydrate();
+
+  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  await scripted.whenPending(handle.mutationId);
+  scripted.settleNext({ outcome: 'conflict', upstream });
+  await handle.settled;
+
+  readable = upstream;
+  const redo = store.retryOnLatest(handle.mutationId);
+  await scripted.whenPending(handle.mutationId);
+  scripted.settleNext('applied');
+  await redo.settled;
+
+  const change = store.getSnapshot().lastChange;
+  assert.ok(change !== undefined, 'the redo saved, so it has a summary');
+  const saved = withEdge(upstream, 'blocked-by', '1', '2');
+  const own = diffOrder(simpleDeriver(upstream), simpleDeriver(saved), change.mutation);
+  const credited = diffOrder(simpleDeriver(threeOpenIssues()), simpleDeriver(saved), change.mutation);
+  assert.notDeepEqual(own.deltas, credited.deltas, 'the upstream edge moves nothing, so this test is vacuous');
+  assert.deepEqual(change.deltas, own.deltas);
+});
+
+test('a redo whose upstream order cannot be derived claims no summary rather than crediting the upstream change', async () => {
+  // The deriver throws on the upstream document alone, so the baseline the
+  // summary needs is unknown. The final derivation succeeds, and diffing it
+  // against the rows from before the read would credit the upstream edge.
+  const upstream = withEdge(threeOpenIssues(), 'blocked-by', '2', '3');
+  const scripted = createScriptedSource(upstream, applyEdit);
+  let readable = threeOpenIssues();
+  const store = createStore({
+    source: { hydrate: () => Promise.resolve(readable), dispatch: (mutation) => scripted.dispatch(mutation) },
+    derive: (document) => {
+      const has = (from: string, to: string): boolean =>
+        document.edges.some((edge) => edge.kind === 'blocked-by' && edge.from === from && edge.to === to);
+      if (has('2', '3') && !has('1', '2')) throw new Error('the deriver fell over on the upstream document');
+      return simpleDeriver(document);
+    },
+  });
+  await store.hydrate();
+
+  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  await scripted.whenPending(handle.mutationId);
+  scripted.settleNext({ outcome: 'conflict', upstream });
+  await handle.settled;
+
+  readable = upstream;
+  const redo = store.retryOnLatest(handle.mutationId);
+  await scripted.whenPending(handle.mutationId);
+  scripted.settleNext('applied');
+  await redo.settled;
+
+  const snapshot = store.getSnapshot();
+  assert.equal(snapshot.orderError, undefined, 'the final derivation succeeded, so this is not the stale-order path');
+  assert.deepEqual(refs(snapshot.order.rows), refs(simpleDeriver(withEdge(upstream, 'blocked-by', '1', '2'))));
+  assert.equal(snapshot.lastChange, undefined, 'a summary was claimed against an order nobody derived');
 });

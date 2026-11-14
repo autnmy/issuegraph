@@ -294,12 +294,13 @@ const RENDERS = [
     words: WORKSPACE_WORDS,
     selection: { kind: 'issue', key: 'i0001' },
     diffOpen: 'm-conflict',
-    recoveries: [
+    log: [
       {
         kind: 'failed',
         mutationId: 'm-failed',
         edgeId: 'blocked-by|i0001|i0002',
         carrier: 'i0001',
+        write: { op: 'create', edge: { id: 'blocked-by|i0001|i0002', kind: 'blocked-by', from: 'i0001', to: 'i0002' } },
         reason: 'the tracker was unreachable',
       },
       {
@@ -307,6 +308,7 @@ const RENDERS = [
         mutationId: 'm-conflict',
         edgeId: 'blocked-by|i0001|i0003',
         carrier: 'i0001',
+        write: { op: 'create', edge: { id: 'blocked-by|i0001|i0003', kind: 'blocked-by', from: 'i0001', to: 'i0003' } },
         // A REFRESH ERROR TOO, so its own rule is reached. It is the state a
         // reader lands in when `retry on latest` cannot even read.
         refreshError: 'the tracker did not answer',
@@ -345,30 +347,44 @@ const RENDERS = [
     words: WORKSPACE_WORDS,
     selection: { kind: 'issue', key: 'i0001' },
     diffOpen: 'm-elsewhere',
-    recoveries: [
+    log: [
       {
         kind: 'conflict',
         mutationId: 'm-elsewhere',
         edgeId: 'blocked-by|i0001|i0003',
         carrier: 'i0001',
+        write: { op: 'create', edge: { id: 'blocked-by|i0001|i0003', kind: 'blocked-by', from: 'i0001', to: 'i0003' } },
         refreshError: null,
         diff: { upstreamOnly: [], mineOnly: [], mineRemoved: [], issuesChanged: [], carrierReversed: [] },
       },
     ],
   }),
-  // THE UNPLACED REGION. A recovery whose carrier is `null` belongs to no panel
-  // and is drawn under its own heading on every one — the only render here that
-  // reaches that heading.
+  // A WRITE WITH NO PANEL. A recovery whose carrier is `null` belongs to no
+  // issue panel, so the log under the header is the only place it is drawn.
   renderWorkspace(DOCUMENT, {
     words: WORKSPACE_WORDS,
     selection: { kind: 'issue', key: 'i0001' },
-    recoveries: [
+    log: [
       {
         kind: 'failed',
         mutationId: 'm-nowhere',
         edgeId: 'blocked-by|gone|alsogone',
         carrier: null,
+        write: { op: 'create', edge: { id: 'blocked-by|gone|alsogone', kind: 'blocked-by', from: 'gone', to: 'alsogone' } },
         reason: 'the tracker refused it',
+      },
+    ],
+  }),
+  // A WRITE STILL SAVING. The log lists it as a line of its own rather than a
+  // recovery card, and no other render reaches that line.
+  renderWorkspace(DOCUMENT, {
+    words: WORKSPACE_WORDS,
+    orderStatus: 'held',
+    log: [
+      {
+        kind: 'pending',
+        mutationId: 'm-saving',
+        write: { op: 'create', edge: { id: 'blocked-by|i0001|i0002', kind: 'blocked-by', from: 'i0001', to: 'i0002' } },
       },
     ],
   }),
@@ -1687,6 +1703,89 @@ describe('the layout under 640', () => {
       layoutBands(css).map((band) => band.condition),
       ['width >= 1360px', 'width < 1360px', 'width < 1120px'],
     );
+  });
+
+  it('R1 draws the log under the head, with its failed write, at every width and on every narrow tab', () => {
+    const failed = {
+      kind: 'failed',
+      mutationId: 'm-unselected',
+      edgeId: 'blocked-by|i0003|i0004',
+      carrier: 'i0003',
+      write: { op: 'create', edge: { id: 'blocked-by|i0003|i0004', kind: 'blocked-by', from: 'i0003', to: 'i0004' } },
+      reason: 'the tracker was unreachable',
+    } as const;
+    const tabs = [
+      { narrowView: 'order', canvas: 'neighbourhood' },
+      { narrowView: 'canvas', canvas: 'neighbourhood' },
+      { narrowView: 'canvas', canvas: 'tree' },
+    ] as const;
+    // One width inside each band: under 640, under 1120, under 1360, and the wide layout.
+    for (const width of [600, 1000, 1200, 1500]) {
+      const rules = rulesAt(sheet, width);
+      for (const options of tabs) {
+        const page = pageOf(
+          renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, log: [failed], ...options }).markup,
+        );
+        const log = page.querySelector('.ig-workspace-log') ?? assert.fail('no log was drawn');
+        // The issue: "A log sits under the workspace head, at every width."
+        assert.equal(log.parentElement, zone(page, 'header'), 'the log is not a child of the header zone');
+        assert.equal(hidden(log, rules), false, `at ${String(width)} on ${options.narrowView} the log is hidden`);
+        const card = log.querySelector('.ig-recovery[data-ig-state="failed"]') ?? assert.fail('the log drew no failed write');
+        assert.equal(hidden(card, rules), false, `at ${String(width)} the failed write in the log is hidden`);
+      }
+    }
+  });
+});
+
+describe('the log under the head stays bounded, and its saved line stays quiet', () => {
+  const ruleBody = (css: string, selector: string): string => {
+    const at = css.indexOf(`\n${selector} {`);
+    assert.notEqual(at, -1, `no ${selector} rule`);
+    return css.slice(css.indexOf('{', at) + 1, css.indexOf('}', at));
+  };
+
+  it('bounds the log in type units and lets it scroll past the bound', () => {
+    const log = ruleBody(withoutComments(workspaceStylesheet), '.ig-workspace-log');
+    // A long batch of failed writes must not push the view zone off a phone screen.
+    assert.match(log, /max-height:\s*calc\([^;]*var\(--ig-font-size\)[^;]*\);/);
+    assert.match(log, /overflow-y:\s*auto;/);
+  });
+
+  it('draws every word of the saved line in the log in --ig-text-muted', () => {
+    // Text colour inherits, so the nearest element that declares one decides.
+    const mutedColourOf = (rules: readonly Rule[], element: Element): string | undefined => {
+      for (let node: Element | null = element; node !== null; node = node.parentElement) {
+        const value = declaredOf(node, rules, 'color');
+        if (value !== undefined) return value;
+      }
+      return undefined;
+    };
+    const moved = diffOrder(orderOf(['i0001', 'i0002', 'i0003']), orderOf(['i0002', 'i0001', 'i0003']), editOf());
+    const unchanged = diffOrder(orderOf(['i0001', 'i0002']), orderOf(['i0001', 'i0002']), editOf());
+    for (const change of [moved, unchanged]) {
+      const result = renderWorkspace(DOCUMENT, { words: { ...WORKSPACE_WORDS, change: CHANGE_WORDS }, change });
+      const rules = rulesAt(withoutComments(result.styles), 1500);
+      const line =
+        pageOf(result.markup).querySelector('.ig-workspace-log .ig-change-line') ?? assert.fail('no saved line in the log');
+      const texts = [...line.querySelectorAll('*')].filter((node) => node.children.length === 0);
+      assert.ok(texts.length > 0, 'the saved line drew no words');
+      // The issue: "A saved change says what it did to the order, in `text-muted`, until it is dismissed"
+      for (const text of texts) {
+        assert.equal(mutedColourOf(rules, text), 'var(--ig-text-muted)', `the ${text.className} colour`);
+      }
+    }
+  });
+
+  it('separates the facets of the saved line with a generated dot, never one in the markup', () => {
+    const css = withoutComments(reevaluateStylesheet);
+    assert.match(ruleBody(css, '.ig-change-part + .ig-change-part::before'), /content:\s*'·'/);
+    const result = renderWorkspace(DOCUMENT, {
+      words: { ...WORKSPACE_WORDS, change: CHANGE_WORDS },
+      change: diffOrder(orderOf(['i0001', 'i0002', 'i0003']), orderOf(['i0002', 'i0001', 'i0003']), editOf()),
+    });
+    const line = pageOf(result.markup).querySelector('.ig-change-line') ?? assert.fail('no saved line was drawn');
+    assert.ok(line.querySelectorAll('.ig-change-part').length > 0, 'the saved line drew no facets');
+    assert.equal((line.textContent ?? '').includes('·'), false, 'the markup carries a separator of its own');
   });
 });
 

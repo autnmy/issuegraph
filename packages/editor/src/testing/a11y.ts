@@ -179,6 +179,11 @@ export async function a11ySurface(
      * navigation control and the refused block's two controls exist.
      */
     readonly audited?: boolean;
+    /**
+     * Land one write before the conflict, so the log carries a saved line and
+     * its `dismiss-change` control beside the conflicted write.
+     */
+    readonly saved?: boolean;
   } = {},
 ): Promise<{ root: Element; close: () => void }> {
   const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>');
@@ -242,6 +247,18 @@ export async function a11ySurface(
   // dispatch — `whenPending` then never settles and the fixture hangs rather
   // than failing. A non-adjacent pair is new, and it closes no cycle because 3
   // already reaches 7 through the chain.
+  // A SAVED LINE NEEDS A WRITE THAT LANDED, and it lands first: a held period
+  // in which nothing lands leaves the saved line as it was, so the conflict
+  // staged next keeps it on screen. `4 -> 1` touches neither the selected
+  // issue nor the conflicted edge, so it adds no control of its own to the
+  // Inspector.
+  if (options.saved === true) {
+    const landing = store.propose({ op: 'create', kind: 'blocked-by', from: '4', to: '1' });
+    await source.whenPending(landing.mutationId);
+    source.settleNext('applied');
+    await landing.settled;
+  }
+
   const to = options.refusalTier === true ? '7' : '4';
   void store.propose({ op: 'create', kind: 'blocked-by', from: '3', to });
   await source.whenPending();

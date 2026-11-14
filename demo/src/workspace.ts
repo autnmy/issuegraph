@@ -191,9 +191,9 @@ const FIRST_PASS_WORDS: FirstPassWords = {
 
 /** The words the packages refuse to invent. */
 export const WORKSPACE_WORDS: MountWords = {
-  // §17f's canvas caption, OPTIONAL IN THE PACKAGE AND SUPPLIED HERE for the
-  // reason the `change` block below states in full: the demo is the one surface
-  // anyone can actually try, so a feature the demo does not word ships dark.
+  // §17f's canvas caption, OPTIONAL IN THE PACKAGE AND SUPPLIED HERE because
+  // the demo is the one surface anyone can actually try, so a feature the demo
+  // does not word ships dark.
   // Without these the canvas draws no caption and no edit-mode pill, and the
   // narrowing that makes the graph legible stays as silent as it was before.
   //
@@ -223,12 +223,7 @@ export const WORKSPACE_WORDS: MountWords = {
     show: 'show',
     hide: 'hide',
   },
-  // §17c's re-evaluate loop. OPTIONAL IN THE PACKAGE AND SUPPLIED HERE, which
-  // is the whole point: the vocabulary is optional so a host built before §17c
-  // keeps rendering, and the demo is the proof the feature is real — without
-  // these words a landed edit draws no summary, no dismiss control, no row
-  // chips and no held-order label, and the loop would ship dark on the one
-  // surface anyone can actually try.
+  // §17c's re-evaluate loop, drawn at the top of the log under the head.
   //
   // Worded for a reader rather than for a log: each facet has to read on its
   // own AND after a number, because `ChangeWords.facets` words both the summary
@@ -241,6 +236,8 @@ export const WORKSPACE_WORDS: MountWords = {
       entered: 'entered the order',
       left: 'left the order',
     },
+    // The lead before the counts, as in "Saved: 2 moved · 1 newly held".
+    saved: 'Saved:',
     unchanged: 'Saved. The order did not change.',
     // NOT "your edit is saved", WHICH THIS STATE DOES NOT MEAN. `held` is
     // `anyPending(records)`, and `dispatch` reserves the record as `pending`
@@ -255,6 +252,22 @@ export const WORKSPACE_WORDS: MountWords = {
     computing: 'Saving. The order below updates when the save is done.',
     dismiss: 'Dismiss',
     direction: { up: 'up', down: 'down' },
+  },
+  // THE LOG UNDER THE HEAD names each write still saving: what it does, then
+  // the issue that declares the edge, the kind in this host's words, and the
+  // issue at its other end.
+  log: {
+    label: 'Saves',
+    saving: 'Saving',
+    ops: { create: 'adding', delete: 'removing', flip: 'reversing', retype: 'changing' },
+    becomes: 'to',
+    kinds: {
+      'blocked-by': 'blocked by',
+      'decomposed-from': 'split from',
+      'duplicate-of': 'duplicate of',
+      'serialize-with': 'one at a time with',
+      'together-with': 'together with',
+    },
   },
   // §17a's header: `312 open · 64 encoded` and `as of 14:32 ↻`. The numbers are
   // the package's and these are the nouns beside them.
@@ -364,7 +377,6 @@ export const WORKSPACE_WORDS: MountWords = {
     // which is a different fact, and the one a groomer needs.
     diffEmpty: 'Nothing on this issue is different. Their change was somewhere else.',
     retryFailed: 'Could not read the latest version:',
-    unplaced: 'Unsaved edits to issues that are no longer here',
   },
   // §17d's FINDINGS LIST. The chips are the frame's own four words; the titles
   // say the CONSEQUENCE rather than restating the finding, because the sentence

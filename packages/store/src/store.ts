@@ -62,7 +62,11 @@ export interface StoreSnapshot {
   readonly order: OrderView;
   /** Edits still carrying a state: pending, invalid, failed or conflicted. */
   readonly writes: readonly WriteRecord[];
-  /** What the last landed edit did to the order. Cleared only by a call. */
+  /**
+   * What the writes saved during the last held period did to the order, once
+   * the period ended. Stays until `dismissChange()`, or until a later period
+   * that saves a write replaces it.
+   */
   readonly lastChange?: OrderChange;
   /**
    * Why the order could not be recomputed, when the injected deriver threw.
@@ -140,7 +144,10 @@ export interface Store {
   discardMine(mutationId: MutationId): void;
   /** Set the selected edges. Selection is client state; it writes nothing. */
   select(edgeIds: readonly EdgeId[]): void;
-  /** Clear the change summary. The only thing that does, besides the next edit. */
+  /**
+   * Clear the change summary. The only thing that does, besides a later held
+   * period that saves a write and replaces it.
+   */
   dismissChange(): void;
 }
 
@@ -280,14 +287,30 @@ export function createStore(config: StoreConfig): Store {
   let orderError: string | undefined;
   let sequence = 0;
   /**
-   * The edit the summary would belong to.
+   * A derivation the held order still owes, and the newest write that landed
+   * while it was held.
    *
-   * A summary is written when a write LANDS, which can be after a newer edit
-   * has already started — and the contract is that a summary lasts until the
-   * next edit. Without this, a host shows the previous edit's blast radius
-   * beside the one the user is making now.
+   * THE ORDER HOLDS FOR THE WHOLE HELD PERIOD, not per write. A change to
+   * several issues goes out as several writes, and re-deriving after each
+   * landing would move the rows once per write and summarise only the last
+   * one. So while any record is `pending`, a document adopted by a landing,
+   * an `unchanged` answer or a read only records here that the order is owed;
+   * `publish` derives once, when nothing is pending, and diffs against the
+   * rows held since the period began. `landing` stays `undefined` when no
+   * write landed, because then nothing was saved and there is no summary.
+   *
+   * `baseline` IS WHAT THE SUMMARY DIFFS AGAINST when somebody else's change
+   * was adopted before any write landed: a read, or an `unchanged` answer. The
+   * held rows predate that change, so diffing against them would credit its
+   * movement to the save. It is derived privately, so the order still holds.
+   * A foreign change adopted AFTER a landing in the same period cannot be told
+   * apart from the save's own movement, and is counted in its summary.
+   * `'underivable'` says the deriver threw on that document, so no order is
+   * known to diff against and the period claims no summary.
    */
-  let currentProposal: MutationId | undefined;
+  let owed:
+    | { readonly landing: Mutation | undefined; readonly baseline: readonly OrderRow[] | 'underivable' | undefined }
+    | undefined;
   /**
    * ONE AUTHORITATIVE OPERATION AT A TIME, and the rest queued.
    *
@@ -371,6 +394,15 @@ export function createStore(config: StoreConfig): Store {
     // how a follow-up edit once jumped the queue ahead of the edit that
     // triggered it. Every other call site already commits first; keep it that
     // way rather than making each one rediscover the rule.
+    //
+    // Derived here because every transition ends in a publish, so the one that
+    // empties the pending set — a settle, a refusal, a restored resolve, a
+    // read — cannot be missed by a call site that forgot to ask.
+    if (owed !== undefined && !anyPending(records)) {
+      const { landing, baseline } = owed;
+      owed = undefined;
+      reDerive(landing, baseline);
+    }
     const nextProjected = project(landed, records, new Set(selection));
     const nextOrderStatus: OrderStatus = anyPending(records) ? 'held' : 'settled';
 
@@ -441,14 +473,18 @@ export function createStore(config: StoreConfig): Store {
    * escape into the dispatch queue, where it would strand every edit behind it.
    * The previously derived rows stand, `orderError` says why they are stale, and
    * no change summary is emitted for an order nobody computed.
+   *
+   * A SAVE WITH NO SUMMARY CLEARS THE OLD ONE. Left standing, it would sit
+   * beside an order that later saves produced, read as the newest save's effect.
    */
-  function reDerive(cause: Mutation | undefined): void {
-    const previous = rows;
+  function reDerive(cause: Mutation | undefined, baseline: readonly OrderRow[] | 'underivable' | undefined): void {
+    const previous = baseline === 'underivable' ? undefined : (baseline ?? rows);
     let next: readonly OrderRow[];
     try {
       next = derive(landed);
     } catch (thrown) {
       orderError = messageOf(thrown);
+      if (cause !== undefined) lastChange = undefined;
       return;
     }
     // RECOVERING FROM A STALE BASELINE EMITS NO SUMMARY. While `orderError`
@@ -459,11 +495,31 @@ export function createStore(config: StoreConfig): Store {
     const recovering = orderError !== undefined;
     orderError = undefined;
     rows = ownRows(next);
-    // Only for the edit that is still the current one. A landing that a newer
-    // proposal has already overtaken has no summary to publish — the newer edit
-    // owns that slot, and will fill it when it lands.
-    const overtaken = cause !== undefined && cause.mutationId !== currentProposal;
-    if (cause !== undefined && !recovering && !overtaken) lastChange = diffOrder(previous, rows, cause);
+    if (cause !== undefined) lastChange = recovering || previous === undefined ? undefined : diffOrder(previous, rows, cause);
+  }
+
+  /**
+   * Record that `landed` changed, so the order is owed a derivation. A write
+   * that landed becomes the period's newest landing; an adoption that is not a
+   * landing keeps the one already recorded.
+   */
+  function owe(landing: Mutation | undefined): void {
+    const prior = owed;
+    // Only a held period needs one: otherwise `publish` derives at once.
+    const foreignFirst = landing === undefined && prior?.landing === undefined && anyPending(records);
+    owed = {
+      landing: landing ?? prior?.landing,
+      baseline: foreignFirst ? privateDerive() : prior?.baseline,
+    };
+  }
+
+  /** The order `landed` gives now, without publishing it, or `'underivable'` when the deriver throws. */
+  function privateDerive(): readonly OrderRow[] | 'underivable' {
+    try {
+      return ownRows(derive(landed));
+    } catch {
+      return 'underivable';
+    }
   }
 
   function recordFor(mutationId: MutationId): WriteRecord | undefined {
@@ -534,7 +590,7 @@ export function createStore(config: StoreConfig): Store {
       case 'applied': {
         adopt(result.document);
         dropRecord(mutation.mutationId);
-        reDerive(mutation);
+        owe(mutation);
         break;
       }
       case 'unchanged': {
@@ -542,12 +598,12 @@ export function createStore(config: StoreConfig): Store {
         // document — and often said BECAUSE the store is out of date, which is
         // exactly when not adopting it loses an edge that genuinely exists.
         //
-        // Re-derived with NO cause: whatever moved was somebody else's doing, so
+        // Owed with NO landing: whatever moved was somebody else's doing, so
         // attributing it to this edit would be wrong. `adopt` no-ops when the
         // document already matches, so the ordinary case changes nothing.
         adopt(result.document);
         dropRecord(mutation.mutationId);
-        reDerive(undefined);
+        owe(undefined);
         break;
       }
       case 'rejected': {
@@ -585,12 +641,6 @@ export function createStore(config: StoreConfig): Store {
    */
   function start(task: EditTask): ProposalHandle {
     const { mutation } = task;
-    // The summary is evidence for ONE edit, and the contract is that it lasts
-    // until the next edit or an explicit dismissal. Clearing it here is what
-    // makes that true: left standing, a host would show the previous edit's
-    // blast radius beside the edit the user is making now.
-    lastChange = undefined;
-    currentProposal = mutation.mutationId;
     const settled = new Promise<void>((resolve) => settlers.set(mutation.mutationId, resolve));
     // THE VERDICT IS REACHED AGAINST THE DOCUMENT THE EDIT WILL BE DISPATCHED
     // AGAINST. For a direct dispatch that is `landed` as it stands, so a refused
@@ -726,7 +776,7 @@ export function createStore(config: StoreConfig): Store {
       adopt(document);
       status = 'ready';
       hydrationError = undefined;
-      reDerive(undefined);
+      owe(undefined);
     } catch (thrown) {
       hydrationError = messageOf(thrown);
       // A failed refresh keeps the last good document and stays `ready`; only a
