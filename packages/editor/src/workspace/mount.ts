@@ -290,6 +290,11 @@ const KEY_ATTRIBUTE = 'data-ig-key';
 const LIVE_REGION = '.ig-change-line[role="status"]';
 /** The Related groups search's status line, carried across redraws the same way. */
 const RELATED_STATUS = `.${RELATED_STATUS_CLASS}[role="status"]`;
+/**
+ * The regions that scroll inside a bound of their own, whose offsets a redraw
+ * keeps: the audit's findings and the log under the head.
+ */
+const SCROLLED_REGIONS = ['.ig-audit-overlay', '.ig-workspace-log'] as const;
 const GROUP_ATTRIBUTE = 'data-ig-group';
 const COMMAND_ATTRIBUTE = 'data-ig-command';
 
@@ -1584,8 +1589,8 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     if (styles.textContent !== sheet) styles.textContent = sheet;
 
     // What the reader was doing survives the redraw: the rail's scroll offset
-    // (kept as `railOffset`), the audit panel's, and the caret in whichever
-    // search box they were typing into.
+    // (kept as `railOffset`), the offset of each bounded region below, and the
+    // caret in whichever search box they were typing into.
     // THE AUDIT SCROLLS TOO, SINCE IT TOOK A SHARE OF ITS COLUMN. Before it had
     // a bound it grew to its content and only the ZONE scrolled, so there was no
     // second offset to keep. Now a long audit is read inside its own scroller,
@@ -1597,8 +1602,13 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // §17d's second surface moved it up to the region holding both — so reading
     // the panel's offset now reads a number that is always zero, and restoring
     // it is a no-op a reader feels as the audit jumping back on every redraw.
-    const auditBefore = surface.querySelector<HTMLElement>('.ig-audit-overlay');
-    const auditScrollTop = auditBefore?.scrollTop ?? 0;
+    //
+    // THE LOG UNDER THE HEAD IS BOUNDED THE SAME WAY, so a long run of failed
+    // writes scrolls inside it, and every write that settles redraws this
+    // surface while the reader is working down that list.
+    const scrolledBefore = SCROLLED_REGIONS.map(
+      (selector) => [selector, surface.querySelector<HTMLElement>(selector)?.scrollTop ?? 0] as const,
+    );
     const active = doc.activeElement;
     const activeInput = isElement(active) && isInput(active) && surface.contains(active) ? active : null;
     const activeCommand = activeInput?.getAttribute(COMMAND_ATTRIBUTE) ?? null;
@@ -1811,8 +1821,10 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // so the element captured from is gone. A region that shrank clamps this on
     // assignment, and one the redraw removed — the audit going clean — is
     // simply absent, which is why nothing is restored rather than zeroed.
-    const auditRegion = surface.querySelector<HTMLElement>('.ig-audit-overlay');
-    if (auditRegion !== null) auditRegion.scrollTop = auditScrollTop;
+    for (const [selector, scrollTop] of scrolledBefore) {
+      const region = surface.querySelector<HTMLElement>(selector);
+      if (region !== null) region.scrollTop = scrollTop;
+    }
     // THE LIST THE READER JUST OPENED IS BROUGHT INTO VIEW. See
     // `revealIsolated` for why the control and the list are in different zones.
     // `block: 'nearest'` so a list already visible is not scrolled at all, and

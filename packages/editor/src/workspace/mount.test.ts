@@ -506,6 +506,34 @@ describe("the audit region's scroll offset survives a redraw", () => {
   });
 });
 
+describe("the log's scroll offset survives a redraw", () => {
+  // The log under the head is bounded and scrolls itself, so a reader working
+  // down a long list of failed writes must not be sent back to its top by a
+  // write settling elsewhere. jsdom holds `scrollTop` on any element, so this
+  // checks the mount's carry, and the stylesheet test checks the bound.
+  it('restores the offset onto the log the redraw built', async () => {
+    const page = await mounted(SEED);
+    try {
+      const log = (): HTMLElement | null => page.element.querySelector<HTMLElement>('.ig-workspace-log');
+      const before = log();
+      assert.ok(before !== null, 'the mount drew no log, so this proves nothing');
+      before.scrollTop = 48;
+      assert.equal(before.scrollTop, 48, 'the fixture cannot hold an offset, so this proves nothing');
+
+      page.handle.update();
+      await flush();
+
+      const after = log();
+      assert.ok(after !== null, 'the redraw dropped the log');
+      assert.notEqual(after, before, 'no redraw happened, so this test would prove nothing');
+      assert.equal(after.scrollTop, 48);
+      page.handle.destroy();
+    } finally {
+      page.dom.window.close();
+    }
+  });
+});
+
 describe('§17c\u2019s live region survives the redraw that would destroy it', () => {
   /**
    * The region is the ONE node this shell carries across a redraw.
