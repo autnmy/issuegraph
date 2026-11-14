@@ -208,6 +208,35 @@ describe('layoutGraph', () => {
     );
   });
 
+  it('keeps a held card\u2019s reason word after its number (q336)', () => {
+    // issue-graph b699f1d draws an off-order node as "#2210 Parked": the
+    // tracker's own label for the hold, muted, in place of a relationship list.
+    const { document } = normalizeDocument({
+      issues: [
+        { key: 'parked', title: 'Parked work', open: true, priority: 2 },
+        { key: 'other', title: 'Other', open: true, priority: 2 },
+      ],
+      edges: [{ field: 'blocked-by', from: 'other', to: 'parked' }],
+      order: {
+        slots: [
+          {
+            rank: null,
+            lead: 'parked',
+            members: ['parked'],
+            ready: false,
+            holds: [{ family: 'tracker', reason: 'parked by its owner', label: 'Parked' }],
+          },
+          { rank: 1, lead: 'other', members: ['other'], ready: true, holds: [] },
+        ],
+        excluded: [],
+      },
+      cycles: [],
+    });
+    const badges = cardBlocks(document, 'parked', ['parked'], false).find((block) => block.kind === 'badges');
+    assert.ok(badges?.kind === 'badges', 'the held card describes no reason word');
+    assert.ok(badges.texts.includes('Parked'), 'the held card lost its reason word');
+  });
+
   it('describes a graph card as its title, number and priority only, however many relationships it has (#303)', () => {
     // RULES, Graphs, Dense neighbourhoods: "A node never lists its
     // relationships: its title, number and priority only." A hub with seventeen

@@ -1215,11 +1215,25 @@ export type CardBlock =
   /** A unit's enclosure: one title-and-identity pair per member. */
   | { readonly kind: 'unit'; readonly members: readonly string[] }
   /**
-   * The priority tag. A node carries its title, number and priority only (RULES,
-   * Graphs, Dense neighbourhoods): its relationships are the selection's lines
-   * and the Inspector's list, and an order row counts them.
+   * The priority tag, and a held card's reason word. A node carries its title,
+   * number and priority only (RULES, Graphs, Dense neighbourhoods): its
+   * relationships are the selection's lines and the Inspector's list, and an
+   * order row counts them.
    */
   | { readonly kind: 'badges'; readonly texts: readonly string[] };
+
+/**
+ * The word a held card carries after its number: the tracker's own label for the
+ * hold ("Parked", "Not eligible"), as the order list's footer tags it. Null when
+ * no hold names one (q336: an off-order node keeps its reason word).
+ */
+export function heldReason(slot: ViewerSlot | undefined): string | null {
+  const labelled = slot?.holds.find(
+    (hold): hold is Extract<ViewerHold, { family: 'tracker' }> =>
+      hold.family === 'tracker' && hold.label !== undefined && hold.label !== '',
+  );
+  return labelled?.label ?? null;
+}
 
 /**
  * Everything one canvas card draws, in the order it draws it: its title, number
@@ -1260,7 +1274,11 @@ export function cardBlocks(
   }
 
   const priority = priorityBadge(issue?.provenance);
-  if (priority !== null) blocks.push({ kind: 'badges', texts: [textOf(priority)] });
+  const reason = heldReason(slot);
+  const texts = [priority === null ? null : textOf(priority), reason].filter(
+    (text): text is string => text !== null,
+  );
+  if (texts.length > 0) blocks.push({ kind: 'badges', texts });
   return blocks;
 }
 

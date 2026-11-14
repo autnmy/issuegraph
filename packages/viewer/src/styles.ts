@@ -1291,6 +1291,12 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   font-variant-numeric: tabular-nums;
 }
 
+/* A HELD CARD'S REASON WORD, muted after its number ("#2210 Parked"), as the
+   board draws it on an off-order node: plain text, no tag. */
+.ig-reason {
+  color: var(--ig-text-muted);
+}
+
 /* WORDS FOR A READER THAT THE ROW DOES NOT SHOW: the overflow chip draws "+16"
    and says "16 more relationships". Kept in the text, not an attribute, because
    a plain span may not be named. */

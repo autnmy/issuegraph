@@ -37,6 +37,7 @@ import {
   adoptionNote,
   atStations,
   cardBlocks,
+  heldReason,
   conditionKind,
   conditionNotice,
   nowRows,
@@ -371,6 +372,11 @@ function nodeCard(
   );
 }
 
+/** A held card's reason word, or nothing. */
+function reasonWord(reason: string | null): ElementSpec | null {
+  return reason === null ? null : element('span', { class: 'ig-reason' }, [reason]);
+}
+
 /** One described block, drawn. The other half of `cardBlocks`. */
 function cardMark(
   document: NormalizedDocument,
@@ -411,9 +417,12 @@ function cardMark(
       return element(
         'div',
         { class: 'ig-badges' },
-        [priorityBadge(document.byKey.get(key)?.provenance)].filter(
-          (badge): badge is ElementSpec => badge !== null,
-        ),
+        [
+          priorityBadge(document.byKey.get(key)?.provenance),
+          // THE REASON WORD, muted after the number (q336; issue-graph b699f1d
+          // draws "#2210 Parked"): the one fact about a hold the card shows.
+          reasonWord(heldReason(slot)),
+        ].filter((badge): badge is ElementSpec => badge !== null),
       );
   }
 }
