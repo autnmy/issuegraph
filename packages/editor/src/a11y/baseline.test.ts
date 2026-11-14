@@ -65,6 +65,11 @@ const BASELINE_PATH = new URL('./baseline.json', import.meta.url);
  * here at all. An ABSENT entry passes every rule below, which is the failure
  * this list exists to make impossible.
  *
+ * AND A SAVED LINE BESIDE THE SHUT DISCLOSURE, because the log under the head
+ * draws `dismiss-change` only once a write has landed, and every other surface
+ * stages a conflict and nothing that lands. It is folded into an existing
+ * surface rather than a twelfth one, for the cost #185 measured below.
+ *
  * AND THE FIRST-PASS QUEUE, because its y/n/s answers are the only controls on
  * the `data-ig-answer` channel. `CONTROL_ATTRIBUTES` names three channels and
  * the rules below quantify over all of them — with the queue closed, one of the
@@ -74,7 +79,7 @@ const BASELINE_PATH = new URL('./baseline.json', import.meta.url);
 async function surfaces(): Promise<Record<string, readonly ControlEntry[]>> {
   const out: Record<string, readonly ControlEntry[]> = {};
   for (const [name, options] of [
-    ['disclosure-shut', {}],
+    ['disclosure-shut', { saved: true }],
     ['disclosure-open', { openDiff: true }],
     ['draft-open', { openDraft: true }],
     ['search-open', { openSearch: true }],
@@ -234,6 +239,10 @@ const RENDERED_CONTROLS: readonly string[] = Object.freeze([
   'data-ig-command:close-isolated',
   'data-ig-command:delete',
   'data-ig-command:discard',
+  // THE LOG'S SAVED LINE, drawn once a write has landed. `disclosure-shut`
+  // lands one before its conflict, so the log's every control is recorded:
+  // this one, and the conflicted write's `view-diff`, `retry` and `discard`.
+  'data-ig-command:dismiss-change',
   'data-ig-command:first-pass',
   'data-ig-command:first-pass-close',
   'data-ig-command:flip',
@@ -284,11 +293,6 @@ const RENDERED_CONTROLS: readonly string[] = Object.freeze([
  * oversight the test now refuses.
  */
 const UNREACHABLE: Readonly<Record<string, string>> = Object.freeze({
-  // The re-evaluate summary is drawn from a LANDED edit that moved the order,
-  // and every write this fixture stages is refused or conflicted on purpose —
-  // the recovery cards are what it exists to record. A landed-and-moved state
-  // is a different fixture, not another step in this one.
-  'data-ig-command:dismiss-change': 'needs a landed edit that moved the order',
   // THE RELATED GROUPS LIST'S TWO CONTROLS appear only past 60 relationships on
   // one selection, and a fixture that large adds every one of them as an
   // Inspector row to this artifact. Their tab stop and name are pinned below,
