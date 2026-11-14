@@ -1806,9 +1806,10 @@ ${heldRailDeclarations}
   outline-offset: var(--ig-space-micro);
 }
 
-/* THE INSPECTOR'S GROUPS, AND ITS ROW BOX: each kind's head and count, five
-   rows of '.ig-relationship', then "Show 4 more". Only the gap between the
-   groups is this list's. Drawn by the narrow sheet alone. */
+/* THE INSPECTOR'S GROUPS, WITH THE ORDER'S ROWS: each kind's head and count,
+   its first five neighbours as layer 1 draws an order row, then "Show 4 more".
+   Only the gap between the groups is this list's. Drawn by the narrow sheet,
+   and past the graph's budget at every width (below). */
 .ig-workspace .ig-related {
   display: none;
   flex-direction: column;
@@ -1822,6 +1823,32 @@ ${heldRailDeclarations}
   margin: 0;
   color: var(--ig-text-muted);
   font-size: var(--ig-font-size-small);
+}
+
+/* PAST THE GRAPH'S BUDGET AROUND THE SELECTION THE LIST STANDS IN FOR THE
+   GRAPH, AT EVERY WIDTH (RULES, Graphs, Dense neighbourhoods): the graph is
+   not drawn, so the list is the zone's content wherever the zone is. */
+.ig-workspace .ig-related[data-over='true'] {
+  display: flex;
+}
+
+/* THE ONE LINE OVER IT THAT SAYS WHY, the board's .ig-over: small muted text
+   with a hairline under it, at the zone's inset. Under 640 it is hidden with
+   the rest of the graph's zone, since there the list is the view as always. */
+.ig-related-over {
+  margin: 0;
+  padding: var(--ig-space) var(--ig-space-loose);
+  color: var(--ig-text-muted);
+  font-size: var(--ig-font-size-small);
+  border-bottom: var(--ig-stroke) solid var(--ig-line);
+}
+
+/* A KIND'S HEAD IN THE LIST: its icon beside its words, as one phrase. The
+   head's muted colour and weight are the group head's. */
+.ig-related-kind {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--ig-space-tight);
 }
 
 /* ONE KEY PER SURFACE, AND THE CANVAS KEEPS IT.
@@ -1883,14 +1910,16 @@ ${heldRailDeclarations}
     box-shadow: var(--ig-elevation-overlay);
   }
 
-  /* THE CANVAS LEGEND ENDS WHERE THE LIFTED INSPECTOR BEGINS (#303). The
-     switch's drawn figure ("14 of 19 drawn") sits at the legend's far end, as
-     the board draws it; the board's Inspector is a column, so nothing covers
-     it there. Here the panel lies over the canvas, so a legend running the
-     canvas's full width put that figure under it. The clearance is the
-     panel's own inline-size, the rule above. */
-  .ig-workspace[data-inspector='lifted'] .ig-zone[data-zone='canvas'] .ig-legend {
-    margin-inline-end: calc(var(--ig-char-width) * 42);
+  /* THE CANVAS ZONE'S CONTENT ENDS WHERE THE LIFTED INSPECTOR BEGINS (#303).
+     The board's Inspector is a column, so nothing covers the canvas's far
+     edge there; here the panel lies over the canvas, and everything set at
+     that edge went under it: the head's count ("Selected: #3104 · 74 related"),
+     the switch's "14 of 19 drawn", the Related list's counts. Padding the zone,
+     not each part, keeps every part clear at once; the panel itself is a
+     sibling in the same grid area, so the padding does not move it. The
+     clearance is the panel's own inline-size, the rule above. */
+  .ig-workspace[data-inspector='lifted'] .ig-zone[data-zone='canvas'] {
+    padding-inline-end: calc(var(--ig-char-width) * 42);
   }
 
   /* OPENED BY SELECTION, DISMISSED ON ESCAPE — 17k's own words, and both
@@ -1951,9 +1980,9 @@ ${heldRailDeclarations}
     box-shadow: none;
   }
 
-  /* THE INSPECTOR IS A COLUMN AGAIN, so the legend has nothing to clear. */
-  .ig-workspace[data-inspector='lifted'] .ig-zone[data-zone='canvas'] .ig-legend {
-    margin-inline-end: 0;
+  /* THE INSPECTOR IS A COLUMN AGAIN, so the canvas has nothing to clear. */
+  .ig-workspace[data-inspector='lifted'] .ig-zone[data-zone='canvas'] {
+    padding-inline-end: 0;
   }
 
   /* THE DISMISSAL MEANS NOTHING HERE, and saying so is the undo of the middle

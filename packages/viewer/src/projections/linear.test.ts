@@ -15,7 +15,7 @@ import {
   heldTogetherDocument,
   twoUnitDocument,
 } from '../testing/fixtures.ts';
-import { linearScene } from './linear.ts';
+import { linearScene, listedRowsScene } from './linear.ts';
 
 /**
  * How many relationships an order row names before it counts the rest: one
@@ -759,5 +759,47 @@ describe('a selected set in the list', () => {
     // Two members of one unit around a member of another: the last added is 11.
     const shared = linearScene(normalizeDocument(twoUnitDocument).document, { selected: ['12', '22', '11'] });
     assert.match(renderMarkup(shared.root), /<li class="ig-slot" data-ig-key="11"[^>]*tabindex="0"/);
+  });
+});
+
+describe('the order rows a list draws in place of the graph (#303)', () => {
+  const document = normalizeDocument(fixtureDocument).document;
+  // 102 ranked, 101 held inline, 104 a unit member, 105 a tracker hold, 106 an
+  // excluded duplicate, 110 placed nowhere: one of each place an issue can sit.
+  const keys = ['102', '101', '104', '105', '106', '110'];
+  const scene = listedRowsScene(document, [...keys, '102'], { label: 'neighbours', focused: '101' });
+  const markup = renderMarkup(scene.root);
+
+  it('draws each issue with the rail’s own row, and names no relationship on it', () => {
+    // RULES, Graphs, Dense neighbourhoods: "order rows (rank, readiness, title, number and tag)".
+    for (const key of ['102', '101', '104']) assert.match(row(markup, key), /^<li class="ig-slot"/, key);
+    assert.match(row(markup, '105'), /^<li class="ig-footer-row"/);
+    assert.match(row(markup, '106'), /data-hold="duplicate"/);
+    assert.match(row(markup, '110'), /^<li class="ig-footer-row"/);
+    assert.deepEqual(edgeBadgesIn(markup), [], 'a row named a relationship the list head already names');
+    assert.equal(markup.includes('data-omitted'), false, 'a row counted relationships it does not name');
+    // The rail's own held line stays: why it is held is the row's one fact.
+    assert.match(row(markup, '101'), /blocked by 102, which is open/);
+  });
+
+  it('draws a unit member alone, at its unit’s rank, under its own title', () => {
+    const member = row(markup, '104');
+    assert.match(member, /data-unit="false"/);
+    assert.match(member, /<span class="ig-rank" data-held="false">2<\/span>/);
+    assert.match(member, /Split the invoice reader/);
+    assert.equal(member.includes('Split the invoice writer'), false, 'the partner the relationship does not reach was named');
+  });
+
+  it('is one column the reader moves through once per issue, with one tab stop, at the rail’s density', () => {
+    assert.deepEqual(scene.focusOrder, keys);
+    assert.deepEqual(scene.navigable, keys);
+    assert.equal(scene.projection, 'linear');
+    assert.equal(markup.match(/tabindex="0"/g)?.length, 1);
+    assert.match(row(markup, '101'), /tabindex="0"/);
+    assert.match(markup, /^<div class="ig-viewer ig-linear" data-frame="none" data-density="dense" data-ig-detached="rows"><ol class="ig-list" aria-label="neighbours">/);
+  });
+
+  it('leaves the order’s own rows naming their relationships', () => {
+    assert.ok(edgeBadgesIn(render()).length > 0);
   });
 });

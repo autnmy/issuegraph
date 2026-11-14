@@ -276,6 +276,10 @@ describe('the public surface', () => {
       'labelFrom',
       // The legend's phrase from either end, which heads the Inspector's groups (#303).
       'legendLabelFrom',
+      // The order's rows for a list that stands in for the graph: the editor's
+      // Related groups list draws a selection's neighbours with the rail's own
+      // row rather than a second spelling of one (#303).
+      'listedRowsScene',
       'mountViewer',
       'navigate',
       'nextSelection',

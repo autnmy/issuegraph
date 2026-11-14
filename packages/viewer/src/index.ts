@@ -147,6 +147,13 @@ export {
 // is drawn, which is exactly the question the window has to get right.
 export { isFooterSlot } from './projections/linear.ts';
 
+// THE ORDER'S ROWS, FOR A LIST THAT STANDS IN FOR THE GRAPH (#303). The
+// editor's Related groups list draws a selection's neighbours as order rows
+// under each kind's head; a row it spelled itself would be a second order row
+// free to disagree with the rail's about rank, readiness or tag.
+export type { ListedRowsOptions } from './projections/linear.ts';
+export { listedRowsScene } from './projections/linear.ts';
+
 /**
  * The mark vocabulary, and it is deliberately the ONLY thing `marks.ts` puts on
  * the surface.

@@ -176,10 +176,20 @@ const WITH_AN_EXCLUSION = {
 const RAIL_WORDS = { isolated: 'carrying no edges', show: 'reveal', hide: 'fold away' };
 
 /**
- * One issue holding 61 relationships of one kind: a group folded past its
+ * One issue holding 13 relationships of one kind: a group folded past its
  * first five, and a selection dense enough for the legend's switch.
  */
-const RELATED_HUB = backlogOf(62, {
+const RELATED_HUB = backlogOf(14, {
+  edges: keysOf(14)
+    .slice(1)
+    .map((key) => ['blocked-by', 'i0001', key] as const),
+});
+
+/**
+ * One issue holding 61: past the graph's budget, where the Related groups
+ * list stands in for the graph with its one line over it (#303).
+ */
+const PAST_BUDGET = backlogOf(62, {
   edges: keysOf(62)
     .slice(1)
     .map((key) => ['blocked-by', 'i0001', key] as const),
@@ -517,6 +527,7 @@ const RENDERS = [
     canvas: 'neighbourhood',
     selection: { kind: 'issue', key: 'i0001' },
   }),
+  renderWorkspace(PAST_BUDGET, { words: WORKSPACE_WORDS, selection: { kind: 'issue', key: 'i0001' } }),
   renderWorkspace(RELATED_HUB, {
     words: WORKSPACE_WORDS,
     narrowView: 'canvas',
@@ -591,11 +602,25 @@ const COMPOSED: ReadonlySet<string> = new Set([
   // The ladder's own root, which that sheet does not style: it is a grid area
   // this surface places, so its share is THIS sheet's to declare.
   'ig-ladder',
-  // AND WHAT THE LADDER DRAWS WHEN IT REFUSES. A hub past the Related groups
-  // list's flat limit holds more issues than the canvas draws, so the render
-  // that reaches the grouped list also reaches the ladder's refusal, whose
-  // classes are the ladder's to style.
-  ...classesIn(renderScaleLadder(RELATED_HUB).markup),
+  // AND WHAT THE LADDER DRAWS WHEN IT REFUSES, with nothing selected over a
+  // hub past the graph's budget, whose classes are the ladder's to style.
+  ...classesIn(renderScaleLadder(PAST_BUDGET).markup),
+  // AND THE LEGEND AS A SWITCH, which is layer 1's: `RELATED_HUB` selected is
+  // dense enough to draw it, and the viewer's sheet styles its parts.
+  ...classesIn(
+    renderViewer(DOCUMENT, {
+      projection: 'graph',
+      legendSwitch: {
+        label: 'kinds to draw',
+        drawn: '1 of 2',
+        command: 'legend-kind',
+        kinds: [
+          { field: 'blocked-by', count: 1, on: true, switchable: true },
+          { field: 'decomposed-from', count: 1, on: false, switchable: false },
+        ],
+      },
+    }).markup,
+  ),
   // EVERY CLASS `auditStylesheet` STYLES, DERIVED FROM THAT SHEET rather than
   // listed here — the idiom `reevaluateStylesheet` below already uses, and for
   // the reason this file's other direction exists: a hand list goes on passing
@@ -1618,6 +1643,33 @@ describe('the layout under 640', () => {
     }
   });
 
+  it('#303 past 60 the list stands in for the graph at every width, under its one line, and under 640 the line goes', () => {
+    // RULES, Graphs, Dense neighbourhoods: "Related groups lists them as it does under 640, under
+    // one line in small text-muted ... Under 640 it is the list as always, with no line."
+    const options = { words: WORKSPACE_WORDS, selection: { kind: 'issue', key: 'i0001' } } as const;
+    const cases = [
+      { width: 1500, options },
+      { width: 1200, options: { ...options, canvasOpen: true } },
+      { width: 900, options: { ...options, canvasOpen: true } },
+      { width: 600, options: { ...options, narrowView: 'canvas', canvas: 'neighbourhood' } },
+    ] as const;
+    for (const { width, options: each } of cases) {
+      const rules = rulesAt(sheet, width);
+      const page = pageOf(renderWorkspace(PAST_BUDGET, each).markup);
+      const canvas = zone(page, 'canvas');
+      const list = canvas.querySelector(':scope > .ig-related[data-over="true"]') ?? assert.fail('no list in the graph’s place');
+      const line = canvas.querySelector(':scope > .ig-related-over') ?? assert.fail('no line over the list');
+      assert.equal(hidden(list, rules), false, `at ${String(width)} the list is hidden`);
+      assert.equal(hidden(line, rules), width < 640, `at ${String(width)} the line`);
+      assert.equal(canvas.querySelector('[data-projection="graph"]'), null, `at ${String(width)} a graph was drawn`);
+    }
+    // The board's .ig-over: small muted text with a hairline under it.
+    const over = withoutComments(workspaceStylesheet).match(/(?:^|\n)\.ig-related-over\s*\{([^}]*)\}/)?.[1] ?? assert.fail('no rule for the line');
+    assert.match(over, /color:\s*var\(--ig-text-muted\);/);
+    assert.match(over, /font-size:\s*var\(--ig-font-size-small\);/);
+    assert.match(over, /border-bottom:\s*var\(--ig-stroke\) solid var\(--ig-line\);/);
+  });
+
   it('R1 under 640px the Sub-issues tab draws the tree and the toolbar the mount puts in the canvas zone', () => {
     const backlog = backlogOf(6);
     const rules = rulesAt(sheet, 600);
@@ -2214,7 +2266,7 @@ describe('one recovery card per failed write: the log stands down where the Insp
   });
 });
 
-describe('the canvas legend clears the lifted Inspector (#303)', () => {
+describe('the canvas zone clears the lifted Inspector (#303)', () => {
   const css = workspaceStylesheet.replace(/\/\*[\s\S]*?\*\//g, '');
   const blockOf = (condition: string): string => {
     const at = css.indexOf(`@container ig-workspace (${condition})`);
@@ -2222,14 +2274,14 @@ describe('the canvas legend clears the lifted Inspector (#303)', () => {
     const next = css.indexOf('@container ig-workspace', at + 1);
     return css.slice(at, next < 0 ? undefined : next);
   };
-  const legend = ".ig-workspace[data-inspector='lifted'] .ig-zone[data-zone='canvas'] .ig-legend";
+  const zone = ".ig-workspace[data-inspector='lifted'] .ig-zone[data-zone='canvas']";
   const escaped = (text: string): string => text.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&');
   const margin = (value: string): RegExp =>
-    new RegExp(`${escaped(legend)} \\{\\s*margin-inline-end: ${escaped(value)};`);
+    new RegExp(`${escaped(zone)} \\{\\s*padding-inline-end: ${escaped(value)};`);
 
-  it('stops the legend where the overlay starts, at the overlay’s own width', () => {
+  it('stops the canvas content where the overlay starts, at the overlay’s own width', () => {
     // THE SAME WIDTH BOTH WAYS: the clearance is read off the panel's own rule, so
-    // the switch's drawn figure cannot slide under a panel that changed size.
+    // the head's count, the switch's figure and the list's counts cannot slide under a panel that changed size.
     const middle = blockOf('width < 1360px');
     const panel = middle.match(/\.ig-workspace \.ig-zone\[data-zone='inspector'\] \{[^}]*inline-size: ([^;]+);/)?.[1];
     assert.ok(panel !== undefined, 'the lifted panel has no inline-size');

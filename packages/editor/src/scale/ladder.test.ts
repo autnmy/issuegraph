@@ -12,6 +12,7 @@ import {
 import { componentKey, componentsSumming, documentOf, isolatedKey } from '../testing/documents.ts';
 import { INITIAL_SCALE_STATE } from './commands.ts';
 import { scaleLadder } from './ladder.ts';
+import { renderScaleLadder } from './render.ts';
 
 const relatedDocument = (total: number, cap = 20) =>
   documentOf({ components: componentsSumming(total, cap) });
@@ -381,13 +382,11 @@ describe('with nothing selected, the groups; with a selection, what surrounds it
     // c0-1 -> c0-2 -> c0-3 -> c0-4: the selection c0-2 draws its two lines and
     // its two neighbours, and the line between c0-3 and c0-4 waits.
     const document = documentOf({ components: [4, 2] });
-    const around = {
-      centre: [componentKey(0, 2)],
-      edges: [
-        { field: 'blocked-by' as const, from: componentKey(0, 1), to: componentKey(0, 2) },
-        { field: 'blocked-by' as const, from: componentKey(0, 2), to: componentKey(0, 3) },
-      ],
-    };
+    const edges = [
+      { field: 'blocked-by' as const, from: componentKey(0, 1), to: componentKey(0, 2) },
+      { field: 'blocked-by' as const, from: componentKey(0, 2), to: componentKey(0, 3) },
+    ];
+    const around = { centre: [componentKey(0, 2)], edges, reach: edges };
     const ladder = scaleLadder(document, INITIAL_SCALE_STATE, around);
     assert.equal(ladder.tier, 'direct');
     assert.equal(ladder.nodeCount, 3);
@@ -408,19 +407,34 @@ describe('with nothing selected, the groups; with a selection, what surrounds it
         excluded: [],
       },
     };
-    const around = { centre: [componentKey(0, 3)], edges: [] };
+    const around = { centre: [componentKey(0, 3)], edges: [], reach: [] };
     const ladder = scaleLadder(unit, { ...INITIAL_SCALE_STATE, focus: componentKey(0, 1) }, around);
     assert.equal(ladder.focus, null, 'a focus was reported over a selection');
     assert.deepEqual(new Set(ladder.canvas.issues.map((issue) => issue.key)), new Set([componentKey(0, 3), componentKey(0, 4)]));
   });
 
-  it('refuses a neighbourhood past the budget with no search, since a match would move nothing drawn', () => {
+  it('lists a neighbourhood past the budget in place of drawing it: no refusal, no search, no capsules', () => {
+    // RULES, Graphs, Dense neighbourhoods: "Past 60 issues around the selection, the
+    // graph doesn't draw them: Related groups lists them".
     const document = documentOf({ components: [GRAPH_NODE_BUDGET + 2] });
-    const edges = document.edges.slice(0, GRAPH_NODE_BUDGET + 1);
-    const ladder = scaleLadder(document, INITIAL_SCALE_STATE, { centre: [componentKey(0, 1)], edges });
-    assert.equal(ladder.tier, 'capsules');
+    const reach = document.edges.slice(0, GRAPH_NODE_BUDGET + 1);
+    const ladder = scaleLadder(document, INITIAL_SCALE_STATE, { centre: [componentKey(0, 1)], edges: reach, reach });
+    assert.equal(ladder.tier, 'listed');
+    assert.equal(ladder.refusal, null);
     assert.equal(ladder.search, null);
     assert.deepEqual(ladder.capsules, []);
-    assert.deepEqual(ladder.refusal?.routes.map((route) => route.kind), ['order-rail']);
+    assert.equal(renderScaleLadder(document, { around: { centre: [componentKey(0, 1)], edges: reach, reach } }).markup.includes('data-projection="graph"'), false, 'the graph was drawn past the budget');
+  });
+
+  it('reads the budget off the whole reach, so the kinds switched on never decide whether the graph draws', () => {
+    // A selection whose first kind alone fits, and whose every kind does not: still listed,
+    // so switching a kind on cannot turn the graph into the list.
+    const document = documentOf({ components: [GRAPH_NODE_BUDGET + 2] });
+    const reach = document.edges.slice(0, GRAPH_NODE_BUDGET + 1);
+    const listed = scaleLadder(document, INITIAL_SCALE_STATE, { centre: [componentKey(0, 1)], edges: reach.slice(0, 2), reach });
+    assert.equal(listed.tier, 'listed');
+    const drawn = scaleLadder(document, INITIAL_SCALE_STATE, { centre: [componentKey(0, 1)], edges: reach.slice(0, 2), reach: reach.slice(0, 2) });
+    assert.equal(drawn.tier, 'direct');
+    assert.equal(drawn.nodeCount, 3);
   });
 });

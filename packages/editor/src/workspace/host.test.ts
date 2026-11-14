@@ -1250,9 +1250,9 @@ describe('the narrow tabs and the Related groups list', () => {
     const back = drive([{ kind: 'control', name: 'legend-kind', value: 'serialize-with' }], both).state;
     assert.deepEqual(back.switchedKinds, ['blocked-by'], 'a second press did not flip the kind back');
 
-    // The value comes from a `data-ig-value` attribute in the page, so only a kind this canvas
-    // draws may flip: decomposed-from lives in Sub-issues and is no switch here.
-    for (const value of ['decomposed-from', 'nonsense', 'Blocked-By', '', '__proto__', 'toString', undefined]) {
+    // The value comes from a `data-ig-value` attribute in the page, so only a kind the switch
+    // turns may flip: decomposed-from lives in Sub-issues, and together-with always draws.
+    for (const value of ['decomposed-from', 'together-with', 'nonsense', 'Blocked-By', '', '__proto__', 'toString', undefined]) {
       const command: HostCommand =
         value === undefined
           ? { kind: 'control', name: 'legend-kind' }

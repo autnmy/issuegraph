@@ -61,6 +61,13 @@ export type ScaleTier =
    * Not a refusal, so no sentence and no search: picking is the whole move.
    */
   | 'groups'
+  /**
+   * Past the node budget around a selection: the graph is not drawn, and the
+   * workspace lists the neighbours by relationship in its place (RULES,
+   * Graphs, Dense neighbourhoods: "Past 60 issues around the selection, the
+   * graph doesn't draw them"). Not a refusal: the list is the answer.
+   */
+  | 'listed'
   /** Past the node budget: component capsules instead of a hairball. */
   | 'capsules'
   /** Past the cluster-only budget: capsules are truncated and search leads. */
@@ -241,6 +248,13 @@ export interface ScaleAround {
   readonly centre: readonly string[];
   /** The relationships drawn out from the centre. Each one's far end is drawn too. */
   readonly edges: readonly ViewerEdge[];
+  /**
+   * Every relationship the canvas could draw out from the centre, whatever is
+   * switched off: what decides whether the neighbourhood is drawn at all. A
+   * superset of {@link edges}, so a kind switched on can never carry the
+   * neighbourhood past the budget and take the switch away with the graph.
+   */
+  readonly reach: readonly ViewerEdge[];
 }
 
 /** What a tier draws: the graph, the group cards, a refusal, and its search. */
@@ -252,6 +266,7 @@ interface TierTraits {
 const TIER_TRAITS: Readonly<Record<ScaleTier, TierTraits>> = Object.freeze({
   direct: { refuses: false, lists: false },
   groups: { refuses: false, lists: true },
+  listed: { refuses: false, lists: false },
   capsules: { refuses: true, lists: true },
   clusters: { refuses: true, lists: true },
 });
@@ -264,12 +279,37 @@ const TIER_TRAITS: Readonly<Record<ScaleTier, TierTraits>> = Object.freeze({
 const UNSELECTED_TIER: Readonly<Record<ScaleTier, ScaleTier>> = Object.freeze({
   direct: 'groups',
   groups: 'groups',
+  listed: 'listed',
   capsules: 'capsules',
   clusters: 'clusters',
 });
 
 /** What the canvas keeps: everything related, one picked group, or a selection's neighbourhood. */
 type ScaleMode = 'everything' | 'focused' | 'around';
+
+/**
+ * The tier around a selection: drawn within the budget, listed past it (RULES,
+ * Graphs, Dense neighbourhoods: "Past 60 issues around the selection, the
+ * graph doesn't draw them: Related groups lists them"). Never a refusal.
+ */
+const AROUND_TIER: Readonly<Record<ScaleTier, ScaleTier>> = Object.freeze({
+  direct: 'direct',
+  groups: 'listed',
+  listed: 'listed',
+  capsules: 'listed',
+  clusters: 'listed',
+});
+
+/**
+ * The tier each way of keeping takes, from the tier the budget gives. A
+ * DOCUMENT WITH NOTHING RELATED HAS NO GROUPS, so with nothing kept the canvas
+ * draws its own empty state rather than an empty board.
+ */
+const MODE_TIER: Readonly<Record<ScaleMode, (budget: ScaleTier, kept: number) => ScaleTier>> = Object.freeze({
+  everything: (budget, kept) => (kept > 0 ? UNSELECTED_TIER[budget] : budget),
+  focused: (budget) => budget,
+  around: (budget) => AROUND_TIER[budget],
+});
 
 interface TierStep {
   readonly tier: ScaleTier;
@@ -462,13 +502,13 @@ function omittedFrom(listable: readonly Cluster[], shown: readonly ScaleCapsule[
   return { count, range: largest === 0 ? null : { smallest, largest } };
 }
 
-/** Why the canvas declined, in the reader's terms. One sentence, four cases. */
+/**
+ * Why the canvas declined, in the reader's terms. One sentence, three cases:
+ * around a selection it never declines, since the list stands in for it.
+ */
 function reasonFor(tier: ScaleTier, nodeCount: number, mode: ScaleMode): string {
   if (mode === 'focused') {
     return `This group has ${String(nodeCount)} issues, too many to draw here. The limit is ${String(GRAPH_NODE_BUDGET)}.`;
-  }
-  if (mode === 'around') {
-    return `${String(nodeCount)} issues surround this selection, too many to draw here. The limit is ${String(GRAPH_NODE_BUDGET)}.`;
   }
   if (tier === 'clusters') {
     return `${String(nodeCount)} related issues are far too many to draw, so they are listed as groups. Search to find one.`;
@@ -497,15 +537,10 @@ function refusalFor(
   if (mode === 'focused') {
     routes.push({ kind: 'clear-focus', label: 'Go back to all groups.' });
   }
-  // NO SEARCH AROUND A SELECTION. A search focuses a group, and while an issue
-  // is selected the canvas draws what surrounds it, so a match would move
-  // nothing the reader can see.
-  if (mode !== 'around') {
-    routes.push({
-      kind: 'search',
-      label: 'Search for an issue to draw its group.',
-    });
-  }
+  routes.push({
+    kind: 'search',
+    label: 'Search for an issue to draw its group.',
+  });
   routes.push({
     kind: 'order-rail',
     label: 'The list always shows the full order.',
@@ -634,10 +669,12 @@ export function scaleLadder(
   const drawn = new Set(around?.edges.map(edgeKey) ?? []);
   const canvas = narrow(document, keep, (edge) => around === null || drawn.has(edgeKey(edge)));
   const nodeCount = keep.size;
-  const budgetTier = tierFor(nodeCount).tier;
-  // A DOCUMENT WITH NOTHING RELATED HAS NO GROUPS, so the canvas keeps drawing
-  // its own empty state rather than an empty board.
-  const tier = mode === 'everything' && nodeCount > 0 ? UNSELECTED_TIER[budgetTier] : budgetTier;
+  // AROUND A SELECTION THE BUDGET IS READ OFF ITS WHOLE REACH, never off the
+  // kinds switched on, so switching a kind on cannot turn the graph into the
+  // list and take the switch away with it. Elsewhere the reach is what is kept.
+  const reach = around === null ? keep : aroundKeys(document, { ...around, edges: around.reach });
+  const budgetTier = tierFor(reach.size).tier;
+  const tier = MODE_TIER[mode](budgetTier, nodeCount);
   const traits = TIER_TRAITS[tier];
 
   // CAPSULES ONLY FOR EVERY COMPONENT AT ONCE. Inside one, the reader is already
@@ -682,7 +719,9 @@ export function scaleLadder(
     // limit, and reporting only the slice would under-count it.
     capsulesOmitted: traits.lists ? omittedFrom(listable, capsules) : null,
     isolated,
-    search: traits.refuses && mode !== 'around' ? searchFor(state.query, document, leadOf) : null,
+    // AROUND A SELECTION NOTHING REFUSES, so no search: a match would focus a
+    // group, and the canvas draws what surrounds the selection, not a group.
+    search: traits.refuses ? searchFor(state.query, document, leadOf) : null,
     canvas,
     diagnostics,
   };

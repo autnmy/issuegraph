@@ -58,6 +58,7 @@ import {
   type Freshness,
   type HostFacts,
   type LegendSwitch,
+  type NormalizedDocument,
   type NormalizedHostFacts,
   type SpecChild,
   type Theme,
@@ -72,6 +73,7 @@ import {
   issueNumber,
   labelFrom,
   legendLabelFrom,
+  listedRowsScene,
   normalizeDocument,
   renderMarkup,
   provenanceClause,
@@ -118,7 +120,7 @@ import {
   renderAuditHeader,
 } from '../audit/surface.ts';
 import { type ScaleState, INITIAL_SCALE_STATE } from '../scale/commands.ts';
-import type { IsolatedChip, ScaleAround, ScaleLadder } from '../scale/ladder.ts';
+import type { IsolatedChip, ScaleAround, ScaleLadder, ScaleTier } from '../scale/ladder.ts';
 import { renderScaleLadder } from '../scale/render.ts';
 import { scaleLadderStylesheet } from '../scale/styles.ts';
 
@@ -135,7 +137,7 @@ import {
 import { CANVAS_MODES, type CanvasMode, type NarrowTab, type NarrowView, NARROW_TABS, canvasTabOf, narrowTabOf } from './narrow.ts';
 import { canvasNeighbourhood } from './neighbourhood.ts';
 import { type RailWindow, type RailWindowOptions, railWindow } from './rail.ts';
-import { type RelatedListView, relatedListView } from './related.ts';
+import { type RelatedGroup, type RelatedListView, relatedListView, shownNeighbours } from './related.ts';
 import { type ConflictDiff, diffIsEmpty, diffWithin } from './recovery.ts';
 import {
   type WorkspaceSelection,
@@ -283,6 +285,15 @@ export interface WorkspaceWords {
    * for the reason `showMore` is one: both counts sit inside the sentence.
    */
   readonly relationshipsDrawn: (drawn: number, total: number) => string;
+  /**
+   * The one line over the Related groups list where it stands in for the
+   * graph, past the graph's budget around the selection: *"74 issues relate to
+   * #3104, more than the graph draws at once, so they're listed by
+   * relationship."* The count is the issues the list reaches, and `issue` the
+   * selected issue as the board writes it ("#3104"). The limit is never in
+   * these words: it is the package's, and it may move.
+   */
+  readonly listedByRelationship: (count: number, issue: string) => string;
   /**
    * §17a's `WHY RANK n` heading, without the number.
    *
@@ -575,6 +586,11 @@ export interface CanvasWords {
   readonly of: string;
   /** Trails the counts — the frame's `6 of 312 SHOWN`. */
   readonly shown: string;
+  /**
+   * Trails the count where the Related groups list stands in for the graph:
+   * the board's `Selected: #3104 · 74 RELATED`, the issues the list reaches.
+   */
+  readonly related: string;
   /**
    * The trailing pill — the frame's `edit mode`.
    *
@@ -1343,6 +1359,7 @@ function canvasToolbar(
   words: CanvasWords | undefined,
   canvasSwitch: ElementSpec,
   selectedIssue: string | null,
+  related: number,
 ): ElementSpec {
   // THE CLAUSE NAMES WHAT THE CANVAS IS DRAWN AROUND: a selected issue (the
   // board's `Selected: #2290`), or else the picked group. The ladder resolves
@@ -1354,8 +1371,12 @@ function canvasToolbar(
       : selectedIssue === null
         ? { word: words.focus, key: ladder.focus }
         : { word: words.selected, key: selectedIssue };
+  // WHAT THE COUNT SAYS IS THE TIER'S: drawn, "13 of 41 shown"; listed past the
+  // graph's budget, "74 related", the issues the list reaches (the board's
+  // "Selected: #3104 · 74 related"). No other tier draws a caption.
+  const counts = words === undefined ? null : captionCounts(ladder, document, words, related);
   const statement =
-    words === undefined || ladder.tier !== 'direct'
+    words === undefined || counts === null
       ? null
       : element('p', { class: 'ig-canvas-caption' }, [
           // NO CLAUSE AT ALL WHEN NOTHING IS FOCUSED, rather than the label with
@@ -1386,15 +1407,7 @@ function canvasToolbar(
                 element('span', { class: 'ig-id' }, [issueNumber(lead.key)]),
                 ' · ',
               ]),
-          element('span', { class: 'ig-canvas-shown' }, [
-            element('span', { class: 'ig-canvas-count' }, [String(ladder.nodeCount)]),
-            ' ',
-            element('span', {}, [words.of]),
-            ' ',
-            element('span', { class: 'ig-canvas-count' }, [String(document.issues.length)]),
-            ' ',
-            element('span', {}, [words.shown]),
-          ]),
+          counts,
         ]);
   // A STATE, NOT A CONTROL, AND NOT A ROLE. It carries text, so it is announced
   // in reading order on its own; `role="img"` with an `aria-label` — the shape
@@ -1408,6 +1421,23 @@ function canvasToolbar(
   // THE SWITCH LEADS, so the row is never empty at 640 and wider. Under 640 the
   // sheet hides the switch, and a row left with nothing else in it with it.
   return element('div', { class: 'ig-canvas-toolbar' }, [canvasSwitch, statement, pill]);
+}
+
+/** The caption's counts on the tiers that draw one, and `null` on every other. */
+function captionCounts(
+  ladder: ScaleLadder,
+  document: ViewerDocument,
+  words: CanvasWords,
+  related: number,
+): ElementSpec | null {
+  const count = (value: number): ElementSpec => element('span', { class: 'ig-canvas-count' }, [String(value)]);
+  const shown = (parts: readonly SpecChild[]): ElementSpec => element('span', { class: 'ig-canvas-shown' }, parts);
+  const byTier: Readonly<Partial<Record<ScaleTier, () => ElementSpec>>> = {
+    direct: () =>
+      shown([count(ladder.nodeCount), ' ', element('span', {}, [words.of]), ' ', count(document.issues.length), ' ', element('span', {}, [words.shown])]),
+    listed: () => shown([count(related), ' ', element('span', {}, [words.related])]),
+  };
+  return byTier[ladder.tier]?.() ?? null;
 }
 
 /**
@@ -1946,39 +1976,38 @@ function relationshipSpec(
 }
 
 /**
- * One Related groups row: the Inspector's own head in the Inspector's own row
- * box, so a relationship reads the same words, direction and hue here. Only
- * the head: removing, retyping and flipping stay the Inspector's.
- */
-function relatedRowSpec(row: InspectorRelationship, subject: string | null): ElementSpec {
-  return element('li', { class: 'ig-relationship', 'data-edge': row.field }, [relationshipHead(row, subject)]);
-}
-
-/**
- * The Related groups list, drawn in the canvas zone under `640`: the
- * selection's relationships grouped as the Inspector groups them, each kind
- * with its count and five rows before "Show 4 more" (RULES, Graphs, Dense
- * neighbourhoods: "Under 640 the list does the same").
+ * The Related groups list, drawn in the canvas zone under `640` and in the
+ * canvas's place past the graph's budget (RULES, Graphs, Dense neighbourhoods):
+ * the selection's neighbours as order rows under each kind's head, at every
+ * count, five each before "Show N more".
  *
- * THE INSPECTOR'S OWN GROUP, AND ITS OWN OPENED STATE. `shownGroups` is one
+ * THE INSPECTOR'S OWN GROUPS, AND THEIR OWN OPENED STATE. `shownGroups` is one
  * list for both, because both are one selection's groups, so a group opened in
  * one is open in the other when the width changes.
+ *
+ * `data-over` MARKS THE LIST THAT STANDS IN FOR THE GRAPH, which the sheet
+ * draws at every width; otherwise it is drawn under `640` alone.
  */
 function relatedListSpec(
   view: RelatedListView,
-  subject: string | null,
+  document: NormalizedDocument,
   shownGroups: readonly string[],
   words: WorkspaceWords,
+  over: boolean,
 ): ElementSpec {
-  return element('div', { class: 'ig-related' }, relatedListParts(view, subject, shownGroups, words));
+  return element(
+    'div',
+    { class: 'ig-related', 'data-over': over ? 'true' : undefined },
+    relatedListParts(view, document, shownGroups, words),
+  );
 }
 
 function relatedListParts(
   view: RelatedListView,
-  subject: string | null,
+  document: NormalizedDocument,
   shownGroups: readonly string[],
   words: WorkspaceWords,
-): readonly ElementSpec[] {
+): readonly (ElementSpec | null)[] {
   switch (view.kind) {
     case 'no-selection':
       return [element('p', { class: 'ig-related-empty' }, [words.narrow.noSelection])];
@@ -1987,22 +2016,51 @@ function relatedListParts(
     case 'listed':
       // NOTHING IS REFUSED HERE: a refusal is stated in the Inspector, beside
       // the controls that answer it, so the fold is the only rule.
-      // THE HEAD CARRIES THE TOTAL (the board's 390 list opens "Around #2290 17"),
+      // THE HEAD CARRIES THE TOTAL (the board's list opens "Around #2290 17"),
       // as the Inspector's heading does at wider widths. Drawn in a group head's
-      // shape, words left and count right; with no issue to centre on (a
-      // selected relationship) there is nothing for it to name.
+      // shape, words left and count right; a set has no one issue to name.
       return [
-        ...(subject === null
-          ? []
-          : [
-              element('div', { class: 'ig-relationship-group-head' }, [
-                element('span', {}, [`${words.narrow.around} `, element('span', { class: 'ig-id' }, [issueNumber(subject)])]),
-                element('span', { class: 'ig-relationship-count' }, [String(view.total)]),
-              ]),
+        view.around === null
+          ? null
+          : element('div', { class: 'ig-relationship-group-head' }, [
+              element('span', {}, [`${words.narrow.around} `, element('span', { class: 'ig-id' }, [issueNumber(view.around)])]),
+              element('span', { class: 'ig-relationship-count' }, [String(view.total)]),
             ]),
-        ...listingSpecs(view.listing, shownGroups, (row) => relatedRowSpec(row, subject), () => false, words),
+        // ONE TAB STOP FOR THE LIST, on its first row: the rows are the
+        // viewer's, each at `-1` but the one a list's scene names.
+        ...view.groups.map((group, index) => relatedGroupSpec(group, document, shownGroups, words, index === 0)),
       ];
   }
+}
+
+/**
+ * One kind's group in the Related groups list: its icon, words and count, its
+ * first five neighbours as the order draws them, then "Show N more".
+ *
+ * THE ROWS ARE THE RAIL'S (`listedRowsScene`), so a neighbour's rank,
+ * readiness, title, number, tag and held line read here as they do in the
+ * order. Only the relationship the row would name is left out: the head names
+ * it, which is why the list groups at every count.
+ */
+function relatedGroupSpec(
+  related: RelatedGroup,
+  document: NormalizedDocument,
+  shownGroups: readonly string[],
+  words: WorkspaceWords,
+  first: boolean,
+): ElementSpec {
+  const { group } = related;
+  const heading = groupHeading(group);
+  const rows = shownNeighbours(related, shownGroups);
+  const hidden = related.neighbours.length - rows.length;
+  return element('div', { class: 'ig-relationship-group', 'data-ig-group-key': group.key }, [
+    element('div', { class: 'ig-relationship-group-head' }, [
+      element('span', { class: 'ig-related-kind' }, glyphAndLabel(treatmentFor(group.field).glyph, heading)),
+      element('span', { class: 'ig-relationship-count' }, [String(related.neighbours.length)]),
+    ]),
+    listedRowsScene(document, rows, { label: heading, focused: first ? rows[0] : null }).root,
+    hidden === 0 ? null : showMoreSpec(group.key, hidden, words),
+  ]);
 }
 
 /**
@@ -3057,12 +3115,7 @@ function relationshipGroupSpec(
   refused: (relationship: InspectorRelationship) => boolean,
   words: WorkspaceWords,
 ): ElementSpec {
-  // THE LEGEND'S WORDS, read from the subject's end: "Is blocked by" and
-  // "Was decomposed from" as the key says them, and the reverse phrase
-  // ("Blocks", "Is a duplicate of this") for a kind the subject receives
-  // (RULES, Graphs, Dense neighbourhoods). One vocabulary, so never "Duplicated by".
-  const phrase = legendLabelFrom(treatmentFor(group.field), group.direction !== 'incoming');
-  const heading = `${phrase.charAt(0).toUpperCase()}${phrase.slice(1)}`;
+  const heading = groupHeading(group);
   const drawn = shown
     ? group.relationships
     : group.relationships.filter((relationship, index) => index < INSPECTOR_GROUP_SHOWN || refused(relationship));
@@ -3073,19 +3126,34 @@ function relationshipGroupSpec(
       element('span', { class: 'ig-relationship-count' }, [String(group.relationships.length)]),
     ]),
     element('ul', { class: 'ig-relationship-list' }, drawn.map(rowOf)),
-    hidden === 0
-      ? null
-      : element(
-          'button',
-          {
-            type: 'button',
-            class: 'ig-relationship-more',
-            'data-ig-command': 'show-group',
-            'data-ig-value': group.key,
-          },
-          [words.showMore(hidden)],
-        ),
+    hidden === 0 ? null : showMoreSpec(group.key, hidden, words),
   ]);
+}
+
+/**
+ * A group's head words: the legend's phrase read from the subject's end, "Is
+ * blocked by" and "Was decomposed from" as the key says them, and the reverse
+ * phrase ("Blocks", "Is a duplicate of this") for a kind the subject receives
+ * (RULES, Graphs, Dense neighbourhoods). One vocabulary, so never "Duplicated
+ * by", and one spelling for the Inspector and the Related groups list.
+ */
+function groupHeading(group: InspectorGroup): string {
+  const phrase = legendLabelFrom(treatmentFor(group.field), group.direction !== 'incoming');
+  return `${phrase.charAt(0).toUpperCase()}${phrase.slice(1)}`;
+}
+
+/** "Show 4 more" under a folded group: it opens the group for good, in both lists. */
+function showMoreSpec(key: string, hidden: number, words: WorkspaceWords): ElementSpec {
+  return element(
+    'button',
+    {
+      type: 'button',
+      class: 'ig-relationship-more',
+      'data-ig-command': 'show-group',
+      'data-ig-value': key,
+    },
+    [words.showMore(hidden)],
+  );
 }
 
 /**
@@ -3769,12 +3837,18 @@ export function renderWorkspace(
   });
 
   const inspector = inspectorView(document, selection);
+  const relatedView = relatedListView(document, selection);
+  // PAST THE GRAPH'S BUDGET AROUND THE SELECTION THE LIST STANDS IN FOR IT, at
+  // every width (RULES, Graphs, Dense neighbourhoods: "Related groups lists
+  // them as it does under 640").
+  const over = canvas.ladder.tier === 'listed';
   const toolbar = canvasToolbar(
     canvas.ladder,
     document,
     options.words.canvas,
     canvasSwitchSpec(options.canvas ?? 'neighbourhood', options.words.narrow),
     inspector.subject.kind === 'issue' ? inspector.subject.issue.key : null,
+    relatedView.kind === 'listed' ? relatedView.related : 0,
   );
 
   // §17k'S STRIP CONTROL — the way out of the collapsed canvas below `1120`.
@@ -3852,24 +3926,32 @@ export function renderWorkspace(
   // scope is a reading hazard worth one name, not one comment per use.
   const railFooterSpec = railFooter(canvas.ladder.isolated, options.words.rail, isolatedListId);
 
-  // The Related groups list, drawn only while its tab is the one selected: the
-  // other two tabs show nothing of it, and the wider layouts hide it.
+  // The Related groups list, drawn while its tab is the one selected, and past
+  // the graph's budget around the selection, where it stands in for the graph
+  // at every width. Otherwise the other two tabs show nothing of it, and the
+  // wider layouts hide it.
   //
   // WITH NOTHING SELECTED IT IS THE GROUPS, never every issue at once (RULES,
   // Graphs, Dense neighbourhoods), and the canvas has already drawn them: the
   // list is left out and the narrow sheet shows the ladder's cards in its place,
   // so one control per group stays one element.
-  const relatedView = relatedListView(document, selection);
   const relatedList =
-    tab !== 'related' || (relatedView.kind === 'no-selection' && canvas.ladder.capsules.length > 0)
+    (tab !== 'related' && !over) || (relatedView.kind === 'no-selection' && canvas.ladder.capsules.length > 0)
+      ? ''
+      : renderMarkup(relatedListSpec(relatedView, document, options.shownGroups ?? [], options.words, over));
+  // THE ONE LINE OVER THE LIST THAT SAYS WHY IT IS A LIST, where it stands in
+  // for the graph: "74 issues relate to #3104, more than the graph draws at
+  // once, so they're listed by relationship." The limit stays in code, never in
+  // the words. A sibling of the list rather than its child, so under 640, where
+  // the list is the view as always, the sheet hides it with the rest of the
+  // graph's zone. A set has no one issue for it to name.
+  const overLine =
+    !over || relatedView.kind !== 'listed' || relatedView.around === null
       ? ''
       : renderMarkup(
-          relatedListSpec(
-            relatedView,
-            inspector.subject.kind === 'issue' ? inspector.subject.issue.key : null,
-            options.shownGroups ?? [],
-            options.words,
-          ),
+          element('p', { class: 'ig-related-over' }, [
+            options.words.listedByRelationship(relatedView.related, issueNumber(relatedView.around)),
+          ]),
         );
 
   // §17c'S LOOP, OVER THE RAIL THE READER IS ACTUALLY LOOKING AT.
@@ -4055,6 +4137,7 @@ export function renderWorkspace(
       [strip, toolbar]
         .map((spec) => (spec === null ? '' : renderMarkup(spec)))
         .join('') +
+      overLine +
       relatedList +
       canvas.markup +
       auditPanel,

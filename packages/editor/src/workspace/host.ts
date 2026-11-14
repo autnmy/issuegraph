@@ -45,7 +45,7 @@ import {
   firstPassReducer,
 } from './firstpass.ts';
 import { type CanvasMode, type NarrowView, isNarrowTab, pressNarrowTab } from './narrow.ts';
-import { CANVAS_KINDS } from './neighbourhood.ts';
+import { SWITCHABLE_KINDS } from './neighbourhood.ts';
 import {
   INITIAL_SELECTION,
   type SelectionCommand,
@@ -161,7 +161,8 @@ export interface HostState {
   readonly shownGroups: readonly string[];
   /**
    * The kinds the reader switched on or off in the legend, away from where
-   * they start for this selection (blocked-by alone past 8 relationships). See
+   * they start for this selection (past 8 relationships, blocked-by alone, or
+   * the first kind the selection has in the legend's order). See
    * `drawnKinds`. Cleared when the selection moves, as `shownGroups` is: the
    * next issue's kinds start over.
    */
@@ -965,11 +966,11 @@ function controlled(
       return value === undefined || !isNarrowTab(value)
         ? unclaimed(state)
         : settled({ ...state, ...pressNarrowTab(value, state.canvas) });
-    // The legend's switch: each press flips one kind the canvas draws. A kind
-    // it never draws (decomposed-from) is no switch, so a press naming it is
-    // somebody else's.
+    // The legend's switch: each press flips one kind. A kind the canvas never
+    // draws (decomposed-from) or always draws (together-with, the unit's
+    // region) is no switch, so a press naming it is somebody else's.
     case 'legend-kind':
-      return value === undefined || !isEdgeField(value) || !CANVAS_KINDS.includes(value)
+      return value === undefined || !isEdgeField(value) || !SWITCHABLE_KINDS.includes(value)
         ? unclaimed(state)
         : settled({
             ...state,
