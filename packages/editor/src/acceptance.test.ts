@@ -89,14 +89,19 @@ describe('done when: isolated issues collapse to one count chip that opens a LIS
 });
 
 describe('done when: every refusal names its reason and offers a route forward', () => {
-  it('holds for every tier that refuses, and the routes reach the markup', () => {
+  it('holds for every tier that refuses, and the board itself is the route', () => {
+    // THE ROUTE FORWARD IS THE GROUP CARDS. The routes stay on the refusal as
+    // data, but the board draws no route lines (the redesign lead's ruling on
+    // #296): every group card is the control, and above the cluster budget the
+    // search box is.
     for (const document of [related(GRAPH_NODE_BUDGET + 1), related(CLUSTER_ONLY_BUDGET + 1, 5)]) {
       const result = renderScaleLadder(document);
       const refusal = result.ladder.refusal;
       assert.ok(refusal !== null);
       assert.match(refusal.reason, /too many to draw/);
       assert.ok(refusal.routes.length > 0);
-      for (const route of refusal.routes) assert.ok(result.markup.includes(route.label));
+      assert.match(result.markup, /class="ig-capsule-enter"|data-ig-command="search"/, 'nothing on the board is a way forward');
+      for (const route of refusal.routes) assert.equal(result.markup.includes(route.label), false, `the board draws the route line "${route.label}"`);
     }
   });
 });
