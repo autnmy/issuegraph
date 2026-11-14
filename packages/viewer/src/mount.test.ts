@@ -2194,6 +2194,43 @@ describe('the mount builds and reports a selection set', () => {
     assert.equal(handle.state.selected, '31');
   });
 
+  it('re-derives the stations of a set when an update moves a lead, keeping every member still there', () => {
+    const { handle, calls } = recorded({ selected: ['31', '12'] });
+    // 11 goes; 12 now leads its own slot.
+    const without11: ViewerDocument = {
+      ...twoUnitDocument,
+      issues: twoUnitDocument.issues.filter((issue) => issue.key !== '11'),
+      edges: twoUnitDocument.edges.filter((edge) => edge.from !== '11' && edge.to !== '11'),
+      order: {
+        ...twoUnitDocument.order,
+        slots: twoUnitDocument.order.slots.map((slot) => (slot.lead === '11' ? { ...slot, lead: '12', members: ['12'] } : slot)),
+      },
+    };
+    handle.update(without11);
+    assert.deepEqual(calls, []);
+    assert.deepEqual(handle.state.selected, ['31', '12']);
+  });
+
+  it('keeps focus in the viewer when Escape clears a set', () => {
+    const { container, handle, row } = recorded({ selected: ['31', '33'] });
+    container.dispatch('click', { target: row('33'), metaKey: true });
+    container.dispatch('click', { target: row('33'), metaKey: true });
+    const focused = handle.state.focused;
+    assert.ok(focused !== null);
+    container.dispatch('keydown', { key: 'Escape', target: row(focused) });
+    assert.equal(handle.state.selected, null);
+    // The row drawn after the clear, not the one the redraw destroyed.
+    assert.equal(row(focused).focusCount, 1, 'Escape dropped focus out of the viewer');
+  });
+
+  it('never keeps an edge identity or an unknown key in a set, from a host or a gesture', () => {
+    const identity = edgeIdentity('blocked-by', '12', '31');
+    const { container, handle, changes, row } = recorded({ selected: ['31', identity, 'nowhere', '33'] });
+    assert.deepEqual(handle.state.selected, ['31', '33']);
+    container.dispatch('click', { target: row('34'), metaKey: true });
+    assert.deepEqual(changes.at(-1), issues('31', '33', '34'));
+  });
+
   it('gives onSelect one call and onSelectionChange none for a repeated click or select()', () => {
     const { container, handle, calls, row } = recorded({ selected: '31' });
     container.dispatch('click', { target: row('31') });

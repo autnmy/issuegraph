@@ -306,7 +306,7 @@ export function mountViewer(
   const keepDrawn = (selected: StoredSelection): StoredSelection =>
     typeof selected === 'string' || selected === null
       ? selected !== null && stillDrawn(selected) ? selected : null
-      : storedSelectionOf({ kind: 'issues', keys: selected.filter(stillDrawn) });
+      : storedSelectionOf({ kind: 'issues', keys: selected.filter((key) => stillDrawn(key) && !isDocumentEdge(key)) });
   /**
    * The remembered selection, while it still names what `state.selected`
    * names; otherwise `state.selected` itself.
@@ -333,19 +333,20 @@ export function mountViewer(
       : selected;
   };
   /**
-   * A SET LOSES ONLY THE MEMBERS THAT WENT. When an update removes members of
-   * a set of two or more issues, the members still named are the selection,
-   * as given; their stations follow from them on this draw. Falling back to the
-   * stations instead would select a removed member's lead, an issue the reader
-   * never picked. A single selected member keeps today's rule and falls back to its
-   * lead, which `asGivenSelection` applies. `undefined` when there is no set
-   * or it lost nothing.
+   * A SET IS ITS MEMBERS AS GIVEN, ON EVERY DRAW. The members this document
+   * still carries are the selection, and their stations are derived from them
+   * afresh; nothing else is. Falling back to the stations the handle held
+   * selected a removed member's lead, an issue the reader never picked, and
+   * keeping old stations after an update moved a lead silently dropped a
+   * member that was still there. An edge identity is never a member. A single
+   * selection keeps today's rule — a removed member falls back to its lead —
+   * which `asGivenSelection` applies. `undefined` when the selection is not a
+   * set.
    */
   const survivingSet = (): StoredSelection | undefined => {
     const given = selectedAsGiven;
     if (given === null || typeof given === 'string') return undefined;
-    const kept = given.filter((key) => normalized.byKey.has(key));
-    return kept.length === given.length ? undefined : storedSelectionOf({ kind: 'issues', keys: kept });
+    return storedSelectionOf({ kind: 'issues', keys: given.filter((key) => normalized.byKey.has(key)) });
   };
   /** The selection as the reader made it, which `onSelectionChange` reports. */
   const selectionAsGiven = (): ViewerSelection => viewerSelectionOf(normalized, selectedAsGiven);
@@ -463,10 +464,12 @@ export function mountViewer(
     // The post-materialize check settles it a few lines down, against a scene
     // that exists; deferring costs one frame in which nothing renders an edge
     // selection anyway.
-    if (currentScene !== null) {
-      const surviving = survivingSet();
-      if (surviving !== undefined) selectedAsGiven = surviving;
-      state = { ...state, selected: keepDrawn(surviving === undefined ? state.selected : surviving) };
+    const surviving = survivingSet();
+    if (surviving !== undefined) {
+      selectedAsGiven = surviving;
+      state = { ...state, selected: surviving };
+    } else if (currentScene !== null) {
+      state = { ...state, selected: keepDrawn(state.selected) };
     }
     selectedAsGiven = asGivenSelection();
     if (root !== null) container.removeChild(root);
@@ -803,6 +806,10 @@ export function mountViewer(
     }
     if (result.command.kind === 'clear') {
       applyGesture({ kind: 'clear' }, null);
+      // THE REDRAW DESTROYED THE ROW HOLDING FOCUS, and a clear names no subject
+      // for `applyGesture` to refocus, so the tab stop the reader kept is
+      // focused again — this is the viewer's own key press, not a host update.
+      if (state.focused !== null) keyed.get(state.focused)?.focus?.();
       return;
     }
     // A COMMAND IS THE HOST'S TO COMPLETE, exactly like the header's own
