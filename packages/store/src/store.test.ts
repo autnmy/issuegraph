@@ -1456,51 +1456,6 @@ test('an unchanged answer about a document the store already has changes nothing
   assert.equal(after.lastChange, undefined);
 });
 
-import { describe } from "node:test";
-
-describe("more tests", function () {
-test('a saved summary outlasts a new edit, a retry and a period where nothing lands, until dismissChange clears it', async () => {
-  const source = createScriptedSource(threeOpenIssues(), applyEdit);
-  const store = createStore({ source, derive: simpleDeriver });
-  await store.hydrate();
-
-  const first = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
-  await source.whenPending(first.mutationId);
-  source.settleNext('applied');
-  await first.settled;
-  const saved = store.getSnapshot().lastChange;
-  assert.ok(saved !== undefined, 'the landing published no summary');
-  assert.equal(saved.counts.newlyHeld, 1);
-
-  // The issue: "A saved change says what it did to the order, in `text-muted`, until it is dismissed: "Saved: 2 moved · 1 newly held", or "Saved. The order did not change." Never on a timer."
-  const failing = store.propose({ op: 'create', kind: 'duplicate-of', from: '3', to: '1' });
-  assert.deepEqual(store.getSnapshot().lastChange, saved, 'starting an edit cleared the saved summary');
-  await source.whenPending(failing.mutationId);
-  source.settleNext({ outcome: 'rejected', reason: 'locked' });
-  await failing.settled;
-  assert.deepEqual(store.getSnapshot().lastChange, saved, 'a period in which nothing landed replaced the summary');
-
-  const retried = store.retry(failing.mutationId);
-  assert.deepEqual(store.getSnapshot().lastChange, saved, 'starting a retry cleared the saved summary');
-  await source.whenPending(failing.mutationId);
-  source.settleNext({ outcome: 'rejected', reason: 'still locked' });
-  await retried.settled;
-  assert.deepEqual(store.getSnapshot().lastChange, saved, 'a retry that failed replaced the summary');
-
-  const later = store.propose({ op: 'create', kind: 'blocked-by', from: '3', to: '2' });
-  await source.whenPending(later.mutationId);
-  source.settleNext('applied');
-  await later.settled;
-  assert.equal(
-    store.getSnapshot().lastChange?.mutation.mutationId,
-    later.mutationId,
-    'the next period that landed a write did not replace the summary',
-  );
-
-  store.dismissChange();
-  assert.equal(store.getSnapshot().lastChange, undefined, 'dismissChange left the summary standing');
-});
-
 test('the rows keep their identity through the first landing and are published once when the last write settles', async () => {
   const source = createScriptedSource(threeOpenIssues(), applyEdit);
   const store = createStore({ source, derive: simpleDeriver });
@@ -1530,36 +1485,13 @@ test('the rows keep their identity through the first landing and are published o
 
   const after = store.getSnapshot();
   assert.deepEqual(after.order.rows.map((row) => row.ref), ['2', '1', '3']);
+  assert.equal(after.order.status, 'settled');
   assert.equal(published.size, 2, 'one held period published more than one new rows array');
+  // Diffed against the rows held before either write, issues 1 and 3 both
+  // became held. A diff of the last landing alone would count only issue 3.
   assert.equal(after.lastChange?.counts.newlyHeld, 2, 'the summary does not count both landings');
+  assert.equal(after.lastChange?.counts.moved, 2);
   assert.equal(after.lastChange?.mutation.mutationId, second.mutationId, 'the summary does not name the newest landing');
-});
-
-test('a held period whose last write is rejected still states the earlier landing and keeps the failed write', async () => {
-  const source = createScriptedSource(threeOpenIssues(), applyEdit);
-  const store = createStore({ source, derive: simpleDeriver });
-  await store.hydrate();
-
-  const landed = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
-  const rejected = store.propose({ op: 'create', kind: 'duplicate-of', from: '3', to: '1' });
-  await source.whenPending(landed.mutationId);
-  source.settleNext('applied');
-  await landed.settled;
-  await source.whenPending(rejected.mutationId);
-  source.settleNext({ outcome: 'rejected', reason: 'locked' });
-  await rejected.settled;
-
-  const snapshot = store.getSnapshot();
-  assert.deepEqual(snapshot.order.rows.map((row) => row.ref), ['2', '3', '1']);
-  // The issue: "A saved change says what it did to the order, in `text-muted`, until it is dismissed: "Saved: 2 moved · 1 newly held", or "Saved. The order did not change." Never on a timer."
-  assert.equal(snapshot.lastChange?.counts.newlyHeld, 1, 'the write that landed is not reported because a later one failed');
-  assert.equal(snapshot.lastChange?.mutation.mutationId, landed.mutationId);
-  // The issue: "A write that was not saved stays in the log, whether or not its issue is selected, with Retry and "Discard my edit"."
-  assert.equal(
-    snapshot.writes.find((record) => record.mutationId === rejected.mutationId)?.state,
-    'failed',
-    'the rejected write left the ledger',
-  );
 });
 
 test('a held period whose landings cancel out publishes an empty summary that the order did not change', async () => {
@@ -1602,91 +1534,6 @@ test('a held period whose landings cancel out publishes an empty summary that th
   store.dismissChange();
   assert.equal(store.getSnapshot().lastChange, undefined);
 });
-});
-
-describe("more tests 2", function () {
-test('R7 createStore: the rows hold through the first landing and move once, counting both writes, when the last write settles', async () => {
-  const source = createScriptedSource(threeOpenIssues(), applyEdit);
-  const store = createStore({ source, derive: simpleDeriver });
-  await store.hydrate();
-  const held = store.getSnapshot().order.rows;
-  assert.deepEqual(refs(held), ['1', '2', '3']);
-
-  const first = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
-  const second = store.propose({ op: 'create', kind: 'blocked-by', from: '3', to: '2' });
-  await source.whenPending(first.mutationId);
-  source.settleNext('applied');
-  await first.settled;
-
-  // The issue: "A change to several issues (#249) lists each write in the log, and the order holds until all of them settle."
-  const between = store.getSnapshot();
-  assert.equal(between.order.rows, held, 'the first landing re-derived the rows while a write was still pending');
-  assert.equal(between.order.status, 'held');
-  assert.equal(between.lastChange, undefined, 'a summary was published before every write settled');
-
-  await source.whenPending(second.mutationId);
-  source.settleNext('applied');
-  await second.settled;
-
-  const after = store.getSnapshot();
-  assert.deepEqual(refs(after.order.rows), ['2', '1', '3']);
-  assert.equal(after.order.status, 'settled');
-  // Diffed against the rows held before either write, issues 1 and 3 both
-  // became held. A diff of the last landing alone would count only issue 3.
-  assert.equal(after.lastChange?.counts.newlyHeld, 2);
-  assert.equal(after.lastChange?.counts.moved, 2);
-  assert.equal(after.lastChange?.mutation.mutationId, second.mutationId);
-});
-
-test('R6 KTD7 createStore: a held period closed by a rejected write still states what the earlier landing did to the order', async () => {
-  const source = createScriptedSource(threeOpenIssues(), applyEdit);
-  const store = createStore({ source, derive: simpleDeriver });
-  await store.hydrate();
-
-  const first = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
-  const second = store.propose({ op: 'create', kind: 'blocked-by', from: '3', to: '2' });
-  await source.whenPending(first.mutationId);
-  source.settleNext('applied');
-  await first.settled;
-  await source.whenPending(second.mutationId);
-  source.settleNext({ outcome: 'rejected', reason: 'the issue body is locked' });
-  await second.settled;
-
-  // The issue: "A saved change says what it did to the order, in `text-muted`, until it is dismissed: "Saved: 2 moved · 1 newly held", or "Saved. The order did not change." Never on a timer."
-  // The first write was saved, so the period's summary must say what it did,
-  // even though the write that closed the period was not saved.
-  const snapshot = store.getSnapshot();
-  assert.deepEqual(refs(snapshot.order.rows), ['2', '3', '1']);
-  assert.equal(snapshot.order.status, 'settled');
-  assert.ok(snapshot.lastChange !== undefined, 'a saved write was reported as nothing');
-  assert.equal(snapshot.lastChange.counts.newlyHeld, 1);
-  assert.equal(snapshot.lastChange.counts.moved, 3);
-  assert.equal(snapshot.lastChange.mutation.mutationId, first.mutationId);
-});
-
-test('R6 KTD7 createStore: a held period closed by an unchanged answer still states what the earlier landing did to the order', async () => {
-  const source = createScriptedSource(threeOpenIssues(), applyEdit);
-  const store = createStore({ source, derive: simpleDeriver });
-  await store.hydrate();
-
-  const first = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
-  const second = store.propose({ op: 'create', kind: 'duplicate-of', from: '3', to: '1' });
-  await source.whenPending(first.mutationId);
-  source.settleNext('applied');
-  await first.settled;
-  await source.whenPending(second.mutationId);
-  source.settleNext('unchanged');
-  await second.settled;
-
-  // The issue: "A saved change says what it did to the order, in `text-muted`, until it is dismissed: "Saved: 2 moved · 1 newly held", or "Saved. The order did not change." Never on a timer."
-  // An unchanged answer is not a landing, so the summary belongs to the first write.
-  const snapshot = store.getSnapshot();
-  assert.deepEqual(refs(snapshot.order.rows), ['2', '3', '1']);
-  assert.ok(snapshot.lastChange !== undefined, 'a saved write was reported as nothing');
-  assert.equal(snapshot.lastChange.counts.newlyHeld, 1);
-  assert.equal(snapshot.lastChange.counts.moved, 3);
-  assert.equal(snapshot.lastChange.mutation.mutationId, first.mutationId);
-});
 
 test('R6 KTD11 createStore: a saved summary outlives a new edit, a period that saves nothing and a retry, until the next saved period or dismissChange', async () => {
   const source = createScriptedSource(threeOpenIssues(), applyEdit);
@@ -1726,9 +1573,7 @@ test('R6 KTD11 createStore: a saved summary outlives a new edit, a period that s
   store.dismissChange();
   assert.equal(store.getSnapshot().lastChange, undefined);
 });
-});
 
-describe("more tests 3", function () {
 test('a held period whose closing write is rejected moves the order once and still states the earlier landing', async () => {
   const source = createScriptedSource(threeOpenIssues(), applyEdit);
   const store = createStore({ source, derive: simpleDeriver });
@@ -1753,10 +1598,18 @@ test('a held period whose closing write is rejected moves the order once and sti
 
   const after = store.getSnapshot();
   assert.deepEqual(refs(after.order.rows), ['2', '3', '1']);
+  assert.equal(after.order.status, 'settled');
   assert.equal(published.size, 2, 'the order was published more than once in one held period');
   // The issue: "A saved change says what it did to the order, in `text-muted`, until it is dismissed: "Saved: 2 moved · 1 newly held", or "Saved. The order did not change." Never on a timer."
   assert.equal(after.lastChange?.mutation.mutationId, first.mutationId, 'a rejected closing write erased the summary of the write that landed');
   assert.equal(after.lastChange?.counts.newlyHeld, 1);
+  assert.equal(after.lastChange?.counts.moved, 3);
+  // The issue: "A write that was not saved stays in the log, whether or not its issue is selected, with Retry and "Discard my edit"."
+  assert.equal(
+    after.writes.find((record) => record.mutationId === second.mutationId)?.state,
+    'failed',
+    'the rejected write left the ledger',
+  );
 });
 
 test('a held period whose closing write answers unchanged still states the earlier landing', async () => {
@@ -1786,6 +1639,7 @@ test('a held period whose closing write answers unchanged still states the earli
   // The issue: "A saved change says what it did to the order, in `text-muted`, until it is dismissed: "Saved: 2 moved · 1 newly held", or "Saved. The order did not change." Never on a timer."
   assert.equal(after.lastChange?.mutation.mutationId, first.mutationId, 'an unchanged closing write erased the summary of the write that landed');
   assert.equal(after.lastChange?.counts.newlyHeld, 1);
+  assert.equal(after.lastChange?.counts.moved, 3);
 });
 
 test('a saved summary outlives the next edit, a retry and a held period in which nothing lands', async () => {
@@ -1863,7 +1717,6 @@ test('a refresh that runs between two writes of one held period does not move th
   const after = store.getSnapshot();
   assert.deepEqual(refs(after.order.rows), ['2', '3', '1']);
   assert.equal(after.order.status, 'settled');
-});
 });
 
 test('a held period in which every write fails publishes no summary and keeps the rows', async () => {

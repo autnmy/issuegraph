@@ -14,6 +14,7 @@ import { type WorkspaceRecovery, ZONES, renderWorkspace } from './render.ts';
 import type { ViewerDocument } from '@issuegraph/viewer';
 import { selectionReducer } from './selection.ts';
 import type { WorkspaceWords } from '../index.ts';
+import type { WorkspaceLogEntry } from '../index.ts';
 import { WORKSPACE_WORDS, backlogOf, drawnKeys, zonesIn } from '../testing/workspace.ts';
 import { TASK_KEYS, blockedHub, keysOf, relatedHubEdges } from '../testing/workspace.ts';
 
@@ -3188,9 +3189,6 @@ describe('the rail recedes as the whole document says', () => {
   });
 });
 
-import type { WorkspaceLogEntry } from '../index.ts';
-
-describe("more tests", function () {
 it('Compare open on a conflict drawn in the log and the Inspector gives each control its own region', () => {
   // ONE WRITE, TWO CARDS. The selected issue carries the conflict, so the log
   // and the Inspector both draw its card, and with Compare open both draw a
@@ -3248,5 +3246,4 @@ it('Compare open on a conflict drawn in the log and the Inspector gives each con
   // AND NO OTHER ELEMENT ON THE SURFACE SHARES AN ID WHILE THE DIFFERENCE IS OPEN.
   const ids = [...markup.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]);
   assert.equal(new Set(ids).size, ids.length, 'two elements share an id');
-});
 });

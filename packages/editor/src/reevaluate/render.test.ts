@@ -289,7 +289,6 @@ describe('the surface composes the viewer rather than re-rendering it', () => {
   });
 });
 
-describe("more tests", function () {
 it('R6 KTD8 renderReevaluate: the host saved word leads the change line once, before the counts', () => {
   const result = renderReevaluate(railOf(['b', 'a', 'c']), {
     words: WORDS,
@@ -305,5 +304,4 @@ it('R6 KTD8 renderReevaluate: the host saved word leads the change line once, be
   assert.notEqual(firstCountAt, -1, 'the change line drew no counts');
   assert.ok(savedAt < firstCountAt, 'the saved word is drawn after the counts');
   assert.equal(line.split(WORDS.saved).length - 1, 1, 'the saved word is drawn more than once');
-});
 });
