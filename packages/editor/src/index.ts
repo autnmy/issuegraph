@@ -397,9 +397,9 @@ export {
   // declare is exported by accident, not withheld on purpose.
   type WorkspaceRefusal,
   // ON THE SURFACE FOR `WorkspaceRefusal`'s OWN REASON: it is the element type
-  // of `WorkspaceOptions.recoveries`, so without it a host could build the
-  // array and could not name it.
-  type WorkspaceRecovery,
+  // of `WorkspaceOptions.log`, so without it a host could build the array and
+  // could not name it.
+  type WorkspaceLogEntry,
   type WorkspaceResult,
   type WorkspaceView,
   type WorkspaceWords,

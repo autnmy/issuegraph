@@ -1954,12 +1954,14 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
       words: WORKSPACE_WORDS,
       selection: { kind: 'issue', key: 'i0001' },
       diffOpen: 'm1',
-      recoveries: [CONFLICT],
+      log: [CONFLICT],
     });
-    // READ OFF THE DIFF REGION, NOT THE WHOLE SURFACE. `i0005` is also a rail
-    // row on this backlog, so a document-wide search finds it either way and
-    // the assertion would be vacuous in the direction that matters.
-    const region = /<div class="ig-recovery-diff"[\s\S]*?<\/div><\/li>/.exec(markup)?.[0];
+    // READ OFF THE INSPECTOR'S DIFF REGION, NOT THE WHOLE SURFACE. `i0005` is
+    // also a rail row on this backlog, so a document-wide search finds it
+    // either way and the assertion would be vacuous in the direction that
+    // matters. The log draws the same difference whole, for no panel.
+    const inspector = markup.slice(markup.indexOf('data-zone="inspector"'));
+    const region = /<div class="ig-recovery-diff"[\s\S]*?<\/div><\/li>/.exec(inspector)?.[0];
     assert.ok(region !== undefined, 'the difference region was not drawn');
     assert.ok(region.includes('i0003'), 'the panel’s own upstream change is missing');
     assert.equal(
@@ -1976,7 +1978,7 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
     const shut = drawn({
       words: WORKSPACE_WORDS,
       selection: { kind: 'issue', key: 'i0001' },
-      recoveries: [CONFLICT],
+      log: [CONFLICT],
     });
     assert.match(shut, /data-ig-command="view-diff"[^>]*aria-expanded="false"/);
     assert.equal(shut.includes('aria-pressed'), false, 'a disclosure announced as a toggle');
@@ -1985,7 +1987,7 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
       words: WORKSPACE_WORDS,
       selection: { kind: 'issue', key: 'i0001' },
       diffOpen: 'm1',
-      recoveries: [CONFLICT],
+      log: [CONFLICT],
     });
     assert.match(open, /aria-expanded="true"/);
     // THE CONTROL NAMES THE REGION, and the region carries that id — an
@@ -1995,14 +1997,14 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
     assert.ok(open.includes(`id="${controls}"`), 'the region it names is not there');
   });
 
-  it('draws a carrier-less write once, even on the panel filtered to its edge', () => {
+  it('draws a carrier-less write once in the Inspector, even on the panel filtered to its edge', () => {
     // MEASURED: two identical cards, two tab stops, and two buttons carrying
     // one write's id. `statedHere`'s EDGE arm matches on `edgeId` and ignores
-    // the carrier, so the unplaced region drew it a second time.
+    // the carrier, so a second region for carrier-less writes drew it again.
     const markup = drawn({
       words: WORKSPACE_WORDS,
       selection: { kind: 'edge', edgeId: 'blocked-by|i0001|i0002' },
-      recoveries: [
+      log: [
         {
           kind: 'failed',
           mutationId: 'm2',
@@ -2012,17 +2014,18 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
         },
       ],
     });
-    assert.equal((markup.match(/class="ig-recovery"/g) ?? []).length, 1);
-    assert.equal((markup.match(/data-ig-target="m2"/g) ?? []).length, 2, 'retry and discard, once each');
+    const inspector = markup.slice(markup.indexOf('data-zone="inspector"'));
+    assert.equal((inspector.match(/class="ig-recovery"/g) ?? []).length, 1);
+    assert.equal((inspector.match(/data-ig-target="m2"/g) ?? []).length, 2, 'retry and discard, once each');
   });
 
-  it('draws a carrier-less write in the unplaced region when no panel states it', () => {
-    // THE REGION ITSELF HAD NO TEST: deleting it left every test green, and it
-    // is the one the code calls Done-when 1 failing where it matters most.
+  it('draws a carrier-less write in the log, and on no issue panel', () => {
+    // A write about issues this backlog does not hold has no panel, and the
+    // log is where it keeps its Retry and Discard.
     const markup = drawn({
       words: WORKSPACE_WORDS,
       selection: { kind: 'issue', key: 'i0001' },
-      recoveries: [
+      log: [
         {
           kind: 'failed',
           mutationId: 'm3',
@@ -2032,10 +2035,11 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
         },
       ],
     });
-    assert.ok(markup.includes(WORKSPACE_WORDS.recovery.unplaced), 'the unplaced heading is missing');
-    assert.equal((markup.match(/class="ig-recovery"/g) ?? []).length, 1);
+    const header = markup.slice(markup.indexOf('data-zone="header"'), markup.indexOf('data-zone="rail"'));
+    assert.equal((header.match(/class="ig-recovery"/g) ?? []).length, 1, 'the log does not draw the write');
+    assert.equal((markup.match(/class="ig-recovery"/g) ?? []).length, 1, 'an issue panel drew the write too');
     // AND IT KEEPS ITS CONTROLS, which is the whole reason it is drawn at all.
-    assert.equal((markup.match(/data-ig-target="m3"/g) ?? []).length, 2);
+    assert.equal((header.match(/data-ig-target="m3"/g) ?? []).length, 2);
   });
 
   it('says a conflicted delete removes something, rather than that nothing differs', () => {
@@ -2043,7 +2047,7 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
       words: WORKSPACE_WORDS,
       selection: { kind: 'issue', key: 'i0001' },
       diffOpen: 'm4',
-      recoveries: [
+      log: [
         {
           kind: 'conflict',
           mutationId: 'm4',
@@ -2068,6 +2072,29 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
       false,
       'the card claimed nothing differs about an edit that removes a relationship',
     );
+  });
+
+  it('draws the same card in the log and in the Inspector for a failed write on the selected issue', () => {
+    const markup = drawn({
+      words: WORKSPACE_WORDS,
+      selection: { kind: 'issue', key: 'i0001' },
+      log: [
+        {
+          kind: 'failed',
+          mutationId: 'm5',
+          edgeId: 'blocked-by|i0001|i0002',
+          carrier: 'i0001',
+          reason: 'the tracker was unreachable',
+        },
+      ],
+    });
+    const header = markup.slice(markup.indexOf('data-zone="header"'), markup.indexOf('data-zone="rail"'));
+    const inspector = markup.slice(markup.indexOf('data-zone="inspector"'));
+    const card = (zone: string): string | undefined =>
+      /<li class="ig-recovery"[\s\S]*?<\/li>/.exec(zone)?.[0];
+    const logged = card(header);
+    assert.ok(logged !== undefined, 'the log drew no card');
+    assert.equal(card(inspector), logged, 'the log card differs from the Inspector card');
   });
 });
 
@@ -3052,4 +3079,66 @@ describe('the rail recedes as the whole document says', () => {
       );
     }
   });
+});
+
+import type { WorkspaceLogEntry } from '../index.ts';
+
+describe("more tests", function () {
+it('Compare open on a conflict drawn in the log and the Inspector gives each control its own region', () => {
+  // ONE WRITE, TWO CARDS. The selected issue carries the conflict, so the log
+  // and the Inspector both draw its card, and with Compare open both draw a
+  // difference region. If the two regions shared an id, each `aria-controls`
+  // would name two elements and the log's control could open the Inspector's.
+  const conflict: WorkspaceLogEntry = {
+    kind: 'conflict',
+    mutationId: 'm-twice',
+    edgeId: 'blocked-by|i0001|i0002',
+    carrier: 'i0001',
+    refreshError: null,
+    diff: {
+      upstreamOnly: [{ id: 'blocked-by|i0001|i0003', kind: 'blocked-by', from: 'i0001', to: 'i0003' }],
+      mineOnly: [],
+      mineRemoved: [],
+      issuesChanged: [],
+      carrierReversed: [],
+    },
+  };
+  const { markup } = renderWorkspace(backlogOf(4, { edges: [['blocked-by', 'i0001', 'i0002']] }), {
+    words: WORKSPACE_WORDS,
+    selection: { kind: 'issue', key: 'i0001' },
+    diffOpen: 'm-twice',
+    log: [conflict],
+  });
+
+  const headerAt = markup.indexOf('data-zone="header"');
+  const railAt = markup.indexOf('data-zone="rail"');
+  const inspectorAt = markup.indexOf('data-zone="inspector"');
+  assert.ok(headerAt !== -1 && railAt > headerAt && inspectorAt > railAt, 'the zones are not in order');
+  const header = markup.slice(headerAt, railAt);
+  const inspector = markup.slice(inspectorAt);
+
+  const controlled = (zone: string): string[] =>
+    [...zone.matchAll(/<[^>]*data-ig-command="view-diff"[^>]*>/g)].map(
+      ([tag]) => /aria-controls="([^"]+)"/.exec(tag)?.[1] ?? '',
+    );
+  const fromLog = controlled(header);
+  const fromInspector = controlled(inspector);
+  assert.equal(fromLog.length, 1, 'the log card has no open Compare control');
+  assert.equal(fromInspector.length, 1, 'the Inspector card has no open Compare control');
+  const [logRegion = '', inspectorRegion = ''] = [fromLog[0], fromInspector[0]];
+  assert.notEqual(logRegion, '', 'the log control names no region');
+  assert.notEqual(inspectorRegion, '', 'the Inspector control names no region');
+  assert.notEqual(logRegion, inspectorRegion, 'both controls name the same region');
+
+  // EACH CONTROL NAMES EXACTLY ONE ELEMENT, and it is the one in its own placement.
+  for (const region of [logRegion, inspectorRegion]) {
+    assert.equal(markup.split(`id="${region}"`).length - 1, 1, `${region} is not exactly one element`);
+  }
+  assert.ok(header.includes(`id="${logRegion}"`), 'the log control opens a region outside the log');
+  assert.ok(inspector.includes(`id="${inspectorRegion}"`), 'the Inspector control opens a region outside the Inspector');
+
+  // AND NO OTHER ELEMENT ON THE SURFACE SHARES AN ID WHILE THE DIFFERENCE IS OPEN.
+  const ids = [...markup.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]);
+  assert.equal(new Set(ids).size, ids.length, 'two elements share an id');
+});
 });

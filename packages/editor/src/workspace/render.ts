@@ -82,6 +82,7 @@ import {
 
 import type {
   EdgeId,
+  EdgeKind,
   InvalidCode,
   MutationId,
   OrderChange,
@@ -656,14 +657,6 @@ export interface RecoveryWords {
    * observable.
    */
   readonly retryFailed: string;
-  /**
-   * Heads the region for recoveries with no panel to sit on.
-   *
-   * See {@link WorkspaceRecovery.carrier}: a write about issues this backlog
-   * does not hold has no panel, and dropping it would leave the reader's work
-   * unrecoverable.
-   */
-  readonly unplaced: string;
 }
 
 /**
@@ -721,6 +714,49 @@ export type WorkspaceRecovery =
        */
       readonly refreshError: string | null;
     };
+
+/**
+ * The edge a logged write is about: as the landed document holds it, or its
+ * raw id when the document no longer holds it.
+ *
+ * THE RAW ID IS NEVER TAKEN APART. An id is a key, not a description: splitting
+ * it back into a kind and two ends would mean parsing a string whose spelling
+ * is the store's to choose, so a write about an edge that is gone is named by
+ * its id, drawn as one piece of text.
+ */
+export type WorkspaceLoggedEdge = StoredEdge | EdgeId;
+
+/**
+ * What one logged write does, in the facts a line naming it needs.
+ *
+ * A UNION ON THE OPERATION, because only a retype has a second kind to name,
+ * and a create always has its edge: it is the edit itself, not something the
+ * landed document might have lost.
+ */
+export type WorkspaceLoggedWrite =
+  | { readonly op: 'create'; readonly edge: StoredEdge }
+  | { readonly op: 'delete' | 'flip'; readonly edge: WorkspaceLoggedEdge }
+  | { readonly op: 'retype'; readonly edge: WorkspaceLoggedEdge; readonly nextKind: EdgeKind };
+
+/**
+ * One write the log lists: one still saving, or one that did not save.
+ *
+ * THE ONE INPUT BOTH PLACEMENTS DRAW FROM. The log under the header draws a
+ * card for every `failed` and `conflict` entry; the Inspector draws the ones
+ * its panel states. Two inputs could disagree about which writes exist, and
+ * one cannot.
+ *
+ * A REFUSED EDIT IS NOT AN ENTRY. The store refuses it before any write is
+ * attempted, so nothing was saving and nothing failed to save; its capsule
+ * stays on the relationship it refused, through {@link WorkspaceRefusal}.
+ */
+export type WorkspaceLogEntry =
+  | {
+      readonly kind: 'pending';
+      readonly mutationId: MutationId;
+      readonly write: WorkspaceLoggedWrite;
+    }
+  | WorkspaceRecovery;
 
 /**
  * One refused edit, as the panel needs it: which edge, and why.
@@ -1003,13 +1039,15 @@ export interface WorkspaceOptions {
    */
   readonly refusals?: readonly WorkspaceRefusal[] | undefined;
   /**
-   * The failed and conflicted writes the reader can still act on.
+   * The writes still saving and the writes that did not save, in the ledger's
+   * own order. The log under the header draws a card for each one that did
+   * not save, and the Inspector draws the ones its panel states.
    *
    * OPTIONAL, on the same reasoning as {@link WorkspaceOptions.refusals}: an
    * unsettled write is a fact the store produces, so "none" and "never asked"
-   * leave the panel with the same nothing to draw.
+   * leave the log with the same nothing to draw.
    */
-  readonly recoveries?: readonly WorkspaceRecovery[] | undefined;
+  readonly log?: readonly WorkspaceLogEntry[] | undefined;
   /**
    * Which conflict has its difference open, if any.
    *
@@ -2491,13 +2529,25 @@ const AFFORDANCE_COMMANDS = Object.freeze({
 } as const satisfies Record<OverlayAffordance, string>);
 
 /**
+ * Where a recovery card is drawn. One write can have a card in both places at
+ * once: the log lists every write, and the Inspector states the selected
+ * issue's.
+ */
+type RecoveryPlacement = 'log' | 'inspector';
+
+/**
  * The region a card's `view-diff` control discloses.
  *
  * Derived from the write's own identity so `aria-controls` can name it, and
  * scoped by a prefix because a page may mount more than one workspace.
+ *
+ * SCOPED BY PLACEMENT TOO. With the difference open, the log's card and the
+ * Inspector's card for one write each draw a region. Sharing an id would make
+ * each `aria-controls` name two elements, and the log's control could open
+ * the Inspector's region.
  */
-function diffRegionId(mutationId: MutationId): string {
-  return `ig-recovery-diff-${mutationId}`;
+function diffRegionId(mutationId: MutationId, placement: RecoveryPlacement): string {
+  return `ig-recovery-diff-${placement}-${mutationId}`;
 }
 
 /** One edge in a difference, named the way the relationship rows name one. */
@@ -2621,10 +2671,12 @@ function recoveryCard(
   recovery: WorkspaceRecovery,
   words: RecoveryWords,
   diffOpen: MutationId | null,
+  placement: RecoveryPlacement,
   keys: ReadonlySet<string> | null,
 ): ElementSpec {
   const treatment = OVERLAY_TREATMENTS[recovery.kind];
   const open = recovery.kind === 'conflict' && diffOpen === recovery.mutationId;
+  const regionId = diffRegionId(recovery.mutationId, placement);
   return element(
     'li',
     {
@@ -2675,7 +2727,7 @@ function recoveryCard(
               // screen-reader user. Found by the a11y baseline's
               // reference rule on its first run.
               'aria-controls':
-                affordance === 'view-diff' && open ? diffRegionId(recovery.mutationId) : undefined,
+                affordance === 'view-diff' && open ? regionId : undefined,
             },
             [affordanceWord(affordance, recovery.kind, words)],
           ),
@@ -2684,36 +2736,57 @@ function recoveryCard(
       // NARROWED BY THE PANEL'S KEY SET, not by the carrier alone. A together
       // unit's lead speaks for its partners, so a single key would drop a
       // partner's conflicted edge from the one panel entitled to state it.
-      // `null` keys is the unplaced region, which is nobody's unit: nothing is
-      // narrowed away there.
+      // `null` keys is the log, or an edge panel, which speak for no unit:
+      // nothing is narrowed away there.
       open && recovery.kind === 'conflict'
-        ? diffSpec(
-            keys === null ? recovery.diff : diffWithin(recovery.diff, keys),
-            words,
-            diffRegionId(recovery.mutationId),
-          )
+        ? diffSpec(keys === null ? recovery.diff : diffWithin(recovery.diff, keys), words, regionId)
         : null,
     ],
   );
 }
 
-/** The cards a panel states, or nothing when it states none. */
+/** The cards a placement draws, or nothing when it draws none. */
 function recoveryListSpec(
   recoveries: readonly WorkspaceRecovery[],
   words: RecoveryWords,
   diffOpen: MutationId | null,
+  placement: RecoveryPlacement,
   keys: ReadonlySet<string> | null,
-  heading: string | null,
 ): ElementSpec | null {
   if (recoveries.length === 0) return null;
   return element('div', { class: 'ig-recovery-region' }, [
-    heading === null ? null : element('h3', { class: 'ig-inspector-heading' }, [heading]),
     element(
       'ul',
       { class: 'ig-recovery-list' },
-      recoveries.map((recovery) => recoveryCard(recovery, words, diffOpen, keys)),
+      recoveries.map((recovery) => recoveryCard(recovery, words, diffOpen, placement, keys)),
     ),
   ]);
+}
+
+/**
+ * The log's entries that did not save: the ones a reader can still act on.
+ *
+ * Both placements take their cards from here, so the log and the Inspector
+ * cannot come to disagree about which writes failed.
+ */
+function recoveriesIn(log: readonly WorkspaceLogEntry[]): readonly WorkspaceRecovery[] {
+  return log.flatMap((entry) => (entry.kind === 'pending' ? [] : [entry]));
+}
+
+/**
+ * The log under the workspace head: a card for every write that did not save,
+ * whichever issue it is about and whether or not that issue is selected.
+ *
+ * NOT NARROWED BY ANY PANEL. The log speaks for the whole workspace, so a
+ * conflict's difference is drawn whole here.
+ */
+function logSpec(
+  log: readonly WorkspaceLogEntry[],
+  words: RecoveryWords,
+  diffOpen: MutationId | null,
+): ElementSpec | null {
+  const list = recoveryListSpec(recoveriesIn(log), words, diffOpen, 'log', null);
+  return list === null ? null : element('div', { class: 'ig-workspace-log' }, [list]);
 }
 
 /**
@@ -2940,33 +3013,16 @@ function inspectorSpec(view: InspectorView, context: InspectorContext): ElementS
     // — one `statedHere`, one carrier, no second derivation of whose panel this
     // is. No heading: the cards carry their own state names, and a heading over
     // a region that is usually absent is a heading a reader learns to skip.
+    //
+    // A WRITE WITH A `null` CARRIER IS NOT DRAWN HERE ON AN ISSUE PANEL. It is
+    // about issues this backlog does not hold, so no issue panel is entitled
+    // to it; the log lists it on every render, with its Retry and Discard.
     recoveryListSpec(
       context.recoveries.filter((recovery) => statedHere(scope, recovery)),
       words.recovery,
       context.diffOpen,
+      'inspector',
       scope.kind === 'issue' ? scope.keys : null,
-      null,
-    ),
-    // THE WRITES WITH NOWHERE TO SIT, ON EVERY PANEL. A recovery whose carrier
-    // is `null` is about issues this backlog does not hold, so no panel is
-    // entitled to it — and the refusal path drops exactly these. Dropping a
-    // REFUSAL costs a sentence the reader can live without; dropping a RECOVERY
-    // takes away the only retry and discard they have, which is #137's
-    // Done-when 1 ("offers all three resolutions from the editor's own
-    // surface") failing on the state where it matters most. So they are drawn
-    // here, under a heading that says why they are not on a relationship.
-    // AND NEVER TWICE ON ONE PANEL. `statedHere`'s EDGE arm matches on
-    // `edgeId` and ignores the carrier, so an edge panel narrowed to a
-    // null-carrier recovery's own edge states it above AND here — two identical
-    // cards, two tab stops, and two buttons carrying one write's id.
-    recoveryListSpec(
-      context.recoveries.filter(
-        (recovery) => recovery.carrier === null && !statedHere(scope, recovery),
-      ),
-      words.recovery,
-      context.diffOpen,
-      null,
-      words.recovery.unplaced,
     ),
   ]);
 }
@@ -3548,6 +3604,7 @@ export function renderWorkspace(
   // reason there is no default sentence here; see `ChangeWords`.
   const changeWords = options.words.change;
   const orderStatus: OrderStatus = options.orderStatus ?? 'settled';
+  const log = options.log ?? [];
   // EVERY REF THE ORDER HAS, WINDOWED OR NOT — and taken from the UNFILTERED
   // document on purpose, so a row the audit filter is hiding counts as expected
   // for the same reason an off-window row does. The rail this render hands the
@@ -3702,6 +3759,11 @@ export function renderWorkspace(
         changeWords === undefined
           ? ''
           : renderMarkup(summarySpec(change.summary, changeWords, { held: change.held })),
+        // THE LOG IS IN THE HEADER because the header is the one zone drawn at
+        // every width: under 640 the grid keeps only the header and the view.
+        // A write that did not save keeps its Retry and Discard there whatever
+        // the width and whatever is selected.
+        specMarkup(logSpec(log, options.words.recovery, options.diffOpen ?? null)),
         // THE TABS ARE THE HEADER'S LAST CHILD, because the header is the one
         // zone nothing replaces after this render: the mount swaps the canvas
         // zone's children for the tree, and a tab inside it would vanish there.
@@ -3829,8 +3891,9 @@ export function renderWorkspace(
           refusals: options.refusals ?? [],
           // FORWARDED IN THE LEDGER'S ORDER too, for the reason above: the
           // cards are drawn in the order the writes were made, so the one the
-          // reader just caused is the one nearest what they were doing.
-          recoveries: options.recoveries ?? [],
+          // reader just caused is the one nearest what they were doing. Taken
+          // from the same log the header draws, so the two placements agree.
+          recoveries: recoveriesIn(log),
           diffOpen: options.diffOpen ?? null,
         }),
       ),

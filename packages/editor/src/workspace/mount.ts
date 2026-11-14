@@ -97,11 +97,10 @@ import {
 } from './host.ts';
 import type { CanvasMode } from './narrow.ts';
 import type { RailWindow } from './rail.ts';
-import { conflictDiff } from './recovery.ts';
+import { writeLog } from './log.ts';
 import {
   RELATED_STATUS_CLASS,
   type WorkspaceOptions,
-  type WorkspaceRecovery,
   type WorkspaceRefusal,
   type WorkspaceWords,
   renderWorkspace,
@@ -1479,58 +1478,26 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       return [{ edgeId, code: record.reason.code, carrier, phantom: !landedIds.has(edgeId) }];
     });
 
-    // §17b's RECOVERY CARDS, BUILT FROM THE SAME LEDGER PASS AS THE REFUSALS.
-    // One walk of `snapshot.writes` keeps the chronology the panel relies on,
-    // and reuses the `edgeId` and `carrier` answers already worked out above
-    // rather than asking either question a second time.
+    // THE LOG, BUILT FROM THE SAME LEDGER AS THE REFUSALS. It reuses the
+    // `markedBy` and carrier answers already worked out above rather than
+    // asking either question a second time.
     //
     // THE CARRIER IS CARRIED EVEN WHEN IT IS `null`, and that is the one place
     // this deliberately parts company with the refusal derivation above, which
-    // drops those. A refusal dropped costs the reader a sentence. A RECOVERY
-    // dropped costs them the only retry and discard they have, on a write that
-    // is still theirs to resolve — so it travels, and the panel draws it in the
-    // unplaced region instead of nowhere.
-    // ANNOTATED RATHER THAN INFERRED. `flatMap` takes its element type from the
-    // first arm it sees, which here is the `failed` one — so an unannotated
-    // callback types the whole list as failures and rejects the conflict arm
-    // for want of a `reason`. The repair this repository bans is a cast; the
-    // repair it wants is saying what the function returns.
-    const recoveries: readonly WorkspaceRecovery[] = snapshot.writes.flatMap(
-      (record): readonly WorkspaceRecovery[] => {
-      if (record.state !== 'failed' && record.state !== 'conflict') return [];
-      const carrier = writeCarriers.get(record.mutationId) ?? null;
-      const edgeId =
-        markedBy.get(record.mutationId) ??
-        (record.mutation.op === 'create'
-          ? edgeIdentity(record.mutation.kind, record.mutation.from, record.mutation.to)
-          : record.mutation.edgeId);
-      if (record.state === 'failed') {
-        return [{ kind: 'failed' as const, mutationId: record.mutationId, edgeId, carrier, reason: record.reason }];
-      }
-      return [
-        {
-          kind: 'conflict' as const,
-          mutationId: record.mutationId,
-          edgeId,
-          carrier,
-          // AGAINST `landedNow`, WHICH CANNOT HOLD THE EDIT — that is the
-          // point. `conflictDiff` reconstructs the reader's own side from the
-          // mutation, so the card is guaranteed to name the relationship it is
-          // about rather than depending on a document that by contract omits it.
-          diff: conflictDiff(landedNow, record.upstream, record.mutation),
-          // THE READ'S OWN FAILURE, WHICH IS NOT THE RECORD'S. A `retry on
-          // latest` whose refresh fails restores this record verbatim and
-          // dispatches nothing; the reason lands on the snapshot instead. Read
-          // from there, the card can say why the button appeared to do nothing.
-          // ONLY ON THE CARD WHOSE READ FAILED. Both halves are required: a
-          // hydration error with no press behind it belongs to no card, and a
-          // press whose read succeeded leaves no error to draw.
-          refreshError:
-            refreshFailedFor === record.mutationId ? (snapshot.hydrationError ?? null) : null,
-        },
-      ];
-      },
-    );
+    // drops those. A refusal dropped costs the reader a sentence. A write that
+    // did not save, dropped, costs them the only retry and discard they have —
+    // so it travels, and the log draws it whichever issue is selected.
+    const log = writeLog(snapshot.writes, {
+      landed: landedNow,
+      carriers: writeCarriers,
+      markedBy,
+      // THE READ'S OWN FAILURE, WHICH IS NOT THE RECORD'S. A `retry on latest`
+      // whose refresh fails restores its record verbatim and dispatches
+      // nothing; the reason lands on the snapshot instead, and the card whose
+      // press caused it says why the button appeared to do nothing.
+      refreshFailedFor,
+      hydrationError: snapshot.hydrationError ?? null,
+    });
     // ITS LIFETIME IS THE CONFLICT'S, NOT THE LEDGER'S, and the distinction is
     // load-bearing: `retryOnLatest` reserves its record as `pending`
     // synchronously, and a resolve whose re-check refuses leaves it `invalid`.
@@ -1549,9 +1516,8 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     const result = renderWorkspace(viewer, {
       words: current.words,
       // §17c's CAUSE AND EFFECT, STRAIGHT OFF THE SNAPSHOT. The store is the
-      // single source of truth for both — `lastChange` persists until the next
-      // edit or an explicit dismissal, and `dismissChange()` is already the
-      // only thing besides the next edit that clears it — so nothing about
+      // single source of truth for both — `lastChange` persists until a later
+      // saved edit replaces it or `dismissChange()` clears it — so nothing about
       // "has this been dismissed" is held out here. A second copy of that is
       // exactly the drift the command grammar exists to avoid.
       //
@@ -1608,7 +1574,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       draft: state.draft,
       drop: state.drop,
       refusals,
-      recoveries,
+      log,
       diffOpen: state.diffOpen,
     });
     // THE FIRST PASS'S OWN SHEET, IMPORTED — not `renderFirstPass(...).styles`,
