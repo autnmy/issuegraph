@@ -241,11 +241,11 @@ describe('the tree projection', () => {
     assert.match(markup, new RegExp(`data-ig-key="${String(depth)}" data-level="${String(depth)}"`));
   });
 
-  it('budgets a row\'s badges exactly as the linear projection does', () => {
+  it('budgets a row\'s badges at ROW_BADGE_BUDGET and counts the rest on one chip', () => {
     // The tree draws EVERY key its own row, so it badges the most of the
-    // three — and it shares `edgeBadges`, so one rule covers it. The slice
-    // stops at the next keyed item because a row's nested list is its last
-    // child, after the badges.
+    // three, and it keeps the shared ROW_BADGE_BUDGET: only an ORDER row names
+    // one and counts the rest (#303). The slice stops at the next keyed item
+    // because a row's nested list is its last child, after the badges.
     const omitted = 9;
     const markup = render(denseRowDocument(ROW_BADGE_BUDGET + omitted - 1));
     const start = markup.indexOf('data-ig-key="hub"');
@@ -254,7 +254,13 @@ describe('the tree projection', () => {
     const hub = markup.slice(start, next === -1 ? undefined : next);
 
     assert.equal((hub.match(/data-edge="/g) ?? []).length, ROW_BADGE_BUDGET);
-    assert.match(hub, new RegExp(`data-omitted="${String(omitted)}"[^>]*>\\+${String(omitted)} more relationships<`));
+    assert.match(
+      hub,
+      new RegExp(
+        `data-omitted="${String(omitted)}"[^>]*><span aria-hidden="true">\\+${String(omitted)}</span>` +
+          `<span class="ig-hidden-words">${String(omitted)} more relationships</span>`,
+      ),
+    );
   });
 
   it('is deterministic — two renders of one document agree byte for byte', () => {

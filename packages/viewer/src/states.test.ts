@@ -113,7 +113,16 @@ interface State {
   readonly host: HostFacts;
   /** Substrings present in THIS state and absent in every other. */
   readonly exclusive: readonly string[];
+  /**
+   * The projections that draw `exclusive`; every one when absent. A row caveat
+   * is a chip, and a graph card carries none: its title, number and priority
+   * only (#303, RULES, Graphs, Dense neighbourhoods).
+   */
+  readonly drawnBy?: readonly Projection[];
 }
+
+/** The projections that draw a row's chips: a graph card has none (#303). */
+const ROW_CHIP_PROJECTIONS: readonly Projection[] = ['linear', 'tree'];
 
 const STATES: readonly State[] = [
   {
@@ -147,6 +156,7 @@ const STATES: readonly State[] = [
     document: previewOnlyDocument,
     host: { freshness: FRESHNESS },
     exclusive: ['data-caveat="preview-only"'],
+    drawnBy: ROW_CHIP_PROJECTIONS,
   },
   {
     name: 'signals disagree',
@@ -155,6 +165,7 @@ const STATES: readonly State[] = [
     // The design's guarantee here is not which signal wins — that is the
     // owner's call — but that the LOSER STAYS VISIBLE. The strike is the pin.
     exclusive: ['data-caveat="disagree"'],
+    drawnBy: ROW_CHIP_PROJECTIONS,
   },
   {
     name: 'zero adoption',
@@ -184,7 +195,8 @@ describe('the §16 states', () => {
     for (const projection of PROJECTIONS) {
       for (const state of STATES) {
         const markup = draw(state, projection);
-        for (const marker of state.exclusive) {
+        const drawn = (state.drawnBy ?? PROJECTIONS).includes(projection);
+        for (const marker of drawn ? state.exclusive : []) {
           assert.ok(markup.includes(marker), `${projection}/${state.name} is missing its own ${marker}`);
         }
         for (const other of STATES) {

@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { type ViewerDocument, type ViewerEdge, normalizeDocument } from './document.ts';
-import { edgeGeometry, layoutGraph, measureLabel } from './layout.ts';
-import { ROW_BADGE_BUDGET, badgeTexts } from './parts.ts';
+import { edgeGeometry, layoutGraph } from './layout.ts';
+import { cardBlocks } from './parts.ts';
 import { fixtureDocument } from './testing/fixtures.ts';
 import { defaultTheme, extendTheme } from './theme.ts';
 
@@ -130,49 +130,6 @@ describe('layoutGraph', () => {
     assert.deepEqual([...layout.footer], []);
   });
 
-  it('reserves the room a WRAPPED gutter note needs, not one line per note', () => {
-    // A hold reason is an arbitrary host string and `.ig-hold` wraps it inside a
-    // fixed-width gutter, so charging one line each under-reserved every note
-    // that runs to two or three — and the card beneath was drawn over the
-    // overflow while the arcs stayed attached to the box the layout thought it
-    // had.
-    const long =
-      'matches none of the ordered queries the repository configures, so the pick order never reaches it at all and it stays outside the order indefinitely';
-    const { document } = normalizeDocument({
-      issues: [
-        { key: 'a', title: 'Ranked', open: true, priority: 2 },
-        { key: 'b', title: 'Blocker with a long reason', open: true, priority: 2 },
-      ],
-      edges: [{ field: 'blocked-by', from: 'a', to: 'b' }],
-      order: {
-        slots: [
-          { rank: 1, lead: 'a', members: ['a'], ready: true, holds: [] },
-          {
-            rank: null,
-            lead: 'b',
-            members: ['b'],
-            ready: false,
-            holds: [{ family: 'tracker', reason: long, label: 'not eligible' }],
-          },
-        ],
-        excluded: [],
-      },
-      cycles: [],
-    });
-    const layout = layoutGraph(document, defaultTheme);
-    const box = layout.nodes.get('b');
-    assert.ok(box !== undefined, 'the blocker is not in the gutter');
-
-    const line = defaultTheme.metrics['--ig-card-line'];
-    const inset = defaultTheme.metrics['--ig-space'];
-    const wrapped = Math.ceil(measureLabel(defaultTheme, long) / (box.width - inset * 2));
-    assert.ok(wrapped > 1, 'the reason fits on one line, so this proves nothing');
-    assert.ok(
-      box.height >= inset * 2 + wrapped * line,
-      `${String(box.height)}px reserved for a note needing ${String(wrapped)} lines`,
-    );
-  });
-
   it('gives a claimed-and-running job ONE box, and it is the NOW station', () => {
     // THE ORDINARY CASE, and it went wrong twice in opposite directions. A job
     // is usually running BECAUSE a runner claimed it, so its slot is
@@ -251,109 +208,59 @@ describe('layoutGraph', () => {
     );
   });
 
-  it('measures a chip WITH its glyph and its inner gap', () => {
-    // A relationship or status chip is a glyph and a label — two children with
-    // a gap between them — and two of them were written out by hand and lost
-    // their glyph entirely. Both under-measure, and near a row boundary the
-    // browser then wraps a chip the packer kept on the previous row: the height
-    // omits that whole row and the cards beneath are drawn over it.
-    const { document } = normalizeDocument(fixtureDocument);
-    // `101` is held, so it carries the two chips that used to lose their glyph.
-    const held = document.order.slots.find((slot) => slot.lead === '101');
-    assert.ok(held !== undefined);
-    const { texts } = badgeTexts(document, held, document.byKey.get('101'), ['101']);
-    assert.ok(
-      texts.some((text) => text.startsWith('⊘')),
-      'the not-ready chip is measured without its glyph',
-    );
-    for (const text of texts) {
-      assert.ok(text.length > 0, 'a chip measures as nothing at all');
-    }
-  });
-
-  it('reserves the rows its chips take on a graph card with more than ROW_BADGE_BUDGET relationships', () => {
-    // PAST THE BUDGET A CARD DRAWS AN OVERFLOW CHIP, and that chip is a count:
-    // the sheet sets it in the body sans at --ig-font-size while every other
-    // chip stays at the micro size (#254). The packer measured it with
-    // --ig-label-char-width, a ceiling for SMALL text, so where the browser
-    // wraps the chip onto a row of its own the card had kept it on the row
-    // before — one row short, and the next card is drawn over the chip.
-    //
-    // So the card is sized to put the chip on exactly that boundary: it fits
-    // beside the last row of chips at the small size and does not at the body
-    // size. The body width here is the small measure scaled by the theme's own
-    // two sizes, which is a floor on what the chip draws rather than the
-    // packer's ceiling, so this pins the rows and not the constant behind them.
-    // KEYS OF GROWING LENGTH, so the chips differ in width. Twelve chips of one
-    // width fill their rows exactly or leave the last row two or more chips
-    // short, and neither leaves room between the two measures for the search
-    // below to find.
-    const blockers = Array.from({ length: ROW_BADGE_BUDGET + 1 }, (_, index) => `b${'x'.repeat(index)}`);
-    const hubWith = (relationships: number): ReturnType<typeof normalizeDocument>['document'] => {
-      const keys = blockers.slice(0, relationships);
-      const edge = (to: string): ViewerEdge => ({ field: 'blocked-by', from: 'hub', to });
-      return normalizeDocument({
-        issues: [
-          { key: 'hub', title: 'Hub', open: true, priority: 2 },
-          ...keys.map((key) => ({ key, title: `Blocker ${key}`, open: true, priority: 2 })),
+  it('keeps a held card\u2019s reason word after its number (q336)', () => {
+    // issue-graph b699f1d draws an off-order node as "#2210 Parked": the
+    // tracker's own label for the hold, muted, in place of a relationship list.
+    const { document } = normalizeDocument({
+      issues: [
+        { key: 'parked', title: 'Parked work', open: true, priority: 2 },
+        { key: 'other', title: 'Other', open: true, priority: 2 },
+      ],
+      edges: [{ field: 'blocked-by', from: 'other', to: 'parked' }],
+      order: {
+        slots: [
+          {
+            rank: null,
+            lead: 'parked',
+            members: ['parked'],
+            ready: false,
+            holds: [{ family: 'tracker', reason: 'parked by its owner', label: 'Parked' }],
+          },
+          { rank: 1, lead: 'other', members: ['other'], ready: true, holds: [] },
         ],
-        edges: keys.map(edge),
-        order: { slots: [{ rank: 1, lead: 'hub', members: ['hub'], ready: true, holds: [] }], excluded: [] },
-        cycles: [],
-      }).document;
-    };
-    const within = hubWith(ROW_BADGE_BUDGET);
-    const past = hubWith(ROW_BADGE_BUDGET + 1);
-    const chipsOf = (document: ReturnType<typeof normalizeDocument>['document']): ReturnType<typeof badgeTexts> =>
-      badgeTexts(document, document.slotByLead.get('hub'), document.byKey.get('hub'), ['hub']);
-    const { texts } = chipsOf(within);
-    const { texts: pastTexts, overflow } = chipsOf(past);
-    assert.deepEqual(pastTexts, texts, 'the chips under the budget differ, so the two cards cannot be compared');
-    assert.ok(overflow !== null, 'no overflow chip past the budget');
-
-    const metrics = defaultTheme.metrics;
-    const gap = metrics['--ig-space-tight'];
-    // What the packer charges around a chip's text: the tag's inline padding,
-    // which it charges every chip (#293), and the gap between a glyph and its
-    // label.
-    const chrome = metrics['--ig-space-snug'] * 2 + gap;
-    const bodyScale =
-      Number.parseFloat(defaultTheme.type['--ig-font-size']) / Number.parseFloat(defaultTheme.type['--ig-font-size-small']);
-    const chips = texts.map((text) => measureLabel(defaultTheme, text) + chrome);
-    const small = measureLabel(defaultTheme, overflow) + chrome;
-    const body = measureLabel(defaultTheme, overflow) * bodyScale + chrome;
-    /** The rows `widths` take when wrapped into `inner`, `gap` apart: the flex row `.ig-badges` draws. */
-    const rows = (widths: readonly number[], inner: number): number => {
-      let used = 0;
-      let count = 1;
-      for (const width of widths) {
-        if (used > 0 && used + gap + width > inner) {
-          count += 1;
-          used = width;
-        } else {
-          used += (used > 0 ? gap : 0) + width;
-        }
-      }
-      return count;
-    };
-    const spineWidth = Array.from({ length: 600 }, (_, step) => 200 + step).find((width) => {
-      const inner = width - metrics['--ig-space'] * 2;
-      const under = rows(chips, inner);
-      return rows([...chips, small], inner) === under && rows([...chips, body], inner) === under + 1;
+        excluded: [],
+      },
+      cycles: [],
     });
-    assert.ok(spineWidth !== undefined, 'no card width puts the chip on the boundary, so this proves nothing');
-
-    const theme = extendTheme(defaultTheme, { metrics: { '--ig-spine-width': spineWidth } });
-    const heightOf = (document: ReturnType<typeof normalizeDocument>['document']): number =>
-      layoutGraph(document, theme).nodes.get('hub')?.height ?? Number.NaN;
-    // A row is the taller of the tag's height and a line, plus the gap above it.
-    const row = Math.max(metrics['--ig-space-wide'], metrics['--ig-card-line']) + gap;
-    assert.ok(
-      heightOf(past) - heightOf(within) >= row,
-      `the card reserved ${String(heightOf(past) - heightOf(within))}px for the row its overflow chip wraps onto, under ${String(row)}px`,
-    );
+    const badges = cardBlocks(document, 'parked', ['parked'], false).find((block) => block.kind === 'badges');
+    assert.ok(badges?.kind === 'badges', 'the held card describes no reason word');
+    assert.ok(badges.texts.includes('Parked'), 'the held card lost its reason word');
   });
 
+  it('describes a graph card as its title, number and priority only, however many relationships it has (#303)', () => {
+    // RULES, Graphs, Dense neighbourhoods: "A node never lists its
+    // relationships: its title, number and priority only." A hub with seventeen
+    // blockers is described, and so measured, exactly like an issue with none.
+    const blockers = Array.from({ length: 17 }, (_, index) => `b${String(index)}`);
+    const { document } = normalizeDocument({
+      issues: [
+        { key: 'hub', title: 'Hub', open: true, priority: 2, provenance: { kind: 'declared-tier', priority: 2 } },
+        ...blockers.map((key) => ({ key, title: `Blocker ${key}`, open: true, priority: 2 })),
+      ],
+      edges: blockers.map((to): ViewerEdge => ({ field: 'blocked-by', from: 'hub', to })),
+      order: { slots: [{ rank: 1, lead: 'hub', members: ['hub'], ready: true, holds: [] }], excluded: [] },
+      cycles: [],
+    });
+    assert.equal(document.edgesOf.get('hub')?.length, 17, 'the hub does not have seventeen relationships to leave out');
+    const blocks = cardBlocks(document, 'hub', ['hub'], false);
+    assert.deepEqual(
+      blocks.map((block) => block.kind),
+      ['head', 'badges'],
+      'the card describes more, or less, than its head and its priority',
+    );
+    const badges = blocks.find((block) => block.kind === 'badges');
+    assert.deepEqual(badges?.kind === 'badges' ? badges.texts : [], ['P2'], 'the card carries a chip besides its priority');
+  });
   it('aligns a gutter card with an unslotted NOW station, not just with a slot', () => {
     // `partnerY` searched `order.slots` alone, and an unslotted running job has
     // a spine box of its own — it IS the NOW station. So a gutter card
@@ -416,45 +323,6 @@ describe('layoutGraph', () => {
     const column = layoutGraph(document, defaultTheme, true);
     assert.equal(column.nodes.get('n')?.now, true);
     assert.equal(column.footer.includes('n'), false, 'the NOW node is a card AND a footer row');
-  });
-
-  it('counts a gutter UNIT\u2019s notes as well as its members', () => {
-    // The unit branch of the height rule returned before the note lines were
-    // added, so a tracker-held unit in the gutter overran its box by exactly its
-    // own hold reason while its arcs stayed anchored to the shorter geometry. A
-    // height rule with an early return is a height rule with a case it forgets.
-    const long =
-      'claimed by another run, which is still working the second member of this unit and has not reported back';
-    const withNote = (reason: string): ViewerDocument => ({
-      issues: [
-        { key: 'r', title: 'Ranked', open: true, priority: 2 },
-        { key: 'u', title: 'Unit lead', open: true, priority: 2 },
-        { key: 'p', title: 'Unit partner', open: true, priority: 2 },
-      ],
-      edges: [
-        { field: 'together-with', from: 'u', to: 'p' },
-        { field: 'blocked-by', from: 'r', to: 'p' },
-      ],
-      order: {
-        slots: [
-          { rank: 1, lead: 'r', members: ['r'], ready: true, holds: [] },
-          {
-            rank: null,
-            lead: 'u',
-            members: ['u', 'p'],
-            ready: false,
-            holds: [{ family: 'tracker', reason, label: 'claimed' }],
-          },
-        ],
-        excluded: [],
-      },
-      cycles: [],
-    });
-    const tall = layoutGraph(normalizeDocument(withNote(long)).document, defaultTheme).nodes.get('u');
-    const short = layoutGraph(normalizeDocument(withNote('claimed')).document, defaultTheme).nodes.get('u');
-
-    assert.ok(tall !== undefined && short !== undefined, 'the unit is not in the gutter');
-    assert.ok(tall.height > short.height, 'a unit card reserved nothing for its own hold reason');
   });
 
   it('marks the UNIT when the running job is a partner, and sizes a gutter unit whole', () => {

@@ -253,29 +253,6 @@ export function measureLabel(theme: Theme, label: string): number {
 }
 
 /**
- * How wide a run of BODY-SIZE text runs: the overflow chip, which the sheet
- * sets in the body sans at `--ig-font-size` because it is a count.
- *
- * `--ig-label-char-width` IS THE WRONG CEILING HERE. It is the label face's
- * average at `--ig-font-size-small`, so a body-size chip measured with it is
- * charged about 12/13 of what it draws, and the card under-reserves exactly
- * the row that chip wraps onto.
- *
- * `--ig-char-width` IS THE BODY-SIZE CEILING THE THEME ALREADY CARRIES. It is
- * the MONO advance at `--ig-font-size`, and a monospace cell is wider than a
- * proportional face's average advance at the same size, so taking it as the
- * average — still scaled per character class by `labelWidth` — over-states a
- * body sans run rather than under-stating it. A host that changes the type
- * scale changes it too, so the chip's reservation follows. No token is added:
- * the token list is the contract every host theme has to fill.
- */
-function measureBodyLabel(theme: Theme, label: string): number {
-  return labelWidth([...label], metric(theme, '--ig-char-width'));
-}
-
-
-
-/**
  * Assign every key that needs a box to a column.
  *
  * Totality is the requirement, not a nicety: every kept edge's endpoints must
@@ -414,7 +391,6 @@ function cardHeight(
   key: string,
   width: number,
   members: readonly string[],
-  onSpine: boolean,
   now: boolean,
 ): number {
   const pad = metric(theme, '--ig-space') * 2;
@@ -431,7 +407,7 @@ function cardHeight(
     inner - memberPad - metric(theme, '--ig-stroke-connector') * 2,
   );
 
-  const blocks = cardBlocks(document, key, members, onSpine, now);
+  const blocks = cardBlocks(document, key, members, now);
   let height = pad;
   blocks.forEach((block, index) => {
     if (index > 0) height += gap;
@@ -443,7 +419,7 @@ function cardHeight(
       // and the card beneath was drawn over it. Every row is charged the taller
       // of the tag and a line: a row of muted text alone reserves a little
       // more than it draws, which is the harmless direction.
-      const rows = packedRows(theme, block.texts, block.overflow, inner);
+      const rows = packedRows(theme, block.texts, inner);
       const chipHeight = Math.max(metric(theme, '--ig-space-wide'), line);
       height += rows * chipHeight + Math.max(0, rows - 1) * gap;
       return;
@@ -481,17 +457,9 @@ function cardHeight(
  * were drawn over. Packed here rather than assumed: each chip is its own text
  * plus its padding, laid into the card's inner width.
  *
- * THE OVERFLOW CHIP IS MEASURED AT THE BODY SIZE, because that is the size the
- * sheet draws it at — see {@link measureBodyLabel}. It is the last chip of the
- * row, so it is packed last. The row that holds it is also a little taller than
- * `--ig-card-line` (13px at 1.45 against 18 by default); the line of slack
- * {@link cardHeight} adds to every card covers that, so no row height is added.
  */
-function packedRows(theme: Theme, texts: readonly string[], overflow: string | null, inner: number): number {
-  const widths = [
-    ...texts.map((text) => measureLabel(theme, text)),
-    ...(overflow === null ? [] : [measureBodyLabel(theme, overflow)]),
-  ];
+function packedRows(theme: Theme, texts: readonly string[], inner: number): number {
+  const widths = texts.map((text) => measureLabel(theme, text));
   if (widths.length === 0) return 0;
   const gap = metric(theme, '--ig-space-tight');
   // THE CHIP'S OWN INNER GAP, TOO. A relationship or status chip is a glyph and
@@ -611,7 +579,7 @@ export function layoutGraph(
   const stacked = [...nowKeys, ...spine];
   for (const key of stacked) {
     const members = slotMembers.get(key) ?? [key];
-    const height = cardHeight(theme, document, key, spineWidth, members, true, nowKeys.includes(key));
+    const height = cardHeight(theme, document, key, spineWidth, members, nowKeys.includes(key));
     nodes.set(key, {
       key,
       column: 'spine',
@@ -678,7 +646,7 @@ export function layoutGraph(
       // `slotMembers` there too — so sizing it as a single issue reserved a
       // fraction of the markup it draws, and the next gutter card was placed on
       // top of the difference.
-      const height = cardHeight(theme, document, key, gutterWidth, slotMembers.get(key) ?? [key], false, false);
+      const height = cardHeight(theme, document, key, gutterWidth, slotMembers.get(key) ?? [key], false);
       // Never above the previous card in the same gutter: an alignment that
       // would overlap gives way to the stack, because a hidden card explains
       // nothing at all.

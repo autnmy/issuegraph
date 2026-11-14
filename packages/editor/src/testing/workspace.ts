@@ -98,6 +98,7 @@ export const WORKSPACE_WORDS: WorkspaceWords = {
   filteredClear: 'clear the filter',
   workedAsOneUnit: 'worked as one unit with',
   noRelationships: 'nothing is related to this',
+  showMore: (count: number): string => `Show ${String(count)} more`,
   addRelationship: 'begin a relationship',
   // DELIBERATELY UNLIKE THE CONTROL'S LABEL ABOVE. A fixture that spelled the
   // heading and the control the same way would pass whichever one the panel

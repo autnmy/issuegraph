@@ -21,7 +21,7 @@ import { recedingOf } from '../recede.ts';
 import { renderViewer } from '../render.ts';
 import { viewerStylesheet } from '../styles.ts';
 import { defaultTheme, extendTheme } from '../theme.ts';
-import { dashArrayFor, treatmentFor } from '../vocabulary.ts';
+import { EDGE_ORDER, dashArrayFor, treatmentFor } from '../vocabulary.ts';
 import { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET, graphScene, relatedKeys } from './graph.ts';
 
 function scene(input: ViewerDocument = fixtureDocument, options = {}) {
@@ -484,7 +484,6 @@ describe('the graph projection', () => {
         document,
         key,
         layout.slotMembers.get(key) ?? [key],
-        box.column === 'spine',
         box.now === true,
       );
       // One top-level child per described block, counted by scanning the card's
@@ -779,51 +778,26 @@ describe('the graph projection', () => {
     assert.equal(markup.includes('data-ig-key="2"'), false, 'the partner took a card of its own');
     assert.match(markup, /data-ig-key="1"[^>]*tabindex="0"/);
   });
-  it('names a unit\u2019s members on its card, and its edges from the declaration', () => {
-    // WHAT THE CONNECTOR TESTS WERE REALLY HOLDING. A three-member unit used to
-    // draw two connectors, and the property worth keeping was never the line —
-    // it was that the unit is read from the DECLARED edges rather than from
-    // member adjacency, so nothing is invented and nothing is missed. One card
-    // listing its members states the same thing, and `edgeBadges` publishes each
-    // declared edge's own identity on the badge that names it.
-    const markup = render(togetherChain);
-    for (const key of ['1', '2', '3']) {
-      assert.match(
-        markup,
-        new RegExp(`<li class="ig-unit-member"><span class="ig-title">[^<]*</span><span class="ig-id"><span class="ig-id">#${key}</span> `),
-      );
+  it('names a unit\u2019s members on its card, and draws none of its internal edges (#303)', () => {
+    // A node never lists its relationships (RULES, Graphs, Dense
+    // neighbourhoods), and a unit's internal edges join members of ONE card, so
+    // no line can draw them either: the card names its members and the
+    // Inspector lists the edges. Checked on a CHAIN and on a STAR, the shape
+    // whose adjacency once invented `together-with|2|3`, so neither a declared
+    // edge nor an inferred one reaches the canvas.
+    for (const shape of [togetherChain, togetherStar]) {
+      const normalized = normalizeDocument(shape).document;
+      const markup = renderMarkup(graphScene(normalized, {}).root);
+      for (const key of ['1', '2', '3']) {
+        assert.match(
+          markup,
+          new RegExp(`<li class="ig-unit-member"><span class="ig-title">[^<]*</span><span class="ig-id"><span class="ig-id">#${key}</span> `),
+        );
+      }
+      const declared = normalized.edges.filter((edge) => edge.field === 'together-with');
+      assert.equal(declared.length, 2, 'the unit declares no edge to leave out');
+      assert.equal(markup.includes('data-ig-group="together-with|'), false, 'a unit edge has a mark');
     }
-    const declared = normalizeDocument(togetherChain)
-      .document.edges.filter((edge) => edge.field === 'together-with')
-      .map((edge) => edgeIdentity(edge.field, edge.from, edge.to));
-    const published = new Set(
-      [...markup.matchAll(/data-edge="together-with" data-ig-group="([^"]*)"/g)].map(
-        (match) => match[1] as string,
-      ),
-    );
-    assert.deepEqual([...published].sort(), [...declared].sort());
-  });
-  it('draws a STAR group from its declared edges, not from adjacent members', () => {
-    // A writer joins a group by pointing at any existing member (§4.3.7), so a
-    // star is ordinary rather than exotic — and it is the shape a chain fixture
-    // cannot catch. An identity inferred from adjacency published
-    // `together-with|2|3`, a relationship this document does not contain, while
-    // the real `1`\u2013`3` edge got none. Checked in BOTH directions: nothing
-    // invented, nothing missed.
-    const normalized = normalizeDocument(togetherStar).document;
-    const markup = renderMarkup(graphScene(normalized, {}).root);
-    const drawn = [...markup.matchAll(/data-edge="together-with" data-ig-group="([^"]*)"/g)].map(
-      (match) => match[1] as string,
-    );
-    const declared = normalized.edges
-      .filter((edge) => edge.field === 'together-with')
-      .map((edge) => edgeIdentity(edge.field, edge.from, edge.to));
-
-    assert.deepEqual([...drawn].sort(), [...declared].sort());
-    assert.ok(
-      !drawn.includes(edgeIdentity('together-with', '2', '3')),
-      'a relationship the document never declared was published',
-    );
   });
 
 
@@ -1403,7 +1377,9 @@ describe('the graph projection recedes what a selection does not touch', () => {
     ]);
   });
 
-  it('keeps the unit card and the selected member 104 its own line, and recedes the lines only its partner 103 has', () => {
+  it('keeps the unit card and the selected member 104 its own line, and draws none of the lines only its partner 103 has', () => {
+    // Only the selection's own relationships draw (RULES, Graphs, Dense
+    // neighbourhoods, #303): a partner's lines wait until it is selected.
     const markup = render(fixtureDocument, { selected: '104' });
     const card = (key: string): string => {
       const tag = tagsWith(markup, 'data-ig-key').find((candidate) =>
@@ -1412,32 +1388,44 @@ describe('the graph projection recedes what a selection does not touch', () => {
       assert.ok(tag !== undefined, `no card was drawn for ${key}`);
       return tag;
     };
-    const paths = (identity: string): readonly string[] => {
-      const found = [...canvasOf(markup).matchAll(/<path class="ig-edge"[^>]*>/g)]
+    const paths = (drawnIn: string, identity: string): readonly string[] =>
+      [...canvasOf(drawnIn).matchAll(/<path class="ig-edge"[^>]*>/g)]
         .map(([tag]) => tag)
         .filter((tag) => tag.includes(`data-ig-group="${identity}"`));
-      assert.ok(found.length > 0, `no line was drawn for ${identity}`);
-      return found;
-    };
+    const partnerOnly = [edgeIdentity('decomposed-from', '103', '107'), edgeIdentity('serialize-with', '103', '105')];
 
     assert.equal(stamped(card('103')), false, 'the unit card receded');
     assert.match(card('103'), /aria-current="true"/, 'the unit card no longer marks the selection');
     assert.equal(stamped(card('102')), true, 'the card of 102, which touches neither member, was kept');
-    assert.deepEqual(paths(edgeIdentity('decomposed-from', '104', '107')).map(stamped), [false]);
-    assert.deepEqual(paths(edgeIdentity('decomposed-from', '103', '107')).map(stamped), [true]);
-    assert.deepEqual(paths(edgeIdentity('serialize-with', '103', '105')).map(stamped), [true, true]);
+    assert.deepEqual(paths(markup, edgeIdentity('decomposed-from', '104', '107')).map(stamped), [false]);
+    for (const identity of partnerOnly) {
+      // NOT VACUOUS: the same line draws with nothing selected.
+      assert.ok(paths(render(fixtureDocument), identity).length > 0, `${identity} draws nowhere, so this proves nothing`);
+      assert.deepEqual(paths(markup, identity), [], `${identity}, a line only the partner has, was drawn`);
+    }
   });
 
   it('stamps no legend sample, no edge mark and no row of a refused canvas', () => {
-    const identity = edgeIdentity('blocked-by', '101', '102');
+    // A mark rides its line: on the selection's own line it draws unstamped, and
+    // on a line the selection does not touch it waits with the line (#303).
+    const own = edgeIdentity('serialize-with', '103', '105');
+    const other = edgeIdentity('blocked-by', '101', '102');
+    const requested = [{ placement: 'companion' as const }, { placement: 'beside' as const, glyph: '!' }];
     const marked = render(fixtureDocument, {
       selected: '105',
-      edgeMarks: new Map([[identity, [{ placement: 'companion' as const }, { placement: 'beside' as const, glyph: '!' }]]]),
+      edgeMarks: new Map([
+        [own, requested],
+        [other, requested],
+      ]),
     });
-    assert.ok(stamped(tagsWith(canvasOf(marked), 'data-ig-group').find((tag) => tag.includes(identity)) ?? ''), 'the marked line did not recede, so this proves nothing');
     const marks = tagsWith(marked, 'data-ig-mark');
-    assert.ok(marks.length > 0, 'no edge mark was drawn');
+    assert.ok(marks.some((tag) => tag.includes(own)), 'no mark was drawn on the selection\u2019s own line');
     assert.deepEqual(marks.filter(stamped), []);
+    assert.deepEqual(
+      tagsWith(canvasOf(marked), 'data-ig-group').filter((tag) => tag.includes(other)),
+      [],
+      'the line 105 does not touch, or a mark on it, was drawn',
+    );
 
     const legendStart = marked.indexOf('<fieldset class="ig-legend"');
     assert.notEqual(legendStart, -1, 'no legend was drawn');
@@ -1502,9 +1490,10 @@ describe('the graph projection recedes what a selection does not touch', () => {
     }
   });
 
-  it('adds only the constant recede stamp for a resolving selectedEdge', () => {
+  it('adds only the constant recede stamp for a resolving selectedEdge, and leaves out the other lines', () => {
     const bare = render(fixtureDocument);
-    const receding = render(fixtureDocument, { selectedEdge: edgeIdentity('decomposed-from', '103', '107') });
+    const selectedEdge = edgeIdentity('decomposed-from', '103', '107');
+    const receding = render(fixtureDocument, { selectedEdge });
 
     // The issue: "Receding elements get `data-recede="true"`; others get no attribute, never `"false"`."
     const values = [...receding.matchAll(/data-recede="([^"]*)"/g)].map((match) => match[1]);
@@ -1512,9 +1501,16 @@ describe('the graph projection recedes what a selection does not touch', () => {
     assert.deepEqual([...new Set(values)], ['true']);
 
     // The issue: "The selection value is compared, never written into markup, a selector or the stylesheet."
-    // Removing every stamp must give back the bare render byte for byte, so the
-    // receding render carries no copy of the selection anywhere else.
-    assert.equal(receding.replaceAll(' data-recede="true"', ''), bare);
+    // Removing every stamp must give back the bare render with only the other
+    // lines left out (#303: only the selection's own relationships draw), so
+    // the receding render carries no copy of the selection anywhere else.
+    const canvas = canvasOf(bare);
+    const ownLinesOnly = canvas.replace(/<[a-z]+ [^>]*data-ig-group="([^"]*)"[^>]*\/>/g, (tag, identity: string) =>
+      identity === selectedEdge ? tag : '',
+    );
+    assert.notEqual(ownLinesOnly, canvas, 'no other line was drawn in the bare render, so this proves nothing');
+    assert.ok(ownLinesOnly.includes(`data-ig-group="${selectedEdge}"`), 'the selected line itself was left out');
+    assert.equal(receding.replaceAll(' data-recede="true"', ''), bare.replace(canvas, ownLinesOnly));
   });
 
   it('recomputes the recede on every render, so a selection leaves no stamp on the next render of the same document', () => {
@@ -1583,26 +1579,36 @@ describe('the graph projection recedes what a selection does not touch', () => {
     assert.equal(by105.get('rank 2'), false, 'the station of the neighbour 103 receded');
   });
 
-  it("keeps each receded line on its kind's own dash for the four kinds the canvas draws", () => {
-    // "A receded line keeps its kind's dash, for all five kinds"
-    // together-with draws no line on the canvas, so its dash is checked against the stylesheet instead.
-    const canvas = canvasOf(render(fixtureDocument, { selected: '102' }));
-    assert.notEqual(canvas, '', 'the graph drew no canvas');
+  it("draws only the selection's own lines, each on its kind's own dash, and none of the four kinds' other lines", () => {
+    // RULES, Graphs, Dense neighbourhoods: "Only the selection's own
+    // relationships draw." 102 touches only blocked-by 101 to 102 and
+    // decomposed-from 102 to 101, so every other line, of all four kinds the
+    // canvas draws, waits. together-with draws no line on the canvas at all.
+    const lines = (options: { selected?: string }): readonly string[] =>
+      [...canvasOf(render(fixtureDocument, options)).matchAll(/<path class="ig-edge"[^>]*>/g)].map(([tag]) => tag);
+    const kindOf = (tag: string): (typeof EDGE_ORDER)[number] => {
+      const field = EDGE_ORDER.find((candidate) => tag.includes(`data-edge="${candidate}"`));
+      assert.ok(field !== undefined, `a line of no known kind: ${tag}`);
+      return field;
+    };
 
-    const recededKinds = new Set<string>();
-    for (const [tag] of canvas.matchAll(/<path class="ig-edge"[^>]*>/g)) {
-      if (!stamped(tag)) continue;
-      const kind = (/data-edge="([^"]+)"/.exec(tag)?.[1] ?? '') as Parameters<typeof treatmentFor>[0];
-      recededKinds.add(kind);
+    const bareKinds = new Set(lines({}).map(kindOf));
+    assert.deepEqual([...bareKinds].sort(), ['blocked-by', 'decomposed-from', 'duplicate-of', 'serialize-with']);
+
+    const drawn = lines({ selected: '102' });
+    const identities = new Set(drawn.map((tag) => /data-ig-group="([^"]*)"/.exec(tag)?.[1] ?? ''));
+    assert.deepEqual(
+      [...identities].sort(),
+      [edgeIdentity('blocked-by', '101', '102'), edgeIdentity('decomposed-from', '102', '101')].sort(),
+    );
+    for (const tag of drawn) {
+      assert.equal(stamped(tag), false, 'a line of the selection receded');
       assert.equal(
         /stroke-dasharray="([^"]*)"/.exec(tag)?.[1] ?? null,
-        dashArrayFor(treatmentFor(kind).dash),
-        `a receded ${kind} line lost its dash`,
+        dashArrayFor(treatmentFor(kindOf(tag)).dash),
+        `a ${kindOf(tag)} line lost its dash`,
       );
     }
-    // 102 touches only blocked-by 101 to 102 and decomposed-from 102 to 101, so each of the
-    // four kinds still has a line that recedes.
-    assert.deepEqual([...recededKinds].sort(), ['blocked-by', 'decomposed-from', 'duplicate-of', 'serialize-with']);
   });
 
   it('keeps the neighbour of the selected unit member b and the unit card, and recedes the neighbour of its partner a', () => {

@@ -176,6 +176,7 @@ export { EDGE_MARK_CLASS, MARK_PLACEMENT_ATTRIBUTE } from './marks.ts';
 // that argued against it. `hiddenGlyph` is the half that call site needs.
 export {
   COMMAND_ATTRIBUTE,
+  LEGEND_ORDER,
   ROW_BADGE_BUDGET,
   glyphAndLabel,
   hiddenGlyph,

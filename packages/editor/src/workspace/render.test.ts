@@ -59,9 +59,17 @@ function inspectorOf(markup: string): string {
 }
 
 /** The relationship list alone, so a `data-edge` on a kind-list entry cannot answer for a row. */
+/**
+ * Every row the Inspector's relationship lists draw, in order. The list is one
+ * `ul` per kind's group since #303, so this joins them all.
+ */
 function listOf(panel: string): string {
-  const at = panel.indexOf('<ul class="ig-relationship-list">');
-  return at === -1 ? '' : panel.slice(at, panel.indexOf('</ul>', at));
+  const lists: string[] = [];
+  const open = '<ul class="ig-relationship-list">';
+  for (let at = panel.indexOf(open); at !== -1; at = panel.indexOf(open, at + open.length)) {
+    lists.push(panel.slice(at, panel.indexOf('</ul>', at)));
+  }
+  return lists.join('');
 }
 
 /**
@@ -1033,15 +1041,16 @@ describe('the create path begins in the panel, and its digits are the keyboard\u
     // the control, so the pin is that the control's place does not depend on
     // it: the same header, with three rows under it and with none.
     const head = /<div class="ig-inspector-relationships-head">.*?<\/div>/;
-    for (const [key, note] of [
-      ['i0001', 'an issue with relationships'],
-      ['i0004', 'an issue with none'],
+    // The heading carries the total when there is one to state (#303).
+    for (const [key, note, total] of [
+      ['i0001', 'an issue with relationships', '<span class="ig-relationship-count"> \\d+<\\/span>'],
+      ['i0004', 'an issue with none', ''],
     ] as const) {
       const panel = inspectorOf(
         renderWorkspace(document, { ...WORDS, selection: { kind: 'issue', key } }).markup,
       );
       const header = head.exec(panel)?.[0] ?? '';
-      assert.match(header, /<h3 class="ig-inspector-heading">relationships<\/h3>/, note);
+      assert.match(header, new RegExp(`<h3 class="ig-inspector-heading">relationships${total}</h3>`), note);
       assert.match(header, /class="ig-inspector-addbutton"/, `+ add is outside the header for ${note}`);
     }
     // AND THE EMPTY PANEL STILL SAYS SO. The control moving up must not displace
@@ -3353,3 +3362,37 @@ describe('the middle zone switch between Related groups and Sub-issues', () => {
   });
 });
 
+describe('the Inspector draws each kind\u2019s group with its count and five rows before "Show N more" (#303)', () => {
+  // RULES, Graphs, Dense neighbourhoods. i0001 is blocked by nine issues.
+  const blockers = keysOf(12).slice(1, 10);
+  const document = backlogOf(12, { edges: blockers.map((to) => ['blocked-by', 'i0001', to] as const) });
+  const panelWith = (shownGroups: readonly string[]): string =>
+    inspectorOf(renderWorkspace(document, { ...WORDS, selection: { kind: 'issue', key: 'i0001' }, shownGroups }).markup);
+  const rows = (panel: string): number => (panel.match(/<li class="ig-relationship" /g) ?? []).length;
+
+  it('heads the group in the kind\u2019s words with its count, and draws five of its nine rows', () => {
+    const panel = panelWith([]);
+    assert.match(
+      panel,
+      /<div class="ig-relationship-group" data-ig-group-key="blocked-by:outgoing"><div class="ig-relationship-group-head"><span>Is blocked by<\/span><span class="ig-relationship-count">9<\/span><\/div>/,
+    );
+    assert.equal(rows(panel), 5, 'the group did not fold past its first five');
+    assert.match(
+      panel,
+      /<button type="button" class="ig-relationship-more" data-ig-command="show-group" data-ig-value="blocked-by:outgoing">Show 4 more<\/button>/,
+    );
+  });
+
+  it('heads the relationships with their total over the groups, as the board does', () => {
+    assert.match(
+      panelWith([]),
+      /<h3 class="ig-inspector-heading">relationships<span class="ig-relationship-count"> 9<\/span><\/h3>/,
+    );
+  });
+
+  it('draws all nine once the reader opened the group, and offers no "Show more"', () => {
+    const panel = panelWith(['blocked-by:outgoing']);
+    assert.equal(rows(panel), 9);
+    assert.equal(panel.includes('ig-relationship-more'), false, 'an opened group still offers to show more');
+  });
+});

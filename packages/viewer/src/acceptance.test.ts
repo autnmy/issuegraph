@@ -204,6 +204,9 @@ describe('the public surface', () => {
       'EFFECT_TOKENS',
       'GRAPH_NODE_BUDGET',
       'KEY_ATTRIBUTE',
+      // The legend's field order, so §17a's Inspector lists a node's
+      // relationships in the order the legend names them (#303).
+      'LEGEND_ORDER',
       'MARK_PLACEMENT_ATTRIBUTE',
       'METRIC_TOKENS',
       // WHAT A SELECTION RECEDES and the strength it draws at, so a host that

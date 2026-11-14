@@ -1577,6 +1577,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       narrowView: state.narrowView,
       canvas: state.canvas,
       relatedGroup: state.relatedGroup,
+      shownGroups: state.shownGroups,
       relatedQuery: state.relatedQuery,
       // §17d's overlay. Host state, for the same reason the filter beside it
       // is: the renderer keeps nothing across a redraw.

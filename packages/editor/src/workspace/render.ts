@@ -120,9 +120,12 @@ import { renderScaleLadder } from '../scale/render.ts';
 import { scaleLadderStylesheet } from '../scale/styles.ts';
 
 import {
+  INSPECTOR_GROUP_SHOWN,
+  type InspectorGroup,
   type InspectorRelationship,
   type InspectorView,
   type InspectorWhyRank,
+  inspectorGroups,
   inspectorView,
 } from './inspector.ts';
 import { CANVAS_MODES, type CanvasMode, type NarrowTab, type NarrowView, NARROW_TABS, canvasTabOf, narrowTabOf } from './narrow.ts';
@@ -260,6 +263,11 @@ export interface WorkspaceWords {
   readonly hideCanvas: string;
   /** Names the relationships list. */
   readonly relationships: string;
+  /**
+   * The Inspector's control under a group past its first five: *"Show 4
+   * more"*. A function because the count sits inside the sentence.
+   */
+  readonly showMore: (count: number) => string;
   /**
    * §17a's `WHY RANK n` heading, without the number.
    *
@@ -1130,6 +1138,8 @@ export interface WorkspaceOptions {
   readonly relatedGroup?: EdgeField | null | undefined;
   /** The Related groups list's search text. See `HostState.relatedQuery`. */
   readonly relatedQuery?: string | undefined;
+  /** The Inspector groups opened past their first five. See `HostState.shownGroups`. */
+  readonly shownGroups?: readonly string[] | undefined;
 }
 
 export interface WorkspaceView {
@@ -2472,6 +2482,8 @@ function headerMarkup(
  */
 interface InspectorContext {
   readonly words: WorkspaceWords;
+  /** The groups the reader opened past their first five. See `HostState.shownGroups`. */
+  readonly shownGroups: readonly string[];
   /**
    * The audit, when the host asked for one, so the zone can carry §17d's list.
    *
@@ -3018,7 +3030,7 @@ function relationshipEntries(
     if (statedHere(scope, refusal)) stated.set(refusal.edgeId, refusal);
   }
   const listed = new Set<EdgeId>();
-  const rows = view.relationships.map((relationship) => {
+  const rowOf = (relationship: InspectorRelationship): ElementSpec => {
     const refusal = stated.get(relationship.edgeId);
     if (refusal === undefined) {
       return relationshipSpec(relationship, subject, selected, context.words, undefined);
@@ -3027,11 +3039,69 @@ function relationshipEntries(
     return refusal.phantom
       ? refusalCapsule(relationship, refusal.code, subject, context.words)
       : relationshipSpec(relationship, subject, selected, context.words, refusal.code);
-  });
+  };
+  const groups = inspectorGroups(view.relationships).map((group) =>
+    relationshipGroupSpec(
+      group,
+      context.shownGroups.includes(group.key),
+      rowOf,
+      (relationship) => stated.has(relationship.edgeId),
+      context.words,
+    ),
+  );
   const orphaned = [...stated.values()]
     .filter((refusal) => !listed.has(refusal.edgeId))
     .map((refusal) => refusalCapsule(undefined, refusal.code, subject, context.words));
-  return [...rows, ...orphaned];
+  return orphaned.length === 0
+    ? groups
+    : [...groups, element('ul', { class: 'ig-relationship-list' }, orphaned)];
+}
+
+/**
+ * One kind's group in the Inspector: its words and count, its first five rows,
+ * and "Show 4 more" for the rest (RULES, Graphs, Dense neighbourhoods).
+ *
+ * THE ROWS PAST FIVE ARE NOT DRAWN until the reader opens the group, so a
+ * selection with three hundred relationships draws fifteen rows, not three
+ * hundred, and every refusal among the hidden rows is still stated: a refused
+ * row is drawn whatever the fold.
+ */
+function relationshipGroupSpec(
+  group: InspectorGroup,
+  shown: boolean,
+  rowOf: (relationship: InspectorRelationship) => ElementSpec,
+  refused: (relationship: InspectorRelationship) => boolean,
+  words: WorkspaceWords,
+): ElementSpec {
+  // THE LEGEND'S WORDS, read from the subject's end: "Is blocked by" and
+  // "Was decomposed from" as the key says them, and the reverse verb ("Blocks")
+  // for a kind the subject receives (RULES, Graphs, Dense neighbourhoods).
+  const treatment = treatmentFor(group.field);
+  const phrase = group.direction === 'incoming' ? labelFrom(treatment, false) : treatment.legendLabel;
+  const heading = `${phrase.charAt(0).toUpperCase()}${phrase.slice(1)}`;
+  const drawn = shown
+    ? group.relationships
+    : group.relationships.filter((relationship, index) => index < INSPECTOR_GROUP_SHOWN || refused(relationship));
+  const hidden = group.relationships.length - drawn.length;
+  return element('div', { class: 'ig-relationship-group', 'data-ig-group-key': group.key }, [
+    element('div', { class: 'ig-relationship-group-head' }, [
+      element('span', {}, [heading]),
+      element('span', { class: 'ig-relationship-count' }, [String(group.relationships.length)]),
+    ]),
+    element('ul', { class: 'ig-relationship-list' }, drawn.map(rowOf)),
+    hidden === 0
+      ? null
+      : element(
+          'button',
+          {
+            type: 'button',
+            class: 'ig-relationship-more',
+            'data-ig-command': 'show-group',
+            'data-ig-value': group.key,
+          },
+          [words.showMore(hidden)],
+        ),
+  ]);
 }
 
 /**
@@ -3161,7 +3231,14 @@ function inspectorSpec(view: InspectorView, context: InspectorContext): ElementS
           // fold on the busy issues a groomer most needs it for. On the header
           // row its position does not depend on the content.
           element('div', { class: 'ig-inspector-relationships-head' }, [
-            element('h3', { class: 'ig-inspector-heading' }, [words.relationships]),
+            // THE TOTAL OVER THE GROUPS, as the dense board heads them:
+            // "Relationships 17", each group then counting its own.
+            element('h3', { class: 'ig-inspector-heading' }, [
+              words.relationships,
+              view.relationships.length === 0
+                ? null
+                : element('span', { class: 'ig-relationship-count' }, [` ${String(view.relationships.length)}`]),
+            ]),
             step.kind === 'add' ? addControlSpec(words, step.subject) : null,
           ]),
           // A STATED EMPTY, AND ONLY WHERE THERE IS A SUBJECT TO STATE IT ABOUT.
@@ -3172,7 +3249,7 @@ function inspectorSpec(view: InspectorView, context: InspectorContext): ElementS
           entries.length === 0 && subject.kind !== 'none'
             ? element('p', { class: 'ig-inspector-none' }, [words.noRelationships])
             : null,
-          entries.length === 0 ? null : element('ul', { class: 'ig-relationship-list' }, entries),
+          ...entries,
           // THE STEPS ARE EXCLUSIVE, AND THE CHAIN IS THE SHELL'S OWN. `+ add`
           // begins a draft; the numbered list is what a live draft with no kind
           // yet looks like. Drawing `+ add` beside a live list would offer a
@@ -4018,6 +4095,7 @@ export function renderWorkspace(
       renderMarkup(
         inspectorSpec(inspector, {
           words: options.words,
+          shownGroups: options.shownGroups ?? [],
           audit: overlay,
           known,
           leadOf,

@@ -51,6 +51,13 @@ import { type LateralNeighbours, type Scene, resolveFocusKey } from '../scene.ts
 import { isSelectedKey } from '../selection.ts';
 import { treatmentFor } from '../vocabulary.ts';
 
+/**
+ * How many relationships an order row names before it counts the rest: one
+ * (RULES, Graphs, Dense neighbourhoods: "#2290 P0 is blocked by #2281 +16"). The
+ * Inspector lists them all, and the selection's lines draw them.
+ */
+const ORDER_ROW_RELATIONSHIPS = 1;
+
 export interface SceneOptions {
   /**
    * The selected issue, or a set of them in the order they were added. Every
@@ -349,7 +356,7 @@ export function slotRow(
   // readiness and the relationships as one wrapping row of chips, in that
   // order — the facts a reader scans for before they read a word of the
   // sentence beneath.
-  const badgeRow = [...badges, ...edgeBadgeList(document, slot.members)];
+  const badgeRow = [...badges, ...edgeBadgeList(document, slot.members, ORDER_ROW_RELATIONSHIPS)];
 
   // THE IDENTITY AND THE BADGES ARE ONE LINE, NOT TWO BLOCKS — which is what
   // §17j's row anatomy asks for and what the old markup could not express.
