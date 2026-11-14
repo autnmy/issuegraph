@@ -2113,6 +2113,44 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
     assert.equal(card(inspector), logged, 'the log card differs from the Inspector card');
   });
 
+  it('marks the log\u2019s copy of a write the Inspector states, and only that one: one card per failed write', () => {
+    // THE REDESIGN LEAD'S RULING. The Inspector draws the card beside the issue
+    // the reader is working on; the log's copy is marked, and the sheet hides
+    // it wherever the Inspector is drawn. Every other failed write, and every
+    // write with no carrier, stays in the log unmarked.
+    const failed = (mutationId: string, from: string, to: string, carrier: string | null): WorkspaceRecovery => ({
+      kind: 'failed',
+      mutationId,
+      edgeId: `blocked-by|${from}|${to}`,
+      carrier,
+      write: { op: 'create', edge: { id: `blocked-by|${from}|${to}`, kind: 'blocked-by', from, to } },
+      reason: 'the tracker was unreachable',
+    });
+    const log = [failed('m1', 'i0001', 'i0002', 'i0001'), failed('m2', 'i0003', 'i0004', 'i0003'), failed('m3', 'i0005', 'i0006', null)];
+    const entry = (markup: string, mutationId: string): string =>
+      new RegExp(`<li class="ig-log-recovery" data-mutation="${mutationId}"[^>]*>`).exec(markup)?.[0] ?? '';
+    const inspectorCards = (markup: string): readonly string[] =>
+      [...markup.slice(markup.indexOf('data-zone="inspector"')).matchAll(/data-ig-target="(m\d)"/g)].map((match) => match[1] ?? '');
+
+    const onFirst = drawn({ words: WORKSPACE_WORDS, selection: { kind: 'issue', key: 'i0001' }, log });
+    assert.match(entry(onFirst, 'm1'), /data-ig-inspected="true"/, 'the log did not mark the write the Inspector draws');
+    assert.ok(inspectorCards(onFirst).includes('m1'), 'the Inspector did not draw the selected issue\u2019s write');
+    assert.equal(entry(onFirst, 'm2').includes('data-ig-inspected'), false, 'another issue\u2019s write was marked');
+    assert.equal(entry(onFirst, 'm3').includes('data-ig-inspected'), false, 'a write with no carrier was marked');
+    assert.equal(inspectorCards(onFirst).includes('m2'), false);
+
+    // SWITCHING THE SELECTION MOVES THE CARD: now the Inspector states m2, and
+    // the log takes m1 back.
+    const onThird = drawn({ words: WORKSPACE_WORDS, selection: { kind: 'issue', key: 'i0003' }, log });
+    assert.match(entry(onThird, 'm2'), /data-ig-inspected="true"/);
+    assert.equal(entry(onThird, 'm1').includes('data-ig-inspected'), false, 'the old selection\u2019s write stayed marked');
+    assert.equal(entry(onThird, 'm3').includes('data-ig-inspected'), false);
+
+    // NOTHING SELECTED: the log keeps every card.
+    const none = drawn({ words: WORKSPACE_WORDS, log });
+    assert.equal(/data-ig-inspected/.test(none), false, 'a write was marked with no Inspector subject');
+  });
+
   it('names each write that did not save above its log card, and names none in the Inspector', () => {
     const words = WORKSPACE_WORDS.log;
     const markup = drawn({
@@ -2131,7 +2169,7 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
     });
     const header = markup.slice(markup.indexOf('data-zone="header"'), markup.indexOf('data-zone="rail"'));
     const inspector = markup.slice(markup.indexOf('data-zone="inspector"'));
-    const line = /<li class="ig-log-recovery" data-mutation="m6"><div class="ig-log-write">([\s\S]*?)<\/div><ul class="ig-recovery-list"><li class="ig-recovery"/.exec(header)?.[1];
+    const line = /<li class="ig-log-recovery" data-mutation="m6"[^>]*><div class="ig-log-write">([\s\S]*?)<\/div><ul class="ig-recovery-list"><li class="ig-recovery"/.exec(header)?.[1];
     assert.ok(line !== undefined, 'the log drew no line naming the write above its card');
     for (const word of [words.ops.delete, words.kinds['blocked-by']]) {
       assert.ok(line.includes(word), `the naming line does not carry "${word}"`);
