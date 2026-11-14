@@ -51,6 +51,7 @@ import {
   legend,
   notReadyBadge,
   priorityBadge,
+  priorityRaise,
   recedeStamp,
   slotLabel,
   slotPosition,
@@ -423,6 +424,7 @@ function cardMark(
         // can differ by one.
         [
           priorityBadge(document.byKey.get(key)?.provenance),
+          priorityRaise(document.byKey.get(key)?.provenance),
           evidenceBadge(document.byKey.get(key)),
           slot === undefined ? null : notReadyBadge(slot),
           ...caveatBadges(document.byKey.get(key)),

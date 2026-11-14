@@ -115,7 +115,16 @@ describe('the default theme meets WCAG AA', () => {
   });
 
   it('states every colour as a hex value the ratio test can read', () => {
+    // ONE EXCEPTION, AND IT IS NAMED (#293). `--ig-fill-strong` is the export's
+    // fill-strong: an ink at 8% over whatever surface it lands on, so an opaque
+    // hex would be right on one surface and wrong on the others. It carries no
+    // text and no line, so no ratio test reads it; it is held to its own form.
+    const translucent = ['--ig-fill-strong'];
     for (const token of COLOR_TOKENS) {
+      if (translucent.includes(token)) {
+        assert.match(defaultTheme.colors[token], /^rgb\(\d+ \d+ \d+ \/ 0?\.\d+\)$/, token);
+        continue;
+      }
       assert.match(defaultTheme.colors[token], /^#[0-9A-Fa-f]{6}$/, token);
     }
   });
@@ -648,6 +657,25 @@ describe('a selected row and an inverted node measured against the text bar', ()
       assert.ok(inverted >= 4.5, `${name}: the inverted label measures ${inverted.toFixed(2)}:1`);
       assert.equal(inverted.toFixed(2), expected[name].inverted, `${name}: the inverted label`);
     }
+  });
+});
+
+describe('the state marks (#293)', () => {
+  it('clears the 3:1 non-text bar for each state mark on every surface, in the default and paper themes', () => {
+    // A mark is a dot that states a state: a graphical object, so 1.4.11's bar.
+    for (const [name, theme] of [['default', defaultTheme], ['paper', paperTheme]] as const) {
+      for (const mark of ['--ig-state-failed-mark', '--ig-state-conflict-mark'] as const) {
+        for (const surface of SURFACES) {
+          const ratio = contrastRatio(theme.colors[mark], theme.colors[surface]);
+          assert.ok(ratio >= 3, `${name}: ${mark} on ${surface} measures ${ratio.toFixed(2)}:1`);
+        }
+      }
+    }
+  });
+
+  it('defaults each mark to its state hue, so the default look is unchanged', () => {
+    assert.equal(defaultTheme.colors['--ig-state-failed-mark'], defaultTheme.colors['--ig-state-failed']);
+    assert.equal(defaultTheme.colors['--ig-state-conflict-mark'], defaultTheme.colors['--ig-state-conflict']);
   });
 });
 

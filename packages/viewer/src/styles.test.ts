@@ -1241,10 +1241,11 @@ describe('the chrome the export draws differently, drawn as the export draws it 
 
   it('draws the loading placeholder on one static fill, lines as short pills in their line height, blocks with the card corner', () => {
     const css = viewerStylesheet;
-    // ONE FILL, the stronger surface, everywhere — no ground-specific override.
-    // Read in a row and on the header's own ground, where an override used to be.
-    assert.equal(declaredOn(css, '.ig-skeleton-block', 'background', ['.ig-viewer', '.ig-list', '.ig-slot'])?.value, 'var(--ig-surface)');
-    assert.equal(declaredOn(css, '.ig-skeleton-block', 'background', ['.ig-viewer', '.ig-header', '.ig-header-top'])?.value, 'var(--ig-surface)');
+    // ONE FILL, the fill-strong role (its own token since #293), everywhere — no
+    // ground-specific override. Read in a row and on the header's own ground,
+    // where an override used to be.
+    assert.equal(declaredOn(css, '.ig-skeleton-block', 'background', ['.ig-viewer', '.ig-list', '.ig-slot'])?.value, 'var(--ig-fill-strong)');
+    assert.equal(declaredOn(css, '.ig-skeleton-block', 'background', ['.ig-viewer', '.ig-header', '.ig-header-top'])?.value, 'var(--ig-fill-strong)');
     // A LINE IS A PILL ONE SNUG STEP TALL, whose margins make up its line.
     const lines: readonly (readonly [string, string])[] = [
       ['title', '--ig-row-title-line'],
@@ -1320,6 +1321,8 @@ describe('the tag, the rank, the unit count and the legend, as the export draws 
     const SECOND = [
       ".ig-badge[data-edge='blocked-by']",
       ".ig-badge[data-edge='decomposed-from']",
+      // A raise, "from P3", after the raised priority's tag.
+      ".ig-badge[data-raise='3']",
       ".ig-badge[data-caveat='disagree']",
       ".ig-badge[data-caveat='preview-only']",
       ".ig-badge[data-evidence='verified']",

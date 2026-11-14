@@ -58,6 +58,19 @@ export const COLOR_TOKENS = Object.freeze([
   // hue mixed at a tint, because a host maps its error fill to one role and a
   // mix of the text hue lands on a different colour in every theme.
   '--ig-state-failed-fill',
+  // THE EXPORT'S FILL-STRONG ROLE (#293): a ground for a placeholder, an ink
+  // laid at a low alpha over whatever surface lies beneath. The loading
+  // skeleton reads it, so this package's own themes draw the skeleton the
+  // way a host's fill-strong does. It is NOT `--ig-surface`, which is an
+  // opaque surface a host may map to something else.
+  '--ig-fill-strong',
+  // A STATE'S MARK, BESIDE ITS HUE (#293). The hue colours a state's words and
+  // strokes, and a host maps it to the state's text ink; a dot that states a
+  // state wants the state's own colour, which on a light ground is not that
+  // ink. Defaulted to the hue, so nothing this package draws changes until a
+  // host maps the two apart.
+  '--ig-state-failed-mark',
+  '--ig-state-conflict-mark',
 ] as const);
 
 export type ColorToken = (typeof COLOR_TOKENS)[number];
@@ -311,6 +324,14 @@ export const defaultTheme: Theme = Object.freeze({
     // A dark warm ground the failed hue reads on at well over 4.5:1, where
     // the tag used to mix that hue at the chip tint over whatever lay beneath.
     '--ig-state-failed-fill': '#2A1C17',
+    // The export's dark fill-strong verbatim: its light ink at 8%. TRANSLUCENT
+    // ON PURPOSE, so it reads the same over the ground and over the second
+    // surface; it is the one colour here that is not a hex, and theme.test.ts
+    // says why.
+    '--ig-fill-strong': 'rgb(232 233 238 / 0.08)',
+    // The two hues above, so the default dot is the colour it was.
+    '--ig-state-failed-mark': '#FFAF8E',
+    '--ig-state-conflict-mark': '#F5C542',
   }),
   type: Object.freeze({
     '--ig-font-ui': "Geist, ui-sans-serif, system-ui, sans-serif",

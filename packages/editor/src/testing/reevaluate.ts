@@ -140,8 +140,8 @@ export function ranks(markup: string): string[] {
   );
 }
 
-/** The background, the surfaces, the hairline and the text roles: the colour tokens with no hue. */
-const NEUTRAL_TOKEN = /^--ig-(?:bg|surface(?:-2)?|line|text(?:-body|-muted)?)$/;
+/** The background, the surfaces and the fill-strong ground, the hairline and the text roles: the colour tokens with no hue. */
+const NEUTRAL_TOKEN = /^--ig-(?:bg|surface(?:-2)?|fill-strong|line|text(?:-body|-muted)?)$/;
 
 /**
  * What a held rail's rule must declare: each colour token that is not the

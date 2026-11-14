@@ -249,9 +249,13 @@ describe('the linear projection', () => {
       row(render(), '102'),
       /Priority raised <span class=\"ig-id\">P3 -&gt; 0<\/span><span> because it blocks <span class=\"ig-id\">101<\/span>/,
     );
-    // And the same fact as a chip on the badge row, which is where a reader
-    // scanning a column of rows meets it.
-    assert.match(row(render(), '102'), /<span class="ig-badge" data-priority="promoted">P3 -&gt; 0<\/span>/);
+    // And the same fact on the badge row, which is where a reader scanning a
+    // column of rows meets it: the tag holds the priority the row has now, and
+    // the raise is muted text after it, as the board draws it (#293).
+    assert.match(
+      row(render(), '102'),
+      /<span class="ig-badge" data-priority="promoted">P0<\/span><span class="ig-badge" data-raise="3">from P3<\/span>/,
+    );
   });
 
   it('renders the other two provenance forms', () => {

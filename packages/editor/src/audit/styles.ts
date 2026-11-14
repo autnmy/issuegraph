@@ -48,8 +48,14 @@ export const auditStylesheet = `
   gap: var(--ig-space-tight);
 }
 
+/* THE WORDS SIT ON ONE BASELINE (issue 293). An inline-flex box takes its
+   baseline from its first item that takes part in baseline alignment, and
+   centred items take none, so the empty dot leading the button gave it its
+   bottom edge as a baseline and the count rode high beside the header's other
+   text. The count and its word align by baseline, which makes the count the
+   button's baseline; the dot alone is centred, below. */
 .ig-audit-toggle {
-  align-items: center;
+  align-items: baseline;
   background: none;
   border: 0;
   color: var(--ig-text);
@@ -82,9 +88,12 @@ export const auditStylesheet = `
    rules give each one: a loop is the error state, a duplicate of a closed issue
    and relationships that could not be read are the attention state, and a
    closed blocker is the neutral state, drawn as a ring because nothing is
-   happening. The theme's failed and conflict hues are those two states, and
-   the pending station colour is the neutral one. */
+   happening. The dot reads each state's MARK token, not its hue: a host maps
+   the hue to the state's text ink, which on a light ground is near black, and
+   the mark to the state's own colour. The pending station colour is the
+   neutral ring. */
 .ig-audit-dot {
+  align-self: center;
   block-size: var(--ig-space-snug);
   border-radius: 50%;
   flex: none;
@@ -95,12 +104,12 @@ export const auditStylesheet = `
 }
 
 .ig-audit-dot[${AUDIT_WORST_ATTRIBUTE}='cycle'] {
-  background: var(--ig-state-failed);
+  background: var(--ig-state-failed-mark);
 }
 
 .ig-audit-dot[${AUDIT_WORST_ATTRIBUTE}='dead-duplicate-ref'],
 .ig-audit-dot[${AUDIT_WORST_ATTRIBUTE}='encoding-refused'] {
-  background: var(--ig-state-conflict);
+  background: var(--ig-state-conflict-mark);
 }
 
 .ig-audit-dot[${AUDIT_WORST_ATTRIBUTE}='stale-blocker'] {

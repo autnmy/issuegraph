@@ -1255,7 +1255,7 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 
 /* A SECOND CONDITION IS MUTED TEXT AFTER THE TAG, NOT A SECOND TAG (issue
    293). The export's rules allow one tag per cell, and its board draws a row's
-   relationships ("is blocked by …", "blocks …") and its caveats
+   relationships ("is blocked by …", "blocks …"), a raise ("from …") and its caveats
    ("Priorities disagree", "Estimated") as plain muted words after the one
    priority tag, with the count of what is left as a muted number. So every
    chip that is not the priority tag drops the pill: no fill, no corner, no
@@ -1267,6 +1267,7 @@ ${railDensity(".ig-viewer[data-density='dense']")}
    export colours no relationship text, and the theme holds the edge hues to
    the 3:1 non-text bar, so the words could never take the hue anyway. */
 .ig-badge[data-edge],
+.ig-badge[data-raise],
 .ig-badge[data-caveat],
 .ig-badge[data-evidence],
 .ig-badge[data-not-ready],
@@ -1913,15 +1914,17 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 
 /* THE HOST'S HOOK, AND THE ONLY ONE. Every placeholder shape is one of these,
    on one static fill and holding still, as the skeleton rules have it: the
-   stronger surface, the one a selected row takes, and no pulse. This package
-   ships no motion, and the fill follows the host's theme.
+   fill-strong role, and no pulse. Since issue 293 that is its own token, an
+   ink at a low alpha, so this package's own themes draw the skeleton as a
+   host's fill-strong does. This package ships no motion, and the fill follows
+   the host's theme.
 
    THE SHAPES FOLLOW THOSE RULES TOO. A line of text, a heading or a figure is
    a pill one snug step tall, set in that line's own height by its margins, so
    nothing moves when the text arrives. A control or an icon is a pill its own
    size. A block is a rectangle with the card's corner. */
 .ig-skeleton-block {
-  background: var(--ig-surface);
+  background: var(--ig-fill-strong);
   border-radius: var(--ig-space-snug);
   display: block;
 }

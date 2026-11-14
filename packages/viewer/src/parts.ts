@@ -238,15 +238,54 @@ export function priorityBadge(provenance: RankProvenance | undefined): ElementSp
       return element('span', { class: 'ig-badge', 'data-priority': 'tier' }, [
         `P${String(provenance.priority)}`,
       ]);
-    case 'promotion':
+    case 'promotion': {
+      // THE TAG HOLDS THE PRIORITY THE ROW HAS NOW (#293). The board draws a
+      // raise as the current priority's tag with "from P3" muted after it,
+      // which {@link priorityRaise} draws. A notation this cannot read keeps
+      // the whole string in the tag, as it always did.
+      const raise = raiseOf(provenance.notation);
       return element('span', { class: 'ig-badge', 'data-priority': 'promoted' }, [
-        provenance.notation,
+        raise === null ? provenance.notation : `P${raise.to}`,
       ]);
+    }
     case 'order-strategy':
       // NO CHIP. The chip names the priority that ranked the row, and the tail
       // has none; §16h draws its row with the provenance line alone (#130).
       return null;
   }
+}
+
+/**
+ * The spec's raise notation, `P3 -> 0`, read into its two priorities.
+ *
+ * A FIXED GRAMMAR, NOT A JUDGEMENT: `@issuegraph/derive` writes exactly
+ * `P<declared> -> <effective>`, and a host may draw the arrow as `→`. Anything
+ * else is not read, and the caller draws the notation whole.
+ */
+const RAISE_NOTATION = /^P(\d+)\s*(?:->|→)\s*(\d+)$/u;
+
+function raiseOf(notation: string): { readonly from: string; readonly to: string } | null {
+  const match = RAISE_NOTATION.exec(notation.trim());
+  const from = match?.[1];
+  const to = match?.[2];
+  return from === undefined || to === undefined ? null : { from, to };
+}
+
+/**
+ * The muted words after a raised priority's tag: `from P3`, or nothing (#293).
+ *
+ * THE BOARD'S OWN WORDS AND ITS OWN SHAPE: one tag holding the priority the
+ * row has now, and the priority it was raised from as a second condition,
+ * muted text after it. It is a `.ig-badge` like the relationships, so the
+ * badge row, the drop order and the graph's chip packer treat it as one more
+ * chip; `data-raise` carries the old priority and is what the sheet sets as
+ * muted text.
+ */
+export function priorityRaise(provenance: RankProvenance | undefined): ElementSpec | null {
+  if (provenance?.kind !== 'promotion') return null;
+  const raise = raiseOf(provenance.notation);
+  if (raise === null) return null;
+  return element('span', { class: 'ig-badge', 'data-raise': raise.from }, [`from P${raise.from}`]);
 }
 
 /**
@@ -1150,6 +1189,7 @@ export function badgeTexts(
   // The builders are the one source; nothing here restates what they draw.
   const chips = [
     priorityBadge(issue?.provenance),
+    priorityRaise(issue?.provenance),
     evidenceBadge(issue),
     slot === undefined ? null : notReadyBadge(slot),
     ...caveatBadges(issue),

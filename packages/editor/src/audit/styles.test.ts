@@ -277,9 +277,11 @@ describe('the header count leads with the dot of the worst problem (#293)', () =
   });
 
   it('colours it by the worst class\u2019s state', () => {
-    assert.equal(declaredOn(css, dot('cycle'), 'background', inside)?.value, 'var(--ig-state-failed)');
-    assert.equal(declaredOn(css, dot('dead-duplicate-ref'), 'background', inside)?.value, 'var(--ig-state-conflict)');
-    assert.equal(declaredOn(css, dot('encoding-refused'), 'background', inside)?.value, 'var(--ig-state-conflict)');
+    // THE MARK TOKENS, NOT THE HUES: a host maps a state's hue to its text
+    // ink, which drew the dot near black on a light ground.
+    assert.equal(declaredOn(css, dot('cycle'), 'background', inside)?.value, 'var(--ig-state-failed-mark)');
+    assert.equal(declaredOn(css, dot('dead-duplicate-ref'), 'background', inside)?.value, 'var(--ig-state-conflict-mark)');
+    assert.equal(declaredOn(css, dot('encoding-refused'), 'background', inside)?.value, 'var(--ig-state-conflict-mark)');
     assert.equal(declaredOn(css, dot('stale-blocker'), 'background', inside), undefined, 'the neutral dot is filled');
     assert.equal(
       declaredOn(css, dot('stale-blocker'), 'box-shadow', inside)?.value,
@@ -295,6 +297,17 @@ describe('the header count leads with the dot of the worst problem (#293)', () =
       'var(--ig-text-muted)',
     );
     assert.equal(/\.ig-audit-toggle\[aria-pressed/.test(css), false, 'a dead pressed rule is back');
+  });
+
+  it('sets the count and its word on one baseline, and centres the dot alone', () => {
+    // An inline-flex box takes its baseline from its first baseline-aligned
+    // item; with every item centred the empty dot's bottom edge was the
+    // button's baseline, and the count rode high.
+    assert.equal(declaredOn(css, '.ig-audit-toggle', 'align-items', ['.ig-audit'])?.value, 'baseline');
+    for (const target of ['.ig-audit-count', '.ig-audit-label']) {
+      assert.equal(declaredOn(css, target, 'align-self', inside), undefined, `${target} leaves the baseline`);
+    }
+    assert.equal(declaredOn(css, '.ig-audit-dot', 'align-self', inside)?.value, 'center');
   });
 
   it('keeps the rail bar off the dot, which carries no severity attribute', () => {
