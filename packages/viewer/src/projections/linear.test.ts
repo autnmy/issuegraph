@@ -253,7 +253,9 @@ describe('the linear projection', () => {
 
   it('renders the other two provenance forms', () => {
     const markup = render();
-    assert.match(row(markup, '101'), /Picked by query 1 · <span class="ig-id">label:P1<\/span>/);
+    // THE LABEL IS A KEY A READER COPIES, so it is the mono `.ig-copy-key`, not
+    // the sans `.ig-id` an issue number or a tier takes (#254).
+    assert.match(row(markup, '101'), /Picked by query 1 · <span class="ig-copy-key">label:P1<\/span>/);
     // NEUTRAL. This arm means only that no ordering query matched and the issue
     // stayed in its tier; it does NOT mean the priority was absent, and §16a's
     // own row — which happens to be one where it was — is not a licence to say

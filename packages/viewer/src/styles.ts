@@ -486,11 +486,13 @@ export const viewerStylesheet = `
   color: var(--ig-text);
 }
 
+/* The small role in the sans, as the explanation lines are: one face and one
+   size on the line, the time inside it included (see .ig-freshness .ig-id). */
 .ig-freshness {
   align-items: center;
   color: var(--ig-text-muted);
   display: inline-flex;
-  font-family: var(--ig-font-mono);
+  font-family: var(--ig-font-ui);
   font-size: var(--ig-font-size-small);
   font-variant-numeric: tabular-nums;
   gap: var(--ig-space-tight);
@@ -1098,15 +1100,22 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 /* THE PROVENANCE LINE IS NOT MUTED. It is the answer to "why is this here",
    which is the panel's whole reason to exist, so the frame gives it body text
    and lifts the named parts to the brightest ink on the page. Muting the whole
-   sentence — which is what shipped — files the explanation under decoration. */
+   sentence — which is what shipped — files the explanation under decoration.
+
+   ONE FACE AND ONE SIZE PER LINE. The line is the small role in the sans, with
+   tabular figures for the numbers in it; it was small mono, which left a sans
+   issue number at the body size sitting inside it. The numbers in it inherit
+   its size (below), and the one key a reader copies, .ig-copy-key, is mono at
+   that same size. */
 .ig-provenance,
 .ig-hold,
 .ig-caveat {
   align-items: baseline;
   color: var(--ig-text-body);
   display: flex;
-  font-family: var(--ig-font-mono);
+  font-family: var(--ig-font-ui);
   font-size: var(--ig-font-size-small);
+  font-variant-numeric: tabular-nums;
   gap: var(--ig-space-tight);
   margin: 0;
 }
@@ -1115,6 +1124,24 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 .ig-hold .ig-id,
 .ig-caveat .ig-id {
   color: var(--ig-text);
+}
+
+/* A NUMBER IN A SMALL LINE READS SMALL. .ig-id gives an issue number the body
+   size on its own; inside an explanation line or the freshness stamp it takes
+   the line's size instead, so the line keeps one size. */
+.ig-provenance .ig-id,
+.ig-hold .ig-id,
+.ig-caveat .ig-id,
+.ig-freshness .ig-id {
+  font-size: inherit;
+}
+
+/* A KEY A READER COPIES AS TYPED, such as label:P0, is the one thing set mono.
+   It takes no size of its own, so it reads at the size of whatever line it
+   sits in; tabular figures because a key can carry digits. */
+.ig-copy-key {
+  font-family: var(--ig-font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 /* The turnstile the frame puts in front of every explanation, so the line reads

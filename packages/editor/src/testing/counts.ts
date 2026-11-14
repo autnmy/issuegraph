@@ -32,7 +32,10 @@ export const COUNT_TYPE: RoleType = Object.freeze({
   'font-variant-numeric': 'tabular-nums',
 });
 
-/** The small role the keys line and the legend take: the same sans, a step below the body. */
+/**
+ * The small role the keys line, the legend and the explanation lines take
+ * (provenance, hold, caveat, freshness): the same sans, a step below the body.
+ */
 export const SMALL_TYPE: RoleType = Object.freeze({
   'font-family': 'var(--ig-font-ui)',
   'font-size': 'var(--ig-font-size-small)',
@@ -72,6 +75,13 @@ export const VIEWER_COUNTS: readonly string[] = Object.freeze([
 
 /** The viewer's legend bar, at the small role, read the same way. */
 export const VIEWER_SMALL: readonly string[] = Object.freeze(['.ig-legend-item', '.ig-legend-keys']);
+
+/**
+ * The viewer's explanation lines, at the small role: one face and one size per
+ * line. A number inside one inherits the line's size, and a copied key inside
+ * one is mono at it.
+ */
+export const VIEWER_LINES: readonly string[] = Object.freeze(['.ig-provenance', '.ig-hold', '.ig-caveat', '.ig-freshness']);
 
 /** A later rule that puts the mono face back. */
 export const MONO_BACK: readonly (readonly [string, string])[] = [['font-family', 'var(--ig-font-mono)']];
@@ -131,9 +141,32 @@ function splitOutside(text: string, separator: RegExp): string[] {
   return [...parts, text.slice(start)].map((part) => part.trim()).filter((part) => part !== '');
 }
 
-/** The compound a selector styles: its last, outside every `:not(…)` and attribute value. */
+/** A selector's compounds, outermost first, split outside every `:not(…)` and attribute value. */
+function compoundsOf(selector: string): string[] {
+  return splitOutside(selector, /[\s>+~]/);
+}
+
+/** The compound a selector styles: its last. */
 function lastCompound(selector: string): string {
-  return splitOutside(selector, /[\s>+~]/).at(-1) ?? '';
+  return compoundsOf(selector).at(-1) ?? '';
+}
+
+/**
+ * Whether a selector's ancestor compounds can all be found, in order, among
+ * `ancestors` (outermost first). Every combinator is read as a descendant one,
+ * which only ever lets a rule match more.
+ */
+function withinAncestors(selector: string, ancestors: readonly Compound[]): boolean {
+  const wanted = compoundsOf(selector).slice(0, -1);
+  let at = ancestors.length - 1;
+  for (let index = wanted.length - 1; index >= 0; index -= 1) {
+    const compound = compoundOf(wanted[index] ?? '');
+    if (compound === null) return false;
+    while (at >= 0 && !canStyle(compound, ancestors[at] ?? { tag: null, classes: [], attributes: [] })) at -= 1;
+    if (at < 0) return false;
+    at -= 1;
+  }
+  return true;
 }
 
 /** A compound with every pseudo-class removed, balanced parentheses and all. A state is taken as reachable. */
@@ -224,10 +257,26 @@ function rulesOf(css: string): { readonly selectors: readonly string[]; readonly
  * What the cascade gives `property` on an element that is exactly `target`:
  * the most specific rule that can style it, and of those the last. The `font`
  * shorthand resets all three properties, so it is read as setting each of them.
+ *
+ * WITH `ancestors` (outermost first) the element sits inside exactly those, and
+ * a rule whose ancestor compounds they cannot supply does not apply — so a
+ * number INSIDE a provenance line is read as that line's number, and a rule for
+ * a number on a card does not stand in for it. Without them, any ancestor is
+ * taken as present.
  */
-export function declaredOn(css: string, target: string, property: string): Declared | undefined {
+export function declaredOn(
+  css: string,
+  target: string,
+  property: string,
+  ancestors?: readonly string[],
+): Declared | undefined {
   const element = compoundOf(target);
   if (element === null) throw new Error(`${target} is not a compound selector`);
+  const context = ancestors?.map((one) => {
+    const compound = compoundOf(one);
+    if (compound === null) throw new Error(`${one} is not a compound selector`);
+    return compound;
+  });
   let winner: (Declared & { readonly rank: number }) | undefined;
   for (const rule of rulesOf(css)) {
     const declarations = rule.body
@@ -239,6 +288,7 @@ export function declaredOn(css: string, target: string, property: string): Decla
       if (selector.includes('::')) continue;
       const styled = compoundOf(lastCompound(selector));
       if (styled === null || !canStyle(styled, element)) continue;
+      if (context !== undefined && !withinAncestors(selector, context)) continue;
       for (const { name, value } of declarations) {
         const rank = specificity(selector) + (value.includes('!important') ? 1_000_000 : 0);
         if (winner === undefined || rank >= winner.rank) {

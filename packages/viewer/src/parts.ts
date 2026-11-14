@@ -145,9 +145,12 @@ export function provenanceClause(provenance: RankProvenance | undefined): Elemen
   if (provenance === undefined) return null;
   switch (provenance.kind) {
     case 'matched-query':
+      // THE LABEL IS A KEY A READER COPIES, so it is `.ig-copy-key`, the one
+      // part of the sentence set mono; an issue number, a tier and a notation
+      // are read rather than copied and stay `.ig-id`, in the line's sans.
       return element('span', {}, [
         `Picked by query ${String(provenance.index)} · `,
-        element('span', { class: 'ig-id' }, [provenance.label]),
+        element('span', { class: 'ig-copy-key' }, [provenance.label]),
       ]);
     case 'declared-tier':
       // NEUTRAL, AND THAT IS THE POINT. This arm means only that no ordering

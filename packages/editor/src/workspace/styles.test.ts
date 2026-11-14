@@ -30,9 +30,11 @@ import {
   MONO_BACK,
   SMALL_TYPE,
   VIEWER_COUNTS,
+  VIEWER_LINES,
   VIEWER_SMALL,
   baseRule,
   countTypeMisses,
+  declaredOn,
   regressionsOf,
   typeMisses,
 } from '../testing/counts.ts';
@@ -2109,6 +2111,21 @@ describe('the counts this sheet draws are body text with tabular figures (#254)'
     for (const later of regressionsOf(INSTALLED, '.ig-id', MONO_BACK)) {
       assert.notDeepEqual(typeMisses(later, ['.ig-id'], ISSUE_NUMBER_TYPE), [], 'an issue number passed in the mono face');
     }
+  });
+
+  it('leaves the viewer’s explanation lines one face and one size under every sheet the mount installs', () => {
+    // The rail draws the viewer's provenance, hold and caveat lines, and the
+    // Inspector's why-rank sentence draws the same clause with its copied key.
+    // No editor sheet may move a line off the small sans, give a number in one
+    // a size of its own, or size the copied key.
+    assert.deepEqual(typeMisses(INSTALLED, VIEWER_LINES, SMALL_TYPE), []);
+    for (const line of VIEWER_LINES) {
+      // Inside the rail zone's viewer and a row, as the rail draws it.
+      const inside = ['.ig-workspace', ".ig-zone[data-zone='rail']", '.ig-viewer', '.ig-slot', line];
+      assert.equal(declaredOn(INSTALLED, '.ig-id', 'font-size', inside)?.value, 'inherit', line);
+    }
+    assert.equal(declaredOn(INSTALLED, '.ig-copy-key', 'font-family')?.value, 'var(--ig-font-mono)');
+    assert.equal(declaredOn(INSTALLED, '.ig-copy-key', 'font-size'), undefined, 'a rule sizes the copied key');
   });
 
   it('draws the header numbers as counts rather than issue numbers', () => {
