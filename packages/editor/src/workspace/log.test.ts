@@ -104,6 +104,7 @@ test('writeLog keeps a failed write whose carrier is null as a recovery entry', 
       mutationId: 'm-nowhere',
       edgeId: makeEdge('blocked-by', 'gone', 'alsogone').id,
       carrier: null,
+      write: { op: 'create', edge: makeEdge('blocked-by', 'gone', 'alsogone') },
       reason: 'the tracker was unreachable',
     },
   ]);

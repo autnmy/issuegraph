@@ -300,6 +300,7 @@ const RENDERS = [
         mutationId: 'm-failed',
         edgeId: 'blocked-by|i0001|i0002',
         carrier: 'i0001',
+        write: { op: 'create', edge: { id: 'blocked-by|i0001|i0002', kind: 'blocked-by', from: 'i0001', to: 'i0002' } },
         reason: 'the tracker was unreachable',
       },
       {
@@ -307,6 +308,7 @@ const RENDERS = [
         mutationId: 'm-conflict',
         edgeId: 'blocked-by|i0001|i0003',
         carrier: 'i0001',
+        write: { op: 'create', edge: { id: 'blocked-by|i0001|i0003', kind: 'blocked-by', from: 'i0001', to: 'i0003' } },
         // A REFRESH ERROR TOO, so its own rule is reached. It is the state a
         // reader lands in when `retry on latest` cannot even read.
         refreshError: 'the tracker did not answer',
@@ -351,6 +353,7 @@ const RENDERS = [
         mutationId: 'm-elsewhere',
         edgeId: 'blocked-by|i0001|i0003',
         carrier: 'i0001',
+        write: { op: 'create', edge: { id: 'blocked-by|i0001|i0003', kind: 'blocked-by', from: 'i0001', to: 'i0003' } },
         refreshError: null,
         diff: { upstreamOnly: [], mineOnly: [], mineRemoved: [], issuesChanged: [], carrierReversed: [] },
       },
@@ -367,6 +370,7 @@ const RENDERS = [
         mutationId: 'm-nowhere',
         edgeId: 'blocked-by|gone|alsogone',
         carrier: null,
+        write: { op: 'create', edge: { id: 'blocked-by|gone|alsogone', kind: 'blocked-by', from: 'gone', to: 'alsogone' } },
         reason: 'the tracker refused it',
       },
     ],
@@ -1707,6 +1711,7 @@ describe('the layout under 640', () => {
       mutationId: 'm-unselected',
       edgeId: 'blocked-by|i0003|i0004',
       carrier: 'i0003',
+      write: { op: 'create', edge: { id: 'blocked-by|i0003|i0004', kind: 'blocked-by', from: 'i0003', to: 'i0004' } },
       reason: 'the tracker was unreachable',
     } as const;
     const tabs = [

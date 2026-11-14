@@ -79,11 +79,16 @@ function entryFor(record: WriteRecord, context: WriteLogContext): readonly Works
   }
 }
 
-/** The facts every recovery card carries: which write, which edge, and whose panel. */
+/** The facts every recovery card carries: which write, which edge, whose panel, and what it did. */
 function cardFacts(
   record: WriteRecord,
   context: WriteLogContext,
-): { readonly mutationId: MutationId; readonly edgeId: EdgeId; readonly carrier: string | null } {
+): {
+  readonly mutationId: MutationId;
+  readonly edgeId: EdgeId;
+  readonly carrier: string | null;
+  readonly write: WorkspaceLoggedWrite;
+} {
   return {
     mutationId: record.mutationId,
     // THE PROJECTION'S EDGE, AND THE EDIT'S OWN AS THE FALLBACK: a write about
@@ -91,6 +96,7 @@ function cardFacts(
     // still names the edge it was about.
     edgeId: context.markedBy.get(record.mutationId) ?? mutationEdgeId(record.mutation),
     carrier: context.carriers.get(record.mutationId) ?? null,
+    write: loggedWrite(record.mutation, context.landed),
   };
 }
 
@@ -99,7 +105,7 @@ function mutationEdgeId(mutation: Mutation): EdgeId {
   return mutation.op === 'create' ? edgeIdentity(mutation.kind, mutation.from, mutation.to) : mutation.edgeId;
 }
 
-/** What a saving write does, with the edge it is about looked up in the landed document. */
+/** What a write does, with the edge it is about looked up in the landed document. */
 function loggedWrite(mutation: Mutation, landed: GraphDocument): WorkspaceLoggedWrite {
   switch (mutation.op) {
     case 'create':

@@ -194,15 +194,23 @@ export const workspaceStylesheet = `
   border-bottom: var(--ig-stroke) solid var(--ig-line);
 }
 
-/* A write still saving, named on one line: the saving word, the operation,
-   the kind and the two issues. Its words are separate spans, so the gap is
-   the space between them. */
-.ig-log-entry {
+/* A write named on one line: the saving word for one still saving, then the
+   operation, the kind and the two issues. Its words are separate spans, so
+   the gap is the space between them. */
+.ig-log-entry,
+.ig-log-write {
   display: flex;
   flex-wrap: wrap;
   gap: var(--ig-space-tight);
   align-items: baseline;
   color: var(--ig-text-muted);
+}
+
+/* A write that did not save: its naming line above the Inspector's card. */
+.ig-log-recovery {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
 }
 
 .ig-workspace-identity {

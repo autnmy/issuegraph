@@ -690,7 +690,8 @@ export interface RecoveryWords {
  * The whole write ledger is the larger surface this deliberately is not: a
  * `WriteRecord` carries a `Mutation` and, on a conflict, an entire second
  * `GraphDocument`, none of which a renderer can draw. What a card needs is the
- * state, the reason or the difference, and which panel states it.
+ * state, the reason or the difference, which panel states it, and what the
+ * write did, so the log can name it above its card.
  *
  * A UNION, BECAUSE THE TWO STATES CARRY DIFFERENT FACTS. `WriteRecord` is
  * already a union on this exact line. Two optionals would admit a conflict with
@@ -709,6 +710,8 @@ export type WorkspaceRecovery =
       readonly mutationId: MutationId;
       readonly edgeId: EdgeId;
       readonly carrier: string | null;
+      /** What the write did, for the line the log draws above its card. */
+      readonly write: WorkspaceLoggedWrite;
       /**
        * The adapter's own sentence, verbatim.
        *
@@ -725,6 +728,7 @@ export type WorkspaceRecovery =
       readonly mutationId: MutationId;
       readonly edgeId: EdgeId;
       readonly carrier: string | null;
+      readonly write: WorkspaceLoggedWrite;
       /** Both sides, held apart. See `recovery.ts`. */
       readonly diff: ConflictDiff;
       /**
@@ -2810,10 +2814,9 @@ function loggedEdgeSpecs(edge: WorkspaceLoggedEdge, words: LogWords): readonly E
       ];
 }
 
-/** A write still saving: the saving word, then what the write does. */
-function savingEntrySpec(mutationId: MutationId, write: WorkspaceLoggedWrite, words: LogWords): ElementSpec {
-  return element('li', { class: 'ig-log-entry', 'data-ig-state': 'pending', 'data-mutation': mutationId }, [
-    element('span', {}, [words.saving]),
+/** What a logged write does: the operation, the edge, and a retype's new kind. */
+function loggedWriteSpecs(write: WorkspaceLoggedWrite, words: LogWords): readonly ElementSpec[] {
+  return [
     element('span', {}, [words.ops[write.op]]),
     ...loggedEdgeSpecs(write.edge, words),
     ...(write.op === 'retype'
@@ -2822,6 +2825,34 @@ function savingEntrySpec(mutationId: MutationId, write: WorkspaceLoggedWrite, wo
           element('span', {}, [words.kinds[write.nextKind]]),
         ]
       : []),
+  ];
+}
+
+/** A write still saving: the saving word, then what the write does. */
+function savingEntrySpec(mutationId: MutationId, write: WorkspaceLoggedWrite, words: LogWords): ElementSpec {
+  return element('li', { class: 'ig-log-entry', 'data-ig-state': 'pending', 'data-mutation': mutationId }, [
+    element('span', {}, [words.saving]),
+    ...loggedWriteSpecs(write, words),
+  ]);
+}
+
+/**
+ * A write that did not save: a line naming the write, then the Inspector's
+ * own card.
+ *
+ * THE NAMING LINE SITS OUTSIDE THE CARD. The card has to read exactly as the
+ * Inspector's does, and the Inspector names no write because its panel is
+ * already about the write's issue. The log speaks for every issue at once, so
+ * without the line two failed writes would show two identical cards.
+ */
+function recoveryEntrySpec(
+  recovery: WorkspaceRecovery,
+  words: WorkspaceWords,
+  diffOpen: MutationId | null,
+): ElementSpec {
+  return element('li', { class: 'ig-log-recovery', 'data-mutation': recovery.mutationId }, [
+    element('div', { class: 'ig-log-write' }, loggedWriteSpecs(recovery.write, words.log)),
+    element('ul', { class: 'ig-recovery-list' }, [recoveryCard(recovery, words.recovery, diffOpen, 'log', null)]),
   ]);
 }
 
@@ -2834,8 +2865,8 @@ function savingEntrySpec(mutationId: MutationId, write: WorkspaceLoggedWrite, wo
  * anything to say in it. The entry list is not a live region.
  *
  * A WRITE THAT DID NOT SAVE IS THE INSPECTOR'S OWN CARD, drawn by
- * {@link recoveryCard}, so its note, reason and controls cannot differ between
- * the two placements. It is drawn for every such write, whichever issue it is
+ * {@link recoveryCard} under a line naming the write, so its note, reason and
+ * controls cannot differ between the two placements. It is drawn for every such write, whichever issue it is
  * about and whether or not that issue is selected, and a conflict's difference
  * is drawn whole, because the log speaks for no panel.
  */
@@ -2855,7 +2886,7 @@ function logSpec(
           log.map((entry) =>
             entry.kind === 'pending'
               ? savingEntrySpec(entry.mutationId, entry.write, words.log)
-              : recoveryCard(entry, words.recovery, diffOpen, 'log', null),
+              : recoveryEntrySpec(entry, words, diffOpen),
           ),
         ),
   ]);

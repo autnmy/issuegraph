@@ -1916,6 +1916,7 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
     mutationId: 'm1',
     edgeId: 'blocked-by|i0001|i0002',
     carrier: 'i0001',
+    write: { op: 'create', edge: { id: 'blocked-by|i0001|i0002', kind: 'blocked-by', from: 'i0001', to: 'i0002' } },
     refreshError: null,
     diff: {
       // ONE SIDE ON THIS PANEL AND ONE FAR AWAY. Without the far one, dropping
@@ -2008,6 +2009,7 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
           mutationId: 'm2',
           edgeId: 'blocked-by|i0001|i0002',
           carrier: null,
+          write: { op: 'create', edge: { id: 'blocked-by|i0001|i0002', kind: 'blocked-by', from: 'i0001', to: 'i0002' } },
           reason: 'the tracker was unreachable',
         },
       ],
@@ -2029,6 +2031,7 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
           mutationId: 'm3',
           edgeId: 'blocked-by|gone|alsogone',
           carrier: null,
+          write: { op: 'create', edge: { id: 'blocked-by|gone|alsogone', kind: 'blocked-by', from: 'gone', to: 'alsogone' } },
           reason: 'the tracker was unreachable',
         },
       ],
@@ -2051,6 +2054,7 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
           mutationId: 'm4',
           edgeId: 'blocked-by|i0001|i0002',
           carrier: 'i0001',
+          write: { op: 'create', edge: { id: 'blocked-by|i0001|i0002', kind: 'blocked-by', from: 'i0001', to: 'i0002' } },
           refreshError: null,
           diff: {
             upstreamOnly: [],
@@ -2082,6 +2086,7 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
           mutationId: 'm5',
           edgeId: 'blocked-by|i0001|i0002',
           carrier: 'i0001',
+          write: { op: 'create', edge: { id: 'blocked-by|i0001|i0002', kind: 'blocked-by', from: 'i0001', to: 'i0002' } },
           reason: 'the tracker was unreachable',
         },
       ],
@@ -2093,6 +2098,33 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
     const logged = card(header);
     assert.ok(logged !== undefined, 'the log drew no card');
     assert.equal(card(inspector), logged, 'the log card differs from the Inspector card');
+  });
+
+  it('names each write that did not save above its log card, and names none in the Inspector', () => {
+    const words = WORKSPACE_WORDS.log;
+    const markup = drawn({
+      words: WORKSPACE_WORDS,
+      selection: { kind: 'issue', key: 'i0001' },
+      log: [
+        {
+          kind: 'failed',
+          mutationId: 'm6',
+          edgeId: 'blocked-by|i0001|i0002',
+          carrier: 'i0001',
+          write: { op: 'delete', edge: { id: 'blocked-by|i0001|i0002', kind: 'blocked-by', from: 'i0001', to: 'i0002' } },
+          reason: 'the tracker was unreachable',
+        },
+      ],
+    });
+    const header = markup.slice(markup.indexOf('data-zone="header"'), markup.indexOf('data-zone="rail"'));
+    const inspector = markup.slice(markup.indexOf('data-zone="inspector"'));
+    const line = /<li class="ig-log-recovery" data-mutation="m6"><div class="ig-log-write">([\s\S]*?)<\/div><ul class="ig-recovery-list"><li class="ig-recovery"/.exec(header)?.[1];
+    assert.ok(line !== undefined, 'the log drew no line naming the write above its card');
+    for (const word of [words.ops.delete, words.kinds['blocked-by']]) {
+      assert.ok(line.includes(word), `the naming line does not carry "${word}"`);
+    }
+    assert.deepEqual([...line.matchAll(/<span class="ig-id">([^<]*)<\/span>/g)].map((match) => match[1]), ['i0001', 'i0002']);
+    assert.equal(inspector.includes('ig-log-write'), false, 'the Inspector card gained the log naming line');
   });
 });
 
@@ -3169,6 +3201,7 @@ it('Compare open on a conflict drawn in the log and the Inspector gives each con
     mutationId: 'm-twice',
     edgeId: 'blocked-by|i0001|i0002',
     carrier: 'i0001',
+    write: { op: 'create', edge: { id: 'blocked-by|i0001|i0002', kind: 'blocked-by', from: 'i0001', to: 'i0002' } },
     refreshError: null,
     diff: {
       upstreamOnly: [{ id: 'blocked-by|i0001|i0003', kind: 'blocked-by', from: 'i0001', to: 'i0003' }],

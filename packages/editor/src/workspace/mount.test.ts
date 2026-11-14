@@ -184,14 +184,7 @@ async function mounted(
   options: {
     railCount?: number;
     derive?: OrderDeriver;
-    /**
-     * Override the vocabulary.
-     *
-     * The default deliberately carries no `change`, so §17c draws nothing for
-     * the suite's other tests — the package refuses to invent those words, and
-     * a fixture that supplied them everywhere would put the loop on surfaces
-     * whose tests are not about it. A test that IS about it passes its own.
-     */
+    /** Override the vocabulary. */
     words?: MountWords;
     project?: (snapshot: StoreSnapshot) => WorkspaceProjection;
     firstPass?: FirstPassOption;

@@ -48,8 +48,8 @@
  * ## Nothing dismisses itself
  *
  * There is no timer, and there is no view state. `Store.dismissChange()` is
- * already the only thing besides the next edit that clears the summary, so this
- * renders a control publishing `data-ig-command="dismiss-change"` and lets the
+ * the only thing that clears the summary (a later save that lands replaces
+ * it), so this renders a control publishing `data-ig-command="dismiss-change"` and lets the
  * store stay the single source of truth. A second copy of "has this been
  * dismissed" held out here is the drift the command grammar exists to avoid.
  */
