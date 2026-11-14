@@ -1801,3 +1801,33 @@ describe('the workspace styles draw a receded rail row like a receded card', () 
     assert.doesNotMatch(declaredOf(graphFooter, rules, 'background') ?? '', /var\(--ig-surface-2\)/, 'a receded graph footer row takes a ground');
   });
 });
+
+describe("the narrow tabs are the design's Tabs part: filled, not bordered", () => {
+  const css = withoutComments(workspaceStylesheet);
+  const rule = (selector: string): string => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const body = new RegExp(`(?:^|\\n)${escaped}\\s*\\{([^}]*)\\}`).exec(css)?.[1];
+    assert.ok(body !== undefined, `no rule for ${selector}`);
+    return body;
+  };
+
+  it('draws an idle tab as muted text on no fill and no border, 32 tall with 12 inline padding and the control radius', () => {
+    const tab = rule('.ig-workspace .ig-narrow-tab');
+    assert.match(tab, /border:\s*0;/);
+    assert.match(tab, /background:\s*none;/);
+    assert.match(tab, /color:\s*var\(--ig-text-muted\);/);
+    assert.match(tab, /min-block-size:\s*calc\(var\(--ig-space-loose\) \* 2\);/);
+    assert.match(tab, /padding:\s*0 var\(--ig-space\);/);
+    assert.match(tab, /border-radius:\s*var\(--ig-radius\);/);
+    assert.match(rule('.ig-workspace .ig-narrow-tabs'), /gap:\s*calc\(var\(--ig-space-micro\) \* 2\);/);
+  });
+
+  it('fills a hovered tab with the secondary fill and full text, and the selected tab with the strong fill and full text', () => {
+    const hovered = rule('.ig-workspace .ig-narrow-tab:hover');
+    assert.match(hovered, /background:\s*var\(--ig-surface-2\);/);
+    assert.match(hovered, /color:\s*var\(--ig-text\);/);
+    const selected = rule(".ig-workspace .ig-narrow-tab[aria-selected='true']");
+    assert.match(selected, /background:\s*var\(--ig-surface\);/);
+    assert.match(selected, /color:\s*var\(--ig-text\);/);
+  });
+});
