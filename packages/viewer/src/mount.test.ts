@@ -2559,7 +2559,7 @@ describe('under 640 the mounted viewer holds one issue', () => {
         container.box = { width: 500, height: 300 };
         observer.fire();
         assert.equal(handle.state.selected, '33');
-        assert.deepEqual(focusedRows(container), ['33'], 'focus did not land on the drawn row for 33');
+        assert.deepEqual(focusedRows(container), ['31'], 'focus did not go back to the row the reader stood on');
         // Grow back, build a set again, and narrow once more: focus is still inside, so it is put back again.
         container.box = { width: 800, height: 300 };
         observer.fire();
@@ -2595,9 +2595,12 @@ describe('under 640 the mounted viewer holds one issue', () => {
           target: rowIn(within.container, '31'),
           relatedTarget: rowIn(within.container, '34'),
         });
+        // A browser follows that focusout with a focusin on the row focus moved to.
+        within.container.dispatch('focusin', { target: rowIn(within.container, '34') });
         within.container.box = { width: 500, height: 300 };
         within.observer.fire();
-        assert.deepEqual(focusedRows(within.container), ['33'], 'focus moving between rows counted as leaving');
+        assert.equal(within.handle.state.selected, '33');
+        assert.deepEqual(focusedRows(within.container), ['34'], 'focus did not go back to the row the reader moved to');
       } finally {
         within.handle.destroy();
       }

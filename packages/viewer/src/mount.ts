@@ -808,6 +808,27 @@ export function mountViewer(
     clearHover();
   };
 
+  // SYNC FOCUS FROM THE DOM. `state.focused` tracks the viewer's OWN moves —
+  // its arrow keys and its clicks — and native Tab is neither. A reader who
+  // tabs into the deep link inside the third row leaves `focused` pointing
+  // wherever it was, so ArrowDown moved relative to the OLD row and sent focus
+  // BACKWARDS past the row they were standing in, and a resize redraw put focus
+  // back on that old row instead of the one they were on.
+  // FOCUS IDENTITY ONLY, hence the explicit attribute list: `GROUP_ATTRIBUTE`
+  // marks decoration that is deliberately outside the focus index, so adopting
+  // one would set `focused` to a key `navigate` cannot find — which resolves
+  // to -1 and throws the reader back to the top of the order. That is the same
+  // bug this fixes, arriving through the fix.
+  // `navigable`, NOT `focusOrder`: a gutter node reachable only sideways is a
+  // legitimate place to be standing, and `focusOrder` does not contain it.
+  const adoptFocusFrom = (target: MountElement | null | undefined): void => {
+    if (currentScene === null) return;
+    const standingOn = keyAt(target, container, [KEY_ATTRIBUTE]);
+    if (standingOn !== null && standingOn !== state.focused && currentScene.navigable.includes(standingOn)) {
+      state = { ...state, focused: standingOn };
+    }
+  };
+
   const onKeyDown = (event: MountEvent): void => {
     if (event.key === undefined || currentScene === null) return;
     // An activation key on a control that activates itself is that control's.
@@ -819,22 +840,7 @@ export function mountViewer(
     ) {
       return;
     }
-    // SYNC FOCUS FROM THE DOM BEFORE MOVING. `state.focused` tracks the viewer's
-    // OWN moves — its arrow keys and its clicks — and native Tab is neither. A
-    // reader who tabs into the deep link inside the third row leaves `focused`
-    // pointing wherever it was, so ArrowDown moved relative to the OLD row and
-    // sent focus BACKWARDS past the row they were standing in.
-    // FOCUS IDENTITY ONLY, hence the explicit attribute list: `GROUP_ATTRIBUTE`
-    // marks decoration that is deliberately outside the focus index, so adopting
-    // one would set `focused` to a key `navigate` cannot find — which resolves
-    // to -1 and throws the reader back to the top of the order. That is the same
-    // bug this fixes, arriving through the fix.
-    // `navigable`, NOT `focusOrder`: a gutter node reachable only sideways is a
-    // legitimate place to be standing, and `focusOrder` does not contain it.
-    const standingOn = keyAt(event.target, container, [KEY_ATTRIBUTE]);
-    if (standingOn !== null && standingOn !== state.focused && currentScene.navigable.includes(standingOn)) {
-      state = { ...state, focused: standingOn };
-    }
+    adoptFocusFrom(event.target);
     const result = navigate(currentScene, state, event.key, { shift: event.shiftKey === true });
     if (result.command.kind === 'none') return;
     event.preventDefault?.();
@@ -872,10 +878,13 @@ export function mountViewer(
   // WHETHER FOCUS IS INSIDE THE VIEWER, kept from the container's own focus
   // events so the module never asks its host for `activeElement`. A resize
   // redraw reads it to put focus back on the row it destroyed, and only then,
-  // so a resize while the reader is elsewhere on the page moves nothing.
+  // so a resize while the reader is elsewhere on the page moves nothing. Each
+  // `focusin` also adopts the row it landed on, so that redraw focuses the row
+  // the reader stood on.
   let focusInside = false;
-  const onFocusIn = (): void => {
+  const onFocusIn = (event: MountEvent): void => {
     focusInside = true;
+    adoptFocusFrom(event.target);
   };
   const onFocusOut = (event: MountEvent): void => {
     const to = event.relatedTarget ?? null;
