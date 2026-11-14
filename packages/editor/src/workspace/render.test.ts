@@ -2069,12 +2069,18 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
         },
       ],
     });
-    assert.ok(markup.includes(WORKSPACE_WORDS.recovery.mineRemoved));
-    assert.equal(
-      markup.includes(WORKSPACE_WORDS.recovery.diffEmpty),
-      false,
-      'the card claimed nothing differs about an edit that removes a relationship',
-    );
+    // Each placement is checked on its own: the log draws the card too, so a
+    // whole-page check would pass with the Inspector's difference missing.
+    const header = markup.slice(markup.indexOf('data-zone="header"'), markup.indexOf('data-zone="rail"'));
+    const inspector = markup.slice(markup.indexOf('data-zone="inspector"'));
+    for (const [placement, zone] of [['Inspector', inspector], ['log', header]] as const) {
+      assert.ok(zone.includes(WORKSPACE_WORDS.recovery.mineRemoved), `the ${placement} card does not say the edit removes something`);
+      assert.equal(
+        zone.includes(WORKSPACE_WORDS.recovery.diffEmpty),
+        false,
+        `the ${placement} card claimed nothing differs about an edit that removes a relationship`,
+      );
+    }
   });
 
   it('draws the same card in the log and in the Inspector for a failed write on the selected issue', () => {

@@ -1551,14 +1551,20 @@ test('R6 KTD11 createStore: a saved summary outlives a new edit, a period that s
 
   // The issue: "A saved change says what it did to the order, in `text-muted`, until it is dismissed: "Saved: 2 moved · 1 newly held", or "Saved. The order did not change." Never on a timer."
   const second = store.propose({ op: 'create', kind: 'blocked-by', from: '3', to: '2' });
-  assert.deepEqual(store.getSnapshot().lastChange, saved, 'starting a new edit removed the saved line');
+  assert.equal(store.getSnapshot().lastChange, saved, 'starting a new edit removed the saved line');
   await source.whenPending(second.mutationId);
   source.settleNext({ outcome: 'rejected', reason: 'the issue body is locked' });
   await second.settled;
-  assert.deepEqual(store.getSnapshot().lastChange, saved, 'a period that saved nothing removed the saved line');
+  assert.equal(store.getSnapshot().lastChange, saved, 'a period that saved nothing removed the saved line');
+
+  const failedAgain = store.retry(second.mutationId);
+  assert.equal(store.getSnapshot().lastChange, saved, 'a retry removed the saved line');
+  await source.whenPending(failedAgain.mutationId);
+  source.settleNext({ outcome: 'rejected', reason: 'still locked' });
+  await failedAgain.settled;
+  assert.equal(store.getSnapshot().lastChange, saved, 'a retry that failed again replaced the saved line');
 
   const retried = store.retry(second.mutationId);
-  assert.deepEqual(store.getSnapshot().lastChange, saved, 'a retry removed the saved line');
   await source.whenPending(retried.mutationId);
   source.settleNext('applied');
   await retried.settled;
@@ -1641,43 +1647,6 @@ test('a held period whose closing write answers unchanged still states the earli
   assert.equal(after.lastChange?.mutation.mutationId, first.mutationId, 'an unchanged closing write erased the summary of the write that landed');
   assert.equal(after.lastChange?.counts.newlyHeld, 1);
   assert.equal(after.lastChange?.counts.moved, 3);
-});
-
-test('a saved summary outlives the next edit, a retry and a held period in which nothing lands', async () => {
-  const source = createScriptedSource(threeOpenIssues(), applyEdit);
-  const store = createStore({ source, derive: simpleDeriver });
-  await store.hydrate();
-
-  const landed = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
-  await source.whenPending(landed.mutationId);
-  source.settleNext('applied');
-  await landed.settled;
-  const summary = store.getSnapshot().lastChange;
-  assert.ok(summary !== undefined, 'the landed write published no summary');
-
-  // The issue: "A saved change says what it did to the order, in `text-muted`, until it is dismissed: "Saved: 2 moved · 1 newly held", or "Saved. The order did not change." Never on a timer."
-  const failing = store.propose({ op: 'create', kind: 'duplicate-of', from: '3', to: '1' });
-  assert.equal(store.getSnapshot().lastChange, summary, 'starting the next edit cleared the saved line');
-  await source.whenPending(failing.mutationId);
-  source.settleNext({ outcome: 'rejected', reason: 'locked' });
-  await failing.settled;
-  assert.equal(store.getSnapshot().lastChange, summary, 'a held period in which nothing landed replaced the saved line');
-
-  const retried = store.retry(failing.mutationId);
-  assert.equal(store.getSnapshot().lastChange, summary, 'a retry cleared the saved line');
-  await source.whenPending(retried.mutationId);
-  source.settleNext({ outcome: 'rejected', reason: 'still locked' });
-  await retried.settled;
-  assert.equal(store.getSnapshot().lastChange, summary, 'a retry that failed again replaced the saved line');
-
-  const next = store.propose({ op: 'create', kind: 'blocked-by', from: '3', to: '2' });
-  await source.whenPending(next.mutationId);
-  source.settleNext('applied');
-  await next.settled;
-  assert.equal(store.getSnapshot().lastChange?.mutation.mutationId, next.mutationId, 'a later landing did not replace the saved line');
-
-  store.dismissChange();
-  assert.equal(store.getSnapshot().lastChange, undefined);
 });
 
 test('a refresh that runs between two writes of one held period does not move the order', async () => {
@@ -1842,4 +1811,39 @@ test('a redo on the latest version credits only its own movement, not the upstre
   const credited = diffOrder(simpleDeriver(threeOpenIssues()), simpleDeriver(saved), change.mutation);
   assert.notDeepEqual(own.deltas, credited.deltas, 'the upstream edge moves nothing, so this test is vacuous');
   assert.deepEqual(change.deltas, own.deltas);
+});
+
+test('a redo whose upstream order cannot be derived claims no summary rather than crediting the upstream change', async () => {
+  // The deriver throws on the upstream document alone, so the baseline the
+  // summary needs is unknown. The final derivation succeeds, and diffing it
+  // against the rows from before the read would credit the upstream edge.
+  const upstream = withEdge(threeOpenIssues(), 'blocked-by', '2', '3');
+  const scripted = createScriptedSource(upstream, applyEdit);
+  let readable = threeOpenIssues();
+  const store = createStore({
+    source: { hydrate: () => Promise.resolve(readable), dispatch: (mutation) => scripted.dispatch(mutation) },
+    derive: (document) => {
+      const has = (from: string, to: string): boolean =>
+        document.edges.some((edge) => edge.kind === 'blocked-by' && edge.from === from && edge.to === to);
+      if (has('2', '3') && !has('1', '2')) throw new Error('the deriver fell over on the upstream document');
+      return simpleDeriver(document);
+    },
+  });
+  await store.hydrate();
+
+  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  await scripted.whenPending(handle.mutationId);
+  scripted.settleNext({ outcome: 'conflict', upstream });
+  await handle.settled;
+
+  readable = upstream;
+  const redo = store.retryOnLatest(handle.mutationId);
+  await scripted.whenPending(handle.mutationId);
+  scripted.settleNext('applied');
+  await redo.settled;
+
+  const snapshot = store.getSnapshot();
+  assert.equal(snapshot.orderError, undefined, 'the final derivation succeeded, so this is not the stale-order path');
+  assert.deepEqual(refs(snapshot.order.rows), refs(simpleDeriver(withEdge(upstream, 'blocked-by', '1', '2'))));
+  assert.equal(snapshot.lastChange, undefined, 'a summary was claimed against an order nobody derived');
 });

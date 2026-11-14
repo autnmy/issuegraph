@@ -305,9 +305,11 @@ export function createStore(config: StoreConfig): Store {
    * movement to the save. It is derived privately, so the order still holds.
    * A foreign change adopted AFTER a landing in the same period cannot be told
    * apart from the save's own movement, and is counted in its summary.
+   * `'underivable'` says the deriver threw on that document, so no order is
+   * known to diff against and the period claims no summary.
    */
   let owed:
-    | { readonly landing: Mutation | undefined; readonly baseline: readonly OrderRow[] | undefined }
+    | { readonly landing: Mutation | undefined; readonly baseline: readonly OrderRow[] | 'underivable' | undefined }
     | undefined;
   /**
    * ONE AUTHORITATIVE OPERATION AT A TIME, and the rest queued.
@@ -475,8 +477,8 @@ export function createStore(config: StoreConfig): Store {
    * A SAVE WITH NO SUMMARY CLEARS THE OLD ONE. Left standing, it would sit
    * beside an order that later saves produced, read as the newest save's effect.
    */
-  function reDerive(cause: Mutation | undefined, baseline: readonly OrderRow[] | undefined): void {
-    const previous = baseline ?? rows;
+  function reDerive(cause: Mutation | undefined, baseline: readonly OrderRow[] | 'underivable' | undefined): void {
+    const previous = baseline === 'underivable' ? undefined : (baseline ?? rows);
     let next: readonly OrderRow[];
     try {
       next = derive(landed);
@@ -493,7 +495,7 @@ export function createStore(config: StoreConfig): Store {
     const recovering = orderError !== undefined;
     orderError = undefined;
     rows = ownRows(next);
-    if (cause !== undefined) lastChange = recovering ? undefined : diffOrder(previous, rows, cause);
+    if (cause !== undefined) lastChange = recovering || previous === undefined ? undefined : diffOrder(previous, rows, cause);
   }
 
   /**
@@ -511,12 +513,12 @@ export function createStore(config: StoreConfig): Store {
     };
   }
 
-  /** The order `landed` gives now, without publishing it; none when the deriver throws. */
-  function privateDerive(): readonly OrderRow[] | undefined {
+  /** The order `landed` gives now, without publishing it, or `'underivable'` when the deriver throws. */
+  function privateDerive(): readonly OrderRow[] | 'underivable' {
     try {
       return ownRows(derive(landed));
     } catch {
-      return undefined;
+      return 'underivable';
     }
   }
 
