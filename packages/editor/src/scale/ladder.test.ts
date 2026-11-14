@@ -426,6 +426,41 @@ describe('with nothing selected, the groups; with a selection, what surrounds it
     assert.equal(renderScaleLadder(document, { around: { centre: [componentKey(0, 1)], edges: reach, reach } }).markup.includes('data-projection="graph"'), false, 'the graph was drawn past the budget');
   });
 
+  it('decides "past 60" on the count its words state: the related issues, never the selection (q347)', () => {
+    // A chain from c0-1: the first N edges reach N issues past the selection.
+    // 60 related draws the graph; 61 lists them. Counting the selection too
+    // listed 60 under "60 issues relate to #N, more than the graph draws".
+    const document = documentOf({ components: [GRAPH_NODE_BUDGET + 2] });
+    const centre = [componentKey(0, 1)];
+    const at = (count: number) => {
+      const reach = document.edges.slice(0, count);
+      return scaleLadder(document, INITIAL_SCALE_STATE, { centre, edges: reach, reach });
+    };
+    assert.deepEqual([at(GRAPH_NODE_BUDGET).tier, at(GRAPH_NODE_BUDGET).related], ['direct', GRAPH_NODE_BUDGET]);
+    assert.deepEqual([at(GRAPH_NODE_BUDGET + 1).tier, at(GRAPH_NODE_BUDGET + 1).related], ['listed', GRAPH_NODE_BUDGET + 1]);
+  });
+
+  it('counts a neighbour\u2019s unit partner as related, an issue reached twice once, and nothing with no selection', () => {
+    const base = documentOf({ components: [4] });
+    const unit: typeof base = {
+      ...base,
+      order: {
+        slots: [
+          { rank: 1, lead: componentKey(0, 3), members: [componentKey(0, 3), componentKey(0, 4)], ready: true, holds: [] },
+          ...base.order.slots.filter((slot) => slot.lead !== componentKey(0, 3) && slot.lead !== componentKey(0, 4)),
+        ],
+        excluded: [],
+      },
+    };
+    const reach = [
+      { field: 'blocked-by' as const, from: componentKey(0, 1), to: componentKey(0, 3) },
+      { field: 'serialize-with' as const, from: componentKey(0, 3), to: componentKey(0, 1) },
+    ];
+    // c0-3 (reached twice) and its partner c0-4: two related, c0-1 itself not counted.
+    assert.equal(scaleLadder(unit, INITIAL_SCALE_STATE, { centre: [componentKey(0, 1)], edges: reach, reach }).related, 2);
+    assert.equal(scaleLadder(unit).related, null);
+  });
+
   it('reads the budget off the whole reach, so the kinds switched on never decide whether the graph draws', () => {
     // A selection whose first kind alone fits, and whose every kind does not: still listed,
     // so switching a kind on cannot turn the graph into the list.

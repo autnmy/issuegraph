@@ -2292,3 +2292,25 @@ describe('the canvas zone clears the lifted Inspector (#303)', () => {
     assert.match(blockOf('width < 1120px'), margin('0'));
   });
 });
+
+describe('the Related list heads are the board’s .ig-sub (#303, q348)', () => {
+  const css = workspaceStylesheet.replace(/\/\*[\s\S]*?\*\//g, '');
+  const body = (selector: string): string => {
+    const at = css.indexOf(`${selector} {`);
+    assert.ok(at >= 0, `no rule for ${selector}`);
+    return css.slice(at, css.indexOf('}', at));
+  };
+
+  it('sets each head 40 tall at the 16 inset, with a hairline between the groups and none over the first', () => {
+    const head = body('.ig-related .ig-relationship-group-head');
+    assert.match(head, /min-block-size: calc\(var\(--ig-space-snug\) \* 5\);/);
+    assert.match(head, /padding: 0 var\(--ig-space-loose\);/);
+    assert.match(head, /border-top: var\(--ig-stroke\) solid var\(--ig-line\);/);
+    assert.match(body('.ig-related > .ig-relationship-group-head:first-child'), /border-top: 0;/);
+  });
+
+  it('sets the count regular and the glyph 8 from its words', () => {
+    assert.match(body('.ig-related .ig-relationship-count'), /font-weight: var\(--ig-weight-regular\);/);
+    assert.match(body('.ig-related-kind'), /gap: var\(--ig-space-snug\);/);
+  });
+});

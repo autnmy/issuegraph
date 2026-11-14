@@ -1813,14 +1813,37 @@ ${heldRailDeclarations}
 .ig-workspace .ig-related {
   display: none;
   flex-direction: column;
+}
+
+/* EACH HEAD IS THE BOARD'S .ig-sub (q348): 40 tall, 16 inset, a hairline
+   between the groups, the words medium and the count regular. The list is
+   full-bleed, so the head's inset is the only inset; the first head, "Around
+   #N", has no line over it. 40 is 5 x --ig-space-snug, 12 between its parts. */
+.ig-related .ig-relationship-group-head {
+  min-block-size: calc(var(--ig-space-snug) * 5);
+  padding: 0 var(--ig-space-loose);
   gap: var(--ig-space);
-  padding: var(--ig-space);
+  border-top: var(--ig-stroke) solid var(--ig-line);
+}
+
+.ig-related > .ig-relationship-group-head:first-child {
+  border-top: 0;
+}
+
+.ig-related .ig-relationship-count {
+  font-weight: var(--ig-weight-regular);
+}
+
+/* THE FOLD AND THE EMPTY SENTENCES TAKE THE HEAD'S INSET, since the list has none of its own. */
+.ig-related .ig-relationship-more,
+.ig-related .ig-related-empty {
+  margin-inline: var(--ig-space-loose);
 }
 
 /* The list's own sentences, the empty states: muted, at the size of the
    group counts. */
 .ig-related-empty {
-  margin: 0;
+  margin-block: var(--ig-space);
   color: var(--ig-text-muted);
   font-size: var(--ig-font-size-small);
 }
@@ -1848,7 +1871,7 @@ ${heldRailDeclarations}
 .ig-related-kind {
   display: inline-flex;
   align-items: baseline;
-  gap: var(--ig-space-tight);
+  gap: var(--ig-space-snug);
 }
 
 /* ONE KEY PER SURFACE, AND THE CANVAS KEEPS IT.

@@ -202,6 +202,14 @@ export interface ScaleLadder {
    * component, or all of them.
    */
   readonly nodeCount: number;
+  /**
+   * The related issues around a selection: the far ends of every relationship
+   * it could draw and their unit partners, never the selection itself. `null`
+   * with nothing selected. ONE COUNT FOR THE TIER AND THE WORDS (q347): "past
+   * 60" is read off it, and so are "74 issues relate to #3104" and "74
+   * related", so the line can never state a number the tier did not decide on.
+   */
+  readonly related: number | null;
   readonly budgets: { readonly node: number; readonly clusterOnly: number };
   /** The focused member, once resolved against a real component. */
   readonly focus: string | null;
@@ -609,6 +617,17 @@ function aroundKeys(document: NormalizedDocument, around: ScaleAround): Readonly
   return new Set([...reached, ...units].filter((key) => document.byKey.has(key)));
 }
 
+/**
+ * How many issues relate to a selection (q347): every issue its whole reach
+ * would draw, the selection's own excepted. Read off the reach, never off the
+ * kinds switched on, so switching a kind on cannot turn the graph into the list
+ * and take the switch away with it.
+ */
+function relatedAround(document: NormalizedDocument, around: ScaleAround): number {
+  const centre = new Set(around.centre);
+  return [...aroundKeys(document, { ...around, edges: around.reach })].filter((key) => !centre.has(key)).length;
+}
+
 /** One edge's declaration, as a key a set can hold. */
 function edgeKey(edge: ViewerEdge): string {
   return `${edge.field}|${edge.from}|${edge.to}`;
@@ -672,8 +691,8 @@ export function scaleLadder(
   // AROUND A SELECTION THE BUDGET IS READ OFF ITS WHOLE REACH, never off the
   // kinds switched on, so switching a kind on cannot turn the graph into the
   // list and take the switch away with it. Elsewhere the reach is what is kept.
-  const reach = around === null ? keep : aroundKeys(document, { ...around, edges: around.reach });
-  const budgetTier = tierFor(reach.size).tier;
+  const aroundCount = around === null ? null : relatedAround(document, around);
+  const budgetTier = tierFor(aroundCount ?? keep.size).tier;
   const tier = MODE_TIER[mode](budgetTier, nodeCount);
   const traits = TIER_TRAITS[tier];
 
@@ -710,6 +729,7 @@ export function scaleLadder(
   return {
     tier,
     nodeCount,
+    related: aroundCount,
     budgets: { node: GRAPH_NODE_BUDGET, clusterOnly: CLUSTER_ONLY_BUDGET },
     focus: focusedCluster === null ? null : requested,
     refusal: refusalFor(tier, nodeCount, mode, capsules.length > 0),

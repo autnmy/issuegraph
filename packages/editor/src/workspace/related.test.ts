@@ -28,7 +28,6 @@ it('#303 relatedListView groups the selection by kind at every count, as the Ins
     );
     assert.equal(view.around, 'i0001');
     assert.equal(view.total, count);
-    assert.equal(view.related, count);
   }
 });
 
@@ -75,7 +74,6 @@ it('#303 relatedListView lists a set’s neighbours by kind, read from the membe
     ],
   );
   assert.equal(view.total, 3);
-  assert.equal(view.related, 2, 'an issue reached twice was counted twice');
 });
 
 it('#303 the rows drawn fold at five per group until the reader opens one, for the list and its keyboard alike', () => {

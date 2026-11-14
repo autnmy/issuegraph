@@ -15,7 +15,7 @@ import {
   heldTogetherDocument,
   twoUnitDocument,
 } from '../testing/fixtures.ts';
-import { linearScene, listedRowsScene } from './linear.ts';
+import { asideRow, linearScene, listedRowsScene } from './linear.ts';
 
 /**
  * How many relationships an order row names before it counts the rest: one
@@ -797,6 +797,13 @@ describe('the order rows a list draws in place of the graph (#303)', () => {
     assert.equal(markup.match(/tabindex="0"/g)?.length, 1);
     assert.match(row(markup, '101'), /tabindex="0"/);
     assert.match(markup, /^<div class="ig-viewer ig-linear" data-frame="none" data-density="dense" data-ig-detached="rows"><ol class="ig-list" aria-label="neighbours">/);
+  });
+
+  it('names an issue the order does not place truthfully: it is drawn here (review-219 at PR 310)', () => {
+    assert.match(row(markup, '110'), /aria-label="[^"]+ — 110 — related"/);
+    assert.equal(row(markup, '110').includes('not drawn here'), false, 'a row in the list said it was not drawn');
+    // The order's footer still says it, where it is true.
+    assert.match(renderMarkup(asideRow(document, '110', {})), /aria-label="[^"]+ — 110 — related, not drawn here"/);
   });
 
   it('leaves the order’s own rows naming their relationships', () => {
