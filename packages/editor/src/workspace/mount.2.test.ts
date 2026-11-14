@@ -13,70 +13,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import type { GraphDocument, StoreSnapshot } from '@issuegraph/store';
-import { type OrderDeriver, createScriptedSource, createStore, makeEdge } from '@issuegraph/store';
+import { createScriptedSource, createStore } from '@issuegraph/store';
 import { JSDOM } from 'jsdom';
 
-import { PICKER_WORDS } from '../testing/picker.ts';
-import { WORKSPACE_WORDS } from '../testing/workspace.ts';
-import { type MountWords, type WorkspaceProjection, mountWorkspace } from './mount.ts';
-
-const WORDS: MountWords = {
-  ...WORKSPACE_WORDS,
-  picker: PICKER_WORDS,
-  addRelationship: 'add a relationship',
-  deleteRelationship: 'delete this relationship',
-  cancel: 'cancel',
-  chooseKind: 'choose the kind',
-  targetLabel: 'target issue',
-  targetPlaceholder: 'find the other issue',
-  keys: 'R relate · Esc cancel',
-};
-
-const SEED: GraphDocument = {
-  issues: [
-    { ref: '1', title: 'Publish the first release', state: 'open', priority: 0 },
-    { ref: '2', title: 'Write the release notes', state: 'open', priority: 3 },
-    { ref: '3', title: 'Cut the changelog', state: 'open', priority: 3 },
-    { ref: '4', title: 'Rename the config flag', state: 'open' },
-  ],
-  edges: [makeEdge('blocked-by', '1', '2')],
-};
-
-/** A host's projection: the order as the deriver ranked it, and an audit over the landed document. */
-function project(snapshot: StoreSnapshot): WorkspaceProjection {
-  const landed = { issues: snapshot.issues, edges: snapshot.landed };
-  return {
-    viewer: {
-      issues: snapshot.issues.map((issue) => ({
-        key: issue.ref,
-        title: issue.title,
-        open: issue.state === 'open',
-        priority: issue.priority ?? 2,
-      })),
-      edges: snapshot.landed.map((edge) => ({ field: edge.kind, from: edge.from, to: edge.to })),
-      order: {
-        slots: snapshot.order.rows.map((row) => ({
-          rank: row.rank + 1,
-          lead: row.ref,
-          members: [row.ref],
-          ready: row.ready,
-          holds: [],
-        })),
-        excluded: [],
-      },
-      cycles: [],
-    },
-    audit: { document: landed, graph: { cycles: [], duplicateCanonical: () => null } },
-  };
-}
-
-/** Let every queued microtask — the coalesced render among them — run. */
-const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
-
-/** The harness deriver: document order, everything ready. */
-const flatDeriver: OrderDeriver = (document) =>
-  document.issues.map((issue, rank) => ({ ref: issue.ref, rank, ready: true, holdReasons: [] }));
+import { SEED, WORDS, flatDeriver, flush, project } from '../testing/mount.ts';
+import { mountWorkspace } from './mount.ts';
 
 /** The root element's box, read at every measure, so a test changes it between resize callbacks. */
 interface NarrowRuleBox {
