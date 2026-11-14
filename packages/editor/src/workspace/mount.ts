@@ -54,6 +54,7 @@ import {
   type Theme,
   type ViewerDocument,
   isFooterSlot,
+  isNarrowBox,
   navigate,
   normalizeDocument,
   renderViewer,
@@ -105,7 +106,7 @@ import {
   type WorkspaceWords,
   renderWorkspace,
 } from './render.ts';
-import { type WorkspaceSelection, selectedEdgeId, selectedKey, toViewerSelection } from './selection.ts';
+import { type WorkspaceSelection, selectedEdgeId, selectedKey, selectionReducer, toViewerSelection } from './selection.ts';
 
 export { CANVAS_MODES, type CanvasMode } from './narrow.ts';
 
@@ -204,9 +205,10 @@ export interface MountWorkspaceOptions {
   /**
    * Called once per change of the selection, with the whole selection: on a
    * click or key press that changes it, and on a reconciliation that drops a
-   * selected member. Never for a store notification or a gesture that changes
-   * nothing — the last selection announced is compared by value. A set's keys
-   * are a fresh frozen array each time.
+   * selected member, and on a resize that narrows the root element under 640
+   * while a set is selected. Never for a store notification or a gesture that
+   * changes nothing — the last selection announced is compared by value. A
+   * set's keys are a fresh frozen array each time.
    */
   readonly onSelectionChange?: ((selection: WorkspaceSelection) => void) | undefined;
   /**
@@ -518,6 +520,23 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   element.append(styles, surface);
 
   let state: HostState = { ...INITIAL_HOST_STATE, canvas: options.canvas ?? INITIAL_HOST_STATE.canvas };
+  // WHETHER THE ROOT ELEMENT IS NARROWER THAN 640, read off the element the
+  // host passed and never off the window, for `railResize`'s reason below.
+  // While it holds, every selection write keeps one issue (`narrowed`). An
+  // element that cannot be measured is never narrow, so it reduces nothing.
+  const measuresNarrow = (): boolean =>
+    typeof element.getBoundingClientRect === 'function' && isNarrowBox(element.getBoundingClientRect());
+  let narrow = measuresNarrow();
+  /**
+   * The state with its selection cut to the most recently added issue while
+   * the root is narrow, and the same state otherwise, so a caller can tell by
+   * identity whether anything changed.
+   */
+  const narrowed = (next: HostState): HostState => {
+    if (!narrow) return next;
+    const selection = selectionReducer(next.selection, { kind: 'limit-to-one' });
+    return sameSelection(toViewerSelection(selection), toViewerSelection(next.selection)) ? next : { ...next, selection };
+  };
   // THE LAST SELECTION THE HOST WAS TOLD, compared by value in `render()`,
   // which every path reaches — a gesture, a store notification, the
   // reconciliation that drops a member — so the notice has one home.
@@ -871,7 +890,9 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
    * press did. `reduceHost` is pure, so asking costs nothing and answers safely.
    */
   const applyResult = (result: HostResult): void => {
-    state = result.state;
+    // NARROWED HERE, BEFORE THE RENDER, so `handle.state` never holds a set
+    // while the root is narrow, not even until the coalesced redraw runs.
+    state = narrowed(result.state);
     for (const effect of result.effects) perform(effect);
     schedule();
   };
@@ -3119,12 +3140,40 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   const railResize =
     typeof ResizeObserver === 'function' ? new ResizeObserver(() => { dockRailLegend(); }) : null;
 
+  /**
+   * The root element's own width, watched so a resize under 640 cuts a live
+   * set to one issue. The reduction is a state write and a scheduled redraw,
+   * so `announceSelection` reports it once from `render()` like any other.
+   *
+   * ITS OWN OBSERVER, NOT `railResize`, because `dockRailLegend` disconnects
+   * and re-observes that one on every redraw, and the root element is never
+   * replaced by a redraw. TAKEN FROM THE ROOT ELEMENT'S OWN DOCUMENT, which in
+   * a browser is the same constructor `railResize` uses, so a test can supply
+   * one with no global. Without one the narrow flag measured at mount still
+   * holds; only the resize watch is lost.
+   */
+  const RootResizeObserver = doc.defaultView?.ResizeObserver;
+  const rootResize =
+    RootResizeObserver === undefined
+      ? null
+      : new RootResizeObserver(() => {
+          // A queued callback can still arrive after `disconnect()`.
+          if (destroyed) return;
+          narrow = measuresNarrow();
+          const next = narrowed(state);
+          if (next === state) return;
+          state = next;
+          schedule();
+        });
+  rootResize?.observe(element);
+
   const unsubscribe = store.subscribe(schedule);
 
   /** Every listener off and every node this mount built removed. Shared by `destroy` and a failed first render. */
   const teardown = (): void => {
     unsubscribe();
     railResize?.disconnect();
+    rootResize?.disconnect();
     element.removeEventListener('click', onClick);
     element.removeEventListener('input', onInput);
     element.removeEventListener('compositionend', onCompositionEnd);
