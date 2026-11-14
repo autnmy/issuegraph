@@ -5636,13 +5636,15 @@ describe('the editor builds and reports a selection set', () => {
     try {
       await click(row('1'));
       await click(row('2'), { metaKey: true });
-      // A field inside the mount, standing in for any text field a host or a
-      // part draws there; the press bubbles to the mount's listener.
-      const field = page.win.document.createElement('input');
-      page.zone('rail')?.append(field);
       // Dismiss the lifted inspector first (see the Escape test above), so only
       // the field rule decides this press.
       await press(row('2'), 'Escape');
+      // A field inside the mount, standing in for any text field a host or a
+      // part draws there; the press bubbles to the mount's listener. Appended
+      // AFTER the dismissing press, whose redraw would otherwise detach it.
+      const field = page.win.document.createElement('input');
+      page.zone('rail')?.append(field);
+      assert.ok(field.isConnected, 'the field is not in the mount');
       field.focus();
       field.dispatchEvent(new page.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
       await flush();
