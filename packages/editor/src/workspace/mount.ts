@@ -53,9 +53,12 @@ import {
   type Scene,
   type Theme,
   type ViewerDocument,
+  isFooterSlot,
   navigate,
+  normalizeDocument,
   renderViewer,
   resolveTheme,
+  sameSelection,
 } from '@issuegraph/viewer';
 
 import { CONTROL_ATTRIBUTES } from '../a11y/baseline.ts';
@@ -102,7 +105,7 @@ import {
   type WorkspaceWords,
   renderWorkspace,
 } from './render.ts';
-import { selectedEdgeId, selectedKey } from './selection.ts';
+import { type WorkspaceSelection, selectedEdgeId, selectedKey, toViewerSelection } from './selection.ts';
 
 export { CANVAS_MODES, type CanvasMode } from './narrow.ts';
 
@@ -198,6 +201,14 @@ export interface MountWorkspaceOptions {
    * here too.
    */
   readonly railDensity?: WorkspaceOptions['railDensity'];
+  /**
+   * Called once per change of the selection, with the whole selection: on a
+   * click or key press that changes it, and on a reconciliation that drops a
+   * selected member. Never for a store notification or a gesture that changes
+   * nothing — the last selection announced is compared by value. A set's keys
+   * are a fresh frozen array each time.
+   */
+  readonly onSelectionChange?: ((selection: WorkspaceSelection) => void) | undefined;
   /**
    * What the canvas zone draws when the workspace mounts. A SEED, not a
    * setting: the reader's Sub-issues and Related groups tabs change the mode
@@ -431,6 +442,13 @@ function isInput(node: Element | null | undefined): node is HTMLInputElement {
   return node !== null && node !== undefined && node.tagName === 'INPUT';
 }
 
+/** Whether a key press was typed into a text field. */
+function typedInField(event: Event): boolean {
+  const target = event.target;
+  if (!isElement(target)) return false;
+  return target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.closest('[contenteditable="true"]') !== null;
+}
+
 function isComposing(event: Event): boolean {
   return 'isComposing' in event && event.isComposing === true;
 }
@@ -493,6 +511,12 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   element.append(styles, surface);
 
   let state: HostState = { ...INITIAL_HOST_STATE, canvas: options.canvas ?? INITIAL_HOST_STATE.canvas };
+  // THE LAST SELECTION THE HOST WAS TOLD, compared by value in `render()`,
+  // which every path reaches — a gesture, a store notification, the
+  // reconciliation that drops a member — so the notice has one home.
+  let announced: WorkspaceSelection = state.selection;
+  /** The viewer document last drawn, which a Shift range reads its rank order from. */
+  let lastViewer: ViewerDocument | null = null;
   // THE RAIL OFFSET THE SCROLL HANDLER LAST SAW, which is what every redraw
   // restores. Read back off the old rail instead, a redraw while another tab
   // shows would restore the 0 a hidden rail reports, and the reader would lose
@@ -1346,6 +1370,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       unsettled.length === 0 && kept.length === projected.viewer.edges.length
         ? projected.viewer
         : { ...projected.viewer, edges: [...kept, ...unsettled] };
+    lastViewer = viewer;
     const { audit } = projected;
     const resolved = theme();
     // THE WRITE STATES ONLY. The workspace holds the one selection, and every
@@ -2035,6 +2060,59 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     }
     firstPassWas = state.firstPass.phase.kind;
     searchWasOpen = search !== null;
+    announceSelection();
+  };
+
+  /**
+   * Tell the host the selection changed, once, with a fresh frozen copy. The
+   * announced value is written BEFORE the callback, so a host that changes the
+   * selection from inside it is told about that change on its own render.
+   */
+  const announceSelection = (): void => {
+    const now = state.selection;
+    if (sameSelection(toViewerSelection(announced), toViewerSelection(now))) return;
+    announced = now;
+    const handed: WorkspaceSelection =
+      now.kind === 'issues' ? Object.freeze({ kind: 'issues', keys: Object.freeze([...now.keys]) }) : Object.freeze({ ...now });
+    current.onSelectionChange?.(handed);
+  };
+
+  /**
+   * The WHOLE rank order as last drawn — every member of every ranked slot —
+   * which a Shift range walks. Never the rail window: a range whose anchor is
+   * outside the window covers the full span.
+   */
+  const rankOrder = (): readonly string[] =>
+    lastViewer === null
+      ? []
+      : normalizeDocument(lastViewer).document.order.slots
+          .filter((slot) => slot.rank !== null)
+          .flatMap((slot) => slot.members);
+
+  /** The pointer gesture a click's modifiers ask for: Cmd or Ctrl toggles, Shift ranges. */
+  const gestureOf = (event: {
+    readonly shiftKey: boolean;
+    readonly metaKey: boolean;
+    readonly ctrlKey: boolean;
+  }): { readonly gesture?: 'toggle' | 'range'; readonly order?: readonly string[] } => {
+    if (event.metaKey || event.ctrlKey) return { gesture: 'toggle' };
+    return event.shiftKey ? { gesture: 'range', order: rankOrder() } : {};
+  };
+
+  /**
+   * The row across the rail window's edge that ArrowDown on its last drawn row
+   * (or ArrowUp on its first) will focus once the window is re-cut: the next
+   * (or previous) slot in the WHOLE sequence. `null` when the press does not
+   * re-cut the window — exactly the conditions `advanceRail` re-cuts on.
+   */
+  const acrossEdge = (rail: RailWindow, key: string, pressedKey: string): string | null => {
+    const offset = rail.offsetOf(key);
+    if (offset === undefined || lastViewer === null) return null;
+    const down = pressedKey === 'ArrowDown' && rail.after > 0 && (rail.rows.at(-1)?.members.includes(key) ?? false);
+    const up = pressedKey === 'ArrowUp' && rail.before > 0 && (rail.rows[0]?.members.includes(key) ?? false);
+    if (!down && !up) return null;
+    const sequence = normalizeDocument(lastViewer).document.order.slots.filter((slot) => !isFooterSlot(slot));
+    return sequence[offset + (down ? 1 : -1)]?.lead ?? null;
   };
 
   /**
@@ -2213,8 +2291,10 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       dispatch({ kind: 'group', id });
       return;
     }
+    // MODIFIERS ARE READ ON AN ISSUE ONLY. A relationship above stays a plain
+    // relationship click under any modifier, replacing any set.
     const key = named.getAttribute(KEY_ATTRIBUTE);
-    if (key !== null) dispatch({ kind: 'point', key });
+    if (key !== null) dispatch({ kind: 'point', key, ...gestureOf(event) });
   };
 
   const readInput = (event: Event): void => {
@@ -2538,12 +2618,28 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     const zoneName = owner?.getAttribute('data-zone') ?? null;
     const key = active.closest<HTMLElement>(`[${KEY_ATTRIBUTE}]`)?.getAttribute(KEY_ATTRIBUTE) ?? null;
     if (owner === null || zoneName === null || key === null || !surface.contains(owner)) return false;
-    if (zoneName === 'rail' && drawn !== null && advanceRail(drawn.rail, key, event.key)) return true;
+    // SHIFT IS READ BEFORE THE RE-CUT, because `advanceRail` returns before
+    // `navigate` runs: the range goes to the neighbour in the whole order that
+    // the re-cut then focuses, so the set extends across the edge exactly as
+    // it does inside the window.
+    if (zoneName === 'rail' && drawn !== null) {
+      const across = event.shiftKey ? acrossEdge(drawn.rail, key, event.key) : null;
+      if (across !== null) dispatch({ kind: 'point', key: across, gesture: 'range', order: rankOrder() });
+      if (drawn !== null && advanceRail(drawn.rail, key, event.key)) return true;
+    }
     const scene = sceneFor(zoneName);
     if (scene === null) return false;
-    const result = navigate(scene, { focused: key, selected: selectedKey(state.selection) }, event.key);
+    const result = navigate(scene, { focused: key, selected: selectedKey(state.selection) }, event.key, {
+      shift: event.shiftKey,
+    });
     if (result.command.kind === 'select') {
       dispatch({ kind: 'point', key: result.command.key });
+      return true;
+    }
+    // SHIFT WITH AN ARROW: a Shift-click on the issue focus moves to.
+    if (result.command.kind === 'extend') {
+      dispatch({ kind: 'point', key: result.command.key, gesture: 'range', order: rankOrder() });
+      focusIn(zoneName, result.command.key);
       return true;
     }
     if (result.command.kind === 'focus') {
@@ -2759,6 +2855,14 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       if (narrowOverlayOpen(state) && (state.canvasOpen || inspectorIsLifted())) {
         event.preventDefault();
         dispatch({ kind: 'control', name: 'narrow-dismiss' });
+        return;
+      }
+      // THE SELECTION CLEARS LAST, only when nothing above claimed the press
+      // and before the create map's cancel, and never from a text field: an
+      // Escape typed there belongs to the field.
+      if (state.selection.kind !== 'none' && !typedInField(event)) {
+        event.preventDefault();
+        dispatch({ kind: 'control', name: 'clear' });
         return;
       }
     }

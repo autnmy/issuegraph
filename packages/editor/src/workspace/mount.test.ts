@@ -29,6 +29,7 @@ import { WORDS as CHANGE_WORDS } from '../testing/reevaluate.ts';
 import { WORKSPACE_WORDS } from '../testing/workspace.ts';
 import { keysOf, relatedHubEdges } from '../testing/workspace.ts';
 import { mountStylesheet } from './chrome.ts';
+import type { WorkspaceSelection } from './selection.ts';
 import {
   type CanvasMode,
   type FirstPassOption,
@@ -207,6 +208,7 @@ async function mounted(
     wrap?: (source: ReturnType<typeof createScriptedSource>) => DataSource;
     /** §17d's outward link is drawn only for a URL the host can name. */
     issueUrl?: (ref: string) => string | null;
+    onSelectionChange?: (selection: WorkspaceSelection) => void;
   } = {},
 ) {
   const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>');
@@ -5497,6 +5499,195 @@ describe('the narrow tabs and the Related groups list, mounted', () => {
       for (const handle of handles) handle.destroy();
     } finally {
       dom.window.close();
+    }
+  });
+});
+
+describe('the editor builds and reports a selection set', () => {
+  /** A mount recording every `onSelectionChange` call, as JSON in call order. */
+  async function recording(seed: GraphDocument = SEED, options: { railCount?: number; wrap?: (source: ReturnType<typeof createScriptedSource>) => DataSource } = {}) {
+    const calls: string[] = [];
+    const page = await mounted(seed, { ...options, onSelectionChange: (selection) => calls.push(JSON.stringify(selection)) });
+    const row = (key: string): HTMLElement => {
+      const found = page.rows().find((candidate) => candidate.getAttribute('data-ig-key') === key);
+      assert.ok(found !== undefined, `no rail row is drawn for ${key}`);
+      return found;
+    };
+    const press = async (target: Element, key: string, modifiers: { shiftKey?: boolean } = {}): Promise<void> => {
+      (target instanceof page.win.HTMLElement ? target : row('1')).focus();
+      target.dispatchEvent(new page.win.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...modifiers }));
+      await flush();
+    };
+    const click = async (target: Element, modifiers: { shiftKey?: boolean; metaKey?: boolean; ctrlKey?: boolean } = {}): Promise<void> => {
+      target.dispatchEvent(new page.win.MouseEvent('click', { bubbles: true, ...modifiers }));
+      await flush();
+    };
+    return { page, calls, row, press, click };
+  }
+  const issues = (...keys: string[]): string => JSON.stringify({ kind: 'issues', keys });
+  const issue = (key: string): string => JSON.stringify({ kind: 'issue', key });
+  const many: GraphDocument = {
+    issues: Array.from({ length: 60 }, (_, index) => ({ ref: String(index + 1), title: `Issue ${String(index + 1)}`, state: 'open' as const })),
+    edges: [],
+  };
+
+  it('adds with a Cmd-click and drops with a Ctrl-click, past the chord refusal, one notice each', async () => {
+    const { page, calls, row, click } = await recording();
+    try {
+      await click(row('1'));
+      await click(row('3'), { metaKey: true });
+      await click(row('1'), { ctrlKey: true });
+      assert.deepEqual(calls, [issue('1'), issues('1', '3'), issue('3')]);
+      assert.deepEqual(page.handle.state.selection, { kind: 'issue', key: '3' });
+    } finally {
+      page.handle.destroy();
+    }
+  });
+
+  it('ranges over the full rank span from an anchor outside the rail window', async () => {
+    const { page, calls, row, press, click } = await recording(many, { railCount: 50 });
+    try {
+      await press(row('1'), 'End');
+      await click(row('60'));
+      await press(row('60'), 'Home');
+      assert.ok(!page.rows().some((candidate) => candidate.getAttribute('data-ig-key') === '60'), 'the anchor is still drawn');
+      await click(row('2'), { shiftKey: true });
+      const expected = ['60', ...Array.from({ length: 58 }, (_, index) => String(59 - index))];
+      assert.deepEqual(calls.at(-1), issues(...expected));
+    } finally {
+      page.handle.destroy();
+    }
+  });
+
+  it('extends with Shift and an arrow across the rail window edge, on its last and first drawn rows', async () => {
+    const { page, calls, row, press, click } = await recording(many, { railCount: 50 });
+    try {
+      await click(row('50'));
+      const before = calls.length;
+      await press(row('50'), 'ArrowDown', { shiftKey: true });
+      assert.deepEqual(calls.slice(before), [issues('50', '51')], 'one notice for the press');
+      assert.equal(page.win.document.activeElement?.getAttribute('data-ig-key'), '51', 'focus did not cross the edge');
+      const top = page.rows()[0];
+      assert.ok(top !== undefined);
+      const first = top.getAttribute('data-ig-key') ?? '';
+      await click(top);
+      const mark = calls.length;
+      // Re-read: the click's redraw replaced the row element.
+      await press(row(first), 'ArrowUp', { shiftKey: true });
+      const above = String(Number(first) - 1);
+      assert.deepEqual(calls.slice(mark), [issues(first, above)]);
+      assert.equal(page.win.document.activeElement?.getAttribute('data-ig-key'), above);
+    } finally {
+      page.handle.destroy();
+    }
+  });
+
+  it('extends with Shift and an arrow inside the window, down and up', async () => {
+    const { page, calls, row, press, click } = await recording();
+    try {
+      await click(row('1'));
+      await press(row('1'), 'ArrowDown', { shiftKey: true });
+      assert.deepEqual(calls.at(-1), issues('1', '2'));
+      await press(row('2'), 'ArrowUp', { shiftKey: true });
+      // 1 is already present, so it moves to the end.
+      assert.deepEqual(calls.at(-1), issues('2', '1'));
+      assert.equal(page.win.document.activeElement?.getAttribute('data-ig-key'), '1');
+    } finally {
+      page.handle.destroy();
+    }
+  });
+
+  it('clears a set on Escape and announces once', async () => {
+    const { page, calls, row, press, click } = await recording();
+    try {
+      await click(row('1'));
+      await click(row('2'), { metaKey: true });
+      const before = calls.length;
+      // jsdom lays nothing out, so the inspector reads as lifted over the
+      // canvas and the first Escape dismisses it, which keeps precedence.
+      await press(row('2'), 'Escape');
+      assert.equal(page.handle.state.inspectorDismissed, true, 'the first Escape did not dismiss the lifted inspector');
+      assert.deepEqual(calls.slice(before), [], 'dismissing the inspector changed the selection');
+      await press(row('2'), 'Escape');
+      assert.deepEqual(calls.slice(before), [JSON.stringify({ kind: 'none' })]);
+      assert.deepEqual(page.handle.state.selection, { kind: 'none' });
+    } finally {
+      page.handle.destroy();
+    }
+  });
+
+  it('keeps the set when Escape cancels a live draft', async () => {
+    const { page, row, press, click } = await recording();
+    try {
+      await press(row('1'), RELATE_KEY);
+      assert.ok(page.handle.state.draft.source === '1', 'the draft did not begin');
+      await click(row('3'), { metaKey: true });
+      assert.deepEqual(page.handle.state.selection, { kind: 'issues', keys: ['1', '3'] });
+      await press(row('3'), 'Escape');
+      assert.equal(page.handle.state.draft.source, null, 'Escape did not cancel the draft');
+      assert.deepEqual(page.handle.state.selection, { kind: 'issues', keys: ['1', '3'] });
+    } finally {
+      page.handle.destroy();
+    }
+  });
+
+  it('keeps the set when Escape is typed in a text field', async () => {
+    const { page, row, press, click } = await recording();
+    try {
+      await click(row('1'));
+      await click(row('2'), { metaKey: true });
+      // Dismiss the lifted inspector first (see the Escape test above), so only
+      // the field rule decides this press.
+      await press(row('2'), 'Escape');
+      // A field inside the mount, standing in for any text field a host or a
+      // part draws there; the press bubbles to the mount's listener. Appended
+      // AFTER the dismissing press, whose redraw would otherwise detach it.
+      const field = page.win.document.createElement('input');
+      page.zone('rail')?.append(field);
+      assert.ok(field.isConnected, 'the field is not in the mount');
+      field.focus();
+      field.dispatchEvent(new page.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      await flush();
+      assert.deepEqual(page.handle.state.selection, { kind: 'issues', keys: ['1', '2'] });
+    } finally {
+      page.handle.destroy();
+    }
+  });
+
+  it('reports add, drop, range, clear and a store update that drops a member, and nothing for a no-op', async () => {
+    let override: GraphDocument | null = null;
+    const { page, calls, row, press, click } = await recording(SEED, {
+      wrap: (source) => ({ ...source, hydrate: () => (override === null ? source.hydrate() : Promise.resolve(override)) }),
+    });
+    try {
+      await click(row('1'));
+      await click(row('4'), { metaKey: true });
+      await click(row('4'), { metaKey: true });
+      await click(row('3'), { shiftKey: true });
+      await press(row('3'), 'Escape');
+      await press(row('3'), 'Escape');
+      await click(row('2'));
+      await click(row('4'), { metaKey: true });
+      // A store notification that changes nothing, and a range onto the anchor, which changes nothing.
+      await page.store.rehydrate();
+      await flush();
+      await click(row('4'), { shiftKey: true });
+      assert.deepEqual(calls, [
+        issue('1'),
+        issues('1', '4'),
+        issue('1'),
+        issues('1', '2', '3'),
+        JSON.stringify({ kind: 'none' }),
+        issue('2'),
+        issues('2', '4'),
+      ]);
+      override = { ...SEED, issues: SEED.issues.filter((candidate) => candidate.ref !== '4') };
+      await page.store.rehydrate();
+      await flush();
+      assert.deepEqual(calls.at(-1), issue('2'), 'the reconciliation that dropped 4 was not reported');
+      assert.equal(calls.length, 8);
+    } finally {
+      page.handle.destroy();
     }
   });
 });

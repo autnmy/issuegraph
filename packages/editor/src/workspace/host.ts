@@ -47,6 +47,7 @@ import {
 import { type CanvasMode, type NarrowView, isNarrowTab, pressNarrowTab } from './narrow.ts';
 import {
   INITIAL_SELECTION,
+  type SelectionCommand,
   type WorkspaceSelection,
   issuesSelection,
   selectedEdgeId,
@@ -190,7 +191,18 @@ export const INITIAL_HOST_STATE: HostState = Object.freeze({
  * and a mark naming an edge or a slot.
  */
 export type HostCommand =
-  | { readonly kind: 'point'; readonly key: string }
+  /**
+   * A pointer or key press on an issue. `gesture` is set by a modifier:
+   * `toggle` (Cmd or Ctrl) adds or drops the issue, `range` (Shift) adds a
+   * range over `order`, the WHOLE rank order as last drawn, never the rail
+   * window. Absent, it is a plain click.
+   */
+  | {
+      readonly kind: 'point';
+      readonly key: string;
+      readonly gesture?: 'toggle' | 'range' | undefined;
+      readonly order?: readonly string[] | undefined;
+    }
   | { readonly kind: 'group'; readonly id: string }
   | {
       readonly kind: 'control';
@@ -629,15 +641,26 @@ function firstPassed(state: HostState, command: FirstPassCommand, document: Grap
 }
 
 /** A pointer on an issue: a target while one is being chosen, a selection otherwise. */
-function pointed(state: HostState, key: string, document: GraphDocument): HostResult {
+function pointed(
+  state: HostState,
+  point: Extract<HostCommand, { kind: 'point' }>,
+  document: GraphDocument,
+): HostResult {
+  const { key } = point;
   const choosingTarget = state.draft.kind !== null && state.draft.target === null;
   if (choosingTarget && key !== state.draft.source) {
     return drafted(state, { kind: 'target', ref: key }, document);
   }
-  return settled({
-    ...state,
-    selection: selectionReducer(state.selection, { kind: 'select-issue', key }),
-  });
+  return settled({ ...state, selection: selectionReducer(state.selection, selectionCommandOf(point)) });
+}
+
+/** The selection command a pointer gesture asks for. */
+function selectionCommandOf(point: Extract<HostCommand, { kind: 'point' }>): SelectionCommand {
+  switch (point.gesture) {
+    case 'toggle': return { kind: 'toggle-issue', key: point.key };
+    case 'range': return { kind: 'range-issue', key: point.key, order: point.order ?? [] };
+    case undefined: return { kind: 'select-issue', key: point.key };
+  }
 }
 
 /**
@@ -721,7 +744,7 @@ function controlled(
       // open blocker, the claimed peer — as this control, so a reader can reach
       // the issue holding the one they are looking at. It is a pointer on that
       // issue, with a pointer's rules: a selection, or the target of a draft.
-      return target === undefined ? settled(state) : pointed(state, target, document);
+      return target === undefined ? settled(state) : pointed(state, { kind: 'point', key: target }, document);
     case 'reveal-issue':
       // NAVIGATION THAT CANNOT WRITE, which is why it is not `select-issue`.
       // A pointer's rules are right for the hold deep link and wrong here: with
@@ -1049,7 +1072,7 @@ function forgetRelatedList(state: HostState): HostState {
 function reduceCommand(state: HostState, command: HostCommand, document: GraphDocument): HostResult {
   switch (command.kind) {
     case 'point':
-      return pointed(state, command.key, document);
+      return pointed(state, command, document);
     case 'group': {
       // A mark names either an edge (its store identity) or a slot (its lead).
       // A MARK NAMING NEITHER CHANGES NOTHING. The canvas draws an edge the
@@ -1058,7 +1081,7 @@ function reduceCommand(state: HostState, command: HostCommand, document: GraphDo
       // is no issue key. Falling through to `pointed` would select that
       // identity as an issue, or worse, commit it as a draft's target.
       if (findEdge(document, command.id) !== undefined) return selectEdge(state, command.id);
-      if (document.issues.some((issue) => issue.ref === command.id)) return pointed(state, command.id, document);
+      if (document.issues.some((issue) => issue.ref === command.id)) return pointed(state, { kind: 'point', key: command.id }, document);
       return settled(state);
     }
     case 'control':
