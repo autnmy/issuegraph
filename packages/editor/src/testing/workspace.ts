@@ -83,6 +83,7 @@ export const WORKSPACE_WORDS: WorkspaceWords = {
     order: 'ranked queue',
     related: 'linked issues',
     subIssues: 'child tree',
+    view: 'view picker',
     closeSheet: 'fold the sheet down',
     noSelection: 'select an issue to list its links',
     searchRelated: 'search links',

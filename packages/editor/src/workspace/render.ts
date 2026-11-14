@@ -606,6 +606,12 @@ export interface NarrowWords {
   /** The tab that shows the sub-issue tree. */
   readonly subIssues: string;
   /**
+   * Names the choice between views, for assistive technology: the narrow tabs'
+   * tablist, and the middle zone's switch at `640` and wider. One word for both,
+   * because both pick the same thing.
+   */
+  readonly view: string;
+  /**
    * Names the control that closes the Inspector's sheet under `640`. Nothing
    * in this version draws that sheet, so nothing reads this yet.
    */
@@ -1202,7 +1208,7 @@ function narrowTabsSpec(
 ): ElementSpec {
   return element(
     'div',
-    { class: 'ig-narrow-tabs', role: 'tablist' },
+    { class: 'ig-narrow-tabs', role: 'tablist', 'aria-label': words.view },
     NARROW_TABS.map((tab) =>
       element(
         'button',
@@ -1242,7 +1248,7 @@ function canvasSwitchSpec(canvas: CanvasMode, words: NarrowWords): ElementSpec {
   const pressed = canvasTabOf(canvas);
   return element(
     'div',
-    { class: 'ig-canvas-switch', role: 'group' },
+    { class: 'ig-canvas-switch', role: 'group', 'aria-label': words.view },
     CANVAS_MODES.map(canvasTabOf).map((tab) =>
       element(
         'button',

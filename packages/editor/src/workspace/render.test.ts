@@ -3277,7 +3277,7 @@ describe('the middle zone switch between Related groups and Sub-issues', () => {
   const switchIn = (markup: string): string => {
     const canvas = markup.slice(markup.indexOf('data-zone="canvas"'));
     return (
-      /<div class="ig-canvas-toolbar"><div class="ig-canvas-switch" role="group">([\s\S]*?)<\/div>/.exec(canvas)?.[1] ??
+      /<div class="ig-canvas-toolbar"><div class="ig-canvas-switch" role="group" aria-label="view picker">([\s\S]*?)<\/div>/.exec(canvas)?.[1] ??
       assert.fail('the canvas zone draws no switch at the head of its toolbar')
     );
   };
@@ -3314,6 +3314,13 @@ describe('the middle zone switch between Related groups and Sub-issues', () => {
     const drawn = switchIn(renderWorkspace(backlogOf(4), { words: WORKSPACE_WORDS }).markup);
     assert.equal(drawn.includes('aria-controls'), false, 'the switch names a panel it does not show');
     assert.equal(drawn.includes('role="tab"'), false, 'the switch draws tabs, which need a panel to name');
+  });
+
+  it('R4 names the switch and the narrow tablist with the one host word for the choice between views', () => {
+    const { markup } = renderWorkspace(backlogOf(4), { words: WORKSPACE_WORDS });
+    const label = `aria-label="${WORKSPACE_WORDS.narrow.view}"`;
+    assert.ok(markup.includes(`<div class="ig-canvas-switch" role="group" ${label}>`), 'the switch is an unnamed group');
+    assert.ok(markup.includes(`<div class="ig-narrow-tabs" role="tablist" ${label}>`), 'the narrow tablist is unnamed');
   });
 });
 

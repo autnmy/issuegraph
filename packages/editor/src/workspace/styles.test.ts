@@ -1983,10 +1983,42 @@ describe("the middle zone switch is the design's segmented control", () => {
     assert.match(idle, /background:\s*none;/);
     assert.match(idle, /color:\s*var\(--ig-text-muted\);/);
     assert.match(idle, /padding:\s*0 var\(--ig-space\);/);
+    assert.match(idle, /font-size:\s*var\(--ig-font-size\);/, 'the options are not at the body size the board gives them');
     const pressed = rule(".ig-workspace .ig-canvas-switch-option[aria-pressed='true']");
     assert.match(pressed, /background:\s*var\(--ig-surface\);/);
     assert.match(pressed, /color:\s*var\(--ig-text\);/);
     assert.match(pressed, /font-weight:\s*var\(--ig-weight-medium\);/);
+  });
+});
+
+describe("the middle zone's head is the board's .igz-head, with the count at its right", () => {
+  const css = withoutComments(workspaceStylesheet);
+  const rule = (selector: string): string => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const body = new RegExp(`(?:^|\\n)${escaped}\\s*\\{([^}]*)\\}`).exec(css)?.[1];
+    assert.ok(body !== undefined, `no rule for ${selector}`);
+    return body;
+  };
+
+  it('is 48 tall with 16 inline padding and 12 between its parts', () => {
+    const head = rule('.ig-canvas-toolbar');
+    assert.match(head, /min-block-size:\s*calc\(var\(--ig-space-loose\) \* 3\);/);
+    assert.match(head, /padding:\s*0 var\(--ig-space-loose\);/);
+    assert.match(head, /gap:\s*var\(--ig-space\);/);
+  });
+
+  it('pushes whatever follows the switch to the right with one auto margin, and gives the pill none of its own', () => {
+    assert.match(rule('.ig-workspace .ig-canvas-switch + *'), /margin-left:\s*auto;/);
+    assert.equal(/margin-left/.test(rule('.ig-edit-mode')), false, 'a second auto margin splits the free space');
+  });
+
+  it('sets the count as the board sets .meta: body size, muted, tabular figures, on one line', () => {
+    const count = rule('.ig-canvas-caption');
+    assert.match(count, /font-size:\s*var\(--ig-font-size\);/);
+    assert.match(count, /color:\s*var\(--ig-text-muted\);/);
+    assert.match(count, /font-variant-numeric:\s*tabular-nums;/);
+    assert.match(count, /white-space:\s*nowrap;/);
+    assert.equal(/color/.test(rule('.ig-canvas-count')), false, 'the numbers are set apart from the muted count');
   });
 });
 

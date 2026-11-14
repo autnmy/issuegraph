@@ -384,12 +384,18 @@ export const workspaceStylesheet = `
    IT DOES NOT SCROLL WITH THE CANVAS, deliberately. The zone scrolls (above),
    and a caption saying "6 of 312 shown" that scrolls away is a caption you have
    to go back for. A sticky position keeps it against the zone's top edge
-   without taking the graph out of the zone's own scroll. */
+   without taking the graph out of the zone's own scroll.
+
+   THE MIDDLE ZONE'S HEAD, AS THE GRAPHS BOARD DRAWS IT: 48 tall, 16 inline
+   padding, 12 between its parts, the switch at the left and the count at the
+   right. 48 is 3 x --ig-space-loose; the package has no token of its own. */
 .ig-canvas-toolbar {
   display: flex;
   align-items: center;
-  gap: var(--ig-space-tight);
-  padding: var(--ig-space-tight) var(--ig-space);
+  gap: var(--ig-space);
+  min-block-size: calc(var(--ig-space-loose) * 3);
+  box-sizing: border-box;
+  padding: 0 var(--ig-space-loose);
   border-bottom: var(--ig-stroke) solid var(--ig-line);
   position: sticky;
   top: 0;
@@ -397,13 +403,14 @@ export const workspaceStylesheet = `
   z-index: 1;
 }
 
-/* MONO AND MUTED, because it is a read-out rather than a heading: the frame
-   sets it in the same mono face at the same muted hue as the rail's own footer
-   count, and the two are the same kind of fact. */
+/* THE HEAD'S COUNT, the board's .meta: body size, muted, tabular figures, one
+   line. It is a read-out rather than a heading, so nothing in it is set apart
+   by weight or colour. */
 .ig-canvas-caption {
   margin: 0;
-  font-family: var(--ig-font-mono);
-  font-size: var(--ig-font-size-micro);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size);
+  font-variant-numeric: tabular-nums;
   color: var(--ig-text-muted);
   min-width: 0;
   overflow: hidden;
@@ -417,7 +424,6 @@ export const workspaceStylesheet = `
    it. Borrowing the name put that inset around two numbers in the middle of a
    sentence, which is what the frame comparison caught. */
 .ig-canvas-count {
-  color: var(--ig-text-body);
   font-variant-numeric: tabular-nums;
 }
 
@@ -429,16 +435,17 @@ export const workspaceStylesheet = `
   white-space: nowrap;
 }
 
-/* PUSHED RIGHT BY ITS OWN MARGIN, NOT BY THE ROW'S JUSTIFICATION. The row's
-   arity changes: off the direct tier the caption is gone and the pill is the
-   only child, and justify-content: space-between puts a lone item at main
-   START — so the pill jumped to the left edge on exactly the tiers a large
-   backlog is always in, which is the state this surface exists to handle well.
-   margin-left: auto is one declaration that is correct at either arity, and it
-   is also what leaves #181's projection toggle a real slot: a control added
-   ahead of the caption lands in the left group without touching this rule.
+/* WHATEVER FOLLOWS THE SWITCH IS PUSHED RIGHT BY ITS OWN MARGIN, NOT BY THE
+   ROW'S JUSTIFICATION. The row's arity changes: off the direct tier the caption
+   is gone and the pill follows the switch alone, and justify-content would
+   place the parts by count. One auto margin on the switch's next sibling is
+   correct at every arity; a second auto margin on the pill would split the
+   space and leave the pill midway. */
+.ig-workspace .ig-canvas-switch + * {
+  margin-left: auto;
+}
 
-   THE TINT PAIR, NOT A BARE OUTLINE. The tint fill and tint border tokens
+/* THE TINT PAIR, NOT A BARE OUTLINE. The tint fill and tint border tokens
    exist for exactly this — "a fill of its own hue inside a heavier border of
    the same hue" — and the frame draws the pill that way. Reaching for the
    accent directly would give a solid chip that reads as loud as the selection.
@@ -448,7 +455,6 @@ export const workspaceStylesheet = `
    saying nothing. */
 .ig-edit-mode {
   flex: 0 0 auto;
-  margin-left: auto;
   font-family: var(--ig-font-mono);
   font-size: var(--ig-font-size-pill);
   letter-spacing: var(--ig-tracking-pill);
@@ -1695,7 +1701,7 @@ ${heldRailDeclarations}
   background: none;
   color: var(--ig-text-muted);
   font-family: var(--ig-font-ui);
-  font-size: var(--ig-font-size-small);
+  font-size: var(--ig-font-size);
   padding: 0 var(--ig-space);
   white-space: nowrap;
   cursor: pointer;

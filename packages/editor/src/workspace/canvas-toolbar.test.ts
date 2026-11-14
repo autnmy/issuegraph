@@ -268,7 +268,7 @@ describe('§17f’s row is drawn from what the host said, and nothing else', () 
 
     // THE ROW STAYS FOR THE MIDDLE ZONE'S SWITCH, whose words are the narrow tabs' and always
     // present. What the host did not word is still absent.
-    assert.match(without, /<div class="ig-canvas-toolbar"><div class="ig-canvas-switch" role="group">/, 'the row lost the switch');
+    assert.match(without, /<div class="ig-canvas-toolbar"><div class="ig-canvas-switch" role="group" aria-label="view picker">/, 'the row lost the switch');
     assert.equal(/class="ig-canvas-caption"/.test(without), false, 'a caption nobody worded');
     assert.equal(/class="ig-edit-mode"/.test(without), false, 'a pill nobody worded');
 
@@ -289,7 +289,7 @@ describe('§17f’s row is drawn from what the host said, and nothing else', () 
     // THE ROW BETWEEN THEM HOLDS THE MIDDLE ZONE'S SWITCH AND NOTHING ELSE.
     assert.match(
       without,
-      /<\/button><div class="ig-canvas-toolbar"><div class="ig-canvas-switch" role="group">(?:<button [^>]*>[^<]*<\/button>){2}<\/div><\/div><section class="ig-viewer/,
+      /<\/button><div class="ig-canvas-toolbar"><div class="ig-canvas-switch" role="group" aria-label="view picker">(?:<button [^>]*>[^<]*<\/button>){2}<\/div><\/div><section class="ig-viewer/,
       'something other than the switch was inserted between the strip and the canvas',
     );
   });
