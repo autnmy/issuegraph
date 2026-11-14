@@ -917,6 +917,7 @@ describe('mountWorkspace', () => {
         selected: '',
         of: '',
         shown: '',
+        related: '',
       };
       page.handle.destroy();
       page = await mounted(SEED, { words: { ...WORDS, canvas: captionOnly } });

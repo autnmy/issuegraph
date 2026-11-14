@@ -290,19 +290,18 @@ describe('the narrow tabs and the Related groups list, mounted', () => {
     }
   });
 
-  it('#303 a mounted reader opens a group past its first five and selects a relationship that was not drawn before', async () => {
+  it('#303 a mounted reader opens a group past its first five and selects a neighbour that was not drawn before', async () => {
     // 13 relationships on i0001: 7 blocked-by, the last of them to i0014.
-    const last = makeEdge('blocked-by', 'i0001', 'i0014');
     const hub = await mounted(relatedHubSeed(13));
     try {
       const canvas = (): HTMLElement => hub.zone('canvas') ?? assert.fail('no canvas zone');
-      const row = `.ig-related [data-ig-command="select-edge"][data-ig-target="${last.id}"]`;
+      const row = '.ig-related [data-ig-key="i0014"]';
       hub.click(hub.rows().find((each) => each.getAttribute('data-ig-key') === 'i0001') ?? assert.fail('no rail row for i0001'));
       await flush();
       hub.click(narrowTab(hub, 'related'));
       await flush();
       // RULES, Graphs, Dense neighbourhoods: "five each before the rest fold under 'Show 4 more'. Under 640 the list does the same."
-      assert.equal(canvas().querySelector(row), null, 'the seventh relationship was drawn before its group opened');
+      assert.equal(canvas().querySelector(row), null, 'the seventh neighbour was drawn before its group opened');
       const more =
         canvas().querySelector<HTMLElement>('.ig-related [data-ig-command="show-group"][data-ig-value="blocked-by:outgoing"]') ??
         assert.fail('no "Show 2 more" under the blocked-by group');
@@ -310,9 +309,44 @@ describe('the narrow tabs and the Related groups list, mounted', () => {
       hub.click(more);
       await flush();
       assert.deepEqual(hub.handle.state.shownGroups, ['blocked-by:outgoing']);
-      hub.click(canvas().querySelector(row) ?? assert.fail('the opened group does not draw the seventh relationship'));
+      // An order row selects its issue, as a row in the order does.
+      hub.click(canvas().querySelector(row) ?? assert.fail('the opened group does not draw the seventh neighbour'));
       await flush();
-      assert.deepEqual(hub.handle.state.selection, { kind: 'edge', edgeId: last.id });
+      assert.deepEqual(hub.handle.state.selection, { kind: 'issue', key: 'i0014' });
+    } finally {
+      hub.handle.destroy();
+      hub.dom.window.close();
+    }
+  });
+
+  it('#303 the keyboard walks the Related groups list’s rows across its groups, Enter selects one, and focus stays in the list', async () => {
+    const hub = await mounted(relatedHubSeed(13));
+    try {
+      const list = (): HTMLElement =>
+        hub.zone('canvas')?.querySelector<HTMLElement>('.ig-related') ?? assert.fail('no Related groups list');
+      const press = (key: string): void => {
+        const active = hub.win.document.activeElement ?? assert.fail('nothing focused');
+        active.dispatchEvent(new hub.win.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+      };
+      hub.click(hub.rows().find((each) => each.getAttribute('data-ig-key') === 'i0001') ?? assert.fail('no rail row for i0001'));
+      await flush();
+      hub.click(narrowTab(hub, 'related'));
+      await flush();
+      // One tab stop, on the list's first row: the first of i0001's blocked-by.
+      const stops = [...list().querySelectorAll<HTMLElement>('[data-ig-key][tabindex="0"]')];
+      assert.deepEqual(stops.map((stop) => stop.getAttribute('data-ig-key')), ['i0002']);
+      stops[0]?.focus();
+      // Five blocked-by rows drawn, so the sixth press crosses into the serialize-with group.
+      for (let step = 0; step < 5; step += 1) press('ArrowDown');
+      await flush();
+      const active = hub.win.document.activeElement;
+      assert.ok(active?.closest('.ig-related') != null, 'focus left the list');
+      assert.equal(active?.getAttribute('data-ig-key'), 'i0003', 'ArrowDown did not walk the rows in the order drawn');
+      press('Enter');
+      await flush();
+      assert.deepEqual(hub.handle.state.selection, { kind: 'issue', key: 'i0003' });
+      // The list is now drawn around i0003, and focus is on its tab stop rather than off the list.
+      assert.ok(hub.win.document.activeElement?.closest('.ig-related') != null, 'selecting from the list dropped focus out of it');
     } finally {
       hub.handle.destroy();
       hub.dom.window.close();

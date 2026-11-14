@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import { buildModel } from '@issuegraph/reader';
 import { EDGE_FIELDS, type EdgeField, edgeIdentity, isSymmetricEdgeField } from '@issuegraph/core';
-import { KEY_ATTRIBUTE, type ViewerHold, labelFrom, treatmentFor } from '@issuegraph/viewer';
+import { KEY_ATTRIBUTE, type ViewerHold, labelFrom, legendLabelFrom, treatmentFor } from '@issuegraph/viewer';
 import { normalizeDocument, recedingOf } from '@issuegraph/viewer';
 
 import { RELATE_KEY, keyIntent } from '../create/keys.ts';
@@ -2920,7 +2920,7 @@ describe('the narrow tabs and the Related groups list', () => {
     assert.equal(lone.includes(WORKSPACE_WORDS.narrow.noSelection), false, 'a selected issue is worded as nothing selected');
   });
 
-  it('R9 R10 the Related groups list states each relationship in the Inspector words from either end', () => {
+  it('R9 R10 #303 the Related groups list draws each neighbour as the order draws it, under its kind’s head read from the selection’s end', () => {
     const backlog = backlogOf(6, {
       edges: [
         ['blocked-by', 'i0001', 'i0002'],
@@ -2928,33 +2928,56 @@ describe('the narrow tabs and the Related groups list', () => {
         ['serialize-with', 'i0001', 'i0003'],
         ['blocked-by', 'i0005', 'i0006'],
       ],
+      held: ['i0002'],
     });
-    // Each row as its kind words and the other end, the pair the Inspector draws.
-    const statements = (markup: string): string[] =>
-      [...markup.matchAll(/<span>([^<]+)<\/span><\/span><span class="ig-relationship-ref"[^>]*>([^<]+)<\/span>/g)]
-        .map(([, words = '', ref = '']) => `${words} ${ref}`)
-        .sort();
-    const listed = (key: string): { list: string[]; inspector: string[] } => {
-      const { markup } = renderWorkspace(backlog, {
-        ...WORDS,
-        selection: { kind: 'issue', key },
-        narrowView: 'canvas',
-        canvas: 'neighbourhood',
-      });
-      return { list: statements(canvasOf(markup)), inspector: statements(listOf(inspectorOf(markup))) };
+    const listed = (key: string): readonly (readonly [string, readonly string[]])[] => {
+      const canvas = canvasOf(
+        renderWorkspace(backlog, { ...WORDS, selection: { kind: 'issue', key }, narrowView: 'canvas', canvas: 'neighbourhood' }).markup,
+      );
+      const list = canvas.slice(canvas.indexOf('<div class="ig-related">'));
+      return list
+        .split('<div class="ig-relationship-group"')
+        .slice(1)
+        .map((group) => [
+          /<span class="ig-related-kind">[\s\S]*?<span>([^<]+)<\/span><\/span>/.exec(group)?.[1] ?? '',
+          [...group.matchAll(/<li class="ig-(?:slot|footer-row)" data-ig-key="([^"]+)"/g)].map((match) => match[1] ?? ''),
+        ] as const);
     };
-    // "Related groups lists the selection's relationships in the Inspector's words, with a sentence when nothing is selected"
-    // "The list is drawn in the canvas zone from `inspectorView(...).relationships` through `relationshipDescription`, so its words and direction match the Inspector."
-    for (const key of ['i0001', 'i0005', 'i0006']) {
-      const { list, inspector } = listed(key);
-      assert.ok(inspector.length > 0, `${key}: the Inspector lists nothing to compare with`);
-      assert.deepEqual(list, inspector, `${key}: the list and the Inspector word the relationships differently`);
-    }
-    assert.deepEqual(listed('i0001').list, ['blocked by i0002', 'duplicated by i0004', 'serialized with i0003']);
-    assert.deepEqual(listed('i0005').list, ['blocked by i0006']);
-    const [receiving = ''] = listed('i0006').list;
-    assert.match(receiving, / i0005$/);
-    assert.equal(receiving.startsWith('blocked by '), false, 'the receiving end took the sending end words');
+    // The heads are the legend's words from the selection's end: what the selection does, or has done to it.
+    const head = (field: EdgeField, outgoing: boolean): string => {
+      const phrase = legendLabelFrom(treatmentFor(field), outgoing);
+      return `${phrase.charAt(0).toUpperCase()}${phrase.slice(1)}`;
+    };
+    // RULES, Graphs, Dense neighbourhoods: "order rows (rank, readiness, title, number and tag) under the
+    // same heads with their icons, at every count" — three relationships, three heads.
+    assert.deepEqual(listed('i0001'), [
+      [head('blocked-by', true), ['i0002']],
+      [head('serialize-with', true), ['i0003']],
+      [head('duplicate-of', false), ['i0004']],
+    ]);
+    assert.deepEqual(listed('i0005'), [[head('blocked-by', true), ['i0006']]]);
+    assert.deepEqual(listed('i0006'), [[head('blocked-by', false), ['i0005']]]);
+
+    // Each row is the rail's: the same rank cell, station, title and held line, and no relationship named on it.
+    const { markup } = renderWorkspace(backlog, { ...WORDS, selection: { kind: 'issue', key: 'i0001' }, narrowView: 'canvas', canvas: 'neighbourhood' });
+    const canvas = canvasOf(markup);
+    // The list alone, up to the graph's own root that follows it in the zone.
+    const fromList = canvas.slice(canvas.indexOf('<div class="ig-related">'));
+    const list = fromList.slice(0, fromList.indexOf('<section class="ig-viewer'));
+    const rowOf = (zone: string, key: string): string => {
+      const at = zone.indexOf(`data-ig-key="${key}"`);
+      return zone.slice(zone.lastIndexOf('<li', at), zone.indexOf('</li>', at));
+    };
+    const rail = markup.slice(markup.indexOf('data-zone="rail"'), markup.indexOf('data-zone="canvas"'));
+    // Up to the number, after which the rail's row names its one relationship and this one names none.
+    const strip = (row: string): string => row.slice(0, row.indexOf('</span>', row.indexOf('class="ig-id"'))).replace(/ data-recede="true"| tabindex="-?\d"| aria-current="\w+"/g, '');
+    assert.equal(strip(rowOf(list, 'i0003')), strip(rowOf(rail, 'i0003')), 'the list spelled its own order row');
+    assert.match(rowOf(list, 'i0002'), /<span class="ig-rank" data-held="true">—<\/span>/);
+    assert.match(rowOf(list, 'i0002'), /a blocker is open/);
+    assert.equal(/data-edge="/.test(list.replace(/<svg[\s\S]*?<\/svg>/g, '')), false, 'a row named the relationship its head names');
+    // One tab stop in the list, on its first row.
+    assert.equal(list.match(/tabindex="0"/g)?.length, 1);
+    assert.match(rowOf(list, 'i0002'), /tabindex="0"/);
   });
 
   it('#303 the rendered list groups each kind with its count, five rows, then "Show N more", as the Inspector does', () => {
@@ -2979,7 +3002,7 @@ describe('the narrow tabs and the Related groups list', () => {
         .map((group) => ({
           key: /data-ig-group-key="([^"]+)"/.exec(group)?.[1],
           count: /<span class="ig-relationship-count">(\d+)<\/span>/.exec(group)?.[1],
-          rows: (group.match(/<li class="ig-relationship"/g) ?? []).length,
+          rows: (group.match(/<li class="ig-slot"/g) ?? []).length,
           more: /<button[^>]*data-ig-command="show-group" data-ig-value="([^"]+)">([^<]*)<\/button>/.exec(group)?.slice(1),
         }));
     // RULES, Graphs, Dense neighbourhoods: "five each before the rest fold under 'Show 4 more'. Under 640 the list does the same."
@@ -3006,6 +3029,69 @@ describe('the narrow tabs and the Related groups list', () => {
       list,
       /^<div class="ig-related"><div class="ig-relationship-group-head"><span>centred on <span class="ig-id">[^<]*i0001<\/span><\/span><span class="ig-relationship-count">13<\/span><\/div>/,
     );
+  });
+
+  it('#303 past 60 issues around the selection the list stands in for the graph: no refusal, its one line, "Selected: #3104 · 74 related"', () => {
+    // The board's #3104: 58 block it, it blocks 12, 4 serialize with it — 74 related, past 60.
+    const keys = keysOf(75);
+    const at = (index: number): string => keys[index] ?? assert.fail(`no key ${String(index)}`);
+    const range = (from: number, count: number): number[] => Array.from({ length: count }, (_, offset) => from + offset);
+    const larger = backlogOf(75, {
+      edges: [
+        ...range(1, 58).map((index) => ['blocked-by', at(0), at(index)] as const),
+        ...range(59, 12).map((index) => ['blocked-by', at(index), at(0)] as const),
+        ...range(71, 4).map((index) => ['serialize-with', at(index), at(0)] as const),
+      ],
+    });
+    const { markup } = renderWorkspace(larger, { ...WORDS, selection: { kind: 'issue', key: at(0) } });
+    const canvas = canvasOf(markup);
+    // "There is no refusal state and no empty canvas."
+    assert.equal(canvas.includes('data-projection="graph"'), false, 'the graph was drawn past its budget');
+    assert.equal(canvas.includes('class="ig-refusal"'), false, 'the canvas refused');
+    assert.match(canvas, /<section class="ig-ladder" data-tier="listed">/);
+    // "The legend switches go."
+    assert.equal(canvas.includes('data-switch="true"'), false, 'the legend switch was drawn over the list');
+    assert.equal(markup.includes('data-canvas-legend="absent"'), true, 'the rail did not get its key back');
+    // The one line, in the host's words, over the list.
+    // The issue as the board writes it; a key that is not all digits is drawn as written.
+    const line = WORKSPACE_WORDS.listedByRelationship(74, 'i0001');
+    assert.ok(canvas.includes(`<p class="ig-related-over">${line}</p><div class="ig-related" data-over="true">`), 'no line over the list');
+    // "The head reads 'Selected: #3104 · 74 related'."
+    const caption = /<p class="ig-canvas-caption">([\s\S]*?)<\/p>/.exec(canvas)?.[1] ?? assert.fail('no caption');
+    assert.equal(
+      caption.replace(/<[^>]+>/g, ''),
+      `${WORKSPACE_WORDS.canvas?.selected ?? ''}: i0001 · 74 ${WORKSPACE_WORDS.canvas?.related ?? ''}`,
+    );
+    // The board's groups: five each, then "Show 53 more", "Show 7 more".
+    const groups = canvas
+      .split('<div class="ig-relationship-group"')
+      .slice(1)
+      .map((group) => [
+        /data-ig-group-key="([^"]+)"/.exec(group)?.[1],
+        /<span class="ig-relationship-count">(\d+)<\/span>/.exec(group)?.[1],
+        (group.match(/<li class="ig-slot"/g) ?? []).length,
+        /data-ig-command="show-group"[^>]*>([^<]*)<\/button>/.exec(group)?.[1] ?? null,
+      ]);
+    assert.deepEqual(groups, [
+      ['blocked-by:outgoing', '58', 5, 'Show 53 more'],
+      ['blocked-by:incoming', '12', 5, 'Show 7 more'],
+      ['serialize-with:none', '4', 4, null],
+    ]);
+    assert.match(canvas, /<div class="ig-relationship-group-head"><span>centred on <span class="ig-id">i0001<\/span><\/span><span class="ig-relationship-count">74<\/span><\/div>/);
+    // "The limit stays in code, not in the words."
+    // The words around the list are the host's alone: no sentence of the package's states the limit.
+    assert.equal(/limit|too many to draw/i.test(canvas), false, 'the package wrote its own refusal over the list');
+  });
+
+  it('#303 within the budget the line is never drawn, and under 640 the list is the list as always', () => {
+    const hub = backlogOf(14, { edges: relatedHubEdges(13) });
+    const wide = canvasOf(renderWorkspace(hub, { ...WORDS, selection: { kind: 'issue', key: 'i0001' } }).markup);
+    assert.equal(wide.includes('ig-related'), false, 'the list was drawn beside a graph that fits');
+    const narrow = canvasOf(
+      renderWorkspace(hub, { ...WORDS, selection: { kind: 'issue', key: 'i0001' }, narrowView: 'canvas', canvas: 'neighbourhood' }).markup,
+    );
+    assert.equal(narrow.includes('ig-related-over'), false, 'the line was drawn over the list as always');
+    assert.equal(narrow.includes('data-over'), false);
   });
 
   it('R17 the narrow tabs are named by the host narrow words, in the order Order, Related groups, Sub-issues', () => {

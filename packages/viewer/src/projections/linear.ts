@@ -60,6 +60,14 @@ import { treatmentFor } from '../vocabulary.ts';
  */
 const ORDER_ROW_RELATIONSHIPS = 1;
 
+/**
+ * Whether a row names its relationships. The order's rows do, one and a count
+ * of the rest; a row in a list whose head already names the kind does not
+ * (#303, RULES, Graphs, Dense neighbourhoods: Related groups lists the
+ * neighbours as order rows "under the same heads"), since the head says it.
+ */
+type RowRelationships = 'named' | 'unnamed';
+
 export interface SceneOptions {
   /**
    * The selected issue, or a set of them in the order they were added. Every
@@ -327,6 +335,7 @@ export function slotRow(
   slot: ViewerSlot,
   options: SceneOptions,
   showRank: boolean,
+  relationships: RowRelationships = 'named',
 ): ElementSpec {
   const held = !slot.ready;
   const lead = document.byKey.get(slot.lead);
@@ -366,7 +375,10 @@ export function slotRow(
   // readiness and the relationships as one wrapping row of chips, in that
   // order — the facts a reader scans for before they read a word of the
   // sentence beneath.
-  const badgeRow = [...badges, ...edgeBadgeList(document, slot.members, ORDER_ROW_RELATIONSHIPS)];
+  const badgeRow = [
+    ...badges,
+    ...(relationships === 'named' ? edgeBadgeList(document, slot.members, ORDER_ROW_RELATIONSHIPS) : []),
+  ];
 
   // THE IDENTITY AND THE BADGES ARE ONE LINE, NOT TWO BLOCKS — which is what
   // §17j's row anatomy asks for and what the old markup could not express.
@@ -463,6 +475,7 @@ export function footerRow(
   document: NormalizedDocument,
   slot: ViewerSlot,
   options: SceneOptions,
+  relationships: RowRelationships = 'named',
 ): ElementSpec {
   const lead = document.byKey.get(slot.lead);
   // THE REASON RIDES THE NAME. A footer entry is one line — a chip, a title and
@@ -494,7 +507,7 @@ export function footerRow(
       labelled === undefined
         ? null
         : element('span', { class: 'ig-badge', 'data-hold': labelled.label }, [labelled.label]),
-      footerRelationships(document, slot.members),
+      footerRelationships(document, slot.members, relationships),
     ),
   );
 }
@@ -549,8 +562,9 @@ function footerEntry(
 function footerRelationships(
   document: NormalizedDocument,
   keys: readonly string[],
+  relationships: RowRelationships,
 ): ElementSpec | null {
-  return edgeBadges(document, keys);
+  return relationships === 'named' ? edgeBadges(document, keys) : null;
 }
 
 // EXPORTED FOR THE GRAPH'S REFUSAL, which is the only other place an exclusion
@@ -562,6 +576,7 @@ export function excludedRow(
   key: string,
   canonical: string,
   options: SceneOptions,
+  relationships: RowRelationships = 'named',
 ): ElementSpec {
   const issue = document.byKey.get(key);
   // THE SAME ONE-LINE SHAPE THE OTHER FOOTER ENTRIES TAKE. A duplicate is the
@@ -588,7 +603,7 @@ export function excludedRow(
       // "Claimed" and "Not eligible". The consequence ("which gets worked
       // instead") rides the accessible name.
       element('span', { class: 'ig-badge', 'data-hold': 'duplicate' }, [DUPLICATE_WORD]),
-      footerRelationships(document, [key]),
+      footerRelationships(document, [key], relationships),
     ),
   );
 }
@@ -608,6 +623,7 @@ export function asideRow(
   document: NormalizedDocument,
   key: string,
   options: SceneOptions,
+  relationships: RowRelationships = 'named',
 ): ElementSpec {
   const issue = document.byKey.get(key);
   return element(
@@ -623,9 +639,74 @@ export function asideRow(
       issue?.title ?? key,
       issue === undefined ? null : identity(issue),
       element('span', { class: 'ig-badge', 'data-hold': 'related' }, ['Related']),
-      footerRelationships(document, [key]),
+      footerRelationships(document, [key], relationships),
     ),
   );
+}
+
+/**
+ * One issue's own row, as the order draws it, naming no relationship: where
+ * the order puts it, a footer entry for an issue the order holds back or
+ * excludes, or the aside entry for one it does not place.
+ *
+ * A UNIT MEMBER IS DRAWN ALONE, at its unit's rank and readiness, under its own
+ * title: a list of one selection's neighbours names each issue it reaches, and
+ * the unit's row would name the partner the relationship does not.
+ */
+function listedRow(document: NormalizedDocument, key: string, options: SceneOptions): ElementSpec {
+  const slot = document.order.slots.find((each) => each.members.includes(key));
+  const exclusion = document.order.excluded.find((each) => each.key === key);
+  if (slot !== undefined) {
+    const own: ViewerSlot = { ...slot, lead: key, members: [key] };
+    return isFooterSlot(own) ? footerRow(document, own, options, 'unnamed') : slotRow(document, own, options, true, 'unnamed');
+  }
+  if (exclusion !== undefined) return excludedRow(document, key, exclusion.canonical, options, 'unnamed');
+  return asideRow(document, key, options, 'unnamed');
+}
+
+/** What a list of order rows is named, and where its tab stop sits. */
+export interface ListedRowsOptions {
+  /** The list's accessible name. */
+  readonly label: string;
+  /** The key holding the list's tab stop; every other row is at `-1`. */
+  readonly focused?: string | null | undefined;
+}
+
+/**
+ * Issues drawn as the order's rows, for a list that stands in for the graph
+ * (#303, RULES, Graphs, Dense neighbourhoods: Related groups lists the
+ * selection's neighbours "as order rows (rank, readiness, title, number and
+ * tag)"). The rail's own row builder, so a neighbour reads the same here as it
+ * does in the order; only the relationship it would name is left to the list's
+ * head.
+ *
+ * A SCENE, SO A HOST NAVIGATES IT AS IT NAVIGATES THE OTHERS: one column, in the
+ * order given, each key once. The root is a viewer root of its own, as the
+ * detached footer's is, so the rows' type and density hang off it; it is drawn
+ * at the rail's dense density, since the rail is where these rows are read.
+ */
+export function listedRowsScene(
+  document: NormalizedDocument,
+  keys: readonly string[],
+  options: ListedRowsOptions,
+): Scene {
+  const order = keys.filter((key, index) => keys.indexOf(key) === index);
+  const rowOptions: SceneOptions = { focused: options.focused ?? null };
+  const root = element(
+    'div',
+    { class: 'ig-viewer ig-linear', 'data-frame': 'none', 'data-density': 'dense', 'data-ig-detached': 'rows' },
+    [element('ol', { class: 'ig-list', 'aria-label': options.label }, keys.map((key) => listedRow(document, key, rowOptions)))],
+  );
+  return {
+    projection: 'linear',
+    root,
+    footer: null,
+    focusOrder: order,
+    navigable: order,
+    lateral: new Map(),
+    stationOf: new Map(),
+    diagnostics: [],
+  };
 }
 
 /** The one count chip isolated issues collapse into (they carry no information as rows). */

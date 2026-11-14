@@ -55,6 +55,7 @@ import {
   type ViewerDocument,
   isFooterSlot,
   isNarrowBox,
+  listedRowsScene,
   navigate,
   normalizeDocument,
   renderViewer,
@@ -98,6 +99,7 @@ import {
 } from './host.ts';
 import type { CanvasMode } from './narrow.ts';
 import type { RailWindow } from './rail.ts';
+import { relatedListView, relatedRowKeys } from './related.ts';
 import { writeLog } from './log.ts';
 import {
   type WorkspaceOptions,
@@ -458,6 +460,20 @@ function typedInField(event: Event): boolean {
 
 function isComposing(event: Event): boolean {
   return 'isComposing' in event && event.isComposing === true;
+}
+
+/**
+ * The Related groups list (#303), and the name its focus is kept under: it
+ * sits in the canvas zone but is navigated and restored as a scope of its own.
+ */
+const RELATED_LIST = '.ig-related';
+const RELATED_SCOPE = 'related';
+
+/** The scope focus on `element` belongs to: the Related groups list, or its zone. */
+function scopeNameOf(element: Element): string | null {
+  return element.closest(RELATED_LIST) === null
+    ? (element.closest('.ig-zone')?.getAttribute('data-zone') ?? null)
+    : RELATED_SCOPE;
 }
 
 /** Every element under `scope` carrying exactly this key, in document order. */
@@ -1240,15 +1256,30 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     return true;
   };
 
+  /**
+   * Where focus moves and is restored: a zone by name, or the Related groups
+   * list, which shares the canvas zone with the graph under `640` and keeps
+   * focus of its own, since one issue can be a row in it and a node beside it.
+   */
+  const scopeOf = (name: string | null): Element =>
+    (name === null ? null : name === RELATED_SCOPE ? surface.querySelector(RELATED_LIST) : zone(name)) ?? surface;
+
   /** Focus the element carrying `key`, inside one zone when named, without scrolling the page. */
   const focusIn = (zoneName: string | null, key: string): void => {
-    const scope = zoneName === null ? surface : (zone(zoneName) ?? surface);
+    const scope = scopeOf(zoneName);
     const candidates = withKey(scope, key);
     // THE FOCUSABLE ONE. The graph draws an issue twice — its SVG node and the
     // rail row positioned over it — and only the element carrying `tabindex`
     // takes focus; the first match by document order is the node, on which
     // `focus()` is a no-op and the reader's focus falls off the page.
-    const target = candidates.find((node) => node.hasAttribute('tabindex')) ?? candidates[0];
+    //
+    // IN THE RELATED LIST, A ROW IT NO LONGER DRAWS FALLS TO ITS TAB STOP: Enter
+    // on a neighbour selects it, and the list is then drawn around that issue,
+    // so the reader stays in the list rather than landing on the graph's node.
+    const target =
+      candidates.find((node) => node.hasAttribute('tabindex')) ??
+      candidates[0] ??
+      (zoneName === RELATED_SCOPE ? (scope.querySelector<HTMLElement>(`[${KEY_ATTRIBUTE}][tabindex="0"]`) ?? undefined) : undefined);
     if (target === undefined) return;
     // THE ROVING TAB STOP MOVES WITH FOCUS, as the viewer's own mount moves it.
     // The zone renders one element at tabindex 0 and the rest at -1; moving
@@ -1290,6 +1321,12 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         dockLegend: true,
         detachFooter: true,
       }).scene;
+    // THE RELATED GROUPS LIST IS ONE COLUMN OF THE ORDER'S ROWS, the rows it
+    // draws: the viewer's own scene of them, from the same rule that folds them.
+    if (zoneName === RELATED_SCOPE) {
+      const rows = relatedRowKeys(relatedListView(drawn.viewer, state.selection), state.shownGroups);
+      return listedRowsScene(normalizeDocument(drawn.viewer).document, rows, { label: '' });
+    }
     if (zoneName !== 'canvas') return null;
     if (state.canvas === 'tree')
       return renderViewer(withoutChrome(drawn.viewer), { projection: 'tree', theme: theme(), chrome: false, frame: false, dockLegend: true }).scene;
@@ -1679,7 +1716,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // The ZONE too: an issue is commonly drawn in the rail and on the canvas,
     // and restoring "the first element with this key" would move focus from
     // a canvas node into the rail on every redraw.
-    const focusedZone = isElement(active) ? (active.closest('.ig-zone')?.getAttribute('data-zone') ?? null) : null;
+    const focusedZone = isElement(active) ? scopeNameOf(active) : null;
     drawn = { viewer, rail: result.view.rail };
 
     // THE LIVE REGION HAS TO SURVIVE THE REDRAW, or it announces nothing.
@@ -2623,7 +2660,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     const active = doc.activeElement;
     if (!isElement(active)) return false;
     const owner = active.closest<HTMLElement>('.ig-zone');
-    const zoneName = owner?.getAttribute('data-zone') ?? null;
+    const zoneName = scopeNameOf(active);
     const key = active.closest<HTMLElement>(`[${KEY_ATTRIBUTE}]`)?.getAttribute(KEY_ATTRIBUTE) ?? null;
     if (owner === null || zoneName === null || key === null || !surface.contains(owner)) return false;
     // SHIFT IS READ BEFORE THE RE-CUT, because `advanceRail` returns before

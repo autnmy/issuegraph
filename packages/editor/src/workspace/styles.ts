@@ -1806,9 +1806,10 @@ ${heldRailDeclarations}
   outline-offset: var(--ig-space-micro);
 }
 
-/* THE INSPECTOR'S GROUPS, AND ITS ROW BOX: each kind's head and count, five
-   rows of '.ig-relationship', then "Show 4 more". Only the gap between the
-   groups is this list's. Drawn by the narrow sheet alone. */
+/* THE INSPECTOR'S GROUPS, WITH THE ORDER'S ROWS: each kind's head and count,
+   its first five neighbours as layer 1 draws an order row, then "Show 4 more".
+   Only the gap between the groups is this list's. Drawn by the narrow sheet,
+   and past the graph's budget at every width (below). */
 .ig-workspace .ig-related {
   display: none;
   flex-direction: column;
@@ -1822,6 +1823,32 @@ ${heldRailDeclarations}
   margin: 0;
   color: var(--ig-text-muted);
   font-size: var(--ig-font-size-small);
+}
+
+/* PAST THE GRAPH'S BUDGET AROUND THE SELECTION THE LIST STANDS IN FOR THE
+   GRAPH, AT EVERY WIDTH (RULES, Graphs, Dense neighbourhoods): the graph is
+   not drawn, so the list is the zone's content wherever the zone is. */
+.ig-workspace .ig-related[data-over='true'] {
+  display: flex;
+}
+
+/* THE ONE LINE OVER IT THAT SAYS WHY, the board's .ig-over: small muted text
+   with a hairline under it, at the zone's inset. Under 640 it is hidden with
+   the rest of the graph's zone, since there the list is the view as always. */
+.ig-related-over {
+  margin: 0;
+  padding: var(--ig-space) var(--ig-space-loose);
+  color: var(--ig-text-muted);
+  font-size: var(--ig-font-size-small);
+  border-bottom: var(--ig-stroke) solid var(--ig-line);
+}
+
+/* A KIND'S HEAD IN THE LIST: its icon beside its words, as one phrase. The
+   head's muted colour and weight are the group head's. */
+.ig-related-kind {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--ig-space-tight);
 }
 
 /* ONE KEY PER SURFACE, AND THE CANVAS KEEPS IT.

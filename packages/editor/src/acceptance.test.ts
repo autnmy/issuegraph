@@ -859,6 +859,8 @@ const WORKSPACE_WORDS: surface.WorkspaceWords = {
   showMore: (count: number): string => `Show ${String(count)} more`,
   relationshipsToDraw: 'kinds to draw',
   relationshipsDrawn: (drawn: number, total: number): string => `${String(drawn)} drawn out of ${String(total)}`,
+  listedByRelationship: (count: number, issue: string): string =>
+    `${String(count)} issues touch ${issue}, too many for one picture, so they are listed by kind`,
   addRelationship: 'begin a relationship',
   addRelationshipHeading: 'add relationship',
   cancel: 'abandon the draft',

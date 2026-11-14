@@ -52,6 +52,10 @@ describe('the three tiers render', () => {
           { field: 'blocked-by', from: componentKey(0, 4), to: componentKey(0, 5) },
           { field: 'blocked-by', from: componentKey(0, 5), to: componentKey(0, 6) },
         ],
+        reach: [
+          { field: 'blocked-by', from: componentKey(0, 4), to: componentKey(0, 5) },
+          { field: 'blocked-by', from: componentKey(0, 5), to: componentKey(0, 6) },
+        ],
       },
       legendSwitch,
     });

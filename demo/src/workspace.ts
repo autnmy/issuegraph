@@ -209,6 +209,7 @@ export const WORKSPACE_WORDS: MountWords = {
     selected: 'Selected',
     of: 'of',
     shown: 'shown',
+    related: 'related',
     editMode: 'edit mode',
   },
   // §17a'S RAIL FOOTER. OPTIONAL IN THE PACKAGE AND SUPPLIED HERE, on `canvas`'s
@@ -320,6 +321,8 @@ export const WORKSPACE_WORDS: MountWords = {
   showMore: (count: number): string => `Show ${String(count)} more`,
   relationshipsToDraw: 'Relationships to draw',
   relationshipsDrawn: (drawn: number, total: number): string => `${String(drawn)} of ${String(total)} drawn`,
+  listedByRelationship: (count: number, issue: string): string =>
+    `${String(count)} issues relate to ${issue}, more than the graph draws at once, so they’re listed by relationship.`,
   addRelationship: '+ add',
   addRelationshipHeading: 'Add relationship',
   cancel: 'Cancel',
