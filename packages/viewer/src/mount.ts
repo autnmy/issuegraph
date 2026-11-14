@@ -332,6 +332,21 @@ export function mountViewer(
       ? storedSelectionOf(viewerSelectionOf(normalized, stillNamed.length === 1 ? (stillNamed[0] ?? null) : stillNamed))
       : selected;
   };
+  /**
+   * A SET LOSES ONLY THE MEMBERS THAT WENT. When an update removes members of
+   * a set of two or more issues, the members still named are the selection,
+   * as given; their stations follow from them on this draw. Falling back to the
+   * stations instead would select a removed member's lead, an issue the reader
+   * never picked. A single selected member keeps today's rule and falls back to its
+   * lead, which `asGivenSelection` applies. `undefined` when there is no set
+   * or it lost nothing.
+   */
+  const survivingSet = (): StoredSelection | undefined => {
+    const given = selectedAsGiven;
+    if (given === null || typeof given === 'string') return undefined;
+    const kept = given.filter((key) => normalized.byKey.has(key));
+    return kept.length === given.length ? undefined : storedSelectionOf({ kind: 'issues', keys: kept });
+  };
   /** The selection as the reader made it, which `onSelectionChange` reports. */
   const selectionAsGiven = (): ViewerSelection => viewerSelectionOf(normalized, selectedAsGiven);
   /**
@@ -448,7 +463,11 @@ export function mountViewer(
     // The post-materialize check settles it a few lines down, against a scene
     // that exists; deferring costs one frame in which nothing renders an edge
     // selection anyway.
-    if (currentScene !== null) state = { ...state, selected: keepDrawn(state.selected) };
+    if (currentScene !== null) {
+      const surviving = survivingSet();
+      if (surviving !== undefined) selectedAsGiven = surviving;
+      state = { ...state, selected: keepDrawn(surviving === undefined ? state.selected : surviving) };
+    }
     selectedAsGiven = asGivenSelection();
     if (root !== null) container.removeChild(root);
     const scene = sceneFor(normalized, projection, {

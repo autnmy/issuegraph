@@ -2176,6 +2176,24 @@ describe('the mount builds and reports a selection set', () => {
     assert.equal(calls.length, 2);
   });
 
+  it('drops a removed unit member from a set rather than selecting its lead', () => {
+    const { handle, calls } = recorded({ selected: ['31', '12'] });
+    const without12: ViewerDocument = {
+      ...twoUnitDocument,
+      issues: twoUnitDocument.issues.filter((issue) => issue.key !== '12'),
+      edges: twoUnitDocument.edges.filter((edge) => edge.from !== '12' && edge.to !== '12'),
+      order: {
+        ...twoUnitDocument.order,
+        slots: twoUnitDocument.order.slots.map((slot) =>
+          slot.lead === '11' ? { ...slot, members: ['11'], ready: true, holds: [] } : slot,
+        ),
+      },
+    };
+    handle.update(without12);
+    assert.deepEqual(calls, ['change {"kind":"issues","keys":["31"]}', 'select 31']);
+    assert.equal(handle.state.selected, '31');
+  });
+
   it('gives onSelect one call and onSelectionChange none for a repeated click or select()', () => {
     const { container, handle, calls, row } = recorded({ selected: '31' });
     container.dispatch('click', { target: row('31') });
