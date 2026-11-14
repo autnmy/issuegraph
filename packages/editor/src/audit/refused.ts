@@ -56,7 +56,7 @@
  */
 
 import type { IssueRef } from '@issuegraph/store';
-import { type ElementSpec, element, isLinkable } from '@issuegraph/viewer';
+import { type ElementSpec, element, isLinkable, issueNumber } from '@issuegraph/viewer';
 
 import type { EncodingRefusal } from './findings.ts';
 import { AUDIT_KIND_ATTRIBUTE, type AuditWords } from './panel.ts';
@@ -135,7 +135,8 @@ function refusalsToDraw(refusals: readonly EncodingRefusal[]): readonly Encoding
  * It adds no English: the ref is already the card's visible heading line.
  */
 function controlName(word: string, ref: IssueRef): string {
-  return `${word} ${ref}`;
+  // The ref as a reader sees it, with its "#" (#296), as the card draws it.
+  return `${word} ${issueNumber(ref)}`;
 }
 
 /**
@@ -294,7 +295,7 @@ function refusalSpec(
     [
       element('p', { class: 'ig-audit-title' }, [words.titles[REFUSED_KIND]]),
       element('div', { class: 'ig-audit-refused-head' }, [
-        element('span', { class: 'ig-audit-refused-ref' }, [refusal.ref]),
+        element('span', { class: 'ig-audit-refused-ref' }, [issueNumber(refusal.ref)]),
       ]),
       reasonSpec(refusal),
       // NO EMPTY CONTROL ROW. Both controls are conditional, and a card that

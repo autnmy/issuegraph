@@ -121,7 +121,7 @@ describe('the demo supplies every host fact the port carries', () => {
     // The runner's words ride the tracker arm — one label per executor hold.
     const footer = viewer.order.slots.filter((slot) => slot.holds.some((hold) => hold.family === 'tracker'));
     const labels = footer.flatMap((slot) => slot.holds.flatMap((hold) => (hold.family === 'tracker' ? [hold.label] : [])));
-    assert.deepEqual([...new Set(labels)].sort(), ['claimed', 'not eligible', 'parked']);
+    assert.deepEqual([...new Set(labels)].sort(), ['Claimed', 'Not eligible', 'Parked']);
 
     // The engine's caveats, from the scenario's table.
     const preview = viewer.issues.find((issue) => issue.key === '487');
@@ -148,8 +148,8 @@ describe('the demo supplies every host fact the port carries', () => {
     assert.match(markup, /<p class="ig-freshness" data-stale="false"><span>as of <span class="ig-id">14:32<\/span> · 2m ago<\/span><button class="ig-refresh" type="button" data-ig-command="refresh">refresh<\/button><\/p>/);
     assert.match(markup, /<li class="ig-now-row" data-ig-group="499" aria-label="Fix flaky auth integration test — Review · 14m">/);
     assert.equal((markup.match(/data-ig-key="499"/g) ?? []).length, 0, 'the running issue also holds a slot');
-    assert.match(markup, /<span class="ig-badge" data-hold="claimed">claimed<\/span>/);
-    assert.match(markup, /<span class="ig-badge" data-hold="parked">parked<\/span>/);
+    assert.match(markup, /<span class="ig-badge" data-hold="Claimed">Claimed<\/span>/);
+    assert.match(markup, /<span class="ig-badge" data-hold="Parked">Parked<\/span>/);
     assert.match(markup, /data-ig-key="487"[^]*?data-caveat="preview-only"/);
     assert.match(markup, /data-ig-key="501"[^]*?data-caveat="disagree"[^]*?Using the P1 label · the issue body says <s class="ig-strike">priority: 3<\/s>/);
     // EACH ROW SAYS ITS OWN REASON, in this host's words: its tag on screen and
@@ -157,9 +157,9 @@ describe('the demo supplies every host fact the port carries', () => {
     // row with no second line of reasons. The legend of labels that used to
     // float beside the count is gone: it restated the chips and explained nothing.
     for (const [label, why] of [
-      ['claimed', 'Another worker already has it.'],
-      ['parked', 'Waiting on a decision from a person.'],
-      ['not eligible', 'No priority search matches it, so it never comes up.'],
+      ['Claimed', 'Another worker already has it.'],
+      ['Parked', 'Waiting on a decision from a person.'],
+      ['Not eligible', 'No priority search matches it, so it never comes up.'],
     ] as const) {
       assert.match(markup, new RegExp(`aria-label="[^"]*${why.replace('.', '\\.')}"[^]*?data-hold="${label}">${label}</span>`));
     }

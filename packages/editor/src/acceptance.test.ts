@@ -883,7 +883,7 @@ const WORKSPACE_WORDS: surface.WorkspaceWords = {
     retryFailed: 'could not read the newest version',
   },
   audit: {
-    heading: 'problems in the encoding',
+    heading: { one: 'problem in the encoding', other: 'problems in the encoding' },
     titles: {
       cycle: 'these issues wait on each other for ever',
       'stale-blocker': 'this waits on something already finished',

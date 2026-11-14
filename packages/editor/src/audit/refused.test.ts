@@ -18,7 +18,7 @@ import { AUDIT_SEVERITY_ATTRIBUTE } from './surface.ts';
  * frame's own English.
  */
 const WORDS: AuditWords = {
-  heading: 'things wrong with the encoding',
+  heading: { one: 'thing wrong with the encoding', other: 'things wrong with the encoding' },
   titles: {
     cycle: 'these wait on each other for ever',
     'stale-blocker': 'this waits on something finished',
@@ -78,6 +78,12 @@ describe('the encoding-refused block', () => {
     assert.match(markup, /<li class="ig-audit-refused-card" data-ig-audit-kind="encoding-refused" data-s="attention">/);
     assert.match(markup, new RegExp(`<p class="ig-audit-title">${WORDS.titles['encoding-refused']}</p>`));
     assert.equal(markup.includes('ig-audit-chip'), false, 'the card still draws a class chip');
+  });
+
+  it('draws a bare issue number with its "#" on the card (#296)', () => {
+    const markup = markupOf([{ ref: '2257' }]);
+    assert.match(markup, /<span class="ig-audit-refused-ref">#2257<\/span>/);
+    assert.equal(/>2257</.test(markup), false, 'the ref lost its "#"');
   });
 
   it('omits a reason the host did not record', () => {

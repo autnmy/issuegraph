@@ -1681,7 +1681,7 @@ export function slotPosition(slot: ViewerSlot): string {
 
 /** A slot's accessible name: what it is, where it sits, and whether it is held. */
 export function slotLabel(document: NormalizedDocument, slot: ViewerSlot): string {
-  return `${slotTitle(document, slot)} — ${slot.members.join(', ')} — ${slotPosition(slot)}`;
+  return `${slotTitle(document, slot)} — ${slot.members.map(issueNumber).join(', ')} — ${slotPosition(slot)}`;
 }
 
 /** The empty state. A container with nothing in it reads as a bug. */

@@ -75,6 +75,11 @@ export const COLOR_TOKENS = Object.freeze([
   // duplicate of a closed issue, or relationships that could not be read, sits
   // on it, as the export's attention note does.
   '--ig-state-conflict-fill',
+  // WORK IN FLIGHT, the export's progress state (#296). The "Being worked" key
+  // and the NOW row's dot drew the accent, which a host maps to the same ink
+  // as "Ready now", so the two keys read alike. Defaulted to the accent, so
+  // nothing this package draws changes until a host maps it apart.
+  '--ig-state-progress',
 ] as const);
 
 export type ColorToken = (typeof COLOR_TOKENS)[number];
@@ -330,6 +335,8 @@ export const defaultTheme: Theme = Object.freeze({
     '--ig-state-failed-fill': '#2A1C17',
     // A dark warm ground the conflict hue reads on at well over 4.5:1.
     '--ig-state-conflict-fill': '#2A2415',
+    // The accent above, so the default look is unchanged.
+    '--ig-state-progress': '#17BCEE',
     // The export's dark fill-strong verbatim: its light ink at 8%. TRANSLUCENT
     // ON PURPOSE, so it reads the same over the ground and over the second
     // surface; it is the one colour here that is not a hex, and theme.test.ts

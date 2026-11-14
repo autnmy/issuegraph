@@ -389,7 +389,7 @@ export const WORKSPACE_WORDS: MountWords = {
   // interpolating them. So the title says what is true of every finding in its
   // class and the detail beneath it says which issues.
   audit: {
-    heading: 'problems to fix',
+    heading: { one: 'problem to fix', other: 'problems to fix' },
     titles: {
       cycle: 'These issues block each other in a loop.',
       'stale-blocker': 'This waits on an issue that is already closed.',
@@ -469,6 +469,8 @@ export const PAPER_THEME: Theme = extendTheme(defaultTheme, {
     '--ig-state-failed-fill': '#F6E3DC',
     // The light ground an attention note's title sits on.
     '--ig-state-conflict-fill': '#F7EDD3',
+    // The paper accent, for work in flight.
+    '--ig-state-progress': '#0A5B8A',
     // The export's light fill-strong: its dark ink at 8% over the ground.
     '--ig-fill-strong': 'rgb(25 28 34 / 0.08)',
     // The two state hues again, for the dot that marks each state.

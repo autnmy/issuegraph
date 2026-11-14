@@ -544,15 +544,16 @@ export function compHolds(): readonly ExecutorHold[] {
     // ACTIVE: a worker is running these right now, so a serialize group of
     // theirs would be excluded (§6.2 rule 4). Neither is in one.
     { ref: '499', label: 'working', detail: 'a worker has this issue: Review · 12m', active: true },
-    { ref: '533', label: 'claimed', detail: 'Another worker already has it.', active: true },
+    // THE BOARD'S CASE FOR A REASON TAG (#296): "Claimed", "Parked", "Not eligible".
+    { ref: '533', label: 'Claimed', detail: 'Another worker already has it.', active: true },
     // NOT active: parked work is not running, so it excludes nobody. Reading
     // every hold as a claim is what held a serialize group over an issue that
     // nothing was working.
-    { ref: '541', label: 'parked', detail: 'Waiting on a decision from a person.' },
+    { ref: '541', label: 'Parked', detail: 'Waiting on a decision from a person.' },
     // Not a runner hold but the host's own knowledge all the same: the frame's
     // "open · not eligible" is an issue no pick-order query reaches, so it is
     // outside the order while its blocked-by still holds #530 in place.
-    { ref: '602', label: 'not eligible', detail: 'No priority search matches it, so it never comes up.' },
+    { ref: '602', label: 'Not eligible', detail: 'No priority search matches it, so it never comes up.' },
   ];
 }
 

@@ -103,9 +103,9 @@ describe('the isolated list says what it is a list of', () => {
 });
 
 describe('the counts this sheet draws are body text with tabular figures (#254)', () => {
-  // A capsule card's member count and its blocked count. A stuck card's cycle
-  // stands in the blocked slot but is a tag, not a count (#288), pinned below.
-  const COUNTS = ['.ig-capsule-size', '.ig-capsule-load'];
+  // A capsule card's member count. Its blocked count was drawn here too until
+  // #296 removed it; a stuck card's cycle is a tag, not a count (#288).
+  const COUNTS = ['.ig-capsule-size'];
 
   it('sets the body sans, the body size and tabular figures on each, alone and over the viewer sheet', () => {
     assert.deepEqual(countTypeMisses(scaleLadderStylesheet, COUNTS), []);
@@ -197,5 +197,22 @@ describe('the capsule board, as the export draws its groups (#296)', () => {
     assert.match(result.markup, /<p>\d+ related issues are too many to draw here\. Pick a group\.<\/p>/);
     assert.equal(/The limit is/.test(result.markup), false);
     assert.match(result.markup, /<span class="ig-capsule-size">\d+ issues<\/span>/);
+  });
+});
+
+describe('the group card draws the export’s four parts (#296 design read)', () => {
+  const css = `${viewerStylesheet}\n${scaleLadderStylesheet}`;
+  const inside = ['.ig-ladder', '.ig-refusal', '.ig-list', '.ig-capsule-cell', '.ig-capsule-enter'];
+
+  it('sets the "Around …" line in muted ink', () => {
+    assert.equal(declaredOn(css, '.ig-capsule-name', 'color', inside)?.value, 'var(--ig-text-muted)');
+  });
+
+  it('draws no blocked count, and keeps it in the accessible name', () => {
+    const markup = renderScaleLadder(documentOf({ components: [40, 30] })).markup;
+    assert.equal(markup.includes('ig-capsule-load'), false, 'a card still draws its blocked count');
+    assert.equal(/⊘/.test(markup), false);
+    assert.match(markup, /aria-label="Draw the group around [^"]*, \d+ blocking, /);
+    assert.equal(/\.ig-capsule-load\b/.test(scaleLadderStylesheet.replace(/\/\*[\s\S]*?\*\//g, '')), false, 'the blocked count keeps a rule');
   });
 });

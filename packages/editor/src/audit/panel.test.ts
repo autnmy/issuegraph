@@ -23,7 +23,7 @@ import { auditStylesheet } from './styles.ts';
  * fixture and the hardcode are the same string.
  */
 const WORDS: AuditWords = {
-  heading: 'things wrong with the encoding',
+  heading: { one: 'thing wrong with the encoding', other: 'things wrong with the encoding' },
   titles: {
     cycle: 'these wait on each other for ever',
     'stale-blocker': 'this waits on something finished',
@@ -287,7 +287,7 @@ describe('the findings panel', () => {
     // fix": the count leads the host's words within the same heading.
     assert.match(
       markup,
-      new RegExp(`<h2 class="ig-audit-panel-heading"><span class="ig-audit-panel-count">${overlay.count}</span> ${WORDS.heading}</h2>`),
+      new RegExp(`<h2 class="ig-audit-panel-heading"><span class="ig-audit-panel-count">${overlay.count}</span> ${WORDS.heading.other}</h2>`),
     );
     // AND THE FIXTURE ACTUALLY SEPARATES THE TWO: the refusal is counted and
     // not listed here, so a count of the cards would read one less.
@@ -298,7 +298,7 @@ describe('the findings panel', () => {
     // block beside it is an `h2` for the same reason.
     // AND THE SECTION IS NAMED. An unnamed `section` carries no landmark role at
     // all, so a reader navigating by landmark cannot reach the panel.
-    assert.match(markup, new RegExp(`<section class="ig-audit-panel" aria-label="${WORDS.heading}"`));
+    assert.match(markup, new RegExp(`<section class="ig-audit-panel" aria-label="${WORDS.heading.other}"`));
     // THE PANEL IS A TAB STOP. It was the scroll container while #177's bound
     // sat on this element; the bound and the scrolling belong to the audit
     // region now, so what keeps the stop is the second reason alone — its cards
@@ -320,7 +320,7 @@ describe('the findings panel', () => {
     // exists to prevent.
     const markup = markupOf(EVERY_CLASS.issues, EVERY_CLASS.edges, [{ ref: 'f' }]);
     const supplied = new Set<string>([
-      WORDS.heading,
+      WORDS.heading.other,
       ...Object.values(WORDS.titles),
       // §17d's REMEDY LABELS ARE THE HOST'S TOO. This guard caught them the
       // moment they shipped, which is the guard working: the labels are real
@@ -369,7 +369,11 @@ describe('the findings panel', () => {
     const alone = renderAuditPanel(overlay, { words: WORDS, known: new Set(['a']), edges: new Set<string>() });
     assert.ok(alone !== null, 'one unreadable finding drew no panel, so no title');
     const markup = renderMarkup(alone);
-    assert.match(markup, new RegExp(`<span class="ig-audit-panel-count">1</span> ${WORDS.heading}</h2>`));
+    // AND THE ONE FORM OF THE HOST'S WORDS (#296): "1 problem to fix", never
+    // "1 problems to fix", and the section is named the same way.
+    assert.match(markup, new RegExp(`<span class="ig-audit-panel-count">1</span> ${WORDS.heading.one}</h2>`));
+    assert.match(markup, new RegExp(`<section class="ig-audit-panel" aria-label="${WORDS.heading.one}"`));
+    assert.equal(markup.includes(WORDS.heading.other), false, 'one finding read in the plural');
     assert.equal(markup.includes('ig-audit-list'), false, 'an empty list was drawn under the title');
   });
 

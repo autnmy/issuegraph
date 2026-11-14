@@ -283,7 +283,7 @@ describe('the linear projection', () => {
     for (const key of ['102', '101', '103', '105', '106']) {
       assert.match(row(markup, key), /aria-label="[^"]+"/);
     }
-    assert.match(row(markup, '102'), /aria-label="Backfill the ledger — 102 — rank 1"/);
+    assert.match(row(markup, '102'), /aria-label="Backfill the ledger — #102 — rank 1"/);
   });
 
   /**
@@ -299,17 +299,17 @@ describe('the linear projection', () => {
     const markup = render(heldButRankedDocument);
 
     // The unit is held AND placed: both facts, from `ready` and `rank`.
-    assert.match(row(markup, '1'), /aria-label="Lead · Partner — 1, 2 — held, rank 2"/);
+    assert.match(row(markup, '1'), /aria-label="Lead · Partner — #1, #2 — held, rank 2"/);
     // The station agrees with the name rather than with the number beside it.
     assert.match(row(markup, '1'), /data-fill="dashed"/);
     assert.match(row(markup, '1'), /class="ig-rank"[^>]*>2</);
     // A ready slot says nothing about holds.
-    assert.match(row(markup, '3'), /aria-label="Blocker — 3 — rank 1"/);
+    assert.match(row(markup, '3'), /aria-label="Blocker — #3 — rank 1"/);
     // The other arm keeps the phrase it always had, and adds the position it
     // would have taken when the host worked one out.
     assert.match(
       row(markup, '4'),
-      /aria-label="Waiting on elsewhere — 4 — held, no rank, would be rank 3"/,
+      /aria-label="Waiting on elsewhere — #4 — held, no rank, would be rank 3"/,
     );
   });
 

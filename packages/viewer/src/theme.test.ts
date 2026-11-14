@@ -679,6 +679,13 @@ describe('the state marks (#293)', () => {
   });
 });
 
+describe('the progress state (#296)', () => {
+  it('defaults to the accent in both documented themes, so the default look is unchanged', () => {
+    assert.equal(defaultTheme.colors['--ig-state-progress'], defaultTheme.colors['--ig-accent']);
+    assert.equal(paperTheme.colors['--ig-state-progress'], paperTheme.colors['--ig-accent']);
+  });
+});
+
 describe('the conflict state on its own fill (#296)', () => {
   it('keeps the conflict hue and text ink at 4.5:1 or more on --ig-state-conflict-fill, and text ink on the failed fill, in the default and paper themes', () => {
     // An attention note's title is drawn in --ig-state-conflict and its

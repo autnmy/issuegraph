@@ -804,10 +804,12 @@ export const viewerStylesheet = `
 }
 
 /* The pulse is the frame's, and it is the one moving thing in the panel. The
-   legend's "Being worked" key draws the same dot under a class of its own. */
+   legend's "Being worked" key draws the same dot under a class of its own.
+   Both take the progress state (issue 296), not the accent a host maps to the
+   same ink as "Ready now". */
 .ig-now-pulse,
 .ig-legend-working {
-  background: var(--ig-accent);
+  background: var(--ig-state-progress);
   block-size: var(--ig-space-tight);
   border-radius: 50%;
   display: inline-block;
@@ -1095,14 +1097,9 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   color: var(--ig-text-body);
 }
 
-/* A held row's CONTENT recedes, not its position. The body's text turns muted
-   and the rank track stays at full strength, so the row still reads as
-   occupying the slot it would have taken. By colour, never by opacity: fading
-   the text would drop it below the contrast the theme's text roles promise. */
-.ig-slot[data-held='true'] .ig-row-body,
-.ig-slot[data-held='true'] .ig-title {
-  color: var(--ig-text-muted);
-}
+/* A HELD ROW'S TEXT IS NOT MUTED (issue 296). Its title and body read as any
+   row's do, and the held station is the whole of the mark, as the export draws
+   a held row with its dot alone. */
 
 /* The isolated-issue tally sits directly on the panel, outside the padded
    groups, so it carries the panel's own inset rather than none. */

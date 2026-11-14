@@ -146,8 +146,12 @@ export const AUDIT_KIND_ATTRIBUTE = 'data-ig-audit-kind';
  * silently draws its own key.
  */
 export interface AuditWords {
-  /** Reads the panel's header after the count — the frame's `encoding problems`. */
-  readonly heading: string;
+  /**
+   * Reads the panel's title after the count, in the form the count takes: the
+   * export's "1 problem to fix" and "3 problems to fix". A PAIR since #296,
+   * because one word after every count read "1 problems to fix".
+   */
+  readonly heading: { readonly one: string; readonly other: string };
   /**
    * The card's title line.
    *
@@ -468,6 +472,8 @@ export function renderAuditPanel(
   if (overlay.count === 0) return null;
   const listed = overlay.findings.filter((finding) => finding.kind !== 'encoding-refused');
   const { words } = options;
+  // THE FORM THE COUNT TAKES, as the header's own problem / problems does.
+  const heading = overlay.count === 1 ? words.heading.one : words.heading.other;
   return element(
     'section',
     {
@@ -477,7 +483,7 @@ export function renderAuditPanel(
       // as nothing and a reader navigating by landmark cannot find the panel.
       // `firstpass/render.ts` already names its own section from its words; this
       // is the same rule one leaf over.
-      'aria-label': words.heading,
+      'aria-label': heading,
       // A TAB STOP, AND THE REASON IS NOW THE SECOND ONE ALONE. It was the
       // scroll container itself while #177's half-column bound sat on this
       // element; since §17d's fourth class moved to `./refused.ts` the bound and
@@ -529,7 +535,7 @@ export function renderAuditPanel(
       // markup does not have. Two peers, two `h2`s.
       element('h2', { class: 'ig-audit-panel-heading' }, [
         element('span', { class: 'ig-audit-panel-count' }, [String(overlay.count)]),
-        ` ${words.heading}`,
+        ` ${heading}`,
       ]),
       // §17d's OWN ENTRY POINT, drawn where the frame draws it. `RULINGS.md` §2
       // already settled what it does — *"The filter hides ROWS. It never

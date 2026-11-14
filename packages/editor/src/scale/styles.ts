@@ -171,31 +171,12 @@ export const scaleLadderStylesheet = `
   color: var(--ig-text);
 }
 
-/* END-ALIGNED AND CONTENT-WIDTH. A grid item stretches by default, which drew
-   the cycle badge as a full-width bar across the top of the card. The pill is
-   the frame's: the blocked count and the cycle sit in one slot, so they read as
-   one kind of thing rather than as a bordered badge beside bare text.
-
-   THE BLOCKED COUNT IS A COUNT, so it takes the body type every count takes.
-   The cycle stands in the same slot on a stuck card, but it is a tag, not a
-   count, so it has a rule of its own below. */
-.ig-capsule-load {
-  grid-column: 2;
-  justify-self: end;
-  background: var(--ig-bg);
-  border: var(--ig-stroke) solid var(--ig-line);
-  border-radius: var(--ig-radius);
-  padding: var(--ig-space-micro) var(--ig-space-snug);
-  font-family: var(--ig-font-ui);
-  font-size: var(--ig-font-size);
-  font-variant-numeric: tabular-nums;
-  color: var(--ig-text-muted);
-}
+/* NO BLOCKED COUNT (issue 296): the export's group card draws none, so the
+   chip that held it, and its rule, are gone. */
 
 /* THE CYCLE IS A TAG IN THE ERROR STATE, as the export draws its loop tag: the
    small role in the sans at medium weight, the failed state's colour on the
-   failed state's own fill, in the slot the blocked count holds on any other
-   card. The theme carries no pill radius, so the corner is the large radius,
+   failed state's own fill, at the end of the count's row. The theme carries no pill radius, so the corner is the large radius,
    which rounds a tag this tall fully. The fill is the theme's error fill since
    issue 293, so a host maps it to its own; it was the state colour mixed at
    the chip tint, which no host role could name. The tag is the wide space
@@ -219,9 +200,11 @@ export const scaleLadderStylesheet = `
 /* THE NAME AND THE REACH SPAN BOTH COLUMNS, and the name is the one part
    allowed to wrap: a title is arbitrary length, and letting it size the grid
    would make every card on the board a different shape. */
+/* IN MUTED INK (issue 296), as the export's group card sets its "Around …"
+   line: the count above it is the part read first. */
 .ig-capsule-name {
   grid-column: 1 / -1;
-  color: var(--ig-text);
+  color: var(--ig-text-muted);
   min-width: 0;
   overflow-wrap: anywhere;
 }

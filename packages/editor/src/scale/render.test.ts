@@ -94,7 +94,7 @@ describe('the refusal, as a reader sees it', () => {
       new RegExp(
         // A count with its noun since #296, as the export's group card reads it.
         `<span class="ig-capsule-size">${String(capsule.size)} issues</span>` +
-          `<span class="ig-capsule-load">\u2298 ${String(capsule.blockedByEdges)}</span>` +
+          // No blocked count since #296: the export's group card draws none.
           // THE NAME SLOT NOW HOLDS THE ANCHOR, not a bare title: RULINGS.md
           // §4 identifies a capsule by "around #488 · <title>" because a
           // connected component has no name to invent. The ORDER this test

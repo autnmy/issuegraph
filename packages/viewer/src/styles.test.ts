@@ -642,7 +642,7 @@ describe('a receded element draws by colour roles and stroke opacity', () => {
     assert.deepEqual(offenders, [], 'these rules fade a receded node, or something above it, by opacity or filter');
   });
 
-  it('dims no viewer text by opacity, and colours the held row, the held card and the right-column card with --ig-text-muted instead', () => {
+  it('dims no viewer text by opacity, and colours the held card and the right-column card with --ig-text-muted instead', () => {
     // "No text in either package is dimmed by opacity"
     // The property name is compared exactly, so stroke-opacity and fill-opacity neither fail this nor hide a bare opacity.
     assert.deepEqual(
@@ -656,7 +656,9 @@ describe('a receded element draws by colour roles and stroke opacity', () => {
     );
 
     // "Replace the opacity on text at packages/viewer/src/styles.ts:1030, :1445 and :1456 with `--ig-text-muted` colour, keeping the dashed borders."
-    for (const target of [`.ig-slot[data-held='true'] .ig-row-body`, `.ig-card[data-column='right']`, `.ig-card[data-held='true']`]) {
+    // A HELD ROW LEFT THIS LIST WITH #296: its dot is the whole mark, so its
+    // text reads as any row's, pinned in the #296 block below.
+    for (const target of [`.ig-card[data-column='right']`, `.ig-card[data-held='true']`]) {
       assert.ok(
         sheet.some(
           (rule) =>
@@ -1442,10 +1444,28 @@ describe('the legend, the held row, the footer group and issue numbers, as the e
     ]);
   });
 
-  it('marks a held row with its dot alone: no hatched ground', () => {
+  it('marks a held row with its dot alone: no hatched ground and no muted text', () => {
     const inside = ['.ig-viewer', '.ig-list'];
     assert.equal(declaredOn(viewerStylesheet, ".ig-slot[data-held='true']", 'background-image', inside), undefined, 'a held row is still hatched');
     assert.equal(/repeating-linear-gradient/.test(withoutComments(viewerStylesheet)), false);
+    // ITS TITLE READS AS ANY ROW'S: the same colour inside a held row as inside a ready one.
+    for (const target of ['.ig-title', '.ig-row-body']) {
+      assert.equal(
+        declaredOn(viewerStylesheet, target, 'color', [...inside, ".ig-slot[data-held='true']"])?.value,
+        declaredOn(viewerStylesheet, target, 'color', [...inside, ".ig-slot[data-held='false']"])?.value,
+        `a held row's ${target} takes a colour of its own`,
+      );
+    }
+  });
+
+  it('draws work in flight in the progress state, not the accent "Ready now" shares', () => {
+    const places: readonly (readonly [string, readonly string[]])[] = [
+      ['.ig-legend-working', ['.ig-viewer', '.ig-legend', '.ig-legend-keys', '.ig-legend-item']],
+      ['.ig-now-pulse', ['.ig-viewer', '.ig-now', '.ig-now-row', '.ig-now-phase']],
+    ];
+    for (const [target, inside] of places) {
+      assert.equal(declaredOn(viewerStylesheet, target, 'background', inside)?.value, 'var(--ig-state-progress)', target);
+    }
   });
 
   it('heads the group "Not in the order" with a bare count, draws no lede, and no second line of reasons', () => {
