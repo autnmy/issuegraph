@@ -2798,18 +2798,24 @@ function recoveriesIn(log: readonly WorkspaceLogEntry[]): readonly WorkspaceReco
 }
 
 /**
- * A logged edge, named: the host's word for its kind, then its two ends.
+ * A logged edge, named: its `from` end, the host's word for its kind, then its
+ * `to` end.
  *
  * A RAW ID IS ONE PIECE OF TEXT. The landed document no longer holds that
  * edge, and an id is the store's key rather than a description, so it is
  * printed whole instead of being split back into a kind and two ends.
+ *
+ * THE KIND SITS BETWEEN THE ENDS. `from` is the issue whose frontmatter
+ * declares the edge, so `i0001 blocked by i0002` reads as the fact it stores.
+ * With the kind first, `blocked by i0001 i0002` reads either way round, and for
+ * a reversal the direction is the whole edit.
  */
 function loggedEdgeSpecs(edge: WorkspaceLoggedEdge, words: LogWords): readonly ElementSpec[] {
   return typeof edge === 'string'
     ? [element('span', {}, [edge])]
     : [
-        element('span', {}, [words.kinds[edge.kind]]),
         element('span', { class: 'ig-id' }, [edge.from]),
+        element('span', {}, [words.kinds[edge.kind]]),
         element('span', { class: 'ig-id' }, [edge.to]),
       ];
 }

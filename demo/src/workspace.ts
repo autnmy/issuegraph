@@ -253,8 +253,9 @@ export const WORKSPACE_WORDS: MountWords = {
     dismiss: 'Dismiss',
     direction: { up: 'up', down: 'down' },
   },
-  // THE LOG UNDER THE HEAD names each write still saving: what it does, the
-  // kind in this host's words, then the two issues it is between.
+  // THE LOG UNDER THE HEAD names each write still saving: what it does, then
+  // the issue that declares the edge, the kind in this host's words, and the
+  // issue at its other end.
   log: {
     label: 'Saves',
     saving: 'Saving',

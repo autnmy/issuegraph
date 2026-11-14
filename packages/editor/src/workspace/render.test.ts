@@ -2164,6 +2164,23 @@ describe('the log names each write still saving in the host words', () => {
     assert.equal(entry.includes(labelFrom(treatmentFor('blocked-by'), true)), false, 'the viewer label named the kind');
   });
 
+  it('names a saving reversal with the kind word between its from and to ends', () => {
+    const [entry] = savingEntries({
+      words: WORKSPACE_WORDS,
+      orderStatus: 'held',
+      log: [
+        {
+          kind: 'pending',
+          mutationId: 'm-flip',
+          write: { op: 'flip', edge: { id: 'blocked-by|i0003|i0001', kind: 'blocked-by', from: 'i0003', to: 'i0001' } },
+        },
+      ],
+    });
+    assert.ok(entry !== undefined, 'the log drew no saving entry');
+    const spans = [...entry.matchAll(/<span[^>]*>([^<]*)<\/span>/g)].map((match) => match[1]);
+    assert.deepEqual(spans, [words.saving, words.ops.flip, 'i0003', words.kinds['blocked-by'], 'i0001']);
+  });
+
   it('names a saving retype with the becomes word before the new kind', () => {
     const [entry] = savingEntries({
       words: WORKSPACE_WORDS,
