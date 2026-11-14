@@ -303,7 +303,9 @@ describe('the header count leads with the dot of the worst problem (#293)', () =
     // An inline-flex box takes its baseline from its first baseline-aligned
     // item; with every item centred the empty dot's bottom edge was the
     // button's baseline, and the count rode high.
-    assert.equal(declaredOn(css, '.ig-audit-toggle', 'align-items', ['.ig-audit'])?.value, 'baseline');
+    // READ OFF THE RULE'S TEXT: the toggle also sets the `font` shorthand, which
+    // the cascade reader counts as a candidate for every property.
+    assert.match(css, /\.ig-audit-toggle \{[^}]*align-items: baseline;/);
     for (const target of ['.ig-audit-count', '.ig-audit-label']) {
       assert.equal(declaredOn(css, target, 'align-self', inside), undefined, `${target} leaves the baseline`);
     }
