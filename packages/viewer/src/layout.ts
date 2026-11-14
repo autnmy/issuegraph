@@ -24,8 +24,9 @@
  */
 
 import type { NormalizedDocument, ViewerEdge } from './document.ts';
-import { cardBlocks, cardText } from './parts.ts';
+import { LEGEND_ORDER, cardBlocks, cardText } from './parts.ts';
 import { type MetricToken, type Theme, defaultTheme } from './theme.ts';
+import { treatmentFor } from './vocabulary.ts';
 
 /**
  * Custom properties carrying LAYOUT OUTPUT rather than theme input.
@@ -771,6 +772,11 @@ function facingSide(box: NodeBox, other: NodeBox, channelX: number): 'left' | 'r
   return channelX > centre ? 'right' : 'left';
 }
 
+/** A path coordinate, to two places. */
+function fixed(value: number): string {
+  return (Math.round(value * 100) / 100).toFixed(2);
+}
+
 function anchor(box: NodeBox, fraction: number, side: 'left' | 'right'): Point {
   return {
     x: side === 'left' ? box.x : box.x + box.width,
@@ -823,8 +829,7 @@ export function edgeGeometry(
   const end = anchor(to, ARRIVE_FRACTION, endSide);
   const controlY = (start.y + end.y) / 2;
 
-  const round = (value: number): string => (Math.round(value * 100) / 100).toFixed(2);
-  const d = `M ${round(start.x)} ${round(start.y)} Q ${round(controlX)} ${round(controlY)} ${round(end.x)} ${round(end.y)}`;
+  const d = `M ${fixed(start.x)} ${fixed(start.y)} Q ${fixed(controlX)} ${fixed(controlY)} ${fixed(end.x)} ${fixed(end.y)}`;
 
   return {
     d,
@@ -835,4 +840,185 @@ export function edgeGeometry(
     endSide,
     endAngle: Math.atan2(end.y - controlY, end.x - controlX),
   };
+}
+
+/**
+ * Which way a relationship runs, read from the selection: into it, out of it,
+ * or, for a kind that reads the same both ways, neither.
+ */
+type TrunkDirection = 'in' | 'both' | 'out';
+
+/** In, then symmetric, then out: the order trunks take within one kind. */
+const DIRECTION_ORDER: readonly TrunkDirection[] = ['in', 'both', 'out'];
+
+/** A channel between columns, named by the column on its left. */
+type Channel = 'left' | 'spine';
+
+/**
+ * The channel a trunk joining a card in one column to a card in another runs
+ * in, keyed by the selection's column and then the neighbour's.
+ *
+ * A STUB MAY CROSS A LINE, NEVER A CARD (RULES, Graphs, Dense neighbourhoods).
+ * A trunk runs in a channel because a channel holds no card, and a stub runs
+ * from a card's facing bound to the trunk within it — so the channel has to be
+ * the one BETWEEN the two columns, or beside both when they are the same
+ * column. The left and right gutters have the spine between them, so no
+ * channel joins them without a stub crossing the spine's cards: that pair keeps
+ * its arc, which is what `null` says.
+ *
+ * THE SPINE'S OWN TRUNKS RUN RIGHT OF IT, as the board draws them, 20 right of
+ * the column; a right-gutter card's run in the same channel, left of its
+ * column, because right of it is the canvas's edge.
+ */
+const CHANNEL_OF: Readonly<Record<Column, Readonly<Record<Column, Channel | null>>>> = {
+  left: { left: 'left', spine: 'left', right: null },
+  spine: { left: 'left', spine: 'spine', right: 'spine' },
+  right: { left: null, spine: 'spine', right: 'spine' },
+};
+
+/** One relationship routed through a shared trunk. */
+export interface TrunkRoute {
+  /**
+   * The route as an edge's geometry, oriented as the edge is DRAWN: `start` is
+   * where it leaves and `end` where its terminal sits, so the terminal and the
+   * marks read it exactly as they read an arc.
+   *
+   * `d` IS WRITTEN FROM THE SELECTION OUTWARD, whichever way the edge points.
+   * Every route of a group overlaps on the selection's stub and the trunk, and a
+   * dashed or dotted kind's pattern starts where its path does — so routes
+   * written from their far ends laid the same dash down out of phase on the
+   * shared line and drew it as a smear. Written from the shared end, the shared
+   * part of every route is the same dash in the same place.
+   */
+  readonly geometry: EdgeGeometry;
+  /**
+   * An earlier route in the same group already ends at this route's end. A
+   * group drawn into the selection ends every route at one point, so its
+   * terminal is drawn once — "what blocks the selection comes in on one line
+   * with one chevron" — and a route out of it ends on its own neighbour.
+   */
+  readonly sharesEnd: boolean;
+}
+
+/** One relationship's place in a trunk group, before it has coordinates. */
+interface TrunkLeg {
+  readonly member: NodeBox;
+  readonly hubIsEnd: boolean;
+  readonly channel: Channel;
+  readonly group: string;
+  /** Sorts a channel's groups: by the legend's kind order, then direction. */
+  readonly order: number;
+}
+
+function trunkLeg(layout: GraphLayout, hub: NodeBox, edge: ViewerEdge): TrunkLeg | null {
+  const from = layout.nodes.get(stationFor(layout, edge.from));
+  const to = layout.nodes.get(stationFor(layout, edge.to));
+  if (from === undefined || to === undefined || from.key === to.key) return null;
+  const hubIsEnd = to.key === hub.key;
+  if (!hubIsEnd && from.key !== hub.key) return null;
+  const member = hubIsEnd ? from : to;
+  const channel = CHANNEL_OF[hub.column][member.column];
+  if (channel === null) return null;
+  const direction: TrunkDirection = treatmentFor(edge.field).symmetric ? 'both' : hubIsEnd ? 'in' : 'out';
+  return {
+    member,
+    hubIsEnd,
+    channel,
+    group: `${channel} ${edge.field} ${direction}`,
+    order: LEGEND_ORDER.indexOf(edge.field) * DIRECTION_ORDER.length + DIRECTION_ORDER.indexOf(direction),
+  };
+}
+
+/** The point on `box`'s bound facing a trunk at `x`, `fraction` of the way down. */
+function facingTrunk(box: NodeBox, x: number, fraction: number): { point: Point; side: 'left' | 'right' } {
+  const side = box.x + box.width <= x ? 'right' : 'left';
+  return { point: anchor(box, fraction, side), side };
+}
+
+/**
+ * The selection's relationships, each routed through the shared line of its
+ * group (RULES, Graphs, Dense neighbourhoods): one vertical trunk per kind and
+ * direction, a stub from each neighbour to it, and a stub from it to the
+ * selection. Answers one entry per edge, in order; `null` for an edge that
+ * keeps its arc — one that does not touch the selection's card, one inside it,
+ * or one whose two cards no channel joins (see {@link CHANNEL_OF}).
+ *
+ * `edges` are oriented as DRAWN — a blocked-by already turned to point at what
+ * is held up — because "into" and "out of" the selection are read off the
+ * drawing, which is what a reader follows.
+ *
+ * A GROUP OF ONE IS A TRUNK OF ONE. Routing every relationship of the selection
+ * one way means one path for all of them, so a lone kind's elbow and a dense
+ * kind's trunk are the same drawing with a different number of stubs, and no
+ * arc is left to collide with a stub on the selection's bound.
+ *
+ * THE FIRST TRUNK IN A CHANNEL SITS `--ig-space-wide` RIGHT OF ITS LEFT EDGE,
+ * each further one another step right — the board's 20, as the theme spells it.
+ * A channel holding more trunks than fit at that step closes them up evenly
+ * rather than running the last into the next column's cards. Each group meets
+ * every card at its own fraction of the card's height, so two groups never run
+ * one stub over another on a shared card.
+ */
+export function trunkRoutes(
+  layout: GraphLayout,
+  selected: string,
+  edges: readonly ViewerEdge[],
+  theme: Theme,
+): readonly (TrunkRoute | null)[] {
+  const hub = layout.nodes.get(stationFor(layout, selected));
+  if (hub === undefined || layout.compact) return edges.map(() => null);
+
+  // A channel runs from the right bound of the column on its left, and its
+  // centre is the one the layout routes arcs through.
+  const channels: Readonly<Record<Channel, { readonly from: number; readonly width: number }>> = {
+    left: channelFrom(layout.columnX.left + metric(theme, '--ig-gutter-width'), layout.leftChannel),
+    spine: channelFrom(layout.columnX.spine + metric(theme, '--ig-spine-width'), layout.rightChannel),
+  };
+  const legs = edges.map((edge) => trunkLeg(layout, hub, edge));
+
+  // Each group's place among its channel's groups: one slot per group, ordered.
+  const slots = new Map<string, { readonly index: number; readonly count: number }>();
+  for (const channel of ['left', 'spine'] as const) {
+    const groups = legs
+      .filter((leg): leg is TrunkLeg => leg !== null && leg.channel === channel)
+      .sort((a, b) => a.order - b.order)
+      .map((leg) => leg.group)
+      .filter((group, index, all) => all.indexOf(group) === index);
+    groups.forEach((group, index) => slots.set(group, { index, count: groups.length }));
+  }
+
+  const ended = new Set<string>();
+  return legs.map((leg) => {
+    if (leg === null) return null;
+    const slot = slots.get(leg.group) ?? { index: 0, count: 1 };
+    const channel = channels[leg.channel];
+    const steps = slot.count + 1;
+    const x = channel.from + Math.min(metric(theme, '--ig-space-wide'), channel.width / steps) * (slot.index + 1);
+    const fraction = (slot.index + 1) / steps;
+    const atHub = facingTrunk(hub, x, fraction);
+    const atMember = facingTrunk(leg.member, x, fraction);
+    const [start, end] = leg.hubIsEnd ? [atMember, atHub] : [atHub, atMember];
+    const endKey = `${leg.group} ${leg.hubIsEnd ? hub.key : leg.member.key}`;
+    const sharesEnd = ended.has(endKey);
+    ended.add(endKey);
+    return {
+      geometry: {
+        d: `M ${fixed(atHub.point.x)} ${fixed(atHub.point.y)} L ${fixed(x)} ${fixed(atHub.point.y)} L ${fixed(x)} ${fixed(atMember.point.y)} L ${fixed(atMember.point.x)} ${fixed(atMember.point.y)}`,
+        start: start.point,
+        end: end.point,
+        // ON THE TRUNK, halfway between the two stubs: `marks.ts` sets a mark
+        // beside the line at the control's x, which is the trunk's.
+        control: { x, y: (atHub.point.y + atMember.point.y) / 2 },
+        startSide: start.side,
+        endSide: end.side,
+        // A stub is horizontal, so the terminal points along it, from the trunk.
+        endAngle: Math.atan2(0, end.point.x - x),
+      },
+      sharesEnd,
+    };
+  });
+}
+
+function channelFrom(from: number, centre: number): { readonly from: number; readonly width: number } {
+  return { from, width: 2 * (centre - from) };
 }

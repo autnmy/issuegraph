@@ -735,12 +735,21 @@ describe('only the selection\'s own lines draw, so only their write states show'
     }
   });
 
-  it("draws the selection's own line and its write-state marks exactly as with nothing selected", () => {
-    // A selection decides WHICH lines draw, never HOW a drawn one looks, so the
-    // state keeps its dash, hue and fade.
+  it("draws the selection's own line and its write-state marks as with nothing selected, wherever the line runs", () => {
+    // A selection decides WHICH lines draw and WHERE they run, never HOW a drawn
+    // one looks, so the state keeps its dash, hue and fade. Where is the
+    // geometry, and only the geometry: with one issue selected its lines join a
+    // shared trunk in the gutter (viewer, RULES, Graphs, Dense neighbourhoods),
+    // so the path and its clones take the trunk's `d` and nothing else moves.
+    const placeless = (spec: ElementSpec): ElementSpec => ({
+      ...spec,
+      attrs: Object.fromEntries(
+        Object.entries(spec.attrs ?? {}).filter(([name]) => name !== 'd' && name !== 'transform'),
+      ),
+    });
     const drawnFor = (specs: readonly ElementSpec[], id: string) => ({
-      paths: pathsOf(specs, id),
-      marks: specs.filter((spec) => classesOf(spec).includes(OVERLAY_CLASS)),
+      paths: pathsOf(specs, id).map(placeless),
+      marks: specs.filter((spec) => classesOf(spec).includes(OVERLAY_CLASS)).map(placeless),
     });
 
     for (const state of EDGE_STATES.filter((each) => each !== 'selected')) {

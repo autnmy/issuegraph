@@ -28,8 +28,10 @@ import {
   type Column,
   type EdgeGeometry,
   type GraphLayout,
+  type Point,
   edgeGeometry,
   layoutGraph,
+  trunkRoutes,
 } from '../layout.ts';
 import { type EdgeMark, edgeMarkSpecs } from '../marks.ts';
 import {
@@ -223,17 +225,34 @@ function terminalMarker(
 }
 
 /**
+ * How a doubled arc's two strokes part: vertically, as they always have.
+ */
+const ARC_SPLIT: Point = Object.freeze({ x: 0, y: 1 });
+/**
+ * How a doubled trunk route's two strokes part: on the diagonal.
+ *
+ * A ROUTE TURNS TWICE, so no single axis parts it. Parted vertically, the
+ * trunk's two strokes lay one on the other and `serialize-with` drew as one
+ * line down the gutter; parted on the diagonal, every horizontal stub and the
+ * vertical trunk alike sit one stroke apart either side, which is what the
+ * "double" pattern is.
+ */
+const TRUNK_SPLIT: Point = Object.freeze({ x: 1, y: -1 });
+
+/**
  * One edge, drawn on all four channels: the path carries dash and hue, the
  * marker carries the terminal, and the badge grammar carries the glyph.
  *
  * `serialize-with` is drawn as two parallel strokes rather than one dashed
  * line — the "double" pattern is structural, so it cannot be confused with a
- * dash under any theme.
+ * dash under any theme. `split` is the direction the two strokes part along:
+ * see {@link ARC_SPLIT} and {@link TRUNK_SPLIT}.
  */
 function edgePaths(
   edge: ViewerEdge,
   geometry: EdgeGeometry,
   theme: Theme,
+  split: Point,
 ): ElementSpec[] {
   const treatment = treatmentFor(edge.field);
   const dash = dashArrayFor(treatment.dash);
@@ -268,11 +287,13 @@ function edgePaths(
     // Separated by one stroke width, so the pair reads as two lines at any
     // scale rather than merging once a host thickens the stroke.
     const offset = theme.metrics['--ig-stroke'];
+    const shift = (sign: number): string =>
+      `translate(${String(sign * split.x * offset)} ${String(sign * split.y * offset)})`;
     return [
-      svg('path', { ...base, transform: `translate(0 ${String(-offset)})` }),
+      svg('path', { ...base, transform: shift(-1) }),
       svg('path', {
         ...base,
-        transform: `translate(0 ${String(offset)})`,
+        transform: shift(1),
         'aria-hidden': 'true',
         role: null,
       }),
@@ -719,6 +740,60 @@ function footerKeys(
   return layout.footer.map((key) => withRecede(row(key), receding.keys.has(key)));
 }
 
+/** One relationship the canvas draws, before it is routed. */
+interface DrawableEdge {
+  /** As declared: what a click reports and what its identity is built from. */
+  readonly edge: ViewerEdge;
+  /** As drawn: pointing at what it holds up. */
+  readonly drawn: ViewerEdge;
+  readonly identity: string;
+  /** Its arc, which it keeps unless a trunk routes it. */
+  readonly arc: EdgeGeometry;
+}
+
+/**
+ * The relationships the canvas draws, in document order, each with its arc.
+ *
+ * ONE PASS DECIDES WHAT DRAWS, AND ROUTING READS ONLY THAT. A trunk's slot is
+ * counted from the lines it gathers, so a line that will not draw — receded, or
+ * of a kind switched off — must not hold a slot in the gutter for nothing.
+ */
+function drawableEdges(
+  document: NormalizedDocument,
+  layout: GraphLayout,
+  receding: Receding,
+  off: ReadonlySet<EdgeField>,
+): readonly DrawableEdge[] {
+  return document.edges.flatMap((edge): DrawableEdge[] => {
+    // THE ARROW POINTS AT WHAT IS HELD UP, not at what holds it. §16b draws
+    // every blocking arc arriving on the blocked card, and it is the reading
+    // that answers the question the panel exists for: a reader following an
+    // arrowhead is asking "what is waiting on this", and an arrow into the
+    // blocker answers the question nobody asked. The DECLARATION is untouched
+    // — the identity below is still the field's own orientation, so what a
+    // click reports is the edge as written.
+    const drawn: ViewerEdge =
+      edge.field === 'blocked-by' ? { field: edge.field, from: edge.to, to: edge.from } : edge;
+    // ONE STATION PER SLOT MEANS ONE BOX PER SLOT, so an edge inside a unit has
+    // both ends on the same card and no arc to draw. It is not lost: the card
+    // lists its members, and the badge row names the relationship, which is the
+    // same treatment the list projection gives it. `edgeGeometry` answers null
+    // for exactly that case, and it resolves a member to its unit's card for
+    // every other — so this asks the geometry rather than deciding twice.
+    const arc = edgeGeometry(layout, drawn);
+    const identity = edgeIdentity(edge.field, edge.from, edge.to);
+    // ONLY THE SELECTION'S OWN RELATIONSHIPS DRAW (RULES, Graphs, Dense
+    // neighbourhoods). The lines between its neighbours wait until one of them
+    // is selected; drawn faded they still crossed the selection's own in a
+    // dense neighbourhood (#303). With nothing selected nothing recedes, so
+    // every line draws. A KIND THE READER SWITCHED OFF DRAWS NO LINE, as its
+    // switch says.
+    return arc === null || receding.edges.has(identity) || off.has(edge.field)
+      ? []
+      : [{ edge, drawn, identity, arc }];
+  });
+}
+
 export function graphScene(document: NormalizedDocument, rawOptions: GraphOptions = {}): Scene {
   // See `linearScene` — the same rule, applied before the canvas is laid out.
   const stations = stationsOf(document);
@@ -941,46 +1016,26 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
   } else {
     const edgeLayers: ElementSpec[] = [];
     const off = switchedOff(options.legendSwitch);
-    // ONE STATION PER SLOT MEANS ONE BOX PER SLOT, so an edge inside a unit has
-    // both ends on the same card and no arc to draw. It is not lost: the card
-    // lists its members, and the badge row names the relationship, which is the
-    // same treatment the list projection gives it. `edgeGeometry` answers null
-    // for exactly that case, and it resolves a member to its unit's card for
-    // every other — so this loop asks the geometry rather than deciding twice.
-    for (const edge of document.edges) {
-      // No arcs in the column: §16b says they cannot be drawn legibly there,
-      // and an arc drawn illegibly is worse than an arc a reader knows to
-      // expand for. The badge row on every card still names the relationship.
-      if (layout.compact) break;
-      // THE ARROW POINTS AT WHAT IS HELD UP, not at what holds it. §16b draws
-      // every blocking arc arriving on the blocked card, and it is the reading
-      // that answers the question the panel exists for: a reader following an
-      // arrowhead is asking "what is waiting on this", and an arrow into the
-      // blocker answers the question nobody asked. The DECLARATION is untouched
-      // — the identity below is still the field's own orientation, so what a
-      // click reports is the edge as written.
-      const drawn: ViewerEdge =
-        edge.field === 'blocked-by' ? { field: edge.field, from: edge.to, to: edge.from } : edge;
-      const geometry = edgeGeometry(layout, drawn);
-      if (geometry === null) continue;
-      const identity = edgeIdentity(edge.field, edge.from, edge.to);
-      // ONLY THE SELECTION'S OWN RELATIONSHIPS DRAW (RULES, Graphs, Dense
-      // neighbourhoods). The lines between its neighbours wait until one of them
-      // is selected; drawn faded they still crossed the selection's own in a
-      // dense neighbourhood (#303). With nothing selected nothing recedes, so
-      // every line draws.
-      if (receding.edges.has(identity)) continue;
-      // A KIND THE READER SWITCHED OFF DRAWS NO LINE, as its switch says
-      // (RULES, Graphs, Dense neighbourhoods).
-      if (off.has(edge.field)) continue;
-      edgeLayers.push(...edgePaths(edge, geometry, theme));
-      const marker = terminalMarker(
-        treatmentFor(edge.field).terminal,
-        geometry,
-        edge.field,
-        identity,
-        theme,
-      );
+    // No arcs in the column: §16b says they cannot be drawn legibly there, and
+    // an arc drawn illegibly is worse than an arc a reader knows to expand for.
+    // The badge row on every card still names the relationship.
+    const drawable = layout.compact ? [] : drawableEdges(document, layout, receding, off);
+    // ONE ISSUE SELECTED, ITS LINES SHARE A TRUNK PER KIND AND DIRECTION (RULES,
+    // Graphs, Dense neighbourhoods). With nothing selected, a set, or a
+    // relationship selected, every line keeps its arc: the rule is about lines
+    // into and out of one selection, and a set has no one card to gather on.
+    const hub = typeof options.selected === 'string' ? options.selected : null;
+    const routes = hub === null ? [] : trunkRoutes(layout, hub, drawable.map(({ drawn }) => drawn), theme);
+    drawable.forEach(({ edge, identity, arc }, index) => {
+      const route = routes[index] ?? null;
+      const geometry = route?.geometry ?? arc;
+      edgeLayers.push(...edgePaths(edge, geometry, theme, route === null ? ARC_SPLIT : TRUNK_SPLIT));
+      // A GROUP INTO THE SELECTION ENDS ON ONE POINT, so its terminal is drawn
+      // once, by its first route — "one line with one chevron".
+      const marker =
+        route?.sharesEnd === true
+          ? null
+          : terminalMarker(treatmentFor(edge.field).terminal, geometry, edge.field, identity, theme);
       if (marker !== null) edgeLayers.push(marker);
       // THE MARKS A CALLER ASKED FOR, LAST, so every one of them sits in front
       // of the line it decorates rather than under it.
@@ -1006,7 +1061,7 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
           }),
         );
       }
-    }
+    });
 
     // THE SPINE ITSELF, painted first so every arc bows off a line that is
     // already there. It spans the stations and no further: a line running the
