@@ -47,8 +47,6 @@ export type RelatedListView =
       readonly groups: readonly RelatedGroup[];
       /** Every relationship listed: the head's count. */
       readonly total: number;
-      /** How many issues they reach, each once: "74 issues relate to #3104". */
-      readonly related: number;
     };
 
 const NO_SELECTION: RelatedListView = Object.freeze({ kind: 'no-selection' });
@@ -87,7 +85,6 @@ function listed(
     around,
     groups,
     total: relationships.length,
-    related: new Set(relationships.map(far)).size,
   };
 }
 

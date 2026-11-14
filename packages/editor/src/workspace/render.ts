@@ -3848,7 +3848,7 @@ export function renderWorkspace(
     options.words.canvas,
     canvasSwitchSpec(options.canvas ?? 'neighbourhood', options.words.narrow),
     inspector.subject.kind === 'issue' ? inspector.subject.issue.key : null,
-    relatedView.kind === 'listed' ? relatedView.related : 0,
+    canvas.ladder.related ?? 0,
   );
 
   // §17k'S STRIP CONTROL — the way out of the collapsed canvas below `1120`.
@@ -3950,7 +3950,7 @@ export function renderWorkspace(
       ? ''
       : renderMarkup(
           element('p', { class: 'ig-related-over' }, [
-            options.words.listedByRelationship(relatedView.related, issueNumber(relatedView.around)),
+            options.words.listedByRelationship(canvas.ladder.related ?? 0, issueNumber(relatedView.around)),
           ]),
         );
 

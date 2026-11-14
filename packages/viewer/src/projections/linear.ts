@@ -68,6 +68,17 @@ const ORDER_ROW_RELATIONSHIPS = 1;
  */
 type RowRelationships = 'named' | 'unnamed';
 
+/**
+ * What an issue the order does not place is called, by where its row stands.
+ * In the order's footer it is "related, not drawn here"; in a list that stands
+ * in for the graph (#303) the row IS where it is drawn, so saying otherwise
+ * would be a false name (review-219 at PR 310).
+ */
+const ASIDE_NAME: Readonly<Record<RowRelationships, string>> = Object.freeze({
+  named: 'related, not drawn here',
+  unnamed: 'related',
+});
+
 export interface SceneOptions {
   /**
    * The selected issue, or a set of them in the order they were added. Every
@@ -632,7 +643,7 @@ export function asideRow(
       class: 'ig-footer-row',
       'data-ig-key': key,
       'aria-current': isSelectedKey(options.selected, key) ? 'true' : 'false',
-      'aria-label': `${issue?.title ?? key} — ${key} — related, not drawn here`,
+      'aria-label': `${issue?.title ?? key} — ${key} — ${ASIDE_NAME[relationships]}`,
       tabindex: options.focused === key ? 0 : -1,
     },
     footerEntry(
