@@ -226,7 +226,11 @@ function capsuleLabel(capsule: ScaleCapsule): string {
   // make the same claim. It used to read "Focus <title> (<key>)", which names
   // the component after one issue in the one channel that cannot show the
   // layout making it an anchor.
-  return `Draw the group around ${capsule.lead}, ${capsule.name}: ${String(capsule.size)} issues, ${blocking}, ${clusterReachLabel(capsule.reach)}`;
+  // THE REACH IS SENTENCE CASE WHERE IT STARTS ITS OWN LINE; mid-sentence
+  // here it continues the name, as "has a loop" does, so its first letter is
+  // lowered for the name alone.
+  const reach = clusterReachLabel(capsule.reach);
+  return `Draw the group around ${capsule.lead}, ${capsule.name}: ${String(capsule.size)} issues, ${blocking}, ${reach.charAt(0).toLowerCase()}${reach.slice(1)}`;
 }
 
 /**

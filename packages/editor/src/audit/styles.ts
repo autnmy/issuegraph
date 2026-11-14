@@ -52,7 +52,7 @@ export const auditStylesheet = `
   align-items: center;
   background: none;
   border: 0;
-  color: var(--ig-text-muted);
+  color: var(--ig-text);
   cursor: pointer;
   display: inline-flex;
   font: inherit;
@@ -60,8 +60,10 @@ export const auditStylesheet = `
   padding: 0;
 }
 
-.ig-audit-toggle[aria-pressed='true'] {
-  color: var(--ig-text);
+/* THE WORDS ARE IN TEXT INK, as the export's state label is; only the
+   neutral state reads muted, and a closed blocker is the neutral one. */
+.ig-audit-toggle[${AUDIT_WORST_ATTRIBUTE}='stale-blocker'] {
+  color: var(--ig-text-muted);
 }
 
 /* A COUNT, SO BODY TEXT: the body sans at the body size, with tabular figures
@@ -87,6 +89,9 @@ export const auditStylesheet = `
   border-radius: 50%;
   flex: none;
   inline-size: var(--ig-space-snug);
+  /* With the toggle's gap, twelve between the dot and its count, as the
+     export's state label spaces its dot. */
+  margin-inline-end: var(--ig-space-tight);
 }
 
 .ig-audit-dot[${AUDIT_WORST_ATTRIBUTE}='cycle'] {

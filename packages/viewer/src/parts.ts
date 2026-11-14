@@ -888,12 +888,12 @@ export function caveatBadges(issue: ViewerIssue | undefined): readonly ElementSp
   const chips: ElementSpec[] = [];
   if (issue.previewOnly !== undefined) {
     chips.push(
-      element('span', { class: 'ig-badge', 'data-caveat': 'preview-only' }, glyphAndLabel('◐', 'estimated')),
+      element('span', { class: 'ig-badge', 'data-caveat': 'preview-only' }, glyphAndLabel('◐', 'Estimated')),
     );
   }
   if (issue.disagreement !== undefined) {
     chips.push(
-      element('span', { class: 'ig-badge', 'data-caveat': 'disagree' }, glyphAndLabel('◆', 'priorities disagree')),
+      element('span', { class: 'ig-badge', 'data-caveat': 'disagree' }, glyphAndLabel('◆', 'Priorities disagree')),
     );
   }
   return chips;

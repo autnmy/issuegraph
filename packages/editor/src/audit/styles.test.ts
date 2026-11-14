@@ -287,6 +287,16 @@ describe('the header count leads with the dot of the worst problem (#293)', () =
     );
   });
 
+  it('sets the dot twelve from its count and the words in text ink, muted only for a closed blocker', () => {
+    assert.equal(declaredOn(css, '.ig-audit-dot', 'margin-inline-end', inside)?.value, 'var(--ig-space-tight)');
+    assert.match(css, /\.ig-audit-toggle \{[^}]*color: var\(--ig-text\);/);
+    assert.equal(
+      declaredOn(css, `.ig-audit-toggle[${AUDIT_WORST_ATTRIBUTE}='stale-blocker']`, 'color', ['.ig-audit'])?.value,
+      'var(--ig-text-muted)',
+    );
+    assert.equal(/\.ig-audit-toggle\[aria-pressed/.test(css), false, 'a dead pressed rule is back');
+  });
+
   it('keeps the rail bar off the dot, which carries no severity attribute', () => {
     // The rail's gold bar is an unqualified rule on the severity attribute; a
     // dot wearing it would draw that bar whatever its class.

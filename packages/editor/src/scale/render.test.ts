@@ -118,7 +118,7 @@ describe('the refusal, as a reader sees it', () => {
       result.markup,
       new RegExp(
         `aria-label="Draw the group around ${capsule.lead}, ${capsule.name}: ${String(capsule.size)} issues, ` +
-          `${String(capsule.blockedByEdges)} blocking, Longest chain ${String(capsule.chainDepth)}"`,
+          `${String(capsule.blockedByEdges)} blocking, longest chain ${String(capsule.chainDepth)}"`,
       ),
     );
     // DISTINCT BY CONSTRUCTION, not by this fixture's titles happening to

@@ -359,6 +359,9 @@ export function renderAuditHeader(overlay: AuditOverlay, options: AuditHeaderOpt
     // something, which is what an overlay anchored here is. A reader told
     // "pressed" would be waiting for a state, not for a panel.
     `<button type="button" class="ig-audit-toggle" aria-expanded="${String(open)}"`,
+    // The worst class rides on the button too, so its words can take the
+    // neutral state's muted ink when a closed blocker is the worst problem.
+    worst === undefined ? '' : ` ${AUDIT_WORST_ATTRIBUTE}="${worst}"`,
     ` ${AUDIT_PANEL_ATTRIBUTE}>`,
     dot,
     `<span class="ig-audit-count">${count}</span>`,
