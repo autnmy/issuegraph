@@ -293,6 +293,7 @@ export const WORKSPACE_WORDS: MountWords = {
     order: 'Order',
     related: 'Related groups',
     subIssues: 'Sub-issues',
+    view: 'View',
     closeSheet: 'Close',
     noSelection: 'Select an issue to list its relationships.',
     searchRelated: 'Search relationships',

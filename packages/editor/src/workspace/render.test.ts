@@ -1981,7 +1981,8 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
       log: [CONFLICT],
     });
     assert.match(shut, /data-ig-command="view-diff"[^>]*aria-expanded="false"/);
-    assert.equal(shut.includes('aria-pressed'), false, 'a disclosure announced as a toggle');
+    // The middle zone's switch is a pressed button by design, so the check reads the disclosure alone.
+    assert.equal(/data-ig-command="view-diff"[^>]*aria-pressed/.test(shut), false, 'a disclosure announced as a toggle');
 
     const open = drawn({
       words: WORKSPACE_WORDS,
@@ -2807,7 +2808,8 @@ describe('the narrow tabs and the Related groups list', () => {
     const tabsOf = (markup: string): string[] =>
       markup
         .split('<')
-        .filter((tag) => tag.startsWith('button') && tag.includes('data-ig-command="narrow-tab"'))
+        // The middle zone's switch sends the same command, so the tabs are told apart by their class.
+        .filter((tag) => tag.startsWith('button') && tag.includes('class="ig-narrow-tab"'))
         .map((tag) => tag.slice(0, tag.indexOf('>')));
     const zoneFor: Readonly<Record<string, string>> = { order: 'rail', related: 'canvas', 'sub-issues': 'canvas' };
     const tabbed = backlogOf(4, { edges: [['blocked-by', 'i0001', 'i0002']] });
@@ -3270,3 +3272,55 @@ it('Compare open on a conflict drawn in the log and the Inspector gives each con
   const ids = [...markup.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]);
   assert.equal(new Set(ids).size, ids.length, 'two elements share an id');
 });
+
+describe('the middle zone switch between Related groups and Sub-issues', () => {
+  const switchIn = (markup: string): string => {
+    const canvas = markup.slice(markup.indexOf('data-zone="canvas"'));
+    return (
+      /<div class="ig-canvas-toolbar"><div class="ig-canvas-switch" role="group" aria-label="view picker">([\s\S]*?)<\/div>/.exec(canvas)?.[1] ??
+      assert.fail('the canvas zone draws no switch at the head of its toolbar')
+    );
+  };
+  const optionsOf = (markup: string): { readonly attributes: string; readonly word: string }[] =>
+    [...switchIn(markup).matchAll(/<button ([^>]*)>([^<]*)<\/button>/g)].map((match) => ({
+      attributes: match[1] ?? '',
+      word: match[2] ?? '',
+    }));
+  const attribute = (attributes: string, name: string): string | undefined =>
+    new RegExp(`${name}="([^"]*)"`).exec(attributes)?.[1];
+
+  it('R1 draws both options in the narrow words, each sending the narrow tab command, pressed by the canvas mode', () => {
+    const cases = [
+      ['neighbourhood', ['true', 'false']],
+      ['tree', ['false', 'true']],
+    ] as const;
+    for (const [canvas, pressed] of cases) {
+      const options = optionsOf(renderWorkspace(backlogOf(4), { words: WORKSPACE_WORDS, canvas }).markup);
+      assert.deepEqual(options.map((option) => option.word), [WORKSPACE_WORDS.narrow.related, WORKSPACE_WORDS.narrow.subIssues]);
+      assert.deepEqual(options.map((option) => attribute(option.attributes, 'data-ig-command')), ['narrow-tab', 'narrow-tab']);
+      assert.deepEqual(options.map((option) => attribute(option.attributes, 'data-ig-value')), ['related', 'sub-issues']);
+      assert.deepEqual(options.map((option) => attribute(option.attributes, 'aria-pressed')), [...pressed], canvas);
+    }
+  });
+
+  it('R2 presses the option for the canvas mode whatever the narrow view, because the order is beside it at 640 and wider', () => {
+    const options = optionsOf(
+      renderWorkspace(backlogOf(4), { words: WORKSPACE_WORDS, narrowView: 'order', canvas: 'tree' }).markup,
+    );
+    assert.deepEqual(options.map((option) => attribute(option.attributes, 'aria-pressed')), ['false', 'true']);
+  });
+
+  it('R4 is a group of pressed buttons that names no panel, so it leaves no ARIA reference to resolve', () => {
+    const drawn = switchIn(renderWorkspace(backlogOf(4), { words: WORKSPACE_WORDS }).markup);
+    assert.equal(drawn.includes('aria-controls'), false, 'the switch names a panel it does not show');
+    assert.equal(drawn.includes('role="tab"'), false, 'the switch draws tabs, which need a panel to name');
+  });
+
+  it('R4 names the switch and the narrow tablist with the one host word for the choice between views', () => {
+    const { markup } = renderWorkspace(backlogOf(4), { words: WORKSPACE_WORDS });
+    const label = `aria-label="${WORKSPACE_WORDS.narrow.view}"`;
+    assert.ok(markup.includes(`<div class="ig-canvas-switch" role="group" ${label}>`), 'the switch is an unnamed group');
+    assert.ok(markup.includes(`<div class="ig-narrow-tabs" role="tablist" ${label}>`), 'the narrow tablist is unnamed');
+  });
+});
+

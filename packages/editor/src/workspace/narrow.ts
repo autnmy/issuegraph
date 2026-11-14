@@ -68,7 +68,12 @@ export function pressNarrowTab(
   return { narrowView: press.narrowView, canvas: press.canvas ?? canvas };
 }
 
+/** The tab that shows a canvas mode: what the middle zone's switch marks selected. */
+export function canvasTabOf(canvas: CanvasMode): NarrowTab {
+  return CANVAS_TABS[canvas];
+}
+
 /** The tab a view and a mode stand for: what `data-tab` and `aria-selected` say. */
 export function narrowTabOf(narrowView: NarrowView, canvas: CanvasMode): NarrowTab {
-  return narrowView === 'order' ? 'order' : CANVAS_TABS[canvas];
+  return narrowView === 'order' ? 'order' : canvasTabOf(canvas);
 }
