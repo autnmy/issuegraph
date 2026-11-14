@@ -52,6 +52,10 @@ export const paperTheme = extendTheme(defaultTheme, {
     '--ig-state-conflict': '#5C4300',
     // The light ground a failed tag's word sits on.
     '--ig-state-failed-fill': '#F6E3DC',
+    // The light ground an attention note's title sits on.
+    '--ig-state-conflict-fill': '#F7EDD3',
+    // The paper accent, for work in flight.
+    '--ig-state-progress': '#0A5B8A',
     // The export's light fill-strong: its dark ink at 8% over the ground.
     '--ig-fill-strong': 'rgb(25 28 34 / 0.08)',
     // The two state hues again, for the dot that marks each state.
@@ -255,6 +259,9 @@ describe('the public surface', () => {
       // THE SELECTION SET's gesture rules and stored form, so a host editor
       // builds a set by the same rules the mount does, never a copy of them.
       'isNarrowBox',
+      // The `#` a bare issue number carries wherever a reader sees it (#296),
+      // for `@issuegraph/editor`, which draws refs the way the rail does.
+      'issueNumber',
       // The one construction of "which verb, read from which end". The rail
       // badge and the inspector row draw one edge one zone apart, and a
       // consumer left to write the ternary itself has a second copy whose
@@ -284,6 +291,9 @@ describe('the public surface', () => {
       'sameSelection',
       'skeletonSpec',
       'storedSelectionOf',
+      // An SVG-namespace spec, for the editor's note icons (#296): `element`
+      // alone builds an icon that draws nothing once mounted.
+      'svg',
       'themeCss',
       'treatmentFor',
       'viewerSelectionOf',

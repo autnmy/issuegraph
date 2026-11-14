@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import { type ElementSpec, type SpecChild } from './element.ts';
 import { LAYOUT_PROPERTIES } from './layout.ts';
+import { issueNumber } from './parts.ts';
 import { renderViewer } from './render.ts';
 import { RECEDE_ALPHA } from './recede.ts';
 import { fixtureDocument, hostedFixtureDocument } from './testing/fixtures.ts';
@@ -641,7 +642,7 @@ describe('a receded element draws by colour roles and stroke opacity', () => {
     assert.deepEqual(offenders, [], 'these rules fade a receded node, or something above it, by opacity or filter');
   });
 
-  it('dims no viewer text by opacity, and colours the held row, the held card and the right-column card with --ig-text-muted instead', () => {
+  it('dims no viewer text by opacity, and colours the held card and the right-column card with --ig-text-muted instead', () => {
     // "No text in either package is dimmed by opacity"
     // The property name is compared exactly, so stroke-opacity and fill-opacity neither fail this nor hide a bare opacity.
     assert.deepEqual(
@@ -655,7 +656,9 @@ describe('a receded element draws by colour roles and stroke opacity', () => {
     );
 
     // "Replace the opacity on text at packages/viewer/src/styles.ts:1030, :1445 and :1456 with `--ig-text-muted` colour, keeping the dashed borders."
-    for (const target of [`.ig-slot[data-held='true'] .ig-row-body`, `.ig-card[data-column='right']`, `.ig-card[data-held='true']`]) {
+    // A HELD ROW LEFT THIS LIST WITH #296: its dot is the whole mark, so its
+    // text reads as any row's, pinned in the #296 block below.
+    for (const target of [`.ig-card[data-column='right']`, `.ig-card[data-held='true']`]) {
       assert.ok(
         sheet.some(
           (rule) =>
@@ -1420,5 +1423,77 @@ describe('the tag, the rank, the unit count and the legend, as the export draws 
     // DOCKED, IT IS STICKY OVER ROWS THAT SCROLL BENEATH IT, so it takes the
     // root's ground rather than letting them show through.
     assert.equal(declaredOn(viewerStylesheet, '.ig-legend', 'background', [".ig-viewer[data-legend='docked']"])?.value, 'var(--ig-bg)');
+  });
+});
+
+describe('the legend, the held row, the footer group and issue numbers, as the export draws them (#296)', () => {
+  it('prints the legend in the export’s words and order, with the four readiness keys', () => {
+    const markup = renderViewer(fixtureDocument, { projection: 'graph' }).markup;
+    const legend = /<fieldset class="ig-legend"[^>]*>([\s\S]*?)<\/fieldset>/.exec(markup)?.[1] ?? '';
+    const words = [...legend.matchAll(/<span>([^<]+)<\/span>/g)].map((match) => match[1]);
+    assert.deepEqual(words, [
+      'is blocked by',
+      'serializes with',
+      'goes together with',
+      'is a duplicate of',
+      'was decomposed from',
+      'Ready now',
+      'Ready after its blockers',
+      'Held',
+      'Being worked',
+    ]);
+  });
+
+  it('marks a held row with its dot alone: no hatched ground and no muted text', () => {
+    const inside = ['.ig-viewer', '.ig-list'];
+    assert.equal(declaredOn(viewerStylesheet, ".ig-slot[data-held='true']", 'background-image', inside), undefined, 'a held row is still hatched');
+    assert.equal(/repeating-linear-gradient/.test(withoutComments(viewerStylesheet)), false);
+    // ITS TITLE READS AS ANY ROW'S: the same colour inside a held row as inside a ready one.
+    for (const target of ['.ig-title', '.ig-row-body']) {
+      assert.equal(
+        declaredOn(viewerStylesheet, target, 'color', [...inside, ".ig-slot[data-held='true']"])?.value,
+        declaredOn(viewerStylesheet, target, 'color', [...inside, ".ig-slot[data-held='false']"])?.value,
+        `a held row's ${target} takes a colour of its own`,
+      );
+    }
+  });
+
+  it('draws all four readiness keys at the export\u2019s eight (q303)', () => {
+    const inside = ['.ig-viewer', '.ig-legend', '.ig-legend-keys', '.ig-legend-item'];
+    for (const target of [".ig-station[data-fill='filled']", ".ig-station[data-fill='hollow']", ".ig-station[data-fill='dashed']", '.ig-legend-working']) {
+      for (const property of ['block-size', 'inline-size']) {
+        assert.equal(declaredOn(viewerStylesheet, target, property, inside)?.value, 'var(--ig-space-snug)', `${target} ${property}`);
+      }
+    }
+    // The row's own station keeps its size outside the legend.
+    assert.equal(declaredOn(viewerStylesheet, '.ig-station', 'block-size', ['.ig-viewer', '.ig-slot', '.ig-rank-cell'])?.value, 'var(--ig-station-size)');
+  });
+
+  it('draws work in flight in the progress state, not the accent "Ready now" shares', () => {
+    const places: readonly (readonly [string, readonly string[]])[] = [
+      ['.ig-legend-working', ['.ig-viewer', '.ig-legend', '.ig-legend-keys', '.ig-legend-item']],
+      ['.ig-now-pulse', ['.ig-viewer', '.ig-now', '.ig-now-row', '.ig-now-phase']],
+    ];
+    for (const [target, inside] of places) {
+      assert.equal(declaredOn(viewerStylesheet, target, 'background', inside)?.value, 'var(--ig-state-progress)', target);
+    }
+  });
+
+  it('heads the group "Not in the order" with a bare count, draws no lede, and no second line of reasons', () => {
+    const css = withoutComments(viewerStylesheet);
+    assert.equal(/\.ig-footer-(note|why)\b/.test(css), false, 'a rule still styles the lede or the reasons line');
+    const markup = renderViewer(fixtureDocument).markup;
+    assert.match(markup, /<p class="ig-header-label ig-footer-title">Not in the order<\/p><span class="ig-count-chip" data-count="footer">\d+<\/span>/);
+    assert.equal(/ig-footer-(note|why)/.test(markup), false);
+    assert.match(markup, /<span class="ig-badge" data-hold="duplicate">Duplicate<\/span>/);
+  });
+
+  it('draws a bare issue number with its "#", and a host’s other spelling as written', () => {
+    const markup = renderViewer(fixtureDocument).markup;
+    assert.match(markup, /<span class="ig-id">#\d+<\/span>/);
+    assert.equal(/<span class="ig-id">\d+<\/span>/.test(markup), false, 'an issue number lost its "#"');
+    assert.equal(issueNumber('101'), '#101');
+    assert.equal(issueNumber('acme/app#7'), 'acme/app#7');
+    assert.equal(issueNumber('c0-1'), 'c0-1');
   });
 });

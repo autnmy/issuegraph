@@ -80,9 +80,9 @@ describe('the order-strategy arm (#130)', () => {
       cycles: [],
     });
     const markup = renderMarkup(unitBlock(document, slot)!);
-    assert.ok(markup.includes('<span class="ig-id">1</span> · P1</span>'), 'the lead lost its stated tier');
+    assert.ok(markup.includes('<span class="ig-id">#1</span> · P1</span>'), 'the lead lost its stated tier');
     assert.ok(
-      markup.includes('Tail partner</span><span class="ig-id"><span class="ig-id">2</span></span>'),
+      markup.includes('Tail partner</span><span class="ig-id"><span class="ig-id">#2</span></span>'),
       'the tail partner was given a tier',
     );
   });

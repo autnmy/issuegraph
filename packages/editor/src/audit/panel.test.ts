@@ -8,7 +8,7 @@ import { makeEdge } from '@issuegraph/store';
 import type { EdgeKind, GraphDocument, IssueRef, StoredIssue } from '@issuegraph/store';
 import { renderMarkup } from '@issuegraph/viewer';
 
-import { AUDIT_CLASSES, AUDIT_CLASS_SPECS } from './findings.ts';
+import { AUDIT_CLASSES } from './findings.ts';
 import type { AuditClass, AuditGraph } from './findings.ts';
 import { AUDIT_KIND_ATTRIBUTE, renderAuditPanel } from './panel.ts';
 import type { AuditWords } from './panel.ts';
@@ -23,22 +23,14 @@ import { auditStylesheet } from './styles.ts';
  * fixture and the hardcode are the same string.
  */
 const WORDS: AuditWords = {
-  heading: 'things wrong with the encoding',
-  classes: {
-    cycle: 'a loop',
-    'stale-blocker': 'closed blocker',
-    'dead-duplicate-ref': 'dead canonical',
-    'encoding-refused': 'unreadable',
-  },
+  heading: { one: 'thing wrong with the encoding', other: 'things wrong with the encoding' },
   titles: {
     cycle: 'these wait on each other for ever',
     'stale-blocker': 'this waits on something finished',
     'dead-duplicate-ref': 'this is filed against something gone',
     'encoding-refused': 'this declaration could not be read',
   },
-  show: 'go and look',
   filter: 'narrow the list',
-  refusedHeading: 'could not be read',
   refusedOpen: 'see it upstream',
   remedies: {
     pickEdge: 'choose an edge',
@@ -117,6 +109,8 @@ function markupOf(
     words: WORDS,
     known,
     edges: new Set(edges.map(([field, from, to]) => edgeIdentity(field, from, to))),
+    // The same refusals the audit counted, drawn as notes in the panel (#296).
+    refusals: encodingRefused,
   });
   assert.ok(spec !== null, 'the fixture produced no findings, so this proves nothing');
   return renderMarkup(spec);
@@ -159,14 +153,6 @@ const EVERY_EDGE_IDS: ReadonlySet<string> = new Set(
   EVERY_CLASS.edges.map(([field, from, to]) => edgeIdentity(field, from, to)),
 );
 
-/**
- * The classes this panel lists.
- *
- * DERIVED FROM `AUDIT_CLASSES`, NEVER TYPED OUT. A fifth class added to the
- * table must appear here by default and force a decision about it; a hand-written
- * list would silently keep testing three.
- */
-const LISTED_CLASSES = AUDIT_CLASSES.filter((kind) => kind !== 'encoding-refused');
 
 describe('the findings panel', () => {
   it('draws one card per finding, in the class table’s order', () => {
@@ -180,7 +166,9 @@ describe('the findings panel', () => {
     // a refusal is surfaced on the issue itself rather than as one entry in a
     // list of relationship problems. `refused.ts` owns it, and `refused.test.ts`
     // pins that it is drawn — so the class cannot fall between the two.
-    assert.deepEqual([...kinds].sort(), [...LISTED_CLASSES].sort());
+    // EVERY CLASS SINCE #296, the unreadable one included: it is a note in
+    // this panel now, as the export draws it, not a block beside it.
+    assert.deepEqual([...kinds].sort(), [...AUDIT_CLASSES].sort());
     // THE TABLE'S ORDER, WHICH `auditOverlay` ALREADY FIXED. Re-sorting in the
     // panel would be a second opinion about severity beside `AUDIT_CLASS_SPECS`.
     const rank = (kind: AuditClass) => AUDIT_CLASSES.indexOf(kind);
@@ -191,32 +179,72 @@ describe('the findings panel', () => {
     );
   });
 
-  it('never puts the rail’s severity attribute on a chip', () => {
+  it('never puts the rail’s severity attribute on a card', () => {
     // `audit/styles.ts` ends with an UNQUALIFIED `[data-ig-audit]` rule, on
     // purpose — it lands on a row the viewer rendered and this layer may not
-    // rewrite that row's class. So a chip wearing the same attribute would draw
-    // the rail's 2px gold left-bar whatever hue its class was given, and all
-    // four chips would agree in gold. This is the pin for that.
+    // rewrite that row's class. So a card wearing the same attribute would draw
+    // the rail's 2px gold left-bar whatever state it was drawn in.
     const markup = markupOf(EVERY_CLASS.issues, EVERY_CLASS.edges, [{ ref: 'f' }]);
-    for (const chip of markup.matchAll(/<span class="ig-audit-chip"[^>]*>/g)) {
-      // THE `=` IS PART OF THE NEEDLE, and it has to be: `data-ig-audit-kind`
-      // CONTAINS `data-ig-audit`, so a bare substring test passes on the very
-      // attribute the chip is supposed to carry and proves nothing either way.
-      assert.equal(
-        (chip[0] as string).includes(`${AUDIT_SEVERITY_ATTRIBUTE}="`),
-        false,
-        `a chip carries ${AUDIT_SEVERITY_ATTRIBUTE}: ${chip[0] as string}`,
-      );
-      assert.match(chip[0] as string, new RegExp(AUDIT_KIND_ATTRIBUTE));
+    const cards = [...markup.matchAll(/<li class="ig-audit-card"[^>]*>/g)];
+    assert.ok(cards.length > 0, 'no cards were drawn, so this proves nothing');
+    for (const card of cards) {
+      // THE `=` IS PART OF THE NEEDLE: `data-ig-audit-kind` CONTAINS
+      // `data-ig-audit`, so a bare substring test proves nothing either way.
+      assert.equal((card[0] as string).includes(`${AUDIT_SEVERITY_ATTRIBUTE}="`), false, card[0] as string);
+      assert.match(card[0] as string, new RegExp(AUDIT_KIND_ATTRIBUTE));
     }
-    // AND THE STYLESHEET HUES WHAT THE CHIP ACTUALLY CARRIES. A rule keyed on an
-    // attribute the markup stopped writing is green about a string.
-    for (const kind of AUDIT_CLASSES) {
+  });
+
+  it('draws each finding as the export’s note: a state, a title, a sentence and its remedies (#296)', () => {
+    // NO CLASS CHIP, NO WALK LINE AND NO SHOW BUTTON. The export draws each
+    // problem as a note in its state, and the state follows the export's rules:
+    // a loop is error, a duplicate of a closed issue attention, a closed
+    // blocker neutral.
+    const markup = markupOf(EVERY_CLASS.issues, EVERY_CLASS.edges, [{ ref: 'f' }]);
+    for (const gone of ['ig-audit-chip', 'ig-audit-walk', 'ig-audit-show']) {
+      assert.equal(markup.includes(gone), false, `a note still draws ${gone}`);
+    }
+    const states = Object.fromEntries(
+      [...markup.matchAll(/<li class="ig-audit-card" data-ig-audit-kind="([^"]+)"[^>]*\sdata-s="([^"]+)"/g)].map(
+        (match) => [match[1] as string, match[2] as string],
+      ),
+    );
+    assert.deepEqual(states, {
+      cycle: 'error',
+      'stale-blocker': 'neutral',
+      'dead-duplicate-ref': 'attention',
+      'encoding-refused': 'attention',
+    });
+    // AND EACH RELATIONSHIP NOTE IS EXACTLY ITS PARTS, IN ORDER: its state's
+    // icon, then the title, the sentence and the remedies. The unreadable note
+    // carries its ref and reason where a sentence is; `refused.test.ts` pins it.
+    for (const card of markup.split('<li class="ig-audit-card"').slice(1)) {
+      if (card.includes('data-ig-audit-kind="encoding-refused"')) continue;
       assert.match(
-        auditStylesheet,
-        new RegExp(`\\.ig-audit-chip\\[${AUDIT_KIND_ATTRIBUTE}='${kind}'\\]`),
-        `no chip rule for ${kind}`,
+        card,
+        /^[^>]*><svg class="ig-audit-icon"[^>]*>.*?<\/svg><div class="ig-audit-note-text"><p class="ig-audit-title">[^<]+<\/p><p class="ig-audit-detail">[^<]+<\/p>(<div class="ig-audit-remedies">|<\/div><\/li>)/,
+        card,
       );
+    }
+  });
+
+  it('draws one icon per note state, as the export draws them, hidden from a reader (#296)', () => {
+    // The alert circle for the error state, the triangle for attention, the
+    // clock for neutral. The title says what the note is about, so the icon
+    // is decoration.
+    const markup = markupOf(EVERY_CLASS.issues, EVERY_CLASS.edges, [{ ref: 'f' }]);
+    const iconOf = (kind: string): string =>
+      new RegExp(`<li class="ig-audit-card" data-ig-audit-kind="${kind}"[^>]*>(<svg[^>]*>.*?</svg>)`).exec(markup)?.[1] ?? '';
+    const ICONS: Readonly<Record<string, RegExp>> = {
+      cycle: /<circle cx="12" cy="12" r="10" \/><line x1="12" x2="12" y1="8" y2="12" \/><line x1="12" x2="12.01" y1="16" y2="16" \/>/,
+      'dead-duplicate-ref': /<path d="m21\.73 18-8-14a2 2 0 0 0-3\.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1\.73-3" \/><path d="M12 9v4" \/><path d="M12 17h\.01" \/>/,
+      'encoding-refused': /<path d="m21\.73 18-8-14a2 2 0 0 0-3\.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1\.73-3" \/>/,
+      'stale-blocker': /<circle cx="12" cy="12" r="9" \/><path d="M12 7v5l3 2" \/>/,
+    };
+    for (const [kind, shape] of Object.entries(ICONS)) {
+      const icon = iconOf(kind);
+      assert.match(icon, /^<svg class="ig-audit-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">/, `${kind} has no icon`);
+      assert.match(icon, shape, `${kind} draws the wrong icon`);
     }
   });
 
@@ -237,137 +265,68 @@ describe('the findings panel', () => {
     assert.equal(markup.includes(hostile), false, markup);
     assert.equal(markup.includes('<script'), false, markup);
     assert.match(markup, /&lt;script&gt;/, 'the detail was not escaped');
-    assert.match(markup, /data-ig-target="&quot;&gt;&lt;script&gt;/, 'the target was not escaped');
+    // The remedies' targets are edge identities, which encode the ref; none
+    // carries it raw (#296 removed the Show button that targeted the ref).
+    assert.match(markup, /data-ig-target="[^"]+"/, 'no remedy was drawn, so the attribute half proves nothing');
+    assert.equal(/data-ig-target="[^"]*[<>]/.test(markup), false, 'a target carries markup raw');
   });
 
-  it('gives every card a keyboard-reachable way to the issue it is about', () => {
-    // §17d's rule, from `surface.ts`: "the surface offers navigation and never a
-    // remedy". A `button` rather than a styled span, because the a11y baseline's
-    // universal rule reads the TAB ORDER and a `tabindex="-1"` control does not
-    // pass as reachable. `reveal-issue` rather than `select-issue`, because the
-    // latter is a pointer and a pointer mid-draft WRITES — pinned in
-    // `workspace/host.test.ts` against the control that does create.
-    const markup = markupOf(EVERY_CLASS.issues, EVERY_CLASS.edges, [{ ref: 'f' }]);
-    const cards = markup.match(/<li class="ig-audit-card"/g) ?? [];
-    // MATCHED ON THE WHOLE TAG rather than on an attribute ADJACENCY: an
-    // assertion spelling attributes in one fixed order fails the next time one
-    // is added between them, which says nothing about the behaviour it pins.
-    const shows = [
-      ...markup.matchAll(/<button[^>]*class="ig-audit-show"[^>]*>/g),
-    ].map((tag) => {
-      const whole = tag[0] as string;
-      assert.match(whole, /data-ig-command="reveal-issue"/, whole);
-      return /data-ig-target="([^"]+)"/.exec(whole)?.[1];
-    });
-    // EVERY CARD, because every member of this fixture IS loaded. The one case
-    // where a card legitimately has no control has its own test below, so this
-    // equality stays an equality rather than softening to "at least one".
-    assert.equal(shows.length, cards.length, 'a card has no way out');
-    const overlay = overlayOf(EVERY_CLASS.issues, EVERY_CLASS.edges, [{ ref: 'f' }]);
-    // THE TARGET IS THE FINDING'S OWN, not merely some issue in the document —
-    // a control that navigated to an unrelated row would satisfy a presence
-    // check and mislead every reader who pressed it.
-    shows.forEach((target, index) => {
-      const finding = overlay.findings[index];
-      assert.ok(finding !== undefined);
-      assert.ok(
-        target !== undefined && finding.members.includes(target as IssueRef),
-        `${String(target)} is not a member of the ${finding.kind} finding`,
-      );
-    });
-  });
-
-  it('names each navigation button distinctly, whatever two findings share', () => {
+  it('names each remedy distinctly, whatever two findings share', () => {
     // THE MODE THAT STRIPS THE CARD. A screen reader's button list shows names
-    // and nothing around them, so the name is all a reader has; the ref in
-    // `data-ig-target` is not exposed to assistive technology at all.
+    // and nothing around them, so the name is all a reader has. With the Show
+    // button gone (#296) the remedies are the only buttons on a note, and each
+    // is named by its word and the finding's own sentence, which cannot
+    // collide: two findings with one sentence are one finding.
     //
-    // THREE COLLISION SHAPES IN ONE FIXTURE, and the list is the point rather
-    // than the count. Three revisions each summarised a finding into its name
-    // and each summary collided on a shape the last had not met, so this
-    // asserts over ALL of them at once:
-    //
-    //   1. several findings at all       — the host's word alone collides
-    //   2. one issue, two CLASSES        — `a` in the cycle and refused
-    //   3. two findings, one class AND one target — `a blocked-by y` and
-    //      `a blocked-by z`, two closed blockers on one issue
-    //
-    // Shape 3 is what defeats "class plus ref", and nothing short of the
-    // finding's own sentence separates it.
+    // `a blocked-by y` and `a blocked-by z` are two closed blockers on one
+    // issue, and `e duplicate-of canon` a duplicate of a closed issue with two
+    // remedies on one edge (q300 on #296).
     const markup = markupOf(
-      [
-        issue('a'),
-        issue('b'),
-        issue('c'),
-        issue('y', 'closed'),
-        issue('z', 'closed'),
-      ],
+      [issue('a'), issue('b'), issue('c'), issue('y', 'closed'), issue('z', 'closed'), issue('e'), issue('canon', 'closed')],
       [
         ['blocked-by', 'a', 'b'],
         ['blocked-by', 'b', 'c'],
         ['blocked-by', 'c', 'a'],
         ['blocked-by', 'a', 'y'],
         ['blocked-by', 'a', 'z'],
+        ['duplicate-of', 'e', 'canon'],
       ],
       [{ ref: 'a' }],
     );
-    const names = [...markup.matchAll(/class="ig-audit-show"[^>]*aria-label="([^"]+)"/g)].map(
-      (match) => match[1] as string,
-    );
-    const targets = [...markup.matchAll(/class="ig-audit-show"[^>]*data-ig-target="([^"]+)"/g)].map(
-      (match) => match[1] as string,
-    );
-    const kinds = [...markup.matchAll(/<li class="ig-audit-card" data-ig-audit-kind="([^"]+)"/g)].map(
-      (match) => match[1] as string,
-    );
+    const names = [...markup.matchAll(/class="ig-audit-remedy"[^>]*aria-label="([^"]+)"/g)].map((match) => match[1] as string);
+    const targets = [...markup.matchAll(/class="ig-audit-remedy"[^>]*data-ig-target="([^"]+)"/g)].map((match) => match[1] as string);
     assert.ok(names.length > 2, 'too few buttons to collide');
-
-    // THE PREMISES, ASSERTED RATHER THAN HOPED FOR. Without these the fixture
-    // could stop producing the collisions and this test would go on passing
-    // while proving nothing — which is exactly how the ref-only name shipped.
+    // THE PREMISE: two remedies share a target, so a target-based name collides.
     assert.ok(new Set(targets).size < targets.length, `no shared target: ${targets.join(' | ')}`);
-    const pairs = kinds.map((kind, index) => `${kind}\u0000${targets[index] ?? ''}`);
-    assert.ok(
-      new Set(pairs).size < pairs.length,
-      `no two findings share a class AND a target: ${pairs.join(' | ')}`,
-    );
-
     assert.equal(new Set(names).size, names.length, names.join('\n'));
-    // THE HOST'S WORD LEADS EVERY ONE, so this cannot pass by dropping the
-    // label for a bare sentence the package wrote.
-    for (const name of names) assert.ok(name.startsWith(WORDS.show), name);
-    // AND THE VISIBLE TEXT IS STILL THE SHORT WORD: the sentence is announced,
-    // not drawn twice.
-    assert.match(markup, new RegExp(`>${WORDS.show}</button>`));
+    const labels = Object.values(WORDS.remedies);
+    for (const name of names) assert.ok(labels.some((label) => name.startsWith(label)), name);
   });
 
   it('says how many, in the host’s word, beside the ambient mark', () => {
     const markup = markupOf(EVERY_CLASS.issues, EVERY_CLASS.edges, [{ ref: 'f' }]);
     const overlay = overlayOf(EVERY_CLASS.issues, EVERY_CLASS.edges, [{ ref: 'f' }]);
-    // THIS PANEL'S OWN CARDS, WHICH IS NOT `overlay.count` ANY MORE. The ambient
-    // header in `surface.ts` counts every finding — it is the persistent control
-    // beside both surfaces, and a reader works through all four classes. This
-    // number is enclosed in the same bounded, scrolling section as the list under
-    // it, so once `encoding-refused` moved to `refused.ts` a whole count would
-    // have printed `4` directly above three cards.
+    // ONE COUNT, THE HEADER'S (#296). The title counted its own cards while the
+    // header counted every finding, so the header read "6 problems" over "5
+    // problems to fix". The export keeps one count, which includes
+    // relationships that could not be read.
     const drawn = [...markup.matchAll(/<li class="ig-audit-card"/g)].length;
     // ONE TITLE WITH THE COUNT INSIDE IT (#288), as the export's "3 problems to
     // fix": the count leads the host's words within the same heading.
     assert.match(
       markup,
-      new RegExp(`<h2 class="ig-audit-panel-heading"><span class="ig-audit-panel-count">${drawn}</span> ${WORDS.heading}</h2>`),
+      new RegExp(`<h2 class="ig-audit-panel-heading"><span class="ig-audit-panel-count">${overlay.count}</span> ${WORDS.heading.other}</h2>`),
     );
-    // AND THE FIXTURE ACTUALLY SEPARATES THE TWO. Without a refusal in it the
-    // two numbers agree and this pin is vacuous — which is exactly how the
-    // defect it exists for reached a plan and two reviews unnoticed.
-    assert.equal(overlay.count, drawn + 1, markup);
+    // AND THE REFUSAL IS ONE OF THE NOTES (#296), so the count and the notes
+    // agree.
+    assert.equal(overlay.count, drawn, markup);
     // `h2` BECAUSE THE PANEL IS THE INSPECTOR'S PEER, not its child: it sits in
     // the audit region above the selection detail, so an `h3` would announce a
     // level three ahead of the level two it claimed to sit under. The refused
     // block beside it is an `h2` for the same reason.
     // AND THE SECTION IS NAMED. An unnamed `section` carries no landmark role at
     // all, so a reader navigating by landmark cannot reach the panel.
-    assert.match(markup, new RegExp(`<section class="ig-audit-panel" aria-label="${WORDS.heading}"`));
+    assert.match(markup, new RegExp(`<section class="ig-audit-panel" aria-label="${WORDS.heading.other}"`));
     // THE PANEL IS A TAB STOP. It was the scroll container while #177's bound
     // sat on this element; the bound and the scrolling belong to the audit
     // region now, so what keeps the stop is the second reason alone — its cards
@@ -389,9 +348,7 @@ describe('the findings panel', () => {
     // exists to prevent.
     const markup = markupOf(EVERY_CLASS.issues, EVERY_CLASS.edges, [{ ref: 'f' }]);
     const supplied = new Set<string>([
-      WORDS.heading,
-      WORDS.show,
-      ...Object.values(WORDS.classes),
+      WORDS.heading.other,
       ...Object.values(WORDS.titles),
       // §17d's REMEDY LABELS ARE THE HOST'S TOO. This guard caught them the
       // moment they shipped, which is the guard working: the labels are real
@@ -400,6 +357,10 @@ describe('the findings panel', () => {
       // §17d's filter entry point moved into the panel head, so its word is
       // the panel's to draw now too.
       WORDS.filter,
+      // AN UNREADABLE NOTE IS IN THE PANEL SINCE #296: its rewrite control is
+      // the host's word, and its ref the host's value.
+      WORDS.refusedRewrite,
+      'f',
     ]);
     const drawn = [...markup.matchAll(/>([^<>]+)</g)]
       .map((match) => (match[1] as string).trim())
@@ -409,48 +370,46 @@ describe('the findings panel', () => {
     // it is package-owned prose by decision — recorded in `panel.ts` rather than
     // left as a gap. So it is allowed here explicitly rather than by accident.
     for (const finding of overlay.findings) supplied.add(finding.detail);
-    // A WALK LINE IS ALLOWED ON A STRONGER FOOTING THAN `detail`, and it is
-    // listed rather than pattern-matched away. `detail` is a real sentence and
-    // is admitted above by decision; a walk contains NO WORD AT ALL — it is the
-    // host's own refs joined by a separator glyph, the same category as the
-    // digits this test already skips. The composition still belongs to
-    // the package, so it is named here explicitly rather than falling through a
-    // widened filter that would admit the next real sentence too.
-    for (const finding of overlay.findings) {
-      if (finding.walk === undefined) continue;
-      supplied.add([...finding.walk, finding.walk[0] as IssueRef].join(' → '));
-    }
     for (const text of drawn) {
       assert.ok(supplied.has(text), `the package wrote "${text}"`);
     }
   });
 
-  it('draws no refusal at all, whatever the host reported', () => {
-    // §17d'S FOURTH CLASS IS NOT THIS PANEL'S. SPEC surfaces a refusal "on the
-    // issue itself, because until it parses the issue has no edges at all and
-    // would otherwise look simply unencoded" — the other three say something
-    // about a relationship that EXISTS. `refused.ts` draws it.
+  it('lists an unreadable relationship as a note, counted in the one count (#296)', () => {
+    // THE EXPORT'S PANEL holds every problem, relationships that could not be
+    // read included, and counts them all. It was a block of its own beside the
+    // panel, under a heading of its own.
     //
     // BOTH SHAPES, because they fail differently. A refusal on a ref the
-    // document carries would have been an ordinary card; one on a ref outside it
-    // is the paging case `findings.ts` keeps on purpose, and dropping the finding
-    // there would lose it on exactly the issues paging has not reached.
+    // document carries, and one on a ref outside it: the paging case
+    // `findings.ts` keeps on purpose. Each is a note either way.
     const loaded = markupOf([issue('a'), issue('b'), issue('shut', 'closed')],
-      [['blocked-by', 'a', 'shut']], [{ ref: 'b' }]);
-    assert.equal(loaded.includes('data-ig-audit-kind="encoding-refused"'), false, loaded);
-    assert.equal(loaded.includes(WORDS.classes['encoding-refused']), false, loaded);
-    // AND THE FIXTURE IS NOT VACUOUS: the stale blocker beside it still drew.
+      [['blocked-by', 'a', 'shut']], [{ ref: 'b' }, { ref: 'nowhere-near-this-page' }]);
+    assert.equal([...loaded.matchAll(/data-ig-audit-kind="encoding-refused"/g)].length, 2, loaded);
+    assert.match(loaded, /<span class="ig-audit-panel-count">3<\/span>/);
+    // AND THE FIXTURE IS NOT VACUOUS: the stale blocker beside them still drew.
     assert.match(loaded, /data-ig-audit-kind="stale-blocker"/);
+    // NO BLOCK OF ITS OWN, AND NO HEADING OF ITS OWN.
+    assert.equal(/ig-audit-refused(?:"|-heading|-list)/.test(loaded), false, loaded);
 
-    // A DOCUMENT WHOSE ONLY FINDINGS ARE REFUSALS DRAWS NO PANEL. Testing
-    // `overlay.findings` instead of the listed ones would have drawn a panel
-    // whose head said `1` over an empty list.
+    // A DOCUMENT WHOSE ONLY FINDING IS A REFUSAL KEEPS ITS TITLE, with the note
+    // under it.
     const overlay = overlayOf([issue('a')], [], [{ ref: 'a' }]);
     assert.equal(overlay.count, 1, 'the fixture produced no finding, so this proves nothing');
-    assert.equal(
-      renderAuditPanel(overlay, { words: WORDS, known: new Set(['a']), edges: new Set<string>() }),
-      null,
-    );
+    const alone = renderAuditPanel(overlay, {
+      words: WORDS,
+      known: new Set(['a']),
+      edges: new Set<string>(),
+      refusals: [{ ref: 'a' }],
+    });
+    assert.ok(alone !== null, 'one unreadable finding drew no panel, so no title');
+    const markup = renderMarkup(alone);
+    // AND THE ONE FORM OF THE HOST'S WORDS (#296): "1 problem to fix", never
+    // "1 problems to fix", and the section is named the same way.
+    assert.match(markup, new RegExp(`<span class="ig-audit-panel-count">1</span> ${WORDS.heading.one}</h2>`));
+    assert.match(markup, new RegExp(`<section class="ig-audit-panel" aria-label="${WORDS.heading.one}"`));
+    assert.equal(markup.includes(WORDS.heading.other), false, 'one finding read in the plural');
+    assert.match(markup, /<ul class="ig-audit-list"><li class="ig-audit-card" data-ig-audit-kind="encoding-refused"/);
   });
 
   it('publishes no navigation for a ref the DRAWN surface does not carry', () => {
@@ -471,9 +430,10 @@ describe('the findings panel', () => {
     assert.ok(overlay.rowFor('a') !== undefined, 'the overlay has no row to withhold');
     const drawnNone = markupOf(issues, edges, [], new Set());
     assert.match(drawnNone, /ig-audit-card/, 'the finding itself was dropped');
-    assert.equal(drawnNone.includes('ig-audit-show'), false, drawnNone);
-    // THE CONTROL, so this cannot pass by drawing no button ever.
-    assert.ok(markupOf(issues, edges, [], new Set(['b'])).includes('data-ig-target="b"'));
+    assert.equal(drawnNone.includes('data-ig-target'), false, drawnNone);
+    // THE CONTROL, so this cannot pass by drawing no button ever: with the loop
+    // on the page its remedy names its head.
+    assert.ok(markupOf(issues, edges, [], new Set(['a', 'b', 'c'])).includes('data-ig-remedy="pick-edge"'));
   });
 
   it('draws nothing at all when the audit found nothing', () => {
@@ -506,16 +466,11 @@ describe('the findings panel', () => {
   });
 });
 
-describe('§17d — the cycle card draws its walk', () => {
-  it('draws the walk as a mono line, closing the loop on the head', () => {
-    // `10 waits on 9`, `9 waits on 100`, `100 waits on 10`.
-    //
-    // THE REFS ARE CHOSEN SO THE RING ORDER IS NOT THE SORTED ORDER — "10" <
-    // "100" < "9" as strings, while the ring runs 10 → 9 → 100. On a fixture
-    // like `a → b → c` the two coincide, and every assertion here would pass
-    // against a renderer that simply listed the members. The one thing this
-    // line exists to carry is the ordering, so the fixture has to be able to
-    // tell the difference.
+describe('§17d — a loop’s note draws no walk line (#296)', () => {
+  it('draws the title, the sentence and the remedy, and no walk, even where the reader named one', () => {
+    // The export's note is a title, one sentence and its remedies. The walk
+    // line, `10 → 9 → 100 → 10`, is not among them, so it is no longer drawn;
+    // the finding still carries `walk`, and the remedy still names its head.
     const markup = markupOf(
       [issue('10'), issue('9'), issue('100')],
       [
@@ -524,97 +479,12 @@ describe('§17d — the cycle card draws its walk', () => {
         ['blocked-by', '100', '10'],
       ],
     );
-    assert.equal(markup.match(/class="ig-audit-walk"/g)?.length, 1);
-    // The closing `→ 10` is drawn HERE and nowhere else: the reader names each
-    // member once and implies the return edge.
-    assert.ok(markup.includes('>10 → 9 → 100 → 10<'), markup);
-    // And explicitly NOT the sorted form, so the pin cannot rot into one.
-    assert.ok(!markup.includes('>10 → 100 → 9'), markup);
+    assert.equal(markup.includes('ig-audit-walk'), false, markup);
+    assert.equal(markup.includes(' → '), false, markup);
+    assert.match(markup, /data-ig-remedy="pick-edge"/);
   });
 
-  it('draws no walk line on a finding that is not a cycle', () => {
-    // `AuditFinding` and this renderer are both public, so a host can hand it a
-    // hand-built finding. An ordering under a `stale blocker` chip would be an
-    // ordering of an edge that has none.
-    const spec = renderAuditPanel(
-      {
-        count: 1,
-        rows: [],
-        rowFor: () => undefined,
-        findings: [
-          {
-            kind: 'stale-blocker',
-            severity: AUDIT_CLASS_SPECS['stale-blocker'].severity,
-            keepAsHistory: AUDIT_CLASS_SPECS['stale-blocker'].keepAsHistory,
-            members: ['a', 'b'],
-            detail: 'a waits on b, which is closed',
-            walk: ['a', 'b'],
-          },
-        ],
-      },
-      { words: WORDS, known: new Set(['a', 'b']), edges: new Set<string>() },
-    );
-    assert.ok(spec !== null);
-    assert.ok(!renderMarkup(spec).includes('ig-audit-walk'));
-  });
-
-  it('hides the walk from the accessibility tree, glyph and all', () => {
-    // The line's only new information is direction, and `→` announces as "right
-    // arrow" rather than "waits on" — so announcing it would repeat three refs
-    // the detail has just named, minus the reason they were drawn.
-    const markup = markupOf(
-      [issue('10'), issue('9'), issue('100')],
-      [
-        ['blocked-by', '10', '9'],
-        ['blocked-by', '9', '100'],
-        ['blocked-by', '100', '10'],
-      ],
-    );
-    assert.ok(/<p class="ig-audit-walk" aria-hidden="true">/.test(markup), markup);
-  });
-
-  it('draws NO walk line where §6.6 declined to name one', () => {
-    // Two simple cycles overlapping at `b`: one SCC, no canonical walk. The
-    // card still lists the finding — only the ordering is withheld.
-    const markup = markupOf(
-      [issue('a'), issue('b'), issue('c')],
-      [
-        ['blocked-by', 'a', 'b'],
-        ['blocked-by', 'b', 'a'],
-        ['blocked-by', 'b', 'c'],
-        ['blocked-by', 'c', 'b'],
-      ],
-    );
-    assert.ok(!markup.includes('ig-audit-walk'), markup);
-    assert.ok(markup.includes(`${WORDS.titles.cycle}`), markup);
-  });
-
-  it('draws no walk line for a host that wired no reader answer', () => {
-    // `cycleWalk` is optional, because SPEC §6.6 says a reader that omits the
-    // walk still conforms. Omitting it must render exactly what shipped before
-    // the field existed, not throw and not draw an empty line.
-    const document = documentOf(
-      [issue('a'), issue('b'), issue('c')],
-      [
-        ['blocked-by', 'a', 'b'],
-        ['blocked-by', 'b', 'c'],
-        ['blocked-by', 'c', 'a'],
-      ],
-    );
-    const { cycleWalk: _omitted, ...withoutWalk } = graphOf(document);
-    const spec = renderAuditPanel(
-      auditOverlay({ document, graph: withoutWalk, encodingRefused: [] }),
-      { words: WORDS, known: new Set(['a', 'b', 'c']), edges: new Set<string>() },
-    );
-    assert.ok(spec !== null);
-    const markup = renderMarkup(spec);
-    assert.ok(!markup.includes('ig-audit-walk'), markup);
-    assert.ok(markup.includes(`${WORDS.titles.cycle}`), markup);
-  });
-
-  it('escapes a ref that looks like markup, in the walk as everywhere else', () => {
-    // `ElementSpec` owns the escaping — the module writes no tag — and the walk
-    // is the one line built by joining host values with a string.
+  it('escapes a ref that looks like markup in the sentence', () => {
     const nasty = '<img src=x>' as IssueRef;
     const markup = markupOf(
       [issue(nasty), issue('b')],
@@ -623,32 +493,8 @@ describe('§17d — the cycle card draws its walk', () => {
         ['blocked-by', 'b', nasty],
       ],
     );
-    assert.ok(markup.includes('ig-audit-walk'), markup);
     assert.ok(!markup.includes('<img src=x>'), markup);
     assert.ok(markup.includes('&lt;img src=x&gt;'), markup);
-  });
-
-  it('leaves the reveal control\'s accessible name alone', () => {
-    // `detail` is unchanged by this field's arrival, and the name is built from
-    // `detail`. A walk that had been composed into the sentence would move it.
-    const markup = markupOf(
-      [issue('a'), issue('b'), issue('c')],
-      [
-        ['blocked-by', 'a', 'b'],
-        ['blocked-by', 'b', 'c'],
-        ['blocked-by', 'c', 'a'],
-      ],
-    );
-    assert.ok(
-      markup.includes(
-        `aria-label="${WORDS.show} a, b, c block each other in a loop, so none of them can start."`,
-      ),
-      markup,
-    );
-  });
-
-  it('gives the walk a stylesheet rule', () => {
-    assert.ok(auditStylesheet.includes('.ig-audit-walk'));
   });
 });
 
@@ -673,7 +519,7 @@ describe('§17d — the remedies, which select and never write', () => {
     assert.deepEqual(
       found.map((remedy) => remedy.tag).sort(),
       ['keep-as-history', 'pick-edge', 'remove-edge', 'repoint'],
-      'the cycle gets one, the stale blocker two, the dead ref one',
+      'the cycle gets one, the stale blocker one, the dead ref two (q300 on #296)',
     );
   });
 
@@ -710,7 +556,7 @@ describe('§17d — the remedies, which select and never write', () => {
     }
   });
 
-  it('offers Keep as history on the stale blocker alone', () => {
+  it('offers Keep as history on the dead duplicate ref alone, as the export\u2019s board does (q300 on #296)', () => {
     // Gated on `keepAsHistory`, which the class table sets for that class only.
     // Asserted through the MARKUP rather than the table, so the gate is proven
     // where a reader meets it.
@@ -719,8 +565,24 @@ describe('§17d — the remedies, which select and never write', () => {
     for (const card of cards.slice(1)) {
       const kind = /data-ig-audit-kind="([^"]+)"/.exec(card)?.[1];
       const keeps = /data-ig-remedy="keep-as-history"/.test(card);
-      assert.equal(keeps, kind === 'stale-blocker', `${String(kind)} drew the wrong answer`);
+      assert.equal(keeps, kind === 'dead-duplicate-ref', `${String(kind)} drew the wrong answer`);
     }
+  });
+
+  it('draws no remedy on a loop whose first issue is not on the page (q301 on #296)', () => {
+    // The loop's remedy names its walk's head, and a button naming an issue
+    // the drawn page does not carry is a button that cannot work.
+    const overlay = overlayOf(EVERY_CLASS.issues, EVERY_CLASS.edges);
+    const head = overlay.findings.find((found) => found.kind === 'cycle')?.walk?.[0];
+    assert.ok(head !== undefined, 'the fixture names no walk, so this proves nothing');
+    const known = new Set(EVERY_CLASS.issues.map((held) => held.ref).filter((ref) => ref !== head));
+    const spec = renderAuditPanel(overlay, { words: WORDS, known, edges: EVERY_EDGE_IDS });
+    assert.ok(spec !== null);
+    const loop = renderMarkup(spec)
+      .split('<li class="ig-audit-card"')
+      .find((card) => card.includes('data-ig-audit-kind="cycle"'));
+    assert.ok(loop !== undefined, 'the loop note was dropped with its remedy');
+    assert.equal(loop.includes('<button'), false, 'the loop note offers a button that cannot work');
   });
 
   it('withholds a cycle’s remedy where the reader named no walk', () => {

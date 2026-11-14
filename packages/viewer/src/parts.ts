@@ -109,9 +109,22 @@ export function station(fill: StationFill): ElementSpec {
  * a URL. The viewer never constructs one — knowing a tracker's URL shape is the
  * kind of knowledge this layer exists not to have.
  */
+/**
+ * An issue key as a reader sees it: a bare number takes the `#` an issue
+ * number carries everywhere on the export's boards ("#2240") (#296).
+ *
+ * A FORMAT RULE, NOT A GUESS: only a key that is all digits is a bare issue
+ * number, and a host's other spellings ("owner/repo#12", a slug) are drawn as
+ * the host wrote them. The key itself is unchanged, so every identity, every
+ * edge and every attribute still reads the host's spelling.
+ */
+export function issueNumber(key: string): string {
+  return /^\d+$/.test(key) ? `#${key}` : key;
+}
+
 export function identity(issue: ViewerIssue): ElementSpec {
   if (issue.url === undefined || issue.url === '') {
-    return element('span', { class: 'ig-id' }, [issue.key]);
+    return element('span', { class: 'ig-id' }, [issueNumber(issue.key)]);
   }
   return element('span', { class: 'ig-id' }, [
     element(
@@ -120,9 +133,9 @@ export function identity(issue: ViewerIssue): ElementSpec {
         class: 'ig-link',
         href: issue.url,
         rel: 'noreferrer',
-        'aria-label': `open ${issue.key}`,
+        'aria-label': `open ${issueNumber(issue.key)}`,
       },
-      [`${issue.key} ↗`],
+      [`${issueNumber(issue.key)} ↗`],
     ),
   ]);
 }
@@ -173,7 +186,7 @@ export function provenanceClause(provenance: RankProvenance | undefined): Elemen
           ? null
           : element('span', {}, [
               ' because it blocks ',
-              element('span', { class: 'ig-id' }, [provenance.promotedBy.join(', ')]),
+              element('span', { class: 'ig-id' }, [provenance.promotedBy.map(issueNumber).join(', ')]),
             ]);
       return element('span', {}, [
         'Priority raised ',
@@ -792,7 +805,7 @@ export function nowRows(document: NormalizedDocument): ElementSpec | null {
           element('div', { class: 'ig-row-head' }, [
             element('span', { class: 'ig-title' }, [issue?.title ?? job.key]),
             element('span', { class: 'ig-id' }, [
-              issue === undefined ? job.key : identity(issue),
+              issue === undefined ? issueNumber(job.key) : identity(issue),
               ` · ${job.phase} · ${job.elapsed}`,
             ]),
           ]),
@@ -832,7 +845,7 @@ export function unitBlock(document: NormalizedDocument, slot: ViewerSlot): Eleme
       return element('li', { class: 'ig-unit-member' }, [
         element('span', { class: 'ig-title' }, [issue?.title ?? member]),
         issue === undefined
-          ? element('span', { class: 'ig-id' }, [member])
+          ? element('span', { class: 'ig-id' }, [issueNumber(member)])
           : element('span', { class: 'ig-id' }, [
               identity(issue),
               // No tier when the host stated none (#130): never a made-up `P2`.
@@ -999,7 +1012,9 @@ export function caveatText(issue: ViewerIssue | undefined): string {
  * `keyAt` walks target-upward. That is the intended half of "an edge is pointable
  * in every projection", and it is what the canvas already does for an arc.
  */
-function edgeBadge(field: EdgeField, edgeId: string, label: string, other: string): ElementSpec {
+function edgeBadge(field: EdgeField, edgeId: string, label: string, key: string): ElementSpec {
+  // THE OTHER ISSUE AS A READER SEES IT, "#512" (#296).
+  const other = issueNumber(key);
   const treatment = treatmentFor(field);
   return element(
     'span',
@@ -1351,12 +1366,12 @@ export function cardText(document: NormalizedDocument, block: CardBlock): readon
       return [block.note === '' ? block.mark : `${block.mark} ${block.note}`];
     case 'head': {
       const issue = document.byKey.get(block.key);
-      return [issue?.title ?? block.key, block.key];
+      return [issue?.title ?? block.key, issueNumber(block.key)];
     }
     case 'unit':
       return block.members.flatMap((member) => [
         document.byKey.get(member)?.title ?? member,
-        member,
+        issueNumber(member),
       ]);
     case 'badges':
       return block.overflow === null ? block.texts : [...block.texts, block.overflow];
@@ -1385,7 +1400,7 @@ export function legend(): ElementSpec {
   // aria-label and draws no caption: content.md rules out the small uppercase
   // label above a group. The accessible name is the word the caption carried.
   return element('fieldset', { class: 'ig-legend', 'aria-label': 'Relationships' }, [
-    ...EDGE_ORDER.map((field) => {
+    ...LEGEND_ORDER.map((field) => {
       const treatment = treatmentFor(field);
       return element('span', { class: 'ig-legend-item' }, [
         legendSample(field),
@@ -1394,22 +1409,49 @@ export function legend(): ElementSpec {
         // free to lose the `aria-hidden` that makes the mark silent, in the
         // file whose own header calls that the failure the shared pairing
         // exists to prevent.
-        ...glyphAndLabel(treatment.glyph, treatment.label),
+        //
+        // THE EXPORT'S WORDS, in its order (#296): the legend's own phrase.
+        ...glyphAndLabel(treatment.glyph, treatment.legendLabel),
       ]);
     }),
     element('span', { class: 'ig-legend-keys' }, [
       ...STATION_KEYS.map(([fill, label]) =>
         element('span', { class: 'ig-legend-item' }, [station(fill), element('span', {}, [label])]),
       ),
+      // BEING WORKED IS THE FOURTH KEY, as the export's readiness key lists it.
+      // Its mark is drawn as the dot a NOW row carries, the one this package
+      // draws for work in flight, so the key matches what it explains. A class
+      // of its own, because the NOW row's classes are what tell a host's
+      // render that a job is running, and the key is drawn without one.
+      element('span', { class: 'ig-legend-item' }, [
+        element('span', { class: 'ig-legend-working', 'aria-hidden': 'true' }),
+        element('span', {}, [BEING_WORKED]),
+      ]),
     ]),
   ]);
 }
 
+/**
+ * The relationships, in the order the export's legend draws them (#296). Not
+ * {@link EDGE_ORDER}, the format's field order, which is alphabetical: the
+ * legend leads with the one kind that decides the order.
+ */
+const LEGEND_ORDER: readonly EdgeField[] = Object.freeze([
+  'blocked-by',
+  'serialize-with',
+  'together-with',
+  'duplicate-of',
+  'decomposed-from',
+]);
+
+/** The readiness keys, in the export's words and order (#296). */
 const STATION_KEYS: readonly (readonly [StationFill, string])[] = Object.freeze([
-  ['filled', 'ready now'],
-  ['hollow', 'ready after'],
-  ['dashed', 'held'],
+  ['filled', 'Ready now'],
+  ['hollow', 'Ready after its blockers'],
+  ['dashed', 'Held'],
 ] as const);
+
+const BEING_WORKED = 'Being worked';
 
 /** The width and height of one drawn legend sample, in CSS pixels. */
 const SAMPLE_WIDTH = 34;
@@ -1639,7 +1681,7 @@ export function slotPosition(slot: ViewerSlot): string {
 
 /** A slot's accessible name: what it is, where it sits, and whether it is held. */
 export function slotLabel(document: NormalizedDocument, slot: ViewerSlot): string {
-  return `${slotTitle(document, slot)} — ${slot.members.join(', ')} — ${slotPosition(slot)}`;
+  return `${slotTitle(document, slot)} — ${slot.members.map(issueNumber).join(', ')} — ${slotPosition(slot)}`;
 }
 
 /** The empty state. A container with nothing in it reads as a bug. */

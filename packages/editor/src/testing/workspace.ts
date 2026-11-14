@@ -144,20 +144,13 @@ export const WORKSPACE_WORDS: WorkspaceWords = {
     retryFailed: 'could not read the newest version',
   },
   audit: {
-    heading: 'problems in the encoding',
-    classes: {
-      cycle: 'a loop',
-      'stale-blocker': 'closed blocker',
-      'dead-duplicate-ref': 'dead canonical',
-      'encoding-refused': 'unreadable',
-    },
+    heading: { one: 'problem in the encoding', other: 'problems in the encoding' },
     titles: {
       cycle: 'these issues wait on each other for ever',
       'stale-blocker': 'this waits on something already finished',
       'dead-duplicate-ref': 'this is filed against an issue that is gone',
       'encoding-refused': 'this declaration could not be read',
     },
-    show: 'go to it',
     filter: 'narrow the list',
     // DELIBERATELY NOT THE FRAME'S WORDS. These fixtures use host wording that
     // no package string could be mistaken for, so a test asserting on a label
@@ -169,7 +162,6 @@ export const WORKSPACE_WORDS: WorkspaceWords = {
       keepAsHistory: 'leave it be',
       repoint: 'point it somewhere',
     },
-    refusedHeading: 'could not be read',
     refusedOpen: 'see it upstream',
     refusedRewrite: 'fix it here',
   },

@@ -31,12 +31,12 @@
  */
 
 import {
-  EDGE_TREATMENTS,
   type ElementSpec,
   type Theme,
   type ViewerDocument,
   clusterReachLabel,
   element,
+  issueNumber,
   normalizeDocument,
   renderMarkup,
   renderViewer,
@@ -282,7 +282,11 @@ function capsuleSpec(capsule: ScaleCapsule): ElementSpec {
         'aria-label': capsuleLabel(capsule),
       },
       [
-        element('span', { class: 'ig-capsule-size' }, [String(capsule.size)]),
+        // A COUNT WITH ITS NOUN, as the export's group card reads "24 issues"
+        // (#296), not a bare figure a reader has to know the meaning of.
+        element('span', { class: 'ig-capsule-size' }, [
+          `${String(capsule.size)} ${capsule.size === 1 ? 'issue' : 'issues'}`,
+        ]),
         // THE CYCLE STANDS WHERE THE BLOCKING COUNT STANDS. On a stuck
         // component the number of blocking edges is not the fact that changes
         // what the reader does: none of the members is reachable however few
@@ -298,11 +302,11 @@ function capsuleSpec(capsule: ScaleCapsule): ElementSpec {
         // and layer 1's `.ig-badge`, so it took the count's type and an edge
         // chip's tint and read as a third tally. The export draws it as a tag
         // in the error state, so it has a class of its own and neither of those.
-        capsule.reach.kind === 'cyclic'
-          ? element('span', { class: 'ig-capsule-loop' }, ['Loop'])
-          : element('span', { class: 'ig-capsule-load' }, [
-              `${EDGE_TREATMENTS['blocked-by'].glyph} ${String(capsule.blockedByEdges)}`,
-            ]),
+        //
+        // NO BLOCKED COUNT ON ANY CARD (#296). The export's group card draws the
+        // count, the issue at its centre, the longest chain and the Loop tag,
+        // and no "⊘ N" chip; the blocking count stays in the accessible name.
+        capsule.reach.kind === 'cyclic' ? element('span', { class: 'ig-capsule-loop' }, ['Loop']) : null,
         // THE ANCHOR, WORDED AS ONE. `RULINGS.md` §4: a capsule is identified
         // by "around #488 · Extract session store adapter", never by a name —
         // because a connected component HAS no name and one must not be
@@ -320,7 +324,7 @@ function capsuleSpec(capsule: ScaleCapsule): ElementSpec {
         // export's group card reads "Around #2201 · …".
         element('span', { class: 'ig-capsule-name' }, [
           element('span', { class: 'ig-capsule-anchor' }, ['Around ']),
-          element('span', { class: 'ig-id' }, [capsule.lead]),
+          element('span', { class: 'ig-id' }, [issueNumber(capsule.lead)]),
           ' \u00b7 ',
           capsule.name,
         ]),
@@ -341,13 +345,9 @@ function refusalSpec(refusal: ScaleRefusal, ladder: ScaleLadder): ElementSpec {
           ladder.capsules.map((capsule) => capsuleSpec(capsule)),
         ),
     omittedSpec(ladder.capsulesOmitted),
-    element(
-      'ul',
-      { class: 'ig-ladder-routes', 'aria-label': 'what to do next' },
-      refusal.routes.map((route) =>
-        element('li', { class: 'ig-refusal-next', 'data-route': route.kind }, [route.label]),
-      ),
-    ),
+    // NO ROUTE LINES (#296). The export's board says what to do in its head,
+    // "Pick a group.", and draws no list of routes under the cards. The routes
+    // stay on `ScaleRefusal` for a host that wants to say more.
   ]);
 }
 
@@ -377,7 +377,7 @@ function searchSpec(search: ScaleSearch): ElementSpec {
               element(
                 'button',
                 { type: 'button', 'data-ig-command': 'focus', 'data-ig-target': match.lead },
-                [`Show ${match.key}`],
+                [`Show ${issueNumber(match.key)}`],
               ),
               element('span', { class: 'ig-title' }, [match.title]),
             ]),
@@ -474,7 +474,7 @@ function isolatedSpec(
           },
           isolated.issues.map((issue) =>
             element('li', {}, [
-              element('span', { class: 'ig-id' }, [issue.key]),
+              element('span', { class: 'ig-id' }, [issueNumber(issue.key)]),
               element('span', { class: 'ig-title' }, [issue.title]),
             ]),
           ),

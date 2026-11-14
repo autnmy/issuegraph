@@ -28,6 +28,7 @@ import {
   holdLine,
   hostHeader,
   identity,
+  issueNumber,
   legend,
   notReadyBadge,
   nowRows,
@@ -264,83 +265,31 @@ export interface SceneOptions {
  * claim work is queued that nothing can start.
  */
 /**
- * What the footer group calls itself, and the one sentence that says why.
+ * What the footer group calls itself: the export's group heading.
  *
- * TWO LINES, NOT ONE RUN-ON HEADING. It read "4 outside the order — held by the
- * runner, or never worked", which asked a reader to already know what a runner
- * is and what "never worked" means for an issue that is plainly open. The count
- * is the heading; the reason is a sentence under it, in words that need no
- * glossary.
- *
- * IT COVERS SEVERAL FAMILIES, AND NAMING ONE WAS A LIE ABOUT THE OTHERS. §16d's
- * table is explicit that a duplicate is a different fact from a claim or a
- * park, so a document with one duplicate and no hold must not be told it is
- * "held back". The sentence is assembled from what the group actually holds.
- * Shared by both projections, so the two cannot word one group two ways.
+ * NO SENTENCE UNDER IT ANY MORE (#296). The heading carried a lede assembled
+ * from what the group held ("Held back, or a copy of another issue. Pick one to
+ * see why."), and the export draws none: each row's tag says why it is down
+ * here, which is the board's whole account of the group.
  */
-function capitalise(text: string): string {
-  return `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
-}
-
 export function footerHeading(): string {
   return 'Not in the order';
 }
 
-export function footerReason(kinds: FooterKinds): string | null {
-  const reasons = [
-    kinds.runner ? 'held back' : null,
-    kinds.neverWorked ? 'a copy of another issue' : null,
-    kinds.undrawn ? 'related but not drawn here' : null,
-  ].filter((reason): reason is string => reason !== null);
-  if (reasons.length === 0) return null;
-  const joined =
-    reasons.length === 1
-      ? (reasons[0] as string)
-      : `${reasons.slice(0, -1).join(', ')}, or ${reasons[reasons.length - 1] as string}`;
-  return `${capitalise(joined)}. Pick one to see why.`;
-}
-
 /**
- * The group's head, for either projection, in the panel header's own voice.
+ * The group's head, for either projection: its name and its count.
  *
- * THE SAME TWO PIECES THE PANEL HEADER USES, NOT A THIRD STYLE. The name is an
- * `.ig-header-label` — the accent mono kicker that reads "ORDER PREVIEW" at the
- * top of the panel — and the count is an `.ig-count-chip`, the outlined tally
- * beside it. A group that invented its own heading treatment was one more thing
- * a reader had to learn, on the part of the panel they reach last.
- *
- * "HELD" ONLY WHEN SOMETHING IS. The chip reads `4 held` the way the header's
- * `6 held` does, but a group of duplicates alone is not held by anyone — §16d
- * keeps the two facts apart — so it then states the bare count.
+ * THE COUNT IS A NUMBER, NOT "4 held" (#296). The export's group head reads
+ * "Not in the order" and "4"; "held" claimed something of duplicates no one
+ * holds, and the tags beneath say each row's reason.
  */
-export function footerHead(count: number, kinds: FooterKinds): ElementSpec {
-  const reason = footerReason(kinds);
+export function footerHead(count: number): ElementSpec {
   return element('div', { class: 'ig-footer-head' }, [
     element('div', { class: 'ig-footer-title-row' }, [
       element('p', { class: 'ig-header-label ig-footer-title' }, [footerHeading()]),
-      element('span', { class: 'ig-count-chip', 'data-count': 'footer' }, [
-        kinds.runner ? `${String(count)} held` : String(count),
-      ]),
+      element('span', { class: 'ig-count-chip', 'data-count': 'footer' }, [String(count)]),
     ]),
-    reason === null ? null : element('p', { class: 'ig-footer-note' }, [reason]),
   ]);
-}
-
-/**
- * Which families of entry a footer group actually holds.
- *
- * SAID RATHER THAN ASSUMED, because the group holds a different set in each
- * projection and the heading is a claim about every row beneath it. The list's
- * group holds runner-held slots and duplicates; the COLUMN's holds those plus
- * every gutter endpoint the compact graph does not draw — ordinary open
- * blockers, which no runner holds and which are worked like anything else. One
- * heading for all three read as a statement about them that is simply untrue.
- */
-export interface FooterKinds {
-  readonly runner: boolean;
-  readonly neverWorked: boolean;
-  /** Present only in the column, where the gutters are not drawn. */
-  readonly undrawn: boolean;
 }
 
 export function isFooterSlot(slot: ViewerSlot): boolean {
@@ -528,7 +477,6 @@ export function footerRow(
       labelled === undefined
         ? null
         : element('span', { class: 'ig-badge', 'data-hold': labelled.label }, [labelled.label]),
-      because === '' ? null : because,
       footerRelationships(document, slot.members),
     ),
   );
@@ -542,14 +490,17 @@ export function footerRow(
  * above it and is the held station the legend already explains; the name is an
  * `.ig-title`; the identity, the status chip and any relationship chips share
  * one `.ig-row-meta` line, as a ranked row's badges do. What a ranked row has
- * and these do not is a number — they have no place in the order — and in its
- * stead each says why, on its own line, in full.
+ * and these do not is a number — they have no place in the order.
+ *
+ * NO SECOND LINE OF REASONS (#296). Each row said why on a line of its own, and
+ * the export draws two lines: the title, then the number, the reason's tag and
+ * a relationship. The tag is the reason a reader sees; the full sentence stays
+ * in the row's accessible name, where it always also was.
  */
 function footerEntry(
   title: string,
   id: ElementSpec | null,
   status: ElementSpec | null,
-  why: string | null,
   relationships: ElementSpec | null,
 ): readonly ElementSpec[] {
   return [
@@ -561,7 +512,6 @@ function footerEntry(
       element('div', { class: 'ig-row-head' }, [
         element('span', { class: 'ig-title' }, [title]),
         element('div', { class: 'ig-row-meta' }, [id, status, relationships]),
-        why === null ? null : element('p', { class: 'ig-footer-why' }, [why]),
       ]),
     ]),
   ];
@@ -607,7 +557,7 @@ export function excludedRow(
       class: 'ig-footer-row',
       'data-ig-key': key,
       'aria-current': isSelectedKey(options.selected, key) ? 'true' : 'false',
-      'aria-label': `${issue?.title ?? key} — ${treatmentFor('duplicate-of').label} ${canonical}, which gets worked instead`,
+      'aria-label': `${issue?.title ?? key} — ${treatmentFor('duplicate-of').label} ${issueNumber(canonical)}, which gets worked instead`,
       // A HARDCODED -1 HERE MEANT THE VIEWER LOST ITS TAB STOP ENTIRELY. An
       // exclusion is in `focusOrder`, so focus can resolve to one — and when it
       // did, no element carried `tabindex="0"` and Tab could not enter the
@@ -617,11 +567,10 @@ export function excludedRow(
     footerEntry(
       issue?.title ?? key,
       issue === undefined ? null : identity(issue),
-      element('span', { class: 'ig-badge', 'data-hold': 'duplicate' }, ['duplicate']),
-      // THE CONSEQUENCE, NOT THE RELATIONSHIP. The relationship chip beside the
-      // status says "duplicate of 512" in the vocabulary's words; the sentence
-      // says what that means for the work, so the one fact is not printed twice.
-      'The original gets worked instead.',
+      // THE BOARD'S CASE (#296): its reason tags read "Duplicate", "Parked",
+      // "Claimed" and "Not eligible". The consequence ("which gets worked
+      // instead") rides the accessible name.
+      element('span', { class: 'ig-badge', 'data-hold': 'duplicate' }, ['Duplicate']),
       footerRelationships(document, [key]),
     ),
   );
@@ -656,8 +605,7 @@ export function asideRow(
     footerEntry(
       issue?.title ?? key,
       issue === undefined ? null : identity(issue),
-      element('span', { class: 'ig-badge', 'data-hold': 'related' }, ['related']),
-      'Not drawn at this width.',
+      element('span', { class: 'ig-badge', 'data-hold': 'related' }, ['Related']),
       footerRelationships(document, [key]),
     ),
   );
@@ -742,12 +690,7 @@ export function linearScene(
     footerEntries.length === 0
       ? null
       : element('section', { class: 'ig-footer' }, [
-          footerHead(footerEntries.length, {
-            runner: footerSlots.length > 0,
-            neverWorked: document.order.excluded.length > 0,
-            // The list draws every column it has, so it never withholds one.
-            undrawn: false,
-          }),
+          footerHead(footerEntries.length),
           element(
             'ol',
             { class: 'ig-list', 'aria-label': 'not in the order' },

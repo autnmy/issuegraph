@@ -48,6 +48,7 @@ import {
   hostHeader,
   statesItsOwnCause,
   identity,
+  issueNumber,
   legend,
   notReadyBadge,
   priorityBadge,
@@ -597,7 +598,7 @@ function capsuleSpec(cluster: Cluster): ElementSpec {
     // capsule is inert and unnamed, so the visible word is what a reader hears.
     reach.kind === 'cyclic' ? element('span', { class: 'ig-loop-tag' }, ['Loop']) : null,
     element('span', { class: 'ig-count' }, [clusterReachLabel(reach)]),
-    element('span', { class: 'ig-id' }, [cluster.members.slice(0, 3).join(', ')]),
+    element('span', { class: 'ig-id' }, [cluster.members.slice(0, 3).map(issueNumber).join(', ')]),
   ]);
 }
 
@@ -695,23 +696,8 @@ function footerGroup(
 ): ElementSpec | null {
   const entries = footerKeys(document, layout, { ...options, focused }, receding);
   if (entries.length === 0) return null;
-  // A SET, so each test is a lookup rather than a scan of the footer — the
-  // same membership question, asked once per slot and once per exclusion.
-  const inFooter: ReadonlySet<string> = new Set(layout.footer);
-  const slots = document.order.slots.filter((slot) => inFooter.has(slot.lead));
-  const excluded = document.order.excluded.filter((exclusion) => inFooter.has(exclusion.key));
-  // WHAT THIS GROUP ACTUALLY HOLDS. In the column it also holds every gutter
-  // endpoint the compact picture does not draw — an ordinary open blocker, say,
-  // which no runner holds and which is worked like anything else — so a heading
-  // that named only the runner and the never-worked said something untrue about
-  // them.
-  const undrawn = entries.length > slots.length + excluded.length;
   return element('section', { class: 'ig-footer' }, [
-    footerHead(entries.length, {
-      runner: slots.length > 0,
-      neverWorked: excluded.length > 0,
-      undrawn,
-    }),
+    footerHead(entries.length),
     element('ol', { class: 'ig-list', 'aria-label': 'not in the order' }, entries),
   ]);
 }

@@ -5,20 +5,23 @@
  * left-bar on an affected rail row. Neither says what was found. This module
  * draws the list, so a reader who sees a count has somewhere to read it.
  *
- * ## Three classes, not four — the fourth is `./refused.ts`'
+ * ## Four classes, one list
  *
- * `encoding-refused` is drawn OUTSIDE this panel, and SPEC is why: a refusal is
- * *"surfaced on the issue itself, because until it parses the issue has no
- * edges at all and would otherwise look simply unencoded"*. The other three
- * say something about a relationship that exists; that one says the
- * relationships cannot be read.
+ * `encoding-refused` used to be drawn OUTSIDE this panel, in its own block,
+ * because SPEC surfaces a refusal on the issue itself. Since #296 the export
+ * draws an unreadable relationship as one more note in this list, counted in
+ * the one count; `./refused.ts` supplies those notes (`refusedNotes`) and
+ * the issue's own row still carries its mark.
  *
- * SO THERE ARE TWO COUNTS NOW, AND THEY ARE DIFFERENT NUMBERS ON PURPOSE.
- * `./surface.ts`'s ambient count stays every finding — it is the persistent
- * control, it sits in the workspace chrome beside both surfaces, and a reader
- * works through all four classes. The count in THIS panel's head is this
- * panel's own cards, because it is enclosed by the list it counts. See
- * {@link renderAuditPanel}.
+ * ONE COUNT, SINCE #296. This panel's title counted its own cards while the
+ * header counted every finding, so the two disagreed by the unreadable ones.
+ * The export keeps one count that includes them, so the title now counts every
+ * finding too. See {@link renderAuditPanel}.
+ *
+ * EACH FINDING IS THE EXPORT'S NOTE: a state, a title, one sentence and its
+ * remedies. The chip, the walk line and the `Show` button that the sections
+ * below describe were removed with #296; their reasoning is kept as history of
+ * what was drawn and why it no longer is.
  *
  * ## It is the module `./surface.ts` predicted
  *
@@ -115,15 +118,16 @@
  * surface whose stated rule is that it never offers one. `reveal-issue` moves
  * the selection and abandons the draft, and can produce no edit at all.
  *
- * AND IT IS DRAWN ONLY FOR A LOADED MEMBER — see {@link navigableMember}.
+ * AND IT WAS DRAWN ONLY FOR A LOADED MEMBER; the remedies keep that rule.
  *
  * @see https://github.com/autnmy/issuegraph/blob/main/SPEC.md
  */
 
 import type { IssueRef } from '@issuegraph/store';
-import { type ElementSpec, element } from '@issuegraph/viewer';
+import { type ElementSpec, element, svg } from '@issuegraph/viewer';
 
-import type { AuditClass, AuditEdge, AuditFinding } from './findings.ts';
+import type { AuditClass, AuditEdge, AuditFinding, EncodingRefusal } from './findings.ts';
+import { refusedNotes } from './refused.ts';
 import { AUDIT_FILTER_ATTRIBUTE } from './surface.ts';
 import type { AuditOverlay } from './surface.ts';
 
@@ -144,10 +148,12 @@ export const AUDIT_KIND_ATTRIBUTE = 'data-ig-audit-kind';
  * silently draws its own key.
  */
 export interface AuditWords {
-  /** Reads the panel's header after the count — the frame's `encoding problems`. */
-  readonly heading: string;
-  /** The chip on each card. The frame's `cycle`, `stale`, `dead ref`, `refused`. */
-  readonly classes: Readonly<Record<AuditClass, string>>;
+  /**
+   * Reads the panel's title after the count, in the form the count takes: the
+   * export's "1 problem to fix" and "3 problems to fix". A PAIR since #296,
+   * because one word after every count read "1 problems to fix".
+   */
+  readonly heading: { readonly one: string; readonly other: string };
   /**
    * The card's title line.
    *
@@ -155,8 +161,6 @@ export interface AuditWords {
    * titles are not reconstructible.
    */
   readonly titles: Readonly<Record<AuditClass, string>>;
-  /** The navigation control on each card — the frame's `Show the loop`. */
-  readonly show: string;
   /**
    * The panel head's filter control — the frame's `filter the rail to these`.
    *
@@ -179,27 +183,27 @@ export interface AuditWords {
    * `duplicate-of` is repointed, and a cycle is neither.
    */
   readonly remedies: AuditRemedyWords;
-  /**
-   * The refused block's own heading — the frame's `Encoding refused`.
-   *
-   * THE LAST THREE BELONG TO `./refused.ts`, AND THEY LIVE HERE ANYWAY. §17d is
+  /*
+   * THE LAST TWO BELONG TO `./refused.ts`, AND THEY LIVE HERE ANYWAY. §17d is
    * one section and its words are one record: a host wiring the audit supplies
-   * `AuditWords` once, and splitting a second record off for the fourth class
-   * would let a host supply half a section. `classes` and `titles` are already
-   * total over `AuditClass`, which includes `encoding-refused` — so the words
-   * for that class were never going to sit anywhere else.
+   * `AuditWords` once. `titles` is already total over `AuditClass`, which
+   * includes `encoding-refused`.
+   *
+   * `classes`, `show` AND `refusedHeading` LEFT THIS RECORD WITH #296: the
+   * export's note draws no class chip and no `Show` button, and unreadable
+   * relationships are notes in the panel, under its title, not a block with a
+   * heading of its own.
    */
-  readonly refusedHeading: string;
-  /** The outward link's label. The package draws the `↗`. */
+  /** The outward link's label — the export's "Open the issue". The package draws the `↗`. */
   readonly refusedOpen: string;
-  /** The reveal control's label — the frame's `Rewrite from editor`. */
+  /** The reveal control's label — the export's "Rewrite it here". */
   readonly refusedRewrite: string;
 }
 
 /**
  * The four remedy labels §17d draws, and no others.
  *
- * NOT TOTAL OVER `AuditClass`, unlike `classes` and `titles`. The frame gives
+ * NOT TOTAL OVER `AuditClass`, unlike `titles`. The frame gives
  * `cycle` one remedy, `stale-blocker` two, `dead-duplicate-ref` one and
  * `encoding-refused` none — the refusal's own controls are `refusedOpen` and
  * `refusedRewrite`, which already exist. A record keyed by class would make a
@@ -211,11 +215,12 @@ export interface AuditRemedyWords {
   /** The frame's `Remove the edge`, on a stale blocker. */
   readonly removeEdge: string;
   /**
-   * The frame's `Keep as history`, on a stale blocker and nowhere else.
+   * The export's "Keep as history", on a duplicate of a closed issue and
+   * nowhere else (q300 on #296: the board offers it there, and only "Remove
+   * the relationship" on a closed blocker).
    *
-   * Drawn from {@link AuditFinding.keepAsHistory}, which the class table
-   * already sets — `true` for `stale-blocker` alone. The field predates this
-   * control and was waiting for it.
+   * Drawn from {@link AuditFinding.keepAsHistory}, which the class table sets
+   * — `true` for `dead-duplicate-ref` alone.
    */
   readonly keepAsHistory: string;
   /** The frame's `Repoint or clear`, on a dead duplicate ref. */
@@ -264,44 +269,85 @@ export interface AuditPanelOptions {
    * once, off the NORMALIZED document it draws, and hands it to both.
    */
   readonly known: ReadonlySet<string>;
+  /**
+   * The host's unreadable relationships, each drawn as a note in this panel
+   * (#296) with its diagnostic and the line it stopped on. The same refusals
+   * `AuditInput.encodingRefused` gave the audit, so each one the title counts
+   * is a note here.
+   */
+  readonly refusals?: readonly EncodingRefusal[] | undefined;
+  /**
+   * Where an issue lives, for an unreadable note's "Open the issue" link. See
+   * `./refused.ts`, which owns the rule that withholds an unsafe or absent URL.
+   */
+  readonly issueUrl?: ((ref: IssueRef) => string | null) | undefined;
 }
 
+/** A note's state, as the export's rules name the three it draws. */
+export type NoteState = 'error' | 'attention' | 'neutral';
+
 /**
- * The navigable member of a finding, or `undefined` when it has none.
- *
- * THE FIRST MEMBER THE DRAWN SURFACE CARRIES, and the filter is not defensive
- * tidying. An encoding refusal is a fact the HOST asserted about an issue it
- * read, and `findings.ts` keeps one whose ref lies outside the loaded document
- * ON PURPOSE — filtering findings to the loaded set would drop them on exactly
- * the issues a paging boundary has not reached. So a finding's members are not
- * all rows, and a control targeting one that is not advertises a move it cannot
- * make: the mount reconciles the unknown selection straight back away.
- *
- * IT ASKS THE CALLER, NOT THE OVERLAY, AND THE DIFFERENCE IS NOT PEDANTRY. An
- * earlier revision used `overlay.rowFor`, which answers "does the AUDIT's
- * document carry this ref" — a different question, and the two come apart
- * exactly where a host audits more than it draws. The demo does: it audits the
- * repository it holds and renders a page of it, so a ref can be audited, have
- * an overlay row, and still reach a view with nothing in it.
- *
- * FIRST RATHER THAN "MOST IMPORTANT": a finding names a component, no member of
- * it leads, and a rule invented here would be a second ranking nothing else in
- * the package agrees with.
+ * The state a finding's note is drawn in, as the export's rules give each
+ * class: a loop is the error state, a duplicate of a closed issue the
+ * attention state, and a blocker already closed the neutral state.
  */
-function navigableMember(
-  finding: AuditFinding,
-  known: ReadonlySet<string>,
-): IssueRef | undefined {
-  return finding.members.find((ref) => known.has(ref));
+const NOTE_STATE: Readonly<Record<AuditClass, NoteState>> = Object.freeze({
+  cycle: 'error',
+  'dead-duplicate-ref': 'attention',
+  'encoding-refused': 'attention',
+  'stale-blocker': 'neutral',
+});
+
+/**
+ * The SVG children of each state's icon, as the export's boards draw them: the
+ * alert circle for the error state, the triangle for attention, the clock for
+ * neutral. Built in the SVG namespace, because an icon built with `element`
+ * draws nothing once mounted.
+ */
+const NOTE_ICON: Readonly<Record<NoteState, () => readonly ElementSpec[]>> = Object.freeze({
+  error: () => [
+    svg('circle', { cx: '12', cy: '12', r: '10' }),
+    svg('line', { x1: '12', x2: '12', y1: '8', y2: '12' }),
+    svg('line', { x1: '12', x2: '12.01', y1: '16', y2: '16' }),
+  ],
+  attention: () => [
+    svg('path', { d: 'm21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3' }),
+    svg('path', { d: 'M12 9v4' }),
+    svg('path', { d: 'M12 17h.01' }),
+  ],
+  neutral: () => [
+    svg('circle', { cx: '12', cy: '12', r: '9' }),
+    svg('path', { d: 'M12 7v5l3 2' }),
+  ],
+});
+
+/**
+ * A note's icon, one per state (#296). Decoration: the title says what the
+ * note is about, so the icon is hidden from the accessibility tree and from the
+ * tab order.
+ */
+export function noteIcon(state: NoteState): ElementSpec {
+  return svg(
+    'svg',
+    { class: 'ig-audit-icon', viewBox: '0 0 24 24', 'aria-hidden': 'true', focusable: 'false' },
+    NOTE_ICON[state](),
+  );
 }
 
 /**
- * The card for one finding.
+ * The note for one finding: a state, a title, a body and its remedies (#296).
  *
- * A card whose finding names no loaded issue draws no control — see
- * {@link navigableMember}. It keeps its chip, title and sentence, because the
- * FINDING is still true and still worth reading; what it loses is a move that
- * would not have moved anything.
+ * THE EXPORT'S NOTE AND NOTHING ELSE. It drew a mono chip naming the class
+ * ("loop", "closed blocker"), a walk line, and a `Show` button beside the
+ * remedies; the export's problems panel draws each problem as a note in its
+ * state with its title, one sentence and its remedies, so the chip, the walk
+ * and the button are gone. The class still rides `data-ig-audit-kind`, and the
+ * state `data-s`, for the stylesheet and for a host.
+ *
+ * A REMEDY IS THE WAY OUT NOW. Each one selects its subject (an edge, or a
+ * loop's head), which is the navigation the `Show` button gave and more; a
+ * note whose subject is off the drawn page draws no remedy, and keeps its title
+ * and sentence, because the finding is still true.
  */
 function cardSpec(
   finding: AuditFinding,
@@ -309,100 +355,24 @@ function cardSpec(
   edges: ReadonlySet<string>,
   words: AuditWords,
 ): ElementSpec {
-  const target = navigableMember(finding, known);
   return element(
     'li',
     {
       class: 'ig-audit-card',
       [AUDIT_KIND_ATTRIBUTE]: finding.kind,
       // THE SEVERITY IS PUBLISHED, NOT DRAWN FROM. A host styling the four
-      // differently needs it, and on the card — which this package owns — it
-      // carries no rule of its own, so it cannot collide the way it would on a
-      // chip. See the header.
+      // differently needs it, and on the card, which this package owns, it
+      // carries no rule of its own.
       'data-ig-audit-severity': finding.severity,
+      'data-s': NOTE_STATE[finding.kind],
     },
     [
-      element('span', { class: 'ig-audit-chip', [AUDIT_KIND_ATTRIBUTE]: finding.kind }, [
-        words.classes[finding.kind],
+      noteIcon(NOTE_STATE[finding.kind]),
+      element('div', { class: 'ig-audit-note-text' }, [
+        element('p', { class: 'ig-audit-title' }, [words.titles[finding.kind]]),
+        element('p', { class: 'ig-audit-detail' }, [finding.detail]),
+        remedySpec(finding, known, edges, words),
       ]),
-      element('p', { class: 'ig-audit-title' }, [words.titles[finding.kind]]),
-      // THE FRAME'S THIRD LINE, and only where the reader named an ordering —
-      // see this module's header for the amendment that admits it, the cost it
-      // concedes, and why it is hidden from the accessibility tree.
-      //
-      // THE HEAD REPEATS HERE AND NOWHERE ELSE. `AuditFinding.walk` names each
-      // member once and implies the return edge, because closing the loop is a
-      // drawing decision — this is the drawing.
-      //
-      // NO `AuditWords` ENTRY. The arrow is a glyph the package draws, the same
-      // call `refusedOpen`'s `↗` makes; a host supplies words, not punctuation.
-      // GATED ON THE CLASS AS WELL AS THE FIELD. `AuditFinding` is a public
-      // export and so is this renderer, so a host can hand it a hand-built
-      // finding — and a walk drawn under a `stale blocker` chip would be an
-      // ordering of an edge that has none. The field's own doc says "only ever
-      // on a cycle finding"; this is what makes that a fact here rather than a
-      // hope about callers.
-      finding.kind !== 'cycle' || finding.walk === undefined || finding.walk.length === 0
-        ? null
-        : element('p', { class: 'ig-audit-walk', 'aria-hidden': 'true' }, [
-            [...finding.walk, finding.walk[0] as IssueRef].join(' → '),
-          ]),
-      element('p', { class: 'ig-audit-detail' }, [finding.detail]),
-      target === undefined
-        ? null
-        : element(
-            'button',
-            {
-              type: 'button',
-              class: 'ig-audit-show',
-              // `reveal-issue`, NEVER `select-issue`. The latter is a POINTER,
-              // and with a draft awaiting its target `workspace/host.ts` reads a
-              // pointer as choosing that target and emits the create proposal —
-              // so this button would declare a relationship. §17d's surface
-              // "offers navigation and never a remedy", and a control that can
-              // write is a remedy whatever its label says.
-              'data-ig-command': 'reveal-issue',
-              // THE NAME IS THE FINDING'S OWN SENTENCE, AND THAT IS A CLASS
-              // REMOVED RATHER THAN A THIRD ATTEMPT AT IT.
-              //
-              // Several findings mean several of these buttons, and in the one
-              // navigation mode that strips the surrounding card — a screen
-              // reader's BUTTON LIST — the name is all a reader has. Three
-              // revisions tried to SUMMARISE a finding into that name, and each
-              // summary collided on a shape the last had not met: the host's
-              // word alone collided everywhere; adding the ref collided when
-              // one issue carried two findings; adding the class collided when
-              // two findings shared a class AND a target — `a blocked-by y` and
-              // `a blocked-by z`, two closed blockers on one issue.
-              //
-              // The PATTERN is the defect. Any hand-picked subset of a
-              // finding's attributes has two findings that agree on it, so
-              // counting the collisions was never going to end. `detail` is the
-              // one value that cannot collide by construction: `findings.ts`
-              // composes it from the specific edge or members the finding is
-              // about, and documents it as "what the reader can be told, in one
-              // sentence" — so two findings with one sentence are one finding.
-              //
-              // IT ADDS NO ENGLISH. `detail` is already this card's visible
-              // prose, so nothing is announced that is not on screen, and the
-              // host's word still leads. Appended, never interpolated, the
-              // `WorkspaceWords.whyRank` idiom.
-              //
-              // A LONG NAME IS THE RIGHT TRADE. In a button list a name is an
-              // identifier before it is a label, and a distinct sentence beats
-              // a short ambiguous phrase; the VISIBLE label stays the short
-              // word.
-              //
-              // `WorkspaceWords.remove` has the same shape one leaf over and is
-              // deliberately untouched — filed as #176 rather than widened.
-              'data-ig-target': target,
-              'aria-label': `${words.show} ${finding.detail}`,
-            },
-            [words.show],
-          ),
-      // §17d's REMEDIES. Drawn after the navigation control, which is the
-      // frame's order: `Show the loop` then `pick one edge to drop`.
-      remedySpec(finding, known, edges, words),
     ],
   );
 }
@@ -477,20 +447,20 @@ function remedySpec(
         );
 
   switch (finding.kind) {
+    // THE BOARD'S REMEDIES (q300 on #296): a closed blocker offers only
+    // "Remove the relationship"; a duplicate of a closed issue offers "Change
+    // or remove" and "Keep as history". The second control is gated on the
+    // finding's own field rather than on the class, so asking the finding keeps
+    // the two in step instead of restating the table here.
     case 'stale-blocker': {
-      // TWO CONTROLS, AND THE SECOND IS GATED ON THE FINDING'S OWN FIELD rather
-      // than on the class. `keepAsHistory` is read from `AUDIT_CLASS_SPECS` and
-      // is `true` for this class alone — it predates this control and was
-      // waiting for it — so asking the finding keeps the two in step instead of
-      // restating the table here.
       const remove = onEdge(remedies.removeEdge, 'remove-edge');
-      const keep = finding.keepAsHistory ? onEdge(remedies.keepAsHistory, 'keep-as-history') : null;
-      const both = [remove, keep].filter((spec): spec is ElementSpec => spec !== null);
-      return both.length === 0 ? null : element('div', { class: 'ig-audit-remedies' }, both);
+      return remove === null ? null : element('div', { class: 'ig-audit-remedies' }, [remove]);
     }
     case 'dead-duplicate-ref': {
       const repoint = onEdge(remedies.repoint, 'repoint');
-      return repoint === null ? null : element('div', { class: 'ig-audit-remedies' }, [repoint]);
+      const keep = finding.keepAsHistory ? onEdge(remedies.keepAsHistory, 'keep-as-history') : null;
+      const both = [repoint, keep].filter((spec): spec is ElementSpec => spec !== null);
+      return both.length === 0 ? null : element('div', { class: 'ig-audit-remedies' }, both);
     }
     case 'cycle': {
       // THE WALK'S HEAD, NOT AN EDGE. See this function's header: the cycle is
@@ -528,28 +498,39 @@ function remedySpec(
 }
 
 /**
- * The panel, or `null` when there is nothing to list.
+ * The panel, or `null` when the audit found nothing.
  *
  * `null` RATHER THAN AN EMPTY PANEL, and it is not the same decision as the
  * header count's. The count is drawn at zero on purpose — `./surface.ts`:
  * *"a control that appears when there is bad news is a control the eye has to
- * re-find"* — because it IS the control. A list of nothing is not a control; it
- * is a heading over an empty region in a column whose space belongs to the
- * selection. So the ambient half stays put at zero and the list goes away.
+ * re-find"* — because it IS the control. A panel titled with nothing found is
+ * not; so the ambient half stays put at zero and the panel goes away.
  *
- * IT IS THE LISTED FINDINGS THAT DECIDE, NOT `overlay.findings`. A document
- * whose only findings are encoding refusals has a non-zero count, a bar on
- * every affected row, and NOTHING for this panel to list — so it draws the
- * refused block and no panel at all. Testing the overlay instead would have
- * drawn a panel whose head said `2` above an empty list.
+ * EVERY FINDING DECIDES, SINCE #296, and the title counts them all, the same
+ * number the header shows. Unreadable relationships are notes in this panel
+ * too, drawn from {@link AuditPanelOptions.refusals} by `./refused.ts`.
  */
 export function renderAuditPanel(
   overlay: AuditOverlay,
   options: AuditPanelOptions,
 ): ElementSpec | null {
+  // EVERY FINDING DECIDES WHETHER THE PANEL IS DRAWN, AND THE COUNT (#296).
+  // The panel used to count and appear for its own cards alone, so the header
+  // said "6 problems" over a title reading "5 problems to fix", and a document
+  // whose one finding was unreadable drew no panel, so no title, at all. The
+  // export keeps one count that includes relationships that could not be read,
+  // so the title counts every finding and stays at one. The unreadable ones are
+  // notes here too, after the three relationship classes, as `AUDIT_CLASSES`
+  // orders them; their own diagnostics come from the host's refusals.
+  if (overlay.count === 0) return null;
   const listed = overlay.findings.filter((finding) => finding.kind !== 'encoding-refused');
-  if (listed.length === 0) return null;
   const { words } = options;
+  const notes = [
+    ...listed.map((finding) => cardSpec(finding, options.known, options.edges, words)),
+    ...refusedNotes(options.refusals ?? [], { words, known: options.known, issueUrl: options.issueUrl }),
+  ];
+  // THE FORM THE COUNT TAKES, as the header's own problem / problems does.
+  const heading = overlay.count === 1 ? words.heading.one : words.heading.other;
   return element(
     'section',
     {
@@ -559,7 +540,7 @@ export function renderAuditPanel(
       // as nothing and a reader navigating by landmark cannot find the panel.
       // `firstpass/render.ts` already names its own section from its words; this
       // is the same rule one leaf over.
-      'aria-label': words.heading,
+      'aria-label': heading,
       // A TAB STOP, AND THE REASON IS NOW THE SECOND ONE ALONE. It was the
       // scroll container itself while #177's half-column bound sat on this
       // element; since §17d's fourth class moved to `./refused.ts` the bound and
@@ -610,8 +591,8 @@ export function renderAuditPanel(
       // before the level two it claimed to sit under, describing a nesting the
       // markup does not have. Two peers, two `h2`s.
       element('h2', { class: 'ig-audit-panel-heading' }, [
-        element('span', { class: 'ig-audit-panel-count' }, [String(listed.length)]),
-        ` ${words.heading}`,
+        element('span', { class: 'ig-audit-panel-count' }, [String(overlay.count)]),
+        ` ${heading}`,
       ]),
       // §17d's OWN ENTRY POINT, drawn where the frame draws it. `RULINGS.md` §2
       // already settled what it does — *"The filter hides ROWS. It never
@@ -638,11 +619,8 @@ export function renderAuditPanel(
     // arrives in `AUDIT_CLASSES` order because `auditDocument` concatenates its
     // four detectors in that order; re-sorting here would be a second opinion
     // about severity next to `AUDIT_CLASS_SPECS`, which is the one that ranks.
-    element(
-      'ul',
-      { class: 'ig-audit-list' },
-      listed.map((finding) => cardSpec(finding, options.known, options.edges, words)),
-    ),
+    // NO EMPTY LIST, for a host that counted refusals it did not pass.
+    notes.length === 0 ? null : element('ul', { class: 'ig-audit-list' }, notes),
     ],
   );
 }

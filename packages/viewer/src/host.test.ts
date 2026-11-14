@@ -178,21 +178,17 @@ describe('the host-facts port', () => {
     assert.equal(canvas.indexOf('data-ig-key="105"') === canvas.lastIndexOf('data-ig-key="105"'), true, 'the footer issue was drawn twice');
   });
 
-  it('labels a footer entry with the runner word and says why, on screen', () => {
-    // A LABEL CHIP, THE NAME, AND THE HOST'S REASON AS A VISIBLE LINE. The
-    // reason used to ride only the row's `title`, so the group showed issues a
-    // reader could not account for — nothing on screen said one was taken and
-    // another waiting on a person.
+  it('labels a footer entry with the runner word as its tag, and the group with a bare count (#296)', () => {
+    // THE TAG IS THE REASON A READER SEES. The export draws a footer row on two
+    // lines, the title and then the number, the reason's tag and a
+    // relationship; the host's sentence rides the row's accessible name.
     const markup = renderViewer(hostedFixtureDocument).markup;
     assert.match(markup, /<span class="ig-badge" data-hold="claimed">claimed<\/span>/);
-    assert.match(markup, /<p class="ig-footer-why">[^<]+<\/p>/, 'the reason is not drawn');
-    // THE HEADING COVERS BOTH FAMILIES. §16d's table is explicit that a
-    // duplicate is a different fact from a hold, so the sentence names both.
-    assert.match(markup, /<p class="ig-header-label ig-footer-title">Not in the order<\/p><span class="ig-count-chip" data-count="footer">2 held<\/span>/);
-    assert.match(
-      markup,
-      /<p class="ig-footer-note">Held back, or a copy of another issue\. Pick one to see why\.<\/p>/,
-    );
+    assert.equal(markup.includes('ig-footer-why'), false, 'a footer row still draws a second line of reasons');
+    // THE COUNT IS A NUMBER, as the export's group head reads "4".
+    assert.match(markup, /<p class="ig-header-label ig-footer-title">Not in the order<\/p><span class="ig-count-chip" data-count="footer">2<\/span>/);
+    // NO LEDE UNDER THE HEADING: the export draws none.
+    assert.equal(markup.includes('ig-footer-note'), false, 'the group still draws a lede');
     // THE FLOATING LEGEND OF HOLD LABELS IS GONE: every row carries its own.
     assert.equal(markup.includes('ig-footer-labels'), false);
     const bare = renderViewer(fixtureDocument).markup;
@@ -204,7 +200,9 @@ describe('the host-facts port', () => {
     // The `→ 512` chip and the sentence said the same thing twice, and the
     // arrow read as a relationship of its own.
     const markup = renderViewer(fixtureDocument).markup;
-    assert.match(markup, /<p class="ig-footer-why">The original gets worked instead\.<\/p>/);
+    // THE CONSEQUENCE RIDES THE ACCESSIBLE NAME, not a line of its own (#296).
+    assert.match(markup, /aria-label="[^"]*which gets worked instead"/);
+    assert.equal(markup.includes('The original gets worked instead.'), false);
     assert.equal(/<span class="ig-id">→ /.test(markup), false);
   });
 

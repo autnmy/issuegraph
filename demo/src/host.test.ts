@@ -121,7 +121,7 @@ describe('the demo supplies every host fact the port carries', () => {
     // The runner's words ride the tracker arm — one label per executor hold.
     const footer = viewer.order.slots.filter((slot) => slot.holds.some((hold) => hold.family === 'tracker'));
     const labels = footer.flatMap((slot) => slot.holds.flatMap((hold) => (hold.family === 'tracker' ? [hold.label] : [])));
-    assert.deepEqual([...new Set(labels)].sort(), ['claimed', 'not eligible', 'parked']);
+    assert.deepEqual([...new Set(labels)].sort(), ['Claimed', 'Not eligible', 'Parked']);
 
     // The engine's caveats, from the scenario's table.
     const preview = viewer.issues.find((issue) => issue.key === '487');
@@ -148,19 +148,20 @@ describe('the demo supplies every host fact the port carries', () => {
     assert.match(markup, /<p class="ig-freshness" data-stale="false"><span>as of <span class="ig-id">14:32<\/span> · 2m ago<\/span><button class="ig-refresh" type="button" data-ig-command="refresh">refresh<\/button><\/p>/);
     assert.match(markup, /<li class="ig-now-row" data-ig-group="499" aria-label="Fix flaky auth integration test — Review · 14m">/);
     assert.equal((markup.match(/data-ig-key="499"/g) ?? []).length, 0, 'the running issue also holds a slot');
-    assert.match(markup, /<span class="ig-badge" data-hold="claimed">claimed<\/span>/);
-    assert.match(markup, /<span class="ig-badge" data-hold="parked">parked<\/span>/);
+    assert.match(markup, /<span class="ig-badge" data-hold="Claimed">Claimed<\/span>/);
+    assert.match(markup, /<span class="ig-badge" data-hold="Parked">Parked<\/span>/);
     assert.match(markup, /data-ig-key="487"[^]*?data-caveat="preview-only"/);
     assert.match(markup, /data-ig-key="501"[^]*?data-caveat="disagree"[^]*?Using the P1 label · the issue body says <s class="ig-strike">priority: 3<\/s>/);
-    // EACH ROW SAYS ITS OWN REASON, in this host's words, on screen. The
-    // legend of labels that used to float beside the count is gone: it restated
-    // the chips and explained nothing.
+    // EACH ROW SAYS ITS OWN REASON, in this host's words: its tag on screen and
+    // its sentence in the row's accessible name, as the export draws a footer
+    // row with no second line of reasons. The legend of labels that used to
+    // float beside the count is gone: it restated the chips and explained nothing.
     for (const [label, why] of [
-      ['claimed', 'Another worker already has it.'],
-      ['parked', 'Waiting on a decision from a person.'],
-      ['not eligible', 'No priority search matches it, so it never comes up.'],
+      ['Claimed', 'Another worker already has it.'],
+      ['Parked', 'Waiting on a decision from a person.'],
+      ['Not eligible', 'No priority search matches it, so it never comes up.'],
     ] as const) {
-      assert.match(markup, new RegExp(`data-hold="${label}">${label}</span>.*?<p class="ig-footer-why">${why.replace('.', '\\.')}</p>`));
+      assert.match(markup, new RegExp(`aria-label="[^"]*${why.replace('.', '\\.')}"[^]*?data-hold="${label}">${label}</span>`));
     }
     assert.equal(markup.includes('ig-footer-labels'), false);
   });
@@ -194,6 +195,9 @@ describe('the refresh control reaches the host', () => {
     // own chrome, `Element` for the click target test — so the double supplies them.
     const previous = { document: globalThis.document, window: globalThis.window, Element: globalThis.Element };
     Object.assign(globalThis, { document: win.document, window: win, Element: win.Element });
+    // TORN DOWN EVEN WHEN AN ASSERTION FAILS: the sandbox runs a clock timer,
+    // and a failure that skipped the teardown left the process running forever.
+    let teardown: (() => void) | undefined;
     try {
       const byId = <T extends HTMLElement>(id: string, kind: new () => T): T => {
         const found = win.document.getElementById(id);
@@ -236,6 +240,7 @@ describe('the refresh control reaches the host', () => {
         // A fast tick, so the clock-only redraw is observable within the test.
         { clock: () => current, tickMs: 5 },
       );
+      teardown = () => handle.destroy();
       const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
       await settle();
       await settle();
@@ -252,7 +257,8 @@ describe('the refresh control reaches the host', () => {
       // notifies its subscribers before `hydrate()` resolves, so without the
       // mount's own redraw the drawn stamp was one read behind.
       assert.equal(stamp(), stampOf(OBSERVED));
-      assert.equal(elapsed(), '499 · Review · 12m');
+      // The identity carries its "#" since #296.
+      assert.equal(elapsed(), '#499 · Review · 12m');
 
       // RE-QUERIED PER CLICK: every redraw rebuilds the control, so a reference
       // taken once would dispatch into a detached node after the first read.
@@ -268,7 +274,7 @@ describe('the refresh control reaches the host', () => {
       assert.equal(hydrations, 2, 'the click did not re-read the mirror');
       assert.equal(stamp(), stampOf(current), 'the drawn stamp is not the newest read');
       // The job started once, at mount; a refresh does not wind it back.
-      assert.equal(elapsed(), '499 · Review · 22m');
+      assert.equal(elapsed(), '#499 · Review · 22m');
       const landed = current;
 
       // A READ THAT FAILED IS NOT A READ. The store keeps the last good document
@@ -314,13 +320,15 @@ describe('the refresh control reaches the host', () => {
       await settle();
       assert.equal(win.document.querySelector('#workspace .ig-workspace-freshness')?.getAttribute('data-stale'), 'true', 'the stamp never went stale on its own');
       assert.equal(stamp(), fresh, 'a clock tick re-stamped the read');
-      handle.destroy();
+      teardown?.();
+      teardown = undefined;
       // TORN DOWN, NO TIMER: a later tick draws nothing.
       const after = win.document.querySelector('#workspace .ig-workspace-freshness')?.textContent;
       current = new Date(current.getTime() + 60_000);
       await new Promise((resolve) => setTimeout(resolve, 20));
       assert.equal(win.document.querySelector('#workspace .ig-workspace-freshness')?.textContent, after);
     } finally {
+      teardown?.();
       Object.assign(globalThis, previous);
       win.close();
     }

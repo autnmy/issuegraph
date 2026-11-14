@@ -95,7 +95,7 @@ import type {
 import type { AuditInput, AuditSeverity } from '../audit/findings.ts';
 import { type EdgeField, edgeIdentity } from '@issuegraph/core';
 import { type AuditWords, renderAuditPanel } from '../audit/panel.ts';
-import { type EncodingRefusedBlockOptions, renderEncodingRefusedBlock } from '../audit/refused.ts';
+import type { RefusedNoteOptions } from '../audit/refused.ts';
 import { auditStylesheet } from '../audit/styles.ts';
 import { type CreateDraft, IDLE_CREATE_DRAFT } from '../create/draft.ts';
 import { KIND_KEYS, RELATE_KEY } from '../create/keys.ts';
@@ -1002,12 +1002,12 @@ export interface WorkspaceOptions {
    * opaque in here and this package holds no repository identity, so a URL is
    * supplied rather than derived. Absent, `null`, or a scheme the viewer's
    * allowlist refuses all mean the same thing — no link is drawn. See
-   * {@link EncodingRefusedBlockOptions.issueUrl}, which owns that rule and the
+   * {@link RefusedNoteOptions.issueUrl}, which owns that rule and the
    * reason an `href` cannot be trusted to escaping alone.
    *
    * Ignored with no audit, because a refusal arrives on the audit's input.
    */
-  readonly issueUrl?: EncodingRefusedBlockOptions['issueUrl'];
+  readonly issueUrl?: RefusedNoteOptions['issueUrl'];
   readonly theme?: Theme | undefined;
   /** The selector the theme's custom properties are written onto. */
   readonly themeSelector?: string | undefined;
@@ -3803,32 +3803,28 @@ export function renderWorkspace(
     : (() => {
 
         if (overlay === null) return '';
-        const refused = renderEncodingRefusedBlock(options.audit?.encodingRefused ?? [], {
-          words: options.words.audit,
-          known,
-          issueUrl: options.issueUrl,
-        });
         // `filtered` REACHES THE PANEL, and the first draft forgot it. The chip drew
         // `aria-pressed="false"` while the rail beside it was visibly narrowed —
         // a control lying about its own state, which is the exact shape §2 wrote
         // its ruling against.
+        //
+        // UNREADABLE RELATIONSHIPS ARE NOTES IN THE PANEL (#296), not a block of
+        // their own beside it, so the host's refusals and its URL resolver reach
+        // the panel.
         const panel = renderAuditPanel(overlay, {
           words: options.words.audit,
           known,
           edges: drawnEdges,
           filtered,
+          refusals: options.audit?.encodingRefused ?? [],
+          issueUrl: options.issueUrl,
         });
-        // THE REFUSAL LEADS. It is the finding that says the other three cannot
-        // be trusted for that issue — its edges were never read — so a reader
-        // meeting the list first would be reading conclusions drawn from a
-        // declaration nobody could parse.
-        const members = [refused, panel].filter((spec): spec is ElementSpec => spec !== null);
         // NO EMPTY REGION. A wrapper drawn around nothing is a heading-less box
         // taking a declared share of a column whose space belongs to the
         // selection — the same call `renderAuditPanel` makes about a list of
         // nothing, one level up.
-        if (members.length === 0) return '';
-        return renderMarkup(element('div', { class: 'ig-audit-overlay' }, members));
+        if (panel === null) return '';
+        return renderMarkup(element('div', { class: 'ig-audit-overlay' }, [panel]));
       })();
 
   // ONE MARKING FOR BOTH HALVES OF THE RAIL'S VIEWER — the window's root and the

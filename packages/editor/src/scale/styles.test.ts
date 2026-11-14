@@ -103,9 +103,9 @@ describe('the isolated list says what it is a list of', () => {
 });
 
 describe('the counts this sheet draws are body text with tabular figures (#254)', () => {
-  // A capsule card's member count and its blocked count. A stuck card's cycle
-  // stands in the blocked slot but is a tag, not a count (#288), pinned below.
-  const COUNTS = ['.ig-capsule-size', '.ig-capsule-load'];
+  // A capsule card's member count. Its blocked count was drawn here too until
+  // #296 removed it; a stuck card's cycle is a tag, not a count (#288).
+  const COUNTS = ['.ig-capsule-size'];
 
   it('sets the body sans, the body size and tabular figures on each, alone and over the viewer sheet', () => {
     assert.deepEqual(countTypeMisses(scaleLadderStylesheet, COUNTS), []);
@@ -167,5 +167,67 @@ describe('a stuck capsule’s loop tag sits on the theme’s error fill, and the
     const markup = renderScaleLadder(documentOf({ components: [40, 30] })).markup;
     assert.match(markup, /<span class="ig-capsule-anchor">Around <\/span>/);
     assert.match(markup, /<span class="ig-capsule-reach">Longest chain \d+<\/span>/);
+  });
+});
+
+describe('the capsule board, as the export draws its groups (#296)', () => {
+  const css = `${viewerStylesheet}\n${scaleLadderStylesheet}`;
+  const inside = ['.ig-ladder', '.ig-refusal', '.ig-list', '.ig-capsule-cell'];
+
+  it('draws a group card on the second fill at the card corner, with no border', () => {
+    // READ OFF THE BASE RULE: the cascade reader also counts the card's hover
+    // rule, which lifts it to the first surface, as a candidate at rest.
+    assert.match(css, /\.ig-capsule-enter \{[^}]*background: var\(--ig-surface-2\);/);
+    assert.equal(declaredOn(css, '.ig-capsule-enter', 'border', inside)?.value, '0');
+    assert.equal(declaredOn(css, '.ig-capsule-enter', 'border-radius', inside)?.value, 'var(--ig-radius-large)');
+  });
+
+  it('marks a stuck group on its tag alone: no hued border and no hued reach line', () => {
+    const stuck = ".ig-capsule-enter[data-reach='cyclic']";
+    assert.equal(declaredOn(css, stuck, 'border-color', inside), undefined, 'the stuck card still draws a hued border');
+    assert.equal(
+      declaredOn(css, '.ig-capsule-reach', 'color', [...inside, stuck])?.value,
+      declaredOn(css, '.ig-capsule-reach', 'color', [...inside, '.ig-capsule-enter'])?.value,
+      'the stuck card’s reach line takes a colour of its own',
+    );
+  });
+
+  it('heads the board with the export’s words and counts each group with its noun', () => {
+    const result = renderScaleLadder(documentOf({ components: componentsSumming(70, 5) }));
+    assert.match(result.markup, /<p>\d+ related issues are too many to draw here\. Pick a group\.<\/p>/);
+    assert.equal(/The limit is/.test(result.markup), false);
+    assert.match(result.markup, /<span class="ig-capsule-size">\d+ issues<\/span>/);
+  });
+});
+
+describe('the group card draws the export’s four parts (#296 design read)', () => {
+  const css = `${viewerStylesheet}\n${scaleLadderStylesheet}`;
+  const inside = ['.ig-ladder', '.ig-refusal', '.ig-list', '.ig-capsule-cell', '.ig-capsule-enter'];
+
+  it('sets the "Around …" line in muted ink', () => {
+    assert.equal(declaredOn(css, '.ig-capsule-name', 'color', inside)?.value, 'var(--ig-text-muted)');
+  });
+
+  it('draws no blocked count, and keeps it in the accessible name', () => {
+    const markup = renderScaleLadder(documentOf({ components: [40, 30] })).markup;
+    assert.equal(markup.includes('ig-capsule-load'), false, 'a card still draws its blocked count');
+    assert.equal(/⊘/.test(markup), false);
+    assert.match(markup, /aria-label="Draw the group around [^"]*, \d+ blocking, /);
+    assert.equal(/\.ig-capsule-load\b/.test(scaleLadderStylesheet.replace(/\/\*[\s\S]*?\*\//g, '')), false, 'the blocked count keeps a rule');
+  });
+});
+
+describe('the board draws its group cards on the zone, not in a box of the same fill (#296 design read)', () => {
+  const css = `${viewerStylesheet}\n${scaleLadderStylesheet}`;
+
+  it('clears the refusal box’s ground and border inside the ladder, and leaves the viewer’s own', () => {
+    const inside = ['.ig-ladder'];
+    assert.equal(declaredOn(css, '.ig-refusal', 'background', inside)?.value, 'none');
+    assert.equal(declaredOn(css, '.ig-refusal', 'border', inside)?.value, '0');
+    // The viewer's own refusal, outside a ladder, keeps its box.
+    assert.equal(declaredOn(css, '.ig-refusal', 'background', ['.ig-viewer'])?.value, 'var(--ig-surface-2)');
+    // And a card still sits on the second fill, which is what now reads. Read
+    // off the base rule: the cascade reader also counts the hover rule.
+    assert.match(css, /\.ig-capsule-enter \{[^}]*background: var\(--ig-surface-2\);/);
   });
 });

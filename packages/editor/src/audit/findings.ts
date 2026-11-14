@@ -74,11 +74,13 @@ export interface AuditClassSpec {
   /**
    * Whether the finding may be kept as deliberate history.
    *
-   * TRUE ON `stale-blocker` AND NOTHING ELSE (§17d). A closed blocker is often
-   * a record of what a piece of work waited for, and clearing it destroys that;
-   * none of the other three is ever something to keep. Stated as data on the
-   * class so the affordance cannot be offered by a render site that decides for
-   * itself.
+   * TRUE ON `dead-duplicate-ref` AND NOTHING ELSE, as the export's board draws
+   * it (the redesign lead's ruling q300 on #296): a duplicate of a closed issue
+   * may be kept as the record of what it duplicated, and the board offers
+   * "Keep as history" there and only "Remove the relationship" on a closed
+   * blocker. It was the closed blocker's, by §17d's own frame; the board
+   * wins. Stated as data on the class so the affordance cannot be offered by a
+   * render site that decides for itself.
    */
   readonly keepAsHistory: boolean;
 }
@@ -90,13 +92,13 @@ export interface AuditClassSpec {
  */
 export const AUDIT_CLASS_SPECS = Object.freeze({
   cycle: Object.freeze({ severity: 'blocks-work', weight: 3, keepAsHistory: false }),
-  'dead-duplicate-ref': Object.freeze({ severity: 'dangerous', weight: 2, keepAsHistory: false }),
+  'dead-duplicate-ref': Object.freeze({ severity: 'dangerous', weight: 2, keepAsHistory: true }),
   'encoding-refused': Object.freeze({
     severity: 'blocks-own-edges',
     weight: 1,
     keepAsHistory: false,
   }),
-  'stale-blocker': Object.freeze({ severity: 'misleading', weight: 0, keepAsHistory: true }),
+  'stale-blocker': Object.freeze({ severity: 'misleading', weight: 0, keepAsHistory: false }),
 } as const) satisfies Readonly<Record<AuditClass, AuditClassSpec>>;
 
 

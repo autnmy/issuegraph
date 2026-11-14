@@ -790,7 +790,7 @@ describe('the graph projection', () => {
     for (const key of ['1', '2', '3']) {
       assert.match(
         markup,
-        new RegExp(`<li class="ig-unit-member"><span class="ig-title">[^<]*</span><span class="ig-id"><span class="ig-id">${key}</span> `),
+        new RegExp(`<li class="ig-unit-member"><span class="ig-title">[^<]*</span><span class="ig-id"><span class="ig-id">#${key}</span> `),
       );
     }
     const declared = normalizeDocument(togetherChain)

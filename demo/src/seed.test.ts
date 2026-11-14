@@ -200,7 +200,7 @@ describe('the landing state is the §16a comp', () => {
     const blocker = rowFor(comp.explained.rows, '602');
     assert.equal(blocker.issue.state, 'open');
     assert.equal(blocker.placement, 'footer');
-    assert.ok(blocker.holds.some((hold) => hold.family === 'executor' && hold.label === 'not eligible'));
+    assert.ok(blocker.holds.some((hold) => hold.family === 'executor' && hold.label === 'Not eligible'));
   });
 
   it('declares a priority only where the frame draws one', () => {
@@ -231,9 +231,9 @@ describe('the landing state is the §16a comp', () => {
       footer.map((row) => [row.issue.ref, row.holds.find((hold) => hold.family === 'executor')?.label]).sort(),
       [
         ['499', 'working'],
-        ['533', 'claimed'],
-        ['541', 'parked'],
-        ['602', 'not eligible'],
+        ['533', 'Claimed'],
+        ['541', 'Parked'],
+        ['602', 'Not eligible'],
       ],
     );
     for (const row of footer) assert.equal(row.showRank, false, `#${row.issue.ref}`);

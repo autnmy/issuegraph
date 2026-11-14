@@ -679,6 +679,32 @@ describe('the state marks (#293)', () => {
   });
 });
 
+describe('the progress state (#296)', () => {
+  it('defaults to the accent in both documented themes, so the default look is unchanged', () => {
+    assert.equal(defaultTheme.colors['--ig-state-progress'], defaultTheme.colors['--ig-accent']);
+    assert.equal(paperTheme.colors['--ig-state-progress'], paperTheme.colors['--ig-accent']);
+  });
+});
+
+describe('the conflict state on its own fill (#296)', () => {
+  it('keeps the conflict hue and text ink at 4.5:1 or more on --ig-state-conflict-fill, and text ink on the failed fill, in the default and paper themes', () => {
+    // An attention note's title is drawn in --ig-state-conflict and its
+    // sentence in --ig-text on this fill; an error note's sentence in --ig-text
+    // on the failed fill.
+    for (const [name, theme] of [['default', defaultTheme], ['paper', paperTheme]] as const) {
+      const pairs: readonly (readonly [ColorToken, ColorToken])[] = [
+        ['--ig-state-conflict', '--ig-state-conflict-fill'],
+        ['--ig-text', '--ig-state-conflict-fill'],
+        ['--ig-text', '--ig-state-failed-fill'],
+      ];
+      for (const [text, fill] of pairs) {
+        const ratio = contrastRatio(theme.colors[text], theme.colors[fill]);
+        assert.ok(ratio >= 4.5, `${name}: ${text} on ${fill} measures ${ratio.toFixed(2)}:1`);
+      }
+    }
+  });
+});
+
 describe('the failed state on its own fill (#293)', () => {
   it('keeps the failed hue at 4.5:1 or more on --ig-state-failed-fill, in the default and paper themes', () => {
     // A tag in the failed state draws its word in --ig-state-failed on this

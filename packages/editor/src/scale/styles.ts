@@ -35,17 +35,6 @@ export const scaleLadderStylesheet = `
   color: var(--ig-text-body);
 }
 
-.ig-ladder-routes {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--ig-space-tight);
-  color: var(--ig-text-muted);
-  font-size: var(--ig-font-size-small);
-}
-
 .ig-ladder-search {
   display: flex;
   flex-direction: column;
@@ -103,6 +92,15 @@ export const scaleLadderStylesheet = `
   min-width: 0;
 }
 
+/* THE BOARD'S BOX DRAWS NO GROUND AND NO BORDER (issue 296). Layer 1's
+   refusal box paints the second fill, which is the group cards' own fill, so
+   the cards vanished into it; the export's board sets its cards straight on
+   the zone. Scoped to the ladder, so the viewer's own refusal keeps its box. */
+.ig-ladder .ig-refusal {
+  background: none;
+  border: 0;
+}
+
 /* FOUR CARDS ACROSS A COLUMN, NOT FOUR ROWS DOWN IT. Frame 17f lays the
    capsules out as a board, which is what makes the counts comparable at a
    glance — the whole reason the count leads. minmax(0, 1fr) rather than a
@@ -128,10 +126,12 @@ export const scaleLadderStylesheet = `
   width: 100%;
   height: 100%;
   text-align: left;
+  /* THE EXPORT'S GROUP CARD (issue 296): the second fill at the card corner,
+     with no border. */
   background: var(--ig-surface-2);
   color: var(--ig-text-body);
-  border: var(--ig-stroke) solid var(--ig-line);
-  border-radius: var(--ig-radius);
+  border: 0;
+  border-radius: var(--ig-radius-large);
   padding: var(--ig-space);
   font-family: var(--ig-font-ui);
   font-size: var(--ig-font-size);
@@ -143,21 +143,15 @@ export const scaleLadderStylesheet = `
   outline-offset: var(--ig-space-tight);
 }
 
+/* With no border to colour, a hovered card takes the stronger fill. */
 .ig-capsule-enter:hover {
-  border-color: var(--ig-accent);
+  background: var(--ig-surface);
 }
 
-/* THE WHOLE STUCK CARD IS TINTED, as frame 17f draws it — the tag alone puts
-   the one finding that stops work outright at the size of every other chip on
-   the board. The border takes blocked-by's hue, because that is the edge the
-   cycle is made of; the tag inside it states the error, in the error state. */
-.ig-capsule-enter[data-reach='cyclic'] {
-  border-color: var(--ig-edge-blocked-by);
-}
-
-.ig-capsule-enter[data-reach='cyclic'] .ig-capsule-reach {
-  color: var(--ig-edge-blocked-by);
-}
+/* A STUCK CARD SAYS SO ON ITS TAG ALONE (issue 296). It drew blocked-by's hue
+   on its border and on its reach line as well, and the export's stuck group is
+   the same card as any other with an error Loop tag in it: one state, one mark.
+   data-reach stays on the markup for a host that wants to style the stuck card. */
 
 /* THE COUNT LEADS BY ITS PLACE AND ITS INK, NOT ITS FACE. It is a count, and
    every count both packages draw is the body sans at the body size with
@@ -175,31 +169,12 @@ export const scaleLadderStylesheet = `
   color: var(--ig-text);
 }
 
-/* END-ALIGNED AND CONTENT-WIDTH. A grid item stretches by default, which drew
-   the cycle badge as a full-width bar across the top of the card. The pill is
-   the frame's: the blocked count and the cycle sit in one slot, so they read as
-   one kind of thing rather than as a bordered badge beside bare text.
-
-   THE BLOCKED COUNT IS A COUNT, so it takes the body type every count takes.
-   The cycle stands in the same slot on a stuck card, but it is a tag, not a
-   count, so it has a rule of its own below. */
-.ig-capsule-load {
-  grid-column: 2;
-  justify-self: end;
-  background: var(--ig-bg);
-  border: var(--ig-stroke) solid var(--ig-line);
-  border-radius: var(--ig-radius);
-  padding: var(--ig-space-micro) var(--ig-space-snug);
-  font-family: var(--ig-font-ui);
-  font-size: var(--ig-font-size);
-  font-variant-numeric: tabular-nums;
-  color: var(--ig-text-muted);
-}
+/* NO BLOCKED COUNT (issue 296): the export's group card draws none, so the
+   chip that held it, and its rule, are gone. */
 
 /* THE CYCLE IS A TAG IN THE ERROR STATE, as the export draws its loop tag: the
    small role in the sans at medium weight, the failed state's colour on the
-   failed state's own fill, in the slot the blocked count holds on any other
-   card. The theme carries no pill radius, so the corner is the large radius,
+   failed state's own fill, at the end of the count's row. The theme carries no pill radius, so the corner is the large radius,
    which rounds a tag this tall fully. The fill is the theme's error fill since
    issue 293, so a host maps it to its own; it was the state colour mixed at
    the chip tint, which no host role could name. The tag is the wide space
@@ -223,9 +198,11 @@ export const scaleLadderStylesheet = `
 /* THE NAME AND THE REACH SPAN BOTH COLUMNS, and the name is the one part
    allowed to wrap: a title is arbitrary length, and letting it size the grid
    would make every card on the board a different shape. */
+/* IN MUTED INK (issue 296), as the export's group card sets its "Around …"
+   line: the count above it is the part read first. */
 .ig-capsule-name {
   grid-column: 1 / -1;
-  color: var(--ig-text);
+  color: var(--ig-text-muted);
   min-width: 0;
   overflow-wrap: anywhere;
 }

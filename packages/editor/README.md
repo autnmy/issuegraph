@@ -109,18 +109,17 @@ auditRowAttributes(overlay, ref);    // {} for a clean row; the severity mark fo
 
 **"Long-closed" is not available here.** A document carries no timestamp, so every closed blocker is reported — the safe direction for a finding whose whole severity is `misleading`, and one a host can narrow with a date it does have.
 
-**Three classes are a list; the fourth is its own block.** `renderAuditPanel` draws the cycle, the stale blocker and the dead duplicate ref as cards, because each says something about a relationship that exists. `renderEncodingRefusedBlock` draws the refusal separately — SPEC surfaces it *"on the issue itself, because until it parses the issue has no edges at all and would otherwise look simply unencoded"* — with the ref, the reader's diagnostic, the offending source line, and two controls.
+**Every finding is a note in one panel.** `renderAuditPanel` draws each finding as a note in its state, with its icon, title, sentence and remedies, under one title counting every finding. Unreadable relationships are notes there too, drawn from the refusals you pass, with the ref and the reader's diagnostic as one sentence, and two controls (`refusedOpen`, `refusedRewrite`).
 
 ```ts
-import { renderAuditPanel, renderEncodingRefusedBlock } from '@issuegraph/editor';
+import { renderAuditPanel } from '@issuegraph/editor';
 
-renderAuditPanel(overlay, { words, known, edges });               // the three relationship findings
-renderEncodingRefusedBlock(encodingRefused, { words, known, issueUrl });
+renderAuditPanel(overlay, { words, known, edges, refusals: encodingRefused, issueUrl });
 ```
 
 `known` is the issue refs your surface draws and `edges` the edge ids it draws — both answered by you, not derived here, because the audit reads a document that is not always the one on screen. They gate the controls: a remedy that selects an edge your surface does not hold would clear the reader's selection and open nothing, so it is withheld. The finding is still drawn; it is the control that is withheld, never the information.
 
-Both return `null` when they have nothing to draw. `renderWorkspace` composes them for you into §17d's overlay over the **canvas** — anchored to the header count, dismissed on Escape, and never over the rail, because judging a finding is largely a question of what it would do to the order.
+It returns `null` when the audit found nothing. `renderWorkspace` composes it for you into §17d's overlay over the **canvas** — anchored to the header count, dismissed on Escape, and never over the rail, because judging a finding is largely a question of what it would do to the order.
 
 **Two counts, and they are different numbers.** `renderAuditHeader`'s count is every finding — it is the persistent control, it sits in the workspace chrome beside both surfaces, and a reader works through all four classes. The count in the *panel's own head* is that panel's own cards, because it is enclosed by the list it counts.
 

@@ -180,6 +180,9 @@ export {
   glyphAndLabel,
   hiddenGlyph,
   identity,
+  // The `#` a bare issue number carries wherever a reader sees it (#296), so
+  // layer 2 draws a ref the way the rail does.
+  issueNumber,
   provenanceClause,
 } from './parts.ts';
 
@@ -187,4 +190,6 @@ export type { Cluster, ClusterReach } from './clusters.ts';
 export { clusterReach, clusterReachLabel, clustersOf } from './clusters.ts';
 
 export type { AttrValue, ElementSpec, SpecChild } from './element.ts';
-export { element, renderMarkup } from './element.ts';
+// `svg` builds a spec in the SVG namespace, for `@issuegraph/editor`'s note
+// icons (#296): an icon built with `element` draws nothing once mounted.
+export { element, renderMarkup, svg } from './element.ts';

@@ -175,6 +175,10 @@ const paper = extendTheme(defaultTheme, {
     '--ig-state-conflict': '#5C4300',
     // The light ground a failed tag's word sits on.
     '--ig-state-failed-fill': '#F6E3DC',
+    // The light ground an attention note's title sits on.
+    '--ig-state-conflict-fill': '#F7EDD3',
+    // The paper accent, for work in flight.
+    '--ig-state-progress': '#0A5B8A',
     // The export's light fill-strong: its dark ink at 8% over the ground.
     '--ig-fill-strong': 'rgb(25 28 34 / 0.08)',
     // The two state hues again, for the dot that marks each state.

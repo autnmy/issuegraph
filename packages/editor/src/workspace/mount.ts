@@ -1669,7 +1669,8 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // right while the scrolling element and the tab stop were one element; they
     // are not any more — the region scrolls and its members carry the stops —
     // so the answer has to name which stop, and it is restored by the same name.
-    const AUDIT_STOPS = ['.ig-audit-refused', '.ig-audit-panel'] as const;
+    // ONE SINCE #296: the refused block's notes moved into the panel.
+    const AUDIT_STOPS = ['.ig-audit-panel'] as const;
     const auditStop = isElement(active)
       ? (AUDIT_STOPS.find((one) => active.matches(one)) ?? null)
       : null;

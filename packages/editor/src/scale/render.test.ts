@@ -54,14 +54,16 @@ describe('the ladder and the canvas agree about the count', () => {
 });
 
 describe('the refusal, as a reader sees it', () => {
-  it('states the reason and lists at least one labelled route', () => {
+  it('states the reason and draws no route lines, as the export\u2019s board draws none (#296)', () => {
     const result = renderScaleLadder(relatedDocument(GRAPH_NODE_BUDGET + 1));
     const refusal = result.ladder.refusal;
     assert.ok(refusal !== null);
     assert.ok(result.markup.includes(refusal.reason));
-    assert.match(result.markup, /class="ig-ladder-routes"/);
+    // The routes stay on the refusal for a host; the board draws none of them.
+    assert.ok(refusal.routes.length > 0, 'the refusal lost its routes');
+    assert.equal(/ig-ladder-routes|ig-refusal-next/.test(result.markup), false, 'the board draws route lines');
     for (const route of refusal.routes) {
-      assert.ok(result.markup.includes(route.label), `route ${route.kind} was not rendered`);
+      assert.equal(result.markup.includes(route.label), false, `route ${route.kind} was rendered`);
     }
   });
 
@@ -92,8 +94,9 @@ describe('the refusal, as a reader sees it', () => {
     assert.match(
       result.markup,
       new RegExp(
-        `<span class="ig-capsule-size">${String(capsule.size)}</span>` +
-          `<span class="ig-capsule-load">\u2298 ${String(capsule.blockedByEdges)}</span>` +
+        // A count with its noun since #296, as the export's group card reads it.
+        `<span class="ig-capsule-size">${String(capsule.size)} issues</span>` +
+          // No blocked count since #296: the export's group card draws none.
           // THE NAME SLOT NOW HOLDS THE ANCHOR, not a bare title: RULINGS.md
           // §4 identifies a capsule by "around #488 · <title>" because a
           // connected component has no name to invent. The ORDER this test
@@ -164,7 +167,8 @@ describe('the refusal, as a reader sees it', () => {
     assert.ok(card !== undefined);
     assert.match(card, />Loop</);
     assert.match(card, />Nothing can start</);
-    // The tint the frame puts on the whole stuck card is a rule on this hook.
+    // The hook stays on the stuck card, for a host that wants to style it;
+    // this sheet marks it with the tag alone (#296).
     assert.match(card, /data-reach="cyclic"/);
     assert.equal(/longest chain/i.test(card), false);
     // THE REACH SLOT, not a bare digit probe over the whole card: the size, the

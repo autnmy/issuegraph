@@ -118,16 +118,12 @@ describe('the leaves size nothing, and ring the stops their markup declares', ()
   }
 
   /**
-   * BOTH SURFACES, BECAUSE §17d HAS TWO NOW. `./refused.ts` draws the fourth
-   * class outside the findings list, and every rule below is as true of it as of
-   * the panel — a leaf that sized itself would be wrong in every composition but
-   * one, and a leaf that scrolled would nest a second scroller inside the region
-   * that already scrolls. Written as a table so a third surface inherits the
-   * boundary instead of being reviewed into it.
+   * ONE SURFACE SINCE #296: the refused block's notes moved into the panel.
+   * Written as a table so a second surface inherits the boundary instead of
+   * being reviewed into it.
    */
   const SURFACES: readonly (readonly [string, string])[] = [
     ['.ig-audit-panel', '.ig-audit-list'],
-    ['.ig-audit-refused', '.ig-audit-refused-list'],
   ];
 
   for (const [surface, list] of SURFACES) {
@@ -239,11 +235,6 @@ describe('the problems panel head is one title with the count inside it (#288)',
     assert.equal(declaredOn(css, '.ig-audit-panel-heading', 'letter-spacing'), undefined, 'the title is still tracked');
   });
 
-  it('gives the refused block’s heading, the panel’s peer, the same type', () => {
-    assert.deepEqual(typeMisses(css, ['.ig-audit-refused-heading'], TITLE), []);
-    assert.equal(declaredOn(css, '.ig-audit-refused-heading', 'text-transform'), undefined, 'the peer heading is still capitalised');
-  });
-
   it('draws the count in the title’s own ink and size, not gold, in the sans with tabular figures', () => {
     const inside = ['.ig-audit-panel', '.ig-audit-panel-head', '.ig-audit-panel-heading'];
     assert.equal(declaredOn(css, '.ig-audit-panel-count', 'color', inside)?.value, 'inherit');
@@ -317,5 +308,71 @@ describe('the header count leads with the dot of the worst problem (#293)', () =
     // dot wearing it would draw that bar whatever its class.
     assert.notEqual(AUDIT_WORST_ATTRIBUTE, AUDIT_SEVERITY_ATTRIBUTE);
     assert.equal(declaredOn(css, dot('cycle'), 'box-shadow', inside), undefined);
+  });
+});
+
+describe('each finding is drawn as the export’s note (#296)', () => {
+  const css = `${viewerStylesheet}\n${auditStylesheet}`;
+  const inside = ['.ig-audit-panel', '.ig-audit-list'];
+
+  it('sets each note on its state’s fill, its title in the state’s hue and its sentence in text ink', () => {
+    const NOTES: readonly (readonly [string, string, string])[] = [
+      ["error", 'var(--ig-state-failed-fill)', 'var(--ig-state-failed)'],
+      ["attention", 'var(--ig-state-conflict-fill)', 'var(--ig-state-conflict)'],
+      ["neutral", 'var(--ig-surface-2)', 'var(--ig-text)'],
+    ];
+    for (const [state, fill, hue] of NOTES) {
+      const card = `.ig-audit-card[data-s='${state}']`;
+      assert.equal(declaredOn(css, card, 'background', inside)?.value, fill, `${state} note fill`);
+      assert.equal(declaredOn(css, '.ig-audit-title', 'color', [...inside, card])?.value, hue, `${state} note title`);
+      assert.equal(declaredOn(css, '.ig-audit-detail', 'color', [...inside, card])?.value, 'var(--ig-text)', `${state} note sentence`);
+      assert.equal(declaredOn(css, card, 'border', inside), undefined, `${state} note draws a border`);
+    }
+  });
+
+  it('draws each note\u2019s icon at the export\u2019s size and stroke, in its state\u2019s ink (#296)', () => {
+    const ICON: Readonly<Record<string, string>> = {
+      'block-size': 'var(--ig-space-loose)',
+      'inline-size': 'var(--ig-space-loose)',
+      fill: 'none',
+      stroke: 'currentColor',
+      'stroke-width': 'var(--ig-stroke)',
+    };
+    for (const [property, expected] of Object.entries(ICON)) {
+      assert.equal(declaredOn(css, '.ig-audit-icon', property, [...inside, '.ig-audit-card'])?.value, expected, `the icon's ${property}`);
+    }
+    const INK: readonly (readonly [string, string])[] = [
+      ['error', 'var(--ig-state-failed)'],
+      ['attention', 'var(--ig-state-conflict)'],
+      ['neutral', 'var(--ig-text)'],
+    ];
+    for (const [state, ink] of INK) {
+      assert.equal(declaredOn(css, '.ig-audit-icon', 'color', [...inside, `.ig-audit-card[data-s='${state}']`])?.value, ink, `${state} icon ink`);
+    }
+  });
+
+  it('draws no refused block of its own any more', () => {
+    const bare = auditStylesheet.replace(/\/\*[\s\S]*?\*\//g, '');
+    assert.equal(/\.ig-audit-refused(?:-heading|-list|-card|-controls)?\s*[{,:]/.test(bare), false, 'a rule still styles the refused block');
+  });
+
+  it('styles no class chip, walk line or show button any more', () => {
+    const bare = auditStylesheet.replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const gone of ['.ig-audit-chip', '.ig-audit-walk', '.ig-audit-show']) {
+      assert.equal(bare.includes(gone), false, `${gone} still has a rule`);
+    }
+  });
+});
+
+describe('the panel head\u2019s filter is a ghost button, as the export draws it (#296 design read)', () => {
+  const css = `${viewerStylesheet}\n${auditStylesheet}`;
+
+  it('draws no edge and no fill at rest, the second fill on hover, and accent words with no edge when on', () => {
+    assert.match(css, /\.ig-audit-filter \{[^}]*background: none;[^}]*border: 0;/);
+    assert.match(css, /\.ig-audit-filter:hover \{[^}]*background: var\(--ig-surface-2\);/);
+    const on = /\.ig-audit-filter\[aria-pressed='true'\] \{([^}]*)\}/.exec(css);
+    assert.ok(on !== null, 'the pressed rule is gone');
+    assert.match(on[1] ?? '', /color: var\(--ig-accent\);/);
+    assert.equal(/border/.test(on[1] ?? ''), false, 'the pressed filter draws an edge');
   });
 });
