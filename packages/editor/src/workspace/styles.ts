@@ -228,6 +228,27 @@ export const workspaceStylesheet = `
   font-size: var(--ig-font-size-small);
 }
 
+/* ONE SIZE ON THE LINE (#254 design read): the export draws the counts and the
+   freshness as one muted span ("312 open, 64 with relationships, as of 2m
+   ago" in its words), so the freshness takes the body size beside the counts. It stays out
+   of the counts rule because a time takes no tabular figures. */
+.ig-workspace-freshness {
+  font-size: var(--ig-font-size);
+}
+
+/* BUT THE PAIR IS A COUNT, AND A COUNT IS BODY TEXT. It takes the body size
+   with tabular figures, as every count both packages draw does; quiet is the
+   muted colour above, not a smaller size. Its two numbers are .ig-workspace-count
+   rather than layer 1's .ig-id, which names an issue rather than counting
+   anything. The stamp beside it is a time, not a count, so it takes no
+   tabular figures and keeps a rule of its own. */
+.ig-workspace-counts,
+.ig-workspace-count {
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size);
+  font-variant-numeric: tabular-nums;
+}
+
 /* THE ONLY TREATMENT STALENESS GETS, and it is why the stamp carries no word
    for it: the state is on the element, so the sheet says what a stale read
    looks like and no host has to translate an adjective. */
@@ -331,14 +352,23 @@ export const workspaceStylesheet = `
   padding: var(--ig-space-tight) var(--ig-space);
   border-top: var(--ig-stroke) solid var(--ig-line);
   background: var(--ig-bg);
-  font-family: var(--ig-font-mono);
-  font-size: var(--ig-font-size-small);
+  /* A COUNT AND ITS WORDS, SO BODY TEXT. '5 with no relationships' is read as a
+     number, and the mono face it was set in is for keys; tabular figures keep
+     the number from wandering as it changes. The mount measures this footer's
+     height rather than deriving it, so the larger size moves nothing it
+     reserves. */
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size);
+  font-variant-numeric: tabular-nums;
   line-height: var(--ig-line-height);
   color: var(--ig-text-body);
 }
 
 .ig-rail-count {
   color: var(--ig-text);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size);
+  font-variant-numeric: tabular-nums;
 }
 
 .ig-rail-isolated-toggle {
@@ -422,8 +452,12 @@ export const workspaceStylesheet = `
    not: layer 1's is the isolated-issue tally that "sits directly on the panel,
    outside the padded groups, so it carries the panel's own inset" — 12px 20px of
    it. Borrowing the name put that inset around two numbers in the middle of a
-   sentence, which is what the frame comparison caught. */
+   sentence, which is what the frame comparison caught. It states the type it
+   would otherwise inherit from the caption, so a rule that later moved the
+   caption could not carry the count back to mono or a smaller size. */
 .ig-canvas-count {
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size);
   font-variant-numeric: tabular-nums;
 }
 

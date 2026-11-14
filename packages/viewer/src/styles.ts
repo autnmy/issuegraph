@@ -164,11 +164,15 @@ ${scope} .ig-slot[data-unit='true'] .ig-unit {
 
 /* The marker itself: the glyph and the count, on the title's line. It is a
    COUNT and not a pill here because 53px has no room for one, and because
-   the pill's words are already the accessible name's. */
+   the pill's words are already the accessible name's. Like every count this
+   package draws it is body sans at the body size with tabular figures; mono
+   is kept for keys. */
 ${scope} .ig-unit-count {
   color: var(--ig-edge-together-with);
   display: inline;
-  font-family: var(--ig-font-mono);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size);
+  font-variant-numeric: tabular-nums;
   margin-right: var(--ig-space-tight);
 }
 
@@ -451,7 +455,12 @@ export const viewerStylesheet = `
 /* THE COUNTS ARE CHIPS, NOT A SENTENCE. The frame gives each tally its own
    outline and tints only the one a reader acts on — "how many could run right
    now, against the cap" — so the accent is spent once instead of on a whole
-   line of muted prose. */
+   line of muted prose.
+
+   A COUNT IS BODY TEXT, NOT A KEY. It is set in the body sans at the body
+   size, and tabular figures keep its digits from wandering, which was the one
+   thing the small mono gave it. Mono is kept for what a reader copies as typed,
+   such as a label:P0 key; an issue number is read, so it is sans too. */
 .ig-counts {
   align-items: center;
   display: flex;
@@ -465,8 +474,8 @@ export const viewerStylesheet = `
   border: var(--ig-stroke) solid var(--ig-line);
   border-radius: var(--ig-radius);
   color: var(--ig-text-body);
-  font-family: var(--ig-font-mono);
-  font-size: var(--ig-font-size-small);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size);
   font-variant-numeric: tabular-nums;
   padding: var(--ig-space-micro) var(--ig-space-snug);
 }
@@ -477,11 +486,13 @@ export const viewerStylesheet = `
   color: var(--ig-text);
 }
 
+/* The small role in the sans, as the explanation lines are: one face and one
+   size on the line, the time inside it included (see .ig-freshness .ig-id). */
 .ig-freshness {
   align-items: center;
   color: var(--ig-text-muted);
   display: inline-flex;
-  font-family: var(--ig-font-mono);
+  font-family: var(--ig-font-ui);
   font-size: var(--ig-font-size-small);
   font-variant-numeric: tabular-nums;
   gap: var(--ig-space-tight);
@@ -551,12 +562,13 @@ export const viewerStylesheet = `
   margin: 0;
 }
 
-/* A COUNT, SO IT SITS ON THE FIGURE FACE. A progress figure is read as a number,
-   and the proportional face makes its digits wander the way a rank column's do. */
+/* A COUNT, SO IT TAKES TABULAR FIGURES. A progress figure is read as a number,
+   and proportional digits wander the way a rank column's would. Tabular figures
+   in the body sans hold them still; the mono face is for keys, not counts. */
 .ig-notice-progress {
   color: var(--ig-text-muted);
-  font-family: var(--ig-font-mono);
-  font-size: var(--ig-font-size-small);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size);
   font-variant-numeric: tabular-nums;
   margin: 0;
 }
@@ -1056,11 +1068,22 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   padding: var(--ig-space) var(--ig-space-wide);
 }
 
-.ig-id,
+/* AN ISSUE NUMBER IS READ AS A NUMBER, NOT COPIED AS A KEY. The design draws
+   it as its muted .num: the body sans at the body size, with tabular figures so
+   a column of numbers lines up. Mono is kept for what a reader copies as typed,
+   such as a label:P0 key. The count beside it takes the same type; it keeps a
+   rule of its own because the tally's inset above is not the number's. */
+.ig-id {
+  color: var(--ig-text-muted);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size);
+  font-variant-numeric: tabular-nums;
+}
+
 .ig-count {
   color: var(--ig-text-muted);
-  font-family: var(--ig-font-mono);
-  font-size: var(--ig-font-size-small);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1077,15 +1100,22 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 /* THE PROVENANCE LINE IS NOT MUTED. It is the answer to "why is this here",
    which is the panel's whole reason to exist, so the frame gives it body text
    and lifts the named parts to the brightest ink on the page. Muting the whole
-   sentence — which is what shipped — files the explanation under decoration. */
+   sentence — which is what shipped — files the explanation under decoration.
+
+   ONE FACE AND ONE SIZE PER LINE. The line is the small role in the sans, with
+   tabular figures for the numbers in it; it was small mono, which left a sans
+   issue number at the body size sitting inside it. The numbers in it inherit
+   its size (below), and the one key a reader copies, .ig-copy-key, is mono at
+   that same size. */
 .ig-provenance,
 .ig-hold,
 .ig-caveat {
   align-items: baseline;
   color: var(--ig-text-body);
   display: flex;
-  font-family: var(--ig-font-mono);
+  font-family: var(--ig-font-ui);
   font-size: var(--ig-font-size-small);
+  font-variant-numeric: tabular-nums;
   gap: var(--ig-space-tight);
   margin: 0;
 }
@@ -1094,6 +1124,24 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 .ig-hold .ig-id,
 .ig-caveat .ig-id {
   color: var(--ig-text);
+}
+
+/* A NUMBER IN A SMALL LINE READS SMALL. .ig-id gives an issue number the body
+   size on its own; inside an explanation line or the freshness stamp it takes
+   the line's size instead, so the line keeps one size. */
+.ig-provenance .ig-id,
+.ig-hold .ig-id,
+.ig-caveat .ig-id,
+.ig-freshness .ig-id {
+  font-size: inherit;
+}
+
+/* A KEY A READER COPIES AS TYPED, such as label:P0, is the one thing set mono.
+   It takes no size of its own, so it reads at the size of whatever line it
+   sits in; tabular figures because a key can carry digits. */
+.ig-copy-key {
+  font-family: var(--ig-font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 /* The turnstile the frame puts in front of every explanation, so the line reads
@@ -1223,6 +1271,18 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 .ig-badge[data-not-ready='true'] {
   background: color-mix(in srgb, var(--ig-edge-blocked-by) var(--ig-tint-fill), transparent);
   border-color: color-mix(in srgb, var(--ig-edge-blocked-by) var(--ig-tint-border), transparent);
+}
+
+/* THE OVERFLOW CHIP IS A COUNT, NOT A RELATIONSHIP. '+12 more relationships'
+   names no edge, so it takes the body type every count takes rather than the
+   chip's micro mono. The graph card's height is reserved before anything is
+   drawn, so the layout measures this chip at the body size too (see
+   packedRows in layout.ts); a chip this rule enlarged and the layout did not
+   would overrun its card and be drawn over by the next. */
+.ig-badge[data-omitted] {
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size);
+  font-variant-numeric: tabular-nums;
 }
 
 .ig-glyph {
@@ -1950,17 +2010,26 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   text-transform: uppercase;
 }
 
+/* THE KEYS LINE TAKES THE SMALL ROLE, IN THE SANS. Its words are a legend, not
+   keys a reader types, so they are not mono; and a legend explains the drawing
+   rather than competing with it, so it sits a step below the body in muted
+   ink. Tabular figures as everywhere a figure appears. Each item's glyph keeps
+   the mono face .ig-glyph gives it. */
 .ig-legend-item {
   align-items: center;
-  color: var(--ig-text-body);
+  color: var(--ig-text-muted);
   display: inline-flex;
-  font-family: var(--ig-font-mono);
-  font-size: var(--ig-font-size-meta);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+  font-variant-numeric: tabular-nums;
   gap: var(--ig-space-tight);
 }
 
 .ig-legend-keys {
   display: inline-flex;
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+  font-variant-numeric: tabular-nums;
   gap: var(--ig-space-loose);
   margin-inline-start: auto;
 }

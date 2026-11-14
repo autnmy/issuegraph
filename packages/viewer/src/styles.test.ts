@@ -856,3 +856,298 @@ describe('the recede rules win over every card and station variant', () => {
     assert.deepEqual([...new Set([...shares, ...opacities])], [RECEDE_ALPHA]);
   });
 });
+
+/**
+ * #254, AS THE REDESIGN LEAD RULED IT: every count this package draws, and
+ * every issue number, is the body sans at the body size with tabular figures,
+ * not the small mono; the keys line (the legend bar) takes the small role in
+ * the same sans. Mono is kept only for keys a reader copies, such as label:P0.
+ *
+ * jsdom is not a dependency here, so this reads the cascade off the sheet
+ * itself, and PESSIMISTICALLY: a rule counts when its last compound can select
+ * the element, whatever its ancestors are and whatever state it names, and a
+ * container query is taken to hold — a count that reads mono in one context is
+ * the defect. A pseudo-element styles another box, so it never counts. The
+ * editor's tests carry the same reading in `testing/counts.ts`; a package test
+ * reaching into a sibling's source is the seam `check:isolation` keeps.
+ */
+const COUNT_TYPE: Readonly<Record<string, string>> = Object.freeze({
+  'font-family': 'var(--ig-font-ui)',
+  'font-size': 'var(--ig-font-size)',
+  'font-variant-numeric': 'tabular-nums',
+});
+
+/** The small role the legend bar takes: the same sans, a step below the body. */
+const SMALL_TYPE: Readonly<Record<string, string>> = Object.freeze({
+  'font-family': 'var(--ig-font-ui)',
+  'font-size': 'var(--ig-font-size-small)',
+  'font-variant-numeric': 'tabular-nums',
+});
+
+/**
+ * What an issue number keeps in EVERY context: the sans and tabular figures.
+ * A context may size or colour it — a card's identity line is smaller — so only
+ * these two are read pessimistically; the base rule is read on its own below.
+ */
+const ISSUE_NUMBER_TYPE: Readonly<Record<string, string>> = Object.freeze({
+  'font-family': 'var(--ig-font-ui)',
+  'font-variant-numeric': 'tabular-nums',
+});
+
+/** One attribute selector, or one attribute an element carries. */
+interface CountAttribute {
+  readonly name: string;
+  readonly operator: string | null;
+  readonly value: string | null;
+}
+
+/** One compound selector: what an element must be to match it. `tag: null` matches any tag. */
+interface CountCompound {
+  readonly tag: string | null;
+  readonly classes: readonly string[];
+  readonly attributes: readonly CountAttribute[];
+}
+
+/** How an attribute selector's operator compares the value it names with the one the element holds. */
+const ATTRIBUTE_OPERATORS: Readonly<Record<string, (wanted: string, held: string) => boolean>> = {
+  '=': (wanted, held) => held === wanted,
+  '~=': (wanted, held) => held.split(/\s+/).includes(wanted),
+};
+
+/** A compound's parts with every pseudo-class removed, or null when it is not a plain compound. */
+function countCompoundOf(text: string): CountCompound | null {
+  const bare = text.replace(/:[\w-]+(?:\([^()]*\))?/g, '');
+  const tag = /^(?:\*|[a-z][\w-]*)/i.exec(bare)?.[0] ?? null;
+  const rest = bare.slice(tag?.length ?? 0);
+  const parts = rest.match(/\.[\w-]+|\[[^\]]*\]/g) ?? [];
+  if (parts.join('') !== rest || (tag === null && parts.length === 0)) return null;
+  const attributes = parts
+    .filter((part) => part.startsWith('['))
+    .map((part) => /^\[\s*([\w-]+)\s*(?:([~|^$*]?=)\s*(?:'([^']*)'|"([^"]*)"|([^\s\]]+)))?\s*\]$/.exec(part));
+  if (attributes.some((match) => match === null)) return null;
+  return {
+    tag: tag === '*' ? null : tag,
+    classes: parts.filter((part) => part.startsWith('.')).map((part) => part.slice(1)),
+    attributes: attributes
+      .filter((match): match is RegExpExecArray => match !== null)
+      .map((match) => ({ name: match[1] ?? '', operator: match[2] ?? null, value: match[3] ?? match[4] ?? match[5] ?? null })),
+  };
+}
+
+/** Whether a rule's compound can select an element that is exactly `element`. */
+function canStyleCount(rule: CountCompound, element: CountCompound): boolean {
+  if (rule.tag !== null && rule.tag !== element.tag) return false;
+  return (
+    rule.classes.every((name) => element.classes.includes(name)) &&
+    rule.attributes.every((wanted) =>
+      element.attributes.some((held) => {
+        if (held.name !== wanted.name) return false;
+        const compare = wanted.operator === null ? undefined : ATTRIBUTE_OPERATORS[wanted.operator];
+        // An operator this reading does not model matches on presence, so it
+        // over-counts a rule rather than missing one.
+        return compare === undefined || compare(wanted.value ?? '', held.value ?? '');
+      }),
+    )
+  );
+}
+
+/**
+ * Whether a selector's ancestor compounds can all be found, in order, among
+ * `ancestors` (outermost first). Every combinator is read as a descendant one,
+ * which only ever lets a rule match more.
+ */
+function withinAncestors(selector: string, ancestors: readonly CountCompound[]): boolean {
+  const wanted = selector.split(/[\s>+~]+/).filter((part) => part !== '').slice(0, -1);
+  let at = ancestors.length - 1;
+  for (let index = wanted.length - 1; index >= 0; index -= 1) {
+    const compound = countCompoundOf(wanted[index] ?? '');
+    if (compound === null) return false;
+    while (at >= 0) {
+      const held = ancestors[at];
+      if (held !== undefined && canStyleCount(compound, held)) break;
+      at -= 1;
+    }
+    if (at < 0) return false;
+    at -= 1;
+  }
+  return true;
+}
+
+/**
+ * What the cascade gives `property` on an element that is exactly `target`:
+ * the most specific rule that can style it, and of those the last. The `font`
+ * shorthand resets all three properties, so it is read as setting each.
+ *
+ * WITH `ancestors` (outermost first) the element sits inside exactly those, and
+ * a rule whose ancestor compounds they cannot supply does not apply — so a
+ * number inside a provenance line is read as that line's number. Without them,
+ * any ancestor is taken as present.
+ */
+function declaredOn(
+  css: string,
+  target: string,
+  property: string,
+  ancestors?: readonly string[],
+): { value: string; selector: string } | undefined {
+  const element = countCompoundOf(target);
+  assert.ok(element !== null, `${target} is not a compound selector`);
+  const context = ancestors?.map((one) => {
+    const compound = countCompoundOf(one);
+    assert.ok(compound !== null, `${one} is not a compound selector`);
+    return compound;
+  });
+  let winner: { rank: number; value: string; selector: string } | undefined;
+  for (const rule of declaredRules(css)) {
+    if (rule.selector.includes('::')) continue;
+    const styled = countCompoundOf(styledCompound(rule.selector));
+    if (styled === null || !canStyleCount(styled, element)) continue;
+    if (context !== undefined && !withinAncestors(rule.selector, context)) continue;
+    for (const { name, value } of rule.declarations) {
+      if (name !== property && name !== 'font') continue;
+      const rank = specificity(rule.selector) + (value.includes('!important') ? 1_000_000 : 0);
+      if (winner === undefined || rank >= winner.rank) {
+        winner = { rank, value: name === 'font' ? `font: ${value}` : value, selector: rule.selector };
+      }
+    }
+  }
+  return winner === undefined ? undefined : { value: winner.value, selector: winner.selector };
+}
+
+/** Every one of `targets` the cascade does not give `type`, one line per property. */
+function typeMisses(css: string, targets: readonly string[], type: Readonly<Record<string, string>>): string[] {
+  return targets.flatMap((target) =>
+    Object.entries(type).flatMap(([property, expected]) => {
+      const declared = declaredOn(css, target, property);
+      return declared?.value === expected
+        ? []
+        : [`${target} reads ${property}: ${declared?.value ?? 'nothing'} (from ${declared?.selector ?? 'no rule'})`];
+    }),
+  );
+}
+
+/**
+ * `css` with a later rule on the selector that gives `target` its `property`
+ * today, setting `value` — so it ties that rule on specificity and wins on
+ * order, the shape a careless later edit takes.
+ */
+function withLaterRule(css: string, target: string, property: string, value: string): string {
+  const winner = declaredOn(css, target, property);
+  assert.ok(winner !== undefined, `no rule sets ${property} on ${target}`);
+  return `${css}\n${winner.selector} {\n  ${property}: ${value};\n}\n`;
+}
+
+describe('every count and every issue number is body text, and the keys line is the small role (#254)', () => {
+  // Every count the viewer draws, the overflow chip among them — it is a
+  // count, not an edge.
+  const COUNTS = ['.ig-count-chip', '.ig-count', '.ig-notice-progress', '.ig-unit-count', '.ig-badge[data-omitted]'];
+  // "The keys line" names no class; in this package it is the legend bar's
+  // items and its readiness keys.
+  const SMALL = ['.ig-legend-item', '.ig-legend-keys'];
+
+  it('sets the body sans, the body size and tabular figures on each count, as the last rule that can style it', () => {
+    assert.deepEqual(typeMisses(viewerStylesheet, COUNTS, COUNT_TYPE), []);
+  });
+
+  it('fails a later rule that puts the mono face or a smaller size back on a count', () => {
+    const wrong: readonly (readonly [string, string])[] = [
+      ['font-family', 'var(--ig-font-mono)'],
+      ['font-size', 'var(--ig-font-size-small)'],
+    ];
+    for (const target of COUNTS) {
+      for (const [property, value] of wrong) {
+        const later = withLaterRule(viewerStylesheet, target, property, value);
+        assert.notDeepEqual(typeMisses(later, [target], COUNT_TYPE), [], `${target} passed with ${property}: ${value} put back`);
+      }
+    }
+  });
+
+  it('sets the legend bar at the small role, in the sans with tabular figures, its items muted', () => {
+    assert.deepEqual(typeMisses(viewerStylesheet, SMALL, SMALL_TYPE), []);
+    // Read in the legend's own context: the reader otherwise assumes any ancestor, and the
+    // current rail card's `.ig-card *` colour rule would stand in for a legend item it never holds.
+    assert.equal(declaredOn(viewerStylesheet, '.ig-legend-item', 'color', ['.ig-viewer', '.ig-legend'])?.value, 'var(--ig-text-muted)');
+  });
+
+  it('fails a later rule that puts the mono face or a smaller size on the legend bar', () => {
+    const wrong: readonly (readonly [string, string])[] = [
+      ['font-family', 'var(--ig-font-mono)'],
+      ['font-size', 'var(--ig-font-size-micro)'],
+    ];
+    for (const target of SMALL) {
+      for (const [property, value] of wrong) {
+        const later = withLaterRule(viewerStylesheet, target, property, value);
+        assert.notDeepEqual(typeMisses(later, [target], SMALL_TYPE), [], `${target} passed with ${property}: ${value} put back`);
+      }
+    }
+  });
+
+  it('draws an issue number as the design’s muted number: the sans at the body size, tabular figures', () => {
+    // AN ISSUE NUMBER IS READ, NOT COPIED, so it is not mono. The base rule
+    // carries the whole treatment; a context may resize or recolour it (a
+    // card's identity line is smaller), but no context may put the mono face
+    // back or drop the tabular figures.
+    assert.deepEqual(typeMisses(viewerStylesheet, ['.ig-id'], ISSUE_NUMBER_TYPE), []);
+    const base = declaredRules(viewerStylesheet).filter((rule) => rule.selector === '.ig-id');
+    assert.deepEqual(
+      Object.fromEntries(base.flatMap((rule) => rule.declarations.map(({ name, value }) => [name, value]))),
+      {
+        color: 'var(--ig-text-muted)',
+        'font-family': 'var(--ig-font-ui)',
+        'font-size': 'var(--ig-font-size)',
+        'font-variant-numeric': 'tabular-nums',
+      },
+    );
+    const later = withLaterRule(viewerStylesheet, '.ig-id', 'font-family', 'var(--ig-font-mono)');
+    assert.notDeepEqual(typeMisses(later, ['.ig-id'], ISSUE_NUMBER_TYPE), [], 'an issue number passed in the mono face');
+  });
+});
+
+describe('one face and one size per explanation line, and a copied key is mono at it (#254)', () => {
+  // The provenance, hold and caveat lines and the freshness stamp: the small
+  // role in the sans. A number in one inherits the line's size; the one key a
+  // reader copies (label:P0) is `.ig-copy-key`, mono at the line's size.
+  const LINES = ['.ig-provenance', '.ig-hold', '.ig-caveat', '.ig-freshness'];
+
+  it('sets each line in the sans at the small size with tabular figures, as the last rule that can style it', () => {
+    assert.deepEqual(typeMisses(viewerStylesheet, LINES, SMALL_TYPE), []);
+  });
+
+  it('fails a later rule that puts the mono face or a smaller size on a line', () => {
+    const wrong: readonly (readonly [string, string])[] = [
+      ['font-family', 'var(--ig-font-mono)'],
+      ['font-size', 'var(--ig-font-size-micro)'],
+    ];
+    for (const target of LINES) {
+      for (const [property, value] of wrong) {
+        const later = withLaterRule(viewerStylesheet, target, property, value);
+        assert.notDeepEqual(typeMisses(later, [target], SMALL_TYPE), [], `${target} passed with ${property}: ${value} put back`);
+      }
+    }
+  });
+
+  it('draws an issue number inside a line at the line’s size, not the body size', () => {
+    // READ IN CONTEXT: the number sits inside the viewer and the line, and in
+    // nothing else, so a rule for a number on a card does not stand in for it.
+    for (const line of LINES) {
+      const inside = ['.ig-viewer', line];
+      assert.equal(declaredOn(viewerStylesheet, '.ig-id', 'font-size', inside)?.value, 'inherit', `a number in ${line} has a size of its own`);
+      assert.equal(declaredOn(viewerStylesheet, '.ig-id', 'font-family', inside)?.value, 'var(--ig-font-ui)', `a number in ${line} is not sans`);
+    }
+    // And the body size is what it would get without the line rule.
+    const without = viewerStylesheet.replace(/\.ig-freshness \.ig-id \{\n {2}font-size: inherit;\n\}/, '.ig-freshness .ig-id {\n}');
+    assert.notEqual(without, viewerStylesheet, 'the line rule this test removes is gone');
+    assert.notEqual(declaredOn(without, '.ig-id', 'font-size', ['.ig-viewer', '.ig-freshness'])?.value, 'inherit');
+  });
+
+  it('sets a copied key mono with tabular figures, and gives it no size of its own anywhere', () => {
+    // NO SIZE IS THE POINT: read pessimistically, in any context, no rule sizes
+    // it, so it takes the size of the line it sits in.
+    assert.equal(declaredOn(viewerStylesheet, '.ig-copy-key', 'font-family')?.value, 'var(--ig-font-mono)');
+    assert.equal(declaredOn(viewerStylesheet, '.ig-copy-key', 'font-variant-numeric')?.value, 'tabular-nums');
+    assert.equal(declaredOn(viewerStylesheet, '.ig-copy-key', 'font-size'), undefined);
+    for (const line of LINES) {
+      const inside = ['.ig-viewer', line];
+      assert.equal(declaredOn(viewerStylesheet, '.ig-copy-key', 'font-family', inside)?.value, 'var(--ig-font-mono)', line);
+    }
+  });
+});

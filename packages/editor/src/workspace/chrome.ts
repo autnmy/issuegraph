@@ -170,9 +170,16 @@ export const mountStylesheet = `
   z-index: 2;
 }
 
+/* THE KEYS LINE UNDER THE INSPECTOR TAKES THE SMALL ROLE, IN THE SANS. It is
+   a sentence the reader reads, not a key they type, so it is not mono; it is a
+   hint beside the panel rather than its content, so it sits a step below the
+   body, muted, with tabular figures. The face is stated rather than inherited
+   so no sheet installed above this one can carry it back to mono. */
 .ig-chrome-keys {
   margin: 0;
+  font-family: var(--ig-font-ui);
   font-size: var(--ig-font-size-small);
+  font-variant-numeric: tabular-nums;
   color: var(--ig-text-muted);
 }
 
