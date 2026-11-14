@@ -805,6 +805,20 @@ const {
 } = surface;
 
 const WORKSPACE_WORDS: surface.WorkspaceWords = {
+  change: WORDS,
+  log: {
+    label: 'writes not yet settled',
+    saving: 'still being written',
+    ops: { create: 'putting in place', delete: 'taking out', flip: 'turning around', retype: 'swapping the kind of' },
+    becomes: 'so that it reads as',
+    kinds: {
+      'blocked-by': 'waits on',
+      'decomposed-from': 'split out of',
+      'duplicate-of': 'repeats',
+      'serialize-with': 'queues behind',
+      'together-with': 'ships alongside',
+    },
+  },
   asOf: 'read at',
   open: 'in the backlog',
   encoded: 'carry relationships',
@@ -865,7 +879,6 @@ const WORKSPACE_WORDS: surface.WorkspaceWords = {
     issuesChanged: 'issues that moved',
     diffEmpty: 'nothing on this row differs',
     retryFailed: 'could not read the newest version',
-    unplaced: 'writes about issues this backlog does not hold',
   },
   audit: {
     heading: 'problems in the encoding',

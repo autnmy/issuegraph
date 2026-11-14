@@ -85,10 +85,9 @@ describe('the three zones render at their fixed positions', () => {
     // overlay existed, which made the header BE the audit header; §17a's header
     // carries five facts and the audit count is one of them.
     assert.deepEqual(zonesIn(result.markup), [...ZONES]);
-    // NO `data-order` HERE, and its absence is the contract rather than an
-    // omission: `WORDS` carries no §17c vocabulary, and the root attribute is
-    // the stylesheet's hook for a held order — which must not grey a rail this
-    // workspace cannot also label. `reevaluate.test.ts` pins both arms.
+    // `data-order` LEADS THE ROOT on every render. It is the stylesheet's hook
+    // for a held order, and the change words are required, so the sentence
+    // that explains the greying can always be drawn beside it.
     //
     // THIS USED TO ASSERT THE EXACT OPENING TAG `<div class="ig-workspace">`,
     // with nothing after the class — deliberately, "so an attribute added here
@@ -101,15 +100,14 @@ describe('the three zones render at their fixed positions', () => {
     // sheet, because CSS cannot read a reducer.
     //
     // SO THE SHAPE OF THE PIN CHANGES RATHER THAN THE PIN GOING AWAY. The
-    // exhaustive list below is still exact — a third attribute added later
-    // still fails here — and the two `data-order` arms are still asserted, one
-    // per branch. What is no longer claimed is that the root carries NOTHING.
-    // The layout under 640 adds `data-tab`, the tab its container block reads.
+    // exhaustive list below is still exact — a further attribute added later
+    // still fails here. What is no longer claimed is that the root carries
+    // NOTHING. The layout under 640 adds `data-tab`, the tab its container
+    // block reads.
     assert.match(
       result.markup,
-      /^<div class="ig-workspace" data-canvas="strip" data-canvas-legend="[a-z]+" data-inspector="dismissed" data-tab="order">/,
+      /^<div class="ig-workspace" data-order="settled" data-canvas="strip" data-canvas-legend="[a-z]+" data-inspector="dismissed" data-tab="order">/,
     );
-    assert.equal(/^<div class="ig-workspace"[^>]*data-order=/.test(result.markup), false);
     assert.match(result.markup, /<\/div>$/);
   });
 
@@ -2095,6 +2093,83 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
     const logged = card(header);
     assert.ok(logged !== undefined, 'the log drew no card');
     assert.equal(card(inspector), logged, 'the log card differs from the Inspector card');
+  });
+});
+
+describe('the log names each write still saving in the host words', () => {
+  const headerOf = (markup: string): string =>
+    markup.slice(markup.indexOf('data-zone="header"'), markup.indexOf('data-zone="rail"'));
+  const savingEntries = (options: Parameters<typeof renderWorkspace>[1]): string[] =>
+    [
+      ...headerOf(renderWorkspace(backlogOf(3), options).markup).matchAll(
+        /<li class="ig-log-entry" data-ig-state="pending"[^>]*>[\s\S]*?<\/li>/g,
+      ),
+    ].map((match) => match[0]);
+  const words = WORKSPACE_WORDS.log;
+
+  it('names a saving create by the host kind word and its two refs, and never by the viewer label', () => {
+    const [entry] = savingEntries({
+      words: WORKSPACE_WORDS,
+      orderStatus: 'held',
+      log: [
+        {
+          kind: 'pending',
+          mutationId: 'm-create',
+          write: { op: 'create', edge: { id: 'blocked-by|i0001|i0002', kind: 'blocked-by', from: 'i0001', to: 'i0002' } },
+        },
+      ],
+    });
+    assert.ok(entry !== undefined, 'the log drew no saving entry');
+    assert.match(entry, /data-mutation="m-create"/);
+    for (const word of [words.saving, words.ops.create, words.kinds['blocked-by']]) {
+      assert.ok(entry.includes(word), `the saving entry does not carry "${word}"`);
+    }
+    assert.deepEqual([...entry.matchAll(/<span class="ig-id">([^<]*)<\/span>/g)].map((match) => match[1]), [
+      'i0001',
+      'i0002',
+    ]);
+    assert.equal(entry.includes(labelFrom(treatmentFor('blocked-by'), true)), false, 'the viewer label named the kind');
+  });
+
+  it('names a saving retype with the becomes word before the new kind', () => {
+    const [entry] = savingEntries({
+      words: WORKSPACE_WORDS,
+      orderStatus: 'held',
+      log: [
+        {
+          kind: 'pending',
+          mutationId: 'm-retype',
+          write: {
+            op: 'retype',
+            edge: { id: 'blocked-by|i0001|i0002', kind: 'blocked-by', from: 'i0001', to: 'i0002' },
+            nextKind: 'duplicate-of',
+          },
+        },
+      ],
+    });
+    assert.ok(entry !== undefined, 'the log drew no saving entry');
+    const becomesAt = entry.indexOf(words.becomes);
+    assert.ok(entry.indexOf(words.kinds['blocked-by']) < becomesAt, 'the old kind is not named first');
+    assert.ok(becomesAt < entry.indexOf(words.kinds['duplicate-of']), 'the new kind is not named after the becomes word');
+  });
+
+  it('names a saving delete whose edge is gone by its raw id, as one piece of escaped text', () => {
+    const rawId = 'blocked-by|<b>i0001</b>|i0009';
+    const [entry] = savingEntries({
+      words: WORKSPACE_WORDS,
+      orderStatus: 'held',
+      log: [{ kind: 'pending', mutationId: 'm-gone', write: { op: 'delete', edge: rawId } }],
+    });
+    assert.ok(entry !== undefined, 'the log drew no saving entry');
+    assert.ok(entry.includes('blocked-by|&lt;b&gt;i0001&lt;/b&gt;|i0009'), 'the raw id is not one escaped text');
+    assert.equal(/<b>/.test(entry), false, 'the raw id was decoded as markup');
+    assert.equal(/class="ig-id"/.test(entry), false, 'the raw id was split into issue refs');
+  });
+
+  it('draws no entry list when no write is saving or unsaved, and keeps the change line', () => {
+    const header = headerOf(renderWorkspace(backlogOf(3), { words: WORKSPACE_WORDS }).markup);
+    assert.match(header, /<div class="ig-workspace-log"><div class="ig-change-summary"[^>]*><div class="ig-change-line" role="status">/);
+    assert.equal(header.includes(words.label), false, 'an empty list of writes was drawn');
   });
 });
 
