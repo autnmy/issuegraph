@@ -1831,3 +1831,14 @@ describe("the narrow tabs are the design's Tabs part: filled, not bordered", () 
     assert.match(selected, /color:\s*var\(--ig-text\);/);
   });
 });
+
+describe('the Related search status line stays in the accessibility tree', () => {
+  it('is never hidden by display or visibility, so its first message is announced', () => {
+    const css = withoutComments(workspaceStylesheet);
+    const rules = [...css.matchAll(/([^{}]*\.ig-related-status[^{}]*)\{([^}]*)\}/g)];
+    assert.ok(rules.length > 0, 'no rule styles the status line');
+    for (const [, selector, body] of rules) {
+      assert.doesNotMatch(body ?? '', /display:\s*none|visibility:\s*hidden/, `${(selector ?? '').trim()} hides the status line`);
+    }
+  });
+});
