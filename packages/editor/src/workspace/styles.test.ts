@@ -2213,3 +2213,30 @@ describe('one recovery card per failed write: the log stands down where the Insp
     assert.match(blockOf('width < 640px'), rule(".ig-workspace[data-inspector] .ig-log-recovery[data-ig-inspected]", 'flex'));
   });
 });
+
+describe('the canvas legend clears the lifted Inspector (#303)', () => {
+  const css = workspaceStylesheet.replace(/\/\*[\s\S]*?\*\//g, '');
+  const blockOf = (condition: string): string => {
+    const at = css.indexOf(`@container ig-workspace (${condition})`);
+    assert.ok(at >= 0, `no ${condition} block`);
+    const next = css.indexOf('@container ig-workspace', at + 1);
+    return css.slice(at, next < 0 ? undefined : next);
+  };
+  const legend = ".ig-workspace[data-inspector='lifted'] .ig-zone[data-zone='canvas'] .ig-legend";
+  const escaped = (text: string): string => text.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&');
+  const margin = (value: string): RegExp =>
+    new RegExp(`${escaped(legend)} \\{\\s*margin-inline-end: ${escaped(value)};`);
+
+  it('stops the legend where the overlay starts, at the overlay’s own width', () => {
+    // THE SAME WIDTH BOTH WAYS: the clearance is read off the panel's own rule, so
+    // the switch's drawn figure cannot slide under a panel that changed size.
+    const middle = blockOf('width < 1360px');
+    const panel = middle.match(/\.ig-workspace \.ig-zone\[data-zone='inspector'\] \{[^}]*inline-size: ([^;]+);/)?.[1];
+    assert.ok(panel !== undefined, 'the lifted panel has no inline-size');
+    assert.match(middle, margin(panel));
+  });
+
+  it('drops the clearance where the Inspector is a column again', () => {
+    assert.match(blockOf('width < 1120px'), margin('0'));
+  });
+});

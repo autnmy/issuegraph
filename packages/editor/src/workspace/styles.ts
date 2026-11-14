@@ -1883,6 +1883,16 @@ ${heldRailDeclarations}
     box-shadow: var(--ig-elevation-overlay);
   }
 
+  /* THE CANVAS LEGEND ENDS WHERE THE LIFTED INSPECTOR BEGINS (#303). The
+     switch's drawn figure ("14 of 19 drawn") sits at the legend's far end, as
+     the board draws it; the board's Inspector is a column, so nothing covers
+     it there. Here the panel lies over the canvas, so a legend running the
+     canvas's full width put that figure under it. The clearance is the
+     panel's own inline-size, the rule above. */
+  .ig-workspace[data-inspector='lifted'] .ig-zone[data-zone='canvas'] .ig-legend {
+    margin-inline-end: calc(var(--ig-char-width) * 42);
+  }
+
   /* OPENED BY SELECTION, DISMISSED ON ESCAPE — 17k's own words, and both
      halves arrive as this one attribute. render.ts writes 'lifted' only when
      something is SELECTED and the reader has not dismissed it since, so an
@@ -1939,6 +1949,11 @@ ${heldRailDeclarations}
     z-index: auto;
     background: none;
     box-shadow: none;
+  }
+
+  /* THE INSPECTOR IS A COLUMN AGAIN, so the legend has nothing to clear. */
+  .ig-workspace[data-inspector='lifted'] .ig-zone[data-zone='canvas'] .ig-legend {
+    margin-inline-end: 0;
   }
 
   /* THE DISMISSAL MEANS NOTHING HERE, and saying so is the undo of the middle
