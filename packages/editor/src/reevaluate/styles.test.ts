@@ -6,6 +6,7 @@ import { THEME_TOKENS, renderViewer, viewerStylesheet } from '@issuegraph/viewer
 
 import { renderReevaluate } from './render.ts';
 import { reevaluateStylesheet } from './styles.ts';
+import { countTypeMisses, regressionsOf } from '../testing/counts.ts';
 import {
   HELD_RAIL_GREY,
   WORDS,
@@ -171,5 +172,25 @@ describe('the re-evaluate stylesheet carries structure, never a value', () => {
       ),
       [],
     );
+  });
+});
+
+describe('the counts this sheet draws are body text with tabular figures (#254)', () => {
+  // "2 moved · 1 newly held": the figure in each part, in the saved line and in
+  // a rail chip alike. The chip's direction colours it and nothing else.
+  const COUNTS = ['.ig-change-count'];
+
+  it('sets the body sans, the body size and tabular figures on it, alone and over the viewer sheet', () => {
+    assert.deepEqual(countTypeMisses(reevaluateStylesheet, COUNTS), []);
+    assert.deepEqual(countTypeMisses(`${viewerStylesheet}\n${reevaluateStylesheet}`, COUNTS), []);
+  });
+
+  it('fails a later rule that puts the mono face or a smaller size back', () => {
+    const css = `${viewerStylesheet}\n${reevaluateStylesheet}`;
+    for (const target of COUNTS) {
+      for (const later of regressionsOf(css, target)) {
+        assert.notDeepEqual(countTypeMisses(later, [target]), [], `${target} passed with its old type put back`);
+      }
+    }
   });
 });

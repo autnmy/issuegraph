@@ -145,9 +145,12 @@ export function provenanceClause(provenance: RankProvenance | undefined): Elemen
   if (provenance === undefined) return null;
   switch (provenance.kind) {
     case 'matched-query':
+      // THE LABEL IS A KEY A READER COPIES, so it is `.ig-copy-key`, the one
+      // part of the sentence set mono; an issue number, a tier and a notation
+      // are read rather than copied and stay `.ig-id`, in the line's sans.
       return element('span', {}, [
         `Picked by query ${String(provenance.index)} · `,
-        element('span', { class: 'ig-id' }, [provenance.label]),
+        element('span', { class: 'ig-copy-key' }, [provenance.label]),
       ]);
     case 'declared-tier':
       // NEUTRAL, AND THAT IS THE POINT. This arm means only that no ordering
@@ -974,6 +977,9 @@ function edgeBadge(field: EdgeField, edgeId: string, label: string, other: strin
  */
 export const ROW_BADGE_BUDGET = 12;
 
+/** The attribute the overflow chip carries: how many relationships it stands for. */
+const OMITTED_ATTRIBUTE = 'data-omitted';
+
 /**
  * The chip a row draws in place of the badges past its budget.
  *
@@ -983,6 +989,11 @@ export const ROW_BADGE_BUDGET = 12;
  * carries NO edge identity: it names no single edge, so it must not enter the
  * pointer set as if it did. An omitted edge stays selectable regardless —
  * `mount`'s drawn-check answers from the document first for an edge id.
+ *
+ * IT IS DRAWN AT THE BODY SIZE, NOT THE CHIP'S MICRO SIZE: it is a count, and
+ * the sheet sets every count in the body sans. Its `data-omitted` attribute is
+ * what that rule selects on and what {@link badgeTexts} sets the chip apart by, so
+ * the layout measures at the body size exactly the chips the sheet draws there.
  */
 function overflowBadge(omitted: number): ElementSpec {
   // THE WHOLE PHRASE IS THE VISIBLE TEXT, and there is no `aria-label`. A
@@ -993,7 +1004,7 @@ function overflowBadge(omitted: number): ElementSpec {
   const noun = omitted === 1 ? 'relationship' : 'relationships';
   return element(
     'span',
-    { class: 'ig-badge', 'data-omitted': omitted, title: `${String(omitted)} more ${noun} not shown` },
+    { class: 'ig-badge', [OMITTED_ATTRIBUTE]: omitted, title: `${String(omitted)} more ${noun} not shown` },
     [`+${String(omitted)} more ${noun}`],
   );
 }
@@ -1090,13 +1101,19 @@ export function edgeBadgeList(
  * with them. Deriving the strings here rather than re-deriving them there is
  * what keeps the reserved height and the drawn height about the same thing: a
  * badge whose wording changes moves the geometry with it.
+ *
+ * THE OVERFLOW CHIP COMES BACK APART FROM THE REST, because it is drawn at a
+ * different size: it is a count, and the sheet sets it in the body sans while
+ * every other chip stays at the chip's micro size. Measured with the others it
+ * would be charged the small-text ceiling and under-measured, and near a row
+ * boundary the browser would wrap it onto a row the card never reserved.
  */
 export function badgeTexts(
   document: NormalizedDocument,
   slot: ViewerSlot | undefined,
   issue: ViewerIssue | undefined,
   keys: readonly string[],
-): readonly string[] {
+): BadgeRun {
   // THROUGH `textOf` FOR EVERY CHIP, so the GLYPH is measured with the label it
   // sits beside. Two of these were written out by hand and lost their glyph —
   // `✓ verified` measured as `verified`, `⊘ not ready` as `not ready` — which
@@ -1110,7 +1127,31 @@ export function badgeTexts(
     ...caveatBadges(issue),
     ...edgeBadgeList(document, keys),
   ];
-  return chips.filter((chip): chip is ElementSpec => chip !== null).map(textOf);
+  const drawn = chips.filter((chip): chip is ElementSpec => chip !== null);
+  // BY THE ATTRIBUTE THE SHEET SELECTS ON, so the chips measured at the body
+  // size are exactly the chips `.ig-badge[data-omitted]` draws at it.
+  const omitted = (chip: ElementSpec): boolean => {
+    const value = chip.attrs?.[OMITTED_ATTRIBUTE];
+    return value !== undefined && value !== null;
+  };
+  return {
+    texts: drawn.filter((chip) => !omitted(chip)).map(textOf),
+    overflow: drawn.filter(omitted).map(textOf)[0] ?? null,
+  };
+}
+
+/**
+ * The visible text of one badge row, split by the size each chip is drawn at.
+ *
+ * The overflow chip is the last chip `edgeBadgeList` adds, and the edge list is
+ * the last part of the row, so packing `texts` and then `overflow` keeps the
+ * order the row draws.
+ */
+export interface BadgeRun {
+  /** Every chip drawn at the chip's own micro size, in order. */
+  readonly texts: readonly string[];
+  /** The overflow chip, drawn at the body size, or null when nothing was omitted. */
+  readonly overflow: string | null;
 }
 
 /** Every string inside one spec, concatenated — what a reader sees on it. */
@@ -1149,8 +1190,11 @@ export type CardBlock =
   | { readonly kind: 'head'; readonly key: string }
   /** A unit's enclosure: one title-and-identity pair per member. */
   | { readonly kind: 'unit'; readonly members: readonly string[] }
-  /** The wrapping row of chips. */
-  | { readonly kind: 'badges'; readonly texts: readonly string[] }
+  /**
+   * The wrapping row of chips. The overflow chip is drawn at the body size, so
+   * it is carried apart from the rest and the layout measures it at that size.
+   */
+  | { readonly kind: 'badges'; readonly texts: readonly string[]; readonly overflow: string | null }
   /** A sentence the card prints because nothing else draws it. */
   | { readonly kind: 'note'; readonly text: string };
 
@@ -1196,8 +1240,8 @@ export function cardBlocks(
     blocks.push({ kind: 'head', key });
   }
 
-  const texts = badgeTexts(document, slot, issue, members);
-  if (texts.length > 0) blocks.push({ kind: 'badges', texts });
+  const { texts, overflow } = badgeTexts(document, slot, issue, members);
+  if (texts.length > 0 || overflow !== null) blocks.push({ kind: 'badges', texts, overflow });
 
   if (!onSpine) {
     for (const text of noteText(document, key)) blocks.push({ kind: 'note', text });
@@ -1247,7 +1291,7 @@ export function cardText(document: NormalizedDocument, block: CardBlock): readon
         member,
       ]);
     case 'badges':
-      return block.texts;
+      return block.overflow === null ? block.texts : [...block.texts, block.overflow];
     case 'note':
       return [block.text];
   }

@@ -1631,6 +1631,7 @@ describe('the mount stylesheet carries structure, never a value', () => {
   it('declares no animation and no transition', () => {
     assert.equal(/\banimation\b|\btransition\b|@keyframes/.test(css), false);
   });
+
 });
 
 describe('a pending write cannot change a rank', () => {

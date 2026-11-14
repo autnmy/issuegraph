@@ -1829,7 +1829,12 @@ describe('the workspace splits the host facts between the header and the rail', 
     // THE FRAME'S ORDER, TOTAL FIRST. §16a words the same pair the other way
     // round; see `adoptionCountsSpec` for why the two surfaces differ.
     assert.match(header, /class="ig-workspace-counts"/);
-    assert.match(header, />312<\/span> in the backlog · <span class="ig-id">64<\/span> carry relationships/);
+    // COUNTS, NOT KEYS (#254): the numbers take the count class, so they are
+    // set in the body sans rather than the mono an issue key keeps.
+    assert.match(
+      header,
+      /<span class="ig-workspace-count">312<\/span> in the backlog · <span class="ig-workspace-count">64<\/span> carry relationships/,
+    );
     assert.match(header, /class="ig-workspace-freshness" data-stale="false"/);
     assert.match(header, /read at <span class="ig-id">14:32<\/span> · 2m ago/);
     assert.match(header, /data-ig-command="refresh"/);

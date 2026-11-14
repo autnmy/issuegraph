@@ -14,12 +14,30 @@ import { JSDOM } from 'jsdom';
 
 import { auditStylesheet } from '../audit/styles.ts';
 import { AUDIT_SEVERITY_ATTRIBUTE } from '../audit/surface.ts';
+import { firstPassStylesheet } from '../firstpass/styles.ts';
+import { edgeOverlayStylesheet } from '../overlay/styles.ts';
+import { pickerStylesheet } from '../picker/styles.ts';
 import { INITIAL_SCALE_STATE } from '../scale/commands.ts';
+import { mountStylesheet } from './chrome.ts';
 import { ZONES, renderWorkspace } from './render.ts';
 import { reevaluateStylesheet } from '../reevaluate/styles.ts';
 import { renderScaleLadder } from '../scale/render.ts';
 import { scaleLadderStylesheet } from '../scale/styles.ts';
 import { workspaceStylesheet } from './styles.ts';
+import {
+  ISSUE_NUMBER_BASE,
+  ISSUE_NUMBER_TYPE,
+  MONO_BACK,
+  SMALL_TYPE,
+  VIEWER_COUNTS,
+  VIEWER_LINES,
+  VIEWER_SMALL,
+  baseRule,
+  countTypeMisses,
+  declaredOn,
+  regressionsOf,
+  typeMisses,
+} from '../testing/counts.ts';
 import { WORKSPACE_WORDS, backlogOf, keysOf } from '../testing/workspace.ts';
 import {
   WORDS as CHANGE_WORDS,
@@ -2030,5 +2048,93 @@ describe('the Related search status line stays in the accessibility tree', () =>
     for (const [, selector, body] of rules) {
       assert.doesNotMatch(body ?? '', /display:\s*none|visibility:\s*hidden/, `${(selector ?? '').trim()} hides the status line`);
     }
+  });
+});
+
+describe('the counts this sheet draws are body text with tabular figures (#254)', () => {
+  // The rail footer's tally, the middle zone head's caption and its numbers,
+  // and the header's adoption pair — each container and each number in it, so
+  // a rule on either one cannot put the mono face or a smaller size back.
+  const COUNTS = [
+    '.ig-rail-footer',
+    '.ig-rail-count',
+    '.ig-canvas-caption',
+    '.ig-canvas-count',
+    '.ig-workspace-counts',
+    '.ig-workspace-count',
+  ];
+  /**
+   * Every sheet a mounted workspace installs, in the order it installs them:
+   * `renderWorkspace`'s list, then the three the mount appends (see the
+   * `styles` list in render.ts and the sheet join in mount.ts).
+   */
+  const INSTALLED = [
+    viewerStylesheet,
+    scaleLadderStylesheet,
+    edgeOverlayStylesheet,
+    auditStylesheet,
+    reevaluateStylesheet,
+    workspaceStylesheet,
+    pickerStylesheet,
+    firstPassStylesheet,
+    mountStylesheet,
+  ].join('\n');
+
+  it('sets the body sans, the body size and tabular figures on each, alone and over the viewer sheet', () => {
+    assert.deepEqual(countTypeMisses(workspaceStylesheet, COUNTS), []);
+    assert.deepEqual(countTypeMisses(`${viewerStylesheet}\n${workspaceStylesheet}`, COUNTS), []);
+  });
+
+  it('leaves the viewer’s own counts and legend as the viewer set them, under every sheet the mount installs', () => {
+    // THE OTHER DIRECTION. The viewer sheet is installed first, so a rule in
+    // any editor sheet above it can carry one of its counts back to mono.
+    assert.deepEqual(countTypeMisses(INSTALLED, [...VIEWER_COUNTS, ...COUNTS]), []);
+    assert.deepEqual(typeMisses(INSTALLED, VIEWER_SMALL, SMALL_TYPE), []);
+  });
+
+  it('fails a later rule that puts the mono face or a smaller size back', () => {
+    const css = `${viewerStylesheet}\n${workspaceStylesheet}`;
+    for (const target of COUNTS) {
+      for (const later of regressionsOf(css, target)) {
+        assert.notDeepEqual(countTypeMisses(later, [target]), [], `${target} passed with its old type put back`);
+      }
+    }
+  });
+
+  it('draws an issue number in the sans with tabular figures under every sheet the mount installs, and a later mono rule fails', () => {
+    // AN ISSUE NUMBER IS READ, NOT COPIED (the redesign lead's ruling on #254):
+    // the export's muted .num. Mono is kept only for keys such as label:P0. A
+    // context may size or colour a number — a card's identity line is smaller,
+    // an isolated list's column is small — but none may put the mono face back.
+    assert.deepEqual(typeMisses(INSTALLED, ['.ig-id'], ISSUE_NUMBER_TYPE), []);
+    assert.deepEqual(Object.fromEntries(baseRule(INSTALLED, '.ig-id')), ISSUE_NUMBER_BASE);
+    for (const later of regressionsOf(INSTALLED, '.ig-id', MONO_BACK)) {
+      assert.notDeepEqual(typeMisses(later, ['.ig-id'], ISSUE_NUMBER_TYPE), [], 'an issue number passed in the mono face');
+    }
+  });
+
+  it('leaves the viewer’s explanation lines one face and one size under every sheet the mount installs', () => {
+    // The rail draws the viewer's provenance, hold and caveat lines, and the
+    // Inspector's why-rank sentence draws the same clause with its copied key.
+    // No editor sheet may move a line off the small sans, give a number in one
+    // a size of its own, or size the copied key.
+    assert.deepEqual(typeMisses(INSTALLED, VIEWER_LINES, SMALL_TYPE), []);
+    for (const line of VIEWER_LINES) {
+      // Inside the rail zone's viewer and a row, as the rail draws it.
+      const inside = ['.ig-workspace', ".ig-zone[data-zone='rail']", '.ig-viewer', '.ig-slot', line];
+      assert.equal(declaredOn(INSTALLED, '.ig-id', 'font-size', inside)?.value, 'inherit', line);
+    }
+    assert.equal(declaredOn(INSTALLED, '.ig-copy-key', 'font-family')?.value, 'var(--ig-font-mono)');
+    assert.equal(declaredOn(INSTALLED, '.ig-copy-key', 'font-size'), undefined, 'a rule sizes the copied key');
+  });
+
+  it('draws the header numbers as counts rather than issue numbers', () => {
+    const header = renderWorkspace(
+      { ...DOCUMENT, host: { adoption: { counts: { declaring: 64, total: 312 } } } },
+      { words: WORKSPACE_WORDS },
+    ).markup;
+    const pair = header.slice(header.indexOf('class="ig-workspace-counts"'));
+    assert.match(pair, /^class="ig-workspace-counts"><span class="ig-workspace-count">312<\/span>/);
+    assert.equal(/class="ig-id">(?:312|64)</.test(header), false, 'a header count is drawn as an issue key');
   });
 });

@@ -252,6 +252,27 @@ export function measureLabel(theme: Theme, label: string): number {
   return labelWidth([...label], metric(theme, '--ig-label-char-width'));
 }
 
+/**
+ * How wide a run of BODY-SIZE text runs: the overflow chip, which the sheet
+ * sets in the body sans at `--ig-font-size` because it is a count.
+ *
+ * `--ig-label-char-width` IS THE WRONG CEILING HERE. It is the label face's
+ * average at `--ig-font-size-small`, so a body-size chip measured with it is
+ * charged about 11/13 of what it draws, and the card under-reserves exactly
+ * the row that chip wraps onto.
+ *
+ * `--ig-char-width` IS THE BODY-SIZE CEILING THE THEME ALREADY CARRIES. It is
+ * the MONO advance at `--ig-font-size`, and a monospace cell is wider than a
+ * proportional face's average advance at the same size, so taking it as the
+ * average — still scaled per character class by `labelWidth` — over-states a
+ * body sans run rather than under-stating it. A host that changes the type
+ * scale changes it too, so the chip's reservation follows. No token is added:
+ * the token list is the contract every host theme has to fill.
+ */
+function measureBodyLabel(theme: Theme, label: string): number {
+  return labelWidth([...label], metric(theme, '--ig-char-width'));
+}
+
 
 
 /**
@@ -420,7 +441,7 @@ function cardHeight(
       // between wrapped rows — so `rows * line` under-reserved a wrapping badge
       // row by more than the gap between cards, and the card beneath was drawn
       // over it.
-      const rows = packedRows(theme, block.texts, inner);
+      const rows = packedRows(theme, block.texts, block.overflow, inner);
       const chipHeight =
         line + metric(theme, '--ig-space-micro') * 2 + metric(theme, '--ig-stroke') * 2;
       height += rows * chipHeight + Math.max(0, rows - 1) * gap;
@@ -458,9 +479,19 @@ function cardHeight(
  * relationships reserved the height of a card with one and the two beneath it
  * were drawn over. Packed here rather than assumed: each chip is its own text
  * plus its padding, laid into the card's inner width.
+ *
+ * THE OVERFLOW CHIP IS MEASURED AT THE BODY SIZE, because that is the size the
+ * sheet draws it at — see {@link measureBodyLabel}. It is the last chip of the
+ * row, so it is packed last. The row that holds it is also a little taller than
+ * `--ig-card-line` (13px at 1.45 against 18 by default); the line of slack
+ * {@link cardHeight} adds to every card covers that, so no row height is added.
  */
-function packedRows(theme: Theme, texts: readonly string[], inner: number): number {
-  if (texts.length === 0) return 0;
+function packedRows(theme: Theme, texts: readonly string[], overflow: string | null, inner: number): number {
+  const widths = [
+    ...texts.map((text) => measureLabel(theme, text)),
+    ...(overflow === null ? [] : [measureBodyLabel(theme, overflow)]),
+  ];
+  if (widths.length === 0) return 0;
   const gap = metric(theme, '--ig-space-tight');
   // THE CHIP'S OWN INNER GAP, TOO. A relationship or status chip is a glyph and
   // a label — two children with `gap: var(--ig-space-tight)` between them — and
@@ -471,8 +502,8 @@ function packedRows(theme: Theme, texts: readonly string[], inner: number): numb
   const chipPadding = gap * 3 + metric(theme, '--ig-stroke') * 2;
   let used = 0;
   let rows = 1;
-  for (const text of texts) {
-    const chip = measureLabel(theme, text) + chipPadding;
+  for (const width of widths) {
+    const chip = width + chipPadding;
     if (used > 0 && used + gap + chip > inner) {
       rows += 1;
       used = chip;
