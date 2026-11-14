@@ -175,7 +175,9 @@ describe('the capsule board, as the export draws its groups (#296)', () => {
   const inside = ['.ig-ladder', '.ig-refusal', '.ig-list', '.ig-capsule-cell'];
 
   it('draws a group card on the second fill at the card corner, with no border', () => {
-    assert.equal(declaredOn(css, '.ig-capsule-enter', 'background', inside)?.value, 'var(--ig-surface-2)');
+    // READ OFF THE BASE RULE: the cascade reader also counts the card's hover
+    // rule, which lifts it to the first surface, as a candidate at rest.
+    assert.match(css, /\.ig-capsule-enter \{[^}]*background: var\(--ig-surface-2\);/);
     assert.equal(declaredOn(css, '.ig-capsule-enter', 'border', inside)?.value, '0');
     assert.equal(declaredOn(css, '.ig-capsule-enter', 'border-radius', inside)?.value, 'var(--ig-radius-large)');
   });
@@ -184,8 +186,8 @@ describe('the capsule board, as the export draws its groups (#296)', () => {
     const stuck = ".ig-capsule-enter[data-reach='cyclic']";
     assert.equal(declaredOn(css, stuck, 'border-color', inside), undefined, 'the stuck card still draws a hued border');
     assert.equal(
-      declaredOn(css, '.ig-capsule-reach', 'color', [...inside, stuck]),
-      declaredOn(css, '.ig-capsule-reach', 'color', [...inside, '.ig-capsule-enter']),
+      declaredOn(css, '.ig-capsule-reach', 'color', [...inside, stuck])?.value,
+      declaredOn(css, '.ig-capsule-reach', 'color', [...inside, '.ig-capsule-enter'])?.value,
       'the stuck card’s reach line takes a colour of its own',
     );
   });
