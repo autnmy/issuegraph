@@ -1063,7 +1063,9 @@ describe('every count and every issue number is body text, and the keys line is 
 
   it('sets the legend bar at the small role, in the sans with tabular figures, its items muted', () => {
     assert.deepEqual(typeMisses(viewerStylesheet, SMALL, SMALL_TYPE), []);
-    assert.equal(declaredOn(viewerStylesheet, '.ig-legend-item', 'color')?.value, 'var(--ig-text-muted)');
+    // Read in the legend's own context: the reader otherwise assumes any ancestor, and the
+    // current rail card's `.ig-card *` colour rule would stand in for a legend item it never holds.
+    assert.equal(declaredOn(viewerStylesheet, '.ig-legend-item', 'color', ['.ig-viewer', '.ig-legend'])?.value, 'var(--ig-text-muted)');
   });
 
   it('fails a later rule that puts the mono face or a smaller size on the legend bar', () => {
