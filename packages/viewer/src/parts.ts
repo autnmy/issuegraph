@@ -1442,8 +1442,14 @@ export function atStations<
   // A SET IS NAMED MEMBER BY MEMBER: each member's lead, duplicates dropped,
   // in addition order. Only marks and focus read this; what recedes was worked
   // out from the set as given, so a member keeps its own neighbours.
-  const leads = (keys: readonly string[]): readonly string[] =>
-    Object.freeze([...new Set(keys.map((key) => stations.get(key) ?? key))]);
+  // A LEAD STANDS WHERE IT WAS LAST ADDED, so the set still ends on the station
+  // of the most recently added member, the one focus falls back to: deduping
+  // by first occurrence moved focus to another unit (`['12', '22', '11']`
+  // focused 21, not 11).
+  const leads = (keys: readonly string[]): readonly string[] => {
+    const named = keys.map((key) => stations.get(key) ?? key);
+    return Object.freeze(named.filter((lead, index) => named.lastIndexOf(lead) === index));
+  };
   const { selected } = options;
   return {
     ...options,

@@ -251,9 +251,11 @@ describe('slotPosition', () => {
 describe('atStations over a selected set', () => {
   it('names each member by its lead, drops duplicates and keeps the addition order', () => {
     const stations = stationsOf(normalizeDocument(twoUnitDocument).document);
-    // 22 and 21 share one lead, 12 has another, 31 represents itself.
+    // 22 and 21 share one lead, 12 has another, 31 represents itself. A lead
+    // stands where it was last added.
     const named = atStations({ selected: ['22', '12', '21', '31'], focused: '12' }, stations);
-    assert.deepEqual(named.selected, ['21', '11', '31']);
+    assert.deepEqual(named.selected, ['11', '21', '31']);
+    assert.deepEqual(atStations({ selected: ['12', '22', '11'] }, stations).selected, ['21', '11']);
     assert.equal(named.focused, '11');
     assert.equal(atStations({ selected: '12' }, stations).selected, '11', 'a single key is still a string');
   });

@@ -1721,6 +1721,13 @@ describe('a selected set on the canvas', () => {
     assert.equal(cardTag(markup, '31').includes('data-recede'), false, '31 blocks the member 12, so it stays');
   });
 
+  it('puts the tab stop on the unit of the most recently added member', () => {
+    // 12 and 11 share unit A and 22 sits between them, so A was picked last.
+    const markup = render(twoUnitDocument, { selected: ['12', '22', '11'] });
+    assert.match(cardTag(markup, '11'), /tabindex="0"/);
+    assert.match(cardTag(markup, '21'), /tabindex="-1"/);
+  });
+
   it('recedes a line exactly when it touches no selected issue', () => {
     const normalized = normalizeDocument(twoUnitDocument).document;
     const asGiven = recedingOf(normalized, { key: ['22', '12'], edge: null });

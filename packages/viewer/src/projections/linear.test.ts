@@ -706,5 +706,8 @@ describe('a selected set in the list', () => {
   it('puts the tab stop on the most recently added member it draws', () => {
     const scene = linearScene(normalizeDocument(twoUnitDocument).document, { selected: ['31', '22'] });
     assert.match(renderMarkup(scene.root), /<li class="ig-slot" data-ig-key="21"[^>]*tabindex="0"/);
+    // Two members of one unit around a member of another: the last added is 11.
+    const shared = linearScene(normalizeDocument(twoUnitDocument).document, { selected: ['12', '22', '11'] });
+    assert.match(renderMarkup(shared.root), /<li class="ig-slot" data-ig-key="11"[^>]*tabindex="0"/);
   });
 });
