@@ -282,3 +282,34 @@ describe('reconcile', () => {
     assert.deepEqual(reconcile(empty, initialNavigationState), { focused: null, selected: null });
   });
 });
+
+describe('navigate over a selection set', () => {
+  it('clears a selection on Escape and leaves the key to the host when nothing is selected', () => {
+    const scene = linear();
+    const cleared = navigate(scene, { focused: '101', selected: ['101', '102'] }, 'Escape');
+    assert.deepEqual(cleared.command, { kind: 'clear' });
+    assert.equal(cleared.state.selected, null);
+    assert.deepEqual(navigate(scene, { focused: '101', selected: null }, 'Escape').command, { kind: 'none' });
+  });
+
+  it('turns Shift with an arrow into an extend onto the newly focused issue', () => {
+    const scene = linear();
+    const first = scene.focusOrder[0] as string;
+    const second = scene.focusOrder[1] as string;
+    const down = navigate(scene, { focused: first, selected: first }, 'ArrowDown', { shift: true });
+    assert.deepEqual(down.command, { kind: 'extend', key: second });
+    assert.equal(down.state.focused, second);
+    const up = navigate(scene, { focused: second, selected: first }, 'ArrowUp', { shift: true });
+    assert.deepEqual(up.command, { kind: 'extend', key: first });
+    // A move that goes nowhere extends nothing, and without Shift an arrow only moves.
+    assert.deepEqual(navigate(scene, { focused: first, selected: first }, 'ArrowUp', { shift: true }).command, { kind: 'none' });
+    assert.deepEqual(navigate(scene, { focused: first, selected: first }, 'ArrowDown').command, { kind: 'focus', key: second });
+  });
+
+  it('reconciles a set to its stations, each where its member was last added', () => {
+    const scene = linear();
+    // 104 is drawn on its unit's lead 103.
+    assert.deepEqual(reconcile(scene, { focused: null, selected: ['104', '101', '103'] }).selected, ['101', '103']);
+    assert.equal(reconcile(scene, { focused: null, selected: ['104', '103'] }).selected, '103');
+  });
+});
