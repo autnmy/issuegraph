@@ -53,7 +53,7 @@ import { treatmentFor } from '../vocabulary.ts';
 
 /**
  * How many relationships an order row names before it counts the rest: one
- * (RULES, Graphs, Dense neighbourhoods: "#2290 P0 blocks #2281 +16"). The
+ * (RULES, Graphs, Dense neighbourhoods: "#2290 P0 is blocked by #2281 +16"). The
  * Inspector lists them all, and the selection's lines draw them.
  */
 const ORDER_ROW_RELATIONSHIPS = 1;

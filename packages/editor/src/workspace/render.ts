@@ -3231,7 +3231,14 @@ function inspectorSpec(view: InspectorView, context: InspectorContext): ElementS
           // fold on the busy issues a groomer most needs it for. On the header
           // row its position does not depend on the content.
           element('div', { class: 'ig-inspector-relationships-head' }, [
-            element('h3', { class: 'ig-inspector-heading' }, [words.relationships]),
+            // THE TOTAL OVER THE GROUPS, as the dense board heads them:
+            // "Relationships 17", each group then counting its own.
+            element('h3', { class: 'ig-inspector-heading' }, [
+              words.relationships,
+              view.relationships.length === 0
+                ? null
+                : element('span', { class: 'ig-relationship-count' }, [` ${String(view.relationships.length)}`]),
+            ]),
             step.kind === 'add' ? addControlSpec(words, step.subject) : null,
           ]),
           // A STATED EMPTY, AND ONLY WHERE THERE IS A SUBJECT TO STATE IT ABOUT.

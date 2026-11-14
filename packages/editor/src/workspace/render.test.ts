@@ -1041,15 +1041,16 @@ describe('the create path begins in the panel, and its digits are the keyboard\u
     // the control, so the pin is that the control's place does not depend on
     // it: the same header, with three rows under it and with none.
     const head = /<div class="ig-inspector-relationships-head">.*?<\/div>/;
-    for (const [key, note] of [
-      ['i0001', 'an issue with relationships'],
-      ['i0004', 'an issue with none'],
+    // The heading carries the total when there is one to state (#303).
+    for (const [key, note, total] of [
+      ['i0001', 'an issue with relationships', '<span class="ig-relationship-count"> \\d+<\\/span>'],
+      ['i0004', 'an issue with none', ''],
     ] as const) {
       const panel = inspectorOf(
         renderWorkspace(document, { ...WORDS, selection: { kind: 'issue', key } }).markup,
       );
       const header = head.exec(panel)?.[0] ?? '';
-      assert.match(header, /<h3 class="ig-inspector-heading">relationships<\/h3>/, note);
+      assert.match(header, new RegExp(`<h3 class="ig-inspector-heading">relationships${total}</h3>`), note);
       assert.match(header, /class="ig-inspector-addbutton"/, `+ add is outside the header for ${note}`);
     }
     // AND THE EMPTY PANEL STILL SAYS SO. The control moving up must not displace
@@ -3379,6 +3380,13 @@ describe('the Inspector draws each kind\u2019s group with its count and five row
     assert.match(
       panel,
       /<button type="button" class="ig-relationship-more" data-ig-command="show-group" data-ig-value="blocked-by:outgoing">Show 4 more<\/button>/,
+    );
+  });
+
+  it('heads the relationships with their total over the groups, as the board does', () => {
+    assert.match(
+      panelWith([]),
+      /<h3 class="ig-inspector-heading">relationships<span class="ig-relationship-count"> 9<\/span><\/h3>/,
     );
   });
 

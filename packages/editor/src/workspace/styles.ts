@@ -913,7 +913,8 @@ export const workspaceStylesheet = `
 
 .ig-inspector-clear:focus-visible,
 .ig-inspector-addbutton:focus-visible,
-.ig-inspector-cancel:focus-visible {
+.ig-inspector-cancel:focus-visible,
+.ig-relationship-more:focus-visible {
   /* '+ add' keeps the shared focus ring though it left the shared fill: a
      focus indicator is an accessibility guarantee, not a visual register. */
   outline: var(--ig-focus-ring) solid var(--ig-focus);
@@ -993,12 +994,13 @@ export const workspaceStylesheet = `
   color: var(--ig-text-body);
   font-family: inherit;
   font-size: inherit;
+  font-weight: var(--ig-weight-strong);
   padding: var(--ig-space-tight);
   cursor: pointer;
 }
 
 .ig-relationship-more:hover {
-  background: var(--ig-surface);
+  background: var(--ig-surface-2);
 }
 
 /* IT WRAPS RATHER THAN TRUNCATES, which is '.ig-picker-direction''s rule
