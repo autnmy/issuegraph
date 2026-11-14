@@ -1497,3 +1497,13 @@ describe('the legend, the held row, the footer group and issue numbers, as the e
     assert.equal(issueNumber('c0-1'), 'c0-1');
   });
 });
+
+describe('an issue-number link in running text', () => {
+  it('is underlined at rest, not only on hover, so colour is not its only cue', () => {
+    const rest = /\.ig-link \{([^}]*)\}/.exec(viewerStylesheet);
+    assert.ok(rest !== null, 'the link rule is gone');
+    assert.match(rest[1] ?? '', /text-decoration: underline;/);
+    assert.match(rest[1] ?? '', /text-underline-offset: var\(--ig-space-micro\);/);
+    assert.equal(/text-decoration: none/.test(rest[1] ?? ''), false, 'the link lost its rest underline');
+  });
+});

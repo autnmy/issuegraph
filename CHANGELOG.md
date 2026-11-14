@@ -4,6 +4,10 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
+- **`@issuegraph/viewer` `0.16.1`: an issue-number link is underlined at rest.** **No API change.** `.ig-link` sat in its row's line in the line's own ink with the underline on hover only, so colour alone told it apart, and a host's enforced accessibility audit (axe `link-in-text-block`) refused it on the grooming tree rows. It now draws `text-decoration: underline` at rest, offset by `--ig-space-micro`, and keeps the accent on hover. The board draws the rule on hover only; the audit wins, as the host's own in-text links already do. Pinned in the viewer sheet test.
+
+### Released: store `0.3.0`, viewer `0.16.0`, editor `0.29.0` (2026-11-14)
+
 This release ships as **`@issuegraph/store` `0.3.0`, `@issuegraph/viewer` `0.16.0` and `@issuegraph/editor` `0.29.0`**, and carries every change merged after `c83c00e`, the commit the last publish (store `0.2.0`, viewer `0.13.0`, editor `0.26.0`, 2026-11-14 04:42Z) was built from. The numbers on the entries below record the order the changes landed, not separate releases: none of viewer `0.14.0`–`0.15.0` or editor `0.27.0`–`0.28.0` was published, and two entries carry viewer `0.14.0` (#254 and #288) for that reason. A host moving from viewer `0.13.0` / editor `0.26.0` takes every breaking note below.
 
 - **`@issuegraph/viewer` `0.14.0` / `@issuegraph/editor` `0.27.0`: every count and every issue number is body text with tabular figures, the keys line and the explanation lines are the small role, and only a copied key is mono (#254, part of #248).** **No API change; visible on every surface that draws a count, an issue number or an explanation line, and two markup changes for a host that styles them: the editor's header numbers, and a matched query's label.**
