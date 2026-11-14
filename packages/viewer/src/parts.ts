@@ -165,8 +165,9 @@ export function provenanceClause(provenance: RankProvenance | undefined): Elemen
       // THE LABEL IS A KEY A READER COPIES, so it is `.ig-copy-key`, the one
       // part of the sentence set mono; an issue number, a tier and a notation
       // are read rather than copied and stay `.ig-id`, in the line's sans.
+      // THE BOARD'S WORDS (#303): "Matched ordering query 1, label:P0".
       return element('span', {}, [
-        `Picked by query ${String(provenance.index)} · `,
+        `Matched ordering query ${String(provenance.index)}, `,
         element('span', { class: 'ig-copy-key' }, [provenance.label]),
       ]);
     case 'declared-tier':
@@ -266,6 +267,19 @@ export function priorityBadge(provenance: RankProvenance | undefined): ElementSp
       // has none; §16h draws its row with the provenance line alone (#130).
       return null;
   }
+}
+
+/**
+ * The tag a graph card carries: its priority, and never a query's text (#303,
+ * RULES, Graphs, Dense neighbourhoods). A card has room for its title, number
+ * and priority only, and the Inspector names the query that placed it. So a
+ * card a query placed shows the priority the issue declares, or its number
+ * alone when it declares none.
+ */
+export function cardPriorityBadge(issue: ViewerIssue | undefined): ElementSpec | null {
+  const provenance = issue?.provenance;
+  if (provenance?.kind !== 'matched-query') return priorityBadge(provenance);
+  return issue?.priority === undefined ? null : priorityBadge({ kind: 'declared-tier', priority: issue.priority });
 }
 
 /**
@@ -1273,7 +1287,7 @@ export function cardBlocks(
     blocks.push({ kind: 'head', key });
   }
 
-  const priority = priorityBadge(issue?.provenance);
+  const priority = cardPriorityBadge(issue);
   const reason = heldReason(slot);
   const texts = [priority === null ? null : textOf(priority), reason].filter(
     (text): text is string => text !== null,
@@ -1323,7 +1337,8 @@ export function cardText(document: NormalizedDocument, block: CardBlock): readon
  * filled, hollow, dashed — and it is the one part of the grammar the edge table
  * cannot explain, so §16b keys it at the far end of the same bar.
  */
-export function legend(): ElementSpec {
+export function legend(switcher?: LegendSwitch): ElementSpec {
+  if (switcher !== undefined) return legendSwitch(switcher);
   // NAMED, NOT CAPTIONED (#288). The export carries the bar's name as an
   // aria-label and draws no caption: content.md rules out the small uppercase
   // label above a group. The accessible name is the word the caption carried.
@@ -1360,6 +1375,93 @@ export function legend(): ElementSpec {
 }
 
 /**
+ * One kind on the legend's switch: how many of the selection's relationships
+ * are of it, and whether its lines draw.
+ */
+export interface LegendSwitchKind {
+  readonly field: EdgeField;
+  readonly count: number;
+  /** Whether the canvas draws this kind's lines now. */
+  readonly on: boolean;
+  /**
+   * Whether a press turns it on or off. A kind the canvas never draws
+   * (decomposed-from lives in Sub-issues) still shows its swatch and count, so
+   * the drawn figure adds up, but is no control.
+   */
+  readonly switchable: boolean;
+}
+
+/**
+ * The legend as a switch for each kind, past 8 relationships on the selection
+ * (RULES, Graphs, Dense neighbourhoods). The words are the host's: this
+ * package writes only each kind's own phrase.
+ */
+export interface LegendSwitch {
+  /** Names the switch for assistive technology: the board's "Relationships to draw". */
+  readonly label: string;
+  /** The kinds the selection holds, in {@link LEGEND_ORDER}. */
+  readonly kinds: readonly LegendSwitchKind[];
+  /** The figure that ends the bar: "12 of 17 drawn". */
+  readonly drawn: string;
+  /**
+   * The command a switch publishes on {@link COMMAND_ATTRIBUTE}, its kind on
+   * `data-ig-value`: the host wires it, as it wires every control here.
+   */
+  readonly command: string;
+}
+
+/**
+ * The value attribute a switch carries beside its command: the spelling
+ * `@issuegraph/editor` reads for a control's value, so one listener hears both.
+ */
+const VALUE_ATTRIBUTE = 'data-ig-value';
+
+/** The kinds a switch leaves off, whose lines the graph does not draw. */
+export function switchedOff(switcher: LegendSwitch | undefined): ReadonlySet<EdgeField> {
+  return new Set((switcher?.kinds ?? []).filter((kind) => !kind.on).map((kind) => kind.field));
+}
+
+/**
+ * The board's switch: one pressed-or-not button per kind with its swatch, its
+ * phrase and its count, then the drawn figure. A kind switched off keeps its
+ * swatch faded and its words muted, so the reader still sees what it would add.
+ *
+ * NO READINESS KEY, as the board draws it: the bar is a control for the lines
+ * at that density, and the stations are the static key's to explain.
+ */
+function legendSwitch(switcher: LegendSwitch): ElementSpec {
+  return element('div', { class: 'ig-legend', 'data-switch': 'true', role: 'group', 'aria-label': switcher.label }, [
+    ...switcher.kinds.map((kind) => {
+      // A SPACE BETWEEN THE WORDS AND THE COUNT, so the button's name reads
+      // "is blocked by 12". A flex row draws no whitespace between its items,
+      // so the board's spacing stays the gap's.
+      const parts = [
+        legendSample(kind.field),
+        element('span', {}, [treatmentFor(kind.field).legendLabel]),
+        ' ',
+        element('span', { class: 'ig-legend-count' }, [String(kind.count)]),
+      ];
+      const drawn = kind.on ? 'true' : 'false';
+      return kind.switchable
+        ? element(
+            'button',
+            {
+              type: 'button',
+              class: 'ig-legend-switch',
+              'data-drawn': drawn,
+              'aria-pressed': drawn,
+              [COMMAND_ATTRIBUTE]: switcher.command,
+              [VALUE_ATTRIBUTE]: kind.field,
+            },
+            parts,
+          )
+        : element('span', { class: 'ig-legend-switch', 'data-drawn': drawn }, parts);
+    }),
+    element('span', { class: 'ig-legend-drawn' }, [switcher.drawn]),
+  ]);
+}
+
+/**
  * The relationships, in the order the export's legend draws them (#296). Not
  * {@link EDGE_ORDER}, the format's field order, which is alphabetical: the
  * legend leads with the one kind that decides the order. Exported because the
@@ -1373,6 +1475,15 @@ export const LEGEND_ORDER: readonly EdgeField[] = Object.freeze([
   'duplicate-of',
   'decomposed-from',
 ]);
+
+/**
+ * Past this many relationships on the selected issue, the selection is dense
+ * (RULES, Graphs, Dense neighbourhoods): the graph draws blocked-by alone at
+ * first and the legend becomes a switch, and the Inspector groups the list by
+ * kind. At this many or fewer it is one flat list and every kind draws. One
+ * number for every surface that asks, so the legend and the list turn together.
+ */
+export const DENSE_RELATIONSHIPS = 8;
 
 /** The readiness keys, in the export's words and order (#296). */
 const STATION_KEYS: readonly (readonly [StationFill, string])[] = Object.freeze([

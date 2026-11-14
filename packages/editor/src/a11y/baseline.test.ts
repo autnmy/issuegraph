@@ -248,6 +248,8 @@ const RENDERED_CONTROLS: readonly string[] = Object.freeze([
   'data-ig-command:flip',
   'data-ig-command:focus',
   'data-ig-command:kind',
+  // THE LEGEND'S SWITCH (#303), drawn by the viewer with this package's command.
+  'data-ig-command:legend-kind',
   // THE LAYOUT UNDER 640's TABS, on every surface: the workspace draws them on
   // every render and the stylesheet hides them at the wider layouts.
   'data-ig-command:narrow-tab',
@@ -267,6 +269,8 @@ const RENDERED_CONTROLS: readonly string[] = Object.freeze([
   'data-ig-command:search',
   'data-ig-command:select-edge',
   'data-ig-command:select-issue',
+  // "Show 4 more" under a group past its first five (#303).
+  'data-ig-command:show-group',
   // §17d's FINDINGS PANEL, and it is NOT `select-issue`. That one is a pointer
   // and completes a draft; this one navigates and cannot write. Listing it is
   // the whole safeguard: the surface below records it today, so a change that
@@ -293,13 +297,13 @@ const RENDERED_CONTROLS: readonly string[] = Object.freeze([
  * oversight the test now refuses.
  */
 const UNREACHABLE: Readonly<Record<string, string>> = Object.freeze({
-  // THE RELATED GROUPS LIST'S TWO CONTROLS appear only past 60 relationships on
-  // one selection, and a fixture that large adds every one of them as an
-  // Inspector row to this artifact. Their tab stop and name are pinned below,
-  // over a rendered list, by 'the Related groups controls are tab stops with
-  // names'.
-  'data-ig-command:related-group': 'needs more than 60 relationships on one selection',
-  'data-ig-command:related-query': 'needs more than 60 relationships on one selection',
+  // THE DENSE NEIGHBOURHOOD'S TWO CONTROLS (#303) appear only past 5 and 8
+  // relationships on one selection, and a fixture that large adds every one of
+  // them as an Inspector row to this artifact. Their tab stop and name are
+  // pinned below, over a rendered surface, by 'the dense neighbourhood's
+  // controls are tab stops with names'.
+  'data-ig-command:legend-kind': 'needs more than 8 relationships on one selection',
+  'data-ig-command:show-group': 'needs more than 5 relationships of one kind on one selection',
 });
 
 describe('the recorded states cover what the package renders', () => {
@@ -606,29 +610,33 @@ describe('the middle zone switch on every surface', () => {
   });
 });
 
-describe('the Related groups controls are tab stops with names', () => {
-  it('records the group control and the search of an open group past 60 as named tab stops', () => {
-    // One kind, so the open group holds all 61 and draws its own search.
-    const hub = backlogOf(62, {
-      edges: keysOf(62)
+describe("the dense neighbourhood's controls are tab stops with names", () => {
+  it('records the legend switch and "Show N more" past 8 relationships as named tab stops, each pressed or not', () => {
+    const hub = backlogOf(13, {
+      edges: keysOf(13)
         .slice(1)
-        .map((key) => ['blocked-by', 'i0001', key] as const),
+        .map((key, index) => [index % 3 === 0 ? 'serialize-with' : 'blocked-by', 'i0001', key] as const),
     });
     const { markup } = renderWorkspace(hub, {
       words: WORKSPACE_WORDS,
       selection: { kind: 'issue', key: 'i0001' },
       narrowView: 'canvas',
       canvas: 'neighbourhood',
-      relatedGroup: 'blocked-by',
     });
     const dom = new JSDOM(`<!doctype html><html><body>${markup}</body></html>`);
     try {
       const entries = controlSurface(dom.window.document.body);
-      for (const control of ['related-group', 'related-query']) {
-        const found = entries.filter((entry) => entry.control === control);
-        assert.equal(found.length, 1, `expected one ${control}`);
-        assert.equal(found[0]?.tabStop, 'tab', `${control} is not a tab stop`);
-        assert.ok(['text', 'label'].includes(found[0]?.name ?? ''), `${control} has no name`);
+      const switches = entries.filter((entry) => entry.control === 'legend-kind');
+      assert.deepEqual(switches.map((entry) => [entry.value, entry.aria['aria-pressed']]), [
+        ['blocked-by', 'true'],
+        ['serialize-with', 'false'],
+      ]);
+      const more = entries.filter((entry) => entry.control === 'show-group');
+      assert.ok(more.length > 0, 'no "Show N more" was drawn');
+      for (const entry of [...switches, ...more]) {
+        assert.equal(entry.role, 'button', `${entry.control} is not a button`);
+        assert.equal(entry.tabStop, 'tab', `${entry.control} is not a tab stop`);
+        assert.equal(entry.name, 'text', `${entry.control} is not named by its words`);
       }
     } finally {
       dom.window.close();

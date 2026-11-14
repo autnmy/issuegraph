@@ -173,17 +173,44 @@ describe('§17f’s caption says what the canvas is drawing', () => {
   });
 
   /**
-   * AE2. An unfocused canvas draws every component, which the counts already
-   * say — so the label with nothing after it would be the only untrue part.
+   * AE2, AS #303 LEFT IT. With nothing selected or picked the canvas draws the
+   * groups as cards rather than every issue at once, so it draws no node to
+   * count, and a ratio over cards would state a drawing that is not there.
    */
-  it('draws no focus clause when the ladder resolved no focus', () => {
+  it('draws no caption over the groups drawn with nothing selected', () => {
     const zone = canvasZone(renderWorkspace(FRAME, { words: WORKSPACE_WORDS }).markup);
 
     assert.match(zone, /class="ig-canvas-toolbar"/, 'the row went missing with the focus');
-    assert.equal(/class="ig-canvas-focus"/.test(zone), false, 'a focus clause with no focus');
+    assert.match(zone, /data-tier="groups"/);
+    assert.equal(/class="ig-canvas-caption"/.test(zone), false, 'a ratio over the group cards');
+  });
+
+  /**
+   * THE BOARD'S HEAD (RULES, Graphs, Dense neighbourhoods): `Selected: #2290 ·
+   * 13 of 41 shown`. A relationship selected has no one issue to name, so its
+   * counts stand alone.
+   */
+  it('names the selected issue in the host’s word, and counts what surrounds it', () => {
     assert.ok(CANVAS !== undefined);
-    assert.equal(zone.includes(CANVAS.focus), false, 'the focus label is drawn with no key');
-    assert.match(zone, /<span class="ig-canvas-count">312<\/span>/, 'the total is not the whole backlog');
+    const zone = canvasZone(
+      renderWorkspace(FRAME, { words: WORKSPACE_WORDS, selection: { kind: 'issue', key: 'i0005' } }).markup,
+    );
+    const clause = focusClause(zone);
+    assert.ok(clause.includes(`<span>${CANVAS.selected}</span>: `), 'the host’s selected word is not drawn');
+    assert.match(clause, /<span class="ig-id">i0005<\/span>/);
+    const caption = /<p class="ig-canvas-caption">([\s\S]*?)<\/p>/.exec(zone)?.[1] ?? '';
+    // i0005 sits in a chain: i0004 blocks it and it blocks i0006.
+    assert.match(caption, /<span class="ig-canvas-count">3<\/span>/, 'the drawn count is not the selection and its two neighbours');
+    assert.match(caption, /<span class="ig-canvas-count">312<\/span>/, 'the total is not the whole backlog');
+
+    const edge = canvasZone(
+      renderWorkspace(FRAME, {
+        words: WORKSPACE_WORDS,
+        selection: { kind: 'edge', edgeId: 'blocked-by|i0005|i0004' },
+      }).markup,
+    );
+    assert.match(edge, /<span class="ig-canvas-count">2<\/span>/, 'a relationship does not draw its two ends');
+    assert.equal(/class="ig-canvas-focus"/.test(edge), false, 'a relationship named one issue');
   });
 });
 
@@ -251,7 +278,10 @@ describe('§17f’s row is drawn from what the host said, and nothing else', () 
     assert.ok(CANVAS !== undefined);
     const { editMode: _editMode, ...withoutPill } = CANVAS;
     const zone = canvasZone(
-      renderWorkspace(FRAME, { words: { ...WORKSPACE_WORDS, canvas: withoutPill } }).markup,
+      renderWorkspace(FRAME, {
+        words: { ...WORKSPACE_WORDS, canvas: withoutPill },
+        scale: { ...INITIAL_SCALE_STATE, focus: 'i0002' },
+      }).markup,
     );
 
     assert.match(zone, /class="ig-canvas-caption"/, 'the caption went with the pill');
@@ -264,7 +294,9 @@ describe('§17f’s row is drawn from what the host said, and nothing else', () 
    */
   it('draws no caption and no pill when the host worded none, and changes nothing else', () => {
     const { canvas: _canvas, ...wordsWithoutCanvas } = WORKSPACE_WORDS;
-    const without = canvasZone(renderWorkspace(FRAME, { words: wordsWithoutCanvas }).markup);
+    const without = canvasZone(
+      renderWorkspace(FRAME, { words: wordsWithoutCanvas, scale: { ...INITIAL_SCALE_STATE, focus: 'i0002' } }).markup,
+    );
 
     // THE ROW STAYS FOR THE MIDDLE ZONE'S SWITCH, whose words are the narrow tabs' and always
     // present. What the host did not word is still absent.
@@ -318,12 +350,12 @@ describe('§17f’s row is drawn from what the host said, and nothing else', () 
   });
 
   /**
-   * THE KEY IS THE LADDER'S, NOT THE SELECTION'S. They are different questions —
-   * the canvas is narrowed to a component, the inspector is filtered to a
-   * selection — and a row reading the wrong one would name an issue the canvas
-   * is not centred on.
+   * THE KEY IS WHAT THE CANVAS IS DRAWN AROUND. Since #303 a selected issue
+   * outranks a picked group — the canvas draws what surrounds the selection —
+   * so the row names the selection, and a row naming the group would name an
+   * issue the canvas is not centred on.
    */
-  it('names the ladder’s focus even when another issue is selected', () => {
+  it('names the selection rather than a picked group, since the canvas is drawn around it', () => {
     const zone = canvasZone(
       renderWorkspace(FRAME, {
         words: WORKSPACE_WORDS,
@@ -333,7 +365,7 @@ describe('§17f’s row is drawn from what the host said, and nothing else', () 
     );
 
     const clause = focusClause(zone);
-    assert.match(clause, /<span class="ig-id">i0002<\/span>/);
-    assert.equal(clause.includes('i0005'), false, 'the row followed the selection');
+    assert.match(clause, /<span class="ig-id">i0005<\/span>/);
+    assert.equal(clause.includes('i0002'), false, 'the row named the picked group under a selection');
   });
 });

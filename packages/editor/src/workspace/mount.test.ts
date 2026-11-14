@@ -476,6 +476,10 @@ describe('mountWorkspace', () => {
 
   describe('done when: a proposal through the store redraws with the edge pending and the order held', () => {
     it('marks the new edge pending-write on the canvas while the source has not answered', async () => {
+      // THE GROUP PICKED, so the canvas draws its graph: with nothing selected
+      // or picked it draws the groups as cards (#303).
+      page.handle.dispatch({ kind: 'control', name: 'focus', target: '2' });
+      await flush();
       void page.store.propose({ op: 'create', kind: 'blocked-by', from: '2', to: '3' });
       await page.source.whenPending();
       await flush();
@@ -492,6 +496,10 @@ describe('mountWorkspace', () => {
     });
 
     it('draws one line per pair during a pending retype: the new identity dashed, the hidden old one gone', async () => {
+      // THE GROUP PICKED, so the canvas draws its graph: with nothing selected
+      // or picked it draws the groups as cards (#303).
+      page.handle.dispatch({ kind: 'control', name: 'focus', target: '2' });
+      await flush();
       const old = makeEdge('blocked-by', '1', '2');
       const next = makeEdge('duplicate-of', '1', '2');
       void page.store.propose({ op: 'retype', edgeId: old.id, nextKind: 'duplicate-of' });
@@ -873,6 +881,10 @@ describe('mountWorkspace', () => {
      * be false — the same rule that keeps the caption off the refusing tiers.
      */
     it('keeps §17f’s pill across the canvas switch, and drops its caption', async () => {
+      // THE GROUP PICKED, so the canvas draws its graph: with nothing selected
+      // or picked it draws the groups as cards (#303).
+      page.handle.dispatch({ kind: 'control', name: 'focus', target: '2' });
+      await flush();
       const row = () => page.element.querySelector('[data-zone="canvas"] .ig-canvas-toolbar');
       assert.ok(row() !== null, 'the neighbourhood canvas drew no toolbar to begin with');
       assert.ok(row()?.querySelector('.ig-canvas-caption') !== null, 'no caption to lose');
@@ -902,6 +914,7 @@ describe('mountWorkspace', () => {
     it('keeps the row for the switch alone when the caption was its other content', async () => {
       const { editMode: _editMode, ...captionOnly } = WORKSPACE_WORDS.canvas ?? {
         focus: '',
+        selected: '',
         of: '',
         shown: '',
       };
@@ -939,6 +952,10 @@ describe('mountWorkspace', () => {
 
   describe('the canvas path: drag a node onto another, then choose the kind at the drop point', () => {
     it('reaches the same proposal as the inspector path', async () => {
+      // THE GROUP PICKED, so the canvas draws its graph: with nothing selected
+      // or picked it draws the groups as cards (#303).
+      page.handle.dispatch({ kind: 'control', name: 'focus', target: '2' });
+      await flush();
       // RE-QUERIED ON EVERY STEP: the drag-start dispatch redraws the canvas, so
       // a node held from before it is detached and an event on it reaches nothing.
       const nodeOf = (key: string): Element => {
@@ -991,6 +1008,10 @@ describe('mountWorkspace', () => {
     });
 
     it('ignores a second pointer while one is pressed, and a non-primary press', async () => {
+      // THE GROUP PICKED, so the canvas draws its graph: with nothing selected
+      // or picked it draws the groups as cards (#303).
+      page.handle.dispatch({ kind: 'control', name: 'focus', target: '2' });
+      await flush();
       const canvas = page.zone('canvas');
       assert.ok(canvas !== null);
       const node = [...canvas.querySelectorAll('[data-ig-key]')].find((each) => each.getAttribute('data-ig-key') === '2');

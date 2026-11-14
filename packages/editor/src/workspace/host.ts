@@ -45,6 +45,7 @@ import {
   firstPassReducer,
 } from './firstpass.ts';
 import { type CanvasMode, type NarrowView, isNarrowTab, pressNarrowTab } from './narrow.ts';
+import { CANVAS_KINDS } from './neighbourhood.ts';
 import {
   INITIAL_SELECTION,
   type SelectionCommand,
@@ -152,16 +153,19 @@ export interface HostState {
    * decision and not a width: the wider layouts never read it.
    */
   readonly narrowView: NarrowView;
-  /** The relationship kind whose group the Related groups list has open, if any. */
-  readonly relatedGroup: EdgeField | null;
-  /** What the reader has typed into the Related groups search. */
-  readonly relatedQuery: string;
   /**
    * The Inspector groups the reader opened past their first five, by
    * `InspectorGroup.key`. Cleared when the selection moves: a group key names a
    * kind, and the next issue's kind is a different list.
    */
   readonly shownGroups: readonly string[];
+  /**
+   * The kinds the reader switched on or off in the legend, away from where
+   * they start for this selection (blocked-by alone past 8 relationships). See
+   * `drawnKinds`. Cleared when the selection moves, as `shownGroups` is: the
+   * next issue's kinds start over.
+   */
+  readonly switchedKinds: readonly EdgeField[];
 }
 
 export const INITIAL_HOST_STATE: HostState = Object.freeze({
@@ -181,9 +185,8 @@ export const INITIAL_HOST_STATE: HostState = Object.freeze({
   diffOpen: null,
   canvas: 'neighbourhood',
   narrowView: 'order',
-  relatedGroup: null,
-  relatedQuery: '',
   shownGroups: [],
+  switchedKinds: [],
 });
 
 /**
@@ -962,18 +965,18 @@ function controlled(
       return value === undefined || !isNarrowTab(value)
         ? unclaimed(state)
         : settled({ ...state, ...pressNarrowTab(value, state.canvas) });
-    // A toggle, and every press changes the group, so the query typed for the
-    // old group is cleared rather than filtering a group it was not typed in.
-    case 'related-group':
-      return value === undefined || !isEdgeField(value)
+    // The legend's switch: each press flips one kind the canvas draws. A kind
+    // it never draws (decomposed-from) is no switch, so a press naming it is
+    // somebody else's.
+    case 'legend-kind':
+      return value === undefined || !isEdgeField(value) || !CANVAS_KINDS.includes(value)
         ? unclaimed(state)
         : settled({
             ...state,
-            relatedGroup: state.relatedGroup === value ? null : value,
-            relatedQuery: '',
+            switchedKinds: state.switchedKinds.includes(value)
+              ? state.switchedKinds.filter((field) => field !== value)
+              : [...state.switchedKinds, value],
           });
-    case 'related-query':
-      return settled({ ...state, relatedQuery: value ?? '' });
     // "Show 4 more" opens a group for good: the rest of a list a reader asked
     // for does not fold away again under them.
     case 'show-group':
@@ -1061,8 +1064,9 @@ function intended(state: HostState, intent: KeyIntent, document: GraphDocument):
  * something, the panel is open again. Comparing the two selections rather than
  * listing the commands that change one is what makes a ninth arm free.
  *
- * The Related groups list's open group and query go on the same move, to
- * nothing selected as well: both describe the old selection's relationships.
+ * The Inspector's opened groups and the legend's switched kinds go on the
+ * same move, to nothing selected as well: both describe the old selection's
+ * relationships.
  */
 export function reduceHost(state: HostState, command: HostCommand, document: GraphDocument): HostResult {
   const result = reduceCommand(state, command, document);
@@ -1072,15 +1076,14 @@ export function reduceHost(state: HostState, command: HostCommand, document: Gra
 
 function afterSelectionMoved(state: HostState): HostState {
   return {
-    ...forgetRelatedList(state),
-    shownGroups: [],
+    ...forgetRelationships(state),
     inspectorDismissed: state.selection.kind === 'none' ? state.inspectorDismissed : false,
   };
 }
 
-/** The Related groups list's reader state, cleared for a selection it no longer describes. */
-function forgetRelatedList(state: HostState): HostState {
-  return { ...state, relatedGroup: null, relatedQuery: '' };
+/** The reader's place among a selection's relationships, cleared for a selection it no longer describes. */
+function forgetRelationships(state: HostState): HostState {
+  return { ...state, shownGroups: [], switchedKinds: [] };
 }
 
 function reduceCommand(state: HostState, command: HostCommand, document: GraphDocument): HostResult {
@@ -1230,7 +1233,7 @@ export function reconcileHost(
   const expandedStands = expanded.length === state.expanded.length;
   if (selection === state.selection && draftStands && expandedStands) return state;
   return {
-    ...(selection === state.selection ? state : forgetRelatedList(state)),
+    ...(selection === state.selection ? state : forgetRelationships(state)),
     selection,
     ...(expandedStands ? {} : { expanded }),
     ...(draftStands ? {} : { draft: IDLE_CREATE_DRAFT, targetQuery: '', drop: null }),

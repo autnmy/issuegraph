@@ -16,6 +16,7 @@
 import type { NormalizedDocument, ViewerHold, ViewerSlot } from '../document.ts';
 import { type ElementSpec, element } from '../element.ts';
 import {
+  type LegendSwitch,
   adoptionNote,
   caveatBadges,
   caveatLines,
@@ -74,6 +75,12 @@ export interface SceneOptions {
    * ignores it.
    */
   readonly selectedEdge?: string | null | undefined;
+  /**
+   * The legend as a switch for each kind, with the kinds switched off left
+   * undrawn (RULES, Graphs, Dense neighbourhoods). The graph only: the list and
+   * the tree draw no lines to switch. Absent, the legend is the static key.
+   */
+  readonly legendSwitch?: LegendSwitch | undefined;
   /**
    * What the list recedes, in place of what it works out from `selected` and
    * `selectedEdge`. The graph, the tree and `mountViewer` ignore it; the mount

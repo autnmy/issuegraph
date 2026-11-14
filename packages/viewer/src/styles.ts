@@ -1241,14 +1241,14 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 }
 
 /* A MATCHED QUERY IS SAID ONCE ON A LIST ROW, BY ITS LINE (#131). The row's
-   provenance line already reads "Picked by query 1 · label:P0", so a chip
+   provenance line already reads "Matched ordering query 1, label:P0", so a chip
    carrying "label:P0" above it printed the same label twice on every row a
    query placed — and no §16 frame draws that chip; §16h gives a row "a single
    provenance line". Hidden by CSS rather than dropped from the markup, for the
    reason the dense rail hides the line instead: the markup stays whole, and
    at the dense density, where the LINE is the one hidden, the rail block
-   brings the chip back. A graph card is not an .ig-slot and draws no line, so
-   its chip is untouched. A declared tier and a promotion keep their chips:
+   brings the chip back. A graph card is not an .ig-slot and draws no line; it
+   carries no query chip at all (cardPriorityBadge). A declared tier and a promotion keep their chips:
    those are the scanning read §16a draws beside the sentence. */
 .ig-slot .ig-badge[data-priority='query'] {
   display: none;
@@ -2054,6 +2054,69 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   font-variant-numeric: tabular-nums;
   gap: var(--ig-space-loose);
   margin-inline-start: auto;
+}
+
+/* THE LEGEND AS A SWITCH (RULES, Graphs, Dense neighbourhoods): past 8
+   relationships on the selection each kind is a ghost button with its swatch,
+   its words and its count, set tighter than the key (the board's 4 between
+   items and 4 above and below) so the bar keeps one row. A kind switched off
+   keeps its swatch faded and its words muted; switched on, its words take the
+   full ink. The swatch fades as a receded line does, by stroke and fill
+   opacity on its marks, and the words beside it by colour alone.
+   The drawn figure ends the bar, pushed to its far edge. */
+.ig-legend[data-switch='true'] {
+  column-gap: var(--ig-space-micro);
+  padding-block: var(--ig-space-micro);
+}
+
+.ig-legend-switch {
+  align-items: center;
+  background: none;
+  border: 0;
+  border-radius: var(--ig-radius);
+  block-size: calc(var(--ig-space-loose) * 2);
+  color: var(--ig-text-muted);
+  display: inline-flex;
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+  gap: var(--ig-space-snug);
+  padding: 0 var(--ig-space-snug);
+  white-space: nowrap;
+}
+
+.ig-legend-switch[aria-pressed] {
+  cursor: pointer;
+}
+
+.ig-legend-switch[aria-pressed]:hover {
+  background: var(--ig-surface-2);
+}
+
+.ig-legend-switch[aria-pressed]:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-micro);
+}
+
+.ig-legend-switch[data-drawn='true'] {
+  color: var(--ig-text);
+}
+
+.ig-legend-switch[data-drawn='false'] svg > * {
+  fill-opacity: ${RECEDE_ALPHA};
+  stroke-opacity: ${RECEDE_ALPHA};
+}
+
+.ig-legend-count,
+.ig-legend-drawn {
+  color: var(--ig-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ig-legend-drawn {
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+  margin-inline-start: auto;
+  white-space: nowrap;
 }
 
 /* ALL FOUR READINESS KEYS ARE ONE SIZE, the export's eight (the redesign

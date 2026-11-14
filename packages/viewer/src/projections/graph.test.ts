@@ -1746,3 +1746,103 @@ describe('a selected set on the canvas', () => {
     assert.equal(asGiven.edges.has(edgeIdentity('blocked-by', '22', '32')), false);
   });
 });
+
+describe('the legend as a switch for each kind (#303, RULES, Graphs, Dense neighbourhoods)', () => {
+  // 105 holds one relationship of each of three kinds: it is blocked by
+  // other/repo#7, serializes with 103, and 106 is a duplicate of it.
+  const legendSwitch = {
+    label: 'kinds to draw',
+    command: 'legend-kind',
+    drawn: '1 drawn out of 4',
+    kinds: [
+      { field: 'blocked-by' as const, count: 1, on: true, switchable: true },
+      { field: 'serialize-with' as const, count: 1, on: false, switchable: true },
+      { field: 'duplicate-of' as const, count: 1, on: false, switchable: true },
+      { field: 'decomposed-from' as const, count: 1, on: false, switchable: false },
+    ],
+  };
+
+  function legendOf(markup: string): string {
+    const start = markup.indexOf('<div class="ig-legend"');
+    assert.notEqual(start, -1, 'no switch legend');
+    return markup.slice(start);
+  }
+
+  it('draws a named group of pressed-or-not buttons, each with its swatch, words, count and command', () => {
+    const legend = legendOf(render(fixtureDocument, { selected: '105', legendSwitch }));
+    assert.match(legend, /^<div class="ig-legend" data-switch="true" role="group" aria-label="kinds to draw">/);
+    assert.match(
+      legend,
+      /<button type="button" class="ig-legend-switch" data-drawn="true" aria-pressed="true" data-ig-command="legend-kind" data-ig-value="blocked-by"><svg[^>]*>.*?<\/svg><span>is blocked by<\/span> <span class="ig-legend-count">1<\/span><\/button>/,
+    );
+    assert.match(
+      legend,
+      /<button type="button" class="ig-legend-switch" data-drawn="false" aria-pressed="false" data-ig-command="legend-kind" data-ig-value="serialize-with">/,
+    );
+    assert.match(legend, /<span class="ig-legend-drawn">1 drawn out of 4<\/span><\/div>/);
+  });
+
+  it('shows a kind it never draws with its count, but as no control', () => {
+    const legend = legendOf(render(fixtureDocument, { selected: '105', legendSwitch }));
+    assert.match(legend, /<span class="ig-legend-switch" data-drawn="false"><svg[^>]*>.*?<\/svg><span>was decomposed from<\/span> <span class="ig-legend-count">1<\/span><\/span>/);
+    assert.equal(legend.includes('data-ig-value="decomposed-from"'), false);
+  });
+
+  it('draws no line of a kind switched off, and every line of a kind switched on', () => {
+    const canvas = canvasOf(render(fixtureDocument, { selected: '105', legendSwitch }));
+    assert.match(canvas, /data-edge="blocked-by"/);
+    assert.equal(canvas.includes('data-edge="serialize-with"'), false, 'a switched-off kind drew');
+    assert.equal(canvas.includes('data-edge="duplicate-of"'), false, 'a switched-off kind drew');
+    const all = canvasOf(render(fixtureDocument, { selected: '105' }));
+    assert.match(all, /data-edge="serialize-with"/, 'the fixture draws the kind without a switch');
+  });
+
+  it('keeps the static key, readiness and all, without a switch', () => {
+    const markup = render(fixtureDocument, { selected: '105' });
+    assert.match(markup, /<fieldset class="ig-legend" aria-label="Relationships">/);
+    assert.equal(markup.includes('ig-legend-switch'), false);
+  });
+
+  it('styles a switched-off swatch faded and its words muted, the switched-on words in full ink', () => {
+    assert.match(viewerStylesheet, /\.ig-legend-switch\[data-drawn='false'\] svg > \* \{\s*fill-opacity: 0\.5;\s*stroke-opacity: 0\.5;/);
+    assert.match(viewerStylesheet, /\.ig-legend-switch \{[^}]*color: var\(--ig-text-muted\);/);
+    assert.match(viewerStylesheet, /\.ig-legend-switch\[data-drawn='true'\] \{\s*color: var\(--ig-text\);/);
+  });
+});
+
+describe('a card a query placed shows no query (#303, RULES, Graphs, Dense neighbourhoods)', () => {
+  /** The card for `key`, from its key to the next keyed element's. */
+  function cardOf(markup: string, key: string): string {
+    const start = markup.indexOf(`data-ig-key="${key}"`);
+    assert.notEqual(start, -1, `no card for ${key}`);
+    const next = markup.indexOf('data-ig-key="', start + 1);
+    const card = markup.slice(start, next === -1 ? undefined : next);
+    assert.match(card, /Ship the settlement reconciler/, 'the slice is not the card');
+    return card;
+  }
+
+  it('shows the priority a query-placed issue declares, and never the query text', () => {
+    // 101 is placed by `label:P1` and declares P1.
+    const card = cardOf(render(fixtureDocument), '101');
+    assert.match(card, /<span class="ig-badge" data-priority="tier">P1<\/span>/);
+    assert.equal(card.includes('label:P1'), false, 'the query text was drawn on a node');
+  });
+
+  it('shows the number alone for a query-placed issue that declares no priority', () => {
+    const unprioritized: ViewerDocument = {
+      ...fixtureDocument,
+      issues: fixtureDocument.issues.map((issue) =>
+        issue.key === '101' ? { ...issue, priority: undefined } : issue,
+      ),
+    };
+    const card = cardOf(render(unprioritized), '101');
+    assert.equal(/data-priority=/.test(card), false, 'a query-placed card with no priority drew a tag');
+    assert.equal(card.includes('label:P1'), false, 'the query text was drawn on a node');
+    assert.match(card, /#101/);
+  });
+
+  it('words the query in the board’s words wherever the provenance is said', () => {
+    const markup = renderViewer(fixtureDocument, { projection: 'linear' }).markup;
+    assert.match(markup, /Matched ordering query 1, <span class="ig-copy-key">label:P1<\/span>/);
+  });
+});

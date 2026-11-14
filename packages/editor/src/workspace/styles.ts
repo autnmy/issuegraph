@@ -1758,8 +1758,7 @@ ${heldRailDeclarations}
   color: var(--ig-text);
 }
 
-.ig-workspace .ig-narrow-tab:focus-visible,
-.ig-workspace .ig-related-group:focus-visible {
+.ig-workspace .ig-narrow-tab:focus-visible {
   outline: var(--ig-focus-ring) solid var(--ig-focus);
   outline-offset: var(--ig-space-tight);
 }
@@ -1807,60 +1806,19 @@ ${heldRailDeclarations}
   outline-offset: var(--ig-space-micro);
 }
 
+/* THE INSPECTOR'S GROUPS, AND ITS ROW BOX: each kind's head and count, five
+   rows of '.ig-relationship', then "Show 4 more". Only the gap between the
+   groups is this list's. Drawn by the narrow sheet alone. */
 .ig-workspace .ig-related {
   display: none;
+  flex-direction: column;
+  gap: var(--ig-space);
   padding: var(--ig-space);
 }
 
-/* The rows take the Inspector's own row box, '.ig-relationship', so they read
-   the same; only the lists around them are this list's. */
-.ig-related-rows,
-.ig-related-groups {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--ig-space-tight);
-}
-
-.ig-related-groups > li {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ig-space-tight);
-}
-
-.ig-related-group {
-  display: flex;
-  gap: var(--ig-space-tight);
-  align-items: baseline;
-  border: var(--ig-stroke) solid var(--ig-line);
-  border-radius: var(--ig-radius);
-  background: var(--ig-surface);
-  color: var(--ig-text-body);
-  font-family: inherit;
-  font-size: inherit;
-  padding: var(--ig-space-tight);
-  text-align: left;
-  cursor: pointer;
-}
-
-.ig-related-search {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ig-space-tight);
-  margin-bottom: var(--ig-space-tight);
-  color: var(--ig-text-muted);
-  font-size: var(--ig-font-size-small);
-}
-
-/* The list's own sentences: the empty states, and the search's status line
-   (nothing matched, or how many the 60-row cut left out). All muted, at the
-   size of the group counts. An empty status line takes no room with no
-   margin, and it is never display: none, which would take the region out of
-   the accessibility tree and lose the first announcement. */
-.ig-related-empty,
-.ig-related-status {
+/* The list's own sentences, the empty states: muted, at the size of the
+   group counts. */
+.ig-related-empty {
   margin: 0;
   color: var(--ig-text-muted);
   font-size: var(--ig-font-size-small);
@@ -2224,7 +2182,17 @@ ${heldRailDeclarations}
   }
 
   .ig-workspace[data-tab='related'][data-canvas] .ig-zone[data-zone='canvas'] > .ig-related {
-    display: block;
+    display: flex;
+  }
+
+  /* WITH NOTHING SELECTED THE TAB IS THE GROUPS, never every issue at once
+     (RULES, Graphs, Dense neighbourhoods). The render leaves the list out and
+     the cards the ladder drew stand in its place, so each group is one control
+     whatever the width. */
+  .ig-workspace[data-tab='related'][data-canvas]
+    .ig-zone[data-zone='canvas']:not(:has(> .ig-related))
+    > .ig-ladder {
+    display: flex;
   }
 
   /* THE PROBLEMS PANEL ON THE ORDER TAB IS IN FLOW, ABOVE THE ORDER (issue

@@ -206,6 +206,7 @@ export const WORKSPACE_WORDS: MountWords = {
   // counts sit between them.
   canvas: {
     focus: 'centered on',
+    selected: 'Selected',
     of: 'of',
     shown: 'shown',
     editMode: 'edit mode',
@@ -296,9 +297,6 @@ export const WORKSPACE_WORDS: MountWords = {
     view: 'View',
     closeSheet: 'Close',
     noSelection: 'Select an issue to list its relationships.',
-    searchRelated: 'Search relationships',
-    omitted: (count) => `${String(count)} more not shown. Narrow the search to see them.`,
-    noMatch: 'No relationship matches this search.',
   },
   // §17a's inspector explains the position before it lists the relationships.
   // The frame draws the heading in caps; the caps are the stylesheet's, so the
@@ -319,6 +317,8 @@ export const WORKSPACE_WORDS: MountWords = {
   workedAsOneUnit: 'worked together with',
   noRelationships: 'Nothing is related to this issue yet.',
   showMore: (count: number): string => `Show ${String(count)} more`,
+  relationshipsToDraw: 'Relationships to draw',
+  relationshipsDrawn: (drawn: number, total: number): string => `${String(drawn)} of ${String(total)} drawn`,
   addRelationship: '+ add',
   addRelationshipHeading: 'Add relationship',
   cancel: 'Cancel',

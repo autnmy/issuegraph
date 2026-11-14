@@ -113,7 +113,7 @@ export type { EdgeDash, EdgeTerminal, EdgeTreatment, OrderingEffect } from './vo
 // the duplicate when the other issue is. Publishing the treatment's fields and
 // withholding the rule that reads them is what put two copies of it here once
 // already.
-export { EDGE_TREATMENTS, dashArrayFor, labelFrom, treatmentFor } from './vocabulary.ts';
+export { EDGE_TREATMENTS, dashArrayFor, labelFrom, legendLabelFrom, treatmentFor } from './vocabulary.ts';
 
 // `relatedKeys` IS WHAT THOSE TWO NUMBERS COUNT, and it travels with them: the
 // editor's scale ladder decides the same tiers against the same constants, so it
@@ -176,6 +176,7 @@ export { EDGE_MARK_CLASS, MARK_PLACEMENT_ATTRIBUTE } from './marks.ts';
 // that argued against it. `hiddenGlyph` is the half that call site needs.
 export {
   COMMAND_ATTRIBUTE,
+  DENSE_RELATIONSHIPS,
   LEGEND_ORDER,
   ROW_BADGE_BUDGET,
   glyphAndLabel,
@@ -186,6 +187,9 @@ export {
   issueNumber,
   provenanceClause,
 } from './parts.ts';
+// The legend's per-kind switch (#303): the editor builds one for a dense
+// selection and hands it to the graph through `SceneOptions.legendSwitch`.
+export type { LegendSwitch, LegendSwitchKind } from './parts.ts';
 
 export type { Cluster, ClusterReach } from './clusters.ts';
 export { clusterReach, clusterReachLabel, clustersOf } from './clusters.ts';

@@ -328,10 +328,13 @@ describe('the dense layer reaches the surfaces the sandbox exists for', () => {
     assert.notEqual(focused.tier, 'direct', 'the largest component draws when it should refuse');
   });
 
-  it('draws the comp directly, so the landing state is never a refusal', () => {
+  it('lands the comp on its groups, so the landing state is never a refusal', () => {
+    // With nothing selected the canvas draws the groups as cards, never every
+    // issue at once (#303); within the budget that is a choice, not a refusal.
     const comp = load('comp');
     const top = scaleLadder(comp.viewer, INITIAL_SCALE_STATE);
-    assert.equal(top.tier, 'direct', `the comp landed on tier ${top.tier}`);
+    assert.equal(top.tier, 'groups', `the comp landed on tier ${top.tier}`);
+    assert.equal(top.refusal, null);
     assert.ok(top.nodeCount <= GRAPH_NODE_BUDGET);
   });
 

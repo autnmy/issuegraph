@@ -193,6 +193,9 @@ describe('the public surface', () => {
       // The attribute a host reads to hear a control the viewer publishes and
       // does not wire — refresh, the projection toggle, expand and collapse.
       'COMMAND_ATTRIBUTE',
+      // The relationship count past which a selection is dense, so the
+      // editor's legend switch and its Inspector groups turn at one number (#303).
+      'DENSE_RELATIONSHIPS',
       // The class every drawn mark carries and the attribute it publishes its
       // PLACEMENT on. Both joined for `@issuegraph/editor`, which decides which
       // marks an edge owes and cannot place one: a mark needs a position, and
@@ -271,6 +274,8 @@ describe('the public surface', () => {
       // failure is an INVERTED word rather than a missing one: an inbound
       // `duplicate-of` worded forwards asserts the reverse of the fact.
       'labelFrom',
+      // The legend's phrase from either end, which heads the Inspector's groups (#303).
+      'legendLabelFrom',
       'mountViewer',
       'navigate',
       'nextSelection',

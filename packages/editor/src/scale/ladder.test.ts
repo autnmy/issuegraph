@@ -22,7 +22,12 @@ describe('the tier is decided by the viewer\'s own budgets', () => {
     // the ladder and the canvas into disagreement about the same document — the
     // canvas would draw a refusal under a ladder claiming it drew, or the
     // reverse — and only the boundary cases can catch it.
-    assert.equal(scaleLadder(relatedDocument(GRAPH_NODE_BUDGET)).tier, 'direct');
+    // A PICKED GROUP draws at the budget and refuses one past it; with nothing
+    // picked or selected, the groups at or under it are cards (#303).
+    const focus = { ...INITIAL_SCALE_STATE, focus: componentKey(0, 1) };
+    assert.equal(scaleLadder(documentOf({ components: [GRAPH_NODE_BUDGET] }), focus).tier, 'direct');
+    assert.equal(scaleLadder(documentOf({ components: [GRAPH_NODE_BUDGET + 1] }), focus).tier, 'capsules');
+    assert.equal(scaleLadder(relatedDocument(GRAPH_NODE_BUDGET)).tier, 'groups');
     assert.equal(scaleLadder(relatedDocument(GRAPH_NODE_BUDGET + 1)).tier, 'capsules');
     assert.equal(scaleLadder(relatedDocument(CLUSTER_ONLY_BUDGET)).tier, 'capsules');
     assert.equal(scaleLadder(relatedDocument(CLUSTER_ONLY_BUDGET + 1)).tier, 'clusters');
@@ -43,7 +48,7 @@ describe('the tier is decided by the viewer\'s own budgets', () => {
     const document = documentOf({ components: componentsSumming(20, 5), isolated: 500 });
     const ladder = scaleLadder(document);
     assert.equal(ladder.nodeCount, 20);
-    assert.equal(ladder.tier, 'direct');
+    assert.equal(ladder.tier, 'groups');
     assert.equal(ladder.isolated.count, 500);
   });
 
@@ -58,7 +63,7 @@ describe('the tier is decided by the viewer\'s own budgets', () => {
       const ladder = scaleLadder(input);
       const canvas = renderViewer(input, { projection: 'graph' }).scene;
       assert.equal(ladder.nodeCount, relatedKeys(normalizeDocument(input).document).size);
-      assert.equal(ladder.tier === 'direct', canvas.diagnostics.length === 0, `disagreed at ${String(total)}`);
+      assert.equal(ladder.tier === 'groups', canvas.diagnostics.length === 0, `disagreed at ${String(total)}`);
     }
   });
 });
@@ -194,10 +199,14 @@ describe('every refusal names its reason and offers a route', () => {
     assert.ok(focused.refusal?.routes.some((route) => route.kind === 'clear-focus'));
   });
 
-  it('never refuses on the direct tier', () => {
-    const ladder = scaleLadder(relatedDocument(GRAPH_NODE_BUDGET));
-    assert.equal(ladder.refusal, null);
-    assert.equal(ladder.search, null);
+  it('never refuses on the direct tier, nor on the groups drawn with nothing selected', () => {
+    const groups = scaleLadder(relatedDocument(GRAPH_NODE_BUDGET));
+    assert.equal(groups.refusal, null);
+    assert.equal(groups.search, null);
+    const direct = scaleLadder(relatedDocument(GRAPH_NODE_BUDGET), { ...INITIAL_SCALE_STATE, focus: componentKey(0, 1) });
+    assert.equal(direct.tier, 'direct');
+    assert.equal(direct.refusal, null);
+    assert.equal(direct.search, null);
   });
 
   it('says the order list is unaffected, because narrowing the canvas is not narrowing the order', () => {
@@ -352,3 +361,66 @@ describe('a narrowed canvas keeps what is TRUE and drops what is DRAWN', () => {
   });
 });
 
+
+describe('with nothing selected, the groups; with a selection, what surrounds it (#303)', () => {
+  it('draws the groups as cards, never every issue at once, whenever any issue is related', () => {
+    const ladder = scaleLadder(documentOf({ components: [3, 2], isolated: 4 }));
+    assert.equal(ladder.tier, 'groups');
+    assert.deepEqual(ladder.capsules.map((capsule) => capsule.size), [3, 2]);
+    assert.equal(ladder.capsulesOmitted, null);
+    assert.equal(ladder.canvas.issues.length, 5, 'the canvas still names what the groups hold');
+  });
+
+  it('keeps drawing a document with nothing related as the empty canvas it is', () => {
+    const ladder = scaleLadder(documentOf({ components: [], isolated: 3 }));
+    assert.equal(ladder.tier, 'direct');
+    assert.deepEqual(ladder.capsules, []);
+  });
+
+  it('keeps the selected issue and the far ends of the relationships drawn from it, and those lines alone', () => {
+    // c0-1 -> c0-2 -> c0-3 -> c0-4: the selection c0-2 draws its two lines and
+    // its two neighbours, and the line between c0-3 and c0-4 waits.
+    const document = documentOf({ components: [4, 2] });
+    const around = {
+      centre: [componentKey(0, 2)],
+      edges: [
+        { field: 'blocked-by' as const, from: componentKey(0, 1), to: componentKey(0, 2) },
+        { field: 'blocked-by' as const, from: componentKey(0, 2), to: componentKey(0, 3) },
+      ],
+    };
+    const ladder = scaleLadder(document, INITIAL_SCALE_STATE, around);
+    assert.equal(ladder.tier, 'direct');
+    assert.equal(ladder.nodeCount, 3);
+    assert.deepEqual(ladder.canvas.issues.map((issue) => issue.key), [1, 2, 3].map((member) => componentKey(0, member)));
+    assert.equal(ladder.canvas.edges.length, 2);
+    assert.deepEqual(ladder.capsules, []);
+  });
+
+  it('outranks a picked group while something is selected, and keeps a selected unit whole', () => {
+    const base = documentOf({ components: [4] });
+    const unit: typeof base = {
+      ...base,
+      order: {
+        slots: [
+          { rank: 1, lead: componentKey(0, 3), members: [componentKey(0, 3), componentKey(0, 4)], ready: true, holds: [] },
+          ...base.order.slots.filter((slot) => slot.lead !== componentKey(0, 3) && slot.lead !== componentKey(0, 4)),
+        ],
+        excluded: [],
+      },
+    };
+    const around = { centre: [componentKey(0, 3)], edges: [] };
+    const ladder = scaleLadder(unit, { ...INITIAL_SCALE_STATE, focus: componentKey(0, 1) }, around);
+    assert.equal(ladder.focus, null, 'a focus was reported over a selection');
+    assert.deepEqual(new Set(ladder.canvas.issues.map((issue) => issue.key)), new Set([componentKey(0, 3), componentKey(0, 4)]));
+  });
+
+  it('refuses a neighbourhood past the budget with no search, since a match would move nothing drawn', () => {
+    const document = documentOf({ components: [GRAPH_NODE_BUDGET + 2] });
+    const edges = document.edges.slice(0, GRAPH_NODE_BUDGET + 1);
+    const ladder = scaleLadder(document, INITIAL_SCALE_STATE, { centre: [componentKey(0, 1)], edges });
+    assert.equal(ladder.tier, 'capsules');
+    assert.equal(ladder.search, null);
+    assert.deepEqual(ladder.capsules, []);
+    assert.deepEqual(ladder.refusal?.routes.map((route) => route.kind), ['order-rail']);
+  });
+});

@@ -12,12 +12,52 @@ import { renderScaleLadder } from './render.ts';
 const relatedDocument = (total: number, cap = 20) =>
   documentOf({ components: componentsSumming(total, cap) });
 
+/**
+ * The first component picked, so the canvas draws its graph: with nothing
+ * selected or picked it draws the groups as cards (#303).
+ */
+const DRAWN = { ...INITIAL_SCALE_STATE, focus: componentKey(0, 1) };
+
 describe('the three tiers render', () => {
   it('draws the canvas at or under the node budget, and nothing else claims to', () => {
-    const result = renderScaleLadder(relatedDocument(GRAPH_NODE_BUDGET));
+    const result = renderScaleLadder(documentOf({ components: [GRAPH_NODE_BUDGET] }), { state: DRAWN });
     assert.match(result.markup, /data-projection="graph"/);
     assert.match(result.markup, /data-tier="direct"/);
     assert.equal(/class="ig-refusal"/.test(result.markup), false);
+  });
+
+  it('draws the groups as cards with nothing selected, with no sentence over them and no graph (#303)', () => {
+    const result = renderScaleLadder(relatedDocument(GRAPH_NODE_BUDGET));
+    assert.match(result.markup, /data-tier="groups"/);
+    assert.match(result.markup, /<ol class="ig-list ig-groups" aria-label="groups of related issues">/);
+    assert.equal(result.markup.match(/class="ig-capsule-cell"/g)?.length, 3);
+    assert.equal(/class="ig-refusal"/.test(result.markup), false, 'a choice was drawn as a refusal');
+    assert.equal(/data-projection="graph"/.test(result.markup), false, 'every issue was drawn at once');
+    assert.equal(/data-ig-command="search"/.test(result.markup), false);
+  });
+
+  it('draws what surrounds the selection, and hands the viewer its legend switch (#303)', () => {
+    const document = relatedDocument(10);
+    const legendSwitch = {
+      label: 'kinds to draw',
+      command: 'legend-kind',
+      drawn: '2 of 2',
+      kinds: [{ field: 'blocked-by' as const, count: 2, on: true, switchable: true }],
+    };
+    const result = renderScaleLadder(document, {
+      selected: componentKey(0, 5),
+      around: {
+        centre: [componentKey(0, 5)],
+        edges: [
+          { field: 'blocked-by', from: componentKey(0, 4), to: componentKey(0, 5) },
+          { field: 'blocked-by', from: componentKey(0, 5), to: componentKey(0, 6) },
+        ],
+      },
+      legendSwitch,
+    });
+    assert.match(result.markup, /data-tier="direct"/);
+    assert.equal(result.ladder.nodeCount, 3);
+    assert.match(result.markup, /<div class="ig-legend" data-switch="true" role="group" aria-label="kinds to draw">/);
   });
 
   it('draws capsules and NO canvas past the node budget', () => {
@@ -44,8 +84,8 @@ describe('the ladder and the canvas agree about the count', () => {
     // the viewer's own — routeless — refusal inside it, and every assertion
     // about tier would still pass. The viewer says "graph refused" in its
     // diagnostics when it declines, so an empty diagnostic list is the check.
-    const document = documentOf({ components: componentsSumming(GRAPH_NODE_BUDGET, 5), isolated: 500 });
-    const result = renderScaleLadder(document);
+    const document = documentOf({ components: [GRAPH_NODE_BUDGET], isolated: 500 });
+    const result = renderScaleLadder(document, { state: DRAWN });
     assert.equal(result.ladder.tier, 'direct');
     assert.equal(result.ladder.nodeCount, GRAPH_NODE_BUDGET);
     assert.deepEqual([...result.diagnostics], []);
@@ -359,7 +399,7 @@ describe('the output is safe and complete', () => {
         index === 0 ? { ...issue, url: 'javascript:alert(1)' } : issue,
       ),
     };
-    const result = renderScaleLadder(withBadUrl);
+    const result = renderScaleLadder(withBadUrl, { state: DRAWN });
     assert.equal(result.ladder.tier, 'direct');
     const about = result.diagnostics.filter((line) => line.includes('url whose scheme'));
     assert.equal(about.length, 1, `diagnostics: ${JSON.stringify(result.diagnostics)}`);
@@ -407,7 +447,7 @@ describe('the canvas draws the selected EDGE', () => {
   const first = edgeIdentity('blocked-by', componentKey(0, 1), componentKey(0, 2));
 
   it('marks it with the selection halo, on the edge the reader picked', () => {
-    const result = renderScaleLadder(document, { selectedEdge: first });
+    const result = renderScaleLadder(document, { state: DRAWN, selectedEdge: first });
 
     assert.match(result.markup, /class="ig-overlay ig-overlay-halo"/);
     // THE STATE LANDS ON THE EDGE ITSELF, not only on a decoration beside it —
@@ -424,15 +464,15 @@ describe('the canvas draws the selected EDGE', () => {
     // A canvas that can draw a class and a stylesheet a caller has to remember
     // separately is a mark that renders as nothing on exactly the host that did
     // everything else right.
-    const result = renderScaleLadder(document, { selectedEdge: first });
+    const result = renderScaleLadder(document, { state: DRAWN, selectedEdge: first });
     assert.match(result.styles, /\.ig-overlay-halo \{/);
   });
 
   it('leaves the canvas untouched when nothing is selected', () => {
-    const bare = renderScaleLadder(document);
+    const bare = renderScaleLadder(document, { state: DRAWN });
     assert.equal(/ig-overlay/.test(bare.markup), false);
     assert.equal(
-      renderScaleLadder(document, { selectedEdge: null }).markup,
+      renderScaleLadder(document, { state: DRAWN, selectedEdge: null }).markup,
       bare.markup,
       'an explicit null is not the same as no selection',
     );
@@ -445,7 +485,7 @@ describe('the canvas draws the selected EDGE', () => {
     // render is nothing selected, and it is not a diagnostic: the canvas has
     // nothing to report about an edge it was never given.
     const absent = edgeIdentity('blocked-by', 'nowhere-1', 'nowhere-2');
-    const result = renderScaleLadder(document, { selectedEdge: absent });
+    const result = renderScaleLadder(document, { state: DRAWN, selectedEdge: absent });
     assert.equal(/ig-overlay/.test(result.markup), false);
     assert.deepEqual([...result.diagnostics], []);
   });
@@ -480,7 +520,7 @@ describe('the canvas draws each edge’s WRITE STATES from the store’s project
   };
 
   it('marks a pending edge on the edge itself', () => {
-    const result = renderScaleLadder(document, { projected: [pending] });
+    const result = renderScaleLadder(document, { state: DRAWN, projected: [pending] });
     const marked = [
       ...result.markup.matchAll(/<path class="ig-edge"[^>]*?data-ig-group="([^"]*)"[^>]*?data-ig-state="([^"]*)"/g),
     ].map((match) => [match[1], match[2]]);
@@ -491,7 +531,7 @@ describe('the canvas draws each edge’s WRITE STATES from the store’s project
   it('composes the selection halo with the write state on one edge', () => {
     // One record per identity, its states the union: a second record for the
     // same edge would replace the first rather than compose with it.
-    const result = renderScaleLadder(document, { projected: [pending], selectedEdge: first });
+    const result = renderScaleLadder(document, { state: DRAWN, projected: [pending], selectedEdge: first });
     assert.match(result.markup, /class="ig-edge"[^>]*data-ig-state="selected pending-write"/);
     assert.match(result.markup, /class="ig-overlay ig-overlay-halo"/);
   });
@@ -500,10 +540,10 @@ describe('the canvas draws each edge’s WRITE STATES from the store’s project
     // Only the selected relationship's own line draws, so the pending line
     // beside it is not on the canvas and neither is its state or its chips.
     assert.ok(
-      renderScaleLadder(document).markup.includes(`data-ig-group="${first}"`),
+      renderScaleLadder(document, { state: DRAWN }).markup.includes(`data-ig-group="${first}"`),
       'the canvas never draws the pending line, so this proves nothing',
     );
-    const result = renderScaleLadder(document, { projected: [pending], selectedEdge: second });
+    const result = renderScaleLadder(document, { state: DRAWN, projected: [pending], selectedEdge: second });
     const states = [
       ...result.markup.matchAll(/<path class="ig-edge"[^>]*?data-ig-group="([^"]*)"[^>]*?data-ig-state="([^"]*)"/g),
     ].map((match) => `${match[1] ?? ''}=${match[2] ?? ''}`);
@@ -516,7 +556,7 @@ describe('the canvas draws each edge’s WRITE STATES from the store’s project
   it('ignores an entry with no state, and one naming an edge this canvas does not draw', () => {
     const absent = { ...pending, id: edgeIdentity('blocked-by', 'nowhere-1', 'nowhere-2'), from: 'nowhere-1', to: 'nowhere-2' };
     const settled = { ...pending, states: [] };
-    const result = renderScaleLadder(document, { projected: [absent, settled] });
+    const result = renderScaleLadder(document, { state: DRAWN, projected: [absent, settled] });
     assert.equal(/ig-overlay/.test(result.markup), false);
     assert.equal(/data-ig-state=/.test(result.markup), false);
     assert.equal(/data-ig-mark=/.test(result.markup), false);
@@ -538,7 +578,7 @@ describe('the canvas draws each edge’s WRITE STATES from the store’s project
       ['conflict', 'companion'],
     ];
     for (const [state, placement] of owed) {
-      const result = renderScaleLadder(document, {
+      const result = renderScaleLadder(document, { state: DRAWN,
         projected: [{ ...pending, states: [state] }],
       });
       const placements = [...result.markup.matchAll(/data-ig-mark="([a-z-]+)"/g)].map(
@@ -553,7 +593,7 @@ describe('the canvas draws each edge’s WRITE STATES from the store’s project
   });
 
   it('draws a pending chip at BOTH ends, because an edit is in flight at both', () => {
-    const result = renderScaleLadder(document, { projected: [pending] });
+    const result = renderScaleLadder(document, { state: DRAWN, projected: [pending] });
     const chips = [...result.markup.matchAll(/data-ig-mark="both-ends"/g)];
     assert.equal(chips.length, 2);
   });
@@ -561,7 +601,7 @@ describe('the canvas draws each edge’s WRITE STATES from the store’s project
   it('draws no mark for a selection, which needs no position of its own', () => {
     // A halo is the path stroked wider, so it is drawn where the path already
     // is. Nothing about selecting an edge needs the layout.
-    const result = renderScaleLadder(document, { selectedEdge: first });
+    const result = renderScaleLadder(document, { state: DRAWN, selectedEdge: first });
     assert.match(result.markup, /ig-overlay-halo/);
     assert.equal(/data-ig-mark=/.test(result.markup), false);
   });
@@ -583,12 +623,12 @@ describe('a selection recedes the rest of the scale canvas', () => {
     );
   /** Every relationship the canvas draws with nothing selected, so an absence below is not vacuous. */
   const everyLine = (document: ReturnType<typeof relatedDocument>): ReadonlySet<string> =>
-    new Set(lineGroups(renderScaleLadder(document).markup).keys());
+    new Set(lineGroups(renderScaleLadder(document, { state: DRAWN }).markup).keys());
 
   it('stamps every row and station the selected edge does not touch, and draws only its line', () => {
     const document = relatedDocument(10);
     const picked = edgeIdentity('blocked-by', componentKey(0, 1), componentKey(0, 2));
-    const { markup } = renderScaleLadder(document, { selectedEdge: picked });
+    const { markup } = renderScaleLadder(document, { state: DRAWN, selectedEdge: picked });
     assert.match(markup, /data-tier="direct"/);
 
     const stamped = (tag: string): boolean => tag.includes('data-recede="true"');
@@ -618,7 +658,7 @@ describe('a selection recedes the rest of the scale canvas', () => {
   it('stamps nothing for a selectedEdge this canvas does not draw, however it is spelled', () => {
     const document = relatedDocument(10);
     const drawn = edgeIdentity('blocked-by', componentKey(0, 1), componentKey(0, 2));
-    const bare = renderScaleLadder(document).markup;
+    const bare = renderScaleLadder(document, { state: DRAWN }).markup;
 
     // The workspace hands this value through from its own selection state, so a
     // stale or crafted identity must reach the canvas as nothing selected.
@@ -629,7 +669,7 @@ describe('a selection recedes the rest of the scale canvas', () => {
       '__proto__',
     ];
     for (const value of unresolved) {
-      const result = renderScaleLadder(document, { selectedEdge: value });
+      const result = renderScaleLadder(document, { state: DRAWN, selectedEdge: value });
       // The issue: "No selection, or one that does not resolve, recedes nothing."
       assert.equal(/data-recede/.test(result.markup), false, `${JSON.stringify(value)} stamped the canvas`);
       assert.equal(result.markup, bare, `${JSON.stringify(value)} changed the canvas`);
@@ -642,7 +682,7 @@ describe('a selection recedes the rest of the scale canvas', () => {
     const ignored = edgeIdentity('blocked-by', componentKey(0, 1), componentKey(0, 2));
     const kept = edgeIdentity('blocked-by', componentKey(0, 9), componentKey(0, 10));
 
-    const result = renderScaleLadder(document, { selected: componentKey(0, 10), selectedEdge: ignored });
+    const result = renderScaleLadder(document, { state: DRAWN, selected: componentKey(0, 10), selectedEdge: ignored });
 
     // "When a host passes issues and a relationship together, the issues win and the relationship is ignored"
     assert.equal(/ig-overlay-halo/.test(result.markup), false, 'the ignored relationship still draws a halo');
@@ -659,7 +699,7 @@ describe('a selection recedes the rest of the scale canvas', () => {
     const far = edgeIdentity('blocked-by', componentKey(0, 5), componentKey(0, 6));
 
     // "A key resolves when the document names it (in `byKey` or as an edge end), and keys that do not resolve are ignored."
-    const result = renderScaleLadder(document, { selected: 'nowhere', selectedEdge: picked });
+    const result = renderScaleLadder(document, { state: DRAWN, selected: 'nowhere', selectedEdge: picked });
     assert.match(result.markup, /class="ig-overlay ig-overlay-halo"/);
     const lines = lineGroups(result.markup);
     assert.equal(lines.get(picked), false, 'the selected relationship receded or was not drawn');
@@ -687,16 +727,16 @@ describe('a selection recedes the rest of the scale canvas', () => {
       const far = lineAs(1, 2, state);
       // The control: with nothing selected the far line carries its state.
       assert.ok(
-        renderScaleLadder(document, { projected: [far] }).markup.includes(`data-ig-state="${state}"`),
+        renderScaleLadder(document, { state: DRAWN, projected: [far] }).markup.includes(`data-ig-state="${state}"`),
         `${state}: the control draws no state`,
       );
 
-      const away = renderScaleLadder(document, { projected: [far], selected }).markup;
+      const away = renderScaleLadder(document, { state: DRAWN, projected: [far], selected }).markup;
       assert.equal(away.includes(`data-ig-group="${far.id}"`), false, `${state}: a line away from the selection was drawn`);
       assert.equal(/data-ig-state=|ig-overlay|data-ig-mark=/.test(away), false, `${state}: a write state on an undrawn line left a mark`);
 
       const own = lineAs(4, 5, state);
-      const { markup } = renderScaleLadder(document, { projected: [own], selected });
+      const { markup } = renderScaleLadder(document, { state: DRAWN, projected: [own], selected });
       const paths = [...markup.matchAll(/<path class="ig-edge"[^>]*>/g)]
         .map(([tag]) => tag)
         .filter((tag) => tag.includes(`data-ig-group="${own.id}"`));
@@ -708,7 +748,7 @@ describe('a selection recedes the rest of the scale canvas', () => {
     }
 
     // A refusal keeps its state hue on the selection's own line.
-    const { markup } = renderScaleLadder(document, { projected: [lineAs(4, 5, 'invalid')], selected });
+    const { markup } = renderScaleLadder(document, { state: DRAWN, projected: [lineAs(4, 5, 'invalid')], selected });
     assert.match(markup, /class="ig-overlay ig-overlay-dash ig-overlay-dotted" stroke="var\(--ig-state-invalid\)"/);
   });
 });

@@ -15,6 +15,7 @@ import type { GraphDocument } from '@issuegraph/store';
 import { makeEdge } from '@issuegraph/store';
 
 import { keyIntent } from '../create/keys.ts';
+import { INITIAL_SCALE_STATE } from '../scale/commands.ts';
 import { documentOf } from '../testing/documents.ts';
 import { WORKSPACE_WORDS } from '../testing/workspace.ts';
 import { renderWorkspace } from './render.ts';
@@ -868,8 +869,12 @@ describe('the first pass reaches the store only through consent', () => {
     const drawn = documentOf({ components: [2] });
     const edge = drawn.edges[0];
     assert.ok(edge !== undefined);
+    // THE COMPONENT PICKED, so the canvas draws its line: with nothing selected
+    // or picked it draws the groups as cards (#303).
+    const picked = { ...INITIAL_SCALE_STATE, focus: edge.from };
     const failed = renderWorkspace(drawn, {
       words: WORKSPACE_WORDS,
+      scale: picked,
       projected: [
         {
           id: edgeIdentity(edge.field, edge.from, edge.to),
@@ -889,7 +894,8 @@ describe('the first pass reaches the store only through consent', () => {
     assert.match(failed.markup, /data-ig-mark="terminal"/);
 
     // And a settled edge is left completely alone, so the marks say something.
-    const settled = renderWorkspace(drawn, { words: WORKSPACE_WORDS });
+    const settled = renderWorkspace(drawn, { words: WORKSPACE_WORDS, scale: picked });
+    assert.match(settled.markup, /data-tier="direct"/);
     assert.equal(/data-ig-mark=/.test(settled.markup), false);
     assert.equal(/data-ig-state=/.test(settled.markup), false);
   });
@@ -1129,15 +1135,14 @@ describe("§17k's narrow layouts are two reader decisions, never a measurement",
 
 /**
  * The layout under 640's two reader decisions — which zone it shows, and what
- * the canvas zone draws — and the Related groups list's open group and query.
+ * the canvas zone draws — and the legend's switched kinds (#303).
  */
 describe('the narrow tabs and the Related groups list', () => {
-  it('R5 INITIAL_HOST_STATE starts on the order tab over the neighbourhood with no related group or query', () => {
+  it('R5 INITIAL_HOST_STATE starts on the order tab over the neighbourhood with no kind switched', () => {
     // The issue: "In packages/editor/src/workspace/host.ts, `HostState` gains `canvas: CanvasMode`, moved from the mount-only option, and `narrowView: 'order' | 'canvas'`."
     assert.equal(INITIAL_HOST_STATE.canvas, 'neighbourhood');
     assert.equal(INITIAL_HOST_STATE.narrowView, 'order');
-    assert.equal(INITIAL_HOST_STATE.relatedGroup, null);
-    assert.equal(INITIAL_HOST_STATE.relatedQuery, '');
+    assert.deepEqual(INITIAL_HOST_STATE.switchedKinds, []);
   });
 
   it('R5 R15 narrow-tab sets only the view and the mode, so the reader keeps their place on every tab', () => {
@@ -1235,62 +1240,37 @@ describe('the narrow tabs and the Related groups list', () => {
     assert.equal(narrowTabOf(retargeted.narrowView, retargeted.canvas), 'sub-issues');
   });
 
-  it('R13 KTD8 related-group: a second press closes the group, a group change clears the query, and a value naming no kind is unclaimed', () => {
-    const opened = reduceHost(
-      INITIAL_HOST_STATE,
-      { kind: 'control', name: 'related-group', value: 'blocked-by' },
-      document,
-    );
-    // The issue: "Past 60 they draw one group per kind with its count, opened by a `related-group` control."
-    assert.equal(opened.claimed, true);
-    assert.equal(opened.state.relatedGroup, 'blocked-by');
-    assert.equal(
-      drive([{ kind: 'control', name: 'related-group', value: 'blocked-by' }], opened.state).state.relatedGroup,
-      null,
-    );
+  it('#303 legend-kind flips one kind the canvas draws, twice back again, and leaves anything else unclaimed', () => {
+    const on = reduceHost(INITIAL_HOST_STATE, { kind: 'control', name: 'legend-kind', value: 'serialize-with' }, document);
+    // RULES, Graphs, Dense neighbourhoods: "the legend becomes a switch for each kind".
+    assert.equal(on.claimed, true);
+    assert.deepEqual(on.state.switchedKinds, ['serialize-with']);
+    const both = drive([{ kind: 'control', name: 'legend-kind', value: 'blocked-by' }], on.state).state;
+    assert.deepEqual(both.switchedKinds, ['serialize-with', 'blocked-by']);
+    const back = drive([{ kind: 'control', name: 'legend-kind', value: 'serialize-with' }], both).state;
+    assert.deepEqual(back.switchedKinds, ['blocked-by'], 'a second press did not flip the kind back');
 
-    // A query typed inside one group would filter the next group by text the reader never typed there.
-    const typed = drive([{ kind: 'control', name: 'related-query', value: 'abc' }], opened.state).state;
-    const moved = drive([{ kind: 'control', name: 'related-group', value: 'serialize-with' }], typed).state;
-    assert.equal(moved.relatedGroup, 'serialize-with');
-    assert.equal(moved.relatedQuery, '', 'a query typed for one group was carried into another');
-
-    // The same press delivered twice is a toggle: the second closes what the first opened.
-    const typedAgain = drive([{ kind: 'control', name: 'related-query', value: 'xyz' }], moved).state;
-    const closed = drive([{ kind: 'control', name: 'related-group', value: 'serialize-with' }], typedAgain).state;
-    assert.equal(closed.relatedGroup, null, 'pressing the open group again did not close it');
-    assert.equal(closed.relatedQuery, '', 'closing the group kept its query');
-
-    // The value comes from a `data-ig-value` attribute in the page, so only a relationship kind
-    // may become the open group; anything else, a prototype name included, changes nothing.
-    for (const value of ['nonsense', 'Blocked-By', 'blocked_by', '', '__proto__', 'constructor', 'toString', undefined]) {
+    // The value comes from a `data-ig-value` attribute in the page, so only a kind this canvas
+    // draws may flip: decomposed-from lives in Sub-issues and is no switch here.
+    for (const value of ['decomposed-from', 'nonsense', 'Blocked-By', '', '__proto__', 'toString', undefined]) {
       const command: HostCommand =
         value === undefined
-          ? { kind: 'control', name: 'related-group' }
-          : { kind: 'control', name: 'related-group', value };
-      const result = reduceHost(typedAgain, command, document);
-      assert.equal(result.claimed, false, `related-group ${String(value)} was claimed`);
-      assert.deepEqual(result.state, typedAgain, `related-group ${String(value)} changed the state`);
+          ? { kind: 'control', name: 'legend-kind' }
+          : { kind: 'control', name: 'legend-kind', value };
+      const result = reduceHost(both, command, document);
+      assert.equal(result.claimed, false, `legend-kind ${String(value)} was claimed`);
+      assert.deepEqual(result.state, both, `legend-kind ${String(value)} changed the state`);
     }
   });
 
-  it('R13 related-query stores the typed text and an absent value as the empty string', () => {
-    // The issue: "Past 300, and inside an open group holding more than 60, a search field filters by key or title through a `related-query` control, held in `HostState` like `targetQuery`."
-    const typed = drive([{ kind: 'control', name: 'related-query', value: 'abc' }]).state;
-    assert.equal(typed.relatedQuery, 'abc');
-    // The same query delivered again stores nothing new.
-    assert.deepEqual(reduceHost(typed, { kind: 'control', name: 'related-query', value: 'abc' }, document).state, typed);
-    assert.equal(drive([{ kind: 'control', name: 'related-query' }], typed).state.relatedQuery, '');
-  });
-
-  it('R13 KTD8 reduceHost: moving the selection clears the related group and query, and a command that keeps it clears neither', () => {
+  it('#303 reduceHost: moving the selection starts the kinds and the opened groups over, and a command that keeps it keeps both', () => {
     const reading = drive([
       { kind: 'point', key: '1' },
-      { kind: 'control', name: 'related-group', value: 'blocked-by' },
-      { kind: 'control', name: 'related-query', value: 'abc' },
+      { kind: 'control', name: 'legend-kind', value: 'serialize-with' },
+      { kind: 'control', name: 'show-group', value: 'blocked-by:outgoing' },
     ]).state;
-    assert.equal(reading.relatedGroup, 'blocked-by');
-    assert.equal(reading.relatedQuery, 'abc');
+    assert.deepEqual(reading.switchedKinds, ['serialize-with']);
+    assert.deepEqual(reading.shownGroups, ['blocked-by:outgoing']);
 
     // Three routes that move the selection, so the clearing cannot live in one command's arm.
     const moves: HostCommand[] = [
@@ -1302,11 +1282,11 @@ describe('the narrow tabs and the Related groups list', () => {
       const { state } = drive([command], reading);
       const label = JSON.stringify(command);
       assert.notDeepEqual(state.selection, reading.selection, `${label} did not move the selection`);
-      assert.equal(state.relatedGroup, null, `${label} left the old selection's group open`);
-      assert.equal(state.relatedQuery, '', `${label} left the old selection's query`);
+      assert.deepEqual(state.switchedKinds, [], `${label} kept the old selection's kinds`);
+      assert.deepEqual(state.shownGroups, [], `${label} kept the old selection's opened groups`);
     }
 
-    // A tab switch, a rail scroll or a filter toggle leaves the selection where it was, so the reader's group and query stay.
+    // A tab switch, a rail scroll or a filter toggle leaves the selection where it was.
     const stays: HostCommand[] = [
       { kind: 'scroll', start: 4 },
       { kind: 'control', name: 'narrow-tab', value: 'order' },
@@ -1317,36 +1297,30 @@ describe('the narrow tabs and the Related groups list', () => {
       const { state } = drive([command], reading);
       const label = JSON.stringify(command);
       assert.deepEqual(state.selection, reading.selection, `${label} moved the selection`);
-      assert.equal(state.relatedGroup, 'blocked-by', `${label} closed the group`);
-      assert.equal(state.relatedQuery, 'abc', `${label} cleared the query`);
+      assert.deepEqual(state.switchedKinds, ['serialize-with'], `${label} reset the kinds`);
+      assert.deepEqual(state.shownGroups, ['blocked-by:outgoing'], `${label} folded the groups`);
     }
   });
 
-  it('R13 KTD8 reconcileHost: a selection dropped or moved to its carrier clears the related group and query, and a live one keeps the same state', () => {
+  it('#303 reconcileHost: a selection dropped or moved to its carrier starts the kinds over, and a live one keeps the same state', () => {
     const nothingHidden: ReadonlySet<string> = new Set();
-    const groupAndQuery: HostCommand[] = [
-      { kind: 'control', name: 'related-group', value: 'blocked-by' },
-      { kind: 'control', name: 'related-query', value: 'abc' },
-    ];
+    const switched: HostCommand[] = [{ kind: 'control', name: 'legend-kind', value: 'serialize-with' }];
 
     // A landed write removed the selected issue: the selection becomes none.
-    const onIssue = drive([{ kind: 'point', key: '2' }, ...groupAndQuery]).state;
-    assert.equal(onIssue.relatedGroup, 'blocked-by');
+    const onIssue = drive([{ kind: 'point', key: '2' }, ...switched]).state;
+    assert.deepEqual(onIssue.switchedKinds, ['serialize-with']);
     const without2: GraphDocument = { issues: document.issues.filter((issue) => issue.ref !== '2'), edges: [] };
     const dropped = reconcileHost(onIssue, without2, nothingHidden);
     assert.deepEqual(dropped.selection, { kind: 'none' });
-    assert.equal(dropped.relatedGroup, null, 'a group stayed open for a selection that is gone');
-    assert.equal(dropped.relatedQuery, '', 'a query stayed for a selection that is gone');
+    assert.deepEqual(dropped.switchedKinds, [], 'kinds stayed switched for a selection that is gone');
 
     assert.equal(reconcileHost(onIssue, document, nothingHidden), onIssue, 'nothing moved, so nothing may change');
 
     // The store hides the selected edge: the selection moves to the edge's carrier, which is a selection change too.
-    const onEdge = drive([{ kind: 'group', id: blockedBy.id }, ...groupAndQuery]).state;
-    assert.equal(onEdge.relatedQuery, 'abc');
+    const onEdge = drive([{ kind: 'group', id: blockedBy.id }, ...switched]).state;
     const carried = reconcileHost(onEdge, document, new Set([blockedBy.id]));
     assert.deepEqual(carried.selection, { kind: 'issue', key: blockedBy.from });
-    assert.equal(carried.relatedGroup, null, 'the edge selection\'s group followed the reader to the carrier');
-    assert.equal(carried.relatedQuery, '', 'the edge selection\'s query followed the reader to the carrier');
+    assert.deepEqual(carried.switchedKinds, [], 'the edge selection\'s kinds followed the reader to the carrier');
   });
 
   it('R6 the host state holds no width before or after a narrow-tab press', () => {

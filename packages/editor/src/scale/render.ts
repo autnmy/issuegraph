@@ -32,6 +32,7 @@
 
 import {
   type ElementSpec,
+  type LegendSwitch,
   type Theme,
   type ViewerDocument,
   clusterReachLabel,
@@ -55,6 +56,7 @@ import { INITIAL_SCALE_STATE, type ScaleState } from './commands.ts';
 import {
   type IsolatedChip,
   type OmittedComponents,
+  type ScaleAround,
   type ScaleCapsule,
   type ScaleLadder,
   type ScaleRefusal,
@@ -124,6 +126,17 @@ export interface ScaleLadderOptions {
    * because `overlayFor` reads a list of states.
    */
   readonly projected?: readonly ProjectedEdge[] | undefined;
+  /**
+   * What the canvas is drawn around: the selection and the relationships
+   * drawn from it. See {@link ScaleAround}. Absent or `null`, nothing is
+   * selected, and the canvas draws the groups as cards (or the picked group).
+   */
+  readonly around?: ScaleAround | null | undefined;
+  /**
+   * The legend as a switch for each kind, for a dense selection. Handed to the
+   * viewer as `SceneOptions.legendSwitch`; absent, the legend is the static key.
+   */
+  readonly legendSwitch?: LegendSwitch | undefined;
   /**
    * Whether this ladder draws its own isolated CHIP. Default `true`.
    *
@@ -334,16 +347,21 @@ function capsuleSpec(capsule: ScaleCapsule): ElementSpec {
   ]);
 }
 
+/** The group cards, or nothing when there are none to pick. */
+function groupsSpec(ladder: ScaleLadder): ElementSpec | null {
+  return ladder.capsules.length === 0
+    ? null
+    : element(
+        'ol',
+        { class: 'ig-list ig-groups', 'aria-label': 'groups of related issues' },
+        ladder.capsules.map((capsule) => capsuleSpec(capsule)),
+      );
+}
+
 function refusalSpec(refusal: ScaleRefusal, ladder: ScaleLadder): ElementSpec {
   return element('section', { class: 'ig-refusal', role: 'note' }, [
     element('p', {}, [refusal.reason]),
-    ladder.capsules.length === 0
-      ? null
-      : element(
-          'ol',
-          { class: 'ig-list', 'aria-label': 'groups of related issues' },
-          ladder.capsules.map((capsule) => capsuleSpec(capsule)),
-        ),
+    groupsSpec(ladder),
     omittedSpec(ladder.capsulesOmitted),
     // NO ROUTE LINES (#296). The export's board says what to do in its head,
     // "Pick a group.", and draws no list of routes under the cards. The routes
@@ -504,7 +522,7 @@ export function renderScaleLadder(
   options: ScaleLadderOptions = {},
 ): ScaleLadderResult {
   const state = options.state ?? INITIAL_SCALE_STATE;
-  const ladder = scaleLadder(input, state);
+  const ladder = scaleLadder(input, state, options.around ?? null);
   const theme = resolveTheme(options.theme);
 
   // THE OVERLAYS ARE RESOLVED BEFORE THE CANVAS IS DRAWN, because the marks
@@ -538,6 +556,7 @@ export function renderScaleLadder(
           // reading to reach. See `SceneOptions.dockLegend`.
           dockLegend: true,
           edgeMarks: edgeMarkRequests(requestedOverlays),
+          legendSwitch: options.legendSwitch,
         })
       : null;
 
@@ -575,7 +594,9 @@ export function renderScaleLadder(
           { type: 'button', class: 'ig-chip', 'data-ig-command': 'clear-focus' },
           ['Go back to all groups'],
         ),
-    ladder.refusal === null ? null : refusalSpec(ladder.refusal, ladder),
+    // THE GROUPS STAND ALONE WITH NOTHING SELECTED: the board draws the cards
+    // and no sentence over them, since nothing was refused.
+    ladder.refusal === null ? groupsSpec(ladder) : refusalSpec(ladder.refusal, ladder),
     ladder.search === null ? null : searchSpec(ladder.search),
     // THE CONTROL, UNLESS THE CALLER DREW IT — the LIST is drawn either way.
     // See `ScaleLadderOptions.isolatedChip`, and `ladder.ts`'s `searchFor` for
