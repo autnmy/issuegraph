@@ -1078,16 +1078,19 @@ const OMITTED_ATTRIBUTE = 'data-omitted';
  * the layout measures at the body size exactly the chips the sheet draws there.
  */
 function overflowBadge(omitted: number): ElementSpec {
-  // THE WHOLE PHRASE IS THE VISIBLE TEXT, and there is no `aria-label`. A
-  // plain span has the generic role, on which ARIA prohibits naming, so an
-  // attribute name here may be ignored and the announcement would be a bare
-  // "+N more" with nothing saying what was left out. Visible text is the one
-  // name every reader gets; `title` stays as a tooltip only.
+  // "+3" IS WHAT THE ROW SHOWS (RULES, Graphs, Dense neighbourhoods: "an order
+  // row names one and counts the rest"). A plain span has the generic role, on
+  // which ARIA prohibits naming, so the words a reader hears are text too, set
+  // apart by `.ig-hidden-words` rather than carried on an attribute that may be
+  // ignored.
   const noun = omitted === 1 ? 'relationship' : 'relationships';
   return element(
     'span',
     { class: 'ig-badge', [OMITTED_ATTRIBUTE]: omitted, title: `${String(omitted)} more ${noun} not shown` },
-    [`+${String(omitted)} more ${noun}`],
+    [
+      element('span', { 'aria-hidden': 'true' }, [`+${String(omitted)}`]),
+      element('span', { class: 'ig-hidden-words' }, [`${String(omitted)} more ${noun}`]),
+    ],
   );
 }
 
@@ -1120,6 +1123,7 @@ export function edgeBadges(document: NormalizedDocument, keys: readonly string[]
 export function edgeBadgeList(
   document: NormalizedDocument,
   keys: readonly string[],
+  budget: number = ROW_BADGE_BUDGET,
 ): readonly ElementSpec[] {
   const mine = new Set(keys);
   const badges: ElementSpec[] = [];
@@ -1153,7 +1157,7 @@ export function edgeBadgeList(
         // reaches later fields, so the budget is spent in the format's own
         // order: `blocked-by` first, because that is the relationship a
         // reader asking "why is this held" is looking for.
-        if (badges.length >= ROW_BADGE_BUDGET) {
+        if (badges.length >= budget) {
           omitted += 1;
           continue;
         }
@@ -1172,69 +1176,6 @@ export function edgeBadgeList(
   }
   if (omitted > 0) badges.push(overflowBadge(omitted));
   return badges;
-}
-
-/**
- * The VISIBLE TEXT of every chip a row's badge row draws, in order.
- *
- * EXPORTED FOR THE LAYOUT, which has to know how tall a card is before anything
- * is rendered and cannot measure the DOM — this package is pure and its
- * coordinates have to be the same on a server with no fonts as in a browser
- * with them. Deriving the strings here rather than re-deriving them there is
- * what keeps the reserved height and the drawn height about the same thing: a
- * badge whose wording changes moves the geometry with it.
- *
- * THE OVERFLOW CHIP COMES BACK APART FROM THE REST, because it is drawn at a
- * different size: it is a count, and the sheet sets it in the body sans while
- * every other chip stays at the chip's micro size. Measured with the others it
- * would be charged the small-text ceiling and under-measured, and near a row
- * boundary the browser would wrap it onto a row the card never reserved.
- */
-export function badgeTexts(
-  document: NormalizedDocument,
-  slot: ViewerSlot | undefined,
-  issue: ViewerIssue | undefined,
-  keys: readonly string[],
-): BadgeRun {
-  // THROUGH `textOf` FOR EVERY CHIP, so the GLYPH is measured with the label it
-  // sits beside. Two of these were written out by hand and lost their glyph —
-  // `✓ verified` measured as `verified`, `⊘ not ready` as `not ready` — which
-  // under-measured exactly the chips a held row carries, and near a row
-  // boundary the browser wrapped one this packer had kept on the previous row.
-  // The builders are the one source; nothing here restates what they draw.
-  const chips = [
-    priorityBadge(issue?.provenance),
-    priorityRaise(issue?.provenance),
-    evidenceBadge(issue),
-    slot === undefined ? null : notReadyBadge(slot),
-    ...caveatBadges(issue),
-    ...edgeBadgeList(document, keys),
-  ];
-  const drawn = chips.filter((chip): chip is ElementSpec => chip !== null);
-  // BY THE ATTRIBUTE THE SHEET SELECTS ON, so the chips measured at the body
-  // size are exactly the chips `.ig-badge[data-omitted]` draws at it.
-  const omitted = (chip: ElementSpec): boolean => {
-    const value = chip.attrs?.[OMITTED_ATTRIBUTE];
-    return value !== undefined && value !== null;
-  };
-  return {
-    texts: drawn.filter((chip) => !omitted(chip)).map(textOf),
-    overflow: drawn.filter(omitted).map(textOf)[0] ?? null,
-  };
-}
-
-/**
- * The visible text of one badge row, split by the size each chip is drawn at.
- *
- * The overflow chip is the last chip `edgeBadgeList` adds, and the edge list is
- * the last part of the row, so packing `texts` and then `overflow` keeps the
- * order the row draws.
- */
-export interface BadgeRun {
-  /** Every chip drawn at the chip's own micro size, in order. */
-  readonly texts: readonly string[];
-  /** The overflow chip, drawn at the body size, or null when nothing was omitted. */
-  readonly overflow: string | null;
 }
 
 /** Every string inside one spec, concatenated — what a reader sees on it. */
@@ -1274,26 +1215,21 @@ export type CardBlock =
   /** A unit's enclosure: one title-and-identity pair per member. */
   | { readonly kind: 'unit'; readonly members: readonly string[] }
   /**
-   * The wrapping row of chips. The overflow chip is drawn at the body size, so
-   * it is carried apart from the rest and the layout measures it at that size.
+   * The priority tag. A node carries its title, number and priority only (RULES,
+   * Graphs, Dense neighbourhoods): its relationships are the selection's lines
+   * and the Inspector's list, and an order row counts them.
    */
-  | { readonly kind: 'badges'; readonly texts: readonly string[]; readonly overflow: string | null }
-  /** A sentence the card prints because nothing else draws it. */
-  | { readonly kind: 'note'; readonly text: string };
+  | { readonly kind: 'badges'; readonly texts: readonly string[] };
 
 /**
- * Everything one canvas card draws, in the order it draws it.
- *
- * `onSpine` decides the notes and nothing else: a spine card keeps its hold on
- * a chip and a tooltip, because the list beside it prints the sentence, while a
- * gutter card is the only mark the projection makes for its issue and §16b
- * prints "open · not eligible" on it in as many words.
+ * Everything one canvas card draws, in the order it draws it: its title, number
+ * and priority, and a unit's or a running job's mark. Why a card is held is its
+ * tooltip and its accessible name, and the Inspector's to list.
  */
 export function cardBlocks(
   document: NormalizedDocument,
   key: string,
   members: readonly string[],
-  onSpine: boolean,
   now: boolean,
 ): readonly CardBlock[] {
   // THE INDEX, NOT A SCAN. This runs twice per card — once when the layout
@@ -1323,33 +1259,9 @@ export function cardBlocks(
     blocks.push({ kind: 'head', key });
   }
 
-  const { texts, overflow } = badgeTexts(document, slot, issue, members);
-  if (texts.length > 0 || overflow !== null) blocks.push({ kind: 'badges', texts, overflow });
-
-  if (!onSpine) {
-    for (const text of noteText(document, key)) blocks.push({ kind: 'note', text });
-  }
+  const priority = priorityBadge(issue?.provenance);
+  if (priority !== null) blocks.push({ kind: 'badges', texts: [textOf(priority)] });
   return blocks;
-}
-
-/**
- * The sentences a card off the spine prints: why it is held, and what it
- * duplicates.
- *
- * Lives here rather than in the layout for the reason {@link cardBlocks} gives:
- * one description, two readers.
- */
-export function noteText(document: NormalizedDocument, key: string): readonly string[] {
-  const lines: string[] = [];
-  // ONE LOOKUP, where this walked the whole order per card: a lead is unique,
-  // so at most one slot ever matched and its holds are the only lines it added.
-  for (const hold of document.slotByLead.get(key)?.holds ?? []) lines.push(hold.reason);
-  for (const exclusion of document.order.excluded) {
-    // THE BADGE ALREADY NAMES THE CANONICAL, so the sentence says only what the
-    // badge cannot: that this issue is never worked at all.
-    if (exclusion.key === key) lines.push('The original gets worked instead.');
-  }
-  return lines;
 }
 
 /**
@@ -1374,9 +1286,7 @@ export function cardText(document: NormalizedDocument, block: CardBlock): readon
         issueNumber(member),
       ]);
     case 'badges':
-      return block.overflow === null ? block.texts : [...block.texts, block.overflow];
-    case 'note':
-      return [block.text];
+      return block.texts;
   }
 }
 
@@ -1434,9 +1344,11 @@ export function legend(): ElementSpec {
 /**
  * The relationships, in the order the export's legend draws them (#296). Not
  * {@link EDGE_ORDER}, the format's field order, which is alphabetical: the
- * legend leads with the one kind that decides the order.
+ * legend leads with the one kind that decides the order. Exported because the
+ * editor's Inspector groups a selection's relationships in the same order
+ * (#303), so the key and the list a reader compares it with agree.
  */
-const LEGEND_ORDER: readonly EdgeField[] = Object.freeze([
+export const LEGEND_ORDER: readonly EdgeField[] = Object.freeze([
   'blocked-by',
   'serialize-with',
   'together-with',

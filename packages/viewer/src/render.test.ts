@@ -476,12 +476,13 @@ describe('renderViewer recedes the graph around a selection', () => {
     return { lines, rows };
   };
 
-  it('stamps exactly the graph cards and lines that do not touch the selected issue 102', () => {
+  it('stamps exactly the graph cards that do not touch the selected issue 102, and draws only its lines', () => {
     const markup = renderViewer(fixtureDocument, { projection: 'graph', selected: '102' }).markup;
     const { lines, rows } = graphStamps(markup);
 
     // "With a selection, lines and stations that do not touch it draw at 50%, and with none selected nothing recedes"
     // "For an issue selection, the issue, its neighbours over any kind in either direction, and its edges stay."
+    // A line that does not touch it is not drawn at all (#303: only the selection's own relationships draw).
     const keptLines = new Set([edgeIdentity('blocked-by', '101', '102'), edgeIdentity('decomposed-from', '102', '101')]);
     assert.deepEqual(new Set(lines.filter((line) => !line.stamped).map((line) => line.group)), keptLines);
     for (const line of lines) {
@@ -498,15 +499,19 @@ describe('renderViewer recedes the graph around a selection', () => {
     assert.equal(renderViewer(fixtureDocument, { projection: 'graph' }).markup.includes('data-recede'), false);
   });
 
-  it('keeps the unit card and the line of the selected partner 104 and recedes the other lines of its lead 103', () => {
+  it('keeps the unit card and the line of the selected partner 104 and draws none of the other lines of its lead 103', () => {
+    const bare = graphStamps(renderViewer(fixtureDocument, { projection: 'graph' }).markup);
     const { lines, rows } = graphStamps(renderViewer(fixtureDocument, { projection: 'graph', selected: '104' }).markup);
 
     // "Selecting one member of a together unit keeps that member's neighbours and lines, not its partners', and the unit's card stays"
     // The unit's own together-with line draws no arc, so 104's one drawn line is decomposed-from 104 to 107.
+    // Its partner's lines wait until the partner is selected (#303).
     const memberLine = edgeIdentity('decomposed-from', '104', '107');
-    assert.deepEqual(new Set(lines.filter((line) => !line.stamped).map((line) => line.group)), new Set([memberLine]));
-    assert.equal(lines.find((line) => line.group === edgeIdentity('decomposed-from', '103', '107'))?.stamped, true);
-    assert.equal(lines.find((line) => line.group === edgeIdentity('serialize-with', '103', '105'))?.stamped, true);
+    assert.deepEqual(new Set(lines.map((line) => line.group)), new Set([memberLine]));
+    assert.ok(lines.every((line) => !line.stamped), 'the member\u2019s own line receded');
+    for (const partnerLine of [edgeIdentity('decomposed-from', '103', '107'), edgeIdentity('serialize-with', '103', '105')]) {
+      assert.ok(bare.lines.some((line) => line.group === partnerLine), `${partnerLine} draws nowhere, so this proves nothing`);
+    }
     assert.equal(rows.find((row) => row.key === '103')?.stamped, false, 'the unit card receded');
     assert.equal(rows.find((row) => row.key === '102')?.stamped, true);
   });
@@ -518,10 +523,9 @@ describe('renderViewer recedes the graph around a selection', () => {
 
     // "When a host passes issues and a relationship together, the issues win and the relationship is ignored"
     assert.equal(both, byIssue);
-    const ignored = graphStamps(both).lines.filter((line) => line.group === edge);
-    assert.ok(ignored.length > 0, 'the ignored relationship has no line');
-    for (const line of ignored) {
-      assert.equal(line.stamped, true, 'the ignored relationship did not recede by issue 105');
-    }
+    const bare = graphStamps(renderViewer(fixtureDocument, { projection: 'graph' }).markup);
+    assert.ok(bare.lines.some((line) => line.group === edge), 'the ignored relationship has no line, so this proves nothing');
+    // Issue 105 does not touch it, so its line is not drawn at all (#303).
+    assert.deepEqual(graphStamps(both).lines.filter((line) => line.group === edge), [], 'the ignored relationship drew');
   });
 });

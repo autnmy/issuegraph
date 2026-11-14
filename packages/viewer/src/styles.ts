@@ -1281,16 +1281,26 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   padding: 0;
 }
 
-/* THE OVERFLOW CHIP IS A COUNT, NOT A RELATIONSHIP. '+12 more relationships'
-   names no edge, so it takes the body type every count takes rather than the
-   chip's micro mono. The graph card's height is reserved before anything is
-   drawn, so the layout measures this chip at the body size too (see
-   packedRows in layout.ts); a chip this rule enlarged and the layout did not
-   would overrun its card and be drawn over by the next. */
+/* THE OVERFLOW CHIP IS A COUNT, NOT A RELATIONSHIP. An order row names one
+   relationship and counts the rest ("+16"); the count names no edge, so it takes
+   the body type every count takes rather than the chip's micro mono. Only order
+   rows draw it: a graph card carries no relationships. */
 .ig-badge[data-omitted] {
   font-family: var(--ig-font-ui);
   font-size: var(--ig-font-size);
   font-variant-numeric: tabular-nums;
+}
+
+/* WORDS FOR A READER THAT THE ROW DOES NOT SHOW: the overflow chip draws "+16"
+   and says "16 more relationships". Kept in the text, not an attribute, because
+   a plain span may not be named. */
+.ig-hidden-words {
+  block-size: var(--ig-stroke);
+  clip-path: inset(50%);
+  inline-size: var(--ig-stroke);
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
 }
 
 .ig-glyph {

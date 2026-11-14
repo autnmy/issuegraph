@@ -959,6 +959,48 @@ export const workspaceStylesheet = `
   gap: var(--ig-space-tight);
 }
 
+/* ONE KIND'S GROUP (RULES, Graphs, Dense neighbourhoods): its words and count
+   in small muted type on one row, its first five rows, then "Show 4 more"
+   under them, set flush to the rows' start. */
+.ig-relationship-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-micro);
+}
+
+.ig-relationship-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ig-space-tight);
+  color: var(--ig-text-muted);
+  font-size: var(--ig-font-size-small);
+  font-weight: var(--ig-weight-medium);
+}
+
+.ig-relationship-count {
+  font-variant-numeric: tabular-nums;
+}
+
+/* A GHOST BUTTON: words only, no fill or border at rest, so it reads as the
+   list's own continuation rather than an action beside it. */
+.ig-relationship-more {
+  align-self: flex-start;
+  margin-block-start: var(--ig-space-micro);
+  border: 0;
+  border-radius: var(--ig-radius);
+  background: none;
+  color: var(--ig-text-body);
+  font-family: inherit;
+  font-size: inherit;
+  padding: var(--ig-space-tight);
+  cursor: pointer;
+}
+
+.ig-relationship-more:hover {
+  background: var(--ig-surface);
+}
+
 /* IT WRAPS RATHER THAN TRUNCATES, which is '.ig-picker-direction''s rule
    inherited along with §17b's statement. A qualified reference is long —
    'owner/repo#602' — the inspector is a fixed 40-character track with no

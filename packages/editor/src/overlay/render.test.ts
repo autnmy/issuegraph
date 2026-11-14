@@ -117,6 +117,10 @@ function oddSceneOf(): ReturnType<typeof renderViewer>['scene'] {
   return renderViewer(ODD_DOCUMENT, { projection: 'graph' }).scene;
 }
 
+function listSceneOf(): ReturnType<typeof renderViewer>['scene'] {
+  return renderViewer(ODD_DOCUMENT, { projection: 'linear' }).scene;
+}
+
 /** A projected edge for one of `ODD_DOCUMENT`'s relationships. */
 function oddEdge(
   kind: 'together-with' | 'serialize-with',
@@ -135,34 +139,42 @@ function oddEdge(
 }
 
 describe('the two relationships the viewer draws differently', () => {
-  it('overlays a together-with, which is drawn as a BADGE and NOT as an edge', () => {
-    // The graph skips `together-with` when it builds edge paths — it shares a
-    // rank rather than ordering anything — and layer 1's §16 pass draws the unit
-    // as ONE card with its members listed, so there is no connector between two
-    // boxes left to overlay either. What carries the relationship in every
-    // projection is the badge that names it, and the badge publishes the same
-    // `edgeIdentity` on `data-ig-group` the connector did — which IS
-    // `ProjectedEdge.id`, so this still matches on identity rather than on a
-    // reconstructed sentence.
+  it('reports a together-with as unattached on the graph, and attaches it to the list badge', () => {
+    // The graph draws a unit as ONE card and a node lists no relationships
+    // (RULES, Graphs, Dense neighbourhoods), so a unit's own `together-with`
+    // has no line and no chip on the canvas: a state on it has nothing to
+    // attach to there, and must be reported rather than land on something
+    // else. The order list still names it with a badge carrying the same
+    // `edgeIdentity` on `data-ig-group`, so the overlay still attaches there.
     const edge = oddEdge('together-with', ['pending-write']);
-    const { scene, unattached } = attachEdgeOverlays(oddSceneOf(), [edge]);
-    assert.deepEqual(unattached, [], 'a together-with overlay matched nothing');
-    const overlaid = walk(scene.root).filter(
+    const graph = oddSceneOf();
+    const onGraph = attachEdgeOverlays(graph, [edge]);
+    assert.equal(onGraph.unattached.length, 1, 'a together-with attached to something on the graph');
+    assert.equal(onGraph.unattached[0]?.attribute, 'pending-write');
+    assert.equal(renderMarkup(onGraph.scene.root), renderMarkup(graph.root), 'the graph scene changed');
+
+    const onList = attachEdgeOverlays(listSceneOf(), [edge]);
+    assert.deepEqual(onList.unattached, [], 'the list badge no longer carries the relationship');
+    const overlaid = walk(onList.scene.root).filter(
       (spec) => spec.attrs?.[STATE_ATTRIBUTE] === 'pending-write',
     );
-    assert.equal(overlaid.length, 1);
-    assert.equal(classesOf(overlaid[0] ?? { tag: 'x' }).includes('ig-badge'), true);
+    assert.ok(overlaid.length > 0, 'nothing on the list carries the state');
+    for (const spec of overlaid) assert.equal(classesOf(spec).includes('ig-badge'), true);
   });
 
   it('never writes an SVG presentation attribute onto a badge', () => {
     // `opacity` is an SVG presentation attribute. On a badge — an HTML span —
     // it renders as an attribute no browser reads, so the state's dimming would
     // silently not apply while the markup claimed it did. The chip is dimmed by
-    // the stylesheet's own state rule or not at all.
+    // the stylesheet's own state rule or not at all. Read on the list, the
+    // projection that still draws relationship badges.
     const edge = oddEdge('together-with', ['pending-write']);
-    const { scene } = attachEdgeOverlays(oddSceneOf(), [edge]);
-    for (const spec of walk(scene.root)) {
-      if (!classesOf(spec).includes('ig-badge')) continue;
+    const { scene } = attachEdgeOverlays(listSceneOf(), [edge]);
+    const badges = walk(scene.root).filter(
+      (spec) => classesOf(spec).includes('ig-badge') && spec.attrs?.[STATE_ATTRIBUTE] === 'pending-write',
+    );
+    assert.ok(badges.length > 0, 'no overlaid badge, so this proves nothing');
+    for (const spec of badges) {
       assert.equal(spec.attrs?.['opacity'], undefined, 'a badge carries an SVG opacity');
     }
   });
@@ -653,12 +665,12 @@ describe('nothing in the module changes state on its own', () => {
   });
 });
 
-describe('a receded line keeps its write state without a write-state fade', () => {
-  // The issue: "A receded line with an editor write state draws at 50%, and its state still shows by its dash and colour"
-  // The stylesheet draws a receded line at half strength. A write-state opacity
-  // on the path or on one of its clones would multiply with it and draw that
-  // part fainter than 50%. Selecting #488 keeps #488, #512 and their line, so
-  // the far #601 to #600 line recedes.
+describe('only the selection\'s own lines draw, so only their write states show', () => {
+  // RULES, Graphs, Dense neighbourhoods: "Only the selection's own relationships
+  // draw." Selecting #488 keeps #488, #512 and their line; the far #601 to #600
+  // line is not drawn at all, so a write state on it has no canvas mark to
+  // attach to, while the kept line carries its state exactly as with nothing
+  // selected.
   const document: ViewerDocument = {
     issues: [
       { key: '#488', title: 'The blocker', open: true, priority: 1 },
@@ -690,78 +702,61 @@ describe('a receded line keeps its write state without a write-state fade', () =
     writes: [],
   });
   const farLine = (state: EdgeState): ProjectedEdge => lineOf('#601', '#600', state);
+  const keptLine = (state: EdgeState): ProjectedEdge => lineOf('#512', '#488', state);
   const pathsOf = (specs: readonly ElementSpec[], id: string): ElementSpec[] =>
     specs.filter((spec) => classesOf(spec).includes('ig-edge') && spec.attrs?.['data-ig-group'] === id);
+  const attachedTo = (selected: string | null, line: ProjectedEdge) =>
+    attachEdgeOverlays(renderViewer(document, { projection: 'graph', selected }).scene, [line]);
   const overlaidSpecs = (selected: string | null, line: ProjectedEdge): ElementSpec[] =>
-    walk(attachEdgeOverlays(renderViewer(document, { projection: 'graph', selected }).scene, [line]).scene.root);
+    walk(attachedTo(selected, line).scene.root);
 
-  it('writes no write-state opacity on a receded line or any of its clones, and still fades a kept line', () => {
-    // The kept line is the control: it keeps its fade.
-    const fading = EDGE_STATES.filter((state) => treatmentForState(state).opacity !== null);
-    assert.ok(fading.length > 0, 'no write state declares an opacity, so this proves nothing');
-    for (const state of fading) {
-      const receded = farLine(state);
-      const overlaid = attachEdgeOverlays(
-        renderViewer(document, { projection: 'graph', selected: '#488' }).scene,
-        [receded],
-      );
-      assert.deepEqual(overlaid.unattached, [], `${state} did not attach to the receded line`);
-      const specs = walk(overlaid.scene.root);
-      const paths = pathsOf(specs, receded.id);
-      assert.ok(paths.length > 0, 'the receded line was not drawn');
-      for (const path of paths) {
-        assert.equal(path.attrs?.['data-recede'], 'true', 'the far line does not recede, so this proves nothing');
-        assert.equal(path.attrs?.[STATE_ATTRIBUTE], state, `${state} no longer shows on the receded line`);
-        assert.equal(path.attrs?.['opacity'] ?? null, null, `${state} wrote an opacity on a receded line`);
-      }
-      for (const mark of specs.filter((spec) => classesOf(spec).includes(OVERLAY_CLASS))) {
-        assert.equal(mark.attrs?.['opacity'] ?? null, null, `${state} wrote an opacity on a clone of a receded line`);
-      }
+  it('draws no mark for a write state on a line away from the selection, and keeps the fade on its own line', () => {
+    const states = EDGE_STATES.filter((state) => state !== 'selected');
+    for (const state of states) {
+      // The control: with nothing selected the far line draws and its state attaches.
+      assert.ok(pathsOf(overlaidSpecs(null, farLine(state)), farLine(state).id).length > 0, 'the far line is never drawn, so this proves nothing');
 
-      const kept = lineOf('#512', '#488', state);
-      const keptPaths = pathsOf(overlaidSpecs('#488', kept), kept.id);
+      const far = attachedTo('#488', farLine(state));
+      assert.equal(far.unattached.length, 1, `${state} on an undrawn line was not reported`);
+      const specs = walk(far.scene.root);
+      assert.deepEqual(pathsOf(specs, farLine(state).id), [], 'a line away from the selection was drawn');
+      assert.equal(specs.some((spec) => spec.attrs?.[STATE_ATTRIBUTE] !== undefined), false, `${state} landed on another mark`);
+      assert.equal(specs.some((spec) => classesOf(spec).includes(OVERLAY_CLASS)), false, `${state} drew a clone with no line`);
+
+      const kept = attachedTo('#488', keptLine(state));
+      assert.deepEqual(kept.unattached, [], `${state} did not attach to the selection's own line`);
+      const keptPaths = pathsOf(walk(kept.scene.root), keptLine(state).id);
       assert.ok(keptPaths.length > 0, 'the kept line was not drawn');
       for (const path of keptPaths) {
-        assert.notEqual(path.attrs?.['data-recede'], 'true', 'a line of the selected issue receded');
-        assert.equal(
-          path.attrs?.['opacity'],
-          treatmentForState(state).opacity,
-          `${state} lost its fade on a line that does not recede`,
-        );
+        assert.equal(path.attrs?.['data-recede'], undefined, 'a drawn line carries a recede stamp');
+        assert.equal(path.attrs?.[STATE_ATTRIBUTE], state);
+        assert.equal(path.attrs?.['opacity'], treatmentForState(state).opacity ?? undefined, `${state} lost its fade`);
       }
     }
   });
 
-  it("draws a receded line's write-state dash and hue exactly as on a line that does not recede", () => {
-    // The same far line is overlaid once on a scene where it recedes and once on
-    // a scene with no selection. Apart from the fade and the stamp, the line and
-    // every mark drawn for it must be the same, so the state keeps its dash and hue.
-    const unfaded = (spec: ElementSpec) => {
-      const { opacity: _opacity, 'data-recede': _recede, ...attrs } = spec.attrs ?? {};
-      return { tag: spec.tag, attrs };
-    };
+  it("draws the selection's own line and its write-state marks exactly as with nothing selected", () => {
+    // A selection decides WHICH lines draw, never HOW a drawn one looks, so the
+    // state keeps its dash, hue and fade.
     const drawnFor = (specs: readonly ElementSpec[], id: string) => ({
-      paths: pathsOf(specs, id).map(unfaded),
-      marks: specs.filter((spec) => classesOf(spec).includes(OVERLAY_CLASS)).map(unfaded),
+      paths: pathsOf(specs, id),
+      marks: specs.filter((spec) => classesOf(spec).includes(OVERLAY_CLASS)),
     });
 
     for (const state of EDGE_STATES.filter((each) => each !== 'selected')) {
-      const id = farLine(state).id;
-      const receded = overlaidSpecs('#488', farLine(state));
-      assert.ok(
-        pathsOf(receded, id).some((spec) => spec.attrs?.['data-recede'] === 'true'),
-        'the far line does not recede, so this proves nothing',
-      );
+      const id = keptLine(state).id;
+      const selected = overlaidSpecs('#488', keptLine(state));
+      assert.ok(pathsOf(selected, id).length > 0, 'the kept line was not drawn');
       assert.deepEqual(
-        drawnFor(receded, id),
-        drawnFor(overlaidSpecs(null, farLine(state)), id),
-        `${state} draws differently on a receded line beyond its fade`,
+        drawnFor(selected, id),
+        drawnFor(overlaidSpecs(null, keptLine(state)), id),
+        `${state} draws differently on the selection's own line`,
       );
     }
 
     const dashStroke = (state: EdgeState): unknown =>
-      overlaidSpecs('#488', farLine(state)).find((spec) => classesOf(spec).includes('ig-overlay-dash'))?.attrs?.['stroke'];
-    assert.equal(dashStroke('pending-write'), 'var(--ig-edge-blocked-by)', 'a receded pending line lost its relationship hue');
-    assert.equal(dashStroke('invalid'), 'var(--ig-state-invalid)', 'a receded refused line lost its state hue');
+      overlaidSpecs('#488', keptLine(state)).find((spec) => classesOf(spec).includes('ig-overlay-dash'))?.attrs?.['stroke'];
+    assert.equal(dashStroke('pending-write'), 'var(--ig-edge-blocked-by)', 'a pending line lost its relationship hue');
+    assert.equal(dashStroke('invalid'), 'var(--ig-state-invalid)', 'a refused line lost its state hue');
   });
 });

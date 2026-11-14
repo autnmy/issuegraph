@@ -318,6 +318,7 @@ export const WORKSPACE_WORDS: MountWords = {
   filteredClear: 'Clear filter',
   workedAsOneUnit: 'worked together with',
   noRelationships: 'Nothing is related to this issue yet.',
+  showMore: (count: number): string => `Show ${String(count)} more`,
   addRelationship: '+ add',
   addRelationshipHeading: 'Add relationship',
   cancel: 'Cancel',

@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import { EDGE_FIELDS, edgeIdentity, isSymmetricEdgeField } from '@issuegraph/core';
 
-import { inspectorView } from './inspector.ts';
+import { INSPECTOR_GROUP_SHOWN, inspectorGroups, inspectorView } from './inspector.ts';
 import { INITIAL_SELECTION } from './selection.ts';
 import { WORKSPACE_WORDS, backlogOf } from '../testing/workspace.ts';
 import { renderWorkspace } from './render.ts';
@@ -272,5 +272,40 @@ describe('the inspector drawing a set', () => {
     // Quotes are safe in a text node, so only the markup characters are escaped.
     assert.ok(region.includes('&lt;b&gt;"Tom" &amp; &lt;i&gt;Jerry&lt;/i&gt;&lt;/b&gt;'), region);
     assert.doesNotMatch(region, /<b>|<i>/);
+  });
+});
+
+describe('the Inspector groups the selection\u2019s relationships by kind (#303)', () => {
+  // RULES, Graphs, Dense neighbourhoods: "The Inspector groups the selection's
+  // relationships by kind, each with its count, five each before the rest fold
+  // under 'Show 4 more'."
+  const hub = backlogOf(14, {
+    edges: [
+      ...['i0002', 'i0003', 'i0004', 'i0005', 'i0006', 'i0007', 'i0008'].map(
+        (to) => ['blocked-by', 'i0001', to] as const,
+      ),
+      ['blocked-by', 'i0009', 'i0001'],
+      ['blocked-by', 'i0010', 'i0001'],
+      ['serialize-with', 'i0001', 'i0011'],
+      ['duplicate-of', 'i0012', 'i0001'],
+    ],
+  });
+  const groups = inspectorGroups(inspectorView(hub, { kind: 'issue', key: 'i0001' }).relationships);
+
+  it('heads a field read from each end apart, in the legend\u2019s order, outgoing first', () => {
+    assert.deepEqual(
+      groups.map((group) => [group.key, group.relationships.length]),
+      [
+        ['blocked-by:outgoing', 7],
+        ['blocked-by:incoming', 2],
+        ['serialize-with:none', 1],
+        ['duplicate-of:incoming', 1],
+      ],
+    );
+  });
+
+  it('keeps every relationship once: the groups hold exactly what the Inspector lists', () => {
+    assert.equal(groups.reduce((total, group) => total + group.relationships.length, 0), 11);
+    assert.equal(INSPECTOR_GROUP_SHOWN, 5);
   });
 });

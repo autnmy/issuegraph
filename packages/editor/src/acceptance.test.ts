@@ -854,6 +854,7 @@ const WORKSPACE_WORDS: surface.WorkspaceWords = {
   filteredClear: 'clear the filter',
   workedAsOneUnit: 'worked as one unit with',
   noRelationships: 'nothing is related to this',
+  showMore: (count: number): string => `Show ${String(count)} more`,
   addRelationship: 'begin a relationship',
   addRelationshipHeading: 'add relationship',
   cancel: 'abandon the draft',

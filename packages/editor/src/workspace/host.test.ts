@@ -1401,3 +1401,22 @@ describe('a set of issues offers no edit', () => {
     assert.deepEqual(reconcileHost(withSet, without3, new Set()).selection, { kind: 'issue', key: '2' });
   });
 });
+
+describe('"Show 4 more" opens an Inspector group until the selection moves (#303)', () => {
+  it('a show-group press opens the group, a second is unclaimed, and a new selection closes every group', () => {
+    const opened = reduceHost(
+      INITIAL_HOST_STATE,
+      { kind: 'control', name: 'show-group', value: 'blocked-by:outgoing' },
+      document,
+    );
+    assert.equal(opened.claimed, true);
+    assert.deepEqual(opened.state.shownGroups, ['blocked-by:outgoing']);
+    // Opened for good: the rest of a list a reader asked for does not fold away again.
+    assert.equal(
+      reduceHost(opened.state, { kind: 'control', name: 'show-group', value: 'blocked-by:outgoing' }, document).claimed,
+      false,
+    );
+    const moved = drive([{ kind: 'point', key: '2' }], opened.state).state;
+    assert.deepEqual(moved.shownGroups, [], 'a group opened for one issue stayed open for the next');
+  });
+});

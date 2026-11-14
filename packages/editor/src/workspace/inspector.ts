@@ -50,7 +50,7 @@ import type {
   ViewerIssue,
   ViewerSlot,
 } from '@issuegraph/viewer';
-import { normalizeDocument } from '@issuegraph/viewer';
+import { LEGEND_ORDER, normalizeDocument } from '@issuegraph/viewer';
 
 import type { WorkspaceSelection } from './selection.ts';
 
@@ -346,4 +346,47 @@ export function inspectorView(
     relationships: [relationship],
     filtered: true,
   };
+}
+
+/**
+ * How many relationships a group shows before the rest fold under "Show 4 more"
+ * (RULES, Graphs, Dense neighbourhoods).
+ */
+export const INSPECTOR_GROUP_SHOWN = 5;
+
+/** One kind, read from one end: the Inspector's group of the selection's relationships. */
+export interface InspectorGroup {
+  /** `field:direction`, stable across renders: what a reader's "Show more" names. */
+  readonly key: string;
+  readonly field: EdgeField;
+  readonly direction: InspectorRelationship['direction'];
+  readonly relationships: readonly InspectorRelationship[];
+}
+
+/** The order a group's direction takes within its kind: what the subject declares first. */
+const DIRECTION_ORDER: Readonly<Record<string, number>> = { outgoing: 0, incoming: 1, none: 2 };
+
+/**
+ * The selection's relationships grouped by kind, each kind read from one end
+ * ("is blocked by", "blocks"), in the order the legend draws the kinds.
+ *
+ * A KIND IS A FIELD AND A DIRECTION, because "is blocked by #2281" and "blocks
+ * #2293" are different questions about the same field, and the board heads them
+ * apart. A symmetric field has no direction, so it is one group.
+ */
+export function inspectorGroups(relationships: readonly InspectorRelationship[]): readonly InspectorGroup[] {
+  const groups = new Map<string, InspectorGroup>();
+  for (const relationship of relationships) {
+    const key = `${relationship.field}:${relationship.direction ?? 'none'}`;
+    const group = groups.get(key);
+    groups.set(key, {
+      key,
+      field: relationship.field,
+      direction: relationship.direction,
+      relationships: [...(group?.relationships ?? []), relationship],
+    });
+  }
+  const rank = (group: InspectorGroup): number =>
+    LEGEND_ORDER.indexOf(group.field) * 3 + (DIRECTION_ORDER[group.direction ?? 'none'] ?? 2);
+  return [...groups.values()].sort((a, b) => rank(a) - rank(b));
 }

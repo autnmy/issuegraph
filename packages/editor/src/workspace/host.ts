@@ -156,6 +156,12 @@ export interface HostState {
   readonly relatedGroup: EdgeField | null;
   /** What the reader has typed into the Related groups search. */
   readonly relatedQuery: string;
+  /**
+   * The Inspector groups the reader opened past their first five, by
+   * `InspectorGroup.key`. Cleared when the selection moves: a group key names a
+   * kind, and the next issue's kind is a different list.
+   */
+  readonly shownGroups: readonly string[];
 }
 
 export const INITIAL_HOST_STATE: HostState = Object.freeze({
@@ -177,6 +183,7 @@ export const INITIAL_HOST_STATE: HostState = Object.freeze({
   narrowView: 'order',
   relatedGroup: null,
   relatedQuery: '',
+  shownGroups: [],
 });
 
 /**
@@ -967,6 +974,12 @@ function controlled(
           });
     case 'related-query':
       return settled({ ...state, relatedQuery: value ?? '' });
+    // "Show 4 more" opens a group for good: the rest of a list a reader asked
+    // for does not fold away again under them.
+    case 'show-group':
+      return value === undefined || value === '' || state.shownGroups.includes(value)
+        ? unclaimed(state)
+        : settled({ ...state, shownGroups: [...state.shownGroups, value] });
     case 'target':
       return target === undefined ? settled(state) : drafted(state, { kind: 'target', ref: target }, document);
     case 'retry':
@@ -1060,6 +1073,7 @@ export function reduceHost(state: HostState, command: HostCommand, document: Gra
 function afterSelectionMoved(state: HostState): HostState {
   return {
     ...forgetRelatedList(state),
+    shownGroups: [],
     inspectorDismissed: state.selection.kind === 'none' ? state.inspectorDismissed : false,
   };
 }

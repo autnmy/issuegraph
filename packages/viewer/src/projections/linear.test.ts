@@ -5,7 +5,6 @@ import { edgeIdentity } from '@issuegraph/core';
 
 import { normalizeDocument } from '../document.ts';
 import { renderMarkup } from '../element.ts';
-import { ROW_BADGE_BUDGET } from '../parts.ts';
 import { type Receding, recedingOf } from '../recede.ts';
 import { renderViewer } from '../render.ts';
 import {
@@ -17,6 +16,13 @@ import {
   twoUnitDocument,
 } from '../testing/fixtures.ts';
 import { linearScene } from './linear.ts';
+
+/**
+ * How many relationships an order row names before it counts the rest: one
+ * (RULES, Graphs, Dense neighbourhoods: "An order row names one and counts the
+ * rest"). Stated here rather than imported because it is the rule under test.
+ */
+const ROW_RELATIONSHIPS = 1;
 
 function render(input = fixtureDocument, options = {}): string {
   return renderMarkup(linearScene(normalizeDocument(input).document, options).root);
@@ -157,26 +163,35 @@ describe('the linear projection', () => {
     assert.match(unit, /data-edge="blocked-by"[^>]*aria-label="blocked by #3"/);
   });
 
-  it('renders an edge internal to a unit once, not once per member', () => {
+  it('counts an edge internal to a unit once, not once per member', () => {
     // Both endpoints of `1 together-with 2` are members, so the edge is in TWO
     // `edgesOf` entries — the failure mode of aggregating across members, and
-    // the reason the fix dedupes on the edge rather than on the member.
+    // the reason the fix dedupes on the edge rather than on the member. The row
+    // names the partner's `blocked-by` and counts the unit edge, once.
     const unit = row(render(heldTogetherDocument), '1');
-    const together = unit.match(/data-edge="together-with"/g) ?? [];
 
-    assert.equal(together.length, 1, `together-with rendered ${together.length} times`);
+    assert.equal(edgeBadgesIn(unit).length, ROW_RELATIONSHIPS);
+    assert.match(unit, /data-edge="blocked-by"/);
+    assert.match(unit, /data-omitted="1"/);
   });
 
-  it('draws a row past the badge budget as the budget plus one chip naming the rest', () => {
-    // `blocked-by` is a list field, so a dense document badges every incident
-    // edge on both endpoint rows with nothing to stop it — the same explosion
-    // the graph refuses, in two projections that have no refusal to reach.
+  it('draws a dense row as one relationship and a chip counting the rest', () => {
+    // RULES, Graphs, Dense neighbourhoods: "An order row names one and counts
+    // the rest ('+16'); the Inspector lists them all." `blocked-by` is a list
+    // field, so without the cut a dense document badges every incident edge.
     const omitted = 25;
-    const hub = row(render(denseRowDocument(ROW_BADGE_BUDGET + omitted - 1)), 'hub');
+    const hub = row(render(denseRowDocument(ROW_RELATIONSHIPS + omitted - 1)), 'hub');
     const drawn = edgeBadgesIn(hub);
 
-    assert.equal(drawn.length, ROW_BADGE_BUDGET, `drew ${String(drawn.length)} badges`);
-    assert.match(hub, new RegExp(`data-omitted="${String(omitted)}"[^>]*>\\+${String(omitted)} more relationships<`));
+    assert.equal(drawn.length, ROW_RELATIONSHIPS, `drew ${String(drawn.length)} badges`);
+    assert.match(
+      hub,
+      new RegExp(
+        `data-omitted="${String(omitted)}" title="${String(omitted)} more relationships not shown">` +
+          `<span aria-hidden="true">\\+${String(omitted)}</span>` +
+          `<span class="ig-hidden-words">${String(omitted)} more relationships</span>`,
+      ),
+    );
     // THE NAME IS THE VISIBLE TEXT. ARIA prohibits naming a generic span, so an
     // attribute name could be ignored and a reader would hear a bare "+25 more".
     assert.equal(/data-omitted="25"[^>]*aria-label/.test(hub), false, 'the chip carries an aria-label');
@@ -187,37 +202,57 @@ describe('the linear projection', () => {
     // format's field order, behind `blocked-by`, so a cut in declaration order would keep it and a
     // cut in field order drops it: the one relationship a reader asking "why
     // is this held" wants is the one that has to survive.
-    const hub = row(render(denseRowDocument(ROW_BADGE_BUDGET)), 'hub');
+    const hub = row(render(denseRowDocument(ROW_RELATIONSHIPS)), 'hub');
 
-    assert.equal((hub.match(/data-edge="blocked-by"/g) ?? []).length, ROW_BADGE_BUDGET);
+    assert.equal((hub.match(/data-edge="blocked-by"/g) ?? []).length, ROW_RELATIONSHIPS);
     assert.equal(hub.includes('data-edge="decomposed-from"'), false, 'decomposed-from survived the cut');
-    assert.match(hub, /data-omitted="1"[^>]*>\+1 more relationship</);
+    assert.match(hub, /data-omitted="1"[^>]*>.*<span class="ig-hidden-words">1 more relationship<\/span>/);
   });
 
   it('draws no chip for a row at or under the budget', () => {
-    // At the budget exactly, the decomposed-from edge is the twelfth badge —
-    // every relationship fits and a chip would claim an omission that never
-    // happened.
-    const hub = row(render(denseRowDocument(ROW_BADGE_BUDGET - 1)), 'hub');
+    // A row with one relationship names it, and a row with none names nothing:
+    // either way a chip would claim an omission that never happened.
+    const markup = render({
+      issues: [
+        { key: 'held', title: 'Held', open: true, priority: 2 },
+        { key: 'blocker', title: 'Blocker', open: true, priority: 2 },
+        { key: 'alone', title: 'Alone', open: true, priority: 2 },
+      ],
+      edges: [{ field: 'blocked-by', from: 'held', to: 'blocker' }],
+      order: {
+        slots: ['held', 'blocker', 'alone'].map((key, index) => ({
+          rank: index + 1,
+          lead: key,
+          members: [key],
+          ready: true,
+          holds: [],
+        })),
+        excluded: [],
+      },
+      cycles: [],
+    });
 
-    assert.equal((hub.match(/data-edge="/g) ?? []).length, ROW_BADGE_BUDGET);
-    assert.equal(hub.includes('data-omitted'), false, 'a chip was drawn with nothing omitted');
+    for (const [key, relationships] of [['held', ROW_RELATIONSHIPS], ['blocker', ROW_RELATIONSHIPS], ['alone', 0]] as const) {
+      const drawn = row(markup, key);
+      assert.equal(edgeBadgesIn(drawn).length, relationships, `${key} drew the wrong relationships`);
+      assert.equal(drawn.includes('data-omitted'), false, `${key} drew a chip with nothing omitted`);
+    }
   });
 
   it('gives the overflow chip no edge identity', () => {
     // The chip names no single edge, so it must not enter the pointer set as
     // if it did — a click on it would otherwise select "N edges".
-    const hub = row(render(denseRowDocument(ROW_BADGE_BUDGET + 5)), 'hub');
+    const hub = row(render(denseRowDocument(ROW_RELATIONSHIPS + 5)), 'hub');
     const chip = hub.slice(hub.indexOf('data-omitted'), hub.indexOf('</span>', hub.indexOf('data-omitted')));
 
     assert.equal(chip.includes('data-ig-group'), false);
   });
 
   it('bounds the badges a dense document draws by its rows, not its edges', () => {
-    // EXACT, not an upper bound: the hub draws the budget, every other row
-    // draws the one incoming badge it owns (`1` draws two, its blocked-by and
-    // the decomposed-from), and the legend draws one badge per field. An
-    // inequality here was satisfied by the unbudgeted render too.
+    // EXACT, not an upper bound: the hub draws one, and every other row draws
+    // the one incoming badge it owns (`1` has two, its blocked-by and the
+    // decomposed-from, and counts the second). An inequality here was
+    // satisfied by the unbudgeted render too.
     const count = 400;
     const markup = render(denseRowDocument(count));
     // COUNTED ON THE BADGE CLASS. The legend draws a SAMPLE of each edge now —
@@ -228,17 +263,18 @@ describe('the linear projection', () => {
     // badges.
     const badges = edgeBadgesIn(markup).length;
 
-    assert.equal(badges, ROW_BADGE_BUDGET + count + 1);
-    assert.match(row(markup, 'hub'), new RegExp(`data-omitted="${String(count + 1 - ROW_BADGE_BUDGET)}"`));
+    assert.equal(badges, ROW_RELATIONSHIPS + count);
+    assert.match(row(markup, 'hub'), new RegExp(`data-omitted="${String(count + 1 - ROW_RELATIONSHIPS)}"`));
+    assert.match(row(markup, '1'), /data-omitted="1"/);
   });
 
   it('counts an omitted intra-unit edge once, after the dedupe', () => {
     // A together unit is one row with two keys, so the unit edge sits in BOTH
     // members' `edgesOf` entries. Counting before the dedupe would report that
     // one edge as two omissions; the partner's own blocked-by is a third.
-    const unit = row(render(denseUnitDocument(ROW_BADGE_BUDGET)), 'hub');
+    const unit = row(render(denseUnitDocument(ROW_RELATIONSHIPS)), 'hub');
 
-    assert.equal((unit.match(/class="ig-badge" data-edge="blocked-by"/g) ?? []).length, ROW_BADGE_BUDGET);
+    assert.equal((unit.match(/class="ig-badge" data-edge="blocked-by"/g) ?? []).length, ROW_RELATIONSHIPS);
     assert.match(unit, /data-omitted="3"/);
   });
 

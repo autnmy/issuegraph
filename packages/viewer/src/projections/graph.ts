@@ -37,22 +37,17 @@ import {
   adoptionNote,
   atStations,
   cardBlocks,
-  caveatBadges,
   conditionKind,
   conditionNotice,
   nowRows,
   caveatText,
-  edgeBadgeList,
   emptyState,
-  evidenceBadge,
   hostHeader,
   statesItsOwnCause,
   identity,
   issueNumber,
   legend,
-  notReadyBadge,
   priorityBadge,
-  priorityRaise,
   recedeStamp,
   slotLabel,
   slotPosition,
@@ -173,7 +168,6 @@ function terminalMarker(
   field: EdgeField,
   identity: string,
   theme: Theme,
-  recedes: boolean,
 ): ElementSpec | null {
   const { end, endAngle } = geometry;
   const degrees = (endAngle * 180) / Math.PI;
@@ -190,7 +184,6 @@ function terminalMarker(
     'data-edge': field,
     'data-ig-group': identity,
     transform,
-    'data-recede': recedeStamp(recedes),
   };
   // Every dimension is theme data. A marker sized by a literal would stay put
   // while a host scaled the type around it, and the shape channel the
@@ -239,7 +232,6 @@ function edgePaths(
   edge: ViewerEdge,
   geometry: EdgeGeometry,
   theme: Theme,
-  recedes: boolean,
 ): ElementSpec[] {
   const treatment = treatmentFor(edge.field);
   const dash = dashArrayFor(treatment.dash);
@@ -268,7 +260,6 @@ function edgePaths(
     'stroke-dasharray': dash,
     role: 'img',
     'aria-label': label,
-    'data-recede': recedeStamp(recedes),
   } as const;
 
   if (treatment.dash === 'double') {
@@ -336,7 +327,7 @@ function nodeCard(
   // reading of what the card should hold, four blocks in a row were added to
   // the drawing and not to the count, and every one of them overran the box the
   // arcs were anchored to.
-  const drawn = cardBlocks(document, key, members, box.column === 'spine', box.now === true).map(
+  const drawn = cardBlocks(document, key, members, box.now === true).map(
     (block) => cardMark(document, block, key, members, slot),
   );
 
@@ -413,33 +404,17 @@ function cardMark(
         ? element('div', { class: 'ig-row-head' }, [])
         : (unitBlock(document, slot) ?? element('div', { class: 'ig-row-head' }, []));
     case 'badges':
-      // THE BADGE ROW IS THE SAME ONE THE LIST DRAWS, which is what makes the
-      // two projections one grammar rather than two spellings. A gutter card
-      // carries it too: it is the only mark this projection draws for its
-      // issue, so a relation left off it is one the graph reader never sees.
+      // THE PRIORITY ALONE. A node carries its title, number and priority (RULES,
+      // Graphs, Dense neighbourhoods): the selection's lines and the Inspector
+      // carry its relationships, and its tooltip says why it is held. Built by
+      // the builder `cardBlocks` measured, so the tag drawn is the tag counted.
       return element(
         'div',
         { class: 'ig-badges' },
-        // FROM THE SAME BUILDERS `badgeTexts` READS, so what the layout packed
-        // and what the card draws are one list of chips rather than two that
-        // can differ by one.
-        [
-          priorityBadge(document.byKey.get(key)?.provenance),
-          priorityRaise(document.byKey.get(key)?.provenance),
-          evidenceBadge(document.byKey.get(key)),
-          slot === undefined ? null : notReadyBadge(slot),
-          ...caveatBadges(document.byKey.get(key)),
-          ...edgeBadgeList(document, members),
-        ].filter((badge): badge is ElementSpec => badge !== null),
+        [priorityBadge(document.byKey.get(key)?.provenance)].filter(
+          (badge): badge is ElementSpec => badge !== null,
+        ),
       );
-    case 'note':
-      // A SPINE CARD KEEPS ITS SENTENCES ON THE TOOLTIP, because the list
-      // projection prints them and §16b's spine card draws a chip. A gutter card
-      // is the only mark this projection makes for its issue, so its sentence
-      // has nowhere else to be — and §16b prints it there.
-      return element('p', { class: 'ig-hold', 'data-family': 'tracker' }, [
-        element('span', {}, [block.text]),
-      ]);
   }
 }
 
@@ -978,15 +953,19 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
       const geometry = edgeGeometry(layout, drawn);
       if (geometry === null) continue;
       const identity = edgeIdentity(edge.field, edge.from, edge.to);
-      const edgeRecedes = receding.edges.has(identity);
-      edgeLayers.push(...edgePaths(edge, geometry, theme, edgeRecedes));
+      // ONLY THE SELECTION'S OWN RELATIONSHIPS DRAW (RULES, Graphs, Dense
+      // neighbourhoods). The lines between its neighbours wait until one of them
+      // is selected; drawn faded they still crossed the selection's own in a
+      // dense neighbourhood (#303). With nothing selected nothing recedes, so
+      // every line draws.
+      if (receding.edges.has(identity)) continue;
+      edgeLayers.push(...edgePaths(edge, geometry, theme));
       const marker = terminalMarker(
         treatmentFor(edge.field).terminal,
         geometry,
         edge.field,
         identity,
         theme,
-        edgeRecedes,
       );
       if (marker !== null) edgeLayers.push(marker);
       // THE MARKS A CALLER ASKED FOR, LAST, so every one of them sits in front

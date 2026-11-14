@@ -497,11 +497,20 @@ describe('the canvas draws each edge’s WRITE STATES from the store’s project
   });
 
   it('keeps the halo when the selected edge is not among the projected ones', () => {
+    // Only the selected relationship's own line draws, so the pending line
+    // beside it is not on the canvas and neither is its state or its chips.
+    assert.ok(
+      renderScaleLadder(document).markup.includes(`data-ig-group="${first}"`),
+      'the canvas never draws the pending line, so this proves nothing',
+    );
     const result = renderScaleLadder(document, { projected: [pending], selectedEdge: second });
     const states = [
       ...result.markup.matchAll(/<path class="ig-edge"[^>]*?data-ig-group="([^"]*)"[^>]*?data-ig-state="([^"]*)"/g),
     ].map((match) => `${match[1] ?? ''}=${match[2] ?? ''}`);
-    assert.deepEqual(states.sort(), [`${first}=pending-write`, `${second}=selected`].sort());
+    assert.deepEqual(states, [`${second}=selected`]);
+    assert.match(result.markup, /class="ig-overlay ig-overlay-halo"/);
+    assert.equal(result.markup.includes(`data-ig-group="${first}"`), false, 'a line away from the selection was drawn');
+    assert.equal(/data-ig-mark=/.test(result.markup), false, 'the undrawn pending line placed its chips');
   });
 
   it('ignores an entry with no state, and one naming an edge this canvas does not draw', () => {
@@ -559,15 +568,24 @@ describe('the canvas draws each edge’s WRITE STATES from the store’s project
 });
 
 describe('a selection recedes the rest of the scale canvas', () => {
-  const recedingByEdge = (markup: string): Map<string, boolean> =>
+  // RULES, Graphs, Dense neighbourhoods: "Only the selection's own relationships
+  // draw." Rows and stations recede; a line that does not touch the selection is
+  // not drawn at all, so every drawn line is unstamped.
+  const lineGroups = (markup: string): Map<string, boolean> =>
     new Map(
-      [...markup.matchAll(/<path class="ig-edge"[^>]*>/g)].map(([tag]): [string, boolean] => [
-        /data-ig-group="([^"]*)"/.exec(tag)?.[1] ?? '',
-        tag.includes('data-recede="true"'),
-      ]),
+      [...markup.matchAll(/<path class="ig-(?:edge|terminal)"[^>]*>/g)]
+        .map(([tag]): [string | undefined, boolean] => [
+          /data-ig-group="([^"]*)"/.exec(tag)?.[1],
+          tag.includes('data-recede'),
+        ])
+        // Legend samples are edge paths too, but they name no relationship.
+        .filter((entry): entry is [string, boolean] => entry[0] !== undefined),
     );
+  /** Every relationship the canvas draws with nothing selected, so an absence below is not vacuous. */
+  const everyLine = (document: ReturnType<typeof relatedDocument>): ReadonlySet<string> =>
+    new Set(lineGroups(renderScaleLadder(document).markup).keys());
 
-  it('stamps every row, station and line the selected edge does not touch, and none that it does', () => {
+  it('stamps every row and station the selected edge does not touch, and draws only its line', () => {
     const document = relatedDocument(10);
     const picked = edgeIdentity('blocked-by', componentKey(0, 1), componentKey(0, 2));
     const { markup } = renderScaleLadder(document, { selectedEdge: picked });
@@ -591,15 +609,10 @@ describe('a selection recedes the rest of the scale canvas', () => {
       ['rank 1', 'rank 2'],
     );
 
-    // Legend samples are edge paths too, but they name no relationship and never recede.
-    const lines = tagsOf(/<path class="ig-(?:edge|terminal)"[^>]*>/g).filter((tag) =>
-      tag.includes('data-ig-group='),
-    );
-    assert.deepEqual(
-      new Set(lines.filter((tag) => !stamped(tag)).map((tag) => attribute(tag, 'data-ig-group'))),
-      new Set([picked]),
-    );
-    assert.ok(lines.some(stamped), 'no line receded');
+    const lines = lineGroups(markup);
+    assert.deepEqual(new Set(lines.keys()), new Set([picked]), 'a line away from the selection was drawn');
+    assert.equal([...lines.values()].some(Boolean), false, 'a drawn line carries a recede stamp');
+    assert.ok(everyLine(document).size > 1, 'the canvas draws one line, so no absence is proved');
   });
 
   it('stamps nothing for a selectedEdge this canvas does not draw, however it is spelled', () => {
@@ -634,115 +647,69 @@ describe('a selection recedes the rest of the scale canvas', () => {
     // "When a host passes issues and a relationship together, the issues win and the relationship is ignored"
     assert.equal(/ig-overlay-halo/.test(result.markup), false, 'the ignored relationship still draws a halo');
     assert.equal(/data-ig-state="selected/.test(result.markup), false, 'the ignored relationship is still marked selected');
-    const lines = [...result.markup.matchAll(/<path class="ig-edge"[^>]*>/g)]
-      .map((match) => ({
-        group: /data-ig-group="([^"]*)"/.exec(match[0])?.[1],
-        stamped: match[0].includes('data-recede="true"'),
-      }))
-      .filter((line) => line.group !== undefined);
-    assert.deepEqual(new Set(lines.filter((line) => !line.stamped).map((line) => line.group)), new Set([kept]));
-    assert.equal(lines.find((line) => line.group === ignored)?.stamped, true);
+    const lines = lineGroups(result.markup);
+    assert.deepEqual(new Set(lines.keys()), new Set([kept]));
+    assert.equal(lines.get(kept), false, 'the selected issue\'s own line carries a recede stamp');
+    assert.ok(everyLine(document).has(ignored), 'the ignored relationship is never drawn, so its absence proves nothing');
   });
 
   it('keeps the edge selection and its halo when the selected issue does not resolve', () => {
     const document = relatedDocument(10);
     const picked = edgeIdentity('blocked-by', componentKey(0, 1), componentKey(0, 2));
+    const far = edgeIdentity('blocked-by', componentKey(0, 5), componentKey(0, 6));
 
     // "A key resolves when the document names it (in `byKey` or as an edge end), and keys that do not resolve are ignored."
     const result = renderScaleLadder(document, { selected: 'nowhere', selectedEdge: picked });
     assert.match(result.markup, /class="ig-overlay ig-overlay-halo"/);
-    const receding = recedingByEdge(result.markup);
-    assert.equal(receding.get(picked), false, 'the selected relationship receded');
-    assert.equal(
-      receding.get(edgeIdentity('blocked-by', componentKey(0, 5), componentKey(0, 6))),
-      true,
-      'a line that touches neither end of the selected relationship stayed at full strength',
-    );
+    const lines = lineGroups(result.markup);
+    assert.equal(lines.get(picked), false, 'the selected relationship receded or was not drawn');
+    assert.ok(everyLine(document).has(far), 'the far line is never drawn, so its absence proves nothing');
+    assert.equal(lines.has(far), false, 'a line that touches neither end of the selected relationship was drawn');
   });
 
-  it('writes no write-state opacity on a receded line or its clones, and its state still shows', () => {
+  it('draws nothing for a write state on a line away from the selection, and keeps it on the selection\'s own line', () => {
+    // A line away from the selection is not drawn, so neither is anything a
+    // write state adds to it: no state, no clone, no placed mark. The same state
+    // on a line of the selected issue still shows by its dash, hue and fade.
     const document = relatedDocument(10);
-    const first = edgeIdentity('blocked-by', componentKey(0, 1), componentKey(0, 2));
-    const projectedAs = (state: EdgeState) => ({
-      id: first,
+    const lineAs = (from: number, to: number, state: EdgeState) => ({
+      id: edgeIdentity('blocked-by', componentKey(0, from), componentKey(0, to)),
       kind: 'blocked-by' as const,
-      from: componentKey(0, 1),
-      to: componentKey(0, 2),
+      from: componentKey(0, from),
+      to: componentKey(0, to),
       states: [state],
       writes: [],
     });
-    // A line that does not recede is faded by an opacity attribute, which a receded line would stack on its own 50%.
-    assert.match(renderScaleLadder(document, { projected: [projectedAs('pending-write')] }).markup, /\sopacity="/);
+    const selected = componentKey(0, 5);
 
-    const states: readonly EdgeState[] = ['pending-write', 'failed'];
+    const states: readonly EdgeState[] = ['pending-write', 'failed', 'invalid'];
     for (const state of states) {
-      const { markup } = renderScaleLadder(document, { projected: [projectedAs(state)], selected: componentKey(0, 5) });
-      const path = [...markup.matchAll(/<path class="ig-edge"[^>]*>/g)]
-        .map(([tag]) => tag)
-        .find((tag) => tag.includes(`data-ig-group="${first}"`));
-      assert.ok(path !== undefined, `${state}: the line was not drawn`);
-      // "A receded line with an editor write state draws at 50%, and its state still shows by its dash and colour"
-      assert.match(path, /data-recede="true"/, `${state}: the line did not recede`);
-      assert.ok(path.includes(`data-ig-state="${state}"`), `${state}: the receded line lost its state`);
-      assert.equal(/\sopacity="/.test(markup), false, `${state}: a receded line or one of its clones carries an opacity attribute`);
-    }
-  });
-
-  it('draws a receded refused line with the dash and hue of an unselected canvas, faded only by the sheet', () => {
-    // The issue: "A receded line with an editor write state draws at 50%, and its state still shows by its dash and colour"
-    // Selecting c0-1 keeps only c0-1, c0-2 and their line, so the refused c0-6 to
-    // c0-7 line recedes. A write-state opacity attribute on it would multiply with
-    // the sheet's half strength and draw it fainter than 50%.
-    const document = documentOf({ components: [10] });
-    const far = edgeIdentity('blocked-by', componentKey(0, 6), componentKey(0, 7));
-    const refused = {
-      id: far,
-      kind: 'blocked-by' as const,
-      from: componentKey(0, 6),
-      to: componentKey(0, 7),
-      states: ['invalid' as const],
-      writes: [],
-    };
-    const bare = renderScaleLadder(document, { projected: [refused] });
-    const receding = renderScaleLadder(document, { projected: [refused], selected: componentKey(0, 1) });
-
-    const pathTags = (markup: string): string[] =>
-      [...markup.matchAll(/<path [^>]*>/g)].map((match) => match[0]);
-    const farLines = (markup: string): string[] =>
-      pathTags(markup).filter(
-        (tag) => tag.includes('class="ig-edge"') && tag.includes(`data-ig-group="${far}"`),
+      const far = lineAs(1, 2, state);
+      // The control: with nothing selected the far line carries its state.
+      assert.ok(
+        renderScaleLadder(document, { projected: [far] }).markup.includes(`data-ig-state="${state}"`),
+        `${state}: the control draws no state`,
       );
-    const dashClones = (markup: string): string[] =>
-      pathTags(markup).filter((tag) => /class="[^"]*\big-overlay-dash\b/.test(tag));
-    const unfaded = (tag: string): string =>
-      tag.replace(/ opacity="[^"]*"/g, '').replace(/ data-recede="true"/g, '');
 
-    const lines = farLines(receding.markup);
-    assert.ok(lines.length > 0, 'the refused line was not drawn');
-    for (const tag of lines) {
-      assert.ok(tag.includes('data-recede="true"'), 'the far line does not recede, so this proves nothing');
-      assert.ok(tag.includes('data-ig-state="invalid"'), 'the refusal no longer shows on the receded line');
-      assert.equal(/ opacity="/.test(tag), false, 'a write-state opacity sits on top of the recede');
+      const away = renderScaleLadder(document, { projected: [far], selected }).markup;
+      assert.equal(away.includes(`data-ig-group="${far.id}"`), false, `${state}: a line away from the selection was drawn`);
+      assert.equal(/data-ig-state=|ig-overlay|data-ig-mark=/.test(away), false, `${state}: a write state on an undrawn line left a mark`);
+
+      const own = lineAs(4, 5, state);
+      const { markup } = renderScaleLadder(document, { projected: [own], selected });
+      const paths = [...markup.matchAll(/<path class="ig-edge"[^>]*>/g)]
+        .map(([tag]) => tag)
+        .filter((tag) => tag.includes(`data-ig-group="${own.id}"`));
+      assert.ok(paths.length > 0, `${state}: the selection's own line was not drawn`);
+      for (const path of paths) {
+        assert.equal(path.includes('data-recede'), false, `${state}: a drawn line carries a recede stamp`);
+        assert.ok(path.includes(`data-ig-state="${state}"`), `${state}: the selection's own line lost its state`);
+      }
     }
-    assert.deepEqual(
-      lines.map(unfaded),
-      farLines(bare.markup).map(unfaded),
-      'receding changed the line beyond its fade',
-    );
 
-    const clones = dashClones(receding.markup);
-    assert.ok(clones.length > 0, 'the refusal lost its dash clone on a receded line');
-    for (const tag of clones) {
-      assert.ok(tag.includes('stroke="var(--ig-state-invalid)"'), 'the refusal lost its hue on a receded line');
-      assert.equal(/ opacity="/.test(tag), false, 'a clone of a receded line carries a write-state opacity');
-    }
-    assert.deepEqual(clones.map(unfaded), dashClones(bare.markup).map(unfaded));
-
-    assert.match(
-      receding.styles,
-      /\[data-recede(=["']?true["']?)?\][^{}]*\{[^}]*stroke-opacity:\s*0?\.5\b/,
-      'the shipped sheet draws no receded line at half strength',
-    );
+    // A refusal keeps its state hue on the selection's own line.
+    const { markup } = renderScaleLadder(document, { projected: [lineAs(4, 5, 'invalid')], selected });
+    assert.match(markup, /class="ig-overlay ig-overlay-dash ig-overlay-dotted" stroke="var\(--ig-state-invalid\)"/);
   });
 });
 

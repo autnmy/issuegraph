@@ -81,7 +81,7 @@ describe('mountViewer', () => {
     assert.deepEqual(selected, ['102']);
   });
 
-  it('resolves the enclosure to its slot and the connector to its edge', () => {
+  it('resolves a unit member to its slot and a member\u2019s line to its edge', () => {
     // The enclosure and its connector are deliberately OUTSIDE the focus index
     // — one element per key, or `focus()` lands on the non-tabbable rect
     // painted behind the node. They are still visible marks a reader can click,
@@ -103,30 +103,33 @@ describe('mountViewer', () => {
       onSelect: (key: string | null) => selected.push(key),
     });
 
-    // THE UNIT IS ONE CARD NOW, so the two marks are the card and the
-    // `together-with` BADGE on it. They decorate different subjects for the same
-    // reason the enclosure and the connector did: the card is the unit, so it
-    // names the slot's lead; the badge is the relationship joining two members,
-    // so it names the EDGE — the same identity `@issuegraph/store` derives
-    // `StoredEdge.id` with, so a host resolves it with `findEdge` rather than
-    // being taught a second format.
+    // THE UNIT IS ONE CARD NOW, and its internal `together-with` has no mark
+    // on the canvas: a node never lists its relationships (#303). So the two
+    // marks are the card and the line leaving its PARTNER, `2 blocked-by 3`.
+    // They decorate different subjects for the same reason the enclosure and
+    // the connector did: the card is the unit, so it names the slot's lead; the
+    // line is a relationship, so it names the EDGE — the same identity
+    // `@issuegraph/store` derives `StoredEdge.id` with, so a host resolves it
+    // with `findEdge` rather than being taught a second format.
+    const edge = edgeIdentity('blocked-by', '2', '3');
     const member = container
       .descendants()
       .find((element) => element.getAttribute('class') === 'ig-unit-member');
-    const badge = container
+    const line = container
       .descendants()
-      .find((element) => element.getAttribute(GROUP_ATTRIBUTE) === edgeIdentity('together-with', '1', '2'));
+      .find((element) => element.getAttribute('class') === 'ig-edge' && element.getAttribute(GROUP_ATTRIBUTE) === edge);
 
     assert.ok(member !== undefined, 'no unit member was drawn');
-    assert.ok(badge !== undefined, 'no together badge was drawn');
-    assert.equal(badge.getAttribute(KEY_ATTRIBUTE), null, 'decoration is in the focus index');
+    assert.ok(line !== undefined, 'no line was drawn from the partner');
+    assert.equal(line.getAttribute(KEY_ATTRIBUTE), null, 'decoration is in the focus index');
 
     // A CLICK ON A MEMBER RESOLVES TO THE UNIT. The member carries no identity
     // of its own, so `keyAt` walks up to the card — which is exactly what "one
-    // station, one focus key" has to mean for a pointer.
+    // station, one focus key" has to mean for a pointer. A click on the
+    // partner's line names the edge, never the lead it is drawn from.
     container.dispatch('click', { target: member });
-    container.dispatch('click', { target: badge });
-    assert.deepEqual(selected, ['1', edgeIdentity('together-with', '1', '2')]);
+    container.dispatch('click', { target: line });
+    assert.deepEqual(selected, ['1', edge]);
   });
 
   it('resolves an ordinary edge path, and its terminal, to that edge', () => {
@@ -241,14 +244,16 @@ describe('mountViewer', () => {
     const away = handle.state.focused;
     assert.notEqual(away, null, 'focus did not move, so the guard is untested');
 
-    const badge = container
+    // The partner's line: the unit's own `together-with` has no canvas mark (#303).
+    const edge = edgeIdentity('blocked-by', '2', '3');
+    const line = container
       .descendants()
-      .find((element) => element.getAttribute(GROUP_ATTRIBUTE) === edgeIdentity('together-with', '1', '2'));
-    assert.ok(badge !== undefined, 'no together badge was drawn');
+      .find((element) => element.getAttribute(GROUP_ATTRIBUTE) === edge);
+    assert.ok(line !== undefined, 'no line was drawn from the partner');
 
-    container.dispatch('click', { target: badge });
+    container.dispatch('click', { target: line });
 
-    assert.equal(handle.state.selected, edgeIdentity('together-with', '1', '2'));
+    assert.equal(handle.state.selected, edge);
     assert.equal(handle.state.focused, away, 'selecting an edge moved the keyboard tab stop');
   });
 
@@ -262,14 +267,15 @@ describe('mountViewer', () => {
     // never happened for the subjects that need it most.
     const doc = new TestDocument();
     const container = doc.createContainer();
-    const edge = edgeIdentity('together-with', '1', '2');
+    // The partner's line, which the list row names as its one relationship.
+    const edge = edgeIdentity('blocked-by', '2', '3');
     const handle = mountViewer(container, heldTogetherDocument, { projection: 'graph' });
 
-    const badge = container
+    const line = container
       .descendants()
       .find((element) => element.getAttribute(GROUP_ATTRIBUTE) === edge);
-    assert.ok(badge !== undefined, 'no together badge was drawn');
-    container.dispatch('click', { target: badge });
+    assert.ok(line !== undefined, 'no line was drawn from the partner');
+    container.dispatch('click', { target: line });
     assert.equal(handle.state.selected, edge);
 
     handle.setProjection('linear');
@@ -342,12 +348,13 @@ describe('mountViewer', () => {
       onSelect: (key: string | null) => selected.push(key),
     });
 
-    const edge = edgeIdentity('together-with', '1', '2');
-    const badge = container
+    // The partner's line: the unit's own `together-with` has no canvas mark (#303).
+    const edge = edgeIdentity('blocked-by', '2', '3');
+    const line = container
       .descendants()
       .find((element) => element.getAttribute(GROUP_ATTRIBUTE) === edge);
-    assert.ok(badge !== undefined, 'no together badge was drawn');
-    container.dispatch('click', { target: badge });
+    assert.ok(line !== undefined, 'no line was drawn from the partner');
+    container.dispatch('click', { target: line });
 
     assert.equal(handle.state.selected, edge);
 
@@ -355,13 +362,13 @@ describe('mountViewer', () => {
     // the subject survives and the host is told nothing new.
     const announced = selected.length;
     handle.update(heldTogetherDocument);
-    assert.equal(handle.state.selected, edge, 'a redraw that still draws the badge dropped it');
+    assert.equal(handle.state.selected, edge, 'a redraw that still draws the line dropped it');
     assert.equal(selected.length, announced, 'an unchanged selection was re-announced');
 
     // THE LINEAR PROJECTION DRAWS NO CANVAS AND THE SUBJECT SURVIVES ANYWAY,
-    // because the connector is not the only thing that represents this edge: the
-    // row draws a `together-with` badge, and that badge now publishes the same
-    // identity. This assertion used to read the other way and encoded the defect
+    // because the line is not the only thing that represents this edge: the
+    // row names it as its one relationship, a `blocked-by` badge that publishes
+    // the same identity. This assertion used to read the other way and encoded the defect
     // as the contract — `setProjection` documents that only the representation
     // changes, and dropping the subject broke exactly that promise.
     const beforeSwitch = selected.length;
@@ -1311,8 +1318,9 @@ describe('mountViewer recedes the graph by the selection as given', () => {
   };
 
   /**
-   * Every card and line agrees with `recedingOf`: it is stamped exactly when
-   * its key or its edge identity is in the receding sets.
+   * Every card and line agrees with `recedingOf`: a card is stamped exactly
+   * when its key is in the receding set, and a line in the receding set is not
+   * drawn at all (#303: only the selection's own relationships draw).
    */
   const assertStampsMatchReceding = (container: TestElement, receding: Receding): void => {
     let cards = 0;
@@ -1327,7 +1335,8 @@ describe('mountViewer recedes the graph by the selection as given', () => {
       }
       if (kind === 'ig-edge' || kind === 'ig-terminal') {
         const identity = element.getAttribute(GROUP_ATTRIBUTE) ?? '';
-        assert.equal(stamped, receding.edges.has(identity), `${kind} ${identity}`);
+        assert.equal(receding.edges.has(identity), false, `${kind} ${identity} was drawn, though it recedes`);
+        assert.equal(stamped, false, `${kind} ${identity} was stamped`);
         lines += 1;
       }
     }
@@ -1343,15 +1352,19 @@ describe('mountViewer recedes the graph by the selection as given', () => {
     return row.getAttribute('data-recede');
   };
 
-  /** The stamps on every drawn line of one relationship. */
-  const lineStamps = (container: TestElement, identity: string): (string | null)[] => {
-    const lines = container
+  /** Every drawn line of one relationship, none when it is not drawn. */
+  const linesOf = (container: TestElement, identity: string): TestElement[] =>
+    container
       .descendants()
       .filter(
         (element) =>
           (element.getAttribute('class') ?? '').split(' ').includes('ig-edge') &&
           element.getAttribute(GROUP_ATTRIBUTE) === identity,
       );
+
+  /** The stamps on every drawn line of one relationship. */
+  const lineStamps = (container: TestElement, identity: string): (string | null)[] => {
+    const lines = linesOf(container, identity);
     assert.ok(lines.length > 0, `no line was drawn for ${identity}`);
     return lines.map((element) => element.getAttribute('data-recede'));
   };
@@ -1403,11 +1416,14 @@ describe('mountViewer recedes the graph by the selection as given', () => {
     const lines = drawn.filter(
       (element) => element.getAttribute('class') === 'ig-edge' && element.getAttribute(GROUP_ATTRIBUTE) !== null,
     );
-    // The other line between the same two issues recedes: only the clicked relationship stays.
-    assert.ok(lines.some((element) => element.getAttribute(GROUP_ATTRIBUTE) === edgeIdentity('decomposed-from', '102', '101')));
+    // Only the clicked relationship draws (#303): even the other line between
+    // the same two issues, which the bare mount drew, waits.
+    assert.ok(before.includes(`data-ig-group="${edgeIdentity('decomposed-from', '102', '101')}"`), 'the other line was never drawn');
+    assert.ok(lines.length > 0, 'the clicked line was not drawn');
     for (const element of lines) {
       const group = element.getAttribute(GROUP_ATTRIBUTE);
-      assert.equal(element.getAttribute('data-recede'), group === blocked101To102 ? null : 'true', `line ${String(group)}`);
+      assert.equal(group, blocked101To102, `line ${String(group)} was drawn`);
+      assert.equal(element.getAttribute('data-recede'), null, 'the clicked line receded');
     }
 
     handle.select(null);
@@ -1429,6 +1445,9 @@ describe('mountViewer recedes the graph by the selection as given', () => {
         .filter((other) => other !== blocked101To102),
     );
     const { container, handle } = mounted({ projection: 'graph' });
+    const othersOf = (): TestElement[] =>
+      edgePaths(container).filter((path) => otherIdentities.has(path.getAttribute(GROUP_ATTRIBUTE) ?? ''));
+    assert.ok(othersOf().length > 0, 'no other relationship line was drawn before the click, so this proves nothing');
 
     const clicked = edgePaths(container).find((path) => path.getAttribute(GROUP_ATTRIBUTE) === blocked101To102);
     assert.ok(clicked !== undefined, 'the blocked-by 101 to 102 line was not drawn');
@@ -1436,12 +1455,13 @@ describe('mountViewer recedes the graph by the selection as given', () => {
     const afterClick = recedeStampsOf(container);
 
     // The issue: "A relationship clicked in the standalone viewer recedes the rest, and clearing it restores everything"
-    // and "For an edge selection, that edge and its two ends stay."
-    const others = edgePaths(container).filter((path) => otherIdentities.has(path.getAttribute(GROUP_ATTRIBUTE) ?? ''));
-    assert.ok(others.length > 0, 'no other relationship line was drawn, so this proves nothing');
-    for (const path of others) {
-      assert.equal(path.getAttribute('data-recede'), 'true', `${String(path.getAttribute(GROUP_ATTRIBUTE))} did not recede`);
-    }
+    // and "For an edge selection, that edge and its two ends stay." The other
+    // lines are not drawn at all (#303: only the selection's own relationships draw).
+    assert.deepEqual(
+      othersOf().map((path) => path.getAttribute(GROUP_ATTRIBUTE)),
+      [],
+      'a line the clicked relationship is not was drawn',
+    );
     for (const element of container.descendants()) {
       const key = element.getAttribute(KEY_ATTRIBUTE);
       const group = element.getAttribute(GROUP_ATTRIBUTE);
@@ -1459,6 +1479,7 @@ describe('mountViewer recedes the graph by the selection as given', () => {
     handle.update(fixtureDocument);
     assert.equal(handle.state.selected, blocked101To102, 'an update with the same document dropped the selection');
     assert.deepEqual(recedeStampsOf(container), afterClick, 'an update with the same document changed what recedes');
+    assert.deepEqual(othersOf(), [], 'an update with the same document drew the other lines again');
   });
 
   it('a click on nothing keyed clears a clicked relationship and every stamp, even beside a host-passed selectedEdge', () => {
@@ -1520,18 +1541,16 @@ describe('mountViewer recedes the graph by the selection as given', () => {
   it('recedes by the selected issue and ignores a selectedEdge the host passes beside it', () => {
     // The issue: "When a host passes issues and a relationship together, the issues win and the relationship is ignored"
     // The blocked-by 105 to other/repo#7 line touches neither 101 nor 102, so it
-    // stays at full strength only if the relationship wins over the issue.
+    // is drawn only if the relationship wins over the issue.
     const far = edgeIdentity('blocked-by', '105', 'other/repo#7');
+    assert.ok(linesOf(mounted({ projection: 'graph' }).container, far).length > 0, 'the bare mount draws no far line, so this proves nothing');
     const { container, handle } = mounted({ projection: 'graph', selected: '102', selectedEdge: far });
 
     assert.equal(handle.state.selected, '102');
     assert.equal(rowStamp(container, '102'), null, 'the selected issue receded');
     assert.equal(rowStamp(container, '101'), null, 'a neighbour of the selected issue receded');
     assert.equal(rowStamp(container, '105'), 'true', 'an end of the host relationship stayed, so the relationship won');
-    assert.ok(
-      lineStamps(container, far).every((stamp) => stamp === 'true'),
-      'the host relationship stayed at full strength',
-    );
+    assert.deepEqual(linesOf(container, far), [], 'the host relationship was drawn');
     assert.ok(
       lineStamps(container, blocked101To102).every((stamp) => stamp === null),
       'a line of the selected issue receded',
@@ -1707,7 +1726,7 @@ describe('mountViewer recedes the graph by the selection as given', () => {
     }
   });
 
-  it('select of the unit member b keeps its neighbour, its line and the unit card, and recedes the neighbour and line of its partner a', () => {
+  it('select of the unit member b keeps its neighbour, its line and the unit card, recedes the neighbour of its partner a, and draws none of a\u2019s lines', () => {
     // "Selecting one member of a together unit keeps that member's neighbours and lines, not its partners', and the unit's card stays"
     // a and b are one unit led by a; c is a neighbour of b only, and d is a neighbour of a only.
     const unit: ViewerDocument = {
@@ -1735,6 +1754,8 @@ describe('mountViewer recedes the graph by the selection as given', () => {
     const container = new TestDocument().createContainer();
     const handle = mountViewer(container, unit, { projection: 'graph' });
     assert.deepEqual(recedeStampsOf(container), [], 'something receded before anything was selected');
+    const partnerLine = edgeIdentity('blocked-by', 'd', 'a');
+    assert.ok(linesOf(container, partnerLine).length > 0, 'the line from d to a draws nowhere, so this proves nothing');
 
     handle.select('b');
     const card = (key: string): TestElement | undefined =>
@@ -1763,11 +1784,8 @@ describe('mountViewer recedes the graph by the selection as given', () => {
       'the line of the selected member receded',
     );
     assert.equal(recedes(card('d'), 'the card of d'), true, 'the neighbour d of the partner a was kept');
-    assert.equal(
-      recedes(line(edgeIdentity('blocked-by', 'd', 'a')), 'the line from d to a'),
-      true,
-      'the line of the partner a was kept',
-    );
+    // The partner's line waits until the partner is selected (#303).
+    assert.equal(line(partnerLine), undefined, 'the line of the partner a was drawn');
   });
 });
 
