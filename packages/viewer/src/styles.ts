@@ -1127,14 +1127,23 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   font-variant-numeric: tabular-nums;
 }
 
+/* A LINK IN RUNNING TEXT IS UNDERLINED AT REST. An issue number sits inside
+   its row's line, in the line's own ink, so colour alone cannot tell it
+   apart, and the host's accessibility audit refuses a link in a line of text
+   that only colour distinguishes. The board draws the rule on hover only;
+   the audit wins, as the host's own in-text links already do. */
 .ig-link {
   color: inherit;
-  text-decoration: none;
+  text-decoration: underline;
+  text-decoration-color: var(--ig-line);
+  text-underline-offset: var(--ig-space-micro);
 }
 
+/* The rule takes the line's own ink under the pointer, as the board's inline
+   link does; at rest it is the hairline colour. */
 .ig-link:hover {
   color: var(--ig-accent);
-  text-decoration: underline;
+  text-decoration-color: currentColor;
 }
 
 /* THE PROVENANCE LINE IS NOT MUTED. It is the answer to "why is this here",
