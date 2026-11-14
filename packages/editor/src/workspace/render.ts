@@ -2902,8 +2902,22 @@ function recoveryEntrySpec(
   recovery: WorkspaceRecovery,
   words: WorkspaceWords,
   diffOpen: MutationId | null,
+  scope: PanelScope,
 ): ElementSpec {
-  return element('li', { class: 'ig-log-recovery', 'data-mutation': recovery.mutationId }, [
+  return element('li', {
+    class: 'ig-log-recovery',
+    'data-mutation': recovery.mutationId,
+    // ONE CARD PER FAILED WRITE (the redesign lead's ruling). When the
+    // Inspector states this write, by the one `statedHere` it draws its own
+    // cards by, the log's copy is marked, and the sheet hides it wherever the
+    // Inspector zone is drawn — so the card sits beside the issue the reader is
+    // working on, and the log keeps it where no Inspector is on screen (under
+    // 640, or a dismissed overlay at the middle width). A rule in the sheet
+    // rather than a branch here, because only the container query knows which
+    // layout is drawn. A write with a `null` carrier is stated by no panel, so
+    // it is never marked.
+    'data-ig-inspected': statedHere(scope, recovery) ? 'true' : null,
+  }, [
     element('div', { class: 'ig-log-write' }, loggedWriteSpecs(recovery.write, words.log)),
     element('ul', { class: 'ig-recovery-list' }, [recoveryCard(recovery, words.recovery, diffOpen, 'log', null)]),
   ]);
@@ -2920,14 +2934,17 @@ function recoveryEntrySpec(
  * A WRITE THAT DID NOT SAVE IS THE INSPECTOR'S OWN CARD, drawn by
  * {@link recoveryCard} under a line naming the write, so its note, reason and
  * controls cannot differ between the two placements. It is drawn for every such write, whichever issue it is
- * about and whether or not that issue is selected, and a conflict's difference
- * is drawn whole, because the log speaks for no panel.
+ * about, and a conflict's difference is drawn whole, because the log speaks for
+ * no panel. ONE CARD SHOWS PER WRITE: the entry the Inspector also states is
+ * marked `data-ig-inspected`, and the sheet hides it wherever the Inspector is
+ * drawn.
  */
 function logSpec(
   log: readonly WorkspaceLogEntry[],
   changeLine: ElementSpec,
   words: WorkspaceWords,
   diffOpen: MutationId | null,
+  scope: PanelScope,
 ): ElementSpec {
   return element('div', { class: 'ig-workspace-log' }, [
     changeLine,
@@ -2939,7 +2956,7 @@ function logSpec(
           log.map((entry) =>
             entry.kind === 'pending'
               ? savingEntrySpec(entry.mutationId, entry.write, words.log)
-              : recoveryEntrySpec(entry, words, diffOpen),
+              : recoveryEntrySpec(entry, words, diffOpen, scope),
           ),
         ),
   ]);
@@ -3886,6 +3903,9 @@ export function renderWorkspace(
             summarySpec(change.summary, changeWords, { held: change.held }),
             options.words,
             options.diffOpen ?? null,
+            // THE INSPECTOR'S OWN SCOPE, so the log marks exactly the writes
+            // the Inspector draws.
+            panelScope(inspector),
           ),
         ),
         // THE TABS ARE THE HEADER'S LAST CHILD, because the header is the one

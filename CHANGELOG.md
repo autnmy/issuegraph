@@ -38,6 +38,7 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
   - **The remedies are the board's.** A duplicate of a closed issue offers "Change or remove" and "Keep as history"; a closed blocker offers only "Remove the relationship". `AUDIT_CLASS_SPECS` moves `keepAsHistory` from `stale-blocker` to `dead-duplicate-ref`; the words are the existing `remedies.repoint` and `remedies.keepAsHistory`.
   - **A loop whose first issue is not on the page offers no remedy**, so no button names an issue the reader cannot reach; pinned.
   - **All four readiness keys in the legend are eight across**, the "Being worked" dot included.
+  - **One recovery card per failed write.** A failed write on the issue in the Inspector drew its card twice, in the log and in the Inspector. The log's copy is now marked `data-ig-inspected`, by the same `statedHere` the Inspector draws its cards by, and the sheet hides it wherever the Inspector zone is drawn, bringing it back where it is not (under 640, and when the middle layout's overlay is dismissed). Every other failed write, and every write with no carrier, stays in the log. The markup keeps both entries, so no count or announcement changes.
   - **The demo's hold labels are in the board's case**: "Claimed", "Parked", "Not eligible".
   - **Pinned** in the panel, refused, surface and sheet tests of the audit, the scale sheet and render tests, the workspace sheet test, the viewer's sheet, theme, parts and projection tests, and the accessibility baseline, which loses the `Show` button.
 

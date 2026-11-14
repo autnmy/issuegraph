@@ -2179,3 +2179,32 @@ describe('on a phone the order stays the view (#296)', () => {
     assert.match(narrow, /\.ig-zone\[data-zone='rail'\] \.ig-legend > \.ig-legend-item \{\s*display: none;/);
   });
 });
+
+describe('one recovery card per failed write: the log stands down where the Inspector shows (redesign lead’s ruling)', () => {
+  const css = workspaceStylesheet.replace(/\/\*[\s\S]*?\*\//g, '');
+  /** The text of the container block opened by `condition`, up to the next block. */
+  const blockOf = (condition: string): string => {
+    const at = css.indexOf(`@container ig-workspace (${condition})`);
+    assert.ok(at >= 0, `no ${condition} block`);
+    const next = css.indexOf('@container ig-workspace', at + 1);
+    return css.slice(at, next < 0 ? undefined : next);
+  };
+  const rule = (selector: string, display: string): RegExp =>
+    new RegExp(`${selector.replace(/[[\]().]/g, '\\$&')} \\{\\s*display: ${display};`);
+
+  it('hides the log’s copy at the widest layout, where the Inspector is a zone', () => {
+    // A TOP-LEVEL RULE, before the narrower blocks that answer it.
+    const at = css.search(rule(".ig-workspace .ig-log-recovery[data-ig-inspected]", 'none'));
+    assert.ok(at >= 0, 'no rule hides the log copy');
+    assert.ok(at < css.indexOf('@container ig-workspace (width < 1360px)'), 'the rule sits inside a narrower block');
+  });
+
+  it('brings it back where no Inspector is on screen, and hides it again where the Inspector returns', () => {
+    // The middle layout's dismissed overlay hides the Inspector, so the log keeps the card.
+    assert.match(blockOf('width < 1360px'), rule(".ig-workspace[data-inspector='dismissed'] .ig-log-recovery[data-ig-inspected]", 'flex'));
+    // The narrow layout draws the Inspector inline again, dismissed or not.
+    assert.match(blockOf('width < 1120px'), rule(".ig-workspace[data-inspector='dismissed'] .ig-log-recovery[data-ig-inspected]", 'none'));
+    // Under 640 there is no Inspector zone, so the log keeps every card.
+    assert.match(blockOf('width < 640px'), rule(".ig-workspace[data-inspector] .ig-log-recovery[data-ig-inspected]", 'flex'));
+  });
+});

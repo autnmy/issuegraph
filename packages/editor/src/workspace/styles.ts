@@ -213,6 +213,17 @@ export const workspaceStylesheet = `
   gap: var(--ig-space-tight);
 }
 
+/* ONE CARD PER FAILED WRITE (the redesign lead's ruling). A write the
+   Inspector states is drawn there, beside the issue the reader is working on,
+   so the log's copy, marked data-ig-inspected, stands down wherever the
+   Inspector zone is drawn: here at the widest layout, and again in the blocks
+   below where the zone shows. Where it does not, under 640 and when the middle
+   layout's overlay is dismissed, the log's copy comes back, so a failed write
+   is never without its card. */
+.ig-workspace .ig-log-recovery[data-ig-inspected] {
+  display: none;
+}
+
 .ig-workspace-identity {
   color: var(--ig-text);
   font-family: var(--ig-font-mono);
@@ -1877,6 +1888,11 @@ ${heldRailDeclarations}
   .ig-workspace[data-inspector='dismissed'] .ig-zone[data-zone='inspector'] {
     display: none;
   }
+
+  /* NO INSPECTOR ON SCREEN, SO THE LOG KEEPS THE CARD. */
+  .ig-workspace[data-inspector='dismissed'] .ig-log-recovery[data-ig-inspected] {
+    display: flex;
+  }
 }
 
 /* THE NARROW LAYOUT: the canvas collapses, the inspector comes back inline,
@@ -1928,6 +1944,11 @@ ${heldRailDeclarations}
      no overlay to have dismissed. */
   .ig-workspace[data-inspector='dismissed'] .ig-zone[data-zone='inspector'] {
     display: block;
+  }
+
+  /* THE INSPECTOR IS BACK, SO THE LOG'S COPY STANDS DOWN AGAIN. */
+  .ig-workspace[data-inspector='dismissed'] .ig-log-recovery[data-ig-inspected] {
+    display: none;
   }
 
   .ig-workspace[data-canvas='strip'] .ig-canvas-strip {
@@ -2070,6 +2091,12 @@ ${heldRailDeclarations}
      and the middle block's lifted panel are both answered. */
   .ig-workspace[data-inspector] .ig-zone[data-zone='inspector'] {
     display: none;
+  }
+
+  /* NO INSPECTOR HERE AT ALL, SO THE LOG KEEPS EVERY CARD. Every value of
+     data-inspector, so it outranks the narrow block's rule above. */
+  .ig-workspace[data-inspector] .ig-log-recovery[data-ig-inspected] {
+    display: flex;
   }
 
   .ig-workspace[data-tab='related'] .ig-zone[data-zone='rail'],
