@@ -2794,6 +2794,7 @@ describe('the narrow tabs and the Related groups list', () => {
 
   it('R17 the narrow tabs are named by the host narrow words, in the order Order, Related groups, Sub-issues', () => {
     const narrow = {
+      ...WORKSPACE_WORDS.narrow,
       order: 'the queue',
       related: 'what touches it',
       subIssues: 'its children',
@@ -2878,6 +2879,43 @@ describe('the narrow tabs and the Related groups list', () => {
     assert.equal(refs[0], 'TASK-1');
     assert.equal(refs.filter((ref) => ref === 'TASK-1').length, 1, 'the exact match was drawn twice');
     assert.equal(new Set(refs).size, refs.length, 'a relationship was drawn twice');
+  });
+});
+
+describe('the Related groups list says what its search cut or did not find', () => {
+  const options = {
+    words: WORKSPACE_WORDS,
+    selection: { kind: 'issue' as const, key: 'HUB' },
+    narrowView: 'canvas' as const,
+    canvas: 'neighbourhood' as const,
+    relatedGroup: null,
+  };
+  const hub = blockedHub([...TASK_KEYS, 'TASK-1'], () => 'Same title');
+
+  it('labels the search with the host search word', () => {
+    const canvas = canvasOf(renderWorkspace(hub, { ...options, relatedQuery: '' }).markup);
+    assert.match(canvas, /<label class="ig-related-search">search links<input/);
+  });
+
+  it('reads the left-out count aloud as a status when the 60-row cut leaves matches out', () => {
+    const canvas = canvasOf(renderWorkspace(hub, { ...options, relatedQuery: 'task-1' }).markup);
+    const omitted = /data-ig-omitted="(\d+)"/.exec(canvas)?.[1];
+    assert.ok(omitted !== undefined && Number(omitted) > 0, 'the search cut nothing, so this proves nothing');
+    assert.ok(
+      canvas.includes(`<p class="ig-related-status" role="status">${omitted} more not shown; narrow the search</p>`),
+      canvas.slice(-400),
+    );
+  });
+
+  it('says a search matched nothing instead of drawing an empty list, and says neither when everything fits', () => {
+    const none = canvasOf(renderWorkspace(hub, { ...options, relatedQuery: 'no-such-issue' }).markup);
+    assert.ok(none.includes('<p class="ig-related-status" role="status">no link matches</p>'));
+    assert.doesNotMatch(none, /more not shown/);
+    const exact = canvasOf(renderWorkspace(hub, { ...options, relatedQuery: 'TASK-1' }).markup);
+    assert.doesNotMatch(exact, /no link matches/);
+    // The status line is drawn, empty, wherever the search is, so it exists before it has anything to say.
+    const idle = canvasOf(renderWorkspace(hub, { ...options, relatedQuery: '' }).markup);
+    assert.ok(idle.includes('<p class="ig-related-status" role="status"></p>'), 'no empty status line beside the search');
   });
 });
 

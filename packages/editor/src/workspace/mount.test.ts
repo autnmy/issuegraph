@@ -5398,6 +5398,35 @@ describe('the narrow tabs and the Related groups list, mounted', () => {
     }
   });
 
+  it('keeps the Related search status line across typing, so only its text changes and is announced', async () => {
+    const hub = await mounted(relatedHubSeed(301));
+    try {
+      const canvas = (): HTMLElement => hub.zone('canvas') ?? assert.fail('no canvas zone');
+      const status = (): HTMLElement | null => canvas().querySelector<HTMLElement>('.ig-related-status[role="status"]');
+      const type = async (value: string): Promise<void> => {
+        const field = canvas().querySelector<HTMLInputElement>('input[data-ig-command="related-query"]') ?? assert.fail('no search');
+        field.value = value;
+        field.dispatchEvent(new hub.win.Event('input', { bubbles: true }));
+        await flush();
+      };
+      hub.click(hub.rows().find((each) => each.getAttribute('data-ig-key') === 'i0001') ?? assert.fail('no rail row for i0001'));
+      await flush();
+      hub.click(narrowTab(hub, 'related'));
+      await flush();
+      const region = status() ?? assert.fail('no status line beside the search');
+      assert.equal(region.textContent, '', 'the status line said something before any search');
+      await type('i0');
+      assert.equal(status(), region, 'the redraw replaced the status line instead of changing its text');
+      assert.match(region.textContent ?? '', /^\d+ more not shown/);
+      await type('no-such-issue');
+      assert.equal(status(), region);
+      assert.equal(region.textContent, 'no link matches');
+    } finally {
+      hub.handle.destroy();
+      hub.dom.window.close();
+    }
+  });
+
   it('R14 mountWorkspace: an edit inside the related query keeps the field focused with its caret, through the input redraw and an unrelated update', async () => {
     // Every keystroke redraws the surface and replaces the field, so a mount that did not carry
     // focus and the caret across would throw the reader out of the search after one key, or send

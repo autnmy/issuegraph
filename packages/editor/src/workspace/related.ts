@@ -66,6 +66,12 @@ export type RelatedListView =
       readonly rows: readonly InspectorRelationship[];
       /** How many rows the list would hold past the {@link RELATED_ROW_LIMIT} cut. */
       readonly omitted: number;
+      /**
+       * Whether a query matched nothing where rows would be listed — in the
+       * open group, or in place of the closed groups — so the panel can say so
+       * rather than draw an empty list.
+       */
+      readonly noMatch: boolean;
     };
 
 const NO_SELECTION: RelatedListView = Object.freeze({ kind: 'no-selection' });
@@ -152,5 +158,6 @@ export function relatedListView(
     search,
     rows,
     omitted: listed.length - rows.length,
+    noMatch: query !== '' && (open !== null || searching) && listed.length === 0,
   };
 }

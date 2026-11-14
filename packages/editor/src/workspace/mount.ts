@@ -99,6 +99,7 @@ import type { CanvasMode } from './narrow.ts';
 import type { RailWindow } from './rail.ts';
 import { conflictDiff } from './recovery.ts';
 import {
+  RELATED_STATUS_CLASS,
   type WorkspaceOptions,
   type WorkspaceRecovery,
   type WorkspaceRefusal,
@@ -288,6 +289,8 @@ const KEY_ATTRIBUTE = 'data-ig-key';
  * what has to be preserved is the live region specifically.
  */
 const LIVE_REGION = '.ig-change-line[role="status"]';
+/** The Related groups search's status line, carried across redraws the same way. */
+const RELATED_STATUS = `.${RELATED_STATUS_CLASS}[role="status"]`;
 const GROUP_ATTRIBUTE = 'data-ig-group';
 const COMMAND_ATTRIBUTE = 'data-ig-command';
 
@@ -1694,20 +1697,26 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // summary, and only then given the new one. The insertion says nothing and
     // the mutation is what announces, which is the sequence the region was
     // designed around.
-    const liveBefore = surface.querySelector<HTMLElement>(LIVE_REGION);
+    // THE RELATED SEARCH'S STATUS LINE IS THE SAME KIND OF REGION and is
+    // carried the same way, so the left-out count and the no-match sentence
+    // are announced as they change while the reader types.
+    const carried: readonly (readonly [string, HTMLElement | null])[] = [LIVE_REGION, RELATED_STATUS].map(
+      (selector) => [selector, surface.querySelector<HTMLElement>(selector)],
+    );
 
     // Package-rendered markup, escaped by the package.
     surface.innerHTML = result.markup;
 
-    const liveAfter = surface.querySelector<HTMLElement>(LIVE_REGION);
-    if (liveBefore !== null && liveAfter !== null) {
-      const next = liveAfter.innerHTML;
-      liveAfter.replaceWith(liveBefore);
-      // GUARDED, so a redraw that did not touch the summary is not a change to
-      // announce. Every keystroke in the ladder's search box redraws this
-      // surface, and re-assigning identical content would re-announce the last
-      // edit's result on each one.
-      if (liveBefore.innerHTML !== next) liveBefore.innerHTML = next;
+    for (const [selector, before] of carried) {
+      const after = surface.querySelector<HTMLElement>(selector);
+      if (before === null || after === null) continue;
+      const next = after.innerHTML;
+      after.replaceWith(before);
+      // GUARDED, so a redraw that did not touch the region is not a change to
+      // announce. Every keystroke in a search box redraws this surface, and
+      // re-assigning identical content would re-announce the last result on
+      // each one.
+      if (before.innerHTML !== next) before.innerHTML = next;
     }
     // THE ORDER'S STATUS, PUBLISHED AS DATA. A write in flight holds the order
     // — it does not move until the edit lands — and a host that wants to say

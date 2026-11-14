@@ -282,6 +282,9 @@ export const WORKSPACE_WORDS: MountWords = {
     subIssues: 'Sub-issues',
     closeSheet: 'Close',
     noSelection: 'Select an issue to list its relationships.',
+    searchRelated: 'Search relationships',
+    omitted: (count) => `${String(count)} more not shown. Narrow the search to see them.`,
+    noMatch: 'No relationship matches this search.',
   },
   // §17a's inspector explains the position before it lists the relationships.
   // The frame draws the heading in caps; the caps are the stylesheet's, so the

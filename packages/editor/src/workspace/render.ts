@@ -612,6 +612,16 @@ export interface NarrowWords {
   readonly closeSheet: string;
   /** What the Related groups list says while nothing is selected. */
   readonly noSelection: string;
+  /** Labels the Related groups search field. */
+  readonly searchRelated: string;
+  /**
+   * Says how many matches the Related groups list left out past its 60-row
+   * cut: *"12 more — narrow the search"*. A function for the reason
+   * `filteredDenominator` is one: the count sits inside the sentence.
+   */
+  readonly omitted: (count: number) => string;
+  /** What the Related groups list says when a search matched nothing. */
+  readonly noMatch: string;
 }
 
 export interface RecoveryWords {
@@ -1103,7 +1113,9 @@ function zoneIds(surfaceId: string | undefined): Readonly<Record<Zone, string>> 
 }
 
 /** The zone each narrow tab shows, and the word that names it. */
-const NARROW_TAB_PARTS: Readonly<Record<NarrowTab, { readonly zone: Zone; readonly word: keyof NarrowWords }>> =
+const NARROW_TAB_PARTS: Readonly<
+  Record<NarrowTab, { readonly zone: Zone; readonly word: 'order' | 'related' | 'subIssues' }>
+> =
   Object.freeze({
     order: { zone: 'rail', word: 'order' },
     related: { zone: 'canvas', word: 'related' },
@@ -1807,11 +1819,11 @@ function relatedRowsSpec(rows: readonly InspectorRelationship[], subject: string
 /**
  * The Related groups search. The input sits inside its label, so the two are
  * associated without an `id`, for the reason `scale/render.ts`'s `searchSpec`
- * gives. Named by the tab's own word: the host words hold no search label.
+ * gives. Named by the host's own search label.
  */
 function relatedSearchSpec(query: string, words: NarrowWords): ElementSpec {
   return element('label', { class: 'ig-related-search' }, [
-    words.related,
+    words.searchRelated,
     element('input', {
       type: 'search',
       'data-ig-command': 'related-query',
@@ -1835,6 +1847,23 @@ function relatedGroupSpec(field: EdgeField, count: number, open: boolean): Eleme
     },
     [...glyphAndLabel(treatment.glyph, labelFrom(treatment, true)), ' ', element('span', {}, [String(count)])],
   );
+}
+
+/**
+ * The search's status line, right under the field: that a search matched
+ * nothing, or how many matches the 60-row cut left out, and empty otherwise.
+ *
+ * DRAWN WHENEVER THE SEARCH IS, EMPTY OR NOT. A live region that is created
+ * already holding its text is not reliably announced; it has to exist first
+ * and then change. So it is always in the markup beside the field, and
+ * `mountWorkspace` carries the element across redraws (`RELATED_STATUS`), as
+ * it carries §17c's change line, so typing changes its text and nothing else.
+ */
+export const RELATED_STATUS_CLASS = 'ig-related-status';
+
+function relatedStatusSpec(view: Extract<RelatedListView, { kind: 'grouped' }>, words: NarrowWords): ElementSpec {
+  const said = view.noMatch ? words.noMatch : view.omitted > 0 ? words.omitted(view.omitted) : null;
+  return element('p', { class: RELATED_STATUS_CLASS, role: 'status' }, said === null ? [] : [said]);
 }
 
 /**
@@ -1879,6 +1908,7 @@ function relatedListParts(
       return [relatedRowsSpec(view.rows, subject)];
     case 'grouped': {
       const search = view.search === 'none' ? null : relatedSearchSpec(query, words.narrow);
+      const status = view.search === 'none' ? null : relatedStatusSpec(view, words.narrow);
       const open = view.groups.some((group) => group.open);
       const groups = element(
         'ul',
@@ -1887,12 +1917,13 @@ function relatedListParts(
           element('li', {}, [
             relatedGroupSpec(group.field, group.count, group.open),
             group.open ? search : null,
+            group.open ? status : null,
             group.open ? relatedRowsSpec(view.rows, subject) : null,
           ]),
         ),
       );
       if (open) return [groups];
-      return [search, view.groups.length > 0 ? groups : relatedRowsSpec(view.rows, subject)];
+      return [search, status, view.groups.length > 0 ? groups : relatedRowsSpec(view.rows, subject)];
     }
   }
 }

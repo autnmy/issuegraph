@@ -1680,7 +1680,13 @@ ${heldRailDeclarations}
   font-size: var(--ig-font-size-small);
 }
 
-.ig-related-empty {
+/* The list's own sentences: the empty states, and the search's status line
+   (nothing matched, or how many the 60-row cut left out). All muted, at the
+   size of the group counts. An empty status line takes no room with no
+   margin, and it is never display: none, which would take the region out of
+   the accessibility tree and lose the first announcement. */
+.ig-related-empty,
+.ig-related-status {
   margin: 0;
   color: var(--ig-text-muted);
   font-size: var(--ig-font-size-small);
