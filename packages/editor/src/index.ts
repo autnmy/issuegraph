@@ -173,6 +173,7 @@ export {
 export {
   type IsolatedChip,
   type OmittedComponents,
+  type ScaleAround,
   type ScaleCapsule,
   type ScaleLadder,
   type ScaleMatch,

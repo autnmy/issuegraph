@@ -176,8 +176,8 @@ const WITH_AN_EXCLUSION = {
 const RAIL_WORDS = { isolated: 'carrying no edges', show: 'reveal', hide: 'fold away' };
 
 /**
- * One issue holding 61 relationships of one kind: the smallest hub past the
- * Related groups list's flat limit whose open group draws its own search.
+ * One issue holding 61 relationships of one kind: a group folded past its
+ * first five, and a selection dense enough for the legend's switch.
  */
 const RELATED_HUB = backlogOf(62, {
   edges: keysOf(62)
@@ -499,11 +499,18 @@ const RENDERS = [
     },
   }),
   // THE LAYOUT UNDER 640, one render per tab and one per shape of the Related
-  // groups list: nothing selected, flat, and grouped with an open group of 61,
-  // which draws its own search. The list is drawn only on its own tab, so
-  // without these every rule for its parts reads as orphaned.
+  // groups list: nothing selected, an issue with no relationships, the groups
+  // of one selection, and a group folded past its first five. The list is drawn only
+  // on its own tab, so without these every rule for its parts reads as
+  // orphaned.
   renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, narrowView: 'canvas', canvas: 'tree' }),
   renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, narrowView: 'canvas', canvas: 'neighbourhood' }),
+  renderWorkspace(DOCUMENT, {
+    words: WORKSPACE_WORDS,
+    narrowView: 'canvas',
+    canvas: 'neighbourhood',
+    selection: { kind: 'issue', key: 'i0005' },
+  }),
   renderWorkspace(DOCUMENT, {
     words: WORKSPACE_WORDS,
     narrowView: 'canvas',
@@ -515,7 +522,6 @@ const RENDERS = [
     narrowView: 'canvas',
     canvas: 'neighbourhood',
     selection: { kind: 'issue', key: 'i0001' },
-    relatedGroup: 'blocked-by',
   }),
   // A SELECTED SET, so the inspector's set list is a drawn state too.
   renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, selection: { kind: 'issues', keys: ['i0001', 'i0002'] } }),
@@ -2040,14 +2046,13 @@ describe("the middle zone's head is the board's .igz-head, with the count at its
   });
 });
 
-describe('the Related search status line stays in the accessibility tree', () => {
-  it('is never hidden by display or visibility, so its first message is announced', () => {
+describe('the Related groups tab with nothing selected (#303)', () => {
+  it('shows the cards the ladder drew in place of a list it left out, and only then', () => {
     const css = withoutComments(workspaceStylesheet);
-    const rules = [...css.matchAll(/([^{}]*\.ig-related-status[^{}]*)\{([^}]*)\}/g)];
-    assert.ok(rules.length > 0, 'no rule styles the status line');
-    for (const [, selector, body] of rules) {
-      assert.doesNotMatch(body ?? '', /display:\s*none|visibility:\s*hidden/, `${(selector ?? '').trim()} hides the status line`);
-    }
+    assert.match(
+      css,
+      /\.ig-workspace\[data-tab='related'\]\[data-canvas\]\s*\.ig-zone\[data-zone='canvas'\]:not\(:has\(> \.ig-related\)\)\s*> \.ig-ladder \{\s*display: flex;/,
+    );
   });
 });
 
@@ -2206,5 +2211,32 @@ describe('one recovery card per failed write: the log stands down where the Insp
     assert.match(blockOf('width < 1120px'), rule(".ig-workspace[data-inspector='dismissed'] .ig-log-recovery[data-ig-inspected]", 'none'));
     // Under 640 there is no Inspector zone, so the log keeps every card.
     assert.match(blockOf('width < 640px'), rule(".ig-workspace[data-inspector] .ig-log-recovery[data-ig-inspected]", 'flex'));
+  });
+});
+
+describe('the canvas legend clears the lifted Inspector (#303)', () => {
+  const css = workspaceStylesheet.replace(/\/\*[\s\S]*?\*\//g, '');
+  const blockOf = (condition: string): string => {
+    const at = css.indexOf(`@container ig-workspace (${condition})`);
+    assert.ok(at >= 0, `no ${condition} block`);
+    const next = css.indexOf('@container ig-workspace', at + 1);
+    return css.slice(at, next < 0 ? undefined : next);
+  };
+  const legend = ".ig-workspace[data-inspector='lifted'] .ig-zone[data-zone='canvas'] .ig-legend";
+  const escaped = (text: string): string => text.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&');
+  const margin = (value: string): RegExp =>
+    new RegExp(`${escaped(legend)} \\{\\s*margin-inline-end: ${escaped(value)};`);
+
+  it('stops the legend where the overlay starts, at the overlay’s own width', () => {
+    // THE SAME WIDTH BOTH WAYS: the clearance is read off the panel's own rule, so
+    // the switch's drawn figure cannot slide under a panel that changed size.
+    const middle = blockOf('width < 1360px');
+    const panel = middle.match(/\.ig-workspace \.ig-zone\[data-zone='inspector'\] \{[^}]*inline-size: ([^;]+);/)?.[1];
+    assert.ok(panel !== undefined, 'the lifted panel has no inline-size');
+    assert.match(middle, margin(panel));
+  });
+
+  it('drops the clearance where the Inspector is a column again', () => {
+    assert.match(blockOf('width < 1120px'), margin('0'));
   });
 });

@@ -62,6 +62,16 @@ export interface EdgeTreatment {
    * them is a wider change than the legend.
    */
   readonly legendLabel: string;
+  /**
+   * The legend's phrase read from the OTHER end, for a directed kind: what the
+   * Inspector heads a group of incoming relationships with (#303), "blocks"
+   * and "is a duplicate of this". {@link reverseLabel}'s "duplicated by" is
+   * not the board's word for it.
+   *
+   * ABSENT ON `decomposed-from` ON PURPOSE: its other end is a sub-issue, and
+   * sub-issues are listed in the Sub-issues tree, never as a relationship.
+   */
+  readonly reverseLegendLabel?: string;
   readonly ordering: OrderingEffect;
   /**
    * Whether the edge reads the same both ways. A symmetric edge is drawn once
@@ -85,6 +95,7 @@ export const EDGE_TREATMENTS = Object.freeze({
     label: 'blocked by',
     reverseLabel: 'blocks',
     legendLabel: 'is blocked by',
+    reverseLegendLabel: 'blocks',
     ordering: 'strict-directed',
     symmetric: false,
   },
@@ -116,6 +127,7 @@ export const EDGE_TREATMENTS = Object.freeze({
     label: 'duplicate of',
     reverseLabel: 'duplicated by',
     legendLabel: 'is a duplicate of',
+    reverseLegendLabel: 'is a duplicate of this',
     ordering: 'never-worked',
     symmetric: false,
   },
@@ -160,6 +172,17 @@ export function treatmentFor(field: EdgeField): EdgeTreatment {
  */
 export function labelFrom(treatment: EdgeTreatment, outgoing: boolean): string {
   return outgoing || treatment.symmetric ? treatment.label : (treatment.reverseLabel ?? treatment.label);
+}
+
+/**
+ * The legend's phrase, read from the end the reader is standing at: "is
+ * blocked by" or "blocks". What heads a kind's group in the Inspector (#303),
+ * and {@link labelFrom}'s rule for the same reason: one expression, not one
+ * per call site. A kind with no reverse phrase keeps its own, which a
+ * symmetric kind states either way round.
+ */
+export function legendLabelFrom(treatment: EdgeTreatment, outgoing: boolean): string {
+  return outgoing ? treatment.legendLabel : (treatment.reverseLegendLabel ?? treatment.legendLabel);
 }
 
 /**

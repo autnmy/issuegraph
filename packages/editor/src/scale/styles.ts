@@ -106,9 +106,9 @@ export const scaleLadderStylesheet = `
    glance — the whole reason the count leads. minmax(0, 1fr) rather than a
    width, because this stylesheet declares no fixed length: a title is arbitrary
    and auto would let the longest one set every column. Scoped to the ladder's
-   own refusal so §16's single-column list, drawn from the same class in layer
-   1, is untouched. */
-.ig-ladder .ig-refusal .ig-list {
+   own cards, under a refusal or alone with nothing selected, so §16's
+   single-column list, drawn from the same class in layer 1, is untouched. */
+.ig-ladder .ig-groups {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--ig-space);

@@ -34,16 +34,20 @@ const { INITIAL_SCALE_STATE, renderScaleLadder, scaleLadder, scaleReducer } = su
 const related = (total: number, cap = 20) =>
   documentOf({ components: componentsSumming(total, cap) });
 
-describe('done when: the three tiers render, driven by the viewer\'s exported budgets', () => {
+describe('done when: the tiers render, driven by the viewer\'s exported budgets', () => {
+  // A PICKED GROUP draws at the budget; with nothing selected or picked the
+  // groups are cards, never every issue at once (#303).
+  const picked = { ...INITIAL_SCALE_STATE, focus: 'c0-1' };
   const cases = [
-    { tier: 'direct', document: related(GRAPH_NODE_BUDGET) },
-    { tier: 'capsules', document: related(GRAPH_NODE_BUDGET + 1) },
-    { tier: 'clusters', document: related(CLUSTER_ONLY_BUDGET + 1, 5) },
+    { tier: 'direct', document: documentOf({ components: [GRAPH_NODE_BUDGET] }), state: picked },
+    { tier: 'groups', document: related(GRAPH_NODE_BUDGET), state: INITIAL_SCALE_STATE },
+    { tier: 'capsules', document: related(GRAPH_NODE_BUDGET + 1), state: INITIAL_SCALE_STATE },
+    { tier: 'clusters', document: related(CLUSTER_ONLY_BUDGET + 1, 5), state: INITIAL_SCALE_STATE },
   ] as const;
 
-  for (const { tier, document } of cases) {
+  for (const { tier, document, state } of cases) {
     it(`renders the ${tier} tier`, () => {
-      const result = renderScaleLadder(document);
+      const result = renderScaleLadder(document, { state });
       assert.equal(result.ladder.tier, tier);
       assert.match(result.markup, new RegExp(`data-tier="${tier}"`));
       assert.deepEqual([...result.diagnostics], []);
@@ -841,10 +845,8 @@ const WORKSPACE_WORDS: surface.WorkspaceWords = {
     subIssues: 'child tree',
     view: 'view picker',
     closeSheet: 'fold the sheet down',
+    around: 'centred on',
     noSelection: 'select an issue to list its links',
-    searchRelated: 'search links',
-    omitted: (count: number) => `${String(count)} more not shown; narrow the search`,
-    noMatch: 'no link matches',
   },
   whyRank: 'why rank',
   whyHeld: 'why held',
@@ -855,6 +857,8 @@ const WORKSPACE_WORDS: surface.WorkspaceWords = {
   workedAsOneUnit: 'worked as one unit with',
   noRelationships: 'nothing is related to this',
   showMore: (count: number): string => `Show ${String(count)} more`,
+  relationshipsToDraw: 'kinds to draw',
+  relationshipsDrawn: (drawn: number, total: number): string => `${String(drawn)} drawn out of ${String(total)}`,
   addRelationship: 'begin a relationship',
   addRelationshipHeading: 'add relationship',
   cancel: 'abandon the draft',

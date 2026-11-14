@@ -332,6 +332,12 @@ export async function a11ySurface(
   // THE CANVAS SEARCH, which is what turns the refusal tier into a state with
   // results and a focused component in it rather than a bare refusal.
   if (options.refusalTier === true) {
+    // NOTHING SELECTED FIRST. Since #303 a selection draws what surrounds it,
+    // and only every group at once refuses with a search to offer.
+    const clear = host.querySelector<HTMLElement>('[data-ig-command="clear"]');
+    assert.ok(clear !== null, 'no control to clear the selection');
+    clear.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    await flush();
     const canvasSearch = host.querySelector<HTMLInputElement>('input[data-ig-command="search"]');
     assert.ok(canvasSearch !== null, 'no canvas search — the ladder is not in a refusal tier');
     canvasSearch.value = 'Release task 3';

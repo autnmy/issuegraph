@@ -59,6 +59,7 @@ export const WORKSPACE_WORDS: WorkspaceWords = {
   // still satisfy a test looking for it.
   canvas: {
     focus: 'centred on',
+    selected: 'picked',
     of: 'out of',
     shown: 'drawn here',
     editMode: 'you may edit',
@@ -85,10 +86,8 @@ export const WORKSPACE_WORDS: WorkspaceWords = {
     subIssues: 'child tree',
     view: 'view picker',
     closeSheet: 'fold the sheet down',
+    around: 'centred on',
     noSelection: 'select an issue to list its links',
-    searchRelated: 'search links',
-    omitted: (count) => `${String(count)} more not shown; narrow the search`,
-    noMatch: 'no link matches',
   },
   whyRank: 'why rank',
   whyHeld: 'why held',
@@ -99,6 +98,8 @@ export const WORKSPACE_WORDS: WorkspaceWords = {
   workedAsOneUnit: 'worked as one unit with',
   noRelationships: 'nothing is related to this',
   showMore: (count: number): string => `Show ${String(count)} more`,
+  relationshipsToDraw: 'kinds to draw',
+  relationshipsDrawn: (drawn: number, total: number): string => `${String(drawn)} drawn out of ${String(total)}`,
   addRelationship: 'begin a relationship',
   // DELIBERATELY UNLIKE THE CONTROL'S LABEL ABOVE. A fixture that spelled the
   // heading and the control the same way would pass whichever one the panel
@@ -191,15 +192,10 @@ export function relatedHubEdges(count: number): (readonly [EdgeField, string, st
     );
 }
 
-/** 301 keys that each hold `TASK-1` as a substring, so only an exact key match reaches `TASK-1` past 300. */
-export const TASK_KEYS: readonly string[] = Array.from({ length: 301 }, (_, n) => `TASK-${String(1000 + n)}`);
-
 /**
  * `HUB`, blocked by each of `keys`, every issue titled `titleOf` its key.
  *
- * The Related groups list's search reads keys and titles, and the hub of
- * {@link relatedHubEdges} gives every issue its own of both, so a search that
- * must tell same-titled or substring keys apart needs this one.
+ * Every title the host's to choose, so a test can hand the list hostile text.
  */
 export function blockedHub(keys: readonly string[], titleOf: (key: string) => string): ViewerDocument {
   return {

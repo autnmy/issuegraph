@@ -299,7 +299,11 @@ describe('the linear projection', () => {
     const markup = render();
     // THE LABEL IS A KEY A READER COPIES, so it is the mono `.ig-copy-key`, not
     // the sans `.ig-id` an issue number or a tier takes (#254).
-    assert.match(row(markup, '101'), /Picked by query 1 · <span class="ig-copy-key">label:P1<\/span>/);
+    assert.match(row(markup, '101'), /Matched ordering query 1, <span class="ig-copy-key">label:P1<\/span>/);
+    // THE ROW'S TAG IS THE NODE'S (q339: "the order row: the number, then its one
+    // fact"): the priority the issue declares, never the query as a chip.
+    assert.equal(row(markup, '101').includes('data-priority="query"'), false, 'the row carries the query as its tag');
+    assert.match(row(markup, '101'), /<span class="ig-badge" data-priority="tier">P1<\/span>/);
     // NEUTRAL. This arm means only that no ordering query matched and the issue
     // stayed in its tier; it does NOT mean the priority was absent, and §16a's
     // own row — which happens to be one where it was — is not a licence to say

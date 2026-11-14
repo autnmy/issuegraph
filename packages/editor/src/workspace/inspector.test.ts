@@ -118,6 +118,12 @@ describe('an edge selection FILTERS the list rather than opening another panel',
         ['i0002', 'incoming'],
       ] as const) {
         const view = inspectorView(document, { kind: 'issue', key });
+        // A PARENT'S SUB-ISSUE IS THE SUB-ISSUES TREE'S (#303), so the one end
+        // a relationship is left off is the parent of a decomposed-from.
+        if (field === 'decomposed-from' && directed === 'incoming') {
+          assert.deepEqual(view.relationships, [], 'a sub-issue was listed as a relationship');
+          continue;
+        }
         assert.equal(view.relationships.length, 1, `${field} was dropped from ${key}'s list`);
         assert.equal(
           view.relationships[0]?.direction,

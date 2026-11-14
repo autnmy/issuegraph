@@ -188,6 +188,10 @@ describe('the narrow tabs and the Related groups list, mounted', () => {
     try {
       const canvasNode = (key: string): HTMLElement | null =>
         page.zone('canvas')?.querySelector<HTMLElement>(`[data-ig-key="${key}"][tabindex]`) ?? null;
+      // THE GROUP PICKED, so the neighbourhood draws its nodes: with nothing
+      // selected or picked it draws the groups as cards (#303).
+      page.handle.dispatch({ kind: 'control', name: 'focus', target: '2' });
+      await flush();
       assert.ok(canvasNode('2') !== null, 'the neighbourhood does not draw 2, so there is nothing to compare');
       assert.equal(canvasNode('3'), null, 'the neighbourhood draws 3, so reaching it proves nothing');
 
@@ -286,123 +290,66 @@ describe('the narrow tabs and the Related groups list, mounted', () => {
     }
   });
 
-  it('R14 a mounted reader opens a group and selects the 61st relationship, which was not drawn before', async () => {
-    const last = makeEdge('blocked-by', 'i0001', 'i0062');
-    const hub = await mounted(relatedHubSeed(61));
+  it('#303 a mounted reader opens a group past its first five and selects a relationship that was not drawn before', async () => {
+    // 13 relationships on i0001: 7 blocked-by, the last of them to i0014.
+    const last = makeEdge('blocked-by', 'i0001', 'i0014');
+    const hub = await mounted(relatedHubSeed(13));
     try {
       const canvas = (): HTMLElement => hub.zone('canvas') ?? assert.fail('no canvas zone');
-      const row = `[data-ig-command="select-edge"][data-ig-target="${last.id}"]`;
+      const row = `.ig-related [data-ig-command="select-edge"][data-ig-target="${last.id}"]`;
       hub.click(hub.rows().find((each) => each.getAttribute('data-ig-key') === 'i0001') ?? assert.fail('no rail row for i0001'));
       await flush();
       hub.click(narrowTab(hub, 'related'));
       await flush();
-      // "Test opening a relationship past the first 60, and finding one past 300 by search."
-      assert.equal(canvas().querySelector(row), null, 'the 61st relationship was drawn before its group opened');
-      hub.click(
-        canvas().querySelector('[data-ig-command="related-group"][data-ig-value="blocked-by"]') ??
-          assert.fail('no blocked-by group control'),
+      // RULES, Graphs, Dense neighbourhoods: "five each before the rest fold under 'Show 4 more'. Under 640 the list does the same."
+      assert.equal(canvas().querySelector(row), null, 'the seventh relationship was drawn before its group opened');
+      const more =
+        canvas().querySelector<HTMLElement>('.ig-related [data-ig-command="show-group"][data-ig-value="blocked-by:outgoing"]') ??
+        assert.fail('no "Show 2 more" under the blocked-by group');
+      assert.equal(more.textContent, 'Show 2 more');
+      hub.click(more);
+      await flush();
+      assert.deepEqual(hub.handle.state.shownGroups, ['blocked-by:outgoing']);
+      hub.click(canvas().querySelector(row) ?? assert.fail('the opened group does not draw the seventh relationship'));
+      await flush();
+      assert.deepEqual(hub.handle.state.selection, { kind: 'edge', edgeId: last.id });
+    } finally {
+      hub.handle.destroy();
+      hub.dom.window.close();
+    }
+  });
+
+  it('#303 a mounted reader switches a kind on in the legend, and its lines and neighbours draw', async () => {
+    // 13 relationships on i0001, past 8: blocked-by alone draws at first.
+    const hub = await mounted(relatedHubSeed(13));
+    try {
+      const canvas = (): HTMLElement => hub.zone('canvas') ?? assert.fail('no canvas zone');
+      const nodes = (): number => canvas().querySelectorAll('.ig-viewer [data-ig-key][tabindex]').length;
+      const lines = (field: string): number =>
+        canvas().querySelectorAll(`svg.ig-canvas path.ig-edge[data-edge="${field}"]`).length;
+      hub.click(hub.rows().find((each) => each.getAttribute('data-ig-key') === 'i0001') ?? assert.fail('no rail row for i0001'));
+      await flush();
+      assert.equal(lines('serialize-with'), 0, 'a kind drew before it was switched on');
+      assert.ok(lines('blocked-by') > 0, 'blocked-by did not draw at first');
+      const before = nodes();
+      const toggle =
+        canvas().querySelector<HTMLElement>('[data-ig-command="legend-kind"][data-ig-value="serialize-with"]') ??
+        assert.fail('no switch for serialize-with');
+      assert.equal(toggle.getAttribute('aria-pressed'), 'false');
+      hub.click(toggle);
+      await flush();
+      assert.deepEqual(hub.handle.state.switchedKinds, ['serialize-with']);
+      assert.ok(lines('serialize-with') > 0, 'the switched-on kind drew no line');
+      assert.ok(nodes() > before, 'the switched-on kind drew no neighbour');
+      assert.equal(
+        canvas().querySelector('[data-ig-command="legend-kind"][data-ig-value="serialize-with"]')?.getAttribute('aria-pressed'),
+        'true',
       );
-      await flush();
-      hub.click(canvas().querySelector(row) ?? assert.fail('the open group does not draw the 61st relationship'));
-      await flush();
-      assert.deepEqual(hub.handle.state.selection, { kind: 'edge', edgeId: last.id });
-    } finally {
-      hub.handle.destroy();
-      hub.dom.window.close();
-    }
-  });
 
-  it('R14 a mounted reader finds the 301st relationship by typing its key into the search and selects it', async () => {
-    const last = makeEdge('blocked-by', 'i0001', 'i0302');
-    const hub = await mounted(relatedHubSeed(301));
-    try {
-      const canvas = (): HTMLElement => hub.zone('canvas') ?? assert.fail('no canvas zone');
-      const row = `[data-ig-command="select-edge"][data-ig-target="${last.id}"]`;
-      hub.click(hub.rows().find((each) => each.getAttribute('data-ig-key') === 'i0001') ?? assert.fail('no rail row for i0001'));
+      // A new selection starts its kinds over.
+      hub.click(hub.rows().find((each) => each.getAttribute('data-ig-key') === 'i0002') ?? assert.fail('no rail row for i0002'));
       await flush();
-      hub.click(narrowTab(hub, 'related'));
-      await flush();
-      // "Test opening a relationship past the first 60, and finding one past 300 by search."
-      assert.equal(canvas().querySelector(row), null, 'the 301st relationship was drawn before any search');
-      const search =
-        canvas().querySelector<HTMLInputElement>('input[data-ig-command="related-query"]') ??
-        assert.fail('no search over 301 relationships');
-      search.value = 'i0302';
-      search.dispatchEvent(new hub.win.Event('input', { bubbles: true }));
-      await flush();
-      hub.click(canvas().querySelector(row) ?? assert.fail('the search does not draw the 301st relationship'));
-      await flush();
-      assert.deepEqual(hub.handle.state.selection, { kind: 'edge', edgeId: last.id });
-    } finally {
-      hub.handle.destroy();
-      hub.dom.window.close();
-    }
-  });
-
-  it('keeps the Related search status line across typing, so only its text changes and is announced', async () => {
-    const hub = await mounted(relatedHubSeed(301));
-    try {
-      const canvas = (): HTMLElement => hub.zone('canvas') ?? assert.fail('no canvas zone');
-      const status = (): HTMLElement | null => canvas().querySelector<HTMLElement>('.ig-related-status[role="status"]');
-      const type = async (value: string): Promise<void> => {
-        const field = canvas().querySelector<HTMLInputElement>('input[data-ig-command="related-query"]') ?? assert.fail('no search');
-        field.value = value;
-        field.dispatchEvent(new hub.win.Event('input', { bubbles: true }));
-        await flush();
-      };
-      hub.click(hub.rows().find((each) => each.getAttribute('data-ig-key') === 'i0001') ?? assert.fail('no rail row for i0001'));
-      await flush();
-      hub.click(narrowTab(hub, 'related'));
-      await flush();
-      const region = status() ?? assert.fail('no status line beside the search');
-      assert.equal(region.textContent, '', 'the status line said something before any search');
-      await type('i0');
-      assert.equal(status(), region, 'the redraw replaced the status line instead of changing its text');
-      assert.match(region.textContent ?? '', /^\d+ more not shown/);
-      await type('no-such-issue');
-      assert.equal(status(), region);
-      assert.equal(region.textContent, 'no link matches');
-    } finally {
-      hub.handle.destroy();
-      hub.dom.window.close();
-    }
-  });
-
-  it('R14 mountWorkspace: an edit inside the related query keeps the field focused with its caret, through the input redraw and an unrelated update', async () => {
-    // Every keystroke redraws the surface and replaces the field, so a mount that did not carry
-    // focus and the caret across would throw the reader out of the search after one key, or send
-    // a caret placed mid-query to the end.
-    const hub = await mounted(relatedHubSeed(301));
-    try {
-      const field = (): HTMLInputElement | null =>
-        hub.zone('canvas')?.querySelector<HTMLInputElement>('input[data-ig-command="related-query"]') ?? null;
-      hub.click(hub.rows().find((each) => each.getAttribute('data-ig-key') === 'i0001') ?? assert.fail('no rail row for i0001'));
-      await flush();
-      hub.click(narrowTab(hub, 'related'));
-      await flush();
-
-      // The reader has typed `i032`, moves the caret back one place and inserts `0`.
-      const typed = field() ?? assert.fail('no search over 301 relationships');
-      typed.focus();
-      typed.value = 'i0302';
-      typed.setSelectionRange(4, 4);
-      typed.dispatchEvent(new hub.win.Event('input', { bubbles: true }));
-      await flush();
-      // "typing keeps focus and caret"
-      const redrawn = field() ?? assert.fail('the input redraw dropped the search');
-      assert.notEqual(redrawn, typed, 'the input did not redraw the field, so this proves nothing');
-      assert.equal(hub.handle.state.relatedQuery, 'i0302');
-      assert.equal(hub.win.document.activeElement, redrawn, 'the input redraw took focus off the search');
-      assert.equal(redrawn.value, 'i0302');
-      assert.deepEqual([redrawn.selectionStart, redrawn.selectionEnd], [4, 4], 'the input redraw moved the caret');
-
-      hub.handle.update();
-      await flush();
-      const updated = field() ?? assert.fail('an unrelated update dropped the search');
-      assert.notEqual(updated, redrawn, 'the update did not redraw the field, so this proves nothing');
-      assert.equal(hub.win.document.activeElement, updated, 'an unrelated update took focus off the search');
-      assert.equal(updated.value, 'i0302');
-      assert.deepEqual([updated.selectionStart, updated.selectionEnd], [4, 4], 'an unrelated update moved the caret');
+      assert.deepEqual(hub.handle.state.switchedKinds, []);
     } finally {
       hub.handle.destroy();
       hub.dom.window.close();

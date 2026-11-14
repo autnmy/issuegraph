@@ -854,7 +854,7 @@ describe('a command control keeps focus across the redraw it causes', () => {
     }
   });
 
-  it('leaves the canvas search its own digits while a kind-step draft is open', async () => {
+  it('draws no canvas search to take a digit while a kind-step draft is open', async () => {
     // REVIEW FINDING ON THIS CHANGE, pinned so it cannot come back. Classifying
     // the kind step from the draft alone said `kind-chooser` for EVERY
     // non-keyed focus except the target search — including the ladder's
@@ -889,24 +889,12 @@ describe('a command control keeps focus across the redraw it causes', () => {
       page.click(add);
       await flush();
 
-      const search = page.element.querySelector<HTMLInputElement>('input[data-ig-command="search"]');
-      assert.ok(search !== null, 'no canvas search — the case is not reproduced');
-      search.focus();
-
-      const chosen = KIND_KEYS[0];
-      assert.ok(chosen !== undefined, 'the vocabulary has no first kind');
-      const press = new page.win.KeyboardEvent('keydown', { key: chosen.key, bubbles: true, cancelable: true });
-      search.dispatchEvent(press);
-      await flush();
-
-      // THE PRESS IS HANDED BACK, which is the assertion that discriminates: a
-      // digit the map declines is one the platform types into the box.
-      assert.equal(press.defaultPrevented, false, 'the create map claimed a digit typed into the search');
-      assert.equal(
-        page.element.querySelector('[data-ig-command="target-query"]'),
-        null,
-        'typing into the canvas search chose a relationship kind',
-      );
+      // NO SEARCH TO TAKE A DIGIT FROM. A draft begins from a selection, and
+      // since #303 a selection draws what surrounds it: the canvas offers no
+      // search there, since a match would move nothing drawn. The digit rule
+      // for the search stays pinned in `create/keys.ts`'s own tests.
+      assert.ok(page.handle.state.draft.source !== null, 'no draft open — the case is not reproduced');
+      assert.equal(page.element.querySelector('input[data-ig-command="search"]'), null, 'a search beside a draft');
     } finally {
       page.handle.destroy();
       page.dom.window.close();

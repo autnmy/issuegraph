@@ -1758,8 +1758,7 @@ ${heldRailDeclarations}
   color: var(--ig-text);
 }
 
-.ig-workspace .ig-narrow-tab:focus-visible,
-.ig-workspace .ig-related-group:focus-visible {
+.ig-workspace .ig-narrow-tab:focus-visible {
   outline: var(--ig-focus-ring) solid var(--ig-focus);
   outline-offset: var(--ig-space-tight);
 }
@@ -1807,60 +1806,19 @@ ${heldRailDeclarations}
   outline-offset: var(--ig-space-micro);
 }
 
+/* THE INSPECTOR'S GROUPS, AND ITS ROW BOX: each kind's head and count, five
+   rows of '.ig-relationship', then "Show 4 more". Only the gap between the
+   groups is this list's. Drawn by the narrow sheet alone. */
 .ig-workspace .ig-related {
   display: none;
+  flex-direction: column;
+  gap: var(--ig-space);
   padding: var(--ig-space);
 }
 
-/* The rows take the Inspector's own row box, '.ig-relationship', so they read
-   the same; only the lists around them are this list's. */
-.ig-related-rows,
-.ig-related-groups {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--ig-space-tight);
-}
-
-.ig-related-groups > li {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ig-space-tight);
-}
-
-.ig-related-group {
-  display: flex;
-  gap: var(--ig-space-tight);
-  align-items: baseline;
-  border: var(--ig-stroke) solid var(--ig-line);
-  border-radius: var(--ig-radius);
-  background: var(--ig-surface);
-  color: var(--ig-text-body);
-  font-family: inherit;
-  font-size: inherit;
-  padding: var(--ig-space-tight);
-  text-align: left;
-  cursor: pointer;
-}
-
-.ig-related-search {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ig-space-tight);
-  margin-bottom: var(--ig-space-tight);
-  color: var(--ig-text-muted);
-  font-size: var(--ig-font-size-small);
-}
-
-/* The list's own sentences: the empty states, and the search's status line
-   (nothing matched, or how many the 60-row cut left out). All muted, at the
-   size of the group counts. An empty status line takes no room with no
-   margin, and it is never display: none, which would take the region out of
-   the accessibility tree and lose the first announcement. */
-.ig-related-empty,
-.ig-related-status {
+/* The list's own sentences, the empty states: muted, at the size of the
+   group counts. */
+.ig-related-empty {
   margin: 0;
   color: var(--ig-text-muted);
   font-size: var(--ig-font-size-small);
@@ -1925,6 +1883,16 @@ ${heldRailDeclarations}
     box-shadow: var(--ig-elevation-overlay);
   }
 
+  /* THE CANVAS LEGEND ENDS WHERE THE LIFTED INSPECTOR BEGINS (#303). The
+     switch's drawn figure ("14 of 19 drawn") sits at the legend's far end, as
+     the board draws it; the board's Inspector is a column, so nothing covers
+     it there. Here the panel lies over the canvas, so a legend running the
+     canvas's full width put that figure under it. The clearance is the
+     panel's own inline-size, the rule above. */
+  .ig-workspace[data-inspector='lifted'] .ig-zone[data-zone='canvas'] .ig-legend {
+    margin-inline-end: calc(var(--ig-char-width) * 42);
+  }
+
   /* OPENED BY SELECTION, DISMISSED ON ESCAPE — 17k's own words, and both
      halves arrive as this one attribute. render.ts writes 'lifted' only when
      something is SELECTED and the reader has not dismissed it since, so an
@@ -1981,6 +1949,11 @@ ${heldRailDeclarations}
     z-index: auto;
     background: none;
     box-shadow: none;
+  }
+
+  /* THE INSPECTOR IS A COLUMN AGAIN, so the legend has nothing to clear. */
+  .ig-workspace[data-inspector='lifted'] .ig-zone[data-zone='canvas'] .ig-legend {
+    margin-inline-end: 0;
   }
 
   /* THE DISMISSAL MEANS NOTHING HERE, and saying so is the undo of the middle
@@ -2224,7 +2197,17 @@ ${heldRailDeclarations}
   }
 
   .ig-workspace[data-tab='related'][data-canvas] .ig-zone[data-zone='canvas'] > .ig-related {
-    display: block;
+    display: flex;
+  }
+
+  /* WITH NOTHING SELECTED THE TAB IS THE GROUPS, never every issue at once
+     (RULES, Graphs, Dense neighbourhoods). The render leaves the list out and
+     the cards the ladder drew stand in its place, so each group is one control
+     whatever the width. */
+  .ig-workspace[data-tab='related'][data-canvas]
+    .ig-zone[data-zone='canvas']:not(:has(> .ig-related))
+    > .ig-ladder {
+    display: flex;
   }
 
   /* THE PROBLEMS PANEL ON THE ORDER TAB IS IN FLOW, ABOVE THE ORDER (issue

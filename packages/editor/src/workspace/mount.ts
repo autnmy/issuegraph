@@ -100,10 +100,10 @@ import type { CanvasMode } from './narrow.ts';
 import type { RailWindow } from './rail.ts';
 import { writeLog } from './log.ts';
 import {
-  RELATED_STATUS_CLASS,
   type WorkspaceOptions,
   type WorkspaceRefusal,
   type WorkspaceWords,
+  canvasDrawing,
   renderWorkspace,
 } from './render.ts';
 import { type WorkspaceSelection, selectedEdgeId, selectedKey, selectionReducer, toViewerSelection } from './selection.ts';
@@ -290,8 +290,6 @@ const KEY_ATTRIBUTE = 'data-ig-key';
  * what has to be preserved is the live region specifically.
  */
 const LIVE_REGION = '.ig-change-line[role="status"]';
-/** The Related groups search's status line, carried across redraws the same way. */
-const RELATED_STATUS = `.${RELATED_STATUS_CLASS}[role="status"]`;
 /**
  * The regions that scroll inside a bound of their own, whose offsets a redraw
  * keeps: the audit's findings and the log under the head.
@@ -1295,9 +1293,12 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     if (zoneName !== 'canvas') return null;
     if (state.canvas === 'tree')
       return renderViewer(withoutChrome(drawn.viewer), { projection: 'tree', theme: theme(), chrome: false, frame: false, dockLegend: true }).scene;
-    const ladder = scaleLadder(drawn.viewer, state.scale);
+    // AROUND THE SAME SELECTION, through the same switched kinds, as the
+    // drawn canvas: see `canvasDrawing`.
+    const { around, legendSwitch } = canvasDrawing(drawn.viewer, state.selection, state.switchedKinds, current.words);
+    const ladder = scaleLadder(drawn.viewer, state.scale, around);
     return ladder.tier === 'direct'
-      ? renderViewer(ladder.canvas, { projection: 'graph', theme: theme(), chrome: false, frame: false, dockLegend: true }).scene
+      ? renderViewer(ladder.canvas, { projection: 'graph', theme: theme(), chrome: false, frame: false, dockLegend: true, legendSwitch }).scene
       : null;
   };
 
@@ -1572,13 +1573,13 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       // that reopened itself on every landed write would be unusable.
       canvasOpen: state.canvasOpen,
       inspectorDismissed: state.inspectorDismissed,
-      // The layout under 640's tab and the Related groups list's place, for the
-      // same reason: the renderer keeps nothing across a redraw.
+      // The layout under 640's tab, the groups opened past five and the
+      // legend's switched kinds, for the same reason: the renderer keeps
+      // nothing across a redraw.
       narrowView: state.narrowView,
       canvas: state.canvas,
-      relatedGroup: state.relatedGroup,
       shownGroups: state.shownGroups,
-      relatedQuery: state.relatedQuery,
+      switchedKinds: state.switchedKinds,
       // §17d's overlay. Host state, for the same reason the filter beside it
       // is: the renderer keeps nothing across a redraw.
       auditOpen: state.auditOpen,
@@ -1696,10 +1697,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // summary, and only then given the new one. The insertion says nothing and
     // the mutation is what announces, which is the sequence the region was
     // designed around.
-    // THE RELATED SEARCH'S STATUS LINE IS THE SAME KIND OF REGION and is
-    // carried the same way, so the left-out count and the no-match sentence
-    // are announced as they change while the reader types.
-    const carried: readonly (readonly [string, HTMLElement | null])[] = [LIVE_REGION, RELATED_STATUS].map(
+    const carried: readonly (readonly [string, HTMLElement | null])[] = [LIVE_REGION].map(
       (selector) => [selector, surface.querySelector<HTMLElement>(selector)],
     );
 
@@ -2311,7 +2309,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     const target = isElement(event.target) && isInput(event.target) ? event.target : null;
     if (target === null || !surface.contains(target)) return;
     const name = target.getAttribute(COMMAND_ATTRIBUTE);
-    if (name === 'search' || name === 'target-query' || name === 'related-query') {
+    if (name === 'search' || name === 'target-query') {
       dispatch({ kind: 'control', name, value: target.value });
     }
   };

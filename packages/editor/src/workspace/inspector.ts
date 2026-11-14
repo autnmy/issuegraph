@@ -50,7 +50,7 @@ import type {
   ViewerIssue,
   ViewerSlot,
 } from '@issuegraph/viewer';
-import { LEGEND_ORDER, normalizeDocument } from '@issuegraph/viewer';
+import { DENSE_RELATIONSHIPS, LEGEND_ORDER, normalizeDocument } from '@issuegraph/viewer';
 
 import type { WorkspaceSelection } from './selection.ts';
 
@@ -222,6 +222,16 @@ function relationshipsOf(
   }));
 }
 
+/**
+ * Whether a relationship names one of the subject's sub-issues: a
+ * `decomposed-from` declared by the other end. Those are the Sub-issues tree's
+ * to list, never the Relationships list's (#303: no "Decomposed into" group),
+ * and the Inspector has no Sub-issues section of its own, so they are left out.
+ */
+function isSubIssue(relationship: InspectorRelationship): boolean {
+  return relationship.field === 'decomposed-from' && relationship.direction === 'incoming';
+}
+
 /** The slot carrying a key, if the order places it. */
 function slotFor(document: ViewerDocument, key: string): ViewerSlot | undefined {
   return document.order.slots.find((slot) => slot.members.includes(key));
@@ -331,7 +341,8 @@ export function inspectorView(
       // entirely. "Does this edge touch my subject" and "which end is my
       // subject on" are different questions, and only the first belongs here.
       relationships: relationshipsOf(document, subject).filter(
-        (relationship) => relationship.from === subject || relationship.to === subject,
+        (relationship) =>
+          (relationship.from === subject || relationship.to === subject) && !isSubIssue(relationship),
       ),
       filtered: false,
     };
@@ -389,4 +400,21 @@ export function inspectorGroups(relationships: readonly InspectorRelationship[])
   const rank = (group: InspectorGroup): number =>
     LEGEND_ORDER.indexOf(group.field) * 3 + (DIRECTION_ORDER[group.direction ?? 'none'] ?? 2);
   return [...groups.values()].sort((a, b) => rank(a) - rank(b));
+}
+
+/**
+ * How the Inspector lists a selection's relationships (RULES, Graphs, Dense
+ * neighbourhoods): up to {@link DENSE_RELATIONSHIPS}, one flat list in the
+ * legend's order with no heads; past it, a group per kind with its count.
+ * The same number turns the legend into a switch, so the two turn together.
+ */
+export type InspectorListing =
+  | { readonly kind: 'flat'; readonly relationships: readonly InspectorRelationship[] }
+  | { readonly kind: 'grouped'; readonly groups: readonly InspectorGroup[] };
+
+export function inspectorListing(relationships: readonly InspectorRelationship[]): InspectorListing {
+  const groups = inspectorGroups(relationships);
+  return relationships.length > DENSE_RELATIONSHIPS
+    ? { kind: 'grouped', groups }
+    : { kind: 'flat', relationships: groups.flatMap((group) => group.relationships) };
 }

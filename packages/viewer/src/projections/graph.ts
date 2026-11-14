@@ -48,12 +48,13 @@ import {
   identity,
   issueNumber,
   legend,
-  priorityBadge,
+  cardPriorityBadge,
   recedeStamp,
   slotLabel,
   slotPosition,
   stationFill,
   stationsOf,
+  switchedOff,
   unitBlock,
   unitPill,
   withRecede,
@@ -417,12 +418,12 @@ function cardMark(
       return element(
         'div',
         { class: 'ig-badges' },
-        [
-          priorityBadge(document.byKey.get(key)?.provenance),
-          // THE REASON WORD, muted after the number (q336; issue-graph b699f1d
-          // draws "#2210 Parked"): the one fact about a hold the card shows.
-          reasonWord(heldReason(slot)),
-        ].filter((badge): badge is ElementSpec => badge !== null),
+        // THE REASON WORD IN THE PRIORITY'S PLACE (q336; RULES 5b5f1cc; the
+        // boards draw "#2210 Parked" and "#2255 Duplicate" with no tag): the one
+        // fact about why the card is off the order, muted, else its priority.
+        [reasonWord(heldReason(document, key)) ?? cardPriorityBadge(document.byKey.get(key))].filter(
+          (badge): badge is ElementSpec => badge !== null,
+        ),
       );
   }
 }
@@ -939,6 +940,7 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
     canvas = emptyState('Nothing is in the order yet, so there is nothing to draw.');
   } else {
     const edgeLayers: ElementSpec[] = [];
+    const off = switchedOff(options.legendSwitch);
     // ONE STATION PER SLOT MEANS ONE BOX PER SLOT, so an edge inside a unit has
     // both ends on the same card and no arc to draw. It is not lost: the card
     // lists its members, and the badge row names the relationship, which is the
@@ -968,6 +970,9 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
       // dense neighbourhood (#303). With nothing selected nothing recedes, so
       // every line draws.
       if (receding.edges.has(identity)) continue;
+      // A KIND THE READER SWITCHED OFF DRAWS NO LINE, as its switch says
+      // (RULES, Graphs, Dense neighbourhoods).
+      if (off.has(edge.field)) continue;
       edgeLayers.push(...edgePaths(edge, geometry, theme));
       const marker = terminalMarker(
         treatmentFor(edge.field).terminal,
@@ -1139,7 +1144,7 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
         : element('p', { class: 'ig-count' }, [
             `${String(document.isolated.length)} ${document.isolated.length === 1 ? 'issue has' : 'issues have'} no relationships, so ${document.isolated.length === 1 ? 'it is' : 'they are'} not drawn`,
           ]),
-      legend(),
+      legend(options.legendSwitch),
       // LAST, because §16h calls it the panel FOOTER and the legend is a footer
       // bar. Above it, the line was not the last thing on the panel.
       adoptionNote(document, options.chrome),

@@ -132,7 +132,7 @@ describe('the §16 comparison page', () => {
     for (const label of ['label:P0', 'label:P1', 'label:P2', 'label:P3']) {
       assert.ok(markup.includes(label), `§16h never names ${label}`);
     }
-    assert.ok(markup.includes('Picked by query 1'), '§16h lost its ordered-query provenance');
+    assert.ok(markup.includes('Matched ordering query 1'), '§16h lost its ordered-query provenance');
     assert.ok(!markup.includes('goes by its priority'), '§16h fell back to a tier read');
     // Complete: no empty slot, no missing affordance, no relationship badge.
     assert.ok(!markup.includes('ig-empty'), '§16h drew an empty state');

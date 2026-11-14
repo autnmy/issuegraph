@@ -41,6 +41,7 @@ import {
   GRAPH_NODE_BUDGET,
   type NormalizedDocument,
   type ViewerDocument,
+  type ViewerEdge,
   type ViewerIssue,
   clusterReach,
   clustersOf,
@@ -50,10 +51,16 @@ import {
 
 import { INITIAL_SCALE_STATE, type ScaleState } from './commands.ts';
 
-/** Which of the design's three scale states the canvas is in. */
+/** Which of the design's scale states the canvas is in. */
 export type ScaleTier =
   /** At or under the node budget: the neighbourhood is drawn. */
   | 'direct'
+  /**
+   * Nothing selected and no group picked: the groups as cards, whatever their
+   * size (RULES, Graphs, Dense neighbourhoods: "never every issue at once").
+   * Not a refusal, so no sentence and no search: picking is the whole move.
+   */
+  | 'groups'
   /** Past the node budget: component capsules instead of a hairball. */
   | 'capsules'
   /** Past the cluster-only budget: capsules are truncated and search leads. */
@@ -183,7 +190,10 @@ export interface OmittedComponents {
 
 export interface ScaleLadder {
   readonly tier: ScaleTier;
-  /** The nodes the canvas would draw: the focused component, or all of them. */
+  /**
+   * The nodes the canvas would draw: the selection's neighbourhood, the focused
+   * component, or all of them.
+   */
   readonly nodeCount: number;
   readonly budgets: { readonly node: number; readonly clusterOnly: number };
   /** The focused member, once resolved against a real component. */
@@ -201,7 +211,10 @@ export interface ScaleLadder {
    */
   readonly capsulesOmitted: OmittedComponents | null;
   readonly isolated: IsolatedChip;
-  /** The affordance, present exactly when the canvas refuses. */
+  /**
+   * The affordance, present exactly when the canvas refuses with nothing
+   * selected: around a selection a match would move nothing drawn.
+   */
   readonly search: ScaleSearch | null;
   /**
    * The document for the CANVAS ZONE — never for the order rail.
@@ -214,6 +227,49 @@ export interface ScaleLadder {
   readonly canvas: ViewerDocument;
   readonly diagnostics: readonly string[];
 }
+
+/**
+ * What the canvas is drawn around: the selection, and the relationships drawn
+ * out from it (RULES, Graphs, Dense neighbourhoods).
+ *
+ * THE CALLER RESOLVES IT, because which relationships draw is a question about
+ * the reader's selection and the kinds switched on, and this module knows
+ * neither. It keeps what this names and nothing else.
+ */
+export interface ScaleAround {
+  /** The selected issues, or a selected relationship's two ends. */
+  readonly centre: readonly string[];
+  /** The relationships drawn out from the centre. Each one's far end is drawn too. */
+  readonly edges: readonly ViewerEdge[];
+}
+
+/** What a tier draws: the graph, the group cards, a refusal, and its search. */
+interface TierTraits {
+  readonly refuses: boolean;
+  readonly lists: boolean;
+}
+
+const TIER_TRAITS: Readonly<Record<ScaleTier, TierTraits>> = Object.freeze({
+  direct: { refuses: false, lists: false },
+  groups: { refuses: false, lists: true },
+  capsules: { refuses: true, lists: true },
+  clusters: { refuses: true, lists: true },
+});
+
+/**
+ * The tier for every component at once. Within the node budget the groups are
+ * still cards and never every issue at once; past it the budget's own refusal
+ * stands, since it has more to say.
+ */
+const UNSELECTED_TIER: Readonly<Record<ScaleTier, ScaleTier>> = Object.freeze({
+  direct: 'groups',
+  groups: 'groups',
+  capsules: 'capsules',
+  clusters: 'clusters',
+});
+
+/** What the canvas keeps: everything related, one picked group, or a selection's neighbourhood. */
+type ScaleMode = 'everything' | 'focused' | 'around';
 
 interface TierStep {
   readonly tier: ScaleTier;
@@ -265,10 +321,14 @@ function tierFor(nodeCount: number): TierStep {
  * and a focus never splits one; the rule is written for the isolated-exclusion
  * pass, where a unit could otherwise lose a member that happens to be edge-free.
  */
-function narrow(input: ViewerDocument, keep: ReadonlySet<string>): ViewerDocument {
+function narrow(
+  input: ViewerDocument,
+  keep: ReadonlySet<string>,
+  drawsEdge: (edge: ViewerEdge) => boolean,
+): ViewerDocument {
   return {
     issues: input.issues.filter((issue) => keep.has(issue.key)),
-    edges: input.edges.filter((edge) => keep.has(edge.from) && keep.has(edge.to)),
+    edges: input.edges.filter((edge) => keep.has(edge.from) && keep.has(edge.to) && drawsEdge(edge)),
     order: {
       slots: input.order.slots.filter((slot) => slot.members.every((member) => keep.has(member))),
       excluded: input.order.excluded.filter((exclusion) => keep.has(exclusion.key)),
@@ -402,10 +462,13 @@ function omittedFrom(listable: readonly Cluster[], shown: readonly ScaleCapsule[
   return { count, range: largest === 0 ? null : { smallest, largest } };
 }
 
-/** Why the canvas declined, in the reader's terms. One sentence, three cases. */
-function reasonFor(tier: ScaleTier, nodeCount: number, focused: boolean): string {
-  if (focused) {
+/** Why the canvas declined, in the reader's terms. One sentence, four cases. */
+function reasonFor(tier: ScaleTier, nodeCount: number, mode: ScaleMode): string {
+  if (mode === 'focused') {
     return `This group has ${String(nodeCount)} issues, too many to draw here. The limit is ${String(GRAPH_NODE_BUDGET)}.`;
+  }
+  if (mode === 'around') {
+    return `${String(nodeCount)} issues surround this selection, too many to draw here. The limit is ${String(GRAPH_NODE_BUDGET)}.`;
   }
   if (tier === 'clusters') {
     return `${String(nodeCount)} related issues are far too many to draw, so they are listed as groups. Search to find one.`;
@@ -419,10 +482,10 @@ function reasonFor(tier: ScaleTier, nodeCount: number, focused: boolean): string
 function refusalFor(
   tier: ScaleTier,
   nodeCount: number,
-  focused: boolean,
+  mode: ScaleMode,
   hasCapsules: boolean,
 ): ScaleRefusal | null {
-  if (tier === 'direct') return null;
+  if (!TIER_TRAITS[tier].refuses) return null;
 
   // ALWAYS AT LEAST TWO. Search reaches a component whatever the tier, and the
   // order rail is complete at any size — so a refusal is never a dead end, and
@@ -431,19 +494,24 @@ function refusalFor(
   if (hasCapsules) {
     routes.push({ kind: 'focus-cluster', label: 'Pick a group to draw just that group.' });
   }
-  if (focused) {
+  if (mode === 'focused') {
     routes.push({ kind: 'clear-focus', label: 'Go back to all groups.' });
   }
-  routes.push({
-    kind: 'search',
-    label: 'Search for an issue to draw its group.',
-  });
+  // NO SEARCH AROUND A SELECTION. A search focuses a group, and while an issue
+  // is selected the canvas draws what surrounds it, so a match would move
+  // nothing the reader can see.
+  if (mode !== 'around') {
+    routes.push({
+      kind: 'search',
+      label: 'Search for an issue to draw its group.',
+    });
+  }
   routes.push({
     kind: 'order-rail',
     label: 'The list always shows the full order.',
   });
   return {
-    reason: reasonFor(tier, nodeCount, focused),
+    reason: reasonFor(tier, nodeCount, mode),
     nodeCount,
     budget: GRAPH_NODE_BUDGET,
     routes,
@@ -494,15 +562,40 @@ function searchFor(
 }
 
 /**
+ * The issues a selection's neighbourhood draws: its centre and every end of the
+ * relationships drawn from it, each with its whole unit, since half a unit is
+ * not a smaller unit (see `narrow`).
+ */
+function aroundKeys(document: NormalizedDocument, around: ScaleAround): ReadonlySet<string> {
+  const reached = [...around.centre, ...around.edges.flatMap((edge) => [edge.from, edge.to])];
+  const units = reached.flatMap(
+    (key) => document.order.slots.find((slot) => slot.members.includes(key))?.members ?? [key],
+  );
+  return new Set([...reached, ...units].filter((key) => document.byKey.has(key)));
+}
+
+/** One edge's declaration, as a key a set can hold. */
+function edgeKey(edge: ViewerEdge): string {
+  return `${edge.field}|${edge.from}|${edge.to}`;
+}
+
+/**
  * Resolve one document and one reader position into a ladder.
  *
  * Pure and total: no global is read, nothing is fetched, and a `focus` naming a
  * key this document does not place in any component produces a diagnostic and
  * every component, rather than a silently unnarrowed canvas that looks focused.
+ *
+ * `around` is the selection's neighbourhood, and it outranks a focus: with an
+ * issue or a relationship selected the canvas draws what surrounds it, and the
+ * picked group comes back when the selection clears. With neither, the groups
+ * are drawn as cards and never every issue at once (RULES, Graphs, Dense
+ * neighbourhoods).
  */
 export function scaleLadder(
   input: ViewerDocument,
   state: ScaleState = INITIAL_SCALE_STATE,
+  around: ScaleAround | null = null,
 ): ScaleLadder {
   const { document, diagnostics: normalizeDiagnostics } = normalizeDocument(input);
   const diagnostics = [...normalizeDiagnostics];
@@ -522,7 +615,7 @@ export function scaleLadder(
     for (const member of cluster.members) leadOf.set(member, lead);
   }
 
-  const requested = state.focus;
+  const requested = around === null ? state.focus : null;
   const focusedCluster =
     requested === null
       ? null
@@ -533,15 +626,25 @@ export function scaleLadder(
     );
   }
 
-  const keep = focusedCluster === null ? related : new Set(focusedCluster.members);
-  const canvas = narrow(document, keep);
+  const mode: ScaleMode = around !== null ? 'around' : focusedCluster !== null ? 'focused' : 'everything';
+  const keep =
+    around !== null ? aroundKeys(document, around) : focusedCluster === null ? related : new Set(focusedCluster.members);
+  // AROUND A SELECTION ONLY ITS OWN RELATIONSHIPS ARE ON THE CANVAS, so the
+  // lines between its neighbours wait until one of them is selected.
+  const drawn = new Set(around?.edges.map(edgeKey) ?? []);
+  const canvas = narrow(document, keep, (edge) => around === null || drawn.has(edgeKey(edge)));
   const nodeCount = keep.size;
-  const { tier } = tierFor(nodeCount);
+  const budgetTier = tierFor(nodeCount).tier;
+  // A DOCUMENT WITH NOTHING RELATED HAS NO GROUPS, so the canvas keeps drawing
+  // its own empty state rather than an empty board.
+  const tier = mode === 'everything' && nodeCount > 0 ? UNSELECTED_TIER[budgetTier] : budgetTier;
+  const traits = TIER_TRAITS[tier];
 
-  // NO CAPSULES WHILE ONE COMPONENT IS FOCUSED. The reader is already inside a
-  // component; listing every other one under a refusal about THIS one would
-  // read as an offer to focus what is already focused.
-  const listable = focusedCluster === null ? clusters : [];
+  // CAPSULES ONLY FOR EVERY COMPONENT AT ONCE. Inside one, the reader is already
+  // there, and listing every other one under a refusal about THIS one would read
+  // as an offer to focus what is already focused; around a selection, a focus
+  // would change nothing drawn.
+  const listable = mode === 'everything' ? clusters : [];
   const shown = tier === 'clusters' ? listable.slice(0, CAPSULE_LIMIT) : listable;
   const titleOf = new Map(document.issues.map((issue) => [issue.key, issue.title]));
   // THE RANK OF EVERY MEMBER THAT HAS ONE, for the anchor. Built from the
@@ -553,12 +656,11 @@ export function scaleLadder(
     if (slot.rank === null) continue;
     for (const member of slot.members) rankOf.set(member, slot.rank);
   }
-  const capsules =
-    tier === 'direct'
-      ? []
-      : shown
-          .map((cluster) => capsuleOf(cluster, titleOf, rankOf))
-          .filter((capsule): capsule is ScaleCapsule => capsule !== null);
+  const capsules = traits.lists
+    ? shown
+        .map((cluster) => capsuleOf(cluster, titleOf, rankOf))
+        .filter((capsule): capsule is ScaleCapsule => capsule !== null)
+    : [];
 
   const isolatedIssues = document.issues.filter((issue) => !related.has(issue.key));
   const isolated: IsolatedChip = {
@@ -573,14 +675,14 @@ export function scaleLadder(
     nodeCount,
     budgets: { node: GRAPH_NODE_BUDGET, clusterOnly: CLUSTER_ONLY_BUDGET },
     focus: focusedCluster === null ? null : requested,
-    refusal: refusalFor(tier, nodeCount, focusedCluster !== null, capsules.length > 0),
+    refusal: refusalFor(tier, nodeCount, mode, capsules.length > 0),
     capsules,
     // COUNTED AGAINST WHAT WAS LISTED, not against what was sliced. A component
     // dropped for having no members is as absent from the list as one past the
     // limit, and reporting only the slice would under-count it.
-    capsulesOmitted: tier === 'direct' ? null : omittedFrom(listable, capsules),
+    capsulesOmitted: traits.lists ? omittedFrom(listable, capsules) : null,
     isolated,
-    search: tier === 'direct' ? null : searchFor(state.query, document, leadOf),
+    search: traits.refuses && mode !== 'around' ? searchFor(state.query, document, leadOf) : null,
     canvas,
     diagnostics,
   };
