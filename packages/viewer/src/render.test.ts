@@ -237,19 +237,21 @@ describe('the outer frame, and the container that declines it', () => {
     }
   });
 
-  it('unsets the border and the radius, and nothing else', () => {
+  it('unsets the border, the radius and the ground, and nothing else', () => {
     // THE DEFECT THIS EXISTS FOR: composed into the workspace, the viewer's own
     // border landed one pixel from the rail track's `border-right` and from the
     // canvas toolbar's `border-bottom`, so every seam on the surface read as a
     // doubled hairline. Asserted against the bytes, because the attribute is
-    // inert without the rule and nothing would fail.
+    // inert without the rule and nothing would fail. The ground goes too: a
+    // container that declines the frame holds the viewer in its own card, and
+    // a painted root would draw a second card inside it.
     const rule = /\.ig-viewer\[data-frame='none'\] \{([^}]*)\}/.exec(viewerStylesheet);
     assert.ok(rule, 'the stylesheet no longer answers the attribute, so declining it draws the frame anyway');
     const declarations = (rule[1] as string)
       .split(';')
       .map((text) => text.trim())
       .filter((text) => text !== '');
-    assert.deepEqual(declarations.sort(), ['border-radius: 0', 'border: 0']);
+    assert.deepEqual(declarations.sort(), ['background: transparent', 'border-radius: 0', 'border: 0']);
   });
 });
 
