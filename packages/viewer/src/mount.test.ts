@@ -2606,6 +2606,47 @@ describe('under 640 the mounted viewer holds one issue', () => {
       }
     });
 
+    it('moves no focus on a resize reduction after a host redraw removed the focused row without a focusout', () => {
+      const { container, handle, observer } = mountedWide();
+      try {
+        container.dispatch('focusin', { target: rowIn(container, '31') });
+        // An engine that fires no focusout when the redraw removes the focused row.
+        handle.update(twoUnitDocument);
+        assert.deepEqual(handle.state.selected, ['31', '33']);
+        container.box = { width: 500, height: 300 };
+        observer.fire();
+        assert.equal(handle.state.selected, '33');
+        assert.deepEqual(focusedRows(container), [], 'a resize pulled focus into the viewer after the host redrew it');
+      } finally {
+        handle.destroy();
+      }
+    });
+
+    it('leaves focus where a selection callback moved it during a resize reduction', () => {
+      const { doc, fakes } = observedDocument();
+      const container = doc.createMeasuredContainer({ width: 800, height: 300 });
+      const field = new TestElement('button', doc);
+      const rowFocusCalls = (): number => container.descendants().reduce((sum, element) => sum + element.focusCount, 0);
+      let rowFocusCallsAtHostMove: number | null = null;
+      const handle = mountViewer(container, twoUnitDocument, {
+        selected: ['31', '33'],
+        onSelectionChange: () => {
+          field.focus();
+          rowFocusCallsAtHostMove = rowFocusCalls();
+        },
+      });
+      try {
+        container.dispatch('focusin', { target: rowIn(container, '31') });
+        container.box = { width: 500, height: 300 };
+        fakes.built[0]?.fire();
+        assert.equal(handle.state.selected, '33');
+        assert.equal(field.focusCount, 1, 'the host callback did not run once');
+        assert.equal(rowFocusCalls(), rowFocusCallsAtHostMove, 'the viewer focused a row after the host moved focus');
+      } finally {
+        handle.destroy();
+      }
+    });
+
     it('removes its focus listeners on destroy', () => {
       const { container, handle } = mountedWide();
       handle.destroy();

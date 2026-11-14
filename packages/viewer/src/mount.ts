@@ -457,8 +457,9 @@ export function mountViewer(
     currentOptions.onHover?.(null);
   };
 
-  // `announceSelection` is false ONLY for the redraw `emitSelect` runs, which
-  // reports the settled selection itself — see there. Every other caller wants
+  // `announceSelection` is false ONLY for the redraws `applyGesture` and
+  // `onResize` run, which restore focus and then report the settled selection
+  // themselves — see there. Every other caller wants
   // the notice, because a reconciliation that moves the selection has moved it
   // out from under whoever set it.
   const draw = (announceSelection = true): void => {
@@ -517,6 +518,11 @@ export function mountViewer(
     }
     selectedAsGiven = asGivenSelection();
     if (root !== null) container.removeChild(root);
+    // REMOVING THE SUBTREE TAKES FOCUS WITH IT, and not every engine fires a
+    // `focusout` when it does. A stale flag would let a later resize pull focus
+    // out of a host field, so every caller that puts focus back on a row after
+    // this draw sets it again beside that call.
+    focusInside = false;
     const scene = sceneFor(normalized, projection, {
       ...currentOptions,
       // THE GRAPH AND THE LIST ARE HANDED THE SELECTION AS GIVEN, because they
@@ -746,7 +752,10 @@ export function mountViewer(
     // selection itself could take no focus, sent focus to an unrelated first
     // row on the reader's very first click. A pointer on a mark that cannot
     // take focus moves the selection and nothing else.
-    if (focusable !== null && state.focused !== null) keyed.get(state.focused)?.focus?.();
+    if (focusable !== null && state.focused !== null) {
+      keyed.get(state.focused)?.focus?.();
+      focusInside = true;
+    }
     // WHAT THE STATE ACTUALLY HOLDS, not what was asked for. `draw()` reconciles
     // the selection against the scene, which canonicalizes a together unit's
     // partner to the station that represents it — so reporting `resolved` here
@@ -859,7 +868,10 @@ export function mountViewer(
       // THE REDRAW DESTROYED THE ROW HOLDING FOCUS, and a clear names no subject
       // for `applyGesture` to refocus, so the tab stop the reader kept is
       // focused again — this is the viewer's own key press, not a host update.
-      if (state.focused !== null) keyed.get(state.focused)?.focus?.();
+      if (state.focused !== null) {
+        keyed.get(state.focused)?.focus?.();
+        focusInside = true;
+      }
       return;
     }
     // A COMMAND IS THE HOST'S TO COMPLETE, exactly like the header's own
@@ -873,12 +885,14 @@ export function mountViewer(
     state = result.state;
     draw();
     keyed.get(result.command.key)?.focus?.();
+    focusInside = true;
   };
 
   // WHETHER FOCUS IS INSIDE THE VIEWER, kept from the container's own focus
-  // events so the module never asks its host for `activeElement`. A resize
-  // redraw reads it to put focus back on the row it destroyed, and only then,
-  // so a resize while the reader is elsewhere on the page moves nothing. Each
+  // events, and cleared by every `draw()` that removes the subtree, so the
+  // module never asks its host for `activeElement`. A resize redraw reads it to
+  // put focus back on the row it destroyed, and only then, so a resize while
+  // the reader is elsewhere on the page moves nothing. Each
   // `focusin` also adopts the row it landed on, so that redraw focuses the row
   // the reader stood on.
   let focusInside = false;
@@ -895,18 +909,25 @@ export function mountViewer(
    * Re-measure, and reduce a set the container is now too narrow for.
    *
    * It redraws only when that reduction is due, so a resize that changes
-   * nothing tells the host nothing, and the redraw's own notice reports the
-   * reduction once. `onSelect` is not forced, as a click forces it, because a
-   * resize is not a selection. Guarded by `destroyed`, because a browser can
-   * deliver a callback it queued before `disconnect()`.
+   * nothing tells the host nothing, and the notice reports the reduction once.
+   * `onSelect` is not forced, as a click forces it, because a resize is not a
+   * selection. The notice goes out AFTER focus is put back, as `applyGesture`
+   * orders it, so a host that moves focus from its callback keeps that move.
+   * Guarded by `destroyed`, because a browser can deliver a callback it queued
+   * before `disconnect()`.
    */
   const onResize = (): void => {
     if (destroyed) return;
     narrow = measuresNarrow();
     if (!narrow || selectedKeysOf(selectedAsGiven).length < 2) return;
+    // READ BEFORE THE DRAW, which clears the flag when it removes the subtree.
     const refocus = focusInside;
-    draw();
-    if (refocus && state.focused !== null) keyed.get(state.focused)?.focus?.();
+    draw(false);
+    if (refocus && state.focused !== null) {
+      keyed.get(state.focused)?.focus?.();
+      focusInside = true;
+    }
+    announce(false);
   };
 
   container.addEventListener('click', onClick);
