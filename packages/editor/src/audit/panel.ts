@@ -597,7 +597,12 @@ export function renderAuditPanel(
       // THE FRAME AGREES: §17d's panel head reads `3 encoding problems` over
       // exactly its own three cards, with the refusal a separate card outside.
       // A count enclosed by the thing it counts is a count OF that thing.
-      element('span', { class: 'ig-audit-panel-count' }, [String(listed.length)]),
+      //
+      // ONE TITLE, THE COUNT INSIDE IT (#288). The export draws the head as one
+      // panel title, "3 problems to fix", so the count and the host's words are
+      // one heading rather than a gold figure beside an uppercase label. The
+      // host's `heading` still reads after the count, as it always has.
+      //
       // A REAL HEADING, AT THE LEVEL ITS PLACE IN THE ZONE EARNS. A `span` left
       // the panel invisible to heading navigation and put a gap in the column's
       // outline; the caps are the stylesheet's, as they are for every other
@@ -609,7 +614,10 @@ export function renderAuditPanel(
       // concatenates the panel first — so an `h3` announced a level three
       // before the level two it claimed to sit under, describing a nesting the
       // markup does not have. Two peers, two `h2`s.
-      element('h2', { class: 'ig-audit-panel-heading' }, [words.heading]),
+      element('h2', { class: 'ig-audit-panel-heading' }, [
+        element('span', { class: 'ig-audit-panel-count' }, [String(listed.length)]),
+        ` ${words.heading}`,
+      ]),
       // §17d's OWN ENTRY POINT, drawn where the frame draws it. `RULINGS.md` §2
       // already settled what it does — *"The filter hides ROWS. It never
       // touches the ORDER"* — and §3 moved it here from the header count so

@@ -111,6 +111,15 @@ export interface SceneOptions {
    *
    * It renders as `data-frame="none"` on the viewer root; absent is the
    * framed default.
+   *
+   * IT IS HOW A HOST SAYS IT EMBEDS THE VIEWER (#288). A host that mounts the
+   * order inside a card of its own passes `frame: false`, and `chrome: false`
+   * for its own head. With the frame declined the root also paints no ground,
+   * so the rows sit on the host's card rather than in a second card inside it,
+   * and the "not in the order" group's heading reads as a sentence-case group
+   * heading with a plain count beside it, rather than as the standalone panel's
+   * uppercase kicker and outlined chip. No option was added for this: the
+   * container declining the frame already says the container owns the surface.
    */
   readonly frame?: boolean | undefined;
   /**

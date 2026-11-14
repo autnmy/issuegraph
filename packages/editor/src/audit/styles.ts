@@ -138,23 +138,27 @@ export const auditStylesheet = `
   font-size: var(--ig-font-size-small);
 }
 
-/* The panel's count is a count like the header's: body sans, body size,
-   tabular figures. The gold is what ties it to the mark beside it. */
+/* THE PANEL'S TITLE, AS THE EXPORT DRAWS IT: one heading, the count and then
+   the host's words, in the sans at medium weight in text colour. It was an
+   uppercase mono label in gold with the count beside it; content.md rules out
+   that small uppercase label, and the count reads as part of the sentence it
+   starts. The export's panel title is a step above the body, and the theme has
+   no token for that step, so the title takes the body size. */
+.ig-audit-panel-heading {
+  color: var(--ig-text);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size);
+  font-weight: var(--ig-weight-medium);
+  margin: 0;
+}
+
+/* The count inside the title is a count like the header's: body sans, body
+   size, tabular figures, in the title's own ink. */
 .ig-audit-panel-count {
-  color: var(--ig-edge-serialize-with);
+  color: inherit;
   font-family: var(--ig-font-ui);
   font-size: var(--ig-font-size);
   font-variant-numeric: tabular-nums;
-}
-
-.ig-audit-panel-heading {
-  color: var(--ig-edge-serialize-with);
-  font-weight: inherit;
-  margin: 0;
-  font-family: var(--ig-font-mono);
-  font-size: var(--ig-font-size-small);
-  letter-spacing: var(--ig-tracking-group);
-  text-transform: uppercase;
 }
 
 /* NO CAP ON THE LIST, AND THAT IS STILL RIGHT — the bound belongs to the PANEL
@@ -389,17 +393,17 @@ export const auditStylesheet = `
   outline-offset: calc(var(--ig-focus-ring) * -1);
 }
 
-/* THE SAME HEADING TREATMENT AS THE PANEL'S, because they are peers in one
+/* THE SAME HEADING TYPE AS THE PANEL'S TITLE, because they are peers in one
    column and §17d draws them as one section. A second treatment would say they
-   were two unrelated things. */
+   were two unrelated things, so when the panel's title became the export's
+   sentence-case title this heading moved with it. Its hue stays blocked-by's:
+   it names a refusal, which the panel's title does not. */
 .ig-audit-refused-heading {
   color: var(--ig-edge-blocked-by);
-  font-family: var(--ig-font-mono);
-  font-size: var(--ig-font-size-small);
-  font-weight: inherit;
-  letter-spacing: var(--ig-tracking-group);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size);
+  font-weight: var(--ig-weight-medium);
   margin: 0;
-  text-transform: uppercase;
 }
 
 .ig-audit-refused-list {

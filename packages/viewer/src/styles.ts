@@ -307,8 +307,35 @@ export const viewerStylesheet = `
    surface. See SceneOptions.frame for why this is an option rather than a
    host stylesheet unsetting the properties above. */
 .ig-viewer[data-frame='none'] {
+  background: transparent;
   border: 0;
   border-radius: 0;
+}
+
+/* A HOST'S OWN CARD HOLDS IT, SO IT DRAWS NO CARD OF ITS OWN. Declining
+   the frame is how a container says it embeds the viewer; with it the root
+   paints no ground (above), so the rows sit on the host's surface rather than
+   in a second card inside it. The footer group's heading then reads as the
+   export's group heading, "Not in the order" in the small role at medium weight
+   in muted ink with its count beside it in regular weight, rather than as the
+   standalone panel's uppercase kicker and outlined chip. The header, with its
+   kicker and its chips, is the chrome a container declines separately. */
+.ig-viewer[data-frame='none'] .ig-footer-title {
+  color: var(--ig-text-muted);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+  font-weight: var(--ig-weight-medium);
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.ig-viewer[data-frame='none'] .ig-count-chip[data-count='footer'] {
+  background: none;
+  border: 0;
+  color: var(--ig-text-muted);
+  font-size: var(--ig-font-size-small);
+  font-weight: var(--ig-weight-regular);
+  padding: 0;
 }
 
 /* THE LEGEND DOCKS AGAINST THE CONTAINER'S SCROLLPORT, NOT THIS ROOT'S.
@@ -955,7 +982,9 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 
 .ig-rank {
   color: var(--ig-text);
-  font-family: var(--ig-font-mono);
+  /* A RANK IS A FIGURE A READER READS, NOT A KEY THEY COPY, so it is the sans
+     with tabular figures, which keep a column of ranks aligned. */
+  font-family: var(--ig-font-ui);
   font-size: var(--ig-font-size-rank);
   font-variant-numeric: tabular-nums;
   font-weight: var(--ig-weight-strong);
@@ -1009,6 +1038,12 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 
 /* ── readiness stations ────────────────────────────────────────────────── */
 
+/* AS THE BOARD DRAWS THEM: ready is a solid dot, ready after its
+   blockers a solid ring in the pending colour, and held a solid dot in the held
+   colour. Held was a dashed ring, which on a dot this small read as a broken
+   outline rather than a state. Each mark is a theme token, so a host maps the
+   three to its own state colours. The fill keeps its data-fill name; only the
+   drawing changed. */
 .ig-station {
   block-size: var(--ig-station-size);
   border: var(--ig-stroke) solid var(--ig-station-held);
@@ -1028,9 +1063,9 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 }
 
 .ig-station[data-fill='dashed'] {
-  background: transparent;
-  border-style: dashed;
+  background: var(--ig-station-held);
   border-color: var(--ig-station-held);
+  border-style: solid;
 }
 
 /* ── titles, identity, provenance ──────────────────────────────────────── */
@@ -1176,8 +1211,14 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   border-radius: var(--ig-radius-small);
   color: var(--ig-text);
   display: inline-flex;
-  font-family: var(--ig-font-mono);
-  font-size: var(--ig-font-size-micro);
+  /* A TAG, AS THE EXPORT DRAWS ONE: the small role in the sans at medium
+     weight. "P3", "blocks 512" and "not ready" are words a reader reads, not
+     keys they copy, so none of them is mono. The graph's chip packer measures
+     every chip with --ig-label-char-width, the label face's average at this
+     same small size, so the card it reserves still fits the chip. */
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+  font-weight: var(--ig-weight-medium);
   gap: var(--ig-space-tight);
   padding: var(--ig-space-micro) var(--ig-space-tight);
 }
@@ -1297,22 +1338,22 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   gap: var(--ig-space-snug);
 }
 
+/* THE UNIT'S LABEL IS A SENTENCE-CASE LABEL, NOT AN EYEBROW. The export
+   draws "One unit · 2 issues" in the small role at medium weight in text
+   colour, with no fill and no capitals, and content.md rules out the small
+   uppercase mono label; the note beside it is the same size in muted ink. */
 .ig-unit-pill {
-  background: var(--ig-accent);
-  border-radius: var(--ig-radius-small);
-  color: var(--ig-bg);
-  font-family: var(--ig-font-mono);
-  font-size: var(--ig-font-size-pill);
-  font-weight: var(--ig-weight-strong);
-  letter-spacing: var(--ig-tracking-badge);
-  padding: var(--ig-space-micro) var(--ig-space-tight);
-  text-transform: uppercase;
+  color: var(--ig-text);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--ig-weight-medium);
 }
 
 .ig-unit-note {
   color: var(--ig-text-muted);
-  font-family: var(--ig-font-mono);
-  font-size: var(--ig-font-size-micro);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
 }
 
 /* THE MEMBERS GET ONE LINE EACH. Joining them with a separator — which is what
@@ -1877,24 +1918,24 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 /* ── loading placeholder ───────────────────────────────────────────────── */
 
 /* THE HOST'S HOOK, AND THE ONLY ONE. Every placeholder shape is one of these,
-   filled with the second surface and holding still: this package ships no
-   motion, and the fill already follows the host's theme. A host that wants a
-   pulse animates this class under its own reduced-motion rule. */
+   on one static fill and holding still, as the skeleton rules have it: the
+   stronger surface, the one a selected row takes, and no pulse. This package
+   ships no motion, and the fill follows the host's theme.
+
+   THE SHAPES FOLLOW THOSE RULES TOO. A line of text, a heading or a figure is
+   a pill one snug step tall, set in that line's own height by its margins, so
+   nothing moves when the text arrives. A control or an icon is a pill its own
+   size. A block is a rectangle with the card's corner. */
 .ig-skeleton-block {
-  background: var(--ig-surface-2);
-  border-radius: var(--ig-radius);
+  background: var(--ig-surface);
+  border-radius: var(--ig-space-snug);
   display: block;
 }
 
-/* ON THE HEADER'S OWN GROUND the second surface is the ground, so the shapes
-   there take the hairline colour instead, or they vanish into it. */
-.ig-header .ig-skeleton-block {
-  background: var(--ig-line);
-}
-
 .ig-skeleton-block[data-shape='label'] {
-  block-size: var(--ig-space);
+  block-size: var(--ig-space-snug);
   inline-size: calc(var(--ig-char-width) * 14);
+  margin-block: calc((var(--ig-row-meta-line) - var(--ig-space-snug)) / 2);
 }
 
 .ig-skeleton-chips {
@@ -1904,7 +1945,7 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 
 .ig-skeleton-block[data-shape='chip'] {
   block-size: calc(var(--ig-space) * 2);
-  border-radius: var(--ig-radius);
+  border-radius: var(--ig-space);
   inline-size: calc(var(--ig-char-width) * 9);
 }
 
@@ -1915,10 +1956,12 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 }
 
 /* THE ROW'S OWN LINE HEIGHTS, so a placeholder row and a real row are the same
-   height at every density the container picks. */
+   height at every density the container picks: each pill is one snug step
+   tall and its margins make up the rest of its line. */
 .ig-skeleton-block[data-shape='title'] {
-  block-size: var(--ig-row-title-line);
+  block-size: var(--ig-space-snug);
   inline-size: 68%;
+  margin-block: calc((var(--ig-row-title-line) - var(--ig-space-snug)) / 2);
 }
 
 .ig-skeleton-block[data-shape='title'][data-width='1'] {
@@ -1930,12 +1973,14 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 }
 
 .ig-skeleton-block[data-shape='meta'] {
-  block-size: var(--ig-row-meta-line);
+  block-size: var(--ig-space-snug);
   inline-size: 36%;
+  margin-block: calc((var(--ig-row-meta-line) - var(--ig-space-snug)) / 2);
 }
 
-/* THE TWO LINES OF A ROW, stacked with no gap of their own: each block is its
-   line's full height, which already carries the leading a real line has. */
+/* THE TWO LINES OF A ROW, stacked with no gap of their own: each block with
+   its margins is its line's full height, which already carries the leading a
+   real line has. Flex items' margins do not collapse, so the sum holds. */
 .ig-skeleton-lines {
   display: flex;
   flex-direction: column;
@@ -1955,7 +2000,8 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 }
 
 /* THE SPINE CARD'S OWN WIDTH, so the graph's placeholder sits where its cards
-   will, as one solid block with the large radius the panel's cards use. */
+   will, as one solid block: a block, so the card's corner, the large radius
+   the panel's cards use. */
 .ig-skeleton-block[data-shape='card'] {
   block-size: calc(var(--ig-station-box) * 4);
   border-radius: var(--ig-radius-large);
@@ -1980,36 +2026,11 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   padding: var(--ig-space) var(--ig-space-wide);
 }
 
-/* FLOATED SO THE BROWSER STOPS TREATING IT AS A RENDERED LEGEND, which is the
-   only reason this declaration exists. HTML gives the first in-flow legend of a
-   fieldset a layout nothing else in CSS has: it is lifted OUT of the fieldset's
-   content box, painted across the top border with a notch cut through the rule
-   either side of it, and the content box then starts below it. On this bar that
-   drew the caption sitting on the rule, a gap of bare ground under the caption
-   where the fieldset's own surface should have been, and a top rule broken in
-   the middle — all three of which looked like a styling bug and none of which
-   any rule here asked for.
-
-   The spec's own escape hatch is the float: a legend whose computed float is
-   not none is not the rendered legend, and becomes an ordinary child. This bar
-   is a flex container, where float does not apply to an item at all, so the
-   caption simply lays out as the first item on the row — which is what the
-   flex rule above, its muted uppercase micro type and its centred alignment
-   were always written for.
-
-   IT IS LOAD-BEARING AND LOOKS DECORATIVE, which is why it is recorded here at
-   this length: delete it and the notch, the gap and the broken rule all come
-   back, with nothing else in this file changed. */
-.ig-legend-caption {
-  color: var(--ig-text-muted);
-  float: left;
-  font-family: var(--ig-font-mono);
-  font-size: var(--ig-font-size-pill);
-  letter-spacing: var(--ig-tracking-group);
-  padding: 0;
-  text-transform: uppercase;
-}
-
+/* NO VISIBLE CAPTION. The bar is named by its aria-label, which is what the
+   export draws: content.md rules out the small uppercase label above a group,
+   and the five drawn samples already say what the bar is. With no legend
+   element in the fieldset there is no rendered-legend slot either, so the
+   float that used to keep a caption out of it went with the caption. */
 /* THE KEYS LINE TAKES THE SMALL ROLE, IN THE SANS. Its words are a legend, not
    keys a reader types, so they are not mono; and a legend explains the drawing
    rather than competing with it, so it sits a step below the body in muted

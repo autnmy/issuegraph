@@ -147,10 +147,10 @@ export const scaleLadderStylesheet = `
   border-color: var(--ig-accent);
 }
 
-/* THE WHOLE STUCK CARD IS TINTED, as frame 17f draws it — the badge alone puts
+/* THE WHOLE STUCK CARD IS TINTED, as frame 17f draws it — the tag alone puts
    the one finding that stops work outright at the size of every other chip on
-   the board. Same hue as the badge inside it, which is blocked-by's, because
-   that is the edge the cycle is made of. */
+   the board. The border takes blocked-by's hue, because that is the edge the
+   cycle is made of; the tag inside it states the error, in the error state. */
 .ig-capsule-enter[data-reach='cyclic'] {
   border-color: var(--ig-edge-blocked-by);
 }
@@ -181,9 +181,8 @@ export const scaleLadderStylesheet = `
    one kind of thing rather than as a bordered badge beside bare text.
 
    THE BLOCKED COUNT IS A COUNT, so it takes the body type every count takes.
-   The cycle pill also carries layer 1's .ig-badge, whose micro mono is
-   installed first; this rule ties it on specificity and wins on order, so the
-   slot reads one way whichever of the two it holds. */
+   The cycle stands in the same slot on a stuck card, but it is a tag, not a
+   count, so it has a rule of its own below. */
 .ig-capsule-load {
   grid-column: 2;
   justify-self: end;
@@ -195,6 +194,27 @@ export const scaleLadderStylesheet = `
   font-size: var(--ig-font-size);
   font-variant-numeric: tabular-nums;
   color: var(--ig-text-muted);
+}
+
+/* THE CYCLE IS A TAG IN THE ERROR STATE, as the export draws its loop tag: the
+   small role in the sans at medium weight, the failed state's colour on a fill
+   tinted from it, in the slot the blocked count holds on any other card. The
+   theme carries no pill radius and no error fill of its own, so the corner is
+   the large radius, which rounds a tag this tall fully, and the fill is the
+   state colour mixed at the tint every chip already uses. */
+.ig-capsule-loop {
+  grid-column: 2;
+  justify-self: end;
+  align-items: center;
+  display: inline-flex;
+  background: color-mix(in srgb, var(--ig-state-failed) var(--ig-tint-fill), transparent);
+  border-radius: var(--ig-radius-large);
+  padding: 0 var(--ig-space-snug);
+  color: var(--ig-state-failed);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+  font-weight: var(--ig-weight-medium);
+  white-space: nowrap;
 }
 
 /* THE NAME AND THE REACH SPAN BOTH COLUMNS, and the name is the one part

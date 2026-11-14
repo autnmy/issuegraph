@@ -351,7 +351,12 @@ describe('the findings panel', () => {
     // it, so once `encoding-refused` moved to `refused.ts` a whole count would
     // have printed `4` directly above three cards.
     const drawn = [...markup.matchAll(/<li class="ig-audit-card"/g)].length;
-    assert.match(markup, new RegExp(`<span class="ig-audit-panel-count">${drawn}</span>`));
+    // ONE TITLE WITH THE COUNT INSIDE IT (#288), as the export's "3 problems to
+    // fix": the count leads the host's words within the same heading.
+    assert.match(
+      markup,
+      new RegExp(`<h2 class="ig-audit-panel-heading"><span class="ig-audit-panel-count">${drawn}</span> ${WORDS.heading}</h2>`),
+    );
     // AND THE FIXTURE ACTUALLY SEPARATES THE TWO. Without a refusal in it the
     // two numbers agree and this pin is vacuous — which is exactly how the
     // defect it exists for reached a plan and two reviews unnoticed.
@@ -360,7 +365,6 @@ describe('the findings panel', () => {
     // the audit region above the selection detail, so an `h3` would announce a
     // level three ahead of the level two it claimed to sit under. The refused
     // block beside it is an `h2` for the same reason.
-    assert.match(markup, new RegExp(`<h2 class="ig-audit-panel-heading">${WORDS.heading}</h2>`));
     // AND THE SECTION IS NAMED. An unnamed `section` carries no landmark role at
     // all, so a reader navigating by landmark cannot reach the panel.
     assert.match(markup, new RegExp(`<section class="ig-audit-panel" aria-label="${WORDS.heading}"`));

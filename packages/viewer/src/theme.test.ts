@@ -340,8 +340,12 @@ const EXPANSION: readonly string[] = Object.freeze([
  * reads is still a token a host has to supply, and one arriving unread by
  * accident is still worth catching.
  *
- * `--ig-weight-medium` is §16's emphasis weight and §16a and §16b spend it on
- * nothing this projection draws. The two ELEVATIONS were never read from a §16
+ * `--ig-weight-medium` LEFT THIS LIST WITH #288: the export's tag, its unit
+ * label and its group heading are all medium, and the viewer now draws each.
+ * `--ig-tracking-badge` JOINED IT THEN: it tracked the uppercase unit pill, and
+ * the export draws that label in sentence case with no tracking, so nothing
+ * here reads it. It stays in the contract, because a host theme built against
+ * it must keep resolving. The two ELEVATIONS were never read from a §16
  * frame at all — §16 separates its panels with a hairline and draws no drop
  * shadow — so reaching for one to lift a §16 panel remains a decision needing a
  * rationale rather than a default. `--ig-card-line` is read by the LAYOUT, not
@@ -349,7 +353,7 @@ const EXPANSION: readonly string[] = Object.freeze([
  * rendered, and it reaches the markup as a computed coordinate.
  */
 const STILL_UNREAD: readonly string[] = Object.freeze([
-  '--ig-weight-medium',
+  '--ig-tracking-badge',
   '--ig-elevation-raised',
   '--ig-elevation-overlay',
   '--ig-card-line',

@@ -5,7 +5,7 @@ import { THEME_TOKENS, viewerStylesheet } from '@issuegraph/viewer';
 
 import { renderScaleLadder } from './render.ts';
 import { scaleLadderStylesheet } from './styles.ts';
-import { countTypeMisses, regressionsOf } from '../testing/counts.ts';
+import { TAG_BACK, TAG_TYPE, countTypeMisses, declaredOn, regressionsOf, typeMisses } from '../testing/counts.ts';
 import { componentsSumming, documentOf } from '../testing/documents.ts';
 
 /** The stylesheet with its comments removed — a comment is not a declaration. */
@@ -52,6 +52,9 @@ describe('the chrome stylesheet carries structure, never a value', () => {
     const markup = [
       renderScaleLadder(document, { state }).markup,
       renderScaleLadder(document, { state, isolatedChip: false }).markup,
+      // A STUCK COMPONENT, so the cycle's tag is drawn and its rule is not
+      // reported as dead (#288).
+      renderScaleLadder(documentOf({ components: componentsSumming(70, 5), isolated: 2, cycleIn: 0 }), { state }).markup,
     ].join('');
     const emitted = new Set([...markup.matchAll(/class="([^"]+)"/g)].flatMap((match) => (match[1] ?? '').split(' ')));
 
@@ -100,11 +103,9 @@ describe('the isolated list says what it is a list of', () => {
 });
 
 describe('the counts this sheet draws are body text with tabular figures (#254)', () => {
-  // A capsule card's member count and its blocked count. The blocked slot holds
-  // the cycle pill on a stuck component, and that pill also carries layer 1's
-  // .ig-badge, whose micro mono is installed first — so the slot is named in
-  // both shapes and the reading has to see this sheet win over the viewer's.
-  const COUNTS = ['.ig-capsule-size', '.ig-capsule-load', ".ig-capsule-load.ig-badge[data-edge='blocked-by']"];
+  // A capsule card's member count and its blocked count. A stuck card's cycle
+  // stands in the blocked slot but is a tag, not a count (#288), pinned below.
+  const COUNTS = ['.ig-capsule-size', '.ig-capsule-load'];
 
   it('sets the body sans, the body size and tabular figures on each, alone and over the viewer sheet', () => {
     assert.deepEqual(countTypeMisses(scaleLadderStylesheet, COUNTS), []);
@@ -117,6 +118,34 @@ describe('the counts this sheet draws are body text with tabular figures (#254)'
       for (const later of regressionsOf(css, target)) {
         assert.notDeepEqual(countTypeMisses(later, [target]), [], `${target} passed with its old type put back`);
       }
+    }
+  });
+});
+
+describe('a stuck capsule\u2019s cycle is a tag in the error state, not a count (#288)', () => {
+  // The export draws the loop as a tag: the small role at medium weight in the
+  // error state. It used to share the blocked count's class and layer 1's badge,
+  // so it read as a third tally.
+  const css = `${viewerStylesheet}\n${scaleLadderStylesheet}`;
+
+  it('draws the cycle in its own class, with neither the count\u2019s class nor a badge\u2019s', () => {
+    const markup = renderScaleLadder(documentOf({ components: [40, 30], cycleIn: 1 })).markup;
+    assert.match(markup, /<span class="ig-capsule-loop">cycle<\/span>/);
+    assert.equal(/class="ig-capsule-load ig-badge"/.test(markup), false, 'the cycle still wears the count and the badge');
+  });
+
+  it('sets the tag role and the failed state\u2019s colour, over the viewer sheet', () => {
+    assert.deepEqual(typeMisses(css, ['.ig-capsule-loop'], TAG_TYPE), []);
+    // READ WHERE THE TAG SITS, so a rule for some other card's children does not
+    // stand in for it.
+    const inside = ['.ig-ladder', '.ig-refusal', '.ig-list', '.ig-capsule-cell', '.ig-capsule-enter'];
+    assert.equal(declaredOn(css, '.ig-capsule-loop', 'color', inside)?.value, 'var(--ig-state-failed)');
+    assert.equal(declaredOn(css, '.ig-capsule-loop', 'font-variant-numeric'), undefined, 'the tag took a count\u2019s figures');
+  });
+
+  it('fails a later rule that puts the mono face or a smaller size on the tag', () => {
+    for (const later of regressionsOf(css, '.ig-capsule-loop', TAG_BACK)) {
+      assert.notDeepEqual(typeMisses(later, ['.ig-capsule-loop'], TAG_TYPE), [], 'the tag passed with its old type put back');
     }
   });
 });

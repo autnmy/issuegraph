@@ -110,7 +110,8 @@ describe('the linear projection', () => {
     // which is what shipped — made a two-issue unit read as one issue with a
     // long title, and the unit is the one place the design draws an enclosure
     // to say the opposite.
-    assert.match(unit, /<span class="ig-unit-pill">⧉ one unit · 2 issues<\/span>/);
+    // SENTENCE CASE IN THE WORDS (#288): the sheet no longer capitalises the label.
+    assert.match(unit, /<span class="ig-unit-pill">⧉ One unit · 2 issues<\/span><span class="ig-unit-note">Worked together<\/span>/);
     // THE IDENTITY GOES THROUGH `identity`, so a member with a URL keeps the
     // deep-link chip §16e calls "the only external link". The fixture's unit
     // has none, so both draw as plain keys — the linked case is asserted below.
